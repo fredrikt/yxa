@@ -34,8 +34,6 @@
 %% Include files
 %%--------------------------------------------------------------------
 
-%% -include("").
-
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
@@ -53,7 +51,7 @@
 %%           FieldStr = string()
 %%           Sep      = char()
 %% Descrip.: split FieldStr into two parts where Sep is encountered
-%% Returns : {First, Second} | {First} | throw() 
+%% Returns : {First, Second} | {First} | throw()
 %%
 %% Example, if Sep = @ then:
 %% "foo@bar"  = {"foo", "bar"}
@@ -62,7 +60,7 @@
 %% "@bar"     = throw()
 %% "foo@@bar" = throw()
 %% "@"        = throw()
-%% ""         = {""}          XXX is this ok ? nothing currently 
+%% ""         = {""}          XXX is this ok ? nothing currently
 %%                            depends on this behaviour.
 %%--------------------------------------------------------------------
 split_fields(FieldStr, Sep) ->
@@ -90,15 +88,15 @@ split_fields([Char | FieldStrRest], Sep, FirstSegmentAcc) ->
     split_fields(FieldStrRest, Sep, [Char | FirstSegmentAcc]).
 
 %%--------------------------------------------------------------------
-%% Function: parse_host(Host) 
+%% Function: parse_host(Host)
 %%           Host = string()
 %% the host rule alows for a varity of formats:
-%% 
+%%
 %% hostname
 %% ipv4address
 %% ipv6reference
 %%
-%% Descrip.: return Host if it is wellformed, a exception is 
+%% Descrip.: return Host if it is wellformed, a exception is
 %%           thrown if the Host is malformed
 %% Returns : Host | throw() if parse fails
 %%           Host = string()
@@ -110,11 +108,11 @@ parse_host(Host) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: parse_hostport(HostPort) 
+%% Function: parse_hostport(HostPort)
 %%           HostPort = string()
 %% the host:port section of the sip url can be formated in a varity of
 %% ways:
-%% 
+%%
 %% hostname:port
 %% hostname
 %% ipv4address:port
@@ -122,67 +120,70 @@ parse_host(Host) ->
 %% ipv6reference:port
 %% ipv6reference
 %%
-%% Descrip.: splits the string into it's two parts, a exception is 
+%% Descrip.: splits the string into it's two parts, a exception is
 %%           thrown if the Host or Port is malformed
 %% Returns : {Host, Port} | throw() if parse fails
 %%           Host = string()
-%%           Port = string() | none 
+%%           Port = string() | none
 %%           throw() = {error, Reason} | {'EXIT',Reason}
 %%--------------------------------------------------------------------
 parse_hostport(HostPort) ->
     H = hd(HostPort),
     case H of
-	%% can only be a ipv6 reference
-	$[ -> parse_ipv6hostport(HostPort);
-	%% IPv4 and domain names require a compleat parse attempt to be distuinguished
-	%% properly from each other, as they may both start with numbers in H
-	_ -> case is_digit(H) of
-		 %% probably a ipv4 address
-		 true -> 
-		     case catch parse_ipv4hostport(HostPort) of
-			 {error,_} ->
-			     parse_domain_hostport(HostPort);
-			 R ->
-			     R
-		     end;
-		 %% must be a domain name
-		 false ->
-		     parse_domain_hostport(HostPort)
-	     end
+	91 ->	%% 91 is $[
+	    %% can only be a ipv6 reference
+	    parse_ipv6hostport(HostPort);
+	_ ->
+	    %% IPv4 and domain names require a complete parse attempt to be distinguished
+	    %% properly from each other, as they may both start with numbers in H
+	    case is_digit(H) of
+		true ->
+		    %% probably a ipv4 address
+		    case catch parse_ipv4hostport(HostPort) of
+			{error,_} ->
+			    parse_domain_hostport(HostPort);
+			R ->
+			    R
+		    end;
+		false ->
+		    %% must be a domain name
+		    parse_domain_hostport(HostPort)
+	    end
     end.
 
 parse_ipv6hostport([$[ | IPv6Hostport]) ->
-    {IPv6Ref, Port} = get_ipv6ref_and_port(IPv6Hostport), 
-    case Port of 
+    {IPv6Ref, Port} = get_ipv6ref_and_port(IPv6Hostport),
+    case Port of
 	none -> ok;
-	%% throw if not a numeric string
-	_ -> list_to_integer(Port)
+	_ -> 
+	    %% throw if not a numeric string
+	    list_to_integer(Port)
     end,
     %% throw if not ip6 ref
     is_IPv6reference(IPv6Ref),
     {"[" ++ IPv6Ref ++ "]", Port}.
 
-get_ipv6ref_and_port(IPv6Hostport) ->	
-    case catch sipparse_util:split_fields(IPv6Hostport, $]) of
-	%% a hack to match when no port is included in IPv6Hostport
-	%% this will ocure because split_fields/2 treats trailing 
-	%% separators as a error (which it should)
+get_ipv6ref_and_port(IPv6Hostport) ->
+    case catch sipparse_util:split_fields(IPv6Hostport, 93) of	%% 93 is $]
 	{error, no_second_part} ->
+	    %% a hack to match when no port is included in IPv6Hostport
+	    %% this will occur because split_fields/2 treats trailing
+	    %% separators as a error (which it should)
 	    %% remove trailing "]"
-	    [$] | R] = lists:reverse(IPv6Hostport),
+	    [93 | R] = lists:reverse(IPv6Hostport),	%% 93 is $]
 	    IPv6Ref = lists:reverse(R),
 	    {IPv6Ref, none};
-	%% other errors
 	{error, R} ->
+	    %% other errors
 	    throw({error, R});
-	%% a style "[...]:Port"
 	{Host, PortRest} ->
+	    %% a style "[...]:Port"
 	    [$: | Port] = PortRest,
 	    {Host, Port}
     end.
-				 
 
-parse_ipv4hostport(HostPort) -> 
+
+parse_ipv4hostport(HostPort) ->
     case sipparse_util:split_fields(HostPort, $:) of
 	{Host, Port} ->
 	    %% throw if not a numeric string
@@ -217,10 +218,10 @@ rm_trailing_dot_from_hostname(H) ->
     end.
 
 %%--------------------------------------------------------------------
-%% BNF checking functions, based on RFC3261 chapter 25 
+%% BNF checking functions, based on RFC3261 chapter 25
 %%--------------------------------------------------------------------
 is_alpha(Char) ->
-    if 
+    if
 	(Char >= $A) and (Char =< $Z) ->
 	    true;
 	(Char >= $a) and (Char =< $z) ->
@@ -251,19 +252,19 @@ is_token(Str) ->
 	    ($_, Acc) -> Acc;
 	    ($+, Acc) -> Acc;
 	    ($`, Acc) -> Acc;
-	    ($', Acc) -> Acc;
+	    ($\', Acc) -> Acc;
 	    ($~, Acc) -> Acc;
 	    (Char, Acc) ->
-		Acc and is_alphanum(Char) 
-	end,	
+		Acc and is_alphanum(Char)
+	end,
     lists:foldl(F,true,Str).
-    
+
 
 %%--------------------------------------------------------------------
 %% Function: is_hostname(Str)
 %%           Str = string(), the host string
-%% Descrip.: parse host string, throw a exception if it doesn't 
-%%           conform to the format specified in RFC3261 chapter 25.1 
+%% Descrip.: parse host string, throw a exception if it doesn't
+%%           conform to the format specified in RFC3261 chapter 25.1
 %%           p218
 %% Returns : Str | throw()
 %% Note    : this function only matches symbolic hostnames
@@ -272,12 +273,12 @@ is_token(Str) ->
 %%
 %% is_digit = [0-9]
 %% is_alpha = [A-Za-z]
-%% is_alphanum = [A-Za-z0-9] 
+%% is_alphanum = [A-Za-z0-9]
 %%--------------------------------------------------------------------
-is_hostname(Host) -> 
+is_hostname(Host) ->
     HostL = length(Host),
-    %% pattern based on the BNF garmmer for the <hostname> rule
-    Pattern = 
+    %% pattern based on the BNF grammer for the <hostname> rule
+    Pattern =
 	"((([A-Za-z0-9])|([A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9]))\\.)*"
 	"(([A-Za-z])|([A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9]))\\.?",
 
@@ -285,14 +286,14 @@ is_hostname(Host) ->
     %% throw exception if whole string doesn't match
     {match, 1, HostL} = R,
     Host.
-    
-	
+
+
 %%--------------------------------------------------------------------
 %% Function: is_IPv4address(Str)
 %%           Str = string(), the host string
-%% Descrip.: parse host string, throw a exception if it doesn't 
-%%           conform to the format specified in RFC3261 chapter 25.1 
-%%           p218
+%% Descrip.: parse host string, throw an exception if it doesn't
+%%           conform to the format specified in RFC3261 chapter 25.1
+%%           page 218
 %% Returns : Str | throw()
 %% Note    : this function only matches IPv4 hostnames
 %%--------------------------------------------------------------------
@@ -305,9 +306,9 @@ is_IPv4address(Host) ->
 %%--------------------------------------------------------------------
 %% Function: is_IPv6refernce(Str)
 %%           Str = string(), the host string
-%% Descrip.: parse host string, throw a exception if it doesn't 
-%%           conform to the format specified in RFC3261 chapter 25.1 
-%%           p218
+%% Descrip.: parse host string, throw an exception if it doesn't
+%%           conform to the format specified in RFC3261 chapter 25.1
+%%           page 218
 %% Returns : Str | throw()
 %% Note    : this function only matches IPv6 hostnames
 %%--------------------------------------------------------------------
@@ -317,17 +318,43 @@ is_IPv6reference(IPv6Str) ->
 	{error, _Reason} -> throw({error, not_a_IPv6_reference})
     end.
 
+
+%%====================================================================
+%% Behaviour functions
+%%====================================================================
+
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
 %% Descrip.: autotest callback
-%% Returns : 
+%% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
     %% split_fields/2
     %%--------------------------------------------------------------------
     %% test regular case
     io:format("test: split_fields/2 - 1~n"),
-    {"foo", "bar"} = sipparse_util:split_fields("foo@bar", $@), 
+    {"foo", "bar"} = sipparse_util:split_fields("foo@bar", $@),
     %% test missplaced Separator
     io:format("test: split_fields/2 - 2~n"),
     case catch sipparse_util:split_fields("@bar", $@) of
@@ -413,23 +440,3 @@ test() ->
 
     ok.
 
-
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
-%%--------------------------------------------------------------------
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
-%%--------------------------------------------------------------------
