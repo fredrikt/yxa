@@ -1,26 +1,48 @@
 -module(siprequest).
 -export([send_redirect/3, process_register_isauth/5,
 	 send_auth_req/4, send_proxyauth_req/4,
-	 send_proxy_request/3, send_proxy_request/4, send_answer/3,
+	 send_proxy_request/3, send_answer/3,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5,
 	 send_result/5, send_result/6, make_answerheader/1,
-	 locations_to_contacts/1, add_record_route/3]).
+	 locations_to_contacts/1, add_record_route/1, 
+	 add_record_route/3, myhostname/0, default_port/1]).
 
 send_response(Socket, Code, Text, Header, Body) ->
     Via = sipheader:via(keylist:fetch("Via", Header)),
     [Dest | _] = Via,
-    logger:log(debug, "send to ~p", [Dest]),
     send_response_to(Socket, Code, Text, Dest, Header, Body).
 
 send_response_to(Socket, Code, Text, Dest, Header, Body) ->
     Line1 = "SIP/2.0 " ++ integer_to_list(Code) ++ " " ++ Text,
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
-    logger:log(debug, "send response(~p):~n~s~n", [Dest, Message]),
     {Protocol, {Host, Port}, Parameters} = Dest,
-    ok = gen_udp:send(Socket, Host, list_to_integer(default_port(Port)), Message).
+    PortInt = list_to_integer(default_port(Port)),
+    SendToHost = case dict:find("received", sipheader:param_to_dict(Parameters)) of
+	{ok, Received} ->
+	    case regexp:first_match(Received, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") of
+		{match, _, _} ->
+		    Received;
+		_ ->
+		    logger:log(debug, "Malformed received= parameter (not an IP address): ~p", [Received]),
+		    Host
+	    end;
+	Res ->
+	    Host
+    end,
+    logger:log(debug, "send response(~p, send to=~p:~p) :~n~s~n", [Dest, SendToHost, default_port(Port), Message]),
+    case gen_udp:send(Socket, SendToHost, PortInt, Message) of
+	ok ->
+	    ok;
+	{error, E} ->
+	    logger:log(error, "Failed sending response to ~p:~p, error ~p",
+			[SendToHost, PortInt, E]),
+	    {senderror, E}
+    end.
 
 default_port(none) ->
     "5060";
+default_port(Port) when integer(Port) ->
+    integer_to_list(Port);
 default_port(Port) ->
     Port.
 
@@ -65,7 +87,7 @@ make_answerheader(Header) ->
 	    keylist:set("Route", RecordRoute, NewHeader1)
     end.
 
-send_proxy_request(Header, Socket, {Action, ReqURI, Body, Parameters}, Dest) ->
+send_proxy_request(Header, Socket, {Action, ReqURI, Body, Parameters}) ->
     MaxForwards =
 	case keylist:fetch("Max-Forwards", Header) of
 	    [M] ->
@@ -83,12 +105,13 @@ send_proxy_request(Header, Socket, {Action, ReqURI, Body, Parameters}, Dest) ->
     end,
     check_valid_proxy_request(Action, Header),
     Line1 = Action ++ " " ++ sipurl:print(ReqURI) ++ " SIP/2.0",
+    ViaHostname = myhostname(),
     [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
-				     {siphost:myip(),
-				      integer_to_list(sipserver:get_env(listenport, 5060))},
+				     {ViaHostname,
+				      default_port(sipserver:get_env(listenport, none))},
 				     Parameters}]),
     Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
-    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
+    {Keylist3, Newdest} = rewrite_route(Keylist2, ReqURI),
     Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist4) ++ "\r\n" ++ Body,
     case url_to_hostport(Newdest) of
@@ -102,9 +125,6 @@ send_proxy_request(Header, Socket, {Action, ReqURI, Body, Parameters}, Dest) ->
 	    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
 	    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
     end.
-
-send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
-    send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}, Dest).
 
 check_valid_proxy_request("ACK", _) ->
     true;
@@ -120,10 +140,26 @@ check_valid_proxy_request(Method, Header) ->
 	    throw({siperror, 420, "Bad Extension", [{"Unsupported", ProxyRequire}]})
     end.
 
+myhostname() ->
+    case sipserver:get_env(myhostnames, []) of
+	[] ->
+	    siphost:myip();
+	Hostnames ->
+	    lists:nth(1, Hostnames)
+    end.
+
 add_record_route(Hostname, Port, Header) ->
-    Route = "<" ++ sipurl:print({none, none, Hostname, Port,
+    Route = "<" ++ sipurl:print({none, none, Hostname, default_port(Port),
 				["maddr=" ++ siphost:myip()]}) ++ ">",
-				keylist:prepend({"Record-Route", Route}, Header).
+    [CRoute] = sipheader:contact([Route]),
+    case sipheader:contact(keylist:fetch("Record-Route", Header)) of
+	[CRoute | _] ->
+	    Header;
+	_ ->
+	    keylist:prepend({"Record-Route", Route}, Header)
+    end.
+add_record_route(Header) ->
+    add_record_route(myhostname(), sipserver:get_env(listenport, none), Header).
 
 register_contact(Phone, Location, Priority, Header) ->
     {_, Contact} = Location,
@@ -138,7 +174,7 @@ register_contact(Phone, Location, Priority, Header) ->
 
 remove_expires_parameter(Contact) ->
     {User, _, Host, Port, _} = Contact,
-    Param1 = sipheader:contact_params(Contact),
+    Param1 = sipheader:contact_params({none, Contact}),
     Param2 = dict:erase("expires", Param1),
     Parameters = sipheader:dict_to_param(Param2),
     {User, none, Host, Port, Parameters}.
@@ -206,11 +242,9 @@ locations_to_contacts([{Location, Flags, Class, Expire} | Rest]) ->
     [print_contact(Location, Expire), locations_to_contacts(Rest)].
 
 print_contact(Location, Expire) ->
-    {User, _, Host, Port, Parameters} = Location,
     % make sure we don't end up with a negative Expires
     NewExpire = lists:max([0, Expire - util:timestamp()]),
-    Contact = {none, {User, none, Host, Port, lists:append(Parameters, ["expires=" ++ integer_to_list(NewExpire)])}},
-    sipheader:contact_print([Contact]).
+    "<" ++ sipheader:contact_print([{none, Location}]) ++ ">;expires=" ++ integer_to_list(NewExpire).
 
 process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
@@ -274,7 +308,7 @@ wildcard_grep([Foo | Rest]) ->
     
 parse_register_expire(Header, Contact) ->
     MaxRegisterTime = sipserver:get_env(max_register_time, 43200),
-    case dict:find("expires", sipheader:contact_params(Contact)) of
+    case dict:find("expires", sipheader:contact_params({none, Contact})) of
 	{ok, E1} ->
 	    % Contact parameters has an expire value, use that
 	    lists:min([MaxRegisterTime, list_to_integer(E1)]);
@@ -349,7 +383,14 @@ send_result(Header, Socket, Body, Code, Description, ExtraHeaders) ->
 
 send_proxy_response(Socket, Status, Reason, Header, Body) ->
     [Self | Via] = sipheader:via(keylist:fetch("Via", Header)),
-    Keylist = keylist:set("Via", sipheader:via_print(Via),
-			  Header),
-    send_response(Socket, Status, Reason,
-		  Keylist, Body).
+    case Via of
+	[] ->
+	    logger:log(error, "Can't proxy response ~p ~s because it contains just one or less Via and that should be mine!",
+			[Status, Reason]),
+	    {error, invalid_Via};
+	_ ->
+	    Keylist = keylist:set("Via", sipheader:via_print(Via),
+				  Header),
+	    send_response(Socket, Status, Reason,
+			  Keylist, Body)
+    end.
