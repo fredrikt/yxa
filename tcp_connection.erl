@@ -277,17 +277,19 @@ handle_cast({connect_to_remote, Proto, Host, Port, GenServerFrom}, State) when S
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({recv, Data}, State)
-%%           Data = list()
+%% Function: handle_cast({recv_sipmsg, Data}, State)
+%%           Data = request record() | response record()
 %% Descrip.: Our received process has received a SIP message on our
 %%           socket, invoke sipserver:process() on it.
 %% Returns : {noreply, State, Timeout}
 %%--------------------------------------------------------------------
-handle_cast({recv, Data}, State) when State#state.on == true ->
+handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
     {IP, Port} = State#state.remote,
-    SipSocket = #sipsocket{module=sipsocket_tcp, proto=State#state.proto, pid=self(), data={State#state.local, State#state.remote}},
-    Origin = #siporigin{proto=State#state.proto, addr=IP, port=Port, receiver=self(), sipsocket=SipSocket},
-    sipserver:safe_spawn(sipserver, process, [Data, Origin, transaction_layer]),
+    SipSocket = #sipsocket{module=sipsocket_tcp, proto=State#state.proto, pid=self(),
+			   data={State#state.local, State#state.remote}},
+    Origin = #siporigin{proto=State#state.proto, addr=IP, port=Port, receiver=self(),
+			sipsocket=SipSocket},
+    sipserver:safe_spawn(sipserver, process, [Msg, Origin, transaction_layer]),
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
