@@ -1,4 +1,4 @@
-%% A minimalistic autotest suite for YXA. Test granularity is on a 
+%% A minimalistic autotest suite for YXA. Test granularity is on a
 %% module basis, rather than the prefered test cases basis.
 %%
 %%--------------------------------------------------------------------
@@ -17,7 +17,7 @@
 %% Internal exports
 %%--------------------------------------------------------------------
 -export([
-	 fake_logger_start/0
+	 fake_logger_loop/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -65,25 +65,26 @@ run() ->
 
 run([Mode]) ->
     case erlang:whereis(logger) of
-	undefined when Mode == shell ->
+	undefined ->
 	    io:format("Faking Yxa runtime environment...~n"),
 	    %%mnesia:start(),
 	    %%directory:start_link(),
-	    spawn(fun fake_logger_start/0);
+	    Logger = spawn(?MODULE, fake_logger_loop, []),
+	    register(logger, Logger);
 	_ -> ok
     end,
 
     {{Year,Month,Day},{Hour,Min,_Sec}} = calendar:local_time(),
-    TimeStr = integer_to_list(Year) ++ "-" ++ string:right(integer_to_list(Month), 2, $0) ++ "-" 
-	++ string:right(integer_to_list(Day), 2, $0) ++ " " ++ string:right(integer_to_list(Hour), 2, $0) 
+    TimeStr = integer_to_list(Year) ++ "-" ++ string:right(integer_to_list(Month), 2, $0) ++ "-"
+	++ string:right(integer_to_list(Day), 2, $0) ++ " " ++ string:right(integer_to_list(Hour), 2, $0)
 	++ ":" ++ string:right(integer_to_list(Min), 2, $0),
-	
+
     io:format("~n"),
     io:format("**********************************************************************~n"),
     io:format("*                      AUTOTEST STARTED            ~s  *~n",[TimeStr]),
     io:format("**********************************************************************~n"),
     Results = [{Module, test_module(Module)} || Module <- ?TEST_MODULES],
-    
+
 
     io:format("~n"),
     io:format("======================================================================~n"),
@@ -102,7 +103,7 @@ run([Mode]) ->
 		end
 	end,
     lists:foreach(F, Results),
-    
+
     Status = erase(autotest_result),
 
     if
@@ -118,7 +119,7 @@ run([Mode]) ->
 %% Descrip.: test a single module
 %% Returns : ok | ERROR
 %%
-%% The Module:test() function that must be supplied by the module 
+%% The Module:test() function that must be supplied by the module
 %% Module:
 %%
 %% Function: test()
@@ -128,13 +129,13 @@ run([Mode]) ->
 %% Note    : each test in the test function should print a single line
 %%           "test: TestedFunction/Arity - TestNo_For_TestedFunction"
 %%           + "~n". It's mainly used to make it easier to find the
-%%           failing sub test. 
-%% Note    : individual subtest in test() should preferably be 
-%%           independent of each other (test setup and execution 
-%%           order) - both for readability and if more advanced 
+%%           failing sub test.
+%% Note    : individual subtest in test() should preferably be
+%%           independent of each other (test setup and execution
+%%           order) - both for readability and if more advanced
 %%           autotest systems are implemented
 %%--------------------------------------------------------------------
-test_module(Module) -> 
+test_module(Module) ->
     io:format("~n"),
     io:format("testing module: ~p~n",[Module]),
     io:format("----------------------------------------------------------------------~n"),
@@ -142,6 +143,7 @@ test_module(Module) ->
 	ok ->
 	    ok;
 	Error ->
+	    io:format("Test FAILED : ~p~n", [Error]),
 	    Error
     end.
 
@@ -151,9 +153,9 @@ test_module(Module) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 
 %%====================================================================
@@ -168,15 +170,16 @@ test_module(Module) ->
 %%           erlang prompt with an Yxa application running.
 %% Returns : does not return.
 %%--------------------------------------------------------------------
-fake_logger_start() ->
-    erlang:register(logger),
+fake_logger_loop() ->
     receive
 	exit ->
-	    ok
+	    ok;
+	_ ->
+	    fake_logger_loop()
     end.
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
