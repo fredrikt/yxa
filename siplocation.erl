@@ -88,6 +88,7 @@
 %%--------------------------------------------------------------------
 
 -module(siplocation).
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -97,7 +98,9 @@
 	 prioritize_locations/1,
 	 debugfriendly_locations/1,
 	 get_locations_for_users/1,
-	 get_user_with_contact/1
+	 get_user_with_contact/1,
+
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -208,13 +211,13 @@ locations_to_contacts(Locations) ->
 
 locations_to_contacts2([], Res) ->
     Res;
-locations_to_contacts2([H | T], Res) ->
+locations_to_contacts2([H | T], Res) when is_record(H, phone) ->
     Location = H#phone.address,
     Expire = H#phone.expire,
 
     %% Expires can't be less than 0 so make sure we don't end up with a negative Expires
     NewExpire = lists:max([0, Expire - util:timestamp()]),
-    Contact = contact:new(Location, [{"expire", integer_to_list(NewExpire)}]),
+    Contact = contact:new(Location, [{"expires", integer_to_list(NewExpire)}]),
 
     locations_to_contacts2(T, [contact:print(Contact) | Res]).
 
@@ -251,7 +254,7 @@ unregister(LogTag, Header, _SipUser, Locations) ->
 	    logger:log(error, "Database: unregister of registrations failed for one or more"
 		       " contact entries, due to: ~p",
 		       [Reason]),
-	    {siperror, 500, "Server Internal Error", []};
+	    {siperror, 500, "Server Internal Error"};
 	{atomic, _ResultOfFun} ->
 	    ok
     end.
@@ -263,13 +266,13 @@ unregister(LogTag, Header, _SipUser, Locations) ->
 %% Descrip.: determine if request is a properly formed wildcard
 %%           request (see RFC 3261 Chapter 10 page 64 - step 6)
 %% Returns : true     |
-%%           SipError
+%%           false    |
+%%           throw({siperror, ...})
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% there is only one Contact and it's a wildcard
 is_valid_wildcard_request(Header, [ #contact{urlstr = "*"} ]) ->
-    Expire = sipheader:expire(Header),
-    case Expire of
-	[$0 | _] ->
+    case sipheader:expire(Header) of
+	[Expire] ->
 	    %% cast to integer so that "0", "00" ... and so on are all considered as 0
 	    case catch list_to_integer(Expire) of
 		0 ->
@@ -289,7 +292,7 @@ is_valid_wildcard_request(_Header, Contacts) ->
     case wildcard_grep(Contacts) of
 	true ->
 	    {siperror, 400, "Wildcard present but not alone, invalid (RFC3261 10.3 #6)"};
-	_ ->
+	false ->
 	    false
     end.
 
@@ -319,80 +322,80 @@ get_user_with_contact(URI) when is_record(URI, sipurl) ->
 	{atomic, [SIPuser | _]} ->
 	    SIPuser;
 	%% no one using URI found
-	_ ->
+	{atomic, []} ->
+	    %% XXX test this
 	    none
     end.
 
 %%--------------------------------------------------------------------
 %% Function: get_locations_for_users(SipUserList)
-%%           SipUserList = list of ???
+%%           SipUserList = list() of string(), usernames
 %% Descrip.: Looks up all locations for a list of users. Used
 %%           to find out where a set of users are to see where
 %%           we should route a request.
-%% Returns : list() of {Address, Flags, Class, Expire}
+%% Returns : list() of siplocationdb_e record()
 %% XXX usage of phone:get_sipuser_locations/1 rather than get_phone/1
 %% would be preferable
 %%--------------------------------------------------------------------
-get_locations_for_users([]) ->
-    [];
-get_locations_for_users([User | Rest]) ->
-    Locations = case phone:get_phone(User) of
-		    {atomic, L} ->
-			L;
-		    Unknown ->
-			logger:log(debug, "Location: Unknown result from phone:get_phone() "
-				   "in get_locations_for_users : ~n~p",
-				   [Unknown]),
-			[]
-		end,
-    Locations ++ get_locations_for_users(Rest).
+get_locations_for_users(In) ->
+    get_locations_for_users2(In, []).
+
+get_locations_for_users2([], Res) ->
+    Res;
+get_locations_for_users2([H | T], Res) ->
+    {ok, Locations} = phone:get_phone(H),
+    get_locations_for_users2(T, Res ++ Locations).
 
 %%--------------------------------------------------------------------
 %% Function: prioritize_locations(Locations)
-%%           Locations = list of Loc
-%%           Loc = {Contact, Flags, Class, Expire}
-%%           Flags = {Name, Value}
-%% Descrip.:
-%% Returns : list of Loc
+%%           Locations = list of siplocationdb_e record()
+%% Descrip.: Look through a list of siplocation DB entrys, figure out
+%%           what the lowest priority amongst them are and then
+%%           return all records which has that priority.
+%% Returns : list of siplocationdb_e record()
 %%--------------------------------------------------------------------
 prioritize_locations(Locations) when is_list(Locations) ->
-    BestPrio = safe_min(get_priorities(Locations)),
-    get_locations_with_prio(BestPrio, Locations).
-
-%% lists:min/1 doesn't like empty lists
-safe_min([]) ->
-    [];
-safe_min(L) ->
-    lists:min(L).
+    case get_priorities(Locations) of
+	[BestPrio | _] ->
+	    get_locations_with_prio(BestPrio, Locations);
+	_ ->
+	    %% No locations or no locations with priority - can't choose
+	    []
+    end.
 
 %% Descrip. = examine all Flags entries in Locations and return all
-%%            priority values (if any are given)
+%%            priority values (if any are given) sorted with lowest (best)
+%%            priority first.
 %% Returns  = list of integer()
-get_priorities(Locations) ->
-    F = fun ({_Location, Flags, _Class, _Expire}, Acc) ->
-		Prio = lists:keysearch(priority, 1, Flags),
-		case Prio of
-		    {value, {priority, P}} ->
-			[P | Acc];
-		    _ ->
-			Acc
-		end
-	end,
-    lists:foldl(F, [], Locations).
+get_priorities(Locations) when is_list(Locations) ->
+    get_priorities2(Locations, []).
+
+get_priorities2([#siplocationdb_e{flags=Flags} | T], Res) ->
+    case lists:keysearch(priority, 1, Flags) of
+	{value, {priority, Prio}} when Prio /= [] ->
+	    get_priorities2(T, [Prio | Res]);
+	_ ->
+	    %% no priority
+	    get_priorities2(T, Res)
+    end;
+get_priorities2([], Res) ->
+    lists:sort(Res).
 
 %% Descrip. = find the Location/s that has the "best" priority in the Flags part of the tuple.
 %%            Note that some may lack a {priority, PrioVal} entry
-%% Returns  = list of Location (all with same "best" priority - Priority)
-get_locations_with_prio(_, []) ->
-    [];
-get_locations_with_prio(Priority, [Location | Rest]) ->
-    {_Contact, Flags, _Class, _Expire} = Location,
+%% Returns  = list() of siplocationdb_e record() (all with same "best" priority - Priority)
+get_locations_with_prio(Priority, Locations) ->
+    get_locations_with_prio2(Priority, Locations, []).
+
+get_locations_with_prio2(_Priority, [], Res) ->
+    lists:reverse(Res);
+get_locations_with_prio2(Priority, [#siplocationdb_e{flags=Flags}=H | T], Res) ->
     Prio = lists:keysearch(priority, 1, Flags),
     case Prio of
 	{value, {priority, Priority}} ->
-	    [Location] ++ get_locations_with_prio(Priority, Rest);
+	    get_locations_with_prio2(Priority, T, [H | Res]);
 	_ ->
-	    get_locations_with_prio(Priority, Rest)
+	    get_locations_with_prio2(Priority, T, Res)
     end.
 
 %%--------------------------------------------------------------------
@@ -411,7 +414,7 @@ get_locations_with_prio(Priority, [Location | Rest]) ->
 %%--------------------------------------------------------------------
 process_non_wildcard_contacts(LogTag, SipUser, Locations, RequestHeader) ->
     RequestCallId = sipheader:callid(RequestHeader),
-    {CSeq, _}  = sipheader:cseq(RequestHeader),
+    {CSeq, _CSeqMethod}  = sipheader:cseq(RequestHeader),
     RequestCSeq = list_to_integer(CSeq),
 
     %% get expire value from request header only once, this will speed up the calls to
@@ -504,9 +507,6 @@ debugfriendly_locations([Location | Rest]) ->
     Res = lists:concat(["priority ", Prio, ": ", C, ";expires=", NewExpire]),
     lists:append([Res], debugfriendly_locations(Rest)).
 
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
 
 %%====================================================================
 %% Internal functions
@@ -648,3 +648,110 @@ parse_register_contact_expire(Header, Contact) when is_record(Header, keylist),
     ExpireHeader = sipheader:expire(Header),
     parse_register_contact_expire(ExpireHeader, Contact).
 
+    
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+
+    %% test get_priorities(Locations)
+    %%--------------------------------------------------------------------
+    Loc0 = #siplocationdb_e{flags=[], expire=0},
+    Loc1 = #siplocationdb_e{flags=[{priority, 1}], expire=1},
+    Loc2 = #siplocationdb_e{flags=[{priority, 2}], expire=2},
+    Loc3 = #siplocationdb_e{flags=[{priority, 2}], expire=3},
+    
+    io:format("test: get_priorities/1 - 1~n"),
+    %% normal case
+    [1, 2, 2] = get_priorities([Loc0, Loc1, Loc2, Loc3]),
+
+    io:format("test: get_priorities/1 - 2~n"),
+    %% no location with priority
+    [] = get_priorities([Loc0]),
+
+
+    %% test prioritize_locations(Locations)
+    %%--------------------------------------------------------------------
+    Loc4 = #siplocationdb_e{flags=[{priority, 4}], expire=4},
+    
+    io:format("test: prioritize_locations/1 - 1~n"),
+    [Loc1] = prioritize_locations([Loc0, Loc1, Loc2, Loc3, Loc4]),
+
+    io:format("test: prioritize_locations/1 - 2~n"),
+    [Loc2, Loc3] = prioritize_locations([Loc2, Loc3, Loc4]),
+
+    io:format("test: prioritize_locations/1 - 3~n"),
+    [Loc4] = prioritize_locations([Loc4, Loc0]),
+
+
+    %% is_valid_wildcard_request(Header, ContactList)
+    %%--------------------------------------------------------------------
+    io:format("test: is_valid_wildcard_request/2 - 1~n"),
+    %% test valid wildcard
+    true = is_valid_wildcard_request(keylist:from_list([{"Expires", ["0"]}]), [contact:new("*")]),
+
+    io:format("test: is_valid_wildcard_request/2 - 2~n"),
+    %% test non-zero Expires
+    {siperror, 400, _} =
+	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["1"]}]), [contact:new("*")])),
+
+    io:format("test: is_valid_wildcard_request/2 - 3~n"),
+    %% test non-zero Expires, starting with a zero
+    {siperror, 400, _} =
+	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["01"]}]), [contact:new("*")])),
+
+    io:format("test: is_valid_wildcard_request/2 - 4~n"),
+    %% test without Expires-header
+    {siperror, 400, _} =
+	(catch is_valid_wildcard_request(keylist:from_list([]), [contact:new("*")])),
+
+    io:format("test: is_valid_wildcard_request/2 - 5~n"),
+    %% test with non-numeric Expires-header
+    {siperror, 400, _} =
+	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["test"]}]), [contact:new("*")])),
+
+    io:format("test: is_valid_wildcard_request/2 - 6~n"),
+    %% test with invalid Expires-header
+    {siperror, 400, _} =
+	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["0 invalid"]}]), [contact:new("*")])),
+
+    io:format("test: is_valid_wildcard_request/2 - 7~n"),
+    %% non-wildcard contact
+    false = is_valid_wildcard_request(keylist:from_list([]), [contact:new("sip:ft@example.org")]),
+
+    io:format("test: is_valid_wildcard_request/2 - 8~n"),
+    %% multiple non-wildcard contact
+    false = is_valid_wildcard_request(keylist:from_list([]), [contact:new("sip:ft@example.org"),
+							     contact:new("sip:ft@example.net")]),
+
+    io:format("test: is_valid_wildcard_request/2 - 9~n"),
+    %% multiple contacts, one is a wildcard
+    {siperror, 400, _} =
+	(catch is_valid_wildcard_request(keylist:from_list([]), [contact:new("*"),
+								contact:new("sip:ft@example.org")])),
+
+    %% parse_register_expire(ExpireHeader, Contact)
+    %%--------------------------------------------------------------------
+    io:format("test: parse_register_expire/2 - 1~n"),
+    %% test default
+    3600 = parse_register_expire([], contact:new("sip:ft@example.org")),
+
+    io:format("test: parse_register_expire/2 - 2~n"),
+    %% test that contact parameter is used if present
+    1201 = parse_register_expire(["1202"], contact:new("sip:ft@example.org", [{"expires", "1201"}])),
+
+    io:format("test: parse_register_expire/2 - 3~n"),
+    %% test that expires header is used if contact parameter is absent
+    1202 = parse_register_expire(["1202"], contact:new("sip:ft@example.org")),
+
+    io:format("test: parse_register_expire/2 - 4~n"),
+    %% test that contact can't be larger than maximum
+    43200 = parse_register_expire([], contact:new("sip:ft@example.org", [{"expires", "86400"}])),
+
+    ok.
