@@ -1,12 +1,43 @@
+%%%-------------------------------------------------------------------
+%%% File     : siptimer.erl
+%%% Author   : Fredrik <ft@it.su.se>
+%%% Descrip. : Module to manage timers, for use in client and server
+%%%            transactions. Make it easier to cancel timers and
+%%%            revive them when we get provisional responses etc.
+%%% Created  : 17 Jun 2003 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
 -module(siptimer).
--export([add_timer/4, revive_timer/3, reset_timers/2, get_timer/2,
-	 get_timers_appsignal_matching/2, cancel_timer/2, cancel_all_timers/1,
-	 cancel_timers/2, cancel_timers_with_appsignal/2, stop_timers/1,
-	 debugfriendly/1, timeout2str/1, extract/2, empty/0]).
 
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([
+	 add_timer/4,
+	 revive_timer/3,
+	 reset_timers/2,
+	 get_timer/2,
+	 get_timers_appsignal_matching/2,
+	 cancel_timer/2,
+	 cancel_all_timers/1,
+	 cancel_timers/2,
+	 cancel_timers_with_appsignal/2,
+	 stop_timers/1,
+	 debugfriendly/1,
+	 timeout2str/1,
+	 extract/2,
+	 empty/0,
+	 length/1
+	]).
+
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
 -record(siptimerlist, {list}).
 -record(siptimer, {ref, timer, timeout, description, starttime, appsignal}).
 
+%%====================================================================
+%% External functions
+%%====================================================================
 add_timer(0, _, _, TimerList) when record(TimerList, siptimerlist) ->
     TimerList;
 add_timer(Timeout, Description, AppSignal, TimerList) when record(TimerList, siptimerlist) ->
@@ -62,18 +93,6 @@ update_timer(SipTimer, TList) when record(SipTimer, siptimer), record(TList, sip
     Ref = SipTimer#siptimer.ref,
     make_siptimerlist(update_timer2(Ref, SipTimer, TList#siptimerlist.list, TList)).
     
-make_siptimerlist([]) ->
-    #siptimerlist{list=[]};
-make_siptimerlist(In) ->
-    #siptimerlist{list=make_siptimerlist2(In, [])}.
-
-make_siptimerlist2([], Res) ->
-    Res;
-make_siptimerlist2([H | T], Res) when record(H, siptimer) ->
-    make_siptimerlist2(T, lists:append(Res, [H]));
-make_siptimerlist2(In, Res) ->
-    erlang:fault("Trying to make siptimerlist of something else than siptimers!", [In, Res]).
-
 update_timer2(Ref, _, [], TList) ->
     logger:log(error, "Siptimer: Asked to update a timer, but I can't find it", [Ref]),
     logger:log(error, "Siptimer: Asked to update a timer with ref=~p, but I can't find it in list :~n~p",
@@ -98,13 +117,6 @@ get_timer2(Ref, [H | T]) when record(H, siptimer) ->
 
 get_timers_appsignal_matching(AppSignal, TimerList) when record(TimerList, siptimerlist) ->
     make_siptimerlist(get_timers_something_matching2(appsignal, AppSignal, TimerList#siptimerlist.list, [])).
-
-get_timers_something_matching2(Key, Value, [], Res) ->
-    Res;
-get_timers_something_matching2(appsignal, Value, [H | T], Res) when record(H, siptimer), H#siptimer.appsignal == Value ->
-    get_timers_something_matching2(appsignal, Value, T, lists:append(Res, [H]));
-get_timers_something_matching2(Key, Value, [H | T], Res) when record(H, siptimer) ->
-    get_timers_something_matching2(Key, Value, T, Res).    
 
 
 extract(Values, SipTimer) when record(SipTimer, siptimer) ->
@@ -142,9 +154,10 @@ stop_timers([]) ->
     logger:log(debug, "Siptimer: Asked to stop timers but none were supplied"),
     error;
 stop_timers(TimerList) when record(TimerList, siptimerlist) ->
-    stop_timers2(TimerList#siptimerlist.list),
-    ok.
+    ok = stop_timers2(TimerList#siptimerlist.list).
 
+stop_timers2([]) ->
+    ok;
 stop_timers2([SipTimer | Rest]) ->
     Timer = SipTimer#siptimer.timer,
     Ref = SipTimer#siptimer.ref,
@@ -203,3 +216,30 @@ timeout2str(500) ->
     "0.5";
 timeout2str(Timeout) ->
     integer_to_list(Timeout div 1000).
+
+length(TimerList) when is_record(TimerList, siptimerlist) ->
+    length(TimerList#siptimerlist.list).
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+make_siptimerlist([]) ->
+    #siptimerlist{list=[]};
+make_siptimerlist(In) ->
+    #siptimerlist{list=make_siptimerlist2(In, [])}.
+
+make_siptimerlist2([], Res) ->
+    Res;
+make_siptimerlist2([H | T], Res) when record(H, siptimer) ->
+    make_siptimerlist2(T, lists:append(Res, [H]));
+make_siptimerlist2(In, Res) ->
+    erlang:fault("Trying to make siptimerlist of something else than siptimers!", [In, Res]).
+
+get_timers_something_matching2(Key, Value, [], Res) ->
+    Res;
+get_timers_something_matching2(appsignal, Value, [H | T], Res) when record(H, siptimer), H#siptimer.appsignal == Value ->
+    get_timers_something_matching2(appsignal, Value, T, lists:append(Res, [H]));
+get_timers_something_matching2(Key, Value, [H | T], Res) when record(H, siptimer) ->
+    get_timers_something_matching2(Key, Value, T, Res).    
