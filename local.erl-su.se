@@ -258,44 +258,6 @@ get_users_for_url(URL) ->
 get_password_for_user(User) ->
     sipuserdb:get_password_for_user(User).
 
-get_classes_for_user("ft.sip1") ->
-    [national,mobile,internal];
-get_classes_for_user("ft.sip2") ->
-    [national,mobile,internal];
-get_classes_for_user("jj@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("lfran@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("wisin.sip1") ->
-    [national,mobile,internal,international];
-get_classes_for_user("lha@it.su.se") ->
-    [national,mobile,internal,international];
-get_classes_for_user("lha2@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("roland@it.su.se") ->
-    [national,mobile,internal,international];
-get_classes_for_user("wikm@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("jelun@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("swold@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("franb@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("rjons@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("leifj@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("leifj.sip1@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("max@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("ualps@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("tol@it.su.se") ->
-    [national,internal];
-get_classes_for_user("shadow@it.su.se") ->
-    [internal];
 get_classes_for_user(User) ->
     sipuserdb:get_classes_for_user(User).
 
