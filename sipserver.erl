@@ -219,14 +219,22 @@ parse_packet(Socket, Packet, Origin) ->
 		{'EXIT', E} ->
 		    logger:log(error, "=ERROR REPORT==== from sipserver:process_parsed_packet() :~n~p", [E]),
 		    {error};
-		{sipparseerror, Header, Status, Reason} ->
+		{sipparseerror, request, Header, Status, Reason} ->
 		    logger:log(error, "INVALID request [client=~s] ~p ~s",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    parse_do_internal_error(Header, Socket, Status, Reason, []);
-		{sipparseerror, Header, Status, Reason, ExtraHeaders} ->
+		{sipparseerror, request, Header, Status, Reason, ExtraHeaders} ->
 		    logger:log(error, "INVALID request [client=~s]: ~s -> ~p ~s",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders);
+		{sipparseerror, response, Header, Status, Reason} ->
+		    logger:log(error, "INVALID response [client=~s]: ~s -> ~p ~s (dropping)",
+			       [origin2str(Origin, "unknown"), Status, Reason]),
+		    false;
+		{sipparseerror, response, Header, Status, Reason, ExtraHeaders} ->
+		    logger:log(error, "INVALID response [client=~s]: ~s -> ~p ~s (dropping)",
+			       [origin2str(Origin, "unknown"), Status, Reason]),
+		    false;
 		{siperror, Status, Reason} ->
 		    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
@@ -418,21 +426,21 @@ route_matches_me(Route) ->
 
 check_packet({request, Method, URI, Header, Body}, Origin) ->
     check_supported_uri_scheme(URI, Header),
-    sanity_check_contact("From", Header),
-    sanity_check_contact("To", Header),
+    sanity_check_contact(request, "From", Header),
+    sanity_check_contact(request, "To", Header),
     case sipheader:cseq(keylist:fetch("CSeq", Header)) of
 	{unparseable, CSeqStr} ->
 	    logger:log(error, "INVALID CSeq ~p in packet from ~s", [CSeqStr, origin2str(Origin, "unknown")]),
-	    throw({sipparseerror, Header, 400, "Invalid CSeq"});
+	    throw({sipparseerror, request, Header, 400, "Invalid CSeq"});
 	{CSeqNum, CSeqMethod} ->
 	    case util:isnumeric(CSeqNum) of
 		false ->
-		    throw({sipparseerror, Header, 400, "CSeq number " ++ CSeqNum ++ " is not an integer"});	
+		    throw({sipparseerror, request, Header, 400, "CSeq number " ++ CSeqNum ++ " is not an integer"});	
 		_ -> true
 	    end,
 	    if
 		CSeqMethod /= Method ->
-		    throw({sipparseerror, Header, 400, "CSeq Method " ++ CSeqMethod ++ " does not match request Method " ++ Method});
+		    throw({sipparseerror, request, Header, 400, "CSeq Method " ++ CSeqMethod ++ " does not match request Method " ++ Method});
 		true -> true
 	    end
     end,
@@ -443,8 +451,8 @@ check_packet({request, Method, URI, Header, Body}, Origin) ->
 	    true
     end;
 check_packet({response, Status, Reason, Header, Body}, Origin) ->
-    sanity_check_contact("From", Header),
-    sanity_check_contact("To", Header).
+    sanity_check_contact(response, "From", Header),
+    sanity_check_contact(response, "To", Header).
 
 check_for_loop(Header, URI, Method) ->
     LoopCookie = siprequest:get_loop_cookie(Header, URI),
@@ -453,7 +461,7 @@ check_for_loop(Header, URI, Method) ->
     case via_indicates_loop(LoopCookie, {ViaHostname, ViaPort},
     			    sipheader:via(keylist:fetch("Via", Header))) of
 	true ->
-	    throw({sipparseerror, Header, 482, "Loop Detected"});
+	    throw({sipparseerror, request, Header, 482, "Loop Detected"});
 	_ ->
 	    true
     end.
@@ -508,33 +516,34 @@ url2str({unparseable, _}) ->
 url2str(URL) ->
     sipurl:print(URL).
 
-sanity_check_contact(Name, Header) ->
+sanity_check_contact(Type, Name, Header) ->
     case keylist:fetch(Name, Header) of
 	[Str] ->
 	    case sipheader:from([Str]) of
 		{_, URI} ->
-		    sanity_check_uri(Name ++ ":", URI, Header);
+		    sanity_check_uri(Type, Name ++ ":", URI, Header);
 		_ ->
-		    throw({sipparseerror, Header, 400, "Invalid " ++ Name ++ ": header"})
+		    throw({sipparseerror, Type, Header, 400, "Invalid " ++ Name ++ ": header"})
 	    end;
 	_ ->
-	    throw({sipparseerror, Header, 400, "Missing " ++ Name ++ ": header"})
+	    %% Header is either missing, or []
+	    throw({sipparseerror, Type, Header, 400, "Missing or invalid " ++ Name ++ ": header"})
     end.
 
-sanity_check_uri(Desc, {none, _, _, _, _, _}, Header) ->
-    throw({sipparseerror, Header, 400, "No user part in " ++ Desc ++ " URL"});
-sanity_check_uri(Desc, {_, _, none, _, _}, Header) ->
-    throw({sipparseerror, Header, 400, "No host part in " ++ Desc ++ " URL"});
-sanity_check_uri(_, URI, _) ->
+sanity_check_uri(Type, Desc, {none, _, _, _, _, _}, Header) ->
+    throw({sipparseerror, Type, Header, 400, "No user part in " ++ Desc ++ " URL"});
+sanity_check_uri(Type, Desc, {_, _, none, _, _}, Header) ->
+    throw({sipparseerror, Type, Header, 400, "No host part in " ++ Desc ++ " URL"});
+sanity_check_uri(_, _, URI, _) ->
     URI.
 
 check_supported_uri_scheme({unparseable, URIstr}, Header) ->
     case string:chr(URIstr, $:) of
 	0 ->
-	    throw({sipparseerror, Header, 416, "Unsupported URI Scheme"});
+	    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme"});
 	Index ->
 	    Scheme = string:substr(URIstr, 1, Index),
-	    throw({sipparseerror, Header, 416, "Unsupported URI Scheme (" ++ Scheme ++ ")"})
+	    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme (" ++ Scheme ++ ")"})
     end;
 check_supported_uri_scheme(URI, _) ->
     true.
