@@ -466,13 +466,14 @@ via_is_equal(A, B) when record(A, via), record(B, via) ->
 
 
 %% Function: via_is_equal/3
-%% Description: Compare one or more parts of two Via records
+%% Description: Compare one or more parts of two Via records according
+%%              to RFC3261 20.42.
 %% Returns: true  |
 %%          false
 %%--------------------------------------------------------------------
 
 %%
-%% Protocol, string compare case sensitive
+%% Protocol (e.g. "SIP/2.0/TCP"), string compare case sensitive
 %%
 via_is_equal(A, B, [proto | T]) when record(A, via), record(B, via), A#via.proto == B#via.proto ->    
     via_is_equal(A, B, T);
