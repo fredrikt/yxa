@@ -1,5 +1,5 @@
 -module(database_regexproute).
--export([create/0, insert/5, list/0, purge_class/2]).
+-export([create/0, create/1, insert/5, list/0, purge_class/2]).
 
 -include("database_regexproute.hrl").
 
@@ -12,9 +12,15 @@ insert_record(Record) ->
     mnesia:transaction(Fun).
 
 create() ->
+    create(servers()).
+
+create(Servers) ->
     mnesia:create_table(regexproute, [{attributes, record_info(fields, regexproute)},
-				      {disc_copies, [node()]},
+				      {disc_copies, Servers},
 				      {type, bag}]).
+
+servers() ->
+    sipserver:get_env(databaseservers).
 
 insert(Regexp, Flags, Class, Expire, Address) ->
     insert_record(#regexproute{regexp = Regexp, flags = Flags, class = Class,

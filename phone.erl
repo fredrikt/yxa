@@ -1,5 +1,5 @@
 -module(phone).
--export([init/0, create/0, insert_phone/5, get_phone/1, list_phones/0,
+-export([init/0, create/0, create/1, insert_phone/5, get_phone/1, list_phones/0,
 	 get_user/1, insert_user/4, list_users/0,
 	 insert_purge_phone/5, insert_purge_class_phone/5,
 	 purge_class_phone/2, expired_phones/0, delete_record/1,
@@ -16,19 +16,22 @@ init() ->
     mnesia:create_schema([node()]),
     mnesia:start().
 
-servers() ->
-    sipserver:get_env(databaseservers).
-
 create() ->
+    create(servers()).
+
+create(Servers) ->
     mnesia:create_table(phone, [{attributes, record_info(fields, phone)},
-				{disc_copies, [servers()]},
+				{disc_copies, Servers},
 				{type, bag}]),
     mnesia:create_table(user, [{attributes, record_info(fields, user)},
-			       {disc_copies, [servers()]}]),
+			       {disc_copies, Servers}]),
     mnesia:create_table(numbers, [{attributes, record_info(fields, numbers)},
-				  {disc_copies, [servers()]},
+				  {disc_copies, Servers},
 				  {index, [number]},
 				  {type, bag}]).
+
+servers() ->
+    sipserver:get_env(databaseservers).
 
 insert_record(Record) ->
     Fun = fun() ->
