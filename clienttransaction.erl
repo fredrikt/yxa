@@ -720,10 +720,10 @@ terminate_transaction(State) when record(State, state) ->
 cancel_request(State) when record(State, state) ->
     {Method, URI, _, _} = State#state.request,
     LogTag = State#state.logtag,
+    NewState1 = State#state{cancelled=true},
+    logger:log(debug, "~s: Marked transaction as cancelled", [LogTag]),
     case Method of
 	"INVITE" ->
-	    NewState1 = State#state{cancelled=true},
-	    logger:log(debug, "~s: Marked transaction as cancelled", [LogTag]),
 	    SipState = NewState1#state.sipstate,
 	    case SipState of
 		calling ->
@@ -744,11 +744,21 @@ cancel_request(State) when record(State, state) ->
 		    NewState1
 	    end;
 	_ ->
-	    %% RFC 3261 9.1 says a stateful proxy SHOULD NOT send CANCEL of non-INVITE requests
-	    logger:log(debug, "~s: Original request was non-INVITE (~s) - not sending CANCEL. Going into 'terminated' state.",
+	    %% RFC 3261 9.1 says a stateful proxy SHOULD NOT send CANCEL of non-INVITE requests.
+	    %% We enter 'completed' state to collect any final responses that might arrive.
+	    logger:log(debug, "~s: Original request was non-INVITE (~s) - not sending CANCEL. Going into 'completed' state.",
 		       [LogTag, Method]),
-	    NewState1 = terminate_transaction(State),
-	    NewState1
+	    %% Terminate any resend request timers, and set up TimerK to fire in default 5 seconds,
+	    %% ending the transaction. RFC3261 does not really describe non-INVITE transactions being
+	    %% cancelled since they does not match the RFC definition of 'pending' (unless they have
+	    %% received provisional responses) but this should be the best way to handle it. Note that
+	    %% we don't check if it was reliable transport or not when deciding the timeout for Timer K
+	    %% here, since the purpose is to collect any late responses.
+	    NewState2 = stop_resendrequest_timer(NewState1),
+	    TimerK = sipserver:get_env(timerT4, 5000),
+	    KDesc = "terminate client transaction " ++ Method ++ " " ++ sipurl:print(URI) ++ " (Timer K)",
+	    NewState3 = add_timer(TimerK, KDesc, {terminate_transaction}, NewState2),
+	    NewState3#state{sipstate=completed}
     end.
 
 %% Start fire-and-forget CANCEL transaction for this client transaction
