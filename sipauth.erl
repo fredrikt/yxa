@@ -98,7 +98,12 @@ get_user_verified(Header, Method, Authheader) ->
     Authorization = sipheader:auth(Authheader),
     Response = dict:fetch("response", Authorization),
     Nonce = dict:fetch("nonce", Authorization),
-    Opaque = dict:fetch("opaque", Authorization),
+    Opaque = case dict:find("opaque", Authorization) of
+		 error ->
+		     throw({siperror, 400, "Authorization should contain opaque"});
+		 {ok, Value} ->
+		     Value
+	     end,
     Timestamp = hex:from(Opaque),
     Now = util:timestamp(),
     logger:log(debug, "Auth: timestamp: ~p now: ~p", [Timestamp, Now]),
