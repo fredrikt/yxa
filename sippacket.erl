@@ -152,8 +152,6 @@ parseheader(Message) ->
 split_header_value(_Key, []) ->
     [];
 split_header_value(Key, Value) ->
-    %% Luckily, none of these headers have a compact form.
-    %% all values are lower case, so lists:member can be used
     case lists:member(Key, ['www-authenticate', authorization,
 			    'proxy-authenticate', 'proxy-authorization',
 			    date]) of
