@@ -1,0 +1,75 @@
+# $Id$
+#
+
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+VPATH = @srcdir@
+prefix = @prefix@
+DESTDIR = @DESTDIR@
+SHELL = @SHELL@
+
+confdir = @sysconfdir@
+sslcertdir = @sslcertdir@
+mnesiadir = @mnesiadir@
+beamdir = @libdir@/yxa/ebin
+sbindir = @sbindir@
+exec_prefix=${prefix}
+builddir = @builddir@
+local_file = @local_file@
+
+ERLC = @ERLC@
+ERL = @ERL@
+
+INSTALL = @INSTALL@
+install_DATA = @INSTALL_DATA@
+install_PROGRAM = @INSTALL_PROGRAM@
+
+mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+
+
+erl_FILES = \
+	event_handler.erl \
+	event_handler_csyslog.erl
+
+imported_hrl_FILES = \
+
+
+hrl_FILES = \
+
+
+yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
+
+CC = gcc
+CFLAGS = -Wall
+
+beam_FILES = $(erl_FILES:.erl=.beam)
+
+all: $(beam_FILES) syslog_c-port
+
+install: $(beam_FILES) syslog_c-port
+	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	for p in $(beam_FILES); do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in syslog_c-port; do \
+	  $(install_PROGRAM) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+
+clean:
+	rm -f core *.core *~
+	rm -f bootstrap.sh local.erl
+	rm -f newversion.erl.new version.erl.in
+	rm -f syslog_c-port *.beam *.script *.start *.boot *.rel *.app *.script
+	rm -f *.o ktrace.out erl_crash.dump
+
+$(beam_FILES): $(yxa_hrl_FILES)
+
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+.SUFFIXES:
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+
+.erl.beam:
+	$(ERLC) -I$(srcdir) -I$(srcdir)/../ -W +debug_info $<
+
+syslog_c-port: syslog_c-port.o
+	$(CC) $(LDFLAGS) $(CFLAGS) -o syslog_c-port syslog_c-port.o
