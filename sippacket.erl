@@ -1,8 +1,11 @@
 -module(sippacket).
--export([parse/1, parse_packet/1, parseheader/1, parserequest/1]).
+-export([parse/3, parse_packet/1, parse_packet/3, parseheader/1, parserequest/1]).
 
 parse_packet(Packet) ->
-    logger:log(debug, "Packet:~p~n", [Packet]),
+    parse_packet(Packet, "", none).
+
+parse_packet(Packet, SrcIP, SrcPort) ->
+    logger:log(debug, "Packet from ~s:~p :~n~s~n", [SrcIP, SrcPort, Packet]),
     Packetfixed = siputil:linefix(Packet),
     case string:str(Packetfixed, "\n\n") of
 	0 ->
@@ -15,8 +18,8 @@ parse_packet(Packet) ->
 	    {Header, Body}
     end.
 
-parse(Packet) ->
-    {Header, Body} = parse_packet(Packet),
+parse(Packet, SrcIP, SrcPort) ->
+    {Header, Body} = parse_packet(Packet, SrcIP, SrcPort),
     {Request, Headerkeylist} = parseheader(Header),
     case parserequest(Request) of
 	{request, Parsed} ->

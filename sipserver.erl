@@ -37,9 +37,9 @@ recvloop(Socket, RequestFun, ResponseFun) ->
 
 process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
     IP = siphost:makeip(IPlist),
-    case sippacket:parse(Packet) of
+    case sippacket:parse(Packet, IP, InPortNo) of
 	{request, Method, URL, Header, Body} ->
-	    logger:log(debug, "~s from ~s:~p", [Method, IP, InPortNo]),
+%	    logger:log(debug, "~s from ~s:~p", [Method, IP, InPortNo]),
 	    apply(RequestFun, [Method, URL, Header, Body, Socket, IP]);
 	{response, Status, Reason, Header, Body} ->
 	    apply(ResponseFun, [Status, Reason, Header, Body, Socket, IP])
