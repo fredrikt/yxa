@@ -17,11 +17,11 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start_link/1]).
+-export([start_link/0]).
 
--export([send/4, is_reliable_transport/1, get_socket/3,
-	 sipproto2str/1, via2sipsocketprotocol/1, sipproto2viastr/1,
-	 is_good_socket/1]).
+-export([send/5, is_reliable_transport/1, get_socket/4,
+	 viaproto2proto/1, proto2viastr/1,
+	 is_good_socket/1, proto2module/1]).
 
 %%--------------------------------------------------------------------
 %% Internal exports
@@ -44,8 +44,8 @@
 %% Function: start_link/0
 %% Description: Starts the supervisor
 %%--------------------------------------------------------------------
-start_link(Port) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, [Port]).
+start_link() ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %%====================================================================
 %% Server functions
@@ -56,11 +56,11 @@ start_link(Port) ->
 %%          ignore                          |
 %%          {error, Reason}   
 %%--------------------------------------------------------------------
-init([Port]) ->
+init([]) ->
     logger:log(debug, "Transport layer supervisor started"),
-    UDP = {sipsocket_udp, {sipsocket_udp, start_link, [Port]},
+    UDP = {sipsocket_udp, {sipsocket_udp, start_link, []},
 	   permanent, 2000, worker, [sipsocket_udp]},
-    TCP = {tcp_dispatcher, {tcp_dispatcher, start_link, [Port]},
+    TCP = {tcp_dispatcher, {tcp_dispatcher, start_link, []},
 	   permanent, 2000, worker, [tcp_dispatcher]},
     {ok,{{one_for_one,5,60}, [UDP, TCP]}}.
 
@@ -72,29 +72,38 @@ init([Port]) ->
 %% Interface functions
 %%====================================================================
 
-send(Socket, SendToHost, PortInt, Message) when record(Socket, sipsocket) ->
-    apply(Socket#sipsocket.module, send, [Socket, SendToHost, PortInt, Message]).
+send(Socket, Proto, Host, Port, Message) when list(Port) ->
+    send(Socket, Proto, Host, list_to_integer(Port), Message);
+send(Socket, Proto, Host, Port, Message) when record(Socket, sipsocket), integer(Port) ->
+    apply(Socket#sipsocket.module, send, [Socket, Proto, Host, Port, Message]).
 
-get_socket(SipProto, Host, Port) ->
-    apply(SipProto, get_socket, [Host, Port]).
+get_socket(Module, Proto, Host, Port) when atom(Module), atom(Proto), list(Port) ->
+    get_socket(Module, Proto, Host, list_to_integer(Port));
+get_socket(Module, Proto, Host, Port) when atom(Module), atom(Proto) ->
+    apply(Module, get_socket, [Proto, Host, Port]).
 
 is_reliable_transport(Socket) when record(Socket, sipsocket) ->
     apply(Socket#sipsocket.module, is_reliable_transport, [Socket]).
 
-sipproto2str(Socket) when record(Socket, sipsocket) ->
-    sipproto2str(Socket#sipsocket.module);
-sipproto2str(sipsocket_tcp) -> "tcp";
-sipproto2str(sipsocket_udp) -> "udp".
+proto2module(tcp) -> sipsocket_tcp;
+proto2module(tcp6) -> sipsocket_tcp;
+proto2module(tls) -> sipsocket_tcp;
+proto2module(tls6) -> spisocket_tcp;
+proto2module(udp) -> sipsocket_udp;
+proto2module(udp6) -> sipsocket_udp.
+    
+proto2viastr(Socket) when record(Socket, sipsocket) ->
+    proto2viastr(Socket#sipsocket.proto);
+proto2viastr(tcp) ->  "SIP/2.0/TCP";
+proto2viastr(tcp6) -> "SIP/2.0/TCP";
+proto2viastr(tls) ->  "SIP/2.0/TLS";
+proto2viastr(tls6) -> "SIP/2.0/TLS";
+proto2viastr(udp) ->  "SIP/2.0/UDP";
+proto2viastr(udp6) -> "SIP/2.0/UDP".
 
-sipproto2viastr(Socket) when record(Socket, sipsocket) ->
-    sipproto2viastr(Socket#sipsocket.module);
-sipproto2viastr(sipsocket_tcp) -> "SIP/2.0/TCP";
-sipproto2viastr(sipsocket_udp) -> "SIP/2.0/UDP".
-
-via2sipsocketprotocol(Socket) when record(Socket, sipsocket) ->
-    via2sipsocketprotocol(Socket#sipsocket.module);
-via2sipsocketprotocol("SIP/2.0/TCP") -> sipsocket_tcp;
-via2sipsocketprotocol("SIP/2.0/UDP") -> sipsocket_udp.
+viaproto2proto("SIP/2.0/TCP") -> tcp;
+viaproto2proto("SIP/2.0/TLS") -> tls;
+viaproto2proto("SIP/2.0/UDP") -> udp.
 
 is_good_socket(Socket) when record(Socket, sipsocket) ->
     case util:safe_is_process_alive(Socket#sipsocket.pid) of

@@ -19,10 +19,12 @@
 -define(TIMEOUT, 10 * 1000).
 %%--------------------------------------------------------------------
 %% External exports
--export([start_link/1]).
+-export([start_link/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-export([connect_to_remote/5]).
 
 -record(state, {socketlist}).
 
@@ -33,8 +35,8 @@
 %% Function: start_link/1
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(Port) ->
-    gen_server:start_link({local, tcp_dispatcher}, ?MODULE, [Port], []).
+start_link() ->
+    gen_server:start_link({local, tcp_dispatcher}, ?MODULE, [], []).
 
 %%====================================================================
 %% Server functions
@@ -48,11 +50,65 @@ start_link(Port) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
-init([Port])  when integer(Port) ->
+init([]) ->
     process_flag(trap_exit, true),
-    {ok, Local, Listener} = tcp_listener:start(gen_tcp, Port),
-    SocketList = socketlist:add(listener, Listener, Local, {"0.0.0.0", 0}, 0, socketlist:empty()),
+    Port = sipserver:get_listenport(tcp),
+    TLSport = sipserver:get_listenport(tls),
+    TCPlisteners = [{tcp, Port}, {tcp6, Port}],
+    Listeners = case sipserver:get_env(enable_experimental_tls, false) of
+		    true ->
+			%% XXX add tls6 to this list when there is an Erlang version released
+			%% than has a ssl.erl that handles inet6. Current version (R9C-0) treats
+			%% inet6 as an invalid gen_tcp option.
+			lists:append(TCPlisteners, [{tls, TLSport}]);
+		    _ ->
+			TCPlisteners
+		end,
+    SocketList = start_listeners(Listeners),
     {ok, #state{socketlist=SocketList}, ?TIMEOUT}.
+
+start_listeners(L) ->
+    start_listeners(L, socketlist:empty()).
+
+start_listeners([], SocketList) ->
+    SocketList;
+start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port), Proto == tcp6; Proto == tls6 ->
+    case sipserver:get_env(enable_v6, false) of
+	true ->
+	    NewSocketList = case catch tcp_listener:start(Proto, Port) of
+				{ok, Local6, Listener6} ->
+				    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=Listener6, data={Local6, none}},
+				    %% Add with timeout of 0 since listening sockets should never be expired
+				    socketlist:add({listener, Proto, Port}, Listener6, Local6, none, SipSocket, 0, SocketList);
+				not_started ->
+				    SocketList;
+				{'EXIT', Reason} ->
+				    logger:log(error, "Failed starting IPv6 TCP listener (~p) : ~p", [Proto, Reason]),
+				    SocketList;
+				Unknown ->
+				    logger:log(error, "Failed starting IPv6 TCP listener (~p) : ~p", [Proto, Unknown]),
+				    SocketList
+			    end,
+	    start_listeners(T, NewSocketList);
+	_ ->
+	    start_listeners(T, SocketList)
+    end;
+start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port), Proto == tcp; Proto == tls ->
+    NewSocketList = case catch tcp_listener:start(Proto, Port) of
+			{ok, Local, Listener} ->
+			    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=Listener, data={Local, none}},
+			    %% Add with timeout of 0 since listening sockets should never be expired
+			    socketlist:add({listener, Proto, Port}, Listener, Local, none, SipSocket, 0, SocketList);
+			not_started ->
+			    SocketList;
+			{'EXIT', Reason} ->
+			    logger:log(error, "Failed starting IPv4 TCP listener (~p) : ~p", [Proto, Reason]),
+			    SocketList;
+			Unknown ->
+			    logger:log(error, "Failed starting IPv4 TCP listener (~p) : ~p", [Proto, Unknown]),
+			    SocketList
+		    end,
+    start_listeners(T, NewSocketList).
 
 %%--------------------------------------------------------------------
 %% Function: handle_call/3
@@ -64,18 +120,22 @@ init([Port])  when integer(Port) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call({get_socket, Host, Port}, From, State) ->
+handle_call({get_socket, Proto, Host, Port}, From, State) ->
     case get_socket_from_list(Host, Port, State#state.socketlist) of
 	none ->
 	    %% We must spawn a child process to take care of making a new connection
 	    %% since we can't risk this thread getting locked up.
-	    P = sipserver:safe_spawn(fun connect_to_remote/4, [gen_tcp, From, Host, Port]),
+	    %P = sipserver:safe_spawn(fun connect_to_remote/4, [From, Proto, Host, Port]),
+	    %spawn(?MODULE, connect_to_remote, [Proto, Host, Port, From, self()]),
+	    tcp_connection:start_link(connect, Proto, Host, Port, From),
+	    logger:log(debug, "Sipsocket TCP: No cached '~p' connection to remote host ~s:~p, trying to connect",
+		       [Proto, Host, Port]),
 	    {noreply, State, ?TIMEOUT};
 	{error, E} ->
 	    {reply, {error, E}, State, ?TIMEOUT};
-	GotSocket when record(GotSocket, sipsocket) ->
-	    logger:log(debug, "Sipsocket TCP: (Transport layer) Use existing connection to ~s:~p", [Host, Port]),
-	    {reply, {ok, GotSocket}, State, ?TIMEOUT}
+	SipSocket when record(SipSocket, sipsocket) ->
+	    logger:log(debug, "Sipsocket TCP: Use existing connection to ~s:~p", [Host, Port]),
+	    {reply, {ok, SipSocket}, State, ?TIMEOUT}
     end;
 
 
@@ -90,7 +150,7 @@ handle_call({register_sipsocket, Dir, SipSocket}, From, State) when record(SipSo
 			out ->
 			    {connection_to, Remote}
 		    end,
-	    case socketlist:add(Ident, CPid, Local, Remote, 0, State#state.socketlist) of
+	    case socketlist:add(Ident, CPid, Local, Remote, SipSocket, 0, State#state.socketlist) of
 		{error, E} ->
 		    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
 		    {reply, {error, E}, State, ?TIMEOUT};
@@ -157,8 +217,9 @@ handle_info(Unknown, State) ->
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     case Reason of
-        normal -> true;
-        _ -> logger:log(error, "TCP dispatcher terminating : ~p", [Reason])
+        normal -> logger:log(error, "TCP dispatcher terminating normally");
+        _ -> logger:log(error, "TCP dispatcher terminating : ~p", [Reason]),
+	     timer:sleep(500)
     end,
     ok.
 
@@ -177,67 +238,16 @@ code_change(OldVsn, State, Extra) ->
 get_socket_from_list(Host, Port, SocketList) ->
     case socketlist:get_using_remote({Host, Port}, SocketList) of
 	SListElem when record(SListElem, socketlistelem) ->
-	    [CPid, Local, Remote] = socketlist:extract([pid, local, remote], SListElem),
+	    [CPid, Local, Remote, SipSocket] = socketlist:extract([pid, local, remote, sipsocket], SListElem),
 	    logger:log(debug, "Sipsocket TCP: Reusing existing connection to ~s:~p (~p)",
 		       [Host, Port, CPid]),
-	    SipSocket = #sipsocket{module=sipsocket_tcp, pid=CPid, data={Local, Remote}},
 	    SipSocket;
 	_ ->
 	    none
     end.
 
-%% Helps us to not block the TCP dispatcher when trying to connect to a remote host
-%% No-one pays attention to what this function returns, since it is spawned, as long
-%% as it does not return something caught by sipserver:safe_spawn().
-connect_to_remote(SocketModule, RequestorPid, Host, Port) ->
-    logger:log(debug, "Sipsocket TCP: No cached connection to remote host ~s:~p, trying to connect",
-	       [Host, Port]),
-    ConnectTimeout = sipserver:get_env(tcp_connect_timeout, 20) * 1000,
-    case SocketModule:connect(Host, Port, [binary, {packet, 0}, {active, false}], ConnectTimeout) of
-	{ok, NewSocket} ->
-	    Local = case inet:sockname(NewSocket) of
-			{ok, {IPlist, LocalPort}} ->
-			    {siphost:makeip(IPlist), LocalPort};
-			{error, E1} ->
-			    logger:log(error, "Sipsocket TCP: sockname() on new socket returned error ~p", [E1]),
-			    {"0.0.0.0", 0}
-		    end,
-	    Remote = {Host, Port},
-	    case tcp_connection:start_link(SocketModule, NewSocket, out, Local, Remote) of
-		{ok, Pid} ->
-		    %% Must change controlling process of new socket since this pid will terminate
-		    case SocketModule:controlling_process(NewSocket, Pid) of
-			ok ->
-			    SipSocket = #sipsocket{module=sipsocket_tcp, pid=Pid, data={Local, Remote}},
-			    gen_server:reply(RequestorPid, {ok, SipSocket});
-			_ ->
-			    logger:log(debug, "Sipsocket TCP: Failed to change controlling process for socket ~p to tcp_connection pid ~p",
-				       [NewSocket, Pid]),
-			    gen_server:reply(RequestorPid, {error, "failed changing controllig process of socket"}),
-			    SocketModule:close(NewSocket)
-		    end;
-		{'EXIT', Reason} ->
-		    logger:log(error, "Sipsocket TCP: TCP dispatcher failed adding new socket ~p " ++
-			       "(connected to remote peer ~s:~p) : ~p", [NewSocket, Host, Port, Reason]),
-		    E = "TCP dispatcher failed",
-		    gen_server:reply(RequestorPid, {error, E}),
-		    SocketModule:close(NewSocket);
-		Unknown ->
-		    logger:log(error, "Sipsocket TCP: TCP dispatcher failed adding new socket ~p " ++
-			       "(connected to remote peer ~s:~p), tcp_connection start_link returned :~n~p",
-			       [NewSocket, Host, Port, Unknown]),
-		    gen_server:reply(RequestorPid, {error, "Failed starting tcp_connection"}),
-		    SocketModule:close(NewSocket)
-	    end;
-	{error, econnrefused} ->
-	    gen_server:reply(RequestorPid, {error, "Connection refused"});
-	{error, ehostunreach} ->
-	    %% If we don't get a connection before ConnectTimeout, we end up here
-	    gen_server:reply(RequestorPid, {error, "Host unreachable"});
-	{error, E} ->
-	    logger:log(error, "Sipsocket TCP: Failed connecting to ~s:~p : ~s (~p)", [Host, Port, inet:format_error(E), E]),
-	    gen_server:reply(RequestorPid, {error, inet:format_error(E)})
-    end,
-    %% process spawned to connect to remote host terminates now
-    ok.
-
+%% Unfortunate little process necessary to start connections to remote hosts
+%% without blocking tcp_dispatcher. We would not need this process at all if
+%% gen_server:start() did not block until init() returns.
+connect_to_remote(Proto, Host, Port, GenServerFrom, Parent) ->
+    tcp_connection:start(connect, sipsocket_tcp, Proto, Host, Port, GenServerFrom, Parent).
