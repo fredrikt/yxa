@@ -55,9 +55,9 @@ these variables:
 
 common:
 -------
-logger_logbase			(default: application name) Create log files
+logger_logbasename		(default: application name) Create log files
 				based on this. If you specify
-				/var/log/incomingproxy as logger_logbase for
+				/var/log/incomingproxy as logger_logbasename for
 				your incomingproxy, it will log to the files
 				/var/log/incomingproxy.debug (everything)
 				/var/log/incomingproxy.log   (informational)
@@ -160,7 +160,7 @@ incomingproxy.config:
 [{incomingproxy, [{sipauth_realm, "example.com"},
                   {sipauth_password, ""},
                   {defaultroute, "other-sipserver.example.com"},
-                  {logger_logbase, "/var/log/incomingproxy"},
+                  {logger_logbasename, "/var/log/incomingproxy"},
                   {internal_to_e164, [{"^00(.+)$", "+\\1"},
                                       {"^0(.+)$", "+46\\1"},
                                       {"^(.+)$", "+468\\1"}
@@ -180,7 +180,7 @@ pstnproxy.config:
 [{pstnproxy, [{sipauth_realm, "example.com"},
               {sipauth_password, ""},
               {sipauth_unauth_classlist, [internal]},
-	      {logger_logbase, "/var/log/pstnproxy"},
+	      {logger_logbasename, "/var/log/pstnproxy"},
               {pstngatewaynames, ["pstn-gw.example.com", "10.10.1.1"]},
               {myhostnames, ["sip-pstn.example.com", "sip2pstn.example.com", "10.10.1.2"]},
               {classdefs, [{"^[1-9]", national},
