@@ -83,7 +83,7 @@ homedomain			(required) SIP home domain
 adminwww:
 
 www_baseurl			(required) Base URL for web server
-
+httpd_config			(required) Path to httpd.conf
 
 ========
 Examples
