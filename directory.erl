@@ -48,10 +48,20 @@ lookupkthid(KTHid) ->
 	    Number
     end.
 
+lookupkthid_address(Address) ->
+    case group_regexp:groups(Address, "(u[0-9]......)@kth.se") of
+	{match, [KTHid]} ->
+	    lookupkthid(KTHid);
+	nomatch ->
+	    none;
+	{error, Error} ->
+	    none
+    end.
+
 lookupmail(Mail) ->
-    case ldapmailsearch(Mail ++ "@kth.se", "uid") of
+    case ldapmailsearch(Mail, "uid") of
 	none ->
-	    lookupkthid(Mail);
+	    lookupkthid_address(Mail);
 	KTHid ->
-	    lookupkthid(KTHid)
+	    lookupkthid_address(KTHid ++ "@kth.se")
     end.
