@@ -10,7 +10,7 @@ add_timer(_, 0, _, _, _, TimerList) ->
     TimerList;
 add_timer(TimerSeq, Timeout, Description, AppSignal, AppId, TimerList) ->
     {ok, NewTimerRef} = timer:send_after(Timeout, {siptimer, TimerSeq, Description}),
-    logger:log(debug, "Siptimer: set up timer ~p:~p, ~p seconds", [TimerSeq, Description, Timeout / 1000]),
+    logger:log(debug, "Siptimer: set up timer ~p:~p, ~p seconds", [TimerSeq, Description, Timeout div 1000]),
     lists:append(TimerList, [{TimerSeq, NewTimerRef, Timeout, Description, util:timestamp(), AppSignal, AppId}]).
 
 revive_timer(Timer, NewTimeout, TimerList) ->
@@ -20,7 +20,7 @@ revive_timer(Timer, NewTimeout, TimerList) ->
 	    logger:log(error, "Siptimer: Can't revive timer ~p:~p gone from list :~n~p~n", [TimerSeq, Description, TimerList]),
 	    TimerList;
         _ ->
-	    logger:log(debug, "Siptimer: Reviving timer ~p:~p with new timeout, ~p seconds", [TimerSeq, Description, NewTimeout / 1000]),
+	    logger:log(debug, "Siptimer: Reviving timer ~p:~p with new timeout, ~p seconds", [TimerSeq, Description, NewTimeout div 1000]),
 	    {ok, NewTimerRef} = timer:send_after(NewTimeout, {siptimer, TimerSeq, Description}),
 	    lists:keyreplace(TimerSeq, 1, TimerList, {TimerSeq, NewTimerRef, NewTimeout, Description, util:timestamp(), AppSignal, AppId})
     end.
@@ -132,5 +132,5 @@ cancel_timers_with_appid(AppId, TimerList) when list(TimerList) ->
 debugfriendly([]) ->
     [];
 debugfriendly([{TSeq, TRef, Timeout, Descr, Starttime, AppSignal, AppId} | Rest]) ->
-    lists:append([{TSeq, Descr}], debugfriendly(Rest)).
+    lists:append([lists:concat(["timer seq ", TSeq, ": ", Descr])], debugfriendly(Rest)).
 
