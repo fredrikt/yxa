@@ -109,7 +109,8 @@ handle_call({rotate_logs, Suffix, Logs}, From, State) when list(Logs) ->
 handle_call({quit}, From, State) ->
     {stop, normal, {ok}, State};
 
-handle_call(Request, From, State) ->
+handle_call(Unknown, From, State) ->
+    logger:log(error, "Logger: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "unknown gen_server call in logger"}, State}.
 
 %%--------------------------------------------------------------------
@@ -279,7 +280,7 @@ needs_rotating2([H | T], Size, State, Res) when record(State, state) ->
 	    needs_rotating2(T, Size, State, [H | Res]);
 	_ ->
 	    %% Either error returned from read_file_info, or file size is within limits.
-	    %% We don't check (care) which one...
+	    %% We don't check (care) which one... check next file in list.
 	    needs_rotating2(T, Size, State, Res)
     end.
 
