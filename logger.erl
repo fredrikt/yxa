@@ -330,10 +330,13 @@ rotate_file(Filename, Suffix) ->
 		_ ->
 		    file:close(NewIoDev),
 		    %% XXX unlink TmpFile or not? It would be a race...
-		    error
+		    Filename2 = lists:flatten(Filename ++ Suffix),
+                    E = io_lib:format("Failed renaming file ~p to ~p", [Filename, Filename2]),
+		    {error, E}
 	    end;
 	_ ->
-	    error
+	    E = io_lib:format("Failed opening temporary file ~p in append-mode", [TmpFile]),
+	    {error, E}
     end.
 
 %% do_log is executed in caller pid (by log/2 or log/3), not in
