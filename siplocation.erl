@@ -151,7 +151,7 @@ process_register_isauth(LogTag, Header, SipUser, Contacts) ->
 %% REGISTER request had no contact header
 process_updates(_LogTag, _Header, SipUser, []) ->
     %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
-    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}};
+    {ok, create_process_updates_response(SipUser)};
 
 process_updates(LogTag, Header, SipUser, Contacts) ->
     %% Processing REGISTER Request - step 6
@@ -166,9 +166,8 @@ process_updates(LogTag, Header, SipUser, Contacts) ->
 		end,
 	    case mnesia:transaction(F) of
 		{aborted, Reason} ->
-		    logger:log(error,
-			       "Location database: REGISTER request failed to add/update/remove one or more contacts,"
-			       " failed due to: ~n~p", [Reason]),
+		    logger:log(error, "Location database: REGISTER request failed to add/update/remove one ",
+			       "or more contacts for user ~p, failed due to: ~n~p", [SipUser, Reason]),
 		    %% Check if it was a siperror, otherwise return '500 Server Internal Error'
 		    case Reason of
 			{throw, {siperror, Status, Reason2}} ->
@@ -178,14 +177,23 @@ process_updates(LogTag, Header, SipUser, Contacts) ->
 		    end;
 		{atomic, _ResultOfFun} ->
 		    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
-		    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}}
+		    {ok, create_process_updates_response(SipUser)}
 	    end;
 	ok ->
 	    %% wildcard found and processed
 	    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
-	    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}};
+	    {ok, create_process_updates_response(SipUser)};
 	SipError ->
 	    SipError
+    end.
+
+%% part of process_updates/4. Returns {200, "OK", []} | {200, "OK", ExtraHeaders}
+create_process_updates_response(SipUser) ->
+    case fetch_contacts(SipUser) of
+	[] ->
+	    {200, "OK", []};
+	NewContacts when is_list(NewContacts) ->
+	    {200, "OK", [{"Contact", NewContacts}]}
     end.
 
 
@@ -235,7 +243,7 @@ process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) ->
 	    logger:log(debug, "Location: Processing valid wildcard un-register"),
 	    case phone:get_sipuser_locations(SipUser) of
 		{atomic, SipUserLocations} ->
-		    unregister(LogTag, Header, SipUser, SipUserLocations);
+		    unregister(LogTag, Header, SipUserLocations);
 		_ ->
 		    none
 	    end;
@@ -245,8 +253,8 @@ process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) ->
 
 %% return = ok       | wildcard processed
 %%          SipError   db error
-%% unregister all SipUser entries
-unregister(LogTag, Header, _SipUser, Locations) ->
+%% unregister all location entries for a sipuser
+unregister(LogTag, Header, Locations) ->
     %% unregister all Locations entries
     F = fun() ->
 		unregister_contacts(LogTag, Header, Locations)
@@ -583,7 +591,7 @@ unregister_contacts(LogTag, RequestHeader, Locations) when is_record(RequestHead
     lists:foreach(F, Locations).
 
 
-unregister_contact(LogTag, Location, RequestCallId, RequestCSeq) when is_record(Location, phone) ->
+unregister_contact(LogTag, #phone{class = dynamic}=Location, RequestCallId, RequestCSeq) ->
     SameCallId = (RequestCallId == Location#phone.callid),
     HigherCSeq = (RequestCSeq > Location#phone.cseq),
 
@@ -610,11 +618,14 @@ unregister_contact(LogTag, Location, RequestCallId, RequestCSeq) when is_record(
 		       [LogTag, SipUser, Location#phone.requristr, Priority]),
 	    ok;
 	false ->
-	    %% Request CSeq value was to old, abort Request
+	    %% Request CSeq value was too old, abort Request
 	    %% RFC 3261 doesn't appear to document the proper error code for this case
 	    throw({siperror, 403, "Request out of order, contained old CSeq number"})
-    end.
-
+    end;
+unregister_contact(LogTag, Location, _RequestCallId, _RequestCSeq) when is_record(Location, phone) ->
+    logger:log(debug, "~s: Not un-registering location with class not 'dynamic' : ~p",
+	       [LogTag, Location#phone.requristr]),
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: parse_register_contact_expire(Header, Contact)
