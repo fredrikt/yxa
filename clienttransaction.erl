@@ -629,7 +629,8 @@ initiate_request(State) when record(State, state) ->
 				InviteTimeout = Timeout * 1000,
 				TimeoutDesc = "invite_timeout of INVITE to " ++ sipurl:print(URI) ++ " after " ++ integer_to_list(Timeout) ++ " seconds",
 				NewState3 = add_timer(TimerC, CDesc, {invite_expire}, NewState2),
-				NewState4 = add_timer(InviteTimeout, TimeoutDesc, {invite_timeout}, NewState3);
+				NewState4 = add_timer(InviteTimeout, TimeoutDesc, {invite_timeout}, NewState3),
+				NewState4;
 			    _ ->
 				NewState2
 			end,
@@ -746,7 +747,7 @@ cancel_request(State) when record(State, state) ->
 		    NewState3 = start_cancel_transaction(NewState2),
 		    NewState3;
 		SipState ->
-		    logger:log(debug, "~s: NOT starting CANCEL transaction for request (INVITE ~p) since we are in state '~p'",
+		    logger:log(debug, "~s: NOT starting CANCEL transaction for request (INVITE ~s) since we are in state '~p'",
 			       [LogTag, sipurl:print(URI), SipState]),
 		    NewState1
 	    end;
