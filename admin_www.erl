@@ -116,7 +116,7 @@ print_users([{user, User, Password, Number, Flags, Classes} | List]) ->
     ["<tr><td>",
      User,
      "</td><td>",
-     print_numbers(Number),
+     print_numbers(phone:get_numbers_for_user(User)),
      "</td><td>",
      print_flags(Flags),
      "</td><td>",
@@ -130,14 +130,22 @@ print_users([{user, User, Password, Number, Flags, Classes} | List]) ->
      | print_users(List)].
 
 
-get_passnumber(User) ->
+get_pass(User) ->
     case phone:get_user(User) of
 	{atomic, []} ->
-	    {none, [], [], []};
+	    {none, [], []};
 	{atomic, [A]} ->
 	    A;
 	{aborted, _} ->
-	    {none, [], [], []}
+	    {none, [], []}
+    end.
+
+get_numbers(User) ->
+    case phone:get_number_for_user(User) of
+	{atomic, Numbers} ->
+	    Numbers;
+	{aborted, _} ->
+	    []
     end.
 
 check_auth(Env, WantAdmin) ->
@@ -168,7 +176,7 @@ check_auth2(Header, Env, WantAdmin) ->
     Timestamp = hex:from(Opaque),
     Now = util:timestamp(),
     User = dict:fetch("username", Authorization),
-    {Password, Numberlist, Flags, Classes} = get_passnumber(User),
+    {Password, Flags, Classes} = get_pass(User),
     Nonce2 = sipauth:get_nonce(Opaque),
     IsAdmin = lists:member(admin, Flags),
     io:format("nonce: ~p ~p~n", [Nonce, Nonce2]),
@@ -242,11 +250,10 @@ list_users(Env, Input) ->
 	     "</form>\n",
 	     "<ul>\n",
 	     "<li>internal: samtal inom KTH\n",
-	     "<li>almostinternal: samtal till t.ex. SU, nummer som börjar på 0\n",
-	     "<li>local: lokalsamtal inom 08-området\n",
 	     "<li>national: samtal inom Sverige\n",
 	     "<li>international: utlandssamtal\n",
-	     "<li>mobile_or_pay: alla samtal som börjar på 0007\n",
+	     "<li>mobile: mobilsamtal\n",
+	     "<li>pay: betalsamtal\n",
 	     "</ul>\n",
 	     indexurl()
 	    ]
@@ -375,7 +382,8 @@ change_user_form(Env, Input) ->
 		{error, _} ->
 		    [header(ok), "Felaktigt användarnamn"];
 		{ok, User} ->
-		    {Password, Numberlist, Flags, Classes} = get_passnumber(User),
+		    {Password, Flags, Classes} = get_pass(User),
+		    Numberlist = get_numbers(User),
 		    [
 		     header(ok),
 		     "<h1>", User, "</h1>\n",
@@ -416,7 +424,7 @@ change_user_form(Env, Input) ->
     end.
     
 set_admin(User, "true") ->
-    {Password, Numberlist, Flags, Classes} = get_passnumber(User),
+    {Password, Flags, Classes} = get_pass(User),
     case lists:member(admin, Flags) of
 	false ->
 	    phone:set_user_flags(User, [admin | Flags]);
@@ -424,7 +432,7 @@ set_admin(User, "true") ->
 	    true
     end;
 set_admin(User, "false") ->
-    {Password, Numberlist, Flags, Classes} = get_passnumber(User),
+    {Password, Flags, Classes} = get_pass(User),
     case lists:member(admin, Flags) of
 	false ->
 	    true;
