@@ -826,10 +826,11 @@ update_invite_expire(Status, State) when record(State, state), Status == 100 ->
     State;
 update_invite_expire(Status, State) when record(State, state), Status =< 199 ->
     LogTag = State#state.logtag,
-    case siptimer:get_timers_appsignal_matching({invite_expire}, State#state.timerlist) of
-	[] ->
-	    logger:log(error, "~s: Received provisional response ~p to INVITE request, but no 'invite_expire' (Timer C) timer found",
-		       [LogTag, Status]),
+    InviteExpireTimerList = siptimer:get_timers_appsignal_matching({invite_expire}, State#state.timerlist),
+    case siptimer:length(InviteExpireTimerList) of
+	0 ->
+	    logger:log(error, "~s: Received provisional response ~p to INVITE request, but no "
+		       "'invite_expire' (Timer C) timer found", [LogTag, Status]),
 	    logger:log(debug, "~s: TimerList where I could not find an 'invite_expire' (Timer C) timer :~n~p",
 		       [LogTag, siptimer:debugfriendly(State#state.timerlist)]),
 	    State;
