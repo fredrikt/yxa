@@ -52,6 +52,9 @@ Installation
 
 5) Run ../configure && make && sudo make install
 
+6) Bootstrap your new installation. See "Bootstrapping" below.
+
+
 Configure options special to Yxa :
 
    --with-erlang	The path to your Erlang/OTP installation's
