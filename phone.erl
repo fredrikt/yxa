@@ -159,7 +159,7 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is
     Fun = fun() ->
 		  A = mnesia:match_object(#phone{number = SipUser,
 						 class = Class,
-						 address = LocationStr,
+						 requristr = URIstr,
 						 _ = '_'}),
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
