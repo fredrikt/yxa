@@ -70,7 +70,7 @@ loop(State) when record(State, state) ->
 	    util:safe_signal("sippipe :", State#state.clienthandler, {cancel, "server transaction cancelled"}),
 	    {ok, State};
 
-	{branch_result, Branch, NewTransactionState, Response, _} ->
+	{branch_result, Branch, NewTransactionState, Response} ->
 	    NewState1 = process_client_transaction_response(Response, State),
 	    {ok, NewState1};
 
