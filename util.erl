@@ -1,5 +1,5 @@
 -module(util).
--export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2]).
+-export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2, count/1]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -15,13 +15,15 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
     io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w",
 		  [Year, Month, Day, Hour, Minute, Second]).
 
-isnumeric(Number) ->
+isnumeric(Number) when list(Number) ->
     case regexp:first_match(Number, "^[0-9]+$") of
 	{match, _, _} ->
 	    true;
 	_ ->
 	    false
-    end.
+    end;
+isnumeric(_) ->
+    false.
 
 digit(Digit) when integer(Digit), Digit >= $0, Digit =< $9 ->
     Digit - $0;
@@ -95,3 +97,13 @@ concat([], Separator) ->
     [];
 concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
+
+count([]) ->
+    0;
+count(List) ->
+    count_elements(List, 0).
+    
+count_elements([], Num) when integer(Num) ->
+    Num;
+count_elements([List|Rest], Num) when integer(Num) ->
+    count_elements(Rest, Num + 1).
