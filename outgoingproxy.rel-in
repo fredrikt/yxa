@@ -1,5 +1,5 @@
-%% Erlang OTP R10B-2 library versions
+%% Erlang OTP R10B-3 library versions
 {release, {"Yxa outgoingproxy","0.0"}, {erts, "5.2"},
- [{kernel,"2.10.3"},
+ [{kernel,"2.10.4"},
   {stdlib,"1.13.4"},
   {outgoingproxy, "0.0"}]}.
