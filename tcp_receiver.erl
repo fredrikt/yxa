@@ -27,22 +27,22 @@ recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.so
 
 	       {ssl, Socket, B} ->
 		   L = binary_to_list(B),
-		   logger:log(debug, "TCP receiver: Received ~p bytes of data, adding it to my buffer which contained ~p bytes of data X",
+		   logger:log(debug, "TCP receiver: Received ~p bytes of data (SSL), adding it to my buffer which contained ~p bytes of data",
 			      [length(L), length(DataIn)]),
 		   %% remove_separator() removes any leading CR or LF
 		   NewDataIn = lists:append(DataIn, L),
 		   SoFar = remove_separator(NewDataIn),
 		   ssl:setopts(Socket, [{active, once}]),
 		   %% Look for header-body separator
-		   case string:str(SoFar, "\r\n\r\n") of
-		       0 ->
+		   case has_header_body_separator(SoFar) of
+		       false ->
 			   %% No Header Body separator yet, read more data
 			   SoFar;
-		       _ ->
+		       true ->
 			   AdditionalData = header_received(SoFar, State),
+			   logger:log(debug, "TCP receiver: My buffer now contains ~p bytes of data (SSL)", [length(AdditionalData)]),
 			   AdditionalData
 		   end;
-
 
 	       {ssl_closed, Socket} ->
 		   logger:log(debug, "TCP receiver: Extra debug: Socket closed (Socket: ~p, local ~p, remote ~p)",
@@ -102,13 +102,13 @@ do_recv(DataIn, State) ->
 		       [length(L), length(DataIn)]),
 	    %% remove_separator() removes any leading CR or LF
 	    SoFar = remove_separator(lists:append(DataIn, L)),
-	    %% Look for header-body separator
-	    case string:str(SoFar, "\r\n\r\n") of
-		0 ->
+	    case has_header_body_separator(SoFar) of
+		false ->
 		    %% No Header Body separator yet, read more data
 		    do_recv(SoFar, State);
-		_ ->
+		true ->
 		    Rest = header_received(SoFar, State),
+		    logger:log(debug, "TCP receiver: My buffer now contains ~p bytes of data", [length(Rest)]),
 		    Rest
 	    end;
 	{error, closed} ->
@@ -118,6 +118,15 @@ do_recv(DataIn, State) ->
 	{error, E} ->
 	    logger:log(error, "TCP receiver: Error when reading data : ~s (~p)", [inet:format_error(E), E]),
 	    {error, E}
+    end.
+
+%% Look for header-body separator, return true | false
+has_header_body_separator(Data) ->
+    case string:str(Data, "\r\n\r\n") of
+	0 ->
+	    false;
+	N when is_integer(N) ->
+	    true
     end.
 
 %% We have found the separator between Header and Body. We can now extract the
@@ -146,7 +155,12 @@ header_received(Data, State) when list(Data), record(State, state) ->
 	    %% We received more data than the Content-Length indicated, might be pipelined requests?
 	    %% Remove any CRLF sequences before (or between) requests, RFC3261 #7.5
 	    NewData = remove_separator(lists:flatten(Rest)),
-	    NewData;
+	    %% Check if there is already a complete request/response in NewData -
+	    %% recurse on ourselves until that is not the case
+	    case has_header_body_separator(NewData) of
+		true  -> header_received(NewData, State);
+		false -> NewData
+	    end;
 	_ ->
 	    logger:log(error, "TCP receiver: Unknown result from sippacket:parse() or tcp_read_sip_message() :~n~p~n" ++
 		       "Closing socket.", [Rest]),
@@ -203,9 +217,10 @@ get_content_length(Header) ->
 	[CLenStr] ->
 	    case util:isnumeric(CLenStr) of
 		true ->
-		    %% must be careful, it could be a partial content-header
-		    %% XXX do we correctly detect that we have received for example
-		    %% 'Content-Length: 10' but no LF? Real length might be '101'.
+		    %% Be extra careful and check for numeric value.
+		    %% We don't have to worry about partially received Content-Length
+		    %% header here since this function doesn't get invoked until
+		    %% the header-body separator has been seen.
 		    list_to_integer(CLenStr);
 		false ->
 		    invalid
