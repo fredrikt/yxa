@@ -26,7 +26,7 @@ AC_ARG_WITH(mnesiadir,
 	AC_HELP_STRING([--with-mnesiadir=dir],
 		[use dir as database for mnesia database]),
 [if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_mnesiadir" = "X"; then
-    mnesiadir=""
+    mnesiadir="/var/yxa/db"
 else
     mnesiadir="$with_mnesiadir"
 fi])
