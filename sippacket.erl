@@ -94,7 +94,7 @@ parse_packet(Packet, Origin) ->
 	S ->
 	    %% Extract receiver pid if present
 	    RStr = case Origin of
-		       _ when record(Origin, siporigin) ->
+		       _ when is_record(Origin, siporigin) ->
 			   "(connection handler: " ++ pid_to_list(Origin#siporigin.receiver) ++ ") ";
 		       _ ->
 			   ""
@@ -210,7 +210,7 @@ parse_firstline(FirstLine) ->
 %%--------------------------------------------------------------------
 request({Method, URI}, Header, Body) ->
     URL = sipurl:parse(URI),
-    #request{method=Method, uri=URL, header=Header, body=Body}.
+    siprequest:set_request_body(#request{method=Method, uri=URL, header=Header}, Body).
 
 %%--------------------------------------------------------------------
 %% Function: response({Status, Reason}, Header, Body)
@@ -222,11 +222,11 @@ request({Method, URI}, Header, Body) ->
 %% Returns : response record()
 %%--------------------------------------------------------------------
 response({Status, Reason}, Header, Body) ->
-    #response{status=list_to_integer(Status), reason=Reason, header=Header, body=Body}.
+    siprequest:set_response_body(#response{status=list_to_integer(Status), reason=Reason, header=Header}, Body).
 
 
 %%====================================================================
-%% Test functions - belong at the bottom of the module
+%% Test functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
@@ -239,7 +239,7 @@ test() ->
     %%--------------------------------------------------------------------
     %% init
     io:format("test: parse/1 request - 1~n"),
-    Message1 = 
+    Message1 =
 	"INVITE sip:test@example.org SIP/2.0\r\n"
 	"Via: SIP/2.0/TCP one.example.org\r\n"
 	"\r\nbody",
@@ -255,7 +255,7 @@ test() ->
     io:format("test: parse/1 request - 1.2~n"),
     ["SIP/2.0/TCP one.example.org"] = keylist:fetch('via', Header1),
 
-    Message2 = 
+    Message2 =
 	"INVITE sip:test@example.org SIP/2.0\r\n"
 	"Via: SIP/2.0/TCP two.example.org\r\n"
 	"From: \"Test Test\" <sip:test@example.org>;tag=abc\r\n"
@@ -279,10 +279,10 @@ test() ->
 
     _Message3 = "INVITE sip:test@example.org   SIP/2.0\r\n",
     _URL3 = sipurl:parse("sip:test@example.org"),
-    
+
     %% Extra spaces in request-line
     io:format("test: parse/1 request - 3 (disabled)~n"),
-%%    {request, "INVITE" , URL3, _, ""} = parse(Message3, none),
+    %%    {request, "INVITE" , URL3, _, ""} = parse(Message3, none),
 
     Message4 =
 	"INVITE sip:test@example.org   SIP/2.0\r\n"
@@ -293,13 +293,13 @@ test() ->
     %% Extra spaces and missing spaces
     io:format("test: parse/1 request - 4.1~n"),
     {request, "INVITE" , _, Header4, ""} = parse(Message4, none),
-    
+
     %% verify the Via's
     io:format("test: parse/1 request - 4.2~n"),
     ["SIP/2.0/TLS four.example.org", "SIP/2.0/TCP three.example.org", "SIP/2.0/TCP two.example.org",
      "SIP/2.0/UDP one.example.org"] = keylist:fetch('via', Header4),
 
-    _Message5 = 
+    _Message5 =
 	"INVITE sip:test@example.org SIP/2.0\r\n"
 	"Via: SIP/2.0/TLS three.example.org,\r\n"
 	"	SIP/2.0/TCP two.example.org\r\n"
@@ -307,13 +307,13 @@ test() ->
 	"\r\n",
     io:format("test: parse/1 request - 5.1 (disabled)~n"),
     %% multiline Via
-%%    {request, "INVITE" , _, Header5, ""} = parse(Message5, none),
-    
+    %%    {request, "INVITE" , _, Header5, ""} = parse(Message5, none),
+
     io:format("test: parse/1 request - 5.2 (disabled)~n"),
     %% verify the three Via's
-%%    ["SIP/2.0/TLS three.example.org", "SIP/2.0/TCP two.example.org", "SIP/2.0/UDP one.example.org"] =
-%%    keylist:fetch('via', Header5),
-    
+    %%    ["SIP/2.0/TLS three.example.org", "SIP/2.0/TCP two.example.org", "SIP/2.0/UDP one.example.org"] =
+    %%    keylist:fetch('via', Header5),
+
     %% This is the '3.1.1.1  A short tortuous INVITE' from draft-ietf-sipping-torture-tests-04.txt,
     %% except the body which wasn't very special
     _Message6 =
@@ -351,11 +351,10 @@ test() ->
 
     io:format("test: parse/1 request - 6.1 (disabled)~n"),
     %% parse tortuous INVITE
-%%    {request, "INVITE" , URL6, Header6, "test"} = parse(Message6, none),
-    
+    %%    {request, "INVITE" , URL6, Header6, "test"} = parse(Message6, none),
+
     io:format("test: parse/1 request - 6.2 (disabled)~n"),
     %% verify contents
-
 
     _Message7 =
         "REGISTER sip:example.org SIP/2.0\r\n"
@@ -368,19 +367,30 @@ test() ->
 
     io:format("test: parse/1 request - 7 (disabled)~n"),
     %% extra data after request - should be ignored (Content-Length: 4)
-%%    {request, "REGISTER" , _, _, "body"} = parse(Message7, none),
-    
+    %%    {request, "REGISTER" , _, _, "body"} = parse(Message7, none),
+
     Message8 =
-         "INVITE <sip:user@example.com> SIP/2.0\r\n"
-         "Via: SIP/2.0/TLS 192.0.2.1, SIP/2.0/FOO 192.0.2.78\r\n",
+	"INVITE <sip:user@example.com> SIP/2.0\r\n"
+	"Via: SIP/2.0/TLS 192.0.2.1, SIP/2.0/FOO 192.0.2.78\r\n",
     io:format("test: parse/1 request - 8.1~n"),
     %% Request-URI enclosed in <> - invalid, but should not be rejected here
-    %% (it isn't THAT broken and should be responded to with a 400 Bad Request) 
+    %% (it isn't THAT broken and should be responded to with a 400 Bad Request)
     {request, "INVITE" , {unparseable, "<sip:user@example.com>"}, Header8, ""} = parse(Message8, none),
 
     io:format("test: parse/1 request - 8.2~n"),
     %% verify the Via header so we know keylist is created as it should
     ["SIP/2.0/TLS 192.0.2.1", "SIP/2.0/FOO 192.0.2.78"] = keylist:fetch('via', Header8),
+
+    Body9 = "This\nis\rbody\n\r\n\r\n_and should have it's line breaks preserved\r\n",
+    Message9 =
+	"INVITE sip:a@example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/TLS 192.0.2.1, SIP/2.0/FOO 192.0.2.78\r\n" 
+	"\r\n" ++ Body9,
+	
+    io:format("test: parse/1 request - 9~n"),
+    %% verify that we don't mess with line breaks in body
+    {request, "INVITE", _, _,  Body9} = parse(Message9, none),
+    
 
     %% RESPONSES
 
@@ -392,8 +402,8 @@ test() ->
     %% verify the Via header so we know keylist is created as it should
     io:format("test: parse/1 response - 1.2~n"),
     ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch('via', RHeader1),
-    
-    RMessage2 =       
+
+    RMessage2 =
         "SIP/2.0 100 \r\n"
         "Via: SIP/2.0/TLS 192.0.2.78\r\n",
     io:format("test: parse/1 response - 2.1~n"),
@@ -402,7 +412,7 @@ test() ->
     %% verify the Via header so we know keylist is created as it should
     io:format("test: parse/1 response - 2.2~n"),
     ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch('via', RHeader2),
-    
+
     %% '3.1.2.19  Overlarge response code' from draft-ietf-sipping-torture-tests-04.txt
     %% (in a shorter form) - the draft says you should just ignore responses with
     %% too large response codes, so we can do that here already.
@@ -410,7 +420,7 @@ test() ->
 	"SIP/2.0 4294967301 better not break the receiver\r\n"
         "Via: SIP/2.0/TLS 192.0.2.78\r\n",
     io:format("test: parse/1 response - 3~n"),
-%%    invalid = parse(RMessage3, none),
+    %%    invalid = parse(RMessage3, none),
 
 
 
