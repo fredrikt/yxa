@@ -59,7 +59,7 @@ start_link(Request, Socket, LogStr, AppModule, Mode) ->
 %%
 %% ACK - no go
 %%
-init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request), Request#request.method == "ACK" ->
+init([Request, _Socket, _LogStr, _AppModule, _Mode]) when record(Request, request), Request#request.method == "ACK" ->
     %% Although a bit vague, RFC3261 section 17 (Transactions) do say that
     %% it is not allowed to send responses to ACK requests, so we simply
     %% deny to start a server transaction here.
@@ -69,7 +69,7 @@ init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request), 
 %%
 %% Anything but ACK
 %%
-init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request) ->
+init([Request, Socket, LogStr, _AppModule, Mode]) when record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
     LogTag = Branch ++ " " ++ Method,
@@ -338,7 +338,7 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -437,7 +437,7 @@ process_timer(Timer, State) when record(State, state)    ->
 			    	       [LogTag, Method, sipurl:print(URI), Status, Reason, State]),
 			    State
 		    end;
-		undefined ->
+		_ ->
 		    logger:log(error, "~s: Resend after ~p (response to ~s ~s, state '~p'): no response sent!",
 			       [Timeout, Method, sipurl:print(URI), State]),
 		    State
@@ -467,25 +467,33 @@ do_response(Created, Response, State) when record(State, state), record(Response
     OldSipState = State#state.sipstate,
     {Status, Reason} = {Response#response.status, Response#response.reason},
     NewState1 = go_stateful(Created, ResponseToMethod, Status, LogTag, State),
-    {Action, SendReliably, NewSipState} = send_response_statemachine(ResponseToMethod, Status, OldSipState),
-    NewState2 = case Action of
-		    ignore ->
-			NewState1;
-		    send ->
-			LogLevel = if
-				       Status >= 200 -> normal;
-				       true -> debug
-				   end,
-			What = case Created of
-				   created -> "Responding";
-				   _ -> "Forwarding response"
-			       end,
-			logger:log(LogLevel, "~s: ~s ~p ~s",
-				   [LogTag, What, Status, Reason]),
-			{ok, NewState2_1} = send_response(Response, SendReliably, NewState1),
-			NewState2_1
-		end,
-    NewState = enter_sip_state(NewSipState, NewState2),
+    NewState = 
+	case catch send_response_statemachine(ResponseToMethod, Status, OldSipState) of
+	    {Action, SendReliably, NewSipState} when Action == ignore; Action == send ->
+		NewState2 = case Action of
+				ignore ->
+				    NewState1;
+				send ->
+				    LogLevel = if
+						   Status >= 200 -> normal;
+						   true -> debug
+					       end,
+				    What = case Created of
+					       created -> "Responding";
+					       _ -> "Forwarding response"
+					   end,
+				    logger:log(LogLevel, "~s: ~s ~p ~s",
+					       [LogTag, What, Status, Reason]),
+				    {ok, NewState2_1} = send_response(Response, SendReliably, NewState1),
+				    NewState2_1
+			    end,
+		enter_sip_state(NewSipState, NewState2);
+	    E ->
+		logger:log(error, "~s: State machine does not allow us to send '~p ~s' in response to '~s ~s' when my SIP-state is '~p'",
+			   [LogTag, Status, Reason, ResponseToMethod, sipurl:print(ResponseToURI), OldSipState]),
+		logger:log(debug, "~s: State machine returned :~n~p", [LogTag, E]),
+		NewState1
+	end,
     {ok, NewState}.
 
 go_stateful(created, Method, Status, LogTag, State) when record(State, state), State#state.mode == stateless, Status >= 200 ->
@@ -550,7 +558,7 @@ send_response_statemachine(Method, Status, terminated) when Status =< 699 ->
 
 %% This branch should answer something.
 send_response(Response, SendReliably, State) when record(Response, response), record(State, state) ->
-    {Status, Reason, RHeader, RBody} = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
+    {Status, Reason, RHeader} = {Response#response.status, Response#response.reason, Response#response.header},
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     Socket = State#state.socket,
@@ -648,7 +656,7 @@ enter_sip_state(NewSipState, State) when record(State, state) ->
 	    NewState
     end.
 
-process_received_ack(State) when record(State, state) ->
+process_received_ack(State) when is_record(State, state), is_record(State#state.response, response) ->
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     Response = State#state.response,
@@ -657,18 +665,30 @@ process_received_ack(State) when record(State, state) ->
     logger:log(normal, "~s: Response ~p ~s to request ~s ~s ACK-ed", [LogTag, Status, Reason, Method, sipurl:print(URI)]),
     case Method of
 	"INVITE" ->
-	    logger:log(debug, "~s: Received ACK, cancelling resend timers for response ~p ~s (to request ~s ~s) and entering state 'confirmed'",
-		       [LogTag, Status, Reason, Method, sipurl:print(URI)]),
-	    TimerList = State#state.timerlist,
-	    NewTimerList = siptimer:cancel_timers_with_appsignal({resendresponse}, TimerList),
-	    NewState1 = State#state{timerlist=NewTimerList},
-	    NewState = enter_sip_state(confirmed, NewState1),
-	    NewState;
+	    SipState = State#state.sipstate,
+	    case lists:member(SipState, [trying, proceeding]) of
+		true ->
+		    logger:log(error, "~s: Received ACK when in state '~p' - ignoring", [LogTag, SipState]),
+		    State;
+		false ->
+		    logger:log(debug, "~s: Received ACK, cancelling resend timers for response ~p ~s (to request ~s ~s) and entering state 'confirmed'",
+			       [LogTag, Status, Reason, Method, sipurl:print(URI)]),
+		    TimerList = State#state.timerlist,
+		    NewTimerList = siptimer:cancel_timers_with_appsignal({resendresponse}, TimerList),
+		    NewState1 = State#state{timerlist=NewTimerList},
+		    NewState = enter_sip_state(confirmed, NewState1),
+		    NewState
+	    end;
 	_ ->
 	    logger:log(debug, "~s: Received ACK to non-INVITE request ~s ~s (response being ACKed is ~p ~s) - ignoring",
 		       [LogTag, Method, sipurl:print(URI), Status, Reason]),
 	    State
-    end.
+    end;
+process_received_ack(State) when is_record(State, state) ->
+    %% State#state.response is not a response record()
+    LogTag = State#state.logtag,
+    logger:log(error, "~s: Received an ACK before I sent any responses, ignoring", [LogTag]),
+    State.
 
 make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State) when record(State, state), Status == 100 ->
     siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State#state.socket, State#state.request);
