@@ -153,8 +153,13 @@ canon_user(Fulluser) ->
 	[User, Host] ->
 	    {User, Host};
 	[User] ->
-	    {User, realm()}
+	    {User, realm()};
+	[] ->
+	    {"", realm()}
     end.
+
+canon_list(List) ->
+    lists:map(fun canon_user/1, List).
 
 can_use_name(User, Number) ->
     case User of
@@ -168,8 +173,8 @@ can_use_name(User, Number) ->
 	    case canon_user(Number) of
 		CanonUser ->
 		    {true, Numberlist};
-		_ ->
-		    {lists:member(Number, Numberlist), []}
+		CanonNumber ->
+		    {lists:member(CanonNumber, canon_list(Numberlist)), []}
 	    end
     end.
 
