@@ -55,7 +55,8 @@
 		       lookup,
 		       sipauth,
 		       sipproxy,
-		       sipuserdb_file_backend
+		       sipuserdb_file_backend,
+		       siptimer
 		      ]).
 
 %%====================================================================
