@@ -41,7 +41,7 @@
 	 build_header_binary/1,
 	 dict_to_param/1,
 	 param_to_dict/1,
-	 dialogueid/1,
+	 dialogid/1,
 	 get_tag/1,
 	 topvia/1,
 	 via_sentby/1,
@@ -547,14 +547,14 @@ print_one_header_binary2(true, BinName, BinValueList) ->
 			      [Value];
 			  _ ->
 			      %% Accumulated comma space Value
-			      concat_binary([Acc, $\,, 32, Value])
+			      list_to_binary([Acc, $\,, 32, Value])
 		      end
 	      end,
     BinValues = lists:foldl(OneLine, [], BinValueList),
-    concat_binary([BinName, $:, 32, BinValues, 13, 10]);
+    list_to_binary([BinName, $:, 32, BinValues, 13, 10]);
 print_one_header_binary2(false, BinName, [First | Rest]) ->
     %% Return one "Key: Value" for every element in BinValueList
-    This = concat_binary([BinName, $:, 32, First, 13, 10]),	%% Name: First\r\n
+    This = list_to_binary([BinName, $:, 32, First, 13, 10]),	%% Name: First\r\n
     [This | print_one_header_binary2(false, BinName, Rest)];
 print_one_header_binary2(false, _BinName, []) ->
     [].
@@ -577,16 +577,15 @@ get_tag([String]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: dialogueid(Header)
+%% Function: dialogid(Header)
 %%           Header = keylist record()
-%% Descrip.: get the contents of several sip headers in Header
+%% Descrip.: Get what in RFC3261 is referred to as a dialog ID. This
+%%           will be the same for all requests in a dialog. Note
+%%           though that the ToTag might be 'none' and later get set.
 %% Returns : {CallID, FromTag, ToTag}
 %%           the contents of "Call-ID", "From" and "To"
 %%--------------------------------------------------------------------
-dialogueid(Header) when is_record(Header, keylist) ->
-    get_dialogid(Header).
-
-get_dialogid(Header) ->
+dialogid(Header) when is_record(Header, keylist) ->
     CallID = sipheader:callid(Header),
     FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
     ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
@@ -972,7 +971,7 @@ guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, 
 %%--------------------------------------------------------------------
 test() ->
 
-    %% comma
+    %% test comma/1
     %%--------------------------------------------------------------------
     %% test empty string
     io:format("test: comma/1 - 1~n"),
@@ -1016,9 +1015,9 @@ test() ->
 
     %% test commas inside <>!
 
+
     %% test via/1
     %%--------------------------------------------------------------------
-
     io:format("test: via/1 - 1~n"),
     [#via{proto="SIP/2.0/TLS", host="192.0.2.123", port=none, param=[]}] =
 	via(["SIP/2.0/TLS 192.0.2.123"]),
@@ -1057,7 +1056,7 @@ test() ->
     {'EXIT', _} = (catch via(["SIP/2.0/TLS 192.0.2.500:5060"])),
     
     
-    %% test get_server_transaction_id
+    %% test get_server_transaction_id/1
     %%--------------------------------------------------------------------
 
     io:format("test: get_server_transaction_id/1 - 1.1~n"),
@@ -1070,7 +1069,7 @@ test() ->
 				       {"CSeq",	["2 INVITE"]}
 				      ]),
     Invite1 = #request{method="INVITE", uri=sipurl:parse("sip:alice@example.org"),
-		       header=InviteHeader1, body=""},
+		       header=InviteHeader1, body = <<>>},
     Invite1Id = get_server_transaction_id(Invite1),
 
     io:format("test: get_server_transaction_id/1 - 1.2~n"),
@@ -1082,7 +1081,7 @@ test() ->
     AckInvite1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], InviteHeader1),
     AckInvite1Header1  = keylist:set("CSeq", ["2 ACK"], AckInvite1Header_1),
     AckInvite1 = #request{method="ACK", uri=sipurl:parse("sip:alice@example.org"),
-			  header=AckInvite1Header1, body=""},
+			  header=AckInvite1Header1, body = <<>>},
 
     AckInvite1Id = get_server_transaction_id(AckInvite1),
 
@@ -1100,7 +1099,7 @@ test() ->
 					    {"CSeq",	["2 INVITE"]}
 					   ]),
     Invite2543_1 = #request{method="INVITE", uri=sipurl:parse("sip:alice@example.org"),
-			    header=Invite2543_1Header, body=""},
+			    header=Invite2543_1Header, body = <<>>},
     Invite2543_1Id = get_server_transaction_id(Invite2543_1),
 
     io:format("test: get_server_transaction_id/1 - 4.2~n"),
@@ -1131,7 +1130,7 @@ test() ->
     AckInvite2543_1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], Invite2543_1Header),
     AckInvite2543_1Header   = keylist:set("CSeq", ["2 ACK"], AckInvite2543_1Header_1),
     AckInvite2543_1 = #request{method="ACK", uri=sipurl:parse("sip:alice@example.org"),
-			       header=AckInvite2543_1Header, body=""},
+			       header=AckInvite2543_1Header, body = <<>>},
 
     is_2543_ack = get_server_transaction_id(AckInvite2543_1),
 
@@ -1143,10 +1142,36 @@ test() ->
     %% check that the 2543 ACK id matches the 2543 INVITE id
     AckInvite2543_1Id = Invite2543_1AckId,
 
-    %% get_client_transaction_id/1
+
+    %% test get_client_transaction_id/1
     %%--------------------------------------------------------------------
     io:format("test: get_client_transaction_id/1 - 1~n"),
-    Response1 = #response{status=699, reason="foo", header=Invite2543_1Header, body=""},
+    Response1 = #response{status=699, reason="foo", header=Invite2543_1Header, body = <<>>},
     {"not-really-unique", "INVITE"} = get_client_transaction_id(Response1),
+
+
+    %% test contact/1. No full test of parameters - we don't test the actual contact parsing here.
+    %%--------------------------------------------------------------------
+    ContactHeader1 = keylist:from_list([
+					{"From", ["Test <sip:alice@example.org>;tag=f-abc"]},
+					{"Contact", ["<sip:bob@example.org>;lr=true"]}
+				       ]),
+    
+    io:format("test: contact/1 - 1~n"),
+    %% test using list key
+    [#contact{urlstr="sip:bob@example.org"}] = contact(ContactHeader1),
+
+
+
+    %% test contact/2. No full test of parameters - we don't test the actual contact parsing here.
+    %%--------------------------------------------------------------------
+    io:format("test: contact/2 - 1~n"),
+    %% test using atom key
+    [#contact{urlstr="sip:alice@example.org"}] = contact(ContactHeader1, 'from'),
+
+    io:format("test: contact/2 - 2~n"),
+    %% test using list key
+    [#contact{urlstr="sip:alice@example.org"}] = contact(ContactHeader1, "From"),
+
 
     ok.
