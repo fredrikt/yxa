@@ -34,6 +34,7 @@
 -define(TEST_MODULES, [
 		       url_param,
 		       contact_param,
+		       keylist,
 		       sipparse_util,
 		       sipurl,
 		       contact,
