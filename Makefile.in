@@ -15,6 +15,7 @@ beamdir = @datadir@
 sbindir = @sbindir@
 exec_prefix='${prefix}'
 builddir = @builddir@
+local_file = @local_file@
 
 ERLC = erlc
 
@@ -37,7 +38,7 @@ create_start_script = \
 	chmod +x $@.new && \
 	mv $@.new $@
 
-LOCAL_ERL = local.erl-default
+LOCAL_ERL = local.erl-$(local_file)
 
 erl_FILES = \
 	LDAPv3.erl \
