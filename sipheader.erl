@@ -103,7 +103,7 @@ name_print({_, wildcard, Parameters}) ->
     sipurl:print({wildcard, Parameters});
     
 name_print({none, URI}) ->
-    sipurl:print(URI);
+    "<" ++ sipurl:print(URI) ++ ">";
 
 name_print({Name, URI}) ->
     "\"" ++ Name ++ "\" <" ++ sipurl:print(URI) ++ ">".
