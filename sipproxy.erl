@@ -1,64 +1,20 @@
 -module(sipproxy).
--export([start/6, process_branch/6]).
+-export([start/8, process_branch/6]).
 
-get_actions(URI) ->
-    Key = local:sipuser(URI),
-    case fetch_actions(Key) of
-	none ->
-	    {User, Pass, Host, Port, Parameters} = URI,
-	    case util:isnumeric(User) of
-		true ->
-		    case fetch_actions(User) of
-			none -> nomatch;
-			Actions -> lists:append(Actions, [{wait, 40}])
-		    end;
-		_ ->
-		    nomatch
-	    end;
-	Actions ->
-	    lists:append(Actions, [{wait, 40}])
-    end.
-
-fetch_actions(Key) ->
-    case phone:get_phone(Key) of
-    	{atomic, []} ->
-	    none;
-	{atomic, Locations} ->
-	    BestLocations = local:prioritize_locations(Key, Locations),
-	    locations_to_actions(BestLocations);
-	_ ->
-	    none
-    end.
-
-locations_to_actions([]) ->
-    [];
-locations_to_actions([{Location, Flags, Class, Expire}]) ->
-    [{call, 30, Location}];
-locations_to_actions([{Location, Flags, Class, Expire} | Rest]) ->
-    Actions = locations_to_actions(Rest),
-    lists:append([{call, 30, Location}], Actions).
-
-start(Method, URI, Header, Body, Socket, FromIP) ->
-    % create header suitable for answering the incoming request
-    AnswerHeader = siprequest:make_answerheader(Header),
+% This is the start() function of sipproxy. sipproxy can presently
+% accomplish 'stateless forking'. It can follow an Actions list and
+% fork a request to several Targets.
+%
+% You start it by calling the start() method with a set of Actions. Currenly
+% supported actions are a list of 'call' and 'wait'. You can mix calls and
+% waits freely.
+start(Method, URI, OrigHeader, ReqHeader, Body, Socket, FromIP, Actions) ->
     % create header suitable for our outgoing requests
-    ForkHeader = keylist:delete("Route", AnswerHeader),
-    logger:log(normal, "Forking: Sending 100 Trying", []),
-    siprequest:send_result(AnswerHeader, Socket, "", 100, "Trying"),
-    [CallID] = keylist:fetch("Call-ID", AnswerHeader),
-    case database_call:insert_call_unique(CallID, proxy, AnswerHeader,
-					  self()) of
+    BranchHeader = keylist:delete("Route", ReqHeader),
+    [CallID] = keylist:fetch("Call-ID", OrigHeader),
+    case database_call:insert_call_unique(CallID, proxy, OrigHeader, self()) of
 	{atomic, ok} ->
-	    Key = local:sipuser(URI),
-	    Actions = get_actions(URI),
-	    case Actions of
-		nomatch ->
-		    logger:log(normal, "Forking: No actions found for ~p, returning 404 Not Found", [Key]),
-		    siprequest:send_notfound(AnswerHeader, Socket);
-		_ ->
-		    logger:log(debug, "Forking: User ~p actions :~n~p", [Key, Actions]),
-		    fork(CallID, URI, ForkHeader, Body, FromIP, Socket, Actions, [])
-	    end;
+	    fork(Method, CallID, URI, BranchHeader, Body, FromIP, Socket, Actions, []);
 	{aborted, key_exists} ->
 	    logger:log(debug, "Forking: Could not start call with CallID ~p - key exists", [CallID]),
 	    true
@@ -195,9 +151,9 @@ generate_branch() ->
     {Megasec, Sec, Microsec} = now(),
     "z9hG4bK" ++ hex:to(Sec, 8) ++ hex:to(Microsec, 8).
 
-start_branch(Socket, ReqURI, Timeout, URI, Header, Body, FromIP) ->
+start_branch(Socket, Method, ReqURI, Timeout, URI, Header, Body, FromIP) ->
     Branch = generate_branch(),
-    LogStr = sipserver:make_logstr({request, "INVITE", ReqURI, Header, Body}, FromIP),
+    LogStr = sipserver:make_logstr({request, Method, ReqURI, Header, Body}, FromIP),
     logger:log(normal, "~s: (new) ~s -> Fork to ~s", [Branch, LogStr, sipurl:print(URI)]),
     {Branch, URI, spawn(?MODULE, process_branch, [Socket, Timeout, URI, Branch,
 					     Header, Body]), calling}.
@@ -252,35 +208,39 @@ find_target(Branch, Targets) ->
 	{value, {_, BranchURI, Pid, BranchState}} ->
 	    {BranchURI, Pid, BranchState}
     end.
-    
-fork(CallID, ReqURI, Header, Body, FromIP, Socket, Actions, Targets) ->
+
+fork(Method, CallID, ReqURI, Header, Body, FromIP, Socket, Actions, Targets) ->
     case Actions of
 	[{call, Timeout, URI} | Rest] ->
 	    logger:log(debug, "Forking: calling ~s with timeout ~p",
 		      [sipurl:print(URI), Timeout]),
-	    Newtargets = [start_branch(Socket, ReqURI, Timeout, URI, Header, Body, FromIP)
+	    Newtargets = [start_branch(Socket, Method, ReqURI, Timeout, URI, Header, Body, FromIP)
 			  | Targets],
-	    fork(CallID, ReqURI, Header, Body, FromIP, Socket, Rest, Newtargets);
+	    fork(Method, CallID, ReqURI, Header, Body, FromIP, Socket, Rest, Newtargets);
 	[{wait, Time} | Rest] ->
 	    logger:log(normal, "Forking: waiting ~p seconds", [Time]),
 	    case process_wait(CallID, ReqURI, Header, Body, FromIP, Socket, Rest,
 			 Targets, false, util:timestamp() + Time) of
-		finished ->
-		    % XXX set controlpid to none
-		    logger:log(normal, "Forking: end processing");
+		{discontinue, NewTargets} ->
+		    logger:log(debug, "Forking: discontinue processing"),
+		    fork(Method, CallID, ReqURI, Header, Body, FromIP, Socket, [], NewTargets);
 		NewTargets ->
-		    fork(CallID, ReqURI, Header, Body, FromIP, Socket, Rest, NewTargets)
+		    fork(Method, CallID, ReqURI, Header, Body, FromIP, Socket, Rest, NewTargets)
 	    end;
 	[] ->
-	    % XXX set controlpid to none
 	    case allterminated(Targets) of
 		true ->
 		    logger:log(normal, "Forking: All targets are terminated, send 486 Busy Here to original request"),
 		    siprequest:send_proxy_response(Socket, 486, "Busy here", Header,  "");
 		_ ->
+		    logger:log(debug, "Forking: Reached end of Actions-list, cancelling all 'calling' and 'proceeding' targets"),
 		    cancel_targets(Targets)
 	    end,
-	    logger:log(normal, "Forking: done"),
+	    logger:log(normal, "Forking: waiting 32 seconds for final responses"),
+	    process_wait(CallID, ReqURI, Header, Body, FromIP, Socket, [],
+	    		 Targets, false, util:timestamp() + 32),
+	    logger:log(normal, "Forking: done, removing call ~p from database", [CallID]),
+	    database_call:delete_call_type(CallID, proxy),
 	    true
     end.
 
@@ -377,7 +337,8 @@ allterminated([_ | Rest]) ->
     false.
 
 process_wait(CallID, ReqURI, Header, Body, FromIP, Socket, Actions, Targets, true, AbsTime) ->
-    finished;
+    logger:log(debug, "Forking: Ending process_wait(), returning discontinue. Targets :~n~p", [Targets]),
+    {discontinue, Targets};
 process_wait(CallID, ReqURI, Header, Body, FromIP, Socket, Actions, Targets, false, AbsTime) ->
     Time = lists:max([AbsTime - util:timestamp(), 0]),
     receive

@@ -1,6 +1,6 @@
 -module(database_call).
 -export([create_call/0, insert_call/4, get_call/1, list_calls/0,
-	 insert_call_unique/4, set_data/2, delete_call/2, get_call_type/2]).
+	 insert_call_unique/4, set_data/2, delete_call_type/2, get_call_type/2]).
 
 -include("database_call.hrl").
 
@@ -37,7 +37,7 @@ insert_call_unique(Callid, Type, Headers, Data) ->
 	  end,
     mnesia:transaction(Fun).
 
-delete_call(Callid, Type) ->
+delete_call_type(Callid, Type) ->
 	F = fun() ->
 		    Q = query
 			    [E || E <- table(call),
