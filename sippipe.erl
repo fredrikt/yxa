@@ -135,7 +135,8 @@ guarded_start2(Branch, ServerHandler, _, Request, [DstIn | DstInT], Timeout) whe
 	    error;
 	[FirstDst | DstT] ->
 	    DstList = [FirstDst | DstT],
-	    case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, Timeout, self()) of
+	    NewRequest = Request#request{uri=FirstDst#sipdst.uri},
+	    case transactionlayer:start_client_transaction(NewRequest, none, FirstDst, Branch, Timeout, self()) of
 		BranchPid when pid(BranchPid) ->
 		    final_start(Branch, ServerHandler, BranchPid, Request, DstList, Timeout, ApproxMsgSize);
 		{error, E} ->
@@ -308,12 +309,13 @@ start_next_client_transaction(State) when record(State, state) ->
 	    ApproxMsgSize = State#state.approxmsgsize,
 	    NewDstList = resolve_if_necessary(DstList, ApproxMsgSize),
 	    [FirstDst | _] = NewDstList,
+	    NewRequest = Request#request{uri=FirstDst#sipdst.uri},
 	    %% XXX ideally we should not try to contact the same host over UDP, when
 	    %% we receive a transport layer error for TCP, if there were any other
 	    %% equally preferred hosts in the SRV response for a destination.
 	    %% It makes more sense to try to connect to Proxy B over TCP/UDP than to
 	    %% try Proxy A over UDP when Proxy A over TCP has just failed.
-	    NewState = case transactionlayer:start_client_transaction(Request, none, FirstDst, NewBranch, Timeout, self()) of
+	    NewState = case transactionlayer:start_client_transaction(NewRequest, none, FirstDst, NewBranch, Timeout, self()) of
 			   BranchPid when pid(BranchPid) ->
 			       State#state{clienthandler=BranchPid, branch=NewBranch, dstlist=NewDstList};
 			   {error, E} ->
