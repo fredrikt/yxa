@@ -441,7 +441,7 @@ add_user_with_cookie(Env, Input) ->
     Userfind = dict:find("user", Args),
     Passwordfind = dict:find("password", Args),
     Cookiefind = dict:find("cookie", Args),
-    Cookie = cookie(),
+    Cookie = cookie(), % this makes the match below fail if the cookie is incorrect
     ["Content-type: text/plain\r\n\r\n",
      case {Userfind, Passwordfind, Cookiefind} of
 	 {error, _, _} ->
@@ -451,8 +451,7 @@ add_user_with_cookie(Env, Input) ->
 	 {_, _, error} ->
 	     "ERROR";
 	 {{ok, User}, {ok, Password}, {ok, Cookie}} ->
-	     Classes = [internal],
-	     phone:insert_user(User, Password, [], [], Classes),
+	     phone:insert_user_or_password(User, Password),
 	     "CREATED";
 	 _ ->
 	     "FORBIDDEN"
