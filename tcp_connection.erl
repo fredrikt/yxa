@@ -64,7 +64,7 @@ init([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
 	ok ->
 	    {IP, Port} = Remote,
 	    %% Start a receiver
-	    Receiver = tcp_receiver:start_link(SocketModule, Socket, Local, Remote),
+	    Receiver = tcp_receiver:start_link(SocketModule, Socket, Local, Remote, SipSocket),
 	    S = case Direction of
 		    in -> "Connection from";
 		    out -> "Connected to"
