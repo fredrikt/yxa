@@ -199,11 +199,21 @@ check_packet({request, Method, URI, Header, Body}, IP) ->
     sanity_check_uri("From:", FromURI, Header),
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
     sanity_check_uri("To:", ToURI, Header),
-    {CSeqNum, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    if
-	CSeqMethod /= Method ->
-	    throw({sipparseerror, Header, 400, "CSeq Method " ++ CSeqMethod ++ " does not match request Method " ++ Method});
-	true -> true
+    case sipheader:cseq(keylist:fetch("CSeq", Header)) of
+	{unparseable, CSeqStr} ->
+	    logger:log(error, "INVALID CSeq ~p in packet from ~s", [CSeqStr, IP]),
+	    throw({sipparseerror, Header, 400, "Invalid CSeq"});
+	{CSeqNum, CSeqMethod} ->
+	    case util:isnumeric(CSeqNum) of
+		false ->
+		    throw({sipparseerror, Header, 400, "CSeq number " ++ CSeqNum ++ " is not an integer"});	
+		_ -> true
+	    end,
+	    if
+		CSeqMethod /= Method ->
+		    throw({sipparseerror, Header, 400, "CSeq Method " ++ CSeqMethod ++ " does not match request Method " ++ Method});
+		true -> true
+	    end
     end;
 check_packet({response, Status, Reason, Header, Body}, IP) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
