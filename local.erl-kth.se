@@ -246,8 +246,16 @@ get_telephonenumber_for_user(User) ->
     sipuserdb:get_telephonenumber_for_user(User).
 
 get_forwards_for_users(Users) ->
-    sipuserdb:get_forwards_for_users(Users).
-
+    case sipuserdb:get_forwards_for_users(Users) of
+	{Forwards, Timeout, Localring} when list(Forwards) ->
+	    Func = fun(Forward) ->
+			   {Forward, none, "kth.se", none, []}
+		   end,
+	    NewForwards = lists:map(Func, Forwards),
+	    {NewForwards, Timeout, Localring};
+	Res ->
+	    Res
+    end.
 
 % Location lookup hooks
 %%%%%%%%%%%%%%%%%%%%%%%%

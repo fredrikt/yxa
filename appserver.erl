@@ -218,9 +218,10 @@ get_actions(URI) ->
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
-forward_call_actions({Forwards, Timeout, Localring}, Actions) ->
+forward_call_actions([{Forwards, Timeout, Localring}], Actions) ->
+    FwdTimeout = sipserver:get_env(appserver_forward_timeout, 40),
     Func = fun(Forward) ->
-		   {call, sipserver:get_env(appserver_forward_timeout, 40), {Forward, none, "kth.se", none, []}}
+		   {call, FwdTimeout, Forward}
 	   end,
     ForwardActions = lists:map(Func, Forwards),
     case Localring of
@@ -241,6 +242,8 @@ fetch_actions_for_users(Users) ->
 	nomatch ->
 	    Actions;
 	[] ->
+	    Actions;
+	{aborted, {no_exists, forward}} ->
 	    Actions;
 	Forwards when list(Forwards) ->
 	    forward_call_actions(Forwards, Actions);
