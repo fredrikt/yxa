@@ -2,6 +2,7 @@
 -export([parse/2, parse_packet/1, parse_packet/2, parseheader/1, parserequest/1]).
 
 -include("sipsocket.hrl").
+-include("siprecords.hrl").
 
 parse_packet(Packet) ->
     parse_packet(Packet, none).
@@ -17,13 +18,13 @@ parse_packet(Packet, Origin) ->
     case sipserver:origin2str(Origin, none) of
 	none -> true;
 	S ->
-	    % Extract receiver pid if present
+	    %% Extract receiver pid if present
 	    RStr = case Origin of
-		{_, _, _, SipSocket} when record(SipSocket, sipsocket) ->
-		    "(receiver: " ++ pid_to_list(SipSocket#sipsocket.pid) ++ ") ";
-	    _ ->
-		""
-	    end,
+		       _ when record(Origin, siporigin) ->
+			   "(receiver: " ++ pid_to_list(Origin#siporigin.receiver) ++ ") ";
+		       _ ->
+			   ""
+		   end,
 	    logger:log(debug, "Packet from ~s ~s:~n~s", [S, RStr, Packet])
     end,
     Packetfixed = siputil:linefix(Packet),
@@ -31,10 +32,8 @@ parse_packet(Packet, Origin) ->
 	0 ->
 	    {Packetfixed, ""};
 	Headerlen ->
-%	    io:format("Headerlen:~p~n", [Headerlen]),
 	    Header = string:substr(Packetfixed, 1, Headerlen),
 	    Body = string:substr(Packetfixed, Headerlen + 2),
-%	    io:format("Header:~p ~p~n", [Header, Body]),
 	    {Header, Body}
     end.
 
@@ -113,8 +112,8 @@ parserequest(Request) ->
 request({Method, URI}, Header, Body) ->
 %    io:format("Request:~p~n", [{Method, URI}]),
     URL = sipurl:parse(URI),
-    {request, Method, URL, Header, Body}.
+    #request{method=Method, uri=URL, header=Header, body=Body}.
 
 response({Status, Reason}, Header, Body) ->
 %    io:format("Response:~p~n", [Status]),
-    {response, list_to_integer(Status), Reason, Header, Body}.
+    #response{status=list_to_integer(Status), reason=Reason, header=Header, body=Body}.
