@@ -1,5 +1,5 @@
 -module(sipauth).
--export([check_auth/4, check_and_send_auth/7, get_response/5,
+-export([check_and_send_auth/7, get_response/5,
 	get_nonce/1, get_user_verified/2, get_challenge/0,
 	can_register/2]).
 
@@ -144,16 +144,16 @@ check_auth(Header, Method, Number, Tophone) ->
 can_register(Header, Number) ->
     case get_user_verified(Header, "REGISTER") of
 	false ->
-	    false;
+	    {false, []};
 	stale ->
-	    stale;
+	    {stale, []};
 	User ->
+	    {_, Numberlist, _, _} = get_passnumber(User),
 	    case Number of
 		User ->
-		    true;
+		    {true, Numberlist};
 		_ ->
-		    {_, Numberlist, _, _} = get_passnumber(User),
-		    lists:member(Number, Numberlist)
+		    {lists:member(Number, Numberlist), []}
 	    end
     end.
 
