@@ -1,7 +1,8 @@
 -module(sipauth).
 -export([check_and_send_auth/8, get_response/5,
-	get_nonce/1, get_user_verified/2, get_challenge/0,
-	can_register/2]).
+	 get_nonce/1, get_user_verified/2, check_and_send_relay/5,
+	 get_challenge/0,
+	 can_register/2]).
 
 % A1 = username ":" realm ":" password
 % A2 = Method ":" digest-uri
@@ -158,4 +159,14 @@ check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs
 		    siprequest:send_proxyauth_req(Header, Socket,
 					     get_challenge(), false)
 	    end
+    end.
+
+check_and_send_relay(Header, Socket, Func, Arg, Method) ->
+    case get_user_verified_proxy(Header, Method) of
+	false ->
+	    siprequest:send_proxyauth_req(Header, Socket, sipauth:get_challenge(), false);
+	stale ->
+	    siprequest:send_proxyauth_req(Header, Socket, sipauth:get_challenge(), true);
+	User ->
+	    apply(Func, [Header, Socket, Arg])
     end.
