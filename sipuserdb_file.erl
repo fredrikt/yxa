@@ -548,11 +548,8 @@ find_first_telephonenumber([]) ->
 find_first_telephonenumber([H | T]) when is_record(H, address) ->
     URL = sipurl:parse(H#address.address),
     IsNumericUser = util:isnumeric(URL#sipurl.user),
-    IsTelURL = case URL#sipurl.proto of
-		   "tel" -> true;
-		   _ -> false
-	       end,
-    IsE164User = case util:isnumeric(URL#sipurl.user) of
+    IsTelURL = (URL#sipurl.proto == "tel"),
+    IsE164User = case URL#sipurl.user of
 		     "+" ++ Rest ->
 			 util:isnumeric(Rest);
 		     _ ->
