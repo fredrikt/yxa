@@ -37,28 +37,29 @@ from([String]) ->
 contact([]) ->
     [];
     
-contact(["'*'"]) ->
-    logger:log(debug, "n: wildcard contact header (IS THIS SYNTAX USED?)"),
-    [{none, {wildcard, []}}];
-
-contact(["*"]) ->
-    logger:log(debug, "n: wildcard contact header"),
-    [{none, {wildcard, []}}];
-
-contact(["'*';" ++ Parameters]) ->
-    logger:log(debug, "n: wildcard contact header (parameters ~p) (IS THIS SYNTAX USED?)", [Parameters]),
-    [{none, {wildcard, [Parameters]}}];
-
-contact(["*;" ++ Parameters]) ->
-    logger:log(debug, "n: wildcard contact header (parameters ~p)", [Parameters]),
-    [{none, {wildcard, [Parameters]}}];
-
 contact([String | Rest]) ->
     Headers = comma(String),
     lists:append(lists:map(fun(H) ->
-				   name_header(H)
+				   parse_contact(H)
 			   end, Headers),
 		 contact(Rest)).
+
+parse_contact("'*'") ->
+    {none, {wildcard, []}};
+
+parse_contact("*") ->
+    {none, {wildcard, []}};
+
+parse_contact("'*';" ++ ParamStr) ->
+    Parameters = string:tokens(ParamStr, ";"),
+    {none, {wildcard, Parameters}};
+
+parse_contact("*;" ++ ParamStr) ->
+    Parameters = string:tokens(ParamStr, ";"),
+    {none, {wildcard, Parameters}};
+
+parse_contact(String) ->
+    name_header(String).
 
 contact_params({_, {wildcard, Parameters}}) ->
     param_to_dict(Parameters);
@@ -90,7 +91,6 @@ via_print(Via) ->
 via_params({Protocol, Hostport, Parameters}) ->
     param_to_dict(Parameters).
 
-% XXX skriv ut <URI> ist. f URI?
 contact_print(Contact) ->
     lists:map(fun(H) ->
 		      name_print(H)
