@@ -87,7 +87,7 @@ enumregexp([{Order1, Preference1, Regexp1} | Rest]) ->
 enumlookup(none) ->
     none;
 enumlookup("+" ++ Number) ->
-    L1 = enumalldomains(Number, ["e164.sunet.se", "e164.arpa"]),
+    L1 = enumalldomains(Number, ["e164.arpa", "e164.sunet.se"]),
     L2 = chooseenum(L1, "SIP+E2U"),
     L3 = lists:sort(fun sortenum/2, L2),
     L4 = enumregexp(L3),
@@ -104,7 +104,7 @@ isnaptr(Entry) ->
     end.
 
 naptrlookup(Name) ->
-    logger:log(debug, "naptrlookup: ~p~n", [Name]),
+    logger:log(debug, "naptrlookup: ~p", [Name]),
     case inet_res:nslookup(Name, in, ?T_NAPTR) of
 	{ok, Rec} ->
 	    ParseNAPTR = fun(Entry) ->
