@@ -124,7 +124,7 @@ get_user_verified(Header, Method, Authheader) ->
 	Nonce /= Nonce2 ->
 	    logger:log(normal, "Auth: Nonce ~p /= ~p, authentication failed for user ~p", [Nonce, Nonce2, User]),
 	    stale;
-	Timestamp < Now - 5 ->
+	Timestamp < Now - 30 ->
 	    logger:log(normal, "Auth: Timestamp ~p too old. Now: ~p, authentication failed for user ~p", [Timestamp, Now, User]),
 	    stale;
 	Timestamp > Now ->
