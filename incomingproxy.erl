@@ -124,21 +124,25 @@ request("CANCEL", URL, Header, Body, Socket, FromIP) ->
 % call verify_homedomain_user() to make sure the user is
 % authorized and authenticated to use this From: address
 request(Method, URL, Header, Body, Socket, FromIP) ->
+    Request = {Method, URL, Header, Body},
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
-    {User, Pass, Host, Port, Parameters} = FromURI,
+    {_, _, Host, _, _} = FromURI,
     case local:homedomain(Host) of
 	true ->
 	    LogStr = sipserver:make_logstr({request, Method, URL, Header, Body}, FromIP),
-	    Request = {Method, URL, Header, Body},
 	    case verify_homedomain_user(Socket, Request, LogStr) of
 		true ->
-		    do_request({Method, URL, Header, Body}, Socket, FromIP);
+		    do_request(Request, Socket, FromIP);
 		false ->
 		    logger:log(normal, "~s -> 403 Forbidden", [LogStr]),
-		    transactionlayer:send_response_request(Request, 403, "Forbidden")
+		    transactionlayer:send_response_request(Request, 403, "Forbidden");
+		Unknown ->
+		    logger:log(error, "~s: Unknown result from verify_homedomain_user() :~n~p",
+		    		[LogStr, Unknown]),
+		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
 	    end;
 	_ ->
-	    do_request({Method, URL, Header, Body}, Socket, FromIP)
+	    do_request(Request, Socket, FromIP)
     end.
 
 verify_homedomain_user(Socket, Request, LogStr) ->
@@ -171,7 +175,8 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 		    end,
 		    logger:log(Prio, "~s -> Request from unauthorized homedomain user, sending challenge",
 		    		[LogStr]),
-		    siprequest:send_proxyauth_req(dropack_to(Header), Socket, sipauth:get_challenge(), false);
+		    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
+		    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
 		Unknown ->
 		    logger:log(error, "request: Unknown result from local:get_user_verified_proxy() :~n~p", [Unknown]),
 		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
@@ -196,13 +201,13 @@ do_request(Request, Socket, FromIP) ->
     case Location of
 	none ->
 	    logger:log(normal, "~s: incomingproxy: 404 Not found", [LogTag]),
-	    transactionlayer:send_response_request(Request, 404, "Not Found");
+	    transactionlayer:send_response_handler(THandler, 404, "Not Found");
 	{error, Errorcode} ->
 	    logger:log(normal, "~s: incomingproxy: Error ~p", [LogTag, Errorcode]),
-	    transactionlayer:send_response_request(Request, Errorcode, "Unknown code");
+	    transactionlayer:send_response_handler(THandler, Errorcode, "Unknown code");
 	{response, Returncode, Text} ->
 	    logger:log(normal, "~s: incomingproxy: Response ~p ~s", [LogTag, Returncode, Text]),
-	    transactionlayer:send_response_request(Request, Returncode, Text);
+	    transactionlayer:send_response_handler(THandler, Returncode, Text);
 	{proxy, Loc} ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
 	    proxy_request(THandler, Request, Loc, []);
@@ -210,7 +215,7 @@ do_request(Request, Socket, FromIP) ->
 	    logger:log(normal, "~s: incomingproxy: Redirect ~s", [LogTag, sipurl:print(Loc)]),
 	    Contact = [{none, Location}],
 	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
-	    transactionlayer:send_response_request(Request, 302, "Moved Temporarily", ExtraHeaders);
+	    transactionlayer:send_response_handler(THandler, 302, "Moved Temporarily", ExtraHeaders);
 	{relay, Loc} ->
 	    relay_request(THandler, Request, Loc, LogTag);
 	{forward, Host, Port} ->
@@ -224,7 +229,7 @@ do_request(Request, Socket, FromIP) ->
 	    request_to_me(THandler, Request, LogStr);
 	_ ->
 	    logger:log(error, "~s: incomingproxy: Invalid Location ~p", [LogTag, Location]),
-	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
+	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
     end.
 
 proxy_request(THandler, Request, DstURL, Parameters) ->
@@ -267,15 +272,15 @@ relay_request(THandler, Request, DstURI, LogTag) ->
 	stale ->
 	    logger:log(debug, "Relay: STALE authentication, sending challenge"),
 	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
-	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
+	    transactionlayer:send_response_handler(THandler, 407, "Proxy Authentication Required", ExtraHeaders);
 	false ->
-	    logger:log(debug, "Relay: Sending challenge"),
+	    logger:log(debug, "Relay: Failed authentication, sending challenge"),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required", [LogTag, sipurl:print(DstURI)]),
 	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
-	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
+	    transactionlayer:send_response_handler(THandler, 407, "Proxy Authentication Required", ExtraHeaders);
 	Unknown ->
 	    logger:log(error, "relay_request: Unknown result from sipauth:get_user_verified_proxy() :~n~p", [Unknown]),
-	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
+	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
     end.
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
@@ -368,21 +373,6 @@ request_to_remote(URL) ->
 	Location ->
 	    logger:log(debug, "Routing: local:lookup_remote_url() ~s -> ~p", [sipurl:print(URL), Location]),
 	    Location
-    end.
-
-% Set a To-tag that includes a magic cookie to recognize the ACK of one of our
-% challenges without having to keep state, except if there already is a to-tag
-dropack_to(Header) ->
-    To = keylist:fetch("To", Header),
-    case sipheader:get_tag(To) of
-	none ->
-	    {DistplayName, ToURI} = sipheader:to(To),
-	    MyHostname = siprequest:myhostname(),
-	    NewTo = lists:concat([sipheader:to_print({DistplayName, ToURI}), ";tag=",
-	    			siprequest:generate_branch(), "-", MyHostname, "-drop-ACK"]),
-	    keylist:set("To", [NewTo], Header);
-	_ ->
-	    Header
     end.
 
 get_branch_from_handler(TH) ->
