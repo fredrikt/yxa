@@ -248,18 +248,26 @@ determine_sip_location(URI) when is_record(URI, sipurl) ->
 	{relay, Loc} ->
 	    {proxy, Loc};
 	none ->
-	    %% Parse configured sipproxy but exchange user with user from Request-URI
-	    DefaultProxy = sipserver:get_env(sipproxy, none),
-	    case sipurl:parse_url_with_default_protocol("sip", DefaultProxy) of
+	    case get_sipproxy() of
 		ProxyURL when is_record(ProxyURL, sipurl) ->
+		    %% Use configured sipproxy but exchange user with user from Request-URI
 		    ProxyURL#sipurl{user=User, pass=none};
-		error ->
+		none ->
 		    %% No ENUM and no (valid) SIP-proxy configured, return failure so
 		    %% that the PBX on the other side of the gateway can fall back to
 		    %% PSTN or something
-		    Status = sipserver:get_env(pstnproxy_no_sip_destination_code, 480),
+		    Status = sipserver:get_env(pstnproxy_no_sip_dst_code, 480),
 		    {reply, Status, "No destination found for number " ++ User}
 	    end
+    end.
+
+%% part of determine_sip_location/1
+get_sipproxy() ->
+    case sipserver:get_env(sipproxy, none) of
+	none ->
+	    none;
+	DefaultProxy ->
+	    sipurl:parse_url_with_default_protocol("sip", DefaultProxy)
     end.
 
 %%--------------------------------------------------------------------
