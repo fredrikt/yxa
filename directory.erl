@@ -38,11 +38,11 @@ recvloop(Server, Handle, QueryCount) ->
     {NewHandle, NewQueryCount} = receive
 	{simple_search, Pid, Opaque, {QueryServer, Type, In, Attribute}} ->
 	    {NewHandle1, Res} = ldapsearch_wrapper(Server, real_ldapsearch_simple, Handle, [Type, In, Attribute]),
-	    Pid ! {ldap_client, Opaque, Res},
+	    util:safe_signal("LDAP client: ", Pid, {ldap_client, Opaque, Res}),
 	    {NewHandle1, QueryCount + 1} ;
 	{search, Pid, Opaque, {QueryServer, Type, In, Attributes}} ->
 	    {NewHandle1, Res} = ldapsearch_wrapper(Server, real_ldapsearch, Handle, [Type, In, Attributes]),
-	    Pid ! {ldap_client, Opaque, Res},
+	    util:safe_signal("LDAP client: ", Pid, {ldap_client, Opaque, Res}),
 	    {NewHandle1, QueryCount + 1};
 	{ping} ->
 	    logger:log(debug, "LDAP client: Pong, handle ~p server ~p query count ~p",
@@ -260,7 +260,7 @@ send_to_ldap_client(Function, Arguments) ->
     end.
     
 send_to_ldap_client1(Function, Arguments) ->
-    ldap_client ! {Function, self(), opaque, Arguments},
+    util:safe_signal("LDAP client: ", ldap_client, {Function, self(), opaque, Arguments}),
     receive     
 	{ldap_client, opaque, Reply} ->
 	    Reply;
@@ -270,8 +270,8 @@ send_to_ldap_client1(Function, Arguments) ->
 	    error
     after
 	1500 ->
-	    case erlang:whereis(ldap_client) of
-		Pid when pid(Pid) ->
+	    case util:safe_is_process_alive(ldap_client) of
+		{true, Pid} ->
 		    logger:log(error, "Directory: Communication with ldap_client timed out, killing ldap_client ~p and answering 'error' to query : ~p ~p",
 				[Pid, Function, Arguments]),
 		    Pid ! {ping},
