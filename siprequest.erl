@@ -84,49 +84,26 @@ rewrite_route(Header, URI) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
     case Route of
         [{_, NewDest} | NewRoute1] ->
-	    case route_matches_me({none, NewDest}) of
+	    {NewRoute, NewURI} = case is_loose_router({none, NewDest}) of
 		true ->
-		    logger:log(debug, "Routing: First Route ~p matches me, removing it.", [sipheader:contact_print([{none, NewDest}])]),
-		    case NewRoute1 of
-			[] ->
-			    rewrite_route(keylist:delete("Route", Header), URI);
-			_ ->
-			    rewrite_route(keylist:set("Route", sipheader:contact_print(NewRoute1), Header), URI)
-		    end;
+		    {NewRoute1, URI};
+		false ->
+		    logger:log(debug, "Routing: Destination ~p is a strict (RFC2543) router, appending final destination URI ~p to Route header",
+				[sipurl:print(NewDest), sipurl:print(URI)]),
+		    NewRoute2 = lists:append(NewRoute1, [{none, URI}]),
+		    {NewRoute2, NewDest}
+	    end,
+	    logger:log(debug, "Routing: New destination is ~p, new Request-URI is ~p", [sipurl:print(NewDest), sipurl:print(NewURI)]),
+	    case NewRoute of
+		[] ->
+		    {keylist:delete("Route", Header), NewDest, NewURI};
 		_ ->
-		    {NewRoute, NewURI} = case is_loose_router({none, NewDest}) of
-			true ->
-			    {NewRoute1, URI};
-			false ->
-			    logger:log(debug, "Routing: Destination ~p is a strict (RFC2543) router, appending final destination URI ~p to Route header",
-					[sipurl:print(NewDest), sipurl:print(URI)]),
-			    NewRoute2 = lists:append(NewRoute1, [{none, URI}]),
-			    {NewRoute2, NewDest}
-		    end,
-		    logger:log(debug, "Routing: New destination is ~p, new Request-URI is ~p", [sipurl:print(NewDest), sipurl:print(NewURI)]),
-		    case NewRoute of
-			[] ->
-			    {keylist:delete("Route", Header), NewDest, NewURI};
-			_ ->
-			    {keylist:set("Route", sipheader:contact_print(NewRoute),
-			     Header), NewDest, NewURI}
-		    end
+		    {keylist:set("Route", sipheader:contact_print(NewRoute),
+		     Header), NewDest, NewURI}
 	    end;
 	[] ->
 	    {Header, URI, URI}
     end.
-
-route_matches_me(Route) ->
-    {_, {_, _, Host, RoutePort, _}} = Route,
-    Port = default_port(RoutePort),
-    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip()]),
-    HostnameIsMyHostname = util:casegrep(Host, HostnameList),
-    MyPort = default_port(sipserver:get_env(listenport, none)),
-    if
-	Port /= MyPort -> false;
-	HostnameIsMyHostname /= true -> false;
-	true ->	true
-    end.	   
 
 is_loose_router(Route) ->
     case dict:find("lr", sipheader:contact_params(Route)) of

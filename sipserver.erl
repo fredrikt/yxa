@@ -143,8 +143,9 @@ process_parsed_packet(Socket, {request, Method, URI, Header, Body}, IP, InPortNo
 	_ ->
 	    {{none, URI}, NewHeader1}
     end,
-    LogStr = make_logstr({request, Method, NewURI, NewHeader, Body}, IP),
-    {{request, Method, NewURI, NewHeader, Body}, LogStr};
+    NewHeader2 = remove_route_matching_me(NewHeader),
+    LogStr = make_logstr({request, Method, NewURI, NewHeader2, Body}, IP),
+    {{request, Method, NewURI, NewHeader2, Body}, LogStr};
 process_parsed_packet(Socket, {response, Status, Reason, Header, Body}, IP, InPortNo) ->
     check_packet({response, Status, Reason, Header, Body}, IP),
     % Check that top-Via is ours (RFC 3261 18.1.2),
@@ -187,6 +188,39 @@ received_from_strict_router(URI, Header) ->
 	HeaderHasRoute /= true -> false;
 	true -> true
     end.
+
+remove_route_matching_me(Header) ->
+    Route = sipheader:contact(keylist:fetch("Route", Header)),
+    case Route of
+        [{_, FirstRoute} | NewRoute] ->
+	    case route_matches_me({none, FirstRoute}) of
+		true ->
+		    logger:log(debug, "Sipserver: First Route ~p matches me, removing it.",
+		    		[sipheader:contact_print([{none, FirstRoute}])]),
+		    case NewRoute of
+			[] ->
+			    keylist:delete("Route", Header);
+			_ ->
+			    keylist:set("Route", sipheader:contact_print(NewRoute), Header)
+		    end;
+		_ ->
+		    Header
+	    end;
+	_ ->
+	    Header
+    end.
+
+route_matches_me(Route) ->
+    {_, {_, _, Host, RoutePort, _}} = Route,
+    Port = siprequest:default_port(RoutePort),
+    HostnameList = lists:append(get_env(myhostnames, []), [siphost:myip()]),
+    HostnameIsMyHostname = util:casegrep(Host, HostnameList),
+    MyPort = siprequest:default_port(get_env(listenport, none)),
+    if
+	Port /= MyPort -> false;
+	HostnameIsMyHostname /= true -> false;
+	true ->	true
+    end.	   
 
 topvia(Header) ->
     Via = sipheader:via(keylist:fetch("Via", Header)),
