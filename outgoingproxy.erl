@@ -31,7 +31,7 @@ request("ACK", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
 
 request("REGISTER", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     URL = {none, none, "kth.se", none, []},
-    siprequest:send_redirect(none, URL, Header, Socket);
+    siprequest:send_redirect(URL, Header, Socket);
 
 request(Method, {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     {NewHost, NewPort} = case {User, Host} of
@@ -43,7 +43,7 @@ request(Method, {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
 				 {Host, Port}
 			 end,
     URL = {User, Pass, NewHost, NewPort, []},
-    siprequest:send_redirect(none, URL, Header, Socket).
+    siprequest:send_redirect(URL, Header, Socket).
 
 response(Status, Reason, Header, Body, Socket) ->
     true.
