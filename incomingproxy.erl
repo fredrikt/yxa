@@ -48,7 +48,7 @@ lookupdefault(User) ->
 	true ->
 	    case dnsutil:enumlookup(globalrewrite(User)) of
 		none ->
-		    {proxy, {User, none, "sip-pstn.kth.se", none, []}};
+		    {proxy, {User, none, sipserver:get_env(defaultroute), none, []}};
 		URL ->
 		    {redirect, sipurl:parse(URL)}
 	    end;
