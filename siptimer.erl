@@ -26,7 +26,7 @@
 	 timeout2str/1,
 	 extract/2,
 	 empty/0,
-	 length/1
+	 get_length/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -38,9 +38,9 @@
 %%====================================================================
 %% External functions
 %%====================================================================
-add_timer(0, _, _, TimerList) when record(TimerList, siptimerlist) ->
+add_timer(0, _, _, TimerList) when is_record(TimerList, siptimerlist) ->
     TimerList;
-add_timer(Timeout, Description, AppSignal, TimerList) when record(TimerList, siptimerlist) ->
+add_timer(Timeout, Description, AppSignal, TimerList) when is_record(TimerList, siptimerlist) ->
     Ref = make_ref(),
     {ok, NewTimerRef} = timer:send_after(Timeout, {siptimer, Ref, Description}),
     TimeoutStr = timeout2str(Timeout),
@@ -51,12 +51,12 @@ add_timer(Timeout, Description, AppSignal, TimerList) when record(TimerList, sip
 empty() ->
     make_siptimerlist([]).
 
-reset_timers(ResetList, TimerList) when record(ResetList, siptimerlist), record(TimerList, siptimerlist) ->
+reset_timers(ResetList, TimerList) when is_record(ResetList, siptimerlist), is_record(TimerList, siptimerlist) ->
     reset_timers2(ResetList#siptimerlist.list, TimerList).
 
 reset_timers2([], TimerList) ->
     TimerList;
-reset_timers2([H|T], TimerList) when record(H, siptimer), record(TimerList, siptimerlist) ->
+reset_timers2([H | _T], TimerList) when is_record(H, siptimer), is_record(TimerList, siptimerlist) ->
     Ref = H#siptimer.ref,
     case get_timer(Ref, TimerList) of
         none ->
@@ -75,7 +75,7 @@ reset_timers2([H|T], TimerList) when record(H, siptimer), record(TimerList, sipt
 	    update_timer(ThisTimer#siptimer{timer=NewTimerRef}, TimerList)
     end.
 
-revive_timer(SipTimer, NewTimeout, TimerList) when record(SipTimer, siptimer), record(TimerList, siptimerlist) ->
+revive_timer(SipTimer, NewTimeout, TimerList) when is_record(SipTimer, siptimer), is_record(TimerList, siptimerlist) ->
     Ref = SipTimer#siptimer.ref,
     case get_timer(Ref, TimerList) of
         none ->
@@ -89,7 +89,7 @@ revive_timer(SipTimer, NewTimeout, TimerList) when record(SipTimer, siptimer), r
 	    update_timer(ThisTimer#siptimer{timeout=NewTimeout,timer=NewTimerRef}, TimerList)
     end.
 	
-update_timer(SipTimer, TList) when record(SipTimer, siptimer), record(TList, siptimerlist) ->
+update_timer(SipTimer, TList) when is_record(SipTimer, siptimer), is_record(TList, siptimerlist) ->
     Ref = SipTimer#siptimer.ref,
     make_siptimerlist(update_timer2(Ref, SipTimer, TList#siptimerlist.list, TList)).
     
@@ -98,44 +98,44 @@ update_timer2(Ref, _, [], TList) ->
     logger:log(error, "Siptimer: Asked to update a timer with ref=~p, but I can't find it in list :~n~p",
 		[Ref, debugfriendly(TList)]),
     [];
-update_timer2(Ref, NewT, [H | T], TList) when record(H, siptimer), H#siptimer.ref == Ref ->
+update_timer2(Ref, NewT, [H | T], _TList) when is_record(H, siptimer), H#siptimer.ref == Ref ->
     [NewT | T];
-update_timer2(Ref, NewT, [H | T], TList) when record(H, siptimer) ->
+update_timer2(Ref, NewT, [H | T], TList) when is_record(H, siptimer) ->
     lists:append([H], update_timer2(Ref, NewT, T, TList)).
 
 
-get_timer(Ref, TimerList) when record(TimerList, siptimerlist) ->
+get_timer(Ref, TimerList) when is_record(TimerList, siptimerlist) ->
     get_timer2(Ref, TimerList#siptimerlist.list).
 
-get_timer2(Ref, []) ->
+get_timer2(_Ref, []) ->
     none;
-get_timer2(Ref, [H | T]) when record(H, siptimer), H#siptimer.ref == Ref ->
+get_timer2(Ref, [H | _T]) when is_record(H, siptimer), H#siptimer.ref == Ref ->
     H;
-get_timer2(Ref, [H | T]) when record(H, siptimer) ->
+get_timer2(Ref, [H | T]) when is_record(H, siptimer) ->
     get_timer2(Ref, T).
 
 
-get_timers_appsignal_matching(AppSignal, TimerList) when record(TimerList, siptimerlist) ->
+get_timers_appsignal_matching(AppSignal, TimerList) when is_record(TimerList, siptimerlist) ->
     make_siptimerlist(get_timers_something_matching2(appsignal, AppSignal, TimerList#siptimerlist.list, [])).
 
 
-extract(Values, SipTimer) when record(SipTimer, siptimer) ->
+extract(Values, SipTimer) when is_record(SipTimer, siptimer) ->
     extract(Values, SipTimer, []).
 
-extract([], SipTimer, Res) when record(SipTimer, siptimer) ->
+extract([], SipTimer, Res) when is_record(SipTimer, siptimer) ->
     Res;
-extract([ref | T], SipTimer, Res) when record(SipTimer, siptimer) ->
+extract([ref | T], SipTimer, Res) when is_record(SipTimer, siptimer) ->
     extract(T, SipTimer, lists:append(Res, [SipTimer#siptimer.ref]));
-extract([timeout | T], SipTimer, Res) when record(SipTimer, siptimer) ->
+extract([timeout | T], SipTimer, Res) when is_record(SipTimer, siptimer) ->
     extract(T, SipTimer, lists:append(Res, [SipTimer#siptimer.timeout]));
-extract([description | T], SipTimer, Res) when record(SipTimer, siptimer) ->
+extract([description | T], SipTimer, Res) when is_record(SipTimer, siptimer) ->
     extract(T, SipTimer, lists:append(Res, [SipTimer#siptimer.description]));
-extract([starttime | T], SipTimer, Res) when record(SipTimer, siptimer) ->
+extract([starttime | T], SipTimer, Res) when is_record(SipTimer, siptimer) ->
     extract(T, SipTimer, lists:append(Res, [SipTimer#siptimer.starttime]));
-extract([appsignal | T], SipTimer, Res) when record(SipTimer, siptimer) ->
+extract([appsignal | T], SipTimer, Res) when is_record(SipTimer, siptimer) ->
     extract(T, SipTimer, lists:append(Res, [SipTimer#siptimer.appsignal])).
 
-cancel_timer(SipTimer, TimerList) when record(SipTimer, siptimer), record(TimerList, siptimerlist) ->
+cancel_timer(SipTimer, TimerList) when is_record(SipTimer, siptimer), is_record(TimerList, siptimerlist) ->
     Timer = SipTimer#siptimer.timer,
     Ref = SipTimer#siptimer.ref,
     Descr = SipTimer#siptimer.description,
@@ -143,17 +143,17 @@ cancel_timer(SipTimer, TimerList) when record(SipTimer, siptimer), record(TimerL
     timer:cancel(Timer),
     make_siptimerlist(del_ref(Ref, TimerList#siptimerlist.list)).
 
-del_ref(Ref, []) ->
+del_ref(_Ref, []) ->
     [];
-del_ref(Ref, [H | T]) when record(H, siptimer), H#siptimer.ref == Ref ->
+del_ref(Ref, [H | T]) when is_record(H, siptimer), H#siptimer.ref == Ref ->
     del_ref(Ref, T);
-del_ref(Ref, [H | T]) when record(H, siptimer) ->
+del_ref(Ref, [H | T]) when is_record(H, siptimer) ->
     [H | del_ref(Ref, T)].
 
 stop_timers([]) ->
     logger:log(debug, "Siptimer: Asked to stop timers but none were supplied"),
     error;
-stop_timers(TimerList) when record(TimerList, siptimerlist) ->
+stop_timers(TimerList) when is_record(TimerList, siptimerlist) ->
     ok = stop_timers2(TimerList#siptimerlist.list).
 
 stop_timers2([]) ->
@@ -166,19 +166,19 @@ stop_timers2([SipTimer | Rest]) ->
     timer:cancel(Timer),
     stop_timers2(Rest).
 
-cancel_timers(CancelTimers, TimerList) when record(CancelTimers, siptimerlist), record(TimerList, siptimerlist) ->
+cancel_timers(CancelTimers, TimerList) when is_record(CancelTimers, siptimerlist), is_record(TimerList, siptimerlist) ->
     cancel_timers(CancelTimers#siptimerlist.list, TimerList);
 
-cancel_timers([], TimerList) when record(TimerList, siptimerlist) ->
+cancel_timers([], TimerList) when is_record(TimerList, siptimerlist) ->
     TimerList;
-cancel_timers([H | T], TimerList) when record(H, siptimer), record(TimerList, siptimerlist) ->
+cancel_timers([H | T], TimerList) when is_record(H, siptimer), is_record(TimerList, siptimerlist) ->
     NewTList = cancel_timer(H, TimerList),
     cancel_timers(T, NewTList).
 
 cancel_all_timers([]) ->
     logger:log(debug, "Siptimer: Asked to cancel all timers but there are no timers to cancel"),
     empty();
-cancel_all_timers(TimerList) when record(TimerList, siptimerlist) ->
+cancel_all_timers(TimerList) when is_record(TimerList, siptimerlist) ->
     logger:log(debug, "Siptimer: Cancelling all timers :"),
     lists:map(fun (SipTimer) ->
 			Timer = SipTimer#siptimer.timer,
@@ -189,22 +189,22 @@ cancel_all_timers(TimerList) when record(TimerList, siptimerlist) ->
 		end, TimerList#siptimerlist.list),
     empty().
 
-cancel_timers_with_appsignal(AppSignal, TimerList) when record(TimerList, siptimerlist) ->
+cancel_timers_with_appsignal(AppSignal, TimerList) when is_record(TimerList, siptimerlist) ->
     case get_timers_appsignal_matching(AppSignal, TimerList) of
-	Foo when record(Foo, siptimerlist), Foo#siptimerlist.list == [] ->
+	Foo when is_record(Foo, siptimerlist), Foo#siptimerlist.list == [] ->
 	%    logger:log(debug, "Siptimer: No timers with AppSignal ~p found in TimerList :~n~p",
 	%		[AppSignal, debugfriendly(TimerList)]),
 	    TimerList;
-	CancelTimers when record(CancelTimers, siptimerlist) ->
+	CancelTimers when is_record(CancelTimers, siptimerlist) ->
 	    logger:log(debug, "Siptimer: Cancelling all timers with AppSignal ~p :", [AppSignal]),
 	    cancel_timers(CancelTimers, TimerList)
     end.
 
-debugfriendly(TimerList) when record(TimerList, siptimerlist) ->
+debugfriendly(TimerList) when is_record(TimerList, siptimerlist) ->
     debugfriendly(TimerList#siptimerlist.list);
 debugfriendly([]) ->
     [];
-debugfriendly([H | Rest]) when record(H, siptimer) ->
+debugfriendly([H | Rest]) when is_record(H, siptimer) ->
     RefStr = io_lib:format("~p", [H#siptimer.ref]),
     Descr = H#siptimer.description,
     SignalStr = io_lib:format("~p", [H#siptimer.appsignal]),
@@ -217,7 +217,7 @@ timeout2str(500) ->
 timeout2str(Timeout) ->
     integer_to_list(Timeout div 1000).
 
-length(TimerList) when is_record(TimerList, siptimerlist) ->
+get_length(TimerList) when is_record(TimerList, siptimerlist) ->
     length(TimerList#siptimerlist.list).
 
 
@@ -232,14 +232,14 @@ make_siptimerlist(In) ->
 
 make_siptimerlist2([], Res) ->
     Res;
-make_siptimerlist2([H | T], Res) when record(H, siptimer) ->
+make_siptimerlist2([H | T], Res) when is_record(H, siptimer) ->
     make_siptimerlist2(T, lists:append(Res, [H]));
 make_siptimerlist2(In, Res) ->
     erlang:fault("Trying to make siptimerlist of something else than siptimers!", [In, Res]).
 
-get_timers_something_matching2(Key, Value, [], Res) ->
+get_timers_something_matching2(_Key, _Value, [], Res) ->
     Res;
-get_timers_something_matching2(appsignal, Value, [H | T], Res) when record(H, siptimer), H#siptimer.appsignal == Value ->
+get_timers_something_matching2(appsignal, Value, [H | T], Res) when is_record(H, siptimer), H#siptimer.appsignal == Value ->
     get_timers_something_matching2(appsignal, Value, T, lists:append(Res, [H]));
-get_timers_something_matching2(Key, Value, [H | T], Res) when record(H, siptimer) ->
+get_timers_something_matching2(Key, Value, [H | T], Res) when is_record(H, siptimer) ->
     get_timers_something_matching2(Key, Value, T, Res).    
