@@ -88,7 +88,7 @@ lookupdefault(User) ->
     end.
 
 homedomain(Domain) ->
-    util:casecompare(sipserver:get_env(homedomain), Domain).
+    util:casegrep(Domain, sipserver:get_env(homedomain)).
 
 isours(Number) ->
     case phone:get_users_for_number(Number) of
