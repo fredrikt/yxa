@@ -76,7 +76,9 @@ enumlookup(Number) ->
 	nomatch ->
 	    none;
 	E164 ->
-	    dnsutil:enumlookup(E164)
+	    Res = dnsutil:enumlookup(E164),
+	    logger:log(normal, "ENUM: ~p -> ~p", [E164, Res]),
+	    Res
     end.
 
 lookupdefault(User) ->
