@@ -3,19 +3,18 @@
 %%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
 %%% Descrip.: Logger is the process that writes our log messages
 %%%           to disk (and erlang shell).
+%%%
 %%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%
-%%% Note: binary data is much faster to write to disk (~ x100 times)
-%%%       and may be preferable if this module is used with higher 
-%%%       loads. 
 %%% Note: with the current implementation - the logger being 
 %%%       registered as 'logger' there can be only one logger per 
 %%%       node. Running the same application on several nodes both 
 %%%       wich have the same file:get_cwd/0 will result in both 
 %%%       using the same log files UNLESS they have a different
 %%%       configured logger_logbasename.
-%%% Note: erlang/OTP has it's own log module - disk_log, that among 
-%%%       other things is able to do log rotation
+%%% Note: Erlang/OTP has it's own log module - disk_log, that among 
+%%%       other things is able to do log rotation. People having used
+%%%       it is not all happy though.
 %%% 
 %%%-------------------------------------------------------------------
 -module(logger).
@@ -72,6 +71,9 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
+%% benchmarking shows no real speed improvement by delayed_write,
+%% just annoyance
+-define(FILE_OPTS, [append, raw, binary]).
 
 %%====================================================================
 %% External functions
@@ -107,10 +109,11 @@ start_link(AppName) ->
 %% Descrip.: log a log entry
 %% Returns : ok
 %%--------------------------------------------------------------------
-log(Level, Format) when atom(Level), list(Format) ->
+log(Level, Format) when is_atom(Level), is_list(Format) ->
     log(Level, Format, []).
 
-log(Level, Format, Arguments) when atom(Level), list(Format), list(Arguments) ->
+log(Level, Format, Arguments) when is_atom(Level), is_list(Format), 
+				   is_list(Arguments) ->
     do_log(Level, Format, Arguments).
 
 %%--------------------------------------------------------------------
@@ -158,15 +161,15 @@ init([Basename]) ->
 	    ok;
 	Size ->
 	    %% Set up a timer to do the size checking every 60 seconds
-	    {ok, T} = timer:send_interval(60 * 1000, logger, {check_logfile_size, Size})
+	    {ok, _T} = timer:send_interval(60 * 1000, logger, {check_logfile_size, Size})
     end,
     %% Construct log filenames and open/create them
     DebugFn = lists:concat([Basename, ".debug"]),
     NormalFn = lists:concat([Basename, ".log"]),
     ErrorFn = lists:concat([Basename, ".error"]),
-    {ok, DebugIoDevice} = safe_open(DebugFn, [append]),
-    {ok, NormalIoDevice} = safe_open(NormalFn, [append]),
-    {ok, ErrorIoDevice} = safe_open(ErrorFn, [append]),
+    {ok, DebugIoDevice} = safe_open(DebugFn, ?FILE_OPTS),
+    {ok, NormalIoDevice} = safe_open(NormalFn, ?FILE_OPTS),
+    {ok, ErrorIoDevice} = safe_open(ErrorFn, ?FILE_OPTS),
     {ok, #state{debug_iodev=DebugIoDevice, debug_fn=DebugFn,
 		normal_iodev=NormalIoDevice, normal_fn=NormalFn,
 		error_iodev=ErrorIoDevice, error_fn=ErrorFn}}.
@@ -202,24 +205,24 @@ init([Basename]) ->
 %%           sources than the timer, but can of course be used
 %%           manually (from the erl shell) on a running system.
 %%--------------------------------------------------------------------
-handle_call({rotate_logs}, From, State) ->
+handle_call({rotate_logs}, _From, State) ->
     %% Create rotation filename suffix from current time
     Suffix = create_filename_time_suffix(),
     {Res, NewState} = rotate([debug, normal, error], Suffix, State),
     {reply, Res, NewState};
 
-handle_call({rotate_logs, Suffix}, From, State) ->
+handle_call({rotate_logs, Suffix}, _From, State) ->
     {Res, NewState} = rotate([debug, normal, error], Suffix, State),
     {reply, Res, NewState};
 
-handle_call({rotate_logs, Suffix, Logs}, From, State) when list(Logs) ->
+handle_call({rotate_logs, Suffix, Logs}, _From, State) when list(Logs) ->
     {Res, NewState} = rotate(Logs, Suffix, State),
     {reply, Res, NewState};
 
-handle_call({quit}, From, State) ->
+handle_call({quit}, _From, State) ->
     {stop, normal, {ok}, State};
 
-handle_call(Unknown, From, State) ->
+handle_call(Unknown, _From, State) ->
     logger:log(error, "Logger: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "unknown gen_server call in logger"}, State}.
 
@@ -234,30 +237,27 @@ handle_call(Unknown, From, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State)
-%%           Msg = {log, Level, TimeStamp, Format, Arguments, Pid}
-%%           Level     = debug | normal | error
-%%           TimeStamp = string()
-%%           Format    = string(), io_lib:format() format
-%%           Arguments = list() of term(), io_lib:format() arguments
-%%           Pid       = pid(), log message originators pid
+%%           Msg = {log, Level, Data}
+%%           Level = debug | normal | error
+%%           Data  = binary(), what we should write to the log file
 %% Descrip.: Write a log message to one or more of our log files (and
 %%           to stdout if Level /= debug). Having this as a cast()
-%%           makes the log/2 and log/3 calls asynchronous.
+%%           makes the log/2 and log/3 calls non-blocking.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_cast({log, Level, TimeStamp, Format, Arguments, Pid}, State) ->
+handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data) ->
     case Level of
 	error ->
-	    log_to_device(State#state.error_iodev, Level, TimeStamp, Format, Arguments, Pid),
-	    log_to_device(State#state.normal_iodev, Level, TimeStamp, Format, Arguments, Pid),
-	    log_to_device(State#state.debug_iodev, Level, TimeStamp, Format, Arguments, Pid), 
-	    log_to_stdout(Level, TimeStamp, Format, Arguments, Pid);
+	    log_to_device(State#state.error_iodev, Data),
+	    log_to_device(State#state.normal_iodev, Data),
+	    log_to_device(State#state.debug_iodev, Data), 
+	    log_to_stdout(Data);
 	normal ->
-	    log_to_device(State#state.normal_iodev, Level, TimeStamp, Format, Arguments, Pid),
-	    log_to_device(State#state.debug_iodev, Level, TimeStamp, Format, Arguments, Pid),
-	    log_to_stdout(Level, TimeStamp, Format, Arguments, Pid);
+	    log_to_device(State#state.normal_iodev, Data),
+	    log_to_device(State#state.debug_iodev, Data),
+	    log_to_stdout(Data);
 	debug ->
-	    log_to_device(State#state.debug_iodev, Level, TimeStamp, Format, Arguments, Pid)
+	    log_to_device(State#state.debug_iodev, Data)
     end,
     {noreply, State};
 
@@ -304,7 +304,7 @@ handle_info(Info, State) ->
 %% Description: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, State) ->
     file:close(State#state.error_iodev),
     file:close(State#state.normal_iodev),
     file:close(State#state.debug_iodev),
@@ -315,7 +315,7 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%====================================================================
@@ -327,7 +327,7 @@ safe_open(Filename, Args) ->
     case file:open(Filename, Args) of
 	{ok, FD} ->
 	    {ok, FD};
-	{error, E} ->
+	{error, _E} ->
 	    erlang:fault("Error opening logfile", [Filename, Args])
     end.
 
@@ -344,25 +344,13 @@ safe_open(Filename, Args) ->
 %%           logger with out feedback, if the logger is run without
 %%           a erlang shell to look at
 %%--------------------------------------------------------------------
-log_to_device(IoDevice, Level, TimeStamp, Format, Arguments, Pid) ->
-    io:format(IoDevice, "~s ~p~p:", [TimeStamp, Level, Pid]),
-    case catch io:format(IoDevice, Format, Arguments) of
-	{'EXIT', E} ->
-	    io:format(IoDevice, "LOG FORMATTING ERROR ~p, Format : ~p~n", [E, Format]);
-	_ ->
-	    true
-    end,
-    io:format(IoDevice, "~n", []).
+log_to_device(IoDevice, Data) ->
+    file:write(IoDevice, Data).
 
-log_to_stdout(Level, TimeStamp, Format, Arguments, Pid) ->
-    io:format("~s ~p ", [TimeStamp, Pid]),
-    case catch io:format(Format, Arguments) of
-	{'EXIT', E} ->
-	    io:format("LOG FORMATTING ERROR ~p, Format : ~p~n", [E, Format]);
-	_ ->
-	    true
-    end,
-    io:format("~n", []).
+log_to_stdout(Data) ->
+    %% XXX is there a way to avoid transforming this back to a list
+    %% just to output it to stdout?
+    io:format("~s", [binary_to_list(Data)]).
 
 %%--------------------------------------------------------------------
 %% Function: create_filename_time_suffix/0
@@ -371,7 +359,7 @@ log_to_stdout(Level, TimeStamp, Format, Arguments, Pid) ->
 %% Returns : string() 
 %%--------------------------------------------------------------------
 create_filename_time_suffix() ->
-    {Megasec, Sec, USec} = now(),
+    {Megasec, Sec, _USec} = now(),
     DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
     [Date, Time] = string:tokens(DateTime, " "),
     Suffix = "-" ++ Date ++ "_" ++ Time,
@@ -411,8 +399,8 @@ needs_rotating(In, Size, State) when record(State, state) ->
 
 %% return {ok, State} | {{error, Str}, State}
 %% stop processing after the first error encountered 
-%% XXX it would be better to process all log files, even if some fail
-rotate([], Suffix, State) when record(State, state) ->
+%% XXX process all log files, even if some fail?
+rotate([], _Suffix, State) when record(State, state) ->
     {ok, State};
 rotate([Level | T], Suffix, State) when record(State, state) ->
     Fn = level2filename(Level, State),
@@ -449,7 +437,7 @@ rotate_file(Filename, Suffix) ->
     %% and rename the old log as "Filename ++ Suffix". Suffix is a date marker.
     %% XXX is there a mktemp() available in Erlang?
     TmpFile = Filename ++ Suffix ++ ".rotate",
-    case catch safe_open(TmpFile, [append]) of
+    case catch safe_open(TmpFile, ?FILE_OPTS) of
         {ok, NewIoDev} ->
 	    %% Try to rename the old logfile
 	    case file:rename(Filename, Filename ++ Suffix) of
@@ -472,12 +460,14 @@ rotate_file(Filename, Suffix) ->
 
 %% do_log is executed in caller pid (by log/2 or log/3), not in
 %% persistent logger process.
-do_log(Level, Format, Arguments) when atom(Level), list(Format), list(Arguments) ->
+do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format), is_list(Arguments) ->
+%%				      Level == debug; Level == normal; Level == error ->
     {Megasec, Sec, USec} = now(),
     USecStr = format_usec(USec, 3),
     DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
     LogTS = lists:concat([DateTime, ".", USecStr]),
-    gen_server:cast(logger, {log, Level, LogTS, Format, Arguments, self()}),
+    Data = format_msg(LogTS, Level, self(), Format, Arguments),
+    gen_server:cast(logger, {log, Level, Data}),
     ok.
 
 
@@ -487,5 +477,26 @@ format_usec(Usec, Precision) ->
     FullStr = string:right(Str, 6, $0), % pad left side with 0, to full 6 char length
     string:substr(FullStr, 1 , Precision).
 
-
-
+%%--------------------------------------------------------------------
+%% Function: format_msg(TimeStamp, Level, Pid, Format, Arguments)
+%%           TimeStamp = string()
+%%           Level     = atom()
+%%           Pid       = pid()
+%%           Format    = string()
+%%           Arguments = term()
+%% Descrip.: Do a guarded io_lib:format() on Format and Arguments and
+%%           produce a binary that we send to the logger process.
+%% Returns : LogMsg = binary()
+%%--------------------------------------------------------------------
+format_msg(TimeStamp, Level, Pid, Format, Arguments) ->
+    Tag = io_lib:format("~s ~p~p:", [TimeStamp, Level, Pid]),
+    BinTag = list_to_binary(Tag),
+    Msg = case catch io_lib:format(Format, Arguments) of
+	      {'EXIT', E} ->
+		  Tmp = io_lib:format("LOG FORMATTING ERROR ~p, Format : ~p", [E, Format]),
+		  list_to_binary(Tmp);
+	      Res when is_list(Res) ->
+		  list_to_binary(Res)
+	  end,
+    %% The 10 is the trailing linefeed
+    concat_binary([BinTag, Msg, 10]).
