@@ -1,5 +1,5 @@
 -module(util).
--export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2]).
+-export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -66,3 +66,16 @@ casecompare(String1, String2) ->
 	_ ->
 	    false
     end.
+
+casegrep(String1,[]) ->
+	nomatch;
+
+casegrep(String1,[String2 | Rest]) ->
+	case casecompare(String1,String2) of
+		true -> 
+			true;
+		_ ->
+			casegrep(String1,Rest)
+	end.
+			 
+
