@@ -574,7 +574,7 @@ unregister_contacts(LogTag, RequestHeader, Locations) when is_record(RequestHead
 
 unregister_contact(LogTag, Location, RequestCallId, RequestCSeq) when is_record(Location, phone) ->
     SameCallId = (RequestCallId == Location#phone.callid),
-    HigherCSeq = (list_to_integer(RequestCSeq) == Location#phone.cseq),
+    HigherCSeq = (RequestCSeq > Location#phone.cseq),
 
     %% RFC 3261 chapter 10 page 64 - step 6 check to see if
     %% sipuser-location binding (stored in Location) should be removed
