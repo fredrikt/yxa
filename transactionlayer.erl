@@ -6,7 +6,8 @@
 	 send_response_handler/3, send_response_handler/4,
 	 send_proxy_response_handler/2, get_server_handler_for_stateless_response/1,
 	 store_stateless_response_branch/3, is_good_transaction/1,
-	 get_pid_from_handler/1]).
+	 get_pid_from_handler/1, send_challenge_request/4, send_challenge/4,
+	 debug_show_transactions/0]).
 
 -include("transactionstatelist.hrl").
 
@@ -180,6 +181,11 @@ receive_signals(TStateList, RequestFun, ResponseFun, Mode) ->
 	%	    util:safe_signal("Transaction layer: ", Pid, {appdata_registered, self()}),
 	%	    {ok, NewTStateList}
 	%    end;
+
+	{debug_show_transactions, FromPid} ->
+	    logger:log(debug, "Transaction layer: Pid ~p asked me to show all ongoing transactions :~n~p",
+			[FromPid, transactionstatelist:debugfriendly(TStateList)]),
+	    {ok, TStateList};
 
 	{quit} ->
 	    logger:log(debug, "Transport layer: Received signal to quit"),
@@ -522,3 +528,46 @@ get_pid_from_handler(TH) when record(TH, thandler) ->
     TH#thandler.pid;
 get_pid_from_handler(_) ->
     none.
+
+send_challenge_request(Request, Type, Stale, RetryAfter) ->
+    TH = transactionlayer:get_handler_for_request(Request),
+    send_challenge(TH, Type, Stale, RetryAfter).
+
+send_challenge(TH, www, Stale, RetryAfter) when record(TH, thandler) ->
+    AuthHeader = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), Stale)}],
+    send_challenge2(TH, 401, "Authentication Required", AuthHeader, RetryAfter);
+send_challenge(TH, proxy, Stale, RetryAfter) when record(TH, thandler) ->
+    AuthHeader = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), Stale)}],
+    send_challenge2(TH, 407, "Proxy Authentication Required", AuthHeader, RetryAfter).
+
+send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when record(TH, thandler)->
+    RetryHeader = case RetryAfter of
+	I when integer(I) ->
+	    [{"Retry-After", [integer_to_list(RetryAfter)]}];
+	_ ->
+	    []
+    end,
+    ExtraHeaders = lists:append(AuthHeader, RetryHeader),
+    send_response_handler(TH, Status, Reason, ExtraHeaders),
+    case sipserver:get_env(stateless_challenges, false) of
+	true ->
+	    % Adhere to advice in RFC3261 #26.3.2.4 (DoS Protection) saying we SHOULD terminate
+	    % the server transaction immediately after sending a challenge, to preserve server
+	    % resources but also to not resend these and thus be more usefull to someone using
+	    % us to perform a DoS on a third party.
+	    %
+	    % Default is to NOT do this, since we will have sent a 100 Trying in response to
+	    % an INVITE (and the DoS thingy only applies to INVITE transactions, since we wouldn't
+	    % send a 401/407 response to a non-INVITE reliably), and if it is a legitimate INVITE
+	    % and the client receives the 100 but this 401/407 is lost then we have screwed up
+	    % badly. The client would wait until it times out, instead of resubmitting the request.
+	    util:safe_signal(TH#thandler.pid, {quit});
+	_ ->
+	    true
+    end,
+    ok.
+
+debug_show_transactions() ->
+    util:safe_signal("Transaction layer: ", self(), {debug_show_transactions, self()}),
+    ok.
+
