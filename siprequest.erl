@@ -332,42 +332,39 @@ proxy_add_via(Header, Method, OrigURI, Parameters, SocketProto, SrvTHandler) ->
 			_ ->
 			    transactionlayer:store_stateless_response_branch(SrvTHandler, Branch, Method)
 		    end,
-		    % Check if there already is a loop cookie in this branch. Necessary to not
-		    % get the wrong branch in constructed ACK of non-2xx response to INVITE.
-		    NewBranch = case string:rstr(Branch, "-o") of
-			0 ->
-			    case LoopCookie of
-				none -> Branch;
-				_ ->
-				    NewBranch1 = Branch ++ "-o" ++ LoopCookie,
-				    logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
+		    NewBranch = case LoopCookie of
+			none ->
+			    logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
+						[Branch]),
+			    Branch;
+			_ ->
+			    NewBranch1 = Branch ++ "-o" ++ LoopCookie,
+			    logger:log(debug, "Siprequest: Added statelessly generated branch (plus loop cookie) ~p to request",
 						[NewBranch1]),
-				    NewBranch1
-			    end;
-			Index when integer(Index) ->
-			    logger:log(debug, "Siprequets: NOT adding generated loop cookie ~p to branch that already " ++
-					"contains a loop cookie : ~p", [LoopCookie, Branch]),
-			    Branch
-		    end,
+			    NewBranch1
+			end,
 		    Param2 = dict:store("branch", NewBranch, ParamDict),
 	    	    sipheader:dict_to_param(Param2)
 	    end;
 	{ok, Branch} when LoopCookie /= none ->
-	    Param2 = case string:rstr(Branch, "-o") of
+	    %% Check if there already is a loop cookie in this branch. Necessary to not
+	    %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
+	    FlatBranch = lists:flatten(Branch),
+	    case string:rstr(FlatBranch, "-o") of
 		0 ->
 		    logger:log(debug, "Siprequest: Added loop cookie ~p to branch of request",
 					[LoopCookie]),
-		    dict:append("branch", "-o" ++ LoopCookie, ParamDict);
+		    Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
+		    sipheader:dict_to_param(Param2);
 		Index when integer(Index) ->
 		    % There is already a loop cookie in this branch, don't change it. Necessary to not
 		    % get the wrong branch in constructed ACK of non-2xx response to INVITE.
 		    logger:log(debug, "Siprequets: NOT adding generated loop cookie ~p to branch that already " ++
-				"contains a loop cookie : ~p", [LoopCookie, Branch]),
-		    ParamDict
-	    end,		   
-	    sipheader:dict_to_param(Param2);
+				"contains a loop cookie : ~p", [LoopCookie, FlatBranch]),
+		    Parameters
+	    end;
 	{ok, Branch} ->
-	    % Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
+	    %% Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
 	    Parameters
     end,
     ViaPort = default_port(sipserver:get_env(listenport, none)),
