@@ -148,9 +148,6 @@ debugfriendly2([], Res) ->
     lists:reverse(Res);
 debugfriendly2([H|T], Res) when is_record(H, sipdst) ->
     Str = dst2str(H),
-    debugfriendly2(T, [Str | Res]);
-debugfriendly2([H|T], Res) ->
-    Str = io_lib:format("INVALID sipdst: ~p", [H]),
     debugfriendly2(T, [Str | Res]).
 
 
@@ -191,11 +188,11 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
 		    combine_host_portres([TCP, UDP]);
 		false ->
 		    %% RFC3263 4.1 says we SHOULD use UDP as default in this case, since UDP was the only thing
-		    %% mandated by RFC2543. Sucks.
-		    %% XXX why do we use and mention TCP here ?
+		    %% mandated by RFC2543. Sucks. We do however append any TCP destinations too, even though
+		    %% any transactions will probably time out if UDP does not work...
 		    logger:log(debug, "Resolver: Port was explicitly supplied, and size of message is <= 1200."
 			       " Try UDP and then TCP."),
-		    lists:append(UDP, TCP)
+		    combine_host_portres([UDP, TCP])
 	    end
     end;
 
@@ -216,8 +213,6 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), i
 	none ->
 	    TCP = host_port_to_dstlist(tcp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
 	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
-	    logger:log(debug, "Warning: ~p has no SRV records in DNS, defaulting to TCP and then UDP",
-		       [URL#sipurl.host]),
 	    case ApproxMsgSize > 1200 of
 		true ->
 		    logger:log(debug, "Warning: ~p has no SRV records in DNS, and the message size" ++
@@ -225,8 +220,9 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), i
 			       [URL#sipurl.host]),
 		    combine_host_portres([TCP, UDP]);
 		false ->
-		    logger:log(debug, "Warning: ~p has no SRV records in DNS. Resolving hostname " ++
-			       "and defaulting to UDP (only).", [URL#sipurl.host]),
+		    logger:log(debug, "Warning: ~p has no SRV records in DNS, and the message size "
+			       "is =< 1200 bytes. Resolving hostname and defaulting to UDP (only).",
+			       [URL#sipurl.host]),
 		    UDP
 	    end;
 	DstList when is_list(DstList) ->
