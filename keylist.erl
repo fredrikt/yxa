@@ -18,7 +18,7 @@ to_lower_list(Keys) ->
 fetch(Key, List) when record(List, keylist) ->
     fetchcase(to_lower(Key), List#keylist.list);
 fetch(Key, List) ->
-    throw({error, {"Keylist not wellformed", List}}).
+    throw({'EXIT', {"Keylist not wellformed", List}}).
 
 fetchcase(Key, []) ->
     [];
@@ -27,7 +27,7 @@ fetchcase(Key, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey =
 fetchcase(Key, [Elem | List]) when record(Elem, keyelem) ->
     fetchcase(Key, List);
 fetchcase(Key, [Elem | List]) ->
-    throw({error, {"Keylist element not wellformed", Elem}}).
+    throw({'EXIT', {"Keylist element not wellformed", Elem}}).
 
 empty() ->
     #keylist{list=[]}.
