@@ -24,8 +24,6 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--export([connect_to_remote/5]).
-
 -record(state, {socketlist}).
 
 %%====================================================================
@@ -123,10 +121,8 @@ start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port)
 handle_call({get_socket, Proto, Host, Port}, From, State) ->
     case get_socket_from_list(Host, Port, State#state.socketlist) of
 	none ->
-	    %% We must spawn a child process to take care of making a new connection
-	    %% since we can't risk this thread getting locked up.
-	    %P = sipserver:safe_spawn(fun connect_to_remote/4, [From, Proto, Host, Port]),
-	    %spawn(?MODULE, connect_to_remote, [Proto, Host, Port, From, self()]),
+	    %% We must spawn a tcp_connection process to take care of making this new connection
+	    %% since the tcp_dispatcher may not be blocked by time consuming operations
 	    tcp_connection:start_link(connect, Proto, Host, Port, From),
 	    logger:log(debug, "Sipsocket TCP: No cached '~p' connection to remote host ~s:~p, trying to connect",
 		       [Proto, Host, Port]),
@@ -245,9 +241,3 @@ get_socket_from_list(Host, Port, SocketList) ->
 	_ ->
 	    none
     end.
-
-%% Unfortunate little process necessary to start connections to remote hosts
-%% without blocking tcp_dispatcher. We would not need this process at all if
-%% gen_server:start() did not block until init() returns.
-connect_to_remote(Proto, Host, Port, GenServerFrom, Parent) ->
-    tcp_connection:start(connect, sipsocket_tcp, Proto, Host, Port, GenServerFrom, Parent).
