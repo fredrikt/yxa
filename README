@@ -144,6 +144,8 @@ tcp_connect_timeout		(default: 20) Number of seconds before we time
 userdb_modules			(default: [sipuserdb_mnesia]) User database
 				backend(s) to use. See "User database" section
 				below.
+enable_v6			(default: false) Enables IPv6 support. Read the
+				IPv6 paragraph below before enabling this!
 
 pstnproxy:
 ----------
@@ -365,3 +367,35 @@ Makefile (see Installation above) and you must start the web interface by
 executing ./adminwww.start.
 
 All of the Yxa application can run just fine without root permissions.
+
+
+============
+IPv6 support
+============
+
+If you enable IPv6 support, you need to add your v6 addresses to the
+myhostnames configuration variable, because siphost:myip_list() is currently
+not capable of detecting your IPv6 address (Erlang OTP R9C-0). If you don't
+do this, then lookup:homedomain() will not work properly and you might get
+problems with requests sent with a URI containing your IPv6 address.
+
+IPv6 support is disabled by default, because you need to know what you are
+doing before turning it on. If you enable it to make proxy-to-proxy
+communication use v6 and a v6-only proxy adds Record-Route headers, then
+v4-only clients won't be able to reach the v6-only proxy. This could be
+fixed by making Yxa always Record-Route when receiving a request over v4/v6
+and sending it out using the other but then there is still the problem with
+v6-only phones responding to INVITE with a SDP offer containing a v6 address.
+How will a v4-only phone be able to send audio to that phone, and receive
+audio from that phone? v6 is disabled by default.
+
+If you are using Linux, then you will need to
+
+	# echo 1 > /proc/sys/net/ipv6/bindv6only
+
+since Yxa wants to use separate sockets for v6 and v4. IPv6 support has only
+been tested on Linux 2.4.x where x >= 20.
+
+Warning: there also seems to be some kind of problem with UDP packets
+received over IPv6 sockets being truncated at 1024 bytes. You have been
+warned.
