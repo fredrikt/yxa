@@ -96,9 +96,7 @@ do_request(Method, URL, OrigHeader, Body, Socket, FromIP) ->
 	{forward, Host, Port} ->
 	    logger:log(normal, "~s -> Forward to ~p", [LogStr, sipurl:print_hostport(Host, Port)]),
 	    [AddRoute] = sipheader:contact_print([{none, {none, none, Host, Port, []}}]),
-	    NewHeader1 = keylist:prepend({"Route", AddRoute}, Header),
-	    [PushURI] = sipheader:contact_print([{none, URL}]),
-	    NewHeader = keylist:append({"Route", PushURI}, NewHeader1),
+	    NewHeader = keylist:prepend({"Route", AddRoute}, Header),
 	    siprequest:send_proxy_request(NewHeader, Socket, {Method, URL, Body, []});
 	_ ->
 	    logger:log(error, "~s -> Invalid Location ~p", [LogStr, Location]),

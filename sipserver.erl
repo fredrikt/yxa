@@ -108,7 +108,21 @@ parse_packet(Socket, Packet, IP, InPortNo) ->
 			    [FirstVia | Via] = sipheader:via(keylist:fetch("Via", Header)),
 			    keylist:set("Via", sipheader:via_print(lists:append([NewVia], Via)), Header)
 		    end,
-		    {request, Method, URI, NewHeader1, Body};
+		    {{_, NewURI}, NewHeader} = case received_from_strict_router(URI, NewHeader1) of
+			true ->
+			    logger:log(debug, "Sipserver: Received request with a Request-URI I (probably) put in a Record-Route. Pop real Request-URI from Route-header."),
+			    ReverseRoute = lists:reverse(sipheader:contact(keylist:fetch("Route", NewHeader1))),
+			    [NewReqURI | NewReverseRoute] = ReverseRoute,
+			    case NewReverseRoute of
+		                [] ->
+		                    {NewReqURI, keylist:delete("Route", NewHeader1)};
+		                _ ->
+		                    {NewReqURI, keylist:set("Route", sipheader:contact_print(lists:reverse(NewReverseRoute)), NewHeader1)}
+		            end;
+			_ ->
+			    {{none, URI}, NewHeader1}
+		    end,
+		    {request, Method, NewURI, NewHeader, Body};
 		{response, Status, Reason, Header, Body} ->
 		    % Check that top-Via is ours (RFC 3261 18.1.2),
 		    % silently drop message if it is not.
@@ -145,6 +159,29 @@ parse_packet(Socket, Packet, IP, InPortNo) ->
 			    {NewParsed, LogStr}
 		    end
 	    end
+    end.
+
+received_from_strict_router(URI, Header) ->
+    MyHostname = siprequest:myhostname(),
+    MyPort = siprequest:default_port(sipserver:get_env(listenport, none)),
+    MyIP = siphost:myip(),
+    {User, Pass, Host, URIPort, Parameters} = URI,
+    Port = siprequest:default_port(URIPort),
+    MAddrMatch = case dict:find("maddr", sipheader:param_to_dict(Parameters)) of
+	{ok, MyIP} -> true;
+	_ -> false
+    end,
+    HeaderHasRoute = case keylist:fetch("Route", Header) of
+	[] -> false;
+	_ -> true
+    end,
+    if
+	Host /= MyHostname -> false;
+	Port /= MyPort -> false;
+	% Some SIP-stacks evidently strip parameters
+	%MAddrMatch /= true -> false;
+	HeaderHasRoute /= true -> false;
+	true -> true
     end.
 
 topvia(Header) ->

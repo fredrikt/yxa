@@ -58,36 +58,66 @@ url_to_hostport({User, Pass, InHost, InPort, Parameters}) ->
 	    dnsutil:get_ip_port(InHost, default_port(InPort))
     end.
 
-rewrite_route(Header, Dest) ->
+rewrite_route(Header, URI) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
     case Route of
-	[{_, Newdest} | Newroute] ->
-	    logger:log(debug, "Routing: New destination is ~p", [Newdest]),
-	    case Newroute of
-		[] ->
-		    {keylist:delete("Route", Header),
-		     Newdest};
-		Newroute ->
-		    {keylist:set("Route",
-				 sipheader:contact_print(Newroute),
-				 Header),
-		     Newdest}
+        [{_, NewDest} | NewRoute1] ->
+	    case route_matches_me({none, NewDest}) of
+		true ->
+		    logger:log(debug, "First Route ~p matches me, removing it.", sipheader:contact_print([{none, NewDest}])),
+		    case NewRoute1 of
+			[] ->
+			    rewrite_route(keylist:delete("Route", Header), URI);
+			_ ->
+			    rewrite_route(keylist:set("Route", sipheader:contact_print(NewRoute1), Header), URI)
+		    end;
+		_ ->
+		    {NewRoute, NewURI} = case is_loose_router({none, NewDest}) of
+			true ->
+			    {NewRoute1, URI};
+			false ->
+			    logger:log(debug, "Routing: Destination ~p is a strict (RFC2543) router, appending final destination URI ~p to Route header",
+					[sipurl:print(NewDest), sipurl:print(URI)]),
+			    NewRoute2 = lists:append(NewRoute1, [{none, URI}]),
+			    {NewRoute2, NewDest}
+		    end,
+		    logger:log(debug, "Routing: New destination is ~p, new Request-URI is ~p", [sipurl:print(NewDest), sipurl:print(NewURI)]),
+		    case NewRoute of
+			[] ->
+			    {keylist:delete("Route", Header), NewDest, NewURI};
+			_ ->
+			    {keylist:set("Route", sipheader:contact_print(NewRoute),
+			     Header), NewDest, NewURI}
+		    end
 	    end;
 	[] ->
-	    {Header, Dest}
+	    {Header, URI, URI}
     end.
 
-make_answerheader(Header) ->
-    RecordRoute = keylist:fetch("Record-Route", Header),
-    NewHeader1 = keylist:delete("Record-Route", Header),
-    NewHeader2 = case RecordRoute of
-	[] ->
-	    NewHeader1;	
+route_matches_me(Route) ->
+    {_, {_, _, Host, Port, _}} = Route,
+    MyName = myhostname(),
+    MyIP = siphost:myip(),
+    MyPort = default_port(sipserver:get_env(listenport, none)),
+    if
+	Port /= MyPort -> false;
+	Host /= MyName ->
+	    if
+		Host == MyIP -> true;
+		true -> false
+	    end;
+	true ->	true
+    end.	   
+
+is_loose_router(Route) ->
+    case dict:find("lr", sipheader:contact_params(Route)) of
+	{ok, E} ->
+	    true;
 	_ ->
-	    keylist:set("Route", RecordRoute, NewHeader1)
-    end.
+	    false
+    end.	    
 
-send_proxy_request(Header, Socket, {Action, ReqURI, Body, Parameters}) ->
+send_proxy_request(Header, Socket, {Method, ReqURI, Body, Parameters}) ->
     MaxForwards =
 	case keylist:fetch("Max-Forwards", Header) of
 	    [M] ->
@@ -103,27 +133,44 @@ send_proxy_request(Header, Socket, {Action, ReqURI, Body, Parameters}) ->
 	true ->
 	    true
     end,
-    check_valid_proxy_request(Action, Header),
-    Line1 = Action ++ " " ++ sipurl:print(ReqURI) ++ " SIP/2.0",
+    check_valid_proxy_request(Method, Header),
     ViaHostname = myhostname(),
     [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
 				     {ViaHostname,
 				      default_port(sipserver:get_env(listenport, none))},
 				     Parameters}]),
     Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
-    {Keylist3, Newdest} = rewrite_route(Keylist2, ReqURI),
+    {Keylist3, NewDest, NewURI} = rewrite_route(Keylist2, ReqURI),
     Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
+    Line1 = Method ++ " " ++ sipurl:print(NewURI) ++ " SIP/2.0",
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist4) ++ "\r\n" ++ Body,
-    case url_to_hostport(Newdest) of
+    case url_to_hostport(NewDest) of
 	{error, nxdomain} ->
-	    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN)", [Newdest]),
+	    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN)", [NewDest]),
 	    siprequest:send_result(Header, Socket, "", 604, "Does Not Exist Anywhere");
 	{error, What} ->
-	    logger:log(normal, "Could not resolve destination ~p (~p)", [Newdest, What]),
+	    logger:log(normal, "Could not resolve destination ~p (~p)", [NewDest, What]),
 	    siprequest:send_result(Header, Socket, "", 500, "Could not resolve destination");
 	{Host, Port} ->
-	    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
-	    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
+	    PortInt = list_to_integer(Port),
+	    logger:log(debug, "send request(~p, send to=~p:~p) :~n~s~n", [NewDest, Host, PortInt, Message]),
+	    case gen_udp:send(Socket, Host, PortInt, Message) of
+		ok ->
+		    ok;
+		{error, E} ->
+		    logger:log(error, "Failed sending request to ~p:~p, error ~p", [Host, PortInt, E]),
+		    {error, E}
+	    end
+    end.
+
+make_answerheader(Header) ->
+    RecordRoute = keylist:fetch("Record-Route", Header),
+    NewHeader1 = keylist:delete("Record-Route", Header),
+    NewHeader2 = case RecordRoute of
+	[] ->
+	    NewHeader1;	
+	_ ->
+	    keylist:set("Route", RecordRoute, NewHeader1)
     end.
 
 check_valid_proxy_request("ACK", _) ->
@@ -150,7 +197,7 @@ myhostname() ->
 
 add_record_route(Hostname, Port, Header) ->
     Route = "<" ++ sipurl:print({none, none, Hostname, default_port(Port),
-				["maddr=" ++ siphost:myip()]}) ++ ">",
+				["maddr=" ++ siphost:myip(), "lr=true"]}) ++ ">",
     [CRoute] = sipheader:contact([Route]),
     case sipheader:contact(keylist:fetch("Record-Route", Header)) of
 	[CRoute | _] ->
@@ -326,7 +373,7 @@ parse_register_expire(Header, Contact) ->
 standardcopy(Header, ExtraHeaders) ->
     keylist:appendlist(keylist:copy(Header,
 				    ["Via", "From", "To",
-				     "Call-ID", "Cseq"]),
+				     "Call-ID", "CSeq"]),
 		       ExtraHeaders).
 
 send_auth_req(Header, Socket, Auth, Stale) ->
