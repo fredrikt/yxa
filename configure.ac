@@ -9,7 +9,28 @@ AC_PROG_INSTALL
 
 AC_CONFIG_FILES(Makefile)
 
+AC_ARG_WITH(mnesiadir,
+	AC_HELP_STRING([--with-mnesiadir=dir],
+		[use dir as database for mnesia database]),
+[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_$1" = "X"; then
+    mnesiadir=""
+else
+    mnesiadir="$with_mnesiadir"
+fi])
+
+AC_ARG_WITH(local,
+	AC_HELP_STRING([--with-local=file],
+		[use dir as database for mnesia database]),
+[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_$1" = "X"; then
+    local_file="default"
+else
+    local_file="$with_local"
+fi])
+
+
 AC_SUBST(DESTDIR)
+AC_SUBST(mnesiadir)
+AC_SUBST(local_file)
 
 AC_OUTPUT
 
