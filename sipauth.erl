@@ -9,7 +9,7 @@
 % resp = H(H(A1) ":" nonce ":" H(A2))
 
 realm() ->
-    "foo".
+    "kth.se".
 
 my_password() ->
     "foobarhemligt".
@@ -72,6 +72,14 @@ get_class(_) ->
     bogus.
 
 get_user_verified(Header, Method) ->
+    Authheader = keylist:fetch("Authorization", Header),
+    if Authheader == [] ->
+	    false;
+       true ->
+	    get_user_verified(Header, Method, Authheader)
+    end.
+
+get_user_verified_proxy(Header, Method) ->
     Authheader = keylist:fetch("Proxy-Authorization", Header),
     if Authheader == [] ->
 	    false;
@@ -94,24 +102,24 @@ get_user_verified(Header, Method, Authheader) ->
 			     dict:fetch("uri", Authorization),
 			     User, Password),
     if
+	Response /= Response2 ->
+	    logger:log(normal, "Response ~p /= Response2 ~p", [Response, Response2]),
+	    false;
 	Nonce /= Nonce2 ->
 	    logger:log(normal, "Nonce ~p /= ~p", [Nonce, Nonce2]),
-	    false;
+	    stale;
 	Timestamp < Now - 5 ->
 	    logger:log(normal, "Timestamp ~p too old. Now: ~p", [Timestamp, Now]),
 	    stale;
 	Timestamp > Now ->
 	    logger:log(normal, "Timestamp ~p too new. Now: ~p", [Timestamp, Now]),
 	    false;
-	Response /= Response2 ->
-	    logger:log(normal, "Response ~p /= Response2 ~p", [Response, Response2]),
-	    false;
 	true ->
 	    User
     end.
 
 check_auth(Header, Method, Number, Tophone) ->
-    User = get_user_verified(Header, Method),
+    User = get_user_verified_proxy(Header, Method),
     {_, Numberlist, _, Classes} = get_passnumber(User),
     Numberallowed = lists:member(Number, Numberlist),
     Class = get_class(Tophone),
@@ -134,7 +142,7 @@ check_auth(Header, Method, Number, Tophone) ->
     end.
 
 can_register(Header, Number) ->
-    case sipauth:get_user_verified(Header, "REGISTER") of
+    case get_user_verified(Header, "REGISTER") of
 	false ->
 	    false;
 	stale ->
@@ -156,10 +164,10 @@ check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method) ->
 		true -> 
 		    apply(Func, [Header, Socket, Arg]);
 		stale ->
-		    siprequest:send_auth_req(Header, Socket,
+		    siprequest:send_proxyauth_req(Header, Socket,
 					     get_challenge(), true);
 		false ->
-		    siprequest:send_auth_req(Header, Socket,
+		    siprequest:send_proxyauth_req(Header, Socket,
 					     get_challenge(), false)
 	    end
     end.
