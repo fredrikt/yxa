@@ -6,23 +6,34 @@
 
 -module(sipdst).
 
--export([url_to_dstlist/3, get_response_destination/1, dst2str/1,
-	 debugfriendly/1]).
+-export([
+	 url_to_dstlist/3,
+	 get_response_destination/1,
+	 dst2str/1,
+	 debugfriendly/1
+	]).
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
 
 %%--------------------------------------------------------------------
-%% Function: url_to_dstlist/3
-%% Description: Make a list of sipdst records from an URL. We need the
-%%              approximate message size to determine if we can use
-%%              UDP or have to do TCP only.
-%% Returns: ListOfDsts | {error, Reason}
+%% Function: url_to_dstlist(URL, ApproxMsgSize, ReqURI)
+%%           URL           = sipurl record(), the destination we
+%%                           should resolve
+%%           ApproxMsgSize = integer()
+%%           ReqURI        = sipurl record(), the original
+%%                           Request-URI of the request
+%% Descrip.: Make a list of sipdst records from an URL. We need the
+%%           approximate message size to determine if we can use
+%%           UDP or have to do TCP only.
+%% Returns : list() of sipdst record() | {error, Reason}
 %%--------------------------------------------------------------------
-url_to_dstlist(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), integer(ApproxMsgSize) ->
+url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize) ->
     {Host, Port, Parameters} = {URL#sipurl.host, URL#sipurl.port, URL#sipurl.param},
     %% Check if Host is either IPv4 or IPv6 address
+    %% XXX module (and function) not listed in erlang documentation but
+    %% included in Erlang/OTP source
     case inet_parse:address(Host) of
 	{ok, _} ->
 	    logger:log(debug, "url_to_dstlist: ~p is an IP address, not performing domain NAPTR/SRV lookup", [Host]),
@@ -38,15 +49,17 @@ url_to_dstlist(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), integer(App
 			none -> udp;
 			"tcp" -> tcp;
 			"udp" -> udp;
-			Unknown -> 
+			Unknown ->
 			    %% RFC3263 4.1 says we SHOULD use UDP for sip: and TCP for sips: when target is IP
 			    %% and no transport is indicated in the parameters
 			    case URL#sipurl.proto of
 				"sips" ->
-				    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized, defaulting to TCP for sips: URL", [Unknown]),
+				    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized,"
+					       " defaulting to TCP for sips: URL", [Unknown]),
 				    tcp;
 				_ ->
-				    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized, defaulting to UDP for non-sips: URL", [Unknown]),
+				    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized,"
+					       " defaulting to UDP for non-sips: URL", [Unknown]),
 				    udp
 			    end
 		    end,
@@ -64,12 +77,13 @@ url_to_dstlist(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), integer(App
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_response_destination/1
-%% Description: Turn the top Via header from a response into a sipdst
-%%              record with the protocol, host and port the response
-%%              should be sent to.
-%% Returns: Dst |
-%%          error
+%% Function: get_response_destination(TopVia)
+%%           TopVia = via record()
+%% Descrip.: Turn the top Via header from a response into a sipdst
+%%           record with the protocol, host and port the response
+%%           should be sent to.
+%% Returns : sipdst record() |
+%%           error
 %%--------------------------------------------------------------------
 get_response_destination(TopVia) when record(TopVia, via) ->
     case get_response_host_proto(TopVia) of
@@ -91,17 +105,19 @@ get_response_destination(TopVia) when record(TopVia, via) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: dst2str/1
-%% Description: Turn a sipdst into something printable (for debugging)
-%% Returns: DstString
+%% Function: dst2str(Dst)
+%%           Dst = sipdst record()
+%% Descrip.: Turn a sipdst into something printable (for debugging)
+%% Returns : DstString, Dst as string()
 %%--------------------------------------------------------------------
 
 %%
 %% URI present
 %%
-dst2str(Dst) when record(Dst, sipdst), Dst#sipdst.uri /= undefined ->
-    lists:flatten(io_lib:format("~p:~s:~p (~s)", [Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port,
-						  sipurl:print(Dst#sipdst.uri)]));
+dst2str(Dst) when is_record(Dst, sipdst), Dst#sipdst.uri /= undefined ->
+    lists:flatten(io_lib:format("~p:~s:~p (~s)",
+				[Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port,
+				 sipurl:print(Dst#sipdst.uri)]));
 
 %%
 %% No URI, for example Response sipdst record
@@ -129,32 +145,41 @@ debugfriendly2([H|T], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: url_to_dstlist_not_ip/3
-%% Description: Called from url_to_dstlist/1 when the Host part of the
+%% Function: url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
+%%           URL           = sipurl record(), destination
+%%           ApproxMsgSize = integer()
+%%           ReqURI        = sipurl record(), original Request-URI
+%% Descrip.: Called from url_to_dstlist/1 when the Host part of the
 %%              URI was not an IP address
-%% Returns: ListOfDsts | {error, Reason}
+%% Returns : DstList         |
+%%           {error, Reason}
+%%           DstList = list() of sipdst record()
 %%--------------------------------------------------------------------
 
 %%
 %% URL port specified
 %%
-url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), integer(ApproxMsgSize), URL#sipurl.port /= none ->
-    case URL#sipurl.proto of
-	_ when URL#sipurl.proto == tls ; URL#sipurl.proto == tls6 ->
+url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
+  when is_record(URL, sipurl), is_integer(ApproxMsgSize), URL#sipurl.port /= none ->
+    case (URL#sipurl.proto == tls) or (URL#sipurl.proto == tls6) of
+	true ->
 	    TLS = host_port_to_dstlist(tcp, URL#sipurl.host, URL#sipurl.port, ReqURI),
 	    logger:log(debug, "Resolver: Port was explicitly supplied and URL protocol is TLS - only try TCP"),
 	    TLS;
-	_ ->
+	false ->
 	    TCP = host_port_to_dstlist(tcp, URL#sipurl.host, URL#sipurl.port, ReqURI),
 	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, URL#sipurl.port, ReqURI),
-	    case ApproxMsgSize of
-		_ when ApproxMsgSize > 1200 ->
-		    logger:log(debug, "Resolver: Port was explicitly supplied, and size of message is > 1200. Try TCP and then UDP."),
+	    case ApproxMsgSize > 1200 of
+		true ->
+		    logger:log(debug, "Resolver: Port was explicitly supplied, and size of message is > 1200."
+			       " Try TCP and then UDP."),
 		    lists:append(TCP, UDP);
-		_ ->
+		false ->
 		    %% RFC3263 4.1 says we SHOULD use UDP as default in this case, since UDP was the only thing
 		    %% mandated by RFC2543. Sucks.
-		    logger:log(debug, "Resolver: Port was explicitly supplied, and size of message is <= 1200. Try UDP and then TCP."),
+		    %% XXX why do we use and mention TCP here ?
+		    logger:log(debug, "Resolver: Port was explicitly supplied, and size of message is <= 1200."
+			       " Try UDP and then TCP."),
 		    lists:append(UDP, TCP)
 	    end
     end;
@@ -162,7 +187,7 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), inte
 %%
 %% URL port NOT specified, do SRV lookup on host from URL
 %%
-url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), integer(ApproxMsgSize) ->
+url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize) ->
     case dnsutil:siplookup(URL#sipurl.host) of
 	[{error, nxdomain} | _] ->
 	    %% A SRV-lookup of the Host part of the URL returned NXDOMAIN, this is
@@ -177,28 +202,53 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), inte
 	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, URL#sipurl.port, ReqURI),
 	    logger:log(debug, "Warning: ~p has no SRV records in DNS, defaulting to TCP and then UDP",
 		       [URL#sipurl.host]),
-	    if
-		ApproxMsgSize > 1200 ->
+	    case ApproxMsgSize > 1200 of
+		true ->
 		    logger:log(debug, "Warning: ~p has no SRV records in DNS, and the message size" ++
 			       "is > 1200 bytes. Resolving hostname and trying TCP and then UDP.",
 			       [URL#sipurl.host]),
 		    lists:append(TCP, UDP);
-		true ->
+		false ->
 		    logger:log(debug, "Warning: ~p has no SRV records in DNS. Resolving hostname " ++
 			       "and defaulting to UDP (only).", [URL#sipurl.host]),
 		    UDP
 	    end;
-	DstList ->
-	    format_siplookup_result(URL#sipurl.port, ReqURI, ApproxMsgSize, DstList)
+	DstList when is_list(DstList) ->
+	    DstList2 = case sipserver:get_env(enable_experimental_tls, false) of
+			   false ->
+			       remove_tls_destinations(DstList, []);
+			   true ->
+			       DstList
+		       end,
+	    format_siplookup_result(URL#sipurl.port, ReqURI, ApproxMsgSize, DstList2)
     end.
 
 %%--------------------------------------------------------------------
+%% Function: remove_tls_destinations(In, [])
+%%           In = list() of {Proto, Host, Port} tuples
+%% Descrip.: Remove all tuples having Proto 'tls' | tls6 from In, and
+%%           return a new list() of tuples.
+%% Returns : DstList = list() of {Proto, Host, Port} tuples
+%%--------------------------------------------------------------------
+remove_tls_destinations([], Res) ->
+    lists:reverse(Res);
+remove_tls_destinations([{Proto, Host, Port} | T], Res) when Proto /= tls, Proto /= tls6 ->
+    remove_tls_destinations(T, [{Proto, Host, Port} | Res]);
+remove_tls_destinations([{Proto, Host, Port} | T], Res) ->
+    %% Proto is tls or tls6
+    logger:log(debug, "Resolver: Removing TLS destination ~p:~s:~p from result set since "
+	       "experimental TLS is not enabled", [Proto, Host, Port]),
+    remove_tls_destinations(T, Res).
+
+%%--------------------------------------------------------------------
 %% Function: host_port_to_dstlist/4
-%% Description: Resolves a hostname and returns a list of sipdst
-%%              records of the protocol requested.
-%%              Inport should either be an integer, or the atom 'none'
-%%              to use the default port for the protocol.
-%% Returns: ListOfDsts | {error, Reason}
+%% Descrip.: Resolves a hostname and returns a list of sipdst
+%%           records of the protocol requested.
+%%           Inport should either be an integer, or the atom 'none'
+%%           to use the default port for the protocol.
+%% Returns : DstList         |
+%%           {error, Reason}
+%%           DstList = list() of sipdst record()
 %%--------------------------------------------------------------------
 host_port_to_dstlist(Proto, InHost, PortStr, URI) when list(PortStr) ->
     host_port_to_dstlist(Proto, InHost, list_to_integer(PortStr), URI);
@@ -209,24 +259,31 @@ host_port_to_dstlist(Proto, InHost, InPort, URI) when integer(InPort) ; InPort =
 	L when list(L) ->
 	    %% L is a list of tuples like {v4, Addr, Port}. Addr is the
 	    %% IP address (be it v4 or v6) as a string.
-	    DstList = make_sipdst_from_hostport(Proto, URI, L)
+	    DstList = make_sipdst_from_hostport(Proto, URI, L),
+	    DstList
     end.
 
 %%--------------------------------------------------------------------
-%% Function: make_sipdst_from_hostport/3
-%% Description: Turns the result of a dnsutil:get_ip_port() into a
-%% list of sipdst records. get_ip_port() return a list of tuples like
-%%    {IP, Addr, Port}
-%% where IP is a string ("10.0.0.1", "[2001:6b0:5:987::1]") and Addr
-%% is the same IP but in tuple representation. This allows us to easily
-%% determine if it is a IPv4 or IPv6 address, and to convert Proto
-%% as necessary.
-%% Returns: ListOfDsts | {error, Reason}
+%% Function: make_sipdst_from_hostport(Proto, URI, L)
+%%           Proto = atom(), tcp | udp | tls
+%%           URI   = sipurl record(), URI to stick into the resulting
+%%                   sipdst records
+%%           L     = list() of {Proto, Addr, Port} tuples - typically
+%%                   the result of a call to dnsutil:get_ip_port()
+%% Descrip.: Turns the result of a dnsutil:get_ip_port() into a list
+%%           of sipdst records. get_ip_port() return a list of tuples
+%%           like {IP, Addr, Port} where IP is a string ("10.0.0.1",
+%%           "[2001:6b0:5:987::1]") and Addr is the same IP but in
+%%           tuple representation. This allows us to easily determine
+%%           if it is a IPv4 or IPv6 address, and to convert Proto as
+%%           necessary.
+%% Returns : DstList | {error, Reason}
+%%           DstList = list() of sipdst record()
 %%--------------------------------------------------------------------
 make_sipdst_from_hostport(Proto, URI, L) ->
     make_sipdst_from_hostport2(Proto, URI, L, []).
 
-make_sipdst_from_hostport2(Proto, URI, [], Res) ->
+make_sipdst_from_hostport2(_Proto, _URI, [], Res) ->
     Res;
 make_sipdst_from_hostport2(Proto, URI, [{inet, Addr, Port} | T], Res) ->
     UsePort = list_to_integer(siprequest:default_port(Proto, Port)),
@@ -244,18 +301,22 @@ make_sipdst_from_hostport2(Proto, URI, [{inet6, Addr, Port} | T], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: format_siplookup_result/4
-%% Description: Turns the result of a dnsutil:siplookup() into a list
-%% of sipdst records.
-%% Returns: ListOfDsts      |
-%%          {error, Reason}
+%% Function: format_siplookup_result(InPort, ReqURI, ApproxMsgSize,
+%%                                   DstList)
+%%           InPort        = list() | integer() | none
+%%           ReqURI        = sipurl record()
+%%           ApproxMsgSize = integer()
+%%           DstList       = list() of sipdst record()
+%% Descrip.: Turns the result of a dnsutil:siplookup() into a list
+%%           of sipdst records.
+%% Returns : DstList, list() of sipdst record()
 %%--------------------------------------------------------------------
 format_siplookup_result(PortStr, ReqURI, ApproxMsgSize, DstList) when list(PortStr) ->
     format_siplookup_result(list_to_integer(PortStr), ReqURI, ApproxMsgSize, DstList);
 format_siplookup_result(InPort, ReqURI, ApproxMsgSize, DstList) when integer(InPort) ; InPort == none ->
     format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, DstList, []).
 
-format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [], Res) ->
+format_siplookup_result2(_InPort, _ReqURI, _ApproxMsgSize, [], Res) ->
     Res;
 format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [{Proto, Host, Port} | T], Res) when integer(Port) ->
     %% If InPort is none, then use the port from DNS. Otherwise, use InPort.
@@ -268,7 +329,8 @@ format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [{Proto, Host, Port} | T
 	      end,
     if
 	UsePort /= Port ->
-	    logger:log(debug, "Warning: ~p is specified to use port ~p in DNS, but I'm going to use the supplied port ~p instead",
+	    logger:log(debug, "Warning: ~p is specified to use port ~p in DNS,"
+		       " but I'm going to use the supplied port ~p instead",
 		       [Host, Port, UsePort]);
 	true -> true
     end,
@@ -279,7 +341,7 @@ format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [{Proto, Host, Port} | T
 		      L
 	      end,
     format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, T, lists:append(Res, DstList));
-format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [{error, What} | T], Res) ->
+format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [{error, _What} | T], Res) ->
     format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, T, Res);
 format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [H | T], Res) ->
     logger:log(debug, "Warning: Skipping unrecognized element when formatting siplookup results : ~p", [H]),
@@ -287,17 +349,16 @@ format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [H | T], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_response_host_port/1
-%% Description: Argument is the top Via header in a response, this
-%%              function extracts the destination and protocol we
-%%              should use.
-%% Returns: {Address, Proto} | error
-%%
-%%   Address is a string that might be IPv4 address (from received=),
-%%   IPv6 address (from received=), or whatever was in the host part
-%%   of the Via.
-%%
-%%   Proto is an atom, tcp|udp|tcp6|udp6|tls|tls6.
+%% Function: get_response_host_port(TopVia)
+%%           TopVia = via record()
+%% Descrip.: Argument is the top Via header in a response, this
+%%           function extracts the destination and protocol we
+%%           should use.
+%% Returns : {Address, Proto} | error
+%%           Address = string() that might be IPv4 address (from
+%%                     received=), IPv6 address (from received=), or
+%%                     whatever was in the host part of the Via.
+%%           Proto = atom(), tcp | udp | tcp6 | udp6 | tls | tls6
 %%--------------------------------------------------------------------
 get_response_host_proto(TopVia) when record(TopVia, via) ->
     {Protocol, Host, Parameters} = {TopVia#via.proto, TopVia#via.host, TopVia#via.param},
@@ -311,7 +372,7 @@ get_response_host_proto(TopVia) when record(TopVia, via) ->
 		    %% received= parameter not usable, try host part of Via instead
 		    %% XXX try to resolve host part of Via if necessary
 		    case address_to_address_and_proto(Host, Proto) of
-			{error, E2} ->
+			{error, _E2} ->
 			    logger:log(debug, "Warning: Invalid host part of Via (~p) : ~p", [E1, Host]),
 			    logger:log(error, "Failed getting a response destination out of Via : ~p", [TopVia]),
 			    error;
@@ -321,7 +382,7 @@ get_response_host_proto(TopVia) when record(TopVia, via) ->
 		R ->
 		    R
 	    end;
-	Res ->
+	_Res ->
 	    %% There was no received= parameter. Do the same checks but on the Via
 	    %% hostname (which is then almost certainly an IP-address).
 	    case address_to_address_and_proto(Host, Proto) of
@@ -336,13 +397,17 @@ get_response_host_proto(TopVia) when record(TopVia, via) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: address_to_address_and_proto/1
-%% Description: When looking at Via headers, we often have a protocol
-%%              from the SIP/2.0/FOO but we need to look at the
-%%              address to determine if our sipdst proto should be
-%%              foo or foo6. This function does that.
-%% Returns: {Address, Proto} | {error, Reason}
-%%   Proto is an atom, tcp|udp|tcp6|udp6|tls|tls6.
+%% Function: address_to_address_and_proto(Addr, DefaultProto)
+%%           Addr = term(), something (probably a string()) that is
+%%                  parseable by inet_parse:ipv{4,6}_address()
+%% Descrip.: When looking at Via headers, we often have a protocol
+%%           from the SIP/2.0/FOO but we need to look at the
+%%           address to determine if our sipdst proto should be
+%%           foo or foo6. This function does that.
+%% Returns : {Addr, Proto} | {error, Reason}
+%%           Address = term(), parsed version of Addr
+%%           Proto   = atom(), tcp | udp | tcp6 | udp6 | tls | tls6
+%%           Reason  = string()
 %%--------------------------------------------------------------------
 address_to_address_and_proto(Addr, DefaultProto) ->
     case inet_parse:ipv4_address(Addr) of
@@ -368,4 +433,3 @@ address_to_address_and_proto(Addr, DefaultProto) ->
 		    {error, "not an IPv4 address"}
 	    end
     end.
-
