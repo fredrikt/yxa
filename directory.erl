@@ -1,20 +1,15 @@
 -module(directory).
--export([lookupphone/1, lookupmail/1, ldapmailsearch/2]).
-
-lookupphone("9532") ->
-    "Magnus Ahltorp";
-
-lookupphone("9516") ->
-    "Ragnar Sundblad";
-
-lookupphone(Phone) ->
-    "Okänd".
+-export([lookupmail/1, ldapmailsearch/2]).
 
 ldapmailsearch(Mail, Attribute) ->
-    {ok, Handle} = eldap:open(["ldap.kth.se"], []),
-    ok = eldap:simple_bind(Handle, "dc=kth, dc=se", ""),
+    {ok, Handle} = eldap:open([sipserver:get_env(ldap_server)], []),
+    ok = eldap:simple_bind(Handle,
+			   sipserver:get_env(ldap_username, ""),
+			   sipserver:get_env(ldap_password, "")),
     Filter = eldap:equalityMatch("mail", Mail),
-    {ok, Result} = eldap:search(Handle, [{base, "dc=kth, dc=se"},
+    {ok, Result} = eldap:search(Handle, [{base,
+					  sipserver:get_env(ldap_searchbase,
+							    "")},
 					 {filter, Filter},
 					 {attributes,[Attribute]}]),
     eldap:close(Handle),
