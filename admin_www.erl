@@ -1,5 +1,5 @@
 -module(admin_www).
--export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2]).
+-export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2, wml/2]).
 
 server_node() -> 'incomingproxy@granit.e.kth.se'.
 
@@ -378,4 +378,20 @@ change_user(Env, Input) ->
 		    set_admin(User, Admin),
 		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
 	    end
+    end.
+
+wml(Env, Input) ->
+    case check_auth(Env, true) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    ["Content-type: text/vnd.wap.wml\r\n\r\n",
+	     "<wml>\r\n",
+	     "<card id=\"test\" title=\"Test\">",
+	     "<p>",
+	     "Hello, this is WML",
+	     "</p>",
+	     "</card>",
+	     "</wml>"
+	    ]
     end.
