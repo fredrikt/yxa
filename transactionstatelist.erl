@@ -68,7 +68,10 @@ get_server_transaction_using_request(Request, TransactionList) when record(Reque
 		    %% because the ACK might have a To-tag. If this happens, we must use 2543 methods to find
 		    %% the transaction even though RFC3261 17.2.3 only says we should do this if the ACK
 		    %% received does NOT have the 3261 magic cookie in the branch parameter.
-		    logger:log(debug, "Transaction state list: Found no match for ACK transaction using RFC3261 methods, " ++
+		    %%
+		    %% Bug in RFC3261, see http://bugs.sipit.net/sipwg/show_bug.cgi?id=755
+		    %%
+		    logger:log(debug, "Transaction state list: Found no matching server transaction for ACK using RFC3261 methods, " ++
 			       "trying RFC2543 too"),
 		    get_server_transaction_ack_2543(Request, TransactionList);	
 		T ->
@@ -78,7 +81,7 @@ get_server_transaction_using_request(Request, TransactionList) when record(Reque
 
 %% ACK requests are matched to transactions differently if they are not received from
 %% an RFC3261 compliant device, see RFC3261 17.2.3   
-get_server_transaction_ack_2543(Request, TransactionList) when record(Request, request) ->
+get_server_transaction_ack_2543(Request, TransactionList) when record(Request, request), record(TransactionList, transactionstatelist) ->
     case sipheader:get_server_transaction_ack_id_2543(Request) of
 	error ->
 	    logger:log(error, "Transaction state list: Could not get server transaction RFC2543 ACK id for request"),
@@ -88,6 +91,9 @@ get_server_transaction_ack_2543(Request, TransactionList) when record(Request, r
 	    case get_elem_ackid(server, Id, ToTag, TransactionList#transactionstatelist.list) of
 		none ->
 		    logger:log(debug, "Transaction state list: ACK request does not match any existing transaction"),
+		    %% If this ever happens, this extra debug output will probably be crucial to
+		    %% diagnose why.
+		    logger:log(debug, "Transaction state list: Extra debug: Looked for server transaction with id ~p AND to-tag ~p in list :~n~p", [Id, ToTag, debugfriendly(TransactionList)]),
 		    none;
 		Res when record(Res, transactionstate) ->
 		    Res
@@ -106,6 +112,13 @@ get_client_transaction(Method, Branch, TStateList) when record(TStateList, trans
     Id = {Branch, Method},
     get_elem(client, Id, TStateList).
 
+%% Function: get_list_using_pid/2
+%% Description: Find all elements in a transactionstatelist who have
+%%              a matching pid. Return a new transactionstatelist
+%%              containing the transactionstate records.
+%% Returns: TransactionStateListRecord |
+%%          none
+%%--------------------------------------------------------------------
 get_list_using_pid(Pid, TStateList) when record(TStateList, transactionstatelist), pid(Pid) ->
     case get_using_pid2(Pid, TStateList#transactionstatelist.list, []) of
 	[] ->
@@ -116,6 +129,13 @@ get_list_using_pid(Pid, TStateList) when record(TStateList, transactionstatelist
 get_list_using_pid(_, _) ->
     {error, "Invalid arguments passed to get_list_using_pid()"}.
 
+%% Function: get_elem_using_pid/2
+%% Description: The same as get_list_using_pid/2 except this function
+%%              returns {error, Reason} if more than one record has
+%%              a matching pid.
+%% Returns: [TransactionStateRecord] |
+%%          none
+%%--------------------------------------------------------------------
 get_elem_using_pid(Pid, TStateList) when record(TStateList, transactionstatelist), pid(Pid) ->
     case get_using_pid2(Pid, TStateList#transactionstatelist.list, []) of
 	[] ->
@@ -128,6 +148,13 @@ get_elem_using_pid(Pid, TStateList) when record(TStateList, transactionstatelist
 	    {error, "unknown result from get_using_pid2"}
     end.
 
+%% Function: get_using_pid/2
+%% Description: Non-exported function that returns a plain list (not
+%%              a transactionstatelist) of all the elements of a
+%%              given transactionstatelist who have a matching pid.
+%% Returns: ListOfTransactionStateRecords |
+%%          []
+%%--------------------------------------------------------------------
 get_using_pid2(Pid, [], Res) ->
     Res;
 get_using_pid2(Pid, [H | T], Res) when record(H, transactionstate), H#transactionstate.pid == Pid ->
@@ -149,6 +176,12 @@ get_server_transaction_using_stateless_response_branch2(Id, [H | T]) ->
 	    get_server_transaction_using_stateless_response_branch2(Id, T)
     end.
 
+%% Function: get_elem/3
+%% Description: Find a single element from a transactionstatelist
+%%              which has a matching type and id.
+%% Returns: TransactionStateRecord |
+%%          none
+%%--------------------------------------------------------------------
 get_elem(Type, Id, TStateList) when record(TStateList, transactionstatelist) ->
     get_elem(Type, Id, TStateList#transactionstatelist.list);
 
@@ -159,6 +192,13 @@ get_elem(Type, Id, [H | T]) when record(H, transactionstate), H#transactionstate
 get_elem(Type, Id, [H | T]) when record(H, transactionstate) ->
     get_elem(Type, Id, T).
 
+
+%% Function: get_elem_ackid/4
+%% Description: Find a single element from a transactionstatelist
+%%              which has a matching ack_id and response_to_tag.
+%% Returns: TransactionStateRecord |
+%%          none
+%%--------------------------------------------------------------------
 get_elem_ackid(Type, AckId, ToTag, TStateList) when record(TStateList, transactionstatelist) ->
     get_elem_ackid(Type, AckId, ToTag, TStateList#transactionstatelist.list);
 
@@ -170,7 +210,12 @@ H#transactionstate.type == Type, H#transactionstate.ack_id == AckId, H#transacti
 get_elem_ackid(Type, AckId, ToTag, [H | T]) when record(H, transactionstate),
 H#transactionstate.type == Type, H#transactionstate.ack_id == AckId ->
     logger:log(debug, "Transaction state list: Found a transaction with matching ACK-Id, but the to-tag is not ~p (it is ~p) :~n~p",
-	       [ToTag, H#transactionstate.response_to_tag, debugfriendly([H])]),
+	       [ToTag, H#transactionstate.response_to_tag, debugfriendly(H)]),
+    get_elem_ackid(Type, AckId, ToTag, T);
+get_elem_ackid(Type, AckId, ToTag, [H | T]) when record(H, transactionstate),
+H#transactionstate.type == Type, H#transactionstate.ack_id == AckId; H#transactionstate.response_to_tag == ToTag ->
+    logger:log(debug, "Transaction state list: Found a transaction with matching ack-id OR matching to-tag~n(ack-id: ~p~n to-tag: ~p)~n~p",
+	       [AckId, ToTag, debugfriendly(H)]),
     get_elem_ackid(Type, AckId, ToTag, T);
 get_elem_ackid(Type, AckId, ToTag, [H | T]) when record(H, transactionstate) ->
     get_elem_ackid(Type, AckId, ToTag, T).
@@ -257,39 +302,51 @@ update_transactionstate(Ref, NewT, [H | T], TStateList) when record(H, transacti
 update_transactionstate(Ref, NewT, [H | T], TStateList) when record(H, transactionstate) ->
     lists:append([H], update_transactionstate(Ref, NewT, T, TStateList)).
 
+%% Function: get_length/1
+%% Description: Returns the length of the list record element of a
+%%              transactionstatelist.
+%% Returns: Length
+%%--------------------------------------------------------------------
 get_length(T) when record(T, transactionstatelist) ->
     length(T#transactionstatelist.list).
 
-debugfriendly(TStateList) when record(TStateList, transactionstatelist) ->
-    debugfriendly(TStateList#transactionstatelist.list);
+%% Function: debugfriendly/1
+%% Description: Returns a list, suitable for debug logging (using ~p),
+%%              describing the contents of a transactionstatelist.
+%% Returns: Blob
+%%          []
+%%--------------------------------------------------------------------
 debugfriendly([]) ->
     [];
-debugfriendly([H | Rest]) when record(H, transactionstate) ->
-    Id = H#transactionstate.id,
-    Type = H#transactionstate.type,
-    PidStr = case H#transactionstate.pid of
-		 none -> "none";
-		 Pid when pid(Pid) -> pid_to_list(Pid);
-		 _ -> "unknown"
-	     end,
-    AppDataStr = case H#transactionstate.appdata of
-		     undefined -> "";
-		     _ -> io_lib:format(", AppData=~p", [H#transactionstate.appdata])
-		 end,
-    IdStr = io_lib:format("~p", [Id]),
-    AckIdStr = case H#transactionstate.ack_id of
-		   undefined -> "";
-		   none -> "";
-		   _ -> io_lib:format(", ack_id=~p", [H#transactionstate.ack_id])
-	       end,
-    ToTagStr = case H#transactionstate.response_to_tag of
-		   undefined -> "";
-		   _ -> io_lib:format(", response_to_tag=~p", [H#transactionstate.response_to_tag])
-	       end,
-    BranchesStr = case length(H#transactionstate.stateless_response_branches) of
-		      0 -> "";
-		      BranchCount -> lists:concat([", Stateless branches=", BranchCount])
-		  end,
-    Str = lists:concat(["type=", Type, ", id=", IdStr, AckIdStr, ToTagStr,
-			", pid=", PidStr, AppDataStr, BranchesStr]),
-    lists:append([lists:flatten(Str)], debugfriendly(Rest)).
+debugfriendly(TStateList) when record(TStateList, transactionstatelist) ->
+    debugfriendly2(TStateList#transactionstatelist.list, []);
+debugfriendly(TState) when record(TState, transactionstate) ->
+    debugfriendly2([TState], []).
+
+debugfriendly2([], Res) ->
+    lists:reverse(Res);
+debugfriendly2([H | T], Res) when record(H, transactionstate) ->
+    In = [{id, H#transactionstate.id}, {type, H#transactionstate.type}, {ref, H#transactionstate.ref}],
+    Out = debugfriendly_non_empty([pid, ack_id, response_to_tag, appdata, branches], H, In),
+    debugfriendly2(T, [Out | Res]).
+
+debugfriendly_non_empty([], R, Res) ->
+    lists:reverse(Res);
+%% pid, not empty
+debugfriendly_non_empty([pid | T], R, Res) when R#transactionstate.pid /= undefined, R#transactionstate.pid /= none ->
+    debugfriendly_non_empty(T, R, [{pid, R#transactionstate.pid} | Res]);
+%% response_to_tag, not empty
+debugfriendly_non_empty([response_to_tag | T], R, Res) when R#transactionstate.response_to_tag /= undefined, R#transactionstate.response_to_tag /= none ->
+    debugfriendly_non_empty(T, R, [{response_to_tag, R#transactionstate.response_to_tag} | Res]);
+%% ack_id, not empty
+debugfriendly_non_empty([ack_id | T], R, Res) when R#transactionstate.ack_id /= undefined, R#transactionstate.ack_id /= none ->
+    debugfriendly_non_empty(T, R, [{ack_id, R#transactionstate.ack_id} | Res]);
+%% appdata, not empty
+debugfriendly_non_empty([appdata | T], R, Res) when R#transactionstate.appdata /= undefined, R#transactionstate.appdata /= none ->
+    debugfriendly_non_empty(T, R, [{appdata, R#transactionstate.appdata} | Res]);
+%% branches (length), not zero
+debugfriendly_non_empty([branches | T], R, Res) when length(R#transactionstate.stateless_response_branches) /= 0 ->
+    debugfriendly_non_empty(T, R, [{stateless_response_branches, length(R#transactionstate.stateless_response_branches)} | Res]);
+%% empty, or unknown record field
+debugfriendly_non_empty([_ | T], R, Res) ->
+    debugfriendly_non_empty(T, R, Res).
