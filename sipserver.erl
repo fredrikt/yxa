@@ -39,7 +39,11 @@ process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
     case catch do_process(Packet, Socket, IPlist, InPortNo,
 			  RequestFun, ResponseFun) of
 	{error, E} ->
-	    logger:log(normal, "=ERROR REPORT==== ~p", E);
+	    logger:log(error, "=ERROR REPORT====~n~p", [E]),
+	    true;
+	{'EXIT', E} ->
+	    logger:log(error, "=ERROR REPORT====~n~p", [E]),
+	    true;
 	_ ->
 	    true
     end.
