@@ -221,7 +221,7 @@ parse_packet(Packet, Origin) when record(Origin, siporigin) ->
 	    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
 		       [origin2str(Origin, "unknown"), Status, Reason]),
 	    false;
-	{drop} ->
+	keepalive ->
 	    true;
 	Parsed ->
 	    %% From here on, we can generate responses to the UAC on error
