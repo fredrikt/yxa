@@ -1,0 +1,1 @@
+-record(sipproxy_action, {action, timeout, requri}).
