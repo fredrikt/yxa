@@ -8,6 +8,13 @@ prefix = @prefix@
 DESTDIR = @DESTDIR@
 SHELL = @SHELL@
 
+configdir = @sysconfdir@
+sslconfdir = @sysconfdir@
+mnesiadir = @mnesiadir@
+beamdir = @datadir@
+sbindir = @sbindir@
+exec_prefix='${prefix}'
+builddir = @builddir@
 
 ERLC = erlc
 
@@ -17,7 +24,6 @@ install_PROGRAM = @INSTALL_PROGRAM@
 
 mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 
-beamdir = $(prefix)/share/yxa
 
 systools_make_script = \
 	erl -noshell -run systools make_script $* -run init stop
@@ -122,7 +128,7 @@ boot_FILES = \
 	adminwww.boot \
 	appserver.boot
 
-start_FILES = $(erl_FILES:.boot=.start)
+start_FILES = $(boot_FILES:.boot=.start)
 
 CC = gcc
 
@@ -130,10 +136,15 @@ beam_FILES = $(erl_FILES:.erl=.beam)
 
 all: $(beam_FILES) bootstrap.sh dtmfserver $(boot_FILES) $(start_FILES)
 
-install:
+install: $(boot_FILES) $(beam_FILES) $(start_FILES)
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
-	for p in $(beam_FILES) ; do \
+	for p in $(beam_FILES) $(boot_FILES) ; do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)
+	$(mkinstalldirs) $(DESTDIR)$(sbindir)
+	for p in $(start_FILES) ; do \
+	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
 clean:
@@ -156,15 +167,6 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 dtmfserver: dtmfserver.o
 	$(CC) $(LDFLAGS) -o dtmfserver dtmfserver.o
-
-bootstrap.sh: init.sh.in
-	sed -e 's!@PROGRAMNAME@!$*!' \
-	    -e 's!@CONFIGDIR@!$(configdir)!' \
-	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
-	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
-	    -e 's!@BUILDDIR@!$(builddir)!' < $(srcdir)/init.sh.in > $@.new
-	chmod +x $@.new
-	mv $@.new $@
 
 .app-in.app:
 	cp $(srcdir)/$*.app-in $*.app
@@ -189,16 +191,17 @@ adminwww.boot: adminwww.app adminwww.rel
 appserver.boot: appserver.app appserver.rel
 	$(systools_make_script)
 
-incomingproxy.start: incomingproxy.boot incomingproxy.config init.sh.in
+bootstrap.sh: init.sh.in config.status
 	$(create_start_script)
 
-pstnproxy.start: pstnproxy.boot pstnproxy.config init.sh.in
+incomingproxy.start: incomingproxy.boot init.sh.in config.status
 	$(create_start_script)
 
-adminwww.start: adminwww.boot adminwww.config init.sh.in
+pstnproxy.start: pstnproxy.boot init.sh.in config.status
 	$(create_start_script)
 
-appserver.start: appserver.boot appserver.config init.sh.in
+adminwww.start: adminwww.boot init.sh.in config.status
 	$(create_start_script)
 
-%.start: %.boot %.config init.sh.in
+appserver.start: appserver.boot init.sh.in config.status
+	$(create_start_script)
