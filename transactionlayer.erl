@@ -123,6 +123,10 @@ start_link(AppModule) ->
 init([AppModule]) ->
     process_flag(trap_exit, true),
     transactionstatelist:empty(), %% create ets tables
+    %% Create a tiny ets table to remember some state. Don't use server
+    %% process for this since it is bad for parallelism
+    Settings = ets:new(transaction_layer_settings, [protected, set, named_table]),
+    true = ets:insert_new(Settings, {appmodule, AppModule}),
     logger:log(debug, "Transaction layer started"),
     {ok, #state{appmodule=AppModule}, ?TIMEOUT}.
 
@@ -138,96 +142,18 @@ init([AppModule]) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_call({add_server_transaction, Request, STPid, Desc}, _From, State)
-  when is_record(Request, request), is_pid(STPid), is_list(Desc) ->
-    Res = transactionstatelist:add_server_transaction(Request, STPid, Desc),
-    {reply, Res, State, ?TIMEOUT};
-
-
-handle_call({add_client_transaction, Method, Branch, CTPid, Desc}, _From, State)
-  when is_list(Method), is_list(Branch), is_pid(CTPid), is_list(Desc) ->
-    Res = transactionstatelist:add_client_transaction(Method, Branch, CTPid, Desc),
-    {reply, Res, State, ?TIMEOUT};
-
-%%--------------------------------------------------------------------
-%% Function: handle_call({store_to_tag, Request, ToTag}, From, State)
-%%           Request  = request record()
-%%           ToTag    = string()
-%% Descrip.: Store the to-tag we use when sending non-2xx responses in
-%%           INVITE server transactions. We need to do this to
-%%           correctly match ACK to the server transaction.
-%% Returns : {reply, Reply, State, Timeout} |
-%%           Reply     = {ok}               |
-%%                       {error, E}
-%%           E         = string(), description of error
-%%--------------------------------------------------------------------
-handle_call({store_to_tag, Request, ToTag}, _From, State) when is_record(Request, request) ->
-    case get_server_transaction(Request) of
-	none ->
-	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
-	ThisState when is_record(ThisState, transactionstate) ->
-	    NewTState = transactionstatelist:set_response_to_tag(ThisState, ToTag),
-	    ok = transactionstatelist:update_transactionstate(NewTState),
-	    {reply, {ok}, State, ?TIMEOUT}
-    end;
-
-%%--------------------------------------------------------------------
-%% Function: handle_call({set_result, Request, Value}, From, State)
-%%           Request  = request record()
-%%           Value    = string()
-%% Descrip.: Set the informational result parameter of a transaction.
-%%           This 'result' value is only used for debugging/
-%%           informational purposes.
-%% Returns : {reply, Reply, State, Timeout} |
-%%           Reply     = {ok}               |
-%%                       {error, E}
-%%           E         = string(), description of error
-%%--------------------------------------------------------------------
-handle_call({set_result, Request, Value}, _From, State) when is_record(Request, request), is_list(Value) ->
-    case get_server_transaction(Request) of
-	none ->
-	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
-	ThisState when is_record(ThisState, transactionstate) ->
-	    NewTState = transactionstatelist:set_result(ThisState, Value),
-	    ok = transactionstatelist:update_transactionstate(NewTState),
-	    {reply, {ok}, State, ?TIMEOUT}
-    end;
-
-%%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg      = {store_appdata, Request, Value}
-%%           Request  = request record()
-%%           Value    = term()
-%% Descrip.: Store some arbitrary data associated with this
-%%           transcation for an application. The Yxa stack never uses
-%%           this data - it is just provided as convenient storage
-%%           for application writers.
-%% Returns : {reply, Reply, State, Timeout} |
-%%           Reply     = {ok}               |
-%%                       {error, E}
-%%           E         = string(), description of error
-%%--------------------------------------------------------------------
-handle_call({store_appdata, Request, Value}, _From, State) when is_record(Request, request) ->
-    case get_server_transaction(Request) of
-	none ->
-	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
-	ThisState when is_record(ThisState, transactionstate) ->
-	    NewTState = transactionstatelist:set_appdata(ThisState, Value),
-	    ok = transactionstatelist:update_transactionstate(NewTState),
-	    {reply, {ok}, State, ?TIMEOUT}
-    end;
 
 %%--------------------------------------------------------------------
 %% Function: handle_call({monitor_get_transactionlist}, From, State)
 %% Descrip.: The stack monitor is requesting our list of transactions.
 %% Returns : {reply, {ok, List} State, ?TIMEOUT}
 %%           List = transactionstatelist record()
+%% Note    : Returning all entrys from an ets table is a relatively
+%%           expensive operation. You might not want to run the
+%%           stack monitor on a busy system...
 %%--------------------------------------------------------------------
 handle_call({monitor_get_transactionlist}, _From, State) ->
     {reply, {ok, transactionstatelist:get_all_entries()}, State, ?TIMEOUT};
-
-handle_call({get_settings}, _From, State) ->
-    {reply, {ok, [{appmodule, State#state.appmodule}]}, State, ?TIMEOUT};
 
 handle_call(Request, From, State) ->
     logger:log(debug, "Transaction layer: Received unknown gen_server call (from ~p) : ~p", [From, Request]),
@@ -402,7 +328,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% ACK
 %%
 received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, _AppModule) ->
-    {ok, [{appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 	       [sipurl:print(Request#request.uri)]),
     {pass_to_core, AppModule};
@@ -777,15 +703,13 @@ start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent)
 %%           E = string(), description of error
 %%--------------------------------------------------------------------
 store_to_tag(Request, ToTag) when is_record(Request, request), is_list(ToTag) ->
-    case catch gen_server:call(transaction_layer, {store_to_tag, Request, ToTag}, ?STORE_TIMEOUT) of
-	{error, E} ->
-	    {error, E};
-	{ok} ->
-	    ok;
-	Unknown ->
-	    logger:log(debug, "Transaction layer: Failed storing To: tag, gen_server call result :~n~p",
-		       [Unknown]),
-	    {error, "Transaction layer failure"}
+    case get_server_transaction(Request) of
+	none ->
+	    {error, "Transaction not found"};
+	ThisState when is_record(ThisState, transactionstate) ->
+	    NewTState = transactionstatelist:set_response_to_tag(ThisState, ToTag),
+	    ok = transactionstatelist:update_transactionstate(NewTState),
+	    ok
     end.
 
 %%--------------------------------------------------------------------
@@ -800,38 +724,35 @@ store_to_tag(Request, ToTag) when is_record(Request, request), is_list(ToTag) ->
 %%           E = string(), description of error
 %%--------------------------------------------------------------------
 set_result(Request, Value) when is_record(Request, request), is_list(Value) ->
-    case catch gen_server:call(transaction_layer, {set_result, Request, Value}, ?STORE_TIMEOUT) of
-	{error, E} ->
-	    {error, E};
-	{ok} ->
-	    ok;
-	Unknown ->
-	    logger:log(debug, "Transaction layer: Failed storing transaction result, gen_server call result :~n~p",
-		       [Unknown]),
-	    {error, "Transaction layer failure"}
+    case get_server_transaction(Request) of
+	none ->
+	    {error, "Transaction not found"};
+	ThisState when is_record(ThisState, transactionstate) ->
+	    NewTState = transactionstatelist:set_result(ThisState, Value),
+	    ok = transactionstatelist:update_transactionstate(NewTState),
+	    ok
     end.
 
 %%--------------------------------------------------------------------
 %% Function: store_appdata(Request, ToTag)
 %%           Request  = request record()
 %%           Value    = term()
-%% Descrip.: Store the to-tag we use when sending non-2xx responses in
-%%           INVITE server transactions. We need to do this to
-%%           correctly match ACK to the server transaction.
+%% Descrip.: Store some arbitrary data associated with this
+%%           transcation for an application. The Yxa stack never uses
+%%           this data - it is just provided as convenient storage
+%%           for application writers.
 %% Returns : ok         |
 %%           {error, E}
 %%           E = string(), description of error
 %%--------------------------------------------------------------------
 store_appdata(Request, Value) when is_record(Request, request) ->
-    case catch gen_server:call(transaction_layer, {store_appdata, Request, Value}, ?STORE_TIMEOUT) of
-	{error, E} ->
-	    {error, E};
-	{ok} ->
-	    ok;
-	Unknown ->
-	    logger:log(debug, "Transaction layer: Failed storing appdata, gen_server call result :~n~p",
-		       [Unknown]),
-	    {error, "Transaction layer failure"}
+    case get_server_transaction(Request) of
+	none ->
+	    {error, "Transaction not found"};
+	ThisState when is_record(ThisState, transactionstate) ->
+	    NewTState = transactionstatelist:set_appdata(ThisState, Value),
+	    ok = transactionstatelist:update_transactionstate(NewTState),
+	    ok
     end.
 
 %%--------------------------------------------------------------------
@@ -951,7 +872,7 @@ debug_show_transactions() ->
 %% Descrip.: The transport layer passes us a request it has just
 %%           received.
 %% Returns : {pass_to_core, AppModule} |
-%%           {continue}
+%%           continue
 %%           AppModule = atom(), Yxa application module name
 %%--------------------------------------------------------------------
 from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
@@ -959,14 +880,14 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 						  is_list(LogStr) ->
     case get_server_transaction_pid(Request) of
 	none ->
-	    {ok, [{appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+	    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
 	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule);
-	TPid when is_pid(TPid) ->
-	    case gen_server:call(TPid, {siprequest, Request, Origin}) of
+	STPid when is_pid(STPid) ->
+	    case gen_server:call(STPid, {siprequest, Request, Origin}) of
 		{pass_to_core, AppModule1} ->
 		    {pass_to_core, AppModule1};
 		{continue} ->
-		    {continue}
+		    continue
 	    end
     end;
 
@@ -983,13 +904,13 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
 						   is_list(LogStr) ->
     case get_client_transaction_pid(Response) of
 	none ->
-	    {ok, [{appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+	    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
 	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
 		       [Response#response.status, Response#response.reason, AppModule]),
 	    {pass_to_core, AppModule};
-	TPid when is_pid(TPid) ->
+	CTPid when is_pid(CTPid) ->
 	    logger:log(debug, "Transaction layer: Passing response '~p ~s' to registered handler ~p",
-		       [Response#response.status, Response#response.reason, TPid]),
-	    gen_server:cast(TPid, {sipmessage, Response, Origin, LogStr}),
-	    {continue}
+		       [Response#response.status, Response#response.reason, CTPid]),
+	    gen_server:cast(CTPid, {sipmessage, Response, Origin, LogStr}),
+	    continue
     end.

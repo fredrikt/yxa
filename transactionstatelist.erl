@@ -111,10 +111,10 @@ add_server_transaction(Request, Pid, Desc)
 %% Returns : TStateList = transactionstatelist record()
 %%--------------------------------------------------------------------
 empty() ->
-    Ref2t = ets:new(transactionstate_ref_to_t, [protected, set, named_table]),
-    Pid2ref = ets:new(transactionstate_pid_to_ref, [protected, bag, named_table]),
-    Ack2ref = ets:new(transactionstate_ack_to_ref, [protected, set, named_table]),
-    TypeId2ref = ets:new(transactionstate_typeid_to_ref, [protected, set, named_table]),
+    Ref2t = ets:new(transactionstate_ref_to_t, [public, set, named_table]),
+    Pid2ref = ets:new(transactionstate_pid_to_ref, [public, bag, named_table]),
+    Ack2ref = ets:new(transactionstate_ack_to_ref, [public, set, named_table]),
+    TypeId2ref = ets:new(transactionstate_typeid_to_ref, [public, set, named_table]),
     Tables = #tables{ref_to_t=Ref2t, pid_to_ref=Pid2ref, ack_to_ref=Ack2ref, typeid_to_ref=TypeId2ref},
     #transactionstatelist{tables=Tables}.
 

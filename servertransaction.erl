@@ -106,16 +106,17 @@ start(Request, Socket, LogStr, AppModule) ->
 %%--------------------------------------------------------------------
 
 init([no_link, Request, Socket, LogStr, AppModule]) ->
-    %% Started with start() and not start_link() - link to transaction_layer
-    %% immediately
-    TPid = erlang:whereis(transaction_layer),
-    true = link(TPid),
-    %% Register with transaction_layer first of all
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
     Desc = lists:concat([Branch, ": ", Method, " ", sipurl:print(URI)]),
-    case gen_server:call(transaction_layer, {add_server_transaction, Request, self(), Desc}) of
+    %% Get ourselves into the transaction state list first of all
+    case transactionstatelist:add_server_transaction(Request, self(), Desc) of
 	ok ->
+	    %% Started with start() and not start_link() - link to transaction_layer
+	    %% immediately (so that it removes this transaction from the transactionstatelist
+	    %% when we exit).
+	    TPid = erlang:whereis(transaction_layer),
+	    true = link(TPid),
 	    case init([Request, Socket, LogStr, AppModule, Branch]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
@@ -127,7 +128,6 @@ init([no_link, Request, Socket, LogStr, AppModule]) ->
 	    %% a resend (us) and then exit. XXX implement the notifying, for now
 	    %% just log.
 	    logger:log(normal, "~s: Early resend, exiting.", [LogStr]),
-	    unlink(TPid),	%% Don't cause 'EXIT' signal to transaction_layer
 	    {stop, resend};
 	_ ->
 	    {stop, "Failed registering with transaction_layer"}

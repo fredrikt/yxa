@@ -79,21 +79,21 @@ start(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
 init([Request, SocketIn, Dst, Branch, Timeout, Parent])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
        is_integer(Timeout), is_pid(Parent); Parent == none ->
-    %% Started with start() and not start_link() - link to transaction_layer
-    %% immediately
-    TPid = erlang:whereis(transaction_layer),
-    true = link(TPid),
-    %% Register with transaction_layer first of all
     RegBranch = sipheader:remove_loop_cookie(Branch),
     {Method, URI} = {Request#request.method, Request#request.uri},
     Desc = lists:flatten(
 	     io_lib:format("~s: ~s ~s (dst ~s)", [RegBranch, Method,
 						  sipurl:print(URI), sipdst:dst2str(Dst)])),
-    case gen_server:call(transaction_layer, {add_client_transaction, Method, RegBranch, self(), Desc}) of
+    %% Get ourselves into the transaction state list first of all
+    case transactionstatelist:add_client_transaction(Method, RegBranch, self(), Desc) of
 	{duplicate, _} ->
 	    logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
 	    {stop, "Client transaction already exists"};
 	ok ->
+	    %% Link to transaction_layer immediately (so that it removes this transaction
+	    %% from the transactionstatelist when we exit).
+	    TPid = erlang:whereis(transaction_layer),
+	    true = link(TPid),
 	    case init2([Request, SocketIn, Dst, Branch, Timeout, Parent]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
