@@ -407,7 +407,7 @@ parse_packet(Packet, Origin) when record(Origin, siporigin) ->
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    parse_do_internal_error(Header, Socket, Status, Reason, []);
 		{sipparseerror, request, Header, Status, Reason, ExtraHeaders} ->
-		    logger:log(error, "INVALID request [client=~s]: ~s -> ~p ~s",
+		    logger:log(error, "INVALID request [client=~s]: -> ~p ~s",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders);
 		{sipparseerror, response, _Header, Status, Reason} ->

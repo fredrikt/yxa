@@ -82,8 +82,8 @@ update_target(Target, TargetList) when is_record(Target, target), is_record(Targ
     #targetlist{list=update_target(Ref, Target, TargetList#targetlist.list, TargetList)}.
 
 update_target(Ref, _, [], TargetList) ->
-    logger:log(error, "Targetlist: Asked to update a target, but I can't find it", [Ref]),
-    logger:log(error, "Targetlist: Asked to update a target with ref=~p, but I can't find it in list :~n~p",
+    logger:log(error, "Targetlist: Asked to update a target, but I can't find it"),
+    logger:log(debug, "Targetlist: Asked to update a target with ref=~p, but I can't find it in list :~n~p",
 		[Ref, debugfriendly(TargetList)]),
     [];
 update_target(Ref, NewT, [H | T], _TargetList) when is_record(H, target), H#target.ref == Ref ->

@@ -94,8 +94,8 @@ update_timer(SipTimer, TList) when is_record(SipTimer, siptimer), is_record(TLis
     make_siptimerlist(update_timer2(Ref, SipTimer, TList#siptimerlist.list, TList)).
     
 update_timer2(Ref, _, [], TList) ->
-    logger:log(error, "Siptimer: Asked to update a timer, but I can't find it", [Ref]),
-    logger:log(error, "Siptimer: Asked to update a timer with ref=~p, but I can't find it in list :~n~p",
+    logger:log(error, "Siptimer: Asked to update a timer, but I can't find it"),
+    logger:log(debug, "Siptimer: Asked to update a timer with ref=~p, but I can't find it in list :~n~p",
 		[Ref, debugfriendly(TList)]),
     [];
 update_timer2(Ref, NewT, [H | T], _TList) when is_record(H, siptimer), H#siptimer.ref == Ref ->

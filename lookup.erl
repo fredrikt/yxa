@@ -343,7 +343,8 @@ lookupnumber(Number) ->
 	    %% Try to rewrite Number using configured regexp 'number_to_pstn'
 	    case util:regexp_rewrite(Number, sipserver:get_env(number_to_pstn, [])) of
 		[] ->
-		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn'"),
+		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn'",
+			      [Number]),
 		    error;
 		Res when list(Res) ->
 		    %% Check to see if what we got is a parseable URL
@@ -367,7 +368,7 @@ lookupnumber(Number) ->
 		Unknown ->
 		    %% Regexp rewrite failed
 		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn', result : ~p",
-			       [Unknown]),
+			       [Number, Unknown]),
 		    error
 	    end;
 	_ ->

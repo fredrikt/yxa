@@ -664,12 +664,12 @@ process_timer2({resendresponse}, Timer, State) when is_record(State, state) ->
 		    State#state{timerlist=NewTimerList};
 		_ ->
 		    logger:log(debug, "~s: Ignoring signal to resend response '~p ~s' (response to ~s ~s) since "
-			       "we are in state '~p'",[LogTag, Status, Reason, Method, sipurl:print(URI), State]),
+			       "we are in state '~p'", [LogTag, Status, Reason, Method, sipurl:print(URI), State]),
 		    State
 	    end;
 	_ ->
 	    logger:log(error, "~s: Resend after ~p (response to ~s ~s, state '~p'): no response sent!",
-		       [Timeout, Method, sipurl:print(URI), State]),
+		       [LogTag, Timeout, Method, sipurl:print(URI), State]),
 	    State
     end;
 
