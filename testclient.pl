@@ -492,7 +492,7 @@ sub perform_test
     my $To = make_url($testparams{To}) || "\"Testclient\" <sip:test\@$testserver>";
     my $From = $testparams{From} || "\"SIP testing program\" <sip:testclient\@$hostname:$localport>";
     my $Contact = $testparams{Contact} || "<sip:testclient\@$hostname:$localport>";
-    my $MaxForwards = $testparams{MaxForwards} || "10";  # RFC3261 says 70 but that is not suitable for testing
+    my $MaxForwards = defined ($testparams{MaxForwards})?$testparams{MaxForwards}:'10';  # RFC3261 says 70 but that is not suitable for testing
     my $testheader = $testparams{Header} || '';
     my $sipuri = $testparams{RequestURI} || parse_sipurl ($To) or warn ("Could not create a Request URI!\n"), return 0;
     
