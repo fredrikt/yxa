@@ -159,6 +159,7 @@ remove_phones([]) ->
     true;
 
 remove_phones([Phone | Rest]) ->
-    logger:log(debug, "Expire: Contact ~p has expired", [siprequest:locations_to_contacts(Phone)]),
-    phone:delete_record(Phone),
+    {Number, Location, Class} = Phone,
+    logger:log(normal, "Expire: User ~p contact ~p has expired", [Number, sipheader:contact_print([{none, Location}])]),
+    phone:delete_phone(Number, Class, Location),
     remove_phones(Rest).
