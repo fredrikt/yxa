@@ -1,22 +1,77 @@
--module(phone).
--export([init/0, create/0, create/1, insert_phone/5, get_phone/1, list_phones/0,
-	 get_user/1, insert_user/4, list_users/0,
-	 insert_purge_phone/5, insert_purge_class_phone/5,
-	 purge_class_phone/2, expired_phones/0, delete_record/1,
-	 delete_user/1, set_user_password/2, set_user_flags/2,
-	 set_user_numbers/2, set_user_classes/2, insert_user_or_password/2,
-	 get_numbers_for_user/1, get_users_for_number/1, list_numbers/0,
-	 delete_phone/3, get_phone_with_requri/1]).
+%%
+%%--------------------------------------------------------------------
 
+-module(phone).
+
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([
+	 init/0,
+	 create/0,
+	 create/1,
+	 insert_phone/5,
+	 get_phone/1,
+	 list_phones/0,
+	 get_user/1,
+	 insert_user/4,
+	 list_users/0,
+	 insert_purge_phone/5,
+	 insert_purge_class_phone/5,
+	 purge_class_phone/2,
+	 expired_phones/0,
+	 delete_record/1,
+	 delete_user/1,
+	 set_user_password/2,
+	 set_user_flags/2,
+	 set_user_numbers/2,
+	 set_user_classes/2,
+	 insert_user_or_password/2,
+	 get_numbers_for_user/1,
+	 get_users_for_number/1,
+	 list_numbers/0,
+	 delete_phone/3,
+	 get_phone_with_requri/1
+	]).
+
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("phone.hrl").
 -include("siprecords.hrl").
 
--include_lib("mnemosyne/include/mnemosyne.hrl").
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+
+%%====================================================================
+%% External functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: init()
+%% Descrip.: start mnesia and use local node as disc node
+%% Returns :
+%%--------------------------------------------------------------------
 init() ->
     mnesia:create_schema([node()]),
     mnesia:start().
 
+%%--------------------------------------------------------------------
+%% Function: create()
+%%           create(Servers)
+%% Descrip.: Put phone, user and numbers tables as disc_copies on
+%%           Servers
+%% Returns :
+%%--------------------------------------------------------------------
 create() ->
     create(servers()).
 
@@ -34,35 +89,31 @@ create(Servers) ->
 servers() ->
     sipserver:get_env(databaseservers).
 
-insert_record(Record) ->
-    Fun = fun() ->
-		  mnesia:write(Record)
-	  end,
-    mnesia:transaction(Fun).
-
-%% Function: insert_phone/5
-%% Description: Inserts an entry for a number (SIP user) in the
-%%              location database.
-%% Returns: The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-insert_phone(SipUser, Flags, Class, Expire, Address) when record(Address, sipurl) ->
+%% Function: insert_phone/5
+%% Descrip.: Inserts an entry for a number (SIP user) in the location
+%%           database.
+%% Returns : The result of the mnesia:transaction()
+%%--------------------------------------------------------------------
+insert_phone(SipUser, Flags, Class, Expire, Address) when is_record(Address, sipurl) ->
     %% We store locations as strings in the location database, since any
     %% datastructure could have to be changed in the future
     LocationStr = sipurl:print(Address),
     %% URIstr is not a valid location for this user, it is used to find the user of
     %% a location.
     URIstr = url_to_requristr(Address),
-    insert_record(#phone{number = SipUser, flags = Flags, class = Class,
+    db_util:insert_record(#phone{number = SipUser, flags = Flags, class = Class,
 			 expire = Expire, address = LocationStr,
 			 requristr = URIstr}).
 
-%% Function: insert_purge_phone/5
-%% Description: Removes all entrys matching on the number (SIP user),
-%%              class and address, then inserts a new entry in the
-%%              location database.
-%% Returns: The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-insert_purge_phone(SipUser, Flags, Class, Expire, Address) when record(Address, sipurl) ->
+%% Function: insert_purge_phone/5
+%% Descrip.: Removes all entrys matching on the number (SIP user),
+%%           class and address, then inserts a new entry in the
+%%           location database.
+%% Returns : The result of the mnesia:transaction()
+%%--------------------------------------------------------------------
+insert_purge_phone(SipUser, Flags, Class, Expire, Address) when is_record(Address, sipurl) ->
     %% We store locations as strings in the location database, since any
     %% datastructure could have to be changed in the future
     LocationStr = sipurl:print(Address),
@@ -70,13 +121,10 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address) when record(Address, 
     %% a location.
     URIstr = url_to_requristr(Address),
     Fun = fun() ->
-		  Q = query
-			  [E || E <- table(phone),
-				E.number = SipUser,
-				E.class = Class,
-				E.address = LocationStr]
-		      end,
-		  A = mnemosyne:eval(Q),
+		  A = mnesia:match_object(#phone{number = SipUser,
+						 class = Class,
+						 address = LocationStr,
+						 _ = '_'}),
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
@@ -88,13 +136,14 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address) when record(Address, 
 	  end,
     mnesia:transaction(Fun).
 
-%% Function: insert_purge_class_phone/5
-%% Description: Removes all entrys matching on the number (SIP user),
-%%              and class, then inserts a new entry in the location
-%%              database.
-%% Returns: The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-insert_purge_class_phone(Number, Flags, Class, Expire, Address) when record(Address, sipurl) ->
+%% Function: insert_purge_class_phone/5
+%% Descrip.: Removes all entrys matching on the number (SIP user),
+%%           and class, then inserts a new entry in the location
+%%           database.
+%% Returns : The result of the mnesia:transaction()
+%%--------------------------------------------------------------------
+insert_purge_class_phone(Number, Flags, Class, Expire, Address) when is_record(Address, sipurl) ->
     %% We store locations as strings in the location database, since any
     %% datastructure could have to be changed in the future
     LocationStr = sipurl:print(Address),
@@ -102,12 +151,9 @@ insert_purge_class_phone(Number, Flags, Class, Expire, Address) when record(Addr
     %% a location.
     URIstr = url_to_requristr(Address),
     Fun = fun() ->
-		  Q = query
-			  [E || E <- table(phone),
-				E.number = Number,
-				E.class = Class]
-		      end,
-		  A = mnemosyne:eval(Q),
+		  A = mnesia:match_object(#phone{number = Number,
+						 class = Class,
+						 _ = '_'}),
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
@@ -117,39 +163,45 @@ insert_purge_class_phone(Number, Flags, Class, Expire, Address) when record(Addr
 				      expire = Expire, address = LocationStr,
 				      requristr = URIstr})
 	  end,
-    mnesia:transaction(Fun).    
+    mnesia:transaction(Fun).
 
+%%--------------------------------------------------------------------
 %% Function: purge_class_phone/2
-%% Description: Removes all entrys matching a number (SIP user),
-%%              and class from the location database.
-%% Returns: The result of the mnesia:transaction()
+%% Descrip.: Removes all entrys matching a number (SIP user),
+%%           and class from the location database.
+%% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
 purge_class_phone(Number, Class) ->
     Fun = fun() ->
-		  Q = query
-			  [E || E <- table(phone),
-				E.number = Number,
-				E.class = Class]
-		      end,
-		  A = mnemosyne:eval(Q),
+		  A = mnesia:match_object(#phone{number = Number,
+						 class = Class,
+						 _ = '_'}),
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
 		  lists:foreach(Delete, A)
 	  end,
-    mnesia:transaction(Fun).    
+    mnesia:transaction(Fun).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 insert_user(User, Password, Flags, Classes) ->
-    insert_record(#user{user = User, password = Password,
+    db_util:insert_record(#user{user = User, password = Password,
 			flags = Flags, classes = Classes}).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 insert_user_or_password(User, Password) ->
     Fun = fun() ->
-		  Q = query
-			  [E || E <- table(user),
-				E.user = User]
-		      end,
-		  case mnemosyne:eval(Q) of
+		  A = mnesia:read({user, User}),
+ 		  %% A = mnesia:match_object(#user{user = User,  _ = '_'}),
+		  case A of
 		      [] ->
 			  mnesia:write(#user{user = User, password = Password,
 					     flags = [], classes = []});
@@ -161,52 +213,38 @@ insert_user_or_password(User, Password) ->
 	  end,
     mnesia:transaction(Fun).
 
+%%--------------------------------------------------------------------
 %% Function: list_phones/0
-%% Description: Fetches all locations stored in the location database.
-%% Returns: The result of the mnesia:transaction()
+%% Descrip.: Fetches all locations stored in the location database.
+%% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
 list_phones() ->
-    F = fun() ->
-		Q = query
-			[E || E <- table(phone)]
-		    end,
-		mnemosyne:eval(Q)
-	end,
-    mnesia:transaction(F).
+    db_util:tab_to_list(phones).
 
 list_users() ->
-    F = fun() ->
-		Q = query
-			[E || E <- table(user)]
-		    end,
-		mnemosyne:eval(Q)
-	end,
-    mnesia:transaction(F).
+    db_util:tab_to_list(user).
 
 list_numbers() ->
-    F = fun() ->
-		Q = query
-			[E || E <- table(numbers)]
-		    end,
-		mnemosyne:eval(Q)
-	end,
-    mnesia:transaction(F).
-    
+    db_util:tab_to_list(numbers).
+
+%%--------------------------------------------------------------------
 %% Function: get_phones/1
-%% Description: Fetches all locations for a given number (SIP user)
-%%              from the location database.
-%% Returns: {atomic, Entrys} |
-%%          the result of the mnesia:transaction()
+%% Descrip.: Fetches all locations for a given number (SIP user)
+%%           from the location database.
+%% Returns : {atomic, Entrys} |
+%%           the result of the mnesia:transaction()
 %%--------------------------------------------------------------------
 get_phone(SipUser) ->
     Now = util:timestamp(),
     F = fun() ->
-		Q = query
-			[{E.address, E.flags, E.class, E.expire} ||
-			    E <- table(phone), E.number = SipUser,
-			    E.expire > Now]
-		    end,
-		mnemosyne:eval(Q)
+		L = mnesia:select(phone, [{#phone{number = SipUser, _ = '_'},
+					   [{'>', {element, #phone.expire, '$_'}, Now}],
+					   [{{{element, #phone.address, '$_'},
+					      {element, #phone.flags, '$_'},
+					      {element, #phone.class, '$_'},
+					      {element, #phone.expire, '$_'}
+					     }}]
+					  }])
 	end,
     case mnesia:transaction(F) of
 	{atomic, L} ->
@@ -219,7 +257,8 @@ get_phone(SipUser) ->
                                   {User, Pass, Host, Port, Parameters} ->
 				      %% 2004-04-14, ft@ : This is COMPABILITY code to handle old entrys just enough to
 				      %% delete them when they expire. Will be removed.
-                                      U = #sipurl{proto="sip", user=User, pass=Pass, host=Host, port=Port, param=Parameters},
+                                      U = #sipurl{proto="sip", user=User, pass=Pass, host=Host,
+						  port=Port, param=Parameters},
                                       {U, Flags, Class, Expire};
 				  _ ->
 				      {sipurl:parse(LocationStr), Flags, Class, Expire}
@@ -231,115 +270,97 @@ get_phone(SipUser) ->
 	    Unknown
     end.
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 get_user(User) ->
     F = fun() ->
-		Q = query
-			[{E.password, E.flags, E.classes} || E <- table(user),
-							     E.user = User]
-			end,
-		mnemosyne:eval(Q)
+		[ {E#user.password, E#user.flags, E#user.classes} ||
+		    E <- mnesia:read({user, User}) ]
 	end,
     mnesia:transaction(F).
 
+
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 get_numbers_for_user(User) ->
     F = fun() ->
-		Q = query
-			[{E.number} || E <- table(numbers),
-				       E.user = User]
-		    end,
-		mnemosyne:eval(Q)
+		[ E#numbers.number || E <- mnesia:read({numbers, User}) ]
 	end,
-    Rewrite = fun({Number}) ->
-		      Number
-	      end,
-    case mnesia:transaction(F) of
-	{atomic, List} ->
-	    {atomic, lists:map(Rewrite, List)};
-	Other ->
-	    Other
-    end.
+    mnesia:transaction(F).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 get_users_for_number(Number) ->
     F = fun() ->
-		Q = query
-			[{E.user} || E <- table(numbers),
-				     E.number = Number]
-		    end,
-		mnemosyne:eval(Q)
+		[ E#numbers.user || E <- mnesia:match_object(#numbers{number = Number,
+								      _ = '_'}) ]
 	end,
-    Rewrite = fun({User}) ->
-		      User
-	      end,
-    case mnesia:transaction(F) of
-	{atomic, List} ->
-	    {atomic, lists:map(Rewrite, List)};
-	Other ->
-	    Other
-    end.
+    mnesia:transaction(F).
 
-%% Function: get_phone_with_requri/1
-%% Description: Find an entry with requristr matching the URI, and
-%%              return the number (SIP user) of that entry.
-%% Returns: {atomic, User} |
-%%          the result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-get_phone_with_requri(URI) when record(URI, sipurl) ->
+%% Function: get_phone_with_requri/1
+%% Descrip.: Find an entry with requristr matching the URI, and
+%%           return the number (SIP user) of that entry.
+%% Returns : {atomic, User} | result of mnesia:transaction()
+%%--------------------------------------------------------------------
+get_phone_with_requri(URI) when is_record(URI, sipurl) ->
     ReqURIstr = url_to_requristr(URI),
     F = fun() ->
-		Q = query
-			[{E.number} || E <- table(phone),
-				     E.requristr = ReqURIstr]
-		    end,
-		mnemosyne:eval(Q)
+		[ E#phone.number || E <- mnesia:match_object(#phone{requristr = ReqURIstr,
+								    _ = '_'}) ]
 	end,
-    Rewrite = fun({User}) ->
-		      User
-	      end,
-    case mnesia:transaction(F) of
-	{atomic, List} ->
-	    {atomic, lists:map(Rewrite, List)};
-	Other ->
-	    Other
-    end.
+    mnesia:transaction(F).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 set_user_password(User, Password) ->
     F = fun() ->
-		Q = query
-			[E || E <- table(user),
-			      E.user = User]
-		    end,
-		A = mnemosyne:eval(Q),
-		Update = fun(O) ->
-				 mnesia:write(O#user{password = Password})
+		L = mnesia:read({user, User}),
+		Update = fun(Obj) ->
+				 mnesia:write(Obj#user{password = Password})
 			 end,
-		lists:foreach(Update, A)
+		lists:foreach(Update, L)
 	end,
     mnesia:transaction(F).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 set_user_flags(User, Flags) ->
     F = fun() ->
-		Q = query
-			[E || E <- table(user),
-			      E.user = User]
-		    end,
-		A = mnemosyne:eval(Q),
-		Update = fun(O) ->
-				 mnesia:write(O#user{flags = Flags})
+		A = mnessia:read({user, User}),
+		Update = fun(Obj) ->
+				 mnesia:write(Obj#user{flags = Flags})
 			 end,
 		lists:foreach(Update, A)
 	end,
     mnesia:transaction(F).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 set_user_numbers(User, Numbers) ->
     F = fun() ->
-		Q = query
-			[E || E <- table(numbers),
-			      E.user = User]
-		    end,
-		A = mnemosyne:eval(Q),
-		Delete = fun(O) ->
-				 mnesia:delete_object(O)
-			   end,
+		A = mnesia:read({numbers, User}),
+		Delete = fun(Obj) ->
+				 mnesia:delete_object(Obj)
+			 end,
 		lists:foreach(Delete, A),
 		Update = fun(Number) ->
 				 mnesia:write(#numbers{number = Number,
@@ -349,34 +370,40 @@ set_user_numbers(User, Numbers) ->
 	end,
     mnesia:transaction(F).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 set_user_classes(User, Classes) ->
     F = fun() ->
-		Q = query
-			[E || E <- table(user),
-			      E.user = User]
-		    end,
-		A = mnemosyne:eval(Q),
-		Update = fun(O) ->
-				 mnesia:write(O#user{classes = Classes})
+		A = mnesia:read({user, User}),
+		Update = fun(Obj) ->
+				 mnesia:write(Obj#user{classes = Classes})
 			 end,
 		lists:foreach(Update, A)
 	end,
     mnesia:transaction(F).
 
+%%--------------------------------------------------------------------
 %% Function: expired_phones/0
-%% Description: Finds all expired entrys from the location database.
-%% Returns: {atomic, Entrys} |
-%%          the result of the Mnesia transaction
+%% Descrip.: Finds all expired entrys from the location database.
+%% Returns : {atomic, Entrys} |
+%%           the result of the Mnesia transaction
 %%--------------------------------------------------------------------
 expired_phones() ->
     Now = util:timestamp(),
+
     F = fun() ->
-		Q = query
-			[ {E.number, E.address, E.class} ||
-			  E <- table(phone), E.expire < Now]
-		    end,
-		mnemosyne:eval(Q)
+		L = mnesia:select(phone, [{#phone{_ = '_'},
+					   ['<', {element, #phone.expire, '$_'}, Now],
+					   [{{{element, #phone.number, '$_'},
+					      {element, #phone.address, '$_'},
+					      {element, #phone.class, '$_'}
+					     }}]
+					  }])
 	end,
+
     case mnesia:transaction(F) of
 	{atomic, L} ->
 	    %% Convert the location strings stored in the database to sipurl record format.
@@ -388,7 +415,8 @@ expired_phones() ->
 				  {User, Pass, Host, Port, Parameters} ->
 				      %% 2004-04-14, ft@ : This is COMPABILITY code to handle old entrys just enough to
                                       %% delete them when they expire. Will be removed.
-				      U = #sipurl{proto="sip", user=User, pass=Pass, host=Host, port=Port, param=Parameters},
+				      U = #sipurl{proto="sip", user=User, pass=Pass, host=Host, port=Port,
+						  param=Parameters},
 				      {SipUser, U, Class};
 				  _ ->
 				      {SipUser, sipurl:parse(LocationStr), Class}
@@ -400,73 +428,77 @@ expired_phones() ->
 	    Unknown
     end.
 
-%% Function: delete_phone/3
-%% Description: Removes all entrys matching a number (SIP user), class
-%%              and address from the location database.
-%% Returns: The result of the Mnesia transaction
 %%--------------------------------------------------------------------
-delete_phone(SipUser, Class, Address) when record(Address, sipurl) ->
+%% Function: delete_phone/3
+%% Descrip.: Removes all entrys matching a number (SIP user), class
+%%           and address from the location database.
+%% Returns : The result of the Mnesia transaction
+%%--------------------------------------------------------------------
+delete_phone(SipUser, Class, Address) when is_record(Address, sipurl) ->
     AddressStr = sipurl:print(Address),
     %% 2004-04-14, ft@ : This is COMPABILITY code to flush out records of old format
     %% from the location database. Will be removed.
-    CompatForm = {Address#sipurl.user, Address#sipurl.pass, Address#sipurl.host, Address#sipurl.port, Address#sipurl.param},
+    CompatForm = {Address#sipurl.user, Address#sipurl.pass, Address#sipurl.host, Address#sipurl.port,
+		  Address#sipurl.param},
     Fun = fun() ->
-		  Q = query
-			  [E || E <- table(phone),
-				E.number = SipUser,
-				E.class = Class,
-				E.address = AddressStr
-				   ]
-		      end,
+		  A1 = mnesia:match_object(#phone{number = SipUser,
+						 class = Class,
+						 address = AddressStr,
+						 _ = '_'}),
 		  %% 2004-04-14, ft@ : This is COMPABILITY code to flush out records of old format
 		  %% from the location database. Will be removed.
-                  Q2 = query
-			   [E || E <- table(phone),
-				 E.number = SipUser,
-				 E.class = Class,
-				 E.address = CompatForm
-				    ]
-		       end,
-		  A = lists:append(mnemosyne:eval(Q), mnemosyne:eval(Q2)),
+		  A2 = mnesia:match_object(#phone{number = SipUser,
+						 class = Class,
+						 address = CompatForm,
+						 _ = '_'}),
+		  A = A1 ++ A2,
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
 		  lists:foreach(Delete, A)
 	  end,
-    mnesia:transaction(Fun).    
+    mnesia:transaction(Fun).
 
-%% query [E || E <- table(employee),
-%%             E <- [#employee{emp_id=312}, #employee{emp_id=400}]]
-
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 delete_record(Obj) ->
-    F = fun() ->
-		mnesia:delete_object(Obj)
-	end,
-    mnesia:transaction(F).
+    db_util:delete_record(Obj).
+
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
+delete_user(User) ->
+    delete_with_key(user, User).
 
 delete_with_key(Db, Key) ->
     F = fun() ->
 		mnesia:delete({Db, Key})
-		end,
+	end,
     Rec = mnesia:transaction(F).
 
-delete_user(User) ->
-    delete_with_key(user, User).
+%%====================================================================
+%% Behaviour functions
+%%====================================================================
 
+%%====================================================================
+%% Internal functions
+%%====================================================================
 
 %%--------------------------------------------------------------------
-%%% Internal functions
-%%--------------------------------------------------------------------
-
 %% Function: url_to_requristr/1
-%% Description: We need to store the location as a searchable string
-%%              in order to be able to look up a location to a user.
-%%              This string is not used to look up the location of a
-%%              user, but rather to see if we are to relay requests
-%%              to a destination without challenging and so on.
-%% Returns: URLstring
+%% Descrip.: We need to store the location as a searchable string
+%%           in order to be able to look up a location to a user.
+%%           This string is not used to look up the location of a
+%%           user, but rather to see if we are to relay requests
+%%           to a destination without challenging and so on.
+%% Returns : URLstring
 %%--------------------------------------------------------------------
-url_to_requristr(URL) when record(URL, sipurl) ->
+url_to_requristr(URL) when is_record(URL, sipurl) ->
     Port = siprequest:default_port(URL#sipurl.proto, URL#sipurl.port),
     Host = sipurl:cleanup_hostname(URL#sipurl.host),
     User = sipurl:unescape_user(URL#sipurl.user),

@@ -1,17 +1,49 @@
+%%
+%%--------------------------------------------------------------------
+
 -module(database_regexproute).
--export([create/0, create/1, insert/5, list/0, purge_class/2, convert_urls/0]).
+
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([
+	 create/0,
+	 create/1,
+	 insert/5,
+	 list/0,
+	 purge_class/2,
+	 convert_urls/0
+	]).
+
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 
 -include("database_regexproute.hrl").
 -include("siprecords.hrl").
 
--include_lib("mnemosyne/include/mnemosyne.hrl").
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
 
-insert_record(Record) ->
-    Fun = fun() ->
-		  mnesia:write(Record)
-	  end,
-    mnesia:transaction(Fun).
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
 
+%%====================================================================
+%% External functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 create() ->
     create(servers()).
 
@@ -23,25 +55,32 @@ create(Servers) ->
 servers() ->
     sipserver:get_env(databaseservers).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 insert(Regexp, Flags, Class, Expire, Address) ->
-    insert_record(#regexproute{regexp = Regexp, flags = Flags, class = Class,
+    db_util:insert_record(#regexproute{regexp = Regexp, flags = Flags, class = Class,
 			       expire = Expire, address = Address}).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 list() ->
-    F = fun() ->
-		Q = query
-			[E || E <- table(regexproute)]
-		    end,
-		mnemosyne:eval(Q)
-	end,
-    mnesia:transaction(F).
+    db_util:tab_to_list(regexproute).
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 convert_urls() ->
     F = fun() ->
-		Q = query
-			[E || E <- table(regexproute)]
-		    end,
-		A = mnemosyne:eval(Q),
+		%% !!! this may be costly if the table is large
+		A = db_util:tab_to_list(regexproute),
 		Update = fun(O) ->
 				 mnesia:delete_object(O),
 				 mnesia:write(rewrite_url(O))
@@ -65,17 +104,39 @@ rewrite_url(R) when record(R, regexproute) ->
 		      [Unknown, R])
     end.
 
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
 purge_class(Regexp, Class) ->
     Fun = fun() ->
-		  Q = query
-			  [E || E <- table(regexproute),
-				E.regexp = Regexp,
-				E.class = Class]
-		      end,
-		  A = mnemosyne:eval(Q),
+		  A = mnesia:match_object(#regexproute{regexp = Regexp,
+						       class = Class,
+						       _ = '_'}),
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
 		  lists:foreach(Delete, A)
 	  end,
     mnesia:transaction(Fun).
+
+%%====================================================================
+%% Behaviour functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.:
+%% Returns :
+%%--------------------------------------------------------------------
