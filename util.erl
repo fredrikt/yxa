@@ -1,5 +1,6 @@
 -module(util).
--export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2]).
+-export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2,
+	 safe_is_process_alive/1]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -97,3 +98,9 @@ concat([], Separator) ->
     [];
 concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
+
+safe_is_process_alive(Pid) when pid(Pid) ->
+    is_process_alive(Pid);
+safe_is_process_alive(_) ->
+    false.
+
