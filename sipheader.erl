@@ -132,6 +132,13 @@ auth(["Digest " ++ String]) ->
 		  end, Headers),
     dict:from_list(L).
 
+unescape([]) ->
+    [];
+unescape([$%, C1, C2 | Rest]) ->
+    [hex:from([C1, C2]) | unescape(Rest)];
+unescape([C | Rest]) ->
+    [C | unescape(Rest)].
+
 httparg(String) ->
     Headers = string:tokens(String, "&"),
     L = lists:map(fun(A) ->
@@ -140,6 +147,6 @@ httparg(String) ->
 			  Name = string:substr(H, 1, Index - 1),
 			  Value = string:substr(H, Index + 1),
 			  
-			  {Name, Value}
+			  {Name, unescape(Value)}
 		  end, Headers),
     dict:from_list(L).
