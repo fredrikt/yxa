@@ -7,8 +7,11 @@ AC_CONFIG_SRCDIR([registrar.erl])
 AC_PROG_CC
 AC_PROG_INSTALL
 
-AC_CONFIG_FILES(Makefile)
-
+AC_CONFIG_FILES(
+		Makefile \
+		cpl/Makefile \
+		event_handler/Makefile
+	       )
 
 AC_ARG_WITH(erlang,
 	AC_HELP_STRING([--with-erlang=dir],
