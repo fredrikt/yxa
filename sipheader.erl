@@ -16,11 +16,11 @@ comma(Parsed, [$" | Rest], false) ->
 comma(Parsed, [$" | Rest], true) ->
     comma(Parsed ++ [$"], Rest, false);
 comma(Parsed, [$, | Rest], false) ->
-    [Parsed | comma([], Rest, false)];
+    [string:strip(Parsed, both) | comma([], Rest, false)];
 comma(Parsed, [Char | Rest], Inquote) ->
     comma(Parsed ++ [Char], Rest, Inquote);
 comma(Parsed, [], false) ->
-    [Parsed].
+    [string:strip(Parsed, both)].
 
 % name-addr = [ display-name ] "<" addr-spec ">"
 % display-name = *token | quoted-string
