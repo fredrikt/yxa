@@ -36,6 +36,15 @@ recvloop(Socket, RequestFun, ResponseFun) ->
     end.
 
 process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
+    case catch do_process(Packet, Socket, IPlist, InPortNo,
+			  RequestFun, ResponseFun) of
+	{error, E} ->
+	    logger:log(normal, "=ERROR REPORT==== ~p", E);
+	_ ->
+	    true
+    end.
+
+do_process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
     IP = siphost:makeip(IPlist),
     case sippacket:parse(Packet, IP, InPortNo) of
 	{request, Method, URL, Header, Body} ->
