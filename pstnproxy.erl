@@ -1,7 +1,9 @@
 -module(pstnproxy).
 -export([start/0, start/2, process/2]).
 
-server_node() -> 'incomingproxy@granit.e.kth.se'.
+server_nodes() ->
+    {ok, Servers} = application:get_env(databaseservers),
+    Servers.
 
 start(normal, Args) ->
     Pid = spawn(pstnproxy, start, []),
@@ -9,10 +11,16 @@ start(normal, Args) ->
 
 start() ->
     mnesia:start(),
-    mnesia:change_config(extra_db_nodes, [server_node()]),
-    logger:start("sipd.log"),
+    mnesia:change_config(extra_db_nodes, server_nodes()),
+    {Message, Args} = case mnesia:wait_for_tables([user], infinity) of
+			  ok ->
+			      {"proxy started, all tables found~n", []};
+			  {timeout, BadTabList} ->
+			      {"proxy started, tables not reachable right now: ~p~n", BadTabList}
+		      end,
+    logger:start(),
     {ok, Socket} = gen_udp:open(5060, [{reuseaddr, true}]),
-    logger:log(normal, "proxy started"),
+    logger:log(normal, Message, Args),
     recvloop(Socket).
 
 recvloop(Socket) ->
@@ -31,26 +39,12 @@ process(Packet, Socket) ->
     end.
 
 classdefs() ->
-    [
-     {"^0007[12]", pay},
-     {"^000900", pay},
-     {"^000939", pay},
-     {"^000944", pay},
-     {"^0007[0346]", mobile},
-     {"^00[1-9]", national},
-     {"^[46-9]", internal},
-     {"^10", internal},
-     {"^112", internal},
-     {"^00010", mobile},
-     {"^000[2-68]", national},
-     {"^0001[1-9]", national},
-     {"^00077", national},
-     {"^0009[125-9]", national},
-     {"^00090[1-9]", national},
-     {"^00093[0-8]", national},
-     {"^00094[0-35-9]", national},
-     {"^0000", international}
-    ].
+    case application:get_env(classdefs) of
+	{ok, Defs} ->
+	    Defs;
+	undefined ->
+	    [{"", unknown}]
+    end.
 
 request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body, Socket) ->
     logger:log(normal, Method),
