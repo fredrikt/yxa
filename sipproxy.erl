@@ -42,8 +42,17 @@
 %%--------------------------------------------------------------------
 -export([
 	 start/5,
-	 start_actions/4
+	 start_actions/4,
+
+	 test/0
 	]).
+
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+-export([
+	 signal_collector/2
+	 ]).
 
 %%--------------------------------------------------------------------
 %% Include files
@@ -57,11 +66,11 @@
 -record(state, {
 	  parent,			%% pid(), parent process - used to trap EXITs
 	  branchbase,			%% string(), a base for us to use when creating client transaction branches.
-					%% Must be unique!
+	  				%% Must be unique!
 	  request,			%% request record(), the request we are working on
 	  actions,			%% list() of sipproxy_action record() - our list of actions
 	  targets,			%% targetlist record(), list of all our targets (ongoing or finished).
-	  				%% Targets are client transactions.
+					%% Targets are client transactions.
 	  final_response_sent=false,	%% true | false, have we forwarded a final response yet?
 	  mystate=calling,		%% calling | cancelled | completed | stayalive
 	  approx_msgsize,		%% integer(), approximate size of requests we send out. Expensive to calculate,
@@ -79,7 +88,6 @@
 %% External functions
 %%====================================================================
 
-
 %%--------------------------------------------------------------------
 %% Function: start_actions(BranchBase, GluePid, OrigRequest, Actions)
 %%           BranchBase = string(), the "base" part of the server
@@ -94,16 +102,23 @@
 %% Returns : ok | error
 %%--------------------------------------------------------------------
 start_actions(BranchBase, GluePid, OrigRequest, Actions) when is_record(OrigRequest, request) ->
-    {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
-    Timeout = 32,	%% wait at the end of actions-list timeout
-    %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals GluePid
-    %% when it is done.
-    case sipproxy:start(BranchBase, GluePid, OrigRequest, Actions, Timeout) of
+    case start_check_actions(Actions) of
 	ok ->
-	    logger:log(debug, "sipproxy: fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
-	    ok;
-	{error, What} ->
-	    logger:log(error, "sipproxy: fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What]),
+	    {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
+	    Timeout = 32,	%% wait at the end of actions-list timeout
+	    %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals GluePid
+	    %% when it is done.
+	    case start(BranchBase, GluePid, OrigRequest, Actions, Timeout) of
+		ok ->
+		    logger:log(debug, "sipproxy: fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
+		    ok;
+		{error, What} ->
+		    logger:log(error, "sipproxy: fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What]),
+		    error
+	    end;
+	{error, Reason} ->
+	    logger:log(error, "sipproxy: Problems with actions : ~p", [Reason]),
+	    logger:log(debug, "sipproxy: Actions : ~p", [Actions]),
 	    error
     end.
 
@@ -125,9 +140,6 @@ start_actions(BranchBase, GluePid, OrigRequest, Actions) when is_record(OrigRequ
 %%--------------------------------------------------------------------
 start(BranchBase, Parent, Request, Actions, Timeout)
   when is_list(BranchBase), is_pid(Parent), is_record(Request, request), is_list(Actions), is_integer(Timeout) ->
-    %% We need to trap exits so that we can handle client transcations failing, and
-    %% cancel all client transactions if the parent crashes.
-    process_flag(trap_exit, true),
     Res = case catch siprequest:check_proxy_request(Request) of
 	      {ok, NewHeader, ApproxMsgSize} ->
 		  %% sipproxy should never be invoked on a request that contains
@@ -139,6 +151,9 @@ start(BranchBase, Parent, Request, Actions, Timeout)
 					 request=Request#request{header=NewHeader},
 					 actions=Actions, targets=targetlist:empty(),
 					 approx_msgsize=ApproxMsgSize},
+			  %% We need to trap exits so that we can handle client transcations failing, and
+			  %% cancel all client transactions if the parent crashes.
+			  process_flag(trap_exit, true),
 			  fork(EndTime, State),
 			  ok;
 		      _ ->
@@ -156,13 +171,14 @@ start(BranchBase, Parent, Request, Actions, Timeout)
 		  E = io_lib:format("Request could not be forked (~p ~s)", [Status, Reason]),
 		  {error, lists:flatten(E)};
 	      Unknown ->
+		  logger:log(error, "sipproxy: siprequest:check_proxy_request/1 failed"),
 		  logger:log(debug, "sipproxy: check_proxy_request returned unknown result :~n~p", [Unknown]),
 		  InternalError = {500, "Server Internal Error"},
 		  Parent ! {sipproxy_all_terminated, self(), InternalError},
 		  {error, "Request could not be forked"}
 	  end,
     %% Always signal Parent that we are terminating
-    util:safe_signal("sipproxy: ", Parent, {sipproxy_terminating, self()}),
+    Parent ! {sipproxy_terminating, self()},
     Res.
 
 
@@ -171,13 +187,40 @@ start(BranchBase, Parent, Request, Actions, Timeout)
 %%====================================================================
 
 %%--------------------------------------------------------------------
+%% Function: start_check_actions(Actions)
+%% Descrip.: Check that the actions supplied to our start function
+%%           makes sense.
+%% Returns : ok              |
+%%           {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+start_check_actions(Actions) when is_list(Actions) ->
+    case start_check_actions2(Actions, 0, 0) of
+	{ok, 0, _Waits} ->
+	    {error, "no call action(s)"};
+	{ok, _Calls, 0} ->
+	    {error, "no wait action(s)"};
+	{ok, _Calls, _Waits} ->
+	    ok
+    end.
+
+start_check_actions2([#sipproxy_action{action=call} | T], Calls, Waits) ->
+    start_check_actions2(T, Calls + 1, Waits);
+start_check_actions2([#sipproxy_action{action=wait} | T], Calls, Waits) ->
+    start_check_actions2(T, Calls, Waits + 1);
+start_check_actions2([], Calls, Waits) ->
+    {ok, Calls, Waits}.
+
+%%--------------------------------------------------------------------
 %% Function: fork(State)
 %%           State = state record()
 %% Descrip.: Main loop. Process actions until there are none left.
 %% Returns : ok
 %%--------------------------------------------------------------------
+%%
+%% No actions left
+%%
 fork(EndTime, State) when is_integer(EndTime), is_record(State, state), State#state.actions == [] ->
-    %% No actions left
     OrigRequest = State#state.request,
     Targets = State#state.targets,
     {Method, ReqURI} = {OrigRequest#request.method, OrigRequest#request.uri},
@@ -200,8 +243,10 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state), State#st
 		logger:log(debug, "sipproxy: waiting ~p seconds for any final responses", [State#state.timeout]),
 		NewEndTime = util:timestamp() + State#state.timeout,
 		NewState1 = case process_wait(false, NewEndTime, State#state{mystate=stayalive, targets=NewTargets}) of
-				{discontinue, NewState1_1} when is_record(NewState1_1, state) -> NewState1_1;
-				NewState1_1 when is_record(NewState1_1, state) -> NewState1_1
+				{discontinue, NewState1_1} when is_record(NewState1_1, state) ->
+				    NewState1_1;
+				{timeout, NewState1_1} ->
+				    NewState1_1
 			    end,
 		logger:log(debug, "sipproxy: final responses wait is over, exiting."),
 		NewState1
@@ -219,6 +264,9 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state), State#st
 	_ -> ok
     end,
     ok;
+%%
+%% One or more actions left
+%%
 fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
     %% Process first action in list
     OrigRequest = State#state.request,
@@ -233,30 +281,49 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
 		       [Method, sipurl:print(CallURI), CallTimeout]),
 	    %% Create a new branch for this target (client transaction). BranchBase plus a sequence number is unique.
 	    Branch = State#state.branchbase ++ "-UAC" ++ integer_to_list(targetlist:get_length(Targets) + 1),
-	    Request = OrigRequest#request{uri=CallURI},
-	    DstList = sipdst:url_to_dstlist(CallURI, State#state.approx_msgsize, CallURI),
-	    [FirstDst|_] = DstList,
-	    NewTargets = case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch,
-									CallTimeout, self()) of
-			     BranchPid when is_pid(BranchPid) ->
-				 targetlist:add(Branch, Request, BranchPid, calling, CallTimeout, DstList, Targets);
-			     {error, E} ->
-				 logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
-				 Targets
-			 end,
-	    fork(EndTime, State#state{actions=TAction, targets=NewTargets});
+	    Request = make_new_target_request(OrigRequest, CallURI, HAction#sipproxy_action.user),
+	    case sipdst:url_to_dstlist(CallURI, State#state.approx_msgsize, CallURI) of
+		[FirstDst | _] = DstList ->
+		    NewTargets = case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch,
+										CallTimeout, self()) of
+				     BranchPid when is_pid(BranchPid) ->
+					 targetlist:add(Branch, Request, BranchPid, calling,
+							CallTimeout, DstList, Targets);
+				     {error, E} ->
+					 logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
+					 fork(EndTime, State#state{actions=TAction})
+				 end,
+		    fork(EndTime, State#state{actions=TAction, targets=NewTargets});
+		[] ->
+		    logger:log(normal, "~s: Target URI ~s did not resolve to any destinations we could use - ignoring",
+			       [Branch, sipurl:print(CallURI)]),
+		    fork(EndTime, State#state{actions=TAction})
+	    end;
 	wait ->
 	    Time = HAction#sipproxy_action.timeout,
 	    logger:log(debug, "sipproxy: waiting ~p seconds", [Time]),
 	    NewEndTime = util:timestamp() + Time,
 	    case process_wait(false, NewEndTime, State) of
-		{discontinue, NewState} ->
+		{discontinue, NewState} when is_record(NewState, state) ->
 		    logger:log(debug, "sipproxy: discontinue processing"),
-		    fork(NewEndTime, NewState#state{actions=[]});
-		NewTargets ->
-		    fork(NewEndTime, State#state{actions=TAction, targets=NewTargets})
+		    fork(NewEndTime, NewState#state{actions = []});
+		{timeout, NewState} ->
+		    fork(NewEndTime, NewState#state{actions = TAction})
 	    end
     end.
+
+make_new_target_request(Request, URI, User) when is_record(Request, request), is_record(URI, sipurl), is_list(User) ->
+    case lists:keysearch(URI#sipurl.host, 1, sipserver:get_env(x_yxa_peer_auth, [])) of
+	{value, {_Host, Secret}} ->
+	    NewHeader = sipauth:add_x_yxa_peer_auth(Request#request.method, URI, Request#request.header, User, Secret),
+	    Request#request{uri=URI,
+			    header=NewHeader};
+	false ->
+	    Request#request{uri=URI}
+    end;
+make_new_target_request(Request, URI, _User) when is_record(Request, request), is_record(URI, sipurl) ->
+    %% non-list User
+    Request#request{uri=URI}.
 
 %%--------------------------------------------------------------------
 %% Function: cancel_pending_targets(Targets)
@@ -301,11 +368,13 @@ mark_cancelled([H | T], TargetList) ->
     mark_cancelled(T, NewTargetList).
 
 %%--------------------------------------------------------------------
-%% Function: process_wait(EndProcessing, State)
+%% Function: process_wait(EndProcessing, EndTime, State)
 %%           EndProcessing  = atom(), true | false
+%%           EndTime        = integer(), time when we should end this wait
 %%           State          = state record()
 %% Descrip.: Marks a number of targets (Targets) as cancelled.
-%% Returns : {discontinue, NewState}
+%% Returns : {discontinue, NewState} |
+%%           {timeout, NewState}
 %%           NewState = state record()
 %%--------------------------------------------------------------------
 process_wait(true, _EndTime, State) when is_record(State, state) ->
@@ -322,12 +391,10 @@ process_wait(false, EndTime, State) when is_record(State, state) ->
 	after
 	    Time * 1000 ->
 		logger:log(debug, "sipproxy: This wait's time (~p seconds) is over", [Time]),
-		{quit, State}
+		{timeout, State}
 	end,
     case Res of
-	quit ->
-	    State#state.targets;
-	_ ->
+	ok ->
 	    AllTerminated = allterminated(NewState),
 	    NewState_1 = report_upstreams(AllTerminated, NewState),
 	    TimeLeft = lists:max([EndTime - util:timestamp(), 0]),
@@ -336,7 +403,11 @@ process_wait(false, EndTime, State) when is_record(State, state) ->
 		       "FinalResponseSent=~p, AllTerminated=~p, EndProcessing=~p",
 		       [State#state.mystate, NewState_1#state.mystate, TimeLeft,
 			NewState_1#state.final_response_sent, AllTerminated, EndProcessing]),
-	    process_wait(EndProcessing, EndTime, NewState_1)
+	    process_wait(EndProcessing, EndTime, NewState_1);
+	timeout ->
+	    {timeout, NewState};
+	quit ->
+	    {discontinue, State}
     end.
 
 %%--------------------------------------------------------------------
@@ -450,7 +521,7 @@ process_signal({showtargets}, State) when is_record(State, state) ->
 %% final_response_sent == 'true' or mystate /= 'calling'
 %%
 process_signal({'EXIT', Pid, normal}, #state{parent=Parent, final_response_sent=FRS,
-					    mystate=MyState}=State)
+					     mystate=MyState}=State)
   when Pid == Parent, FRS == true; MyState /= calling ->
     %% Parent exited when we are finishing up. This is considered normal, so we just exit too.
     {quit, State};
@@ -462,7 +533,8 @@ process_signal({'EXIT', Pid, Reason}, #state{parent=Parent}) when Pid == Parent 
     %% Our parent has exited on us, either abnormally or before we sent a final response.
     %% Exit straight away since there is no point in us staying alive. The client branches
     %% are linked to this process, and will cancel themselves when we exit, if they need to.
-    logger:log(error, "sipproxy: My parent just exited, so I will too (with error 'sipproxy_parent_died')."),
+    logger:log(error, "sipproxy: My parent (~p) just exited, so I will too (with error 'sipproxy_parent_died').",
+	       [Parent]),
     logger:log(debug, "sipproxy: Parents (~p) exit-reason : ~p", [Parent, Reason]),
     erlang:exit(sipproxy_parent_died);
 
@@ -489,7 +561,6 @@ process_signal({'EXIT', Pid, Reason}, State) when is_record(State, state) ->
 		       [Pid, Reason]),
 	    {error, State};
 	ThisTarget ->
-	    logger:log(debug, "FREDRIK: SIPPROXY RECEIVED EXIT SIGNAL FROM BRANCH PID ~p", [Pid]),
 	    NewTarget1 =
 		case Reason of
 		    normal ->
@@ -497,7 +568,7 @@ process_signal({'EXIT', Pid, Reason}, State) when is_record(State, state) ->
 			targetlist:set_state(ThisTarget, terminated);
 		    {_, {siperror, Status, SipReason}} ->
 			logger:log(error, "sipproxy: Branch with pid ~p FAILED : ~p ~s",
-				  [Pid, Status, SipReason]),
+				   [Pid, Status, SipReason]),
 			SPR = #sp_response{status=Status, reason=SipReason, created=true},
 			targetlist:set_endresult(ThisTarget, SPR);
 		    {_, {siperror, Status, SipReason, ExtraHeaders}} ->
@@ -505,7 +576,7 @@ process_signal({'EXIT', Pid, Reason}, State) when is_record(State, state) ->
 			%% extra headers here. XXX.
 			logger:log(error, "sipproxy: Branch with pid ~p FAILED : ~p ~s"
 				   " (discarding extra headers : ~p)",
-				  [Pid, Status, SipReason, ExtraHeaders]),
+				   [Pid, Status, SipReason, ExtraHeaders]),
 			SPR = #sp_response{status=Status, reason=SipReason, created=true},
 			targetlist:set_endresult(ThisTarget, SPR);
 		    _ ->
@@ -513,7 +584,7 @@ process_signal({'EXIT', Pid, Reason}, State) when is_record(State, state) ->
 				   [Pid, Reason]),
 			SPR = #sp_response{status=500, reason="Server Internal Error", created=true},
 			targetlist:set_endresult(ThisTarget, SPR)
-		    end,
+		end,
 	    NewTarget = targetlist:set_state(NewTarget1, terminated),
 	    NewTargets = targetlist:update_target(NewTarget, Targets),
 	    {ok, State#state{targets=NewTargets}}
@@ -802,25 +873,27 @@ check_forward_immediately(Request, SPResponse, Branch, State)
 %% Returns : {true, NewState} | false
 %%           NewState = state record()
 %%--------------------------------------------------------------------
-forward_immediately(Method, Status, State) when is_record(State, state), Status =< 100 ->
+forward_immediately(Method, Status, State) when is_record(State, state), Status == 100 ->
     %% A 100 Trying is considered an illegal response here since it is hop-by-hop and should
     %% be 'filtered' at the transaction layer.
     logger:log(error, "sipproxy: Invalid response ~p to ~s", [Status, Method]),
     false;
-forward_immediately(_Method, Status, State) when is_record(State, state), Status =< 199 ->
+forward_immediately(_Method, Status, State) when is_record(State, state), Status >= 101, Status =< 199 ->
     %% Provisional responses (except 100) are always forwarded immediately,
     %% regardless of Method
     {true, State};
-forward_immediately("INVITE", Status, State) when is_record(State, state), Status =< 299 ->
+forward_immediately("INVITE", Status, State) when is_record(State, state), Status >= 200, Status =< 299 ->
     %% 2xx responses to INVITE are always forwarded immediately, regardless of final_response_sent
     NewState = State#state{mystate=completed, final_response_sent=true},
     {true, NewState};
-forward_immediately(_Method, Status, State) when is_record(State, state), State#state.final_response_sent /= true, Status =< 299 ->
+forward_immediately(_Method, Status, #state{final_response_sent=FRS}=State)
+  when FRS /= true, Status >= 200, Status =< 299 ->
     %% 2xx responses to non-INVITE are forwarded immediately unless we have already
     %% forwarded some other final response already (implicitly another 2xx).
     NewState = State#state{mystate=completed, final_response_sent=true},
     {true, NewState};
-forward_immediately(_Method, _Status, State) when is_record(State, state) ->
+forward_immediately(_Method, Status, State) when is_record(State, state), Status =< 699 ->
+    %% No other final responses are forwarded immediately
     false.
 
 %%--------------------------------------------------------------------
@@ -915,7 +988,9 @@ make_final_response(Responses) ->
 %% Note    : This is described in RFC3261 #16.7 (Response Processing),
 %%           bullet 7. (Aggregate Authorization Header Field Values).
 %%--------------------------------------------------------------------
+%%
 %% BestResponse status == 407, Proxy-Authenticate
+%%
 aggregate_authreqs(#sp_response{status=407}=BestResponse, Responses) when is_list(Responses) ->
     {Reason, Header} = {BestResponse#sp_response.reason, BestResponse#sp_response.header},
     ProxyAuth = collect_auth_headers(407, 'proxy-authenticate', Responses),
@@ -923,7 +998,9 @@ aggregate_authreqs(#sp_response{status=407}=BestResponse, Responses) when is_lis
 	       [length(ProxyAuth), Reason]),
     NewHeader = keylist:set("Proxy-Authenticate", ProxyAuth, Header),
     BestResponse#sp_response{header=NewHeader};
+%%
 %% BestResponse status == 401, WWW-Authenticate
+%%
 aggregate_authreqs(#sp_response{status=401}=BestResponse, Responses) when is_list(Responses) ->
     {Reason, Header} = {BestResponse#sp_response.reason, BestResponse#sp_response.header},
     WWWAuth = collect_auth_headers(401, 'www-authenticate', Responses),
@@ -931,7 +1008,9 @@ aggregate_authreqs(#sp_response{status=401}=BestResponse, Responses) when is_lis
 	       [length(WWWAuth), Reason]),
     NewHeader = keylist:set("WWW-Authenticate", WWWAuth, Header),
     BestResponse#sp_response{header=NewHeader};
+%%
 %% BestResponse status is neither 401 nor 407
+%%
 aggregate_authreqs(BestResponse, Responses) when is_record(BestResponse, sp_response), is_list(Responses) ->
     BestResponse.
 
@@ -943,18 +1022,20 @@ aggregate_authreqs(BestResponse, Responses) when is_record(BestResponse, sp_resp
 %% Descrip.: Part of aggregate_authreqs(). Get all headers matched by
 %%           Key from all responses in Responses which have status
 %%           Status.
-%% Returns : list() of HValue
-%%           HValue = term(), header value as returned by
-%%                    keylist:fetch()
+%% Returns : HeaderValue = list() of string()
 %%--------------------------------------------------------------------
 collect_auth_headers(Status, Key, Responses) ->
     collect_auth_headers2(Status, Key, Responses, []).
 
 collect_auth_headers2(_Status, _Key, [], Res) ->
-    lists:reverse(Res);
+    Res;
 collect_auth_headers2(Status, Key, [#sp_response{status=Status}=H | T], Res) ->
-    This = keylist:fetch(Key, H#sp_response.header),
-    collect_auth_headers2(Status, Key, T, [This | Res]);
+    case keylist:fetch(Key, H#sp_response.header) of
+	[] ->
+	    collect_auth_headers2(Status, Key, T, Res);
+	This ->
+	    collect_auth_headers2(Status, Key, T, Res ++ This)
+    end;
 collect_auth_headers2(Status, Key, [H | T], Res) when is_record(H, sp_response) ->
     collect_auth_headers2(Status, Key, T, Res).
 
@@ -981,12 +1062,7 @@ pick_4xx_sort(A, B) when is_record(A, sp_response), is_record(B, sp_response) ->
 	Apref == Bpref ->
 	    %% A and B is either both in the preferred list, or both NOT in the preferred list.
 	    %% Pick using numerical sort of response codes.
-	    if
-		A#sp_response.status =< B#sp_response.status ->
-		    true;
-		true ->
-		    false
-	    end;
+	    (A#sp_response.status =< B#sp_response.status);
 	Apref == true ->
 	    true;
 	true ->
@@ -998,12 +1074,13 @@ is_4xx_preferred(Response) when is_record(Response, sp_response) ->
     lists:member(Response#sp_response.status, [401, 407, 415, 420, 484]).
 
 %% part of pick_response(), 5xx response sorting
-avoid_503_sort(#sp_response{status=503}, _) ->
+avoid_503_sort(#sp_response{status=503}, Bresponse) when is_record(Bresponse, sp_response) ->
     false;
-avoid_503_sort(#sp_response{status=Astatus}, #sp_response{status=Bstatus}) when Astatus =< Bstatus ->
+%% part of pick_response(), 5xx response sorting
+avoid_503_sort(Aresponse, #sp_response{status=503}) when is_record(Aresponse, sp_response) ->
     true;
-avoid_503_sort(_, _) ->
-    false.
+avoid_503_sort(#sp_response{status=Astatus}, #sp_response{status=Bstatus}) ->
+    (Astatus =< Bstatus).
 
 %%--------------------------------------------------------------------
 %% Function: get_xx_responses(Min, Responses)
@@ -1026,4 +1103,488 @@ get_range_responses(Min, Max, [H | T], Res) when is_record(H, sp_response) ->
 	H#sp_response.status > Max -> get_range_responses(Min, Max, T, Res);
 	true ->
 	    get_range_responses(Min, Max, T, [H | Res])
+    end.
+
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+
+    %% test start_check_actions(Actions)
+    %%--------------------------------------------------------------------
+    CheckAction_Call1 = #sipproxy_action{action = call, timeout = 1},
+    CheckAction_Call2 = #sipproxy_action{action = call, timeout = 2},
+    CheckAction_Wait1 = #sipproxy_action{action = wait, timeout = 3},
+    CheckAction_Wait2 = #sipproxy_action{action = wait, timeout = 4},
+
+    io:format("test: start_check_actions/1 - 1~n"),
+    %% test normal case
+    ok = start_check_actions([CheckAction_Call1, CheckAction_Wait1]),
+
+    io:format("test: start_check_actions/1 - 2~n"),
+    %% test normal case #2
+    ok = start_check_actions([CheckAction_Call1, CheckAction_Wait1,
+			      CheckAction_Call2, CheckAction_Wait2]),
+
+    io:format("test: start_check_actions/1 - 3~n"),
+    %% test only call
+    {error, _} = start_check_actions([CheckAction_Call2]),
+
+    io:format("test: start_check_actions/1 - 4~n"),
+    %% test only wait
+    {error, _} = start_check_actions([CheckAction_Wait1, CheckAction_Wait2]),
+
+
+    %% test get_next_target_branch(In)
+    %%--------------------------------------------------------------------
+    io:format("test: get_next_target_branch - 1~n"),
+    "z9hG4bK-really-unique.1" = get_next_target_branch("z9hG4bK-really-unique"),
+
+    io:format("test: get_next_target_branch - 2~n"),
+    "z9hG4bK-really-unique.10" = get_next_target_branch("z9hG4bK-really-unique.9"),
+
+
+    %% test mark_cancelled(Targets, TargetList)
+    %%--------------------------------------------------------------------
+    io:format("test: mark_cancelled/2 - 0~n"),
+    MarkCancelledList0 = targetlist:empty(),
+    MarkCancelledList1 = targetlist:add("branch1", #request{}, self(), calling,
+					1, [], MarkCancelledList0),
+    MarkCancelledList2 = targetlist:add("branch2", #request{}, self(), terminated,
+					1, [], MarkCancelledList1),
+    MarkCancelled_T1_1 = targetlist:get_using_branch("branch1", MarkCancelledList2),
+    MarkCancelled_T2_1 = targetlist:get_using_branch("branch2", MarkCancelledList2),
+
+    io:format("test: mark_cancelled/2 - 1.1~n"),
+    MarkCancelledList2_1 = mark_cancelled([MarkCancelled_T1_1, MarkCancelled_T2_1],
+					  MarkCancelledList2),
+
+    io:format("test: mark_cancelled/2 - 1.2~n"),
+    %% verify the results (before)
+    ["branch1", false] = targetlist:extract([branch, cancelled], MarkCancelled_T1_1),
+    ["branch2", false] = targetlist:extract([branch, cancelled], MarkCancelled_T2_1),
+
+    io:format("test: mark_cancelled/2 - 1.3~n"),
+    %% verify the results (after)
+    MarkCancelled_T1_2 = targetlist:get_using_branch("branch1", MarkCancelledList2_1),
+    MarkCancelled_T2_2 = targetlist:get_using_branch("branch2", MarkCancelledList2_1),
+    ["branch1", true] = targetlist:extract([branch, cancelled], MarkCancelled_T1_2),
+    ["branch2", true] = targetlist:extract([branch, cancelled], MarkCancelled_T2_2),
+
+
+    %% test allterminated(State)
+    %%--------------------------------------------------------------------
+    io:format("test: allterminated/1 - 0~n"),
+    AllTerminatedList0 = targetlist:empty(),
+    AllTerminatedList1 = targetlist:add("branch1", #request{}, self(), calling,
+					1, [], AllTerminatedList0),
+    AllTerminatedList2 = targetlist:add("branch2", #request{}, self(), terminated,
+					1, [], AllTerminatedList1),
+
+    io:format("test: allterminated/1 - 1~n"),
+    true = allterminated(#state{targets=AllTerminatedList0}),
+
+    io:format("test: allterminated/1 - 2~n"),
+    true = allterminated(AllTerminatedList0),
+
+    io:format("test: allterminated/1 - 3~n"),
+    false = allterminated(AllTerminatedList1),
+
+    io:format("test: allterminated/1 - 4~n"),
+    false = allterminated(AllTerminatedList2),
+
+    io:format("test: allterminated/1 - 5~n"),
+    AllTerminatedT1_1 = targetlist:get_using_branch("branch1", AllTerminatedList2),
+    AllTerminatedT1_2 = targetlist:set_state(AllTerminatedT1_1, terminated),
+    AllTerminatedList2_1 = targetlist:update_target(AllTerminatedT1_2, AllTerminatedList2),
+    true = allterminated(AllTerminatedList2_1),
+
+
+    %% test end_processing(EndTime, State)
+    %%--------------------------------------------------------------------
+    io:format("test: end_processing/2 - 1~n"),
+    false = end_processing(util:timestamp() + 10, #state{mystate = stayalive}),
+
+    io:format("test: end_processing/2 - 2~n"),
+    true = end_processing(util:timestamp() - 1, #state{mystate = stayalive}),
+
+    io:format("test: end_processing/2 - 3~n"),
+    true = end_processing(1, #state{mystate = completed}),
+
+    io:format("test: end_processing/2 - 4~n"),
+    true = end_processing(util:timestamp() + 10, #state{mystate = completed}),
+
+    io:format("test: end_processing/2 - 5~n"),
+    true = end_processing(util:timestamp() + 10, #state{mystate = completed}),
+
+    io:format("test: end_processing/2 - 6~n"),
+    EndProcessingList0 = targetlist:empty(),
+    EndProcessingList1 = targetlist:add("branch1", #request{}, self(), terminated,
+					1, [], EndProcessingList0),
+    EndProcessingList2 = targetlist:add("branch2", #request{}, self(), calling,
+					1, [], EndProcessingList1),
+
+    true = end_processing(1, #state{targets = EndProcessingList1}),
+
+    io:format("test: end_processing/2 - 6~n"),
+    false = end_processing(1, #state{targets = EndProcessingList2}),
+
+
+    %% test forward_immediately(Method, Status, State)
+    %%--------------------------------------------------------------------
+    io:format("test: forward_immediately/3 - 1~n"),
+    %% INVITE, =< 100 response - never forwarded
+    false = forward_immediately("INVITE", 100, #state{}),
+
+    io:format("test: forward_immediately/3 - 2~n"),
+    %% INVITE, provisional response
+    {true, #state{mystate = calling}} = forward_immediately("INVITE", 101, #state{mystate = calling}),
+
+    io:format("test: forward_immediately/3 - 3~n"),
+    %% INVITE, provisional response
+    {true, #state{mystate = calling}} = forward_immediately("INVITE", 199, #state{mystate = calling}),
+
+    io:format("test: forward_immediately/3 - 4~n"),
+    %% INVITE, 2xx response always forwarded immediately
+    {true, #state{mystate = completed, final_response_sent = true}} =
+	forward_immediately("INVITE", 200, #state{mystate = calling, final_response_sent = false}),
+
+    io:format("test: forward_immediately/3 - 5~n"),
+    %% non-INVITE, response = 2xx and final response not yet sent
+    {true, #state{mystate = completed, final_response_sent = true}} =
+	forward_immediately("OPTIONS", 200, #state{mystate = calling, final_response_sent = false}),
+
+    io:format("test: forward_immediately/3 - 6~n"),
+    %% non-INVITE, response =< 299 and final response not yet sent
+    {true, #state{mystate = completed, final_response_sent = true}} =
+	forward_immediately("OPTIONS", 299, #state{mystate = calling, final_response_sent = false}),
+
+    io:format("test: forward_immediately/3 - 6~n"),
+    %% non-INVITE or response >= 300, final_response_sent is already 'true'
+    false = forward_immediately("OPTIONS", 299, #state{mystate = calling, final_response_sent = true}),
+
+
+    %% test pick_response(Nxx, Responses)
+    %%--------------------------------------------------------------------
+    io:format("test: pick_response/2 4xx - 0~n"),
+    R400 = #sp_response{status=400},
+    %% preferred ones
+    R401 = #sp_response{status=401},
+    R407 = #sp_response{status=407},
+    R415 = #sp_response{status=415},
+    R420 = #sp_response{status=420},
+    R484 = #sp_response{status=484},
+    %% end preferred ones
+    R499 = #sp_response{status=499},
+
+    io:format("test: pick_response/2 4xx - 1~n"),
+    %% test lowest response is returned if no preferred ones
+    R400 = pick_response(4, [R499, R400]),
+
+    io:format("test: pick_response/2 4xx - 2~n"),
+    %% test that preferred responses work
+    R401 = pick_response(4, [R499, R401, R400]),
+    R407 = pick_response(4, [R499, R407, R400]),
+    R415 = pick_response(4, [R499, R415, R400]),
+    R420 = pick_response(4, [R499, R420, R400]),
+    R484 = pick_response(4, [R499, R484, R400]),
+
+    io:format("test: pick_response/2 4xx - 3~n"),
+    %% test that equal responses work
+    R401 = pick_response(4, [R401, R407, R401]),
+
+    io:format("test: pick_response/2 4xx - 4~n"),
+    %% test that numerical sorting between preferred responses works as last option
+    R401 = pick_response(4, [R400, R401, R407, R415, R420, R484, R499]),
+
+    io:format("test: pick_response/2 5xx - 0~n"),
+    R500 = #sp_response{status=500},
+    R503 = #sp_response{status=503},
+    R599 = #sp_response{status=599},
+
+    io:format("test: pick_response/2 5xx - 1~n"),
+    %% test that we never choose the 503 if there is another response too
+    R500 = pick_response(5, [R500, R503]),
+
+    io:format("test: pick_response/2 5xx - 2~n"),
+    %% test that we never choose the 503 if there is another response too
+    R599 = pick_response(5, [R503, R599, R503]),
+
+    io:format("test: pick_response/2 5xx - 3~n"),
+    %% test that choosing a 503 if we have to works
+    R503 = pick_response(5, [R503]),
+
+
+    %% test aggregate_authreqs(BestResponse, Responses)
+    %%--------------------------------------------------------------------
+    io:format("test: aggregate_authreqs/2 - 0~n"),
+    AuthReq_EmptyH = keylist:from_list([]),
+    AuthReq_R400   = #sp_response{status=400, header=AuthReq_EmptyH},
+    AuthReq_R401_1 = #sp_response{status=401, header=keylist:set("WWW-Authenticate", ["R401_1"], AuthReq_EmptyH)},
+    AuthReq_R401_2 = #sp_response{status=401, header=keylist:set("WWW-Authenticate", ["R401_2"], AuthReq_EmptyH)},
+    AuthReq_R401_3 = #sp_response{status=401, header=keylist:set("Proxy-Authenticate", ["broken"], AuthReq_EmptyH)},
+    AuthReq_R407_1 = #sp_response{status=407, header=keylist:set("Proxy-Authenticate", ["R407_1"], AuthReq_EmptyH)},
+    AuthReq_R407_2 = #sp_response{status=407, header=keylist:set("Proxy-Authenticate", ["R407_2"], AuthReq_EmptyH)},
+    AuthReqL = [AuthReq_R400, AuthReq_R401_1, AuthReq_R401_2, AuthReq_R401_3, AuthReq_R407_1, AuthReq_R407_2],
+
+    io:format("test: aggregate_authreqs/2 - 1.1~n"),
+    %% Aggregate WWW-Authenticate headers, _don't_ copy the erroneous Proxy-Authenticate
+    %% header in a 401 response
+    Aggr401 = aggregate_authreqs(#sp_response{status=401, header=AuthReq_EmptyH}, AuthReqL),
+
+    io:format("test: aggregate_authreqs/2 - 1.2~n"),
+    %% verify results
+    ["R401_1", "R401_2"] = keylist:fetch('www-authenticate', Aggr401#sp_response.header),
+    [] = keylist:fetch('proxy-authenticate', Aggr401#sp_response.header),
+
+    io:format("test: aggregate_authreqs/2 - 2.1~n"),
+    %% Aggregate Proxy-Authenticate headers
+    Aggr407 = aggregate_authreqs(#sp_response{status=407, header=AuthReq_EmptyH}, AuthReqL),
+
+    io:format("test: aggregate_authreqs/2 - 2.2~n"),
+    %% verify results
+    ["R407_1", "R407_2"] = keylist:fetch('proxy-authenticate', Aggr407#sp_response.header),
+
+
+    %% test make_final_response(Responses)
+    %%--------------------------------------------------------------------
+    io:format("test: make_final_response/1 - 0~n"),
+    FinalRes_R1 = #sp_response{status=100},	%% not a real final response
+    FinalRes_R2 = #sp_response{status=200},
+    FinalRes_R3 = #sp_response{status=300},
+    FinalRes_R4 = #sp_response{status=400},
+    FinalRes_R5 = #sp_response{status=599},
+    FinalRes_R6 = #sp_response{status=600},
+
+    io:format("test: make_final_response/1 - 1~n"),
+    %% test pick of 6xx
+    FinalRes_R6 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R6, FinalRes_R4, FinalRes_R3, FinalRes_R2]),
+
+    io:format("test: make_final_response/1 - 2~n"),
+    %% test pick of 2xx
+    FinalRes_R2 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R4, FinalRes_R3, FinalRes_R2]),
+
+    io:format("test: make_final_response/1 - 3~n"),
+    %% test pick of 3xx
+    FinalRes_R3 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R3, FinalRes_R4]),
+
+    io:format("test: make_final_response/1 - 4~n"),
+    %% test pick of 4xx
+    FinalRes_R4 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R4]),
+
+    io:format("test: make_final_response/1 - 5~n"),
+    %% test pick of 5xx
+    FinalRes_R5 = make_final_response([FinalRes_R1, FinalRes_R5]),
+
+    io:format("test: make_final_response/1 - 6~n"),
+    %% test that we don't fall for the 100 response (it is not a final response)
+    none = make_final_response([FinalRes_R1]),
+
+
+    %% test report_upstreams(AllTerminated, State)
+    %%--------------------------------------------------------------------
+    io:format("test: report_upstreams/2 - 0~n"),
+    UpstreamsTargets1 = targetlist:add("branch1", #request{}, self(), calling,
+				       1, [], targetlist:empty()),
+    UpstreamsTarget_1 = targetlist:get_using_branch("branch1", UpstreamsTargets1),
+    UpstreamsState1 = #state{final_response_sent = false,
+			     mystate = calling,
+			     targets = targetlist:empty(),
+			     parent  = self()
+			    },
+
+    %%
+    %% Test 408 response when no final responses have been received
+    %%
+    test_report_upstreams("1", UpstreamsState1, {408, "Request Timeout"}),
+
+    %%
+    %% Test 500 when there are no final responses
+    %%
+    %% Create a targetlist with a single 100 response
+    UpstreamsTargets2 =
+	targetlist:update_target(targetlist:set_endresult(UpstreamsTarget_1, #sp_response{status=100}),
+				 UpstreamsTargets1),
+
+    test_report_upstreams("2", UpstreamsState1#state{targets=UpstreamsTargets2}, {500, "No answers collected"}),
+
+    %%
+    %% Test 500 when best final response is 503
+    %%
+    UpstreamsTargets3 =
+	targetlist:update_target(targetlist:set_endresult(UpstreamsTarget_1, #sp_response{status=503}),
+				 UpstreamsTargets1),
+
+    test_report_upstreams("3", UpstreamsState1#state{targets=UpstreamsTargets3},
+			  {500, "Only response to fork was 503"}),
+
+    %%
+    %% Test forwarding of created response
+    %%
+    UpstreamsTargets4 =
+	targetlist:update_target(targetlist:set_endresult(UpstreamsTarget_1,
+							  #sp_response{created=true, status=499, reason="testing"}),
+				 UpstreamsTargets1),
+
+    test_report_upstreams("4", UpstreamsState1#state{targets=UpstreamsTargets4}, {499, "testing"}),
+
+    %%
+    %% Test forwarding of received response
+    %%
+    UpstreamsTargets5 =
+	targetlist:update_target(targetlist:set_endresult(UpstreamsTarget_1,
+							  #sp_response{created=false, status=499, reason="testing"}),
+				 UpstreamsTargets1),
+
+    test_report_upstreams("5", UpstreamsState1#state{targets=UpstreamsTargets5},
+			  #response{status=499, reason="testing"}),
+
+
+
+    %% test check_forward_immediately(Request, SPResponse, Branch, State)
+    %% Spawn pids that collects signals and relays them to us in a way that allows
+    %% us to differentiate to which pid the signal was sent
+
+    %% test cancel_pending_if_invite_2xx_or_6xx(Method, Status, State)
+    %%--------------------------------------------------------------------
+    CancelPendingRef = make_ref(),
+    CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
+    CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
+
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 0~n"),
+
+    %% one pending and one already completed target
+    CancelPendingReq1 = #request{method="INVITE", uri=sipurl:parse("sip:ft@it.su.se")},
+    CancelPendingTargets1 = targetlist:add("branch1", CancelPendingReq1, CancelPendingPid1, calling,
+					   1, [], targetlist:empty()),
+    CancelPendingTargets2 = targetlist:add("branch1", CancelPendingReq1, CancelPendingPid2, completed,
+					   1, [], CancelPendingTargets1),
+    CancelPendingState1 = #state{targets=CancelPendingTargets2},
+
+    %%
+    %% Test provisional response
+    %%
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 1~n"),
+    %% test provisional response to INVITE, no change expected
+    CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("INVITE", 180, CancelPendingState1),
+
+    %%
+    %% Test 2xx response to INVITE
+    %%
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 2.1~n"),
+    #state{} = cancel_pending_if_invite_2xx_or_6xx("INVITE", 200, CancelPendingState1),
+
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 2.2~n"),
+    %% check results
+    receive
+	{CancelPendingRef, CancelPendingPid1,
+	 {'$gen_cast', {cancel, "cancel_targets_state", _}}} ->
+	    ok;
+	{CancelPendingRef, CancelPendingPid2_2, CancelPendingMsg2_2} ->
+	    E2_2 = io_lib:format("received unknown signal (from ~p) : ~p",
+				 [CancelPendingPid2_2, CancelPendingMsg2_2]),
+	    throw({error, lists:flatten(E2_2)})
+    after
+	1000 ->
+	    throw({error, "did not receive the expected cancel signal from the pending target"})
+    end,
+
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 2.3~n"),
+    %% check that we did NOT cancel the second target, which was already in state 'completed'
+    receive
+	{CancelPendingRef, CancelPendingPid2,
+	 {'$gen_cast', {cancel, "cancel_targets_state", _}}} ->
+	    throw({error, "we cancelled more than we should have"});
+	{CancelPendingRef, CancelPendingPid2_3, CancelPendingMsg2_3} ->
+	    E2_3 = io_lib:format("received unknown signal (from ~p) : ~p",
+				 [CancelPendingPid2_3, CancelPendingMsg2_3]),
+	    throw({error, lists:flatten(E2_3)})
+    after
+	0 ->
+	    ok
+    end,
+
+    %%
+    %% Test non-6xx response to non-INVITE
+    %%
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 3~n"),
+    %% test non-6xx response to non-INVITE, no change expected
+    CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 599, CancelPendingState1),
+
+    %%
+    %% Test 6xx reponse
+    %%
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 4.1~n"),
+    #state{} = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 603, CancelPendingState1),
+
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 4.2~n"),
+    %% check results
+    receive
+	{CancelPendingRef, CancelPendingPid1,
+	 {'$gen_cast', {cancel, "cancel_targets_state", _}}} ->
+	    ok;
+	{CancelPendingRef, CancelPendingPid4_2, CancelPendingMsg4_2} ->
+	    E4_2 = io_lib:format("received unknown signal (from ~p) : ~p",
+				 [CancelPendingPid4_2, CancelPendingMsg4_2]),
+	    throw({error, lists:flatten(E4_2)})
+    after
+	1000 ->
+	    throw({error, "did not receive the expected cancel signal from the pending target"})
+    end,
+
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 4.3~n"),
+    %% check that we did NOT cancel the second target, which was already in state 'completed'
+    receive
+	{CancelPendingRef, CancelPendingPid2,
+	 {'$gen_cast', {cancel, "cancel_targets_state", _}}} ->
+	    throw({error, "we cancelled more than we should have"});
+	{CancelPendingRef, CancelPendingPid4_3, CancelPendingMsg4_3} ->
+	    E4_3 = io_lib:format("received unknown signal (from ~p) : ~p",
+				 [CancelPendingPid4_3, CancelPendingMsg4_3]),
+	    throw({error, lists:flatten(E4_3)})
+    after
+	0 ->
+	    ok
+    end,
+
+    ok.
+
+
+test_report_upstreams(Num, State, Expected) when is_record(State, state) ->
+    UpstreamsMyself = self(),
+
+    io:format("test: report_upstreams/2 - ~s.1~n", [Num]),
+    #state{mystate=completed, final_response_sent=true} = report_upstreams(true, State),
+
+    io:format("test: report_upstreams/2 - ~s.2~n", [Num]),
+    %% Check result
+    receive
+	{sipproxy_all_terminated, UpstreamsMyself, Expected} ->
+	    ok
+    after 1000 ->
+	    throw({error, "test: did not receive the expected response"})
+    end.
+
+%% signal collector
+signal_collector(Parent, Ref) ->
+    erlang:monitor(process, Parent),
+    receive
+	{quit, Parent} ->
+	    ok;
+	{'DOWN', _MRef, process, Parent, _Info} ->
+	    ok;
+	Msg ->
+	    %% Relay message to parent, with a reference and our pid as tags
+	    Parent ! {Ref, self(), Msg},
+	    signal_collector(Parent, Ref)
+    after 10000 ->
+	    ok
     end.
