@@ -55,8 +55,9 @@
 %%--------------------------------------------------------------------
 %% Function: to_norm(Params)
 %%           Params = list() of string(), each string is a "name=val" 
-%%           pair or a single "name" value and may contain %HH hex 
-%%           escape codes - they are treated as case insensetive
+%%                    pair or a single "name" value and may contain
+%%                    %HH hex escape codes - they are treated as case
+%%                    insensitive
 %% Descrip.: convert a uri-parameter list to a normalized (a non case 
 %%           sensitive form) form
 %% Returns : url_param record() | 
@@ -131,10 +132,10 @@ to_string(Norm) when is_record(Norm, url_param) ->
 %% Function: add(UrlParam, Key, Value)
 %%           add(UrlParam, Key)
 %%           UrlParam = url_param record(), the record to update
-%%           Key      = string(), treated as case insensetive
-%%           Value    = string(), treated as case insensetive
+%%           Key      = string(), treated as case insensitive
+%%           Value    = string(), treated as case insensitive
 %% Descrip.: add new entry or replace old entry in url_param. Key and
-%%           Value are stored in a case insensetive manner
+%%           Value are stored in a case insensitive manner
 %% Returns : url_param record()
 %%--------------------------------------------------------------------
 add(UrlParam, Key) ->
@@ -155,7 +156,7 @@ add2(UrlParam, {Key, Value}) ->
 %--------------------------------------------------------------------
 %% Function: find(Param, Key)
 %%           Param = url_param record(), the record to update
-%%           Key   = string(), is treated as case insensetive
+%%           Key   = string(), is treated as case insensitive
 %% Descrip.: retrive the value of Key if it is contained in Param
 %% Returns : [string()] | []
 %%--------------------------------------------------------------------
@@ -167,7 +168,7 @@ find(Param, Key) ->
 %%--------------------------------------------------------------------
 %% Function: remove(Param, Key)
 %%           Param = url_param record()
-%%           Key   = string(), is treated as case insensetive
+%%           Key   = string(), is treated as case insensitive
 %% Descrip.: find the Key-Val pair to remove from Param
 %% Returns : url_param record
 %%--------------------------------------------------------------------
