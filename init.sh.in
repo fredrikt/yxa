@@ -41,11 +41,30 @@ else
     MNESIAPARAMETERS="-mnesia dir '"$MNESIADIR"'"
 fi
 
+for EXTRA_DIR in "${PWD}/event_handler" "${PWD}/cpl"; do
+    # Add event_handler to search path if such a directory exists
+    # (meaning we are probably in the build directory)
+    if [ -d "$EXTRA_DIR" ]; then
+	EXTRA_ERL_ARGUMENTS="${EXTRA_ERL_ARGUMENTS} -pz $EXTRA_DIR"
+    fi
+done
+    
 if [ "x$1" = "x-d" ]; then
     DETACH=""
 fi
 
 if [ "x$MYNAME" = "xbootstrap.sh" ]; then
+    if [ ! -d "$MNESIADIR" ]; then
+	echo "Creating Mnesia directory '$MNESIADIR'"
+	mkdir "$MNESIADIR"
+    fi
+
+    if [ ! -d "$MNESIADIR" ]; then
+	echo "Failed creating Mnesia directory!"
+	echo ""
+	exit 1
+    fi
+
     if [ "x$ADMINPW" = "x" ]; then
 	echo "You are not following the instructions in README!"
 	echo ""
@@ -57,9 +76,13 @@ if [ "x$MYNAME" = "xbootstrap.sh" ]; then
 	exit 1
     fi
 
-	# yes, the name should be incomingproxy when bootstrapping
-    ${erl} -pz ${beamdir} -name incomingproxy -noshell $MNESIAPARAMETERS \
-	-run bootstrap start "$ADMINPW" -run init stop
+    # yes, the name should be incomingproxy when bootstrapping
+    ${erl} -pz ${beamdir} \
+	$EXTRA_ERL_ARGUMENTS \
+	-name incomingproxy \
+	-noshell $MNESIAPARAMETERS \
+	-run bootstrap start "$ADMINPW" \
+	-run init stop
 else
     if [ ! -r "${CONFIGPATH}.config" ]; then
 	echo "$0: Configuration file ${CONFIGPATH}.config not found or not readable"
@@ -67,6 +90,7 @@ else
     fi
 
     ${erl} -boot $PROGRAMNAME -pz ${beamdir} \
+	$EXTRA_ERL_ARGUMENTS \
 	-name $PROGRAMNAME -config $CONFIGPATH \
 	$ssloptions \
 	$MNESIAPARAMETERS $DETACH
