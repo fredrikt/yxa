@@ -1,5 +1,5 @@
 -module(util).
--export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2, count/1]).
+-export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -97,13 +97,3 @@ concat([], Separator) ->
     [];
 concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
-
-count([]) ->
-    0;
-count(List) ->
-    count_elements(List, 0).
-    
-count_elements([], Num) when integer(Num) ->
-    Num;
-count_elements([List|Rest], Num) when integer(Num) ->
-    count_elements(Rest, Num + 1).
