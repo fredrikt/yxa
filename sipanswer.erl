@@ -150,7 +150,7 @@ start(Header, Body, Mode, Status, Number) ->
     Dest = sdp:parse(Body),
     [CallID] = keylist:fetch("Call-ID", Header),
     Pid = spawn(sipanswer, control, [Dest, CallID, self()]),
-    case phone:insert_call_unique(CallID, Header, Pid) of
+    case database_call:insert_call_unique(CallID, Header, Pid) of
 	{atomic, ok} ->
 	    receive
 		{sipanswer, port, Listenport} ->

@@ -7,7 +7,7 @@ start(normal, Args) ->
 
 start() ->
     phone:init(),
-    phone:create_call(),
+    database_call:create_call(),
     logger:start("sipd.log"),
     {ok, Socket} = gen_udp:open(5060, [{reuseaddr, true}]),
     logger:log(normal, "proxy started: ~p", [application:get_env(startmsg)]),
@@ -30,7 +30,7 @@ process(Packet, Socket) ->
 
 request("BYE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     [CallID] = keylist:fetch("Call-ID", Header),
-    case phone:get_call(CallID) of
+    case database_call:get_call(CallID) of
 	{atomic, [Call]} ->
 	    {Origheaders, Pid} = Call,
 	    Pid ! {siprequest, bye},
@@ -55,7 +55,7 @@ request("INVITE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
 response(Status, Reason, Header, Body, Socket) ->
     logger:log(normal, "status:~p", [Status]),
     [CallID] = keylist:fetch("Call-ID", Header),
-    case phone:get_call(CallID) of
+    case database_call:get_call(CallID) of
 	{atomic, [Call]} ->
 	    {Origheaders, Pid} = Call,
 	    Pid ! {siprequest, status, Status, Header, Socket, Body, Origheaders}
