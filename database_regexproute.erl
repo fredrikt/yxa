@@ -1,7 +1,8 @@
 -module(database_regexproute).
--export([create/0, create/1, insert/5, list/0, purge_class/2]).
+-export([create/0, create/1, insert/5, list/0, purge_class/2, convert_urls/0]).
 
 -include("database_regexproute.hrl").
+-include("siprecords.hrl").
 
 -include_lib("mnemosyne/include/mnemosyne.hrl").
 
@@ -34,6 +35,35 @@ list() ->
 		mnemosyne:eval(Q)
 	end,
     mnesia:transaction(F).
+
+convert_urls() ->
+    F = fun() ->
+		Q = query
+			[E || E <- table(regexproute)]
+		    end,
+		A = mnemosyne:eval(Q),
+		Update = fun(O) ->
+				 mnesia:delete_object(O),
+				 mnesia:write(rewrite_url(O))
+			 end,
+		lists:foreach(Update, A)
+	end,
+    mnesia:transaction(F).
+
+rewrite_url(R) when record(R, regexproute) ->
+    case R#regexproute.address of
+	URL when record(URL, sipurl) ->
+	    %% all set
+	    R;
+	{User, Pass, Host, Port, Parameters} ->
+	    %% old format
+	    U = #sipurl{proto="sip", user=User, pass=Pass, host=Host, port=Port, param=Parameters},
+	    io:format("database_regexproute: Rewrote regexp ~p URL ~p~n", [R#regexproute.regexp, sipurl:print(U)]),
+	    R#regexproute{address=U};
+	Unknown ->
+	    io:format("database_regexproute: Unknown URL format ~p in entry :~n~p~n",
+		      [Unknown, R])
+    end.
 
 purge_class(Regexp, Class) ->
     Fun = fun() ->
