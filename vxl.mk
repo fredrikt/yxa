@@ -14,16 +14,14 @@ clean:
 sslkey:
 	mkdir ssl || true
 	chmod 700 ssl
-	cp $(SRCDIR)/ssl.config ssl/ssl.config
+	cp $(srcdir)/ssl.config ssl/ssl.config
 	cd ssl && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
 	cd ssl && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
 	cd ssl && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
 	cat ssl/cert.cert ssl/cert.pem > ssl/cert.comb
 
-%.start: %.boot %.config
-	echo "#!/bin/sh" > $@
-	echo ". /mpkg/modules/current/init/sh" >> $@
-	echo "module add erlang" >> $@
+%.start: %.boot %.config init.sh.in
+	cp $(srcdir)/init.sh.in $@
 	echo "erl -boot " $* " -name " $* " -config " $* " -proto_dist inet_ssl -ssl_dist_opt client_certfile ssl/cert.comb -ssl_dist_opt server_certfile ssl/cert.comb -ssl_dist_opt verify 2 -detached" >> $@
 	chmod +x $@
 
