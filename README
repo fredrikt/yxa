@@ -508,7 +508,8 @@ sipuserdb_file user database :
  {user, [
 	 {name, "foo@example.org"},
 	 {password, "secret2"},
-	 {classes, [internal]}
+	 {classes, [internal]},
+	 {addresses, ["sip:info@example.org", "sip:all@example.org"]}
 	]},
 
  {address, [
@@ -518,16 +519,8 @@ sipuserdb_file user database :
  {address, [
 	    {user, "ft.sip1"},
 	    {address, "sip:all@example.org"}
-	   ]},
-
- {address, [
-	    {user, "ft.sip2"},
-	    {address, "sip:info@example.org"}
-	   ]},
- {address, [
-	    {user, "ft.sip2"},
-	    {address, "sip:all@example.org"}
 	   ]}
+
 ].
 
 This is a simple user database. If I have two phones, and let one REGISTER
