@@ -13,135 +13,135 @@ init() ->
 
 route_request(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    case lookup:homedomain(Host) of
+    Loc1 = case lookup:homedomain(Host) of
 	true ->
 	    request_to_homedomain(URL);
 	_ ->
 	    request_to_remote(URL)
-    end.
-
-lookupmail(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    Loc1 = local:lookup_homedomain_url(URL),
-    logger:log(debug, "Routing: lookupmail ~p @ ~p -> ~p", [User, Host, Loc1]),
+    end,
     case Loc1 of
-	none ->
-	    none;
-	Loc1 ->
-	    case lookup:lookupuser(Loc1) of
-		none ->
-		    lookupdefault(Loc1);
-		Loc2 ->
-		    Loc2
-	    end
-    end.
-
-enumlookup(Number) ->
-    case util:regexp_rewrite(Number, sipserver:get_env(internal_to_e164, [])) of
 	nomatch ->
-	    none;
-	E164 ->
-	    Res = dnsutil:enumlookup(E164),
-	    logger:log(normal, "ENUM: ~p -> ~p", [E164, Res]),
-	    Res
-    end.
-
-lookupdefault(User) ->
-    case util:isnumeric(User) of
-	true ->
-	    case enumlookup(User) of
-		none ->
-		    logger:log(debug, "Routing: Proxying to ~p @ ~p (my defaultroute)~n", [User, sipserver:get_env(defaultroute, "")]),
-		    {proxy, {User, none, sipserver:get_env(defaultroute), none, []}};
-		URL ->
-		    logger:log(debug, "Routing: ENUM lookup resulted in ~p~n", [URL]),
-		    {relay, sipurl:parse(URL)}
-	    end;
-	false ->
-	    logger:log(debug, "Routing: could not route call"),
-	    none
+	    logger:log(debug, "Routing: No match - trying default route"),
+	    lookup:lookupdefault(URL);
+	_ ->
+	    Loc1
     end.
 
 request("REGISTER", URL, Header, Body, Socket, FromIP) ->
-    logger:log(debug, "REGISTER"),
-    To = sipheader:to(keylist:fetch("To", Header)),
-    Contact = sipheader:contact(keylist:fetch("Contact", Header)),
-    {_, {Phone, _, _, _, _}} = To,
-    [{_, Location}] = Contact,
-    case sipauth:can_register(Header, Phone) of
-	{true, Numberlist} ->
-	    logger:log(debug, "numberlist: ~p", [Numberlist]),
-	    Auxphones = Numberlist,
-	    siprequest:process_register_isauth(Header, Socket, Phone, Auxphones, Location);
-	{stale, _} ->
-	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), true);
-	{false, _} ->
-	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), false)
+    {User, Pass, Host, Port, Parameters} = URL,
+    logger:log(debug, "REGISTER ~p", [sipurl:print(URL)]),
+    case lookup:homedomain(Host) of
+	true ->
+	    % delete any present Record-Route header (RFC3261, #10.3)
+	    NewHeader = keylist:delete("Record-Route", Header),
+	    Contacts = sipheader:contact(keylist:fetch("Contact", Header)),
+	    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
+	    {_, ToURL} = sipheader:to(keylist:fetch("To", Header)),
+	    ToKey = local:sipuser(ToURL),
+	    case sipauth:can_register(NewHeader, ToKey) of
+		{true, Numberlist} ->
+		    if
+			Numberlist /= [] ->
+			    logger:log(debug, "numberlist: ~p", [Numberlist]);
+			true -> none
+		    end,
+		    siprequest:process_register_isauth(NewHeader, Socket, ToKey, Numberlist, Contacts);
+		{stale, _} ->
+		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), true);
+		{false, _} ->
+		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), false)
+	    end;
+	_ ->
+	    logger:log(debug, "REGISTER for non-homedomain ~p", [Host]),
+	    do_request("REGISTER", URL, Header, Body, Socket, FromIP)
     end;
 
 request(Method, URL, Header, Body, Socket, FromIP) ->
+    do_request(Method, URL, Header, Body, Socket, FromIP).
+
+do_request(Method, URL, Header, Body, Socket, FromIP) ->
     logger:log(debug, "~s ~s~n",
 	       [Method, sipurl:print(URL)]),
     Location = route_request(URL),
     logger:log(debug, "Location: ~p", [Location]),
+    LogStr = sipserver:make_logstr({request, Method, URL, Header, Body}, FromIP),
     case Location of
 	none ->
-	    logger:log(normal, "~s ~s -> Not found", [Method, sipurl:print(URL)]),
+	    logger:log(normal, "~s -> Not found", [LogStr]),
 	    siprequest:send_notfound(Header, Socket);
 	{error, Errorcode} ->
-	    logger:log(normal, "~s ~s Error ~p", [Method, sipurl:print(URL), Errorcode]),
+	    logger:log(normal, "~s -> Error ~p", [LogStr, Errorcode]),
 	    siprequest:send_result(Header, Socket, "", Errorcode, "Unknown code");
 	{response, Returncode, Text} ->
-	    logger:log(normal, "~s ~s -> Response ~p ~s", [Method, sipurl:print(URL), Returncode, Text]),
+	    logger:log(normal, "~s -> Response ~p ~s", [LogStr, Returncode, Text]),
 	    siprequest:send_result(Header, Socket, "", Returncode, Text);
 	{proxy, Loc} ->
-	    logger:log(normal, "~s ~s -> Proxy ~s", [Method, sipurl:print(URL), sipurl:print(Loc)]),
+	    logger:log(normal, "~s -> Proxy ~s", [LogStr, sipurl:print(Loc)]),
 	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body, []});
 	{redirect, Loc} ->
-	    logger:log(normal, "~s ~s -> Redirect ~s", [Method, sipurl:print(URL), sipurl:print(Loc)]),
+	    logger:log(normal, "~s -> Redirect ~s", [LogStr, sipurl:print(Loc)]),
 	    siprequest:send_redirect(Loc, Header, Socket);
 	{relay, Loc} ->
-	    logger:log(normal, "~s ~s -> Relay ~s", [Method, sipurl:print(URL), sipurl:print(Loc)]),
+	    logger:log(normal, "~s -> Relay ~s", [LogStr, sipurl:print(Loc)]),
 	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method);
 	_ ->
-	    logger:log(debug, "Don't know how to process Location ~p", [Location]),
+	    logger:log(error, "~s -> Invalid Location ~p", [LogStr, Location]),
 	    siprequest:send_result(Header, Socket, "", 500, "Internal Server Error")
     end.
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
-    logger:log(normal, "Response ~p ~s", [Status, Reason]),
+    LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
+    logger:log(normal, "Response to ~s: ~p ~s", [LogStr, Status, Reason]),
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
 
 request_to_homedomain(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     Key = local:sipuser(URL),
-    logger:log(debug, "Routing: ~p is a local domain", [Host]),
-    Loc1 = lookup:lookupuser(Key),
-    logger:log(debug, "Routing: lookuproute on ~p -> ~p", [Key, Loc1]),
-    Loc2 = case Loc1 of
-	       none ->
-		   lookupmail(URL);
-	       Loc1 ->
-		   Loc1
-	   end,
-    case Loc2 of
+    logger:log(debug, "Routing: Request to homedomain, sipuser ~p", [Key]),
+
+    Loc1 = lookup:lookupuser(URL),
+    logger:log(debug, "Routing: lookupuser on ~p -> ~p", [sipurl:print(URL), Loc1]),
+
+    case Loc1 of
 	none ->
-	    case lookup:isours(Key) of
+	    case lookup:isours(URL) of
 		true ->
-		    logger:log(debug, "Routing: ~p is one of our users, returning 480 Users location currently unknown", [Key]),
+		    logger:log(debug, "Routing: ~p is one of our users, returning Temporarily Unavailable", [User]),
 		    {response, 480, "Users location currently unknown"};
 		false ->
-		    logger:log(debug, "Routing: ~p isn't one of our users - routing towards default", [Key]),
-		    lookupdefault(Key)
+		    request_to_homedomain_not_sipuser(URL)
 	    end;
-	Loc2 ->
-	    Loc2
+	Loc1 ->
+	    Loc1
+    end.
+
+request_to_homedomain_not_sipuser(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+ 
+    Loc1 = local:lookup_homedomain_url(URL),
+    logger:log(debug, "Routing: local:lookup_homedomain_url on ~s -> ~p", [sipurl:print(URL), Loc1]),
+
+    case Loc1 of
+	none ->
+	    % lookup:lookuppotn() returns 'none' if argument is not numeric,
+	    % so we don't have to check that...
+	    Res1 = lookup:lookuppotn(User),
+	    logger:log(debug, "Routing: lookuppotn on ~s -> ~p", [User, Res1]),
+	    Res1;
+	_ ->
+	    Loc1
     end.
 
 request_to_remote(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
-    {relay, URL}.
+    case local:lookup_remote_url(URL) of
+	none ->
+	    {_, _, Host, _, _} = URL,
+	    logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
+	    {relay, URL};
+	Location ->
+	    logger:log(debug, "Routing: local:lookup_remote_url() ~s -> ~p", [sipurl:print(URL), Location]),
+	    Location
+    end.
 
 remove_expired_phones() ->
     {atomic, Expired} = phone:expired_phones(),
@@ -151,6 +151,6 @@ remove_phones([]) ->
     true;
 
 remove_phones([Phone | Rest]) ->
-    logger:log(debug, "phoneexpire:remove ~p", [Phone]),
+    logger:log(debug, "Expire: Contact ~p has expired", [siprequest:locations_to_contacts(Phone)]),
     phone:delete_record(Phone),
     remove_phones(Rest).

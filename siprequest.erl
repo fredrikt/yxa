@@ -39,6 +39,7 @@ rewrite_route(Header, Dest) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
     case Route of
 	[{_, Newdest} | Newroute] ->
+	    logger:log(debug, "Routing: New destination is ~p", [Newdest]),
 	    case Newroute of
 		[] ->
 		    {keylist:delete("Route", Header),
@@ -64,51 +65,97 @@ send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
     logger:log(debug, "Max-Forwards is ~p", [MaxForwards]),
     if
 	MaxForwards < 1 ->
-	    logger:log(normal, "Not proxying request with Max-Forwards < 1 (replying 483 Too Many Hops)"),
-	    send_too_many_hops(Header, Socket);
+	    logger:log(normal, "Not proxying request with Max-Forwards < 1"),
+	    throw({siperror, 483, "Too Many Hops"});
 	true ->
-	    Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
-	    [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
-					     {siphost:myip(),
-					      integer_to_list(sipserver:get_env(listenport, 5060))},
-					     Parameters}]),
-	    Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
-	    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
-	    Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
-	    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist4) ++ "\r\n" ++ Body,
-	    case url_to_hostport(Newdest) of
-		{error, nxdomain} ->
-		    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN), returning 604 Does Not Exist Anywhere", [Newdest]),
-		    siprequest:send_result(Header, Socket, "", 604, "Does Not Exist Anywhere");
-		{error, What} ->
-		    logger:log(normal, "Could not resolve destination ~p (~p), returning 500 Could not resolve destination", [Newdest, What]),
-		    siprequest:send_result(Header, Socket, "", 500, "Could not resolve destination");
-		{Host, Port} ->
-		    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
-		    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
-	    end
+	    true
+    end,
+    check_valid_proxy_request(Action, Header),
+    Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
+    [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
+				     {siphost:myip(),
+				      integer_to_list(sipserver:get_env(listenport, 5060))},
+				     Parameters}]),
+    Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
+    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
+    Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
+    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist4) ++ "\r\n" ++ Body,
+    case url_to_hostport(Newdest) of
+	{error, nxdomain} ->
+	    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN)", [Newdest]),
+	    siprequest:send_result(Header, Socket, "", 604, "Does Not Exist Anywhere");
+	{error, What} ->
+	    logger:log(normal, "Could not resolve destination ~p (~p)", [Newdest, What]),
+	    siprequest:send_result(Header, Socket, "", 500, "Could not resolve destination");
+	{Host, Port} ->
+	    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
+	    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
     end.
 
-process_register_isauth(Header, Socket, Phone, Auxphones, Location) ->
-    logger:log(normal, "REGISTER phone ~p at ~s", [Phone, sipurl:print(Location)]),
-    Expire = 
-	case keylist:fetch("Expires", Header) of
-	    [E] ->
-		E;
-	    [] ->
-		"3600"
-	end,
+check_valid_proxy_request("ACK", _) ->
+    true;
+check_valid_proxy_request("CANCEL", _) ->
+    true;    
+check_valid_proxy_request(Method, Header) ->
+    ProxyRequire = keylist:fetch("Proxy-Require", Header),
+    case ProxyRequire of
+	[] ->
+	    true;
+	_ ->
+	    logger:log(normal, "Proxy Request check: The client requires unsupported extension(s) ~p", [ProxyRequire]),
+	    throw({siperror, 420, "Bad Extension", [{"Unsupported", ProxyRequire}]})
+    end.
 
-    phone:insert_purge_phone(Phone, [{priority, 100}],
+register_contact(Phone, Location, Priority, Header) ->
+    {_, Contact} = Location,
+    Expire = parse_register_expire(Header, Contact),
+    NewContact = remove_expires_parameter(Contact),
+    logger:log(normal, "REGISTER ~s at ~s (priority ~p, expire in ~p)",
+		[Phone, sipurl:print(NewContact), Priority, Expire]),
+    phone:insert_purge_phone(Phone, [{priority, Priority}],
 			     dynamic,
-			     list_to_integer(Expire) + util:timestamp(),
-			     Location),
-    lists:map(fun (Auxphone) ->
-		      phone:insert_purge_phone(Auxphone, [{priority, 50}],
-					       dynamicaux,
-					       list_to_integer(Expire) + util:timestamp(),
-					       Location)
-	      end, Auxphones),
+			     Expire + util:timestamp(),
+			     NewContact).
+
+remove_expires_parameter(Contact) ->
+    {User, _, Host, Port, _} = Contact,
+    Param1 = sipheader:contact_params(Contact),
+    Param2 = dict:erase("expires", Param1),
+    Parameters = sipheader:dict_to_param(Param2),
+    {User, none, Host, Port, Parameters}.
+
+unregister_contact(Phone, Contact, Priority) ->
+    logger:log(normal, "UN-REGISTER ~s at ~s (priority ~p)",
+		[Phone, sipheader:contact_print([{none, Contact}]), Priority]),
+    phone:insert_purge_phone(Phone, [{priority, Priority}],
+			     dynamic,
+			     util:timestamp(),
+			     Contact).
+
+process_register_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
+    % XXX RFC3261 says to store Call-ID and CSeq and to check these on
+    % registers replacing erlier bindings (10.3 #7)
+
+    check_valid_register_request(Header),
+    
+    % try to find a wildcard to process
+    case process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) of
+	none ->
+	    % no wildcard, loop through all Contacts, and for all Contacts
+	    % loop through all Auxphones
+	    lists:map(fun (Location) ->
+			register_contact(Phone, Location, 100, Header),
+
+			lists:map(fun (Auxphone) ->
+				register_contact(Auxphone, Location, 50, Header)
+			    end, Auxphones)
+		      
+		      end, Contacts);
+	_ ->
+	    none
+    end,
+    
+    FetchedContactList = fetch_contacts(Phone),
     
     send_response(Socket, 200, "OK",
 		  [{"via", keylist:fetch("Via", Header)},
@@ -116,7 +163,116 @@ process_register_isauth(Header, Socket, Phone, Auxphones, Location) ->
 		   {"To", keylist:fetch("To", Header)},
 		   {"Call-ID", keylist:fetch("Call-ID", Header)},
 		   {"CSeq", keylist:fetch("CSeq", Header)},
-		   {"Expires", [Expire]}], "").
+		   {"Contact", FetchedContactList}], "").
+
+check_valid_register_request(Header) ->
+    Require = keylist:fetch("Require", Header),
+    case Require of
+	[] ->
+	    true;
+	_ ->
+	    logger:log(normal, "Request check: The client requires unsupported extension(s) ~p", [Require]),
+	    throw({siperror, 420, "Bad Extension", [{"Unsupported", Require}]})
+    end.
+
+fetch_contacts(Phone) ->
+    case phone:get_phone(Phone) of
+	{atomic, Locations} ->
+	    locations_to_contacts(Locations);
+	_ ->
+	    none
+    end.
+
+locations_to_contacts([]) ->
+    [];
+locations_to_contacts([{Location, Flags, Class, Expire}]) ->
+    [print_contact(Location, Expire)];
+locations_to_contacts([{Location, Flags, Class, Expire} | Rest]) ->
+    [print_contact(Location, Expire), locations_to_contacts(Rest)].
+
+print_contact(Location, Expire) ->
+    {User, _, Host, Port, Parameters} = Location,
+    % make sure we don't end up with a negative Expires
+    NewExpire = lists:max([0, Expire - util:timestamp()]),
+    Contact = {none, {User, none, Host, Port, lists:append(Parameters, ["expires=" ++ integer_to_list(NewExpire)])}},
+    sipheader:contact_print([Contact]).
+
+process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
+    case is_valid_wildcard_request(Header, Contacts) of
+	true ->
+	    logger:log(debug, "Register: Processing valid wildcard un-register"),
+	    case phone:get_phone(Phone) of
+		{atomic, Entrys} ->
+		    % loop through all Entrys and unregister them
+		    lists:map(fun (Entry) ->
+			{Location, Flags, Class, Expire} = Entry,
+			Prio = case lists:keysearch(priority, 1, Flags) of
+			    {value, {priority, P}} -> P;
+			    _ -> 100
+			end,
+			unregister_contact(Phone, Location, Prio)
+		      end, Entrys);
+		_ ->
+		    none
+	    end;
+	_ ->
+	    none
+    end.
+
+is_valid_wildcard_request(Header, [{_, {wildcard, Parameters}}]) ->
+    case keylist:fetch("Expires", Header) of
+	["0"] ->
+	    % A single wildcard contact with an Expires header of 0, now just check that
+	    % Parameters does not contain any expire value except possibly zero
+	    case dict:find("expires", sipheader:contact_params({none, {wildcard, Parameters}})) of
+		{ok, E} ->
+		    case E of
+			"0" ->
+			    true;
+			_ ->
+			    %logger:log(debug, "Register: Wildcard with non-zero contact expires parameter (~p), invalid IMO", [Parameters]),
+			    throw({siperror, 400, "Wildcard with non-zero contact expires parameter"})
+		    end;
+		_ ->
+		    true
+	    end;
+	_ ->
+	    throw({siperror, 400, "Wildcard without 'Expires: 0', invalid (RFC3261 10.2.2)"})
+    end;
+is_valid_wildcard_request(Header, Contacts) ->
+    % More than one Contacts (or just one non-wildcard), make sure there
+    % are no wildcards since that would be invalid
+    case wildcard_grep(Contacts) of
+	true ->
+	    %logger:log(debug, "Register: Wildcard present but not alone, invalid (RFC3261 10.3 #6)"),
+	    throw({siperror, 400, "Wildcard present but not alone, invalid (RFC3261 10.3 #6)"});
+	_ ->
+	    none
+    end.
+
+wildcard_grep([]) ->
+    nomatch;
+wildcard_grep([{_, {wildcard, Parameters}} | Rest]) ->
+    true;
+wildcard_grep([Foo | Rest]) ->
+    wildcard_grep(Rest).
+    
+parse_register_expire(Header, Contact) ->
+    MaxRegisterTime = sipserver:get_env(max_register_time, 43200),
+    case dict:find("expires", sipheader:contact_params(Contact)) of
+	{ok, E1} ->
+	    % Contact parameters has an expire value, use that
+	    lists:min([MaxRegisterTime, list_to_integer(E1)]);
+	error ->
+	    case keylist:fetch("Expires", Header) of
+		[E2] ->
+		    % Request has an Expires header, use that
+		    lists:min([MaxRegisterTime, list_to_integer(E2)]);
+		[] ->
+		    % Default expire
+		    3600
+	    end
+    end.
 
 send_auth_req(Header, Socket, Auth, Stale) ->
     send_response(Socket, 401, "Authentication Required",
@@ -162,14 +318,6 @@ send_notavail(Header, Socket) ->
 		   {"Call-ID", keylist:fetch("Call-ID", Header)},
 		   {"CSeq", keylist:fetch("CSeq", Header)},
 		   {"Retry-After", ["180"]}], "").
-
-send_too_many_hops(Header, Socket) ->
-    send_response(Socket, 483, "Too Many Hops",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)}], "").
 
 send_answer(Header, Socket, Body) ->
     send_response(Socket, 200, "OK",

@@ -1,5 +1,5 @@
 -module(sipserver).
--export([start/5, process/6, get_env/1, get_env/2]).
+-export([start/5, process/6, get_env/1, get_env/2, make_logstr/2]).
 
 start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, LocalTablesP) ->
     case LocalTablesP of
@@ -38,11 +38,10 @@ recvloop(Socket, RequestFun, ResponseFun) ->
 process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
     case catch do_process(Packet, Socket, IPlist, InPortNo,
 			  RequestFun, ResponseFun) of
-	{error, E} ->
-	    logger:log(error, "=ERROR REPORT====~n~p", [E]),
-	    true;
 	{'EXIT', E} ->
-	    logger:log(error, "=ERROR REPORT====~n~p", [E]),
+	    logger:log(error, "=ERROR REPORT==== from do_process()~n~p", [E]),
+	    IP = siphost:makeip(IPlist),
+	    logger:log(error, "CRASHED processing packet [client=~s]", [IP]),
 	    true;
 	_ ->
 	    true
@@ -54,24 +53,80 @@ internal_error(Header, Socket) ->
 internal_error(Header, Socket, Code, Text) ->
     siprequest:send_result(Header, Socket, "", Code, Text).
 
+internal_error(Header, Socket, Code, Text, ExtraHeaders) ->
+    siprequest:send_result(Header, Socket, "", Code, Text, ExtraHeaders).
+
 do_process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
     IP = siphost:makeip(IPlist),
-    case sippacket:parse(Packet, IP, InPortNo) of
-	{request, Method, URL, Header, Body} ->
+    case parse_packet(Socket, Packet, IP, InPortNo) of
+	{{request, Method, URL, Header, Body}, LogStr} ->
 %	    logger:log(debug, "~s from ~s:~p", [Method, IP, InPortNo]),
 	    case catch apply(RequestFun, [Method, URL, Header, Body, Socket, IP]) of
 		{'EXIT', E} ->
-		    logger:log(error, "=ERROR REPORT====~n~p", [E]),
+		    logger:log(error, "=ERROR REPORT==== from RequestFun~n~p", [E]),
 		    internal_error(Header, Socket);
 		{siperror, Code, Text} ->
-		    logger:log(error, "SIP error: ~p ~s~n", [Code, Text]),
+		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
 		    internal_error(Header, Socket, Code, Text);
+		{siperror, Code, Text, ExtraHeaders} ->
+		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
+		    internal_error(Header, Socket, Code, Text, ExtraHeaders);
 		_ ->
 		    true
 	    end;
-	{response, Status, Reason, Header, Body} ->
-	    apply(ResponseFun, [Status, Reason, Header, Body, Socket, IP])
+	{{response, Status, Reason, Header, Body}, LogStr} ->
+	    apply(ResponseFun, [Status, Reason, Header, Body, Socket, IP]);
+	_ ->
+	    true
     end.
+
+parse_packet(Socket, Packet, IP, InPortNo) ->
+    case catch sippacket:parse(Packet, IP, InPortNo) of
+	{'EXIT', E} ->
+	    logger:log(error, "=ERROR REPORT==== from sippacket:parse()~n~p", [E]),
+	    logger:log(error, "CRASHED parsing packet [client=~s]", [IP]),
+	    false;
+	{siperror, Code, Text} ->
+	    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE", [IP, Code, Text]),
+	    false;
+	{siperror, Code, Text, ExtraHeaders} ->
+	    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE", [IP, Code, Text]),
+	    false;
+	Parsed ->
+	    % From here on, we can generate responses to the UAC on error
+	    {Type, Header} = case Parsed of
+		{request, Method, _, Header2, _} ->
+		    {Method, Header2};
+		{response, Status, Reason, Header2, _} ->
+		    {integer_to_list(Status) ++ " " ++ Reason, Header2}
+	    end,
+	    case catch make_logstr(Parsed, IP) of
+		{'EXIT', E} ->
+		    logger:log(error, "=ERROR REPORT==== from sipserver:make_logstr()~n~p", [E]),
+		    internal_error(Header, Socket),
+		    logger:log(error, "CRASHED parsing packet [client=~s]", [IP]);
+		{siperror, Code, Text} ->
+		    logger:log(error, "INVALID packet ~s [client=~s] -> ~p ~s", [Type, IP, Code, Text]),
+		    internal_error(Header, Socket, Code, Text);
+		{siperror, Code, Text, ExtraHeaders} ->
+		    logger:log(error, "INVALID packet ~s [client=~s] -> ~p ~s", [Type, IP, Code, Text]),
+		    internal_error(Header, Socket, Code, Text, ExtraHeaders);
+		LogStr ->
+		    {Parsed, LogStr}
+	    end
+    end.
+
+make_logstr({request, Method, URL, Header, Body}, IP) ->
+    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
+    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
+    io_lib:format("~s ~s [client=~s, from=<~s>, to=<~s>]", 
+		[Method, sipurl:print(URL), IP, sipurl:print(FromURI), sipurl:print(ToURI)]);
+make_logstr({response, Status, Reason, Header, Body}, IP) ->
+    {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
+    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
+    io_lib:format("~s [client=~s, from=<~s>, to=<~s>]", 
+		[CSeqMethod, IP, sipurl:print(FromURI), sipurl:print(ToURI)]).
 
 get_env(Name) ->
     {ok, Value} = application:get_env(Name),
