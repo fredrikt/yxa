@@ -741,11 +741,11 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     %% Record-Route
     Port = siprequest:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
     PortMatches = lists:member(Port, MyPorts),
-    MAddrMatch = case dict:find("maddr", sipheader:param_to_dict(URI#sipurl.param)) of
-		     {ok, MyIP} -> true;
-		     {ok, _OtherIP} ->
+    MAddrMatch = case url_param:find(URI#sipurl.param_pairs, "maddr") of
+		     [MyIP] -> true;
+		     [_OtherIP] ->
 			 false;
-		     _ ->
+		     [] ->
 			 %% this should really return 'false', but some SIP-stacks
 			 %% evidently strip parameters so we treat the absence of maddr
 			 %% parameter as if it matches
