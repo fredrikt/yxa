@@ -155,7 +155,7 @@ SUBDIRS = \
 	event_handler
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
-all: $(beam_FILES) bootstrap.sh dtmfserver all-recursive $(boot_FILES) $(start_FILES)
+all: $(beam_FILES) bootstrap.sh dtmfserver all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)
 
 $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
@@ -235,6 +235,9 @@ adminwww.boot: adminwww.app adminwww.rel
 	$(systools_make_script)
 
 appserver.boot: appserver.app appserver.rel
+	$(systools_make_script)
+
+start_ssl.boot: start_ssl.rel
 	$(systools_make_script)
 
 bootstrap.sh: init.sh.in config.status
