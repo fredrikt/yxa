@@ -3,7 +3,8 @@
 	 lookupregexproute/1, lookupuser/1, lookupaddress/1,
 	 lookupappserver/1, prioritize_locations/2, lookupdefault/1,
 	 lookuppotn/1, lookupenum/1, lookuppstn/1, isours/1,
-	 homedomain/1]).
+	 homedomain/1, get_remote_party_number/3,
+	 format_number_for_remote_party_id/3, get_remote_party_name/3]).
 
 sipuser(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
@@ -74,7 +75,7 @@ lookupaddress(Key) ->
 lookupappserver(Key) ->
     case Key of
 	"ft@pappersk.org" ->
-	    {forward, "lab13.lab.it.su.se", "5060"};
+	    {forward, "appserver.devel.sip.su.se", none};
 	_ ->
 	    lookup:lookupappserver(Key)
     end.
@@ -99,3 +100,14 @@ isours(URL) ->
 
 homedomain(Domain) ->
     lookup:homedomain(Domain).
+
+get_remote_party_number("ft@pappersk.org", ToURI, DstHost) ->
+    get_remote_party_number("ft@it.su.se", ToURI, DstHost);
+get_remote_party_number(Key, ToURI, DstHost) ->
+    lookup:get_remote_party_number(Key, ToURI, DstHost).
+
+format_number_for_remote_party_id(Number, ToURI, DstHost) ->
+    Number.
+
+get_remote_party_name(Key, ToURI, DstHost) ->
+    lookup:get_remote_party_name(lookup:rewrite_potn_to_e164(Key), ToURI).
