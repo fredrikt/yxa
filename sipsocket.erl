@@ -85,11 +85,11 @@ get_socket(Module, Proto, Host, Port) when atom(Module), atom(Proto) ->
 is_reliable_transport(Socket) when record(Socket, sipsocket) ->
     apply(Socket#sipsocket.module, is_reliable_transport, [Socket]).
 
-proto2module(tcp) -> sipsocket_tcp;
+proto2module(tcp) ->  sipsocket_tcp;
 proto2module(tcp6) -> sipsocket_tcp;
-proto2module(tls) -> sipsocket_tcp;
+proto2module(tls) ->  sipsocket_tcp;
 proto2module(tls6) -> spisocket_tcp;
-proto2module(udp) -> sipsocket_udp;
+proto2module(udp) ->  sipsocket_udp;
 proto2module(udp6) -> sipsocket_udp.
     
 proto2viastr(Socket) when record(Socket, sipsocket) ->
