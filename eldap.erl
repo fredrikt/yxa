@@ -744,7 +744,21 @@ log(_, _, _, _) ->
 send(To,Msg) -> To ! {self(),Msg}.
 recv(From)   -> receive {From,Msg} -> Msg end.
 
+ldap_closed_p(#eldap{socketmodule=ssl}=Data, Emsg) ->
+    %% Check if the SSL socket seems to be alive or not
+    case catch ssl:sockname(Data#eldap.fd) of
+	{error, _} ->
+	    ssl:close(Data#eldap.fd),
+	    {error, ldap_closed};
+	{ok, _} ->
+	    {error, Emsg};
+	_ ->
+	    %% sockname crashes if the socket pid is not alive
+	    {error, ldap_closed}
+    end;
+
 ldap_closed_p(Data, Emsg) ->
+    %% non-SSL socket
     case inet:port(Data#eldap.fd) of
 	{error,_} -> {error, ldap_closed};
 	_         -> {error,Emsg}
