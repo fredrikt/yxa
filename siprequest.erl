@@ -167,7 +167,7 @@ send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters) when recor
     {ok, NewHeader1, ApproxMsgSize} = check_proxy_request(Request),
     DstList = [Dst | DstT],
     logger:log(debug, "Siprequest: Destination list for request is :~n~p",
-	       [DstList]),
+	       [sipdst:debugfriendly(DstList)]),
     NewRequest = Request#request{header=NewHeader1},
     send_to_available_dst(DstList, NewRequest, ViaParameters, SrvTHandler);
 
