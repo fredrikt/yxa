@@ -1,0 +1,9 @@
+{application, appserver,
+ [{description, "SIP application server"},
+  {vsn,"0.0"},
+  {modules, [appserver, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, sipanswer, phone, sdp, rtp, siphost, sipclient]},
+  {registered, [logger]},
+  {mod, {appserver, []}},
+  {env, []},
+  {applications,
+        [kernel, stdlib]}]}.
