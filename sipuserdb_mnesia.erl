@@ -12,6 +12,7 @@
 	 get_forward_for_user/1
 	]).
 
+-include("siprecords.hrl").
 
 %% Mnesia userdb module
 
@@ -24,7 +25,7 @@ get_user_with_address(Address) ->
 	{atomic, []} ->
 	    case phone:get_users_for_number(Address) of
 		{atomic, []} ->
-		    logger:log(debug, "userdb-mnesia: No user with number ~p", [Address]),
+		    logger:log(debug, "userdb-mnesia: No user with name or number ~p", [Address]),
 		    nomatch;
 		{atomic, [User]} ->
 		    User;
@@ -37,7 +38,8 @@ get_user_with_address(Address) ->
 		    error
 	    end;
 	{atomic, [User]} ->
-	    %% User exists with this name
+	    %% There exists exactly one user with this name. Return the name of the user,
+	    %% not the user record returned from phone:get_user().
 	    Address;
 	{atomic, Users} ->
 	    logger:log(debug, "userdb-mnesia: More than one user with username ~p (~p)", [Address, Users]),
@@ -61,23 +63,49 @@ get_users_for_address_of_record(Address) ->
 		   Unknown1 ->
 		       logger:log(error, "userdb-mnesia: Unexpected result from phone:get_user(), address ~p result : ~p",
 				  [Address, Unknown1]),
-		       []
+		       error
 	       end,
-    case phone:get_users_for_number(Address) of
-	{atomic, []} ->
-	    UserList;
-	{atomic, NumberUsers} ->
-	    lists:umerge(UserList, lists:sort(NumberUsers));
-	Unknown2 ->
-	    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_users_for_number(), address ~p result : ~p",
-		       [Address, Unknown2]),
-	    UserList
+    case UserList of
+	error ->
+	    error;
+	_ ->
+	    case phone:get_users_for_number(Address) of
+		{atomic, []} ->
+		    UserList;
+		{atomic, NumberUsers} ->
+		    lists:usort(UserList, lists:sort(NumberUsers));
+		Unknown2 ->
+		    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_users_for_number(), address ~p result : ~p",
+			       [Address, Unknown2]),
+		    UserList
+	    end
     end.
 
-get_users_for_addresses_of_record([]) ->
+get_users_for_addresses_of_record(In) ->
+    get_users_for_addresses_of_record2(In, []).
+
+get_users_for_addresses_of_record2([], Res) ->
+    lists:usort(Res);
+get_users_for_addresses_of_record2([H | T], Res) ->
+    case get_users_for_address_of_record(H) of
+	Users when list(Users) ->
+	    get_users_for_addresses_of_record2(T, lists:append(Res, Users));
+	_ ->
+	    get_users_for_addresses_of_record2(T, Res)
+    end.
+
+
+%% Function: get_addresses_for_users/1
+%% Description: Iterate over a list of users, return all their 
+%%              addresses without duplicates. Uses the next function,
+%%              get_addresses_for_user/1.
+%% Returns: ListOfAddresses
+%%--------------------------------------------------------------------
+get_addresses_for_users([]) ->
     [];
-get_users_for_addresses_of_record([Address | Rest]) ->
-    lists:append(get_users_for_address_of_record(Address), get_users_for_addresses_of_record(Rest)).
+get_addresses_for_users([User | Rest]) ->
+    lists:append(get_addresses_for_user(User), get_addresses_for_users(Rest)).
+
 
 %% Gets all addresses for a user. Used for example
 %% to check if a request from a user has an acceptable
@@ -95,7 +123,10 @@ get_addresses_for_user(User) ->
 		{atomic, Numbers} ->
 		    logger:log(debug, "userdb-mnesia: Found number(s) ~p for user ~p",
 			       [Numbers, User]),
-		    lists:append([local:canonify_user(User)], local:canonify_numberlist(Numbers));
+		    CanonL = [local:canonify_user(User)],
+		    NumberL = local:canonify_numberlist(Numbers),
+		    All = lists:append([CanonL, NumberL]),
+		    lists:usort(All);
 		Unknown ->
 		    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_numbers_for_user(), user ~p result : ~p",
 			       [User, Unknown]),
@@ -107,12 +138,15 @@ get_addresses_for_user(User) ->
 	    error
     end.
 
-get_addresses_for_users([]) ->
-    [];
-get_addresses_for_users([User | Rest]) ->
-    lists:append(get_addresses_for_user(User), get_addresses_for_users(Rest)).
 
-get_users_for_url(URL) ->
+%% Function: get_users_for_url/1
+%% Description: Given an URL that is typically the Request-URI of an
+%%              incoming request, make a list of implicit user
+%%              addresses and return a list of all users matching any
+%%              of these addresses.
+%% Returns: ListOfUsernames
+%%--------------------------------------------------------------------
+get_users_for_url(URL) when record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_mnesia, URL),
     logger:log(debug, "userdb-mnesia: Looking for users matching address(es) ~p derived from URL ~p",
 	       [Addresses, sipurl:print(URL)]),
@@ -158,20 +192,30 @@ get_telephonenumber_for_user(User) ->
 	    nomatch
     end.
 
-get_forwards_for_users([]) ->
-    [];
-get_forwards_for_users([User | Rest]) ->
-    lists:append(get_forward_for_user(User), get_forwards_for_users(Rest)).
+get_forwards_for_users(In) ->
+    get_forwards_for_users2(In, []).
+
+get_forwards_for_users2([], Res) ->
+    lists:usort(Res);
+get_forwards_for_users2([H | T], Res) ->
+    case get_forward_for_user(H) of
+	error ->
+	    error;
+	nomatch ->
+	    get_forwards_for_users2(T, Res);
+	Fwd ->
+	    get_forwards_for_users2(T, lists:append(Res, [Fwd]))
+    end.
 
 get_forward_for_user(User) ->
     case database_forward:fetch(User) of
 	{atomic, []} ->
 	    logger:log(debug, "userdb-mnesia: No forwards found for user ~p", [User]),
-	    [];
+	    nomatch;
 	{atomic, [F]} ->
 	    F;
 	Unknown ->
 	    logger:log(error, "userdb-mnesia: Unexpected result from database_forward:fetch(), user ~p result : ~p",
 		       [User, Unknown]),
-	    []
+	    error
     end.
