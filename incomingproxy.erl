@@ -129,8 +129,8 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
     end.
 
 
-%% Function: request/3
-%% Description: Yxa applications must export an request/3 function.
+%% Function: response/3
+%% Description: Yxa applications must export an response/3 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
 response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
