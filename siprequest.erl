@@ -30,10 +30,16 @@ rewrite_route(Header, Dest) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
     case Route of
 	[{_, Newdest} | Newroute] ->
-	    {keylist:set("Route",
-			 sipheader:contact_print(Newroute),
-			 Header),
-	     Newdest};
+	    case Newroute of
+		[] ->
+		    {keylist:delete("Route", Header),
+		     Newdest};
+		Newroute ->
+		    {keylist:set("Route",
+				 sipheader:contact_print(Newroute),
+				 Header),
+		     Newdest}
+	    end;
 	[] ->
 	    {Header, Dest}
     end.
