@@ -1,5 +1,5 @@
 -module(admin_www).
--export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2]).
+-export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2]).
 
 server_node() -> 'incomingproxy@granit.e.kth.se'.
 
@@ -39,6 +39,19 @@ print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
 	      util:sec_to_date(Expire),
 	      "</td><td>",
 	      sipurl:print(Address),
+	      "</td><td>",
+	      case Class of
+		  permanent ->
+		      [
+		       "<form action=\"admin_www%3Adel_route\" method=post>\n",
+		       "<input type=\"hidden\" name=\"number\" value=\"",
+		       Number, "\">\n",
+		       "<input type=\"submit\" value=\"Delete\">\n",
+		       "</form>\n"
+		      ];
+		  _ ->
+		      ""
+	      end,
 	      "</td></tr>\n"
 	     ];
 	{mailbox, Status, Number2} ->
@@ -192,7 +205,15 @@ list_users(Env, Input) ->
 	     "<input type=\"text\" name=\"user\" size=\"12\">\n",
 	     "<input type=\"text\" name=\"phone\" size=\"4\">\n",
 	     "<input type=\"submit\" value=\"Add\">\n",
-	     "</form>\n"
+	     "</form>\n",
+	     "<ol>\n",
+	     "<li>internal: samtal inom KTH\n",
+	     "<li>almostinternal: samtal till t.ex. SU, nummer som börjar på 0\n",
+	     "<li>local: lokalsamtal inom 08-området\n",
+	     "<li>national: samtal inom Sverige\n",
+	     "<li>international: utlandssamtal\n",
+	     "<li>mobile_or_pay: alla samtal som börjar på 0007\n",
+	     "</ol>\n"
 	    ]
     end.
 
@@ -207,7 +228,14 @@ list_phones(Env, Input) ->
 	     "<tr><th>Number</th><th>Flags</th><th>Class</th>",
 	     "<th>Expire</th><th>Address</th></tr>\n",
 	     print_phones(List),
-	     "</table>\n"
+	     "</table>\n",
+	     "<h1>Add route</h1>\n",
+	     "<form action=\"admin_www%3Aadd_route\" method=post>\n",
+	     "Number: <input type=\"text\" name=\"number\">\n",
+	     "Priority: <input type=\"text\" name=\"priority\">\n",
+	     "Address: <input type=\"text\" name=\"address\">\n",
+	     "<input type=\"submit\" value=\"Add entry\">\n",
+	     "</form>\n"
 	    ]
     end.
 
@@ -233,6 +261,50 @@ add_user(Env, Input) ->
 		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
 	    end
     end.
+
+add_route(Env, Input) ->
+    case check_auth(Env, true) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    Args = sipheader:httparg(Input),
+	    Numberfind = dict:find("number", Args),
+	    Priorityfind = dict:find("priority", Args),
+	    Addressfind = dict:find("address", Args),
+	    case {Numberfind, Priorityfind, Addressfind} of
+		{error, _, _} ->
+		    [header(ok), "Must supply number"];
+		{_, error, _} ->
+		    [header(ok), "Must supply priority"];
+		{_, _, error} ->
+		    [header(ok), "Must supply address"];
+		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
+		    phone:insert_purge_phone(Number,
+					     [{priority,
+					       list_to_integer(Priority)}],
+					     permanent,
+					     never,
+					     sipurl:parse(Address)),
+		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+	    end
+    end.
+
+del_route(Env, Input) ->
+    case check_auth(Env, true) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    Args = sipheader:httparg(Input),
+	    Numberfind = dict:find("number", Args),
+	    case {Numberfind} of
+		{error} ->
+		    [header(ok), "Must supply number"];
+		{{ok, Number}} ->
+		    phone:purge_class_phone(Number, permanent),
+		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+	    end
+    end.
+
 
 change_user_form(Env, Input) ->
     case check_auth(Env, true) of
