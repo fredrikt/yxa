@@ -1,6 +1,6 @@
 VPATH = $(srcdir)
 
-BEAM = incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sippacket.beam keylist.beam sipurl.beam siprequest.beam sipheader.beam phone.beam sipauth.beam siphost.beam dnsutil.beam admin_www.beam hex.beam directory.beam eldap.beam LDAPv3.beam appserver.beam sipanswer.beam rtp.beam sdp.beam dtmf.beam sound.beam group_regexp.beam sipclient.beam database_call.beam sipserver.beam database_regexproute.beam sipproxy.beam gssapi.beam lookup.beam local.beam testserver.beam siptimer.beam transactionlist.beam targetlist.beam clientbranch.beam serverbranch.beam
+BEAM = incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sippacket.beam keylist.beam sipurl.beam siprequest.beam sipheader.beam phone.beam sipauth.beam siphost.beam dnsutil.beam admin_www.beam hex.beam directory.beam eldap.beam LDAPv3.beam appserver.beam sipanswer.beam rtp.beam sdp.beam dtmf.beam sound.beam group_regexp.beam sipclient.beam database_call.beam sipserver.beam database_regexproute.beam sipproxy.beam gssapi.beam lookup.beam local.beam testserver.beam siptimer.beam transactionlist.beam targetlist.beam clientbranch.beam serverbranch.beam database_forward.beam
 
 CC = gcc
 
