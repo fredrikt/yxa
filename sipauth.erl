@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipauth.erl
 %%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Description : SIP authentication functions.
+%%% Descrip.: SIP authentication functions.
 %%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%-------------------------------------------------------------------
 -module(sipauth).
@@ -9,6 +9,7 @@
 %%-compile(export_all).
 
 -export([get_response/5,
+	 get_response/6,
 	 get_nonce/1,
 	 get_user_verified/2,
 	 get_user_verified_proxy/2,
@@ -18,7 +19,11 @@
 	 is_allowed_pstn_dst/4,
 	 can_use_address/2,
 	 can_use_address_detail/2,
-	 realm/0]).
+	 realm/0,
+	 add_x_yxa_peer_auth/5,
+
+	 test/0
+	]).
 
 
 -include("siprecords.hrl").
@@ -39,7 +44,8 @@ realm() ->
     sipserver:get_env(sipauth_realm, "").
 
 %%--------------------------------------------------------------------
-%% Function: get_nonce()
+%% Function: get_nonce(Timestamp)
+%%           Timestamp = string(), current time in hex
 %% Descrip.: Create a nonce. Since we have not located any useful
 %%           randomness functions in Erlang, and since all proxys that
 %%           share authentication realm should be able to use the
@@ -47,8 +53,8 @@ realm() ->
 %%           current time plus the configured sipauth_password.
 %% Returns : string()
 %%--------------------------------------------------------------------
-get_nonce(Timestamp) ->
-    hex:to(erlang:md5(Timestamp ++ ":" ++ sipserver:get_env(sipauth_password, ""))).
+get_nonce(Timestamp) when is_list(Timestamp) ->
+    hex:to(erlang:md5([Timestamp, ":", sipserver:get_env(sipauth_password, "")])).
 
 %%--------------------------------------------------------------------
 %% Function: get_challenge()
@@ -64,57 +70,66 @@ get_challenge() ->
     {realm(), get_nonce(Timestamp), Timestamp}.
 
 %%--------------------------------------------------------------------
-%% Function: get_response(Nonce, Method, URI, User, Password)
+%% Function: get_response(Nonce, Method, URIstr, User, Password)
+%%           get_response(Nonce, Method, URIstr, User, Password,
+%%                        Realm)
 %%           Nonce    = string()
 %%           Method   = string()
-%%           URI      = string()
+%%           URIstr   = string()
 %%           User     = string()
 %%           Password = string() | nomatch
+%%           Realm    = string()
 %% Descrip.: Get the correct response to a challenge, given a nonce,
 %%           method, URI, username and password.
 %% Returns : Response |
 %%           none
 %%           Response = string()
 %%--------------------------------------------------------------------
-get_response(_Nonce, _Method, _URI, _User, nomatch) ->
+get_response(Nonce, Method, URIstr, User, Password) ->
+    Realm = realm(),
+    get_response(Nonce, Method, URIstr, User, Password, Realm).
+
+get_response(_Nonce, _Method, _URIstr, _User, nomatch, _Realm) ->
     %% Password is nomatch - return 'none'
     none;
-get_response(Nonce, Method, URI, User, Password) ->
-    A1 = hex:to(erlang:md5(User ++ ":" ++ realm() ++ ":" ++ Password)),
-    A2 = hex:to(erlang:md5(Method ++ ":" ++ URI)),
-    hex:to(erlang:md5(A1 ++ ":" ++ Nonce ++ ":" ++ A2)).
+get_response(Nonce, Method, URIstr, User, Password, Realm) ->
+    A1 = hex:to(erlang:md5([User, ":", Realm, ":", Password])),
+    A2 = hex:to(erlang:md5([Method, ":", URIstr])),
+    hex:to(erlang:md5([A1, ":", Nonce, ":", A2])).
 
 %%--------------------------------------------------------------------
 %% Function: classify_number(Number, Regexps)
-%%           Number  = string(),
+%%           Number  = string() | none
 %%           Regexps = list() of {Regexp, Class} tuple()
 %%           Regexp  = string()
 %%           Class   = atom()
 %% Descrip.: Search a list of regexps until Number matches the Regexp
 %%           and return the Class.
-%% Returns : Class   |
-%%           unknown
+%% Returns : {ok, Class}   |
+%%           {ok, unknown} |
+%%           {error, E}
 %%           Class = atom()
 %%--------------------------------------------------------------------
-classify_number(none, _) ->
-    unknown;
+classify_number(none, _Regexps) ->
+    {ok, unknown};
 
-classify_number(_Number, []) ->
-    unknown;
+classify_number(Number, []) when is_list(Number) ->
+    {ok, unknown};
 
-classify_number(Number, [{"^+" ++ Regexp, _Class} | Rest]) ->
+classify_number(Number, [{"^+" ++ Regexp, _Class} | Rest]) when is_list(Number) ->
     logger:log(error, "sipauth:classify_number() Skipping invalid regexp ~p (you probably "
 	       "forgot to escape the plus char)", ["^+" ++ Regexp]),
     classify_number(Number, Rest);
 
-classify_number(Number, [{Regexp, Class} | Rest]) ->
+classify_number(Number, [{Regexp, Class} | Rest]) when is_list(Number), is_list(Regexp), is_atom(Class) ->
     case regexp:first_match(Number, Regexp) of
 	{match, _, _} ->
-	    Class;
+	    {ok, Class};
 	nomatch ->
 	    classify_number(Number, Rest);
-	{error, Error} ->
-	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error])
+	{error, E} ->
+	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, E]),
+	    {error, E}
     end.
 
 %%--------------------------------------------------------------------
@@ -152,6 +167,7 @@ get_user_verified(Header, Method) ->
 %%           {authenticated, User} |
 %%           throw()
 %%           User = string(), SIP authentication username
+%% Notes   : XXX we should verify the URI too
 %%--------------------------------------------------------------------
 get_user_verified_proxy(Header, Method) ->
     case keylist:fetch('proxy-authorization', Header) of
@@ -162,12 +178,47 @@ get_user_verified_proxy(Header, Method) ->
 	    get_user_verified2(Method, Authheader, Header)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_user_verified_yxa_peer(Header, Method)
+%%           Header = keylist record()
+%%           Method = string()
+%% Descrip.: Check if there is an X-Yxa-Peer-Auth: header in Header
+%%           and check if it authorizes this request. Might throw an
+%%           {siperror, ...} if something is wrong with the
+%%           authorization header.
+%% Returns : false                 |
+%%           {stale, User}         |
+%%           {authenticated, User} |
+%%           throw()
+%%           User = string(), SIP authentication username
+%% Notes   : XXX we should verify the URI too
+%%--------------------------------------------------------------------
+get_user_verified_yxa_peer(Header, Method) ->
+    case keylist:fetch('x-yxa-peer-auth', Header) of
+	[] ->
+	    logger:log(debug, "Auth: get_user_verified_yxa_peer: No X-Yxa-Peer-Auth header, returning false"),
+	    false;
+	Authheader ->
+	    Authorization = sipheader:auth(Authheader),
+	    OrigUser = User = dict:fetch("username", Authorization),
+	    case sipserver:get_env(x_yxa_peer_auth_secret, none) of
+		none ->
+		    logger:log(debug, "Auth: Request has X-Yxa-Peer-Auth header, but I have no configured secret"),
+		    false;
+		Password when is_list(Password) ->
+		    Realm = dict:fetch("realm", Authorization),
+		    Now = util:timestamp(),
+		    do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization)
+	    end
+    end.
+
 get_user_verified2(_Method, ["GSSAPI" ++ _R] = Authheader, _Header) ->
     Authorization = sipheader:auth(Authheader),
     Info = dict:fetch("info", Authorization),
     {_Response, Username} = gssapi:request(Info),
     %% XXX this is definately broken! What does gssapi:request() return anyways?
-    Username;
+    Username,
+    erlang:fault({error, "GSSAPI code broken and not yet fixed"});
 
 %%--------------------------------------------------------------------
 %% Function: get_user_verified2(Method, Authheader, Header)
@@ -177,56 +228,58 @@ get_user_verified2(_Method, ["GSSAPI" ++ _R] = Authheader, _Header) ->
 %% Descrip.: Authenticate a request.
 %% Returns : {authenticated, User} |
 %%           {stale, User}         |
-%%           false
+%%           false                 |
+%%           throw({siperror, ...})
 %%--------------------------------------------------------------------
 get_user_verified2(Method, Authheader, Header) ->
     Authorization = sipheader:auth(Authheader),
     %% Remember the username the client used
-    UAuser = dict:fetch("username", Authorization),
+    OrigUser = dict:fetch("username", Authorization),
     %% Canonify username
-    User = case local:canonify_authusername(UAuser, Header) of
+    User = case local:canonify_authusername(OrigUser, Header) of
 	       undefined ->
-		   UAuser;
+		   OrigUser;
 	       Res when is_list(Res) ->
 		   Res
 	   end,
-    Response = dict:fetch("response", Authorization),
-    Nonce = dict:fetch("nonce", Authorization),
-    Opaque = case dict:find("opaque", Authorization) of
+    Password = case local:get_password_for_user(User) of
+		   nomatch ->
+		       nomatch;
+		   PRes when is_list(PRes) ->
+		       PRes
+	       end,
+    Realm = realm(),
+    Now = util:timestamp(),
+    do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization).
+
+%% do_get_user_verified2/7 - part of get_user_verified2/3 in order to make it testable
+do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
+    Opaque = case dict:find("opaque", AuthDict) of
 		 error ->
 		     throw({siperror, 400, "Authorization should contain opaque"});
 		 {ok, Value} ->
 		     Value
 	     end,
-    Timestamp = hex:from(Opaque),
-    Now = util:timestamp(),
-    logger:log(debug, "Auth: timestamp: ~p now: ~p", [Timestamp, Now]),
-    Password = case local:get_password_for_user(User) of
-		   nomatch ->
-		       nomatch;
-		   PRes when is_list(PRes) ->
-		       PRes;
-		   E ->
-		       logger:log(error, "Auth: Failed to fetch password for user ~p, "
-				  "result of get_password_for_user was : ~p", [User, E]),
-		       throw({siperror, 500, "Server Internal Error"})
-	       end,
-
+    AuthURI = dict:fetch("uri", AuthDict),
+    Response = dict:fetch("response", AuthDict),
     Nonce2 = get_nonce(Opaque),
-    Response2 = get_response(Nonce2, Method,
-			     dict:fetch("uri", Authorization),
-			     UAuser, Password),
+    Nonce = dict:fetch("nonce", AuthDict),
+
+    Timestamp = hex:from(Opaque),
+    logger:log(debug, "Auth: timestamp: ~p now: ~p", [Timestamp, Now]),
+    Response2 = get_response(Nonce2, Method, AuthURI,
+			     OrigUser, Password, Realm),
     if
 	Password == nomatch ->
 	    logger:log(normal, "Auth: Authentication failed for non-existing user ~p", [User]),
 	    false;
 	Response /= Response2 ->
-	    %%logger:log(normal, "Response ~p /= Response2 ~p", [Response, Response2]),
+	    logger:log(debug, "Response ~p /= Response2 ~p", [Response, Response2]),
 	    logger:log(normal, "Auth: Authentication failed for user ~p", [User]),
 	    false;
 	Nonce /= Nonce2 ->
 	    logger:log(normal, "Auth: Nonce ~p /= ~p, authentication failed for user ~p", [Nonce, Nonce2, User]),
-	    {stale, User};
+	    false;
 	Timestamp < Now - 30 ->
 	    logger:log(normal, "Auth: Timestamp ~p too old. Now: ~p, authentication failed for user ~p",
 		       [Timestamp, Now, User]),
@@ -240,6 +293,18 @@ get_user_verified2(Method, Authheader, Header) ->
 	    {authenticated, User}
     end.
 
+%% Authenticate through X-Yxa-Peer-Auth or, if that does not exist, through Proxy-Authentication
+pstn_get_user_verified(Header, Method) ->
+    case get_user_verified_yxa_peer(Header, Method) of
+	false ->
+	    get_user_verified_proxy(Header, Method);
+	{stale, User} ->
+	    {stale, User};
+	{authenticated, User} ->
+	    {peer_authenticated, User}
+    end.
+
+
 %%--------------------------------------------------------------------
 %% Function: pstn_call_check_auth(Method, Header, URL, ToNumberIn,
 %%                                Classdefs)
@@ -252,7 +317,8 @@ get_user_verified2(Method, Authheader, Header) ->
 %%           check if this user may use this Address.
 %% Returns : {Allowed, User, Class}
 %%           Allowed = true | false
-%%           User    = string(), SIP authentication username
+%%           User    = unknown | none | string(), SIP authentication
+%%                     username
 %%           Class   = atom(), the class that this ToNumberIn matched
 %%--------------------------------------------------------------------
 pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
@@ -261,7 +327,7 @@ pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
 		   error -> ToNumberIn;
 		   N -> N
 	       end,
-    Class = classify_number(ToNumber, Classdefs),
+    {ok, Class} = classify_number(ToNumber, Classdefs),
     case lists:member(Class, sipserver:get_env(sipauth_unauth_classlist, [])) of
 	true ->
 	    %% This is a class that anyone should be allowed to call,
@@ -271,23 +337,27 @@ pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
 	    Address = sipurl:print(URL),
 	    case local:get_user_with_address(Address) of
 		nomatch ->
-		    logger:log(debug, "Auth: Address ~p does not match any of my users, no need to verify.", 
+		    logger:log(debug, "Auth: Address ~p does not match any of my users, no need to verify.",
 			       [Address]),
 		    {true, unknown, Class};
-		User when list(User) ->
+		User when is_list(User) ->
 		    Allowed = local:can_use_address(User, URL),
-		    {Allowed, User, Class};
-		Unknown ->
-		    logger:log(error, "Auth: Unknown result returned from get_user_for_address(~p) : ~p",
-			       [Address, Unknown]),
-		    {false, unknown, Class}
+		    {Allowed, User, Class}
 	    end;
-	_ ->
-	    case get_user_verified_proxy(Header, Method) of
+	false ->
+	    case pstn_get_user_verified(Header, Method) of
 		false ->
 		    {false, none, Class};
-		stale ->
-		    {stale, none, Class};
+		{stale, User} ->
+		    {stale, User, Class};
+		{peer_authenticated, User} ->
+		    %% For Peer-authenticated User, we don't check to see if User might use From: address or not
+		    case local:is_allowed_pstn_dst(User, ToNumber, Header, Class) of
+			true ->
+			    {true, User, Class};
+			false ->
+			    {false, User, Class}
+		    end;
 		{authenticated, User} ->
 		    UserAllowedToUseAddress = local:can_use_address(User, URL),
 		    AllowedCallToNumber = local:is_allowed_pstn_dst(User, ToNumber, Header, Class),
@@ -302,10 +372,7 @@ pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
 			    {false, User, Class};
 			true ->
 			    {true, User, Class}
-		    end;
-		Unknown ->
-		    logger:log(error, "Auth: Unknown result from get_user_verified_proxy: ~p", [Unknown]),
-		    {false, none, Class}
+		    end
 	    end
     end.
 
@@ -327,14 +394,10 @@ is_allowed_pstn_dst(User, _ToNumber, Header, Class) ->
 	    case local:get_classes_for_user(User) of
 		nomatch ->
 		    false;
-		UserAllowedClasses when list(UserAllowedClasses) ->
-		    lists:member(Class, UserAllowedClasses);
-		Unknown ->
-		    logger:log(error, "Auth: Unknown result from local:get_classes_for_user() user ~p :~n~p",
-			       [User, Unknown]),
-		    false
+		UserAllowedClasses when is_list(UserAllowedClasses) ->
+		    lists:member(Class, UserAllowedClasses)
 	    end;
-	R when list(R) ->
+	R when is_list(R) ->
 	    logger:log(debug, "Auth: Authenticated user ~p sends request with Route-header. Allow.", [User]),
 	    true
     end.
@@ -365,7 +428,11 @@ can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
 %%           Reason  = ok | eperm | nomatch | error
 %%--------------------------------------------------------------------
 can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
-    case local:get_users_for_url(URL) of
+    can_use_address_detail2(User, URL, local:get_users_for_url(URL)).
+
+%% can_use_address_detail2 - the testable part of can_use_address_detail/2
+can_use_address_detail2(User, URL, URLUsers) when is_list(User), is_record(URL, sipurl), is_list(URLUsers) ->
+    case URLUsers of
 	[User] ->
 	    logger:log(debug, "Auth: User ~p is allowed to use address ~p",
 		       [User, sipurl:print(URL)]),
@@ -378,28 +445,20 @@ can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
 	    logger:log(debug, "Auth: No users found for address ~p, use by user ~p NOT permitted",
 		       [sipurl:print(URL), User]),
 	    {false, nomatch};
-	nomatch ->
-	    logger:log(debug, "Auth: No users found for address ~p, use by user ~p NOT permitted",
-		       [sipurl:print(URL), User]),
-	    {false, nomatch};
-	Users when list(Users) ->
-	    case lists:member(User, Users) of
+	_ ->
+	    case lists:member(User, URLUsers) of
 		true ->
 		    {true, ok};
 		false ->
 		    logger:log(debug, "Auth: Use of address ~p NOT permitted. Address maps to more than one user, but not to ~p (~p)",
-			       [sipurl:print(URL), User, Users]),
+			       [sipurl:print(URL), User, URLUsers]),
 		    {false, eperm}
-	    end;
-	Unknown ->
-	    logger:log(debug, "Auth: Use of address ~p NOT permitted. Unknown result from get_users_for_url : ~p",
-		       [sipurl:print(URL), Unknown]),
-	    {false, error}
+	    end
     end;
-can_use_address_detail(User, Address) ->
-    logger:log(debug, "Auth: can_use_address() called with incorrect arguments, User ~p Address ~p",
-	       [User, Address]),
-    {false, error}.
+can_use_address_detail2(User, URL, nomatch) when is_list(User), is_record(URL, sipurl) ->
+    logger:log(debug, "Auth: No users found for address ~p, use by user ~p NOT permitted",
+	       [sipurl:print(URL), User]),
+    {false, nomatch}.
 
 %%--------------------------------------------------------------------
 %% Function: can_register(Header, ToURL)
@@ -425,3 +484,244 @@ can_register(Header, ToURL) ->
 	    logger:log(debug, "Auth: Registration of address ~p NOT permitted", [sipurl:print(ToURL)]),
 	    {false, none}
     end.
+
+add_x_yxa_peer_auth(Method, URI, Header, User, Secret) when is_list(Method), is_record(URI, sipurl),
+						    is_record(Header, keylist), is_list(User), is_list(Secret) ->
+    {Realm, Nonce, Opaque} = get_challenge(),
+    URIstr = sipurl:print(URI),
+    Response = get_response(Nonce, Method, URIstr, User, Secret, Realm),
+    AuthStr = print_auth_response("Digest", User, Realm, URIstr,
+				  Response, Nonce, Opaque, "md5"),
+    keylist:set("X-Yxa-Peer-Auth", [AuthStr], Header).
+    
+%%--------------------------------------------------------------------
+%% Function: print_auth_response(AuthMethod, User, Realm, URIstr,
+%%                               Response, Nonce, Opaque, Algorithm)
+%%           All parameters are of type string()
+%% Descrip.: Construct a challenge response, given a bunch of in-
+%%           parameters.
+%% Returns : string()
+%%--------------------------------------------------------------------
+print_auth_response(AuthMethod, User, Realm, URIstr, Response, Nonce, Opaque, Algorithm) ->
+    Quote = "\"",
+    QuoteComma = "\",",
+
+    lists:concat([AuthMethod, " ",
+		  "username=",		Quote, User,		QuoteComma,
+		  "realm=",		Quote, Realm,		QuoteComma,
+		  "uri=",		Quote, URIstr,		QuoteComma,
+		  "response=",		Quote, Response,	QuoteComma,
+		  "nonce=",		Quote, Nonce,		QuoteComma,
+		  "opaque=",		Quote, Opaque,		QuoteComma,
+		  "algorithm=",		Algorithm]).
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+
+    %% test classify_number(Number, RegexpList)
+    %%--------------------------------------------------------------------
+    ClassifyRegexp1 = [{"^123", internal},
+		       {"^00", external}
+		      ],
+    io:format("test: classify_number/2 - 1~n"),
+    {ok, unknown} = classify_number(none, []),
+
+    io:format("test: classify_number/2 - 2~n"),
+    %% test normal case #1
+    {ok, internal} = classify_number("1234", ClassifyRegexp1),
+
+    io:format("test: classify_number/2 - 3~n"),
+    %% test normal case #2
+    {ok, external} = classify_number("00234", ClassifyRegexp1),
+
+    io:format("test: classify_number/2 - 4~n"),
+    %% test unmatched number
+    {ok, unknown} = classify_number("9", ClassifyRegexp1),
+
+    io:format("test: classify_number/2 - 5~n"),
+    %% test invalid regexp (circumflex-plus), should be skipped
+    {ok, unknown} = classify_number("+123", [{"^+1", internal}]),
+
+    io:format("test: classify_number/2 - 6~n"),
+    %% test invalid regexp
+    {error, _} = classify_number("+123", [{"unbalanced (", internal}]),
+
+
+    %% test can_use_address_detail2(User, URL, URLUsers)
+    %%--------------------------------------------------------------------
+    CanUseURL1 = sipurl:parse("sip:ft@example.org"),
+
+    io:format("test: can_use_address_detail2/3 - 1~n"),
+    {true, ok} = can_use_address_detail2("ft", CanUseURL1, ["ft"]),
+
+    io:format("test: can_use_address_detail2/3 - 2~n"),
+    {false, eperm} = can_use_address_detail2("ft", CanUseURL1, ["not-ft"]),
+
+    io:format("test: can_use_address_detail2/3 - 3~n"),
+    {false, nomatch} = can_use_address_detail2("ft", CanUseURL1, []),
+
+    io:format("test: can_use_address_detail2/3 - 3~n"),
+    {true, ok} = can_use_address_detail2("ft", CanUseURL1, ["foo", "ft", "bar"]),
+
+    io:format("test: can_use_address_detail2/3 - 3~n"),
+    {false, eperm} = can_use_address_detail2("ft", CanUseURL1, ["foo", "bar"]),
+
+    io:format("test: can_use_address_detail2/3 - 1~n"),
+    {false, nomatch} = can_use_address_detail2("ft", CanUseURL1, nomatch),
+
+
+    %% Auth tests
+    %%--------------------------------------------------------------------
+    io:format("test: auth - 0~n"),
+    AuthNow1		= 11000000,
+    AuthTimestamp1	= hex:to(AuthNow1, 8),
+    AuthOpaque1		= AuthTimestamp1,
+    AuthMethod1		= "INVITE",
+    AuthURI1		= "sip:ft@example.org",
+    AuthUser1		= "ft.test",
+    AuthPassword1	= "foo",
+    AuthRealm1		= "yxa-test",
+    AuthNonce1		= get_nonce(AuthTimestamp1),	%% The nonce is MD5 of AuthTimestamp1 colon OurSecret
+
+    AuthCorrectResponse1 = get_response(AuthNonce1, AuthMethod1, AuthURI1, AuthUser1, AuthPassword1, AuthRealm1),
+    AuthResponse1 = print_auth_response("Digest", AuthUser1, AuthRealm1, AuthURI1, AuthCorrectResponse1,
+					AuthNonce1, AuthOpaque1, "md5"),
+    AuthDict1 = sipheader:auth([AuthResponse1]),
+
+
+    %% test get_nonce(Timestamp)
+    %%--------------------------------------------------------------------
+    io:format("test: get_nonce/1 - 1~n"),
+    "22d10c95a33616d16599317751534c4d" = get_nonce(hex:to(0, 8)),
+
+    io:format("test: get_nonce/1 - 2~n"),
+    "2b9d0abeef571102304778343b31a5e1" = get_nonce(hex:to(11000000, 8)),
+
+    io:format("test: get_nonce/1 - 3~n"),
+    "be7ef379132a226876b70668ee46dc8f" = get_nonce(hex:to(22000000, 8)),
+
+
+    %% test do_get_user_verified2(Method, User, UAuser, Password, Realm, Now, AuthDict)
+    %%--------------------------------------------------------------------
+    io:format("test: do_get_user_verified2/7 - 1~n"),
+    %% Correct response (AuthDict1)
+    {authenticated, "canon-user"} =
+	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
+			      AuthRealm1, AuthNow1, AuthDict1),
+
+    io:format("test: do_get_user_verified2/7 - 2~n"),
+    %% Correct response, time in the future
+    false =
+	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
+			      AuthRealm1, AuthNow1 - 1, AuthDict1),
+
+    io:format("test: do_get_user_verified2/7 - 3~n"),
+    %% Correct response, time since challenge: 30 seconds
+    {authenticated, "canon-user"} =
+	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
+			      AuthRealm1, AuthNow1 + 30, AuthDict1),
+
+    io:format("test: do_get_user_verified2/7 - 4~n"),
+    %% Correct response, time since challenge: 31 seconds = stale
+    {stale, "canon-user"} =
+	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
+			      AuthRealm1, AuthNow1 + 31, AuthDict1),
+
+    io:format("test: do_get_user_verified2/7 - 5~n"),
+    %% Invalid password
+    false =
+	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, "incorrect",
+			      AuthRealm1, AuthNow1, AuthDict1),
+
+    io:format("test: do_get_user_verified2/7 - 6~n"),
+    %% Invalid user, indicated by password 'nomatch'
+    false =
+	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, nomatch,
+			      AuthRealm1, AuthNow1, AuthDict1),
+
+    io:format("test: do_get_user_verified2/7 - 7~n"),
+    %% Wrong 'nonce' parameter
+    false =
+	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
+			      AuthRealm1, AuthNow1, dict:store("nonce", "0a1b2c", AuthDict1)),
+
+    io:format("test: do_get_user_verified2/7 - 8~n"),
+    %% Missing 'opaque' parameter
+    {siperror, 400, "Authorization should contain opaque"} =
+	(catch do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, nomatch,
+			      AuthRealm1, AuthNow1, dict:erase("opaque", AuthDict1))),
+
+
+    %% test get_challenge()
+    %%--------------------------------------------------------------------
+    io:format("test: get_challenge/0 - 1.1~n"),
+    {_Realm, ChallengeNonce1, ChallengeTimestamp1} = get_challenge(),
+
+    io:format("test: get_challenge/0 - 1.1~n"),
+    %% verify results as good as we can
+    ChallengeNonce1 = get_nonce(ChallengeTimestamp1),
+    true = (ChallengeTimestamp1 > 11000000),
+
+
+    %% test get_user_verified(Header, Method)
+    %%--------------------------------------------------------------------
+    io:format("test: get_user_verified/2 - 1~n"),
+    %% Test without Authorization header - that is the only thing we can test
+    %% here. The testable parts of this code is tested above (do_get_user_verified2).
+    false = get_user_verified(keylist:from_list([]), "INVITE"),
+
+
+    %% test get_user_verified_proxy(Header, Method)
+    %%--------------------------------------------------------------------
+    io:format("test: get_user_verified_proxy/2 - 1~n"),
+    %% Test without Authorization header - that is the only thing we can test
+    %% here. The testable parts of this code is tested above (do_get_user_verified2).
+    false = get_user_verified(keylist:from_list([]), "INVITE"),
+
+
+    %% test pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
+    %% Not much can be tested in this function, but some is better than nothing
+    %%--------------------------------------------------------------------
+    io:format("test: pstn_call_check_auth/5 - 1~n"),
+    {false, none, testclass} = pstn_call_check_auth("INVITE", keylist:from_list([]),
+						    sipurl:parse("sip:ft@example.org"),
+						    "123456789", [{"^123", testclass}]),
+
+
+    %% test is_allowed_pstn_dst(User, ToNumber, Header, Class)
+    %% Not much can be tested in this function, but some is better than nothing
+    %%--------------------------------------------------------------------
+    io:format("test: is_allowed_pstn_dst/4 - 1~n"),
+    %% test request with Route header
+    true = is_allowed_pstn_dst("ft.testuser", "123456789", keylist:from_list([{"Route", "sip:example.org"}]),
+			       testclass),
+
+    %% This test depends on too much unspecified things in sipuserdb
+    %%io:format("test: is_allowed_pstn_dst/4 - 2 (disabled)~n"),
+    %%%% test general unknown user/number/class
+    %%false = is_allowed_pstn_dst("ft.testuser", "123456789", keylist:from_list([]), testclass),
+
+
+    %% test can_use_address(User, URL)
+    %% Not much can be tested in this function, but some is better than nothing
+    %%--------------------------------------------------------------------
+    io:format("test: can_use_address/2 - 1~n"),
+    false = can_use_address("ft.testuser", sipurl:parse("sip:not-homedomain.example.org")),
+
+
+    %% test can_register(Header, ToURL)
+    %% Not much can be tested in this function, but some is better than nothing
+    %%--------------------------------------------------------------------
+    io:format("test: can_register/2 - 1~n"),
+    {false, none} = can_register(keylist:from_list([]), sipurl:parse("sip:ft@example.org")),
+
+    ok.
