@@ -78,7 +78,8 @@
 	  do_cancel=false,	%% atom(), {true, EH} | false - have we been instructed to cancel?
 	  tl_branch,	%% string(), the branch the transaction layer actually used when sending our request
 	  initialized=no,	%% atom(), yes | no - have we finished our initialization process
-	  cancel_pid	%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that transaction
+	  cancel_pid,	%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that transaction
+	  final_r_sent=no	%% atom(), yes | no - have we sent a final response to our parent yet?
 	 }).
 
 
@@ -595,17 +596,23 @@ process_timer2({invite_timeout}, Timer, State) when is_record(State, state) ->
     URI = Request#request.uri,
     logger:log(debug, "~s: Request INVITE ~s timeout after ~s seconds",
 	       [LogTag, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
-    end_invite(State);
+    NewState1 = State#state{response = {408, "Request Timeout"}},
+    NewState2 = perform_branchaction(tell_parent, NewState1),
+    end_invite(NewState2);
 
 %%--------------------------------------------------------------------
 %% Function: process_timer2({invite_expire}, Timer, State)
 %%           Timer = siptimer record()
 %%           State = state record()
 %% Descrip.: The extra timeout for INVITE (Timer C) has fired. End
-%%           this INVITE transaction.
+%%           this INVITE transaction. This is unlikely to happen,
+%%           because the invite_timeout timeout will most likely be
+%%           shorter than Timer C, but RFC3261 stipulates Timer C.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 process_timer2({invite_expire}, _Timer, State) when is_record(State, state) ->
+    %% XXX generate a '408 Request Timeout' for our parent (transaction user) in the same
+    %% way as we do when we receive a 'invite_timeout'?
     end_invite(State);
 
 process_timer2(Signal, Timer, State) when is_record(State, state) ->
@@ -696,14 +703,12 @@ update_transaction_state(Response, NewSipState, BranchAction, State) when is_rec
 		       [LogTag, Status, Reason, Method, sipurl:print(URI), OldSipState, BranchAction]),
 	    %% Update response so that we report exactly this response to our parent and not any previous
 	    %% (for example, report a previous 183 instead of this new one)
-	    NewState = State#state{response=Response},
-	    NewState;
+	    State#state{response=Response};
 	_ ->
 	    logger:log(debug, "~s: Evaluated '~p ~s' (in response to ~s ~s). Changing state from '~p' "
 		       "to '~p', action '~p'.", [LogTag, Status, Reason, Method, sipurl:print(URI),
 						 OldSipState, NewSipState, BranchAction]),
-	    NewState = State#state{sipstate=NewSipState, response=Response},
-	    NewState
+	    State#state{sipstate=NewSipState, response=Response}
     end.
 
 %%--------------------------------------------------------------------
@@ -782,7 +787,8 @@ act_on_new_sipstate2(completed, BranchAction, State) when is_record(State, state
 
     TimerList = State#state.timerlist,
     NewTimerList1 = siptimer:cancel_timers_with_appsignal({resendrequest_timeout}, TimerList),
-    NewState1 = State#state{timerlist=NewTimerList1},
+    NewTimerList2 = siptimer:cancel_timers_with_appsignal({invite_timeout}, NewTimerList1),
+    NewState1 = State#state{timerlist=NewTimerList2},
     %% Install TimerD with a minimum value of 32 seconds (RFC 3261 17.1.1.2)
     %% or TimerK (T4, default 5 seconds) in case of non-INVITE request (17.1.2.2)
     %% to stay alive for a few seconds collecting resends
@@ -852,34 +858,50 @@ perform_branchaction(ignore, State) when is_record(State, state) ->
 perform_branchaction(tell_parent, State) when is_record(State, state) ->
     LogTag = State#state.logtag,
     Response = State#state.response,
-    {Status, Reason} = {Response#response.status, Response#response.reason},
+    {Status, Reason} = case Response of
+			   _ when is_record(Response, response) ->
+			       {Response#response.status, Response#response.reason};
+			   {Status1, Reason1} when is_integer(Status1), is_list(Reason1) ->
+			       Response
+		       end,
     Request = State#state.request,
-    {Method, URI} = {Request#request.method, Request#request.uri},
     ReportTo = State#state.report_to,
     case util:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} when is_pid(ReportTo) ->
-	    logger:log(debug, "~s: Client transaction telling parent ~p about response '~p ~s'",
-		       [LogTag, ReportTo, Status, Reason]),
-	    Branch = State#state.branch,
-	    SipState = State#state.sipstate,
-	    ReportTo ! {branch_result, self(), Branch, SipState, Response},
-	    if
-		Status >= 200 ->
-		    %% Make event out of final response
-		    L = [{dst, sipdst:dst2str(State#state.dst)}],
-		    event_handler:uac_result(Branch, Method, URI, Status, Reason, L);
-		true -> true
+	    IsFinalResponse = (Status >= 200),
+	    case (IsFinalResponse == true) and (State#state.final_r_sent == true) of
+		true ->
+		    logger:log(debug, "~s: Not telling parent ~p about response '~p ~s' since we "
+			       "have already sent a final response to our parent",
+			       [LogTag, ReportTo, Status, Reason]),
+		    State;
+		false ->
+		    logger:log(debug, "~s: Client transaction telling parent ~p about response '~p ~s'",
+			       [LogTag, ReportTo, Status, Reason]),
+		    Branch = State#state.branch,
+		    SipState = State#state.sipstate,
+		    ReportTo ! {branch_result, self(), Branch, SipState, Response},
+		    if
+			IsFinalResponse ->
+			    %% Make event out of final response
+			    {Method, URI} = {Request#request.method, Request#request.uri},
+			    L = [{dst, sipdst:dst2str(State#state.dst)}],
+			    event_handler:uac_result(Branch, Method, URI, Status, Reason, L),
+			    State#state{final_r_sent = true};
+			true -> State
+		    end
 	    end;
 	{false, undefined} ->
 	    %% ReportTo == undefined, we never had a parent (typically this was a
 	    %% fire-and-forget CANCEL transaction)
 	    logger:log(debug, "~s: Independent client transaction terminating, final response : '~p ~s'",
-		       [LogTag, Status, Reason]);
+		       [LogTag, Status, Reason]),
+	    State;
 	{false, _} ->
 	    logger:log(error, "~s: Client transaction orphaned ('~p' not alive) - not sending "
-		       "response '~p ~s' to anyone", [LogTag, ReportTo, Status, Reason])
-    end,
-    State.
+		       "response '~p ~s' to anyone", [LogTag, ReportTo, Status, Reason]),
+	    State
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: received_response_state_machine(Method, Status, State)
@@ -1091,21 +1113,9 @@ fake_request_response(Status, Reason, State) when is_record(State, state) ->
     LogTag = State#state.logtag,
     logger:log(debug, "~s: ~s ~s - pretend we got an '~p ~s' (and enter SIP state terminated)",
 	       [LogTag, Method, sipurl:print(URI), Status, Reason]),
-    FakeResponse = {Status, Reason},
-    ReportTo = State#state.report_to,
-    case util:safe_is_process_alive(ReportTo) of
-	{true, ReportTo} ->
-	    logger:log(debug, "~s: Client transaction forwarding fake response '~p ~s' to ~p",
-		       [LogTag, Status, Reason, ReportTo]),
-	    Branch = State#state.branch,
-	    ReportTo ! {branch_result, self(), Branch, terminated, FakeResponse};
-	{false, _} ->
-	    logger:log(debug, "~s: Client transaction orphaned ('~p' not alive) - not sending "
-		       "fake response '~p ~s' to anyone", [LogTag, ReportTo, Status, Reason])
-    end,
-    NewState1 = State#state{response=FakeResponse},
-    NewState = terminate_transaction(NewState1),
-    NewState.
+    NewState1 = State#state{response = {Status, Reason}},
+    NewState2 = terminate_transaction(NewState1),
+    perform_branchaction(tell_parent, NewState2).
 
 %%--------------------------------------------------------------------
 %% Function: fake_request_response(Status, Reason, State)
