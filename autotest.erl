@@ -41,7 +41,9 @@
 		       sipheader,
 		       siprequest,
 		       sippacket,
-		       sipserver
+		       sipserver,
+		       servertransaction,
+		       clienttransaction
 		      ]).
 
 %%====================================================================
@@ -92,9 +94,9 @@ run([Mode]) ->
     F = fun({Module,Res}) ->
 		case Res of
 		    ok ->
-			io:format("~p: passed~n", [Module]);
+			io:format("~25w: passed~n", [Module]);
 		    _ ->
-			io:format("~p: failed - Error:~n~p~n", [Module,Res]),
+			io:format("~25w: failed - Error:~n~p~n~n", [Module,Res]),
 			put(autotest_result, error)
 		end
 	end,
