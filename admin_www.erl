@@ -1,5 +1,5 @@
 -module(admin_www).
--export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2, change_classes/2]).
+-export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2, change_classes/2, list_numbers/2]).
 
 -include("phone.hrl").
 
@@ -26,12 +26,33 @@ sleep() ->
     timer:sleep(1000000),
     sleep().
 
+username_to_uid(Username) ->
+    case directory:ldapmailsearch(Username ++ "@kth.se", "uid") of
+	 none ->
+	    "&nbsp;";
+	String ->
+	    String
+    end.
+
+username_to_cn(Username) ->
+    case directory:ldapmailsearch(Username ++ "@kth.se", "cn") of
+	 none ->
+	    "&nbsp;";
+	String ->
+	    String
+    end.
+
+print_flag(Key) when atom(Key) ->
+    io_lib:format("~w<br>", [Key]);
+print_flag({Key, Value}) ->
+    io_lib:format("~w:~w<br>", [Key, Value]).
+
 print_flags([]) ->
-    [];
-print_flags([Key | Rest]) when atom(Key) ->
-    [io_lib:format("~w<br>", [Key]) | print_flags(Rest)];
-print_flags([{Key, Value} | Rest]) ->
-    [io_lib:format("~w:~w<br>", [Key, Value]) | print_flags(Rest)].
+    "&nbsp;";
+print_flags([Key]) ->
+    [print_flag(Key)];
+print_flags([Key | Rest]) ->
+    [print_flag(Key) | print_flags(Rest)].
 
 print_phones([]) -> [];
 
@@ -97,14 +118,14 @@ print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
      end | print_phones(List)].
 
 print_classes([]) ->
-    [];
+    "&nbsp;";
 print_classes([Class]) ->
     atom_to_list(Class);
 print_classes([Class | List]) ->
     atom_to_list(Class) ++ ", " ++ print_classes(List).
 
 print_numbers([]) ->
-    [];
+    "&nbsp;";
 print_numbers([Number]) ->
     Number;
 print_numbers([Number | List]) ->
@@ -112,22 +133,50 @@ print_numbers([Number | List]) ->
 
 print_users([]) -> [];
 
-print_users([{user, User, Password, Number, Flags, Classes} | List]) ->
+print_users([Elem | List]) ->
     ["<tr><td>",
-     User,
+     Elem#user.user,
      "</td><td>",
-     print_numbers(phone:get_numbers_for_user(User)),
+     print_numbers(get_numbers(Elem#user.user)),
      "</td><td>",
-     print_flags(Flags),
+     print_flags(Elem#user.flags),
      "</td><td>",
-     print_classes(lists:sort(Classes)),
+     print_classes(lists:sort(Elem#user.classes)),
+     "</td><td>",
+     username_to_uid(Elem#user.user),
+     "</td><td>",
+     username_to_cn(Elem#user.user),
      "</td><td>",
      "<form action=\"admin_www%3Achange_user_form\" method=post>\n",
-     "<input type=\"hidden\" name=\"user\" value=\"", User,"\" size=\"12\">\n",
+     "<input type=\"hidden\" name=\"user\" value=\"", Elem#user.user,"\" size=\"12\">\n",
      "<input type=\"submit\" value=\"Change\">\n",
      "</form>\n",
      "</td></tr>\n"
      | print_users(List)].
+
+print_numbers_list([]) -> [];
+
+print_numbers_list([Elem | List]) ->
+    ["<tr><td>",
+     Elem#numbers.number,
+     "</td><td>",
+     Elem#numbers.user,
+     "</td><td>",
+     case username_to_uid(Elem#numbers.user) of
+	 none ->
+	     "";
+	 String ->
+	     String
+     end,
+     "</td><td>",
+     case username_to_cn(Elem#numbers.user) of
+	 none ->
+	     "";
+	 String ->
+	     String
+     end,
+     "</td></tr>\n"
+     | print_numbers_list(List)].
 
 
 get_pass(User) ->
@@ -141,7 +190,7 @@ get_pass(User) ->
     end.
 
 get_numbers(User) ->
-    case phone:get_number_for_user(User) of
+    case phone:get_numbers_for_user(User) of
 	{atomic, Numbers} ->
 	    Numbers;
 	{aborted, _} ->
@@ -205,7 +254,7 @@ check_auth2(Header, Env, WantAdmin) ->
 
 
 header(ok) ->
-    ["Content-type: text/html\r\n\r\n"].
+    ["Content-type: text/html; charset=utf-8\r\n\r\n"].
 
 header(unauth, Stale) ->
     Auth = sipauth:get_challenge(),
@@ -232,8 +281,8 @@ list_users(Env, Input) ->
 	    {atomic, List} = phone:list_users(),
 	    [header(ok),
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
-	     "<tr><th>Namn</th><th>Nummer</th><th>Flaggor</th>",
-	     "<th>Klasser</th></tr>\n",
+	     "<tr><th>Användarnamn</th><th>Nummer</th><th>Flaggor</th>",
+	     "<th>Klasser</th><th>KTH-ID</th><th>Namn</th></tr>\n",
 	     print_users(lists:sort(fun (Elem1, Elem2) -> 
 					    if
 						Elem1#user.user < Elem2#user.user ->
@@ -255,6 +304,29 @@ list_users(Env, Input) ->
 	     "<li>mobile: mobilsamtal\n",
 	     "<li>pay: betalsamtal\n",
 	     "</ul>\n",
+	     indexurl()
+	    ]
+    end.
+
+list_numbers(Env, Input) ->
+    case check_auth(Env, true) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    {atomic, List} = phone:list_numbers(),
+	    [header(ok),
+	     "<h1>Alla allokerade nummer</h1>\n",
+	     "<table cellspacing=0 border=1 cellpadding=4>\n",
+	     "<tr><th>Nummer</th><th>Användarnamn</th><th>KTH-ID</th><th>Namn</th></tr>\n",
+	     print_numbers_list(lists:sort(fun (Elem1, Elem2) -> 
+						   if
+						       Elem1#numbers.number < Elem2#numbers.number ->
+							   true;
+						       true ->
+							   false
+						   end
+					   end, List)),
+	     "</table>\n",
 	     indexurl()
 	    ]
     end.
@@ -386,7 +458,7 @@ change_user_form(Env, Input) ->
 		    Numberlist = get_numbers(User),
 		    [
 		     header(ok),
-		     "<h1>", User, "</h1>\n",
+		     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
 		     "<h2>Lösenord</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
