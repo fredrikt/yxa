@@ -115,6 +115,11 @@ handle_cast({cancel, Msg}, State) ->
 	       end,
     check_quit({noreply, NewState});
 
+handle_cast({expired}, State) ->
+    LogTag = State#state.logtag,
+    logger:log(debug, "~s: Received signal that I am expired, exiting.", [LogTag]),
+    check_quit({stop, "Client transaction expired", State});
+
 handle_cast({quit}, State) ->
     logger:log(debug, "~s: Received signal to quit", [State#state.logtag]),
     check_quit({stop, normal, State}).
