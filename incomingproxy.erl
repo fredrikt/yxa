@@ -32,6 +32,8 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
     logger:log(debug, "REGISTER ~p", [sipurl:print(URL)]),
     case local:homedomain(Host) of
 	true ->
+	    LogStr = sipserver:make_logstr({request, "REGISTER", URL, Header, Body}, FromIP),
+	    logger:log(debug, "~s -> processing", [LogStr]),
 	    % delete any present Record-Route header (RFC3261, #10.3)
 	    NewHeader = keylist:delete("Record-Route", Header),
 	    Contacts = sipheader:contact(keylist:fetch("Contact", Header)),
@@ -42,13 +44,16 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 		{true, Numberlist} ->
 		    if
 			Numberlist /= [] ->
-			    logger:log(debug, "numberlist: ~p", [Numberlist]);
-			true -> none
+			    logger:log(debug, "~s -> Registering user ~p (numbers: ~p)", [LogStr, ToKey, Numberlist]);
+			true ->
+			    logger:log(debug, "~s -> Registering user ~p", [LogStr, ToKey])
 		    end,
 		    siprequest:process_register_isauth(NewHeader, Socket, ToKey, Numberlist, Contacts);
 		{stale, _} ->
+		    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
 		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), true);
 		{false, _} ->
+		    logger:log(normal, "~s -> Authentication FAILED, sending challenge", [LogStr]),
 		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), false)
 	    end;
 	_ ->
