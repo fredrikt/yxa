@@ -129,9 +129,12 @@ toPSTNrequest(Method, URI, Header, Body, Socket, LogTag) ->
 	    case local:lookuppstn(DstNumber) of
 		{proxy, Dst} ->
 		    {Dst, Header};	
+		{relay, Dst} ->
+		    {Dst, Header};
 		_ ->
-		    % Route to default PSTN gateway
+		    %% Route to default PSTN gateway
 		    PSTNgateway1 = lists:nth(1, sipserver:get_env(pstngatewaynames)),
+		    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
 		    NewURI2 = {DstNumber, none, PSTNgateway1, none, []},
 		    {NewURI2, Header}
 	    end;
@@ -164,20 +167,26 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) ->
     {Method, URI, Header, Body} = Request,
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
-    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s)", [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
+    logger:log(debug, "~s: pstnproxy: Relay ~s to PSTN ~s (~s)", [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
     case sipauth:pstn_call_check_auth(Method, Header, sipurl:print(FromURI), DstNumber, Classdefs) of
 	{true, User, Class} ->
 	    logger:log(debug, "Auth: User ~p is allowed to call dst ~s (class ~s)", [User, DstNumber, Class]),
+	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (authenticated, class ~p) (~s)",
+		       [LogTag, Method, DstNumber, Class, sipurl:print(DstURI)]),
 	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, none, [], 900]);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)", [User, DstNumber, Class]),
+	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> STALE authentication, sending challenge",
+		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
 	    transactionlayer:send_challenge(THandler, proxy, true, none);
 	{false, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate for dst ~s (class ~s)", [User, DstNumber, Class]),
+	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> needs authentication, sending challenge",
+		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
 	    transactionlayer:send_challenge(THandler, proxy, false, none);
 	Unknown ->
 	    logger:log(error, "Auth: Unknown result from sipauth:pstn_is_allowed_call() :~n~p", [Unknown]),
-	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
+	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
     end.
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
