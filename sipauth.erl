@@ -76,7 +76,7 @@ get_challenge() ->
 %%           none
 %%           Response = string()
 %%--------------------------------------------------------------------
-get_response(Nonce, Method, URI, User, nomatch) ->
+get_response(_Nonce, _Method, _URI, _User, nomatch) ->
     %% Password is nomatch - return 'none'
     none;
 get_response(Nonce, Method, URI, User, Password) ->
@@ -99,10 +99,10 @@ get_response(Nonce, Method, URI, User, Password) ->
 classify_number(none, _) ->
     unknown;
 
-classify_number(Number, []) ->
+classify_number(_Number, []) ->
     unknown;
 
-classify_number(Number, [{"^+" ++ Regexp, Class} | Rest]) ->
+classify_number(Number, [{"^+" ++ Regexp, _Class} | Rest]) ->
     logger:log(error, "sipauth:classify_number() Skipping invalid regexp ~p (you probably "
 	       "forgot to escape the plus char)", ["^+" ++ Regexp]),
     classify_number(Number, Rest);
@@ -162,10 +162,10 @@ get_user_verified_proxy(Header, Method) ->
 	    get_user_verified2(Method, Authheader, Header)
     end.
 
-get_user_verified2(Method, ["GSSAPI" ++ R] = Authheader, _Header) ->
+get_user_verified2(_Method, ["GSSAPI" ++ _R] = Authheader, _Header) ->
     Authorization = sipheader:auth(Authheader),
     Info = dict:fetch("info", Authorization),
-    {Response, Username} = gssapi:request(Info),
+    {_Response, Username} = gssapi:request(Info),
     %% XXX this is definately broken! What does gssapi:request() return anyways?
     Username;
 
@@ -321,7 +321,7 @@ pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
 %% Returns : true  |
 %%           false
 %%--------------------------------------------------------------------
-is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
+is_allowed_pstn_dst(User, _ToNumber, Header, Class) ->
     case keylist:fetch("Route", Header) of
 	[] ->
 	    case local:get_classes_for_user(User) of

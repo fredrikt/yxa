@@ -1,5 +1,15 @@
 -module(sipanswer).
--export([start/5, bounce/5, control/3, alaw_encode/1, sine/1, sine_gen/1, testsine/0, alaw_decode/1]).
+
+-export([
+	 start/5,
+	 bounce/5,
+	 control/3,
+	 alaw_encode/1,
+	 sine/1,
+	 sine_gen/1,
+	 testsine/0,
+	 alaw_decode/1
+	]).
 
 printlist([]) ->
     true;
@@ -18,7 +28,7 @@ alaw_decode(InByte) ->
     T2 = case Seg of
 	     0 ->
 		 T + 8;
-	     1 -> 
+	     1 ->
 		 T + 16#108;
 	     _ ->
 		 (T + 16#108) bsl (Seg -1)
@@ -39,7 +49,7 @@ alaw_search(Linear) when Linear =< 16#FFF -> 4;
 alaw_search(Linear) when Linear =< 16#1FFF -> 5;
 alaw_search(Linear) when Linear =< 16#3FFF -> 6;
 alaw_search(Linear) when Linear =< 16#7FFF -> 7;
-alaw_search(Linear) -> 8.
+alaw_search(_Linear) -> 8.
 
 alaw_encode(Float) ->
     Sample1 = trunc(Float * 16384.0),
@@ -69,7 +79,7 @@ sine_gen(Num) ->
     [math:sin(Num/(160.0/9.0)*3.1416*2)|sine_gen(Num-1)].
 
 sendack(Socket, Header, Url) ->
-    {CSeqID, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    {CSeqID, _CSeqMethod} = sipheader:cseq(Header),
     Sendheader = [{"Via", []},
 		  {"From", keylist:fetch("From", Header)},
 		  {"To", keylist:fetch("To", Header)},
@@ -133,7 +143,7 @@ control_1(Dest, Callid, Parent, RecvPid, Url) ->
     receive
 	{siprequest, bye} ->
 	    RecvPid ! {sipanswer, quit};
-	{siprequest, status, Status, Header, Socket, Body, Origheaders} ->
+	{siprequest, status, Status, Header, Socket, Body, _Origheaders} ->
 	    case recvresponse(Socket, Header, Url, Body, Status) of
 		{Address, Port} ->
 		    sound:input_sound_dest(RecvPid, {Address, Port}),
@@ -145,7 +155,7 @@ control_1(Dest, Callid, Parent, RecvPid, Url) ->
 	    end
     end.
 
-start(Header, Body, Mode, Status, Number) ->
+start(Header, Body, _Mode, _Status, _Number) ->
     Dest = sdp:parse(Body),
     [CallID] = keylist:fetch("Call-ID", Header),
     Pid = spawn(sipanswer, control, [Dest, CallID, self()]),
@@ -160,5 +170,5 @@ start(Header, Body, Mode, Status, Number) ->
 	    {error, duplicate}
     end.
 
-bounce(Header, Body, Mode, Status, Number) ->
+bounce(_Header, Body, _Mode, _Status, _Number) ->
     {ok, Body}.

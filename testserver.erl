@@ -24,7 +24,7 @@ init() ->
 %% Description: Yxa applications must export an request/3 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
+request(Request, Origin, _LogStr) when record(Request, request), record(Origin, siporigin) ->
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
     case Request#request.method of
@@ -48,7 +48,7 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 %% Description: Yxa applications must export an response/3 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+response(Response, Origin, _LogStr) when record(Response, response), record(Origin, siporigin) ->
     logger:log(normal, "~p ~p - dropping", [Response#response.status, Response#response.reason]),
     true.
 
@@ -110,7 +110,7 @@ get_user(URI) ->
     Res.
 
 
-regexp_locate_user(Input, []) ->
+regexp_locate_user(_Input, []) ->
     nomatch;
 regexp_locate_user(Input, [{Regexp, Code, Text} | Rest]) ->
     case regexp:match(Input, Regexp) of

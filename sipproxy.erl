@@ -75,7 +75,7 @@ fork(State) when record(State, state), State#state.actions == [] ->
 fork(State) when record(State, state) ->
     OrigRequest = State#state.request,
     [HAction | TAction] = State#state.actions,
-    {Method, ReqURI} = {OrigRequest#request.method, OrigRequest#request.uri},
+    Method = OrigRequest#request.method,
     Targets = State#state.targets,
     case HAction#sipproxy_action.action of
 	call ->
@@ -221,12 +221,14 @@ try_next_destination(Response, Target, Targets, State) when record(Response, res
 	503 ->
 	    case State#state.mystate of
 		calling ->
+		    %% The first entry in dstlist is the one we have just finished with,
+		    %% not the next one to try.
 		    case targetlist:extract([dstlist], Target) of
-			[[FirstDst]] ->
-			    logger:log(debug, "sipproxy: Received ~p ~s, but there are no more destinations to try for this target",
+			[[_FirstDst]] ->
+			    logger:log(debug, "sipproxy: Received '~p ~s', but there are no more destinations to try for this target",
 					[Status, Reason]),
 			    Targets;
-			[[FailedDst | DstList]] ->
+			[[_FailedDst | DstList]] ->
 			    [Branch] = targetlist:extract([branch], Target),
 			    NewBranch = get_next_target_branch(Branch),
 			    logger:log(debug, "sipproxy: Received ~p ~s, starting new branch ~p for next destination",
@@ -278,12 +280,12 @@ allterminated(TargetList) ->
     TargetsCalling = targetlist:get_targets_in_state(calling, TargetList),
     TargetsTrying = targetlist:get_targets_in_state(trying, TargetList),
     TargetsProceeding = targetlist:get_targets_in_state(proceeding, TargetList),
-    TargetsCompleted = targetlist:get_targets_in_state(completed, TargetList),
+    %%TargetsCompleted = targetlist:get_targets_in_state(completed, TargetList),
     if
 	TargetsCalling /= [] -> false;
 	TargetsTrying /= [] -> false;
 	TargetsProceeding /= [] -> false;
-	%TargetsCompleted /= [] -> false;
+	%%TargetsCompleted /= [] -> false;
 	true -> true
     end.
 
@@ -372,37 +374,37 @@ check_forward_immediately(Request, Response, Branch, State) when record(Request,
 
 % A 100 Trying is considered an illegal response here since it is hop-by-hop and should
 % be 'filtered' at the transaction layer.
-forward_immediately(Method, Status, State) when record(State, state), Status =< 100 ->
+forward_immediately(Method, Status, State) when is_record(State, state), Status =< 100 ->
     logger:log(error, "sipproxy: Invalid response ~p to ~s", [Status, Method]),
     {false, State};
-forward_immediately(Method, Status, State) when record(State, state), Status =< 199 ->
+forward_immediately(_Method, Status, State) when is_record(State, state), Status =< 199 ->
     {true, State};
 % 2xx responses to INVITE are always forwarded immediately, regardless of final_response_sent
-forward_immediately("INVITE", Status, State) when record(State, state), Status =< 299 ->
+forward_immediately("INVITE", Status, State) when is_record(State, state), Status =< 299 ->
     NewState = State#state{mystate=completed, final_response_sent=true},
     {true, NewState};
-forward_immediately(Method, Status, State) when record(State, state), State#state.final_response_sent /= true, Status =< 299 ->
+forward_immediately(_Method, Status, State) when is_record(State, state), State#state.final_response_sent /= true, Status =< 299 ->
     NewState = State#state{mystate=completed, final_response_sent=true},
     {true, NewState};
-forward_immediately(Method, Status, State) when record(State, state) ->
+forward_immediately(_Method, _Status, State) when is_record(State, state) ->
     {false, State}.
 
-cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, State) when record(State, state), Status =< 199 ->
+cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, State) when is_record(State, state), Status =< 199 ->
     State;
-cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, State) when record(State, state), Status =< 299 ->
+cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, State) when is_record(State, state), Status =< 299 ->
     logger:log(debug, "sipproxy: Cancelling pending targets since one INVITE transaction resulted in a 2xx response ~p", [Status]),
     NewTargets = cancel_pending_targets(State#state.targets),
     State#state{targets=NewTargets};
-cancel_pending_if_invite_2xx_or_6xx(Method, Status, State) when record(State, state), Status =< 599 ->
+cancel_pending_if_invite_2xx_or_6xx(_Method, Status, State) when is_record(State, state), Status =< 599 ->
     State;
-cancel_pending_if_invite_2xx_or_6xx(Method, Status, State) when record(State, state), Status =< 699 ->
+cancel_pending_if_invite_2xx_or_6xx(_Method, Status, State) when is_record(State, state), Status =< 699 ->
     logger:log(debug, "sipproxy: Cancelling pending targets since one branch resulted in a 6xx response ~p", [Status]),
     NewTargets = cancel_pending_targets(State#state.targets),
     State#state{targets=NewTargets}.
 
 printable_responses([]) ->
     [];
-printable_responses([H | Rest]) when record(H, response) ->
+printable_responses([H | Rest]) when is_record(H, response) ->
     lists:append([integer_to_list(H#response.status) ++ " " ++ H#response.reason], printable_responses(Rest));
 printable_responses([Response | Rest]) ->
     lists:append([Response], printable_responses(Rest)).
@@ -433,9 +435,9 @@ make_final_response(Responses) ->
 	    none
     end.	    
 
-aggregate_authreqs(BestResponse, Responses) when record(BestResponse, response) ->
-    {Status, Reason, Header, Body} = {BestResponse#response.status, BestResponse#response.reason,
-				      BestResponse#response.header, BestResponse#response.body},
+aggregate_authreqs(BestResponse, Responses) when is_record(BestResponse, response) ->
+    {Status, Reason, Header} = {BestResponse#response.status, BestResponse#response.reason,
+				BestResponse#response.header},
     case Status of
 	407 ->
 	    ProxyAuth = collect_auth_headers(Status, "Proxy-Authenticate", Responses),
@@ -456,22 +458,22 @@ aggregate_authreqs(BestResponse, Responses) when record(BestResponse, response) 
 collect_auth_headers(Status, Key, Responses) ->
     collect_auth_headers2(Status, Key, Responses, []).
     
-collect_auth_headers2(Status, Key, [], Res) ->
+collect_auth_headers2(_Status, _Key, [], Res) ->
     Res;
-collect_auth_headers2(Status, Key, [H | T], Res) when record(H, response), H#response.status == Status ->
+collect_auth_headers2(Status, Key, [H | T], Res) when is_record(H, response), H#response.status == Status ->
     NewRes = lists:append(Res, keylist:fetch(Key, H#response.header)),
     collect_auth_headers2(Status, Key, T, NewRes);
-collect_auth_headers2(Status, Key, [H | T], Res) ->
+collect_auth_headers2(Status, Key, [_H | T], Res) ->
     collect_auth_headers2(Status, Key, T, Res).
 
 pick_response(4, FourxxResponses) ->
     lists:nth(1, lists:sort(fun pick_4xx_sort/2, FourxxResponses));
 pick_response(5, FivexxResponses) ->
     lists:nth(1, lists:sort(fun avoid_503_sort/2, FivexxResponses));
-pick_response(Nxx, Responses) ->
+pick_response(_Nxx, Responses) ->
     lists:nth(1, Responses).
 
-pick_4xx_sort(A, B) when record(A, response), record(B, response) ->
+pick_4xx_sort(A, B) when is_record(A, response), is_record(B, response) ->
     Apref = is_4xx_preferred(A),
     Bpref = is_4xx_preferred(B),
     if
@@ -490,12 +492,12 @@ pick_4xx_sort(A, B) when record(A, response), record(B, response) ->
 	    false
     end.
     
-is_4xx_preferred(Response) when record(Response, response) ->
+is_4xx_preferred(Response) when is_record(Response, response) ->
     lists:member(Response#response.status, [401, 407, 415, 420, 484]).
 
-avoid_503_sort(A, _) when record(A, response), A#response.status == 503 ->
+avoid_503_sort(A, _) when is_record(A, response), A#response.status == 503 ->
     false;
-avoid_503_sort(A, B) when record(A, response), record(B, response), A#response.status =< B#response.status ->
+avoid_503_sort(A, B) when is_record(A, response), is_record(B, response), A#response.status =< B#response.status ->
     true;
 avoid_503_sort(_, _) ->
     false.
@@ -504,9 +506,9 @@ get_xx_responses(Min, Responses) ->
     Max = Min + 99,
     lists:keysort(1, get_range_responses(Min, Max, Responses)).
     
-get_range_responses(Min, Max, []) ->
+get_range_responses(_Min, _Max, []) ->
     [];
-get_range_responses(Min, Max, [H | T]) when record(H, response) ->
+get_range_responses(Min, Max, [H | T]) when is_record(H, response) ->
     if
 	H#response.status < Min -> get_range_responses(Min, Max, T);
 	H#response.status > Max -> get_range_responses(Min, Max, T);
