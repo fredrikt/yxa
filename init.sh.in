@@ -27,12 +27,12 @@ else
 fi
 
 if [ -f ${SSLCERTFILE} ] ; then
-    sslcertfile="-proto_dist inet_ssl " \
+    ssloptions="-proto_dist inet_ssl " \
 	"-ssl_dist_opt client_certfile $SSLCERTFILE" \
 	" -ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2"
 else
-    echo "WARNING: starting without TLS" \
-	"needs certificate file in ${SSLCERTFILE}"
+    echo "WARNING: starting without SSL - " \
+	"missing certificate file ${SSLCERTFILE}"
 fi
 
 if [ "x$MNESIADIR" = "x" ]; then
@@ -57,7 +57,7 @@ if [ "x$MYNAME" = "xbootstrap.sh" ]; then
 	exit 1
     fi
 
-	# yes, the name should be incomingproxy
+	# yes, the name should be incomingproxy when bootstrapping
     ${erl} -pz ${beamdir} -name incomingproxy -noshell $MNESIAPARAMETERS \
 	-run bootstrap start "$ADMINPW" -run init stop
 else
