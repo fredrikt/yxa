@@ -6,6 +6,11 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
+%%--------------------------------------------------------------------
+%%% Standard Yxa SIP-application exported functions
+%%--------------------------------------------------------------------
+
+
 %% Function: init/0
 %% Description: Yxa applications must export an init/0 function.
 %% Returns: See XXX
@@ -14,50 +19,6 @@ init() ->
     Registrar = {registrar, {registrar, start_link, []}, permanent, 2000, worker, [registrar]},
     [none, stateful, {append, [Registrar]}].
 
-
-route_request(Request) when record(Request, request) ->
-    {Method, URL, Header} = {Request#request.method, Request#request.uri, Request#request.header},
-    {User, Pass, Host, Port, Parameters} = URL,
-    Loc1 = case local:homedomain(Host) of
-	true ->
-	    case is_request_to_me(Method, URL, Header) of
-		true ->
-		    {me};
-		_ ->
-		    request_to_homedomain(URL)
-	    end;
-	_ ->
-	    request_to_remote(URL)
-    end,
-    case Loc1 of
-	nomatch ->
-	    logger:log(debug, "Routing: No match - trying default route"),
-	    local:lookupdefault(URL);
-	_ ->
-	    Loc1
-    end.
-
-is_request_to_me(_, {none, _, _, _, _}, Header) ->
-    true;
-is_request_to_me("OPTIONS", URL, Header) ->
-    % RFC3261 # 11 says a proxy that receives an OPTIONS request with a Max-Forwards less than one
-    % MAY treat it as a request to the proxy.
-    MaxForwards =
-	case keylist:fetch("Max-Forwards", Header) of
-	    [M] ->
-		lists:min([255, list_to_integer(M) - 1]);
-	    [] ->
-		70
-	end,
-    if
-	MaxForwards < 1 ->
-	    logger:log(debug, "Routing: Request is OPTIONS and Max-Forwards < 1, treating it as a request to me."),
-	    true;
-	true ->
-	    false
-    end;
-is_request_to_me(_, _, _) ->
-    false.
 
 %% Function: request/3
 %% Description: Yxa applications must export an request/3 function.
@@ -167,6 +128,32 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 	    do_request(Request, Origin)
     end.
 
+
+%% Function: request/3
+%% Description: Yxa applications must export an request/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+    {Status, Reason, Header, Body} = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
+    logger:log(normal, "Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
+    Response = {Status, Reason, Header, Body},
+    transportlayer:send_proxy_response(none, Response).
+
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+
+%% Function: verify_homedomain_user/2
+%% Description: If a request has a From: matching our homedomains,
+%%              this function is called to make sure the user really
+%%              is who it says it is, and not someone else forging
+%%              our users identity.
+%% Returns: true  |
+%%          false |
+%%          drop
+%%--------------------------------------------------------------------
 verify_homedomain_user(Request, LogStr) when record(Request, request) ->
     Method = Request#request.method,
     Header = Request#request.header,
@@ -209,6 +196,13 @@ verify_homedomain_user(Request, LogStr) when record(Request, request) ->
 	    true
     end.
 
+
+%% Function: do_request/2
+%% Description: Calls route_request() to determine what to do with a
+%%              request, and then takes whatever action we are
+%%              supposed to.
+%% Returns: Does not matter
+%%--------------------------------------------------------------------
 do_request(RequestIn, Origin) when record(RequestIn, request), record(Origin, siporigin) ->
     {Method, URI} = {RequestIn#request.method, RequestIn#request.uri},
     logger:log(debug, "~s ~s~n",
@@ -254,14 +248,236 @@ do_request(RequestIn, Origin) when record(RequestIn, request), record(Origin, si
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
     end.
 
+
+%% Function: route_request/1
+%% Description: Check if a request is destined for this proxy, a local
+%%              domain or a remote domain. In case of a local domain,
+%%              we call request_to_homedomain(), and in case of a
+%%              remote domain we call request_to_remote(). If these
+%%              functions return 'nomatch' we call lookupdefault().
+%% Returns: {error, Status}            |
+%%          {response, Status, Reason} |
+%%          {proxy, Location}          |
+%%          {relay, Location}          |
+%%          {forward, Host, Port}      |
+%%          {me}                       |
+%%          none
+%%--------------------------------------------------------------------
+route_request(Request) when record(Request, request) ->
+    {Method, URL, Header} = {Request#request.method, Request#request.uri, Request#request.header},
+    {User, Pass, Host, Port, Parameters} = URL,
+    Loc1 = case local:homedomain(Host) of
+	true ->
+	    case is_request_to_me(Method, URL, Header) of
+		true ->
+		    {me};
+		_ ->
+		    request_to_homedomain(URL)
+	    end;
+	_ ->
+	    request_to_remote(URL)
+    end,
+    case Loc1 of
+	nomatch ->
+	    logger:log(debug, "Routing: No match - trying default route"),
+	    local:lookupdefault(URL);
+	_ ->
+	    Loc1
+    end.
+
+
+%% Function: route_request/1
+%% Description: Check if a request is destined for this proxy. Not
+%%              for a domain handled by this proxy, but for this
+%%              proxy itself.
+%% Returns : true  |
+%%           false
+%%--------------------------------------------------------------------
+is_request_to_me(_, {none, _, _, _, _}, Header) ->
+    true;
+is_request_to_me("OPTIONS", URL, Header) ->
+    % RFC3261 # 11 says a proxy that receives an OPTIONS request with a Max-Forwards less than one
+    % MAY treat it as a request to the proxy.
+    MaxForwards =
+	case keylist:fetch("Max-Forwards", Header) of
+	    [M] ->
+		lists:min([255, list_to_integer(M) - 1]);
+	    [] ->
+		70
+	end,
+    if
+	MaxForwards < 1 ->
+	    logger:log(debug, "Routing: Request is OPTIONS and Max-Forwards < 1, treating it as a request to me."),
+	    true;
+	true ->
+	    false
+    end;
+is_request_to_me(_, _, _) ->
+    false.
+
+
+%% Function: request_to_homedomain/1
+%% Description: Find out where to route this request which is for one
+%%              of our homedomains.
+%% Returns: {error, Status}            |
+%%          {response, Status, Reason} |
+%%          {proxy, Location}          |
+%%          {relay, Location}          |
+%%          {forward, Host, Port}      |
+%%          none
+%%--------------------------------------------------------------------
+request_to_homedomain(URL) ->
+    request_to_homedomain(URL, init).
+
+request_to_homedomain(URL, Recursing) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    logger:log(debug, "Routing: Request to homedomain, URI ~p", [sipurl:print(URL)]),
+
+    Loc1 = local:lookupuser(URL),
+    logger:log(debug, "Routing: lookupuser on ~p -> ~p", [sipurl:print(URL), Loc1]),
+
+    case Loc1 of
+	none ->
+	    logger:log(debug, "Routing: ~s is one of our users, returning Temporarily Unavailable",
+	    		[sipurl:print(URL)]),
+	    {response, 480, "Users location currently unknown"};
+	nomatch ->
+	    request_to_homedomain_not_sipuser(URL, Recursing);
+	Loc1 ->
+	    Loc1
+    end.
+
+
+%% Function: request_to_homedomain_not_sipuser/2
+%% Description: Second part of request_to_homedomain/1. The request
+%%              is not for one of our SIP-users, call
+%%              local:lookup_homedomain_url() and if that does not
+%%              result in something usefull then see if this is
+%%              something we can interpret as a phone number.
+%% Returns: {error, Status}            |
+%%          {response, Status, Reason} |
+%%          {proxy, Location}          |
+%%          {relay, Location}          |
+%%          {forward, Host, Port}      |
+%%          none
+%%--------------------------------------------------------------------
+request_to_homedomain_not_sipuser(URL, loop) ->
+    none;
+request_to_homedomain_not_sipuser(URL, init) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+
+    Loc1 = local:lookup_homedomain_url(URL),
+    logger:log(debug, "Routing: local:lookup_homedomain_url on ~s -> ~p", [sipurl:print(URL), Loc1]),
+
+    case Loc1 of
+	none ->
+	    % local:lookuppotn() returns 'none' if argument is not numeric,
+	    % so we don't have to check that...
+	    Res1 = local:lookuppotn(User),
+	    logger:log(debug, "Routing: lookuppotn on ~s -> ~p", [User, Res1]),
+	    Res1;
+	{proxy, NewURL} ->
+	    logger:log(debug, "Routing: request_to_homedomain_not_sipuser: Calling request_to_homedomain on result of local:lookup_homedomain_url (local URL ~s)",
+	    		[sipurl:print(NewURL)]),
+	    request_to_homedomain(NewURL, loop);
+	{relay, Dst} ->
+	    logger:log(debug, "Routing: request_to_homedomain_not_sipuser: Turning relay into proxy, original request was to a local domain"),
+	    {proxy, Dst};
+	_ ->
+	    Loc1
+    end.
+
+
+%% Function: request_to_remote/1
+%% Description: Find out where to route this request which is for a
+%%              remote domain.
+%% Returns: {error, Status}            |
+%%          {response, Status, Reason} |
+%%          {proxy, Location}          |
+%%          {relay, Location}          |
+%%          {forward, Host, Port}      |
+%%          none
+%%--------------------------------------------------------------------
+request_to_remote(URL) ->
+    case local:lookup_remote_url(URL) of
+	none ->
+	    case local:get_user_with_contact(URL) of
+		none ->
+		    {_, _, Host, _, _} = URL,
+		    logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
+		    {relay, URL};
+		SIPuser ->
+		    logger:log(debug, "Routing: ~p is not a local domain, but it is a registered location of SIPuser ~p. Proxying.",
+			       [sipurl:print(URL), SIPuser]),
+		    {proxy, URL}
+	    end;		
+	Location ->
+	    logger:log(debug, "Routing: local:lookup_remote_url() ~s -> ~p", [sipurl:print(URL), Location]),
+	    Location
+    end.
+
+
+%% Function: request_to_me/3
+%% Description: Request is meant for this proxy, if it is OPTIONS we
+%%              respond 200 Ok, otherwise we respond 481 Call/
+%%              transaction does not exist.
+%% Returns: Does not matter.
+%%--------------------------------------------------------------------
+request_to_me(THandler, Request, LogTag) when record(Request, request), Request#request.method == "OPTIONS" ->
+    logger:log(normal, "~s: incomingproxy: OPTIONS to me -> 200 OK", [LogTag]),
+    logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and Supported headers. RFC 3261 section 11"),
+    transactionlayer:send_response_handler(THandler, 200, "OK");
+
+request_to_me(THandler, Request, LogTag) when record(Request, request) ->
+    logger:log(normal, "~s: incomingproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist", [LogTag]),
+    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
+
+
+%% Function: get_branch_from_handler/1
+%% Description: Get branch from server transaction handler and then
+%%              remove the -UAS suffix. The result is used as a tag
+%%              when logging actions.
+%% Returns: Branch
+%%--------------------------------------------------------------------
+get_branch_from_handler(TH) ->
+    CallBranch = transactionlayer:get_branch_from_handler(TH),
+    case string:rstr(CallBranch, "-UAS") of
+	0 ->
+	    CallBranch;
+	Index when integer(Index) ->
+	    BranchBase = string:substr(CallBranch, 1, Index - 1),
+	    BranchBase
+    end.
+
+
+%% Function: proxy_request/4
+%% Description: Proxy a request somewhere without authentication.
+%% Returns: Does not matter
+%%--------------------------------------------------------------------
 proxy_request(THandler, Request, DstList, Parameters) when record(Request, request) ->
     sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstList, Parameters, 900]).
 
+
+%% Function: relay_request/5
+%% Description: Relay request to remote host. If there is not valid
+%%              credentials present in the request, challenge user
+%%              unless local policy says not to. Never challenge
+%%              CANCEL or BYE since they can't be resubmitted and
+%%              therefor cannot be challenged.
+%% Returns: Does not matter
+%%--------------------------------------------------------------------
+
+%%
+%% CANCEL or BYE
+%%
 relay_request(THandler, Request, URI, Origin, LogTag) when record(Request, request), Request#request.method == "CANCEL"; Request#request.method == "BYE" ->
     logger:log(normal, "~s: incomingproxy: Relay ~s ~s (unauthenticated)",
 	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
     sipserver:safe_spawn(sippipe, start, [THandler, none, Request, URI, [], 900]);
 
+%%
+%% Anything but CANCEL or BYE
+%%
 relay_request(THandler, Request, DstURI, Origin, LogTag) when record(Request, request) ->
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     case sipauth:get_user_verified_proxy(Header, Method) of
@@ -293,94 +509,4 @@ relay_request(THandler, Request, DstURI, Origin, LogTag) when record(Request, re
 	Unknown ->
 	    logger:log(error, "relay_request: Unknown result from sipauth:get_user_verified_proxy() :~n~p", [Unknown]),
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
-    end.
-
-response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
-    {Status, Reason, Header, Body} = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
-    logger:log(normal, "Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
-    Response = {Status, Reason, Header, Body},
-    transportlayer:send_proxy_response(none, Response).
-
-request_to_homedomain(URL) ->
-    request_to_homedomain(URL, init).
-
-request_to_homedomain(URL, Recursing) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    logger:log(debug, "Routing: Request to homedomain, URI ~p", [sipurl:print(URL)]),
-
-    Loc1 = local:lookupuser(URL),
-    logger:log(debug, "Routing: lookupuser on ~p -> ~p", [sipurl:print(URL), Loc1]),
-
-    case Loc1 of
-	none ->
-	    logger:log(debug, "Routing: ~s is one of our users, returning Temporarily Unavailable",
-	    		[sipurl:print(URL)]),
-	    {response, 480, "Users location currently unknown"};
-	nomatch ->
-	    request_to_homedomain_not_sipuser(URL, Recursing);
-	Loc1 ->
-	    Loc1
-    end.
-
-request_to_homedomain_not_sipuser(URL, loop) ->
-    none;
-request_to_homedomain_not_sipuser(URL, init) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-
-    Loc1 = local:lookup_homedomain_url(URL),
-    logger:log(debug, "Routing: local:lookup_homedomain_url on ~s -> ~p", [sipurl:print(URL), Loc1]),
-
-    case Loc1 of
-	none ->
-	    % local:lookuppotn() returns 'none' if argument is not numeric,
-	    % so we don't have to check that...
-	    Res1 = local:lookuppotn(User),
-	    logger:log(debug, "Routing: lookuppotn on ~s -> ~p", [User, Res1]),
-	    Res1;
-	{proxy, NewURL} ->
-	    logger:log(debug, "Routing: request_to_homedomain_not_sipuser: Calling request_to_homedomain on result of local:lookup_homedomain_url (local URL ~s)",
-	    		[sipurl:print(NewURL)]),
-	    request_to_homedomain(NewURL, loop);
-	{relay, Dst} ->
-	    logger:log(debug, "Routing: request_to_homedomain_not_sipuser: Turning relay into proxy, original request was to a local domain"),
-	    {proxy, Dst};
-	_ ->
-	    Loc1
-    end.
-
-request_to_me(THandler, Request, LogTag) when record(Request, request), Request#request.method == "OPTIONS" ->
-    logger:log(normal, "~s: incomingproxy: OPTIONS to me -> 200 OK", [LogTag]),
-    logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and Supported headers. RFC 3261 section 11"),
-    transactionlayer:send_response_handler(THandler, 200, "OK");
-
-request_to_me(THandler, Request, LogTag) when record(Request, request) ->
-    logger:log(normal, "~s: incomingproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist", [LogTag]),
-    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
-
-request_to_remote(URL) ->
-    case local:lookup_remote_url(URL) of
-	none ->
-	    case local:get_user_with_contact(URL) of
-		none ->
-		    {_, _, Host, _, _} = URL,
-		    logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
-		    {relay, URL};
-		SIPuser ->
-		    logger:log(debug, "Routing: ~p is not a local domain, but it is a registered location of SIPuser ~p. Proxying.",
-			       [sipurl:print(URL), SIPuser]),
-		    {proxy, URL}
-	    end;		
-	Location ->
-	    logger:log(debug, "Routing: local:lookup_remote_url() ~s -> ~p", [sipurl:print(URL), Location]),
-	    Location
-    end.
-
-get_branch_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
-    case string:rstr(CallBranch, "-UAS") of
-	0 ->
-	    CallBranch;
-	Index when integer(Index) ->
-	    BranchBase = string:substr(CallBranch, 1, Index - 1),
-	    BranchBase
     end.
