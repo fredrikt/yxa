@@ -303,7 +303,7 @@ proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
 				 Index when integer(Index) ->
 				     %% There is already a loop cookie in this branch, don't change it. Necessary to not
 				     %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
-				     logger:log(debug, "Siprequets (transport layer) : NOT adding generated loop cookie ~p to branch " ++
+				     logger:log(debug, "Siprequest (transport layer) : NOT adding generated loop cookie ~p to branch " ++
 						"that already contains a loop cookie : ~p", [LoopCookie, FlatBranch]),
 				     Parameters
 			     end;
@@ -342,7 +342,7 @@ stateless_generate_branch(OrigURI, Header) ->
 		    "z9hG4bK-yxa-" ++ make_base64_md5_token(In)
 	    end;
 	_ ->
-	    logger:log(error, "Siprequets (transport layer) : Can't generate stateless branch for this request, it has no top Via!"),
+	    logger:log(error, "Siprequest (transport layer) : Can't generate stateless branch for this request, it has no top Via!"),
 	    error
     end.
 
