@@ -6,7 +6,7 @@
 	     clienttransaction,
 	     database_forward,
 	     database_regexproute,
-	     dbutil,
+	     db_util,
 	     directory,
 	     dnsutil,
 	     eldap,
