@@ -5,6 +5,9 @@
 %%%           get a final response from one or them, or have no
 %%%           destinations left to try.
 %%%
+%%% Note    : We should erlang:monitor() our client transactions to
+%%%           be alerted when they die.
+%%%
 %%% Created :  20 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 %%--------------------------------------------------------------------
 -module(sippipe).
@@ -25,16 +28,17 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
--record(state, {branch,
-		serverhandler,
-		clienthandler,
-		request,
-		dstlist,
-		timeout,
-		starttime,
-		endtime,
-		warntime,
-		approxmsgsize
+-record(state, {branch,			%% string(), current client transaction branch
+		serverhandler,		%% term(), server transaction handle
+		clienttransaction_pid,	%% pid(), current client transaction process
+		request,		%% request record(), the request we are working on
+		dstlist,		%% list() of sipdst record(), our list of destinations for this request
+		timeout,		%% integer(), timeout value for this process and transactions it starts
+		starttime,		%% integer(), when we started
+		endtime,		%% integer(), point in time when we terminate
+		warntime,		%% integer(), point in time when we should warn about still being alive
+		approxmsgsize,		%% integer(), approximate size of the SIP requests when we send them
+		cancelled=false		%% true | false, have we been cancelled or not?
 	       }).
 
 %%====================================================================
@@ -57,30 +61,19 @@
 %%           and then enter loop/1.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-start(ServerHandler, ClientPid, Request, Dst, Timeout) when is_record(Request, request) ->
-    case catch guarded_start(ServerHandler, ClientPid, Request, Dst, Timeout) of
-	{'EXIT', Reason} ->
-	    logger:log(error, "=ERROR REPORT==== from sippipe :~n~p", [Reason]),
-	    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
-	    {error, Reason};
-	Res ->
-	    Res
-    end.
-
-%% First, we want to get the branch base from an existing ServerHandler
-guarded_start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_record(RequestIn, request) ->
+start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_record(RequestIn, request) ->
     %% call check_proxy_request to get sanity of proxying this request verified (Max-Forwards checked etc)
     {ok, NewHeader1, ApproxMsgSize} = siprequest:check_proxy_request(RequestIn),
     Request1 = RequestIn#request{header=NewHeader1},
     %% now make sure we know some destinations of this request
     {ok, DstList, Request} = start_get_dstlist(ServerHandler, Request1, ApproxMsgSize, DstIn),
+    %% Adopt server transaction and get it's branch. If ServerHandler is not a valid
+    %% transaction handle, then try to figure the server transaction handler out using Request.
     case start_get_servertransaction(ServerHandler, Request) of
 	{ok, STHandler, Branch} ->
 	    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize);
 	ok ->
-	    ok;
-	error ->
-	    error
+	    ok
     end.
 
 %%
@@ -119,9 +112,9 @@ final_start(Branch, ServerHandler, ClientPid, Request, [Dst|_]=DstList, Timeout,
   when is_list(Branch), is_pid(ClientPid), is_record(Request, request), is_record(Dst, sipdst),
        is_integer(Timeout), is_integer(ApproxMsgSize) ->
     StartTime = util:timestamp(),
-    State=#state{branch=Branch, serverhandler=ServerHandler, clienthandler=ClientPid,
+    State=#state{branch=Branch, serverhandler=ServerHandler, clienttransaction_pid=ClientPid,
 		 request=Request, dstlist=DstList, approxmsgsize=ApproxMsgSize,
-		 timeout=Timeout, endtime = StartTime + Timeout, warntime = StartTime + 300},
+		 timeout=Timeout, endtime=StartTime + Timeout, warntime=StartTime + 300},
     logger:log(debug, "sippipe: All preparations finished, entering pipe loop (~p destinations in my list)",
 	       [length(DstList)]),
     loop(State).
@@ -134,28 +127,28 @@ final_start(Branch, ServerHandler, ClientPid, Request, [Dst|_]=DstList, Timeout,
 %%--------------------------------------------------------------------
 loop(State) when is_record(State, state) ->
 
-    ClientPid = State#state.clienthandler,
+    ClientPid = State#state.clienttransaction_pid,
     ServerHandlerPid = transactionlayer:get_pid_from_handler(State#state.serverhandler),
 
     {Res, NewState} = receive
 
 			  {servertransaction_cancelled, ServerHandlerPid} ->
-			      gen_server:cast(State#state.clienthandler, {cancel, "server transaction cancelled"}),
-			      {ok, State};
+			      NewState1 = cancel_transaction(State, "server transaction cancelled"),
+			      {ok, NewState1};
 
-			  {branch_result, _Branch, _NewTransactionState, Response} ->
-			      NewState1 = process_client_transaction_response(Response, State),
+			  {branch_result, _ClientPid, _Branch, _BranchSipState, Response} ->
+			      NewState1 = process_received_response(Response, State),
 			      {ok, NewState1};
 
 			  {servertransaction_terminating, ServerHandlerPid} ->
 			      NewState1 = State#state{serverhandler=none},
-			      {ok, NewState1};
+			      {quit, NewState1};
 
-			  {clienttransaction_terminating, {_Branch, ClientPid}} ->
-			      NewState1 = State#state{clienthandler=none},
-			      {ok, NewState1};
+			  {clienttransaction_terminating, ClientPid, _Branch} ->
+			      NewState1 = State#state{clienttransaction_pid=none},
+			      {quit, NewState1};
 
-			  {clienttransaction_terminating, {_Branch, _}} ->
+			  {clienttransaction_terminating, _ClientPid, _Branch} ->
 			      %% An (at this time) unknown client transaction signals us that it
 			      %% has terminated. This is probably one of our previously started
 			      %% client transactions that is now finishing - just ignore the signal.
@@ -172,12 +165,7 @@ loop(State) when is_record(State, state) ->
 	quit ->
 	    ok;
 	_ ->
-	    case all_terminated(State) of
-		true ->
-		    ok;
-		false ->
-		    loop(NewState)
-	    end
+	    loop(NewState)
     end.
 
 %%--------------------------------------------------------------------
@@ -192,29 +180,18 @@ loop(State) when is_record(State, state) ->
 %%--------------------------------------------------------------------
 
 %%
-%% Time to quit, send a final response to server transaction and
-%% cancel any running client transaction.
+%% Time to quit.
 %%
 tick(State, Now) when is_record(State, state), Now >= State#state.endtime ->
-    case client_transaction_alive(State) of
-	true ->
-	    gen_server:cast(State#state.clienthandler, {cancel, "sippipe decided to quit (timeout)"});
-	_ -> true
-    end,
-    case transactionlayer:is_good_transaction(State#state.serverhandler) of
-	true ->
-	    transactionlayer:send_response_handler(State#state.serverhandler, 500, "No reachable destination");
-	_ -> ok
-    end,
-    logger:log(error, "sippipe: Reached end time after ~p seconds", [State#state.timeout]),
-    {quit, State#state{clienthandler=none, serverhandler=none, branch=none, dstlist=[]}};
+    logger:log(error, "sippipe: Reached end time after ~p seconds, exiting.", [State#state.timeout]),
+    {quit, State};
 
 %%
 %% Time to warn
 %%
 tick(State, Now) when is_record(State, state), Now >= State#state.warntime ->
     logger:log(error, "sippipe: Warning: pipe process still alive!~nClient handler : ~p, Server handler : ~p",
-	       [State#state.clienthandler, State#state.serverhandler]),
+	       [State#state.clienttransaction_pid, State#state.serverhandler]),
     {ok, State#state{warntime=Now + 60}};
 
 tick(State, _Now) ->
@@ -222,46 +199,81 @@ tick(State, _Now) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: process_client_transaction_response(Response, State)
+%% Function: process_received_response(Response, State)
 %%           Response = response record()
 %% Descrip.: We have received a response. Check if we should do
 %%           something.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-process_client_transaction_response(#response{status=Status}=Response, State)
-  when is_record(Response, response), is_record(State, state), Status >= 200 ->
-    logger:log(debug, "sippipe: Received final response '~p ~s'", [Status, Response#response.reason]),
-    %% This is a final response. See if local:sippipe_received_response() has an oppinion on what
+%%
+%% We are already cancelled
+%%
+process_received_response(_Response, #state{cancelled=true}=State) ->
+    logger:log(debug, "sippipe: Ignoring response received when cancelled"),
+    State;
+%%
+%% Response = response record()
+%%
+process_received_response(Response, State) when is_record(Response, response), is_record(State, state) ->
+    {Status, Reason} = {Response#response.status, Response#response.reason},
+    final_response_event(Status, Reason, forwarded, State),
+    process_received_response2(Status, Reason, Response, State);
+%%
+%% Response = {Status, Reason}
+%%
+process_received_response({Status, Reason}=Response, State) when is_integer(Status), is_list(Reason),
+								 is_record(State, state) ->
+    final_response_event(Status, Reason, created, State),
+    process_received_response2(Status, Reason, Response, State).
+
+%% part of process_received_response/2
+final_response_event(Status, Reason, Origin, State) ->
+    %% Make event out of final response
+    [CurDst | _] = State#state.dstlist,
+    L = [{request_method, (State#state.request)#request.method},
+	 {request_uri, sipurl:print((State#state.request)#request.uri)},
+	 {recv_response, {Status, Reason}},
+	 {origin, Origin},
+	 {recv_from, sipdst:dst2str(CurDst)}],
+    event_handler:request_info(normal, State#state.branch, L).
+
+process_received_response2(Status, Reason, Response, State) when Status >= 200, is_record(State, state) ->
+    logger:log(debug, "sippipe: Received final response '~p ~s'", [Status, Reason]),
+    %% This is a final response. See if local:sippipe_received_response() has an opinion on what
     %% we should do next.
     case local:sippipe_received_response(State#state.request, Response, State#state.dstlist) of
 	{huntstop, SendStatus, SendReason} ->
 	    %% Don't continue searching, respond something
 	    transactionlayer:send_response_handler(State#state.serverhandler, SendStatus, SendReason),
 	    %% XXX cancel client handler?
-	    State#state{clienthandler=none, branch=none, dstlist=[]};
+	    State#state{clienttransaction_pid=none, branch=none, dstlist=[]};
 	{next, NewDstList} ->
 	    %% Continue, possibly with an altered DstList
 	    start_next_client_transaction(State#state{dstlist=NewDstList});
 	undefined ->
 	    %% Use sippipe defaults
-	    process_client_transaction_response2(Response, State)
+	    default_process_received_response(Status, Reason, Response, State)
     end;
-process_client_transaction_response(Response, State) when is_record(Response, response), is_record(State, state) ->
+process_received_response2(Status, Reason, Response, State) when is_record(Response, response),
+								 is_record(State, state) ->
     logger:log(debug, "sippipe: Piping non-final response '~p ~s' to server transaction",
-	       [Response#response.status, Response#response.reason]),
+	       [Status, Reason]),
     transactionlayer:send_proxy_response_handler(State#state.serverhandler, Response),
     State.
 
-process_client_transaction_response2(Response, State) when is_record(Response, response), is_record(State, state) ->
-    case Response#response.status of
-	503 ->
-	    start_next_client_transaction(State);
-	_ ->
-	    logger:log(debug, "sippipe: Piping final response '~p ~s' to server transaction ~p",
-		       [Response#response.status, Response#response.reason, State#state.serverhandler]),
-	    transactionlayer:send_proxy_response_handler(State#state.serverhandler, Response),
-	    State
-    end.
+default_process_received_response(503, _Reason, _Response, State) when is_record(State, state) ->
+    start_next_client_transaction(State);
+default_process_received_response(Status, Reason, Response, State) when is_record(State, state) ->
+    logger:log(debug, "sippipe: Piping final response '~p ~s' to server transaction ~p",
+	       [Status, Reason, State#state.serverhandler]),
+    case is_record(Response, response) of
+	true ->
+	    transactionlayer:send_proxy_response_handler(State#state.serverhandler, Response);
+	false ->
+	    %% this is a locally generated response
+	    transactionlayer:send_response_handler(State#state.serverhandler, Status, Reason)
+    end,
+    State.
 
 %%--------------------------------------------------------------------
 %% Function: start_next_client_transaction(State)
@@ -271,7 +283,7 @@ process_client_transaction_response2(Response, State) when is_record(Response, r
 %%           send a 500 response in case we have no destinations left.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-start_next_client_transaction(State) when is_record(State, state) ->
+start_next_client_transaction(#state{cancelled=false}=State) ->
     DstListIn = State#state.dstlist,
     case DstListIn of
 	[_FirstDst] ->
@@ -279,7 +291,7 @@ start_next_client_transaction(State) when is_record(State, state) ->
 		       "telling server transaction to answer 500 No reachable destination"),
 	    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
 	    transactionlayer:send_response_handler(State#state.serverhandler, 500, "No reachable destination"),
-	    State#state{clienthandler=none, branch=none, dstlist=[]};
+	    State#state{clienttransaction_pid=none, branch=none, dstlist=[]};
 	[_FailedDst | DstList] ->
 	    NewBranch = get_next_target_branch(State#state.branch),
 	    logger:log(debug, "sippipe: Starting new branch ~p for next destination",
@@ -295,49 +307,15 @@ start_next_client_transaction(State) when is_record(State, state) ->
 	    %% equally preferred hosts in the SRV response for a destination.
 	    %% It makes more sense to try to connect to Proxy B over TCP/UDP than to
 	    %% try Proxy A over UDP when Proxy A over TCP has just failed.
-	    NewState = case transactionlayer:start_client_transaction(NewRequest, none, FirstDst, NewBranch, Timeout, self()) of
+	    NewState = case transactionlayer:start_client_transaction(NewRequest, none, FirstDst,
+								      NewBranch, Timeout, self()) of
 			   BranchPid when is_pid(BranchPid) ->
-			       State#state{clienthandler=BranchPid, branch=NewBranch, dstlist=NewDstList};
+			       State#state{clienttransaction_pid=BranchPid, branch=NewBranch, dstlist=NewDstList};
 			   {error, E} ->
 			       logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
-			       transactionlayer:send_response_handler(State#state.serverhandler, 500, "Server Internal Error"),
-			       State
+			       erlang:exit(failed_starting_client_transaction)
 		       end,
 	    NewState
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: adopt_st_and_get_branch(TH)
-%%           TH = term(), server transaction handle
-%% Descrip.: Adopt a server transaction, and get it's branch.
-%% Returns : Branch    |
-%%           error     |
-%%           cancelled
-%%           Branch = string()
-%%--------------------------------------------------------------------
-adopt_st_and_get_branch(TH) ->
-    case transactionlayer:adopt_server_transaction_handler(TH) of
-	{error, cancelled} ->
-	    logger:log(normal, "sippipe: Request has allready been cancelled, aborting."),
-	    cancelled;
-        {error, E} ->
-            logger:log(error, "sippipe: Could not adopt server transaction handler ~p : ~p", [TH, E]),
-	    error;
-	_ ->
-	    Branch = get_branch_from_handler(TH) ++ "-UAC",
-	    Branch
-    end.
-
-%% Part of adopt_st_and_get_branch(). Query a transaction handler for it's branch,
-%% and remove the -UAS suffix in order to get the 'branch base'.
-get_branch_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
-    case string:rstr(CallBranch, "-UAS") of
-	0 ->
-	    CallBranch;
-	Index when is_integer(Index) ->
-	    BranchBase = string:substr(CallBranch, 1, Index - 1),
-	    BranchBase
     end.
 
 %%--------------------------------------------------------------------
@@ -372,14 +350,14 @@ get_next_target_branch(In) ->
 %%           the input DstList and return the new list
 %% Returns : NewDstList = list() of sipdst record()
 %%--------------------------------------------------------------------
-resolve_if_necessary([], _) ->
+resolve_if_necessary([], _ApproxMsgSize) ->
     [];
 resolve_if_necessary([#sipdst{proto=Proto, addr=Addr, port=Port}=Dst | T], ApproxMsgSize)
   when Proto == undefined, Addr == undefined, Port == undefined ->
     URI = Dst#sipdst.uri,
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
-    case URI of
-	_ when is_record(URI, sipurl) ->
+    case is_record(URI, sipurl)  of
+	true ->
 	    case sipdst:url_to_dstlist(URI, ApproxMsgSize, URI) of
 		DstList when is_list(DstList) ->
 		    DstList;
@@ -387,46 +365,32 @@ resolve_if_necessary([#sipdst{proto=Proto, addr=Addr, port=Port}=Dst | T], Appro
 		    logger:log(error, "sippipe: Failed resolving URI ~s : ~p", [sipurl:print(URI), Unknown]),
 		    resolve_if_necessary(T, ApproxMsgSize)
 	    end;
-	InvalidURI ->
-	    logger:log(error, "sippipe: Skipping destination with invalid URI : ~p", [InvalidURI]),
+	false ->
+	    logger:log(error, "sippipe: Skipping destination with invalid URI : ~p", [URI]),
 	    resolve_if_necessary(T, ApproxMsgSize)
     end;
-resolve_if_necessary([Dst | T], _) when is_record(Dst, sipdst) ->
-    [Dst | T];
-resolve_if_necessary([Dst | T], AMS) ->
-    logger:log(error, "sippipe: Skipping invalid destination : ~p", [Dst]),
-    resolve_if_necessary(T, AMS);
-resolve_if_necessary(Unknown, _) ->
-    logger:log(error, "sippipe: Unrecognized destination input data : ~p", [Unknown]),
-    [].
+resolve_if_necessary([Dst | T], _ApproxMsgSize) when is_record(Dst, sipdst) ->
+    [Dst | T].
 
 %%--------------------------------------------------------------------
-%% Function: all_terminated(State)
-%% Descrip.: Check if both server transaction and client transaction
-%%           are dead. If so, return 'true'.
-%% Returns : true  |
-%%           false
+%% Function: cancel_transaction(State, Reason)
+%%           State  = state record()
+%%           Reason = string()
+%% Descrip.: Our server transaction has been cancelled. Signal the
+%%           client transaction. 
+%% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-all_terminated(State) when is_record(State, state) ->
-    ServerAlive = transactionlayer:is_good_transaction(State#state.serverhandler),
-    ClientAlive = client_transaction_alive(State),
-    if
-	ServerAlive == true -> false;
-	ClientAlive == true -> false;
-	true -> true
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: client_transaction_alive(State)
-%% Descrip.: Check if the client transaction is dead.
-%% Returns : true  |
-%%           false
-%%--------------------------------------------------------------------
-client_transaction_alive(State) when is_record(State, state) ->
-    case util:safe_is_process_alive(State#state.clienthandler) of
-	{true, _} -> true;
-	_ -> false
-    end.
+cancel_transaction(#state{cancelled=false}=State, Reason) when is_list(Reason) ->
+    logger:log(debug, "sippipe: Original request has been cancelled, asking current "
+	       "client transaction handler (~p) to cancel, and answering "
+	       "'487 Request Cancelled' to original request",
+	       [State#state.clienttransaction_pid]),
+    gen_server:cast(State#state.clienttransaction_pid, {cancel, Reason, []}),
+    transactionlayer:send_response_handler(State#state.serverhandler, 487, "Request Cancelled"),
+    State#state{cancelled=true};
+cancel_transaction(#state{cancelled=true}=State, Reason) when is_list(Reason) ->
+    %% already cancelled
+    State.
 
 %%====================================================================
 %% Startup functions
@@ -476,8 +440,8 @@ start_get_dstlist(ServerHandler, Request, ApproxMsgSize, route) when is_record(R
 		      [sipurl:print(DstURI), sipurl:print(ReqURI)]),
 	    case sipdst:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
 		{error, nxdomain} ->
-		    logger:log(debug, "sippipe: Failed resolving URI ~s : NXDOMAIN (responding '604 Does Not Exist Anywhere')",
-			       [sipurl:print(DstURI)]),
+		    logger:log(debug, "sippipe: Failed resolving URI ~s : NXDOMAIN (responding "
+			       "'604 Does Not Exist Anywhere')", [sipurl:print(DstURI)]),
 		    transactionlayer:send_response_handler(ServerHandler, 604, "Does Not Exist Anywhere"),
 		    error;
 		{error, What} ->
@@ -490,12 +454,7 @@ start_get_dstlist(ServerHandler, Request, ApproxMsgSize, route) when is_record(R
                     logger:log(error, "sippipe: Failed resolving URI ~s : ~p", [sipurl:print(DstURI), Unknown]),
 		    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving Route destination"),
 		    error
-            end;
-	Unknown ->
-	    logger:log(error, "sippipe: Unkown result from sipdst:url_to_dstlist : ~p",
-		       [Unknown]),
-	    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
-	    error
+            end
     end;
 
 start_get_dstlist(_ServerHandler, Request, _ApproxMsgSize, [Dst | _] = DstList) when is_record(Request, request),
@@ -511,44 +470,24 @@ start_get_dstlist(_ServerHandler, Request, _ApproxMsgSize, [Dst | _] = DstList) 
 %%           find one using the transaction layer. If the server
 %%           transaction has already been cancelled, we return 'ok'.
 %% Returns : {ok, STHandler, Branch} |
-%%           ok                      |
-%%           error
+%%           ok
 %%           STHandler = term()
 %%           Branch    = string()
 %%--------------------------------------------------------------------
-start_get_servertransaction(none, Request) when is_record(Request, request) ->
-    %% No server transaction handler supplied. Try to find a valid handler using the request.
-    case transactionlayer:get_handler_for_request(Request) of
-	{error, E} ->
-	    logger:log(error, "sippipe: Could not start pipe, no valid server transaction "
-		       "supplied and none found using transaction layer, error : ~p", [E]),
-	    error;
-	STHandler ->
-	    %% Ok, found the server transaction handler. Adopt it and query it for it's branch base.
-	    case adopt_st_and_get_branch(STHandler) of
-		error ->
-		    transactionlayer:send_response_handler(STHandler, 500, "Server Internal Error"),
-		    error;
-		cancelled ->
-		    ok;
-		Branch ->
-		    {ok, STHandler, Branch}
-	    end
-    end;
-start_get_servertransaction(ServerHandler, Request) when is_record(Request, request) ->
-    case transactionlayer:is_good_transaction(ServerHandler) of
-	true ->
-	    %% Adopt server transaction and then continue
-	    case adopt_st_and_get_branch(ServerHandler) of
-		error ->
-		    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
-		    error;
-		cancelled ->
-		    ok;
-		Branch ->
-		    {ok, ServerHandler, Branch}
-	    end;
-	false ->
-	    logger:log(error, "sippipe: Server transaction given to me (~p) is not alive", [ServerHandler]),
-	    error
+start_get_servertransaction(TH, Request) when is_record(Request, request) ->
+    Q = case TH of
+	    none -> Request;
+	    _ -> TH
+	end,
+    %% No server transaction handler supplied. Try to find a valid handler using the request,
+    %% and get the branch from it
+    case transactionlayer:adopt_st_and_get_branchbase(Q) of
+	{ok, STHandler, BranchBase} ->
+	    {ok, STHandler, BranchBase ++ "-UAC"};
+	ignore ->
+	    %% Request has already been cancelled, completed or something
+	    ok;
+	error ->
+	    logger:log(error, "sippipe: Failed adopting server transaction, exiting"),
+	    erlang:exit(failed_adopting_server_transaction)
     end.
