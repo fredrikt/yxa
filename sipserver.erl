@@ -93,12 +93,25 @@ start(normal, [AppModule]) ->
 %% Descrip.: Initiate Mnesia on this node. If there are no remote
 %%           mnesia-tables, we conclude that we are a mnesia master
 %%           and check if any of the tables needs to be updated.
-%% Returns : ok | does not return at all
+%% Returns : ok | throw(...)
 %%--------------------------------------------------------------------
 init_mnesia(none) ->
-    %% update old database versions
     ok = check_for_tables([phone]),
-    ok = table_update:update(),
+    %% update old database versions
+    try table_update:update() of
+	ok -> ok
+    catch
+	error: Reason ->
+	    logger:log(error, "Startup problem: Mnesia table updating failed with reason :~n~p",
+		       [Reason]),
+	    timer:sleep(3 * 1000),
+
+	    %% Although very verbose (and only outputted to the console), the output of
+	    %% mnesia:info() can be really helpfull
+	    io:format("~n~nMnesia info :~n"),
+	    mnesia:info(),
+	    throw('Mnesia table update error')
+    end,
     ok;
 init_mnesia(RemoteTables) when is_list(RemoteTables) ->
     DbNodes = case sipserver:get_env(databaseservers, none) of
@@ -106,8 +119,7 @@ init_mnesia(RemoteTables) when is_list(RemoteTables) ->
 		      logger:log(error, "Startup: This application needs remote tables ~p but you " ++
 				 "haven't configured any databaseservers, exiting.",
 				 [RemoteTables]),
-		      logger:quit(none),
-		      erlang:fault("No databaseservers configured");
+		      throw('No databaseservers configured');
 		  Res ->
 		      Res
 	      end,
@@ -115,11 +127,10 @@ init_mnesia(RemoteTables) when is_list(RemoteTables) ->
     case mnesia:change_config(extra_db_nodes,
 			      sipserver:get_env(databaseservers)) of
 	{error, Reason} ->
-	    logger:log(error, "Startup: Could not add configured databaseservers: ~p",
+	    logger:log(error, "Startup problem: Could not add configured databaseservers: ~p",
 		       [mnesia:error_description(Reason)]),
-	    logger:quit(none),
-	    erlang:fault("Could not add configured databaseservers");
-	_ ->
+	    throw('Could not add configured databaseservers');
+	{ok, _Ret} ->
 	    true
     end,
     find_remote_mnesia_tables(RemoteTables).
@@ -132,8 +143,8 @@ init_mnesia(RemoteTables) when is_list(RemoteTables) ->
 %% Returns : ok | doesn't return
 %%--------------------------------------------------------------------
 check_for_tables([H | T]) ->
-    %% check if table exists - XXX is there a more obvious way than to check arity?
-    case catch mnesia:table_info(H, arity) of
+    %% check if table exists
+    case catch mnesia:table_info(H, record_name) of
 	{'EXIT', {aborted, {no_exists, H, arity}}} ->
 	    logger:log(error, "Startup problem: Mnesia table '~p' does not exist - did you bootstrap Yxa? "
 		       "(see README file)~n", [H]),
@@ -141,7 +152,7 @@ check_for_tables([H | T]) ->
 	    timer:sleep(1000),
 	    logger:quit(none),
 	    erlang:halt(1);
-	R when is_integer(R) ->
+	H ->
 	    check_for_tables(T)
     end;
 check_for_tables([]) ->
@@ -155,7 +166,7 @@ check_for_tables([]) ->
 %%           timeout since we (Stockholm university) have had
 %%           intermittent problems with mnesia startups. Try a mnesia
 %%           stop/start after 30 seconds, and stop trying by using
-%%           erlang:fault() after another 30 seconds.
+%%           throw() after another 30 seconds.
 %% Returns : ok | does not return at all
 %%
 %% XXX are the problems asociated with the somewhat random startup
@@ -183,7 +194,7 @@ find_remote_mnesia_tables1(OrigTableList, RemoteTables, Count) ->
 		6 ->
 		    logger:log(error, "Could not initiate remote Mnesia tables ~p, exiting.", [BadTabList]),
 		    logger:quit(none),
-		    erlang:fault("Mnesia table init error", RemoteTables);
+		    throw('Mnesia remote table init error');
 		_ ->
 		    logger:log(debug, "Still waiting for tables ~p", [BadTabList]),
 		    find_remote_mnesia_tables1(OrigTableList, BadTabList, Count + 1)
@@ -428,7 +439,7 @@ parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
 		    erlang:exit(E);
 		throw:
 		  {sipparseerror, request, Header, Status, Reason} ->
-		    logger:log(error, "INVALID request [client=~s] ~p ~s",
+		    logger:log(error, "INVALID request [client=~s]: -> ~p ~s",
 			       [origin2str(Origin), Status, Reason]),
 		    parse_do_internal_error(Header, Socket, Status, Reason, []);
 		  {sipparseerror, request, Header, Status, Reason, ExtraHeaders} ->
