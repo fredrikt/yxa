@@ -99,9 +99,10 @@ handle_call({get_branch}, From, State) ->
     check_quit({reply, {ok, State#state.branch}, State, ?TIMEOUT}, From);
 
 handle_call({set_report_to, Pid}, From, State) ->
+    LogTag = State#state.logtag,
     Reply = case State#state.report_to of
 		undefined ->
-		    logger:log(debug, "Server transaction adopted by ~p", [Pid]),
+		    logger:log(debug, "~s: Server transaction adopted by ~p", [LogTag, Pid]),
 		    {reply, {ok}, State#state{report_to=Pid}, ?TIMEOUT};
 		_ ->
 		    {reply, {error, "Already set"}, State, ?TIMEOUT}
