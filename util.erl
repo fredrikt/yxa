@@ -73,6 +73,7 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
 %% Descrip.: determine if Number is a string containing only numbers,
 %%           length must be >= 1
 %% Returns : true | false
+%% Note    : Using the BIF list_to_integer() is probably cheaper.
 %%--------------------------------------------------------------------
 isnumeric(Number) when is_list(Number) ->
     Pattern = "^[0-9]+\$",
@@ -98,10 +99,7 @@ regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
 	{match, List} ->
 	    apply_rewrite(Rewrite, List);
 	nomatch ->
-	    regexp_rewrite(Input, Rest);
-	{error, Error} ->
-	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error]),
-	    []
+	    regexp_rewrite(Input, Rest)
     end.
 
 %% Function:
@@ -231,7 +229,7 @@ safe_is_process_alive(Name) when is_atom(Name) ->
 %%           LogTag = string() - application name (???)
 %%           PidIn = pid() | atom()
 %%           Message = string()
-%% Descrip.: ???
+%% Descrip.: Check if a process is alive before sending it a signal.
 %% Returns : ok | error
 %%--------------------------------------------------------------------
 safe_signal(LogTag, PidIn, Message) ->
