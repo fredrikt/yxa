@@ -1,7 +1,6 @@
 -module(lookup).
 -export([lookupregexproute/1, lookupuser/1, lookupdefault/1, lookuppotn/1,
 	 lookupenum/1, lookuppstn/1, isours/1, homedomain/1,
-	 prioritize_locations/1, get_locations_with_prio/2,
 	 lookupappserver/1, rewrite_potn_to_e164/1,
 	 get_remote_party_number/3, format_number_for_remote_party_id/3,
 	 get_remote_party_name/2]).
@@ -58,7 +57,7 @@ lookupaddress(Key) ->
 	    Loc;
 	{atomic, Locations} ->
 	    BestLocations = local:prioritize_locations(Key, Locations),
-	    logger:log(debug, "Lookup: Best location(s) of ~p :~n~p", [Key, debugfriendly_locations(BestLocations)]),
+	    logger:log(debug, "Lookup: Best location(s) of ~p :~n~p", [Key, siplocation:debugfriendly_locations(BestLocations)]),
 	    % check if more than one location was found.
 	    case BestLocations of
 	        [] ->
@@ -84,46 +83,6 @@ lookupappserver(Key) ->
 	    {forward, Host, Port}
     end.
 
-prioritize_locations([]) ->
-    {none, [], none, never};
-prioritize_locations(Locations) ->
-    BestPrio = lists:min(get_prioritys(Locations)),
-    get_locations_with_prio(list_to_integer(BestPrio), Locations).
-
-get_locations_with_prio(_, []) ->
-    [];
-get_locations_with_prio(Priority, [Location | Rest]) ->
-    {Contact, Flags, Class, Expire} = Location,
-    Prio = lists:keysearch(priority, 1, Flags),
-    case Prio of
-	{value, {priority, Priority}} ->
-	    lists:append([{Contact, Flags, Class, Expire}], get_locations_with_prio(Priority, Rest));
-	  _ ->
-	    get_locations_with_prio(Priority, Rest)
-    end.
-
-get_prioritys(Locations) ->
-    lists:map(fun ({Location, Flags, Class, Expire}) ->
-		      Prio = lists:keysearch(priority, 1, Flags),
-		      case Prio of
-		          {value, {priority, P}} ->
-				integer_to_list(P);
-			  _ ->
-				none
-		      end
-	      end, Locations).
-
-debugfriendly_locations([]) ->
-    [];
-debugfriendly_locations([Location | Rest]) ->
-    [Prio] = get_prioritys([Location]),
-    {Contact, _, _, Expire} = Location,
-    % make sure we don't end up with a negative Expires
-    NewExpire = lists:max([0, Expire - util:timestamp()]),
-    [C] = sipheader:contact_print([{none, Contact}]),
-    Res = lists:concat(["priority ", Prio, ": ", C, ";expires=", NewExpire]),
-    lists:append([Res], debugfriendly_locations(Rest)).
-    
 lookupdefault(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     case homedomain(Host) of

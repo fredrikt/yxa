@@ -84,7 +84,7 @@ lookupappserver(Key) ->
     lookup:lookupappserver(Key).
 
 prioritize_locations(Key, Locations) ->
-    lookup:prioritize_locations(Locations).
+    siplocation:prioritize_locations(Locations).
 
 lookupdefault(URL) ->
     lookup:lookupdefault(URL).

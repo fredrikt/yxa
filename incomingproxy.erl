@@ -1,5 +1,5 @@
 -module(incomingproxy).
--export([start/2, remove_expired_phones/0]).
+-export([start/2]).
 
 start(normal, Args) ->
     Pid = spawn(sipserver, start, [fun init/0, fun request/6,
@@ -9,7 +9,7 @@ start(normal, Args) ->
 init() ->
 %    phone:create(),
 %    database_regexproute:create(),
-    timer:apply_interval(60000, ?MODULE, remove_expired_phones, []).
+    timer:apply_interval(60000, siplocation, remove_expired_phones, []).
 
 route_request(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
@@ -48,7 +48,7 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 			true ->
 			    logger:log(debug, "~s -> Registering user ~p", [LogStr, ToKey])
 		    end,
-		    siprequest:process_register_isauth(NewHeader, Socket, ToKey, Numberlist, Contacts);
+		    siplocation:process_register_isauth(NewHeader, Socket, ToKey, Numberlist, Contacts);
 		{stale, _} ->
 		    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
 		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), true);
@@ -160,16 +160,3 @@ request_to_remote(URL) ->
 	    logger:log(debug, "Routing: local:lookup_remote_url() ~s -> ~p", [sipurl:print(URL), Location]),
 	    Location
     end.
-
-remove_expired_phones() ->
-    {atomic, Expired} = phone:expired_phones(),
-    remove_phones(Expired).
-
-remove_phones([]) ->
-    true;
-
-remove_phones([Phone | Rest]) ->
-    {Number, Location, Class} = Phone,
-    logger:log(normal, "Expire: User ~p contact ~p has expired", [Number, sipheader:contact_print([{none, Location}])]),
-    phone:delete_phone(Number, Class, Location),
-    remove_phones(Rest).
