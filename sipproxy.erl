@@ -297,6 +297,10 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
 		[] ->
 		    logger:log(normal, "~s: Target URI ~s did not resolve to any destinations we could use - ignoring",
 			       [Branch, sipurl:print(CallURI)]),
+		    fork(EndTime, State#state{actions=TAction});
+		{error, Reason} ->
+		    logger:log(normal, "~s: Failed resolving URI ~s - ignoring this target (error : ~p)",
+			       [Branch, sipurl:print(CallURI), Reason]),
 		    fork(EndTime, State#state{actions=TAction})
 	    end;
 	wait ->
@@ -413,8 +417,8 @@ process_wait(false, EndTime, State) when is_record(State, state) ->
 %%--------------------------------------------------------------------
 %% Function: process_signal({cancel_pending}, State)
 %%           State          = state record()
-%% Descrip.: We are asked to terminate all pending targets.
-%% Returns : {ok, NewState}
+%% Descrip.: We are asked to terminate all pending targets.%
+% Returns : {ok, NewState}
 %%           NewState = state record()
 %%--------------------------------------------------------------------
 process_signal({cancel_pending}, State) when is_record(State, state) ->
