@@ -8,13 +8,13 @@
 %% single scan.
 %%
 %% Note: elements are often only partially parsed - this reduces the
-%% amount of parsing done on entries which will only be passed along, 
+%% amount of parsing done on entries which will only be passed along,
 %% but while this improves performance it increases the need for later
 %% exception handling.
 %%--------------------------------------------------------------------
 
-
 -module(sipheader).
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -51,7 +51,6 @@
 	 get_via_branch/1,
 	 get_via_branch_full/1,
 	 remove_loop_cookie/1,
-	 get_server_transaction_id_using_3261_response_header/1,
 	 via_is_equal/2,
 	 via_is_equal/3,
 
@@ -82,11 +81,11 @@
 %%--------------------------------------------------------------------
 %% Function: comma(String)
 %% Descrip.: split a comma separated string into separate strings,
-%%           along the commas (don't include them). 
+%%           along the commas (don't include them).
 %%           Each substring is cleared of any preceding or trailing
-%%           spaces. example: "foo, bar, zop, \"quoted, hi\"" -> 
+%%           spaces. example: "foo, bar, zop, \"quoted, hi\"" ->
 %%           ["foo","bar","zop", "\"quoted, hi\""]
-%%           
+%%
 %% Returns : list() of string()
 %%--------------------------------------------------------------------
 comma(String) ->
@@ -101,13 +100,13 @@ comma(String) ->
 %% InUriQuote = keep track if currently inside a quoted sipurl segment
 %%              where special chars like "," should be ignored
 
-%% Note: Parsed stores its chars in reverse order during 
-%% scaning - to improve performance, "Parsed ++ [C]" which is easier
-%% to understand is considerably more costly, code becomes  O(N^2) 
+%% Note: Parsed stores it's chars in reverse order during
+%% scanning - to improve performance, "Parsed ++ [C]" which is easier
+%% to understand is considerably more costly, code becomes O(N^2)
 %% instead of O(N)
 %% Note: quote URIs (<...>) can't contain quoted strings.
 %% Quoted strings on the other hand, can contain "<" and ">" - this
-%% means that comma doesn't have to deal with nested quotes. 
+%% means that comma doesn't have to deal with nested quotes.
 
 
 %% start of quoted uri
@@ -124,18 +123,18 @@ comma(Parsed, [Char | Rest], false, true) ->
 
 %% -------------
 
-%% an escape code e.g. "\," has been found, don't treat it in any special manner 
+%% an escape code e.g. "\," has been found, don't treat it in any special manner
 %% only done inside a quoted segment of the string
 comma(Parsed, [$\\, Char | Rest], true, false) ->
     comma([Char, $\\ | Parsed], Rest, true, false);
 
-%% Inquote = false, we have now entered inside a quoted ("...") string segment 
-comma(Parsed, [$" | Rest], false, false) ->
-    comma([$" | Parsed], Rest, true, false);
+%% Inquote = false, we have now entered inside a quoted ("...") string segment
+comma(Parsed, [$\" | Rest], false, false) ->
+    comma([$\" | Parsed], Rest, true, false);
 
-%% Inquote = true and a new quote (") found - end of quoted string segment  
-comma(Parsed, [$" | Rest], true, false) ->
-    comma([$" | Parsed], Rest, false, false);
+%% Inquote = true and a new quote (") found - end of quoted string segment
+comma(Parsed, [$\" | Rest], true, false) ->
+    comma([$\" | Parsed], Rest, false, false);
 
 %% regular char, store in current string
 comma(Parsed, [Char | Rest], true, false) ->
@@ -144,7 +143,7 @@ comma(Parsed, [Char | Rest], true, false) ->
 %% -------------
 
 %% Inquote = false, so comma is a comma that splits string
-%% start looking for the next one  
+%% start looking for the next one
 comma(Parsed, [$, | Rest], false, false) ->
     [lists:reverse(string:strip(Parsed, both)) | comma([], Rest, false, false)];
 
@@ -152,7 +151,7 @@ comma(Parsed, [$, | Rest], false, false) ->
 comma(Parsed, [Char | Rest], false, false) ->
     comma([Char | Parsed], Rest, false, false);
 
-%% end of string, clean up last comma separated entry (it's a error
+%% end of string, clean up last comma separated entry (it's an error
 %% if Inquote or InUriQuote = true, the quotes are then unbalanced)
 comma(Parsed, [], false, false) ->
     [lists:reverse(string:strip(Parsed, both))].
@@ -164,19 +163,19 @@ comma(Parsed, [], false, false) ->
 %% Returns : [Expire] | []
 %%           Expire = numerical string()
 %%--------------------------------------------------------------------
-expire(Header) when is_record(Header, keylist) -> 
+expire(Header) when is_record(Header, keylist) ->
     keylist:fetch("Expires", Header).
 
 %%--------------------------------------------------------------------
 %% Function: to([String])
 %%           to(Header)
-%%           String = string(), the contens of a TO header (usually 
+%%           String = string(), the contents of a TO header (usually
 %%           the result of keylist:fetch(to, Header))
 %%           Header = keylist record()
 %% Descrip.: parse header data
 %% Returns : {Displayname, URI} (see name_header/1)
 %%--------------------------------------------------------------------
-to(Header) when is_record(Header, keylist) -> 
+to(Header) when is_record(Header, keylist) ->
     to(keylist:fetch("To", Header));
 
 to([String]) ->
@@ -185,13 +184,13 @@ to([String]) ->
 %%--------------------------------------------------------------------
 %% Function: from([String])
 %%           from(Header)
-%%           String = string(), the contens of a FROM header (usually 
+%%           String = string(), the contents of a FROM header (usually
 %%           the result of keylist:fetch("From", Header))
 %%           Header = keylist record()
 %% Descrip.: parse header data
 %% Returns : {Displayname, URI} (see name_header/1)
 %%--------------------------------------------------------------------
-from(Header) when is_record(Header, keylist) -> 
+from(Header) when is_record(Header, keylist) ->
     from(keylist:fetch("From", Header));
 
 from([String]) ->
@@ -202,37 +201,37 @@ from([String]) ->
 %%           route(Header)
 %%           record_route(Header)
 %%           Header = keylist record()
-%% Descrip.: return the contact/route/record-route/... entries 
-%%           contained in Header 
-%% Returns : list() of contact record()         
+%% Descrip.: return the contact/route/record-route/... entries
+%%           contained in Header
+%% Returns : list() of contact record()
 %% XXX should we use contact record() for all of these headers ???
 %% they may benefit from their own record type.
 %%--------------------------------------------------------------------
-contact(Header) when is_record(Header, keylist) -> 
+contact(Header) when is_record(Header, keylist) ->
     contact(Header, "Contact").
 
-route(Header) when is_record(Header, keylist) -> 
+route(Header) when is_record(Header, keylist) ->
     contact(Header, "Route").
 
-record_route(Header) when is_record(Header, keylist) -> 
+record_route(Header) when is_record(Header, keylist) ->
     contact(Header, "Record-Route").
 
 
-contact(Header, HeaderFieldName) when is_record(Header, keylist) -> 
+contact(Header, HeaderFieldName) when is_record(Header, keylist) ->
     V = keylist:fetch(HeaderFieldName, Header),
     contact:parse(V).
 
 %%--------------------------------------------------------------------
 %% Function: via(ViaList)
 %%           via(Header)
-%%           ViaList = list() of string(), string() = the contents of 
-%%                     Via: header. StrList is usually the result of 
+%%           ViaList = list() of string(), string() = the contents of
+%%                     Via: header. StrList is usually the result of
 %%                     keylist:fetch("Via", Header)
 %%           Header = keylist record()
 %% Descrip.: parse header data
 %% Returns : list() of via record()
 %%--------------------------------------------------------------------
-via(Header) when is_record(Header, keylist) -> 
+via(Header) when is_record(Header, keylist) ->
     via(keylist:fetch("Via", Header));
 
 via([]) ->
@@ -302,7 +301,7 @@ via_params(Via) when is_record(Via, via) ->
 
 %%--------------------------------------------------------------------
 %% Function: contact_print(Contacts)
-%%           Contacts = list() of contact record(), containing contact 
+%%           Contacts = list() of contact record(), containing contact
 %%           from contact/1
 %% Descrip.: Take a list of contact records, and return a list of
 %%           those contacts as strings
@@ -339,8 +338,8 @@ auth_print(Auth, Stale) ->
 %%--------------------------------------------------------------------
 %% Function: auth([In])
 %%           In = string()
-%% Descrip.: parse authrization header 
-%% Returns : throw() | dict() 
+%% Descrip.: parse authrization header
+%% Returns : throw() | dict()
 %%--------------------------------------------------------------------
 auth([In]) ->
     %% lowercase first word (to implement case insensitivity)
@@ -379,7 +378,7 @@ get_name_and_value(Str) ->
     Value = string:substr(H, Index + 1),
     {Name, unquote(Value)}.
 
-%% removes single pair of quotes, returns contens in between these first two quotes
+%% removes single pair of quotes, returns contents in between these first two quotes
 unquote([$" | QString]) ->
     Index = string:chr(QString, $"),
     string:substr(QString, 1, Index - 1);
@@ -452,13 +451,13 @@ httparg(String) ->
 %%--------------------------------------------------------------------
 %% Function: cseq([String])
 %%           cseq(Header)
-%%           String = string(), the contens of a CSEQ header (usually 
+%%           String = string(), the contents of a CSEQ header (usually
 %%           the result of keylist:fetch(cseq, Header))
 %%           Header = keylist record()
 %% Descrip.: parse header data
 %% Returns : {Seq, Method} | {unparseable, String}
 %%--------------------------------------------------------------------
-cseq(Header) when is_record(Header, keylist) -> 
+cseq(Header) when is_record(Header, keylist) ->
     cseq(keylist:fetch("CSeq", Header));
 
 cseq([String]) ->
@@ -483,7 +482,7 @@ cseq_print({Seq, Method}) ->
 %% Descrip.: get call from header
 %% Returns : string()
 %%--------------------------------------------------------------------
-callid(Header) when is_record(Header, keylist) -> 
+callid(Header) when is_record(Header, keylist) ->
     [CallId] = keylist:fetch("Call-Id", Header),
     CallId.
 
@@ -574,15 +573,15 @@ get_tag([String]) ->
 %%--------------------------------------------------------------------
 %% Function: dialogueid(Header)
 %%           Header = keylist record()
-%% Descrip.: get the contens of several sip headers in Header
+%% Descrip.: get the contents of several sip headers in Header
 %% Returns : {CallID, FromTag, ToTag}
-%%           the contens of "Call-ID", "From" and "To"
+%%           the contents of "Call-ID", "From" and "To"
 %%--------------------------------------------------------------------
 dialogueid(Header) when is_record(Header, keylist) ->
     get_dialogid(Header).
 
 get_dialogid(Header) ->
-    [CallID] = keylist:fetch("Call-Id", Header),
+    CallID = sipheader:callid(Header),
     FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
     ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
     {CallID, FromTag, ToTag}.
@@ -596,11 +595,21 @@ via_sentby(Via) when is_record(Via, via) ->
     {Via#via.proto, Via#via.host, Via#via.port}.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: get_server_transaction_id(Request)
+%%           Request = request record()
+%% Descrip.: Turn a request into a transaction id, that can be stored
+%%           in our transaction state database together with a
+%%           reference to the process handling this request (server
+%%           transaction handler) if this is a new transaction, or
+%%           looked up in the database to find an existing handler if
+%%           this is a resend of the same request or an ACK to a
+%%           non-2xx response to INVITE. This is specified in RFC3261
+%%           #17.2.3 (Matching Requests to Server Transactions).
+%% Returns : Id = term() | is_2543_ack | error
 %%--------------------------------------------------------------------
 get_server_transaction_id(Request) ->
+    %% We do a catch around this since it includes much parsing of the
+    %% request, and parsing data received from the network is a fragile thing.
     case catch guarded_get_server_transaction_id(Request) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from get_server_transaction_id(~p) :~n~p", [Request, E]),
@@ -610,28 +619,36 @@ get_server_transaction_id(Request) ->
     end.
 
 guarded_get_server_transaction_id(Request) when is_record(Request, request) ->
-    R = case Request#request.method of
-	"ACK" ->
-	    % RFC3261 17.2.3, when looking for server transaction for ACK, the method of the transaction is INVITE
-	    Request#request{method="INVITE"};
-	_ ->
-	    Request
-    end,
-    TopVia = sipheader:topvia(R#request.header),
+    TopVia = sipheader:topvia(Request#request.header),
     Branch = get_via_branch(TopVia),
     case Branch of
 	"z9hG4bK" ++ _RestOfBranch ->
-	    guarded_get_server_transaction_id_3261(R#request.method, TopVia);
+	    M = case Request#request.method of
+		    "ACK" ->
+			%% RFC3261 #17.2.3, bullet #3 - when looking for server
+			%% transaction for ACK, the method of the transaction is INVITE
+			"INVITE";
+		    Other ->
+			Other
+		end,
+	    guarded_get_server_transaction_id_3261(M, TopVia);
 	_ ->
-	    guarded_get_server_transaction_id_2543(R, TopVia)
+	    guarded_get_server_transaction_id_2543(Request, TopVia)
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: get_client_transaction_id(Response)
+%%           Response = response record()
+%% Descrip.: When we receive a response, we use this function to get
+%%           an Id which we look up in our transaction state database
+%%           to see if we have a client transaction handler that
+%%           should get this response. This is specified in RFC3261
+%%           #17.1.3 (Matching Responses to Client Transactions).
+%% Returns : Id = term() | error
 %%--------------------------------------------------------------------
 get_client_transaction_id(Response) ->
+    %% We do a catch around this since it includes much parsing of the
+    %% request, and parsing data received from the network is a fragile thing.
     case catch guarded_get_client_transaction_id(Response) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from get_client_transaction_id(~p) :~n~p", [Response, E]),
@@ -644,18 +661,39 @@ guarded_get_client_transaction_id(Response) when is_record(Response, response) -
     Header = Response#response.header,
     TopVia = sipheader:topvia(Header),
     Branch = get_via_branch(TopVia),
-    {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    {_, CSeqMethod} = sipheader:cseq(Header),
     {Branch, CSeqMethod}.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: get_server_transaction_ack_id_2543(Request)
+%%           Request = request record()
+%% Descrip.: When we receive an ACK that has no RFC3261 Via branch
+%%           parameter, we use this function to get an Id that we then
+%%           look up in our transaction state database to try and find
+%%           an existing server transaction that this ACK should be
+%%           delivered to. This is specified in RFC3261 #17.2.3
+%%           (Matching Requests to Server Transactions).
+%% Returns : Id = term() | error
+%% Note    : When using this function, you have to make sure the
+%%           To-tag of this ACK matches the To-tag of the response you
+%%           think this might be the ACK for!
+%%
+%% Note    : RFC3261 #17.2.3 relevant text :
+%%           The ACK request matches a transaction if the Request-
+%%           URI, From tag, Call-ID, CSeq number (not the method),
+%%	     and top Via header field match those of the INVITE
+%%           request which created the transaction, and the To tag of
+%%           the ACK matches the To tag of the response sent by the
+%%           server transaction.
+%%
+%% Note    : We are supposed to do the comparison of for example, the
+%%           URI, according to the matching rules for URIs but that
+%%           would require us to do a full table scan for every ACK.
+%%           XXX perhaps we should divide the Id into two parts - one
+%%           that is byte-by-byte and used as table index, and another
+%%           part for elements that require more exhaustive matching.
 %%--------------------------------------------------------------------
 get_server_transaction_ack_id_2543(Request) ->
-    % When using this function, you have to make sure the To-tag
-    % of this ACK matches the To-tag of the response you think this
-    % might be the ACK for! RFC3261 17.2.3
     case catch guarded_get_server_transaction_ack_id_2543(Request) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from get_server_transaction_ack_id_2543(~p) :~n~p", [Request, E]),
@@ -667,27 +705,19 @@ get_server_transaction_ack_id_2543(Request) ->
 guarded_get_server_transaction_ack_id_2543(Request) when is_record(Request, request) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
     TopVia = remove_branch(sipheader:topvia(Header)),
-    [CallID] = keylist:fetch("Call-Id", Header),
-    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    CallID = sipheader:callid(Header),
+    {CSeqNum, _} = sipheader:cseq(Header),
     FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
-    %% XXX ToTag is unused, are we supposed to use it or not?
-    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
-    {URI, FromTag, CallID, CSeqNum, TopVia}.
+    %% We are supposed to match only on the CSeq number, but the entry we are
+    %% matching against is an INVITE and that INVITE had it's Id generated with
+    %% the full CSeq. Make it possible to match the INVITE with this Id.
+    FakeCSeq = {CSeqNum, "INVITE"},
+    {URI, FromTag, CallID, FakeCSeq, TopVia}.
 
 remove_branch(Via) when is_record(Via, via) ->
     ParamDict = sipheader:param_to_dict(Via#via.param),
     NewDict = dict:erase("branch", ParamDict),
     Via#via{param=sipheader:dict_to_param(NewDict)}.
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
-get_server_transaction_id_using_3261_response_header(Header) ->
-    TopVia = topvia(Header),
-    {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    guarded_get_server_transaction_id_3261(CSeqMethod, TopVia).
 
 %%--------------------------------------------------------------------
 %% Function:
@@ -808,9 +838,9 @@ via_is_equal(A, B, []) when is_record(A, via), is_record(B, via) ->
     true.
 
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function:
 %% Descrip.: autotest callback
-%% Returns : 
+%% Returns :
 %%--------------------------------------------------------------------
 test() ->
 
@@ -831,7 +861,7 @@ test() ->
     %% test with several comma
     io:format("test: comma/1 - 4~n"),
     ["fo","ob","ar"] = comma("fo,ob,ar"),
-    
+
     %% test with quotes inside string
     io:format("test: comma/1 - 5~n"),
     ["foobar: \"this is a string\""] = comma("foobar: \"this is a string\""),
@@ -843,7 +873,7 @@ test() ->
     %% test with commas outside quoutes
     io:format("test: comma/1 - 7~n"),
     ["foobar:", "\",this is a string\""] = comma("foobar:, \",this is a string\""),
-    
+
     %% test with commas outside and inside quoutes
     io:format("test: comma/1 - 8~n"),
     ["foobar:", "\",this is a ,string\"", "foo"] = comma("foobar:, \",this is a ,string\",foo"),
@@ -869,19 +899,18 @@ test() ->
 
 %%--------------------------------------------------------------------
 %% Function: name_header(String)
-%%           String = string(), a sip URI string or sip URI inside "<" 
+%%           String = string(), a sip URI string or sip URI inside "<"
 %%           and ">" quotes, preceded by a displayname
-%% Descrip.: used to parse the contens in a to, from or contact header
+%% Descrip.: used to parse the contents in a To, From or Contact header
 %% Returns : {Displayname, URI}
 %%           Displayname = none | string()
 %%           URI = sipurl record()
 %%--------------------------------------------------------------------
 name_header(String) ->
-    %logger:log(debug, "n: ~p", [String]),
     Index1 = string:rchr(String, $<),
     case Index1 of
 	0 ->
-	    % No "<", just an URI?
+	    % No "<", just an URI? XXX Check that it is parseable?
 	    URI = sipurl:parse(String),
 	    {none, URI};
 	_ ->
@@ -893,13 +922,13 @@ name_header(String) ->
     end.
 
 parse_displayname(String) ->
-    LeftQuoteIndex = string:chr(String, $"),
+    LeftQuoteIndex = string:chr(String, $\"),
     case LeftQuoteIndex of
 	0 ->
 	    empty_displayname(string:strip(String));
 	_ ->
 	    TempString = string:substr(String, LeftQuoteIndex + 1),
-	    RightQuoteIndex = string:chr(TempString, $"),
+	    RightQuoteIndex = string:chr(TempString, $\"),
 	    empty_displayname(string:substr(TempString, 1, RightQuoteIndex - 1))
     end.
 
@@ -909,27 +938,63 @@ empty_displayname(Name) ->
     Name.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: guarded_get_server_transaction_id_3261(Method, TopVia)
+%%           Method = list()
+%%           TopVia = via record()
+%% Descrip.: Part of guarded_get_server_transaction_id(), called when
+%%           the top Via header is found to contain an RFC3261 branch
+%%           parameter. This is the straight forward case.
+%% Returns : Id = term()
 %%--------------------------------------------------------------------
-guarded_get_server_transaction_id_3261(Method, TopVia) ->
+guarded_get_server_transaction_id_3261(Method, TopVia) when is_list(Method), is_record(TopVia, via) ->
     Branch = get_via_branch_full(TopVia),
     SentBy = via_sentby(TopVia),
     {Branch, SentBy, Method}.
 
+%%--------------------------------------------------------------------
+%% Function: guarded_get_server_transaction_id_2543(Request, TopVia)
+%%           Request = request record()
+%%           TopVia = via record()
+%% Descrip.: Part of guarded_get_server_transaction_id(), called when
+%%           the top Via header does NOT contain an RFC3261 branch
+%%           parameter. Creates an Id based on RFC3261 #17.2.3
+%%           (Matching Requests to Server Transactions).
+%% Returns : Id = term() | is_2543_ack
+%% Note    : We could very well do the 2543 ack-id computation here,
+%%           but since the caller must do the To-tag verification for
+%%           such requests we just return is_2543_ack here to make
+%%           sure the caller does not miss this.
+%% Note    : RFC3261 #17.2.3 has different text for ACK (entirely
+%%           separate, see previous note), INVITE and "all other
+%%           methods". However, it seems to me that the instructions
+%%           for INVITE and "all other" are the same :
+%%
+%%           The INVITE request matches a transaction if the
+%%           Request-URI, To tag, From tag, Call-ID, CSeq, and top Via
+%%           header field match those of the INVITE request which
+%%           created the transaction.
+%%           ...
+%%           For all other request methods, a request is matched to a
+%%           transaction if the Request-URI, To tag, From tag,
+%%           Call-ID, CSeq (including the method), and top Via header
+%%           field match those of the request that created the
+%%           transaction.
+%%
+%%           Therefor, we just have non-ACK below.
+%%--------------------------------------------------------------------
 %%
 %% ACK
 %%
 guarded_get_server_transaction_id_2543(Request, _) when is_record(Request, request), Request#request.method == "ACK" ->
     is_2543_ack;
+
 %%
 %% non-ACK
 %%
 guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, request), is_record(TopVia, via) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
-    [CallID] = keylist:fetch("Call-Id", Header),
-    CSeq = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    CallID = sipheader:callid(Header),
+    CSeq = sipheader:cseq(Header),
     FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
     ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
     {URI, ToTag, FromTag, CallID, CSeq, TopVia}.
