@@ -1,13 +1,13 @@
 %% this module is used by contact_param.erl and url_param.erl
-%% to ensure that their entries are unique and can be accessed 
+%% to ensure that their entries are unique and can be accessed
 %% efficiently.
 %% The current implementation handles any kind of key-value pairs
 %% but, the current yxa code mostly uses string() and in some cases
-%% 'none' when there is no value to enter for a key-value pair. 
+%% 'none' when there is no value to enter for a key-value pair.
 %%
-%% Note: add is implemented in a simplistic manner, time consumption is 
-%% O(N) (N is the current size of the DB) - but considering the 
-%% small size of the parameter DBs created, this may actualy be an 
+%% Note: add is implemented in a simplistic manner, time consumption is
+%% O(N) (N is the current size of the DB) - but considering the
+%% small size of the parameter DBs created, this may actualy be an
 %% advantage because most other solutions are likely to have a greater
 %% overhead, making them slower for small DBs.
 %%
@@ -29,13 +29,13 @@
 	 %% retrieve
 	 to_key_val/1,
 	 find/2,
-	 
+
 	 %% update
 	 add/2,
 	 add/3,
 	 rm/2,
 
-	 %% XXX should there be test code ? contact_param.erl and 
+	 %% XXX should there be test code ? contact_param.erl and
 	 %% url_param.erl current do the testing
 	 test/0
 	]).
@@ -61,11 +61,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function:
 %%           KeyValList = list() of {Key, Val}
 %%           Key, Val = term()
-%% Descrip.: 
-%% Returns : 
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 new() ->
     [].
@@ -78,10 +78,10 @@ new(KeyValList) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
+%% Function:
+%% Descrip.:
 %% Returns : KeyValList = list() of {Key, Val}
-%%           Key, Val = term() 
+%%           Key, Val = term()
 %%--------------------------------------------------------------------
 to_key_val(DB) ->
     DB.
@@ -89,7 +89,7 @@ to_key_val(DB) ->
 %%--------------------------------------------------------------------
 %% Function: add(DB, Key, Value)
 %%           add(DB, Key)
-%%           DB    = 
+%%           DB    =
 %%           Key   = term()
 %%           Value = term()
 %% Descrip.: add new entry to DB.
@@ -128,25 +128,21 @@ find(DB, Key) ->
 %%           ContactParam = contact_param record()
 %%           Key          = term(), is treated as case insensetive
 %% Descrip.: find the Key-Val pair to remove from DB
-%% Returns : 
+%% Returns :
 %%--------------------------------------------------------------------
 rm(DB, Key) ->
     lists:keydelete(Key, 1, DB).
-    
 
 
-test() ->
-    
-    ok.
 
 %%====================================================================
 %% Behaviour functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 
 %%====================================================================
@@ -154,8 +150,13 @@ test() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 
+%%====================================================================
+%% Test functions
+%%====================================================================
+test() ->
+    ok.
