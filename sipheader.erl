@@ -224,9 +224,9 @@ cseq([String]) ->
 cseq_print({Seq, Method}) ->
     Seq ++ " " ++ Method.
 
-print_one_header({Name, Value}) ->
+print_one_header(Name, Value) ->
     Name ++ ": " ++ util:join(Value, ",").
 
 build_header(Header) ->
-    Lines = lists:map(fun print_one_header/1, Header),
+    Lines = keylist:map(fun print_one_header/2, Header),
     util:concat(Lines, "\r\n").

@@ -1,60 +1,62 @@
 -module(keylist).
--export([fetch/2, keys/1, from_list/1, append/2, prepend/2,
-	 delete/2, deletefirstvalue/2, set/3]).
+-export([fetch/2, from_list/1, append/2, prepend/2,
+	 delete/2, deletefirstvalue/2, set/3, copy/2, appendlist/2, map/2]).
 
-listfetch(Key, []) ->
-    [];
-listfetch(Key, [{Key, Item} | List]) ->
-    [Item | listfetch(Key, List)];
-listfetch(Key, [{_, _} | List]) ->
-    listfetch(Key, List).
+-record(keylist, {list}).
+-record(keyelem, {key, casekey, item}).
 
-fetch(Key, List) when list(Key) ->
-    fetchcase(httpd_util:to_lower(Key), List);
+to_lower(Key) when list(Key) ->
+    httpd_util:to_lower(Key);
+to_lower(Key) ->
+    Key.
+
+to_lower_list(Keys) ->
+    lists:map(fun(Key) ->
+		      to_lower(Key)
+	      end, Keys).
+
+fetch(Key, List) when record(List, keylist) ->
+    fetchcase(to_lower(Key), List#keylist.list);
 fetch(Key, List) ->
-    fetchcase(Key, List).
+    throw({error, {"Keylist not wellformed", List}}).
 
 fetchcase(Key, []) ->
     [];
-fetchcase(Key, [{Key, Item} | List]) ->
-    Item;
-fetchcase(Key, [{_, _} | List]) ->
-    fetchcase(Key, List).
+fetchcase(Key, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey == Key ->
+    Elem#keyelem.item;
+fetchcase(Key, [Elem | List]) when record(Elem, keyelem) ->
+    fetchcase(Key, List);
+fetchcase(Key, [Elem | List]) ->
+    throw({error, {"Keylist element not wellformed", Elem}}).
 
+empty() ->
+    #keylist{list=[]}.
 
-keys([]) ->
-    [];
-keys([{Key, Item1}, {Key, Item2} | List]) ->
-    keys([{Key, Item2} | List]);
-keys([{Key, _} | List]) ->
-    [Key | keys(List)].
+appendlist(Keylist, List) when record(Keylist, keylist) ->
+    Func = fun ({Key, Item}, KeylistAcc) ->
+		   append({Key, Item}, KeylistAcc)
+	   end,
+    lists:foldl(Func, Keylist, List).
 
 from_list(List) ->
-    Keys = keys(List),
-    Func = fun (Item) ->
-		   {Item, listfetch(Item, List)}
-	   end,
-    lists:map(Func, Keys).
+    appendlist(empty(), List).
 
-append({Key, Value}, List) ->
-    Casekey = httpd_util:to_lower(Key),
-    mod(Casekey, fun (Valuelist) ->
+append({Key, Value}, List) when record(List, keylist) ->
+    mod(Key, fun (Valuelist) ->
 			 lists:append(Valuelist, [Value])
 		 end, List).
 
-prepend({Key, Value}, List) ->
-    Casekey = httpd_util:to_lower(Key),
-    mod(Casekey, fun (Valuelist) ->
+prepend({Key, Value}, List) when record(List, keylist) ->
+    mod(Key, fun (Valuelist) ->
 			 lists:append([Value], Valuelist)
 		 end, List).
 
-delete(Key, List) ->
-    Casekey = httpd_util:to_lower(Key),
-    del(Casekey, List).
+delete(Key, List) when record(List, keylist) ->
+    Casekey = to_lower(Key),
+    #keylist{list=del(Casekey, List#keylist.list)}.
 
-deletefirstvalue(Key, List) ->
-    Casekey = httpd_util:to_lower(Key),
-    mod(Casekey, fun (Valuelist) ->
+deletefirstvalue(Key, List) when record(List, keylist) ->
+    mod(Key, fun (Valuelist) ->
 			 case Valuelist of
 			     [Item | Rest] ->
 				 Rest;
@@ -63,22 +65,46 @@ deletefirstvalue(Key, List) ->
 			 end
 		 end, List).
 
-set(Key, Valuelist, List) ->
-    Casekey = httpd_util:to_lower(Key),
-    mod(Casekey, fun (_) ->
+set(Key, Valuelist, List) when record(List, keylist) ->
+    mod(Key, fun (_) ->
 			 Valuelist
 		 end, List).
 
-mod(Key, Func, []) ->
-    [{Key, Func([])}];
-mod(Key, Func, [{Key, Valuelist} | List]) ->
-    [{Key, Func(Valuelist)} | List];
-mod(Key, Func, [{Key2, Valuelist} | List]) ->
-    [{Key2, Valuelist} | mod(Key, Func, List)].
+mod(Key, Func, List) when record(List, keylist) ->
+    Casekey = to_lower(Key),
+    #keylist{list=modcase(Key, Casekey, Func, List#keylist.list)}.
+
+modcase(Key, Casekey, Func, []) ->
+    [#keyelem{key=Key,
+	      casekey=Casekey,
+	      item=Func([])}];
+modcase(Key, Casekey, Func, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey == Casekey ->
+    [Elem#keyelem{item=Func(Elem#keyelem.item)} | List];
+modcase(Key, Casekey, Func, [Elem | List]) when record(Elem, keyelem) ->
+    [Elem | modcase(Key, Casekey, Func, List)].
 
 del(Key, []) ->
     [];
-del(Key, [{Key, Valuelist} | List]) ->
+del(Key, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey == Key ->
     List;
-del(Key, [{Key2, Valuelist} | List]) ->
-    [{Key2, Valuelist} | del(Key, List)].
+del(Key, [Elem | List]) when record(Elem, keyelem) ->
+    [Elem | del(Key, List)].
+
+filter(Func, Keylist) when record(Keylist, keylist) ->
+    Pred = fun(Elem) ->
+		   Func(Elem#keyelem.casekey, Elem#keyelem.item)
+	   end,
+    #keylist{list=lists:filter(Pred, Keylist#keylist.list)}.
+
+copy(Keylist, Keys) when record(Keylist, keylist) ->
+    Casekeys = to_lower_list(Keys),
+    Func = fun(Key, Item) ->
+		   lists:member(Key, Casekeys)
+	   end,
+    filter(Func, Keylist).
+
+map(Func, Keylist) when record(Keylist, keylist) ->
+    Pred = fun(Elem) ->
+		   Func(Elem#keyelem.key, Elem#keyelem.item)
+	   end,
+    lists:map(Pred, Keylist#keylist.list).

@@ -18,12 +18,13 @@ get_if([]) ->
 
 get_if([A | R]) ->
     {ok, B} = inet:ifget(A, [addr, flags]),
-    case lists:member(loopback,keylist:fetch(flags, B)) of
+    {value, {flags, Flags}} = lists:keysearch(flags, 1, B),
+    case lists:member(loopback,Flags) of
 	true ->
 	    get_if(R);
 	false ->
-	    Addr = makeip(keylist:fetch(addr, B)),
-	    [Addr | get_if(R)]
+	    {value, {addr, Addr}} = lists:keysearch(addr, 1, B),
+	    [makeip(Addr) | get_if(R)]
     end.
 
 get_iplist() ->

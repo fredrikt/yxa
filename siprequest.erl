@@ -174,15 +174,11 @@ process_register_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
 	    none
     end,
     
-    FetchedContactList = fetch_contacts(Phone),
-    
     send_response(Socket, 200, "OK",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)},
-		   {"Contact", FetchedContactList}], "").
+		  keylist:set("Contact", fetch_contacts(Phone),
+			      keylist:copy(Header, ["Via", "From", "To",
+						    "Call-ID", "CSeq"])),
+		  "").
 
 check_valid_register_request(Header) ->
     Require = keylist:fetch("Require", Header),
@@ -293,76 +289,63 @@ parse_register_expire(Header, Contact) ->
 	    end
     end.
 
+standardcopy(Header, ExtraHeaders) ->
+    keylist:appendlist(keylist:copy(Header,
+				    ["Via", "From", "To",
+				     "Call-ID", "Cseq"]),
+		       ExtraHeaders).
+
 send_auth_req(Header, Socket, Auth, Stale) ->
+    ExtraHeaders = [{"WWW-Authenticate",
+		     sipheader:auth_print(Auth, Stale)}],
     send_response(Socket, 401, "Authentication Required",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)},
-		   {"WWW-Authenticate", sipheader:auth_print(Auth, Stale)}], "").
+		  standardcopy(Header, ExtraHeaders),
+		  "").
 
 send_proxyauth_req(Header, Socket, Auth, Stale) ->
+    ExtraHeaders = [{"Proxy-Authenticate",
+		     sipheader:auth_print(Auth, Stale)}],
     send_response(Socket, 407, "Proxy Authentication Required",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)},
-		   {"Proxy-Authenticate", sipheader:auth_print(Auth, Stale)}], "").
+		  standardcopy(Header, ExtraHeaders),
+		  "").
 
 send_redirect(Location, Header, Socket) ->
     Contact = [{none, Location}],
+    ExtraHeaders = [{"Contact",
+		     sipheader:contact_print(Contact)}],
     send_response(Socket, 302, "Moved Temporarily",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)},
-		   {"Contact", sipheader:contact_print(Contact)}], "").
+		  standardcopy(Header, ExtraHeaders),
+		  "").
+		   
 
 send_notfound(Header, Socket) ->
     send_response(Socket, 404, "Not found",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)}], "").
+		  standardcopy(Header, []),
+		  "").
 
 send_notavail(Header, Socket) ->
+    ExtraHeaders = [{"Retry-After", "180"}],
     send_response(Socket, 480, "Temporarily unavailable",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)},
-		   {"Retry-After", ["180"]}], "").
+		  standardcopy(Header, ExtraHeaders),
+		  "").
 
 send_answer(Header, Socket, Body) ->
+    ExtraHeaders = [{"Content-Type", "application/sdp"},
+		    {"Content-Length",
+		     integer_to_list(length(Body))}],
     send_response(Socket, 200, "OK",
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)},
-		   {"Content-Type", ["application/sdp"]},
-		   {"Content-Length", [integer_to_list(length(Body))]}], Body).
+		  standardcopy(Header, ExtraHeaders),
+		  Body).
 
 send_result(Header, Socket, Body, Code, Description) ->
     send_response(Socket, Code, Description,
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)}], Body).
+		  standardcopy(Header, []),
+		  Body).
 
 send_result(Header, Socket, Body, Code, Description, ExtraHeaders) ->
     send_response(Socket, Code, Description,
-		  [{"via", keylist:fetch("Via", Header)},
-		   {"From", keylist:fetch("From", Header)},
-		   {"To", keylist:fetch("To", Header)},
-		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)} | ExtraHeaders], Body).
+		  standardcopy(Header, ExtraHeaders),
+		  Body).
 
 send_proxy_response(Socket, Status, Reason, Header, Body) ->
     [Self | Via] = sipheader:via(keylist:fetch("Via", Header)),

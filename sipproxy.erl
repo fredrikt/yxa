@@ -191,11 +191,11 @@ process_branch_cancel(Socket, URI, Branch, Header, Body) ->
 % direct it.
 process_branch_ack(Socket, URI, Branch, Header, Body, AckHeader, Status, Reason) ->
     {CSeqID, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", AckHeader)),
-    SendHeader = [{"via", keylist:fetch("Via", AckHeader)},
-		  {"From", keylist:fetch("From", AckHeader)},
-		  {"To", keylist:fetch("To", AckHeader)},
-		  {"Call-ID", keylist:fetch("Call-ID", AckHeader)},
-		  {"CSeq", [sipheader:cseq_print({CSeqID, "ACK"})]}],
+    ExtraHeaders = [{"CSeq", sipheader:cseq_print({CSeqID, "ACK"})}], 
+    SendHeader = keylist:appendlist(keylist:copy(Header,
+						 ["Via", "From", "To",
+						  "Call-ID"]),
+				    ExtraHeaders),
     process_request("ACK", Socket, none, URI, Branch, SendHeader, Body).
 
 % This branch should answer something.
