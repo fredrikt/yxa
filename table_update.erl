@@ -39,12 +39,13 @@
 %%--------------------------------------------------------------------
 %% Function: 
 %% Descrip.: update databases
-%% Returns : 
+%% Returns : ok
 %%--------------------------------------------------------------------
 update() ->
     logger:log(debug, "Checking if any mnesia tables needs updating"),
     phone(),
-    regexproute().
+    regexproute(),
+    ok.   
 
 %%--------------------------------------------------------------------
 %% Function: 
