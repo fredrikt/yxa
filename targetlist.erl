@@ -92,10 +92,11 @@ update_target(Ref, NewT, [H | T], TargetList) when is_record(H, target) ->
     lists:append([H], update_target(Ref, NewT, T, TargetList)).
 
 debugfriendly(TargetList) when is_record(TargetList, targetlist) ->
-    debugfriendly(TargetList#targetlist.list);
-debugfriendly([]) ->
-    [];
-debugfriendly([H | T]) when is_record(H, target) ->
+    debugfriendly2(TargetList#targetlist.list, []).
+
+debugfriendly2([], Res) ->
+    lists:reverse(Res);
+debugfriendly2([H | T], Res) when is_record(H, target) ->
     Request = H#target.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     RespStr = case H#target.endresult of
@@ -106,7 +107,8 @@ debugfriendly([H | T]) when is_record(H, target) ->
     end,
     Str = lists:concat(["pid=", pid_to_list(H#target.pid), "branch=", H#target.branch, ", request=", Method, " ",
 		sipurl:print(URI), ", ", RespStr, ", cancelled=", H#target.cancelled, ", state=" , H#target.state]),
-    lists:append([lists:flatten(Str)], debugfriendly(T)).
+    debugfriendly2(T, [binary_to_list(list_to_binary(Str)) | Res]).
+
 get_using_branch(Branch, TargetList) when is_record(TargetList, targetlist) ->
     get_using_branch(Branch, TargetList#targetlist.list);
 
