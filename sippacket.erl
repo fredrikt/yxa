@@ -57,7 +57,6 @@ parse(Packet, Origin) ->
     end.
 
 parseheader(Header) ->
-    % XXX handle compact form of headers. how?
     [Request | Lines] = string:tokens(Header, "\n"),
     Parseheader = fun(Line) ->
 			  Index = string:chr(Line, $:),
@@ -73,6 +72,7 @@ parseheader(Header) ->
 split_header_value(_, []) ->
     [];
 split_header_value(LCname, Value) ->
+    % Luckily, none of these headers have a compact form.
     case util:casegrep(LCname, ["www-authenticate", "authorization",
 				"proxy-authenticate", "proxy-authorization",
 				"date"]) of
