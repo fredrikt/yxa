@@ -110,7 +110,7 @@ start2(Proto, Port, InetModule, SocketModule, Options) ->
 		    {get_defaultaddr(Proto), 0}
 	    end,
     State = #state{socketmodule=SocketModule, inetmodule=InetModule, proto=Proto, port=Port, socket=TCPsocket, local=Local},
-    ListenerPid = sipserver:safe_spawn(fun accept_loop_start/1, [State]),
+    ListenerPid = sipserver:safe_spawn_fun(fun accept_loop_start/1, [State]),
     {ok, Local, ListenerPid}.
 
 get_defaultaddr(tcp) -> "0.0.0.0";
@@ -178,7 +178,7 @@ accept_loop(State) when record(State, state) ->
 %%           Proto  = term() (atom(), tcp | tcp6 | tls | tls6)
 %%           Socket = term()
 %%           Local  = term() ({Host, Port} tuple())
-%%           Remote = term() ({Host, Port} tuple()) 
+%%           Remote = term() ({Host, Port} tuple())
 %% Descrip.: Someone has just connected to our listening socket,
 %%           resulting in the connection socket Socket. Start a
 %%           tcp_connection process to handle this Socket, and in
