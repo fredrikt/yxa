@@ -94,7 +94,19 @@ print_one_phone(Number, Flags, Class, Expire, Address) ->
      "</td><td>",
      atom_to_list(Class),
      "</td><td>",
+     case util:timestamp() of
+	 Time when Time > Expire ->
+	     "<strong>";
+	 _ ->
+	     ""
+     end,
      util:sec_to_date(Expire),
+     case util:timestamp() of
+	 Time when Time > Expire ->
+	     "</strong>";
+	 _ ->
+	     ""
+     end,
      "</td><td>",
      case Address of
 	 {_, _, _, _, _} when list(Number) ->
