@@ -1,3 +1,3 @@
 -record(socketlist, {list}).
--record(socketlistelem, {ref, id, pid, local, remote, expire}).
+-record(socketlistelem, {ref, id, pid, local, remote, sipsocket, expire}).
 
