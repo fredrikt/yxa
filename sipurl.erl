@@ -58,6 +58,7 @@
 	 print/1,
 	 print_hostport/2,
 	 url_is_equal/2,
+	 url_is_equal/3,
 	 parse_url_with_default_protocol/2,
 
 	 unescape_str/1,
@@ -381,27 +382,78 @@ escape_str(Str,IsNonEscapeChar) ->
 
 %% generate a escape hex encoding for a char
 escape(Char) ->
-    [$\% | hex:to_hex_string(Char)].
+    [37 | hex:to_hex_string(Char)].	%% 37 is '%'
+    
+%%--------------------------------------------------------------------
+%% Function: url_is_equal(A, B, Compare)
+%%           A, B = sipurl record()
+%%           Compare = list() of atom(), what to compare. atom() may
+%%                     be proto|user|pass|host|port|param
+%% Descrip.: Return 'true' if A = B according to RFC 3261 chapter
+%%           19.1.4, in the aspects you list. Use url_is_equal/2 to
+%%           do a full compare.
+%% Returns : true | false
+%% Note    : assume that A and B are properly parsed sipurl records
+%%           with unencoded chars i.e. no hex encoded chars
+%%--------------------------------------------------------------------
+url_is_equal(A, B, []) when is_record(A, sipurl), is_record(B, sipurl) ->
+    true;
+%% proto
+url_is_equal(#sipurl{proto=Proto}=A, #sipurl{proto=Proto}=B, [proto | T]) ->
+    url_is_equal(A, B, T);
+url_is_equal(A, B, [proto | _T]) when is_record(A, sipurl), is_record(B, sipurl) ->
+    false;
+%% user
+url_is_equal(#sipurl{user=User}=A, #sipurl{user=User}=B, [user | T]) ->
+    url_is_equal(A, B, T);
+url_is_equal(A, B, [user | _T]) when is_record(A, sipurl), is_record(B, sipurl) ->
+    false;
+%% pass
+url_is_equal(#sipurl{user=User}=A, #sipurl{user=User}=B, [pass | T]) ->
+    url_is_equal(A, B, T);
+url_is_equal(A, B, [pass | _T]) when is_record(A, sipurl), is_record(B, sipurl) ->
+    false;
+%% host
+url_is_equal(#sipurl{host=Host}=A, #sipurl{host=Host}=B, [host | T]) ->
+    url_is_equal(A, B, T);
+url_is_equal(A, B, [host | _T]) when is_record(A, sipurl), is_record(B, sipurl) ->
+    false;
+%% port
+url_is_equal(A, B, [port | T]) when is_record(A, sipurl), is_record(B, sipurl) ->
+    Bp = get_port(B),
+    case get_port(A) of
+	Bp ->
+	    url_is_equal(A, B, T);
+	_ ->
+	    false
+    end;
+url_is_equal(A, B, [param | T]) when is_record(A, sipurl), is_record(B, sipurl) ->
+    case url_is_equal_uri_parameter(A, B) of
+	true ->
+	    url_is_equal(A, B, T);
+	false ->
+	    false
+    end.
 
-     %%--------------------------------------------------------------------
-     %% Function: url_is_equal(A,B)
-     %%           A, B = sipurl record()
-     %% Descrip.: return 'true' if A = B according to RFC 3261 chapter
-     %%           19.1.4
-     %% Returns : true | false
-     %% Note    : assume that A and B are properly parsed sipurl records
-     %%           with unencoded chars i.e. no hex encoded chars
-     %%--------------------------------------------------------------------
-     url_is_equal(A, B) when record(A, sipurl), record(B, sipurl) ->
-	    %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
-	    %% o  A SIP and SIPS URI are never equivalent.
-	    %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-	    case A#sipurl.proto == B#sipurl.proto of
-		false ->
-		    false;
-		true ->
-		    url_is_equal_user_pass_host_port(A, B)
-	    end.
+%%--------------------------------------------------------------------
+%% Function: url_is_equal(A, B)
+%%           A, B = sipurl record()
+%% Descrip.: return 'true' if A = B according to RFC 3261 chapter
+%%           19.1.4
+%% Returns : true | false
+%% Note    : assume that A and B are properly parsed sipurl records
+%%           with unencoded chars i.e. no hex encoded chars
+%%--------------------------------------------------------------------
+url_is_equal(A, B) when record(A, sipurl), record(B, sipurl) ->
+    %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    %% o  A SIP and SIPS URI are never equivalent.
+    %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    case A#sipurl.proto == B#sipurl.proto of
+	false ->
+	    false;
+	true ->
+	    url_is_equal_user_pass_host_port(A, B)
+    end.
 
 url_is_equal_user_pass_host_port(A, B) ->
     %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -472,8 +524,8 @@ url_is_equal_uri_parameter(A, B) ->
     LB = url_param:to_list(B#sipurl.param_pairs),
 
     %% set vs ordset:
-    %% ordsets is and retruns a sorted list, sets does _NOT_.
-    %% ordsets should be better for for union, subtract and
+    %% ordsets is and returns a sorted list, sets does _NOT_.
+    %% ordsets should be better for union, subtract and
     %% intersection functions and as we do few insertions (only
     %% lists:usort/1 is run on the input to ordsets:from_list/1) there
     %% should be litle need for sets.
@@ -765,9 +817,9 @@ test() ->
     %% check that "name=val;;name=val" doesn't work
     io:format("test: is_parameters/1 - 8~n"),
     false = is_parameters("bar=Zo%3Dp%3dg;vaF=ghjT;;;BOF=tOp"),
-    %% check that quoted parameters work
+    %% check that quoted parameters DON'T work, sipurl BNF does not allow quoted URI parameters
     io:format("test: is_parameters/1 - 9~n"),
-    true = is_parameters("foo=\"bar\""),
+    false = is_parameters("foo=\"bar\""),
 
     %% test new
     %%--------------------------------------------------------------------
@@ -958,16 +1010,6 @@ test() ->
 			},
     io:format("test: parse/1 - 9~n"),
     ParsedUrl9 = parse("sip:%3Alice:%3A@[1:1:1:1:2:2:2:2];transp%3b%3Bort=TCP"),
-
-    %% Parse url with quoted comma-separated lists as parameters
-    ParsedUrl10 = #sipurl{proto = "sip",
-			 user = "alice", pass = none,
-			 host = "example.org", port = none,
-			 param = ["foo=\"bar, baZ\""],
-			 param_pairs = url_param:to_norm(["foo=\"bar, baZ\""])
-			},
-    io:format("test: parse/1 - 9~n"),
-    ParsedUrl10 = parse("sip:alice@example.org;foo=\"bar, baZ\""),
 
     %% print(URL)
     %%--------------------------------------------------------------------
