@@ -237,7 +237,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
                        State;
                    L when record(L, transactionstatelist) ->
 		       NewL = transactionstatelist:delete_using_pid(Pid, State#state.tstatelist),
-                       logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n(new list is ~p entry(s)",
+                       logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n(new list is ~p entry(s))",
 				  [transactionstatelist:get_length(L), transactionstatelist:debugfriendly(L), transactionstatelist:get_length(NewL)]),
 		       %%logger:log(debug, "Transaction layer: Extra debug: Transactionlist is now :~n~p", [transactionstatelist:debugfriendly(NewL)]),
 		       State#state{tstatelist=NewL};
