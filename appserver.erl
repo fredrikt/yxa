@@ -75,7 +75,7 @@ init() ->
 %%
 %% REGISTER
 %%
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "REGISTER" ->
+request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     logger:log(normal, "Appserver: ~s Method not applicable here -> 403 Forbidden", [LogStr]),
     transactionlayer:send_response_request(Request, 403, "Forbidden"),
     ok;
@@ -83,7 +83,7 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 %%
 %% ACK
 %%
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "ACK" ->
+request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(debug, "Appserver: ~s -> no transaction state, unknown user, ignoring",
@@ -91,14 +91,14 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:send_proxy_request(none, Request, Request#request.uri, [])
+	    transportlayer:stateless_proxy_request(Request)
     end, 
     ok;
 
 %%
 %% CANCEL
 %%
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "CANCEL" ->
+request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, " ++
@@ -107,13 +107,13 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:send_proxy_request(none, Request, Request#request.uri, [])
+	    transportlayer:stateless_proxy_request(Request)
     end,
     ok;
 
 %%
 %% Anything but REGISTER, ACK and CANCEL
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
+request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
     Header = case sipserver:get_env(record_route, false) of
 		 true -> siprequest:add_record_route(Request#request.header, Origin);
 		 false -> Request#request.header
@@ -136,8 +136,7 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 %% Descrip.: Yxa applications must export an response/3 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
-
+response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
     %% RFC 3261 16.7 says we MUST act like a stateless proxy when no
     %% transaction can be found
     {Status, Reason} = {Response#response.status, Response#response.reason},
@@ -161,7 +160,7 @@ response(Response, Origin, LogStr) when record(Response, response), record(Origi
 %%           transaction does not exist.
 %% Returns : Does not matter.
 %%--------------------------------------------------------------------
-request_to_me(Request, LogTag) when is_record(Request, request), Request#request.method == "OPTIONS" ->
+request_to_me(#request{method="OPTIONS"}=Request, LogTag) ->
     logger:log(normal, "~s: appserver: OPTIONS to me -> 200 OK", [LogTag]),
     logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
 	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
@@ -183,8 +182,7 @@ request_to_me(Request, LogTag) when is_record(Request, request) ->
 %%           what actions to perform for the request.
 %% Returns : void() | throw({siperror, ...})
 %%--------------------------------------------------------------------
-create_session(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
-    %% create header suitable for answering the incoming request
+create_session(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
     URI = Request#request.uri,
     case keylist:fetch('route', Request#request.header) of
 	[] ->
@@ -195,15 +193,13 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 			    logger:log(normal, "Appserver: ~s -> 404 Not Found (no actions, unknown user)",
 				       [LogStr]),
 			    transactionlayer:send_response_request(Request, 404, "Not Found");
-			SIPuser ->
+			SIPuser when is_list(SIPuser) ->
 			    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
 				       [LogStr, SIPuser]),
-			    THandler = transactionlayer:get_handler_for_request(Request),
-			    transportlayer:send_proxy_request(THandler, Request, URI, [])
+			    transportlayer:stateless_proxy_request(Request)
 		    end;
 		{Users, Actions} ->
 		    logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
-		    %%fork_actions(BranchBase, CallHandler, Request, Actions)
 		    %% XXX do we need to trap the EXIT from this process inside appserver_glue?
 		    case appserver_glue:start(Request, Actions) of
 			{ok, P} when is_pid(P) ->
@@ -216,8 +212,7 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 	    logger:log(debug, "Appserver: Request ~s ~s has Route header. Forwarding statelessly.",
 		       [Request#request.method, sipurl:print(URI)]),
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
-	    THandler = transactionlayer:get_handler_for_request(Request),
-	    transportlayer:send_proxy_request(THandler, Request, URI, [])
+	    transportlayer:stateless_proxy_request(Request)
     end.
 
 %%--------------------------------------------------------------------
@@ -230,16 +225,16 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 %%           UserList    = list() of SIP usernames (strings)
 %%           ActionsList = list() of sipproxy_action record()
 %%--------------------------------------------------------------------
-get_actions(URI) when record(URI, sipurl) ->
+get_actions(URI) when is_record(URI, sipurl) ->
     LookupURL = sipurl:set([{pass, none}, {port, none}, {param, []}], URI),
     case local:get_users_for_url(LookupURL) of
 	nomatch ->
 	    nomatch;
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    logger:log(debug, "Appserver: Found user(s) ~p for URI ~s", [Users, sipurl:print(LookupURL)]),
 	    case fetch_actions_for_users(Users) of
 		[] -> nomatch;
-		Actions when list(Actions) ->
+		Actions when is_list(Actions) ->
 		    WaitAction = #sipproxy_action{action=wait, timeout=sipserver:get_env(appserver_call_timeout, 40)},
 		    {Users, lists:append(Actions, [WaitAction])}
 	    end;
@@ -282,7 +277,7 @@ fetch_actions_for_users(Users) ->
 	{aborted, {no_exists, forward}} ->
 	    %% ehh? better let the Unknown thing below handle this?
 	    Actions;
-	Forwards when list(Forwards) ->
+	Forwards when is_list(Forwards) ->
 	    forward_call_actions(Forwards, Actions);
 	Unknown ->
 	    logger:log(error, "Appserver: Unexpected result from get_forwards_for_user(~p) in fetch_actions_for_users : ~p",
@@ -294,11 +289,11 @@ fetch_users_locations_as_actions(Users) ->
     case local:get_locations_for_users(Users) of
 	nomatch ->
 	    [];
-	Locations when list(Locations) ->
+	Locations when is_list(Locations) ->
 	    locations_to_actions(Locations);
 	Unknown ->
-	    logger:log(error, "Appserver: Unexpected result from get_locations_for_users(~p) in fetch_users_locations_as_actions : ~p",
-		       [Users, Unknown]),
+	    logger:log(error, "Appserver: Unexpected result from get_locations_for_users(~p) in "
+		       "fetch_users_locations_as_actions : ~p", [Users, Unknown]),
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
@@ -306,11 +301,21 @@ locations_to_actions(L) ->
     locations_to_actions2(L, []).
 
 locations_to_actions2([], Res) ->
-    Res;
-locations_to_actions2([{Location, _Flags, _Class, _Expire} | T], Res) when record(Location, sipurl) ->
+    lists:reverse(Res);
+
+locations_to_actions2([{Location, _Flags, _Class, _Expire} | T], Res) when is_record(Location, sipurl) ->
     Timeout = sipserver:get_env(appserver_call_timeout, 40),
     CallAction = #sipproxy_action{action=call, requri=Location, timeout=Timeout},
-    locations_to_actions2(T, lists:append([CallAction], Res));
+    locations_to_actions2(T, [CallAction | Res]);
+
+locations_to_actions2([{URL, Timeout} | T], Res) when is_record(URL, sipurl), is_integer(Timeout) ->
+    CallAction = #sipproxy_action{action=call, requri=URL, timeout=Timeout},
+    locations_to_actions2(T, [CallAction | Res]);
+
+locations_to_actions2([{wait, Timeout} | T], Res) ->
+    CallAction = #sipproxy_action{action=wait, timeout=Timeout},
+    locations_to_actions2(T, [CallAction | Res]);
+
 locations_to_actions2([H | T], Res) ->
     logger:log(error, "appserver: Illegal location in locations_to_actions2: ~p", [H]),
     locations_to_actions2(T, Res).
@@ -328,7 +333,7 @@ locations_to_actions2([H | T], Res) ->
 %%           and executes sipproxy:start() in this new thread.
 %% Returns : void(), does not matter.
 %%--------------------------------------------------------------------
-start_actions(BranchBase, GluePid, OrigRequest, Actions) when record(OrigRequest, request) ->
+start_actions(BranchBase, GluePid, OrigRequest, Actions) when is_record(OrigRequest, request) ->
     {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
     Timeout = 32,
     %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals GluePid
