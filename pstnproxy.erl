@@ -40,7 +40,7 @@ request2(Method, Phone, Header, Body, Socket) ->
     Route = "<" ++ sipurl:print({Phone, none, "sip-pstn.kth.se", "5060",
 				 ["maddr=" ++ siphost:myip()]}) ++ ">",
     Newheaders = keylist:append({"Record-route", Route}, Header),
-    sipauth:check_and_send_auth(Newheaders, Socket, Fromphone, Phone,
+    sipauth:check_and_send_auth(Header, Newheaders, Socket, Fromphone, Phone,
 				{siprequest, send_proxy_request},
 				{Method, Newlocation, Body, []},
 				Method, Classdefs).

@@ -1,5 +1,5 @@
 -module(sipauth).
--export([check_and_send_auth/8, get_response/5,
+-export([check_and_send_auth/9, get_response/5,
 	 get_nonce/1, get_user_verified/2, check_and_send_relay/5,
 	 get_challenge/0,
 	 can_register/2]).
@@ -85,7 +85,8 @@ get_user_verified(Header, Method, Authheader) ->
 			     User, Password),
     if
 	Response /= Response2 ->
-	    logger:log(normal, "Response ~p /= Response2 ~p", [Response, Response2]),
+	    %logger:log(normal, "Response ~p /= Response2 ~p", [Response, Response2]),
+	    logger:log(normal, "Authorization failed for user ~s", [User]),
 	    false;
 	Nonce /= Nonce2 ->
 	    logger:log(normal, "Nonce ~p /= ~p", [Nonce, Nonce2]),
@@ -141,26 +142,42 @@ can_use_name(User, Number) ->
 can_register(Header, Number) ->
     can_use_name(get_user_verified(Header, "REGISTER"), Number).
 
-check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs) ->
+check_and_send_auth(OrigHeader, Header, Socket, Phone, Tophone, Func, Arg, "ACK", Classdefs) ->
+    logger:log(debug, "Auth: Always accepting ACK"),
+    apply(Func, [Header, Socket, Arg]);
+check_and_send_auth(OrigHeader, Header, Socket, Phone, Tophone, Func, Arg, "CANCEL", Classdefs) ->
+    logger:log(debug, "Auth: Always accepting CANCEL"),
+    apply(Func, [Header, Socket, Arg]);
+check_and_send_auth(OrigHeader, Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs) ->
     Class = get_class(Tophone, Classdefs),
     Classlist = sipserver:get_env(sipauth_unauth_classlist, []),
     Classallowed = lists:member(Class, Classlist),
     if
 	Classallowed == true ->
+	    logger:log(debug, "Auth: ~s is allowed to call ~s (class ~s) without challenge", [Phone, Tophone, Class]),
 	    apply(Func, [Header, Socket, Arg]);
 	true ->
 	    case check_auth(Header, Method, Phone, Tophone, Classdefs) of
 		true -> 
+		    logger:log(debug, "Auth: Authenticated user ~s is allowed dst ~s (class ~s)", [Phone, Tophone, Class]),
 		    apply(Func, [Header, Socket, Arg]);
 		stale ->
-		    siprequest:send_proxyauth_req(Header, Socket,
-					     get_challenge(), true);
+		    logger:log(debug, "Auth: User ~s must authenticate for dst ~s (class ~s)", [Phone, Tophone, Class]),
+		    siprequest:send_proxyauth_req(OrigHeader, Socket,
+						  get_challenge(), true);
 		false ->
-		    siprequest:send_proxyauth_req(Header, Socket,
-					     get_challenge(), false)
+		    logger:log(debug, "Auth: User ~s must authenticate for dst ~s (class ~s)", [Phone, Tophone, Class]),
+		    siprequest:send_proxyauth_req(OrigHeader, Socket,
+						  get_challenge(), false)
 	    end
     end.
 
+check_and_send_relay(Header, Socket, Func, Arg, "ACK") ->
+    logger:log(debug, "Auth: Always accepting ACK"),
+    apply(Func, [Header, Socket, Arg]);
+check_and_send_relay(Header, Socket, Func, Arg, "CANCEL") ->
+    logger:log(debug, "Auth: Always accepting CANCEL"),
+    apply(Func, [Header, Socket, Arg]);
 check_and_send_relay(Header, Socket, Func, Arg, Method) ->
     case get_user_verified_proxy(Header, Method) of
 	false ->
