@@ -40,7 +40,7 @@ parse_packet(Packet, Origin) ->
 parse(Packet, Origin) ->
     case parse_packet(Packet, Origin) of
 	{keepalive} ->
-	    {drop};
+	    keepalive;
 	{Header, Body} ->
 	    {Request, Headerkeylist} = parseheader(Header),
 	    case parserequest(Request) of
@@ -51,7 +51,9 @@ parse(Packet, Origin) ->
 		    % RFC 3261 19.1.5 Forming Requests from a URI
 		    request(Parsed, Headerkeylist, Body);
 		{response, Parsed} ->
-		    response(Parsed, Headerkeylist, Body)
+		    response(Parsed, Headerkeylist, Body);
+		none ->
+		    {siperror, 400, "Completely unparseable request/response"}
 	    end
     end.
 
@@ -100,7 +102,7 @@ parserequest(Request) ->
 				  left),
 	    {response, {Status, Reason}};
 	[] ->
-	    {broken};
+	    none;
 	Method ->
 	    Index2 = string:rchr(Rest, 32),
 	    URI = string:substr(Rest, 1, Index2 - 1),
