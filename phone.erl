@@ -219,7 +219,7 @@ insert_user_or_password(User, Password) ->
 %% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
 list_phones() ->
-    db_util:tab_to_list(phones).
+    db_util:tab_to_list(phone).
 
 list_users() ->
     db_util:tab_to_list(user).
