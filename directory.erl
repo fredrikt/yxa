@@ -83,7 +83,7 @@ init([Server]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call({simple_search, Server, Type, In, Attribute}, From, State) ->
+handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
     case State#state.server of
 	Server ->
 	    {NewHandle, Res} = ldapsearch_wrapper(simple, [Type, In, Attribute], State),
@@ -94,7 +94,7 @@ handle_call({simple_search, Server, Type, In, Attribute}, From, State) ->
 	    {reply, {error, "Different LDAP server"}, State, ?TIMEOUT}
     end;
 
-handle_call({search, Server, Type, In, Attributes}, From, State) ->
+handle_call({search, Server, Type, In, Attributes}, _From, State) ->
     case State#state.server of
 	Server ->
 	    {NewHandle, Res} = ldapsearch_wrapper(full, [Type, In, Attributes], State),
@@ -165,7 +165,7 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -251,14 +251,14 @@ exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) when record(Handle, ldaphandle
 		       [Handle, Type, In, Unknown]),
 	    error
     end;
-exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) ->
+exec_ldapsearch(_Mode, Handle, [Type, In, _AttrIn]) ->
     logger:log(error, "LDAP client: Returning 'error' on query ~p ~p because handle '~p' is not valid", [Type, In, Handle]),
     error.
 
 get_valuelist(L, Attribute) ->
     get_valuelist2(L, Attribute, []).
     
-get_valuelist2([], Attribute, Res) ->
+get_valuelist2([], _Attribute, Res) ->
     Res;
 get_valuelist2([H | T], Attribute, Res) ->
     case get_value(H, Attribute) of
@@ -375,7 +375,8 @@ query_ldapclient(Query) ->
 %%% Interface functions
 %%--------------------------------------------------------------------
 
-get_value({dn, Dn, attributes, EAttributes}, Attribute) ->
+get_value({dn, _Dn, attributes, EAttributes}, Attribute) ->
+    %% XXX strange to have an interface function that ignores one argument - investigate
     get_value(EAttributes, Attribute);
 get_value(EAttributes, Attribute) ->
     case lists:keysearch(Attribute, 1, EAttributes) of
