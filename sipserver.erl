@@ -339,14 +339,16 @@ process(Packet, Origin, Dst) when record(Origin, siporigin) ->
 %%           SIPerror = {siperror, Status, Reason}
 %%             Status = integer()
 %%             Reason = string()
-%%           ApplyResult = result of apply()
+%%           ApplyResult = result of applications request/3 or
+%%                         response/3 function.
 %%--------------------------------------------------------------------
-my_apply(transaction_layer, R, Origin, LogStr) when record(R, request);
-						    record(R, response), record(Origin, siporigin) ->
+my_apply(transaction_layer, R, Origin, LogStr) when is_record(R, request);
+						    is_record(R, response), is_record(Origin, siporigin) ->
     %% Dst is the transaction layer.
     case transactionlayer:from_transportlayer(R, Origin, LogStr) of
-	{continue} ->
-	    %% terminate silently
+	continue ->
+	    %% terminate silently, the transaction layer found an existing transaction
+	    %% for this request/response
 	    true;
 	{pass_to_core, AppModule} ->
 	    %% Dst (the transaction layer presumably) wants us to apply a function with this
@@ -360,12 +362,12 @@ my_apply(transaction_layer, R, Origin, LogStr) when record(R, request);
 		       [Type, LogStr]),
 	    {siperror, 500, "Server Internal Error"}
     end;
-my_apply(AppModule, Request, Origin, LogStr) when atom(AppModule), record(Request, request),
-						  record(Origin, siporigin) ->
-    apply(AppModule, request, [Request, Origin, LogStr]);
-my_apply(AppModule, Response, Origin, LogStr) when atom(AppModule), record(Response, response),
-						   record(Origin, siporigin) ->
-    apply(AppModule, response, [Response, Origin, LogStr]).
+my_apply(AppModule, Request, Origin, LogStr) when is_atom(AppModule), is_record(Request, request),
+						  is_record(Origin, siporigin) ->
+    AppModule:request(Request, Origin, LogStr);
+my_apply(AppModule, Response, Origin, LogStr) when is_atom(AppModule), is_record(Response, response),
+						   is_record(Origin, siporigin) ->
+    AppModule:response(Response, Origin, LogStr).
 
 %%--------------------------------------------------------------------
 %% Function: parse_packet(Packet, Origin)
