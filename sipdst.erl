@@ -191,9 +191,8 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
     %% SIP URI, and TCP for a SIPS URI"
     case (URL#sipurl.proto == "sips") of
 	true ->
-	    TLS = host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host),
 	    logger:log(debug, "Resolver: Port was explicitly supplied and URL protocol is SIPS - only try TLS"),
-	    TLS;
+	    host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host);
 	false ->
 	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host),
 	    case ApproxMsgSize > 1200 of
@@ -267,14 +266,16 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
 %%--------------------------------------------------------------------
 %% Function: change_sipdst_protocol(Proto, DstList)
 %%           Proto   = atom(), tcp | udp | tls
-%%           DstList = list() of Entry
-%%             Entry = sipdst record() | {error, Reason} tuple()
-%% Descrip.: Go through a list of Entry. For each Entry that is a
-%%           sipdst record, change the records 'proto' element into
-%%           Proto or, if the old protocol was a v6-protocol, into
-%%           the v6 variant of Proto.
-%% Returns : list() of Entry
+%%           DstList = list() of sipdst record() |
+%%                     {error, Reason} tuple()
+%% Descrip.: Go through a list of sipdst records. For each entry,
+%%           change the records 'proto' element into Proto or, if the
+%%           old protocol was a v6-protocol, into the v6 variant of
+%%           Proto.
+%% Returns : list() of Entry | {error, Reason}
 %%--------------------------------------------------------------------
+change_sipdst_protocol(Proto, {error, Reason}) when is_atom(Proto) ->
+    {error, Reason};
 change_sipdst_protocol(Proto, In) when is_atom(Proto), is_list(In) ->
     Proto6 = case Proto of
 		 tcp -> tcp6;
@@ -297,11 +298,6 @@ change_sipdst_protocol2(Proto, Proto6, [#sipdst{proto=OldProto}=H | T], Res)
   when is_record(H, sipdst), OldProto == tcp6; OldProto == udp6; OldProto == tls6 ->
     This = H#sipdst{proto=Proto6},
     change_sipdst_protocol2(Proto, Proto6, T, [This | Res]);
-%%
-%% Error tuple
-%%
-change_sipdst_protocol2(Proto, Proto6, [{error, Reason} | T], Res) ->
-    change_sipdst_protocol2(Proto, Proto6, T, [{error, Reason} | Res]);
 %%
 %% No more entrys
 %%
@@ -789,15 +785,13 @@ test() ->
     CSP_UDP6 = #sipdst{proto=udp6},
     CSP_TLS6 = #sipdst{proto=tls6},
 
-    CSP_Error = {error, undefined},
-
     io:format("test: change_sipdst_protocol/2 - 1~n"),
     %% test no change
     [CSP_TCP] = change_sipdst_protocol(tcp, [CSP_TCP]),
 
     io:format("test: change_sipdst_protocol/2 - 2~n"),
     %% test no change with mixed v4/v6 and error
-    [CSP_TCP, CSP_Error, CSP_TCP6] = change_sipdst_protocol(tcp, [CSP_TCP, CSP_Error, CSP_TCP6]),
+    [CSP_TCP, CSP_TCP6] = change_sipdst_protocol(tcp, [CSP_TCP, CSP_TCP6]),
 
     io:format("test: change_sipdst_protocol/2 - 3.1~n"),
     %% test simple change (to tcp)
@@ -821,5 +815,9 @@ test() ->
     io:format("test: change_sipdst_protocol/2 - 5~n"),
     %% test multiple v6-to-v6 change
     [CSP_TCP6, CSP_TCP6, CSP_TCP6] = change_sipdst_protocol(tcp, [CSP_UDP6, CSP_TCP6, CSP_TLS6]),
+
+    io:format("test: change_sipdst_protocol/2 - 6~n"),
+    %% test error tuple
+    {error, undefined} = change_sipdst_protocol(tcp, {error, undefined}),
 
     ok.
