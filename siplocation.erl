@@ -1,6 +1,7 @@
 -module(siplocation).
--export([process_register_isauth/5, prioritize_locations/1,
-	 debugfriendly_locations/1, remove_expired_phones/0]).
+-export([process_register_isauth/4, prioritize_locations/1,
+	 debugfriendly_locations/1, get_locations_for_users/1,
+	 get_user_with_contact/1, remove_expired_phones/0]).
 
 register_contact(Phone, Location, Priority, Header) ->
     {_, Contact} = Location,
@@ -28,30 +29,25 @@ unregister_contact(Phone, Contact, Priority) ->
 			     util:timestamp(),
 			     Contact).
 
-process_register_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
+process_register_isauth(Header, Socket, Phone, Contacts) ->
     % XXX RFC3261 says to store Call-ID and CSeq and to check these on
     % registers replacing erlier bindings (10.3 #7)
 
     check_valid_register_request(Header),
 
     % try to find a wildcard to process
-    case process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) of
+    case process_register_wildcard_isauth(Header, Socket, Phone, Contacts) of
 	none ->
 	    % no wildcard, loop through all Contacts, and for all Contacts
 	    % loop through all Auxphones
 	    lists:map(fun (Location) ->
-			register_contact(Phone, Location, 100, Header),
-
-			lists:map(fun (Auxphone) ->
-				register_contact(Auxphone, Location, 50, Header)
-			    end, Auxphones)
-		      
+			register_contact(Phone, Location, 100, Header)
 		      end, Contacts);
 	_ ->
 	    none
     end,
     siprequest:send_result(Header, Socket, "", 200, "OK",
-		[{"Contact", fetch_contacts(Phone)}]).
+    		[{"Contact", fetch_contacts(Phone)}]).
 
 check_valid_register_request(Header) ->
     Require = keylist:fetch("Require", Header),
@@ -88,10 +84,10 @@ print_contact(Location, Expire) ->
 	    [C ++ ";expires=" ++ integer_to_list(NewExpire)]
     end.
 
-process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
+process_register_wildcard_isauth(Header, Socket, Phone, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
 	true ->
-	    logger:log(debug, "Register: Processing valid wildcard un-register"),
+	    logger:log(debug, "Location: Processing valid wildcard un-register"),
 	    case phone:get_phone(Phone) of
 		{atomic, Entrys} ->
 		    % loop through all Entrys and unregister them
@@ -121,7 +117,7 @@ is_valid_wildcard_request(Header, [{_, {wildcard, Parameters}}]) ->
 			"0" ->
 			    true;
 			_ ->
-			    %logger:log(debug, "Register: Wildcard with non-zero contact expires parameter (~p), invalid IMO", [Parameters]),
+			    %logger:log(debug, "Location: Wildcard with non-zero contact expires parameter (~p), invalid IMO", [Parameters]),
 			    throw({siperror, 400, "Wildcard with non-zero contact expires parameter"})
 		    end;
 		_ ->
@@ -135,7 +131,7 @@ is_valid_wildcard_request(Header, Contacts) ->
     % are no wildcards since that would be invalid
     case wildcard_grep(Contacts) of
 	true ->
-	    %logger:log(debug, "Register: Wildcard present but not alone, invalid (RFC3261 10.3 #6)"),
+	    %logger:log(debug, "Location: Wildcard present but not alone, invalid (RFC3261 10.3 #6)"),
 	    throw({siperror, 400, "Wildcard present but not alone, invalid (RFC3261 10.3 #6)"});
 	_ ->
 	    none
@@ -173,16 +169,51 @@ remove_phones([]) ->
     true;
 
 remove_phones([Phone | Rest]) ->
-    {Number, Location, Class} = Phone,
-    logger:log(normal, "Expire: User ~p contact ~p has expired", [Number, sipheader:contact_print([{none, Location}])]),
-    phone:delete_phone(Number, Class, Location),
+    {User, Location, Class} = Phone,
+    [C] = sipheader:contact_print([{none, Location}]),
+    logger:log(normal, "Location: User ~s contact ~s has expired", [User, C]),
+    phone:delete_phone(User, Class, Location),
     remove_phones(Rest).
 
+
+% Checks if any of our users are registered at the
+% location specified. Used to determine if we should
+% proxy requests to a URI without authorization.
+get_user_with_contact(URI) ->
+    {User, _, Host, UPort, _} = URI,
+    Port = siprequest:default_port(UPort),
+    URIstr = sipurl:print({User, none, Host, Port, []}),
+    case phone:get_phone_with_requristr(URIstr) of
+	{atomic, [SIPuser, _]} ->
+	    SIPuser;
+	_ ->
+	    none
+    end.
+
+% Looks up all locations for a list of users. Used
+% to find out where a set of users are to see where
+% we should route a request.
+get_locations_for_users([]) ->
+    [];
+get_locations_for_users([User | Rest]) ->
+    Locations = case phone:get_phone(User) of
+	{atomic, L} ->
+	    L;
+	Unknown ->
+	    logger:log(debug, "Location: Unknown result from phone:get_phone() in get_locations_for_users : ~p",
+			[Unknown]),
+	    []
+    end,
+    lists:append(Locations, get_locations_for_users(Rest)).
+
 prioritize_locations([]) ->
-    {none, [], none, never};
-prioritize_locations(Locations) ->
+    [];
+prioritize_locations(Locations) when list(Locations) ->
     BestPrio = lists:min(get_prioritys(Locations)),
-    get_locations_with_prio(list_to_integer(BestPrio), Locations).
+    get_locations_with_prio(list_to_integer(BestPrio), Locations);
+prioritize_locations(Unknown) ->
+    logger:log(error, "prioritize_locations() called with non-list argument ~p", [Unknown]),
+    [].
 
 get_locations_with_prio(_, []) ->
     [];
