@@ -39,15 +39,30 @@ rewrite_route(Header, Dest) ->
     end.
 
 send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
-    Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
-    [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
-				     {siphost:myip(), "5060"}, Parameters}]),
-    Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
-    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
-    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist3) ++ "\r\n" ++ Body,
-    {Host, Port} = url_to_hostport(Newdest),
-    logger:log(debug, "send request(~p,~p:~p):~p", [Newdest, Host, Port, Message]),
-    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
+    MaxForwards =
+	case keylist:fetch("Max-Forwards", Header) of
+	    [M] ->
+		lists:min([255, list_to_integer(M) - 1]);
+	    [] ->
+		70
+	end,
+    logger:log(debug, "Max-Forwards is ~p", [MaxForwards]),
+    if
+	MaxForwards < 1 ->
+	    logger:log(normal, "Not proxying request with Max-Forwards < 1 (replying 483 Too Many Hops)"),
+	    send_too_many_hops(Header, Socket);
+	true ->
+	    Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
+	    [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
+					     {siphost:myip(), "5060"}, Parameters}]),
+	    Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
+	    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
+	    Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
+	    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist4) ++ "\r\n" ++ Body,
+	    {Host, Port} = url_to_hostport(Newdest),
+	    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
+	    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
+    end.
 
 process_register_isauth(Header, Socket, Phone, Auxphones, Location) ->
     logger:log(normal, "REGISTER phone ~p at ~s", [Phone, sipurl:print(Location)]),
