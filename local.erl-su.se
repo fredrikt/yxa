@@ -123,7 +123,7 @@ canonify_numberlist([Number | Rest]) ->
 %% This function looks up the telephone number of the user in LDAP and
 %% if a telephone number is found, looks it up using lookuppotn() which
 %% first looks in ENUM and secondly looks for a PSTN gateway for the number
-lookup_homedomain_url(URL) when record(URL, sipurl) ->
+lookup_homedomain_url(URL) when is_record(URL, sipurl) ->
     {User, Host} = {URL#sipurl.user, URL#sipurl.host},
     Mail = User ++ "@" ++ Host,
     Loc1 = mail2tel(Mail),
@@ -132,7 +132,7 @@ lookup_homedomain_url(URL) when record(URL, sipurl) ->
 	["+" ++ E164] ->
 	    Loc2 = lookuppotn("+" ++ E164),
 	    case Loc2 of
-	        {proxy, Dst1} when record(Dst1, sipurl) ->
+	        {proxy, Dst1} when is_record(Dst1, sipurl) ->
 		    case sipurl:url_is_equal(URL, Dst1, [user, host]) of
 			true ->
 			    logger:log(debug, "Routing: POTN lookup resulted in what I started with, going for PSTN instead"),
@@ -170,7 +170,7 @@ mail2tel(Mail) ->
 lookup_remote_url(_URL) ->
     none.
 
-is_request_to_this_proxy(Request) when record(Request, request) ->
+is_request_to_this_proxy(Request) when is_record(Request, request) ->
     lookup:is_request_to_this_proxy(Request).
 
 
