@@ -27,7 +27,8 @@
 	 get_remote_party_name/2,
 	 get_remote_party_number/2,
 	 rewrite_potn_to_e164/1,
-	 is_request_to_this_proxy/1
+	 is_request_to_this_proxy/1,
+	 remove_unsuitable_locations/2
 	]).
 
 %% siplocation
@@ -71,6 +72,19 @@
 %% sippipe
 -export([
 	 sippipe_received_response/3
+	]).
+
+%% cpl_db
+-export([
+	 user_has_cpl_script/1,
+	 user_has_cpl_script/2,
+	 get_cpl_for_user/1
+	]).
+
+%% transport layer
+-export([
+	 is_acceptable_socket/7,
+	 is_tls_equivalent/3
 	]).
 
 -include("siprecords.hrl").
@@ -138,6 +152,17 @@ lookupregexproute(User) ->
 
 lookupuser(URL) ->
     lookup:lookupuser(URL).
+
+%%--------------------------------------------------------------------
+%% Function: remove_unsuitable_locations(URL, Locations)
+%%           URL      = sipurl record(), Request-URI of request
+%%           Location = list() of sipurl record()
+%% Descrip.: Apply local policy for what locations are good to use for
+%%           a particular Request-URI.
+%% Returns : list() of sipurl()
+%%--------------------------------------------------------------------
+remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
+    lookup:remove_unsuitable_locations(URL, Locations).
 
 lookup_url_to_locations(URL) ->
     lookup:lookup_url_to_locations(URL).
@@ -396,4 +421,73 @@ sippipe_received_response(Request, Response, _DstList) when is_record(Request, r
     undefined;
 sippipe_received_response(Request, {Status, Reason}, _DstList) when is_record(Request, request),
 								    is_integer(Status), is_list(Reason) ->
+    undefined.
+
+% cpl_db hooks
+%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: user_has_cpl_script(User)
+%%           User = string()
+%% Descrip.: determine if a cpl script has been loaded for the user
+%%           User
+%% Returns : true | false
+%%--------------------------------------------------------------------
+user_has_cpl_script(User) ->
+    cpl_db:user_has_cpl_script(User).
+
+%%--------------------------------------------------------------------
+%% Function: user_has_cpl_script(User)
+%%           User      = string()
+%%           Direction = incoming | outgoing
+%% Descrip.: determine if a cpl script has been loaded for the user
+%%           User
+%% Returns : true | false
+%%--------------------------------------------------------------------
+user_has_cpl_script(User, Direction) ->
+    cpl_db:user_has_cpl_script(User, Direction).
+
+%%--------------------------------------------------------------------
+%% Function: get_cpl_for_user(User)
+%%           User = string()
+%% Descrip.: get the cpl script graph for a certain user
+%% Returns : nomatch | {ok, CPLGraph}
+%%           CPLGraph = a cpl graph for use in
+%%                      interpret_cpl:process_cpl_script(...)
+%%--------------------------------------------------------------------
+get_cpl_for_user(User) ->
+    cpl_db:get_cpl_for_user(User).
+
+%% transport layer hooks
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: is_acceptable_socket(Socket, Dir, Proto, Host, Port,
+%%                                Module, Subject)
+%%           Socket  = term(), the socket
+%%           Dir     = atom(), in | out - direction of connection
+%%           Proto   = atom(), tcp | tcp6 | tls | tls6
+%%           Host    = string(), the hostname this socket should match
+%%           Port    = integer()
+%%           Module  = atom(), SIP-socket module name (sipsocket_tcp)
+%%           Subject = term() | undefined, SSL socket Subject
+%%                     information (if SSL socket)
+%% Descrip.: Verify a socket. Return 'true' for acceptable, 'false'
+%%           for NOT acceptable and 'undefined' to do default checks.
+%% Returns : true | false | undefined
+%%--------------------------------------------------------------------
+is_acceptable_socket(_Socket, _Dir, _Proto, _Host, _Port, _Module, _Subject) ->
+    undefined.
+
+%%--------------------------------------------------------------------
+%% Function: is_tls_equivalent(Proto, Host, Port)
+%%           Proto = atom(), tcp | tcp6 | udp | udp6
+%% Descrip.: If a destination (proto:host:port) is not TLS it might
+%%           still be protected by an equivalence to TLS (like IPsec).
+%%           When we require a TLS-protected destination, this hook
+%%           lets you indicate that a particular destination is to be
+%%           considered secure at the transport layer.
+%% Returns : true | false | undefined
+%%--------------------------------------------------------------------
+is_tls_equivalent(_Proto, _Host, _Port) ->
     undefined.

@@ -27,7 +27,8 @@
 	 get_remote_party_name/2,
 	 get_remote_party_number/2,
 	 rewrite_potn_to_e164/1,
-	 is_request_to_this_proxy/1
+	 is_request_to_this_proxy/1,
+	 remove_unsuitable_locations/2
 	]).
 
 %% siplocation
@@ -71,6 +72,19 @@
 %% sippipe
 -export([
 	 sippipe_received_response/3
+	]).
+
+%% cpl_db
+-export([
+	 user_has_cpl_script/1,
+	 user_has_cpl_script/2,
+	 get_cpl_for_user/1
+	]).
+
+%% transport layer
+-export([
+	 is_acceptable_socket/7,
+	 is_tls_equivalent/3
 	]).
 
 -include("siprecords.hrl").
@@ -201,6 +215,10 @@ lookupregexproute(User) ->
 
 lookupuser(URL) ->
     lookup:lookupuser(URL).
+
+%% Returns : list() of sipurl record()
+remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
+    lookup:remove_unsuitable_locations(URL, Locations).
 
 lookup_url_to_locations(URL) ->
     lookup:lookup_url_to_locations(URL).
@@ -363,3 +381,29 @@ incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, s
 %%%%%%%%%%%%%%%%
 sippipe_received_response(Request, Response, DstList) ->
     none.
+
+% cpl_db hooks
+%%%%%%%%%%%%%%%%
+
+%% Returns: true | false
+user_has_cpl_script(User) ->
+    cpl_db:user_has_cpl_script(User).
+
+%% Returns: true | false
+user_has_cpl_script(User, Direction)->
+    cpl_db:user_has_cpl_script(User, Direction).
+
+%% Returns: term(), cpl script graph
+get_cpl_for_user(User) ->
+    cpl_db:get_cpl_for_user(User).
+
+%% transport layer hooks
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Returns: true | false | undefined
+is_acceptable_socket(_Socket, _Dir, _Proto, _Host, _Port, _Module, _Subject) ->
+    undefined.
+
+%% Returns : true | false | undefined
+is_tls_equivalent(_Proto, _Host, _Port) ->
+    undefined.
