@@ -135,7 +135,7 @@ get_user_verified(Header, Method) ->
 	    logger:log(debug, "Auth: get_user_verified: No Authorization header, returning false"),
 	    false;
 	Authheader ->
-	    get_user_verified2(Method, Authheader)
+	    get_user_verified2(Method, Authheader, Header)
     end.
 
 %%--------------------------------------------------------------------
@@ -159,18 +159,37 @@ get_user_verified_proxy(Header, Method) ->
 	    logger:log(debug, "Auth: get_user_verified_proxy: No Proxy-Authorization header, returning false"),
 	    false;
 	Authheader ->
-	    get_user_verified2(Method, Authheader)
+	    get_user_verified2(Method, Authheader, Header)
     end.
 
-get_user_verified2(Method, ["GSSAPI" ++ R] = Authheader) ->
+get_user_verified2(Method, ["GSSAPI" ++ R] = Authheader, _Header) ->
     Authorization = sipheader:auth(Authheader),
     Info = dict:fetch("info", Authorization),
     {Response, Username} = gssapi:request(Info),
     %% XXX this is definately broken! What does gssapi:request() return anyways?
     Username;
 
-get_user_verified2(Method, Authheader) ->
+%%--------------------------------------------------------------------
+%% Function: get_user_verified2(Method, Authheader, Header)
+%%           Method     = string()
+%%           Authheader = [string()], the auth header in question
+%%           Header     = keylist record()
+%% Descrip.: Authenticate a request.
+%% Returns : {authenticated, User} |
+%%           {stale, User}         |
+%%           false
+%%--------------------------------------------------------------------
+get_user_verified2(Method, Authheader, Header) ->
     Authorization = sipheader:auth(Authheader),
+    %% Remember the username the client used
+    UAuser = dict:fetch("username", Authorization),
+    %% Canonify username
+    User = case local:canonify_authusername(UAuser, Header) of
+	       undefined ->
+		   UAuser;
+	       Res when is_list(Res) ->
+		   Res
+	   end,
     Response = dict:fetch("response", Authorization),
     Nonce = dict:fetch("nonce", Authorization),
     Opaque = case dict:find("opaque", Authorization) of
@@ -182,11 +201,10 @@ get_user_verified2(Method, Authheader) ->
     Timestamp = hex:from(Opaque),
     Now = util:timestamp(),
     logger:log(debug, "Auth: timestamp: ~p now: ~p", [Timestamp, Now]),
-    User = dict:fetch("username", Authorization),
     Password = case local:get_password_for_user(User) of
 		   nomatch ->
 		       nomatch;
-		   PRes when list(PRes) ->
+		   PRes when is_list(PRes) ->
 		       PRes;
 		   E ->
 		       logger:log(error, "Auth: Failed to fetch password for user ~p, "
@@ -197,7 +215,7 @@ get_user_verified2(Method, Authheader) ->
     Nonce2 = get_nonce(Opaque),
     Response2 = get_response(Nonce2, Method,
 			     dict:fetch("uri", Authorization),
-			     User, Password),
+			     UAuser, Password),
     if
 	Password == nomatch ->
 	    logger:log(normal, "Auth: Authentication failed for non-existing user ~p", [User]),
