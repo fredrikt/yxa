@@ -59,20 +59,29 @@ log(Level, Format, Arguments) ->
     case catch do_log(Level, Format, Arguments) of
 	ok ->
 	    ok;
-	Foo ->
+	{'EXIT', E} ->
 	    io:format("cannot log ~p:~n", [Format]),
-	    io:format(Format, Arguments),
-	    io:format("log error: ~p~n", [Foo]),
-	    error
+	    io:format("log error: ~p~n", [E]),
+	    ok
     end.
 
 log_to_device(IoDevice, Level, Format, Arguments, Pid) ->
     io:format(IoDevice, "~s ", [util:sec_to_date(util:timestamp())]),
     io:format(IoDevice, "~p~p:", [Level, Pid]),
-    io:format(IoDevice, Format, Arguments),
+    case catch io:format(IoDevice, Format, Arguments) of
+	{'EXIT', E} ->
+	    io:format(IoDevice, "LOG FORMATTING ERROR ~p, Format : ~p~n", [E, Format]);
+	_ ->
+	    true
+    end,
     io:format(IoDevice, "~n", []).
 
 log_to_stdout(Level, Format, Arguments, Pid) ->
     io:format("~s ~p ", [util:sec_to_date(util:timestamp()), Pid]),
-    io:format(Format, Arguments),
+    case catch io:format(Format, Arguments) of
+	{'EXIT', E} ->
+	    io:format("LOG FORMATTING ERROR ~p, Format : ~p~n", [E, Format]);
+	_ ->
+	    true
+    end,
     io:format("~n", []).
