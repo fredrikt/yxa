@@ -13,7 +13,22 @@ BEAM =	incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sipp
 	transactionlayer.beam servertransaction.beam sippipe.beam \
 	transportlayer.beam tcp_dispatcher.beam tcp_listener.beam \
 	tcp_connection.beam tcp_receiver.beam registrar.beam sipserver_sup.beam \
-	sipdst.beam
+	sipdst.beam sipuserdb_static.beam
+
+IMPORTED_INCLUDES=	LDAPv3.hrl eldap.hrl inet_dns.hrl
+YXA_INCLUDES=	database_call.hrl \
+		database_forward.hrl \
+		database_regexproute.hrl \
+		phone.hrl \
+		sipproxy.hrl \
+		siprecords.hrl \
+		sipsocket.hrl \
+		socketlist.hrl \
+		transactionstatelist.hrl
+
+# sipuserdb_static.hrl should not be included in INCLUDES.
+# It is handled more efficiently.
+INCLUDES=	$(IMPORTED_INCLUDES) $(YXA_INCLUDES)
 
 CC = gcc
 
@@ -50,6 +65,10 @@ sslkey:
 
 %.rel: %.rel.in %.app
 	cp $< $@
+
+sipuserdb_static.beam: sipuserdb_static.erl sipuserdb_static.hrl
+
+$(BEAM): $(INCLUDES)
 
 %.beam: %.erl
 	erlc -W +debug_info $<
