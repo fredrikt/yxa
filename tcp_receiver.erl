@@ -71,7 +71,6 @@ start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
 recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.socketmodule == ssl ->
     Socket = State#state.socket,
     Rest = receive
-
 	       {ssl, Socket, B} ->
 		   L = binary_to_list(B),
 		   logger:log(debug, "TCP receiver: Received ~p bytes of data (SSL), adding it to my buffer which contained ~p bytes of data",
@@ -86,9 +85,13 @@ recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.so
 			   %% No Header Body separator yet, read more data
 			   SoFar;
 		       true ->
-			   AdditionalData = header_received(SoFar, State),
-			   logger:log(debug, "TCP receiver: My buffer now contains ~p bytes of data (SSL)", [length(AdditionalData)]),
-			   AdditionalData
+			   case header_received(SoFar, State) of
+			       AdditionalData when is_list(AdditionalData) ->
+				   logger:log(debug, "TCP receiver: My buffer now contains ~p bytes of data (SSL)", [length(AdditionalData)]),
+				   AdditionalData;
+			       AdditionalData2 ->
+				   AdditionalData2
+			   end
 		   end;
 
 	       {ssl_closed, Socket} ->
@@ -175,10 +178,13 @@ do_recv(DataIn, State) ->
 		    %% No Header Body separator yet, read more data
 		    do_recv(SoFar, State);
 		true ->
-		    Rest = header_received(SoFar, State),
-		    %% XXX don't try to do length() on Rest if it is not a list!
-		    logger:log(debug, "TCP receiver: My buffer now contains ~p bytes of data", [length(Rest)]),
-		    Rest
+		    case header_received(SoFar, State) of
+			Rest when is_list(Rest) ->
+			    logger:log(debug, "TCP receiver: My buffer now contains ~p bytes of data", [length(Rest)]),
+			    Rest;
+			Rest2 ->
+			    Rest2
+		    end
 	    end;
 	{error, closed} ->
 	    logger:log(debug, "TCP receiver: Extra debug: ~p recv() returned 'closed' in do_recv() (Socket: ~p)",
@@ -410,7 +416,7 @@ tcp_read_more_data(SocketModule, Socket, Len, DataIn) when Len > 0 ->
 	    {error, E}
     end;
 
-tcp_read_more_data(SocketModule, Socket, Len, In) ->
+tcp_read_more_data(_SocketModule, _Socket, _Len, In) ->
     In.
 
 %%--------------------------------------------------------------------
