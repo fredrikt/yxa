@@ -1,24 +1,26 @@
 -module(socketlist).
--export([add/5, add/6, delete_using_pid/2, delete_expired/1,
+-export([add/6, add/7, delete_using_pid/2, delete_expired/1,
 	 empty/0, get_using_id/2, get_using_pid/2, get_using_remote/2,
 	 extract/2, get_length/1, debugfriendly/1]).
 
 -include("socketlist.hrl").
+-include("sipsocket.hrl").
 
-add(Id, Pid, Local, Remote, SocketList) when record(SocketList, socketlist) ->
+%% Add without expire, use default of Now + 300 seconds
+add(Id, Pid, Local, Remote, SipSocket, SocketList) when record(SocketList, socketlist), record(SipSocket, sipsocket) ->
     Now = util:timestamp(),
-    add(Id, Pid, Local, Remote, Now + 300, SocketList).
+    add(Id, Pid, Local, Remote, SipSocket, Now + 300, SocketList).
 
-add(Id, Pid, Local, Remote, Expire, SocketList) when record(SocketList, socketlist) ->
+add(Id, Pid, Local, Remote, SipSocket, Expire, SocketList) when record(SocketList, socketlist), integer(Expire), record(SipSocket, sipsocket) ->
     case get_using_id(Id, SocketList) of
 	[] ->
-	    NewElem = #socketlistelem{ref=make_ref(), id=Id, pid=Pid, local=Local, remote=Remote, expire=Expire},
+	    NewElem = #socketlistelem{ref=make_ref(), id=Id, pid=Pid, local=Local, remote=Remote, sipsocket=SipSocket, expire=Expire},
 	    #socketlist{list=lists:append(SocketList#socketlist.list, [NewElem])};
 	Elem when record(Elem, socketlistelem), Elem#socketlistelem.pid == Pid ->
-	    % delete and add to get fresh expires
+	    %% delete and add to get fresh expires
 	    SList1 = delete_using_ref(Elem#socketlistelem.ref, SocketList),
-	    % XXX should we keep old ref perhaps?
-	    NewElem = #socketlistelem{ref=make_ref(), id=Id, pid=Pid, local=Local, remote=Remote, expire=Expire},
+	    %% XXX should we keep old ref perhaps?
+	    NewElem = #socketlistelem{ref=make_ref(), id=Id, pid=Pid, local=Local, remote=Remote, sipsocket=SipSocket, expire=Expire},
 	    #socketlist{list=lists:append(SList1#socketlist.list, [NewElem])};
 	Elem when record(Elem, socketlistelem) ->
 	    [StoredPid] = extract([pid], Elem),
@@ -45,6 +47,8 @@ extract([local | T], SListElem, Res) when record(SListElem, socketlistelem) ->
     extract(T, SListElem, lists:append(Res, [SListElem#socketlistelem.local]));
 extract([remote | T], SListElem, Res) when record(SListElem, socketlistelem) ->
     extract(T, SListElem, lists:append(Res, [SListElem#socketlistelem.remote]));
+extract([sipsocket | T], SListElem, Res) when record(SListElem, socketlistelem) ->
+    extract(T, SListElem, lists:append(Res, [SListElem#socketlistelem.sipsocket]));
 extract([expire | T], SListElem, Res) when record(SListElem, socketlistelem) ->
     extract(T, SListElem, lists:append(Res, [SListElem#socketlistelem.expire])).
 
