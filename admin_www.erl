@@ -472,7 +472,7 @@ add_route(Env, Input) ->
 					     permanent,
 					     never,
 					     sipurl:parse(Address)),
-		    [header(redirect, phoneurl())]
+		    [header(redirect, phonesurl())]
 	    end
     end.
 
@@ -499,7 +499,7 @@ add_regexp(Env, Input) ->
 						permanent,
 						never,
 						sipurl:parse(Address)),
-		    [header(redirect, phoneurl())]
+		    [header(redirect, phonesurl())]
 	    end
     end.
 
@@ -515,7 +515,7 @@ del_route(Env, Input) ->
 		    [header(ok), "Du måste ange ett nummer"];
 		{{ok, Number}} ->
 		    phone:purge_class_phone(Number, permanent),
-		    [header(redirect, phoneurl())]
+		    [header(redirect, phonesurl())]
 	    end
     end.
 
@@ -531,7 +531,7 @@ del_regexp(Env, Input) ->
 		    [header(ok), "Du måste ange ett nummer"];
 		{{ok, Number}} ->
 		    database_regexproute:purge_class(Number, permanent),
-		    [header(redirect, phoneurl())]
+		    [header(redirect, phonesurl())]
 	    end
     end.
 
