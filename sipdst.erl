@@ -24,7 +24,7 @@ url_to_dstlist(URL, ApproxMsgSize, ReqURI) when record(URL, sipurl), integer(App
     %% Check if Host is either IPv4 or IPv6 address
     case inet_parse:address(Host) of
 	{ok, _} ->
-	    logger:log(debug, "dns resolver: ~p is an IP address, not performing SRV lookup", [Host]),
+	    logger:log(debug, "url_to_dstlist: ~p is an IP address, not performing domain NAPTR/SRV lookup", [Host]),
 	    ParamDict = sipheader:param_to_dict(Parameters),
 	    %% Find requested transport from Parameters and lowercase it
 	    TransportStr = case dict:find("transport", ParamDict) of
@@ -191,9 +191,8 @@ host_port_to_dstlist(Proto, InHost, InPort, URI) when integer(InPort) ; InPort =
 	{error, What} ->
 	    {error, What};
 	L when list(L) ->
-	    %% L is a list of tuples like {IP, Addr, Port}. IP is string,
-	    %% Addr is another tuple, either {A1 .. A4} or {A1 .. A8},
-	    %% depending on IP version.
+	    %% L is a list of tuples like {v4, Addr, Port}. Addr is the
+	    %% IP address (be it v4 or v6) as a string.
 	    DstList = make_sipdst_from_hostport(Proto, URI, L)
     end.
 
@@ -213,11 +212,11 @@ make_sipdst_from_hostport(Proto, URI, L) ->
 
 make_sipdst_from_hostport2(Proto, URI, [], Res) ->
     Res;
-make_sipdst_from_hostport2(Proto, URI, [{Addr, {A1, A2, A3, A4}, Port} | T], Res) ->
+make_sipdst_from_hostport2(Proto, URI, [{inet, Addr, Port} | T], Res) ->
     UsePort = list_to_integer(siprequest:default_port(Proto, Port)),
     Dst = #sipdst{proto=Proto, addr=Addr, port=UsePort, uri=URI},
     make_sipdst_from_hostport2(Proto, URI, T, lists:append(Res, [Dst]));
-make_sipdst_from_hostport2(Proto, URI, [{Addr, {A1, A2, A3, A4, A5, A6, A7, A8}, Port} | T], Res) ->
+make_sipdst_from_hostport2(Proto, URI, [{inet6, Addr, Port} | T], Res) ->
     NewProto = case Proto of
 		   tcp -> tcp6;
 		   udp -> udp6;
@@ -232,7 +231,8 @@ make_sipdst_from_hostport2(Proto, URI, [{Addr, {A1, A2, A3, A4, A5, A6, A7, A8},
 %% Function: format_siplookup_result/4
 %% Description: Turns the result of a dnsutil:siplookup() into a list
 %% of sipdst records.
-%% Returns: ListOfDsts | {error, Reason}
+%% Returns: ListOfDsts      |
+%%          {error, Reason}
 %%--------------------------------------------------------------------
 format_siplookup_result(PortStr, ReqURI, ApproxMsgSize, DstList) when list(PortStr) ->
     format_siplookup_result(list_to_integer(PortStr), ReqURI, ApproxMsgSize, DstList);
