@@ -179,7 +179,12 @@ accept_loop(State) when is_record(State, state) ->
 	    erlang:error("Listening socket closed", [State]);
 	{error, E} ->
 	    logger:log(error, "TCP listener: accept() returned error : ~s (~p)", [inet:format_error(E), E]),
-	    erlang:error({"Accept failed", {error, E}}, [State])
+	    erlang:error({"Accept failed", {error, E}}, [State]);
+	Unknown ->
+	    %% To keep Dialyzer happy (otherwise complains about this function having no local return)
+	    logger:log(error, "TCP listener: ~p:accept() returned unknown data", [SocketModule]),
+	    logger:log(debug, "TCP listener: data returned by ~p:accept() : ~p", [SocketModule, Unknown]),
+	    {error, accept_returned_unknown_data}
     end.
 
 %%--------------------------------------------------------------------
