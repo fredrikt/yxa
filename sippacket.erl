@@ -210,7 +210,7 @@ parse_firstline(FirstLine) ->
 %%--------------------------------------------------------------------
 request({Method, URI}, Header, Body) ->
     URL = sipurl:parse(URI),
-    siprequest:set_request_body(#request{method=Method, uri=URL, header=Header}, Body).
+    #request{method=Method, uri=URL, header=Header, body=Body}.
 
 %%--------------------------------------------------------------------
 %% Function: response({Status, Reason}, Header, Body)
@@ -222,7 +222,7 @@ request({Method, URI}, Header, Body) ->
 %% Returns : response record()
 %%--------------------------------------------------------------------
 response({Status, Reason}, Header, Body) ->
-    siprequest:set_response_body(#response{status=list_to_integer(Status), reason=Reason, header=Header}, Body).
+    #response{status=list_to_integer(Status), reason=Reason, header=Header, body=Body}.
 
 
 %%====================================================================
