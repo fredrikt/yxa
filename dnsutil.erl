@@ -1,8 +1,8 @@
 -module(dnsutil).
 -export([siplookup/1, enumlookup/1, enumlookup/2, get_ip_port/2]).
 
--include("inet_dns.hrl").
 -include_lib("kernel/include/inet.hrl").
+-include_lib("kernel/src/inet_dns.hrl").
 
 %% For debugging
 -compile(export_all).
@@ -10,6 +10,9 @@
 %% These records is entirely internal to this module
 -record(srventry, {proto, dnsrrdata}).
 -record(naptrrecord, {order, preference, flags, services, regexp, replacement}).
+
+%% The DNS NAPTR RR type code. Other RR type codes are defined in OTP inet_dns.hrl.
+-define(T_NAPTR, 35).
 
 %%--------------------------------------------------------------------
 %% Function: srvlookup/2
@@ -272,7 +275,7 @@ fixplus(Regexp) ->
 %% Returns: ResultStr |
 %%          none
 %%--------------------------------------------------------------------
-applyregexp(Number, []) ->
+applyregexp(_Number, []) ->
     none;
 applyregexp(Number, [Regexp | Rest]) ->
     logger:log(debug, "Resolver: applyregexp: IN ~p ~p", [Number, Regexp]),
@@ -303,7 +306,7 @@ applyregexp(Number, [Regexp | Rest]) ->
 enumalldomains(Number, Domains) ->
     enumalldomains2(Number, Domains, []).
 
-enumalldomains2(Number, [], Res) ->
+enumalldomains2(_Number, [], Res) ->
     Res;
 enumalldomains2(Number, [Domain | Rest], Res) ->
     ENUMdomain = number2enum(lists:reverse(Number), Domain),
@@ -317,7 +320,7 @@ enumalldomains2(Number, [Domain | Rest], Res) ->
 %%              records from a list of naptrrecord records.
 %% Returns: ENUMNAPTRList
 %%--------------------------------------------------------------------
-chooseenum([], Type) ->
+chooseenum([], _Type) ->
     [];
 chooseenum([Elem | Rest], Type) when record(Elem, naptrrecord), Elem#naptrrecord.flags == "u", Elem#naptrrecord.replacement == "" ->
     Services = Elem#naptrrecord.services,
@@ -512,7 +515,7 @@ parsenaptr_replacement(Len, In, Res) when integer(Len), binary(In) ->
 %%              NAPTR records from a list of naptrrecord records.
 %% Returns: DomainNAPTRList
 %%--------------------------------------------------------------------
-filter_naptr([], Flag, Service) ->
+filter_naptr([], _Flag, _Service) ->
     [];
 filter_naptr([Elem | Rest], Flag, Service) when record(Elem, naptrrecord), Elem#naptrrecord.flags == Flag ->
     case Elem#naptrrecord.services of
