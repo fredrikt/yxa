@@ -228,7 +228,7 @@ contact(Header, Name) when is_record(Header, keylist), is_atom(Name); is_list(Na
 %%                     keylist:fetch('via', Header)
 %%           Header = keylist record()
 %% Descrip.: parse header data
-%% Returns : list() of via record()
+%% Returns : list() of via record() | throw()
 %%--------------------------------------------------------------------
 via(Header) when is_record(Header, keylist) ->
     via(keylist:fetch('via', Header));
@@ -240,16 +240,13 @@ via([String | Rest]) ->
     lists:append(lists:map(fun(H) ->
 				   [Protocol, Sentby] = string:tokens(H, " "),
 				   [Hostport | Parameters ] = string:tokens(Sentby, ";"),
-				   {Host, P} = sipparse_util:parse_hostport(Hostport),
-				   Port = case util:isnumeric(P) of
-					      true ->
-						  list_to_integer(P);
-    					      %% XXX how are badly formated entries handled ?
-					      %% silently ignoring them seems like a bad choice
-					      _ ->
-						  none
-					  end,
-				   #via{proto=Protocol, host=Host, port=Port, param=Parameters}
+				   case sipparse_util:parse_hostport(Hostport) of
+				       {Host, Port} when is_list(Host),
+							 is_integer(Port); Port == none ->
+					   #via{proto=Protocol, host=Host, port=Port, param=Parameters};
+				       _ ->
+					   throw({error, unparseable_via})
+				   end
 			   end, Headers),
 		 via(Rest)).
 
@@ -1019,6 +1016,47 @@ test() ->
 
     %% test commas inside <>!
 
+    %% test via/1
+    %%--------------------------------------------------------------------
+
+    io:format("test: via/1 - 1~n"),
+    [#via{proto="SIP/2.0/TLS", host="192.0.2.123", port=none, param=[]}] =
+	via(["SIP/2.0/TLS 192.0.2.123"]),
+
+    io:format("test: via/1 - 2~n"),
+    [#via{proto="SIP/2.0/TLS", host="192.0.2.123", port=1234, param=[]}] =
+	via(["SIP/2.0/TLS 192.0.2.123:1234"]),
+
+    io:format("test: via/1 - 3~n"),
+    [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=5060, param=[]}] =
+	via(["SIP/2.0/TLS [2001:6b0:5:987::5060]:5060"]),
+
+    io:format("test: via/1 - 4~n"),
+    [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=none, param=[]}] =
+	via(["SIP/2.0/TLS [2001:6b0:5:987::5060]"]),
+
+    io:format("test: via/1 - 5~n"),
+    [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=none, param=[]}] =
+	via(["SIP/2.0/TLS 2001:6b0:5:987::5060"]),
+
+    io:format("test: via/1 - 6~n"),
+    [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=none, param=[]},
+     #via{proto="SIP/2.0/TCP", host="phone.example.org", port=none, param=["received=192.0.2.123"]}] =
+	via(["SIP/2.0/TLS 2001:6b0:5:987::5060", "SIP/2.0/TCP phone.example.org;received=192.0.2.123"]),
+
+    io:format("test: via/1 - 7~n"),
+    %% test unparsable via - fail in tokenizing
+    {'EXIT', _} = (catch via(["SIP/2.0/TLS2001:6b0:5:987::5060"])),
+
+    io:format("test: via/1 - 8~n"),
+    %% test unparsable via - fail inside sipparse_util:parse_hostport() since there is an X in the address
+    {'EXIT', _} = (catch via(["SIP/2.0/TLS 2001:6b0:X:987::5060"])),
+
+    io:format("test: via/1 - 9~n"),
+    %% test unparsable via - fail inside sipparse_util:parse_hostport() since there is a 500 in the address
+    {'EXIT', _} = (catch via(["SIP/2.0/TLS 192.0.2.500:5060"])),
+    
+    
     %% test get_server_transaction_id
     %%--------------------------------------------------------------------
 
