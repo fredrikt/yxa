@@ -209,6 +209,16 @@ get_pass(User) ->
 	    {none, [], []}
     end.
 
+user_exists(User) ->
+    case phone:get_user(User) of
+	{atomic, []} ->
+	    false;
+	{atomic, [A]} ->
+	    true;
+	{aborted, _} ->
+	    false
+    end.
+
 get_numbers(User) ->
     case phone:get_numbers_for_user(User) of
 	{atomic, Numbers} ->
@@ -324,10 +334,10 @@ list_users(Env, Input) ->
 					    end
 				    end, List)),
 	     "</table>\n",
+	     "<p>\n",
 	     "<form action=\"admin_www%3Aadd_user\" method=post>\n",
 	     "Anv&auml;ndarnamn: <input type=\"text\" name=\"user\" size=\"12\">\n",
-	     "Nummer: <input type=\"text\" name=\"phone\" size=\"4\">\n",
-	     "<input type=\"submit\" value=\"L&auml;gg till\">\n",
+	     "<input type=\"submit\" value=\"Skapa anv&auml;ndare\">\n",
 	     "</form>\n",
 	     "<ul>\n",
 	     "<li>internal: samtal inom KTH\n",
@@ -425,14 +435,11 @@ add_user(Env, Input) ->
 	{ok} ->
 	    Args = sipheader:httparg(Input),
 	    Userfind = dict:find("user", Args),
-	    Phonefind = dict:find("phone", Args),
 	    Classes = parse_classes(dict:find("classes", Args)),
-	    case {Userfind, Phonefind} of
-		{error, _} ->
+	    case Userfind of
+		error ->
 		    [header(ok), "Felaktigt anv&auml;ndarnamn"];
-		{_, error} ->
-		    [header(ok), "Felaktigt telefonnummer"];
-		{{ok, User}, {ok, Phone}} ->
+		{ok, User} ->
 		    phone:insert_user(User, none, [], Classes),
 		    [header(redirect, userurl())]
 	    end
@@ -571,43 +578,55 @@ change_user_form(Env, Input) ->
 		     header(ok),
 		     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
 		     "<h2>KTH-ID</h2>", username_to_uid(User),
-		     "<h2>Registrerade telefoner</h2>\n",
-		     "<table cellspacing=0 border=1 cellpadding=4>\n",
-		     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
-		     "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
-		     print_phones_list(Phonelist),
-		     "</table>\n",
-		     "<h2>L&ouml;senord</h2>\n",
-		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
-		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
-		     "<input type=\"password\" name=\"password\" size=\"20\">\n",
-		     "<input type=\"submit\" value=\"&Auml;ndra l&ouml;senord\">\n",
-		     "</form>\n",
-		     "<h2>Nummer</h2>\n",
-		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
-		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
-		     "<input type=\"text\" name=\"numbers\" size=\"40\" value=\"",
-		     print_numbers(Numberlist),
-		     "\">\n",
-		     "<input type=\"submit\" value=\"&Auml;ndra nummer\">\n",
-		     "</form>\n",
-		     "<h2>Klasser</h2>\n",
-		     "<form action=\"admin_www%3Achange_classes\" method=post>\n",
-		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
-		     print_class_checkboxes(Classes),
-		     "<input type=\"submit\" value=\"&Auml;ndra klasser\">\n",
-		     "</form>\n",
-		     "<h2>Administrat&ouml;r</h2>\n",
-		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
-		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
-		     "<input type=\"hidden\" name=\"admin\" value=\"true\">\n",
-		     "<input type=\"submit\" value=\"Sl&aring; p&aring; administrat&ouml;rsflaggan\">\n",
-		     "</form>\n",
-		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
-		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
-		     "<input type=\"hidden\" name=\"admin\" value=\"false\">\n",
-		     "<input type=\"submit\" value=\"Sl&aring; av administrat&ouml;rsflaggan\">\n",
-		     "</form>\n",
+		     case user_exists(User) of
+			 true ->
+			     ["<h2>Registrerade telefoner</h2>\n",
+			      "<table cellspacing=0 border=1 cellpadding=4>\n",
+			      "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
+			      "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
+			      print_phones_list(Phonelist),
+			      "</table>\n",
+			      "<h2>L&ouml;senord</h2>\n",
+			      "<form action=\"admin_www%3Achange_user\" method=post>\n",
+			      "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
+			      "<input type=\"password\" name=\"password\" size=\"20\">\n",
+			      "<input type=\"submit\" value=\"&Auml;ndra l&ouml;senord\">\n",
+			      "</form>\n",
+			      "<h2>Nummer</h2>\n",
+			      "<form action=\"admin_www%3Achange_user\" method=post>\n",
+			      "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
+			      "<input type=\"text\" name=\"numbers\" size=\"40\" value=\"",
+			      print_numbers(Numberlist),
+			      "\">\n",
+			      "<input type=\"submit\" value=\"&Auml;ndra nummer\">\n",
+			      "</form>\n",
+			      "<h2>Klasser</h2>\n",
+			      "<form action=\"admin_www%3Achange_classes\" method=post>\n",
+			      "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
+			      print_class_checkboxes(Classes),
+			      "<input type=\"submit\" value=\"&Auml;ndra klasser\">\n",
+			      "</form>\n",
+			      "<h2>Administrat&ouml;r</h2>\n",
+			      "<form action=\"admin_www%3Achange_user\" method=post>\n",
+			      "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
+			      "<input type=\"hidden\" name=\"admin\" value=\"true\">\n",
+			      "<input type=\"submit\" value=\"Sl&aring; p&aring; administrat&ouml;rsflaggan\">\n",
+			      "</form>\n",
+			      "<form action=\"admin_www%3Achange_user\" method=post>\n",
+			      "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
+			      "<input type=\"hidden\" name=\"admin\" value=\"false\">\n",
+			      "<input type=\"submit\" value=\"Sl&aring; av administrat&ouml;rsflaggan\">\n",
+			      "</form>\n"
+			     ];
+			 _ ->
+			     [
+			      "<h2>Anv&auml;ndaren existerar inte</h2>\n",
+			      "<form action=\"admin_www%3Aadd_user\" method=post>\n",
+			      "<input type=\"hidden\" name=\"user\" value=\"", User,"\">\n",
+			      "<input type=\"submit\" value=\"Skapa\">\n",
+			      "</form>\n"
+			     ]
+		     end,
 		     userurl_html()
 		    ]
 	    end
