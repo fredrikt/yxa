@@ -13,7 +13,7 @@ init() ->
 
 route_request(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    Loc1 = case lookup:homedomain(Host) of
+    Loc1 = case local:homedomain(Host) of
 	true ->
 	    request_to_homedomain(URL);
 	_ ->
@@ -22,7 +22,7 @@ route_request(URL) ->
     case Loc1 of
 	nomatch ->
 	    logger:log(debug, "Routing: No match - trying default route"),
-	    lookup:lookupdefault(URL);
+	    local:lookupdefault(URL);
 	_ ->
 	    Loc1
     end.
@@ -30,7 +30,7 @@ route_request(URL) ->
 request("REGISTER", URL, Header, Body, Socket, FromIP) ->
     {User, Pass, Host, Port, Parameters} = URL,
     logger:log(debug, "REGISTER ~p", [sipurl:print(URL)]),
-    case lookup:homedomain(Host) of
+    case local:homedomain(Host) of
 	true ->
 	    % delete any present Record-Route header (RFC3261, #10.3)
 	    NewHeader = keylist:delete("Record-Route", Header),
@@ -99,12 +99,12 @@ request_to_homedomain(URL) ->
     Key = local:sipuser(URL),
     logger:log(debug, "Routing: Request to homedomain, sipuser ~p", [Key]),
 
-    Loc1 = lookup:lookupuser(URL),
+    Loc1 = local:lookupuser(URL),
     logger:log(debug, "Routing: lookupuser on ~p -> ~p", [sipurl:print(URL), Loc1]),
 
     case Loc1 of
 	none ->
-	    case lookup:isours(URL) of
+	    case local:isours(URL) of
 		true ->
 		    logger:log(debug, "Routing: ~p is one of our users, returning Temporarily Unavailable", [User]),
 		    {response, 480, "Users location currently unknown"};
@@ -123,9 +123,9 @@ request_to_homedomain_not_sipuser(URL) ->
 
     case Loc1 of
 	none ->
-	    % lookup:lookuppotn() returns 'none' if argument is not numeric,
+	    % local:lookuppotn() returns 'none' if argument is not numeric,
 	    % so we don't have to check that...
-	    Res1 = lookup:lookuppotn(User),
+	    Res1 = local:lookuppotn(User),
 	    logger:log(debug, "Routing: lookuppotn on ~s -> ~p", [User, Res1]),
 	    Res1;
 	_ ->
