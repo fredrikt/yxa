@@ -1,3 +1,3 @@
--record(phone, {number, flags, class, expire, address}).
+-record(phone, {number, flags, class, expire, address, requristr}).
 -record(user, {user, password, number, flags, classes}).
 -record(numbers, {user, number}).

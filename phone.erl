@@ -6,7 +6,7 @@
 	 delete_user/1, set_user_password/2, set_user_flags/2,
 	 set_user_numbers/2, set_user_classes/2, insert_user_or_password/2,
 	 get_numbers_for_user/1, get_users_for_number/1, list_numbers/0,
-	 delete_phone/3]).
+	 delete_phone/3, get_phone_with_requristr/1]).
 
 -include("phone.hrl").
 
@@ -40,10 +40,17 @@ insert_record(Record) ->
     mnesia:transaction(Fun).
 
 insert_phone(Number, Flags, Class, Expire, Address) ->
+    {User, _, Host, APort, _} = Address,
+    Port = siprequest:default_port(APort),
+    URIstr = sipurl:print({User, none, Host, Port, []}),
     insert_record(#phone{number = Number, flags = Flags, class = Class,
-			 expire = Expire, address = Address}).
+			 expire = Expire, address = Address,
+			 requristr = URIstr}).
 
 insert_purge_phone(Number, Flags, Class, Expire, Address) ->
+    {User, _, Host, APort, _} = Address,
+    Port = siprequest:default_port(APort),
+    URIstr = sipurl:print({User, none, Host, Port, []}),
     Fun = fun() ->
 		  Q = query
 			  [E || E <- table(phone),
@@ -58,11 +65,15 @@ insert_purge_phone(Number, Flags, Class, Expire, Address) ->
 		  lists:foreach(Delete, A),
 		  mnesia:write(#phone{number = Number, flags = Flags,
 				      class = Class,
-				      expire = Expire, address = Address})
+				      expire = Expire, address = Address,
+				      requristr = URIstr})
 	  end,
     mnesia:transaction(Fun).    
 
 insert_purge_class_phone(Number, Flags, Class, Expire, Address) ->
+    {User, _, Host, APort, _} = Address,
+    Port = siprequest:default_port(APort),
+    URIstr = sipurl:print({User, none, Host, Port, []}),
     Fun = fun() ->
 		  Q = query
 			  [E || E <- table(phone),
@@ -76,7 +87,8 @@ insert_purge_class_phone(Number, Flags, Class, Expire, Address) ->
 		  lists:foreach(Delete, A),
 		  mnesia:write(#phone{number = Number, flags = Flags,
 				      class = Class,
-				      expire = Expire, address = Address})
+				      expire = Expire, address = Address,
+				      requristr = URIstr})
 	  end,
     mnesia:transaction(Fun).    
 
@@ -190,6 +202,24 @@ get_users_for_number(Number) ->
 		Q = query
 			[{E.user} || E <- table(numbers),
 				     E.number = Number]
+		    end,
+		mnemosyne:eval(Q)
+	end,
+    Rewrite = fun({User}) ->
+		      User
+	      end,
+    case mnesia:transaction(F) of
+	{atomic, List} ->
+	    {atomic, lists:map(Rewrite, List)};
+	Other ->
+	    Other
+    end.
+
+get_phone_with_requristr(ReqURIstr) ->
+    F = fun() ->
+		Q = query
+			[{E.number} || E <- table(phone),
+				     E.requristr = ReqURIstr]
 		    end,
 		mnemosyne:eval(Q)
 	end,
