@@ -15,14 +15,23 @@ request("BYE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
 	{atomic, [Call]} ->
 	    {Origheaders, Pid} = Call,
 	    Pid ! {siprequest, bye},
-	    siprequest:send_result(Header, Socket, "", 200, "OK")
+	    siprequest:send_result(Header, Socket, "", 200, "OK");
+	{atomic, []} ->
+	    logger:log(debug, "Call not found", [])
     end;
 
 request("ACK", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     true;
 
-request("CANCEL", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
-    true;
+request("CANCEL", URI, Header, Body, Socket) ->
+    logger:log(normal, "CANCEL", []),
+    [CallID] = keylist:fetch("Call-ID", Header),
+    case database_call:get_call(CallID) of
+	{atomic, [{proxy, Origheaders, Pid}]} ->
+	    Pid ! {cancel, {URI, Header, Body}};
+	{atomic, []} ->
+	    logger:log(debug, "Call not found", [])
+    end;
 
 request("INVITE", {"messages", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     case sipanswer:start(Header, Body, start, none, none) of
@@ -32,6 +41,10 @@ request("INVITE", {"messages", Pass, Host, Port, Parameters}, Header, Body, Sock
 	{error, _} ->
 	    true
     end;
+
+request("INVITE", {"fork", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+    sipproxy:start("INVITE", {"fork", Pass, Host, Port, Parameters},
+		   Header, Body, Socket);
 
 request("INVITE", {"bounce", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     case sipanswer:bounce(Header, Body, start, none, none) of
@@ -43,10 +56,13 @@ request("INVITE", {"bounce", Pass, Host, Port, Parameters}, Header, Body, Socket
     end.
 
 response(Status, Reason, Header, Body, Socket) ->
-    logger:log(normal, "status:~p", [Status]),
+%    logger:log(normal, "status:~p", [Status]),
     [CallID] = keylist:fetch("Call-ID", Header),
     case database_call:get_call(CallID) of
-	{atomic, [Call]} ->
-	    {Origheaders, Pid} = Call,
-	    Pid ! {siprequest, status, Status, Header, Socket, Body, Origheaders}
+	{atomic, [{answer, Origheaders, [Pid]}]} ->
+	    Pid ! {siprequest, status, Status, Header, Socket, Body, Origheaders};
+	{atomic, [{proxy, Origheaders, Pid}]} ->
+	    Pid ! {response, {Status, Header, Body}};
+	{atomic, []} ->
+	    logger:log(debug, "Call not found", [])
     end.
