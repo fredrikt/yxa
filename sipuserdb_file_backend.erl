@@ -93,12 +93,15 @@ init([]) ->
 	    logger:log(error, E),
 	    ignore;
 	Fn when is_list(Fn) ->
+	    %% Set up periodic checking for changes in the userdb file, default every 15 seconds
 	    case sipserver:get_env(sipuserdb_file_refresh_interval, 15) of
 		X when X == 0; X == none ->
+		    %% periodic checking for new data disabled through configuration
 		    ok;
 		Interval when is_integer(Interval) ->
 		    {ok, _T} = timer:send_interval(Interval * 1000, ?SERVER, {check_file})
 	    end,
+
 	    case get_mtime(Fn) of
 		{ok, MTime} ->
 		    case read_userdb(#state{fn=Fn}, MTime, init) of
@@ -110,7 +113,7 @@ init([]) ->
 		    end;
 		Unknown ->
 		    logger:log(error, "sipuserdb_file: could not get mtime for file ~p : ~p", [Fn, Unknown]),
-		    {ok, #state{fn=Fn}}
+		    {stop, "sipuserdb_file: get_mtime of userdb failed"}
 	    end
     end.
 
@@ -150,11 +153,11 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast/2
-%% Description: Handling cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_cast(Msg, State)
+%% Descrip.: Handling cast messages
+%% Returns : {noreply, State}          |
+%%           {noreply, State, Timeout} |
+%%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
@@ -196,7 +199,7 @@ handle_cast(Unknown, State) ->
 %% Function: handle_info({check_file}, State)
 %% Descrip.: Periodically check if our files mtime has changed, and if
 %%           so reload it.
-%% Returns: {noreply, State}
+%% Returns : {noreply, State}
 %%--------------------------------------------------------------------
 handle_info({check_file}, State) ->
     case get_mtime(State#state.fn) of
@@ -218,23 +221,34 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate/2
-%% Description: Shutdown the server
-%% Returns: any (ignored by gen_server)
+%% Function: terminate(Reason, State)
+%%           Reason = term()
+%% Descrip.: Shutdown the server
+%% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
-    ok.
+terminate(Reason, _State) ->
+    Reason.
 
 %%--------------------------------------------------------------------
-%% Func: code_change/3
-%% Purpose: Convert process state when code is changed
-%% Returns: {ok, NewState}
+%% Function: code_change(OldVsn, State, Extra)
+%% Descrip.: Convert process state when code is changed
+%% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
 %%% Internal functions
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: read_userdb(State, MTime, Caller)
+%%           State  = state record()
+%%           MTime  = integer(), file modification time
+%%           Caller = atom(), who is calling us (init | cast | info)
+%% Descrip.: (Re-)load the user database. 
+%% Returns : State           |
+%%           {error, Reason}
 %%--------------------------------------------------------------------
 read_userdb(State, MTime, Caller) when is_record(State, state) ->
     logger:log(debug, "sipuserdb_file: (Re-)Loading userdb from file ~p", [State#state.fn]),
@@ -261,9 +275,26 @@ read_userdb(State, MTime, Caller) when is_record(State, state) ->
 	    read_userdb_error(E, State, Caller)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: read_userdb_error(E, State, Caller)
+%%           E      = string(), the error reason
+%%           State  = state record()
+%%           Caller = atom(), who we are formatting the error for
+%%                    (init | cast | info)
+%% Descrip.: Create error return-value for read_userdb/3. Different
+%%           depending on who it is that called read_userdb/3 - for
+%%           'init' (startup), we have no good database in memory to
+%%           fall back on, so we return {error, E} while for others
+%%           we log the error and return the old state which contains
+%%           the last good user database.
+%% Returns : {error, Reason} |
+%%           NewState
+%%           Reason = string()
+%%           NewState = state record()
+%%--------------------------------------------------------------------
 read_userdb_error(E, State, init) when is_record(State, state) ->
     %% On init, always return error tuple
-    {error, E};
+    {error, lists:flatten(E)};
 read_userdb_error(E, State, cast) when is_record(State, state) ->
     %% On cast, always log errors
     logger:log(error, E, []),
@@ -280,6 +311,14 @@ read_userdb_error(E, State, info) when is_record(State, state) ->
 	    State#state{last_fail=Now}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_mtime(Fn)
+%%           Fn = string(), the filename
+%% Descrip.: Get file modification time of a file.
+%% Returns : {ok, MTime} |
+%%           error
+%%           MTime = integer()
+%%--------------------------------------------------------------------
 get_mtime(Fn) ->
     case file:read_file_info(Fn) of
 	{ok, FileInfo} when is_record(FileInfo, file_info) ->
@@ -289,29 +328,62 @@ get_mtime(Fn) ->
 	    error
     end.
 
+%%--------------------------------------------------------------------
+%% Function: parse_db([TermList])
+%%           TermList = list() of term(), result of file:consult()
+%% Descrip.: Parse our userdb file.
+%% Returns : {ok, UserList, AddrList} |
+%%           {error, Reason}
+%%           UserList = list() of user record()
+%%           AddrList = list() of addr record()
+%%           Reason   = string()
+%%--------------------------------------------------------------------
 parse_db([TermList]) ->
     parse_term(TermList, [], []).
 
-parse_term([], U, A) ->
-    {ok, lists:reverse(U), lists:reverse(A)};
-parse_term([{user, Params} | T], U, A) ->
+%%--------------------------------------------------------------------
+%% Function: parse_term(In, UserList, AddrList) 
+%%           In       = list() of {user, Params} | {address, Params}
+%%                      record()
+%%           UserList = list() of user record()
+%%           AddrList = list() of addr record()
+%% Descrip.: Parse terms read from the userdb file.
+%% Returns : {ok, UserList, AddrList} |
+%%           {error, Reason}
+%%           UserList = list() of user record()
+%%           AddrList = list() of addr record()
+%%           Reason   = string()
+%%--------------------------------------------------------------------
+parse_term([], UserList, AddrList) ->
+    {ok, lists:reverse(UserList), lists:reverse(AddrList)};
+parse_term([{user, Params} | T], UserList, AddrList) ->
     case parse_user(Params, #user{}) of
 	R when is_record(R, user) ->
-	    parse_term(T, [R | U], A);
+	    parse_term(T, [R | UserList], AddrList);
 	E ->
 	    E
     end;
-parse_term([{address, Params} | T], U, A) ->
+parse_term([{address, Params} | T], UserList, AddrList) ->
     case parse_address(Params, #address{}) of
 	R when is_record(R, address) ->
-	    parse_term(T, U, [R | A]);
+	    parse_term(T, UserList, [R | AddrList]);
 	E ->
 	    E
     end;
-parse_term([H | _T], _U, _A) ->
+parse_term([H | _T], _UserList, _AddrList) ->
     {error, io_lib:format("sipuserdb_file: Unknown data : ~p", [H])}.
 
-parse_user([], U) ->
+%%--------------------------------------------------------------------
+%% Function: parse_user(Params, U)
+%%           Params = list() of {Key, Value} tuple()
+%%           U      = user record()
+%% Descrip.: Parse a user entry.
+%% Returns : User            |
+%%           {error, Reason}
+%%           User   = user record()
+%%           Reason = string()
+%%--------------------------------------------------------------------
+parse_user([], U) when is_record(U, user) ->
     U;
 parse_user([{name, V} | T], U) when is_record(U, user) ->
     parse_user(T, U#user{name=V});
@@ -325,7 +397,17 @@ parse_user([H | _T], U) when is_record(U, user) ->
     E = io_lib:format("bad data in user record (name ~p) : ~p", [U#user.name, H]),
     {error, E}.
 
-parse_address([], A) ->
+%%--------------------------------------------------------------------
+%% Function: parse_address(Params, A)
+%%           Params = list() of {Key, Value} tuple()
+%%           A      = address record()
+%% Descrip.: Parse an address entry.
+%% Returns : Address         |
+%%           {error, Reason}
+%%           Address = address record()
+%%           Reason  = string()
+%%--------------------------------------------------------------------
+parse_address([], A) when is_record(A, address)->
     A;
 parse_address([{user, V} | T], A) when is_record(A, address) ->
     parse_address(T, A#address{user=V});
@@ -334,4 +416,3 @@ parse_address([{address, V} | T], A) when is_record(A, address) ->
 parse_address([H | _T], A) when is_record(A, address) ->
     E = io_lib:format("bad data in address record (user ~p) : ~p", [A#address.user, H]),
     {error, E}.
-
