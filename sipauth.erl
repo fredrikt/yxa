@@ -183,7 +183,15 @@ can_use_name(User, Number) ->
 		CanonUser ->
 		    {true, Numberlist};
 		CanonNumber ->
-		    {lists:member(CanonNumber, canon_list(Numberlist)), []}
+		    Res = {lists:member(CanonNumber, canon_list(Numberlist)), []},
+		    case Res of
+			true ->
+			    true;
+			_ ->
+			    logger:log(debug, "Auth: User ~p may NOT user number ~p (allowed number(s): ~p)",
+					[User, Number, Numberlist])
+		    end,
+		    Res
 	    end
     end.
 
