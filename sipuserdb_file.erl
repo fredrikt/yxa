@@ -1,12 +1,19 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipuserdb_file.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : A persistent sipuserdb module that reads it's user
-%%%               database from a file using file:consult.
+%%% Descrip.: A persistent sipuserdb module that reads it's user
+%%%           database from a file using file:consult().
 %%%
 %%% Created : 11 Aug 2004 by Fredrik Thulin <ft@it.su.se>
+%%%
+%%% Notes   : If there is unparsable data in the userdb when we start,
+%%            we crash rather ungracefully. Start with empty userdb
+%%            or crash? If the latter then at least crash with style.
+%%            We don't validate data (like addresses) when we load it
+%%            - maybe we should.
 %%%-------------------------------------------------------------------
 -module(sipuserdb_file).
+%%-compile(export_all).
 
 -behaviour(gen_server).
 %%--------------------------------------------------------------------
@@ -15,12 +22,12 @@
 
 %%--------------------------------------------------------------------
 %% External exports
+%%--------------------------------------------------------------------
 -export([start_link/0]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-
+%%--------------------------------------------------------------------
 %% standard Yxa userdb module exports
+%%--------------------------------------------------------------------
 -export([yxa_init/0,
 	 get_user_with_address/1,
 	 get_users_for_address_of_record/1,
@@ -35,20 +42,57 @@
 	 get_forward_for_user/1
 	]).
 
+%%--------------------------------------------------------------------
+%% Internal exports - gen_server callbacks
+%%--------------------------------------------------------------------
+-export([
+	 init/1, 
+	 handle_call/3, 
+	 handle_cast/2, 
+	 handle_info/2, 
+	 terminate/2, 
+	 code_change/3
+	]).
+
+%%--------------------------------------------------------------------
+%% Extra exports - module specific manual-use functions
+-export([
+	 reload_userdb/0
+	 ]).
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("siprecords.hrl").
-
-%%-compile(export_all).
-
-%% File userdb module
-
--record(user, {name, password, classes, forward}).
--record(address, {user, address}).
-
--record(state, {fn, file_mtime, last_fail, userlist, addresslist}).
-
 %% needed for file:read_file_info
 -include_lib("kernel/include/file.hrl").
 
+
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+-record(user, {
+	  name,
+	  password,
+	  classes,
+	  forward
+	 }).
+-record(address, {
+	  user,
+	  address
+	 }).
+
+-record(state, {
+	  fn,
+	  file_mtime,
+	  last_fail,
+	  userlist,
+	  addresslist
+	 }).
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
 %% how often we will log errors with our periodical reading of the
 %% user database file
 -define(LOG_THROTTLE_SECONDS, 300).
@@ -57,24 +101,26 @@
 %% External functions
 %%====================================================================
 
-%% Function: yxa_init/0
-%% Description: Perform any necessary startup initialization and
-%%              return an OTP supervisor child spec if we want to add
-%%              to sipserver_sup's list. If this sipuserdb_module
-%%              needs to be persistent, it should be a gen_server and
-%%              init should just return a spec so that the gen_server
-%%              is started by the supervisor.
-%% Returns: Spec |
-%%          []
+%%--------------------------------------------------------------------
+%% Function: yxa_init()
+%% Descrip.: Perform any necessary startup initialization and
+%%           return an OTP supervisor child spec if we want to add
+%%           to sipserver_sup's list. If this sipuserdb_module
+%%           needs to be persistent, it should be a gen_server and
+%%           init should just return a spec so that the gen_server
+%%           is started by the supervisor.
+%% Returns : Spec |
+%%           []
+%%           Spec = OTP supervisor child specification
 %%--------------------------------------------------------------------
 yxa_init() ->
     [{sipuserdb_file, {sipuserdb_file, start_link, []},
-                 permanent, 2000, worker, [sipuserdb_file]}
+      permanent, 2000, worker, [sipuserdb_file]}
     ].
 
 %%--------------------------------------------------------------------
-%% Function: start_link/0
-%% Description: Starts the server
+%% Function: start_link()
+%% Descrip.: Starts the persistent sipuserdb_file gen_server.
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, sipuserdb_file}, ?MODULE, [], []).
@@ -84,12 +130,12 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init/1
-%% Description: Initiates the server
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
+%% Function: init([])
+%% Descrip.: Initiates the server
+%% Returns : {ok, State}          |
+%%           {ok, State, Timeout} |
+%%           ignore               |
+%%           {stop, Reason}
 %%--------------------------------------------------------------------
 init([]) ->
     case sipserver:get_env(sipuserdb_file_filename, none) of
@@ -97,17 +143,17 @@ init([]) ->
 	    E = "sipuserdb_file module activated, but sipuserdb_file_filename not set - module disabled",
 	    logger:log(error, E),
 	    ignore;
-	Fn when list(Fn) ->
-	    case sipserver:get_env(sipuserdb_file_refresh_interval, 60) of
+	Fn when is_list(Fn) ->
+	    case sipserver:get_env(sipuserdb_file_refresh_interval, 15) of
 		X when X == 0; X == none ->
 		    ok;
-		Interval when integer(Interval) ->
-		    {ok, T} = timer:send_interval(Interval * 1000, sipuserdb_file, {check_file})
+		Interval when is_integer(Interval) ->
+		    {ok, _T} = timer:send_interval(Interval * 1000, sipuserdb_file, {check_file})
 	    end,
 	    case get_mtime(Fn) of
 		{ok, MTime} ->
 		    case read_userdb(#state{fn=Fn}, MTime, init) of
-			NewState when record(NewState, state) ->
+			NewState when is_record(NewState, state) ->
 			    {ok, NewState};
 			{error, Reason} ->
 			    logger:log(error, Reason, []),
@@ -119,25 +165,40 @@ init([]) ->
 	    end
     end.
 
+
 %%--------------------------------------------------------------------
-%% Function: handle_call/3
-%% Description: Handling call messages
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_call(Msg, From, State)
+%% Descrip.: Handling call messages
+%% Returns : {reply, Reply, State}          |
+%%           {reply, Reply, State, Timeout} |
+%%           {noreply, State}               |
+%%           {noreply, State, Timeout}      |
+%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call({fetch_users}, From, State) ->
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({fetch_users}, From, State)
+%% Descrip.: Fetch our user database.
+%% Returns : {reply, {ok, Users}, State}
+%%           Users = list() of user record()
+%%--------------------------------------------------------------------
+handle_call({fetch_users}, _From, State) ->
     {reply, {ok, State#state.userlist}, State};
 
-handle_call({fetch_addresses}, From, State) ->
+%%--------------------------------------------------------------------
+%% Function: handle_call({fetch_addresses}, From, State)
+%% Descrip.: Fetch our address database.
+%% Returns : {reply, {ok, Addresses}, State}
+%%           Addresses = list() of address record()
+%%--------------------------------------------------------------------
+handle_call({fetch_addresses}, _From, State) ->
     {reply, {ok, State#state.addresslist}, State};
 
-handle_call(Unknown, From, State) ->
+handle_call(Unknown, _From, State) ->
     logger:log(error, "sipuserdb_file: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "unknown gen_server call in sipuserdb_file"}, State}.
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast/2
@@ -146,12 +207,19 @@ handle_call(Unknown, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast({reload_userdb}, State)
+%% Descrip.: Signal to reload our user database, even if mtime has
+%%           not changed.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
 handle_cast({reload_userdb}, State) ->
     logger:log(debug, "sipuserdb_file: Forcing reload of userdb upon request"),
     case get_mtime(State#state.fn) of
 	{ok, MTime} ->
 	    case read_userdb(State, MTime, cast) of
-		NewState when record(NewState, state) ->
+		NewState when is_record(NewState, state) ->
 		    {noreply, NewState};
 		{error, _} ->
 		    {noreply, State}
@@ -166,18 +234,26 @@ handle_cast(Unknown, State) ->
     logger:log(error, "sipuserdb_file: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
+
 %%--------------------------------------------------------------------
-%% Function: handle_info/2
-%% Description: Handling all non call/cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_info(Msg, State)
+%% Descrip.: Handling all non call/cast messages
+%% Returns : {noreply, State}          |
+%%           {noreply, State, Timeout} |
+%%           {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: handle_info({check_file}, State)
+%% Descrip.: Periodically check if our files mtime has changed, and if
+%%           so reload it.
+%% Returns: {noreply, State}
 %%--------------------------------------------------------------------
 handle_info({check_file}, State) ->
     case get_mtime(State#state.fn) of
 	{ok, MTime} when MTime /= State#state.file_mtime ->
 	    case read_userdb(State, MTime, info) of
-		NewState when record(NewState, state) ->
+		NewState when is_record(NewState, state) ->
 		    {noreply, NewState};
 		{error, _} ->
 		    {noreply, State}
@@ -187,7 +263,7 @@ handle_info({check_file}, State) ->
 	    %% We don't check (care) which one...
 	    {noreply, State}
     end;
-    
+
 handle_info(Info, State) ->
     logger:log(error, "sipuserdb_file: Received unknown signal : ~p", [Info]),
     {noreply, State}.
@@ -197,7 +273,7 @@ handle_info(Info, State) ->
 %% Description: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
@@ -205,7 +281,7 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
@@ -214,13 +290,17 @@ code_change(OldVsn, State, Extra) ->
 %%--------------------------------------------------------------------
 
 
-%% Function: get_user_with_address/1
-%% Description: Looks up exactly one user with an Address. Used for
-%%              example in REGISTER. If there are multiple users with
-%%              an address, this function returns 'error'.
-%% Returns: Username |
-%%          nomatch  |
-%%          error
+%%--------------------------------------------------------------------
+%% Function: get_user_with_address(Address)
+%%           Address = string(), an address in string format.
+%% Descrip.: Looks up exactly one user with an Address. Used for
+%%           example in REGISTER. If there are multiple users with
+%%           this address in our database, this function returns
+%%           'error'.
+%% Returns:  Username |
+%%           nomatch  |
+%%           error
+%%           Username = string()
 %%--------------------------------------------------------------------
 get_user_with_address(Address) ->
     case get_users_using_address(Address) of
@@ -230,7 +310,7 @@ get_user_with_address(Address) ->
 	[User] ->
 	    %% There exists exactly one user with this name
 	    User;
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    logger:log(debug, "userdb-file: More than one user with address ~p (~p)", [Address, Users]),
 	    error;
 	Unknown ->
@@ -240,15 +320,18 @@ get_user_with_address(Address) ->
     end.
 
 
-%% Function: get_users_for_address_of_record/1
-%% Description: Get all usernames of users matching an address. Used
-%%              to find out to which users we should send a request.
-%% Returns: ListOfUsers |
-%%          error
+%%--------------------------------------------------------------------
+%% Function: get_users_for_address_of_record(Address)
+%%           Address = string(), an address in string format.
+%% Descrip.: Get all usernames of users matching an address. Used to
+%%           find out to which users we should send a request.
+%% Returns : Users |
+%%           error
+%%           Users = list() of string() 
 %%--------------------------------------------------------------------
 get_users_for_address_of_record(Address) ->
     case get_users_using_address(Address) of
-	L when list(L) ->
+	L when is_list(L) ->
 	    L;
 	Unknown ->
 	    logger:log(error, "userdb-file: Unexpected result from get_users_using_address(), address ~p result : ~p",
@@ -257,11 +340,13 @@ get_users_for_address_of_record(Address) ->
     end.
 
 
-%% Function: get_users_for_addresses_of_record/1
-%% Description: Iterate over a list of addresses of record, return
-%%              all users matching one or more of the addresses,
-%%              without duplicates.
-%% Returns: ListOfUsernames
+%%--------------------------------------------------------------------
+%% Function: get_users_for_addresses_of_record(In)
+%%           In = list() of string(), addresses in string format.
+%% Descrip.: Iterate over a list of addresses of record, return
+%%           all users matching one or more of the addresses,
+%%           without duplicates.
+%% Returns : Users, list() of string()
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(In) ->
     get_users_for_addresses_of_record2(In, []).
@@ -270,18 +355,20 @@ get_users_for_addresses_of_record2([], Res) ->
     lists:usort(Res);
 get_users_for_addresses_of_record2([H | T], Res) ->
     case get_users_for_address_of_record(H) of
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    get_users_for_addresses_of_record2(T, lists:append(Res, Users));
 	_ ->
 	    get_users_for_addresses_of_record2(T, Res)
     end.
 
 
-%% Function: get_addresses_for_users/1
-%% Description: Iterate over a list of users, return all their
-%%              addresses without duplicates by using the next
-%%              function, get_addresses_for_user/1.
-%% Returns: ListOfAddresses
+%%--------------------------------------------------------------------
+%% Function: get_addresses_for_users(In)
+%%           In = list() of string(), usernames
+%% Descrip.: Iterate over a list of users, return all their
+%%           addresses without duplicates by using the next
+%%           function, get_addresses_for_user/1.
+%% Returns : Addresses, list() of string()
 %%--------------------------------------------------------------------
 get_addresses_for_users(In) ->
     get_addresses_for_users2(In, []).
@@ -291,27 +378,29 @@ get_addresses_for_users2([], Res) ->
     lists:usort(Res);
 get_addresses_for_users2([H | T], Res) ->
     case get_addresses_for_user(H) of
-	A when list(A) ->
+	A when is_list(A) ->
 	    get_addresses_for_users2(T, lists:append(Res, A));
 	_ ->
 	    get_addresses_for_users2(T, Res)
     end.
 
 
-%% Function: get_addresses_for_user/1
-%% Description: Get all possible addresses of a user. Both configured
-%%              ones, and implcit ones. Used for example to check if a
-%%              request from a user has an acceptable From: header.
-%% Returns: ListOfAddresses |
-%%          nomatch         |
-%%          error
+%%--------------------------------------------------------------------
+%% Function: get_addresses_for_user(Username)
+%%           Username = string()
+%% Descrip.: Get all possible addresses of a user. Both configured
+%%           ones, and implcit ones. Used for example to check if a
+%%           request from a user has an acceptable From: header.
+%% Returns : Addresses |
+%%           error
+%%           Addresses = list() of address record()
 %%--------------------------------------------------------------------
 get_addresses_for_user(Username) ->
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-file: No such user ~p", [Username]),
 	    [];
-	User when record(User, user) ->
+	User when is_record(User, user) ->
 	    collect_addresses(get_addresses_using_user(User));
 	Unknown ->
 	    logger:log(error, "userdb-file: Unexpected result from get_user(), user ~p result : ~p",
@@ -320,16 +409,18 @@ get_addresses_for_user(Username) ->
     end.
 
 
-%% Function: get_users_for_url/1
-%% Description: Given an URL that is typically the Request-URI of an
-%%              incoming request, make a list of implicit user
-%%              addresses and return a list of all users matching any
-%%              of these addresses. This is located in here since
-%%              user database backends can have their own way of
-%%              deriving addresses from a Request-URI.
-%% Returns: ListOfUsernames
 %%--------------------------------------------------------------------
-get_users_for_url(URL) when record(URL, sipurl) ->
+%% Function: get_users_for_url(URL)
+%%           URL = sipurl record()
+%% Descrip.: Given an URL that is typically the Request-URI of an
+%%           incoming request, make a list of implicit user
+%%           addresses and return a list of all users matching any
+%%           of these addresses. This is located in here since
+%%           user database backends can have their own way of
+%%           deriving addresses from a Request-URI.
+%% Returns : Usernames, list() of string()
+%%--------------------------------------------------------------------
+get_users_for_url(URL) when is_record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_file, URL),
     logger:log(debug, "userdb-file: Looking for users matching address(es) ~p derived from URL ~p",
 	       [Addresses, sipurl:print(URL)]),
@@ -340,18 +431,21 @@ get_users_for_url(URL) when record(URL, sipurl) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-%% Function: get_password_for_user/1
-%% Description: Returns the password for a user.
-%% Returns: PasswordString |
-%%          nomatch        |
-%%          error
+%%--------------------------------------------------------------------
+%% Function: get_password_for_user(Username)
+%%           Username = string()
+%% Descrip.: Returns the password for a user.
+%% Returns : Password |
+%%           nomatch  |
+%%           error
+%%           Password = string()
 %%--------------------------------------------------------------------
 get_password_for_user(Username) ->
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-file: No such user ~p when fetching password", [Username]),
 	    nomatch;
-	User when record(User, user) ->
+	User when is_record(User, user) ->
 	    User#user.password;
 	Unknown ->
 	    logger:log(error, "userdb-file: Unexpected result from get_user(), user ~p result : ~p",
@@ -360,20 +454,24 @@ get_password_for_user(Username) ->
     end.
 
 
-%% Function: get_classes_for_users/1
-%% Description: Returns a list of classes allowed for a user. Classes
-%%              are used by pstnproxy to determine if it should allow
-%%              a call to a PSTN number (of a certain class) from a
-%%              user or not.
-%% Returns: ClassesList |
-%%          nomatch
+%%--------------------------------------------------------------------
+%% Function: get_classes_for_user(Username)
+%%           Username = string()
+%% Descrip.: Returns a list of classes allowed for a user. Classes
+%%           are used by pstnproxy to determine if it should allow
+%%           a call to a PSTN number (of a certain class) from a
+%%           user or not.
+%% Returns : Classes |
+%%           nomatch |
+%%           error
+%%           Classes = list() of atom()
 %%--------------------------------------------------------------------
 get_classes_for_user(Username) ->
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-file: No such user ~p when fetching password", [Username]),
 	    nomatch;
-	User when record(User, user) ->
+	User when is_record(User, user) ->
 	    case User#user.classes of
 		_ when User#user.classes == none ; User#user.classes == undefined ->
 		    [];
@@ -387,27 +485,30 @@ get_classes_for_user(Username) ->
     end.
 
 
-%% Function: get_telephonenumber_for_user/1
-%% Description: Return the telephone number for a user. We do this by
-%%              fetching all addresses for the user and then examining
-%%              them to see if any of them is a tel: URL, or has a
-%%              user part which is all numeric or is an E.164 number.
-%% Returns: NumberString |
-%%          nomatch      |
-%%          error
+%%--------------------------------------------------------------------
+%% Function: get_telephonenumber_for_user(Username)
+%%           Username = string()
+%% Descrip.: Return the telephone number for a user. We do this by
+%%           fetching all addresses for the user and then examining
+%%           them to see if any of them is a tel: URL, or has a
+%%           user part which is all numeric or is an E.164 number.
+%% Returns : Number  |
+%%           nomatch |
+%%           error
+%%           Number = string()
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(Username) ->
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-file: No such user ~p when fetching telephone number", [Username]),
 	    nomatch;
-	User when record(User, user) ->
+	User when is_record(User, user) ->
 	    case get_addresses_using_user(User) of
 		nomatch ->
 		    nomatch;
 		error ->
 		    error;
-		A when list(A) ->
+		A when is_list(A) ->
 		    %% Look through the addresses returned and return the first one
 		    %% which has an all numeric user-part.
 		    case find_first_telephonenumber(A) of
@@ -419,7 +520,7 @@ get_telephonenumber_for_user(Username) ->
 			    logger:log(debug, "userdb-file: User ~p has no address that looks like a phone number (addresses : ~p)",
 				       [Username, collect_addresses(A)]),
 			    nomatch;
-			Address when record(Address, address) ->
+			Address when is_record(Address, address) ->
 			    URL = sipurl:parse(Address#address.address),
 			    URL#sipurl.user
 		    end;
@@ -435,10 +536,12 @@ get_telephonenumber_for_user(Username) ->
     end.
 
 
-%% Function: get_forwards_for_users/1
-%% Description: Return a list of all forwards for a list of users.
-%%              Uses the next function, get_forward_for_user/1.
-%% Returns: ForwardList
+%%--------------------------------------------------------------------
+%% Function: get_forwards_for_users(In)
+%%           In = list() of string(), list of usernames
+%% Descrip.: Return a list of all forwards for a list of users.
+%%           Uses the next function, get_forward_for_user/1.
+%% Returns : Forwards, list() of string()
 %%--------------------------------------------------------------------
 get_forwards_for_users(In) ->
     get_forwards_for_users2(In, []).
@@ -448,41 +551,41 @@ get_forwards_for_users2([], Res) ->
     lists:usort(Res);
 get_forwards_for_users2([H | T], Res) ->
     case get_forward_for_user(H) of
+	Fwd when is_list(Fwd) ->
+	    get_forwards_for_users2(T, lists:append(Res, [Fwd]));
 	nomatch ->
 	    get_forwards_for_users2(T, Res);
-	Fwd ->
-	    get_forwards_for_users2(T, lists:append(Res, [Fwd]))
+	error ->
+	    get_forwards_for_users2(T, Res)
     end.
 
 
-%% Function: get_forward_for_user/1
-%% Description: Return the forward for a user.
-%% Returns: Forward |
-%%          nomatch |
-%%          error
+%%--------------------------------------------------------------------
+%% Function: get_forward_for_user(Username)
+%%           Username = string()
+%% Descrip.: Return the forward for a user.
+%% Returns : Forward |
+%%           nomatch |
+%%           error
+%%           Forward = string()
 %%--------------------------------------------------------------------
 get_forward_for_user(Username) ->
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-file: No forwards found for user ~p", [Username]),
 	    nomatch;
-	User when record(User, user) ->
+	User when is_record(User, user) ->
 	    case User#user.forward of
 		Foo when Foo == none; Foo == []; Foo == undefined ->
 		    nomatch;
-		L when list(L) ->
+		L when is_list(L) ->
 		    L;
-		U ->
+		_ ->
 		    logger:log(error, "userdb-file: User ~p has invalid forward in database : ~p",
 			       [Username, User#user.forward]),
 		    error
-	    end;
-	Unknown ->
-	    logger:log(error, "userdb-file: Unexpected result from database_forward:fetch(), user ~p result : ~p",
-		       [Username, Unknown]),
-	    error
+	    end
     end.
-
 
 
 %%--------------------------------------------------------------------
@@ -490,92 +593,101 @@ get_forward_for_user(Username) ->
 %%--------------------------------------------------------------------
 
 
-%% Function: get_user/1
-%% Description: Fetch a user record from the user database,
-%%              given it's username.
-%% Returns: User    |
-%%          nomatch
 %%--------------------------------------------------------------------
-get_user(User) ->
+%% Function: get_user(User)
+%%           User = string()
+%% Descrip.: Fetch a user record from the user database, given it's
+%%           username.
+%% Returns : User    |
+%%           nomatch
+%%--------------------------------------------------------------------
+get_user(User) when is_list(User) ->
     get_user2(User, fetch_users()).
 
-get_user2(User, []) ->
+get_user2(_User, []) ->
     nomatch;
-get_user2(User, [H | T]) when record(H, user), H#user.name == User ->
+get_user2(User, [H | _T]) when is_record(H, user), H#user.name == User ->
     H;
-get_user2(User, [H | T]) when record(H, user) ->
+get_user2(User, [H | T]) when is_record(H, user) ->
     get_user2(User, T);
 get_user2(User, [H | T]) ->
     logger:log(error, "userdb-file: Malformed user record : ~p", [H]),
     get_user2(User, T).
 
-
-%% Function: get_addresses_using_user/1
-%% Description: Return all addresses for a username or a user record.
-%% Returns: ListOfAddresses
 %%--------------------------------------------------------------------
-get_addresses_using_user(Username) when list(Username) ->
+%% Function: get_addresses_using_user(Username)
+%%           User = string() or user record()
+%% Descrip.: Return all addresses for a username or a user record.
+%% Returns : Addresses, list() of address record()
+%%--------------------------------------------------------------------
+get_addresses_using_user(Username) when is_list(Username) ->
     case get_user(Username) of
 	nomatch ->
 	    logger:log(error, "userdb-file: No user named ~p, can't look up addresses", [Username]),
 	    [];
-	User when record(User, user) ->
+	User when is_record(User, user) ->
 	    get_addresses_using_user2(Username, fetch_addresses(), [])
     end;
-get_addresses_using_user(User) when record(User, user) ->
+get_addresses_using_user(User) when is_record(User, user) ->
     get_addresses_using_user2(User#user.name, fetch_addresses(), []).
 
-get_addresses_using_user2(Username, [], Res) ->
+get_addresses_using_user2(_Username, [], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
-get_addresses_using_user2(Username, [H | T], Res) when record(H, address), H#address.user == Username ->
+get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address), H#address.user == Username ->
     %% Username matches the username for the address record (H)
     get_addresses_using_user2(Username, T, lists:append(Res, [H]));
-get_addresses_using_user2(Username, [H | T], Res) when record(H, address) ->
+get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address) ->
     get_addresses_using_user2(Username, T, Res).
 
 
-%% Function: get_users_using_address/1
-%% Description: Given an address (list) or URL (sipurl record), locate
-%%              and return all address records in the userdb, fetched
-%%              from the persistent sipuserdb_file process,
-%%              that matches using URI address matching rules.
-%% Returns: ListOfUsernames
 %%--------------------------------------------------------------------
-get_users_using_address(Address) when list(Address) ->
+%% Function: get_users_using_address(Address)
+%%           Address = string() | sipurl record()
+%% Descrip.: Given an address (list) or URL (sipurl record), locate
+%%           and return all address records in the userdb, fetched
+%%           from the persistent sipuserdb_file process, that matches
+%%           using URI address matching rules.
+%% Returns : Usernames, list() of string()
+%%--------------------------------------------------------------------
+get_users_using_address(Address) when is_list(Address) ->
     %% Check that Address is a parseable URL. It really does not have to
     %% be - it is often the result of canonization of a Request-URI, URL
     %% or address of some form.
     case sipurl:parse(Address) of
-	URL when record(URL, sipurl) ->
+	URL when is_record(URL, sipurl) ->
 	    case get_user_records_for_url(URL, fetch_addresses(), []) of
 		error ->
 		    [];
-		R when list(R) ->
+		R when is_list(R) ->
 		    collect_usernames(R)
 	    end;
 	_ ->
 	    %% unparseable URL
 	    []
     end;
-get_users_using_address(URL) when record(URL, sipurl) ->
+get_users_using_address(URL) when is_record(URL, sipurl) ->
     R = get_user_records_for_url(URL, fetch_addresses(), []),
     collect_usernames(R).
 
 
-%% Function: get_user_records_for_url/4
-%% Description: Given an URL (sipurl record), locate and return all
-%%              address records in the userdb, fetched from the
-%%	        persistent sipuserdb_file process, that matches using
-%%              URI address matching rules, or the user records
-%%              matching the address.
-%% Returns: ListOfUserRecords |
-%%          error
 %%--------------------------------------------------------------------
-get_user_records_for_url(URL, [], Res) ->
+%% Function: get_user_records_for_url(URL, Addresses, [])
+%%           URL       = sipurl record()
+%%           Addresses = list() of address record() 
+%% Descrip.: Given an URL (sipurl record), locate and return all
+%%           address records in the userdb, fetched from the
+%%	     persistent sipuserdb_file process, that matches using URI
+%%           address matching rules, or the user records matching the
+%%           address.
+%% Returns : Users |
+%%           error
+%%           Users = list() of user record()
+%%--------------------------------------------------------------------
+get_user_records_for_url(_URL, [], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
-get_user_records_for_url(URL, [H | T], Res) when record(URL, sipurl), record(H, address) ->
+get_user_records_for_url(URL, [H | T], Res) when is_record(URL, sipurl), is_record(H, address) ->
     case sipurl:url_is_equal(URL, sipurl:parse(H#address.address)) of
 	true ->
 	    %% Check that there is actually a user for this address record too
@@ -585,7 +697,7 @@ get_user_records_for_url(URL, [H | T], Res) when record(URL, sipurl), record(H, 
 			       "but it does not have a matching user record : ~p",
 			       [sipurl:print(URL), H]),
 		    get_user_records_for_url(URL, T, Res);
-		U when record(U, user) ->
+		U when is_record(U, user) ->
 		    %% Address record matching URL found, and we also have a user
 		    %% matching the address records user variable.
 		    get_user_records_for_url(URL, T, lists:append(Res, [U]))
@@ -594,18 +706,17 @@ get_user_records_for_url(URL, [H | T], Res) when record(URL, sipurl), record(H, 
 	    %% URL does NOT match this address record, try next (T)
 	    get_user_records_for_url(URL, T, Res)
     end;
-get_user_records_for_url(URL, [H | T], Res) when record(URL, sipurl) ->
+get_user_records_for_url(URL, [H | T], Res) when is_record(URL, sipurl) ->
     logger:log(error, "userdb-file: Malformed address record : ~p", [H]),
-    get_user_records_for_url(URL, T, Res);
-get_user_records_for_url(URL, [H | T], Res) ->
-    logger:log(error, "userdb-file: Malformed URL in get_user_records_for_url : ~p", [URL]),
-    error.
+    get_user_records_for_url(URL, T, Res).
 
 
-%% Function: collect_usernames/1
-%% Description: Collect and return a list of all usernames from a
-%%              set of user and/or address records.
-%% Returns: ListOfUsernames
+%%--------------------------------------------------------------------
+%% Function: collect_usernames(In)
+%%           In = list() of user and/or address record()
+%% Descrip.: Collect and return a list of all usernames from a
+%%           set of user and/or address records.
+%% Returns : Usernames, list() of string()
 %%--------------------------------------------------------------------
 collect_usernames(In) ->
     collect_usernames2(In, []).
@@ -613,9 +724,9 @@ collect_usernames(In) ->
 collect_usernames2([], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
-collect_usernames2([H | T], Res) when record(H, user) ->
+collect_usernames2([H | T], Res) when is_record(H, user) ->
     collect_usernames2(T, lists:append(Res, [H#user.name]));
-collect_usernames2([H | T], Res) when record(H, address) ->
+collect_usernames2([H | T], Res) when is_record(H, address) ->
     collect_usernames2(T, lists:append(Res, [H#address.user]));
 collect_usernames2([H | T], Res) ->
     logger:log(error, "userdb-file: Input to collect_usernames2 is neither address nor user record : ~p",
@@ -623,10 +734,12 @@ collect_usernames2([H | T], Res) ->
     collect_usernames2(T, Res).
 
 
-%% Function: collect_addresses/1
-%% Description: Collect and return a list of all addresses from a
-%%              set of address records.
-%% Returns: ListOfUsernames
+%%--------------------------------------------------------------------
+%% Function: collect_addresses(In)
+%%           In = list() of address record()
+%% Descrip.: Collect and return a list of all addresses from a
+%%           set of address records.
+%% Returns : list() of string(), list of addresses in string format
 %%--------------------------------------------------------------------
 collect_addresses(In) ->
     collect_addresses2(In, []).
@@ -634,7 +747,7 @@ collect_addresses(In) ->
 collect_addresses2([], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
-collect_addresses2([H | T], Res) when record(H, address) ->
+collect_addresses2([H | T], Res) when is_record(H, address) ->
     collect_addresses2(T, lists:append(Res, [H#address.address]));
 collect_addresses2([H | T], Res) ->
     logger:log(error, "userdb-file: Input to collect_addresses2 is not address record : ~p",
@@ -642,16 +755,19 @@ collect_addresses2([H | T], Res) ->
     collect_addresses2(T, Res).
 
 
-%% Function: find_first_telephonenumber/1
+%%--------------------------------------------------------------------
+%% Function: find_first_telephonenumber(In)
+%%           In = list() of address record()
 %% Description: Look through a list of address records and return the
 %%              first one that has a URL userpart that is all numeric.
 %%              Called from get_telephonenumber_for_user.
 %% Returns: Address |
 %%          nomatch
+%%          Address = address record()
 %%--------------------------------------------------------------------
 find_first_telephonenumber([]) ->
     nomatch;
-find_first_telephonenumber([H | T]) when record(H, address) ->
+find_first_telephonenumber([H | T]) when is_record(H, address) ->
     URL = sipurl:parse(H#address.address),
     IsNumericUser = util:isnumeric(URL#sipurl.user),
     IsTelURL = case URL#sipurl.proto of
@@ -681,7 +797,7 @@ find_first_telephonenumber([H | T]) ->
 fetch_users() ->
     {ok, Res} = gen_server:call(sipuserdb_file, {fetch_users}),
     Res.
-    
+
 fetch_addresses() ->
     {ok, Res} = gen_server:call(sipuserdb_file, {fetch_addresses}),
     Res.
@@ -689,7 +805,7 @@ fetch_addresses() ->
 %%--------------------------------------------------------------------
 %%% Server side Internal functions
 %%--------------------------------------------------------------------
-read_userdb(State, MTime, Caller) when record(State, state) ->
+read_userdb(State, MTime, Caller) when is_record(State, state) ->
     logger:log(debug, "sipuserdb_file: (Re-)Loading userdb from file ~p", [State#state.fn]),
     case file:consult(State#state.fn) of
 	{ok, TermList} ->
@@ -714,31 +830,31 @@ read_userdb(State, MTime, Caller) when record(State, state) ->
 	    read_userdb_error(E, State, Caller)
     end.
 
-read_userdb_error(E, State, init) when record(State, state) ->
+read_userdb_error(E, State, init) when is_record(State, state) ->
     %% On init, always return error tuple
     {error, E};
-read_userdb_error(E, State, cast) when record(State, state) ->
+read_userdb_error(E, State, cast) when is_record(State, state) ->
     %% On cast, always log errors
     logger:log(error, E, []),
     State;
-read_userdb_error(E, State, info) when record(State, state) ->
+read_userdb_error(E, State, info) when is_record(State, state) ->
     %% On info (i.e. interval timer), only log errors every LOG_THROTTLE_SECONDS seconds
     Now = util:timestamp(),
     case State#state.last_fail of
-	L when integer(L), L >= Now - ?LOG_THROTTLE_SECONDS ->
+	L when is_integer(L), L >= Now - ?LOG_THROTTLE_SECONDS ->
 	    %% We have logged an error recently, skip
 	    State;
-	L when integer(L) ->
+	L when is_integer(L) ->
 	    logger:log(error, E, []),
 	    State#state{last_fail=Now}
     end.
-	        
+
 get_mtime(Fn) ->
     case file:read_file_info(Fn) of
-	{ok, FileInfo} when record(FileInfo, file_info) ->
+	{ok, FileInfo} when is_record(FileInfo, file_info) ->
 	    %% file_info record returned
 	    {ok, FileInfo#file_info.mtime};
-	Unknown ->
+	_Unknown ->
 	    error
     end.
 
@@ -749,41 +865,44 @@ parse_term([], U, A) ->
     {ok, lists:reverse(U), lists:reverse(A)};
 parse_term([{user, Params} | T], U, A) ->
     case parse_user(Params, #user{}) of
-	R when record(R, user) ->
+	R when is_record(R, user) ->
 	    parse_term(T, [R | U], A);
 	E ->
 	    E
     end;
 parse_term([{address, Params} | T], U, A) ->
     case parse_address(Params, #address{}) of
-	R when record(R, address) ->
+	R when is_record(R, address) ->
 	    parse_term(T, U, [R | A]);
 	E ->
 	    E
     end;
-parse_term([H | T], U, A) ->
+parse_term([H | _T], _U, _A) ->
     {error, io_lib:format("sipuserdb_file: Unknown data : ~p", [H])}.
 
 parse_user([], U) ->
     U;
-parse_user([{name, V} | T], U) when record(U, user) ->
+parse_user([{name, V} | T], U) when is_record(U, user) ->
     parse_user(T, U#user{name=V});
-parse_user([{password, V} | T], U) when record(U, user) ->
+parse_user([{password, V} | T], U) when is_record(U, user) ->
     parse_user(T, U#user{password=V});
-parse_user([{classes, V} | T], U) when record(U, user) ->
+parse_user([{classes, V} | T], U) when is_record(U, user) ->
     parse_user(T, U#user{classes=V});
-parse_user([{forward, V} | T], U) when record(U, user) ->
+parse_user([{forward, V} | T], U) when is_record(U, user) ->
     parse_user(T, U#user{forward=V});
-parse_user([H | T], U) when record(U, user) ->
+parse_user([H | _T], U) when is_record(U, user) ->
     E = io_lib:format("bad data in user record (name ~p) : ~p", [U#user.name, H]),
     {error, E}.
 
 parse_address([], A) ->
     A;
-parse_address([{user, V} | T], A) when record(A, address) ->
+parse_address([{user, V} | T], A) when is_record(A, address) ->
     parse_address(T, A#address{user=V});
-parse_address([{address, V} | T], A) when record(A, address) ->
+parse_address([{address, V} | T], A) when is_record(A, address) ->
     parse_address(T, A#address{address=V});
-parse_address([H | T], A) when record(A, address) ->
+parse_address([H | _T], A) when is_record(A, address) ->
     E = io_lib:format("bad data in address record (user ~p) : ~p", [A#address.user, H]),
     {error, E}.
+
+reload_userdb() ->
+    gen_server:cast(sipuserdb_file, {reload_userdb}).
