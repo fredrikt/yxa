@@ -13,7 +13,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/0
+	 start_link/0,
 	 send/5,
 	 is_reliable_transport/1,
 	 get_socket/3
@@ -84,28 +84,30 @@ init([]) ->
 %%           {stop, Reason}
 %%           Reason = string()
 %%--------------------------------------------------------------------
-start_listening([], Port, State) ->
+start_listening([], _Port, State) ->
     {ok, State};
-start_listening([udp | T], Port, State) when integer(Port), record(State, state) ->
+start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, state) ->
     case gen_udp:open(Port, ?SOCKETOPTS) of
 	{ok, Socket} ->
 	    Local = get_localaddr(Socket, "0.0.0.0"),
 	    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp, pid=self(), data={Local, none}},
-	    NewSocketList = socketlist:add({listener, udp}, self(), Local, none, SipSocket, 0, State#state.socketlist),
+	    NewSocketList = socketlist:add({listener, udp}, self(), Local, none, SipSocket, 
+					   0, State#state.socketlist),
 	    start_listening(T, Port, State#state{socket=Socket, socketlist=NewSocketList});
 	{error, Reason} ->
 	    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",
 		       [?SOCKETOPTS, Port, inet:format_error(Reason)]),
 	    {stop, "Could not open UDP socket"}
     end;
-start_listening([udp6 | T], Port, State) when integer(Port), record(State, state) ->
+start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State, state) ->
     case sipserver:get_env(enable_v6, false) of
 	true ->
 	    case gen_udp:open(Port, ?SOCKETOPTSv6) of
 		{ok, Socket} ->
 		    Local = get_localaddr(Socket, "[::]"),
 		    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp6, pid=self(), data={Local, none}},
-		    NewSocketList = socketlist:add({listener, udp6}, self(), Local, none, SipSocket, 0, State#state.socketlist),
+		    NewSocketList = socketlist:add({listener, udp6}, self(), Local, none, SipSocket, 
+						   0, State#state.socketlist),
 		    start_listening(T, Port, State#state{socket6=Socket, socketlist=NewSocketList});
 		{error, Reason} ->
 		    logger:log(error, "Could not open IPv6 UDP socket (options ~p), port ~p : ~s",
@@ -143,7 +145,7 @@ start_listening([udp6 | T], Port, State) when integer(Port), record(State, state
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({get_socket, Proto, _Host, _Port}, From, State) when is_atom(Proto) ->
+handle_call({get_socket, Proto, _Host, _Port}, _From, State) when is_atom(Proto) ->
     %% sipsocket_udp is currently not multi-socket, we just have a singe UDP socket and that is 'listener'
     %% for each Proto.
     Id = {listener, Proto},
@@ -168,7 +170,7 @@ handle_call({get_socket, Proto, _Host, _Port}, From, State) when is_atom(Proto) 
 %%           Reply = {send_result, Res}
 %%           Res = term()
 %%--------------------------------------------------------------------
-handle_call({send, {Host, Port, Message}}, From, State) when integer(Port) ->
+handle_call({send, {Host, Port, Message}}, _From, State) when is_list(Host), is_integer(Port) ->
     %% Unfortunately there seems to be no way to receive ICMP port unreachables when sending with gen_udp...
     SendRes = case Host of
 		  "[" ++ Rest ->
@@ -177,7 +179,7 @@ handle_call({send, {Host, Port, Message}}, From, State) when integer(Port) ->
 		      case string:rchr(Rest, $]) of
 			  0 ->
 			      {error, "Uknown format of destination"};
-			  Index when integer(Index) ->
+			  Index when is_integer(Index) ->
 			      H = string:substr(Rest, 1, Index - 1),
 			      gen_udp:send(State#state.socket6, H, Port, Message)
 		      end;
@@ -217,22 +219,20 @@ handle_cast(Msg, State) ->
 %%           sockets. Spawn sipserver:process() on each message.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_info({udp, Socket, IPlist, InPortNo, Packet}, State) ->
+handle_info({udp, Socket, IPlist, InPortNo, Packet}, State) when is_integer(InPortNo) ->
     Sv4 = State#state.socket,
     Sv6 = State#state.socket6,
-    case Socket of
-	Sv4 ->
-	    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp, pid=self(), data=none},
-	    Origin = #siporigin{proto=udp, addr=siphost:makeip(IPlist), port=InPortNo, receiver=self(), sipsocket=SipSocket},
-	    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transaction_layer]);
-	Sv6 ->
-	    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp6, pid=self(), data=none},
-	    Origin = #siporigin{proto=udp6, addr=siphost:makeip(IPlist), port=InPortNo, receiver=self(), sipsocket=SipSocket},
-	    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transaction_layer]);
-	_ ->
-	    logger:log(error, "Sipsocket UDP: Received gen_server info 'udp' from unknown source '~p', ignoring",
-		       [Socket])
-    end,
+    Proto = case Socket of
+		Sv4 -> udp;
+		Sv6 -> udp6;
+		_ ->
+		    logger:log(error, "Sipsocket UDP: Received gen_server info 'udp' "
+			       "from unknown source '~p', ignoring", [Socket])
+	end,
+    SipSocket = #sipsocket{module=sipsocket_udp, proto=Proto, pid=self(), data=none},
+    Origin = #siporigin{proto=Proto, addr=siphost:makeip(IPlist), port=InPortNo, 
+			receiver=self(), sipsocket=SipSocket},
+    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transaction_layer]),
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -244,7 +244,7 @@ handle_info(Info, State) ->
 %% Descrip.: Shutdown the server
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(Reason, _State) ->
     case Reason of
         normal -> true;
         _ -> logger:log(error, "UDP listener terminating : ~p", [Reason])
@@ -256,7 +256,7 @@ terminate(Reason, State) ->
 %% Purpose : Convert process state when code is changed
 %% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -301,9 +301,12 @@ get_localaddr(Socket, DefaultAddr) ->
 %%           Result = term(), ultimately the result of send()
 %%           Reason = string()
 %%--------------------------------------------------------------------
-send(SipSocket, Proto, Host, Port, Message) when record(SipSocket, sipsocket), integer(Port), SipSocket#sipsocket.proto /= Proto ->
+send(SipSocket, Proto, _Host, _Port, _Message)
+  when is_record(SipSocket, sipsocket), SipSocket#sipsocket.proto /= Proto ->
     {error, "Protocol mismatch"};
-send(SipSocket, Proto, Host, Port, Message) when record(SipSocket, sipsocket), integer(Port) ->
+send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket), 
+						 is_integer(Port), is_atom(Proto),
+						 Proto == udp; Proto == udp6 ->
     Pid = SipSocket#sipsocket.pid,
     case catch gen_server:call(Pid, {send, {Host, Port, Message}}) of
 	{send_result, Res} ->
@@ -312,10 +315,7 @@ send(SipSocket, Proto, Host, Port, Message) when record(SipSocket, sipsocket), i
 	    logger:log(error, "Sipsocket UDP: Unknown send response from socket pid ~p for ~p:~s:~p : ~p",
                        [Pid, Proto, Host, Port, Unknown]),
 	    {error, "Unknown sipsocket_udp send result"}
-    end;
-send(InvalidSocket, Proto, Host, Port, Message) ->
-    logger:log(error, "Sipsocket UDP: Could not send message to ~p:~s:~p, invalid socket : ~p",
-		[Proto, Host, Port, InvalidSocket]).
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_socket(Proto, Host, Port)
@@ -329,7 +329,8 @@ send(InvalidSocket, Proto, Host, Port, Message) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_socket(Proto, Host, Port) when atom(Proto), list(Host), integer(Port) ->
+get_socket(Proto, Host, Port) when is_atom(Proto), is_list(Host), is_integer(Port),
+				   Proto == udp; Proto == udp6 ->
     case catch gen_server:call(sipsocket_udp, {get_socket, Proto, Host, Port}, 1500) of
 	{ok, SipSocket} ->
 	    SipSocket;
