@@ -1,5 +1,5 @@
 -module(sipserver).
--export([start/5, process/4, get_env/1, get_env/2]).
+-export([start/5, process/6, get_env/1, get_env/2]).
 
 start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, LocalTablesP) ->
     case LocalTablesP of
@@ -30,17 +30,19 @@ start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, LocalTablesP) ->
 
 recvloop(Socket, RequestFun, ResponseFun) ->
     receive
-	{udp, Socket, IP, InPortNo, Packet} ->
-	    spawn(?MODULE, process, [Packet, Socket, RequestFun, ResponseFun]),
+	{udp, Socket, IPlist, InPortNo, Packet} ->
+	    spawn(?MODULE, process, [Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun]),
 	    recvloop(Socket, RequestFun, ResponseFun)
     end.
 
-process(Packet, Socket, RequestFun, ResponseFun) ->
+process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
+    IP = siphost:makeip(IPlist),
     case sippacket:parse(Packet) of
 	{request, Method, URL, Header, Body} ->
-	    apply(RequestFun, [Method, URL, Header, Body, Socket]);
+	    logger:log(debug, "~s from ~s:~p", [Method, IP, InPortNo]),
+	    apply(RequestFun, [Method, URL, Header, Body, Socket, IP]);
 	{response, Status, Reason, Header, Body} ->
-	    apply(ResponseFun, [Status, Reason, Header, Body, Socket])
+	    apply(ResponseFun, [Status, Reason, Header, Body, Socket, IP])
     end.
 
 get_env(Name) ->

@@ -4,8 +4,8 @@
 -include("database_regexproute.hrl").
 
 start(normal, Args) ->
-    Pid = spawn(sipserver, start, [fun init/0, fun request/5,
-				   fun response/5, none, true]),
+    Pid = spawn(sipserver, start, [fun init/0, fun request/6,
+				   fun response/6, none, true]),
     {ok, Pid}.
 
 init() ->
@@ -139,7 +139,7 @@ lookupphone(URL) ->
 	    {relay, URL}
     end.
 
-request("REGISTER", URL, Header, Body, Socket) ->
+request("REGISTER", URL, Header, Body, Socket, FromIP) ->
     logger:log(debug, "REGISTER"),
     To = sipheader:to(keylist:fetch("To", Header)),
     Contact = sipheader:contact(keylist:fetch("Contact", Header)),
@@ -156,7 +156,7 @@ request("REGISTER", URL, Header, Body, Socket) ->
 	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), false)
     end;
 
-request(Method, URL, Header, Body, Socket) ->
+request(Method, URL, Header, Body, Socket, FromIP) ->
     logger:log(normal, "~s ~s~n",
 	       [Method, sipurl:print(URL)]),
     Location = lookupphone(URL),
@@ -179,7 +179,7 @@ request(Method, URL, Header, Body, Socket) ->
 	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method)
     end.
 
-response(Status, Reason, Header, Body, Socket) ->
+response(Status, Reason, Header, Body, Socket, FromIP) ->
     logger:log(normal, "Response ~p ~s", [Status, Reason]),
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
 

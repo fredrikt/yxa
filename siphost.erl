@@ -1,5 +1,13 @@
 -module(siphost).
--export([myip/0]).
+-export([myip/0, makeip/1]).
+
+makeip(AddrIn) ->
+    {Addr1, Addr2, Addr3, Addr4} = AddrIn,
+    integer_to_list(Addr1) ++ "." ++
+	integer_to_list(Addr2) ++ "." ++
+	integer_to_list(Addr3) ++ "." ++
+	integer_to_list(Addr4).
+
 
 myip() ->
     [A | _] = get_iplist(),
@@ -14,11 +22,7 @@ get_if([A | R]) ->
 	true ->
 	    get_if(R);
 	false ->
-	    {Addr1, Addr2, Addr3, Addr4} = keylist:fetch(addr, B),
-	    Addr = integer_to_list(Addr1) ++ "." ++
-		integer_to_list(Addr2) ++ "." ++
-		integer_to_list(Addr3) ++ "." ++
-		integer_to_list(Addr4),
+	    Addr = makeip(keylist:fetch(addr, B)),
 	    [Addr | get_if(R)]
     end.
 

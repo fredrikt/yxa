@@ -2,14 +2,14 @@
 -export([start/2]).
 
 start(normal, Args) ->
-    Pid = spawn(sipserver, start, [fun init/0, fun request/5,
-				   fun response/5, [user, numbers], false]),
+    Pid = spawn(sipserver, start, [fun init/0, fun request/6,
+				   fun response/6, [user, numbers], false]),
     {ok, Pid}.
 
 init() ->
     true.
 
-request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body, Socket) ->
+request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body, Socket, FromIP) ->
     logger:log(normal, Method),
     case Method of
 	"INVITE" ->
@@ -24,7 +24,7 @@ request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body,
 	    siprequest:send_result(Header, Socket, "", 501, "Not Implemented")
     end;
 
-request(Method, URL, Header, Body, Socket) ->
+request(Method, URL, Header, Body, Socket, FromIP) ->
     {User, Pass, Host, Port, Parameters} = URL,
     Newlocation = {User, none, "kth.se", none, []},
     Route = "<" ++ sipurl:print({User, Pass, Host, Port,
@@ -45,5 +45,5 @@ request2(Method, Phone, Header, Body, Socket) ->
 				{Method, Newlocation, Body, []},
 				Method, Classdefs).
 
-response(Status, Reason, Header, Body, Socket) ->
+response(Status, Reason, Header, Body, Socket, FromIP) ->
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).

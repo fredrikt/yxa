@@ -2,14 +2,14 @@
 -export([start/2]).
 
 start(normal, Args) ->
-    Pid = spawn(sipserver, start, [fun init/0, fun request/5,
-				   fun response/5, none, true]),
+    Pid = spawn(sipserver, start, [fun init/0, fun request/6,
+				   fun response/6, none, true]),
     {ok, Pid}.
 
 init() ->
     database_call:create_call().
 
-request("BYE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+request("BYE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket, FromIP) ->
     [CallID] = keylist:fetch("Call-ID", Header),
     case database_call:get_call(CallID) of
 	{atomic, [Call]} ->
@@ -20,10 +20,10 @@ request("BYE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
 	    logger:log(debug, "Call not found", [])
     end;
 
-request("ACK", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+request("ACK", {User, Pass, Host, Port, Parameters}, Header, Body, Socket, FromIP) ->
     true;
 
-request("CANCEL", URI, Header, Body, Socket) ->
+request("CANCEL", URI, Header, Body, Socket, FromIP) ->
     logger:log(normal, "CANCEL", []),
     [CallID] = keylist:fetch("Call-ID", Header),
     case database_call:get_call(CallID) of
@@ -33,7 +33,7 @@ request("CANCEL", URI, Header, Body, Socket) ->
 	    logger:log(debug, "Call not found", [])
     end;
 
-request("INVITE", {"messages", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+request("INVITE", {"messages", Pass, Host, Port, Parameters}, Header, Body, Socket, FromIP) ->
     case sipanswer:start(Header, Body, start, none, none) of
 	{ok, Replybody} ->
 	    logger:log(debug, "body:~p", [Replybody]),
@@ -42,11 +42,11 @@ request("INVITE", {"messages", Pass, Host, Port, Parameters}, Header, Body, Sock
 	    true
     end;
 
-request("INVITE", {"fork", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+request("INVITE", {"fork", Pass, Host, Port, Parameters}, Header, Body, Socket, FromIP) ->
     sipproxy:start("INVITE", {"fork", Pass, Host, Port, Parameters},
 		   Header, Body, Socket);
 
-request("INVITE", {"bounce", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+request("INVITE", {"bounce", Pass, Host, Port, Parameters}, Header, Body, Socket, FromIP) ->
     case sipanswer:bounce(Header, Body, start, none, none) of
 	{ok, Replybody} ->
 	    logger:log(debug, "body:~p", [Replybody]),
@@ -55,7 +55,7 @@ request("INVITE", {"bounce", Pass, Host, Port, Parameters}, Header, Body, Socket
 	    true
     end.
 
-response(Status, Reason, Header, Body, Socket) ->
+response(Status, Reason, Header, Body, Socket, FromIP) ->
 %    logger:log(normal, "status:~p", [Status]),
     [CallID] = keylist:fetch("Call-ID", Header),
     case database_call:get_call(CallID) of
