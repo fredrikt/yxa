@@ -352,24 +352,17 @@ parse_param(ParamStr) ->
 	    throw({error, param_name_or_value_malformed})
     end.
 
-%% return: string() (that can be turned into a float() with list_to_float/1) |
+%% return: string() (of "x.xxx" format, that can be turned into a float() with list_to_float/1) |
 %%         throw()
 q_value(Str) ->
     %% qvalue = 0 - 1 | 0.000 - 1.000 | 0. - 1.
     QVal = string:strip(Str, right, $.),
-    case QVal of
-	"0" -> "0.0";
-	"1" -> "1.0";
-	_ ->
-	    case catch list_to_float(QVal) of
-		{'Exit', _Reason} ->
-		    throw({error, qval_not_a_float});
-		Float when (length(QVal) < 6), (length(QVal) > 2), Float =< 1.0, Float >= 0.0  ->
-		    QVal;
-		_ ->
-		    throw({error, qval_float_out_of_range})
-
-	    end
+    case sipparse_util:is_qval(QVal) of
+	true -> 
+	    Float = sipparse_util:str_to_qval(QVal),
+	    lists:flatten(io_lib:format("~.3f",[Float]));
+	false -> 
+	    throw({error, malformed_qvalue})
     end.
 
 %% return: true if first and last char is a $" - strings of length < 2 -> false as well
@@ -695,7 +688,7 @@ test() ->
     P9 = [#contact{display_name = none,
 		   %% urlstr = sipurl:parse("sip:watson@worcester.bell-telephone.com"),
 		   urlstr = "sip:watson@worcester.bell-telephone.com",
-		   contact_param = contact_param:to_norm([{"q","1.0"}, {"expires","123456"}, {"host","1.2.3.4"},
+		   contact_param = contact_param:to_norm([{"q","1.000"}, {"expires","123456"}, {"host","1.2.3.4"},
 							  {"domain","www.com"}, {"ipv6","[1:2:3:4:5:6:7:8]"}])
 		  }],
     P9 = parse(["sip:watson@worcester.bell-telephone.com;q = 1.; "
@@ -707,7 +700,7 @@ test() ->
     P10 = [#contact{display_name = "Mr. Watson",
 		    %% urlstr = sipurl:parse("sip:watson@worcester.bell-telephone.com"),
 		    urlstr = "sip:watson@worcester.bell-telephone.com",
-		    contact_param = contact_param:to_norm([{"q","0.0"}, {"expires","123456"}, {"host","1.2.3.4"},
+		    contact_param = contact_param:to_norm([{"q","0.000"}, {"expires","123456"}, {"host","1.2.3.4"},
 							   {"domain","www.com"}, {"ipv6","[1:2:3:4:5:6:7:8]"}])
 		   }],
     P10 = parse(["\"Mr. Watson\"<sip:watson@worcester.bell-telephone.com>; q = 0; "
@@ -719,7 +712,7 @@ test() ->
     P11 = [#contact{display_name = "Watson-.!%*_+`'~",
 		    %% urlstr = sipurl:parse("sip:watson@worcester.bell-telephone.com"),
 		    urlstr = "sip:watson@worcester.bell-telephone.com",
-		    contact_param = contact_param:to_norm([{"q","0.95"}, {"expires","123456"}, {"host","1.2.3.4"},
+		    contact_param = contact_param:to_norm([{"q","0.950"}, {"expires","123456"}, {"host","1.2.3.4"},
 							   {"domain","www.com"}, {"ipv6","[1:2:3:4:5:6:7:8]"}])
 		   }],
     P11 = parse(["Watson-.!%*_+`'~" ++ [?HTAB, ?CR, ?LF] ++
@@ -733,7 +726,7 @@ test() ->
     P12 = [#contact{display_name = none,
 		    %% urlstr = sipurl:parse("sip:hotsip1@130.237.252.103:5060;transport=TCP"),
 		    urlstr = "sip:hotsip1@130.237.252.103:5060;transport=TCP",
-		    contact_param = contact_param:to_norm([{"q","1.00"},
+		    contact_param = contact_param:to_norm([{"q","1.000"},
 							   {"agentid","\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\""},
 							   {"expires","0"}])
 		   }],
@@ -745,7 +738,7 @@ test() ->
     P13 = [#contact{display_name = "Hokan",
 		    %% urlstr = sipurl:parse("sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42"),
 		    urlstr = "sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42",
-		    contact_param = contact_param:to_norm([{"q","1.00"}, {"expires","0"}])
+		    contact_param = contact_param:to_norm([{"q","1.000"}, {"expires","0"}])
 		   }],
     P13 = parse(["Hokan <sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42>;q=1.00;"
 		 ";expires=0"]),
@@ -755,7 +748,7 @@ test() ->
     P14 = [#contact{display_name = none,
 		    %% urlstr = sipurl:parse("sip:hotsip1@130.237.252.103:5060"),
 		    urlstr = "sip:hotsip1@130.237.252.103:5060",
-		    contact_param = contact_param:to_norm([{"transport","TCP"}, {"bar","42"}, {"q","1.00"},
+		    contact_param = contact_param:to_norm([{"transport","TCP"}, {"bar","42"}, {"q","1.000"},
 							   {"expires","0"}])
 		   }],
     P14 = parse(["sip:hotsip1@130.237.252.103:5060;transport=TCP;bar=42"
@@ -807,7 +800,7 @@ test() ->
     PH6 = hd(parse(["sip:watson@worcester.bell-telephone.com;q = 1.; "
 		    "expires=123456;host = 1.2.3.4;domain    = www.com;"
 		    "ipv6=[1:2:3:4:5:6:7:8]"])),
-    "<sip:watson@worcester.bell-telephone.com>;q=1.0;expires=123456;host=1.2.3.4;domain=www.com;"
+    "<sip:watson@worcester.bell-telephone.com>;q=1.000;expires=123456;host=1.2.3.4;domain=www.com;"
 	"ipv6=[1:2:3:4:5:6:7:8]" = print(PH6),
 
     %% test name_addr with contact-params and display-name
@@ -815,7 +808,7 @@ test() ->
     PH7 = hd(parse(["\"Mr. Watson\"<sip:watson@worcester.bell-telephone.com>; q = 0; "
 		    "expires=123456    ;host =1.2.3.4   ;   domain=www.com;"
 		    "    ipv6=[1:2:3:4:5:6:7:8]"])),
-    "\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.0;"
+    "\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.000;"
 	"expires=123456;host=1.2.3.4;domain=www.com;ipv6=[1:2:3:4:5:6:7:8]" = print(PH7),
 
     %% test multi line Contact and DisplayName
@@ -824,7 +817,7 @@ test() ->
 		    "<sip:watson@worcester.bell-telephone.com>; q = 0.95; " ++
 		    [?CR, ?LF] ++ "expires=123456    ;host =1.2.3.4   ;   domain=www.com;" ++
 		    [?HTAB] ++ "    ipv6=[1:2:3:4:5:6:7:8]"])),
-    "\"Watson-.!%*_+`'~\" <sip:watson@worcester.bell-telephone.com>;q=0.95;"
+    "\"Watson-.!%*_+`'~\" <sip:watson@worcester.bell-telephone.com>;q=0.950;"
 	"expires=123456;host=1.2.3.4;domain=www.com;ipv6=[1:2:3:4:5:6:7:8]" = print(PH8),
 
     %% test print of encounterd bug: we LOOSE parameters outside the URI
@@ -833,21 +826,21 @@ test() ->
     io:format("test: print/1 - 9~n"),
     PH9 = hd(parse(["<sip:hotsip1@130.237.252.103:5060;transport=TCP>;q=1.00;"
 		    "agentid=\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\";expires=0"])),
-    "<sip:hotsip1@130.237.252.103:5060;transport=TCP>;q=1.00;"
+    "<sip:hotsip1@130.237.252.103:5060;transport=TCP>;q=1.000;"
 	"agentid=\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\";expires=0" = print(PH9),
 
     %% test uri-parameters inside a SIP-URI (name-addr)
     io:format("test: print/1 - 10~n"),
     PH10 = hd(parse(["Hokan <sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42>;q=1.00;"
 		     ";expires=0"])),
-    "\"Hokan\" <sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42>;q=1.00;expires=0"
+    "\"Hokan\" <sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42>;q=1.000;expires=0"
 	= print(PH10),
 
     %% test contact-parameters after a SIP-URI (addr-spec)
     io:format("test: print/1 - 11~n"),
     PH11 = hd(parse(["sip:hotsip1@130.237.252.103:5060;transport=TCP;bar=42"
 		     " ;q=1.00;expires=0"])),
-    "<sip:hotsip1@130.237.252.103:5060>;transport=tcp;bar=42;q=1.00;expires=0" = print(PH11),
+    "<sip:hotsip1@130.237.252.103:5060>;transport=tcp;bar=42;q=1.000;expires=0" = print(PH11),
 
     %% test printing list of contacts - using a function in sipheader
     io:format("test: print/1 - 12~n"),

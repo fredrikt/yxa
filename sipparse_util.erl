@@ -6,7 +6,7 @@
 %%--------------------------------------------------------------------
 
 -module(sipparse_util).
-%%-compile(export_all).
+-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -23,6 +23,9 @@
 	 is_IPv6reference/1,
 	 is_digit/1,
 	 is_hostname/1,
+	 str_to_float/1,
+	 str_to_qval/1,
+	 is_qval/1,
 
 	 test/0
 	]).
@@ -328,6 +331,73 @@ is_IPv6reference(IPv6Str) ->
 	{error, _Reason} -> throw({error, not_an_IPv6_reference})
     end.
 
+%%--------------------------------------------------------------------
+%% Function: str_to_float(Str)
+%% Descrip.: convert Str containing float() or integer() value, to a 
+%%           float().
+%% Returns : float() | 
+%%           throw() (if Str can't be interpreted as a float)
+%% Note    : user need to strip any preceding or trailing spaces (or 
+%%           other chars themselves)            XXX q_value(...) in contact.erl uses similar code
+%%                                              XXX this should be in a utility module
+%%--------------------------------------------------------------------
+str_to_float(Str) ->
+    case catch list_to_float(Str) of
+	{'EXIT', _} ->
+	    case catch list_to_integer(Str) of
+		{'EXIT', _} -> 
+		    throw({error, string_not_float_or_integer});
+		Int -> 
+		    float(Int)
+	    end;
+        Float ->
+	    Float
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: str_to_qval(Str)
+%% Descrip.: parse a qvalue string
+%%           qvalue  = ( "0" [ "." 0*3DIGIT ] )
+%%                   / ( "1" [ "." 0*3("0") ] )    - RFC 3261
+%% Returns : float()               
+%%--------------------------------------------------------------------
+%% extra clauses to ensure proper qvalue formating
+str_to_qval("0") -> 0.0;
+str_to_qval("1") -> 1.0;
+str_to_qval("0.") -> 0.0;
+str_to_qval("1.") -> 1.0;
+str_to_qval("0." ++ _R = Str) -> str_to_qval2(Str);
+str_to_qval("1." ++ _R = Str) -> str_to_qval2(Str);
+str_to_qval(_) -> throw({error, malformed_beging_of_qvalue}).
+
+str_to_qval2(Str) ->
+    QVal = str_to_float(Str),
+    case (QVal >= 0.0) and (QVal =< 1.0) of
+	true -> StrLen = length(Str),
+		case (StrLen >= 2) and (StrLen =< 5) of
+		    true ->
+			QVal;
+		    false -> throw({error, wrong_number_of_chars_in_q_value})
+		end;
+	false ->
+	    throw({error, q_value_out_of_range})
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: is_qval(Str)
+%% Descrip.: parse a qvalue string
+%%           qvalue  = ( "0" [ "." 0*3DIGIT ] )
+%%                   / ( "1" [ "." 0*3("0") ] )    - RFC 3261
+%% Returns : true | false                 
+%%--------------------------------------------------------------------
+is_qval(Str) ->
+    try begin 
+	    str_to_qval(Str),
+	    true
+	end
+    catch
+	throw: _ -> false
+    end.
 
 %%====================================================================
 %% Behaviour functions
@@ -353,6 +423,14 @@ is_IPv6reference(IPv6Str) ->
 %%====================================================================
 %% Test functions
 %%====================================================================
+
+%% only looks for exceptions from throw()
+fail(Fun) ->
+    try Fun() of 
+	_  -> throw({error, no_exception_thrown_by_test})
+    catch 
+	_ -> ok %% catch user throw()
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: test()
@@ -466,5 +544,119 @@ test() ->
 	    throw({error, test_failed})
     end,
 
+    %% str_to_float/1
+    %%--------------------------------------------------------------------
+    %% 
+    io:format("test: str_to_float/1  - 1~n"),
+    1.0 = str_to_float("1.0"),
+    io:format("test: str_to_float/1  - 2~n"),
+    1.0 = str_to_float("1"),
+    io:format("test: str_to_float/1  - 3~n"),
+    1.0 = str_to_float("0001.0000"),
+    io:format("test: str_to_float/1  - 4~n"),
+    fail(fun() -> str_to_float("foo") end), 
+
+    %% str_to_qval/1
+    %%--------------------------------------------------------------------
+    %% int = 1
+    io:format("test: str_to_qval/1  - 1~n"),
+    1.0 = str_to_qval("1"),
+
+    %% int = 0
+    io:format("test: str_to_qval/1  - 2~n"),
+    0.0 = str_to_qval("0"),
+
+    %% max float value
+    io:format("test: str_to_qval/1  - 3~n"),
+    1.0 = str_to_qval("1.000"),
+
+    %% min float value
+    io:format("test: str_to_qval/1  - 4~n"),
+    0.0 = str_to_qval("0.000"),
+    
+    %% value in 0-1 range
+    io:format("test: str_to_qval/1  - 5~n"),
+    0.567 = str_to_qval("0.567"),
+
+    %% to large int
+    io:format("test: str_to_qval/1  - 6~n"),
+    fail(fun() -> str_to_qval("3") end),
+
+    %% to many chars
+    io:format("test: str_to_qval/1  - 7~n"),
+    fail(fun() -> str_to_qval("0.1234") end),
+    
+    %% float out of range
+    io:format("test: str_to_qval/1  - 8~n"),
+    fail(fun() -> str_to_qval("1.001") end),
+
+    %% missing 0 before .00
+    io:format("test: str_to_qval/1  - 9~n"),
+    fail(fun() -> str_to_qval(".00") end),
+
+    %% to many 0 before .0
+    io:format("test: str_to_qval/1  - 10~n"),
+    fail(fun() -> str_to_qval("00.0") end),
+
+    %% parse "0."
+    io:format("test: str_to_qval/1  - 11~n"),
+    0.0 = str_to_qval("0."),
+    
+    %% parse "1."
+    io:format("test: str_to_qval/1  - 12~n"),
+    1.0 = str_to_qval("1."),
+
+    %% is_qval/1
+    %%--------------------------------------------------------------------
+    %% 
+    %% int = 1
+    io:format("test: is_qval/1  - 1~n"),
+    true = is_qval("1"),
+
+    %% int = 0
+    io:format("test: is_qval/1  - 2~n"),
+    true = is_qval("0"),
+
+    %% max float value
+    io:format("test: is_qval/1  - 3~n"),
+    true = is_qval("1.000"),
+
+    %% min float value
+    io:format("test: is_qval/1  - 4~n"),
+    true = is_qval("0.000"),
+    
+    %% value in 0-1 range
+    io:format("test: is_qval/1  - 5~n"),
+    true = is_qval("0.567"),
+
+    %% to large int
+    io:format("test: is_qval/1  - 6~n"),
+    false = is_qval("3"),
+
+    %% to many chars
+    io:format("test: is_qval/1  - 7~n"),
+    false = is_qval("0.1234"),
+    
+    %% float out of range
+    io:format("test: is_qval/1  - 8~n"),
+    false = is_qval("1.001"),
+
+    %% missing 0 before .00
+    io:format("test: is_qval/1  - 9~n"),
+    false = is_qval(".00"),
+
+    %% to many 0 before .0
+    io:format("test: is_qval/1  - 10~n"),
+    false = is_qval("00.0"),
+
+    %% parse "0."
+    io:format("test: str_to_qval/1  - 11~n"),
+    true = is_qval("0."),
+    
+    %% parse "1."
+    io:format("test: str_to_qval/1  - 12~n"),
+    true = is_qval("1."),
+
     ok.
+
 
