@@ -65,6 +65,8 @@ ldap_server			(required) LDAP server host name
 ldap_username			(default: "") LDAP user name
 ldap_password			(default: "") LDAP password
 ldap_searchbase			(default: "") LDAP search base
+listenport			(default: 5060) Port that the server
+				should listen to
 
 pstnproxy:
 ----------

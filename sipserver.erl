@@ -25,7 +25,7 @@ start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, LocalTablesP) ->
 			      end,
 	    logger:log(normal, Message, Args)
     end,
-    {ok, Socket} = gen_udp:open(5060, [{reuseaddr, true}]),
+    {ok, Socket} = gen_udp:open(sipserver:get_env(listenport, 5060), [{reuseaddr, true}]),
     recvloop(Socket, RequestFun, ResponseFun).
 
 recvloop(Socket, RequestFun, ResponseFun) ->

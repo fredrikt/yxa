@@ -69,7 +69,9 @@ send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
 	true ->
 	    Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
 	    [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
-					     {siphost:myip(), "5060"}, Parameters}]),
+					     {siphost:myip(),
+					      integer_to_list(sipserver:get_env(listenport, 5060))},
+					     Parameters}]),
 	    Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
 	    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
 	    Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
