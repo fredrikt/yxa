@@ -278,7 +278,7 @@ del_time(Time, [H | T]) when record(H, transactionstate), H#transactionstate.exp
 	    %% Be nice and tell lingering processes it is time to go
 	    logger:log(error, "Transaction layer: Had to tell lingering transaction that it is time to terminate :~n~p",
 		       [debugfriendly(H)]),
-	    Pid ! {expired};	
+	    gen_server:cast(Pid, {expired});
 	_ ->
 	    true
     end,
@@ -293,8 +293,8 @@ update_transactionstate(TState, TStateList) when record(TState, transactionstate
     #transactionstatelist{list=update_transactionstate(Ref, TState, TStateList#transactionstatelist.list, TStateList)}.
 
 update_transactionstate(Ref, _, [], TStateList) ->
-    logger:log(error, "TStatelist: Asked to update a transactionstate, but I can't find it", [Ref]),
-    logger:log(error, "TStatelist: Asked to update a transactionstate with ref=~p, but I can't find it in list :~n~p",
+    logger:log(error, "Transaction state list: Asked to update a transactionstate, but I can't find it", [Ref]),
+    logger:log(debug, "Transaction state list: Asked to update a transactionstate with ref=~p, but I can't find it in list :~n~p",
 	       [Ref, debugfriendly(TStateList)]),
     [];
 update_transactionstate(Ref, NewT, [H | T], TStateList) when record(H, transactionstate), H#transactionstate.ref == Ref ->
