@@ -87,7 +87,15 @@ phone() ->
 	    ({phone, _Number, _Flags, _Class, _Expire, _Address, _ReqUriStr, _CallId, _CSeq} = Phone) ->
 		Phone
 	end,
-    {atomic, ok} = mnesia:transform_table(phone, F, record_info(fields, phone)),
+    case mnesia:transform_table(phone, F, record_info(fields, phone)) of
+	{atomic, ok} ->
+	    ok;
+	{aborted, {not_active, Reason, phone, _NodeList}} ->
+	    %% All disc_copies nodes must be online for table transforming, but we can't require
+	    %% all those nodes to be alive in order to start the Yxa servers.
+	    logger:log(normal, "Warning: Failed to update Mnesia table 'phone' : ~s", [Reason]),
+	    ok
+    end,
 
     case erase(update) of
 	true ->
@@ -144,7 +152,15 @@ regexproute() ->
 	    (RegExpRoute) when is_record(RegExpRoute, regexproute) ->
 		RegExpRoute
 	end,
-    {atomic, ok} = mnesia:transform_table(regexproute, F, record_info(fields, regexproute)),
+    case mnesia:transform_table(regexproute, F, record_info(fields, regexproute)) of
+	{atomic, ok} ->
+	    ok;
+	{aborted, {not_active, Reason, regexproute, _NodeList}} ->
+	    %% All disc_copies nodes must be online for table transforming, but we can't require
+	    %% all those nodes to be alive in order to start the Yxa servers.
+	    logger:log(normal, "Warning: Failed to update Mnesia table 'phone' : ~s", [Reason]),
+	    ok
+    end,
 
     case erase(update) of
 	true ->
