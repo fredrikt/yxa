@@ -1,36 +1,61 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_udp.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : Transportlayer UDP all-in-one handler.
+%%% Descrip.: Transportlayer UDP all-in-one handler.
 %%%
 %%% Created : 15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(sipsocket_udp).
 
 -behaviour(gen_server).
-%%--------------------------------------------------------------------
-%% Include files
-%%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
 %% External exports
--export([start_link/0]).
+%%--------------------------------------------------------------------
+-export([
+	 start_link/0
+	 send/5,
+	 is_reliable_transport/1,
+	 get_socket/3
+	]).
 
--export([send/5, is_reliable_transport/1, get_socket/3]).
+%%--------------------------------------------------------------------
+%% Internal exports - gen_server callbacks
+%%--------------------------------------------------------------------
+-export([
+	 init/1,
+	 handle_call/3,
+	 handle_cast/2,
+	 handle_info/2,
+	 terminate/2,
+	 code_change/3
+	]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("sipsocket.hrl").
 
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
 -record(state, {socket, socket6, socketlist}).
 
--include("sipsocket.hrl").
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(SOCKETOPTS, [{reuseaddr, true}]).
+%% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
+-define(SOCKETOPTSv6, [{reuseaddr, true}, inet6, {buffer, 8 * 1024}]).
+
 
 %%====================================================================
 %% External functions
 %%====================================================================
+
 %%--------------------------------------------------------------------
 %% Function: start_link/1
-%% Description: Starts the server
+%% Descrip.: Starts the server
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, sipsocket_udp}, ?MODULE, [], []).
@@ -40,21 +65,25 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init/1
-%% Description: Initiates the server
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
+%% Function: init([])
+%% Descrip.: Initiates the server
+%% Returns : {ok, State}    |
+%%           {stop, Reason}
+%%           Reason = string()
 %%--------------------------------------------------------------------
 init([]) ->
     Port = sipserver:get_listenport(udp),  %% same for UDP and UDPv6
     start_listening([udp, udp6], Port, #state{socketlist=socketlist:empty()}).
 
--define(SOCKETOPTS, [{reuseaddr, true}]).
-%% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
--define(SOCKETOPTSv6, [{reuseaddr, true}, inet6, {buffer, 8 * 1024}]).
-
+%%--------------------------------------------------------------------
+%% Function: start_listening(ProtoList, Port, State)
+%%           ProtoList = list() of atom(), udp | udp6
+%%           Port      = integer()
+%% Descrip.: Begin listening on port Port.
+%% Returns : {ok, State}    |
+%%           {stop, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
 start_listening([], Port, State) ->
     {ok, State};
 start_listening([udp | T], Port, State) when integer(Port), record(State, state) ->
@@ -88,16 +117,33 @@ start_listening([udp6 | T], Port, State) when integer(Port), record(State, state
     end.
 
 %%--------------------------------------------------------------------
-%% Function: handle_call/3
-%% Description: Handling call messages
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_call(Msg, From, State)
+%% Descrip.: Handling call messages
+%% Returns : {reply, Reply, State}          |
+%%           {reply, Reply, State, Timeout} |
+%%           {noreply, State}               |
+%%           {noreply, State, Timeout}      |
+%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call({get_socket, Proto, Host, Port}, From, State) ->
+
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({get_socket, Proto, Host, Port}, From, State)
+%%           Proto = atom(), udp | udp6
+%%           Host  = string()
+%%           Port  = integer()
+%% Descrip.: Get a socket for a certain protocol (Proto).
+%%           sipsocket_udp is currently not multi-socket, we just have
+%%           a singe UDP socket for each protocol and that is
+%%           'listener'. Locate and return it.
+%% Returns : {reply, Reply, State}
+%%           Reply = {ok, SipSocket} |
+%%                   {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+handle_call({get_socket, Proto, _Host, _Port}, From, State) when is_atom(Proto) ->
     %% sipsocket_udp is currently not multi-socket, we just have a singe UDP socket and that is 'listener'
     %% for each Proto.
     Id = {listener, Proto},
@@ -112,10 +158,21 @@ handle_call({get_socket, Proto, Host, Port}, From, State) ->
 	    {reply, {ok, SipSocket}, State}
     end;
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({send, {Host, Port, Message}}, From, State)
+%%           Host    = string()
+%%           Port    = integer()
+%%           Message = term()
+%% Descrip.: Send Message to Host:Port.
+%% Returns : {reply, Reply, State}
+%%           Reply = {send_result, Res}
+%%           Res = term()
+%%--------------------------------------------------------------------
 handle_call({send, {Host, Port, Message}}, From, State) when integer(Port) ->
     %% Unfortunately there seems to be no way to receive ICMP port unreachables when sending with gen_udp...
     SendRes = case Host of
 		  "[" ++ Rest ->
+		      %% XXX use inet_parse:ipv6_address() ?
 		      %% IPv6 address (e.g. [2001:6b0:5:987::1])
 		      case string:rchr(Rest, $]) of
 			  0 ->
@@ -131,24 +188,35 @@ handle_call({send, {Host, Port, Message}}, From, State) when integer(Port) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast/2
-%% Description: Handling cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_cast(Msg, State)
+%% Descrip.: Handling cast messages
+%% Returns : {noreply, State}          |
+%%           {noreply, State, Timeout} |
+%%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_cast(Msg, State) ->
     logger:log(error, "Sipsocket UDP: Received unknown gen_server cast : ~p", [Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info/2
-%% Description: Handling all non call/cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_info(Msg, State)
+%% Descrip.: Handling all non call/cast messages
+%% Returns : {noreply, State}          |
+%%           {noreply, State, Timeout} |
+%%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% Function: handle_info({udp, Socket, IPlist, InPortNo, Packet},
+%%                       State)
+%%           Socket   = term()
+%%           IPlist   = term()
+%%           InPortNo = integer()
+%%           Packet   = list()
+%% Descrip.: Handle data received (as a signal) from one of our
+%%           sockets. Spawn sipserver:process() on each message.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
 handle_info({udp, Socket, IPlist, InPortNo, Packet}, State) ->
     Sv4 = State#state.socket,
     Sv6 = State#state.socket6,
@@ -172,9 +240,9 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate/2
-%% Description: Shutdown the server
-%% Returns: any (ignored by gen_server)
+%% Function: terminate(Reason, State)
+%% Descrip.: Shutdown the server
+%% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     case Reason of
@@ -184,9 +252,9 @@ terminate(Reason, State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Func: code_change/3
-%% Purpose: Convert process state when code is changed
-%% Returns: {ok, NewState}
+%% Function: code_change(OldVsn, State, Extra)
+%% Purpose : Convert process state when code is changed
+%% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
 code_change(OldVsn, State, Extra) ->
     {ok, State}.
@@ -195,6 +263,13 @@ code_change(OldVsn, State, Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% Function: get_localaddr(Socket, DefaultAddr)
+%% Descrip.: Return the listening IP and port for a socket.
+%% Returns : {IP, Port}
+%%           IP   = string()
+%%           Port = integer()
+%%--------------------------------------------------------------------
 get_localaddr(Socket, DefaultAddr) ->
     case inet:sockname(Socket) of
 	{ok, {IPlist, LocalPort}} ->
@@ -212,6 +287,20 @@ get_localaddr(Socket, DefaultAddr) ->
 %%% Interface functions
 %%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% Function: send(SipSocket, Proto, Host, Port, Message)
+%%           SipSocket = sipsocket record()
+%%           Proto     = atom(), udp | udp6
+%%           Host      = string()
+%%           Port      = integer()
+%%           Message   = term()
+%% Descrip.: Send Message to Host:Port. Proto must currently be the
+%%           same protocol as is stored in SipSocket.
+%% Returns : Result |
+%%           {error, Reason}
+%%           Result = term(), ultimately the result of send()
+%%           Reason = string()
+%%--------------------------------------------------------------------
 send(SipSocket, Proto, Host, Port, Message) when record(SipSocket, sipsocket), integer(Port), SipSocket#sipsocket.proto /= Proto ->
     {error, "Protocol mismatch"};
 send(SipSocket, Proto, Host, Port, Message) when record(SipSocket, sipsocket), integer(Port) ->
@@ -228,6 +317,18 @@ send(InvalidSocket, Proto, Host, Port, Message) ->
     logger:log(error, "Sipsocket UDP: Could not send message to ~p:~s:~p, invalid socket : ~p",
 		[Proto, Host, Port, InvalidSocket]).
 
+%%--------------------------------------------------------------------
+%% Function: get_socket(Proto, Host, Port)
+%%           Proto     = atom(), udp | udp6
+%%           Host      = string()
+%%           Port      = integer()
+%% Descrip.: Return a socket suitable for communicating with Host:Port
+%%           using protocol Proto.
+%% Returns : SipSocket       |
+%%           {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
 get_socket(Proto, Host, Port) when atom(Proto), list(Host), integer(Port) ->
     case catch gen_server:call(sipsocket_udp, {get_socket, Proto, Host, Port}, 1500) of
 	{ok, SipSocket} ->
@@ -241,5 +342,10 @@ get_socket(Proto, Host, Port) when atom(Proto), list(Host), integer(Port) ->
 	    {error, "sipsocked_udp failed"}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: is_reliable_transport(_)
+%% Descrip.: No UDP protocol is reliable transport. Return false.
+%% Returns : false
+%%--------------------------------------------------------------------
 is_reliable_transport(_) ->
     false.
