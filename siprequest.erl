@@ -272,14 +272,16 @@ proxy_check_maxforwards(Header) ->
     MaxForwards =
 	case keylist:fetch('max-forwards', Header) of
 	    [M] ->
-		lists:min([sipserver:get_env(max_max_forwards, 255), list_to_integer(M) - 1]);
+		Mnum = list_to_integer(M),
+		Max = sipserver:get_env(max_max_forwards, 255),
+		%% decrease the old value by one, but assure it is not greater than Max
+		lists:min([Max, Mnum - 1]);
 	    [] ->
 		sipserver:get_env(default_max_forwards, 70)
 	end,
-    logger:log(debug, "Max-Forwards is ~p", [MaxForwards]),
     if
 	MaxForwards < 1 ->
-	    logger:log(normal, "Not proxying request with Max-Forwards < 1"),
+	    logger:log(debug, "Siprequest: Not proxying request with Max-Forwards < 1"),
 	    throw({siperror, 483, "Too Many Hops"});
 	true ->
 	    keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Header)
@@ -293,6 +295,9 @@ proxy_check_maxforwards(Header) ->
 %%           Proto       = ???
 %% Descrip.: Generate a Via header for this proxy and add it to Header
 %% Returns : NewHeader, keylist record()
+%%
+%% XXX rework to only calculate LoopCookie if we are actually going to
+%% use it.
 %%--------------------------------------------------------------------
 proxy_add_via(Header, OrigURI, Parameters, Proto) ->
     LoopCookie = case sipserver:get_env(detect_loops, true) of
@@ -311,7 +316,7 @@ proxy_add_via(Header, OrigURI, Parameters, Proto) ->
     ViaParameters = case sipserver:get_env(request_rport, false) of
 			true ->
 			    lists:append(ViaParameters1, ["rport"]);
-			_ ->
+			false ->
 			    ViaParameters1
 		    end,
     V = create_via(Proto, ViaParameters),
@@ -832,7 +837,6 @@ test() ->
 
     %% default_port(Proto, PortIn)
     %%--------------------------------------------------------------------
-
     %% udp/udp6/tcp/tcp6/"sip"
     io:format("test: default_port/2 - 1~n"),
     5060 = default_port(udp, none),
@@ -864,7 +868,6 @@ test() ->
 
     %% create_via(Proto, Parameters)
     %%--------------------------------------------------------------------
-
     SipLPort  = sipserver:get_listenport(tcp),
     SipsLPort = sipserver:get_listenport(tls),
 
@@ -965,9 +968,9 @@ test() ->
     [RRoute2, RRoute1] = sipheader:record_route(RRHeader3),
 
 
+
     %% build request header
     %%--------------------------------------------------------------------
-
     io:format("test: build request header - 1~n"),
     ReqHeader = keylist:from_list([
 				   {"Via",	["SIP/2.0/TLS 130.237.90.1:111",
@@ -983,9 +986,9 @@ test() ->
 				   {"s",	["test subject short form"]}
 				  ]),
 
+
     %% make_answerheader(RequestHeader)
     %%--------------------------------------------------------------------
-
     %% check that our Record-Route was turned into a Route
     io:format("test: make_answerheader/1 - 1~n"),
     AHeader1 = make_answerheader(ReqHeader),
@@ -995,17 +998,17 @@ test() ->
     %% Check that the Record-Route was deleted
     [] = keylist:fetch('record-route', AHeader1),
 
+
     %% get_loop_cookie(ReqHeader, URI, Proto
     %%--------------------------------------------------------------------
-
     io:format("test: get_loop_cookie/3 - 1~n"),
     "JYJPsr4IqjymexLGUB58yg" = get_loop_cookie(ReqHeader, sipurl:parse("sip:test@example.org"), tcp),
+
 
 
     %% make_response(Status, Reason, Body, ExtraHeaders, Parameters,
     %%		     Proto, Request)
     %%--------------------------------------------------------------------
-
     io:format("test: make_response/7 - 1.1~n"),
     Response1 = make_response(100, "Trying", "test", [], [], tcp, #request{header=ReqHeader}),
 
@@ -1054,9 +1057,9 @@ test() ->
     io:format("test: make_response/7 - 2.6.2~n"),
     [] = keylist:fetch('route', Response2#response.header),
 
+
     %% check_proxy_request(Request)
     %%--------------------------------------------------------------------
-
     io:format("test: check_proxy_request/1 - 1~n"),
     ReqHeader2 = keylist:set("Content-Length", ["900"], ReqHeader),
     Req2 = #request{method="MESSAGE", uri=sipurl:parse("sip:test@example.org"), header=ReqHeader2, body = <<"foo">>},
@@ -1105,7 +1108,6 @@ test() ->
 
     %% process_route_header(Header, URI)
     %%--------------------------------------------------------------------
-
     io:format("test: process_route_header/2 - 1~n"),
     InURI = sipurl:parse("sip:in@example.org"),
     [InURIasContact] = contact:parse(["<sip:in@example.org>"]),
@@ -1161,7 +1163,6 @@ test() ->
 
     %% create_via(Proto, Parameters)
     %%--------------------------------------------------------------------
-
     io:format("test: create_via/1 - 1.1~n"),
     TLSBasicVia = create_via(tls, []),
 
@@ -1171,7 +1172,6 @@ test() ->
 
     %% proxy_add_via(Header, URI, Parameters, Proto)
     %%--------------------------------------------------------------------
-
     io:format("test: proxy_add_via/1 - 1.1~n"),
     PAVheaderIn1 = keylist:delete("Via", ReqHeader),
 
@@ -1204,5 +1204,44 @@ test() ->
     Branch2 = sipheader:get_via_branch_full(sipheader:topvia(PAVheader2)),
     TopVia1_NewLoopCookie = TopVia1#via{param=["branch=" ++ Branch2]},
     [TopVia1_NewLoopCookie, TLSBasicVia] = sipheader:via(PAVheader2),
+
+
+    %% test proxy_check_maxforwards(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: proxy_check_maxforwards/1 - 1~n"),
+    %% check that we add the default specified in RFC3261 to header that has no Max-Forwards
+    MaxFwd_H1 = proxy_check_maxforwards(keylist:from_list([])),
+    ["70"] = keylist:fetch('max-forwards', MaxFwd_H1),
+
+    io:format("test: proxy_check_maxforwards/1 - 2~n"),
+    %% check that we decrease Max-Forwards by one (normal case)
+    MaxFwd_H2 = proxy_check_maxforwards(MaxFwd_H1),
+    ["69"] = keylist:fetch('max-forwards', MaxFwd_H2),
+
+    io:format("test: proxy_check_maxforwards/1 - 3~n"),
+    %% check that we don't allow overly large Max-Forwards
+    MaxFwd_H3_in = keylist:set("Max-Forwards", ["500"], MaxFwd_H1),
+    MaxFwd_H3 = proxy_check_maxforwards(MaxFwd_H3_in),
+    ["255"] = keylist:fetch('max-forwards', MaxFwd_H3),
+
+    io:format("test: proxy_check_maxforwards/1 - 4~n"),
+    %% check that we don't refuse Max-Forwards: 2
+    MaxFwd_H4_in = keylist:set("Max-Forwards", ["2"], MaxFwd_H1),
+    MaxFwd_H4 = proxy_check_maxforwards(MaxFwd_H4_in),
+    ["1"] = keylist:fetch('max-forwards', MaxFwd_H4),
+
+    io:format("test: proxy_check_maxforwards/1 - 5~n"),
+    %% check that we don't reach 0
+    {siperror, 483, _} = (catch proxy_check_maxforwards(MaxFwd_H4)),
+
+    io:format("test: proxy_check_maxforwards/1 - 6~n"),
+    %% check that we don't allow 0
+    MaxFwd_H6 = keylist:set("Max-Forwards", ["0"], MaxFwd_H1),
+    {siperror, 483, _} = (catch proxy_check_maxforwards(MaxFwd_H6)),
+
+    io:format("test: proxy_check_maxforwards/1 - 7~n"),
+    %% check that we don't allow negative numbers
+    MaxFwd_H7 = keylist:set("Max-Forwards", ["-1"], MaxFwd_H1),
+    {siperror, 483, _} = (catch proxy_check_maxforwards(MaxFwd_H7)),
 
     ok.
