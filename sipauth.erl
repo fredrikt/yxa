@@ -101,7 +101,7 @@ get_user_verified(Header, Method, Authheader) ->
     Opaque = dict:fetch("opaque", Authorization),
     Timestamp = hex:from(Opaque),
     Now = util:timestamp(),
-    logger:log(debug, "timestamp: ~p now: ~p", [Timestamp, Now]),
+    logger:log(debug, "Auth: timestamp: ~p now: ~p", [Timestamp, Now]),
     User = dict:fetch("username", Authorization),
     {Password, _, _, _} = get_passnumber(User),
     Nonce2 = get_nonce(Opaque),
@@ -110,22 +110,23 @@ get_user_verified(Header, Method, Authheader) ->
 			     User, Password),
     if
 	Password == none ->
-	    logger:log(normal, "Authorization failed for non-existing user ~p", [User]),
+	    logger:log(normal, "Auth: Authentication failed for non-existing user ~p", [User]),
 	    false;
 	Response /= Response2 ->
 	    %logger:log(normal, "Response ~p /= Response2 ~p", [Response, Response2]),
-	    logger:log(normal, "Authorization failed for user ~p", [User]),
+	    logger:log(normal, "Auth: Authentication failed for user ~p", [User]),
 	    false;
 	Nonce /= Nonce2 ->
-	    logger:log(normal, "Nonce ~p /= ~p, authorization failed for user ~p", [Nonce, Nonce2, User]),
+	    logger:log(normal, "Auth: Nonce ~p /= ~p, authentication failed for user ~p", [Nonce, Nonce2, User]),
 	    stale;
 	Timestamp < Now - 5 ->
-	    logger:log(normal, "Timestamp ~p too old. Now: ~p, authorization failed for user ~p", [Timestamp, Now, User]),
+	    logger:log(normal, "Auth: Timestamp ~p too old. Now: ~p, authentication failed for user ~p", [Timestamp, Now, User]),
 	    stale;
 	Timestamp > Now ->
-	    logger:log(normal, "Timestamp ~p too new. Now: ~p, authorization failed for user ~p", [Timestamp, Now, User]),
+	    logger:log(normal, "Auth: Timestamp ~p too new. Now: ~p, authentication failed for user ~p", [Timestamp, Now, User]),
 	    false;
 	true ->
+	    logger:log(debug, "Auth: User ~p authenticated", [User]),
 	    User
     end.
 
