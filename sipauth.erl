@@ -147,7 +147,7 @@ check_auth(Header, Method, Number, Tophone, Classdefs) ->
 	User == stale ->
 	    stale;
 	Numberallowed /= true ->
-	    logger:log(normal, "Number ~p not allowed caller id", [Number]),
+	    logger:log(normal, "Number ~p not allowed caller id for user ~p", [Number, User]),
 	    false;
 	Classallowed /= true ->
 	    logger:log(normal, "Number ~p not allowed to call ~p in class ~p",
