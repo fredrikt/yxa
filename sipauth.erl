@@ -37,6 +37,9 @@ get_passnumber(User) ->
 	    {none, [], [], []}
     end.
 
+get_class(Number, []) ->
+    unknown;
+
 get_class(Number, [{Regexp, Class} | Rest]) ->
     case regexp:first_match(Number, Regexp) of
 	{match, _, _} ->
