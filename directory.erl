@@ -54,9 +54,9 @@ lookupkthid(KTHid) ->
     end.
 
 lookupmail(Mail) ->
-    case ldapsearch(Mail) of
+    case ldapsearch(Mail ++ "@kth.se") of
 	none ->
-	    none;
+	    lookupkthid(Mail);
 	KTHid ->
 	    lookupkthid(KTHid)
     end.
