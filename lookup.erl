@@ -1,4 +1,5 @@
 -module(lookup).
+
 -export([lookupregexproute/1,
 	 lookupuser/1,
 	 lookup_url_to_locations/1,
@@ -103,11 +104,11 @@ lookup_url_to_addresses(sipuserdb_mnesia, URL) when record(URL, sipurl) ->
 	_ -> []
     end,	
     lists:append([Standard, Addr1, Addr2]);
-lookup_url_to_addresses(Src, URL) when record(URL, sipurl) ->
+lookup_url_to_addresses(_Src, URL) when record(URL, sipurl) ->
     % Make a list of all possible addresses we
     % can create out of this URL
     Tel = local:canonify_numberlist([URL#sipurl.user]),
-    lists:append([sipurl:print(URL#sipurl{pass=none, port=none, param=[]})], Tel).
+    lists:append([sipurl:print(sipurl:set([{pass, none}, {port, none}, {param, []}], URL))], Tel).
 
 lookup_addresses_to_users(Addresses) ->
     case local:get_users_for_addresses_of_record(Addresses) of
@@ -120,8 +121,9 @@ lookup_addresses_to_users(Addresses) ->
 	    logger:log(debug, "Lookup: Addresses ~p belongs to one or more users : ~p", [Addresses, Res]),
 	    Res;
 	Unknown ->
-	    logger:log(error, "Lookup: lookup_addresses_to_users: unknown result from local:get_users_for_addresses_of_record(~p) : ~p",
-	    		[Addresses, Unknown]),
+	    logger:log(error, "Lookup: lookup_addresses_to_users: unknown result from"
+		       " local:get_users_for_addresses_of_record(~p) : ~p",
+		       [Addresses, Unknown]),
 	    []
     end.
 
@@ -160,7 +162,8 @@ lookupappserver(Key) ->
 lookupdefault(URL) when record(URL, sipurl) ->
     case homedomain(URL#sipurl.host) of
 	true ->
-	    logger:log(debug, "Lookup: Cannot default-route request to a local domain (~s), aborting", [URL#sipurl.host]),
+	    logger:log(debug, "Lookup: Cannot default-route request to a local domain (~s), aborting", 
+		       [URL#sipurl.host]),
 	    none;
         _ ->
 	    DefaultRoute = sipserver:get_env(defaultroute, none),
@@ -169,8 +172,10 @@ lookupdefault(URL) when record(URL, sipurl) ->
 		    logger:log(debug, "Lookup: No default route - dropping request"),
 		    {response, 500, "Can't route request"};	%% XXX is 500 the correct error-code?
 		Hostname ->
-		    {Host, Port} = sipurl:parse_hostport(Hostname),
-		    NewURI = #sipurl{user=URL#sipurl.user, pass=none, host=Host, port=Port, param=[]},
+		    {Host, Port} = sipparse_util:parse_hostport(Hostname),
+		    NewURI = sipurl:new([{user, URL#sipurl.user}, {pass, none}, {host, Host}, {port, Port}]), 
+		    
+
 		    logger:log(debug, "Lookup: Default-routing to ~s", [sipurl:print(NewURI)]),
 		    %% XXX we should preserve the Request-URI by proxying this as a loose router.
 		    %% It is almost useless to only preserve the User-info IMO. We can do this
@@ -205,7 +210,8 @@ lookuppotn("+" ++ E164) ->
 		   end;
 	       _ ->
 		   none
-	   end;
+	   end,
+    Loc1;
 lookuppotn(Number) ->
     case rewrite_potn_to_e164(Number) of
         "+" ++ E164 ->
@@ -350,7 +356,7 @@ lookupnumber(Number) ->
 				_ ->
 				    {relay, URL}
 			    end;
-			Unknown ->
+			_ ->
 			    logger:log(error, "Lookup: Rewrite of number ~p did not result in a parseable URL : ~p",
 				       [Number, Res]),
 			    error
@@ -434,9 +440,9 @@ is_request_to_this_proxy(Request) when record(Request, request) ->
 %% called if the URI host matches one of our hostnames. Return true if there
 %% is no userpart in the URI, or if the method is OPTIONS and Max-Forwards is
 %% less than one. This procedure is from RFC3261 #11 Querying for Capabilities.
-is_request_to_this_proxy2(_, URL, Header) when record(URL, sipurl), URL#sipurl.user == none ->
+is_request_to_this_proxy2(_Method, #sipurl{user=User}=URL, _Header) when is_record(URL, sipurl), User == none ->
     true;
-is_request_to_this_proxy2("OPTIONS", URL, Header) when record(URL, sipurl) ->
+is_request_to_this_proxy2("OPTIONS", URL, Header) when is_record(URL, sipurl) ->
     %% RFC3261 # 11 says a proxy that receives an OPTIONS request with a Max-Forwards less than one
     %% MAY treat it as a request to the proxy.
     MaxForwards =
@@ -467,11 +473,26 @@ homedomain(Domain) ->
 	    util:casegrep(Domain, HostnameList)
     end.
 
-get_remote_party_number(URL, DstHost) when record(URL, sipurl) ->
+%%--------------------------------------------------------------------
+%% Function: get_remote_party_number(URL, DstHost)
+%%           URL     = sipurl record(), From:
+%%           DstHost = term(), chosen destination for request
+%% Descrip.: This function is used by the pstnproxy to provide a PSTN
+%%           gateway with usefull caller-id information. PSTN networks
+%%           typically gets upset if the "A-number" (calling party) is
+%%           a SIP URL. Different gateways might want the number
+%%           formatted differently, thus the DstHost parameter (a TSP
+%%           gateway to PSTN might only handle E.164 numbers, while a
+%%           PBX might be expecting only a 4-digit extension number).
+%% Returns : {ok, Number} |
+%%           none
+%%           Number = string()
+%%--------------------------------------------------------------------
+get_remote_party_number(URL, DstHost) when is_record(URL, sipurl), is_list(DstHost) ->
     case local:get_users_for_url(URL) of
 	[User] ->
 	    case local:get_telephonenumber_for_user(User) of
-		Number when list(Number) ->
+		Number when is_list(Number) ->
 		    local:format_number_for_remote_party_id(Number, URL, DstHost);
 		nomatch ->
 		    logger:log(debug, "Lookup: No telephone number found for user ~p", [User]),
@@ -489,7 +510,7 @@ get_remote_party_number(URL, DstHost) when record(URL, sipurl) ->
 	    logger:log(debug, "Lookup: No user(s) match address ~p, can't get telephone number",
 		       [sipurl:print(URL)]),
 	    none;
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    logger:log(debug, "Lookup: Multiple users match address ~p, can't get telephone number",
 		       [sipurl:print(URL)]),
 	    none;
@@ -499,20 +520,43 @@ get_remote_party_number(URL, DstHost) when record(URL, sipurl) ->
 	    none
     end.
 
-format_number_for_remote_party_id(Number, ToURI, DstHost) when record(ToURI, sipurl) ->
+%%--------------------------------------------------------------------
+%% Function: format_number_for_remote_party_id(Number, URL, DstHost)
+%%           Number  = string(), the number to format
+%%           URL     = sipurl record(), From:
+%%           DstHost = term(), destination for request
+%% Descrip.: Hook for the actual formatting once
+%%           get_remote_party_number/2 has found a number to be
+%%           formatted.
+%% Returns : {ok, Number}
+%%           Number = string()
+%%--------------------------------------------------------------------
+format_number_for_remote_party_id(Number, ToURI, _DstHost) when is_list(Number),
+								is_record(ToURI, sipurl) ->
     case rewrite_potn_to_e164(Number) of
 	error ->
 	    none;
 	Res ->
-	    Res
+	    {ok, Res}
     end.
 
-get_remote_party_name(Key, URI) when list(Key), record(URI, sipurl) ->
+%%--------------------------------------------------------------------
+%% Function: get_remote_party_name(Key, URI)
+%%           Key = string(), number we should turn into a name
+%%           URI = term(), destination for request
+%% Descrip.: When pstnproxy receives a request from a PSTN gateway,
+%%           this function is called to see if we can find a nice
+%%           Display Name for the calling party.
+%% Returns : {ok, DisplayName} |
+%%           none
+%%           DisplayName = string()
+%%--------------------------------------------------------------------
+get_remote_party_name(Key, URI) when is_list(Key), is_record(URI, sipurl) ->
     case directory:lookup_tel2name(Key) of
 	none ->
 	    none;
 	[DisplayName] when is_list(DisplayName) ->
-	    [DisplayName];
+	    {ok, DisplayName};
 	L when is_list(L) ->
 	    logger:log(debug, "Lookup: Got more than one name back for number ~p. Since I have no way " ++
 		       "of choosing a name from a list, I'm not going to try.", [Key]),
