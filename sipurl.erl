@@ -1,140 +1,1270 @@
--module(sipurl).
--export([parse/1, parse_hostport/1, print/1, print_hostport/2, unescape_user/1, cleanup_hostname/1,
-	url_is_equal/2, url_is_equal/3, parse_url_with_default_protocol/2]).
+%% This module handles sipurl (record) related actions:
+%% * parsing data to a sipurl record()
+%% * formating sipurl record() to a parseable text string
+%% * comparing sipurls with url_is_equal/2
+%% * creating and modifying sipurl records with new() and set()
+%% * accessing sipurl records with get_port/1
+%%
+%% Note: parsing functions used by parse/1 often assume correct
+%% syntaxt and will throw an exception, rather than return 'false'
+%% if matching fails - this reduces the amount of error checking
+%% needed.
+%%
+%% Note: there are various possibilities for optimizations:
+%% * the regexp in host name checking is rather complex and _may_ be
+%%   faster if implemented with custom checking functions.
+%% * There are probably various functions and list operations that
+%%   do unnecessay work.
+%% * Some checks that ensure that a sip url is a proper sip url
+%%   (acording to RFC3261 chapter 25), are not needed to parse legal
+%%   sip url strings, but only to reject malformed ones. Some of
+%%   these checks like looking for multiple ";", ":" and "="could be
+%%   removed as their removal will not insert "bad" data into the
+%%   sipurl record(), but will instead "fix" bad urls.
+%% - I personaly question if this is a good idea (hsten)
+%%
+%% Note: While the set and new functions, ensure case insensitivity
+%% and reject duplicat parameter names - they do not check the
+%% validity of their fields, this is only done in parse/1 which is
+%% expected to handle external data, which might be faulty.
+%%
+%% XXX RFC 3261 is somewhat vague about character encoding and if all
+%% 8 bit values can be escaped. The non-escaped chars(e.g. A-Z, a-z,
+%% 0-9 ...) are encoded as ASCII. The current implementation escapes
+%% all 8 bit values that have no non-escaped version in their current
+%% context (the field they appear in).
+%% RFC 2396, which RFC 3261 referes to, appears to only use the
+%% lower (7 bit) ASCII set, the implication (if any) of this is
+%% unclear - a proper check of RFC 2396 is needed !
+%% XXX a split_fields(Str, SepStr) - that takes a separtor
+%% sequence rather than a single char() would be nice
+%% - string:substring/2 or regexp:split/2 could be used for this but
+%% would most likely be slower than the current solution with
+%% split_fields/2 - altough the use of catch for matching "]:" is kind
+%% of ugly and cryptic.
+%% XXX no type is  enfored on port field in the sipurl record(), it
+%% can be integer() or string() ! this is confusing but safe as long
+%% as get_port/1 is used for access
+%%--------------------------------------------------------------------
 
+-module(sipurl).
+
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([
+	 parse/1,
+	 print/1,
+	 print_hostport/2,
+	 url_is_equal/2,
+	 parse_url_with_default_protocol/2,
+
+	 unescape_str/1,
+	 escape_parameters/1,
+
+	 get_port/1,
+
+	 new/1,
+
+	 set/2,
+
+	 test/0
+	]).
+
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("siprecords.hrl").
 
-parse("sip:" ++ URL) ->
-%    logger:log(debug, "url: ~p", [URL]),
-    [Rest | Parameters ] = string:tokens(URL, ";"),
-    case string:tokens(Rest, "@") of
-	[Userinfo, Hostport] ->
-	    {User, Pass} = parse_userinfo(Userinfo),
-	    {Host, Port} = parse_hostport(Hostport),
-	    #sipurl{proto="sip", user=User, pass=Pass, host=Host, port=Port, param=Parameters};
-	[Hostport] ->
-	    {Host, Port} = parse_hostport(Hostport),
-	    #sipurl{proto="sip", user=none, pass=none, host=Host, port=Port, param=Parameters}
-    end;
-parse(URL) ->
-    {unparseable, URL}.
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
 
-print_parameters([]) ->
-    "";
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
 
-print_parameters([A | B]) ->
-    ";" ++ A ++ print_parameters(B).
+%%====================================================================
+%% External functions
+%%====================================================================
 
-print({wildcard, Parameters}) ->
-    "*" ++ print_parameters(Parameters);
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% RFC 2234 specifies the BNF format (and some rules) used in
+%% RFC 3261.
+%% The most important conventions in this BNF format are:
+%% R1 / R2 / ...   = one of these rules must be applied
+%% (R1 / R2 / ...) = () are used to group rules
+%% N*M(R) = rule R must be applied at least N times but not more than
+%%          M, default N = 0 and M = infinity
+%% N(R)   = N*N(R) i.e. rule R must be applied exactly N time
+%% *(R)   = 0*inifinity(R) i.e. rule R may be applied any number of
+%%          times
+%% [R]    = *1(R), i.e. apply this rule 0-1 times
+%% "string" = quoted strings are case insensitive
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-print(URL) when record(URL, sipurl), URL#sipurl.proto == undefined ->
-    print(URL#sipurl{proto="sip"});
+%% RFC 2234  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% ALPHA          =  %x41-5A / %x61-7A   ; A-Z / a-z
+%% DIGIT          =  %x30-39             ; 0-9
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-print(URL) when record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
-    URL#sipurl.proto ++ ":" ++ print_hostport(URL#sipurl.host, URL#sipurl.port) ++ print_parameters(URL#sipurl.param);
+%% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% 25.1 Basic Rules
+%%
+%%    The following rules are used throughout this specification to
+%%    describe basic parsing constructs.  The US-ASCII coded character set
+%%    is defined by ANSI X3.4-1986.
+%%
+%% alphanum  =  ALPHA / DIGIT
+%%
+%%    Several rules are incorporated from RFC 2396 [5] but are updated to
+%%    make them compliant with RFC 2234 [10].  These include:
+%%
+%%       reserved    =  ";" / "/" / "?" / ":" / "@" / "&" / "=" / "+"
+%%                      / "$" / ","
+%%       unreserved  =  alphanum / mark
+%%       mark        =  "-" / "_" / "." / "!" / "~" / "*" / "'"
+%%                      / "(" / ")"
+%%       escaped     =  "%" HEXDIG HEXDIG
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-print(URL) when record(URL, sipurl) ->
-    URL#sipurl.proto ++ ":" ++ print_userinfo(URL#sipurl.user, URL#sipurl.pass) ++ "@" ++
-	print_hostport(URL#sipurl.host, URL#sipurl.port) ++
-	print_parameters(URL#sipurl.param).
+%% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%%
+%% SIP-URI          =  "sip:" [ userinfo ] hostport
+%%                     uri-parameters [ headers ]
+%% SIPS-URI         =  "sips:" [ userinfo ] hostport
+%%                     uri-parameters [ headers ]
+%% userinfo         =  ( user / telephone-subscriber ) [ ":" password ] "@"
+%% user             =  1*( unreserved / escaped / user-unreserved )
+%% user-unreserved  =  "&" / "=" / "+" / "$" / "," / ";" / "?" / "/"
+%% password         =  *( unreserved / escaped /
+%%                     "&" / "=" / "+" / "$" / "," )
+%% hostport         =  host [ ":" port ]
+%% host             =  hostname / IPv4address / IPv6reference
+%% hostname         =  *( domainlabel "." ) toplabel [ "." ]
+%% domainlabel      =  alphanum
+%%                     / alphanum *( alphanum / "-" ) alphanum
+%% toplabel         =  ALPHA / ALPHA *( alphanum / "-" ) alphanum
+%%
+%% IPv4address    =  1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT
+%% IPv6reference  =  "[" IPv6address "]"
+%% IPv6address    =  hexpart [ ":" IPv4address ]
+%% hexpart        =  hexseq / hexseq "::" [ hexseq ] / "::" [ hexseq ]
+%% hexseq         =  hex4 *( ":" hex4)
+%% hex4           =  1*4HEXDIG
+%% port           =  1*DIGIT
+%%
+%%    The BNF for telephone-subscriber can be found in RFC 2806 [9].  Note,
+%%    however, that any characters allowed there that are not allowed in
+%%    the user part of the SIP URI MUST be escaped.
+%%
+%% uri-parameters    =  *( ";" uri-parameter)
+%% uri-parameter     =  transport-param / user-param / method-param
+%%                      / ttl-param / maddr-param / lr-param / other-param
+%% transport-param   =  "transport="
+%%                      ( "udp" / "tcp" / "sctp" / "tls"
+%%                      / other-transport)
+%% other-transport   =  token
+%% user-param        =  "user=" ( "phone" / "ip" / other-user)
+%% other-user        =  token
+%% method-param      =  "method=" Method
+%% ttl-param         =  "ttl=" ttl
+%% maddr-param       =  "maddr=" host
+%% lr-param          =  "lr"
+%% other-param       =  pname [ "=" pvalue ]
+%% pname             =  1*paramchar
+%% pvalue            =  1*paramchar
+%% paramchar         =  param-unreserved / unreserved / escaped
+%% param-unreserved  =  "[" / "]" / "/" / ":" / "&" / "+" / "$"
+%%
+%% headers         =  "?" header *( "&" header )
+%% header          =  hname "=" hvalue
+%% hname           =  1*( hnv-unreserved / unreserved / escaped )
+%% hvalue          =  *( hnv-unreserved / unreserved / escaped )
+%% hnv-unreserved  =  "[" / "]" / "/" / "?" / ":" / "+" / "$"
+%%
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-print_userinfo(User, none) ->
-    escape_user(User);
+%%--------------------------------------------------------------------
+%% Function: parse(URLStr)
+%%           URLStr = string(), a sip url
+%% Descrip.: parses a sip url of the following format (see RFC 3261
+%%           chapter 19.1.1 for more details):
+%%
+%%           sip:user:password@host:port;uri-parameters?headers
+%%
+%%           * uri-parameters = any number of "parameter_name=value"
+%%           separated by ";"
+%%           * headers = any number of "hname=hvalue" separated by "&"
+%%
+%%           Phone numbers can also be encoded as sip uris (see
+%%           chapter 19.1.6).A tel uri:
+%%           "tel:+358-555-1234567;postd=pp22" becomes
+%%           "sip:+358-555-1234567;postd=pp22@foo.com;user=phone" i.e.
+%%           "user" is replaced by "phone-no;tel-paramters".
+%%
+%% Returns : sipurl record() | {unparseable, URLStr}
+%% Note    : only the sip protocol is supported, although sips is
+%%           mostly trivial to support as it has the exact same fields
+%% Note    : the headers field is currently not supported
+%% Note    : tel URIs encoded as sip URIs are currently not supported
+%%--------------------------------------------------------------------
+parse([C1, C2, C3, C4 | RURL] = URLStr) ->
+    case httpd_util:to_lower([C1,C2,C3,C4]) of
+	"sip:" ->
+	    case catch parse_url(RURL, URLStr) of
+		SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
+		_Error ->
+		    {unparseable, URLStr}
+	    end;
+	_ ->
+	    {unparseable, URLStr}
+    end.
 
-print_userinfo(User, Pass) ->
-    escape_user(User) ++ ":" ++ Pass.
+%% Returns : sipurl record() | throw() (if parse failed)
+parse_url(URL, URLStr) ->
+    {User, Password, HostportParametersHeaders} =
+	case sipparse_util:split_fields(URL, $@) of
+	    {Userinfo, HostportParametersHeaderRest} ->
+		{Usr, Pass} = parse_userinfo(Userinfo),
+		{Usr, Pass, HostportParametersHeaderRest};
+	    %% no "@" means no user:password fields
+	    {HostportParametersHeaderRest} ->
+		{none, none, HostportParametersHeaderRest}
+	end,
 
-print_hostport(Host, none) ->
-    Host;
+    %% first ";" (after "@") occurs in uri-parameters
+    {Host, Port, ParametersHeaders} =
+	case sipparse_util:split_fields(HostportParametersHeaders, $;) of
+	    {HostPortStr, ParametersHeadersStr} ->
+		{Host2, Port2} = sipparse_util:parse_hostport(HostPortStr),
+		{Host2, Port2, ParametersHeadersStr};
+	    {HostPortStr} ->
+		{Host2, Port2} = sipparse_util:parse_hostport(HostPortStr),
+		{Host2,Port2, []}
+	end,
 
-print_hostport(Host, Port) when integer(Port) ->
-    lists:flatten(Host ++ ":" ++ integer_to_list(Port));
+    {Parameters, Parameterlist, _Headerslist} =
+	case ParametersHeaders of
+	    [] ->
+		{[], [], []};
+	    _ ->
+		%% "?" (which isn't part of uri-parameters) acts as stop marker for uri-parameters
+		%% {Parameters, Headers} return, in split_fields/2 currently result in a throw()
+		%% as we don't support headers
+		{Parameters2} = sipparse_util:split_fields(ParametersHeaders, $?),
+		ParamList = string:tokens(Parameters2, ";"),
+		{Parameters2, ParamList, []}
+	end,
 
-print_hostport(Host, Port) when list(Port) ->
-    lists:flatten(Host ++ ":" ++ Port).
+    case is_bnf_compliant_url(User, Password, Host, Port, Parameters) of
+	true ->
+	    new([{proto, "sip"}, {user, User}, {pass, Password}, {host, Host},
+		 {port, Port}, {param, Parameterlist}]);
+	false ->
+	    {unparseable, URLStr}
+    end.
+
+%% The parse functions are somewhat lax compared to the BNF specification so this
+%% function is used to check that fields only contain the expected characters and
+%% separators.
+%% Host and port fields are checked by parse_hostport/1 so there is no need to
+%% verify these values separatly
+is_bnf_compliant_url(User, Pass, _Host, _Port, Parameters) ->
+    is_user(User) andalso
+ 	is_password(Pass) andalso
+     	is_parameters(Parameters).
 
 parse_userinfo(Userinfo) ->
-    case string:tokens(Userinfo, ":") of
-	[User, Pass] ->
-	    {unescape_user(User), Pass};
-	[User] ->
-	    {unescape_user(User), none};
-	[] ->
-	    {none, none}
+    %% ":" can't be used in the user or password parts, so it
+    %% acts as a separator for the two fields
+    case sipparse_util:split_fields(Userinfo, $:) of
+	{User, Pass} ->
+	    {User, Pass};
+	{User} ->
+	    {User, none}
     end.
 
-parse_hostport([$[ | IPv6Hostport]) ->
-    HostpartEnd = string:chr(IPv6Hostport, $]),
-    IPv6Host = "[" ++ string:substr(IPv6Hostport, 1, HostpartEnd),
-    case string:substr(IPv6Hostport, HostpartEnd) of
-	"]:" ++ Port ->
-	    {cleanup_hostname(IPv6Host), Port};
-	_ ->
-	    {cleanup_hostname(IPv6Host), none}
-    end;
-parse_hostport(Hostport) ->
-    case string:tokens(Hostport, ":") of
-	[Host, Port] ->
-	    {cleanup_hostname(Host), Port};
-	[Host] ->
-	    {cleanup_hostname(Host), none}
+%%--------------------------------------------------------------------
+%% Function: unescape_str(Str)
+%%           Str = none | string()
+%% Descrip.: replaces %HH escape codes in a string with its value
+%% Returns : none | string()
+%%--------------------------------------------------------------------
+unescape_str(none) ->
+    none;
+unescape_str([]) ->
+    [];
+%% hex value found convert to integer()
+unescape_str([$%, H1, H2 | RStr]) ->
+	      [hex:to_int([H1, H2]) | unescape_str(RStr)];
+	      unescape_str([Char | RStr]) ->
+		     [Char | unescape_str(RStr)].
+
+%%--------------------------------------------------------------------
+%% Function: print(URL)
+%%           URL = sipurl record()
+%% Descrip.: create parseable sip url string
+%% Returns : string()
+%% Note    : user, password, uri-parameters and headers can use char
+%%           codes that need to be escaped using the %HH (H = 0-F)
+%%           notation
+%%--------------------------------------------------------------------
+%% XXX this will break if if the #sipurl.proto field isn't a string()
+print(URL) when record(URL, sipurl) ->
+    lists:flatten(URL#sipurl.proto ++ ":" ++
+		  print_userinfo(URL#sipurl.user, URL#sipurl.pass) ++
+		  print_hostport(URL#sipurl.host, get_port(URL)) ++
+		  print_parameters(URL#sipurl.param_pairs)).
+
+print_userinfo(none, none) ->
+    "";
+print_userinfo(User, none) ->
+    escape_user(User) ++ "@";
+print_userinfo(User, Pass) ->
+    escape_user(User) ++ ":" ++ escape_password(Pass) ++ "@".
+
+%% XXX exported
+%%--------------------------------------------------------------------
+%% Function: print_hostport(Host, Port)
+%%           Host = string()
+%%           Port = integer() | none (if sipurl contained no port
+%%           value)
+%% Descrip.: return a "host:port" string
+%% Returns : string()
+%%--------------------------------------------------------------------
+print_hostport(Host, none) ->
+    Host;
+print_hostport(Host, Port) ->
+    lists:flatten(Host ++ ":" ++ integer_to_list(Port)).
+
+
+print_parameters(URLParams) when record(URLParams, url_param) ->
+    url_param:to_string(URLParams).
+
+
+escape_user(Str) ->
+    IsNonEscapeChar = fun(Char) ->
+			      is_unreserved(Char) orelse is_user_unreserved(Char)
+		      end,
+    escape_str(Str, IsNonEscapeChar).
+
+escape_password(Str) ->
+    IsNonEscapeChar = fun(Char) ->
+			      is_password_without_escape(Char)
+		      end,
+    escape_str(Str, IsNonEscapeChar).
+
+escape_parameters(Str) ->
+    IsNonEscapeChar = fun(Char) ->
+			      is_param_unreserved(Char) or is_unreserved(Char)
+		      end,
+    escape_str(Str, IsNonEscapeChar).
+
+%% create string with escape char for chars where IsNonEscapeChar(Char) == false
+escape_str(Str,IsNonEscapeChar) ->
+    F = fun(Char) ->
+		case IsNonEscapeChar(Char) of
+		    true -> Char;
+		    false -> escape(Char)
+		end
+	end,
+    NewStr = lists:map(F, Str),
+    %% flatten as escape codes are themselves strings
+    lists:flatten(NewStr).
+
+%% generate a escape hex encoding for a char
+escape(Char) ->
+    [$\% | hex:to_hex_string(Char)].
+
+     %%--------------------------------------------------------------------
+     %% Function: url_is_equal(A,B)
+     %%           A, B = sipurl record()
+     %% Descrip.: return 'true' if A = B according to RFC 3261 chapter
+     %%           19.1.4
+     %% Returns : true | false
+     %% Note    : assume that A and B are properly parsed sipurl records
+     %%           with unencoded chars i.e. no hex encoded chars
+     %%--------------------------------------------------------------------
+     url_is_equal(A, B) when record(A, sipurl), record(B, sipurl) ->
+	    %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+	    %% o  A SIP and SIPS URI are never equivalent.
+	    %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+	    case A#sipurl.proto == B#sipurl.proto of
+		false ->
+		    false;
+		true ->
+		    url_is_equal_user_pass_host_port(A, B)
+	    end.
+
+url_is_equal_user_pass_host_port(A, B) ->
+    %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    %% o  Comparison of the userinfo of SIP and SIPS URIs is case-
+    %%    sensitive.  This includes userinfo containing passwords or
+    %%    formatted as telephone-subscribers.  Comparison of all other
+    %%    components of the URI is case-insensitive unless explicitly
+    %%    defined otherwise.
+    %% o  The ordering of parameters and header fields is not significant
+    %%    in comparing SIP and SIPS URIs.
+    %% o  Characters other than those in the "reserved" set (see RFC 2396
+    %%    [5]) are equivalent to their ""%" HEX HEX" encoding.
+    %% o  An IP address that is the result of a DNS lookup of a host name
+    %%    does not match that host name.
+    %% o  For two URIs to be equal, the user, password, host, and port
+    %%    components must match.
+    %%
+    %%    A URI omitting the user component will not match a URI that
+    %%    includes one.  A URI omitting the password component will not
+    %%    match a URI that includes one.
+    %%
+    %%    A URI omitting any component with a default value will not
+    %%    match a URI explicitly containing that component with its
+    %%    default value.  For instance, a URI omitting the optional port
+    %%    component will not match a URI explicitly declaring port 5060.
+    %%    The same is true for the transport-parameter, ttl-parameter,
+    %%    user-parameter, and method components.
+    %%
+    %%      Defining sip:user@host to not be equivalent to
+    %%      sip:user@host:5060 is a change from RFC 2543.  When deriving
+    %%      addresses from URIs, equivalent addresses are expected from
+    %%      equivalent URIs.  The URI sip:user@host:5060 will always
+    %%      resolve to port 5060.  The URI sip:user@host may resolve to
+    %%      other ports through the DNS SRV mechanisms detailed in [4].
+    %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    %% Undefined fields are handled as shown below:
+    %%
+    %% A#sipurl.x = B#sipurl.x
+    %% xxx          xxx        -> true
+    %% none         none       -> true
+    %% xxx          yyy        -> false
+    %% none         xxx        -> false
+    %% xxx          none       -> false
+
+    case
+	(A#sipurl.user == B#sipurl.user) andalso
+	(A#sipurl.pass == B#sipurl.pass) andalso
+	(A#sipurl.host == B#sipurl.host) andalso
+	(get_port(A) == get_port(B)) of
+	false ->
+	    false;
+	true ->
+	    url_is_equal_uri_parameter(A, B)
     end.
 
-%% remove trailing dot(s) and finally lowercase the hostname
-cleanup_hostname(H) ->
-    case string:substr(H, length(H), 1) of
-        "." ->
-	    cleanup_hostname(string:substr(H, 1, length(H) - 1));
-	_ ->
-	    httpd_util:to_lower(H)
+url_is_equal_uri_parameter(A, B) ->
+    %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    %% o  URI uri-parameter components are compared as follows:
+    %%    -  Any uri-parameter appearing in both URIs must match.
+    %%    -  A user, ttl, or method uri-parameter appearing in only one
+    %%       URI never matches, even if it contains the default value.
+    %%    -  A URI that includes an maddr parameter will not match a URI
+    %%       that contains no maddr parameter.
+    %%    -  All other uri-parameters appearing in only one URI are
+    %%       ignored when comparing the URIs.
+    %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    LA = url_param:to_list(A#sipurl.param_pairs),
+    LB = url_param:to_list(B#sipurl.param_pairs),
+
+    %% set vs ordset:
+    %% ordsets is and retruns a sorted list, sets does _NOT_.
+    %% ordsets should be better for for union, subtract and
+    %% intersection functions and as we do few insertions (only
+    %% lists:usort/1 is run on the input to ordsets:from_list/1) there
+    %% should be litle need for sets.
+    SetA = ordsets:from_list(LA),
+    SetB = ordsets:from_list(LB),
+
+    Intersection = ordsets:intersection(SetA, SetB),
+    %% Union contains all {Name,Value} and {Name, none} entries that match
+    Union = ordsets:union(SetA,SetB),
+    %% all non duplicat {Name,Val}, {Name, none} parameters
+    Nonshared = ordsets:subtract(Union,Intersection),
+
+    NonsharedList = ordsets:to_list(Nonshared),
+
+    %% check if transport, user, method, maddr and lr, only ocure in one
+    %% of the urls
+    OnlyOne = only_one_entry("transport", LA, LB) orelse
+	only_one_entry("user", LA, LB) orelse
+	only_one_entry("ttl", LA, LB) orelse
+	only_one_entry("method", LA, LB) orelse
+	only_one_entry("maddr", LA, LB),
+
+    %% check if remaining parameters that appear unique, truely are
+    %% so - there may be entries that have the same name but different values
+    Mismatch = param_mismatch(NonsharedList),
+
+    case OnlyOne of
+	true ->
+	    %% transport, user, method, maddr and lr
+	    %% in only one url -> never match
+	    false;
+	false ->
+	    case Mismatch of
+		%% parameters that occure in both urls must match
+		%% i.e. two parameters with different values
+		%% result in a mismatch
+		%% unique parameters (in only one url) don't result
+		%% in mismatches
+		true ->
+		    false;
+		false ->
+		    url_is_equal_header(A, B)
+	    end
     end.
 
-%% XXX implement this
-unescape_user(In) ->
-    In.
+%% 'true' if only one ParamName field among the URIs
+only_one_entry(ParaName, AL, BL) ->
+    R1 = lists:keysearch(ParaName, 1, AL),
+    R2 = lists:keysearch(ParaName, 1, BL),
+    case {R1,R2} of
+	{false,false} -> false;
+	{false,_} -> true;
+	{_,false} -> true;
+	_ -> false
+    end.
 
-escape_user(In) ->
-    In.
-
-url_is_equal(A, B) when record(A, sipurl), record(B, sipurl) ->
-    url_is_equal(A, B, [proto, user, pass, host, port, parameters]).
-
-%% XXX finish url_is_equal
-url_is_equal(A, A, _) ->
+%% input   : sorted list()
+%% returns : true if two parameters with the same name don't have the same value
+%% note    : list() from ordsets:to_list/1 used is sorted
+param_mismatch([]) ->
+    false;
+param_mismatch([_E]) ->
+    false;
+param_mismatch([{Name, V1}, {Name, V2} | _R]) when V1 /= V2 ->
     true;
-url_is_equal(A, B, _) ->
-    false.
+param_mismatch([_E | R]) ->
+    param_mismatch(R).
 
+url_is_equal_header(_A, _B) ->
+    %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    %%  o  URI header components are never ignored.  Any present header
+    %%     component MUST be present in both URIs and match for the URIs
+    %%     to match.  The matching rules are defined for each header field
+    %%     in Section 20.
+    %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    %% XXX we currently don't support headers
+    true.
+
+%%--------------------------------------------------------------------
 %% In some places, we allow lookups to result in URL strings without
 %% protocol. First try to parse them as-is, and if that does not work
 %% then make sure there is no protocol specified that we apparently
 %% do not handle, and if not then prepend them with Proto: and try again.
+%%--------------------------------------------------------------------
+%% XXX sip:sip:username@su.se, without protocol (sip:)
+%% and would be parsed as user = username, pass = none instead of user = sip and pass = username.
+%% I can't see any good way to solve this (hsten)
+
 parse_url_with_default_protocol(Proto, URLstr) ->
     case sipurl:parse(URLstr) of
 	URL1 when record(URL1, sipurl) ->
 	    URL1;
 	_ ->
-	    UserPart = case string:chr(URLstr, $@) of
-			   0 ->
-			       [];
-			   AtIndex ->
-			       %% There is an at-sign in there
-			       string:substr(URLstr, 1, AtIndex - 1)
-		       end,
-	    case string:chr(UserPart, $:) of
-		0 ->
-		    %% There is no colon in the userpart of URLstr, try with our default protocol
-		    case sipurl:parse(Proto ++ ":" ++ URLstr) of
-			URL2 when record(URL2, sipurl) ->
-			    URL2;
-			_ ->
-			    error
-		    end;
+	    case sipurl:parse(Proto ++ ":" ++ URLstr) of
+		URL2 when record(URL2, sipurl) ->
+		    URL2;
 		_ ->
-		    %% There is already a protocol in URLstr, but apparently not one
-		    %% that sipurl:parse() can handle.
 		    error
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_port(Sipurl)
+%%           Sipurl = sipurl record()
+%% Descrip.: return the port value in a consistent manner
+%% Returns : none | integer()
+%%--------------------------------------------------------------------
+get_port(Sipurl) ->
+    port_to_integer(Sipurl#sipurl.port).
+
+port_to_integer(none) ->
+    none;
+port_to_integer(Port) when list(Port) ->
+    list_to_integer(Port);
+port_to_integer(Port) when integer(Port) ->
+    Port.
+
+
+%%--------------------------------------------------------------------
+%% Function: new(AttrList)
+%%           AttrList = list() of {Id, Value} pairs
+%%           Id       = proto | user | pass | host | port | param
+%%           Value    = term(), context specific - see set() below
+%% Descrip.: create a sipurl record()
+%% Returns : sipurl record()
+%% Note    : sipurl record() is defined in siprecords.hrl
+%% XXX headers are currently no supported
+%%--------------------------------------------------------------------
+new(AttrList) ->
+    URLtemplate = #sipurl{proto="sip", user=none, pass=none, port=none,
+			  param=[], param_pairs=url_param:to_norm([])
+			 },
+    set(AttrList, URLtemplate).
+
+%%--------------------------------------------------------------------
+%% Function: set(AttrList, URL)
+%%           AttrList = list() of {Id, Value} pairs
+%%           Id       = proto | user | pass | host | port | param
+%%           Value    = term(), context specific :
+%%
+%%           proto  = string(), may be of any case, is stored in a
+%%                    case insensitive manner, may be = "sip" |
+%%                    "sips" (not yet supported) | "tel" |
+%%                    tls (experimental) | tls6 (experimental) |            XXX atoms don't work !
+%%                    the protocol to use
+%%           user   = string(), case sensitive user name
+%%           pass   = string(), case sensitive password
+%%           host   = string(), usually a domain name, will be stored
+%%                    in a case insensitive manner
+%%           port   = string() (numerical chars) | integer()
+%%           param  = list() of "name=value" string() |
+%%                    url_param record()
+%% Descrip.: Update one or more attributes of a sipurl record().
+%% Returns : sipurl record()
+%% Note    : sipurl record() is defined in siprecords.hrl
+%% XXX headers are currently no supported
+%%--------------------------------------------------------------------
+
+%% PROTO
+set([{proto, Val} | T], URL) when is_record(URL, sipurl), Val == "sip"; Val == "sips" ->
+    set(T, URL#sipurl{proto=Val});
+set([{proto, Val} | T], URL) when is_record(URL, sipurl), is_list(Val) ->
+    case httpd_util:to_lower(Val) of
+	L when L == "sip"; L == "sips" ->
+	    set(T, URL#sipurl{proto=L});
+	_ ->
+	    erlang:fault("sipurl:set/2 with non-sip or sips URI", [[{proto, Val} | T], URL])
+    end;
+
+%% USER
+set([{user, Val} | T], URL) when is_record(URL, sipurl), is_list(Val); Val == none ->
+    Fixed = unescape_str(Val),
+    set(T, URL#sipurl{user=Fixed});
+
+%% PASS
+set([{pass, Val} | T], URL) when is_record(URL, sipurl), is_list(Val); Val == none ->
+    Fixed = unescape_str(Val),
+    set(T, URL#sipurl{pass=Fixed});
+
+%% HOST
+set([{host, Val} | T], URL) when is_record(URL, sipurl), is_list(Val) ->
+    %% Lowercase and remove trailing dots
+    LC = httpd_util:to_lower(Val),
+    Hostname = string:strip(LC, right, $.),
+    set(T, URL#sipurl{host=Hostname});
+
+%% PORT
+set([{port, Val} | T], URL) when is_record(URL, sipurl), is_integer(Val) ->
+    set(T, URL#sipurl{port=integer_to_list(Val)});
+set([{port, Val} | T], URL) when is_record(URL, sipurl), Val == none ->
+    set(T, URL#sipurl{port=none});
+set([{port, Val} | T], URL) when is_record(URL, sipurl), is_list(Val) ->
+    set(T, URL#sipurl{port=Val});
+
+%% PARAM
+set([{param, Val} | T], URL) when is_record(URL, sipurl), is_record(Val, url_param); is_list(Val) ->
+    {SetParam, SetParamPairs} =
+	if
+	    is_record(Val, url_param) ->
+		%% Param already in a normalized form
+		{url_param:to_string_list(Val), Val};
+	    is_list(Val) ->
+		%% store param and param_pairs in a normalized form
+		UrlParam = url_param:to_norm(Val),
+		{url_param:to_string_list(UrlParam), UrlParam}
+	end,
+    set(T, URL#sipurl{param=SetParam, param_pairs=SetParamPairs});
+
+%% Finished
+set([], URL) when is_record(URL, sipurl) ->
+    URL.
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+    %% unescape_str/1
+    %%--------------------------------------------------------------------
+    %% test unescaped string
+    io:format("test: unescape_str/1 - 1~n"),
+    Str1 = "hello",
+    "hello" = unescape_str(Str1),
+
+    %% test escaped string, with all values as hex
+    io:format("test: unescape_str/1 - 2~n"),
+    Str2 = "%68%65%6c%6c%6f",
+    "hello" = unescape_str(Str2),
+
+    %% test escaped string, with first char as hex
+    io:format("test: unescape_str/1 - 3~n"),
+    Str3 = "%68ello",
+    "hello" = unescape_str(Str3),
+
+    %% test escaped string, with last char as hex
+    io:format("test: unescape_str/1 - 4~n"),
+    Str4 = "hell%6f",
+    "hello" = unescape_str(Str4),
+
+    %% test escaped string, with middel char as hex
+    io:format("test: unescape_str/1 - 5~n"),
+    Str5 = "he%6clo",
+    "hello" = unescape_str(Str5),
+
+    %% test escaped string, with upper case hex values
+    io:format("test: unescape_str/1 - 6~n"),
+    Str6 = "%68%65%6C%6C%6F",
+    "hello" = unescape_str(Str6),
+
+    %% escape_parameters/1
+    %%--------------------------------------------------------------------
+    %% test non-escaped string
+    io:format("test: escape_parameters/1 - 1~n"),
+    "hello" = escape_parameters("hello"),
+
+    %% test string of only escaped chars
+    io:format("test: escape_parameters/1 - 2~n"),
+    "%3D" = escape_parameters("="),
+
+    %% test partialy escaped string
+    io:format("test: escape_parameters/1 - 3~n"),
+    "hel%3Dlo" = escape_parameters("hel=lo"),
+
+
+    %% is_parameters/1
+    %%--------------------------------------------------------------------
+    %% test empty parameter string
+    io:format("test: is_parameters/1 - 1~n"),
+    true = is_parameters(""),
+    %% single "name" parameter
+    io:format("test: is_parameters/1 - 2~n"),
+    true = is_parameters("bar"),
+    %% test case and "name=val" parameter
+    io:format("test: is_parameters/1 - 3~n"),
+    true = is_parameters("foo=BAr"),
+    %% test several "name" parameters
+    io:format("test: is_parameters/1 - 4~n"),
+    true = is_parameters("bar;foo"),
+    %% test several "name=val" parameters (and case)
+    io:format("test: is_parameters/1 - 5~n"),
+    true = is_parameters("bar=Zopg;vaF=ghjT;BOF=tOp"),
+    %% test escape hex codes
+    io:format("test: is_parameters/1 - 6~n"),
+    true = is_parameters("bar=Zo%3Dp%3dg;vaF=ghjT;BOF=tOp"),
+    %% check that "name==val" doesn't work
+    io:format("test: is_parameters/1 - 7~n"),
+    false = is_parameters("bar=Zo%3Dp%3dg;vaF==ghjT;BOF=tOp"),
+    %% check that "name=val;;name=val" doesn't work
+    io:format("test: is_parameters/1 - 8~n"),
+    false = is_parameters("bar=Zo%3Dp%3dg;vaF=ghjT;;;BOF=tOp"),
+
+    %% test new
+    %%--------------------------------------------------------------------
+    SipUrl = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+		     param = ["foo=bar", "baz"],
+		     param_pairs = url_param:to_norm(["foo=bar", "baz"])
+		     %% header = []
+		    },
+    %% test new/1
+    io:format("test: new/1 - 1~n"),
+    SipUrl = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"},
+		  {host, "Su.iT"}, {port, "42"}, {param, ["foO=bar", "bAz"]}]),
+
+    %% test new/1 - no protocol, should default to sip
+    io:format("test: new/1 - 2~n"),
+    SipUrl = new([{user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"},
+		  {port, "42"}, {param, ["foO=bar", "bAz"]}]),
+
+    SipUrl2 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+		      param = [],
+		      param_pairs = url_param:to_norm([])
+		      %% header = []
+		     },
+
+    %% test new/1
+    io:format("test: new/1 - 3~n"),
+    SipUrl2 = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, "42"}]),
+
+    %% test url_param record() as argument
+    io:format("test: new/1 - 4~n"),
+    SipUrl = new([{proto,  "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, "42"},
+		  {param, url_param:to_norm(["foo=bar", "baz"])}]),
+
+    %% test integer port
+    io:format("test: new/1 - 5~n"),
+    SipUrl2 = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 42}]),
+
+    SipUrl3 = #sipurl{proto = "sip", user = "test", pass = none, host = "su.it", port = none,
+		      param = [],
+		      param_pairs = url_param:to_norm([])
+		      %% header = []
+		     },
+
+    %% test default attribute values
+    io:format("test: new/1 - 6~n"),
+    SipUrl3 = new([{user, "test"}, {host, "SU.IT"}]),
+
+    %% test stripping of trailing dots on hostname
+    io:format("test: new/1 - 7~n"),
+    SipUrl3 = new([{user, "test"}, {host, "SU.IT.."}]),
+
+    %% test new sips
+    %%--------------------------------------------------------------------
+    SipUrl4 = #sipurl{proto = "sips", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+		      param = ["foo=bar", "baz"],
+		      param_pairs = url_param:to_norm(["foo=bar", "baz"])
+		      %% header = []
+		     },
+    io:format("test: new/1 sips - 1~n"),
+    SipUrl4 = new([{proto, "sips"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"},
+		   {port, "42"}, {param, ["foO=bar", "bAz"]}]),
+
+    %% test set
+    %%--------------------------------------------------------------------
+    SipUrl5 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+		      param = ["foo=bar", "baz"],
+		      param_pairs = url_param:to_norm(["foo=bar", "baz"])
+		      %% header = []
+		     },
+    SipUrl6 = #sipurl{proto = "sips", user = "hoKan", pass = "fOObar", host = "foo.su.it", port = "43",
+		      param = ["foo=barbaz", "baz"],
+		      param_pairs = url_param:to_norm(["foo=barbaz", "baz"])
+		      %% header = []
+		     },
+    %% test set
+    io:format("test: set/8 - 1~n"),
+    SipUrl6 = set([{proto, "SIPS"}, {user, "hoKan"}, {pass, "fOObar"}, {host, "foo.su.it"},
+		   {port, "43"}, {param, ["foo=BarBaz", "baz"]}], SipUrl5),
+
+    %% test do_not_set part
+    io:format("test: set/8 - 2~n"),
+    SipUrl5 = set([], SipUrl5),
+
+    %% test url_param record() as argument
+    io:format("test: set/8 - 3~n"),
+    SipUrl6 = set([{proto, "SIPS"}, {user, "hoKan"}, {pass, "fOObar"}, {host, "foo.su.it"},
+		   {port, "43"}, {param, url_param:to_norm(["foo=barbaz", "baz"])}], SipUrl5),
+
+    %% test setting of hostname with trailing dots
+    io:format("test: set/8 - 4~n"),
+    SipUrl6 = set([{host, "foo.su.it.."}], SipUrl6),
+
+    %% get_port
+    %%--------------------------------------------------------------------
+    %% string() in sipurl record
+    io:format("test: get_port/1 - 1~n"),
+    43 = get_port(SipUrl6),
+    %% integer() in sipurl record
+    io:format("test: get_port/1 - 2~n"),
+    43 = get_port(new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 43}])),
+
+    %% parse
+    %%--------------------------------------------------------------------
+    %% parse minimal url
+    ParsedUrl = #sipurl{proto = "sip",
+			user = none, pass = none,
+			host = "atlanta.com", port = none,
+			param = [],
+			param_pairs = url_param:to_norm([])
+		       },
+    io:format("test: parse/1 - 1~n"),
+    ParsedUrl = parse("sip:atlanta.com"),
+    %% parse url with host and port
+    ParsedUrl2 = #sipurl{proto = "sip",
+			 user = none, pass = none,
+			 host = "atlanta.com", port = "42",
+			 param = [],
+			 param_pairs = url_param:to_norm([])
+			},
+    io:format("test: parse/1 - 2~n"),
+    ParsedUrl2 = parse("sip:atlanta.com:42"),
+    %% parse url with user, host and port
+    ParsedUrl3 = #sipurl{proto = "sip",
+			 user = "alice", pass = none,
+			 host = "atlanta.com", port = "42",
+			 param = [],
+			 param_pairs = url_param:to_norm([])
+			},
+    io:format("test: parse/1 - 3~n"),
+    ParsedUrl3 = parse("sip:alice@atlanta.com:42"),
+    %% parse url with user, password, host and port
+    ParsedUrl4 = #sipurl{proto = "sip",
+			 user = "alice", pass = "foo",
+			 host = "atlanta.com", port = "42",
+			 param = [],
+			 param_pairs = url_param:to_norm([])
+			},
+    io:format("test: parse/1 - 4~n"),
+    ParsedUrl4 = parse("sip:alice:foo@atlanta.com:42"),
+    %% parse url with user, password, host, port and parameters
+    ParsedUrl5 = #sipurl{proto = "sip",
+			 user = "alice", pass = "foo",
+			 host = "atlanta.com", port = "42",
+			 param = ["foo=bar", "zop"],
+			 param_pairs = url_param:to_norm(["foo=bar", "zop"])
+			},
+    io:format("test: parse/1 - 5~n"),
+    ParsedUrl5 = parse("sip:alice:foo@atlanta.com:42;foo=bar;zop"),
+
+    %% parse url with escape codes
+    ParsedUrl6 = #sipurl{proto = "sip",
+			 user = "alice", pass = none,
+			 host = "atlanta.com", port = none,
+			 param = ["transport=tcp"],
+			 param_pairs = url_param:to_norm(["transport=tcp"])
+			},
+    io:format("test: parse/1 - 6~n"),
+    ParsedUrl6 = parse("sip:%61lice@atlanta.com;transport=TCP"),
+
+    %% parse url with escape codes (which must be escaped chars) in all escapable fields
+    ParsedUrl7 = #sipurl{proto = "sip",
+			 user = ":lice", pass = ":",
+			 host = "atlanta.com", port = none,
+			 param = ["transp%3B%3Bort=tcp"],
+			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
+			},
+    io:format("test: parse/1 - 7~n"),
+    ParsedUrl7 = parse("sip:%3Alice:%3A@atlanta.com;transp%3b%3Bort=TCP"),
+
+    %% Parse url with escape codes (which must be escaped chars) in all escapable fields
+    %% Use IPv4 host
+    ParsedUrl8 = #sipurl{proto = "sip",
+			 user = ":lice", pass = ":",
+			 host = "2.2.2.2", port = none,
+			 param = ["transp%3B%3Bort=tcp"],
+			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
+			},
+    io:format("test: parse/1 - 8~n"),
+    ParsedUrl8 = parse("sip:%3Alice:%3A@2.2.2.2;transp%3b%3Bort=TCP"),
+
+    %% Parse url with escape codes (which must be escaped chars) in all escapable fields
+    %% Use IPv6 host
+    ParsedUrl9 = #sipurl{proto = "sip",
+			 user = ":lice", pass = ":",
+			 host = "[1:1:1:1:2:2:2:2]", port = none,
+			 param = ["transp%3B%3Bort=tcp"],
+			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
+			},
+    io:format("test: parse/1 - 9~n"),
+    ParsedUrl9 = parse("sip:%3Alice:%3A@[1:1:1:1:2:2:2:2];transp%3b%3Bort=TCP"),
+
+    %% print(URL)
+    %%--------------------------------------------------------------------
+    %% test host
+    io:format("test: print/1 - 1~n"),
+    URL1 = parse("sip:atlanta.com"),
+    "sip:atlanta.com" = print(URL1),
+
+    %% test host, port
+    io:format("test: print/1 - 2~n"),
+    URL2 = parse("sip:atlanta.com:42"),
+    "sip:atlanta.com:42" = print(URL2),
+
+    %% test host, port and parameters
+    io:format("test: print/1 - 3~n"),
+    URL3 = parse("sip:atlanta.com:42;TransPort=TcP"),
+    "sip:atlanta.com:42;transport=tcp" = print(URL3),
+
+    %% test user, host and parameters
+    io:format("test: print/1 - 4~n"),
+    URL4 = parse("sip:alice@atlanta.com;transport=TCP"),
+    "sip:alice@atlanta.com;transport=tcp" = print(URL4),
+
+    %% test user, password, host and parameters
+    io:format("test: print/1 - 5~n"),
+    URL5 = parse("sip:alice:foo@atlanta.com;transport=TCP"),
+    "sip:alice:foo@atlanta.com;transport=tcp" = print(URL5),
+
+    %% test escaped char ":" in user field, that need to be escaped in output
+    io:format("test: print/1 - 6~n"),
+    URL6 = parse("sip:%3ali%3Ace@atlanta.com;TransPort=TcP"),
+    "sip:%3Ali%3Ace@atlanta.com;transport=tcp" = print(URL6),
+
+    %% test escaped char ":" in user and password field, that need to be escaped in output
+    io:format("test: print/1 - 7~n"),
+    URL7 = parse("sip:%3ali%3Ace:%3a@atlanta.com;LR;FoO"),
+    "sip:%3Ali%3Ace:%3A@atlanta.com;lr=true;foo" = print(URL7),
+
+    %% test escaped char ":" in user and password and ";"
+    %% and "=" in paramter field, that need to be escaped in output
+    io:format("test: print/1 - 8~n"),
+    URL8 = parse("sip:%3ali%3Ace:%3a@atlanta.com;LR%3b;F%3doO"),
+    "sip:%3Ali%3Ace:%3A@atlanta.com;lr%3B;f%3Doo" = print(URL8),
+
+
+    %% url_is_equal/2
+    %%--------------------------------------------------------------------
+    %% compare host
+    io:format("test: url_is_equal/2 - 11~n"),
+    A11 = parse("sip:atlanta.com"),
+    B11 = parse("sip:AtLanTa.CoM"),
+    true = url_is_equal(A11, B11),
+
+    %% compare host and port
+    io:format("test: url_is_equal/2 - 12~n"),
+    A12 = parse("sip:atlanta.com:42"),
+    B12 = parse("sip:AtLanTa.CoM:42"),
+    true = url_is_equal(A12, B12),
+
+    %% compare host, port and user
+    io:format("test: url_is_equal/2 - 13~n"),
+    A13 = parse("sip:foo@atlanta.com:42"),
+    B13 = parse("sip:foo@AtLanTa.CoM:42"),
+    true = url_is_equal(A13, B13),
+
+    %% compare host, port, user and password
+    io:format("test: url_is_equal/2 - 14~n"),
+    A14 = parse("sip:foo:bar@atlanta.com"),
+    B14 = parse("sip:foo:bar@AtLanTa.CoM"),
+    true = url_is_equal(A14, B14),
+
+    %% the urls below are taken from RFC 3261 chapter 19.1.4 page 154
+    %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    %% equal, only escape codes and case difference in fields that ignore case
+    io:format("test: url_is_equal/2 - 1~n"),
+    A1 = parse("sip:%61lice@atlanta.com;transport=TCP"),
+    B1 = parse("sip:alice@AtLanTa.CoM;Transport=tcp"),
+    true = url_is_equal(A1, B1),
+
+    %% equal, unique parameters that aren't = transport, user, ttl, maddr or method
+    io:format("test: url_is_equal/2 - 2~n"),
+    A2 = parse("sip:carol@chicago.com"),
+    B2 = parse("sip:carol@chicago.com;newparam=5"),
+    C2 = parse("sip:carol@chicago.com;security=on"),
+    true = url_is_equal(A2, B2),
+    true = url_is_equal(B2, C2),
+    true = url_is_equal(A2, C2),
+
+    %% equal, only different order on the uri-parameters
+    %% XXX header fields are currently not tested
+    io:format("test: url_is_equal/2 - 3~n"),
+    A3 = parse("sip:biloxi.com;transport=tcp;method=REGISTER"),
+    B3 = parse("sip:biloxi.com;method=REGISTER;transport=tcp"),
+    true = url_is_equal(A3, B3),
+						%     io:format("test: url_is_equal/2 - 3~n"),
+						%     A3 = parse("sip:biloxi.com;transport=tcp;method=REGISTER?to=sip:bob%40biloxi.com"),
+						%     B3 = parse("sip:biloxi.com;method=REGISTER;transport=tcp?to=sip:bob%40biloxi.com"),
+						%     true = url_is_equal(A3, B3),
+
+    %% equal, only different order on the header parameters
+    %% XXX headers are currently not tested
+						%     io:format("test: url_is_equal/2 - 4~n"),
+						%     A4 = parse("sip:alice@atlanta.com?subject=project%20x&priority=urgent"),
+						%     B4 = parse("sip:alice@atlanta.com?priority=urgent&subject=project%20x"),
+						%     true = url_is_equal(A4, B4),
+
+    %% not equal, different usernames
+    io:format("test: url_is_equal/2 - 5~n"),
+    A5 = parse("SIP:ALICE@AtLanTa.CoM;Transport=udp"),
+    B5 = parse("sip:alice@AtLanTa.CoM;Transport=UDP"),
+    false = url_is_equal(A5, B5),
+
+    %% not equal, can resolve to different ports
+    io:format("test: url_is_equal/2 - 6~n"),
+    A6 = parse("sip:bob@biloxi.com"),
+    B6 = parse("sip:bob@biloxi.com:5060"),
+    false = url_is_equal(A6, B6),
+
+    %% not equal, can resolve to different transports
+    io:format("test: url_is_equal/2 - 7~n"),
+    A7 = parse("sip:bob@biloxi.com"),
+    B7 = parse("sip:bob@biloxi.com;transport=udp"),
+    false = url_is_equal(A7, B7),
+
+    %% not equal, can resolve to different port and transports
+    io:format("test: url_is_equal/2 - 8~n"),
+    A8 = parse("sip:bob@biloxi.com"),
+    B8 = parse("sip:bob@biloxi.com:6000;transport=tcp"),
+    false = url_is_equal(A8, B8),
+
+    %% not equal, different header component
+    %% io:format("test: url_is_equal/2 - 9~n"),
+						%     A9 = parse("sip:carol@chicago.com"),
+						%     B9 = parse("sip:carol@chicago.com?Subject=next%20meeting"),
+						%     false = url_is_equal(A9, B9),
+
+    %% not equal, different host
+    io:format("test: url_is_equal/2 - 10~n"),
+    A10 = parse("sip:bob@phone21.boxesbybob.com"),
+    B10 = parse("sip:bob@192.0.2.4"),
+    false = url_is_equal(A10, B10),
+
+
+    ok.
+
+%%====================================================================
+%% Behaviour functions
+%%====================================================================
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% BNF checking functions, based on RFC3261 chapter 25
+%%--------------------------------------------------------------------
+
+is_user_unreserved($&) -> true;
+is_user_unreserved($=) -> true;
+is_user_unreserved($+) -> true;
+is_user_unreserved($$) -> true;
+is_user_unreserved($,) -> true;
+is_user_unreserved($;) -> true;
+is_user_unreserved($?) -> true;
+is_user_unreserved($/) -> true;
+is_user_unreserved(_) -> false.
+
+is_mark($-) -> true;
+is_mark($_) -> true;
+is_mark($.) -> true;
+is_mark($!) -> true;
+is_mark($~) -> true;
+is_mark($*) -> true;
+is_mark($') -> true;
+is_mark($() -> true;
+	is_mark($)) -> true;
+	is_mark(_) -> false.
+
+is_unreserved(Char) ->
+    sipparse_util:is_alphanum(Char) or is_mark(Char).
+
+is_param_unreserved($[) -> true;
+		    is_param_unreserved($]) -> true;
+is_param_unreserved($/) -> true;
+is_param_unreserved($:) -> true;
+is_param_unreserved($&) -> true;
+is_param_unreserved($+) -> true;
+is_param_unreserved($$) -> true;
+is_param_unreserved(_) -> false.
+
+is_hexdig(Char) ->
+    if
+	(Char >= $0) and (Char =< $9) ->
+	    true;
+	(Char >= $A) and (Char =< $F) ->
+	    true;
+	(Char >= $a) and (Char =< $f) ->
+	    true;
+	true ->
+	    false
+    end.
+
+is_escaped([$%, H1, H2]) ->
+	    is_hexdig(H1) or is_hexdig(H2).
+
+%% 'true' if char is any non-escaped password char
+is_password_without_escape($&) -> true;
+is_password_without_escape($=) -> true;
+is_password_without_escape($+) -> true;
+is_password_without_escape($$) -> true;
+is_password_without_escape($,) -> true;
+is_password_without_escape(Char) ->
+    is_unreserved(Char).
+
+%%--------------------------------------------------------------------
+%% Function: is_password(Str)
+%%           Str = string() | the password string
+%%                 none       no password supplied during parsing of
+%%                            sip-url
+%% Descrip.: parse password string, return 'true' if it conforms to
+%%           the format specified in RFC3261 chapter 25.1 p218
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_password(none) -> true;
+is_password([]) -> true;
+is_password("&" ++ Str) ->
+    is_password(Str);
+is_password("=" ++ Str) ->
+    is_password(Str);
+is_password("+" ++ Str) ->
+    is_password(Str);
+is_password("$" ++ Str) ->
+    is_password(Str);
+is_password("," ++ Str) ->
+    is_password(Str);
+is_password([$%, C2, C3 | Str]) ->
+	     is_escaped([$%, C2, C3]) andalso is_password(Str);
+			 is_password([Char | Str]) ->
+				is_unreserved(Char) andalso is_password(Str);
+			 is_password(_) ->
+				false.
+
+%%--------------------------------------------------------------------
+%% Function: is_user(Str)
+%%           Str = string() | the user string
+%%                 none       no user supplied during parsing of
+%%                            sip-url
+%% Descrip.: parse user string, return 'true' if it conforms to
+%%           the format specified in RFC3261 chapter 25.1 p218
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_user(none) -> true;
+is_user([]) -> true;
+is_user([$%, C1, C2 | Str]) ->
+	 is_escaped([$%, C1, C2]) andalso is_user(Str);
+		     is_user([Char | Str]) ->
+			    (is_unreserved(Char) orelse is_user_unreserved(Char)) andalso is_user(Str);
+		     is_user(_) ->
+			    false.
+
+%%--------------------------------------------------------------------
+%% Function: is_parameters(Parameters)
+%%           Parameters = string()
+%% Descrip.: parse uri-parameter string, return true if there are no
+%%           duplicat ";" or "=" and all other chars are correct and
+%%           properly escaped
+%% Returns : true | false
+%%--------------------------------------------------------------------
+%% this is a redundant check but reduces the amount of work done to
+%% check for empty Parameters strings
+is_parameters([]) -> true;
+is_parameters(Parameters) ->
+    Match = ";;",
+    %% string:tokens in is_uri_parameters/1 below will consume several ";"
+    %% in sucession and consider it as one separator, as sequences like
+    %% ";;" are ilegal, this is checked for hear instead
+    case regexp:first_match(Parameters, Match) of
+	{match, _, _} -> false;
+	_ ->
+	    is_uri_parameters(Parameters)
+    end.
+
+%% return true if Str is a uri-paramter string
+%% Str = xxx;yyy;zzz .... (first ; is assumed to have been consumed
+%% in previous string:tokens/2 call)
+is_uri_parameters(Str) ->
+    Parameters = string:tokens(Str, ";"),
+    lists:all(fun is_uri_parameter/1, Parameters).
+
+is_uri_parameter(Str) ->
+    Match = "==",
+    %% string:tokens/2 below will consume several "==" in sucession
+    %% and consider it as one separator, as sequences like
+    %% "==" are ilegal, this is checked for hear instead
+    case regexp:first_match(Str, Match) of
+	{match, _, _} -> false;
+	_ ->
+	    case string:tokens(Str, "=") of
+		[Name, Val] ->
+		    is_paramchar_str(Name) and is_paramchar_str(Val);
+		[Name] ->
+		    is_paramchar_str(Name)
+	    end
+    end.
+
+%% checks name or value string in uri-parameter for ilegal chars
+%% returns 'false' if any are found
+is_paramchar_str([]) -> true;
+is_paramchar_str([$% | Str]) ->
+		  [C1, C2 | R] = Str,
+		  is_escaped([$%, C1, C2]) andalso is_paramchar_str(R);
+			      is_paramchar_str([Char | Str]) ->
+				     (is_param_unreserved(Char) or is_unreserved(Char)) andalso is_paramchar_str(Str).
