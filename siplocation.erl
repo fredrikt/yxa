@@ -207,19 +207,22 @@ fetch_contacts(SipUser) ->
 
 %% return: list() of string() (contact:print/1 of contact record())
 locations_to_contacts(Locations) ->
-    locations_to_contacts2(Locations, []).
+    locations_to_contacts2(Locations, util:timestamp(), []).
 
-locations_to_contacts2([], Res) ->
+locations_to_contacts2([], _Now, Res) ->
     Res;
-locations_to_contacts2([H | T], Res) when is_record(H, phone) ->
+locations_to_contacts2([H | T], Now, Res) when is_record(H, phone), H#phone.expire == never ->
+    %% Don't include static contacts which never expire
+    locations_to_contacts2(T, Now, Res);
+locations_to_contacts2([H | T], Now, Res) when is_record(H, phone), is_integer(H#phone.expire) ->
     Location = H#phone.address,
     Expire = H#phone.expire,
 
     %% Expires can't be less than 0 so make sure we don't end up with a negative Expires
-    NewExpire = lists:max([0, Expire - util:timestamp()]),
+    NewExpire = lists:max([0, Expire - Now]),
     Contact = contact:new(Location, [{"expires", integer_to_list(NewExpire)}]),
 
-    locations_to_contacts2(T, [contact:print(Contact) | Res]).
+    locations_to_contacts2(T, Now, [contact:print(Contact) | Res]).
 
 
 %% return = ok       | wildcard processed
@@ -753,5 +756,28 @@ test() ->
     io:format("test: parse_register_expire/2 - 4~n"),
     %% test that contact can't be larger than maximum
     43200 = parse_register_expire([], contact:new("sip:ft@example.org", [{"expires", "86400"}])),
+
+
+    %% locations_to_contacts2(Locations, Now, [])
+    %%--------------------------------------------------------------------
+    io:format("test: locations_to_contacts2/3 - 0~n"),
+    LTCNow = util:timestamp(),
+    LTC_L1 = #phone{expire = LTCNow + 1, address = sipurl:parse("sip:ft@one.example.org")},
+    LTC_L2 = #phone{expire = LTCNow + 2, address = sipurl:parse("sip:ft@two.example.org")},
+    LTC_L3 = #phone{expire = never, address = sipurl:parse("sip:ft@static.example.org")},
+
+    io:format("test: locations_to_contacts2/3 - 1~n"),
+    %% test basic case
+    ["<sip:ft@one.example.org>;expires=1", "<sip:ft@two.example.org>;expires=2"] =
+	locations_to_contacts2([LTC_L2, LTC_L1], LTCNow, []),
+
+    io:format("test: locations_to_contacts2/3 - 2~n"),
+    %% test that we ignore entrys that never expire
+    [] = locations_to_contacts2([LTC_L3], LTCNow, []),
+
+    io:format("test: locations_to_contacts2/3 - 3~n"),
+    %% test that we ignore entrys that never expire together with other entrys
+    ["<sip:ft@one.example.org>;expires=1", "<sip:ft@two.example.org>;expires=2"] =
+	locations_to_contacts2([LTC_L2, LTC_L3, LTC_L1], LTCNow, []),
 
     ok.
