@@ -149,7 +149,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 	    case State of
 		completed ->
 		    logger:log(normal, "~s: Resend after ~p (response to ~s ~s): ~p ~s",
-		    	       [Branch, Timeout / 1000, OrigReqMethod, sipurl:print(OrigReqURI), Status, Reason]),
+		    	       [Branch, Timeout div 1000, OrigReqMethod, sipurl:print(OrigReqURI), Status, Reason]),
 		    siprequest:send_proxy_response(Socket, Status, Reason, RHeader, RBody),
 		    NewTimeout = case OrigReqMethod of
 			"INVITE" ->
@@ -171,7 +171,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 	    {Status, Reason, _, _} = Response,
 	    {OrigReqMethod, OrigReqURI, OrigReqHeader, _} = OrigRequest,
 	    logger:log(normal, "~s: Sending of ~p ~s (response to ~s ~s) timed out after ~p seconds",
-		    	       [Branch, Status, Reason, OrigReqMethod, sipurl:print(OrigReqURI), Timeout / 1000]),
+		    	       [Branch, Status, Reason, OrigReqMethod, sipurl:print(OrigReqURI), Timeout div 1000]),
 	    Transaction = transactionlist:get_transaction_using_header(OrigReqHeader, TransactionList),
 	    Id = transactionlist:extract_id(Transaction),
 	    {quit};
@@ -251,7 +251,7 @@ act_on_new_state(Branch, BranchData, TransactionId, OldState, NewState) ->
 			"INVITE" ->
 			    TimerI = sipserver:get_env(timerT4, 5000),
 			    logger:log(debug, "~s: Entering state 'confirmed'. Original request was an INVITE, starting Timer I with a timeout of ~p seconds.",
-			    		[Branch, TimerI / 1000]),
+			    		[Branch, TimerI div 1000]),
 			    % Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we
 			    % absorb any additional ACK requests that might arrive.
 			    IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++ " (Timer I)",
@@ -306,13 +306,16 @@ process_received_ack(Branch, Socket, Parent, BranchData, Request, AckToTransacti
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
     AckToRequest = transactionlist:extract_request(AckToTransaction),
+    AckToResponse = transactionlist:extract_response(AckToTransaction),
+    {Status, Reason, _, _} = AckToResponse,
     OldState = transactionlist:extract_state(AckToTransaction),
     Id = transactionlist:extract_id(AckToTransaction),
-    {AckToMethod, AckToURI, AckToHeader, _} = AckToRequest,
+    {AckToMethod, AckToURI, _, _} = AckToRequest,
+    logger:log(normal, "~s: Response ~p ~s to request ~s ~s ACK-ed", [Branch, Status, Reason, AckToMethod, sipurl:print(AckToURI)]),
     case AckToMethod of
 	"INVITE" ->
-	    logger:log(debug, "~s: Received ACK, cancelling resend timers for request ~s ~s and entering state 'confirmed'",
-	    		[Branch, AckToMethod, sipurl:print(AckToURI)]),
+	    logger:log(debug, "~s: Received ACK, cancelling resend timers for response ~p ~s (to request ~s ~s) and entering state 'confirmed'",
+	    		[Branch, Status, Reason, AckToMethod, sipurl:print(AckToURI)]),
 	    NewTimerList = siptimer:cancel_timers_with_appid({resendresponse, Id}, TimerList),
 	    NewTransaction1 = transactionlist:set_acked(AckToTransaction, true),
 	    NewTransaction = transactionlist:set_state(NewTransaction1, confirmed),
@@ -320,8 +323,8 @@ process_received_ack(Branch, Socket, Parent, BranchData, Request, AckToTransacti
 	    NewBranchData = {{NewTimerList, TimerSeq}, NewTransactionList},
 	    act_on_new_state(Branch, NewBranchData, Id, OldState, confirmed);
 	_ ->
-	    logger:log(error, "~s: Received ACK to non-INVITE request ~s ~s - ignoring",
-			[Branch, AckToMethod, sipurl:print(AckToURI)]),
+	    logger:log(debug, "~s: Received ACK to non-INVITE request ~s ~s (response being ACKed is ~p ~s) - ignoring",
+			[Branch, AckToMethod, sipurl:print(AckToURI), Status, Reason]),
 	    BranchData
     end.
     
