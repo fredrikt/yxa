@@ -4,13 +4,14 @@
 	 extract_appsignal/1, extract_timeout/1, cancel_timer/2, cancel_all_timers/1,
 	 cancel_timer_seq/2, cancel_timers/2, get_timers_seqs/2, extract_seqno/1,
 	 extract_description/1, extract_starttime/1, 
-	 cancel_timers_with_appid/2, stop_timers/1, debugfriendly/1]).
+	 cancel_timers_with_appid/2, stop_timers/1, debugfriendly/1, timeout2str/1]).
 
 add_timer(_, 0, _, _, _, TimerList) ->
     TimerList;
 add_timer(TimerSeq, Timeout, Description, AppSignal, AppId, TimerList) ->
     {ok, NewTimerRef} = timer:send_after(Timeout, {siptimer, TimerSeq, Description}),
-    logger:log(debug, "Siptimer: set up timer ~p:~p, ~p seconds", [TimerSeq, Description, Timeout div 1000]),
+    TimeoutStr = timeout2str(Timeout),
+    logger:log(debug, "Siptimer: set up timer ~p:~p, ~s seconds", [TimerSeq, Description, TimeoutStr]),
     lists:append(TimerList, [{TimerSeq, NewTimerRef, Timeout, Description, util:timestamp(), AppSignal, AppId}]).
 
 revive_timer(Timer, NewTimeout, TimerList) ->
@@ -134,3 +135,7 @@ debugfriendly([]) ->
 debugfriendly([{TSeq, TRef, Timeout, Descr, Starttime, AppSignal, AppId} | Rest]) ->
     lists:append([lists:concat(["timer seq ", TSeq, ": ", Descr])], debugfriendly(Rest)).
 
+timeout2str(500) ->
+    "0.5";
+timeout2str(Timeout) ->
+    integer_to_list(Timeout div 1000).
