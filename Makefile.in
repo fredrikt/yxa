@@ -1,0 +1,164 @@
+# $Id$
+#
+
+srcdir = @srcdir@
+VPATH = @srcdir@
+prefix = @prefix@
+DESTDIR = @DESTDIR@
+
+ERLC = erlc
+
+erl_FILES = \
+	LDAPv3.erl \
+	admin_www.erl \
+	appserver.erl \
+	bootstrap.erl \
+	clienttransaction.erl \
+	database_call.erl \
+	database_forward.erl \
+	database_regexproute.erl \
+	directory.erl \
+	dnsutil.erl \
+	dtmf.erl \
+	eldap.erl \
+	group_regexp.erl \
+	gssapi.erl \
+	hex.erl \
+	incomingproxy.erl \
+	keylist.erl \
+	local.erl \
+	logger.erl \
+	lookup.erl \
+	phone.erl \
+	pstnproxy.erl \
+	registrar.erl \
+	rtp.erl \
+	sdp.erl \
+	servertransaction.erl \
+	sipanswer.erl \
+	sipauth.erl \
+	sipclient.erl \
+	sipdst.erl \
+	sipheader.erl \
+	siphost.erl \
+	siplocation.erl \
+	sippacket.erl \
+	sippipe.erl \
+	sipproxy.erl \
+	siprequest.erl \
+	sipserver.erl \
+	sipserver_sup.erl \
+	sipsocket.erl \
+	sipsocket_tcp.erl \
+	sipsocket_udp.erl \
+	siptimer.erl \
+	sipurl.erl \
+	sipuserdb.erl \
+	sipuserdb_file.erl \
+	sipuserdb_ldap.erl \
+	sipuserdb_mnesia.erl \
+	sipuserdb_static.erl \
+	siputil.erl \
+	socketlist.erl \
+	sound.erl \
+	targetlist.erl \
+	tcp_connection.erl \
+	tcp_dispatcher.erl \
+	tcp_listener.erl \
+	tcp_receiver.erl \
+	testserver.erl \
+	transactionlayer.erl \
+	transactionstatelist.erl \
+	transportlayer.erl \
+	util.erl \
+	version.erl
+
+imported_hrl_FILES = \
+	LDAPv3.hrl \
+	eldap.hrl \
+	inet_dns.hrl
+
+hrl_FILES = \
+	database_call.hrl \
+	database_forward.hrl \
+	database_regexproute.hrl \
+	phone.hrl \
+	sipproxy.hrl \
+	siprecords.hrl \
+	sipsocket.hrl \
+	socketlist.hrl \
+	transactionstatelist.hrl
+
+yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
+
+CC = gcc
+
+beam_FILES = $(erl_FILES:.erl=.beam)
+
+all: $(beam_FILES) bootstrap.sh dtmfserver
+
+clean:
+	rm -f core *.core *.beam *~ *.script *.start bootstrap.sh version.erl
+
+$(beam_FILES): $(yxa_hrl_FILES)
+
+SUFFIXES = .c .o .hrl .beam .erl
+.SUFFIXES:
+.SUFFIXES: .c .o .hrl .beam .erl
+
+.erl.beam:
+	$(ERLC) -W +debug_info $<
+
+dtmfserver: dtmfserver.o
+	$(CC) $(LDFLAGS) -o dtmfserver dtmfserver.o
+
+bootstrap.sh: init.sh.in
+	sed -e 's!@PROGRAMNAME@!$*!' \
+	    -e 's!@CONFIGDIR@!$(configdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@BUILDDIR@!$(builddir)!' < $(srcdir)/init.sh.in > $@.new
+	chmod +x $@.new
+	mv $@.new $@
+
+
+# STARTSCRIPT = \
+#	incomingproxy.start \
+#	pstnproxy.start \
+#	adminwww.start \
+#	appserver.start 
+
+#%.boot %.script: %.rel
+#.rel.boot:
+#	erl -noshell -run systools make_script $* -run init stop
+#
+#%.start: %.boot %.config init.sh.in
+#	sed -e 's!@PROGRAMNAME@!$*!' \
+#	    -e 's!@CONFIGDIR@!$(configdir)!' \
+#	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+#	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+#	    -e 's!@BUILDDIR@!$(builddir)!' < $(srcdir)/init.sh.in > $@.new
+#	chmod +x $@.new
+#	mv $@.new $@
+#
+#%.config:
+#	test -f $@ || ( echo "% Write your configuration here"; echo "[{$*, []}]." ) > $@
+#
+#%.app: %.app.in
+#	cp $< $@
+#
+#%.rel: %.rel.in %.app
+#	cp $< $@
+#
+#sipuserdb_static.beam: sipuserdb_static.erl sipuserdb_static.hrl
+#
+#
+#sslkey:
+#	mkdir -p $(sslcertdir)
+#	chmod 700 $(sslcertdir)
+#	test -f $(sslcertdir)/ssl.config || cp $(srcdir)/ssl.config $(sslcertdir)/ssl.config
+#	cd $(sslcertdir) && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
+#	cd $(sslcertdir) && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
+#	cd $(sslcertdir) && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
+#	cat $(sslcertdir)/cert.cert $(sslcertdir)/cert.pem > $(sslcertdir)/cert.comb
+#
