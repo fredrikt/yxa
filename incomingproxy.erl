@@ -96,7 +96,7 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
     %% authorized and authenticated to use this From: address
     case local:homedomain(FromURI#sipurl.host) of
 	true ->
-	    case verify_homedomain_user(Request, LogTag) of
+	    case verify_homedomain_user(Request, LogTag, Origin, LogStr) of
 		true ->
 		    do_request(Request, Origin);
 		false ->
@@ -189,13 +189,18 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
     case local:can_register(NewHeader, ToURL) of
 	{{true, _}, SIPuser} ->
 	    Contacts = sipheader:contact(Header),
-	    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
-	    logger:log(debug, "~s: Registering contacts for SIP user ~p", [LogTag, SIPuser]),
+	    logger:log(debug, "~s: user ~p, registering contact(s) : ~p",
+		       [LogTag, SIPuser, sipheader:contact_print(Contacts)]),
 	    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6, step 7 and step 8
 	    case catch siplocation:process_register_isauth(LogTag ++ ": incomingproxy",
 							   NewHeader, SIPuser, Contacts) of
 		{ok, {Status, Reason, ExtraHeaders}} ->
-		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
+		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders),
+		    %% Make event about user sucessfully registered
+		    L = [{register, ok}, {user, SIPuser},
+			 {contacts, sipheader:contact_print(Contacts)}],
+		    event_handler:generic_event(normal, location, LogTag, L),
+		    ok;
 		{siperror, Status, Reason} ->
 		    transactionlayer:send_response_handler(THandler, Status, Reason);
 		{siperror, Status, Reason, ExtraHeaders} ->
@@ -213,11 +218,17 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
 	{{false, eperm}, SipUser} when SipUser /= none ->
 	    logger:log(normal, "~s: incomingproxy: SipUser ~p NOT ALLOWED to REGISTER address ~s",
 		       [LogTag, SipUser, sipurl:print(ToURL)]),
-	    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
+	    transactionlayer:send_response_handler(THandler, 403, "Forbidden"),
+	    %% Make event about users failure to register
+	    L = [{register, forbidden}, {user, SipUser}, {address, sipurl:print(ToURL)}],
+	    event_handler:generic_event(normal, location, LogTag, L);
 	{{false, nomatch}, SipUser} when SipUser /= none ->
 	    logger:log(normal, "~s: incomingproxy: SipUser ~p tried to REGISTER invalid address ~s",
 		       [LogTag, SipUser, sipurl:print(ToURL)]),
-	    transactionlayer:send_response_handler(THandler, 404, "Not Found");
+	    transactionlayer:send_response_handler(THandler, 404, "Not Found"),
+	    %% Make event about users failure to register
+	    L = [{register, invalid_address}, {user, SipUser}, {address, sipurl:print(ToURL)}],
+	    event_handler:generic_event(normal, location, LogTag, L);
 	{false, none} ->
 	    Prio = case keylist:fetch('authorization', Header) of
 		       [] -> debug;
@@ -261,7 +272,8 @@ is_valid_register_request(Header) ->
 %%           our users identity.
 %% Returns:  true | false | drop
 %%--------------------------------------------------------------------
-verify_homedomain_user(Request, LogTag) when is_record(Request, request) ->
+verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, request), is_list(LogTag),
+							     is_record(Origin, siporigin), is_list(LogStr) ->
     Method = Request#request.method,
     Header = Request#request.header,
     case sipserver:get_env(always_verify_homedomain_user, true) of
@@ -275,6 +287,9 @@ verify_homedomain_user(Request, LogTag) when is_record(Request, request) ->
 			true ->
 			    logger:log(debug, "Request: User ~p is allowed to use From: address ~p",
 				       [SIPUser, sipurl:print(FromURI)]),
+			    %% Generate a request_info event with some information about this request
+			    L = [{from_user, SIPUser}],
+			    event_handler:request_info(normal, LogTag, L),
 			    true;
 			false ->
 			    logger:log(error, "Authenticated user ~p may NOT use address ~p",
@@ -292,6 +307,9 @@ verify_homedomain_user(Request, LogTag) when is_record(Request, request) ->
 			    transactionlayer:send_challenge_request(Request, proxy, false, none),
 			    drop;
 			_ ->
+			    OStr = sipserver:origin2str(Origin),
+			    Msg = io_lib:format("Request from ~s failed authentication : ~s", [OStr, LogStr]),
+			    event_handler:event(normal, auth, failure, LogTag, Msg),
 			    false
 		    end;
 		Unknown ->
