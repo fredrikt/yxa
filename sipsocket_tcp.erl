@@ -7,9 +7,11 @@
 start(Port) when integer(Port) ->
     tcp_dispatcher:start_link(Port).
 
-send(SipSocket, Proto, Host, Port, Message) when record(SipSocket, sipsocket), integer(Port), SipSocket#sipsocket.proto /= Proto ->
+send(SipSocket, Proto, _Host, Port, _Message) when record(SipSocket, sipsocket), integer(Port), SipSocket#sipsocket.proto /= Proto ->
     {error, "Protocol mismatch"};
-send(SipSocket, Proto, Host, Port, Message) when record(SipSocket, sipsocket), integer(Port) ->
+send(SipSocket, _Proto, Host, Port, Message) when record(SipSocket, sipsocket), integer(Port) ->
+    %% Proto matches the one in SipSocket, so it can't be the wrong one when
+    %% we extract the connection handler pid from SipSocket.
     SPid = SipSocket#sipsocket.pid,
     Timeout = get_timeout(SipSocket#sipsocket.proto),
     case catch gen_server:call(SPid, {send, {Host, Port, Message}}, Timeout) of
