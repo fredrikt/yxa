@@ -6,7 +6,10 @@
 	 get_tag/1, topvia/1, via_sentby/1, get_client_transaction_id/1,
 	 get_server_transaction_id/1, get_server_transaction_ack_id_2543/1, 
 	 get_via_branch/1, get_via_branch_full/1, remove_loop_cookie/1,
-	 get_server_transaction_id_using_3261_response_header/1]).
+	 get_server_transaction_id_using_3261_response_header/1,
+	 via_is_equal/2, via_is_equal/3]).
+
+-include("siprecords.hrl").
 
 comma(String) ->
     comma([], String, false).
@@ -67,8 +70,8 @@ parse_contact(String) ->
 
 contact_params({_, {wildcard, Parameters}}) ->
     param_to_dict(Parameters);
-contact_params({_, {_, _, _, _, Parameters}}) ->
-    param_to_dict(Parameters).
+contact_params({_, URI}) when record(URI, sipurl) ->
+    param_to_dict(URI#sipurl.param).
 
 via([]) ->
     [];
@@ -77,14 +80,21 @@ via([String | Rest]) ->
     lists:append(lists:map(fun(H) ->
 				   [Protocol, Sentby] = string:tokens(H, " "),
 				   [Hostport | Parameters ] = string:tokens(Sentby, ";"),
-				   {Protocol, sipurl:parse_hostport(Hostport), Parameters}
+				   {Host, P} = sipurl:parse_hostport(Hostport),
+				   Port = case util:isnumeric(P) of
+					      true ->
+						  list_to_integer(P);
+					      _ ->
+						  none
+					  end,
+				   #via{proto=Protocol, host=Host, port=Port, param=Parameters}
 			   end, Headers),
 		 via(Rest)).
 
 topvia(Header) ->
     case via(keylist:fetch("Via", Header)) of
 	[] -> none;
-	[TopVia | _] -> TopVia;
+	[TopVia | _] when record(TopVia, via) -> TopVia;
 	_ -> error
     end.
 
@@ -93,14 +103,16 @@ print_parameters([]) ->
 print_parameters([A | B]) ->
     ";" ++ A ++ print_parameters(B).
 
+via_print(Via) when record(Via, via) ->
+    via_print([Via]);
 via_print(Via) ->
     lists:map(fun(H) ->
-		      {Protocol, {Host, Port}, Parameters} = H,
+		      {Protocol, Host, Port, Parameters} = {H#via.proto, H#via.host, H#via.port, H#via.param},
 		      Protocol ++ " " ++ sipurl:print_hostport(Host, Port) ++ print_parameters(Parameters)
 	      end, Via).
 
-via_params({Protocol, Hostport, Parameters}) ->
-    param_to_dict(Parameters).
+via_params(Via) when record(Via, via) ->
+    param_to_dict(Via#via.param).
 
 contact_print(Contact) ->
     lists:map(fun(H) ->
@@ -302,9 +314,8 @@ get_tag([String]) ->
 dialogueid(Header) ->
     get_dialogid(Header).
 
-via_sentby(Via) ->
-    {Protocol, {Host, Port}, Parameters} = Via,
-    {Protocol, Host, Port}.
+via_sentby(Via) when record(Via, via) ->
+    {Via#via.proto, Via#via.host, Via#via.port}.
 
 get_server_transaction_id(Request) ->
     case catch guarded_get_server_transaction_id(Request) of
@@ -337,24 +348,25 @@ get_server_transaction_ack_id_2543(Request) ->
     end.
 
 
-guarded_get_server_transaction_id(Request) ->
-    {Method, URI, Header, Body} = case Request of
-	{"ACK", URI1, Header1, Body1} ->
+guarded_get_server_transaction_id(Request) when record(Request, request) ->
+    R = case Request#request.method of
+	"ACK" ->
 	    % RFC3261 17.2.3, when looking for server transaction for ACK, the method of the transaction is INVITE
-	    {"INVITE", URI1, Header1, Body1};
+	    Request#request{method="INVITE"};
 	_ ->
 	    Request
     end,	    
-    TopVia = sipheader:topvia(Header),
+    TopVia = sipheader:topvia(R#request.header),
     Branch = get_via_branch(TopVia),
     case Branch of
 	"z9hG4bK" ++ RestOfBranch ->
-	    guarded_get_server_transaction_id_3261(Method, TopVia);
+	    guarded_get_server_transaction_id_3261(R#request.method, TopVia);
 	_ ->
-	    guarded_get_server_transaction_id_2543(Request, TopVia)
+	    guarded_get_server_transaction_id_2543(R, TopVia)
     end.
 
-guarded_get_server_transaction_ack_id_2543({_, URI, Header, _}) ->
+guarded_get_server_transaction_ack_id_2543(Request) when record(Request, request) ->
+    {URI, Header} = {Request#request.uri, Request#request.header},
     TopVia = remove_branch(sipheader:topvia(Header)),
     [CallID] = keylist:fetch("Call-ID", Header),
     {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
@@ -362,15 +374,13 @@ guarded_get_server_transaction_ack_id_2543({_, URI, Header, _}) ->
     ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
     {URI, FromTag, CallID, CSeqNum, TopVia}.
 
-remove_branch(Via) ->
-    {Proto, HostPort, Param} = Via,
-    ParamDict = sipheader:param_to_dict(Param),
+remove_branch(Via) when record(Via, via) ->
+    ParamDict = sipheader:param_to_dict(Via#via.param),
     NewDict = dict:erase("branch", ParamDict),
-    NewVia = {Proto, HostPort, sipheader:dict_to_param(NewDict)},
-    NewVia.
+    Via#via{param=sipheader:dict_to_param(NewDict)}.
 
-guarded_get_client_transaction_id(Response) ->
-    {_, _, Header, _} = Response,
+guarded_get_client_transaction_id(Response) when record(Response, response) ->
+    Header = Response#response.header,
     TopVia = sipheader:topvia(Header),
     Branch = get_via_branch(TopVia),
     {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
@@ -386,9 +396,16 @@ guarded_get_server_transaction_id_3261(Method, TopVia) ->
     SentBy = via_sentby(TopVia),
     {Branch, SentBy, Method}.
 
-guarded_get_server_transaction_id_2543({"ACK", _, _, _}, _) ->
+%%
+%% ACK
+%%
+guarded_get_server_transaction_id_2543(Request, _) when record(Request, request), Request#request.method == "ACK" ->
     is_2543_ack;
-guarded_get_server_transaction_id_2543({Method, URI, Header, _}, TopVia) ->
+%%
+%% non-ACK
+%%
+guarded_get_server_transaction_id_2543(Request, TopVia) when record(Request, request), record(TopVia, via) ->
+    {URI, Header} = {Request#request.uri, Request#request.header},
     [CallID] = keylist:fetch("Call-ID", Header),
     CSeq = sipheader:cseq(keylist:fetch("CSeq", Header)),
     FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
@@ -401,7 +418,7 @@ get_dialogid(Header) ->
     ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
     {CallID, FromTag, ToTag}.
 
-get_via_branch(TopVia) ->
+get_via_branch(TopVia) when record(TopVia, via) ->
     case get_via_branch_full(TopVia) of
 	"z9hG4bK-yxa-" ++ RestOfBranch ->
 	    remove_loop_cookie("z9hG4bK-yxa-" ++ RestOfBranch);
@@ -428,8 +445,8 @@ remove_loop_cookie(Branch) ->
 	    Branch
     end.
 
-get_via_branch_full({_, {ViaHostname, ViaPort}, Parameters}) ->
-    case dict:find("branch", sipheader:param_to_dict(Parameters)) of
+get_via_branch_full(Via) when record(Via, via) ->
+    case dict:find("branch", sipheader:param_to_dict(Via#via.param)) of
 	error ->
 	    none;
 	{ok, Branch} ->
@@ -437,3 +454,67 @@ get_via_branch_full({_, {ViaHostname, ViaPort}, Parameters}) ->
     end;
 get_via_branch_full(_) ->
     none.
+
+%% Function: via_is_equal/2
+%% Description: Compare two Via records according to the rules in
+%%              RFC3261 20.42 (Via)
+%% Returns: true  |
+%%          false
+%%--------------------------------------------------------------------
+via_is_equal(A, B) when record(A, via), record(B, via) ->
+    via_is_equal(A, B, [proto, host, port, param]).
+
+
+%% Function: via_is_equal/3
+%% Description: Compare one or more parts of two Via records
+%% Returns: true  |
+%%          false
+%%--------------------------------------------------------------------
+
+%%
+%% Protocol, string compare case sensitive
+%%
+via_is_equal(A, B, [proto | T]) when record(A, via), record(B, via), A#via.proto == B#via.proto ->    
+    via_is_equal(A, B, T);
+via_is_equal(A, B, [proto | T]) when record(A, via), record(B, via) ->
+    false;
+
+%%
+%% Host, string compare case insensitive
+%%
+via_is_equal(A, B, [host | T]) when record(A, via), record(B, via) ->
+    case util:casecompare(A#via.host, B#via.host) of
+	true ->
+	    via_is_equal(A, B, T);
+	_ ->
+	    false
+    end;
+
+%%
+%% Port, specified port does not equal un-specified port
+%%
+via_is_equal(A, B, [port | T]) when record(A, via), record(B, via), A#via.port == B#via.port ->
+    via_is_equal(A, B, T);
+via_is_equal(A, B, [port | T]) when record(A, via), record(B, via) ->
+    false;
+
+%%
+%% Parameters. All parameters must be present and their values must be equal
+%% for the vias to be considerered equal.
+%%
+via_is_equal(A, B, [parameters | T]) ->
+    Alist = lists:keysort(1, dict:to_list(A#via.param)),
+    Blist = lists:keysort(1, dict:to_list(B#via.param)),
+    case Alist of
+	Blist ->
+	    via_is_equal(A, B, T);
+	_ ->
+	    false
+    end;
+
+%%
+%% Nothing to compare left, consider them equal
+%%
+via_is_equal(A, B, []) when record(A, via), record(B, via) ->
+    true.
+

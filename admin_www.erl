@@ -6,6 +6,7 @@
 
 -include("phone.hrl").
 -include("database_regexproute.hrl").
+-include("siprecords.hrl").
 
 start(normal, Args) ->
     Pid = sipserver:safe_spawn(admin_www, start, [sipserver:get_env(httpd_config)]),
@@ -67,35 +68,32 @@ print_flags([Key]) ->
 print_flags([Key | Rest]) ->
     [print_flag(Key) | print_flags(Rest)].
 
-print_one_regexp(Regexp, Flags, Class, Expire, Address) ->
-    case Address of
-	{_, _, _, _, _} when list(Regexp) ->
-	    ["<tr><td>",
-	     Regexp,
-	     "</td><td>",
-	     print_flags(Flags),
-	     "</td><td>",
-	     atom_to_list(Class),
-	     "</td><td>",
-	     util:sec_to_date(Expire),
-	     "</td><td>",
-	     sipurl:print(Address),
-	     "</td><td>",
-	     case Class of
-		 permanent ->
-		     [
-		      "<form action=\"admin_www%3Adel_regexp\" method=post>\n",
-		      "<input type=\"hidden\" name=\"number\" value=\"",
-		      Regexp, "\">\n",
-		      "<input type=\"submit\" value=\"Ta bort\">\n",
-		      "</form>\n"
-		     ];
-		 _ ->
-		     ""
-	     end,
-	     "</td></tr>\n"
-	    ]
-    end.
+print_one_regexp(Regexp, Flags, Class, Expire, Address) when list(Regexp), record(Address, sipurl) ->
+    ["<tr><td>",
+     Regexp,
+     "</td><td>",
+     print_flags(Flags),
+     "</td><td>",
+     atom_to_list(Class),
+     "</td><td>",
+     util:sec_to_date(Expire),
+     "</td><td>",
+     sipurl:print(Address),
+     "</td><td>",
+     case Class of
+	 permanent ->
+	     [
+	      "<form action=\"admin_www%3Adel_regexp\" method=post>\n",
+	      "<input type=\"hidden\" name=\"number\" value=\"",
+	      Regexp, "\">\n",
+	      "<input type=\"submit\" value=\"Ta bort\">\n",
+	      "</form>\n"
+	     ];
+	 _ ->
+	     ""
+     end,
+     "</td></tr>\n"
+    ].
 
 print_one_phone(Number, Flags, Class, Expire, Address) ->
     ["<tr><td>",
@@ -120,7 +118,7 @@ print_one_phone(Number, Flags, Class, Expire, Address) ->
      end,
      "</td><td>",
      case Address of
-	 {_, _, _, _, _} when list(Number) ->
+	 _ when list(Number), record(Address, sipurl) ->
 	     sipurl:print(Address);
 	 {mailbox, Status, Number2} ->
 	     ["mailbox ", Number2,

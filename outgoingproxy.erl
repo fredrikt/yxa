@@ -1,6 +1,8 @@
 -module(outgoingproxy).
 -export([start/0, start/2, process/2]).
 
+-include("siprecords.hrl").
+
 start(normal, Args) ->
     Pid = spawn(outgoingproxy, start, []),
     {ok, Pid}.
@@ -26,15 +28,26 @@ process(Packet, Socket) ->
 	    response(Status, Reason, Header, Body, Socket)
     end.
 
-request("ACK", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+%%
+%% ACK
+%%
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "ACK" ->
     true;
 
-request("REGISTER", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
-    URL = {none, none, "kth.se", none, []},
-    siprequest:send_redirect(URL, Header, Socket);
+%%
+%% REGISTER
+%%
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "REGISTER" ->
+    URL = Request#request.uri,
+    NewURL = URL#sipurl{user=none, pass=none, host="kth.se", port=none, param=[]},
+    siprequest:send_redirect(NewURL, Request#request.header, Origin#siporigin.sipsocket);
 
-request(Method, {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
-    {NewHost, NewPort} = case {User, Host} of
+%%
+%% Anything but REGISTER and ACK
+%%
+request(Method, URL, Header, Body, Socket) when record(URL, sipurl) ->
+    URL = Request#request.uri,
+    {NewHost, NewPort} = case {URL#sipurl.user, URL#sipurl.host} of
 			     {"00" ++ _, "sip-proxy.kth.se"} ->
 				 {"sip-pstn.kth.se", none};
 			     {_, "sip-proxy.kth.se"} ->
@@ -42,8 +55,8 @@ request(Method, {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
 			     {_, _} ->
 				 {Host, Port}
 			 end,
-    URL = {User, Pass, NewHost, NewPort, []},
-    siprequest:send_redirect(URL, Header, Socket).
+    NewURL = URL#sipurl{host=NewHost, port=NewPort, param=[]},
+    siprequest:send_redirect(NewURL, Request#request.header, Origin#siporigin.sipsocket).
 
-response(Status, Reason, Header, Body, Socket) ->
+response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
     true.

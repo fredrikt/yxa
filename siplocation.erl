@@ -3,49 +3,49 @@
 	 debugfriendly_locations/1, get_locations_for_users/1,
 	 get_user_with_contact/1, remove_expired_phones/0]).
 
-register_contact(LogTag, Phone, Location, Priority, Header) ->
-    {_, Contact} = Location,
-    Expire = parse_register_expire(Header, Contact),
-    NewContact = remove_expires_parameter(Contact),
+-include("siprecords.hrl").
+
+register_contact(LogTag, SipUser, {_, Location}, Priority, Header) when record(Location, sipurl) ->
+    Expire = parse_register_expire(Header, Location),
+    NewContact = remove_expires_parameter(Location),
     logger:log(normal, "~s: REGISTER ~s at ~s (priority ~p, expire in ~p)",
-		[LogTag, Phone, sipurl:print(NewContact), Priority, Expire]),
-    phone:insert_purge_phone(Phone, [{priority, Priority}],
+	       [LogTag, SipUser, sipurl:print(NewContact), Priority, Expire]),
+    phone:insert_purge_phone(SipUser, [{priority, Priority}],
 			     dynamic,
 			     Expire + util:timestamp(),
 			     NewContact).
 
-remove_expires_parameter(Contact) ->
-    {User, _, Host, Port, _} = Contact,
+remove_expires_parameter(Contact) when record(Contact, sipurl) ->
     Param1 = sipheader:contact_params({none, Contact}),
     Param2 = dict:erase("expires", Param1),
     Parameters = sipheader:dict_to_param(Param2),
-    {User, none, Host, Port, Parameters}.
+    Contact#sipurl{pass=none, param=Parameters}.
 
-unregister_contact(LogTag, Phone, Contact, Priority) ->
+unregister_contact(LogTag, SipUser, Contact, Priority) ->
     logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
-		[LogTag, Phone, sipheader:contact_print([{none, Contact}]), Priority]),
-    phone:insert_purge_phone(Phone, [{priority, Priority}],
+	       [LogTag, SipUser, sipurl:print(Contact), Priority]),
+    phone:insert_purge_phone(SipUser, [{priority, Priority}],
 			     dynamic,
 			     util:timestamp(),
 			     Contact).
 
-process_register_isauth(LogTag, Header, Phone, Contacts) ->
+process_register_isauth(LogTag, Header, SipUser, Contacts) ->
     % XXX RFC3261 says to store Call-ID and CSeq and to check these on
     % registers replacing erlier bindings (10.3 #7)
 
     check_valid_register_request(Header),
 
     % try to find a wildcard to process
-    case process_register_wildcard_isauth(LogTag, Header, Phone, Contacts) of
+    case process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) of
 	none ->
 	    % no wildcard, loop through all Contacts
 	    lists:map(fun (Location) ->
-			register_contact(LogTag, Phone, Location, 100, Header)
+			register_contact(LogTag, SipUser, Location, 100, Header)
 		      end, Contacts);
 	_ ->
 	    none
     end,
-    {ok, {200, "OK", [{"Contact", fetch_contacts(Phone)}]}}.
+    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}}.
 
 check_valid_register_request(Header) ->
     Require = keylist:fetch("Require", Header),
@@ -57,46 +57,49 @@ check_valid_register_request(Header) ->
 	    throw({siperror, 420, "Bad Extension", [{"Unsupported", Require}]})
     end.
 
-fetch_contacts(Phone) ->
-    case phone:get_phone(Phone) of
+fetch_contacts(SipUser) ->
+    case phone:get_phone(SipUser) of
 	{atomic, Locations} ->
-	    locations_to_contacts(Locations);
+	    locations_to_contacts(Locations, []);
 	_ ->
 	    none
     end.
 
-locations_to_contacts([]) ->
-    [];
-locations_to_contacts([{Location, Flags, Class, Expire} | Rest]) ->
-    lists:append(print_contact(Location, Expire), locations_to_contacts(Rest)).
+locations_to_contacts([], Res) ->
+    Res;
+locations_to_contacts([{Location, Flags, Class, Expire} | T], Res) when record(Location, sipurl) ->
+    locations_to_contacts(T, lists:append(Res, print_contact(Location, Expire)));
+locations_to_contacts([H | T], Res) ->
+    logger:log(error, "location: invalid location in locations_to_contacts : ~p", [H]),
+    locations_to_contacts(T, Res).
 
-print_contact(Location, Expire) ->
+print_contact(Location, Expire) when record(Location, sipurl) ->
     [C] = sipheader:contact_print([{none, Location}]),
     case Expire of
 	never ->
 	    logger:log(debug, "Not adding permanent contact ~p to REGISTER response", [C]),
 	    [];
 	_ ->
-	    % make sure we don't end up with a negative Expires
+	    %% make sure we don't end up with a negative Expires
 	    NewExpire = lists:max([0, Expire - util:timestamp()]),
 	    [C ++ ";expires=" ++ integer_to_list(NewExpire)]
     end.
 
-process_register_wildcard_isauth(LogTag, Header, Phone, Contacts) ->
+process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
 	true ->
 	    logger:log(debug, "Location: Processing valid wildcard un-register"),
-	    case phone:get_phone(Phone) of
+	    case phone:get_phone(SipUser) of
 		{atomic, Entrys} ->
-		    % loop through all Entrys and unregister them
+		    %% loop through all Entrys and unregister them
 		    lists:map(fun (Entry) ->
-			{Location, Flags, Class, Expire} = Entry,
-			Prio = case lists:keysearch(priority, 1, Flags) of
-			    {value, {priority, P}} -> P;
-			    _ -> 100
-			end,
-			unregister_contact(LogTag, Phone, Location, Prio)
-		      end, Entrys);
+				      {Location, Flags, Class, Expire} = Entry,
+				      Prio = case lists:keysearch(priority, 1, Flags) of
+						 {value, {priority, P}} -> P;
+						 _ -> 100
+					     end,
+				      unregister_contact(LogTag, SipUser, Location, Prio)
+			      end, Entrys);
 		_ ->
 		    none
 	    end;
@@ -142,7 +145,7 @@ wildcard_grep([{_, {wildcard, Parameters}} | Rest]) ->
 wildcard_grep([Foo | Rest]) ->
     wildcard_grep(Rest).
     
-parse_register_expire(Header, Contact) ->
+parse_register_expire(Header, Contact) when record(Contact, sipurl) ->
     MaxRegisterTime = sipserver:get_env(max_register_time, 43200),
     case dict:find("expires", sipheader:contact_params({none, Contact})) of
 	{ok, E1} ->
@@ -174,23 +177,26 @@ remove_expired_phones() ->
 remove_phones([]) ->
     true;
 
-remove_phones([Phone | Rest]) ->
-    {User, Location, Class} = Phone,
-    [C] = sipheader:contact_print([{none, Location}]),
-    logger:log(normal, "Location: User ~s contact ~s has expired", [User, C]),
-    phone:delete_phone(User, Class, Location),
-    remove_phones(Rest).
-
+remove_phones([{User, Location, Class} | Rest]) ->
+    case Location of
+	_ when record(Location, sipurl) ->
+	    [C] = sipheader:contact_print([{none, Location}]),
+	    logger:log(normal, "Location: User ~s ~p contact ~s has expired", [User, Class, C]),
+	    phone:delete_phone(User, Class, Location);
+	Unknown ->
+	    logger:log(error, "Location: Unknown data in location database, suggesting you start with a fresh location database! : ~p",
+		       [Unknown])
+    end,
+    remove_phones(Rest);
+remove_phones([H | T]) ->
+    logger:log(error, "Location: Unknown data passed to remove_phones : ~p", [H]),
+    remove_phones(T).
 
 % Checks if any of our users are registered at the
 % location specified. Used to determine if we should
 % proxy requests to a URI without authorization.
-get_user_with_contact(URI) ->
-    {User, _, Host, UPort, _} = URI,
-    %% XXX use protocol from URI when we have that available!
-    Port = siprequest:default_port(udp, UPort),
-    URIstr = sipurl:print({User, none, Host, Port, []}),
-    case phone:get_phone_with_requristr(URIstr) of
+get_user_with_contact(URI) when record(URI, sipurl) ->
+    case phone:get_phone_with_requri(URI) of
 	{atomic, [SIPuser | _]} ->
 	    SIPuser;
 	_ ->

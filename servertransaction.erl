@@ -49,14 +49,18 @@ start_link(Request, Socket, LogStr, AppModule, Mode) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
-init([{"ACK", URI, _, _}, Socket, LogStr, AppModule, Mode]) ->
+
+%%
+%% ACK
+%%
+init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request), Request#request.method == "ACK" ->
     %% XXX better to start transaction and immediately send 500 Server Internal Error?
     %% Will require passing ACK to process_received_ack() _after_ checking for resent request.
     logger:log(error, "Server transaction: NOT starting transaction for ACK request (ACK ~s)",
-	       [sipurl:print(URI)]),
-    error;
-init([Request, Socket, LogStr, AppModule, Mode]) ->
-    {Method, URI, _, _} = Request,
+	       [sipurl:print(Request#request.uri)]),
+    {stop, "Not starting server transaction for ACK"};
+init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
     LogTag = Branch ++ " " ++ Method,
     MyToTag = generate_tag(),
@@ -122,12 +126,11 @@ handle_call(Request, From, State) ->
 handle_cast({sipmessage, Request, Origin, LogStr, GenSrvFrom, AppModule}, State) when record(Request, request), record(Origin, siporigin) ->
     LogTag = State#state.logtag,
     OrigRequest = State#state.request,
-    {OrigMethod, OrigURI, _, _} = OrigRequest,
+    {OrigMethod, OrigURI, OrigHeader} = {OrigRequest#request.method, OrigRequest#request.uri, OrigRequest#request.header},
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     logger:log(debug, "~s: Server transaction received a request (~s ~s), checking if it is an ACK or a resend",
 	       [LogTag, Method, sipurl:print(URI)]),
     {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    {_, _, OrigHeader, _} = State#state.request,
     {OrigCSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", OrigHeader)),
     Reply = if
 		OrigMethod == "INVITE", Method == "ACK", URI == OrigURI ->
@@ -143,15 +146,15 @@ handle_cast({sipmessage, Request, Origin, LogStr, GenSrvFrom, AppModule}, State)
 				       gen_server:reply(GenSrvFrom, {pass_to_core, AppModule}),
 				       State
 			       end,
-		    {noreply, NewState, ?TIMEOUT};	    
+		    {noreply, NewState, ?TIMEOUT};
 		Method == OrigMethod, URI == OrigURI, CSeqNum == OrigCSeqNum ->
 		    %% This is a resent request, check if we have a response stored that we can resend
 		    case State#state.response of
-			{Status, Reason, RHeader, RBody} ->
+			Re when record(Re, response) ->
 			    logger:log(normal, "~s: Received a retransmission of request (~s ~s), resending response ~p ~s",
-				       [LogTag, Method, sipurl:print(URI), Status, Reason]),
+				       [LogTag, Method, sipurl:print(URI), Re#response.status, Re#response.reason]),
 			    gen_server:reply(GenSrvFrom, {continue}),
-			    transportlayer:send_proxy_response(State#state.socket, State#state.response);
+			    transportlayer:send_proxy_response(State#state.socket, Re);
 			_ ->
 			    %% No response stored, check if we are stateless or stateful
 			    case State#state.mode of
@@ -182,7 +185,12 @@ handle_cast({create_response, Status, Reason, ExtraHeaders}, State) ->
     {ok, NewState1} = do_response(created, Response, State),
     check_quit({noreply, NewState1, ?TIMEOUT});
 
-handle_cast({forwardresponse, Response}, State) ->
+handle_cast({forwardresponse, Response}, State) when record(Response, response) ->
+    {ok, NewState1} = do_response(forwarded, Response, State),
+    check_quit({noreply, NewState1, ?TIMEOUT});
+
+handle_cast({forwardresponse, {Status, Reason, Header, Body}}, State) ->
+    Response = #response{status=Status, reason=Reason, header=Header, body=Body},
     {ok, NewState1} = do_response(forwarded, Response, State),
     check_quit({noreply, NewState1, ?TIMEOUT});
 
@@ -230,7 +238,6 @@ handle_cast({quit}, State) ->
 	       [LogTag, State#state.sipstate]),
     check_quit({stop, normal, State});
 
-
 handle_cast(Msg, State) ->
     LogTag = State#state.logtag,
     logger:log(error, "~s: Received unknown gen_server cast :~n~p",
@@ -246,12 +253,13 @@ handle_cast(Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     LogTag = State#state.logtag,
-    {Method, URI, _, _} = State#state.request,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     Reply = case State#state.mode of
 		stateful ->
 		    RStr = case State#state.response of
-			       {Status, Reason, _, _} ->
-				   io_lib:format("last sent response was ~p ~s", [Status, Reason]);
+			       Response when record(Response, response) ->
+				   io_lib:format("last sent response was ~p ~s", [Response#response.status, Response#response.reason]);
 			       undefined ->
 				   "no responses sent"
 			   end,
@@ -347,12 +355,13 @@ check_quit2(Res, From, State) when record(State, state)  ->
     case State#state.sipstate of
 	terminated ->
 	    RStr = case State#state.response of
-		       {Status, Reason, _, _} ->
-			   io_lib:format("last sent response was ~p ~s", [Status, Reason]);
+		       Re when record(Re, response) ->
+			   io_lib:format("last sent response was ~p ~s", [Re#response.status, Re#response.reason]);
 		       undefined ->
 			   "no responses sent"
 		   end,
-	    {Method, URI, _, _} = State#state.request,
+	    Request = State#state.request,
+	    {Method, URI} = {Request#request.method, Request#request.uri},
 	    LogTag = State#state.logtag,
 	    logger:log(debug, "~s: Server transaction (~s ~s) terminating in state '~p', ~s",
 		       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
@@ -386,13 +395,15 @@ send_reply(To, Reply, State) when record(State, state)   ->
 process_timer(Timer, State) when record(State, state)    ->
     [TRef, Timeout, Signal, Description] = siptimer:extract([ref, timeout, appsignal, description], Timer),
     LogTag = State#state.logtag,
-    {Method, URI, Header, Body} = State#state.request,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     logger:log(debug, "~s: Timer ~p:~p fired", [LogTag, TRef, Description]),
     case Signal of
 
 	{resendresponse} ->
 	    case State#state.response of
-		{Status, Reason, RHeader, RBody} ->
+		Response when record(Response, response) ->
+		    {Status, Reason} = {Response#response.status, Response#response.reason},
 		    case State#state.sipstate of
 			completed ->
 			    logger:log(debug, "~s: Resend after ~p (response to ~s ~s): ~p ~s",
@@ -420,7 +431,8 @@ process_timer(Timer, State) when record(State, state)    ->
 	    end;
 
 	{resendresponse_timeout} ->
-	    {Status, Reason, _, _} = State#state.response,
+	    Response = State#state.response,
+	    {Status, Reason} = {Response#response.status, Response#response.reason},
 	    logger:log(normal, "~s: Sending of ~p ~s (response to ~s ~s) timed out after ~s seconds, terminating transaction.",
 		       [LogTag, Status, Reason, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
 	    %% XXX report to TU?
@@ -435,11 +447,12 @@ process_timer(Timer, State) when record(State, state)    ->
 	    State
     end.
 
-do_response(Created, Response, State) when record(State, state) ->
+do_response(Created, Response, State) when record(State, state), record(Response, response) ->
     LogTag = State#state.logtag,
-    {ResponseToMethod, ResponseToURI, _, _} = State#state.request,
+    Request = State#state.request,
+    {ResponseToMethod, ResponseToURI} = {Request#request.method, Request#request.uri},
     OldSipState = State#state.sipstate,
-    {Status, Reason, _, _} = Response,
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     NewState1 = go_stateful(Created, ResponseToMethod, Status, LogTag, State),
     {Action, SendReliably, NewSipState} = send_response_statemachine(ResponseToMethod, Status, OldSipState),
     NewState2 = case Action of
@@ -522,23 +535,23 @@ send_response_statemachine(Method, Status, terminated) when Status =< 699 ->
     {ignore, false, terminated}.
 
 
-						% This branch should answer something.
-send_response(Response, SendReliably, State) when record(State, state) ->
-    {Status, Reason, RHeader, RBody} = Response,
+%% This branch should answer something.
+send_response(Response, SendReliably, State) when record(Response, response), record(State, state) ->
+    {Status, Reason, RHeader, RBody} = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
     Request = State#state.request,
-    {Method, URI, _, _} = Request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     Socket = State#state.socket,
     LogTag = State#state.logtag,
     if
 	Method == "INVITE", Status >= 300 ->
-						% Tell transactionlayer pid about this response to INVITE - it needs to know
-						% what To-tag we have used in order to match any ACK:s received for this
-						% response back to this server transaction.
+	    %% Tell transactionlayer pid about this response to INVITE - it needs to know
+	    %% what To-tag we have used in order to match any ACK:s received for this
+	    %% response back to this server transaction.
 	    ToTag = sipheader:get_tag(keylist:fetch("To", RHeader)),
 	    case transactionlayer:store_to_tag(Request, ToTag) of
 		ok -> true;
 		R ->
-						% XXX abort sending?
+		    %% XXX abort sending?
 		    logger:log(error, "~s: Failed storing To-tag with transactionlayer : ~p", [LogTag, R])
 	    end;
 	true -> true
@@ -582,7 +595,8 @@ enter_sip_state(NewSipState, State) when record(State, state) ->
 	    State;
 	_ ->
 	    NewState1 = State#state{sipstate=NewSipState},
-	    {ResponseToMethod, ResponseToURI, _, _} = NewState1#state.request,
+            Request = State#state.request,
+            {ResponseToMethod, ResponseToURI} = {Request#request.method, Request#request.uri},
 	    NewState = case NewSipState of
 			   completed ->
 			       case ResponseToMethod of
@@ -594,8 +608,8 @@ enter_sip_state(NewSipState, State) when record(State, state) ->
 				       logger:log(debug, "~s: Server transaction: Entered state 'completed'. Original request was non-INVITE, " ++
 						  "starting Timer J with a timeout of ~s seconds.",
 						  [LogTag, siptimer:timeout2str(TimerJ)]),
-						% Install TimerJ (default 32 seconds) RFC 3261 17.2.2. Until TimerJ fires we
-						% resend our response whenever we receive a request resend.
+				       %% Install TimerJ (default 32 seconds) RFC 3261 17.2.2. Until TimerJ fires we
+				       %% resend our response whenever we receive a request resend.
 				       JDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++ " (Timer J)",
 				       add_timer(TimerJ, JDesc, {terminate_transaction}, NewState1)
 			       end;
@@ -603,15 +617,15 @@ enter_sip_state(NewSipState, State) when record(State, state) ->
 			       case ResponseToMethod of
 				   "INVITE" ->
 				       TimerI = sipserver:get_env(timerT4, 5000),
-				       logger:log(debug, "~s: Entered state 'confirmed'. Original request was an INVITE, starting Timer I with a timeout of ~s seconds.",
-						  [LogTag, siptimer:timeout2str(TimerI)]),
-						% Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we
-						% absorb any additional ACK requests that might arrive.
+				       logger:log(debug, "~s: Entered state 'confirmed'. Original request was an INVITE, starting " ++ 
+						  "Timer I with a timeout of ~s seconds.",  [LogTag, siptimer:timeout2str(TimerI)]),
+				       %% Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we
+				       %% absorb any additional ACK requests that might arrive.
 				       IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++ " (Timer I)",
 				       add_timer(TimerI, IDesc, {terminate_transaction}, NewState1);
 				   _ ->
-				       logger:log(error, "~s: Entered state 'confirmed'. Original request was NOT an INVITE (it was ~s ~s). How could this be?",
-						  [LogTag, ResponseToMethod, sipurl:print(ResponseToURI)]),
+				       logger:log(error, "~s: Entered state 'confirmed'. Original request was NOT an INVITE (it was ~s ~s). " ++
+						  "How could this be?", [LogTag, ResponseToMethod, sipurl:print(ResponseToURI)]),
 				       NewState1
 			       end;
 			   _ ->
@@ -622,8 +636,10 @@ enter_sip_state(NewSipState, State) when record(State, state) ->
     end.
 
 process_received_ack(State) when record(State, state) ->
-    {Method, URI, _, _} = State#state.request,
-    {Status, Reason, _, _} = State#state.response,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    Response = State#state.response,
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     LogTag = State#state.logtag,
     logger:log(normal, "~s: Response ~p ~s to request ~s ~s ACK-ed", [LogTag, Status, Reason, Method, sipurl:print(URI)]),
     case Method of
@@ -646,7 +662,7 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State) when re
 
 make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State) when record(State, state) ->
     Request = State#state.request,
-    {Method, URI, Header, Body} = Request,
+    Header = Request#request.header,
     To = keylist:fetch("To", Header),
     Req = case sipheader:get_tag(To) of
 	      none ->
@@ -654,17 +670,17 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State) when re
 		  NewTo = lists:concat([sipheader:to_print({DistplayName, ToURI}), ";tag=",
 					State#state.my_to_tag]),
 		  NewHeader = keylist:set("To", [NewTo], Header),
-		  {Method, URI, NewHeader, Body};
+		  Request#request{header=NewHeader};
 	      _ ->
 		  Request
 	  end,
     siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State#state.socket, Req).
 
 generate_tag() ->
-						% Erlang guarantees that subsequent calls to now() generate increasing values (on the same node).
+    %% Erlang guarantees that subsequent calls to now() generate increasing values (on the same node).
     {Megasec, Sec, Microsec} = now(),
     In = lists:concat([node(), Megasec * 1000000 + Sec, 8, $., Microsec]),
     Out = siprequest:make_base64_md5_token(In),
-						% RFC3261 #19.3 says tags must have at least 32 bits randomness,
-						% don't make them longer than they have to be.
+    %% RFC3261 #19.3 says tags must have at least 32 bits randomness,
+    %% don't make them longer than they have to be.
     "yxa-" ++ string:substr(Out, 1, 9).

@@ -4,6 +4,8 @@
 	 extract/2, set_pid/2, set_state/2, set_endresult/2, set_dstlist/2,
 	 set_cancelled/2, update_target/2]).
 
+-include("siprecords.hrl").
+
 -record(target, {ref, branch, request, pid, state, timeout, endresult, dstlist, cancelled}).
 -record(targetlist, {list}).
 
@@ -14,10 +16,10 @@
 %
 %    {Branch, InitialRequest, Pid, State, EndResult}
 %
-%       InitialRequest = {Method, URI, Header, Body}
-%	EndResult = {Status, Reason, Header, Body}
+%       InitialRequest = request record
+%	EndResult = response record
 
-add(Branch, Request, Pid, State, Timeout, DstList, TargetList) when record(TargetList, targetlist) ->
+add(Branch, Request, Pid, State, Timeout, DstList, TargetList) when record(Request, request), record(TargetList, targetlist) ->
     case get_using_branch(Branch, TargetList) of
 	none ->
 	    NewTarget = #target{ref=make_ref(), branch=Branch, request=Request, pid=Pid, state=State,
@@ -54,11 +56,13 @@ debugfriendly(TargetList) when record(TargetList, targetlist) ->
 debugfriendly([]) ->
     [];
 debugfriendly([H | T]) when record(H, target) ->
-    {Method, URI, _, _} = H#target.request,
+    Request = H#target.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     RespStr = case H#target.endresult of
 	none -> "no response";
-	{Status, Reason, _, _} ->
-	    lists:concat(["response=", Status, " ", Reason])
+	Response when record(Response, response) ->
+	    lists:concat(["response=", Response#response.status, " ", Response#response.reason]);
+	_ -> "INVALID response"
     end,
     Str = lists:concat(["pid=", pid_to_list(H#target.pid), "branch=", H#target.branch, ", request=", Method, " ",
 		sipurl:print(URI), ", ", RespStr, ", cancelled=", H#target.cancelled, ", state=" , H#target.state]),
@@ -92,8 +96,8 @@ get_responses2([], Res) ->
     Res;
 get_responses2([H | T], Res) when record(H, target) ->
     case H#target.endresult of
-	{Status, Reason, Header, Body} ->
-	    get_responses2(T, lists:append(Res, [H#target.endresult]));
+	Response when record(Response, response) ->
+	    get_responses2(T, lists:append(Res, [Response]));
 	_ ->
 	    get_responses2(T, Res)
     end.

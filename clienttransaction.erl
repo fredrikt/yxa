@@ -47,8 +47,8 @@ start_link(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, SocketIn, Dst, Branch, Timeout, Parent]) when record(Dst, sipdst) ->
-    {Method, URI, _, _} = Request,
+init([Request, SocketIn, Dst, Branch, Timeout, Parent]) when record(Dst, sipdst), record(Request, request) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = lists:flatten(Branch ++ " " ++ Method),
     SipState = case Method of
 		   "INVITE" -> calling;
@@ -58,12 +58,12 @@ init([Request, SocketIn, Dst, Branch, Timeout, Parent]) when record(Dst, sipdst)
 		       sipstate=SipState, timerlist=siptimer:empty(),
 		       dst=Dst, socket_in=SocketIn, timeout=Timeout,
 		       cancelled=false, report_to=Parent},
-    logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~p).",
-	       [LogTag, Method, sipurl:print(URI), Dst]),
+    logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~s).",
+	       [LogTag, Method, sipurl:print(URI), dst2str(Dst)]),
     State = initiate_request(NewState1),
     {ok, State};
 init([Request, SocketIn, Dst, Branch, Timeout, Parent]) ->
-    logger:log(error, "Client transaction: Will not start, invalid dst ~p", [Dst]),
+    logger:log(error, "Client transaction: Will not start, invalid dst (~p) or request", [Dst]),
     {stop, "Invalid arguments for client transaction"}.
 
 
@@ -93,13 +93,12 @@ handle_call(Request, From, State) ->
 handle_cast({sipmessage, Response, Origin, LogStr}, State) when record(Response, response), record(Origin, siporigin) ->
     %% We have received a response to one of our requests.
     LogTag = State#state.logtag,
-    CompatResponse = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
     LogLevel = if
 		   Response#response.status >= 200 -> normal;
 		   true -> debug
 	       end,
     logger:log(LogLevel, "~s: Received response ~p ~s", [LogTag, Response#response.status, Response#response.reason]),
-    NewState = process_received_response(CompatResponse, State),
+    NewState = process_received_response(Response, State),
     check_quit({noreply, NewState});
 
 handle_cast({cancel, Msg}, State) ->
@@ -175,7 +174,6 @@ terminate(Reason, State) ->
 		_ ->
 		    logger:log(error, "~s: Client transaction terminating in state ~p, reason : ~p", [LogTag, SipState, Reason])
 	    end,
-	    logger:log(debug, "~s: Client transaction terminating in state ~p", [LogTag, SipState]),
 	    true
     end,
     case util:safe_is_process_alive(State#state.report_to) of
@@ -224,12 +222,13 @@ check_quit2(Res, From, State) when record(State, state)  ->
     case State#state.sipstate of
 	terminated ->
 	    RStr = case State#state.response of
-		       {Status, Reason, _, _} ->
-			   io_lib:format("last received response was ~p ~s", [Status, Reason]);
+		       Re when record(Re, response) ->
+			   io_lib:format("last received response was ~p ~s", [Re#response.status, Re#response.reason]);
 		       undefined ->
 			   "no responses received"
 		   end,
-	    {Method, URI, _, _} = State#state.request,
+	    Request = State#state.request,
+	    {Method, URI} = {Request#request.method, Request#request.uri},
 	    LogTag = State#state.logtag,
 	    logger:log(debug, "~s: Server transaction (~s ~s) terminating in state '~p', ~s",
 		       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
@@ -263,7 +262,8 @@ send_reply(To, Reply, State) when record(State, state) ->
 process_timer(Timer, State) when record(State, state) ->
     [TRef, Timeout, Signal, Description] = siptimer:extract([ref, timeout, appsignal, description], Timer),
     LogTag = State#state.logtag,
-    {Method, URI, Header, Body} = State#state.request,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     logger:log(debug, "~s: Timer ~p:~p fired", [LogTag, TRef, Description]),
     case Signal of
 
@@ -275,7 +275,7 @@ process_timer(Timer, State) when record(State, state) ->
 		    	       [LogTag, siptimer:timeout2str(Timeout), sipurl:print(URI), Method]),
 		    Branch = State#state.branch,
 		    transportlayer:send_proxy_request(State#state.socket, State#state.request,
-						      URI, ["branch=" ++ Branch, {dst, State#state.dst}]),
+						      State#state.dst, ["branch=" ++ Branch]),
 		    NewTimeout = get_request_resend_timeout(Method, Timeout, SipState),
 		    NewTimerList = siptimer:revive_timer(Timer, NewTimeout, State#state.timerlist),
 		    NewState1 = State#state{timerlist=NewTimerList},
@@ -345,11 +345,11 @@ get_request_resend_timeout(Method, OldTimeout, State) ->
 %% Process a response delivered to us from one of our branches. Make sure
 %% it is a response to the same kind of request as our original request,
 %% then run it through the state machine to determine what to do.
-process_received_response(Response, State) when record(State, state) ->
+process_received_response(Response, State) when record(State, state), record(Response, response) ->
     OldSipState = State#state.sipstate,
     Request = State#state.request,
-    {Method, URI, _, _} = Request,
-    {Status, Reason, _, _} = Response,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     %% Stop resending of request as soon as possible.
     NewState1 = stop_resendrequest_timer(State),
     NewState2 = case Method of
@@ -372,9 +372,10 @@ process_received_response(Response, State) when record(State, state) ->
     NewState.
 
 update_transaction_state(Response, NewSipState, BranchAction, State) when record(State, state) ->
-    {Status, Reason, _, _} = Response,
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     LogTag = State#state.logtag,
-    {Method, URI, _, _} = State#state.request,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     OldSipState = State#state.sipstate,
     case NewSipState of
 	OldSipState ->
@@ -398,12 +399,13 @@ act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State) when record(S
 	_ ->
 	    LogTag = State#state.logtag,
 	    Request = State#state.request,
-	    {Method, URI, _, _} = Request,
+	    {Method, URI} = {Request#request.method, Request#request.uri},
 	    case NewSipState of
 		proceeding ->
 		    case Method of
 			"INVITE" ->
-			    {Status, Reason, _, _} = State#state.response,
+			    Response = State#state.response,
+			    {Status, Reason} = {Response#response.status, Response#response.reason},
 			    case State#state.do_cancel of
 				true ->
 				    logger:log(debug, "~s: A previously cancelled transaction (INVITE ~s) entered state 'proceeding' " ++
@@ -458,9 +460,9 @@ act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State) when record(S
 perform_branchaction(BranchAction, State) when record(State, state) ->
     LogTag = State#state.logtag,
     Response = State#state.response,
-    {Status, Reason, _, _} = Response,
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     Request = State#state.request,
-    {Method, URI, _, _} = Request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     case BranchAction of
 	ignore ->
 	    true;
@@ -577,7 +579,8 @@ received_response_state_machine(Method, Status, State) when Status =< 699 ->
 
 stop_resendrequest_timer(State) when record(State, state) ->
     LogTag = State#state.logtag,
-    {Method, URI, _, _} = State#state.request,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     NTList1 = siptimer:cancel_timers_with_appsignal({resendrequest}, State#state.timerlist),
     %% If it is an INVITE, we stop the resendrequest_timeout as well
     %% since an invite have {invite_expire} (Timer C) that takes
@@ -597,14 +600,14 @@ stop_resendrequest_timer(State) when record(State, state) ->
 %% TimerC will start sending CANCELs to this request, if reached.
 initiate_request(State) when record(State, state) ->
     Request = State#state.request,
-    {Method, URI, _, _} = Request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = State#state.logtag,
     Branch = State#state.branch,
     Dst = State#state.dst,
     Timeout = State#state.timeout,
     logger:log(normal, "~s: Sending ~s ~s (~p:~s:~p)", [LogTag, Method, sipurl:print(URI),
 							Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
-    case transportlayer:send_proxy_request(State#state.socket_in, Request, URI, ["branch=" ++ Branch, {dst, Dst}]) of
+    case transportlayer:send_proxy_request(State#state.socket_in, Request, Dst, ["branch=" ++ Branch]) of
 	{sendresponse, Status, Reason} ->
 	    logger:log(error, "~s: Transport layer failed sending ~s ~s to ~p, asked us to respond ~p ~s",
 		       [LogTag, Method, sipurl:print(URI), Status, Reason]),
@@ -656,7 +659,7 @@ add_timer(Timeout, Description, AppSignal, State) when record(State, state) ->
 
 fake_request_response(Status, Reason, State) when record(State, state) ->
     Request = State#state.request,
-    {Method, URI, Header, _} = Request,
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     LogTag = State#state.logtag,
     Proto = case State#state.dst of
 		Dst when record(Dst, sipdst) ->
@@ -679,12 +682,13 @@ fake_request_response(Status, Reason, State) when record(State, state) ->
 	    logger:log(debug, "~s: Client transaction orphaned ('~p' not alive) - not sending fake response ~p ~s to anyone",
 		       [LogTag, R, Status, Reason])
     end,
-    NewState1 = State#state{response = FakeResponse},
+    NewState1 = State#state{response=FakeResponse},
     NewState = terminate_transaction(NewState1),
     NewState.
 
 fake_request_timeout(State) when record(State, state) ->
-    {Method, URI, _, _} = State#state.request,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = State#state.logtag,
     logger:log(debug, "~s: Client transaction (~s ~s) timed out - pretend we got an 408 Request Timeout",
 	       [LogTag, Method, sipurl:print(URI)]),
@@ -696,7 +700,8 @@ fake_request_timeout(State) when record(State, state) ->
 %% end_invite() ends an INVITE transaction. This is called when our {call, ...} timeout
 %% ocurs, or when Timer C fires. Whichever happens first.
 end_invite(State) when record(State, state) ->
-    {_, URI, _, _} = State#state.request,
+    Request = State#state.request,
+    URI = Request#request.uri,
     SipState = State#state.sipstate,
     LogTag = State#state.logtag,
     case SipState of
@@ -718,7 +723,8 @@ terminate_transaction(State) when record(State, state) ->
     NewState.
 
 cancel_request(State) when record(State, state) ->
-    {Method, URI, _, _} = State#state.request,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = State#state.logtag,
     NewState1 = State#state{cancelled=true},
     logger:log(debug, "~s: Marked transaction as cancelled", [LogTag]),
@@ -765,7 +771,7 @@ cancel_request(State) when record(State, state) ->
 start_cancel_transaction(State) when record(State, state) ->
     LogTag = State#state.logtag,
     Request = State#state.request,
-    {Method, URI, Header, _} = Request,
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     logger:log(debug, "~s: initiate_cancel() Sending CANCEL ~s", [LogTag, sipurl:print(URI)]),
     {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     CancelId = {CSeqNum, "CANCEL"},
@@ -781,7 +787,7 @@ start_cancel_transaction(State) when record(State, state) ->
     CancelHeader5 = keylist:delete("Content-Type", CancelHeader4),
     CancelHeader6 = keylist:delete("Content-Length", CancelHeader5),
     CancelHeader = keylist:set("Content-Length", ["0"], CancelHeader6),
-    CancelRequest = {"CANCEL", URI, CancelHeader, ""},
+    CancelRequest = #request{method="CANCEL", uri=URI, header=CancelHeader, body=""},
     T1 = sipserver:get_env(timerT1, 500),
     NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
     Socket = State#state.socket,
@@ -823,32 +829,48 @@ update_invite_expire(Status, State) when record(State, state), Status =< 199 ->
 update_invite_expire(Status, State) ->
     State.
 
-ack_non_1xx_or_2xx_response_to_invite("INVITE", {Status, Reason, _, _}, State) when record(State, state), Status =< 299 ->
+%%
+%% Status =< 299
+%%
+ack_non_1xx_or_2xx_response_to_invite("INVITE", Response, State) when record(State, state), record(Response, response), Response#response.status =< 299 ->
     LogTag = State#state.logtag,
-    {_, URI, _, _} = State#state.request,
+    Request = State#state.request,
+    URI = Request#request.uri,
     logger:log(debug, "~s: Not ACK-ing 1xx or 2xx response to INVITE ~s: ~p ~s",
-	       [LogTag, sipurl:print(URI), Status, Reason]),
+	       [LogTag, sipurl:print(URI), Response#response.status, Response#response.reason]),
     State;
-ack_non_1xx_or_2xx_response_to_invite("INVITE", {Status, Reason, RHeader, RBody}, State) when record(State, state), Status =< 699 ->
+%%
+%% Status =< 699
+%%
+ack_non_1xx_or_2xx_response_to_invite("INVITE", Response, State) when record(State, state), record(Response, response), Response#response.status =< 699 ->
     LogTag = State#state.logtag,
-    {_, URI, _, _} = State#state.request,
-    Response = {Status, Reason, RHeader, RBody},
+    Request = State#state.request,
+    URI = Request#request.uri,
     logger:log(debug, "~s: ACK-ing 3xx, 4xx, 5xx or 6xx response ~p ~s to INVITE ~s (in state '~p')",
-	       [LogTag, Status, Reason, sipurl:print(URI), State#state.sipstate]),
+	       [LogTag, Response#response.status, Response#response.reason, sipurl:print(URI), State#state.sipstate]),
     generate_ack(Response, State),
     State.
 
 %% Send an ACK. We do not set up any timers for retransmission since if this
 %% ACK is lost we will receive a retransmitted response which will effectively
 %% cause us to send a new ACK.
-generate_ack({Status, Reason, _, _}, State) when record(State, state), Status =< 199 ->
+
+%%
+%% Status =< 199
+%%
+generate_ack(Response, State) when record(State, state), record(Response, response), Response#response.status =< 199 ->
     LogTag = State#state.logtag,
-    logger:log(debug, "~s: Not ACK-ing response ~p ~s. XXX shouldn't this be a PRACK?", [LogTag, Status, Reason]); 
-generate_ack({Status, Reason, RHeader, RBody}, State) when record(State, state), Status =< 699 ->
-    {Method, URI, Header, Body} = State#state.request,
-    LogTag = State#state.logtag,
+    logger:log(debug, "~s: Not ACK-ing response ~p ~s. XXX shouldn't this be a PRACK?",
+	       [LogTag, Response#response.status, Response#response.reason]); 
+
+%%
+%% Status =< 699
+%%
+generate_ack(Response, State) when record(State, state), record(Response, response), Response#response.status =< 699 ->
     Request = State#state.request,
-    {_, URI, Header, Body} = Request,
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
+    {Status, Reason, RHeader} = {Response#response.status, Response#response.reason, Response#response.header},
+    LogTag = State#state.logtag,
     if
 	Status =< 299 ->
 	    logger:log(debug, "~s: generate_ack() Sending ACK of 2xx response ~p -> ~s",
@@ -879,6 +901,10 @@ generate_ack({Status, Reason, RHeader, RBody}, State) when record(State, state),
     %% this ACK to the right transaction. tl_branch is not necessarily the same as branch
     %% since the transport layer can be configured to add a stateless loop cookie.
     Branch = State#state.tl_branch,
-    ACKRequest = {"ACK", URI, SendHeader, ""},
-    transportlayer:send_proxy_request(Socket, ACKRequest, URI, ["branch=" ++ Branch, {dst, Dst}]),
+    ACKRequest = #request{method="ACK", uri=URI, header=SendHeader, body=""},
+    transportlayer:send_proxy_request(Socket, ACKRequest, Dst, ["branch=" ++ Branch]),
     ok.
+
+dst2str(Dst) when record(Dst, sipdst) ->
+    lists:flatten(io_lib:format("~p:~s:~p (~s)", [Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port,
+						  sipurl:print(Dst#sipdst.uri)])).

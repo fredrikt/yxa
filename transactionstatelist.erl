@@ -10,6 +10,7 @@
 	 get_length/1]).
 
 -include("transactionstatelist.hrl").
+-include("siprecords.hrl").
 
 %%-record(transactionstate, {ref, id, ack_id, branch, pid, appdata,
 %%	request, response_to_tag, expire}).
@@ -31,14 +32,14 @@ add_client_transaction(Method, Branch, Pid, TStateList) when record(TStateList, 
     Id = {Branch, Method},
     add(client, Id, none, Pid, TStateList).
 
-add_server_transaction(Request, Pid, TStateList) when record(TStateList, transactionstatelist), pid(Pid) ->
+add_server_transaction(Request, Pid, TStateList) when record(Request, request), record(TStateList, transactionstatelist), pid(Pid) ->
     case sipheader:get_server_transaction_id(Request) of
 	error ->
 	    logger:log(error, "transactionstatelist: Could not get server transaction id for request"),
 	    TStateList;
 	Id ->
-	    AckId = case Request of
-			{"INVITE", _, _, _} ->
+	    AckId = case Request#request.method of
+		        "INVITE" ->
 			    %% For INVITE, we must store an extra Id to match ACK to the INVITE transaction.
 			    %% We must do this even for RFC3261 INVITE since the ACK might arrive through
 			    %% another proxy that is not RFC3261 compliant.
@@ -52,7 +53,7 @@ add_server_transaction(Request, Pid, TStateList) when record(TStateList, transac
 empty() ->
     #transactionstatelist{list=[]}.
 
-get_server_transaction_using_request(Request, TransactionList) when record(TransactionList, transactionstatelist) ->
+get_server_transaction_using_request(Request, TransactionList) when record(Request, request), record(TransactionList, transactionstatelist) ->
     case sipheader:get_server_transaction_id(Request) of
 	is_2543_ack ->
 	    get_server_transaction_ack_2543(Request, TransactionList);
@@ -60,9 +61,8 @@ get_server_transaction_using_request(Request, TransactionList) when record(Trans
 	    logger:log(error, "Transaction state list: Could not get server transaction for request"),
 	    error;
 	Id ->
-	    {Method, URI, _, _} = Request,
 	    case get_elem(server, Id, TransactionList#transactionstatelist.list) of
-		none when Method == "ACK" ->
+		none when Request#request.method == "ACK" ->
 		    %% If the UAC is 2543 compliant, but there is a 3261 compliant proxy between UAC and us,
 		    %% the 3261 proxy will possibly generate another branch for the ACK than the INVITE
 		    %% because the ACK might have a To-tag. If this happens, we must use 2543 methods to find
@@ -78,14 +78,13 @@ get_server_transaction_using_request(Request, TransactionList) when record(Trans
 
 %% ACK requests are matched to transactions differently if they are not received from
 %% an RFC3261 compliant device, see RFC3261 17.2.3   
-get_server_transaction_ack_2543(Request, TransactionList) ->
+get_server_transaction_ack_2543(Request, TransactionList) when record(Request, request) ->
     case sipheader:get_server_transaction_ack_id_2543(Request) of
 	error ->
 	    logger:log(error, "Transaction state list: Could not get server transaction RFC2543 ACK id for request"),
 	    error;
 	Id ->
-	    {_, _, Header, _} = Request,
-	    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
+	    ToTag = sipheader:get_tag(keylist:fetch("To", Request#request.header)),
 	    case get_elem_ackid(server, Id, ToTag, TransactionList#transactionstatelist.list) of
 		none ->
 		    logger:log(debug, "Transaction state list: ACK request does not match any existing transaction"),
@@ -95,7 +94,7 @@ get_server_transaction_ack_2543(Request, TransactionList) ->
 	    end
     end.
 
-get_server_transaction_using_response(Response, TransactionList) when record(TransactionList, transactionstatelist) ->
+get_server_transaction_using_response(Response, TransactionList) when record(Response, response), record(TransactionList, transactionstatelist) ->
     case sipheader:get_client_transaction_id(Response) of
 	error ->
 	    none;

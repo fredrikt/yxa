@@ -1,54 +1,75 @@
 -module(sipproxy).
--export([fork/5]).
+-export([start/5]).
 
 -include("sipproxy.hrl").
+-include("siprecords.hrl").
 
--record(state, {parent, request, targets, endtime, final_response_sent, mystate}).
+-record(state, {parent, branchbase, request, actions, targets, endtime, final_response_sent, mystate, approx_msgsize, timeout}).
 % mystate is either calling, cancelled, completed or stayalive
 
-% This is the "start" function of sipproxy, fork(). sipproxy can fork a request
+% This is the "start" function of sipproxy. sipproxy can fork a request
 % according to a list of sipproxy_action elements.
 %
-% You start it by calling the fork() method with a set of Actions. Currenly
+% You start it by calling the start() method with a set of Actions. Currenly
 % supported actions are a list of 'call' and 'wait'. You can mix calls and
 % waits freely.
 
-fork(BranchBase, Parent, OrigRequest, Actions, Timeout) ->
-    fork(BranchBase, Parent, OrigRequest, Actions, Timeout, targetlist:empty()).
+start(BranchBase, Parent, Request, Actions, Timeout) when record(Request, request) ->
+    case siprequest:check_proxy_request(Request) of
+	{ok, _, ApproxMsgSize} ->
+	    case keylist:fetch("Route", Request#request.header) of
+		[] ->
+		    State = #state{parent=Parent, branchbase=BranchBase, request=Request, 
+				   actions=Actions, timeout=Timeout, targets=targetlist:empty(),
+				   mystate=calling, approx_msgsize=ApproxMsgSize,
+				   endtime=util:timestamp() + Timeout, final_response_sent=false},
+		    fork(State),
+		    util:safe_signal("sipproxy :", Parent, {callhandler_terminating, self()}),
+		    ok;
+		_ ->
+		    logger:log(debug, "sipproxy: Can't fork request with Route header"),
+		    {error, "Request with Route header could not be forked"}
+	    end;
+	_ ->
+	    logger:log(debug, "sipproxy: check_proxy_request did not say it was OK to proxy request"),
+	    {error, "Request could not be forked"}
+    end.
 
-fork(BranchBase, Parent, OrigRequest, [], Timeout, Targets) ->
-    {Method, ReqURI, Header, Body} = OrigRequest,
+%%
+%% No actions left
+%%
+fork(State) when record(State, state), State#state.actions == [] ->
+    OrigRequest = State#state.request,
+    Targets = State#state.targets,
+    {Method, ReqURI} = {OrigRequest#request.method, OrigRequest#request.uri},
     NewTargets = case allterminated(Targets) of
 		     true ->
 			 logger:log(debug, "sipproxy: All targets are terminated, staying alive to handle resends"),
-		         Targets;
+			 Targets;
 		     _ ->
 			 logger:log(normal, "sipproxy: Reached end of Actions-list for ~s ~s, cancelling pending targets.",
 				    [Method, sipurl:print(ReqURI)]),
 			 NewTargets1 = cancel_pending_targets(Targets),
 			 NewTargets1
-		 end,
-    util:safe_signal("sipproxy :", Parent, {no_more_actions}),
-    logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [Timeout]),
-    InitState = #state{parent=Parent, request=OrigRequest, targets=NewTargets,
-			endtime=util:timestamp() + Timeout, mystate=stayalive},
-    process_wait(false, InitState),
-    util:safe_signal("sipproxy :", Parent, {callhandler_terminating, self()}),
+    end,
+    util:safe_signal("sipproxy :", State#state.parent, {no_more_actions}),
+    logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [State#state.timeout]),
+    process_wait(false, State#state{mystate=stayalive, targets=NewTargets, endtime=util:timestamp() + State#state.timeout}),
     ok;
-fork(BranchBase, Parent, OrigRequest, [HAction | TAction], Timeout, Targets) when record(HAction, sipproxy_action) ->
-    % XXX detect Max-Forwards: 1 here instead of when sending the requests
-    % out since siprequest:send_proxy_request() would send the errors
-    % right back to the caller
-    {Method, ReqURI, Header, Body} = OrigRequest,
+fork(State) when record(State, state) ->
+    OrigRequest = State#state.request,
+    [HAction | TAction] = State#state.actions,
+    {Method, ReqURI} = {OrigRequest#request.method, OrigRequest#request.uri},
+    Targets = State#state.targets,
     case HAction#sipproxy_action.action of
 	call ->
 	    CallURI = HAction#sipproxy_action.requri,
 	    CallTimeout = HAction#sipproxy_action.timeout,
 	    logger:log(debug, "sipproxy: forking ~s request to ~s with timeout ~p",
 		      [Method, sipurl:print(CallURI), CallTimeout]),
-	    Branch = BranchBase ++ "-UAC" ++ integer_to_list(targetlist:list_length(Targets) + 1),
-	    Request = {Method, CallURI, Header, Body},
-	    DstList = siprequest:url_to_dstlist(CallURI, 500, undefined), % XXX do better estimation
+	    Branch = State#state.branchbase ++ "-UAC" ++ integer_to_list(targetlist:list_length(Targets) + 1),
+	    Request = OrigRequest#request{uri=CallURI},
+	    DstList = siprequest:url_to_dstlist(CallURI, State#state.approx_msgsize, CallURI),
 	    [FirstDst|_] = DstList,
 	    NewTargets = case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, CallTimeout, self()) of
 	    	BranchPid when pid(BranchPid) ->
@@ -57,19 +78,16 @@ fork(BranchBase, Parent, OrigRequest, [HAction | TAction], Timeout, Targets) whe
 		    logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
 		    Targets
 	    end,
-	    fork(BranchBase, Parent, OrigRequest, TAction, Timeout, NewTargets);
+	    fork(State#state{actions=TAction, targets=NewTargets});
 	wait ->
 	    Time = HAction#sipproxy_action.timeout,
 	    logger:log(debug, "sipproxy: waiting ~p seconds", [Time]),
-	    InitState = #state{parent=Parent, request=OrigRequest, targets=Targets,
-				endtime=util:timestamp() + Time, mystate=calling,
-				final_response_sent=false},
-	    case process_wait(false, InitState) of
-		{discontinue, NewTargets} ->
+	    case process_wait(false, State) of
+		{discontinue, NewState} ->
 		    logger:log(debug, "sipproxy: discontinue processing"),
-		    fork(BranchBase, Parent, OrigRequest, [], Timeout, NewTargets);
+		    fork(NewState#state{actions=[]});
 		NewTargets ->
-		    fork(BranchBase, Parent, OrigRequest, TAction, Timeout, NewTargets)
+		    fork(State#state{actions=TAction, targets=NewTargets})
 	    end
     end.
 
@@ -99,7 +117,7 @@ process_wait(true, State) when record(State, state) ->
     Targets = State#state.targets,
     logger:log(debug, "sipproxy: All Targets terminated or completed. Ending process_wait(), returning discontinue. debugfriendly(TargetList) :~n~p",
     		[targetlist:debugfriendly(Targets)]),
-    {discontinue, Targets};
+    {discontinue, State};
 process_wait(false, State) when record(State, state) ->
     Time = lists:max([State#state.endtime - util:timestamp(), 0]),
     Targets = State#state.targets,
@@ -117,8 +135,8 @@ process_wait(false, State) when record(State, state) ->
 	    NewState1 = State#state{targets=NewTargets, mystate=NewMyState},
 	    {ok, NewState1};
 
-	{branch_result, Branch, NewTransactionState, Response} ->
-	    {Status, Reason, _, _} = Response,
+	{branch_result, Branch, NewTransactionState, Response} when record(Response, response) ->
+	    {Status, Reason} = {Response#response.status, Response#response.reason},
 	    NewState1 = case targetlist:get_using_branch(Branch, Targets) of
 		none ->
 		    logger:log(error, "sipproxy: Received branch result ~p ~s from an unknown Target (branch ~p), ignoring.",
@@ -126,7 +144,7 @@ process_wait(false, State) when record(State, state) ->
 		    State;
 		ThisTarget ->
 		    [ResponseToRequest] = targetlist:extract([request], ThisTarget),
-		    {RMethod, RURI, _, _} = ResponseToRequest,
+		    {RMethod, RURI} = {ResponseToRequest#request.method, ResponseToRequest#request.uri},
 		    NewTarget1 = targetlist:set_state(ThisTarget, NewTransactionState),
 		    NewTarget2 = targetlist:set_endresult(NewTarget1, Response),	% XXX only do this for final responses?
 		    NewTargets1 = targetlist:update_target(NewTarget2, Targets),
@@ -176,13 +194,13 @@ process_wait(false, State) when record(State, state) ->
 	    TimeLeft = lists:max([NewState_1#state.endtime - util:timestamp(), 0]),
 	    AllTerminated = allterminated(NewState_1),
 	    EndProcessing = end_processing(NewState_1),
-	    logger:log(debug, "sipproxy: State changer, MyState=~p, NewMyState=~p, TimeLeft=~p, AllTerminated=~p, EndProcessing=~p",
-	    		[State#state.mystate, NewState_1#state.mystate, TimeLeft, AllTerminated, EndProcessing]),
+	    logger:log(debug, "sipproxy: State changer, MyState=~p, NewMyState=~p, TimeLeft=~p, FinalResponseSent=~p, AllTerminated=~p, EndProcessing=~p",
+	    		[State#state.mystate, NewState_1#state.mystate, TimeLeft, NewState_1#state.final_response_sent, AllTerminated, EndProcessing]),
 	    process_wait(EndProcessing, NewState_1)
     end.
 
-try_next_destination(Response, Target, Targets, State) ->
-    {Status, Reason, _, _} = Response,
+try_next_destination(Response, Target, Targets, State) when record(Response, response) ->
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     case Status of
 	503 ->
 	    case State#state.mystate of
@@ -266,6 +284,10 @@ end_processing(State) when record(State, state) ->
     allterminated(State).
 
 % We need to forward 2xx responses to INVITE to upstream even if we are 'cancelled'.
+
+%%
+%% final_response_sent == false, mystate == calling or cancelled
+%%
 report_upstreams_statemachine(State) when record(State, state), State#state.final_response_sent == false,
 					State#state.mystate == calling; State#state.mystate == cancelled ->
     case allterminated(State) of
@@ -281,13 +303,14 @@ report_upstreams_statemachine(State) when record(State, state), State#state.fina
 			none ->
 			    logger:log(normal, "sipproxy: Found no suitable response in list ~p, answering 408 Request Timeout", [printable_responses(Responses)]),
 			    {408, "Request Timeout"};
-			{503, Reason, _, _} ->
+			R503 when record(R503, response), R503#response.status == 503 ->
 			    %% RFC3261 16.7 (Choosing the best response) bullet 6 says that if
 			    %% we only have a 503, we should send a 500 instead
-			    logger:log(normal, "sipproxy: Turning best response '503 ~p' into a '500 Only response to fork was 503'", [Reason]),
+			    logger:log(normal, "sipproxy: Turning best response '503 ~s' into a '500 Only response to fork was 503'",
+				       [R503#response.reason]),
 			    {500, "Only response to fork was 503"};
-			FinalResponse ->
-			    {Status, Reason, _, _} = FinalResponse,
+			FinalResponse when record(FinalResponse, response) ->
+			    {Status, Reason} = {FinalResponse#response.status, FinalResponse#response.reason},
 			    logger:log(debug, "sipproxy: Picked response '~p ~s' from the list of responses available (~p).",
 			    		[Status, Reason, printable_responses(Responses)]),
 			    FinalResponse
@@ -300,16 +323,20 @@ report_upstreams_statemachine(State) when record(State, state), State#state.fina
 	false ->
 	    State
     end;
+
+%%
+%% final_response_sent == true, or mystate is not calling or cancelled
+%%
 report_upstreams_statemachine(State) when record(State, state) ->
     State.
 
-check_forward_immediately(Request, Response, Branch, State) when record(State, state) ->
-    {Method, URI, _, _} = Request,
-    {Status, Reason, _, _} = Response,
+check_forward_immediately(Request, Response, Branch, State) when record(Request, request), record(Response, response), record(State, state) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     case forward_immediately(Method, Status, State) of
 	{true, NewState} ->
 	    Parent = NewState#state.parent,
-	    logger:log(debug, "sipproxy: Forwarding response ~p ~s (in response to ~s ~s) to my parent (PID ~p) immediately",
+	    logger:log(debug, "sipproxy: Forwarding response '~p ~s' (in response to ~s ~s) to my parent (PID ~p) immediately",
 	    		[Status, Reason, Method, sipurl:print(URI), Parent]),
 	    %% RFC 3261 16.7 bullet 5 (Check response for forwarding) says we MUST process any
 	    %% response chosen for immediate forwarding as described in
@@ -359,8 +386,8 @@ cancel_pending_if_invite_2xx_or_6xx(Method, Status, State) when record(State, st
 
 printable_responses([]) ->
     [];
-printable_responses([{Status, Reason, _, _} | Rest]) ->
-    lists:append([integer_to_list(Status) ++ " " ++ Reason], printable_responses(Rest));
+printable_responses([H | Rest]) when record(H, response) ->
+    lists:append([integer_to_list(H#response.status) ++ " " ++ H#response.reason], printable_responses(Rest));
 printable_responses([Response | Rest]) ->
     lists:append([Response], printable_responses(Rest)).
 
@@ -390,21 +417,22 @@ make_final_response(Responses) ->
 	    none
     end.	    
 
-aggregate_authreqs(BestResponse, Responses) ->
-    {Status, Reason, Header, Body} = BestResponse,
+aggregate_authreqs(BestResponse, Responses) when record(BestResponse, response) ->
+    {Status, Reason, Header, Body} = {BestResponse#response.status, BestResponse#response.reason,
+				      BestResponse#response.header, BestResponse#response.body},
     case Status of
 	407 ->
 	    ProxyAuth = collect_auth_headers(Status, "Proxy-Authenticate", Responses),
 	    logger:log(debug, "Aggregating ~p Proxy-Authenticate headers into response '407 ~s'",
 		       [length(ProxyAuth), Reason]),
 	    NewHeader = keylist:set("Proxy-Authenticate", ProxyAuth, Header),
-	    {Status, Reason, NewHeader, Body};
+	    BestResponse#response{header=NewHeader};
 	401 ->
 	    WWWAuth = collect_auth_headers(Status, "WWW-Authenticate", Responses),
 	    logger:log(debug, "Aggregating ~p WWW-Authenticate headers into response '401 ~s'",
 		       [length(WWWAuth), Reason]),
 	    NewHeader = keylist:set("WWW-Authenticate", WWWAuth, Header),
-	    {Status, Reason, NewHeader, Body};
+	    BestResponse#response{header=NewHeader};
 	_ ->
 	    BestResponse
     end.
@@ -414,8 +442,8 @@ collect_auth_headers(Status, Key, Responses) ->
     
 collect_auth_headers2(Status, Key, [], Res) ->
     Res;
-collect_auth_headers2(Status, Key, [{Status, _, Header, _} | T], Res) ->
-    NewRes = lists:append(Res, keylist:fetch(Key, Header)),
+collect_auth_headers2(Status, Key, [H | T], Res) when record(H, response), H#response.status == Status ->
+    NewRes = lists:append(Res, keylist:fetch(Key, H#response.header)),
     collect_auth_headers2(Status, Key, T, NewRes);
 collect_auth_headers2(Status, Key, [H | T], Res) ->
     collect_auth_headers2(Status, Key, T, Res).
@@ -427,17 +455,15 @@ pick_response(5, FivexxResponses) ->
 pick_response(Nxx, Responses) ->
     lists:nth(1, Responses).
 
-pick_4xx_sort(A, B) ->
+pick_4xx_sort(A, B) when record(A, response), record(B, response) ->
     Apref = is_4xx_preferred(A),
     Bpref = is_4xx_preferred(B),
     if
 	Apref == Bpref ->
 	    % A and B is either both in the preferred list, or both NOT in the preferred list.
 	    % Pick using numerical sort of response codes.
-	    {Anum, _, _, _} = A,
-	    {Bnum, _, _, _} = B,
 	    if
-		Anum =< Bnum ->
+		A#response.status =< B#response.status ->
 		   true;
 		true ->
 		   false
@@ -448,12 +474,12 @@ pick_4xx_sort(A, B) ->
 	    false
     end.
     
-is_4xx_preferred({Status, _, _, _}) ->
-    lists:member(Status, [401, 407, 415, 420, 484]).
+is_4xx_preferred(Response) when record(Response, response) ->
+    lists:member(Response#response.status, [401, 407, 415, 420, 484]).
 
-avoid_503_sort({503, _, _, _}, _) ->
+avoid_503_sort(A, _) when record(A, response), A#response.status == 503 ->
     false;
-avoid_503_sort({Anum, _, _, _}, {Bnum, _, _, _}) when Anum =< Bnum ->
+avoid_503_sort(A, B) when record(A, response), record(B, response), A#response.status =< B#response.status ->
     true;
 avoid_503_sort(_, _) ->
     false.
@@ -464,10 +490,10 @@ get_xx_responses(Min, Responses) ->
     
 get_range_responses(Min, Max, []) ->
     [];
-get_range_responses(Min, Max, [{Status, Reason, Header, Body} | Rest]) ->
+get_range_responses(Min, Max, [H | T]) when record(H, response) ->
     if
-	Status < Min -> get_range_responses(Min, Max, Rest);
-	Status > Max -> get_range_responses(Min, Max, Rest);
+	H#response.status < Min -> get_range_responses(Min, Max, T);
+	H#response.status > Max -> get_range_responses(Min, Max, T);
 	true ->
-	    lists:append([{Status, Reason, Header, Body}], get_range_responses(Min, Max, Rest))
+	    lists:append([H], get_range_responses(Min, Max, T))
     end.

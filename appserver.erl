@@ -32,8 +32,7 @@ init() ->
 %%
 request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "REGISTER" ->
     logger:log(normal, "Appserver: ~s Method not applicable here -> 403 Forbidden", [LogStr]),
-    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
-    transactionlayer:send_response_request(CompatRequest, 403, "Forbidden");
+    transactionlayer:send_response_request(Request, 403, "Forbidden");
 
 %%
 %% ACK
@@ -47,24 +46,22 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
-	    transportlayer:send_proxy_request(none, CompatRequest, Request#request.uri, [])
+	    transportlayer:send_proxy_request(none, Request, Request#request.uri, [])
     end;
 
 %%
 %% CANCEL
 %%
 request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "CANCEL" ->
-    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, " ++
 		       "answer 481 Call/Transaction Does Not Exist", [LogStr]),
-	    transactionlayer:send_response_request(CompatRequest, 481, "Call/Transaction Does Not Exist");
+	    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist");
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:send_proxy_request(none, CompatRequest, Request#request.uri, [])
+	    transportlayer:send_proxy_request(none, Request, Request#request.uri, [])
     end;
 
 %%
@@ -85,20 +82,18 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
     %% RFC 3261 16.7 says we MUST act like a stateless proxy when no
     %% transaction can be found
-    CompatResponse = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
-    Status = Response#response.status,
-    Reason = Response#response.reason,
-    case transactionlayer:get_server_handler_for_stateless_response(CompatResponse) of
+    {Status, Reason} = {Response#response.status, Response#response.reason},
+    case transactionlayer:get_server_handler_for_stateless_response(Response) of
 	{error, E} ->
 	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
 	    logger:log(normal, "Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
-	    transportlayer:send_proxy_response(none, CompatResponse);
+	    transportlayer:send_proxy_response(none, Response);
 	none ->
 	    logger:log(normal, "Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
-	    transportlayer:send_proxy_response(none, CompatResponse);
+	    transportlayer:send_proxy_response(none, Response);
 	TH ->
 	    logger:log(debug, "Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
-	    transactionlayer:send_proxy_response_handler(TH, CompatResponse)
+	    transactionlayer:send_proxy_response_handler(TH, Response)
     end.
 
 
@@ -109,7 +104,6 @@ response(Response, Origin, LogStr) when record(Response, response), record(Origi
 
 create_session(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
     %% create header suitable for answering the incoming request
-    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
     URI = Request#request.uri,
     case keylist:fetch("Route", Request#request.header) of
 	[] ->
@@ -119,16 +113,16 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 			none ->
 			    logger:log(normal, "Appserver: ~s -> 404 Not Found (no actions, unknown user)",
 				       [LogStr]),
-			    transactionlayer:send_response_request(CompatRequest, 404, "Not Found");
+			    transactionlayer:send_response_request(Request, 404, "Not Found");
 			SIPuser ->
 			    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
 				       [LogStr, SIPuser]),
-			    THandler = transactionlayer:get_handler_for_request(CompatRequest),
-			    transportlayer:send_proxy_request(THandler, CompatRequest, URI, [])
+			    THandler = transactionlayer:get_handler_for_request(Request),
+			    transportlayer:send_proxy_request(THandler, Request, URI, [])
 		    end;
 		{Users, Actions} ->
 		    logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
-		    case transactionlayer:adopt_server_transaction(CompatRequest) of
+		    case transactionlayer:adopt_server_transaction(Request) of
 			{error, E} ->
 			    logger:log(error, "Appserver: Failed to adopt server transaction for request ~s ~s : ~p",
 				       [Request#request.method, sipurl:print(URI), E]),
@@ -141,9 +135,7 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 				    throw({siperror, 500, "Server Internal Error"});
 				Index when integer(Index) ->
 				    BranchBase = string:substr(CallBranch, 1, Index - 1),
-				    Socket = Origin#siporigin.sipsocket,
-				    FromIP = Origin#siporigin.addr,
-				    fork_actions(BranchBase, CallBranch, CallHandler, CompatRequest, Socket, FromIP, Actions)
+				    fork_actions(BranchBase, CallBranch, CallHandler, Request, Actions)
 			    end
 		    end
 	    end;
@@ -151,13 +143,12 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 	    logger:log(debug, "Appserver: Request ~s ~s has Route header. Forwarding statelessly.",
 		       [Request#request.method, sipurl:print(URI)]),
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
-	    THandler = transactionlayer:get_handler_for_request(CompatRequest),
-	    transportlayer:send_proxy_request(THandler, CompatRequest, URI, [])
+	    THandler = transactionlayer:get_handler_for_request(Request),
+	    transportlayer:send_proxy_request(THandler, Request, URI, [])
     end.
 
-get_actions(URI) ->
-    {User, Pass, Host, Port, Parameters} = URI,
-    LookupURL = {User, none, Host, none, []},
+get_actions(URI) when record(URI, sipurl) ->
+    LookupURL = URI#sipurl{pass=none, port=none, param=[]},
     case local:get_users_for_url(LookupURL) of
 	nomatch ->
 	    nomatch;
@@ -229,14 +220,17 @@ locations_to_actions(L) ->
 
 locations_to_actions2([], Res) ->
     Res;
-locations_to_actions2([{Location, Flags, Class, Expire} | T], Res) ->
+locations_to_actions2([{Location, Flags, Class, Expire} | T], Res) when record(Location, sipurl) ->
     Timeout = sipserver:get_env(appserver_call_timeout, 40),
     CallAction = #sipproxy_action{action=call, requri=Location, timeout=Timeout},
-    locations_to_actions2(T, lists:append([CallAction], Res)).
+    locations_to_actions2(T, lists:append([CallAction], Res));
+locations_to_actions2([H | T], Res) ->
+    logger:log(error, "appserver: Illegal location in locations_to_actions2: ~p", [H]),
+    locations_to_actions2(T, Res).
 
-fork_actions(BranchBase, CallBranch, CallHandler, Request, Socket, FromIP, Actions) ->
-    {Method, URI, OrigHeader, _} = Request,
-    ForkPid = sipserver:safe_spawn(fun start_actions/6, [BranchBase, self(), Request, Socket, FromIP, Actions]),
+fork_actions(BranchBase, CallBranch, CallHandler, Request, Actions) when record(Request, request) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    ForkPid = sipserver:safe_spawn(fun start_actions/4, [BranchBase, self(), Request, Actions]),
     logger:log(normal, "~s: Appserver: Forking request, ~p actions",
 	       [BranchBase, length(Actions)]),
     logger:log(debug, "Appserver: Starting up call, glue process ~p, CallHandler ~p, ForkPid ~p",
@@ -246,15 +240,19 @@ fork_actions(BranchBase, CallBranch, CallHandler, Request, Socket, FromIP, Actio
     logger:log(normal, "Appserver glue: Finished with call (~s ~s), exiting.", [Method, sipurl:print(URI)]),
     ok.
 
-start_actions(BranchBase, GluePid, OrigRequest, Socket, FromIP, Actions) ->
-    {Method, URI, OrigHeader, _} = OrigRequest,
+start_actions(BranchBase, GluePid, OrigRequest, Actions) when record(OrigRequest, request) ->
+    {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
     Timeout = 32,
     %% We don't return from fork() until all Actions are done, and fork() signals GluePid
     %% when it is done.
-    sipproxy:fork(BranchBase, GluePid, OrigRequest, Actions, Timeout),
-    logger:log(debug, "Appserver glue: fork() of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
-    true.
-
+    case sipproxy:start(BranchBase, GluePid, OrigRequest, Actions, Timeout) of
+	ok ->
+	    logger:log(debug, "Appserver forker : sipproxy fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
+	    true;
+	{error, What} ->
+	    logger:log(error, "Appserver forker : sipproxy fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What]), 
+	    transactionlayer:send_response_request(OrigRequest, 500, "Server Internal Error")
+    end.
 
 %% Receive messages from branch pids and do whatever is necessary with them
 process_messages(State) when record(State, state), State#state.callhandler == none, State#state.forkpid == none -> 
@@ -267,12 +265,13 @@ process_messages(State) when record(State, state) ->
 
     {Res, NewState} = receive
 
-			  {sipproxy_response, ForkPid, Branch, Response} ->
+			  {sipproxy_response, ForkPid, Branch, Response} when record(Response, response) ->
 			      NewState1 = handle_sipproxy_response(Response, State),
 			      {ok, NewState1};
 
 			  {servertransaction_cancelled, CallHandlerPid} ->
-			      logger:log(debug, "Appserver glue: Original request has been cancelled, sending 'cancel_pending' to ForkPid ~p and entering state 'cancelled'",
+			      logger:log(debug, "Appserver glue: Original request has been cancelled, sending " ++
+					 "'cancel_pending' to ForkPid ~p and entering state 'cancelled'",
 					 [ForkPid]),
 			      util:safe_signal("Appserver: ", ForkPid, {cancel_pending}),
 			      NewState1 = State#state{cancelled=true},
@@ -288,16 +287,16 @@ process_messages(State) when record(State, state) ->
 						  State#state{completed=true};
 					      _ ->
 						  case FinalResponse of
-						      {Status, Reason, _, _} ->
+						      _ when record(FinalResponse, response) ->
 							  logger:log(debug, "Appserver glue: received all_terminated with a ~p ~s response (completed: ~p)",
-								     [Status, Reason, State#state.completed]),
+								     [FinalResponse#response.status, FinalResponse#response.reason, State#state.completed]),
 							  NewState2 = handle_sipproxy_response(FinalResponse, State),
 							  NewState2;
 						      {Status, Reason} ->
-							  logger:log(debug, "Appserver glue: received all_terminated - asking CallHandler ~p to answer ~p ~s",
-								     [CallHandler, Status, Reason]),
+							  logger:log(debug, "Appserver glue: received all_terminated - asking CallHandler ~p " ++
+								     "to answer ~p ~s", [CallHandler, Status, Reason]),
 							  transactionlayer:send_response_handler(CallHandler, Status, Reason),
-						% XXX check that this is really a final response?
+							  %% XXX check that this is really a final response?
 							  State#state{completed=true};
 						      none ->
 							  logger:log(debug, "Appserver glue: received all_terminated with no final answer"),
@@ -316,7 +315,8 @@ process_messages(State) when record(State, state) ->
 					      _ ->
 						  case State#state.completed of
 						      false ->
-							  {Method, URI, _, _} = State#state.request,
+							  Request = State#state.request,
+							  {Method, URI} = {Request#request.method, Request#request.uri},
 							  logger:log(debug, "Appserver glue: received no_more_actions when NOT cancelled (and not completed), " ++
 								     "responding 408 Request Timeout to original request ~s ~s",
 								     [Method, sipurl:print(URI)]),
@@ -378,9 +378,13 @@ process_messages(State) when record(State, state) ->
 	    process_messages(NewState)
     end.    
 
-handle_sipproxy_response(Response, State) when record(State, state), State#state.sipmethod == "INVITE", State#state.completed == true ->
-    {Method, URI, _, _} = State#state.request,
-    {Status, Reason, _, _} = Response,
+%%
+%% Method is INVITE and we are already completed
+%%
+handle_sipproxy_response(Response, State) when record(Response, response), record(State, state), State#state.sipmethod == "INVITE", State#state.completed == true ->
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     if
 	Status >= 200, Status =< 299 ->
 	    %% XXX change to debug level
@@ -393,16 +397,24 @@ handle_sipproxy_response(Response, State) when record(State, state), State#state
 		       [Status, Reason, sipurl:print(URI)])
     end,
     State;
-handle_sipproxy_response(Response, State) when record(State, state), State#state.completed == true ->
-    {Method, URI, _, _} = State#state.request,
-    {Status, Reason, _, _} = Response,
+%%
+%% Method is non-INVITE and we are already completed
+%%
+handle_sipproxy_response(Response, State) when record(Response, response), record(State, state), State#state.completed == true ->
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(error, "Appserver glue: NOT forwarding response ~p ~s to non-INVITE request ~s ~s - " ++
 	       "a final response has already been forwarded (sipproxy should not do this!)",
 	       [Status, Reason, Method, sipurl:print(URI)]),
     State;
-handle_sipproxy_response(Response, State) when record(State, state) ->
-    {Method, URI, _, _} = State#state.request,
-    {Status, Reason, _, _} = Response,
+%%
+%% We are not yet completed
+%%
+handle_sipproxy_response(Response, State) when record(Response, response), record(State, state) ->
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     CallHandler = State#state.callhandler,
     logger:log(debug, "Appserver glue: Forwarding response ~p ~s to ~s ~s to CallHandler ~p",
 	       [Status, Reason, Method, sipurl:print(URI), CallHandler]),

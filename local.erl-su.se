@@ -54,9 +54,8 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
-url2mnesia_userlist(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    [User ++ "@" ++ Host].
+url2mnesia_userlist(URL) when record(URL, sipurl) ->
+    [URL#sipurl.user ++ "@" ++ URL#sipurl.host].
 
 % Turn a SIP username into an address which can be reached from anywhere.
 % Used for example from the Mnesia userdb-module. It should be possible
@@ -100,8 +99,8 @@ canonify_numberlist([Number | Rest]) ->
 % This function looks up the telephone number of the user in LDAP and
 % if a telephone number is found, looks it up using lookuppotn() which
 % first looks in ENUM and secondly looks for a PSTN gateway for the number
-lookup_homedomain_url(URL) ->
-    {User, _, Host, _, _} = URL,
+lookup_homedomain_url(URL) when record(URL, sipurl) ->
+    {User, Host} = {URL#sipurl.user, URL#sipurl.host},
     Mail = User ++ "@" ++ Host,
     Loc1 = mail2tel(Mail),
     logger:log(debug, "Local routing: mail2tel ~p -> ~p", [Mail, Loc1]),
@@ -109,11 +108,8 @@ lookup_homedomain_url(URL) ->
 	["+" ++ E164] ->
 	    Loc2 = lookuppotn("+" ++ E164),
 	    case Loc2 of
-	        {proxy, Dst1} ->
-	            {NUser, _, NHost, _, _} = Dst1,
-	            NewMail = NUser ++ "@" ++ NHost,
-		    logger:log(debug, "Local routing: loop check ~p and ~p", [NewMail, Mail]),
-		    case util:casecompare(Mail, NewMail) of
+	        {proxy, Dst1} when record(Dst1, sipurl) ->
+		    case sipurl:url_is_equal(URL, Dst1, [user, host]) of
 			true ->
 			    logger:log(debug, "Routing: POTN lookup resulted in what I started with, going for PSTN instead"),
 			    lookuppstn("+" ++ E164);
@@ -222,7 +218,7 @@ format_number_for_remote_party_id(Number, ToURI, DstHost) ->
 get_remote_party_name(Key, DstHost) ->
     case rewrite_potn_to_e164(Key) of
 	"+" ++ E164 ->
-	    lookup:get_remote_party_name("+" ++ E164, Key);
+	    lookup:get_remote_party_name("+" ++ E164, DstHost);
 	_ -> none
     end.
 
@@ -266,6 +262,10 @@ get_classes_for_user("ft.sip1") ->
     [national,mobile,internal];
 get_classes_for_user("ft.sip2") ->
     [national,mobile,internal];
+get_classes_for_user("jj@it.su.se") ->
+    [national,mobile,internal];
+get_classes_for_user("lfran@it.su.se") ->
+    [national,mobile,internal];
 get_classes_for_user("wisin.sip1") ->
     [national,mobile,internal,international];
 get_classes_for_user("lha@it.su.se") ->
@@ -285,6 +285,8 @@ get_classes_for_user("franb@it.su.se") ->
 get_classes_for_user("rjons@it.su.se") ->
     [national,mobile,internal];
 get_classes_for_user("leifj@it.su.se") ->
+    [national,mobile,internal];
+get_classes_for_user("leifj.sip1@it.su.se") ->
     [national,mobile,internal];
 get_classes_for_user("max@it.su.se") ->
     [national,mobile,internal];
@@ -348,7 +350,7 @@ is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
 % incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
-incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, siporigin) ->
+incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, siporigin), record(Request, request) ->
     true.
 
 % sippipe hooks

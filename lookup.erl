@@ -20,6 +20,7 @@
 	]).
 
 -include("database_regexproute.hrl").
+-include("siprecords.hrl").
 
 lookupregexproute(User) ->
     {atomic, Routes} = database_regexproute:list(),
@@ -47,7 +48,7 @@ lookupregexproute(User) ->
 	    {proxy, sipurl:parse(Result)}
     end.
 
-lookupuser(URL) ->
+lookupuser(URL) when record(URL, sipurl) ->
     case local:lookup_url_to_locations(URL) of
 	nomatch ->
 	    % User does not exist in any of our databases.
@@ -78,7 +79,7 @@ lookupuser(URL) ->
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
-lookup_url_to_locations(URL) ->
+lookup_url_to_locations(URL) when record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
 	nomatch ->
 	    nomatch;
@@ -91,8 +92,8 @@ lookup_url_to_locations(URL) ->
 	    throw({siperror, 500, "Server Internal Error"})
     end.
     
-lookup_url_to_addresses(sipuserdb_mnesia, URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
+lookup_url_to_addresses(sipuserdb_mnesia, URL) when record(URL, sipurl) ->
+    User = URL#sipurl.user,
     % sipuserdb_mnesia is extra liberal with usernames
     Standard = lookup_url_to_addresses(lookup, URL),
     Addr1 = local:url2mnesia_userlist(URL),
@@ -101,12 +102,11 @@ lookup_url_to_addresses(sipuserdb_mnesia, URL) ->
 	_ -> []
     end,	
     lists:append([Standard, Addr1, Addr2]);
-lookup_url_to_addresses(Src, URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
+lookup_url_to_addresses(Src, URL) when record(URL, sipurl) ->
     % Make a list of all possible addresses we
     % can create out of this URL
-    Tel = local:canonify_numberlist([User]),
-    lists:append([sipurl:print({User, none, Host, none, []})], Tel).
+    Tel = local:canonify_numberlist([URL#sipurl.user]),
+    lists:append([sipurl:print(URL#sipurl{pass=none, port=none, param=[]})], Tel).
 
 lookup_addresses_to_users(Addresses) ->
     case local:get_users_for_addresses_of_record(Addresses) of
@@ -141,22 +141,25 @@ lookup_address_to_users(Address) ->
     end.
 
 lookupappserver(Key) ->
-    AppServer = sipserver:get_env(appserver, none),
-    case AppServer of
+    case sipserver:get_env(appserver, none) of
 	none ->
-	    logger:log(debug, "Lookup: More than one location is registered for user ~p, but no appserver configured! Returning 480 Temporarily Unavailable.",
+	    logger:log(debug, "Lookup: Requested to provide appserver for ~p, but no appserver configured! Returning 480 Temporarily Unavailable.",
 			[Key]),
 	    {response, 480, "Temporarily Unavailable"};
-	_ ->
-	    {Host, Port} = sipurl:parse_hostport(AppServer),
-	    {forward, Host, Port}
+	AppServer ->
+	    case sipurl:parse_url_with_default_protocol("sip", AppServer) of
+		URL when record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
+		    {forward, URL};
+		_ ->
+		    logger:log(error, "Failed parsing configured appserver ~p", [AppServer]),
+		    {response, 500, "Server Internal Error"}
+	    end
     end.
 
-lookupdefault(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    case homedomain(Host) of
+lookupdefault(URL) when record(URL, sipurl) ->
+    case homedomain(URL#sipurl.host) of
 	true ->
-	    logger:log(debug, "Lookup: Cannot default-route request to a local domain (~s), aborting", [Host]),
+	    logger:log(debug, "Lookup: Cannot default-route request to a local domain (~s), aborting", [URL#sipurl.host]),
 	    none;
         _ ->
 	    DefaultRoute = sipserver:get_env(defaultroute, none),
@@ -166,11 +169,11 @@ lookupdefault(URL) ->
 		    {response, 500, "Can't route request"};	%% XXX is 500 the correct error-code?
 		Hostname ->
 		    {Host, Port} = sipurl:parse_hostport(Hostname),
-		    NewURI = {User, none, Host, Port, []},
+		    NewURI = #sipurl{user=URL#sipurl.user, pass=none, host=Host, port=Port, param=[]},
 		    logger:log(debug, "Lookup: Default-routing to ~s", [sipurl:print(NewURI)]),
 		    %% XXX we should preserve the Request-URI by proxying this as a loose router.
 		    %% It is almost useless to only preserve the User-info IMO. We can do this
-		    %% by returning {forward, Host, Port} instead.
+		    %% by returning {forward, Proto, Host, Port} instead.
 		    {proxy, NewURI}
 	    end
     end.
@@ -229,8 +232,10 @@ lookupenum("+" ++ E164) ->
     case dnsutil:enumlookup("+" ++ E164) of
 	none ->
 	    none;
-	URL ->
-	    {E164User, _, E164Host, _, _} = sipurl:parse(URL),
+	URLstr ->
+	    URL = sipurl:parse(URLstr),
+	    E164User = URL#sipurl.user,
+	    E164Host = URL#sipurl.host,
 	    IsMe = homedomain(E164Host),
 	    %% Try to rewrite the userpart of the returned URL into a E164 number
 	    %% to make sure it is not a loop back to this proxy. If it is a remote
@@ -245,17 +250,17 @@ lookupenum("+" ++ E164) ->
 	    if
 		IsMe /= true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying", [URL]),
-		    {relay, sipurl:parse(URL)};
+		    {relay, URL};
 		NewE164 == error ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain but not E.164 URL ~p, proxying", [URL]),
-		    {proxy, sipurl:parse(URL)};
+		    {proxy, URL};
 		SameE164 == true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain (~p) and the same E.164 number (~p == ~p), avoiding loop",
 			       [E164Host, E164User, "+" ++ E164]),
 		    none;
 		true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in homedomain E.164 URL ~p, proxying", [URL]),
-		    {proxy, sipurl:parse(URL)}
+		    {proxy, URL}
 	    end
     end;
 lookupenum(Number) ->
@@ -286,7 +291,7 @@ lookuppstn("+" ++ E164) ->
 		    none;
 		PSTN ->
 		    logger:log(debug, "Rewrite: ~s to PSTN URL ~p", ["+" ++ E164, PSTN]),
-		    case parse_url_with_default_protocol("sip", PSTN) of
+		    case sipurl:parse_url_with_default_protocol("sip", PSTN) of
 			error ->
 			    logger:log(error, "Lookup: Failed parsing result of rewrite ~p using 'e164_to_pstn'",
 				       ["+" ++ E164]),
@@ -335,11 +340,10 @@ lookupnumber(Number) ->
 		    error;
 		Res when list(Res) ->
 		    %% Check to see if what we got is a parseable URL
-		    URL = parse_url_with_default_protocol("sip", Res),
-		    case URL of
-			{_, _, Host, _, _} ->
+		    case sipurl:parse_url_with_default_protocol("sip", Res) of
+			URL when record(URL, sipurl) ->
 			    %% Check if it is a local URL or a remote
-			    case homedomain(Host) of
+			    case homedomain(URL#sipurl.host) of
 				true ->
 				    {proxy, URL};
 				_ ->
@@ -393,7 +397,7 @@ rewrite_potn_to_e164(Number) when list(Number) ->
 rewrite_potn_to_e164(_) ->
     error.
 
-isours(URL) ->
+isours(URL) when record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
 	[] ->
 	    logger:log(debug, "Lookup: isours ~s -> false", [sipurl:print(URL)]),
@@ -420,7 +424,7 @@ homedomain(Domain) ->
 	    util:casegrep(Domain, HostnameList)
     end.
 
-get_remote_party_number(URL, DstHost) ->
+get_remote_party_number(URL, DstHost) when record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
 	[User] ->
 	    case local:get_telephonenumber_for_user(User) of
@@ -452,7 +456,7 @@ get_remote_party_number(URL, DstHost) ->
 	    none
     end.
 
-format_number_for_remote_party_id(Number, ToURI, DstHost) ->
+format_number_for_remote_party_id(Number, ToURI, DstHost) when record(ToURI, sipurl) ->
     case rewrite_potn_to_e164(Number) of
 	error ->
 	    none;
@@ -460,7 +464,7 @@ format_number_for_remote_party_id(Number, ToURI, DstHost) ->
 	    Res
     end.
 
-get_remote_party_name(Key, URI) when list(Key) ->
+get_remote_party_name(Key, URI) when list(Key), record(URI, sipurl) ->
     case directory:lookup_tel2name(Key) of
 	none ->
 	    none;
@@ -472,7 +476,7 @@ get_remote_party_name(Key, URI) when list(Key) ->
 	    none
     end;
 get_remote_party_name(Key, URI) ->
-    logger:log(error, "Lookup: Could not get remote party name for non-list argument ~p", [Key]),
+    logger:log(error, "Lookup: Could not get remote party name for non-list argument ~p or non-URL argument ~p", [Key, URI]),
     none.
 
 
@@ -480,36 +484,3 @@ get_remote_party_name(Key, URI) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-%% In some places, we allow lookups to result in URL strings without
-%% protocol. First try to parse them as-is, and if that does not work
-%% then make sure there is no protocol specified that we apparently
-%% do not handle, and if not then prepend them with Proto: and try again.
-parse_url_with_default_protocol(Proto, URLstr) ->
-    URL1 = sipurl:parse(URLstr),
-    case URL1 of
-	{_, _, _, _, _} ->
-	    URL1;
-	_ ->
-	    case string:chr(URLstr, $@) of
-		0 ->
-		    error;
-		AtIndex ->
-		    %% There is an at-sign in there
-		    UserPart = string:substr(URLstr, 1, AtIndex - 1),
-		    case string:chr(UserPart, $:) of
-			0 ->
-			    %% There is no colon in the userpart of URLstr, try with our default protocol
-			    URL2 = sipurl:parse(Proto ++ ":" ++ URLstr),
-			    case URL2 of
-				{_, _, _, _, _} ->
-				    URL2;
-				_ ->
-				    error
-			    end;
-			_ ->
-			    %% There is already a protocol in URLstr, but apparently not one
-			    %% that sipurl:parse() can handle.
-			    error
-		    end
-	    end
-    end.
