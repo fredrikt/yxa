@@ -229,12 +229,22 @@ cseq([String]) ->
 cseq_print({Seq, Method}) ->
     Seq ++ " " ++ Method.
 
-print_one_header(Name, Value) ->
-    Name ++ ": " ++ util:join(Value, ",").
+print_one_header(_, _, []) ->
+    [];
+print_one_header(Name, LCName, [Value | Rest]) ->
+    case util:casegrep(Name, ["Allow", "Supported", "Require",
+			      "Proxy-Require"]) of
+	true ->
+	    [Name ++ ": " ++ util:join(lists:append([Value], Rest), ", ")];
+	_ ->
+	    lists:append([Name ++ ": " ++ Value], print_one_header(Name, LCName, Rest))
+    end.
 
 build_header(Header) ->
-    Lines = keylist:map(fun print_one_header/2, Header),
-    util:concat(Lines, "\r\n").
+    Lines = keylist:map(fun print_one_header/3, Header),
+    lists:map(fun(H) ->
+			util:concat(H, "\r\n")
+		end, Lines).
 
 get_tag([String]) ->
     Index = string:chr(String, $>),
