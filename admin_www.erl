@@ -365,6 +365,10 @@ list_numbers(Env, Input) ->
 	    Message;
 	{ok} ->
 	    {atomic, List} = phone:list_numbers(),
+	    {atomic, PhoneList} = phone:list_phones(),
+	    List2 = lists:map(fun (Elem) ->
+					  #numbers{number = Elem#phone.number, user="*"}
+				  end, PhoneList),
 	    [header(ok),
 	     "<h1>Alla allokerade nummer</h1>\n",
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
@@ -376,7 +380,7 @@ list_numbers(Env, Input) ->
 						       true ->
 							   false
 						   end
-					   end, List)),
+					   end, lists:append(List, List2))),
 	     "</table>\n",
 	     indexurl_html()
 	    ]
