@@ -43,8 +43,10 @@ start(ConfigFile) ->
     sleep().
 
 sleep() ->
-    timer:sleep(1000000),
-    sleep().
+    receive
+	adminwww_exit ->
+	    ok
+    end.
 
 username_to_uid("*") ->
     "&nbsp;";
@@ -569,7 +571,6 @@ add_user(Env, Input) ->
 	    end
     end.
 
-%% XXX appears to be unused
 add_route(Env, Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
@@ -579,9 +580,6 @@ add_route(Env, Input) ->
 	    Numberfind = dict:find("number", Args),
 	    Priorityfind = dict:find("priority", Args),
 	    Addressfind = dict:find("address", Args),
-	    %% XXX These two lines are untested
-	    CallId = dict:find("call-id", Args),
-	    CSeq = list_to_integer(dict:find("cseq", Args)),
 	    case {Numberfind, Priorityfind, Addressfind} of
 		{error, _, _} ->
 		    [header(ok), "Du m&aring;ste ange ett nummer"];
@@ -590,14 +588,18 @@ add_route(Env, Input) ->
 		{_, _, error} ->
 		    [header(ok), "Du m&aring;ste ange en adress"];
 		{{ok, Number}, {ok, Priority}, {ok, ">" ++ Errorcode}} ->
+		    %% Insert permanent entry in location database with address {error, Status}
+		    %% to cause us to respond with a specific SIP error-code for requests to
+		    %% this address. Code to do this is present in incomingproxy:do_request()
+		    %% but I have no idea if it actually works - ft
 		    phone:insert_purge_phone(Number,
 					     [{priority,
 					       list_to_integer(Priority)}],
 					     permanent,
 					     never,
 					     {error, list_to_integer(Errorcode)},
-					     CallId,
-					     CSeq),
+					     "",
+					     0),
 		    [header(redirect, phonesurl())];
 		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
 		    phone:insert_purge_phone(Number,
@@ -606,8 +608,8 @@ add_route(Env, Input) ->
 					     permanent,
 					     never,
 					     sipurl:parse(Address),
-					     CallId,
-					     CSeq),
+					     "",
+					     0),
 		    [header(redirect, phonesurl())]
 	    end
     end.
