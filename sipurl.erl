@@ -3,14 +3,13 @@
 
 parse("sip:" ++ URL) ->
 %    logger:log(debug, "url: ~p", [URL]),
-    case string:tokens(URL, "@") of
-	[Userinfo, Rest] ->
-	    [Hostport | Parameters ] = string:tokens(Rest, ";"),
+    [Rest | Parameters ] = string:tokens(URL, ";"),
+    case string:tokens(Rest, "@") of
+	[Userinfo, Hostport] ->
 	    {User, Pass} = parse_userinfo(Userinfo),
 	    {Host, Port} = parse_hostport(Hostport),
 	    {User, Pass, Host, Port, Parameters};
-	[Rest] ->
-	    [Hostport | Parameters ] = string:tokens(Rest, ";"),
+	[Hostport] ->
 	    {Host, Port} = parse_hostport(Hostport),
 	    {none, none, Host, Port, Parameters}
     end.
