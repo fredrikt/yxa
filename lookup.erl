@@ -1,9 +1,22 @@
 -module(lookup).
--export([lookupregexproute/1, lookupuser/1, lookupdefault/1, lookuppotn/1,
-	 lookupenum/1, lookuppstn/1, isours/1, homedomain/1,
-	 lookupappserver/1, rewrite_potn_to_e164/1,
-	 get_remote_party_number/3, format_number_for_remote_party_id/3,
-	 get_remote_party_name/2]).
+-export([lookupregexproute/1,
+	 lookupuser/1,
+	 lookup_url_to_locations/1,
+	 lookup_url_to_addresses/2,
+	 lookup_addresses_to_users/1,
+	 lookup_address_to_users/1,
+	 lookupdefault/1,
+	 lookuppotn/1,
+	 lookupenum/1,
+	 lookuppstn/1,
+	 isours/1,
+	 homedomain/1,
+	 lookupappserver/1,
+	 rewrite_potn_to_e164/1,
+	 get_remote_party_number/2,
+	 format_number_for_remote_party_id/3,
+	 get_remote_party_name/2
+	]).
 
 -include("database_regexproute.hrl").
 
@@ -34,48 +47,103 @@ lookupregexproute(User) ->
     end.
 
 lookupuser(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    Key = local:sipuser(URL),
-    Loc1 = lookupaddress(Key),
-    case Loc1 of
-	none ->
-	    case util:isnumeric(User) of
-		true ->
-		    lookupaddress(User);
-		_ ->
-		    none
-	    end;
-	Loc1 ->
-	    Loc1
-    end.
-    
-lookupaddress(Key) ->
-    case phone:get_phone(Key) of
-	{atomic, []} ->
-	    Loc = lookupregexproute(Key),
-	    logger:log(debug, "Lookup: Address lookup of ~p -> ~p", [Key, Loc]),
-	    Loc;
-	{atomic, Locations} ->
-	    BestLocations = local:prioritize_locations(Key, Locations),
-	    logger:log(debug, "Lookup: Best location(s) of ~p :~n~p", [Key, siplocation:debugfriendly_locations(BestLocations)]),
+    case local:lookup_url_to_locations(URL) of
+	nomatch ->
+	    % User does not exist in any of our databases.
+	    nomatch;
+	Locations when list(Locations) ->
 	    % check if more than one location was found.
-	    case BestLocations of
+	    case Locations of
 	        [] ->
-		    none;
+		    % User exists but has no currently known locations
+		    case local:lookupregexproute(sipurl:print(URL)) of
+			none ->
+			    logger:log(debug, "Lookup: No locations found for URL ~p, and no matching regexp rules.", [sipurl:print(URL)]),
+			    none;
+			Loc ->
+			    logger:log(debug, "Lookup: Regexp-route lookup of ~p -> ~p", [sipurl:print(URL), Loc]),
+		            Loc
+		    end;
 		[{BestLocation, _, _, _}] ->
 		    {proxy, BestLocation};
-		 _ ->
-		    % More than one location registered for this user, check for appserver...
+		_ ->
+		    % More than one location registered for this address, check for appserver...
 		    % (appserver is the program that handles forking of requests)
-		    local:lookupappserver(Key)
-	    end
+		    local:lookupappserver(URL)
+	    end;
+	Unknown ->
+	    logger:log(error, "Lookup: Unknown result from local:lookup_url_to_locations() of URL ~p in lookupuser : ~n~p",
+			[sipurl:print(URL), Unknown]),
+	    throw({siperror, 500, "Server Internal Error"})
+    end.
+
+lookup_url_to_locations(URL) ->
+    case local:get_users_for_url(URL) of
+	nomatch ->
+	    nomatch;
+	Users when list(Users) ->
+	    Locations = local:get_locations_for_users(Users),
+	    local:prioritize_locations([Users], Locations);
+	Unknown ->
+	    logger:log(error, "Lookup: Unknown result from local:get_users_for_url() in lookup_url_to_locations: ~p",
+			[Unknown]),
+	    throw({siperror, 500, "Server Internal Error"})
+    end.
+    
+lookup_url_to_addresses(sipuserdb_mnesia, URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    % sipuserdb_mnesia is extra liberal with usernames
+    Standard = lookup_url_to_addresses(lookup, URL),
+    Addr1 = local:url2mnesia_userlist(URL),
+    Addr2 = case util:isnumeric(User) of
+	true -> [User];
+	_ -> []
+    end,	
+    lists:append([Standard, Addr1, Addr2]);
+lookup_url_to_addresses(Src, URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    % Make a list of all possible addresses we
+    % can create out of this URL
+    Tel = local:canonify_numberlist([User]),
+    lists:append([sipurl:print({User, none, Host, none, []})], Tel).
+
+lookup_addresses_to_users(Addresses) ->
+    case local:get_users_for_addresses_of_record(Addresses) of
+	[] ->
+	    [];
+	nomatch ->
+	    [];
+	Users when list(Users) ->
+	    Res = lists:sort(Users),
+	    logger:log(debug, "Lookup: Addresses ~p belongs to one or more users : ~p", [Addresses, Res]),
+	    Res;
+	Unknown ->
+	    logger:log(error, "Lookup: lookup_addresses_to_users: unknown result from local:get_users_for_addresses_of_record(~p) : ~p",
+	    		[Addresses, Unknown]),
+	    []
+    end.
+
+lookup_address_to_users(Address) ->
+    case local:get_users_for_address_of_record(Address) of
+	[] ->
+	    [];
+	nomatch ->
+	    [];
+	Users when list(Users) ->
+	    Res = lists:sort(Users),
+	    logger:log(debug, "Lookup: Address ~p belongs to one or more users : ~p", [Address, Res]),
+	    Res;
+	Unknown ->
+	    logger:log(error, "Lookup: lookup_address_to_users: unknown result from local:get_users_for_address_of_record(~p) : ~p",
+	    		[Address, Unknown]),
+	    []
     end.
 
 lookupappserver(Key) ->
     AppServer = sipserver:get_env(appserver, none),
     case AppServer of
 	none ->
-	    logger:log(debug, "Lookup: More than one location is registered for user ~p, but no appserver configured! Aborting.",
+	    logger:log(debug, "Lookup: More than one location is registered for user ~p, but no appserver configured! Returning 480 Temporarily Unavailable.",
 			[Key]),
 	    {response, 480, "Temporarily Unavailable"};
 	_ ->
@@ -87,7 +155,7 @@ lookupdefault(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     case homedomain(Host) of
 	true ->
-	    logger:log(debug, "Lookup: Cannot default-route to a local domain (~s), aborting", [Host]),
+	    logger:log(debug, "Lookup: Cannot default-route request to a local domain (~s), aborting", [Host]),
 	    none;
         _ ->
 	    DefaultRoute = sipserver:get_env(defaultroute, none),
@@ -96,8 +164,13 @@ lookupdefault(URL) ->
 		    logger:log(debug, "Lookup: No default route - dropping request"),
 		    {response, 500, "Can't route request"};	% XXX rätt error-code?
 		Hostname ->
-		    logger:log(debug, "Lookup: Proxying to ~p @ ~p (my defaultroute)", [User, Hostname]),
-		    {proxy, {User, none, Hostname, "5060", []}}
+		    {Host, Port} = sipurl:parse_hostport(Hostname),
+		    NewURI = {User, none, Host, Port, []},
+		    logger:log(debug, "Lookup: Default-routing to ~s", [sipurl:print(NewURI)]),
+		    % XXX we should preserve the Request-URI by proxying this as a loose router.
+		    % It is almost useless to only preserve the User-info IMO. We can do this
+		    % by returning {forward, Host, Port} instead.
+		    {proxy, NewURI}
 	    end
     end.
 
@@ -198,7 +271,7 @@ rewrite_potn_to_e164("+" ++ E164) ->
 	_ ->
 	    none
     end;
-rewrite_potn_to_e164(Number) ->
+rewrite_potn_to_e164(Number) when list(Number) ->
     case util:isnumeric(Number) of
 	true ->
 	    case util:regexp_rewrite(Number, sipserver:get_env(internal_to_e164, [])) of
@@ -209,32 +282,23 @@ rewrite_potn_to_e164(Number) ->
 	    end;
 	_ ->
 	    none
-    end.
-
+    end;
+rewrite_potn_to_e164(_) ->
+    none.
 
 isours(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    Key = local:sipuser(URL),
-    Res = in_userdb(Key),
-    case Res of
-	none ->
-	    case util:isnumeric(User) of
-		true ->
-		    in_userdb(User);
-		_ ->
-		    none
-	    end;
-	_ ->
-	    Res
-    end.
-
-in_userdb(Key) ->
-    case phone:get_users_for_number(Key) of
-	{atomic, []} ->
+    case local:get_users_for_url(URL) of
+	[] ->
+	    logger:log(debug, "Lookup: isours ~s -> false", [sipurl:print(URL)]),
 	    false;
-	{atomic, Foo} ->
+	nomatch ->
+	    logger:log(debug, "Lookup: isours ~s -> false", [sipurl:print(URL)]),
+	    false;
+	Users when list(Users) ->
+	    logger:log(debug, "Lookup: isours ~s -> user(s) ~p", [sipurl:print(URL), Users]),
 	    true;
-	{aborted, _} ->
+	Unknown ->
+	    logger:log(debug, "Lookup: isours ~s -> Unknown result ~p", [sipurl:print(URL), Unknown]),
 	    false
     end.
 
@@ -247,26 +311,44 @@ homedomain(Domain) ->
 	    util:casegrep(Domain, HostnameList)
     end.
 
-get_remote_party_number(Key, URI, DstHost) ->
-    {_, _, Host, _, _} = URI,
-    case phone:get_numbers_for_user(Key) of
-	{atomic, [FirstNumber | _]} ->
-	    Number = local:format_number_for_remote_party_id(FirstNumber, URI, DstHost),
-	    [Addr] = sipheader:contact_print([{none, {Number, none, Host, none, ["user=phone"]}}]),
-	    Addr ++ ";screen=no;privacy=off";
-	_ ->
+get_remote_party_number(URL, DstHost) ->
+    case local:get_users_for_url(URL) of
+	[User] ->
+	    case local:get_telephonenumber_for_user(User) of
+		Number when list(Number) ->
+		    local:format_number_for_remote_party_id(Number, URL, DstHost);
+		nomatch ->
+		    logger:log(debug, "Lookup: No telephone number found for user ~p", [User]),
+		    none;
+		Unknown ->
+		    logger:log(error, "Lookup: Unexpected results from local:get_telephonenumber_for_user() for user ~p in get_remote_party_number: ~p",
+				[User, Unknown]),
+		    none
+	    end;		    	    
+	Users ->
+	    logger:log(debug, "Lookup: Multiple users match address ~p, can't get telephone number",
+			[sipurl:print(URL)]),
+	    none;
+	Unknown ->
+	    logger:log(error, "Lookup: Unexpected results from local:get_users_for_url() for URL ~p in get_remote_party_number: ~p",
+			[sipurl:print(URL), Unknown]),
 	    none
     end.
 
 format_number_for_remote_party_id(Number, ToURI, DstHost) ->
     rewrite_potn_to_e164(Number).
 
-get_remote_party_name(Key, URI) ->
+get_remote_party_name(Key, URI) when list(Key) ->
     case directory:lookup_tel2name(Key) of
 	none ->
 	    none;
-	DisplayName ->
-	    [C] = sipheader:contact_print([{DisplayName, URI}]),
-	    C ++ ";screen=yes;privacy=off"
-    end.
-
+	DisplayName when list(DisplayName) ->
+	    DisplayName;
+	Unknown ->
+	    logger:log(error, "Lookup: Failed to get name for remote party ~p, unexpected result from lookup_tel2name : ~p",
+		    		[Key, Unknown]),
+	    none
+    end;
+get_remote_party_name(Key, URI) ->
+    logger:log(error, "Lookup: Could not get remote party name for non-list argument ~p", [Key]),
+    none.
