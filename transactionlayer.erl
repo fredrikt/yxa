@@ -30,6 +30,7 @@
 	 get_pid_from_handler/1,
 	 send_challenge_request/4,
 	 send_challenge/4,
+	 store_appdata/2,
 	 debug_show_transactions/0
 	]).
 
@@ -38,7 +39,8 @@
 %% invoked from the transport layer).
 %%--------------------------------------------------------------------
 -export([
-	 store_stateless_response_branch/3
+	 store_stateless_response_branch/3,
+	 from_transportlayer/3
 	]).
 
 %%--------------------------------------------------------------------
@@ -46,7 +48,8 @@
 %% invoked from the transaction layer).
 %%--------------------------------------------------------------------
 -export([
-	 store_to_tag/2
+	 store_to_tag/2,
+	 set_result/2
 	]).
 
 %%--------------------------------------------------------------------
@@ -73,7 +76,6 @@
 %%--------------------------------------------------------------------
 %% My State
 -record(state, {
-	  tstatelist,	% The transaction layers list of transactions
 	  appmodule,	% Which Yxa application this is
 	  mode		% stateful | stateless
 	 }).
@@ -87,9 +89,10 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
-%% Wake up every seven seconds to remove expired transactions from
-%% State#state.tstatelist.
+%% Wake up every seven seconds to remove expired transactions
 -define(TIMEOUT, 7 * 1000).
+-define(STORE_TIMEOUT, 2500).
+-define(STATELESS_STORE_TIMEOUT, 1000).
 
 %%====================================================================
 %% External functions
@@ -123,9 +126,9 @@ start_link(AppModule, Mode) ->
 %%--------------------------------------------------------------------
 init([AppModule, Mode]) ->
     process_flag(trap_exit, true),
-    TStateList = transactionstatelist:empty(),
+    transactionstatelist:empty(), %% create ets tables
     logger:log(debug, "Transaction layer started"),
-    {ok, #state{appmodule=AppModule, mode=Mode, tstatelist=TStateList}, ?TIMEOUT}.
+    {ok, #state{appmodule=AppModule, mode=Mode}, ?TIMEOUT}.
 
 
 %%--------------------------------------------------------------------
@@ -139,75 +142,16 @@ init([AppModule, Mode]) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-%%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg     = {sipmessage, Request, Origin, LogStr}
-%%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string()
-%% Descrip.: A SIP request has been received by the transport layer.
-%%           Check to see if we have a matching transaction (i.e.
-%%           this is a resend) or if we need to start a new
-%%           transaction.
-%% Returns : {reply, Reply, State, ?TIMEOUT}       |
-%%           {noreply, State, ?TIMEOUT}
-%%           Reply     = {continue}                |
-%%                       {pass_to_core, AppModule}
-%%           AppModule = atom()
-%%
-%% Notes   : This handle_call() is a bit special in that it might pass
-%%           the From term() on to someone else (an existing server
-%%           transaction), and let that someone else do
-%%           gen_server:reply().
-%%
-%%           See documentation of received_new_request() for info
-%%           about the meaning of Reply.
-%%--------------------------------------------------------------------
-handle_call({sipmessage, Request, Origin, LogStr}, From, State)
-  when is_record(Request, request), is_record(Origin, siporigin) ->
-    AppModule = State#state.appmodule,
-    case get_server_transaction_pid(Request, State#state.tstatelist) of
-	none ->
-	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, State);
-	TPid when is_pid(TPid) ->
-	    gen_server:cast(TPid, {sipmessage, Request, Origin, From, AppModule}),
-	    %% We do noreply here and send AppModule (and gen_server From) on to TPid and let TPid do gen_server:reply()
-	    {noreply, State, ?TIMEOUT}
-    end;
+handle_call({add_server_transaction, Request, STPid, Desc}, _From, State)
+  when is_record(Request, request), is_pid(STPid), is_list(Desc) ->
+    Res = transactionstatelist:add_server_transaction(Request, STPid, Desc),
+    {reply, Res, State, ?TIMEOUT};
 
-%%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg     = {sipmessage, Request, Origin, LogStr}
-%%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string()
-%% Descrip.: A SIP response has been received by the transport layer.
-%%           Check to see if we have a matching transaction (i.e.
-%%           this is a resend) or if we need to start a new
-%%           transaction.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply     = {continue}                |
-%%                       {pass_to_core, AppModule}
-%%           AppModule = atom()
-%%
-%% Notes   : This handle_call() is a bit special in the same way as
-%%           the {sipmessage, Request ...} handle_call() above. See
-%%           it's documentation to understand Reply.
-%%--------------------------------------------------------------------
-handle_call({sipmessage, Response, Origin, LogStr}, _From, State)
-  when is_record(Response, response), is_record(Origin, siporigin) ->
-    AppModule = State#state.appmodule,
-    case get_client_transaction_pid(Response, State#state.tstatelist) of
-	none ->
-	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
-		       [Response#response.status, Response#response.reason, AppModule]),
-	    {reply, {pass_to_core, AppModule}, State, ?TIMEOUT};
-	TPid when is_pid(TPid) ->
-	    logger:log(debug, "Transaction layer: Passing response ~p ~s to registered handler ~p",
-		       [Response#response.status, Response#response.reason, TPid]),
-	    gen_server:cast(TPid, {sipmessage, Response, Origin, LogStr}),
-	    {reply, {continue}, State, ?TIMEOUT}
-    end;
+
+handle_call({add_client_transaction, Method, Branch, CTPid, Desc}, _From, State)
+  when is_list(Method), is_list(Branch), is_pid(CTPid), is_list(Desc) ->
+    Res = transactionstatelist:add_client_transaction(Method, Branch, CTPid, Desc),
+    {reply, Res, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Msg, From, State)
@@ -231,21 +175,21 @@ handle_call({sipmessage, Response, Origin, LogStr}, _From, State)
 %%--------------------------------------------------------------------
 handle_call({store_stateless_response_branch, Pid, Branch, Method}, _From, State)
   when is_pid(Pid), is_list(Branch), is_list(Method) ->
-    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, State#state.tstatelist) of
+    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method) of
 	none ->
-	    case transactionstatelist:get_elem_using_pid(Pid, State#state.tstatelist) of
+	    case transactionstatelist:get_elem_using_pid(Pid) of
 		{error, E} ->
 		    logger:log(error, "Transaction layer: Error associating stateless response branch ~p with pid ~p~n: ~p",
 			       [Branch, Pid, E]),
 		    {reply, {error, E}, State, ?TIMEOUT};
-		[] ->
+		none ->
 		    logger:log(error, "Transaction layer: Can't associate stateless response branch ~p with unknown transaction handler ~p",
 			       [Branch, Pid]),
 		    {reply, {error, "server transaction not found"}, State, ?TIMEOUT};
 		ThisElem when is_record(ThisElem, transactionstate) ->
 		    NewTElem = transactionstatelist:append_response_branch(ThisElem, Branch, Method),
-		    NewL = transactionstatelist:update_transactionstate(NewTElem, State#state.tstatelist),
-		    {reply, {ok}, State#state{tstatelist=NewL}, ?TIMEOUT}
+		    ok = transactionstatelist:update_transactionstate(NewTElem),
+		    {reply, {ok}, State, ?TIMEOUT}
 	    end;
 	ThisElem when is_record(ThisElem, transactionstate) ->
 	    case ThisElem#transactionstate.pid of
@@ -263,57 +207,16 @@ handle_call({store_stateless_response_branch, Pid, Branch, Method}, _From, State
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Msg, From, State)
-%%           Msg     = {get_server_transaction_handler, Request}
-%%           Request = request record()
-%% Descrip.: Get the pid of a server transaction using a Request.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply     = {ok, Pid}          |
-%%                       {error, E}
-%%           Pid       = pid()
-%%           E         = string(), description of error
-%%--------------------------------------------------------------------
-handle_call({get_server_transaction_handler, Request}, _From, State) when is_record(Request, request) ->
-    case get_server_transaction_pid(Request, State#state.tstatelist) of
-	none ->
-	    {reply, {error, "No state found"}, State, ?TIMEOUT};
-	TPid when is_pid(TPid) ->
-	    {reply, {ok, TPid}, State, ?TIMEOUT}
-    end;
-
-%%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg     = {get_server_transaction_handler_for_response,
-%%                      Branch, Method}
-%%           Branch  = string()
-%%           Method  = string()
-%% Descrip.: Get the pid of a server transaction using properties from
-%%           a received response.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply     = {ok, Pid}          |
-%%                       {error, nomatch}
-%%           Pid       = pid()
-%%--------------------------------------------------------------------
-handle_call({get_server_transaction_handler_for_response, Branch, Method}, _From, State)
-  when is_list(Branch), is_list(Method) ->
-    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, State#state.tstatelist) of
-	none ->
-	    {reply, {error, nomatch}, State, ?TIMEOUT};
-	ThisState when is_record(ThisState, transactionstate) ->
-	    TPid = ThisState#transactionstate.pid,
-	    {reply, {ok, TPid}, State, ?TIMEOUT}
-    end;
-
-%%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
 %%           Msg      = {start_client_transaction, Request, SocketIn,
 %%                      Dst, Branch, Timeout, Parent}
 %%           Request  = request record()
-%%           SocketIn = sipsocket record(), the socket the request
-%%                                          arrived on
+%%           SocketIn = sipsocket record(), the default socket we
+%%                      should give to the transport layer for this
+%%                      request. XXX remove - don't do stateless.
 %%           Dst      = sipdst record(), the destination for this
 %%                                       client transaction
 %%           Branch   = string()
-%%           Timeout  =
+%%           Timeout  = integer(), timeout for INVITE transactions
 %%           Parent   = pid(), the process that initiated this client
 %% Descrip.: Start a new client transaction.
 %% Returns : {reply, Reply, State, Timeout}
@@ -322,27 +225,37 @@ handle_call({get_server_transaction_handler_for_response, Branch, Method}, _From
 %%           Pid       = pid()
 %%           E         = string(), description of error
 %%--------------------------------------------------------------------
-handle_call({start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, _From, State)
-  when is_record(Request, request) ->
-    Method = Request#request.method,
-    case transactionstatelist:get_client_transaction(Method, Branch, State#state.tstatelist) of
-	none ->
-	    case clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, Parent) of
-		{ok, CPid} ->
-		    RegBranch = sipheader:remove_loop_cookie(Branch),
-		    NewL = transactionstatelist:add_client_transaction(Method, RegBranch, CPid, State#state.tstatelist),
-		    {reply, {ok, CPid}, State#state{tstatelist=NewL}, ?TIMEOUT};
-		_ ->
-		    {reply, {error, "Failed starting client transaction"}, State, ?TIMEOUT}
-	    end;
-	_ ->
-	    logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
-	    {reply, {error, "Transaction already exists"}, State, ?TIMEOUT}
-    end;
+handle_call({sXtart_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, _From, State)
+  when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch), is_integer(Timeout),
+       is_pid(Parent); Parent == none ->
+    T1 = erlang:now(),
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    Reply =
+	case transactionstatelist:get_client_transaction(Method, Branch) of
+	    none ->
+		case clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, Parent) of
+		    {ok, CPid} ->
+			RegBranch = sipheader:remove_loop_cookie(Branch),
+			Desc = lists:flatten(
+				 io_lib:format("~s: ~s ~s (dst ~s)", [RegBranch, Method,
+								      sipurl:print(URI), sipdst:dst2str(Dst)])),
+			ok = transactionstatelist:add_client_transaction(Method, RegBranch, CPid, Desc),
+			{reply, {ok, CPid}, State, ?TIMEOUT};
+		    _ ->
+			{reply, {error, "Failed starting client transaction"}, State, ?TIMEOUT}
+		end;
+	    _ ->
+		logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
+		{reply, {error, "Transaction already exists"}, State, ?TIMEOUT}
+	end,
+    T2 = erlang:now(),
+    S = io_lib:format("gen_server:call({start_client_transaction, ...}) (~s ~s)",
+		      [Method, sipurl:print(URI)]),
+    log_time_consumption(T1, T2, 200, 100, S),
+    Reply;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg      = {store_to_tag, Request, ToTag}
+%% Function: handle_call({store_to_tag, Request, ToTag}, From, State)
 %%           Request  = request record()
 %%           ToTag    = string()
 %% Descrip.: Store the to-tag we use when sending non-2xx responses in
@@ -354,14 +267,72 @@ handle_call({start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, 
 %%           E         = string(), description of error
 %%--------------------------------------------------------------------
 handle_call({store_to_tag, Request, ToTag}, _From, State) when is_record(Request, request) ->
-    case get_server_transaction(Request, State#state.tstatelist) of
+    case get_server_transaction(Request) of
 	none ->
 	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
 	ThisState when is_record(ThisState, transactionstate) ->
 	    NewTState = transactionstatelist:set_response_to_tag(ThisState, ToTag),
-	    NewL = transactionstatelist:update_transactionstate(NewTState, State#state.tstatelist),
-	    {reply, {ok}, State#state{tstatelist=NewL}, ?TIMEOUT}
+	    ok = transactionstatelist:update_transactionstate(NewTState),
+	    {reply, {ok}, State, ?TIMEOUT}
     end;
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({set_result, Request, Value}, From, State)
+%%           Request  = request record()
+%%           Value    = string()
+%% Descrip.: Set the informational result parameter of a transaction.
+%%           This 'result' value is only used for debugging/
+%%           informational purposes.
+%% Returns : {reply, Reply, State, Timeout} |
+%%           Reply     = {ok}               |
+%%                       {error, E}
+%%           E         = string(), description of error
+%%--------------------------------------------------------------------
+handle_call({set_result, Request, Value}, _From, State) when is_record(Request, request), is_list(Value) ->
+    case get_server_transaction(Request) of
+	none ->
+	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
+	ThisState when is_record(ThisState, transactionstate) ->
+	    NewTState = transactionstatelist:set_result(ThisState, Value),
+	    ok = transactionstatelist:update_transactionstate(NewTState),
+	    {reply, {ok}, State, ?TIMEOUT}
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: handle_call(Msg, From, State)
+%%           Msg      = {store_appdata, Request, Value}
+%%           Request  = request record()
+%%           Value    = term()
+%% Descrip.: Store some arbitrary data associated with this
+%%           transcation for an application. The Yxa stack never uses
+%%           this data - it is just provided as convenient storage
+%%           for application writers.
+%% Returns : {reply, Reply, State, Timeout} |
+%%           Reply     = {ok}               |
+%%                       {error, E}
+%%           E         = string(), description of error
+%%--------------------------------------------------------------------
+handle_call({store_appdata, Request, Value}, _From, State) when is_record(Request, request) ->
+    case get_server_transaction(Request) of
+	none ->
+	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
+	ThisState when is_record(ThisState, transactionstate) ->
+	    NewTState = transactionstatelist:set_appdata(ThisState, Value),
+	    ok = transactionstatelist:update_transactionstate(NewTState),
+	    {reply, {ok}, State, ?TIMEOUT}
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({monitor_get_transactionlist}, From, State)
+%% Descrip.: The stack monitor is requesting our list of transactions.
+%% Returns : {reply, {ok, List} State, ?TIMEOUT}
+%%           List = transactionstatelist record()
+%%--------------------------------------------------------------------
+handle_call({monitor_get_transactionlist}, _From, State) ->
+    {reply, {ok, transactionstatelist:get_all_entries()}, State, ?TIMEOUT};
+
+handle_call({get_settings}, _From, State) ->
+    {reply, {ok, [{mode, State#state.mode}, {appmodule, State#state.appmodule}]}, State, ?TIMEOUT};
 
 handle_call(Request, From, State) ->
     logger:log(debug, "Transaction layer: Received unknown gen_server call (from ~p) : ~p", [From, Request]),
@@ -385,8 +356,9 @@ handle_call(Request, From, State) ->
 %% Returns : {noreply, State, ?TIMEOUT}
 %%--------------------------------------------------------------------
 handle_cast({unregister_pid, Pid}, State) ->
-    NewL = transactionstatelist:delete_using_pid(Pid, State#state.tstatelist),
-    {noreply, State#state{tstatelist=NewL}, ?TIMEOUT};
+    L = transactionstatelist:get_entrylist_using_pid(Pid),
+    {ok, _NumDeleted} = transactionstatelist:delete_using_entrylist(L),
+    {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({debug_show_transactions, FromPid}, State)
@@ -397,7 +369,7 @@ handle_cast({unregister_pid, Pid}, State) ->
 %%--------------------------------------------------------------------
 handle_cast({debug_show_transactions, FromPid}, State) ->
     logger:log(debug, "Transaction layer: Pid ~p asked me to show all ongoing transactions :~n~p",
-	       [FromPid, transactionstatelist:debugfriendly(State#state.tstatelist)]),
+	       [FromPid, transactionstatelist:debugfriendly()]),
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
@@ -431,8 +403,8 @@ handle_cast(Msg, State) ->
 %% Returns : {noreply, State, ?TIMEOUT}
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
-    NewL = transactionstatelist:delete_expired(State#state.tstatelist),
-    {noreply, State#state{tstatelist=NewL}, ?TIMEOUT};
+    ok = transactionstatelist:delete_expired(),
+    {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({'EXIT', Pid, Reason}, State)
@@ -448,23 +420,18 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	normal -> logger:log(debug, "Transaction layer: Received normal exit-signal from process ~p", [Pid]);
 	_ -> logger:log(error, "Transaction layer: =ERROR REPORT==== Received non-normal exit signal from process ~p :~n~p", [Pid, Reason])
     end,
-    NewState = case transactionstatelist:get_list_using_pid(Pid, State#state.tstatelist) of
-		   none ->
-		       logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list. Transactionlist is :~n~p",
-				  [Pid, transactionstatelist:debugfriendly(State#state.tstatelist)]),
-		       State;
-		   L when is_record(L, transactionstatelist) ->
-		       NewL = transactionstatelist:delete_using_pid(Pid, State#state.tstatelist),
-		       logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n(new list is ~p entry(s))",
-				  [transactionstatelist:get_length(L), transactionstatelist:debugfriendly(L), transactionstatelist:get_length(NewL)]),
-		       %%logger:log(debug, "Transaction layer: Extra debug: Transactionlist is now :~n~p", [transactionstatelist:debugfriendly(NewL)]),
-		       State#state{tstatelist=NewL};
-		   Unknown ->
-		       logger:log(error, "Transaction layer: Unknown result returned from get_list_using_pid :~n~p",
-				  [Unknown]),
-		       State
-	       end,
-    {noreply, NewState, ?TIMEOUT};
+    case transactionstatelist:get_entrylist_using_pid(Pid) of
+	none ->
+	    logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list.", [Pid]),
+	    true;
+	L when is_list(L) ->
+	    {ok, Deleted} = transactionstatelist:delete_using_entrylist(L),
+	    logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n"
+		       "(new list is ~p entry(s))", [Deleted, transactionstatelist:debugfriendly(L),
+						     transactionstatelist:get_length()]),
+	    true
+	end,
+    {noreply, State, ?TIMEOUT};
 
 handle_info(Msg, State) ->
     logger:log(error, "Transaction layer: Received unknown gen_server info :~n~p", [Msg]),
@@ -496,15 +463,21 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: received_new_request(Request, Socket, LogStr, State)
+%% Function: received_new_request(Request, Socket, LogStr, Mode,
+%%                                AppModule)
 %%           Request = request record()
 %%           Socket  = sipsocket record(), the socket this request was
 %%                                         received on
 %%           LogStr  = string(), describes the request
-%%           State   = record()
+%%           Mode    = stateless | stateful
+%%           AppModule = atom(), Yxa application module
 %% Descrip.: Act on a new request that has just been delivered to the
 %%           transaction layer from the transport layer, where the
 %%           transaction layer did not have any prior transaction.
+%%           This code executes in the request handler process - NOT
+%%           in the transaction_layer. This is to achieve better
+%%           concurrency by not doing alot of work in the
+%%           transaction_layer process.
 %% Returns : {reply, Reply, State, ?TIMEOUT}
 %%           Reply   = {pass_to_core, AppModule} |
 %%                     {continue}
@@ -521,95 +494,127 @@ code_change(_OldVsn, State, _Extra) ->
 %%           transacton_layer process, and asking the caller to do it
 %%           saves us a spawn(). AppModule is the module name passed to
 %%           our init/1.
+%%
+%%
+%%           It might be worthwile to insert a dummy-entry in the
+%%           transaction layers list of transactions for this new
+%%           transaction, before spawning a servertransaction. That
+%%           would reduce the workload of a really loaded system that
+%%           receives a big percentage of resends before it has had
+%%           time to spawn servertransactions that have registered
+%%           themselves in the transaction layers list.
 %%--------------------------------------------------------------------
 
 %%
 %% ACK
 %%
-received_new_request(Request, _Socket, _LogStr, State)
-  when is_record(State, state), is_record(Request, request), Request#request.method == "ACK" ->
-    AppModule = State#state.appmodule,
+received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, _Mode, _AppModule) ->
+    {ok, [{mode, _}, {appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 	       [sipurl:print(Request#request.uri)]),
-    {reply, {pass_to_core, AppModule}, State, ?TIMEOUT};
+    {pass_to_core, AppModule};
 
 %%
 %% CANCEL, our mode == stateless
 %%
-received_new_request(Request, Socket, LogStr, State)
-  when is_record(State, state), is_record(Request, request), State#state.mode == stateless, Request#request.method == "CANCEL" ->
-    AppModule = State#state.appmodule,
+received_new_request(#request{method="CANCEL"}=Request, Socket, LogStr, stateless, AppModule) ->
+    URI = Request#request.uri,
     logger:log(debug, "Transaction layer: Stateless received CANCEL ~s. Starting transaction but passing to core.",
-	       [sipurl:print(Request#request.uri)]),
-    case servertransaction:start_link(Request, Socket, LogStr, AppModule, stateless) of
+	       [sipurl:print(URI)]),
+    case servertransaction:start(Request, Socket, LogStr, AppModule, stateless) of
 	{ok, STPid} when is_pid(STPid) ->
-	    NewL = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
-	    {reply, {pass_to_core, AppModule}, State#state{tstatelist=NewL}, ?TIMEOUT};
+	    {pass_to_core, AppModule};
+	{error, resend} ->
+	    logger:log(debug, "Transaction layer: Failed starting server transaction (was a resend) - "
+		       "ignoring request"),
+	    {continue};
 	E ->
 	    logger:log(error, "Transaction layer: Failed starting server transaction (~p) - ignoring request", [E]),
-	    {reply, {continue}, State, ?TIMEOUT}
+	    {continue}
     end;
 
-received_new_request(Request, Socket, LogStr, State) when is_record(State, state),
-							  is_record(Request, request) ->
-    AppModule = State#state.appmodule,
+received_new_request(Request, Socket, LogStr, Mode, AppModule) when is_record(Request, request) ->
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
-    case servertransaction:start_link(Request, Socket, LogStr, AppModule, State#state.mode) of
+    case servertransaction:start(Request, Socket, LogStr, AppModule, Mode) of
 	{ok, STPid} when is_pid(STPid) ->
-	    NewTStateList2 = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
-	    PassToCore = case Request#request.method of
+	    Method = Request#request.method,
+	    PassToCore = case Method of
 			     "CANCEL" ->
-				 Header = Request#request.header,
-				 %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
-				 %% transaction that is being handled by 'assuming the method is anything but
-				 %% CANCEL or ACK'.
-				 {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-				 %% When looking for the corresponding INVITE transaction, we have to change the
-				 %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
-				 %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
-				 %% probably an error in RFC3261 #9.2 that refers to #17.2.3 which does not say that
-				 %% CANCEL matches a transaction even though the CSeq method differs)
-				 IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
-				 Invite = Request#request{method="INVITE", header=IHeader},
-				 case get_server_transaction_pid(Invite, State#state.tstatelist) of
-				     InvitePid when is_pid(InvitePid) ->
-					 logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
-					 {Status, Reason} = case util:safe_is_process_alive(InvitePid) of
-								{true, _} ->
-								    logger:log(debug, "Transaction layer: Cancelling other transaction handled by ~p " ++
-									       "and responding 200 Ok", [InvitePid]),
-								    gen_server:cast(InvitePid, {cancelled}),
-								    {200, "Ok"};
-								_ ->
-								    logger:log(debug, "Transaction layer: Transaction to be cancelled handled by dead " ++
-									       "pid '~p', responding 481 Call/Transaction Does Not Exist", [InvitePid]),
-								    {481, "Call/Transaction Does Not Exist"}
-							    end,
-					 gen_server:cast(STPid, {create_response, Status, Reason, [], ""}),
-					 false;
-				     _ ->
-					 logger:log(debug, "Transaction layer: Could not find transaction for CANCEL, pass it on to application core."),
-					 true
-				 end;
+				 cancel_corresponding_transaction(Request, STPid);
 			     _ ->
 				 true
 			 end,
 	    case PassToCore of
 		true ->
-		    logger:log(debug, "Transaction layer: Telling sipserver to apply this applications request function."),
-		    {reply, {pass_to_core, AppModule}, State#state{tstatelist=NewTStateList2}, ?TIMEOUT};
+		    logger:log(debug, "Transaction layer: Telling sipserver to apply this applications "
+			       "request function."),
+		    {pass_to_core, AppModule};
 		_ ->
-		    {reply, {continue}, State#state{tstatelist=NewTStateList2}, ?TIMEOUT}
+		    {continue}
 	    end;
+	{error, resend} ->
+	    logger:log(debug, "Transaction layer: Failed starting server transaction (was a resend) - "
+		       "ignoring request"),
+	    {continue};
 	E ->
 	    logger:log(error, "Transaction layer: Failed starting server transaction (~p) - ignoring request", [E]),
-	    {reply, {continue}, State, ?TIMEOUT}
+	    {continue}
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction(R, TStateList)
+%% Function: cancel_corresponding_transaction(Request, STPid)
+%%           Request = request record()
+%%           STPid   = pid of CANCEL server transaction.
+%% Descrip.: Part of received_new_request/4. We have received a CANCEL
+%%           and here we try to find the corresponding INVITE and tell
+%%           it that it has been cancelled. If we find an INVITE, we
+%%           return 'false' to _not_ pass this CANCEL to the
+%%           Transaction User (core). If we do not find it however, we
+%%           return 'true' to pass the CANCEL to core.
+%% Returns : PassToCore
+%%           PassToCore = true | false
+%%--------------------------------------------------------------------
+cancel_corresponding_transaction(Request, STPid) when is_record(Request, request), is_pid(STPid) ->
+    Header = Request#request.header,
+    %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
+    %% transaction that is being handled by 'assuming the method is anything but
+    %% CANCEL or ACK'.
+    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    %% When looking for the corresponding INVITE transaction, we have to change the
+    %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
+    %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
+    %% probably an error in RFC3261 #9.2 that refers to #17.2.3 which does not say that
+    %% CANCEL matches a transaction even though the CSeq method differs)
+    IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
+    Invite = Request#request{method="INVITE", header=IHeader},
+    case get_server_transaction_pid(Invite) of
+	InvitePid when is_pid(InvitePid) ->
+	    logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
+	    {Status, Reason} =
+		case util:safe_is_process_alive(InvitePid) of
+		    {true, _} ->
+			logger:log(debug, "Transaction layer: Cancelling other transaction handled by ~p " ++
+				   "and responding 200 Ok", [InvitePid]),
+			gen_server:cast(InvitePid, {cancelled}),
+			{200, "Ok"};
+		    _ ->
+			logger:log(debug, "Transaction layer: Transaction to be cancelled handled by dead " ++
+				   "pid '~p', responding 481 Call/Transaction Does Not Exist", [InvitePid]),
+			{481, "Call/Transaction Does Not Exist"}
+		end,
+	    gen_server:cast(STPid, {create_response, Status, Reason, [], ""}),
+	    %% Don't pass to core
+	    false;
+	_ ->
+	    logger:log(debug, "Transaction layer: Could not find transaction for CANCEL, "
+		       "pass it on to application core."),
+	    %% Pass to core
+	    true
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_server_transaction(R)
 %%           R           = request record() | response record()
-%%           TStateList  = list() of transactionstate record()
 %% Descrip.: Find a server transaction in our list given either a
 %%           request or a response record().
 %% Returns : THandler |
@@ -617,23 +622,22 @@ received_new_request(Request, Socket, LogStr, State) when is_record(State, state
 %%           none
 %%           THandler    = transactionstate record()
 %%--------------------------------------------------------------------
-get_server_transaction(Request, TStateList) when is_record(Request, request) ->
-    transactionstatelist:get_server_transaction_using_request(Request, TStateList);
-get_server_transaction(Response, TStateList) when is_record(Response, response) ->
-    transactionstatelist:get_server_transaction_using_response(Response, TStateList).
+get_server_transaction(Request) when is_record(Request, request) ->
+    transactionstatelist:get_server_transaction_using_request(Request);
+get_server_transaction(Response) when is_record(Response, response) ->
+    transactionstatelist:get_server_transaction_using_response(Response).
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction_pid(R, TStateList)
+%% Function: get_server_transaction_pid(R)
 %%           R           = request record() | response record()
-%%           TStateList  = list() of transactionstate record()
-%% Descrip.: Find a server transaction in TStateList given either a
-%%           request or a response record(). Return it's pid.
+%% Descrip.: Find a server transaction given either a request or a 
+%%           response record(). Return it's pid.
 %% Returns : Pid |
 %%           none
 %%           Pid         = pid()
 %%--------------------------------------------------------------------
-get_server_transaction_pid(Re, TStateList) when is_record(Re, request); is_record(Re, response) ->
-    case get_server_transaction(Re, TStateList) of
+get_server_transaction_pid(Re) when is_record(Re, request); is_record(Re, response) ->
+    case get_server_transaction(Re) of
 	none ->
 	    none;
 	TState when is_record(TState, transactionstate) ->
@@ -652,33 +656,31 @@ get_server_transaction_pid(Re, TStateList) when is_record(Re, request); is_recor
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_client_transaction(Response, TStateList)
+%% Function: get_client_transaction(Response)
 %%           Response    = response record()
-%%           TStateList  = list() of transactionstate record()
-%% Descrip.: Find a client transaction in TStateList given a response.
+%% Descrip.: Find a client transaction given a response.
 %% Returns : TState |
 %%           none
 %%           TState      = transactionstate record()
 %%--------------------------------------------------------------------
-get_client_transaction(Response, TStateList) when is_record(Response, response) ->
+get_client_transaction(Response) when is_record(Response, response) ->
     Header = Response#response.header,
     TopVia = sipheader:topvia(Header),
     Branch = sipheader:get_via_branch(TopVia),
     {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    transactionstatelist:get_client_transaction(Method, Branch, TStateList).
+    transactionstatelist:get_client_transaction(Method, Branch).
 
 %%--------------------------------------------------------------------
-%% Function: get_client_transaction_pid(Response, TStateList)
+%% Function: get_client_transaction_pid(Response)
 %%           Response    = response record()
-%%           TStateList  = list() of transactionstate record()
-%% Descrip.: Find a client transaction in TStateList given a response.
+%% Descrip.: Find a client transaction given a response.
 %%           Return it's pid.
 %% Returns : Pid  |
 %%           none
 %%           Pid         = pid()
 %%--------------------------------------------------------------------
-get_client_transaction_pid(Response, TStateList) when is_record(Response, response) ->
-    case get_client_transaction(Response, TStateList) of
+get_client_transaction_pid(Response) when is_record(Response, response) ->
+    case get_client_transaction(Response) of
 	none ->
 	    none;
 	TState when is_record(TState, transactionstate) ->
@@ -690,6 +692,23 @@ get_client_transaction_pid(Response, TStateList) when is_record(Response, respon
 	    end
     end.
 
+
+log_time_consumption(T1, T2, Limit1, Limit2, Context) when is_integer(Limit1), is_integer(Limit2),
+							   is_list(Context) ->
+    Diff = timer:now_diff(T2, T1) div 1000,
+    if
+	Diff >= Limit2 ->
+	    logger:log(error, "Transcation layer: Warning: Blocked for ~p ms : ~s",
+		       [Diff, Context]);
+	Diff >= Limit1 ->
+	    logger:log(normal, "Transaction layer: Notice: Blocked for ~p ms : ~s",
+		       [Diff, Context]);
+	Diff >= 15 ->
+	    logger:log(debug, "Transaction layer: Spent ~p ms on activity : ~s",
+		       [Diff, Context]);
+	true ->
+	    true
+    end.
 
 %%--------------------------------------------------------------------
 %%% Interface functions
@@ -797,13 +816,11 @@ send_proxy_response_handler(TH, Response) when is_record(TH, thandler), is_recor
 %%           E = string(), describes the error
 %%--------------------------------------------------------------------
 get_handler_for_request(Request) ->
-    case catch gen_server:call(transaction_layer, {get_server_transaction_handler, Request}, 2500) of
-        {error, E} ->
-	    {error, E};
-        {ok, Pid} ->
-	    #thandler{pid=Pid};
-	_ ->
-	    {error, "Transaction layer failed"}
+    case get_server_transaction_pid(Request) of
+        none ->
+            {error, "No state found"};
+        TPid when is_pid(TPid) ->
+            #thandler{pid=TPid}
     end.
 
 %%--------------------------------------------------------------------
@@ -830,15 +847,12 @@ get_server_handler_for_stateless_response(Response) when is_record(Response, res
     {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Response#response.header)),
     case sipheader:get_via_branch(TopVia) of
 	Branch when is_list(Branch) ->
-	    case catch gen_server:call(transaction_layer, {get_server_transaction_handler_for_response, Branch, Method}, 1000) of
-		{error, nomatch} ->
+	    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method) of
+		none ->
 		    none;
-		{error, E} ->
-		    {error, E};
-		{ok, Pid} ->
-		    #thandler{pid=Pid};
-		_ ->
-		    {error, "Transaction layer failed"}
+		ThisState when is_record(ThisState, transactionstate) ->
+		    TPid = ThisState#transactionstate.pid,
+		    #thandler{pid=TPid}
 	    end;
 	_ ->
 	    {error, "No branch in top via of response"}
@@ -866,7 +880,7 @@ adopt_server_transaction(Request) when is_record(Request, request) ->
 
 %% See adopt_server_transaction/1 above
 adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
-    case catch gen_server:call(TH#thandler.pid, {set_report_to, self()}, 1000) of
+    case catch gen_server:call(TH#thandler.pid, {set_report_to, self()}, ?STORE_TIMEOUT) of
 	{error, E} ->
 	    {error, E};
 	{ok} ->
@@ -888,7 +902,7 @@ adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
 %%--------------------------------------------------------------------
 get_branch_from_handler(TH) when is_record(TH, thandler) ->
     TPid = TH#thandler.pid,
-    case catch gen_server:call(TPid, {get_branch}, 500) of
+    case catch gen_server:call(TPid, {get_branch}, ?STORE_TIMEOUT) of
 	{ok, Branch} ->
 	    Branch;
 	_ ->
@@ -909,7 +923,8 @@ transaction_terminating(TransactionPid) ->
 %%           Dst      = sipdst record(), the destination for this
 %%                      client transaction
 %%           Branch   = string(), branch parameter to use
-%%           Timeout  = integer(), how long to live (seconds)
+%%           Timeout  = integer(), timeout for INVITE transactions
+%%                                 (seconds from now)
 %%           Parent   = pid(), who the client transaction should
 %%                      report to
 %% Descrip.: Start a new client transaction.
@@ -918,20 +933,14 @@ transaction_terminating(TransactionPid) ->
 %%           Pid = pid()
 %%           E   = string()
 %%--------------------------------------------------------------------
-start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
-    %% XXX we probably want a shorter timeout on this, but since we send out the initial request
-    %% in clienttransaction:init() it can take some time (if a TCP connection has to be established
-    %% first etc).
-    case catch gen_server:call(transaction_layer, {start_client_transaction, Request, SocketIn,
-						   Dst, Branch, Timeout, Parent}, 10000) of
-	{error, E} ->
-	    {error, E};
-	{ok, Pid} ->
-	    Pid;
-	Unknown ->
-	    logger:log(debug, "Transaction layer: Failed starting client transaction, gen_server call result :~n~p",
-		       [Unknown]),
-	    {error, "Transaction layer failure"}
+start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent)
+  when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch), is_integer(Timeout),
+       is_pid(Parent); Parent == none ->
+    case clienttransaction:start(Request, SocketIn, Dst, Branch, Timeout, Parent) of
+	{ok, CPid} ->
+	    CPid;
+	_ ->
+	    {error, "Failed starting client transaction"}
     end.
 
 %%--------------------------------------------------------------------
@@ -945,14 +954,60 @@ start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
 %%           {error, E}
 %%           E = string(), description of error
 %%--------------------------------------------------------------------
-store_to_tag(Request, ToTag) when is_record(Request, request) ->
-    case catch gen_server:call(transaction_layer, {store_to_tag, Request, ToTag}, 2500) of
+store_to_tag(Request, ToTag) when is_record(Request, request), is_list(ToTag) ->
+    case catch gen_server:call(transaction_layer, {store_to_tag, Request, ToTag}, ?STORE_TIMEOUT) of
 	{error, E} ->
 	    {error, E};
 	{ok} ->
 	    ok;
 	Unknown ->
 	    logger:log(debug, "Transaction layer: Failed storing To: tag, gen_server call result :~n~p",
+		       [Unknown]),
+	    {error, "Transaction layer failure"}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: set_result(Request, ToTag)
+%%           Request  = request record()
+%%           ToTag    = string()
+%% Descrip.: Set the informational result parameter of a transaction.
+%%           This 'result' value is only used for debugging/
+%%           informational purposes.
+%% Returns : ok         |
+%%           {error, E}
+%%           E = string(), description of error
+%%--------------------------------------------------------------------
+set_result(Request, Value) when is_record(Request, request), is_list(Value) ->
+    case catch gen_server:call(transaction_layer, {set_result, Request, Value}, ?STORE_TIMEOUT) of
+	{error, E} ->
+	    {error, E};
+	{ok} ->
+	    ok;
+	Unknown ->
+	    logger:log(debug, "Transaction layer: Failed storing transaction result, gen_server call result :~n~p",
+		       [Unknown]),
+	    {error, "Transaction layer failure"}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: store_appdata(Request, ToTag)
+%%           Request  = request record()
+%%           Value    = term()
+%% Descrip.: Store the to-tag we use when sending non-2xx responses in
+%%           INVITE server transactions. We need to do this to
+%%           correctly match ACK to the server transaction.
+%% Returns : ok         |
+%%           {error, E}
+%%           E = string(), description of error
+%%--------------------------------------------------------------------
+store_appdata(Request, Value) when is_record(Request, request) ->
+    case catch gen_server:call(transaction_layer, {store_appdata, Request, Value}, ?STORE_TIMEOUT) of
+	{error, E} ->
+	    {error, E};
+	{ok} ->
+	    ok;
+	Unknown ->
+	    logger:log(debug, "Transaction layer: Failed storing appdata, gen_server call result :~n~p",
 		       [Unknown]),
 	    {error, "Transaction layer failure"}
     end.
@@ -978,7 +1033,7 @@ store_stateless_response_branch(none, _Branch, _Method) ->
     ok;
 store_stateless_response_branch(TH, Branch, Method) when is_record(TH, thandler) ->
     HPid = TH#thandler.pid,
-    case catch gen_server:call(transaction_layer, {store_stateless_response_branch, HPid, Branch, Method}, 1000) of
+    case catch gen_server:call(transaction_layer, {store_stateless_response_branch, HPid, Branch, Method}, ?STATELESS_STORE_TIMEOUT) of
 	{ok} ->
 	    ok;
 	{error, E} ->
@@ -1032,12 +1087,17 @@ get_pid_from_handler(_) ->
 %%           RetryAfter = integer()
 %% Descrip.: Locate a server transaction handler using Request, then
 %%           invoke send_challenge() with the rest of our parameters.
-%% Returns : ok
+%% Returns : ok         |
+%%           {error, E}
+%%           E = string()
 %%--------------------------------------------------------------------
 send_challenge_request(Request, Type, Stale, RetryAfter) ->
-    TH = transactionlayer:get_handler_for_request(Request),
-    %% XXX check that we really got a thandler record()
-    send_challenge(TH, Type, Stale, RetryAfter).
+    case transactionlayer:get_handler_for_request(Request) of
+	TH when is_record(TH, thandler) ->
+	    send_challenge(TH, Type, Stale, RetryAfter);
+	_ ->
+	    {error, "Could not locate handler for request"}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: send_challenge(TH, Type, Stale, RetryAfter)
@@ -1095,3 +1155,51 @@ send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when is_record(TH, t
 debug_show_transactions() ->
     gen_server:cast(transaction_layer, {debug_show_transactions, self()}),
     ok.
+
+%%--------------------------------------------------------------------
+%% Function: from_transportlayer(Request, Origin, LogStr)
+%% Descrip.: The transport layer passes us a request it has just
+%%           received.
+%% Returns : {pass_to_core, AppModule} |
+%%           {continue}
+%%           AppModule = atom(), Yxa application module name
+%%--------------------------------------------------------------------
+from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
+						  is_record(Origin, siporigin),
+						  is_list(LogStr) ->
+    case get_server_transaction_pid(Request) of
+	none ->
+	    {ok, [{mode, Mode}, {appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, Mode, AppModule);
+	TPid when is_pid(TPid) ->
+	    case gen_server:call(TPid, {siprequest, Request, Origin}) of
+		{pass_to_core, AppModule1} ->
+		    {pass_to_core, AppModule1};
+		{continue} ->
+		    {continue}
+	    end
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: from_transportlayer(Response, Origin, LogStr)
+%% Descrip.: The transport layer passes us a response it has just
+%%           received.
+%% Returns : {pass_to_core, AppModule} |
+%%           {continue}
+%%           AppModule = atom(), Yxa application module name
+%%--------------------------------------------------------------------
+from_transportlayer(Response, Origin, LogStr) when is_record(Response, response),
+						   is_record(Origin, siporigin),
+						   is_list(LogStr) ->
+    case get_client_transaction_pid(Response) of
+	none ->
+	    {ok, [{mode, _}, {appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
+		       [Response#response.status, Response#response.reason, AppModule]),
+	    {pass_to_core, AppModule};
+	TPid when is_pid(TPid) ->
+	    logger:log(debug, "Transaction layer: Passing response '~p ~s' to registered handler ~p",
+		       [Response#response.status, Response#response.reason, TPid]),
+	    gen_server:cast(TPid, {sipmessage, Response, Origin, LogStr}),
+	    {continue}
+    end.
