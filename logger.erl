@@ -33,8 +33,19 @@ recvloop(IoDevice) ->
 	    recvloop(IoDevice)
     end.
 
+do_log(Level, Format, Arguments) ->
+    logger ! {log, Level, Format, Arguments, self()},
+    ok.
+
 log(Level, Format) ->
     log(Level, Format, []).
 
 log(Level, Format, Arguments) ->
-    logger ! {log, Level, Format, Arguments, self()}.
+    case catch do_log(Level, Format, Arguments) of
+	ok ->
+	    ok;
+	{error, E} ->
+	    io:format("cannot log: ", []),
+	    io:format(Format, Arguments),
+	    error
+    end.
