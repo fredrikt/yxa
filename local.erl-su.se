@@ -22,6 +22,7 @@
 	 get_remote_party_name/2,
 	 get_remote_party_number/2,
 	 rewrite_potn_to_e164/1,
+	 is_request_to_this_proxy/1,
     % siplocation
 	 prioritize_locations/2,
 	 homedomain/1,
@@ -54,8 +55,10 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
+url2mnesia_userlist(URL) when record(URL, sipurl), is_list(URL#sipurl.user) ->
+    [URL#sipurl.user ++ "@" ++ URL#sipurl.host];
 url2mnesia_userlist(URL) when record(URL, sipurl) ->
-    [URL#sipurl.user ++ "@" ++ URL#sipurl.host].
+    [].
 
 % Turn a SIP username into an address which can be reached from anywhere.
 % Used for example from the Mnesia userdb-module. It should be possible
@@ -146,6 +149,8 @@ mail2tel(Mail) ->
 lookup_remote_url(URL) ->
     none.
 
+is_request_to_this_proxy(Request) when record(Request, request) ->
+    lookup:is_request_to_this_proxy(Request).
 
 
 % lookup.erl hooks
