@@ -29,6 +29,55 @@ process(Packet, Socket) ->
 	    response(Status, Reason, Header, Body, Socket)
     end.
 
+lookuproute(User) ->
+    case phone:get_phone(User) of
+	{atomic, []} ->
+	    none;
+	{atomic, Locations} ->
+	    {Location, _, _, _} = siprequest:location_prio(Locations),
+	    Location
+    end.
+
+lookupmail(User) ->
+    case directory:lookupmail(User ++ "@kth.se") of
+	none ->
+	    none;
+	Phone ->
+	    case lookuproute(Phone) of
+		none ->
+		    none;
+		Loc ->
+		    Loc
+	    end
+    end.
+
+lookupimplicit(User) ->
+    none.
+
+lookupdefault(User) ->
+    {User, none, "sip-pstn.kth.se", none, []}.
+
+lookupphone(User) ->
+    Loc1 = lookuproute(User),
+    Loc2 = case Loc1 of
+	       none ->
+		   lookupmail(User);
+	       Loc1 ->
+		   Loc1
+	   end,
+    Loc3 = case Loc2 of
+	       none ->
+		   lookupimplicit(User);
+	       Loc2 ->
+		   Loc2
+	   end,
+    case Loc3 of
+	none ->
+	    lookupdefault(User);
+	       Loc3 ->
+	    Loc3
+    end.
+
 request("REGISTER", URL, Header, Body, Socket) ->
     logger:log(debug, "REGISTER"),
     To = sipheader:to(keylist:fetch("To", Header)),
@@ -46,21 +95,11 @@ request("REGISTER", URL, Header, Body, Socket) ->
 
 request(Method, {User, Pass, "kth.se", Port, Parameters}, Header, Body, Socket) ->
     logger:log(normal, Method),
-%    Phone = case directory:lookupmail(User ++ "@kth.se") of
-%		none ->
-%		    User;
-%		Phone2 ->
-%		    Phone2
-%	    end,
-    Phone = User,
-    {atomic, Locations} = phone:get_phone(Phone),
-    logger:log(debug, "Locations: ~p", [Locations]),
-    {Location, _, _, _} = siprequest:location_prio(Locations),
+    Location = lookupphone(User),
+    logger:log(debug, "Location: ~p", [Location]),
     case Location of
 	none ->
-	    Newlocation = {Phone, none, "sip-pstn.kth.se", none, []},
-	    siprequest:send_proxy_request(Header, Socket,
-					  {Method, Newlocation, Body});
+	    siprequest:send_notfound(Header, Socket);
 	_ ->
 	    siprequest:send_proxy_request(Header, Socket, {Method, Location, Body})
     end;
