@@ -37,12 +37,12 @@ fixplus(Regexp) ->
 applyregexp(Number, []) ->
     none;
 applyregexp(Number, [Regexp | Rest]) ->
-    logger:log(debug, "applyregexp: IN ~p ~p~n", [Number, Regexp]),
+    logger:log(debug, "applyregexp: IN ~p ~p", [Number, Regexp]),
     Rewrite = case string:tokens(Regexp, "!") of
 		  [Lhs, Rhs] ->
 		      NLhs = fixplus(Lhs),
 		      Res = util:regexp_rewrite(Number, [{NLhs, Rhs}]),
-		      logger:log(debug, "applyregexp: OUT ~p~n", [Res]),
+		      logger:log(debug, "applyregexp: OUT ~p", [Res]),
 		      Res;
 		  _ ->
 		      nomatch
