@@ -30,65 +30,57 @@ case $HOSTNAME in
 esac
 
 # Calculate Erlang arguments
-if [ "x$CONFIGDIR" = "x" ]
-then
-	CONFIGPATH="$PROGRAMNAME"
+if [ "x$CONFIGDIR" = "x" ]; then
+    CONFIGPATH="$PROGRAMNAME"
 else
-	CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
+    CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
 fi
 
-if [ "x$BUILDDIR" = "x" ]
-then
-	SEARCHPATHPARAMETERS=""
+if [ "x$BUILDDIR" = "x" ]; then
+    SEARCHPATHPARAMETERS=""
 else
-	SEARCHPATHPARAMETERS="-pz $BUILDDIR"
+    SEARCHPATHPARAMETERS="-pz $BUILDDIR"
 fi
 
-if [ "x$SSLCERTDIR" = "x" ]
-then
-	SSLCERTFILE="ssl/cert.comb"
+if [ "x$SSLCERTDIR" = "x" ]; then
+    SSLCERTFILE="ssl/cert.comb"
 else
-	SSLCERTFILE="$SSLCERTDIR/cert.comb"
+    SSLCERTFILE="$SSLCERTDIR/cert.comb"
 fi
 
-if [ "x$MNESIADIR" = "x" ]
-then
-	MNESIAPARAMETERS=""
+if [ "x$MNESIADIR" = "x" ]; then
+    MNESIAPARAMETERS=""
 else
-	MNESIAPARAMETERS="-mnesia dir '"$MNESIADIR"'"
+    MNESIAPARAMETERS="-mnesia dir '"$MNESIADIR"'"
 fi
 
-if [ "x$1" = "x-d" ]
-then
-	DETACH=""
+if [ "x$1" = "x-d" ]; then
+    DETACH=""
 fi
 
-if [ "x$MYNAME" = "xbootstrap.sh" ]
-then
-	if [ "x$ADMINPW" = "x" ]
-	then
-		echo "You are not following the instructions in README!"
-		echo ""
-		echo "You need to set the environment variable ADMINPW"
-		echo "before executing $0. Like this :"
-		echo ""
-		echo "  $ ADMINPW=foo $0"
-		echo ""
-		exit 1
-	fi
+if [ "x$MYNAME" = "xbootstrap.sh" ]; then
+    if [ "x$ADMINPW" = "x" ]; then
+	echo "You are not following the instructions in README!"
+	echo ""
+	echo "You need to set the environment variable ADMINPW"
+	echo "before executing $0. Like this :"
+	echo ""
+	echo "  $ ADMINPW=foo $0"
+	echo ""
+	exit 1
+    fi
 
 	# yes, the name should be incomingproxy
-	erl $SEARCHPATHPARAMETERS -name incomingproxy -noshell $MNESIAPARAMETERS \
-		-run bootstrap start "$ADMINPW" -run init stop
+    erl $SEARCHPATHPARAMETERS -name incomingproxy -noshell $MNESIAPARAMETERS \
+	-run bootstrap start "$ADMINPW" -run init stop
 else
-	if [ ! -r "${CONFIGPATH}.config" ]
-	then
-		echo "$0: Configuration file ${CONFIGPATH}.config not found or not readable"
-		exit 1
-	fi
+    if [ ! -r "${CONFIGPATH}.config" ]; then
+	echo "$0: Configuration file ${CONFIGPATH}.config not found or not readable"
+	exit 1
+    fi
 
-	erl -boot $PROGRAMNAME $SEARCHPATHPARAMETERS -name $PROGRAMNAME -config $CONFIGPATH \
-		-proto_dist inet_ssl -ssl_dist_opt client_certfile $SSLCERTFILE \
-		-ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2 \
-		$MNESIAPARAMETERS $DETACH
+    erl -boot $PROGRAMNAME $SEARCHPATHPARAMETERS -name $PROGRAMNAME -config $CONFIGPATH \
+	-proto_dist inet_ssl -ssl_dist_opt client_certfile $SSLCERTFILE \
+	-ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2 \
+	$MNESIAPARAMETERS $DETACH
 fi
