@@ -77,7 +77,7 @@ get_user_with_address(Address) ->
 		    logger:log(debug, "userdb-ldap: No user found for address ~p in LDAP (server ~p)", [Address, Server]),
 		    nomatch;
 		[{dn, Dn, attributes, EAttributes}] ->
-		    case directory:get_value(EAttributes, UserAttribute) of
+		    case directory:get_value({dn, Dn, attributes, EAttributes}, UserAttribute) of
 			QRes when is_list(QRes) ->
 			    logger:log(debug, "userdb-ldap: Found LDAP user for ~p, dn ~p: ~p", [Address, Dn, QRes]),
 			    QRes;
