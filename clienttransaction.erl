@@ -504,7 +504,7 @@ received_response_state_machine(Method, Status, trying) when Status =< 199 ->
 
 received_response_state_machine(Method, Status, State) when Status =< 199 ->
     logger:log(debug, "UAC decision: Received 1xx response ~p to ~s when in state '~p', ignoring", [Status, Method, State]),
-    {ignore, proceeding};
+    {ignore, State};
 
 received_response_state_machine("INVITE", Status, State) when Status =< 299 ->
     %% We ALWAYS tell parent about 2xx responses to INVITE. RFC 3261 17.1.1.2 says we
