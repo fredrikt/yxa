@@ -6,7 +6,7 @@
 PROGRAMNAME="@PROGRAMNAME@"
 CONFIGDIR="@CONFIGDIR@"
 SSLCERTDIR="@SSLCERTDIR@"
-MNESIADIR="@MNESIADIR@"
+MNESIADIR="@MNESIADIR@/$PROGRAMNAME"
 beamdir="@beamdir@"
 erl="@erl@"
 DETACH="-detached"
@@ -34,6 +34,10 @@ fi
 if [ "x$MNESIADIR" = "x" ]; then
     MNESIAPARAMETERS=""
 else
+    if [ ! -d "$MNESIADIR" ]; then
+	echo "$0: Mnesia directory '$MNESIADIR' does not exist!"
+	exit 1
+    fi
     MNESIAPARAMETERS="-mnesia dir '"$MNESIADIR"'"
 fi
 
