@@ -51,6 +51,7 @@ erl_FILES = \
 	database_call.erl \
 	database_forward.erl \
 	database_regexproute.erl \
+	db_util.erl \
 	directory.erl \
 	dnsutil.erl \
 	dtmf.erl \
