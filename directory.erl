@@ -216,7 +216,8 @@ handle_info(timeout, State) ->
 	true ->
 	    case catch ldap_connect(Server) of
 		H when is_record(H, ldaphandle) ->
-		    logger:log(debug, "LDAP client: Opened new connection to server ~s", [Server]),
+		    logger:log(debug, "LDAP client: Opened new connection to server ~s, closing old", [Server]),
+		    ldap_close(State#state.handle),
 		    {noreply, State#state{handle=H, querycount=0}, ?TIMEOUT};
 		E ->
 		    logger:log(error, "LDAP client: Could not reconnect to LDAP server ~p : ~p", [Server, E]),
@@ -239,7 +240,7 @@ terminate(Reason, State) ->
 	_ -> logger:log(error, "LDAP client terminating : ~p", [Reason])
     end,
     ldap_close(State#state.handle),
-    ok.
+    Reason.
 
 
 %%--------------------------------------------------------------------
