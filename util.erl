@@ -1,4 +1,9 @@
-%%
+%%%-------------------------------------------------------------------
+%%% File    : util.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: Utility functions.
+%%%
+%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%--------------------------------------------------------------------
 
 -module(util).
@@ -6,7 +11,6 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
-
 -export([
 	 timestamp/0,
 	 sec_to_date/1,
@@ -43,7 +47,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: timestamp()
-%% Descrip.: number of seconds elapsed since base point of now()
+%% Descrip.: Number of seconds elapsed since start point used by now()
 %% Returns : integer()
 %%--------------------------------------------------------------------
 timestamp() ->
@@ -52,10 +56,11 @@ timestamp() ->
 
 %%--------------------------------------------------------------------
 %% Function: sec_to_date(Seconds)
-%%           Seconds = integer(), seconds since start point of now()
-%% Descrip.: takes a Seconds value (e.g. from timestamp) and returns a
-%%           nicely formatted string
-%% Returns : "yyyy-mm-dd hh:mm:ss" formated string
+%%           Seconds = integer(), seconds since start point used by
+%%                     now()
+%% Descrip.: Takes a Seconds value (e.g. from timestamp/0 above) and
+%%           returns a nicely formatted date-time string.
+%% Returns : string(), "yyyy-mm-dd hh:mm:ss"
 %%--------------------------------------------------------------------
 sec_to_date(never) ->
     "never";
@@ -70,8 +75,8 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
 %%--------------------------------------------------------------------
 %% Function: isnumeric(Number)
 %%           Number = string()
-%% Descrip.: determine if Number is a string containing only numbers,
-%%           length must be >= 1
+%% Descrip.: Determine if Number is a string containing only numbers.
+%%           Length of Number must be >= 1.
 %% Returns : true | false
 %% Note    : Using the BIF list_to_integer() is probably cheaper.
 %%--------------------------------------------------------------------
@@ -87,9 +92,16 @@ isnumeric(_) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: regexp_rewrite(Input, RegexpList)
+%%           Input      = string()
+%%           RegexpList = list() of {Regexp, Rewrite} tuple()
+%%              Regexp  = string(), e.g. "foo(.+)"
+%%              Rewrite = string(), e.g. "\\1@example.com"
+%% Descrip.: Do regexp substitution. If Input is "foobar" and the
+%%           regexp tuple is {"foo(.+)", "\\1@example.com"} this
+%%           function will return "bar@example.com".
+%% Returns : Res = string() |
+%%           nomatch
 %%--------------------------------------------------------------------
 regexp_rewrite(_Input, []) ->
     nomatch;
@@ -97,37 +109,13 @@ regexp_rewrite(_Input, []) ->
 regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
     case group_regexp:groups(Input, Regexp) of
 	{match, List} ->
+	    %% If Input was "foobar" and Regexp was "foo(.+)" then List will be ["bar"].
+	    %% If Input was "foobar" and Regexp was "foo.+" then List will be [].
+	    %% If Input was "foobar" and Regexp was "(fo.)(.+)" then List will be ["foo", "bar"].
 	    apply_rewrite(Rewrite, List);
 	nomatch ->
 	    regexp_rewrite(Input, Rest)
     end.
-
-%% Function:
-%% Descrip.: ???
-%% Returns :
-apply_rewrite([], _List) ->
-    [];
-apply_rewrite([$\\, $\\ | Rest], List) ->
-    [$\\ | apply_rewrite(Rest, List)];
-apply_rewrite([$\\, C | Rest], List) ->
-    case digit(C) of
-	error ->
-	    [C | apply_rewrite(Rest, List)];
-	0 ->
-	    [C | apply_rewrite(Rest, List)];
-	Number ->
-	    lists:nth(Number, List) ++ apply_rewrite(Rest, List)
-    end;
-apply_rewrite([C | Rest], List) ->
-    [C | apply_rewrite(Rest, List)].
-
-%% return integer value (0-9) of the chars $0-$9
-%% return error if Digit is a non-numerical char (or other type)
-digit(Digit) when is_integer(Digit), Digit >= $0, Digit =< $9 ->
-    Digit - $0;
-digit(_Digit) ->
-    error.
-
 
 %%--------------------------------------------------------------------
 %% Function: casecompare(Str1, Str2)
@@ -164,7 +152,7 @@ casegrep(String1, [String2 | Rest]) ->
     case casecompare(String1, String2) of
 	true ->
 	    true;
-	_ ->
+	false ->
 	    casegrep(String1, Rest)
     end.
 
@@ -217,7 +205,7 @@ safe_is_process_alive(Name) when is_atom(Name) ->
 	    case is_process_alive(Pid) of
 		true ->
 		    {true, Pid};
-		_ ->
+		false ->
 		    {false, Pid}
 	    end;
 	E ->
@@ -246,40 +234,82 @@ safe_signal(LogTag, PidIn, Message) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: remove_v6_brackets(H)
-%%           H = string()
-%% Descrip.: ???
-%% Returns : ip6_address() | string()
+%% Function: remove_v6_brackets(In)
+%%           In = string()
+%% Descrip.: If In is "[IPv6Address]" then return "IPv6Address".
+%%           Otherwise, return whatever In was.
+%% Returns : Addr = string(), IPv6 address |
+%%           In
 %%--------------------------------------------------------------------
-remove_v6_brackets([$[ | R] = H) ->
+remove_v6_brackets([$[ | Rest] = In) ->
     %% Might be IPv6 formatted address, check if it ends with "]"
-    case string:substr(R, length(R), 1) of
+    case string:substr(Rest, length(Rest), 1) of
 	"]" ->
-	    A = string:substr(R, 1, length(R) - 1),
+	    A = string:substr(Rest, 1, length(Rest) - 1),
 	    case inet_parse:ipv6_address(A) of
 		{ok, _} ->
 		    A;
 		_ ->
 		    %% what was between [ and ] was not a valid v6 address
-		    H
+		    In
 	    end;
 	_ ->
 	    %% No ending "]"
-	    H
+	    In
     end;
-remove_v6_brackets(H) ->
-    H.
+remove_v6_brackets(In) ->
+    In.
 
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: apply_rewrite(Rewrite, List)
+%% Descrip.: Do regexp group substitution. Part of regexp_rewrite.
+%%           Easiest to explain with examples :
+%%
+%%           Rewrite = "\\1@foo", List = ["first"] -> "first@foo"
+%%           Rewrite = "abc\\1def\\2", List = ["123", "456"] ->
+%%                        "abc123def456"
+%% Returns : Res = string() |
+%%           []
+%% Note    : Function is not tail recursive.
 %%--------------------------------------------------------------------
+apply_rewrite([], _List) ->
+    [];
+apply_rewrite([$\\, $\\ | Rest], List) ->
+    %% Double backslash - not a group.
+    [$\\ | apply_rewrite(Rest, List)];
+apply_rewrite([$\\, C | Rest], List) ->
+    case digit(C) of
+	error ->
+	    %% Backslash not followed by digit, not a group.
+	    [C | apply_rewrite(Rest, List)];
+	0 ->
+	    %% Backslash followed by the digit zero, not a group.
+	    [C | apply_rewrite(Rest, List)];
+	Number ->
+	    %% Backslash followed by a digit between 1 and 9.
+	    %% Substitute with that element from List.
+	    %% XXX we crash with a slightly cryptic error if List does
+	    %% not have enough elements ({function_clause, ...})!
+	    lists:nth(Number, List) ++ apply_rewrite(Rest, List)
+    end;
+apply_rewrite([C | Rest], List) ->
+    %% Not a backslash. Check next character.
+    [C | apply_rewrite(Rest, List)].
+
+%% return integer value (0-9) of the chars $0-$9
+%% return error if Digit is a non-numerical char (or other type)
+digit(Digit) when is_integer(Digit), Digit >= $0, Digit =< $9 ->
+    Digit - $0;
+digit(_Digit) ->
+    error.
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
