@@ -18,7 +18,7 @@ lookup_homedomain_url(URL) ->
     Loc1 = mail2tel(User),
     logger:log(debug, "Local routing: mail2tel ~p -> ~p", [User, Loc1]),
     case Loc1 of
-	"+" ++ E164 ->
+	["+" ++ E164] ->
 	    Loc2 = lookuppotn("+" ++ E164),
 	    case Loc2 of
 	        {proxy, Dst1} ->
