@@ -77,7 +77,7 @@ casecompare(String1, String2) ->
     end.
 
 casegrep(String1,[]) ->
-	nomatch;
+	false;
 
 casegrep(String1,[String2 | Rest]) ->
 	case casecompare(String1,String2) of
@@ -112,9 +112,7 @@ safe_is_process_alive(Name) when is_atom(Name) ->
 	    end;
 	Pid ->
 	    {false, Pid}
-    end;	
-safe_is_process_alive(_) ->
-    false.
+    end.
 
 safe_signal(LogTag, PidIn, Message) ->
     case util:safe_is_process_alive(PidIn) of
