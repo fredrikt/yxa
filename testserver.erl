@@ -1,8 +1,15 @@
 -module(testserver).
+
+%% Standard Yxa SIP-application exports
 -export([init/0, request/3, response/3]).
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
+
+%%--------------------------------------------------------------------
+%%% Standard Yxa SIP-application exported functions
+%%--------------------------------------------------------------------
+
 
 %% Function: init/0
 %% Description: Yxa applications must export an init/0 function.
@@ -11,6 +18,7 @@
 init() ->
     database_call:create([node()]),
     [none, stateful, {append, []}].
+
 
 %% Function: request/3
 %% Description: Yxa applications must export an request/3 function.
@@ -36,6 +44,22 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 	    transactionlayer:send_response_handler(THandler, 501, "Not Implemented")
     end.
 
+%% Function: response/3
+%% Description: Yxa applications must export an response/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+    logger:log(normal, "~p ~p - dropping", [Response#response.status, Response#response.reason]),
+    true.
+
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+%%
+%% REGISTER
+%%
 process_request(Request, LogTag) when record(Request, request), Request#request.method == "REGISTER" ->
     {User, Pass, Host, Port, Parameters} = Request#request.uri,
     case localhostname(Host) of
@@ -51,6 +75,9 @@ process_request(Request, LogTag) when record(Request, request), Request#request.
 	    transactionlayer:send_response_request(Request, 501, "Not Implemented")
     end;
 
+%%
+%% INVITE or MESSAGE
+%%
 process_request(Request, LogTag) when record(Request, request), Request#request.method == "INVITE"; Request#request.method == "MESSAGE" ->
     case get_user(Request#request.uri) of
 	{404, Reason} ->
@@ -66,16 +93,21 @@ process_request(Request, LogTag) when record(Request, request), Request#request.
 	    transactionlayer:send_response_request(Request, 486, S)
     end;
 
+%%
+%% Anything but REGISTER, INVITE or MESSAGE
+%%
 process_request(Request, LogTag) when record(Request, request) ->
     logger:log(normal, "~s: testserver: ~s ~s dropped",
 	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
     true.
+
 
 get_user(URI) ->
     Key = sipurl:print(URI),
     Res = regexp_locate_user(Key, sipserver:get_env(user_db, [])),
     logger:log(debug, "Locate user: ~s -> ~p", [Key, Res]),
     Res.
+
 
 regexp_locate_user(Input, []) ->
     nomatch;
@@ -90,16 +122,10 @@ regexp_locate_user(Input, [{Regexp, Code, Text} | Rest]) ->
 	    []
     end.
 
-%% Function: response/3
-%% Description: Yxa applications must export an response/3 function.
-%% Returns: See XXX
-%%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
-    logger:log(normal, "~p ~p - dropping", [Response#response.status, Response#response.reason]),
-    true.
 
 packet_check_ok(Header, LogTag) ->
     check_no_unsupported_extension(Header, LogTag).
+
 
 check_no_unsupported_extension(Header, LogTag) ->
     Require = keylist:fetch("Require", Header),
@@ -112,6 +138,7 @@ check_no_unsupported_extension(Header, LogTag) ->
 	    throw({siperror, 420, "Bad Extension", [{"Unsupported", Require}]})
     end.
 
+
 get_branch_from_handler(TH) ->
     CallBranch = transactionlayer:get_branch_from_handler(TH),
     case string:rstr(CallBranch, "-UAS") of
@@ -121,6 +148,7 @@ get_branch_from_handler(TH) ->
             BranchBase = string:substr(CallBranch, 1, Index - 1),
 	    BranchBase
     end.
+
 
 localhostname(Hostname) ->
     util:casegrep(Hostname, sipserver:get_env(myhostnames)).
