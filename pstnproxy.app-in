@@ -1,0 +1,13 @@
+{application, pstnproxy,
+ [{description, "PSTN SIP proxy"},
+  {vsn,"0.0"},
+  {modules, [pstnproxy, logger, util, siputil, sippacket, keylist, sipurl, 
+	     siprequest, sipheader, sipauth, siphost, hex, phone,
+	     sipserver, local, sipuserdb, sipuserdb_mnesia,
+	     sipuserdb_ldap, transactionlayer, servertransaction,
+	     sippipe, transportlayer]},
+  {registered, []},
+  {mod, {sipserver, [pstnproxy]}},
+  {env, []},
+  {applications,
+        [kernel, stdlib]}]}.
