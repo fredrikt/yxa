@@ -189,6 +189,14 @@ send_result(Header, Socket, Body, Code, Description) ->
 		   {"Call-ID", keylist:fetch("Call-ID", Header)},
 		   {"CSeq", keylist:fetch("CSeq", Header)}], Body).
 
+send_result(Header, Socket, Body, Code, Description, ExtraHeaders) ->
+    send_response(Socket, Code, Description,
+		  [{"via", keylist:fetch("Via", Header)},
+		   {"From", keylist:fetch("From", Header)},
+		   {"To", keylist:fetch("To", Header)},
+		   {"Call-ID", keylist:fetch("Call-ID", Header)},
+		   {"CSeq", keylist:fetch("CSeq", Header)}, ExtraHeaders], Body).
+
 location_prio([]) ->
     {none, [], none, never};
 location_prio([Address]) ->
