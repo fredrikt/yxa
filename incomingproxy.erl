@@ -57,15 +57,17 @@ lookuproute(User) ->
     end.
 
 lookupmail(User, Host) ->
-    case directory:lookupmail(User ++ "@" ++ Host) of
+    Loc1 = directory:lookupmail(User ++ "@" ++ Host),
+    logger:log(debug, "Routing: lookupmail ~p @ ~p -> ~p", [User, Host, Loc1]),
+    case Loc1 of
 	none ->
 	    none;
-	Phone ->
-	    case lookuproute(Phone) of
+	Loc1 ->
+	    case lookuproute(Loc1) of
 		none ->
-		    lookupdefault(Phone);
-		Loc ->
-		    Loc
+		    lookupdefault(Loc1);
+		Loc2 ->
+		    Loc2
 	    end
     end.
 
