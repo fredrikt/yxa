@@ -324,8 +324,16 @@ get_remote_party_number(URL, DstHost) ->
 		    logger:log(error, "Lookup: Unexpected results from local:get_telephonenumber_for_user() for user ~p in get_remote_party_number: ~p",
 				[User, Unknown]),
 		    none
-	    end;		    	    
-	Users ->
+	    end;
+	nomatch ->
+	    logger:log(debug, "Lookup: No user(s) match address ~p, can't get telephone number",
+			[sipurl:print(URL)]),
+	    none;
+	[] ->
+	    logger:log(debug, "Lookup: No user(s) match address ~p, can't get telephone number",
+			[sipurl:print(URL)]),
+	    none;
+	Users when list(Users) ->
 	    logger:log(debug, "Lookup: Multiple users match address ~p, can't get telephone number",
 			[sipurl:print(URL)]),
 	    none;
