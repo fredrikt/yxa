@@ -8,7 +8,7 @@ prefix = @prefix@
 DESTDIR = @DESTDIR@
 SHELL = @SHELL@
 
-configdir = @sysconfdir@
+sysconfdir = @sysconfdir@
 sslcertdir = @sysconfdir@
 mnesiadir = @mnesiadir@
 beamdir = @datadir@
@@ -32,7 +32,7 @@ systools_make_script = \
 
 create_start_script = \
 	sed -e 's!@PROGRAMNAME@!$*!' \
-	    -e 's!@CONFIGDIR@!$(configdir)!' \
+	    -e 's!@CONFIGDIR@!$(sysconfdir)!' \
 	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
 	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
 	    -e 's!@erl@!$(ERL)!' \
