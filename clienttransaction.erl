@@ -59,7 +59,7 @@ init([Request, SocketIn, Dst, Branch, Timeout, Parent]) when record(Dst, sipdst)
 		       dst=Dst, socket_in=SocketIn, timeout=Timeout,
 		       cancelled=false, report_to=Parent},
     logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~s).",
-	       [LogTag, Method, sipurl:print(URI), dst2str(Dst)]),
+	       [LogTag, Method, sipurl:print(URI), sipdst:dst2str(Dst)]),
     State = initiate_request(NewState1),
     {ok, State};
 init([Request, SocketIn, Dst, Branch, Timeout, Parent]) ->
@@ -904,7 +904,3 @@ generate_ack(Response, State) when record(State, state), record(Response, respon
     ACKRequest = #request{method="ACK", uri=URI, header=SendHeader, body=""},
     transportlayer:send_proxy_request(Socket, ACKRequest, Dst, ["branch=" ++ Branch]),
     ok.
-
-dst2str(Dst) when record(Dst, sipdst) ->
-    lists:flatten(io_lib:format("~p:~s:~p (~s)", [Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port,
-						  sipurl:print(Dst#sipdst.uri)])).

@@ -243,7 +243,7 @@ do_request(RequestIn, Origin) when record(RequestIn, request), record(Origin, si
 	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~s",
 			[LogTag, Method, sipurl:print(URI), sipurl:print(FwdURL)]),
 	    {ok, _, ApproxMsgSize} = siprequest:check_proxy_request(Request),
-	    case siprequest:url_to_dstlist(FwdURL, ApproxMsgSize, URI) of
+	    case sipdst:url_to_dstlist(FwdURL, ApproxMsgSize, URI) of
 		{error, nxdomain} ->
 		    logger:log(debug, "incomingproxy: Failed resolving FwdURL : NXDOMAIN (responding '604 Does Not Exist Anywhere')"),
                     transactionlayer:send_response_handler(THandler, 604, "Does Not Exist Anywhere"),

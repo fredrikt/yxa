@@ -69,7 +69,7 @@ fork(State) when record(State, state) ->
 		      [Method, sipurl:print(CallURI), CallTimeout]),
 	    Branch = State#state.branchbase ++ "-UAC" ++ integer_to_list(targetlist:list_length(Targets) + 1),
 	    Request = OrigRequest#request{uri=CallURI},
-	    DstList = siprequest:url_to_dstlist(CallURI, State#state.approx_msgsize, CallURI),
+	    DstList = sipdst:url_to_dstlist(CallURI, State#state.approx_msgsize, CallURI),
 	    [FirstDst|_] = DstList,
 	    NewTargets = case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, CallTimeout, self()) of
 	    	BranchPid when pid(BranchPid) ->

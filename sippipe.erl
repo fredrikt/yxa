@@ -41,7 +41,7 @@ start(ServerHandler, ClientPid, Request, route, Timeout) ->
 	    {ok, _, ApproxMsgSize} = siprequest:check_proxy_request(Request),
 	    logger:log(debug, "sippipe: Routing request as per the Route header, Destination ~p, Request-URI ~p",
 		      [sipurl:print(DstURI), sipurl:print(ReqURI)]),
-	    case siprequest:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
+	    case sipdst:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
 		{error, nxdomain} ->
 		    logger:log(debug, "sippipe: Failed resolving URI ~s : NXDOMAIN (responding '604 Does Not Exist Anywhere')",
 			       [sipurl:print(DstURI)]),
@@ -59,7 +59,7 @@ start(ServerHandler, ClientPid, Request, route, Timeout) ->
 		    error
             end;
 	Unknown ->
-	    logger:log(error, "sippipe: Unkown result from siprequest:url_to_dstlist : ~p",
+	    logger:log(error, "sippipe: Unkown result from sipdst:url_to_dstlist : ~p",
 		       [Unknown]),
 	    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
 	    error
@@ -343,7 +343,7 @@ resolve_if_necessary([Dst | T]) when record(Dst, sipdst), Dst#sipdst.proto == un
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
     case URI of
 	_ when record(URI, sipurl) ->
-	    case siprequest:url_to_dstlist(URI, 500, URI) of    % XXX do better size estimation
+	    case sipdst:url_to_dstlist(URI, 500, URI) of    % XXX do better size estimation
 		DstList when list(DstList) ->
 		    DstList;
 		Unknown ->
