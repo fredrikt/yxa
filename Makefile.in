@@ -28,7 +28,7 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 
 
 systools_make_script = \
-	$(ERL) -noshell -run systools make_script $* -run init stop
+	$(ERL) -noshell -run systools make_script $* -run init stop && test -f $*.boot
 
 create_start_script = \
 	sed -e 's!@PROGRAMNAME@!$@!' \
@@ -110,8 +110,7 @@ erl_FILES = \
 
 imported_hrl_FILES = \
 	LDAPv3.hrl \
-	eldap.hrl \
-	inet_dns.hrl
+	eldap.hrl
 
 hrl_FILES = \
 	database_call.hrl \
@@ -161,6 +160,23 @@ clean:
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out dtmfserver erl_crash.dump
 	rm -f $(start_FILES)
+
+sslkey:
+	@if [ -f $(DESTDIR)$(sslcertdir)/ssl.config ]; then \
+		echo ""; \
+		echo "You already have a $(DESTDIR)$(sslcertdir)/ssl.config file - "; \
+		echo "aborting to not accidentally overwrite existing ssl keys"; \
+		echo ""; \
+		false; \
+	    else \
+		true; \
+	fi
+	$(mkinstalldirs) -m 700 $(DESTDIR)$(sslcertdir)
+	cp $(srcdir)/ssl.config $(DESTDIR)$(sslcertdir)/ssl.config
+	cd $(DESTDIR)$(sslcertdir) && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
+	cd $(DESTDIR)$(sslcertdir) && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
+	cd $(DESTDIR)$(sslcertdir) && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
+	cat $(DESTDIR)$(sslcertdir)/cert.cert $(DESTDIR)$(sslcertdir)/cert.pem > $(DESTDIR)$(sslcertdir)/cert.comb
 
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
