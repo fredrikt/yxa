@@ -78,7 +78,7 @@ incomingproxy:
 internal_to_e164		(default: []) Regexps for rewriting
 				internal numbers to E.164 numbers
 defaultroute			(required) SIP host name part of default route
-homedomain			(required) SIP home domain
+homedomain			(required) List of SIP home domains
 
 adminwww:
 
@@ -99,7 +99,7 @@ incomingproxy.config:
                                       {"^0(.+)$", "+46\\1"},
                                       {"^(.+)$", "+468\\1"}
                                      ]},
-                  {homedomain, "example.com"},
+                  {homedomain, ["example.com"]},
                   {ldap_server, "ldap.example.com"}
                  ]}].
 
