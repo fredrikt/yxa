@@ -21,7 +21,7 @@ parse_packet(Packet, Origin) ->
 	    %% Extract receiver pid if present
 	    RStr = case Origin of
 		       _ when record(Origin, siporigin) ->
-			   "(receiver: " ++ pid_to_list(Origin#siporigin.receiver) ++ ") ";
+			   "(connection handler: " ++ pid_to_list(Origin#siporigin.receiver) ++ ") ";
 		       _ ->
 			   ""
 		   end,
@@ -61,7 +61,7 @@ parseheader(Header) ->
     [Request | Lines] = string:tokens(Header, "\n"),
     Parseheader = fun(Line) ->
 			  Index = string:chr(Line, $:),
-			  Name = string:substr(Line, 1, Index - 1),
+			  Name = string:strip(string:substr(Line, 1, Index - 1), right), 
 			  Value = string:strip(string:substr(Line, Index + 1),
 					       left),
 			  {Name, split_header_value(httpd_util:to_lower(Name), Value)}
@@ -73,10 +73,11 @@ parseheader(Header) ->
 split_header_value(_, []) ->
     [];
 split_header_value(LCname, Value) ->
-    % Luckily, none of these headers have a compact form.
-    case util:casegrep(LCname, ["www-authenticate", "authorization",
-				"proxy-authenticate", "proxy-authorization",
-				"date"]) of
+    %% Luckily, none of these headers have a compact form.
+    %% all values are lower case, so lists:member can be used
+    case lists:member(LCname, ["www-authenticate", "authorization",
+			       "proxy-authenticate", "proxy-authorization",
+			       "date"]) of
 	true ->
 	    % Except the headers listed in RFC3261 7.3.1 and some other that needs
 	    % to be excepted from standard header comma splitting
