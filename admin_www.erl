@@ -232,11 +232,14 @@ check_auth2(Header, Env, WantAdmin) ->
     Response2 = sipauth:get_response(Nonce2, Method,
 				     URI,
 				     User, Password),
-    io:format("response: ~p ~p~n", [Response, Response2]),
+    Response3 = sipauth:get_response(Nonce2, "GET",
+				     URI,
+				     User, Password),
+    io:format("response: ~p ~p ~p~n", [Response, Response2, Response3]),
     if 
 	Password == "" ->
 	    false;
-	Response == Response2 ->
+	Response == Response2 ; Response == Response3 ->
 	    if 
 		WantAdmin == true ->
 		    if
