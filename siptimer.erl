@@ -64,8 +64,9 @@ reset_timers2([H | _T], TimerList) when is_record(H, siptimer), is_record(TimerL
 	    logger:log(error, "Siptimer: Can't reset timer ~p:~p gone from list :~n~p~n", [Ref, Description, TimerList]),
 	    TimerList;
         ThisTimer ->
-	    timer:cancel(ThisTimer#siptimer.timer),
             Description = ThisTimer#siptimer.description,
+	    timer:cancel(ThisTimer#siptimer.timer),
+	    remove_queued_result({siptimer, Ref, Description}),
             Timeout = ThisTimer#siptimer.timeout,
 	    OldStarttime = ThisTimer#siptimer.starttime,
 	    SecondsLeft = (OldStarttime + (Timeout div 1000)) - util:timestamp(),
@@ -141,7 +142,19 @@ cancel_timer(SipTimer, TimerList) when is_record(SipTimer, siptimer), is_record(
     Descr = SipTimer#siptimer.description,
     logger:log(debug, "Siptimer: Cancelling timer ~p:~p", [Ref, Descr]),
     timer:cancel(Timer),
+    remove_queued_result({siptimer, Ref, Descr}),
     make_siptimerlist(del_ref(Ref, TimerList#siptimerlist.list)).
+
+%% Receive all messages matching Signal from this processes mailbox. When there
+%% are no more signals matching Signal, return ok. This is to remove any signals
+%% from a timer that we have in queue when we cancel the timer.
+remove_queued_result(Signal) ->
+    receive
+	Signal ->
+	    remove_queued_result(Signal)
+    after 0 ->
+	    ok
+    end.
 
 del_ref(_Ref, []) ->
     [];
@@ -150,9 +163,6 @@ del_ref(Ref, [H | T]) when is_record(H, siptimer), H#siptimer.ref == Ref ->
 del_ref(Ref, [H | T]) when is_record(H, siptimer) ->
     [H | del_ref(Ref, T)].
 
-stop_timers([]) ->
-    logger:log(debug, "Siptimer: Asked to stop timers but none were supplied"),
-    error;
 stop_timers(TimerList) when is_record(TimerList, siptimerlist) ->
     ok = stop_timers2(TimerList#siptimerlist.list).
 
@@ -164,6 +174,7 @@ stop_timers2([SipTimer | Rest]) ->
     Descr = SipTimer#siptimer.description,
     logger:log(debug, "Siptimer: Stopping timer ~p:~p", [Ref, Descr]),
     timer:cancel(Timer),
+    remove_queued_result({siptimer, Ref, Descr}),
     stop_timers2(Rest).
 
 cancel_timers(CancelTimers, TimerList) when is_record(CancelTimers, siptimerlist), is_record(TimerList, siptimerlist) ->
@@ -181,19 +192,20 @@ cancel_all_timers([]) ->
 cancel_all_timers(TimerList) when is_record(TimerList, siptimerlist) ->
     logger:log(debug, "Siptimer: Cancelling all timers :"),
     lists:map(fun (SipTimer) ->
-			Timer = SipTimer#siptimer.timer,
-			Ref = SipTimer#siptimer.ref,
-			Descr = SipTimer#siptimer.description,
-			logger:log(debug, "Siptimer:    ~p:~p", [Ref, Descr]),
-			timer:cancel(Timer)
+		      Timer = SipTimer#siptimer.timer,
+		      Ref = SipTimer#siptimer.ref,
+		      Descr = SipTimer#siptimer.description,
+		      logger:log(debug, "Siptimer:    ~p:~p", [Ref, Descr]),
+		      timer:cancel(Timer),
+		      remove_queued_result({siptimer, Ref, Descr})
 		end, TimerList#siptimerlist.list),
     empty().
 
 cancel_timers_with_appsignal(AppSignal, TimerList) when is_record(TimerList, siptimerlist) ->
     case get_timers_appsignal_matching(AppSignal, TimerList) of
 	Foo when is_record(Foo, siptimerlist), Foo#siptimerlist.list == [] ->
-	%    logger:log(debug, "Siptimer: No timers with AppSignal ~p found in TimerList :~n~p",
-	%		[AppSignal, debugfriendly(TimerList)]),
+	%%    logger:log(debug, "Siptimer: No timers with AppSignal ~p found in TimerList :~n~p",
+	%%	       [AppSignal, debugfriendly(TimerList)]),
 	    TimerList;
 	CancelTimers when is_record(CancelTimers, siptimerlist) ->
 	    logger:log(debug, "Siptimer: Cancelling all timers with AppSignal ~p :", [AppSignal]),
