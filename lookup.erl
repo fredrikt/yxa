@@ -511,8 +511,12 @@ get_remote_party_name(Key, URI) when list(Key), record(URI, sipurl) ->
     case directory:lookup_tel2name(Key) of
 	none ->
 	    none;
-	DisplayName when list(DisplayName) ->
-	    DisplayName;
+	[DisplayName] when is_list(DisplayName) ->
+	    [DisplayName];
+	L when is_list(L) ->
+	    logger:log(debug, "Lookup: Got more than one name back for number ~p. Since I have no way " ++
+		       "of choosing a name from a list, I'm not going to try.", [Key]),
+	    none;
 	Unknown ->
 	    logger:log(error, "Lookup: Failed to get name for remote party ~p, unexpected result from lookup_tel2name : ~p",
 		    		[Key, Unknown]),
