@@ -11,6 +11,7 @@
 	 lookupenum/1,
 	 lookuppstn/1,
 	 isours/1,
+	 is_request_to_this_proxy/1,
 	 homedomain/1,
 	 lookupappserver/1,
 	 rewrite_potn_to_e164/1,
@@ -412,6 +413,48 @@ isours(URL) when record(URL, sipurl) ->
 	    logger:log(debug, "Lookup: isours ~s -> Unknown result ~p", [sipurl:print(URL), Unknown]),
 	    false
     end.
+
+%%--------------------------------------------------------------------
+%% Function: is_request_to_this_proxy(Request)
+%%           Request = request record()
+%% Descrip.: Check if a request is destined for this proxy. Not for a
+%%           domain handled by this proxy, but for this proxy itself.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_request_to_this_proxy(Request) when record(Request, request) ->
+    {Method, URL, Header} = {Request#request.method, Request#request.uri, Request#request.header},
+    case local:homedomain(URL#sipurl.host) of
+	true ->
+	    is_request_to_this_proxy2(Method, URL, Header);
+	false ->
+	    false
+    end.
+
+%% is_request_to_this_proxy2/3 is a subfunction of is_request_to_this_proxy/1,
+%% called if the URI host matches one of our hostnames. Return true if there
+%% is no userpart in the URI, or if the method is OPTIONS and Max-Forwards is
+%% less than one. This procedure is from RFC3261 #11 Querying for Capabilities.
+is_request_to_this_proxy2(_, URL, Header) when record(URL, sipurl), URL#sipurl.user == none ->
+    true;
+is_request_to_this_proxy2("OPTIONS", URL, Header) when record(URL, sipurl) ->
+    %% RFC3261 # 11 says a proxy that receives an OPTIONS request with a Max-Forwards less than one
+    %% MAY treat it as a request to the proxy.
+    MaxForwards =
+        case keylist:fetch("Max-Forwards", Header) of
+            [M] ->
+                lists:min([255, list_to_integer(M) - 1]);
+            [] ->
+                70
+        end,
+    if
+        MaxForwards < 1 ->
+            logger:log(debug, "Routing: Request is OPTIONS and Max-Forwards < 1, treating it as a request to me."),
+            true;
+        true ->
+            false
+    end;
+is_request_to_this_proxy2(_, URL, _) when record(URL, sipurl) ->
+    false.
 
 homedomain(Domain) ->
     case util:casegrep(Domain, sipserver:get_env(homedomain, [])) of
