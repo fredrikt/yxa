@@ -312,8 +312,8 @@ check_auth_user(Env, User) ->
 check_auth2(Header, Env, WantAdmin) ->
     Authorization = sipheader:auth([Header]),
     {value, {_, Method}} = lists:keysearch(request_method, 1, Env),
-    {value, {_, URI}} = lists:keysearch(script_name, 1, Env),
     Response = dict:fetch("response", Authorization),
+    URI = dict:fetch("uri", Authorization),
     Nonce = dict:fetch("nonce", Authorization),
     Opaque = dict:fetch("opaque", Authorization),
     Timestamp = hex:from(Opaque),
@@ -350,8 +350,8 @@ check_auth2(Header, Env, WantAdmin) ->
 check_auth_user2(Header, Env, InUser) ->
     Authorization = sipheader:auth([Header]),
     {value, {_, Method}} = lists:keysearch(request_method, 1, Env),
-    {value, {_, URI}} = lists:keysearch(script_name, 1, Env),
     Response = dict:fetch("response", Authorization),
+    URI = dict:fetch("uri", Authorization),
     Nonce = dict:fetch("nonce", Authorization),
     Opaque = dict:fetch("opaque", Authorization),
     Timestamp = hex:from(Opaque),
