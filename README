@@ -40,21 +40,38 @@ routes requests correctly to the testserver.
 Installation
 ============
 
-1) Create a build directory somewhere and copy the "Makefile.template"
-from the source directory here and name it "Makefile".
+1) Unpack the source
 
-2) Edit the srcdir variable in your new Makefile and change the
-STARTSCRIPT variable to whatever application(s) you want to build
-in this build directory.
+2) Change working directory to where you unpacked the source
 
-3) Create a local.erl suiting your needs or symlink local.erl to
-one of the ones provided with Yxa (local.erl-su.se and
-local.erl-kth.se).
+3) Optionally, but preferrably - create a sub-directory called 'build'
+   or whatever you desire (this does not have to be a sub-directory to
+   where you unpacked the source).
 
-4) Edit init.sh.in and replace the smodule stuff with whatever you
-need to set up a runtime environment containing Erlang.
+4) Change into the 'build' directory you created in step 3.
 
-5) Type "make" in your build directory.
+5) Run ../configure && make && sudo make install
+
+Configure options special to Yxa :
+
+   --with-erlang	The path to your Erlang/OTP installation's
+			'bin' directory.
+   --with-mnesiadir	The path to where you want your Mnesia
+			database files. Default is current directory,
+			which might not be what you want (if you
+			start Yxa on system startup, these files would
+			probably end up in '/').
+   --with-sslcertdir	The path to where you keep your SSL certificate
+			files (cert.comb).
+   --with-local		The suffix of local.erl-file you want. local.erl
+			is a file containing hooks for all sorts of
+			things, making it possible to make your own
+			extensions to Yxa. The default is 'default',
+			but 'su.se' and 'kth.se' local.erl's are also
+			included in the distribution.
+			Copy 'local.erl-default' to 'local.erl-your.domain'
+			and use --with-local='your.domain' if you want
+			to make your own custom local.erl.
 
 ===
 SSL
