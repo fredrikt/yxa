@@ -49,7 +49,7 @@ if [ "x$MYNAME" = "xbootstrap.sh" ]; then
     fi
 
 	# yes, the name should be incomingproxy
-    $(ERL) -pz $(beamdir) -name incomingproxy -noshell $MNESIAPARAMETERS \
+    ${ERL} -pz ${beamdir} -name incomingproxy -noshell $MNESIAPARAMETERS \
 	-run bootstrap start "$ADMINPW" -run init stop
 else
     if [ ! -r "${CONFIGPATH}.config" ]; then
@@ -57,7 +57,7 @@ else
 	exit 1
     fi
 
-    $(erl) -boot $PROGRAMNAME -pz $(beamdir) \
+    ${erl} -boot $PROGRAMNAME -pz ${beamdir} \
 	-name $PROGRAMNAME -config $CONFIGPATH \
 	-proto_dist inet_ssl -ssl_dist_opt client_certfile $SSLCERTFILE \
 	-ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2 \
