@@ -123,6 +123,14 @@ send_notavail(Header, Socket) ->
 		   {"CSeq", keylist:fetch("CSeq", Header)},
 		   {"Retry-After", ["180"]}], "").
 
+send_too_many_hops(Header, Socket) ->
+    send_response(Socket, 483, "Too Many Hops",
+		  [{"via", keylist:fetch("Via", Header)},
+		   {"From", keylist:fetch("From", Header)},
+		   {"To", keylist:fetch("To", Header)},
+		   {"Call-ID", keylist:fetch("Call-ID", Header)},
+		   {"CSeq", keylist:fetch("CSeq", Header)}], "").
+
 send_answer(Header, Socket, Body) ->
     send_response(Socket, 200, "OK",
 		  [{"via", keylist:fetch("Via", Header)},
