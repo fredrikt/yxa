@@ -1,12 +1,12 @@
 VPATH = $(srcdir)
 
-BEAM = incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sippacket.beam keylist.beam sipurl.beam siprequest.beam sipheader.beam phone.beam sipauth.beam siphost.beam dnsutil.beam admin_www.beam hex.beam directory.beam eldap.beam LDAPv3.beam appserver.beam sipanswer.beam rtp.beam sdp.beam dtmf.beam sound.beam group_regexp.beam sipclient.beam database_call.beam sipserver.beam database_regexproute.beam sipproxy.beam gssapi.beam lookup.beam local.beam testserver.beam siptimer.beam transactionlist.beam targetlist.beam clientbranch.beam serverbranch.beam database_forward.beam
+BEAM = incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sippacket.beam keylist.beam sipurl.beam siprequest.beam sipheader.beam phone.beam sipauth.beam siphost.beam dnsutil.beam admin_www.beam hex.beam directory.beam eldap.beam LDAPv3.beam appserver.beam sipanswer.beam rtp.beam sdp.beam dtmf.beam sound.beam group_regexp.beam sipclient.beam database_call.beam sipserver.beam database_regexproute.beam sipproxy.beam gssapi.beam lookup.beam local.beam testserver.beam siptimer.beam transactionlist.beam targetlist.beam clientbranch.beam serverbranch.beam database_forward.beam bootstrap.beam
 
 CC = gcc
 
 .PRECIOUS: %.boot %.config
 
-all: $(BEAM) $(STARTSCRIPT)
+all: $(BEAM) $(STARTSCRIPT) bootstrap.sh
 
 clean:
 	rm -f *.beam *.boot *.app *.rel *~ *.script *.start
@@ -42,3 +42,9 @@ sslkey:
 
 dtmfserver: dtmfserver.o
 	$(CC) $(LDFLAGS) -o dtmfserver dtmfserver.o
+
+bootstrap.sh: init.sh.in
+	cp $(srcdir)/init.sh.in $@
+	echo "ADMINPW='verysecret'" >> $@
+	echo "erl -name incomingproxy -noshell -run bootstrap start \"\$$ADMINPW\" -run init stop" >> $@
+	chmod +x $@
