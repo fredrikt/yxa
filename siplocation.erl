@@ -3,12 +3,12 @@
 	 debugfriendly_locations/1, get_locations_for_users/1,
 	 get_user_with_contact/1, remove_expired_phones/0]).
 
-register_contact(Phone, Location, Priority, Header) ->
+register_contact(LogTag, Phone, Location, Priority, Header) ->
     {_, Contact} = Location,
     Expire = parse_register_expire(Header, Contact),
     NewContact = remove_expires_parameter(Contact),
-    logger:log(normal, "REGISTER ~s at ~s (priority ~p, expire in ~p)",
-		[Phone, sipurl:print(NewContact), Priority, Expire]),
+    logger:log(normal, "~s: REGISTER ~s at ~s (priority ~p, expire in ~p)",
+		[LogTag, Phone, sipurl:print(NewContact), Priority, Expire]),
     phone:insert_purge_phone(Phone, [{priority, Priority}],
 			     dynamic,
 			     Expire + util:timestamp(),
@@ -21,33 +21,31 @@ remove_expires_parameter(Contact) ->
     Parameters = sipheader:dict_to_param(Param2),
     {User, none, Host, Port, Parameters}.
 
-unregister_contact(Phone, Contact, Priority) ->
-    logger:log(normal, "UN-REGISTER ~s at ~s (priority ~p)",
-		[Phone, sipheader:contact_print([{none, Contact}]), Priority]),
+unregister_contact(LogTag, Phone, Contact, Priority) ->
+    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
+		[LogTag, Phone, sipheader:contact_print([{none, Contact}]), Priority]),
     phone:insert_purge_phone(Phone, [{priority, Priority}],
 			     dynamic,
 			     util:timestamp(),
 			     Contact).
 
-process_register_isauth(Header, Socket, Phone, Contacts) ->
+process_register_isauth(LogTag, Header, Phone, Contacts) ->
     % XXX RFC3261 says to store Call-ID and CSeq and to check these on
     % registers replacing erlier bindings (10.3 #7)
 
     check_valid_register_request(Header),
 
     % try to find a wildcard to process
-    case process_register_wildcard_isauth(Header, Socket, Phone, Contacts) of
+    case process_register_wildcard_isauth(LogTag, Header, Phone, Contacts) of
 	none ->
-	    % no wildcard, loop through all Contacts, and for all Contacts
-	    % loop through all Auxphones
+	    % no wildcard, loop through all Contacts
 	    lists:map(fun (Location) ->
-			register_contact(Phone, Location, 100, Header)
+			register_contact(LogTag, Phone, Location, 100, Header)
 		      end, Contacts);
 	_ ->
 	    none
     end,
-    siprequest:send_result(Header, Socket, "", 200, "OK",
-    		[{"Contact", fetch_contacts(Phone)}]).
+    {ok, {200, "OK", [{"Contact", fetch_contacts(Phone)}]}}.
 
 check_valid_register_request(Header) ->
     Require = keylist:fetch("Require", Header),
@@ -84,7 +82,7 @@ print_contact(Location, Expire) ->
 	    [C ++ ";expires=" ++ integer_to_list(NewExpire)]
     end.
 
-process_register_wildcard_isauth(Header, Socket, Phone, Contacts) ->
+process_register_wildcard_isauth(LogTag, Header, Phone, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
 	true ->
 	    logger:log(debug, "Location: Processing valid wildcard un-register"),
@@ -97,7 +95,7 @@ process_register_wildcard_isauth(Header, Socket, Phone, Contacts) ->
 			    {value, {priority, P}} -> P;
 			    _ -> 100
 			end,
-			unregister_contact(Phone, Location, Prio)
+			unregister_contact(LogTag, Phone, Location, Prio)
 		      end, Entrys);
 		_ ->
 		    none
@@ -184,7 +182,7 @@ get_user_with_contact(URI) ->
     Port = siprequest:default_port(UPort),
     URIstr = sipurl:print({User, none, Host, Port, []}),
     case phone:get_phone_with_requristr(URIstr) of
-	{atomic, [SIPuser, _]} ->
+	{atomic, [SIPuser | _]} ->
 	    SIPuser;
 	_ ->
 	    none
