@@ -1,7 +1,8 @@
 -module(admin_www).
 -export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2,
 	 change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2,
-	 change_classes/2, list_numbers/2, add_regexp/2, del_regexp/2]).
+	 change_classes/2, list_numbers/2, add_regexp/2, del_regexp/2,
+	 show_user/2, set_forward/2]).
 
 -include("phone.hrl").
 -include("database_regexproute.hrl").
@@ -137,6 +138,40 @@ print_one_phone(Number, Flags, Class, Expire, Address) ->
      end,
      "</td></tr>\n"].
 
+print_one_forward({Forwards, Timeout, Localring}) ->
+    Printfunc = fun (Number) ->
+			[
+			 "<tr><td>",
+			 Number,
+			 "</td></tr>"
+			]
+		end,
+    ["<td>",
+     case Timeout of
+	 0 ->
+	     "Vidarekoppla alltid till ";
+	 _ ->
+	     ["Vidarekoppla efter ", integer_to_list(Timeout), " sekunder till "]
+     end,
+     "</td><td>",
+     "<table>",
+     lists:map(Printfunc, Forwards),
+     "</table>",
+     "</td><td>",
+     case Localring of
+	 true ->
+	     "Ring ocks&aring; p&aring; den egna telefonen ";
+	 _ ->
+	     ""
+     end,
+     "</td>\n"
+    ];
+print_one_forward(none) ->
+    ["<td>",
+     "Vidarekoppla aldrig"
+     "</td>\n"
+    ].
+
 print_phones([]) -> [];
 
 print_phones([{regexproute, Regexp, Flags, Class, Expire, Address} | List]) ->
@@ -257,6 +292,23 @@ check_auth(Env, WantAdmin) ->
 	    end
     end.
 
+check_auth_user(Env, User) ->
+    case lists:keysearch(http_authorization, 1, Env) of
+	false ->
+	    {error, [header(unauth, false),
+		     "Not authorized\r\n"
+		    ]};
+	{value, {Key, Value}} ->
+	    case check_auth_user2(Value, Env, User) of
+		true ->
+		    {ok};
+		false ->
+		    {error, [header(unauth, false),
+			     "Not authorized\r\n"
+			    ]}
+	    end
+    end.
+
 check_auth2(Header, Env, WantAdmin) ->
     Authorization = sipheader:auth([Header]),
     {value, {_, Method}} = lists:keysearch(request_method, 1, Env),
@@ -295,6 +347,39 @@ check_auth2(Header, Env, WantAdmin) ->
 	    false
     end.
 
+check_auth_user2(Header, Env, InUser) ->
+    Authorization = sipheader:auth([Header]),
+    {value, {_, Method}} = lists:keysearch(request_method, 1, Env),
+    {value, {_, URI}} = lists:keysearch(script_name, 1, Env),
+    Response = dict:fetch("response", Authorization),
+    Nonce = dict:fetch("nonce", Authorization),
+    Opaque = dict:fetch("opaque", Authorization),
+    Timestamp = hex:from(Opaque),
+    Now = util:timestamp(),
+    User = dict:fetch("username", Authorization),
+    {Password, Flags, Classes} = get_pass(User),
+    Nonce2 = sipauth:get_nonce(Opaque),
+    IsAdmin = lists:member(admin, Flags),
+    Response2 = sipauth:get_response(Nonce2, Method,
+				     URI,
+				     User, Password),
+    Response3 = sipauth:get_response(Nonce2, "GET",
+				     URI,
+				     User, Password),
+    if 
+	Password == "" ->
+	    false;
+	Response == Response2 ; Response == Response3 ->
+	    if 
+		User == InUser ->
+		    true;
+		true ->
+		    false
+	    end;
+	true ->
+	    false
+    end.
+
 
 header(ok) ->
     ["Content-type: text/html; charset=utf-8\r\n\r\n"].
@@ -317,6 +402,9 @@ userurl() ->
 
 phonesurl() ->
     sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Alist_phones".
+
+showuserurl() ->
+    sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Ashow_user".
 
 indexurl_html() ->
     "<a href=\"" ++ indexurl() ++ "\">Tillbaka till f&ouml;rstasidan</a>".
@@ -644,7 +732,290 @@ change_user_form(Env, Input) ->
 		    ]
 	    end
     end.
-    
+
+print_disabled(none, never) ->
+    "disabled";
+print_disabled({Forwards, 0, Localring}, always) ->
+    "disabled";
+print_disabled({Forwards, Timeout, Localring}, noanswer) when Timeout > 0 ->
+    "disabled";
+print_disabled(_, _) ->
+    "".
+
+show_user_front(User, Numberlist) ->
+    Printfunc = fun (Number) ->
+			Forward = case database_forward:fetch(Number) of
+				      {atomic, [F]} ->
+					  F;
+				      _ ->
+					  none
+				  end,
+			[
+			 "<h2>Vidarekoppling f&ouml;r ", Number, "</h2>\n",
+			 "<h3>Nuvarande vidarekopplingsstatus</h3>\n",
+			 "<table>",
+			 "<tr>",
+			 print_one_forward(Forward),
+			 case Forward of
+			     none ->
+				 "";
+			     _ ->
+				 ["<td>",
+				  "<form action=\"admin_www%3Ashow_user\" method=get>\n",
+				  "<input type=\"hidden\" name=\"user\" value=\"",
+				  User, "\">\n",
+				  "<input type=\"hidden\" name=\"number\" value=\"",
+				  Number, "\">\n",
+				  "<input type=\"hidden\" name=\"type\" value=\"",
+				  "change", "\">\n",
+				  "<input type=\"submit\" value=\"&Auml;ndra\">\n",
+				  "</form>\n",
+				  "</td>"]
+			 end,
+			 "</tr>",
+			 "</table>",
+			 "<h3>&Auml;ndra vidarekopplingstyp</h3>",
+			 "<table><tr><td>",
+			 "<form action=\"admin_www%3Ashow_user\" method=get>\n",
+			 "<input type=\"hidden\" name=\"user\" value=\"",
+			 User, "\">\n",
+			 "<input type=\"hidden\" name=\"number\" value=\"",
+			 Number, "\">\n",
+			 "<input type=\"hidden\" name=\"type\" value=\"",
+			 "never", "\">\n",
+			 "<input ",
+			 print_disabled(Forward, never),
+			 " type=\"submit\" value=\"Vidarekoppla aldrig\">\n",
+			 "</form>\n",
+			 "</td><td>",
+			 "<form action=\"admin_www%3Ashow_user\" method=get>\n",
+			 "<input type=\"hidden\" name=\"user\" value=\"",
+			 User, "\">\n",
+			 "<input type=\"hidden\" name=\"number\" value=\"",
+			 Number, "\">\n",
+			 "<input type=\"hidden\" name=\"type\" value=\"",
+			 "always", "\">\n",
+			 "<input ",
+			 print_disabled(Forward, always),
+			 " type=\"submit\" value=\"Vidarekoppla alltid\">\n",
+			 "</form>\n",
+			 "</td><td>",
+			 "<form action=\"admin_www%3Ashow_user\" method=get>\n",
+			 "<input type=\"hidden\" name=\"user\" value=\"",
+			 User, "\">\n",
+			 "<input type=\"hidden\" name=\"number\" value=\"",
+			 Number, "\">\n",
+			 "<input type=\"hidden\" name=\"type\" value=\"",
+			 "noanswer", "\">\n",
+			 "<input ",
+			 print_disabled(Forward, noanswer),
+			 " type=\"submit\" value=\"Vidarekoppla vid ej svar\">\n",
+			 "</form>\n"
+			 "</td></tr></table>"
+			]
+		end,
+    [
+     header(ok),
+     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
+     lists:map(Printfunc, Numberlist),
+     indexurl_html()
+    ].
+
+forward_to_typestring(none) ->
+    "never";
+forward_to_typestring({Forwards, 0, Localring}) ->
+    "always";
+forward_to_typestring({Forwards, _, Localring}) ->
+    "noanswer".
+
+show_user_number(User, Number, "never") ->
+    [
+     header(ok),
+     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
+     "<h2>Byt vidarekopplingstyp f&ouml;r ", Number, "</h2>\n",
+     "Byt till vidarekoppla aldrig<br>",
+
+     "<form action=\"admin_www%3Aset_forward\" method=post>\n",
+     "<input type=\"hidden\" name=\"user\" value=\"",
+     User, "\">\n",
+     "<input type=\"hidden\" name=\"number\" value=\"",
+     Number, "\">\n",
+     "<input type=\"hidden\" name=\"type\" value=\"",
+     "never", "\">\n",
+     "<input type=\"submit\" value=\"OK\">\n",
+     "</form>\n",
+     "<form action=\"admin_www%3Ashow_user\" method=post>\n",
+     "<input type=\"hidden\" name=\"user\" value=\"",
+     User, "\">\n",
+     "<input type=\"submit\" value=\"Avbryt\">\n",
+     "</form>\n",
+     indexurl_html()
+    ];
+
+show_user_number(User, Number, InType) ->
+    Forward = case database_forward:fetch(Number) of
+		  {atomic, [F]} ->
+		      F;
+		  _ ->
+		      none
+	      end,
+    {Forwards, Timeout, Localring} = case Forward of
+					 none ->
+					     {[""], 20, false};
+					 _ ->
+					     Forward
+				     end,
+    Type = case InType of
+	       "change" ->
+		   forward_to_typestring(Forward);
+	       _ ->
+		   InType
+	   end,
+    [
+     header(ok),
+     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
+     case InType of
+	 "change" ->
+	     ["<h2>&Auml;ndra vidarekoppling f&ouml;r ", Number, "</h2>\n"];
+	 _ ->
+	     ["<h2>Byt vidarekopplingstyp f&ouml;r ", Number, "</h2>\n"]
+     end,
+
+     "<form action=\"admin_www%3Aset_forward\" method=post>\n",
+     "Vidarekoppla till ",
+     "<input type=\"text\" name=\"forwardnumber\" value=\"",
+     hd(Forwards),
+     "\">",
+     case Type of
+	 "noanswer" ->
+	     T = case InType of
+		     "change" ->
+			 integer_to_list(Timeout);
+		     _ ->
+			 "20"
+		 end,
+	     [
+	      "<br>efter <input type=\"text\" name=\"timeout\" value=\"",
+	      T,
+	      "\"> sekunder"
+	     ];
+	 _ ->
+	     ""
+     end,
+     "<br>\n",
+     case Type of
+	 "noanswer" ->
+	     "Forts&auml;tt ring p&aring; min vanliga telefon ";
+	 "always" ->
+	     "Ring ocks&aring; p&aring; min vanliga telefon "
+     end,
+     "<input type=\"checkbox\" name=\"localring\"",
+     case Localring of
+	 true ->
+	     "checked ";
+	 _ ->
+	     ""
+     end,
+     "value=\"true\"><br>\n",
+     "<br>\n",
+     "<input type=\"hidden\" name=\"user\" value=\"",
+     User, "\">\n",
+     "<input type=\"hidden\" name=\"number\" value=\"",
+     Number, "\">\n",
+     "<input type=\"hidden\" name=\"type\" value=\"",
+     Type, "\">\n",
+     "<input type=\"submit\" value=\"OK\">\n",
+     "</form>\n",
+     "<form action=\"admin_www%3Ashow_user\" method=post>\n",
+     "<input type=\"hidden\" name=\"user\" value=\"",
+     User, "\">\n",
+     "<input type=\"submit\" value=\"Avbryt\">\n",
+     "</form>\n",
+     indexurl_html()
+    ].
+
+httparg(Env, Input) ->
+    case lists:keysearch(request_method, 1, Env) of
+	{value, {_, "GET"}} ->
+	    case lists:keysearch(query_string, 1, Env) of
+		{value, {_, Query}} ->
+		    sipheader:httparg(Query)
+	    end;
+	{value, {Key, "POST"}} ->
+	    sipheader:httparg(Input)
+    end.
+
+show_user(Env, Input) ->
+    Args = httparg(Env, Input),
+    {ok, User} = dict:find("user", Args),
+
+    case check_auth_user(Env, User) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    {Password, Flags, Classes} = get_pass(User),
+	    Numberlist = get_numbers(User),
+	    case dict:find("number", Args) of
+		error ->
+		    show_user_front(User, Numberlist);
+		{ok, Number} ->
+		    case lists:member(Number, Numberlist) of
+			false ->
+			    [header(ok),
+			     "<h1>Not allowed to change number</h1>"
+			    ];
+			_ ->
+			    {ok, Type} = dict:find("type", Args),
+			    show_user_number(User, Number, Type)
+		    end
+	    end
+    end.
+
+set_forward_type(Number, "never", _, _, _) ->
+    database_forward:delete(Number);
+set_forward_type(Number, "always", Forwards, _, Localring) ->
+    database_forward:insert(Number, Forwards, 0, Localring);
+set_forward_type(Number, "noanswer", Forwards, Timeout, Localring) ->
+    database_forward:insert(Number, Forwards, Timeout, Localring).
+
+dict_find(Key, Dict, Default) ->
+    case dict:find(Key, Dict) of
+	{ok, Value} ->
+	    Value;
+	_ ->
+	    Default
+    end.
+
+set_forward(Env, Input) ->
+    Args = httparg(Env, Input),
+    {ok, User} = dict:find("user", Args),
+    {ok, Number} = dict:find("number", Args),
+    {ok, Type} = dict:find("type", Args),
+
+    case check_auth_user(Env, User) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    {Password, Flags, Classes} = get_pass(User),
+	    
+	    Numberlist = get_numbers(User),
+	    
+	    true = lists:member(Number, Numberlist),
+	    
+	    Forwards = [dict_find("forwardnumber", Args, "")],
+	    TimeoutText = dict_find("timeout", Args, "20"),
+	    Timeout = case util:isnumeric(TimeoutText) of
+			  true ->
+			      list_to_integer(TimeoutText);
+			  _ ->
+			      20
+		      end,
+	    Localring = list_to_atom(dict_find("localring", Args, "false")),
+	    
+	    set_forward_type(Number, Type, Forwards, Timeout, Localring),
+	    header(redirect, showuserurl() ++ "?user=" ++ User)
+    end.
+
 set_admin(User, "true") ->
     {Password, Flags, Classes} = get_pass(User),
     case lists:member(admin, Flags) of
