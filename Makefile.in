@@ -46,8 +46,12 @@ erl_FILES = \
 	LDAPv3.erl \
 	admin_www.erl \
 	appserver.erl \
+	appserver_glue.erl \
+	autotest.erl \
 	bootstrap.erl \
 	clienttransaction.erl \
+	contact.erl \
+	contact_param.erl \
 	database_call.erl \
 	database_forward.erl \
 	database_regexproute.erl \
@@ -60,6 +64,7 @@ erl_FILES = \
 	gssapi.erl \
 	hex.erl \
 	incomingproxy.erl \
+	key_val_db.erl \
 	keylist.erl \
 	local.erl \
 	logger.erl \
@@ -78,6 +83,7 @@ erl_FILES = \
 	siphost.erl \
 	siplocation.erl \
 	sippacket.erl \
+	sipparse_util.erl \
 	sippipe.erl \
 	sipproxy.erl \
 	siprequest.erl \
@@ -96,6 +102,7 @@ erl_FILES = \
 	siputil.erl \
 	socketlist.erl \
 	sound.erl \
+	table_update.erl \
 	targetlist.erl \
 	tcp_connection.erl \
 	tcp_dispatcher.erl \
@@ -105,8 +112,10 @@ erl_FILES = \
 	transactionlayer.erl \
 	transactionstatelist.erl \
 	transportlayer.erl \
+	url_param.erl \
 	util.erl \
-	version.erl
+	version.erl \
+	xref_test.erl
 
 imported_hrl_FILES = \
 	LDAPv3.hrl \
