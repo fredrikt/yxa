@@ -13,7 +13,7 @@ BEAM =	incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sipp
 	transactionlayer.beam servertransaction.beam sippipe.beam \
 	transportlayer.beam tcp_dispatcher.beam tcp_listener.beam \
 	tcp_connection.beam tcp_receiver.beam registrar.beam sipserver_sup.beam \
-	sipdst.beam sipuserdb_static.beam
+	sipdst.beam sipuserdb_static.beam sipuserdb_file.beam
 
 IMPORTED_INCLUDES=	LDAPv3.hrl eldap.hrl inet_dns.hrl
 YXA_INCLUDES=	database_call.hrl \
