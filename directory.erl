@@ -1,145 +1,251 @@
+%%%-------------------------------------------------------------------
+%%% File    : directory.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Description : gen_server that caches connection to LDAP-server
+%%% and do all the querying.
+%%%
+%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 -module(directory).
--export([start/0, recvloop/3, ldapsearch_simple/4, ldapsearch/4,
-	 real_ldapsearch_simple/4, real_ldapsearch/4,
-	 get_value/2,
+
+-behaviour(gen_server).
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% External exports
+-export([start_link/0, start_link/1,
+	 ldapsearch_simple/4, ldapsearch/4, get_value/2,
 	 lookup_mail2tel/1, lookup_mail2uid/1, lookup_mail2cn/1, lookup_tel2name/1]).
 
-start() ->
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-record(state, {handle, server, querycount}).
+-record(ldaphandle, {ref}).
+
+-define(TIMEOUT, 2 * 1000).
+
+%%====================================================================
+%% External functions
+%%====================================================================
+%%--------------------------------------------------------------------
+%% Function: start_link/0
+%% Description: Starts the server
+%%--------------------------------------------------------------------
+start_link() ->
     case sipserver:get_env(ldap_server, none) of
 	none ->
-	    logger:log(debug, "Directory: Not starting LDAP client, no LDAP server configured"),
-	    none;
+	    logger:log(debug, "Directory: No LDAP server configured"),
+	    start_link(none);
 	Server ->
-	    start(Server)
-    end.
+	    start_link(Server)
+    end.    
 
-start(Server) ->
+start_link(Server) ->
+    gen_server:start_link({local, ldap_client}, ?MODULE, [Server], []).
+
+%%====================================================================
+%% Server functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: init/1
+%% Description: Initiates the server
+%% Returns: {ok, State}          |
+%%          {ok, State, Timeout} |
+%%          ignore               |
+%%          {stop, Reason}
+%%--------------------------------------------------------------------
+init([Server]) ->
     Handle = case Server of
-	{handle, H} -> H;
+		 none -> none;
+		 H when record(H, ldaphandle) -> H;
+		 _ ->
+		     case ldap_connect(Server) of
+			 H2 when record(H2, ldaphandle) -> H2;
+			 {error, E} ->
+			     logger:log(error, "Directory: Could not connect to LDAP server ~p " ++
+					"at the moment : ~p", [Server, E]),
+			     error
+		     end
+	     end,
+    {ok, #state{handle=Handle, server=Server, querycount=0}}.
+
+%%--------------------------------------------------------------------
+%% Function: handle_call/3
+%% Description: Handling call messages
+%% Returns: {reply, Reply, State}          |
+%%          {reply, Reply, State, Timeout} |
+%%          {noreply, State}               |
+%%          {noreply, State, Timeout}      |
+%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+handle_call({simple_search, Server, Type, In, Attribute}, From, State) ->
+    case State#state.server of
+	Server ->
+	    {NewHandle, Res} = ldapsearch_wrapper(simple, [Type, In, Attribute], State),
+	    NewQC = State#state.querycount + 1,
+	    NewState = State#state{handle=NewHandle, querycount=NewQC},
+	    {reply, {ok, Res}, NewState, ?TIMEOUT};
 	_ ->
-	    case ldap_connect(Server) of
-		{handle, H} -> H;
-		{error, E} ->
-		    logger:log(error, "Directory: Could not connect to LDAP server ~p at the moment : ~p", [Server, E]),
-		    error
-	    end
-    end,
-    case Handle of
-	P when pid(P) ->
-	    Pid = spawn(directory, recvloop, [Server, {handle, Handle}, 0]),
-	    logger:log(debug, "Directory: Started ldap_client process ~p", [Pid]),
-	    register(ldap_client, Pid),
-	    ok;
+	    {reply, {error, "Different LDAP server"}, State, ?TIMEOUT}
+    end;
+
+handle_call({search, Server, Type, In, Attributes}, From, State) ->
+    case State#state.server of
+	Server ->
+	    {NewHandle, Res} = ldapsearch_wrapper(full, [Type, In, Attributes], State),
+	    NewQC = State#state.querycount + 1,
+	    NewState = State#state{handle=NewHandle, querycount=NewQC},
+	    {reply, {ok, Res}, NewState, ?TIMEOUT};
 	_ ->
-	    error
+	    {reply, {error, "Different LDAP server"}, State, ?TIMEOUT}
     end.
 
-recvloop(Server, Handle, QueryCount) ->
-    {NewHandle, NewQueryCount} = receive
-	{simple_search, Pid, Opaque, {QueryServer, Type, In, Attribute}} ->
-	    {NewHandle1, Res} = ldapsearch_wrapper(Server, real_ldapsearch_simple, Handle, [Type, In, Attribute]),
-	    util:safe_signal("LDAP client: ", Pid, {ldap_client, Opaque, Res}),
-	    {NewHandle1, QueryCount + 1} ;
-	{search, Pid, Opaque, {QueryServer, Type, In, Attributes}} ->
-	    {NewHandle1, Res} = ldapsearch_wrapper(Server, real_ldapsearch, Handle, [Type, In, Attributes]),
-	    util:safe_signal("LDAP client: ", Pid, {ldap_client, Opaque, Res}),
-	    {NewHandle1, QueryCount + 1};
-	{ping} ->
-	    logger:log(debug, "LDAP client: Pong, handle ~p server ~p query count ~p",
-	    		[Handle, Server, QueryCount]),
-	    {Handle, QueryCount};
-	Unknown ->
-	    logger:log(debug, "Directory: ldap_client received unknown signal ~p", [Unknown]),
-	    {Handle, QueryCount}
-    after
-	2 * 1000 ->
-	    % Check if we should try to re-open our LDAP handle
-	    % every time we have been idle for 5 seconds
-	    case should_reopen_connection(Handle, QueryCount, Server) of
-		true ->
-		    case catch ldap_connect(Server) of
-			{'EXIT', E} ->
-			    logger:log(error, "LDAP client: Could not connect to LDAP server ~p : ~p", [Server, E]),
-			    % Return old handle in hope that it is still working.
-			    {Handle, QueryCount};
-			{handle, H} ->
-			    logger:log(debug, "LDAP client: Opened new connection to server ~s", [Server]),
-			    {{handle, H}, 0}
-		    end;
-		_ ->
-		    {Handle, QueryCount}
-	    end
+%%--------------------------------------------------------------------
+%% Function: handle_cast/2
+%% Description: Handling cast messages
+%% Returns: {noreply, State}          |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+handle_cast({ping_of_death, Pid}, State) ->
+    logger:log(debug, "LDAP client: Pinged with death by ~p, handle ~p server ~p query count ~p",
+	       [Pid, State#state.handle, State#state.server, State#state.querycount]),
+    {stop, normal, State}.
+
+%%--------------------------------------------------------------------
+%% Function: handle_info/2
+%% Description: Handling all non call/cast messages
+%% Returns: {noreply, State}          |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+%% Check if we should try to re-open our LDAP handle
+%% every time we have been idle for 2 seconds
+handle_info(timeout, State) ->
+    Server = State#state.server,
+    case should_reopen_connection(State) of
+	true ->
+	    case catch ldap_connect(Server) of
+		H when record(H, ldaphandle) ->
+		    logger:log(debug, "LDAP client: Opened new connection to server ~s", [Server]),
+		    {noreply, State#state{handle=H, querycount=0}, ?TIMEOUT};
+		{'EXIT', E} ->
+		    logger:log(error, "LDAP client: Could not reconnect to LDAP server ~p : ~p", [Server, E]),
+		    %% Keep using old handle in hope that it is still working.
+		    {noreply, State, ?TIMEOUT};
+		Unknown ->
+		    logger:log(error, "LDAP client: Could not reconnect to LDAP server ~p, unknown " ++
+			       "result from ldap_connect :~n~p", [Server, Unknown]),
+		    %% Keep using old handle in hope that it is still working.
+		    {noreply, State, ?TIMEOUT}
+	    end;
+	_ ->
+	    {noreply, State, ?TIMEOUT}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
+%%--------------------------------------------------------------------
+terminate(Reason, State) ->
+    case Reason of
+	normal -> true;
+	_ -> logger:log(error, "LDAP client terminating : ~p", [Reason])
     end,
-    recvloop(Server, NewHandle, NewQueryCount).
+    ldap_close(State#state.handle),
+    ok.
 
-should_reopen_connection({handle, H}, QueryCount, Server) when pid(H) ->
-    QueryLimit = sipserver:get_env(ldap_connection_query_limit, 500),
-    if
-	QueryCount >= QueryLimit ->
-	    logger:log(debug, "LDAP client: This connections query limit (~p) is exceeded (~p). Will try to open new connection to server ~p.",
-			[QueryLimit, QueryCount, Server]),
-	    true;
-	true -> false
-    end;
-should_reopen_connection(H, QC, Server) ->
-    logger:log(debug, "LDAP client: Trying to open new connection to server ~p since current handle is broken (handle ~p, query count ~p)",
-		[Server, H, QC]),
-    true.
 
-ldapsearch_wrapper(Server, Func, Handle, Args) ->
-    case apply(?MODULE, Func, [Handle | Args]) of
+%%--------------------------------------------------------------------
+%% Func: code_change/3
+%% Purpose: Convert process state when code is changed
+%% Returns: {ok, NewState}
+%%--------------------------------------------------------------------
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+should_reopen_connection(State) when record(State, state) ->
+    QueryCount = State#state.querycount,
+    Server = State#state.server,
+    case State#state.handle of
+	H when record(H, ldaphandle) ->
+	    case util:safe_is_process_alive(H#ldaphandle.ref) of
+		{false, _} ->
+		    true;
+		{true, _} ->
+		    QueryCount = State#state.querycount,
+		    QueryLimit = sipserver:get_env(ldap_connection_query_limit, 500),
+		    if
+			QueryCount >= QueryLimit ->
+			    logger:log(debug, "LDAP client: This connections query limit (~p) is exceeded (~p).",
+				       [QueryLimit, QueryCount]),
+			    true;
+			true -> false
+		    end
+	    end;
+	H ->
+	    logger:log(debug, "LDAP client: Trying to open new connection to server ~p since current " ++
+		       "handle is broken (handle ~p, query count ~p)",
+		       [Server, H, QueryCount]),
+	    true
+    end.
+
+ldapsearch_wrapper(Mode, Args, State) when record(State, state) ->
+    Handle = State#state.handle,
+    Server = State#state.server,
+    case exec_ldapsearch(Mode, Handle, Args) of
 	error ->
-	    logger:log(error, "LDAP client: Error returned from ~p, closing LDAP handle ~p and retrying query",
-			[Func, Handle]),
+	    logger:log(error, "LDAP client: Error returned from exec_ldapsearch (~p), " ++
+		       "closing LDAP handle ~p and retrying query", [Mode, Handle]),
 	    ldap_close(Handle),
 	    case catch ldap_connect(Server) of
 		{'EXIT', E} ->
 		    logger:log(error, "LDAP client: Could not connect to LDAP server ~p : ~p", [Server, E]),
-		    {{handle, error}, error};
-		{handle, H} ->
-		    NewHandle = {handle, H},
+		    %% This is bad. We have closed our old handle and could not get a new one...
+		    {error, error};
+		NewHandle when record(NewHandle, ldaphandle) ->
 		    logger:log(debug, "LDAP client: Retrying query using new LDAP handle ~p", [NewHandle]),
-		    % New handle returned, retry query and return new handle plus result of retry
-		    Res = apply(?MODULE, Func, [NewHandle | Args]),
+		    %% New handle returned, retry query and return new handle plus result of retry
+		    Res = exec_ldapsearch(Mode, NewHandle, Args),
 		    {NewHandle, Res}
 	    end;
 	Res ->
 	    {Handle, Res}
     end.
 
-real_ldapsearch_simple(Handle, Type, In, Attribute) ->
-    case catch ldapsearch_unsafe(Handle, Type, In, [Attribute]) of
+exec_ldapsearch(Mode, Handle, [Type, In, Attribute]) when record(Handle, ldaphandle) ->
+    case catch exec_ldapsearch_unsafe(Handle, Type, In, [Attribute]) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from ldapsearch_unsafe(~p, ~p, ~p, ~p) :~n~p",
-	    		[Handle, Type, In, Attribute, E]),
+		       [Handle, Type, In, Attribute, E]),
 	    error;
-	[{dn, Dn, attributes, EAttributes} | Rest] ->
-	    lists:sort(get_valuelist([{dn, Dn, attributes, EAttributes} | Rest], Attribute));
 	none ->
 	    none;
 	error ->
 	    error;
-	Unknown ->
-	    logger:log(error, "LDAP client: Unknown result from ldapsearch_unsafe (handle ~p, query ~p ~p) :~n~p",
-	    		[Handle, Type, In, Unknown]),
-	    error
-    end.
-
-real_ldapsearch(Handle, Type, In, Attributes) when list(Attributes) ->
-    case catch ldapsearch_unsafe(Handle, Type, In, Attributes) of
-	{'EXIT', E} ->
-	    logger:log(error, "=ERROR REPORT==== from ldapsearch_unsafe(~p, ~p, ~p, ~p) :~n~p",
-	    		[Handle, Type, In, Attributes, E]),
-	    error;
 	[{dn, Dn, attributes, EAttributes} | Rest] ->
-	    [{dn, Dn, attributes, EAttributes} | Rest];
-	none ->
-	    none;
-	error ->
-	    error;
+	    case Mode of
+		simple ->
+		    lists:sort(get_valuelist([{dn, Dn, attributes, EAttributes} | Rest], Attribute));
+		full ->
+		    [{dn, Dn, attributes, EAttributes} | Rest]
+	    end;
 	Unknown ->
 	    logger:log(error, "LDAP client: Unknown result from ldapsearch_unsafe (handle ~p, query ~p ~p) :~n~p",
-	    		[Handle, Type, In, Unknown]),
+		       [Handle, Type, In, Unknown]),
 	    error
     end.
 
@@ -147,24 +253,16 @@ get_valuelist([], Attribute) ->
     [];
 get_valuelist([H | T], Attribute) ->
     lists:append([get_value(H, Attribute)], get_valuelist(T, Attribute)).
-    
-get_value({dn, Dn, attributes, EAttributes}, Attribute) ->
-    get_value(EAttributes, Attribute);
-get_value(EAttributes, Attribute) ->
-    case lists:keysearch(Attribute, 1, EAttributes) of
-	{value, {Attribute, [Value]}} -> Value;
-	_ -> none
-    end.
 
-ldapsearch_unsafe({handle, Handle}, Type, In, Attributes) when pid(Handle) ->
+exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when record(LHandle, ldaphandle), list(Type), list(In), list(Attributes) ->
+    Handle = LHandle#ldaphandle.ref,
     Filter = eldap:equalityMatch(Type, In),
     SearchResult = eldap:search(Handle, [{base,
 					  sipserver:get_env(ldap_searchbase, "")},
 					 {filter, Filter},
 					 {attributes, Attributes}]),
     case SearchResult of
-	{ok, Result} ->
-	    {eldap_search_result, List, _} = Result,
+	{ok, {eldap_search_result, List, _}} ->
 	    case List of
 		[] ->
 		    none;
@@ -175,113 +273,104 @@ ldapsearch_unsafe({handle, Handle}, Type, In, Attributes) when pid(Handle) ->
 		    get_ldapres([{eldap_entry, Dn, RAttributes} | Rest]);
 		Unknown ->
 		    logger:log(error, "LDAP client: Search using handle ~p returned unknown data (2) : ~p",
-		    		[Handle, Unknown]),
+			       [Handle, Unknown]),
 		    error
 	    end;
 	Unknown ->
 	    logger:log(error, "LDAP client: Search using handle ~p returned unknown data (1) : ~p",
-			[Handle, Unknown]),
+		       [Handle, Unknown]),
 	    error
     end;
-ldapsearch_unsafe({handle, H}, Type, In, Arguments) ->
-    logger:log(debug, "LDAP client: ldapsearch_unsafe() called with broken handle ~p - returning error", [{handle, H}]),
+exec_ldapsearch_unsafe(H, Type, In, Arguments) when list(Type), list(In), list(Arguments) ->
+    logger:log(debug, "LDAP client: exec_ldapsearch_unsafe() called with broken handle ~p - returning error", [H]),
     error;
-ldapsearch_unsafe(Handle, Type, In, Arguments) ->
-    logger:log(debug, "LDAP client: ldapsearch_unsafe() called with illegal arguments :~nHandle ~p, Type ~p, In ~p, Arguments",
-		[Handle, Type, In, Arguments]),
+exec_ldapsearch_unsafe(Handle, Type, In, Arguments) ->
+    logger:log(error, "LDAP client: exec_ldapsearch_unsafe() called with illegal arguments :~n" ++
+	       "Handle ~p, Type ~p, In ~p, Arguments", [Handle, Type, In, Arguments]),
     error.
 
-get_ldapres([]) ->
-    [];
-get_ldapres([{eldap_entry, Dn, RAttributes} | Rest]) ->
-    lists:append([{dn, Dn, attributes, RAttributes}], get_ldapres(Rest)).
+get_ldapres(In) ->
+    get_ldapres(In, []).
 
-ldap_connect(Server) ->
-    OpenRes = eldap:open([Server], [{use_ssl, sipserver:get_env(ldap_use_ssl, false)}]),
-    case OpenRes of
+get_ldapres([], Res) ->
+    Res;
+get_ldapres([{eldap_entry, Dn, RAttributes} | T], Res) ->
+    get_ldapres(T, lists:append(Res, [{dn, Dn, attributes, RAttributes}])).
+
+ldap_connect(Server) when list(Server) ->
+    UseSSL = sipserver:get_env(ldap_use_ssl, false),
+    case eldap:open([Server], [{use_ssl, UseSSL}]) of
 	{ok, Handle} ->
 	    case eldap:simple_bind(Handle,
-			   sipserver:get_env(ldap_username, ""),
-			   sipserver:get_env(ldap_password, "")) of
+				   sipserver:get_env(ldap_username, ""),
+				   sipserver:get_env(ldap_password, "")) of
 		ok ->
 		    logger:log(debug, "LDAP client: Opened LDAP handle ~p (server ~s)", [Handle, Server]),
-		    {handle, Handle};
+		    #ldaphandle{ref=Handle};
 		E ->
 		    logger:log(error, "LDAP client: ldap_connect: eldap:simple_bind failed : ~p", [E]),
 		    {error, E}
 	    end;
 	E ->
-	    logger:log(error, "LDAP client: ldap_connect: eldap:open failed : ~p", [E]),
+	    logger:log(error, "LDAP client: ldap_connect: eldap:open() failed. Server ~p, UseSSL ~p : ~p",
+		       [Server, UseSSL, E]),
 	    {error, E}
     end.
-	
-ldap_close({handle, Handle}) ->
-    logger:log(debug, "LDAP client: Closing LDAP handle ~p", [Handle]),
-    eldap:close(Handle).
+
+ldap_close(H) when record(H, ldaphandle) ->
+    logger:log(debug, "LDAP client: Closing LDAP handle ~p", [H#ldaphandle.ref]),
+    eldap:close(H#ldaphandle.ref);
+ldap_close(_) ->
+    ok.
+
+%% query_ldapclient is executed by the interface functions in the calling process,
+%% not in the persistent ldap_client gen_server.
+query_ldapclient(Query) ->
+    case catch gen_server:call(ldap_client, Query, 1500) of
+	{ok, Res} ->
+	    Res;
+	{error, E} ->
+	    logger:log(error, "Directory: LDAP client returned error : ~p", [E]),
+	    error;
+	Unknown ->
+	    logger:log(error, "Directory: LDAP client returned unknown result : ~p", [Unknown]),
+	    gen_server:cast(ldap_client, {ping_of_death, self()}),
+	    error
+    end.
 
 
+%%--------------------------------------------------------------------
+%%% Interface functions
+%%--------------------------------------------------------------------
 
-% Search functions :
+get_value({dn, Dn, attributes, EAttributes}, Attribute) ->
+    get_value(EAttributes, Attribute);
+get_value(EAttributes, Attribute) ->
+    case lists:keysearch(Attribute, 1, EAttributes) of
+	{value, {Attribute, [Value]}} -> Value;
+	_ -> none
+    end.
 
 ldapsearch_simple(Server, Type, In, Attribute) when list(Server), list(Type), list(In), list(Attribute) ->
     logger:log(debug, "Directory: Extra debug: ldapsearch_simple() Server ~p, Type ~p, In ~p, Attribute ~p",
-		[Server, Type, In, Attribute]),
-    send_to_ldap_client(simple_search, {Server, Type, In, Attribute});
+	       [Server, Type, In, Attribute]),
+    query_ldapclient({simple_search, Server, Type, In, Attribute});
 ldapsearch_simple(Server, Type, In, Attribute) ->
-    logger:log(error, "Directory: ldapsearch_simple called with illegal argument(s) :~nServer ~p, Type ~p, In ~p, Attribute ~p",
-		[Server, Type, In, Attribute]),
+    logger:log(error, "Directory: ldapsearch_simple() called with illegal argument(s) :~nServer ~p, Type ~p, In ~p, Attribute ~p",
+	       [Server, Type, In, Attribute]),
     error.
 
-ldapsearch(Server, Type, In, Attributes) when list(Server), list(Type), list(In), list(Attributes) ->
+ldapsearch(Server, Type, In, Attribute) when list(Server), list(Type), list(In), list(Attribute) ->
     logger:log(debug, "Directory: Extra debug: ldapsearch() Server ~p, Type ~p, In ~p, Attribute ~p",
-		[Server, Type, In, Attributes]),
-    send_to_ldap_client(search, {Server, Type, In, Attributes});
-ldapsearch(Server, Type, In, Attributes) ->
-    logger:log(error, "Directory: ldapsearch called with illegal argument(s) :~nServer ~p, Type ~p, In ~p, Attributes ~p",
-		[Server, Type, In, Attributes]),
+	       [Server, Type, In, Attribute]),
+    query_ldapclient({search, Server, Type, In, Attribute});
+ldapsearch(Server, Type, In, Attribute) ->
+    logger:log(error, "Directory: ldapsearch() called with illegal argument(s) :~nServer ~p, Type ~p, In ~p, Attribute ~p",
+	       [Server, Type, In, Attribute]),
     error.
-    
-send_to_ldap_client(Function, Arguments) ->
-    case erlang:whereis(ldap_client) of
-	undefined ->
-	    logger:log(error, "Directory: Spawned LDAP client process is not around, trying to start a new one"),
-	    Res = start(),
-	    logger:log(debug, "Directory: Extra debug: Starting ldap_client -> ~p", [Res]),
-	    case Res of
-		none ->
-		    none;
-		ok ->
-		    send_to_ldap_client1(Function, Arguments);
-		_ ->
-		    error		    
-	    end;
-	Pid when pid(Pid) ->
-	    send_to_ldap_client1(Function, Arguments)
-    end.
-    
-send_to_ldap_client1(Function, Arguments) ->
-    util:safe_signal("LDAP client: ", ldap_client, {Function, self(), opaque, Arguments}),
-    receive     
-	{ldap_client, opaque, Reply} ->
-	    Reply
-    after
-	1500 ->
-	    case util:safe_is_process_alive(ldap_client) of
-		{true, Pid} ->
-		    logger:log(error, "Directory: Communication with ldap_client timed out, killing ldap_client ~p and answering 'error' to query : ~p ~p",
-				[Pid, Function, Arguments]),
-		    Pid ! {ping},
-		    exit(Pid, "You were not fast enough"),
-		    error;
-		_ ->
-		    logger:log(error, "Directory: Communication with ldap_client timed out and now there are no ldap_client. Answering 'error' to query : ~p ~p",
-				[Function, Arguments]),
-		    error
-	    end
-    end.
 
 
-% Specific querys
+%% Specific querys
 
 lookup_mail2tel(Mail) ->
     case sipserver:get_env(ldap_server, none) of

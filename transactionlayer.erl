@@ -1,5 +1,22 @@
+%%%-------------------------------------------------------------------
+%%% File    : transactionlayer.erl
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Description : Transactionlayer 
+%%% Created : 05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
 -module(transactionlayer).
--export([start/3, check_alive/3, send_response_request/3, send_response_request/4,
+
+-behaviour(gen_server).
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("transactionstatelist.hrl").
+
+%%--------------------------------------------------------------------
+%% External exports
+-export([start_link/3]).
+
+-export([send_response_request/3, send_response_request/4,
 	 transaction_terminating/1, get_handler_for_request/1,
 	 get_branch_from_handler/1, start_client_transaction/6,
 	 store_to_tag/2, adopt_server_transaction/1, adopt_server_transaction_handler/1,
@@ -9,272 +26,310 @@
 	 get_pid_from_handler/1, send_challenge_request/4, send_challenge/4,
 	 debug_show_transactions/0]).
 
--include("transactionstatelist.hrl").
 
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-record(state, {tstatelist, requestfun, responsefun, mode}).
 -record(thandler, {pid}).
 
-start(RequestFun, ResponseFun, Mode) ->
-    sipserver:safe_spawn(fun spawned/3, [RequestFun, ResponseFun, Mode]).
+-define(TIMEOUT, 7 * 1000).
 
-check_alive(RequestFun, ResponseFun, Mode) ->
-    case util:safe_is_process_alive(transaction_layer) of
-	{true, Pid} ->
-	    true;
-	{false, Pid} ->
-	    logger:log(error, "Transaction layer: Service pid ~p not alive, attempting restart.",
-			[Pid]),
-	    start(RequestFun, ResponseFun, Mode)
-    end.
+%%====================================================================
+%% External functions
+%%====================================================================
+%%--------------------------------------------------------------------
+%% Function: start_link/3
+%% Description: Starts the server
+%%--------------------------------------------------------------------
+start_link(RequestFun, ResponseFun, Mode) ->
+    gen_server:start_link({local, transaction_layer}, ?MODULE, [RequestFun, ResponseFun, Mode], []).
 
-spawned(RequestFun, ResponseFun, Mode) ->
-    register(transaction_layer, self()),
+%%====================================================================
+%% Server functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: init/1
+%% Description: Initiates the server
+%% Returns: {ok, State}          |
+%%          {ok, State, Timeout} |
+%%          ignore               |
+%%          {stop, Reason}
+%%--------------------------------------------------------------------
+init([RequestFun, ResponseFun, Mode]) ->
+    process_flag(trap_exit, true),
     TStateList = transactionstatelist:empty(),
-    receive_signals(TStateList, RequestFun, ResponseFun, Mode).
+    logger:log(debug, "Transaction layer started"),
+    {ok, #state{requestfun=RequestFun, responsefun=ResponseFun, mode=Mode, tstatelist=TStateList}}.
 
-receive_signals(TStateList, RequestFun, ResponseFun, Mode) ->
-    Res = receive
+%%--------------------------------------------------------------------
+%% Function: handle_call/3
+%% Description: Handling call messages
+%% Returns: {reply, Reply, State}          |
+%%          {reply, Reply, State, Timeout} |
+%%          {noreply, State}               |
+%%          {noreply, State, Timeout}      |
+%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
 
-	{sipmessage, FromPid, MsgRef, request, Request, Socket, LogStr} ->
-	    NewTStateList1 = case get_server_transaction_pid(request, Request, TStateList) of
-		nohandler ->
-		    % XXX is this really needed? Transactions that have no handlers? Handlers are spawned automatically for
-		    % server transactions below.
-		    logger:log(debug, "Transaction layer: No handler registered for received request, passing to RequestFun ~p.", [RequestFun]),
-		    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, RequestFun}),
-		    TStateList;
-		nostate ->
-		    received_new_request(FromPid, MsgRef, Request, Socket, LogStr, RequestFun, Mode, TStateList);
-		{handlerdead, TPid} ->
-		    logger:log(error, "Transaction layer: Process ~p registered to receive this request is not alive! Passing to RequestFun ~p.",
-				[TPid, RequestFun]),
-		    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, RequestFun}),
-		    TStateList;
-		TPid when pid(TPid) ->
-		    util:safe_signal("Transaction layer: ", TPid, {sipmessage, self(), request, Request, Socket, LogStr, FromPid, MsgRef, RequestFun}),
-		    TStateList
-	    end,
-	    {ok, NewTStateList1};
 
-	{sipmessage, FromPid, MsgRef, response, Response, Socket, LogStr} ->
-	    case get_client_transaction_pid(response, Response, TStateList) of
-		nohandler ->
-		    logger:log(debug, "Transaction layer: No handler registered for received response, passing to ResponseFun."),
-		    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, ResponseFun});
-		nostate ->
-		    logger:log(debug, "Transaction layer: No state for received response, passing to ResponseFun."),
-		    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, ResponseFun});
-		{handlerdead, TPid} ->
-		    logger:log(error, "Transaction layer: Process ~p registered to receive this response is not alive! Passing to ResponseFun.",
-				[TPid]),
-		    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, ResponseFun});
-		TPid when pid(TPid) ->
-		    {Status, Reason, _, _} = Response,
-		    logger:log(debug, "Transaction layer: Passing response ~p ~s to registered handler ~p",
-				[Status, Reason, TPid]),
-		    util:safe_signal("Transaction layer: ", TPid, {sipmessage, self(), response, Response, Socket, LogStr}),
-		    util:safe_signal("Transaction layer: ", FromPid, {continue, MsgRef})
-	    end,
-	    {ok, TStateList};
+%% A request has been received by the transaction layer and a SIP message handler is
+%% asking us of what to do with it. If we return {continue} the SIP message handler will
+%% terminate, but if we return {pass_to_core, Fun} the SIP message handler will pass the
+%% request on to that function.
+handle_call({sipmessage, request, Request, Socket, LogStr}, From, State) ->
+    RequestFun = State#state.requestfun,
+    case get_server_transaction_pid(request, Request, State#state.tstatelist) of
+	none ->
+	    received_new_request(Request, Socket, LogStr, State);
+	TPid when pid(TPid) ->
+	    gen_server:cast(TPid, {sipmessage, request, Request, Socket, LogStr, From, RequestFun}),
+	    %% We do noreply here and send RequestFun (and gen_server From) on to TPid and let TPid do gen_server:reply()
+	    {noreply, State, ?TIMEOUT}
+    end;
 
-	{store_stateless_response_branch, FromPid, Pid, Branch, Method} ->
-	    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, TStateList) of
-		none ->
-		    case transactionstatelist:get_server_transaction_using_pid(Pid, TStateList) of
-			{error, E} ->
-			    logger:log(error, "Transaction layer: Error associating stateless response branch ~p with pid ~p~n: ~p",
-					[Branch, Pid, E]),
-			    util:safe_signal("Transaction layer: ", FromPid,
-					{failed_storing_stateless_response_branch, self(), E}),
-			    {ok, TStateList};
-			{none} ->
-			    logger:log(error, "Transaction layer: Can't associate stateless response branch ~p with unknown transaction handler ~p",
-					[Branch, Pid]),
-			    util:safe_signal("Transaction layer: ", FromPid,
-					{failed_storing_stateless_response_branch, self(), "server transaction not found"}),
-			    {ok, TStateList};
-			ThisState when record(ThisState, transactionstate) ->
-			    NewTState = transactionstatelist:append_response_branch(ThisState, Branch, Method),
-			    NewTStateList = transactionstatelist:update_transactionstate(NewTState, TStateList),
-			    util:safe_signal("Transaction layer: ", FromPid, {stored_stateless_response_branch, self()}),
-			    {ok, NewTStateList}
-		    end;
-		ThisState when record(ThisState, transactionstate) ->
-		    case ThisState#transactionstate.pid of
-			Pid ->
-			    % already associated with that very same server transaction, this is not an error since
-			    % it can happen when a stateless application receives retransmissions of a request
-			    util:safe_signal("Transaction layer: ", FromPid, {stored_stateless_response_branch, self()});
-			OtherPid ->
-			    logger:log(error, "Transaction layer: Asked to associate branch ~p with transaction with pid ~p, " ++
-					"but branch is already associated with transaction handled by ~p!", [Branch, Pid, OtherPid]),
-			    util:safe_signal("Transaction layer: ", FromPid, {failed_storing_stateless_response_branch, self(),
-					"branch already associated with another server transaction"})
-		    end,
-		    {ok, TStateList}
-	    end;	
+%% A response has been received by the transaction layer and a SIP message handler is
+%% asking us of what to do with it. See comment about requests above.
+handle_call({sipmessage, response, Response, Socket, LogStr}, From, State) ->
+    ResponseFun = State#state.responsefun,
+    case get_client_transaction_pid(response, Response, State#state.tstatelist) of
+	none ->
+	    logger:log(debug, "Transaction layer: No state for received response, passing to ResponseFun."),
+	    {reply, {pass_to_core, ResponseFun}, State, ?TIMEOUT};
+	TPid when pid(TPid) ->
+	    {Status, Reason, _, _} = Response,
+	    logger:log(debug, "Transaction layer: Passing response ~p ~s to registered handler ~p",
+		       [Status, Reason, TPid]),
+	    gen_server:cast(TPid, {sipmessage, response, Response, Socket, LogStr}),
+	    {reply, {continue}, State, ?TIMEOUT}
+    end;
 
-	{unregister_pid, Pid} ->
-	    {ok, transactionstatelist:delete_using_pid(Pid, TStateList)};
-
-	    
-	{get_server_transaction_handler, FromPid, Request} ->
-	    case get_server_transaction_pid(request, Request, TStateList) of
-		nohandler ->
-		    util:safe_signal("Transaction layer: ", FromPid, {failed_getting_server_transaction_handler, "No handler found"});
-		nostate ->
-		    util:safe_signal("Transaction layer: ", FromPid, {failed_getting_server_transaction_handler, "No state found"});
-		{handlerdead, TPid} ->
-		    util:safe_signal("Transaction layer: ", FromPid, {failed_getting_server_transaction_handler, "Server transaction handler dead"});
-		TPid when pid(TPid) ->
-		    util:safe_signal("Transaction layer: ", FromPid, {got_server_transaction_handler, self(), TPid})
-	    end,
-	    {ok, TStateList};
-
-	{get_server_transaction_handler_for_response, FromPid, Branch, Method} ->
-	    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, TStateList) of
-		none ->
-		    util:safe_signal("Transaction layer: ", FromPid, {failed_getting_server_transaction_for_response, self(), nomatch});
-		ThisState when record(ThisState, transactionstate) ->
-		    TPid = ThisState#transactionstate.pid,
-		    util:safe_signal("Transaction layer: ", FromPid,
-				{got_server_transaction_handler_for_response, self(), TPid})
-	    end,
-	    {ok, TStateList};
-
-	{start_client_transaction, FromPid, Request, SocketIn, Dst, Branch, Timeout, Parent} ->
-	    {Method, _, _, _} = Request,
-	    NewTStateList1 = case transactionstatelist:get_client_transaction(Method, Branch, TStateList) of
-		none ->
-		    CPid = clienttransaction:start(Request, SocketIn, Dst, Branch, Timeout, Parent),
-		    util:safe_signal("Transaction layer: ", FromPid, {started_client_transaction, self(), CPid}),
-		    transactionstatelist:add_client_transaction(Method, Branch, CPid, TStateList);
-		_ ->
-		    logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
-		    util:safe_signal("Transaction layer: ", FromPid, {failed_starting_client_transaction, self(), "Transaction already exists"}),
-		    TStateList	
-	    end,
-	    {ok, NewTStateList1};
-
-	{store_to_tag, FromPid, Request, ToTag} ->
-	    case get_server_transaction(request, Request, TStateList) of
-		nostate ->
-		    util:safe_signal("Transaction layer: ", FromPid, {failed_storing_totag, self(), "Transaction not found"}),
-		    {ok, TStateList};
-		ThisState when record(ThisState, transactionstate) ->
-		    NewTState = transactionstatelist:set_response_to_tag(ThisState, ToTag),
-		    NewTStateList = transactionstatelist:update_transactionstate(NewTState, TStateList),
-		    util:safe_signal("Transaction layer: ", FromPid, {stored_to_tag, self()}),
-		    {ok, NewTStateList}
+handle_call({store_stateless_response_branch, Pid, Branch, Method}, From, State) ->
+    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, State#state.tstatelist) of
+	none ->
+	    case transactionstatelist:get_elem_using_pid(Pid, State#state.tstatelist) of
+		{error, E} ->
+		    logger:log(error, "Transaction layer: Error associating stateless response branch ~p with pid ~p~n: ~p",
+			       [Branch, Pid, E]),
+		    {reply, {error, E}, State, ?TIMEOUT};
+		[] ->
+		    logger:log(error, "Transaction layer: Can't associate stateless response branch ~p with unknown transaction handler ~p",
+			       [Branch, Pid]),
+		    {reply, {error, "server transaction not found"}, State, ?TIMEOUT};
+		ThisElem when record(ThisElem, transactionstate) ->
+		    NewTElem = transactionstatelist:append_response_branch(ThisElem, Branch, Method),
+		    NewL = transactionstatelist:update_transactionstate(NewTElem, State#state.tstatelist),
+		    {reply, {ok}, State#state{tstatelist=NewL}, ?TIMEOUT}
 	    end;
+	ThisElem when record(ThisElem, transactionstate) ->
+	    case ThisElem#transactionstate.pid of
+		Pid ->
+		    %% already associated with that very same server transaction, this is not an error since
+		    %% it can happen when a stateless application receives retransmissions of a request
+		    {reply, {ok}, State, ?TIMEOUT};
+		OtherPid ->
+		    logger:log(error, "Transaction layer: Asked to associate branch ~p with transaction with pid ~p, " ++
+			       "but branch is already associated with transaction handled by ~p!", [Branch, Pid, OtherPid]),
+		    E = "branch already associated with another server transaction",
+		    {reply, {error, E}, State, ?TIMEOUT}
+		end
+    end;	
 
-	%{register_appdata, Pid, Type, RequestOrResponse, AppName, AppData} ->
-	%    case get_server_transaction(Type, RequestOrResponse, TStateList) of
-	%	nostate ->
-	%	    util:safe_signal("Transaction layer: ", Pid, {failed_registering_appdata, 
-	%		self(), Type, RequestOrResponse, "No state found for request/response"}),
-	%	    {ok, TStateList};		
-	%	TState ->
-	%	    [OldAppDataList] = transactionstatelist:extract([appdata], TState),
-	%	    NewAppDataList = lists:keyreplace(AppName, 1, OldAppDataList, {AppName, AppData}),
-	%	    NewTState = transactionstatelist:set_appdata(TState, NewAppDataList),
-	%	    NewTStateList = transactionstatelist:update_transactionstate(TState, TStateList),
-	%	    util:safe_signal("Transaction layer: ", Pid, {appdata_registered, self()}),
-	%	    {ok, NewTStateList}
-	%    end;
+handle_call({get_server_transaction_handler, Request}, From, State) ->
+    case get_server_transaction_pid(request, Request, State#state.tstatelist) of
+	none ->
+	    {reply, {error, "No state found"}, State, ?TIMEOUT};
+	TPid when pid(TPid) ->
+	    {reply, {ok, TPid}, State, ?TIMEOUT}
+    end;
 
-	{debug_show_transactions, FromPid} ->
-	    logger:log(debug, "Transaction layer: Pid ~p asked me to show all ongoing transactions :~n~p",
-			[FromPid, transactionstatelist:debugfriendly(TStateList)]),
-	    {ok, TStateList};
+handle_call({get_server_transaction_handler_for_response, Branch, Method}, From, State) ->
+    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, State#state.tstatelist) of
+	none ->
+	    {reply, {error, nomatch}, State, ?TIMEOUT};
+	ThisState when record(ThisState, transactionstate) ->
+	    TPid = ThisState#transactionstate.pid,
+	    {reply, {ok, TPid}, State, ?TIMEOUT}
+    end;
 
-	{quit} ->
-	    logger:log(debug, "Transport layer: Received signal to quit"),
-    	    {quit};
-    	Unknown ->
-	    logger:log(error, "Tranport layer: Received unknown signal in receive_signals() : ~p", [Unknown]),
-	    {error, TStateList}
-    after
-	7 * 1000 ->
-	    % Wake up every 7 seconds to do garbage collection (delete_expired() below)
-	    {ok, TStateList}
+handle_call({start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, From, State) ->
+    {Method, _, _, _} = Request,
+    case transactionstatelist:get_client_transaction(Method, Branch, State#state.tstatelist) of
+	none ->
+	    {ok, CPid} = clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, Parent),
+	    NewL = transactionstatelist:add_client_transaction(Method, Branch, CPid, State#state.tstatelist),
+	    {reply, {ok, CPid}, State#state{tstatelist=NewL}, ?TIMEOUT};
+	_ ->
+	    logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
+	    {reply, {error, "Transaction already exists"}, State, ?TIMEOUT}
+    end;
+
+handle_call({store_to_tag, Request, ToTag}, From, State) ->
+    case get_server_transaction(request, Request, State#state.tstatelist) of
+	none ->
+	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
+	ThisState when record(ThisState, transactionstate) ->
+	    NewTState = transactionstatelist:set_response_to_tag(ThisState, ToTag),
+	    NewL = transactionstatelist:update_transactionstate(NewTState, State#state.tstatelist),
+	    {reply, {ok}, State#state{tstatelist=NewL}, ?TIMEOUT}
+	end;
+
+handle_call(Request, From, State) ->
+    logger:log(debug, "Transaction layer: Received unknown gen_server call (from ~p) : ~p", [From, Request]),
+    {noreply, State, ?TIMEOUT}.
+
+
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast/2
+%% Description: Handling cast messages
+%% Returns: {noreply, State}          |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+handle_cast({unregister_pid, Pid}, State) ->
+    NewL = transactionstatelist:delete_using_pid(Pid, State#state.tstatelist),
+    {noreply, State#state{tstatelist=NewL}, ?TIMEOUT};
+
+handle_cast({debug_show_transactions, FromPid}, State) ->
+    logger:log(debug, "Transaction layer: Pid ~p asked me to show all ongoing transactions :~n~p",
+	       [FromPid, transactionstatelist:debugfriendly(State#state.tstatelist)]),
+    {noreply, State, ?TIMEOUT};
+
+handle_cast({quit}, State) ->
+    logger:log(debug, "Transaction layer: Received signal to quit"),
+    {stop, normal, State};
+
+handle_cast(Msg, State) ->
+    logger:log(debug, "Transaction layer: Received unknown gen_server cast : ~p", [Msg]),
+    {noreply, State, ?TIMEOUT}.
+
+%%--------------------------------------------------------------------
+%% Function: handle_info/2
+%% Description: Handling all non call/cast messages
+%% Returns: {noreply, State}          |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+handle_info(timeout, State) ->
+    NewL = transactionstatelist:delete_expired(State#state.tstatelist),
+    {noreply, State#state{tstatelist=NewL}};
+
+handle_info({'EXIT', Pid, Reason}, State) ->
+    case Reason of
+	normal -> logger:log(debug, "Transaction layer: Received normal exit-signal from process ~p", [Pid]);
+	_ -> logger:log(error, "Transaction layer: =ERROR REPORT==== Received non-normal exit signal from process ~p :~n~p", [Pid, Reason])
     end,
-    case Res of
-	{quit} ->
-	    ok;
-	{_, NewTStateList1_1} when record(NewTStateList1_1, transactionstatelist) ->
-	    NewTStateList1_2 = transactionstatelist:delete_expired(NewTStateList1_1),
-	    receive_signals(NewTStateList1_2, RequestFun, ResponseFun, Mode);
-	UnknownRes ->
-	    logger:log(error, "Transaction layer: Unknown result from receive_signals() : ~p", [UnknownRes]),
-	    receive_signals(TStateList, RequestFun, ResponseFun, Mode)
-    end.
+    NewState = case transactionstatelist:get_list_using_pid(Pid, State#state.tstatelist) of
+                   none ->
+                       logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list. Socketlist is :~n~p",
+				  [Pid, transactionstatelist:debugfriendly(State#state.tstatelist)]),
+                       State;
+                   L when record(L, transactionstatelist) ->
+		       NewL = transactionstatelist:delete_using_pid(Pid, State#state.tstatelist),
+                       logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n(new list is ~p entry(s)",
+				  [transactionstatelist:get_length(L), transactionstatelist:debugfriendly(L), transactionstatelist:get_length(NewL)]),
+		       %%logger:log(debug, "Transaction layer: Extra debug: Transactionlist is now :~n~p", [transactionstatelist:debugfriendly(NewL)]),
+		       State#state{tstatelist=NewL};
+		   Unknown ->
+		       logger:log(error, "Transaction layer: Unknown result returned from get_list_using_pid :~n~p",
+				  [Unknown]),
+		       State
+               end,
+    {noreply, NewState, ?TIMEOUT};
 
-received_new_request(FromPid, MsgRef, {"ACK", URI, _, _}, Socket, LogStr, RequestFun, Mode, TStateList) ->
+handle_info(Msg, State) ->
+    logger:log(error, "Transaction layer: Received unknown gen_server info :~n~p", [Msg]),
+    {noreply, State, ?TIMEOUT}.
+
+%%--------------------------------------------------------------------
+%% Function: terminate/2
+%% Description: Shutdown the server
+%% Returns: any (ignored by gen_server)
+%%--------------------------------------------------------------------
+terminate(Reason, State) ->
+    ok.
+
+%%--------------------------------------------------------------------
+%% Func: code_change/3
+%% Purpose: Convert process state when code is changed
+%% Returns: {ok, NewState}
+%%--------------------------------------------------------------------
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+received_new_request({"ACK", URI, _, _}, Socket, LogStr, State) when record(State, state) ->
+    RequestFun = State#state.requestfun,
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 		[sipurl:print(URI)]),
-    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, RequestFun}),
-    TStateList;
-received_new_request(FromPid, MsgRef, {"CANCEL", URI, Header, Body}, Socket, LogStr, RequestFun, stateless, TStateList) ->
+    {reply, {pass_to_core, RequestFun}, State, ?TIMEOUT};
+
+received_new_request({"CANCEL", URI, Header, Body}, Socket, LogStr, State) when record(State, state), State#state.mode == stateless ->
+    RequestFun = State#state.requestfun,
     logger:log(debug, "Transaction layer: Stateless received CANCEL ~s. Starting transaction but passing to core.",
 		[sipurl:print(URI)]),
     Request = {"CANCEL", URI, Header, Body},
-    case servertransaction:start(Request, Socket, LogStr, RequestFun, stateless) of
-	STPid when pid(STPid) ->
-	    NewTStateList2 = transactionstatelist:add_server_transaction(Request, STPid, TStateList),
-	    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, RequestFun}),
-	    NewTStateList2;
+    case servertransaction:start_link(Request, Socket, LogStr, RequestFun, stateless) of
+	{ok, STPid} when pid(STPid) ->
+	    NewL = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
+	    {reply, {pass_to_core, RequestFun}, State#state{tstatelist=NewL}, ?TIMEOUT};
 	E ->
 	    logger:log(error, "Transaction layer: Failed starting server transaction (~p) - ignoring request", [E]),
-	    util:safe_signal("Transaction layer: ", FromPid, {continue, MsgRef}),
-	    TStateList
+	    {reply, {continue}, State, ?TIMEOUT}
     end;
-received_new_request(FromPid, MsgRef, Request, Socket, LogStr, RequestFun, Mode, TStateList) ->
+
+received_new_request(Request, Socket, LogStr, State) when record(State, state) ->
+    RequestFun = State#state.requestfun,
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
-    case servertransaction:start(Request, Socket, LogStr, RequestFun, Mode) of
-	STPid when pid(STPid) ->
-	    NewTStateList2 = transactionstatelist:add_server_transaction(Request, STPid, TStateList),
+    case servertransaction:start_link(Request, Socket, LogStr, RequestFun, State#state.mode) of
+	{ok, STPid} when pid(STPid) ->
+	    NewTStateList2 = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
 	    PassToCore = case Request of
-		{"CANCEL", URI, Header, _} ->
-		    % XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
-		    % transaction that is being handled by 'assuming the method is anything but
-		    % CANCEL or ACK'.
-		    Invite = {"INVITE", URI, Header, ""},
-		    case get_server_transaction_pid(request, Invite, TStateList) of
-			InvitePid when pid(InvitePid) ->
-			    logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
-			    {Status, Reason} = case util:safe_is_process_alive(InvitePid) of
-				{true, _} ->
-				    logger:log(debug, "Transaction layer: Cancelling other transaction handled by ~p and responding 200 Ok",
-						[InvitePid]),
-				    util:safe_signal("Transaction layer: ", InvitePid, {cancelled, self()}),
-				    {200, "Ok"};
-				_ ->
-				    logger:log(debug, "Transaction layer: Transaction to be cancelled handled by dead pid '~p', responding 481 Call/Transaction Does Not Exist",
-				    			[InvitePid]),
-				    {481, "Call/Transaction Does Not Exist"}
-			    end,	
-			    util:safe_signal("Transaction layer: ", STPid, {create_response, self(), Status, Reason, []}),
-			    false;
-			_ ->
-			    logger:log(debug, "Transaction layer: Could not find transaction for CANCEL, pass it on to application core."),
-			    true
-		    end;
-		_ ->
-		    true
-	    end,
+			     {"CANCEL", URI, Header, _} ->
+				 %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
+				 %% transaction that is being handled by 'assuming the method is anything but
+				 %% CANCEL or ACK'.
+				 Invite = {"INVITE", URI, Header, ""},
+				 case get_server_transaction_pid(request, Invite, State#state.tstatelist) of
+				     InvitePid when pid(InvitePid) ->
+					 logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
+					 {Status, Reason} = case util:safe_is_process_alive(InvitePid) of
+								{true, _} ->
+								    logger:log(debug, "Transaction layer: Cancelling other transaction handled by ~p " ++
+									       "and responding 200 Ok", [InvitePid]),
+								    gen_server:cast(InvitePid, {cancelled}),
+								    {200, "Ok"};
+								_ ->
+								    logger:log(debug, "Transaction layer: Transaction to be cancelled handled by dead " ++
+									       "pid '~p', responding 481 Call/Transaction Does Not Exist", [InvitePid]),
+								    {481, "Call/Transaction Does Not Exist"}
+							    end,	
+					 gen_server:cast(STPid, {create_response, Status, Reason, []}),
+					 false;
+				     _ ->
+					 logger:log(debug, "Transaction layer: Could not find transaction for CANCEL, pass it on to application core."),
+					 true
+				 end;
+			     _ ->
+				 true
+			 end,
 	    case PassToCore of
 		true ->
-		    logger:log(debug, "Transaction layer: Telling sipserver ~p to apply this applications request function.",
-				[FromPid]),
-		    util:safe_signal("Transaction layer: ", FromPid, {pass_to_core, MsgRef, RequestFun});
+		    logger:log(debug, "Transaction layer: Telling sipserver to apply this applications request function."),
+		    {reply, {pass_to_core, RequestFun}, State#state{tstatelist=NewTStateList2}, ?TIMEOUT};
 		_ ->
-		    util:safe_signal("Transaction layer: ", FromPid, {continue, MsgRef})
-	    end,
-	    NewTStateList2;
+		    {reply, {continue}, State#state{tstatelist=NewTStateList2}, ?TIMEOUT}
+	    end;
 	E ->
 	    logger:log(error, "Transaction layer: Failed starting server transaction (~p) - ignoring request", [E]),
-	    util:safe_signal("Transaction layer: ", FromPid, {continue, MsgRef}),
-	    TStateList
+	    {reply, {continue}, State, ?TIMEOUT}
     end.
 
 get_server_transaction(request, Request, TStateList) ->
@@ -285,18 +340,13 @@ get_server_transaction(response, Response, TStateList) ->
 get_server_transaction_pid(Type, RequestOrResponse, TStateList) ->
     case get_server_transaction(Type, RequestOrResponse, TStateList) of
 	none ->
-	    nostate;	
+	    none;
 	TState ->
 	    case transactionstatelist:extract([pid], TState) of
-		[none] ->
-		    nohandler;	    
 		[TPid] when pid(TPid) ->
-		    case util:safe_is_process_alive(TPid) of
-			{true, _} ->
-			    TPid;
-			{false, _} ->
-			    {handlerdead, TPid}
-		    end
+		    TPid;
+		_ ->
+		    none
 	    end
     end.
 
@@ -313,25 +363,21 @@ get_client_transaction(Foo, _, _) ->
 get_client_transaction_pid(Type, RequestOrResponse, TStateList) ->
     case get_client_transaction(Type, RequestOrResponse, TStateList) of
 	none ->
-	    nostate;	
+	    none;	
 	TState ->
 	    case transactionstatelist:extract([pid], TState) of
-		[none] ->
-		    nohandler;	    
 		[TPid] when pid(TPid) ->
-		    case util:safe_is_process_alive(TPid) of
-			{true, _} ->
-			    TPid;
-			{false, _} ->
-			    {handlerdead, TPid}
-		    end
+		    TPid;
+		_ ->
+		    none	    
 	    end
     end.
 
 
 
-% Application functions
-
+%%--------------------------------------------------------------------
+%%% Interface functions
+%%--------------------------------------------------------------------
 
 send_response_request(Request, Status, Reason) ->
     send_response_request(Request, Status, Reason, []).
@@ -356,38 +402,29 @@ send_response_handler(TH, Status, Reason) when record(TH, thandler) ->
     send_response_handler(TH, Status, Reason, []).
 
 send_response_handler(TH, Status, Reason, ExtraHeaders) when record(TH, thandler) ->
-    case util:safe_is_process_alive(TH#thandler.pid) of
-	{true, Pid} ->
-	    Pid ! {create_response, self(), Status, Reason, ExtraHeaders},
+    case catch gen_server:cast(TH#thandler.pid, {create_response, Status, Reason, ExtraHeaders}) of
+	ok ->
 	    ok;
 	_ ->
-	    {error, "Transaction handler not alive"}
+	    {error, "Transaction handler failure"}
     end.
 
 send_proxy_response_handler(TH, Response) when record(TH, thandler) ->
-    case util:safe_is_process_alive(TH#thandler.pid) of
-	{true, Pid} ->
-	    Pid ! {forwardresponse, Response},
+    case gen_server:cast(TH#thandler.pid, {forwardresponse, Response}) of
+	ok ->
 	    ok;
 	_ ->
-	    {error, "Transaction handler not alive"}
+	    {error, "Transaction handler failure"}
     end.
 
 get_handler_for_request(Request) ->
-    case util:safe_is_process_alive(transaction_layer) of
-	{true, TLPid} ->
-	    TLPid ! {get_server_transaction_handler, self(), Request},
-	    receive
-	        {failed_getting_server_transaction_handler, TLPid, E} ->
-		    {error, E};
-	        {got_server_transaction_handler, TLPid, Pid} ->
-		    #thandler{pid=Pid}
-	    after
-		2500 ->
-		    {error, unavailable}
-	    end;
-	{false, _} ->
-	    {error, unavailable}
+    case catch gen_server:call(transaction_layer, {get_server_transaction_handler, Request}, 2500) of
+        {error, E} ->
+	    {error, E};
+        {ok, Pid} ->
+	    #thandler{pid=Pid};
+	_ ->
+	    {error, "Transaction layer failed"}
     end.
 
 get_server_handler_for_stateless_response(Response) ->
@@ -396,22 +433,15 @@ get_server_handler_for_stateless_response(Response) ->
     {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     case sipheader:get_via_branch(TopVia) of
 	Branch when list(Branch) ->
-	    case util:safe_is_process_alive(transaction_layer) of
-		{true, TLPid} ->
-		    TLPid ! {get_server_transaction_handler_for_response, self(), Branch, Method},
-		    receive
-			{failed_getting_server_transaction_for_response, TLPid, nomatch} ->
-			    none;
-			{failed_getting_server_transaction_for_response, TLPid, E} ->
-			    {error, E};
-			{got_server_transaction_handler_for_response, TLPid, Pid} ->
-			    #thandler{pid=Pid}
-		    after
-			1000 ->
-			    {error, unavailable}
-		    end;
-		{false, _} ->
-		    {error, unavailable}
+	    case catch gen_server:call(transaction_layer, {get_server_transaction_handler_for_response, Branch, Method}, 1000) of
+		{error, nomatch} ->
+		    none;
+		{error, E} ->
+		    {error, E};
+		{ok, Pid} ->
+		    #thandler{pid=Pid};
+		_ ->
+		    {error, "Transaction layer failed"}
 	    end;
 	_ ->
 	    {error, "No branch in top via of response"}
@@ -426,92 +456,60 @@ adopt_server_transaction(Request) ->
     end.
 
 adopt_server_transaction_handler(TH) when record(TH, thandler) ->
-    Pid = TH#thandler.pid,
-    util:safe_signal("Transaction layer: ", Pid, {set_report_to, self()}),
-    receive
-	{failed_setting_report_to, Pid, E} ->
+    case catch gen_server:call(TH#thandler.pid, {set_report_to, self()}, 1000) of
+	{error, E} ->
 	    {error, E};
-	{set_report_to, Pid} ->
-	    TH
-    after
-	1000 ->
-	    {error, unavailable}
+	{ok} ->
+	    TH;
+	_ ->
+	    {error, "Server transaction handler failed"}
     end.
 
 get_branch_from_handler(TH) when record(TH, thandler) ->
-    Pid = TH#thandler.pid,
-    util:safe_signal("Transaction layer: ", Pid, {get_branch, self()}),
-    receive
-	{got_branch, Pid, Branch} ->
-	    Branch
-    after
-	500 ->
-	    logger:log(error, "Transaction layer: Failed getting branch from pid ~p : timeout", [Pid]),
+    TPid = TH#thandler.pid,
+    case catch gen_server:call(TPid, {get_branch}, 500) of
+	{ok, Branch} ->
+	    Branch;
+	_ ->
+	    logger:log(error, "Transaction layer: Failed getting branch from pid ~p", [TPid]),
 	    error
     end.
 
 transaction_terminating(TransactionPid) ->
-    case util:safe_is_process_alive(transaction_layer) of
-	{true, TLPid} ->
-	    TLPid ! {unregister_pid, TransactionPid};
-	{false, TLPid} ->
-	    logger:log(error, "Transaction layer: Transaction layer ~p is dead, no need to signal it about terminating transaction.",
-			[TLPid])
-    end,
+    gen_server:cast(transaction_layer, {unregister_pid, TransactionPid}),
     ok.
 
 start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
-    case util:safe_is_process_alive(transaction_layer) of
-	{true, TLPid} ->
-	    TLPid ! {start_client_transaction, self(), Request, SocketIn, Dst, Branch, Timeout, Parent},
-	    receive
-	        {failed_starting_client_transaction, TLPid, E} ->
-		    {error, E};
-	        {started_client_transaction, TLPid, Pid} ->
-		    Pid
-	    after
-		2500 ->
-		    {error, unavailable}
-	    end;
-	{false, _} ->
-	    {error, unavailable}
+    case catch gen_server:call(transaction_layer, {start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, 2500) of
+	{error, E} ->
+	    {error, E};
+	{ok, Pid} ->
+	    Pid;
+	_ ->
+	    {error, "Transaction layer failure"}
     end.
 
 store_to_tag(Request, ToTag) ->
-    case util:safe_is_process_alive(transaction_layer) of
-	{true, TLPid} ->
-	    TLPid ! {store_to_tag, self(), Request, ToTag},
-	    receive
-	        {failed_storing_to_tag, TLPid, E} ->
-		    {error, E};
-	        {stored_to_tag, TLPid} ->
-		    ok
-	    after
-		2500 ->
-		    {error, unavailable}
-	    end;
-	{false, _} ->
-	    {error, unavailable}
+    case catch gen_server:call(transaction_layer, {store_to_tag, Request, ToTag}, 2500) of
+	{error, E} ->
+	    {error, E};
+	{ok} ->
+	    ok;
+	_ ->
+	    {error, "Transaction layer failure"}
     end.
 
 store_stateless_response_branch(none, Branch, Method) ->
     ok;
 store_stateless_response_branch(TH, Branch, Method) when record(TH, thandler) ->
-    HandlerPid = TH#thandler.pid,
-    case util:safe_is_process_alive(transaction_layer) of
-	{true, TLPid} ->
-	    TLPid ! {store_stateless_response_branch, self(), HandlerPid, Branch, Method},
-	    receive
-	        {failed_storing_stateless_response_branch, TLPid, E} ->
-		    {error, E};
-	        {stored_stateless_response_branch, TLPid} ->
-		    ok
-	    after
-		1000 ->
-		    {error, unavailable}
-	    end;
-	{false, _} ->
-	    {error, unavailable}
+    HPid = TH#thandler.pid,
+    case catch gen_server:call(transaction_layer, {store_stateless_response_branch, HPid, Branch, Method}, 1000) of
+	{ok} ->
+	    ok;
+	{error, E} ->
+	    {error, E};
+	_ ->
+	    {error, "Transaction layer failure"}
     end.
 
 is_good_transaction(TH) when record(TH, thandler) ->
@@ -542,32 +540,32 @@ send_challenge(TH, proxy, Stale, RetryAfter) when record(TH, thandler) ->
 
 send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when record(TH, thandler)->
     RetryHeader = case RetryAfter of
-	I when integer(I) ->
-	    [{"Retry-After", [integer_to_list(RetryAfter)]}];
-	_ ->
-	    []
-    end,
+		      I when integer(I) ->
+			  [{"Retry-After", [integer_to_list(RetryAfter)]}];
+		      _ ->
+			  []
+		  end,
     ExtraHeaders = lists:append(AuthHeader, RetryHeader),
     send_response_handler(TH, Status, Reason, ExtraHeaders),
     case sipserver:get_env(stateless_challenges, false) of
 	true ->
-	    % Adhere to advice in RFC3261 #26.3.2.4 (DoS Protection) saying we SHOULD terminate
-	    % the server transaction immediately after sending a challenge, to preserve server
-	    % resources but also to not resend these and thus be more usefull to someone using
-	    % us to perform a DoS on a third party.
-	    %
-	    % Default is to NOT do this, since we will have sent a 100 Trying in response to
-	    % an INVITE (and the DoS thingy only applies to INVITE transactions, since we wouldn't
-	    % send a 401/407 response to a non-INVITE reliably), and if it is a legitimate INVITE
-	    % and the client receives the 100 but this 401/407 is lost then we have screwed up
-	    % badly. The client would wait until it times out, instead of resubmitting the request.
-	    util:safe_signal(TH#thandler.pid, {quit});
+	    %% Adhere to advice in RFC3261 #26.3.2.4 (DoS Protection) saying we SHOULD terminate
+	    %% the server transaction immediately after sending a challenge, to preserve server
+	    %% resources but also to not resend these and thus be more usefull to someone using
+	    %% us to perform a DoS on a third party.
+	    %%
+	    %% Default is to NOT do this, since we will have sent a 100 Trying in response to
+	    %% an INVITE (and the DoS thingy only applies to INVITE transactions, since we wouldn't
+	    %% send a 401/407 response to a non-INVITE reliably), and if it is a legitimate INVITE
+	    %% and the client receives the 100 but this 401/407 is lost then we have screwed up
+	    %% badly. The client would wait until it times out, instead of resubmitting the request.
+	    gen_server:cast(TH#thandler.pid, {quit}),
+	    ok;
 	_ ->
 	    true
     end,
     ok.
 
 debug_show_transactions() ->
-    util:safe_signal("Transaction layer: ", self(), {debug_show_transactions, self()}),
+    gen_server:cast(transaction_layer, {debug_show_transactions, self()}),
     ok.
-
