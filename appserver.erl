@@ -65,7 +65,7 @@ create_session("INVITE", URI, Header, Body, Socket, FromIP) ->
 	    case Actions of
 		nomatch ->
 		    logger:log(normal, "Appserver: No actions found for INVITE ~s (SIP user ~p), answering 404 Not Found", [sipurl:print(URI), Key]),
-		    safe_signal(CallPid, {sendresponse, 404, "Not Found"});
+		    fork_actions(BranchBase, CallBranch, CallPid, OrigRequest, Socket, FromIP, {sendresponse, 404, "Not Found"});
 		_ ->
 		    logger:log(debug, "Appserver: User ~p actions :~n~p", [Key, Actions]),
 		    fork_actions(BranchBase, CallBranch, CallPid, OrigRequest, Socket, FromIP, Actions)
@@ -131,8 +131,8 @@ do_request(Method, URI, OrigHeader, Body, Socket, FromIP) ->
 				none ->
 				    logger:log(debug, "appserver: Could not find target for branch ~p in debugfriendly(Targets) :~n~p",
 				    		[Branch, targetlist:debugfriendly(Targets)]),
-				    logger:log(normal, "~s -> glue PID ~p (branch ~s)", [LogStr, Pid, Branch]),
-				    safe_signal(Pid, {siprequest, Branch, {Method, URI, Header, Body}});
+				    logger:log(normal, "~s -> glue PID ~p (callbranch, since branch ~s is not recognized)", [LogStr, Pid, Branch]),
+				    safe_signal(Pid, {siprequest, callbranch, {Method, URI, Header, Body}});
 				Target ->
 				    BranchPid = targetlist:extract_pid(Target),
 				    logger:log(debug, "appserver: Forwarding request ~s ~s to BranchPid ~p", [Method, sipurl:print(URI), BranchPid]),
@@ -214,9 +214,16 @@ fork_actions(BranchBase, CallBranch, CallPid, Request, Socket, FromIP, Actions) 
     DialogueID = sipheader:dialogueid(OrigHeader),
     case database_call:insert_call_unique(DialogueID, appserver, Request, {self(), CallBranch, []}) of
 	{atomic, ok} ->
-	    ForkPid = sipserver:safe_spawn(fun start_actions/6, [BranchBase, self(), Request, Socket, FromIP, Actions]),
-	    logger:log(normal, "Appserver: Starting up call ~p, glue process ~p. CallPid ~p, ForkPid ~p", [DialogueID, self(), CallPid, ForkPid]),
-	    process_messages(Socket, CallPid, ForkPid, calling),
+	    {ForkPid, InitialState} = case Actions of
+		{sendresponse, Status, Reason} ->
+		    safe_signal(CallPid, {sendresponse, Status, Reason}),
+		    {none, completed};
+		_ ->
+		    {sipserver:safe_spawn(fun start_actions/6, [BranchBase, self(), Request, Socket, FromIP, Actions]), calling}
+	    end,
+	    logger:log(normal, "Appserver: Starting up call ~p, glue process ~p, CallPid ~p, ForkPid ~p, Initial state ~p",
+	    		[DialogueID, self(), CallPid, ForkPid, InitialState]),
+	    process_messages(Socket, CallPid, ForkPid, InitialState),
 	    logger:log(normal, "Appserver glue: Finished with call (~s ~s), exiting.", [Method, sipurl:print(URI)]),
 	    delete_call(DialogueID),
 	    true;
