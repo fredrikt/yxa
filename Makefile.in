@@ -141,6 +141,7 @@ all: $(beam_FILES) bootstrap.sh dtmfserver $(boot_FILES) $(start_FILES)
 
 install: $(boot_FILES) $(beam_FILES) $(start_FILES)
 	$(mkinstalldirs) $(DESTDIR)$(sysconfdir)
+	$(mkinstalldirs) $(DESTDIR)$(sysconfdir)/yxa
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
 	for p in $(beam_FILES) $(boot_FILES) ; do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
