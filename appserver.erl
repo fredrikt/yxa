@@ -1,32 +1,13 @@
 -module(appserver).
--export([start/0, start/2, process/2]).
+-export([start/2]).
 
 start(normal, Args) ->
-    Pid = spawn(appserver, start, []),
+    Pid = spawn(sipserver, start, [fun init/0, fun request/5,
+				   fun response/5, none, true]),
     {ok, Pid}.
 
-start() ->
-    phone:init(),
-    database_call:create_call(),
-    logger:start("sipd.log"),
-    {ok, Socket} = gen_udp:open(5060, [{reuseaddr, true}]),
-    logger:log(normal, "proxy started: ~p", [application:get_env(startmsg)]),
-    recvloop(Socket).
-
-recvloop(Socket) ->
-    receive
-	{udp, Socket, IP, InPortNo, Packet} ->
-	    spawn(appserver, process, [Packet, Socket]),
-	    recvloop(Socket)
-    end.
-
-process(Packet, Socket) ->
-    case sippacket:parse(Packet) of
-	{request, Method, URL, Header, Body} ->
-	    request(Method, URL, Header, Body, Socket);
-	{response, Status, Reason, Header, Body} ->
-	    response(Status, Reason, Header, Body, Socket)
-    end.
+init() ->
+    database_call:create_call().
 
 request("BYE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     [CallID] = keylist:fetch("Call-ID", Header),

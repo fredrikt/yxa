@@ -1,33 +1,14 @@
 -module(incomingproxy).
--export([start/0, start/2, process/2, remove_expired_phones/0]).
+-export([start/2, remove_expired_phones/0]).
 
 start(normal, Args) ->
-    Pid = spawn(incomingproxy, start, []),
+    Pid = spawn(sipserver, start, [fun init/0, fun request/5,
+				   fun response/5, none, true]),
     {ok, Pid}.
 
-start() ->
-    phone:init(),
+init() ->
     phone:create(),
-    logger:start("sipd.log"),
-    {ok, Socket} = gen_udp:open(5060, [{reuseaddr, true}]),
-    timer:apply_interval(60000, incomingproxy, remove_expired_phones, []),
-    logger:log(normal, "proxy started"),
-    recvloop(Socket).
-
-recvloop(Socket) ->
-    receive
-	{udp, Socket, IP, InPortNo, Packet} ->
-	    spawn(incomingproxy, process, [Packet, Socket]),
-	    recvloop(Socket)
-    end.
-
-process(Packet, Socket) ->
-    case sippacket:parse(Packet) of
-	{request, Method, URL, Header, Body} ->
-	    request(Method, URL, Header, Body, Socket);
-	{response, Status, Reason, Header, Body} ->
-	    response(Status, Reason, Header, Body, Socket)
-    end.
+    timer:apply_interval(60000, ?MODULE, remove_expired_phones, []).
 
 lookuproute(User) ->
     case phone:get_phone(User) of

@@ -9,31 +9,10 @@
 % resp = H(H(A1) ":" nonce ":" H(A2))
 
 realm() ->
-    case application:get_env(sipauth_realm) of
-	{ok, Realm} ->
-	    Realm;
-	undefined ->
-	    ""
-    end.
-
-my_password() ->
-    case application:get_env(sipauth_password) of
-	{ok, Password} ->
-	    Password;
-	undefined ->
-	    ""
-    end.
-
-unauth_classlist() ->
-    case application:get_env(sipauth_unauth_classlist) of
-	{ok, List} ->
-	    List;
-	undefined ->
-	    []
-    end.
+    sipserver:get_env(sipauth_realm, "").
 
 get_nonce(Timestamp) ->
-    hex:to(erlang:md5(Timestamp ++ ":" ++ my_password())).
+    hex:to(erlang:md5(Timestamp ++ ":" ++ sipserver:get_env(sipauth_password, ""))).
 
 get_challenge() ->
     Timestamp = hex:to(util:timestamp(), 8),
@@ -158,7 +137,7 @@ can_register(Header, Number) ->
 
 check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs) ->
     Class = get_class(Tophone, Classdefs),
-    Classlist = unauth_classlist(),
+    Classlist = sipserver:get_env(sipauth_unauth_classlist, []),
     Classallowed = lists:member(Class, Classlist),
     if
 	Classallowed == true ->
