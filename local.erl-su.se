@@ -75,6 +75,7 @@
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
+-include("directory.hrl").
 
 url2mnesia_userlist(URL) when is_record(URL, sipurl), is_list(URL#sipurl.user) ->
     [URL#sipurl.user ++ "@" ++ URL#sipurl.host];
@@ -147,7 +148,7 @@ lookup_homedomain_url(URL) when is_record(URL, sipurl) ->
 	    Loc1
     end.
 
-%% same as lookup_mail2tel but looks for the mail address in the mailLocalAddress attribute
+%% same as directory:lookup_mail2tel() but looks for the mail address in the mailLocalAddress attribute
 lookup_mailLocalAddress2tel(Mail) ->
     case sipserver:get_env(ldap_server, none) of
 	none ->
@@ -288,7 +289,46 @@ get_password_for_user(User) ->
     sipuserdb:get_password_for_user(User).
 
 get_classes_for_user(User) ->
-    sipuserdb:get_classes_for_user(User).
+    Res = sipuserdb:get_classes_for_user(User),
+    case Res of
+	nomatch ->
+	    Server = sipserver:get_env(ldap_server, none),
+	    case get_classes_for_user_is_itsuse(Server, User) of
+		true ->
+		    %% Override with default classes for it.su.se user since sipuserdb returned 'nomatch'
+		    NewRes = [internal, national, mobile],
+		    logger:log(debug, "Local: User ~p is an it.su.se user, granting default classes : ~p",
+			      [User, NewRes]),
+		    NewRes;
+		false ->
+		    Res
+	    end;
+	_ ->
+	    Res
+    end.
+
+%% get_classes_for_user_is_itsuse/2, part of get_classes_for_user/2.
+%% Determine if User belongs to "it.su.se" or not. Returns true | false
+get_classes_for_user_is_itsuse(none, _User) ->
+    false;
+get_classes_for_user_is_itsuse(Server, User) when is_list(Server), is_list(User) ->
+    %% look if User belongs to it.su.se
+    case directory:ldapsearch(Server, "sipAuthenticationUser", User, ["sipAuthenticationUser"]) of
+	[LR] when is_record(LR, ldapres) ->
+	    Dn = LR#ldapres.dn,
+	    DnLen = length(Dn),
+	    MatchLen = 18,	%% length(",dc=it,dc=su,dc=se")
+	    if
+		DnLen >= MatchLen ->
+		    %% Return 'true' if the end of Dn matches ",dc=it,dc=su,dc=se"
+		    (string:substr(Dn, DnLen - MatchLen + 1, MatchLen) == ",dc=it,dc=su,dc=se");
+		true ->
+		    %% Dn not long enough to even compare
+		    false
+	    end;
+	_ ->
+	    false
+    end.
 
 get_telephonenumber_for_user("ft.sip1") ->
     "1225";
