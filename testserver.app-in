@@ -7,6 +7,7 @@
 	     database_call,
 	     database_forward,
 	     database_regexproute,
+	     db_util,
 	     directory,
 	     dnsutil,
 	     eldap,
