@@ -78,6 +78,8 @@ start(normal, [AppModule]) ->
 	    end,
 	    case RemoteMnesiaTables of
 		none ->
+		    %% update old database versions
+		    table_update:update(),
 		    logger:log(normal, "proxy started, supervisor is ~p", [Supervisor]);
 		_ ->
 		    DbNodes = case sipserver:get_env(databaseservers, none) of
@@ -230,7 +232,7 @@ safe_spawn_child(Module, Function, Arguments) ->
 
 %%--------------------------------------------------------------------
 %% Function: my_send_result(Request, Socket, Status, Reason,
-%%                                ExtraHeaders)
+%%                          ExtraHeaders)
 %%           Request = request record()
 %%           Socket  = sipsocket record()
 %%           Status  = integer(), SIP response code
@@ -348,7 +350,7 @@ process(Packet, Origin, Dst) when record(Origin, siporigin) ->
 my_apply(transaction_layer, R, Origin, LogStr) when record(R, request);
 						    record(R, response), record(Origin, siporigin) ->
     %% Dst is the transaction layer.
-    case gen_server:call(transaction_layer, {sipmessage, R, Origin, LogStr}, 2000) of
+    case transactionlayer:from_transportlayer(R, Origin, LogStr) of
 	{continue} ->
 	    %% terminate silently
 	    true;
@@ -359,10 +361,7 @@ my_apply(transaction_layer, R, Origin, LogStr) when record(R, request);
 	    %% but can't do it itself because that would block the transactionlayer process.
 	    my_apply(AppModule, R, Origin, LogStr);
 	_ ->
-	    Type = case R of
-		       _ when record(R, request) -> request;
-		       _ -> response
-		   end,
+	    Type = element(1, R),	%% get record type - 'request' or 'response'
 	    logger:log(error, "Sipserver: Got no or unknown response from transaction_layer regarding ~p : ~s",
 		       [Type, LogStr]),
 	    {siperror, 500, "Server Internal Error"}
@@ -397,7 +396,7 @@ parse_packet(Packet, Origin) when record(Origin, siporigin) ->
 	    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
 		       [origin2str(Origin, "unknown"), Status, Reason]),
 	    false;
-	{siperror, Status, Reason, ExtraHeaders} ->
+	{siperror, Status, Reason, _ExtraHeaders} ->
 	    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
 		       [origin2str(Origin, "unknown"), Status, Reason]),
 	    false;
@@ -417,11 +416,11 @@ parse_packet(Packet, Origin) when record(Origin, siporigin) ->
 		    logger:log(error, "INVALID request [client=~s]: ~s -> ~p ~s",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders);
-		{sipparseerror, response, Header, Status, Reason} ->
+		{sipparseerror, response, _Header, Status, Reason} ->
 		    logger:log(error, "INVALID response [client=~s]: ~s -> ~p ~s (dropping)",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    false;
-		{sipparseerror, response, Header, Status, Reason, ExtraHeaders} ->
+		{sipparseerror, response, _Header, Status, Reason, _ExtraHeaders} ->
 		    logger:log(error, "INVALID response [client=~s]: ~s -> ~p ~s (dropping)",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    false;
@@ -429,7 +428,7 @@ parse_packet(Packet, Origin) when record(Origin, siporigin) ->
 		    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    false;
-		{siperror, Status, Reason, ExtraHeaders} ->
+		{siperror, Status, Reason, _ExtraHeaders} ->
 		    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
 			       [origin2str(Origin, "unknown"), Status, Reason]),
 		    false;
@@ -453,7 +452,7 @@ parse_packet(Packet, Origin) when record(Origin, siporigin) ->
 %% Returns : ok
 %%--------------------------------------------------------------------
 parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
-    {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    {_, Method} = sipheader:cseq(Header),
     case Method of
 	"ACK" ->
 	    %% Empirical evidence says that it is a really bad idea to send responses to ACK
@@ -485,25 +484,27 @@ process_parsed_packet(Request, Origin) when record(Request, request), record(Ori
     NewHeader1 = fix_topvia_received(Request#request.header, Origin),
     NewHeader2 = fix_topvia_rport(NewHeader1, Origin),
     check_packet(Request#request{header=NewHeader2}, Origin),
-    {{_, NewURI}, NewHeader3} =
+    {NewURI, NewHeader3} =
 	case received_from_strict_router(Request#request.uri, NewHeader2) of
 	    true ->
 		logger:log(debug, "Sipserver: Received request with a"
 			   " Request-URI I (probably) put in a Record-Route. "
 			   "Pop real Request-URI from Route-header."),
-		ReverseRoute = lists:reverse(sipheader:contact(
-					       keylist:fetch("Route", NewHeader2))),
-		[NewReqURI | NewReverseRoute] = ReverseRoute,
-		case NewReverseRoute of
-		    [] ->
-			{NewReqURI, keylist:delete("Route", NewHeader2)};
-		    _ ->
-			{NewReqURI, keylist:set("Route", sipheader:contact_print(
-						  lists:reverse(NewReverseRoute)), NewHeader2)}
-					end;
-				    _ ->
-					{{none, Request#request.uri}, NewHeader2}
-				end,
+		ReverseRoute = lists:reverse(sipheader:route(NewHeader2)),
+		[FirstRoute | NewReverseRoute] = ReverseRoute,
+		NewReqURI = sipurl:parse(FirstRoute#contact.urlstr),
+		NewH = 
+		    case NewReverseRoute of
+			[] ->
+			    keylist:delete("Route", NewHeader2);
+			_ ->
+			    keylist:set("Route", sipheader:contact_print(
+						   lists:reverse(NewReverseRoute)), NewHeader2)
+		end,
+		{NewReqURI, NewH};
+	    _ ->
+		{Request#request.uri, NewHeader2}
+	end,
     NewHeader4 = remove_route_matching_me(NewHeader3),
     NewRequest = Request#request{uri=NewURI, header=NewHeader4},
     LogStr = make_logstr(NewRequest, Origin),
@@ -545,7 +546,7 @@ process_parsed_packet(Response, Origin) when record(Response, response), record(
 %% Returns : ok    |
 %%           error
 %%--------------------------------------------------------------------
-check_response_via(Response, Origin, none) ->
+check_response_via(_Response, Origin, none) ->
     logger:log(error, "INVALID top-Via in response [client=~s] (no Via found).",
 	       [origin2str(Origin, "unknown")]),
     error;
@@ -561,7 +562,6 @@ check_response_via(Response, Origin, TopVia) when is_record(TopVia, via) ->
     %% But we also accept this, which is the same but with the protocol from this response - in
     %% case we sent the request out using TCP but received the response over UDP for example
     SentByMeNoParam = siprequest:create_via(sipsocket:viaproto2proto(TopVia#via.proto), []),
-    TopViaProto = sipsocket:viaproto2proto(TopVia#via.proto),
     case sipheader:via_is_equal(TopVia, MyViaNoParam, [proto, host, port]) of
         true ->
 	    ok;
@@ -596,7 +596,6 @@ check_response_via(Response, Origin, TopVia) when is_record(TopVia, via) ->
 %%--------------------------------------------------------------------
 fix_topvia_received(Header, Origin) when record(Origin, siporigin) ->
     IP = Origin#siporigin.addr,
-    InPortNo = Origin#siporigin.port,
     %% Check "sent-by" in top-Via to see if we MUST add a
     %% received= parameter (RFC 3261 18.2.1)
     TopVia = sipheader:topvia(Header),
@@ -659,7 +658,7 @@ fix_topvia_rport(Header, Origin) when record(Origin, siporigin) ->
 
 %% Replace top Via header in a keylist record()
 replace_top_via(NewVia, Header) when record(NewVia, via) ->
-    [FirstVia | Via] = sipheader:via(keylist:fetch("Via", Header)),
+    [_FirstVia | Via] = sipheader:via(Header),
     keylist:set("Via", sipheader:via_print(lists:append([NewVia], Via)), Header).
 
 %%--------------------------------------------------------------------
@@ -721,19 +720,21 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
 %%                       same as input if no changes were made)
 %%--------------------------------------------------------------------
 remove_route_matching_me(Header) ->
-    Route = sipheader:contact(keylist:fetch("Route", Header)),
+    Route = sipheader:route(Header),
     case Route of
-        [{_, FirstRoute} | NewRoute] ->
-	    case route_matches_me(FirstRoute) of
+        [#contact{urlstr = FirstRoute} | NewRoute] ->
+	    case route_matches_me(sipurl:parse(FirstRoute)) of
 		true ->
 		    logger:log(debug, "Sipserver: First Route ~p matches me, removing it.",
-			       [sipheader:contact_print([{none, FirstRoute}])]),
-		    case NewRoute of
-			[] ->
-			    keylist:delete("Route", Header);
-			_ ->
-			    keylist:set("Route", sipheader:contact_print(NewRoute), Header)
-		    end;
+			       [ contact:print(contact:new(none, FirstRoute, [])) ]),
+		    NewHeader =
+			case NewRoute of
+			    [] ->
+				keylist:delete("Route", Header);
+			    _ ->
+				keylist:set("Route", sipheader:contact_print(NewRoute), Header)
+			end,
+		    NewHeader;
 		_ ->
 		    Header
 	    end;
@@ -787,7 +788,7 @@ check_packet(Request, Origin) when record(Request, request), record(Origin, sipo
     check_supported_uri_scheme(Request#request.uri, Header),
     sanity_check_contact(request, "From", Header),
     sanity_check_contact(request, "To", Header),
-    case sipheader:cseq(keylist:fetch("CSeq", Header)) of
+    case sipheader:cseq(Header) of
 	{unparseable, CSeqStr} ->
 	    logger:log(error, "INVALID CSeq ~p in packet from ~s", [CSeqStr, origin2str(Origin, "unknown")]),
 	    throw({sipparseerror, request, Header, 400, "Invalid CSeq"});
@@ -837,9 +838,11 @@ check_for_loop(Header, URI, Origin) when record(Origin, siporigin) ->
     ViaHostname = siprequest:myhostname(),
     ViaPort = sipserver:get_listenport(Origin#siporigin.proto),
     CmpVia = #via{host=ViaHostname, port=ViaPort},
-    case via_indicates_loop(LoopCookie, CmpVia,
-    			    sipheader:via(keylist:fetch("Via", Header))) of
+
+    case via_indicates_loop(LoopCookie, CmpVia, sipheader:via(Header)) of
 	true ->
+	    logger:log(debug, "Sipserver: Found a loop when inspecting the Via headers, "
+		       "throwing SIP-serror '482 Loop Detected'"),
 	    throw({sipparseerror, request, Header, 482, "Loop Detected"});
 	_ ->
 	    true
@@ -894,16 +897,16 @@ via_indicates_loop(LoopCookie, CmpVia, [TopVia | Rest]) when record(TopVia, via)
 %%--------------------------------------------------------------------
 make_logstr(Request, Origin) when record(Request, request) ->
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
-    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
-    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
+    {_, FromURI} = sipheader:from(Header),
+    {_, ToURI} = sipheader:to(Header),
     ClientStr = origin2str(Origin, "unknown"),
     lists:flatten(io_lib:format("~s ~s [client=~s, from=<~s>, to=<~s>]",
 				[Method, sipurl:print(URI), ClientStr, url2str(FromURI), url2str(ToURI)]));
 make_logstr(Response, Origin) when record(Response, response) ->
     Header = Response#response.header,
-    {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
-    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
+    {_, CSeqMethod} = sipheader:cseq(Header),
+    {_, FromURI} = sipheader:from(Header),
+    {_, ToURI} = sipheader:to(Header),
     ClientStr = origin2str(Origin, "unknown"),
     case keylist:fetch("Warning", Header) of
 	[] ->
@@ -965,7 +968,7 @@ origin2str(Origin, _) when record(Origin, siporigin) ->
     lists:concat([Origin#siporigin.proto, ":", Origin#siporigin.addr, ":", Origin#siporigin.port]);
 origin2str(Str, _) when list(Str) ->
     lists:concat([Str]);
-origin2str(F, Default) ->
+origin2str(_F, Default) ->
     Default.
 
 get_listenport(Proto) when Proto == tls; Proto == tls6 ->
