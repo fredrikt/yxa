@@ -37,62 +37,85 @@ routeRequestToPSTN(FromIP, ToHost) ->
 	    end
     end.
 
-request(Method, URL, Header, Body, Socket, FromIP) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    logger:log(debug, "~s ~s", [Method, sipurl:print(URL)]),
-    {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
-    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
-    LogStr = io_lib:format("~s ~s [client=~s, from=<~s>, to=<~s>]", [Method, sipurl:print(URL), FromIP, sipurl:print(FromURI), sipurl:print(ToURI)]),
+request(Method, URI, Header, Body, Socket, FromIP) ->
+    {User, Pass, Host, Port, Parameters} = URI,
+    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
     case routeRequestToPSTN(FromIP, Host) of
 	true ->
 	    logger:log(normal, "~s -> PSTN gateway", [LogStr]),
 	    case Method of
 		"INVITE" ->
-		    toPSTNrequest(Method, User, Header, Body, Socket);
+		    toPSTNrequest(Method, URI, Header, Body, Socket);
 		"ACK" ->
-		    toPSTNrequest(Method, User, Header, Body, Socket);
+		    toPSTNrequest(Method, URI, Header, Body, Socket);
 		"PRACK" ->
-		    toPSTNrequest(Method, User, Header, Body, Socket);
+		    toPSTNrequest(Method, URI, Header, Body, Socket);
 		"CANCEL" ->
-		    toPSTNrequest(Method, User, Header, Body, Socket);
+		    toPSTNrequest(Method, URI, Header, Body, Socket);
 		"BYE" ->
-		    toPSTNrequest(Method, User, Header, Body, Socket);
+		    toPSTNrequest(Method, URI, Header, Body, Socket);
 		_ ->
 		    siprequest:send_result(Header, Socket, "", 501, "Not Implemented")
 	    end;
 	false ->
 	    logger:log(normal, "~s -> SIP server", [LogStr]),
-	    toSIPrequest(Method, URL, Header, Body, Socket);
+	    toSIPrequest(Method, URI, Header, Body, Socket);
 	_ ->
+	    logger:log(normal, "~s -> 403 Forbidden", [LogStr]),
 	    siprequest:send_result(Header, Socket, "", 403, "Forbidden")
     end.
 
-toSIPrequest(Method, URL, Header, Body, Socket) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    Newlocation = {User, none, sipserver:get_env(sipproxy), none, []},
+toSIPrequest(Method, URI, Header, Body, Socket) ->
+    {User, Pass, Host, Port, Parameters} = URI,
+    Newlocation = case localhostname(Host) of
+	true ->
+	    logger:log(debug, "Performing ENUM lookup on ~p", [User]),
+	    case local:lookupenum(User) of
+		{relay, Loc} ->
+		    Loc;
+		_ ->
+		    Proxy = sipserver:get_env(sipproxy, none),
+		    case Proxy of
+			none ->
+			    % No ENUM and no SIP-proxy configured, return failure so
+			    % that the PBX on the other side of the gateway can try
+			    % PSTN or something
+			    siprequest:send_result(Header, Socket, "", 503, "Service Unavailable"),
+			    none;
+			_ ->
+			    {User, none, Proxy, none, []}
+		    end
+	    end;
+	_ ->
+	    URI
+    end,
     case Newlocation of
 	none ->
 	    none;
 	_ ->
-	    Route = "<" ++ sipurl:print({User, Pass, lists:nth(1, sipserver:get_env(myhostnames)), Port,
-    				["maddr=" ++ siphost:myip()]}) ++ ">",
-	    Newheaders = keylist:prepend({"Record-Route", Route}, Header),
+	    Newheaders = case sipserver:get_env(record_route, true) of
+		true -> siprequest:add_record_route(Header);
+	        false -> Header
+	    end,
 	    siprequest:send_proxy_request(Newheaders, Socket, {Method, Newlocation, Body, []})
     end.
 
-toPSTNrequest(Method, Phone, Header, Body, Socket) ->
+toPSTNrequest(Method, URI, Header, Body, Socket) ->
+    {Phone, _, _, _, _} = URI,
     Newlocation = {Phone, none, lists:nth(1, sipserver:get_env(pstngatewaynames)), none, []},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     Fromphone = local:sipuser(FromURI),
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
-    Route = "<" ++ sipurl:print({Phone, none, lists:nth(1, sipserver:get_env(myhostnames)), none,
-				 ["maddr=" ++ siphost:myip()]}) ++ ">",
-    Newheaders = keylist:append({"Record-route", Route}, Header),
+    Newheaders = case sipserver:get_env(record_route, true) of
+	true -> siprequest:add_record_route(Header);
+        false -> Header
+    end,
     sipauth:check_and_send_auth(Header, Newheaders, Socket, Fromphone, Phone,
 				{siprequest, send_proxy_request},
 				{Method, Newlocation, Body, []},
 				Method, Classdefs).
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
-    logger:log(normal, "~p", [Status]),
+    LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
+    logger:log(normal, "Response to ~s: ~p ~s", [LogStr, Status, Reason]),
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
