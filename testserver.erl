@@ -3,7 +3,7 @@
 
 start(normal, Args) ->
     Pid = spawn(sipserver, start, [fun init/0, fun request/6,
-				   fun response/6, none, true]),
+				   fun response/6, none]),
     {ok, Pid}.
 
 init() ->
