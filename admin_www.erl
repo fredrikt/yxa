@@ -239,17 +239,17 @@ print_numbers_list([Elem | List]) ->
      Elem#numbers.user,
      "</td><td>",
      case username_to_uid(Elem#numbers.user) of
-	 none ->
-	     "";
-	 String ->
-	     String
+	 String1 when list(String1) ->
+	     String1;
+	 _ ->
+	     ""
      end,
      "</td><td>",
      case username_to_cn(Elem#numbers.user) of
-	 none ->
-	     "";
-	 String ->
-	     String
+	 String2 when list(String2) ->
+	     String2;
+	 _ ->
+	     ""
      end,
      "</td></tr>\n"
      | print_numbers_list(List)].
