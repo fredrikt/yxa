@@ -9,10 +9,23 @@ AC_PROG_INSTALL
 
 AC_CONFIG_FILES(Makefile)
 
+
+AC_ARG_WITH(erlang,
+	AC_HELP_STRING([--with-erlang=dir],
+		[search for erlang in dir]),
+[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_erlang" = "X"; then
+    extra_erl_path=""
+else
+    extra_erl_path="$with_erlang:"
+fi
+])
+AC_PATH_PROG(ERL, erl, erl, [${extra_erl_path}$PATH])
+AC_PATH_PROG(ERLC, erlc, erlc, [${extra_erl_path}$PATH])
+
 AC_ARG_WITH(mnesiadir,
 	AC_HELP_STRING([--with-mnesiadir=dir],
 		[use dir as database for mnesia database]),
-[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_$1" = "X"; then
+[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_mnesiadir" = "X"; then
     mnesiadir=""
 else
     mnesiadir="$with_mnesiadir"
@@ -21,16 +34,17 @@ fi])
 AC_ARG_WITH(local,
 	AC_HELP_STRING([--with-local=file],
 		[use file as local erlang configuration file]),
-[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_$1" = "X"; then
+[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_local" = "X"; then
     local_file="default"
 else
     local_file="$with_local"
-fi])
-
+fi],[local_file="default"])
 
 AC_SUBST(DESTDIR)
 AC_SUBST(mnesiadir)
 AC_SUBST(local_file)
+AC_SUBST(ERL)
+AC_SUBST(ERLC)
 
 AC_OUTPUT
 
