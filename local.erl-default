@@ -372,7 +372,7 @@ incomingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origi
 %%--------------------------------------------------------------------
 %% Function: sippipe_received_response(Request, Response, DstList)
 %%           Request  = request record()
-%%           Response = response record()
+%%           Response = response record() | {Status, Reason}
 %%           DstList  = list() of sipdst record()
 %% Descrip.: When sippipe receives a final response, this function is
 %%           called. Depending on the return value of this function,
@@ -392,5 +392,8 @@ incomingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origi
 %%           NewDstList = list() of sipdst record()
 %%--------------------------------------------------------------------
 sippipe_received_response(Request, Response, _DstList) when is_record(Request, request),
-							   is_record(Response, response) ->
+							    is_record(Response, response) ->
+    undefined;
+sippipe_received_response(Request, {Status, Reason}, _DstList) when is_record(Request, request),
+								    is_integer(Status), is_list(Reason) ->
     undefined.
