@@ -15,8 +15,13 @@ start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, LocalTablesP) ->
 	none ->
 	    logger:log(normal, "proxy started");
 	_ ->
-	    mnesia:change_config(extra_db_nodes,
-				 sipserver:get_env(databaseservers)),
+	    case mnesia:change_config(extra_db_nodes,
+				 sipserver:get_env(databaseservers)) of
+		{error, Reason} ->
+		    logger:log(error, "Startup: Could not add configured databaseservers: ~p", [mnesia:error_description(Reason)]);
+		_ ->
+		    true
+	    end,
 	    {Message, Args} = case mnesia:wait_for_tables(RemoteMnesiaTables, infinity) of
 				  ok ->
 				      {"proxy started, all tables found", []};
@@ -125,8 +130,14 @@ make_logstr({response, Status, Reason, Header, Body}, IP) ->
     {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
-    io_lib:format("~s [client=~s, from=<~s>, to=<~s>]", 
-		[CSeqMethod, IP, sipurl:print(FromURI), sipurl:print(ToURI)]).
+    case keylist:fetch("Warning", Header) of
+	[] ->
+	    io_lib:format("~s [client=~s, from=<~s>, to=<~s>]", 
+			[CSeqMethod, IP, sipurl:print(FromURI), sipurl:print(ToURI)]);
+	[Warning] ->
+	    io_lib:format("~s [client=~s, from=<~s>, to=<~s>, warning=~p]", 
+			[CSeqMethod, IP, sipurl:print(FromURI), sipurl:print(ToURI), Warning])
+    end.
 
 get_env(Name) ->
     {ok, Value} = application:get_env(Name),
