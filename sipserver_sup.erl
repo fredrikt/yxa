@@ -58,11 +58,12 @@ init([AppModule, Mode, AppSupdata]) ->
     TransactionLayer = {transactionlayer,
 			{transactionlayer, start_link, [AppModule, Mode]},
 			permanent, 2000, worker, [transactionlayer]},
-    MyList = [Logger, Directory, TransactionLayer],
+    UserDb = sipuserdb:yxa_init(),
+    MyList = lists:append([Logger, Directory, TransactionLayer], UserDb),
     SupList = case AppSupdata of
 		  {append, AppList} when list(AppList) ->
 		      lists:append(MyList, AppList);
-		  _ ->
+		  none ->
 		      MyList
 	      end,
     {ok,{{one_for_one,20,60}, SupList}}.
