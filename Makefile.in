@@ -9,7 +9,7 @@ DESTDIR = @DESTDIR@
 SHELL = @SHELL@
 
 configdir = @sysconfdir@
-sslconfdir = @sysconfdir@
+sslcertdir = @sysconfdir@
 mnesiadir = @mnesiadir@
 beamdir = @datadir@
 sbindir = @sbindir@
