@@ -5,7 +5,7 @@
 	 build_header/1, dict_to_param/1, param_to_dict/1, dialogueid/1,
 	 get_tag/1, topvia/1, via_sentby/1, get_client_transaction_id/1,
 	 get_server_transaction_id/1, get_server_transaction_ack_id_2543/1, 
-	 get_via_branch/1, get_via_branch_full/1,
+	 get_via_branch/1, get_via_branch_full/1, remove_loop_cookie/1,
 	 get_server_transaction_id_using_3261_response_header/1]).
 
 comma(String) ->
@@ -404,20 +404,28 @@ get_dialogid(Header) ->
 get_via_branch(TopVia) ->
     case get_via_branch_full(TopVia) of
 	"z9hG4bK-yxa-" ++ RestOfBranch ->
+	    remove_loop_cookie("z9hG4bK-yxa-" ++ RestOfBranch);
+	Res ->
+	    Res
+    end.
+
+remove_loop_cookie(Branch) ->
+    case Branch of
+	"z9hG4bK-yxa-" ++ RestOfBranch ->
 	    case sipserver:get_env(detect_loops, true) of
 		true ->
 		    case string:rstr(RestOfBranch, "-o") of
 			0 ->
-			    "z9hG4bK-yxa-" ++ RestOfBranch;
+			    Branch;
 			Index when integer(Index) ->
-			    % Return branch without Yxa loop cookie
+			    %% Return branch without Yxa loop cookie
 			    "z9hG4bK-yxa-" ++ string:substr(RestOfBranch, 1, Index - 1)
 		    end;
 		_ ->
-		    "z9hG4bK-yxa-" ++ RestOfBranch
+		    Branch
 	    end;
-	Res ->
-	    Res
+        _ ->
+	    Branch
     end.
 
 get_via_branch_full({_, {ViaHostname, ViaPort}, Parameters}) ->
