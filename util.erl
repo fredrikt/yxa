@@ -90,7 +90,7 @@ isnumeric(_) ->
 %% Descrip.:
 %% Returns :
 %%--------------------------------------------------------------------
-regexp_rewrite(Input, []) ->
+regexp_rewrite(_Input, []) ->
     nomatch;
 
 regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
@@ -107,7 +107,7 @@ regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
 %% Function:
 %% Descrip.: ???
 %% Returns :
-apply_rewrite([], List) ->
+apply_rewrite([], _List) ->
     [];
 apply_rewrite([$\\, $\\ | Rest], List) ->
     [$\\ | apply_rewrite(Rest, List)];
@@ -127,7 +127,7 @@ apply_rewrite([C | Rest], List) ->
 %% return error if Digit is a non-numerical char (or other type)
 digit(Digit) when is_integer(Digit), Digit >= $0, Digit =< $9 ->
     Digit - $0;
-digit(Digit) ->
+digit(_Digit) ->
     error.
 
 
@@ -140,9 +140,9 @@ digit(Digit) ->
 %%--------------------------------------------------------------------
 casecompare(none, none) ->
     true;
-casecompare(none, String) ->
+casecompare(none, _String) ->
     false;
-casecompare(String, none) ->
+casecompare(_String, none) ->
     false;
 casecompare(String1, String2) ->
     S1 = httpd_util:to_lower(String1),
@@ -160,14 +160,14 @@ casecompare(String1, String2) ->
 %% Descrip.: determine if Str is a memeber of StrList
 %% Returns : true | false
 %%--------------------------------------------------------------------
-casegrep(String1,[]) ->
+casegrep(_String1, []) ->
     false;
-casegrep(String1,[String2 | Rest]) ->
-    case casecompare(String1,String2) of
+casegrep(String1, [String2 | Rest]) ->
+    case casecompare(String1, String2) of
 	true ->
 	    true;
 	_ ->
-	    casegrep(String1,Rest)
+	    casegrep(String1, Rest)
     end.
 
 %%--------------------------------------------------------------------
@@ -181,9 +181,9 @@ casegrep(String1,[String2 | Rest]) ->
 %% XXX badly chosen function name - I mostly associate this name with
 %% functions like lists:append - hsten
 %%--------------------------------------------------------------------
-join([], Separator) ->
+join([], _Separator) ->
     [];
-join([A], Separator) ->
+join([A], _Separator) ->
     A;
 join([String | Rest], Separator) ->
     String ++ Separator ++ join(Rest, Separator).
@@ -198,7 +198,7 @@ join([String | Rest], Separator) ->
 %% XXX badly chosen function name - I mostly associate this name with
 %% functions that add a element to a list - hsten
 %%--------------------------------------------------------------------
-concat([], Separator) ->
+concat([], _Separator) ->
     [];
 concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
@@ -222,8 +222,8 @@ safe_is_process_alive(Name) when is_atom(Name) ->
 		_ ->
 		    {false, Pid}
 	    end;
-	Pid ->
-	    {false, Pid}
+	E ->
+	    {false, E}
     end.
 
 %%--------------------------------------------------------------------
@@ -240,9 +240,10 @@ safe_signal(LogTag, PidIn, Message) ->
 	    Pid ! Message,
 	    ok;
 	{false, Pid} when is_list(LogTag) ->
-	    logger:log(error, LogTag ++ "Can't send signal ~p to pid ~p - not alive or not pid", [Message, Pid]),
+	    logger:log(error, LogTag ++ "Can't send signal ~p to pid '~p' (~p) - not alive or not pid",
+		       [Message, PidIn, Pid]),
 	    error;
-	{false, Pid} ->
+	{false, _} ->
 	    error
     end.
 
