@@ -98,6 +98,7 @@ default_port(_, Port) when integer(Port) ->
 default_port(_, Port) ->
     Port.
 
+%%--------------------------------------------------------------------
 %% Function: process_route_header/2
 %% Description: Looks at the Route header. If it exists, we return a
 %%              new destination URL for this request, and if there was
@@ -251,6 +252,18 @@ proxy_check_maxforwards(Header) ->
 	    keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Header)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: proxy_add_via(Header, Method, OrigURI, Parameters, Proto,
+%%                         SrvTHandler)
+%%           Header      = keylist record()
+%%           Method      = string()
+%%           OrigURI     = sipurl record()
+%%           Parameters  = string()
+%%           Proto       = ???
+%%           SrvTHandler = ???
+%% Descrip.: Generate a Via header for this proxy and add it to Header
+%% Returns : NewHeader, keylist record()
+%%--------------------------------------------------------------------
 proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
     LoopCookie = case sipserver:get_env(detect_loops, true) of
 		     true ->
@@ -261,55 +274,9 @@ proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
     ParamDict = sipheader:param_to_dict(Parameters),
     ViaParameters1 = case dict:find("branch", ParamDict) of
 			 error ->
-			     case stateless_generate_branch(OrigURI, Header) of
-				 error ->
-				     Parameters;
-				 Branch ->
-				     %% In order to find the correct "server transaction" (ie. TCP socket) to use
-				     %% when sending future responses to this request back upstreams, we need to
-				     %% associate the stateless branch we generated with the socket the request
-				     %% we are now proxying arrived on. If it is a TCP socket.
-				     %% We don't check for errors since sockets can vanish but we can route
-				     %% responses using the information in Via too.
-				     case Method of
-					 "ACK" -> true;	%% ACK is part of INVITE transaction or does not get responded to
-					 _ ->
-					     transactionlayer:store_stateless_response_branch(SrvTHandler, Branch, Method)
-				     end,
-				     NewBranch = case LoopCookie of
-						     none ->
-							 logger:log(debug, "Siprequest (transport layer) : Added statelessly generated branch ~p to request",
-								    [Branch]),
-							 Branch;
-						     _ ->
-							 NewBranch1 = Branch ++ "-o" ++ LoopCookie,
-							 logger:log(debug, "Siprequest (transport layer) : Added statelessly generated branch (plus loop cookie) ~p to request",
-								    [NewBranch1]),
-							 NewBranch1
-						 end,
-				     Param2 = dict:store("branch", NewBranch, ParamDict),
-				     sipheader:dict_to_param(Param2)
-			     end;
-			 {ok, Branch} when LoopCookie /= none ->
-			     %% Check if there already is a loop cookie in this branch. Necessary to not
-			     %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
-			     FlatBranch = lists:flatten(Branch),
-			     case string:rstr(FlatBranch, "-o") of
-				 0 ->
-				     logger:log(debug, "Siprequest (transport layer) : Added loop cookie ~p to branch of request",
-						[LoopCookie]),
-				     Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
-				     sipheader:dict_to_param(Param2);
-				 Index when integer(Index) ->
-				     %% There is already a loop cookie in this branch, don't change it. Necessary to not
-				     %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
-				     logger:log(debug, "Siprequest (transport layer) : NOT adding generated loop cookie ~p to branch " ++
-						"that already contains a loop cookie : ~p", [LoopCookie, FlatBranch]),
-				     Parameters
-			     end;
+			     add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters, SrvTHandler);
 			 {ok, Branch} ->
-			     %% Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
-			     Parameters
+			     add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict)
 		     end,
     ViaParameters = case sipserver:get_env(request_rport, false) of
 			true ->
@@ -320,6 +287,89 @@ proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
     V = create_via(Proto, ViaParameters),
     MyVia = sipheader:via_print([V]),
     keylist:prepend({"Via", MyVia}, Header).
+
+%%--------------------------------------------------------------------
+%% Function: add_loopcookie_to_branch(LoopCookie, Branch, Parameters,
+%%                                    ParamDict)
+%%           LoopCookie  = string() | none
+%%           Branch      = string()
+%%           Parameters  = list() of string()
+%%           ParamDict   = dict()
+%% Descrip.: If LoopCookie is not 'none', add it to the Branch if
+%%           Branch does not already contain a loop cookie. Return
+%%           a new Parameters construct.
+%% Returns : NewParameters, list() of string()
+%%--------------------------------------------------------------------
+add_loopcookie_to_branch(none, _Branch, Parameters, _ParamDict) ->
+    %% Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
+    Parameters;
+add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict) ->
+    %% Check if there already is a loop cookie in this branch. Necessary to not
+    %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
+    FlatBranch = lists:flatten(Branch),
+    case string:rstr(FlatBranch, "-o") of
+	0 ->
+	    logger:log(debug, "Siprequest (transport layer) : Added loop cookie ~p to branch of request",
+		       [LoopCookie]),
+	    Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
+	    sipheader:dict_to_param(Param2);
+	Index when integer(Index) ->
+	    %% There is already a loop cookie in this branch, don't change it. Necessary to not
+	    %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
+	    logger:log(debug, "Siprequest (transport layer) : NOT adding generated loop cookie ~p to branch " ++
+		       "that already contains a loop cookie : ~p", [LoopCookie, FlatBranch]),
+	    Parameters
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: add_stateless_generated_branch(Header, Method, OrigURI,
+%%                                          LoopCookie, Parameters,
+%%                                          SrvTHandler)
+%%           Header      = keylist record()
+%%           Method      = string()
+%%           OrigURI     = sipurl record()
+%%           LoopCookie  = string() | none
+%%           Parameters  = list() of string()
+%%           SrvTHandler = term(), (thandler record())
+%% Descrip.: If LoopCookie is not 'none', add it to the Branch if
+%%           Branch does not already contain a loop cookie. Return
+%%           a new Parameters construct.
+%% Returns : NewParameters, list() of string()
+%%--------------------------------------------------------------------
+add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters, SrvTHandler)
+  when is_record(Header, keylist), is_list(Method), is_record(OrigURI, sipurl), 
+       is_list(LoopCookie), is_list(Parameters) ->
+    case stateless_generate_branch(OrigURI, Header) of
+	error ->
+	    Parameters;
+	Branch ->
+	    %% In order to find the correct "server transaction" (ie. TCP socket) to use
+	    %% when sending future responses to this request back upstreams, we need to
+	    %% associate the stateless branch we generated with the socket the request
+	    %% we are now proxying arrived on. If it is a TCP socket.
+	    %% We don't check for errors since sockets can vanish but we can route
+	    %% responses using the information in Via too.
+	    case Method of
+		"ACK" -> true;	%% ACK is part of INVITE transaction or does not get responded to
+		_ ->
+		    transactionlayer:store_stateless_response_branch(SrvTHandler, Branch, Method)
+	    end,
+	    NewBranch =
+		case LoopCookie of
+		    none ->
+			logger:log(debug, "Siprequest (transport layer) : Added statelessly "
+				   "generated branch ~p to request", [Branch]),
+			Branch;
+		    _ ->
+			NewBranch1 = Branch ++ "-o" ++ LoopCookie,
+			logger:log(debug, "Siprequest (transport layer) : Added statelessly "
+				   "generated branch (plus loop cookie) ~p to request", [NewBranch1]),
+			NewBranch1
+		end,
+	    ParamDict = sipheader:param_to_dict(Parameters),
+	    Param2 = dict:store("branch", NewBranch, ParamDict),
+	    sipheader:dict_to_param(Param2)
+    end.
 
 stateless_generate_branch(OrigURI, Header) ->
     %% generate a branch for this request in a way that makes sure that we generate
