@@ -359,10 +359,10 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%--------------------------------------------------------------------
 %% Function: received_new_request(Request, Socket, LogStr, AppModule)
-%%           Request = request record()
-%%           Socket  = sipsocket record(), the socket this request was
-%%                                         received on
-%%           LogStr  = string(), describes the request
+%%           Request   = request record()
+%%           Socket    = sipsocket record(), the socket this request
+%%                                           was received on
+%%           LogStr    = string(), describes the request
 %%           AppModule = atom(), Yxa application module
 %% Descrip.: Act on a new request that has just been delivered to the
 %%           transaction layer from the transport layer, where the
@@ -406,25 +406,6 @@ received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, _AppModul
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 	       [sipurl:print(Request#request.uri)]),
     {pass_to_core, AppModule};
-
-%%
-%% CANCEL, our mode == stateless
-%%
-received_new_request(#request{method="CANCEL"}=Request, Socket, LogStr, AppModule) ->
-    URI = Request#request.uri,
-    logger:log(debug, "Transaction layer: Stateless received CANCEL ~s. Starting transaction but passing to core.",
-	       [sipurl:print(URI)]),
-    case servertransaction:start(Request, Socket, LogStr, AppModule) of
-	{ok, STPid} when is_pid(STPid) ->
-	    {pass_to_core, AppModule};
-	{error, resend} ->
-	    logger:log(debug, "Transaction layer: Failed starting server transaction (was a resend) - "
-		       "ignoring request"),
-	    {continue};
-	E ->
-	    logger:log(error, "Transaction layer: Failed starting server transaction (~p) - ignoring request", [E]),
-	    {continue}
-    end;
 
 received_new_request(Request, Socket, LogStr, AppModule) when is_record(Request, request) ->
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
