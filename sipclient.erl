@@ -21,7 +21,7 @@ dial(Number, Dest) ->
 		  {"CSeq", ["101 INVITE"]},
 		  {"Expires", ["3600"]}],
     Url = sipurl:parse("sip:" ++ Number ++ "@kth.se"),
-    {atomic, ok} =  phone:insert_call_unique(CallID, Sendheader, self()),
+    {atomic, ok} =  database_call:insert_call_unique(CallID, Sendheader, self()),
     siprequest:send_proxy_request(Sendheader,
 				  Socket,
 				  {"INVITE",
