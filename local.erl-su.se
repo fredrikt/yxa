@@ -12,6 +12,7 @@
 	 lookup_remote_url/1,
 	 lookupregexproute/1,
 	 lookupuser/1,
+	 lookupuser_locations/2,
 	 lookup_url_to_locations/1,
 	 lookup_url_to_addresses/2,
 	 lookup_addresses_to_users/1,
@@ -25,7 +26,7 @@
 	 isours/1,
 	 format_number_for_remote_party_id/3,
 	 get_remote_party_name/2,
-	 get_remote_party_number/2,
+	 get_remote_party_number/4,
 	 rewrite_potn_to_e164/1,
 	 is_request_to_this_proxy/1,
 	 remove_unsuitable_locations/2
@@ -90,6 +91,7 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 -include("directory.hrl").
+-include("sipproxy.hrl").
 
 url2mnesia_userlist(URL) when is_record(URL, sipurl), is_list(URL#sipurl.user) ->
     [URL#sipurl.user ++ "@" ++ URL#sipurl.host];
@@ -152,7 +154,7 @@ lookup_homedomain_url(URL) when is_record(URL, sipurl) ->
 			true ->
 			    logger:log(debug, "Routing: POTN lookup resulted in what I started with, going for PSTN instead"),
 			    lookuppstn("+" ++ E164);
-			_ ->
+			false ->
 			    {proxy, Dst1}
 		    end;
 		Loc2 ->
@@ -169,7 +171,7 @@ lookup_mailLocalAddress2tel(Mail) ->
 	    none;
 	LDAPserver ->
 	    Res = directory:ldapsearch_simple(LDAPserver, "mailLocalAddress", Mail, "telephoneNumber"),
-	    logger:log(debug, "Local: LDAP telephoneNumber lookup on ~p -> ~p", [Mail, Res]),
+	    logger:log(debug, "Local: LDAP mailLocalAddress -> telephoneNumber lookup on ~p -> ~p", [Mail, Res]),
 	    Res
     end.
 
@@ -195,8 +197,14 @@ is_request_to_this_proxy(Request) when is_record(Request, request) ->
 lookupregexproute(User) ->
     lookup:lookupregexproute(User).
 
+%% Returns : {proxy, URL} | {relay, URL} | {forward, URL} |
+%%           {response, Status, Reason} | none | nomatch
 lookupuser(URL) ->
     lookup:lookupuser(URL).
+
+%% Returns : list() of siplocationdb_e record()
+lookupuser_locations(Users, URL) ->
+    lookup:lookupuser_locations(Users, URL).
 
 %% Returns : list() of sipurl record()
 remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
@@ -241,20 +249,21 @@ isours(URL) ->
 homedomain(Domain) ->
     lookup:homedomain(Domain).
 
-%% Returns: {ok, Number} | none
-get_remote_party_number(URL, DstHost) ->
-    lookup:get_remote_party_number(URL, DstHost).
+%% Returns: {ok, RPI, Number} | none
+get_remote_party_number(User, Header, URI, DstHost) ->
+    lookup:get_remote_party_number(User, Header, URI, DstHost).
 
 -define(E164toInternal, [{"^\\+46816([0-9][0-9][0-9][0-9])\$",    "\\1"},
 			 {"^\\+468674(7[0-9][0-9][0-9])\$",       "\\1"},
 			 {"^\\+4685537(8[0-9][0-9][0-9]+)\$",   "\\1"}]).
 
 %% Returns: {ok, Number} | none
-format_number_for_remote_party_id(Number, _ToURI, "sip1.telia.com") ->
+format_number_for_remote_party_id(Number, _Header, "sip1.telia.com") ->
     {ok, rewrite_potn_to_e164(Number)};
-format_number_for_remote_party_id(Number, _ToURI, "sip2.telia.com") ->
+format_number_for_remote_party_id(Number, _Header, "sip2.telia.com") ->
     {ok, rewrite_potn_to_e164(Number)};
-format_number_for_remote_party_id(Number, _ToURI, _DstHost) ->
+format_number_for_remote_party_id(Number, _Header, _DstHost) ->
+    %% Rewrite number to an internal number if the gateway is not one of Telias
     case util:regexp_rewrite(Number, ?E164toInternal) of
 	nomatch ->
 	    {ok, Number};
@@ -355,6 +364,12 @@ get_telephonenumber_for_user("ft.sip2") ->
 get_telephonenumber_for_user(User) ->
     sipuserdb:get_telephonenumber_for_user(User).
 
+%%get_forwards_for_users(["ft.sip2"]) ->
+%%    [#sipproxy_forward{user      = "ft.sip2",
+%%		       forwards  = [sipurl:parse("sip:0090510@pstnproxy.devel.sip.su.se")],
+%%		       timeout   = 0,
+%%		       localring = true
+%%		      }];
 get_forwards_for_users(Users) ->
     sipuserdb:get_forwards_for_users(Users).
 
@@ -385,10 +400,14 @@ get_user_verified_proxy(Header, Method) ->
     sipauth:get_user_verified_proxy(Header, Method).
 
 %% Returns: true | false
+can_use_address("ata-hage10", URL) when is_record(URL, sipurl) ->
+    true;
 can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
     sipauth:can_use_address(User, URL).
 
-%% Returns: true | false
+%% Returns: {Verdict, Reason}
+can_use_address_detail("ata-hage10", URL) when is_record(URL, sipurl) ->
+    {true, ok};
 can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
     sipauth:can_use_address_detail(User, URL).
 
@@ -443,6 +462,8 @@ user_has_cpl_script(User, Direction)->
     cpl_db:user_has_cpl_script(User, Direction).
 
 %% Returns: term(), cpl script graph
+%%get_cpl_for_user("ft.sip2") ->
+%%    nomatch;
 get_cpl_for_user(User) ->
     cpl_db:get_cpl_for_user(User).
 

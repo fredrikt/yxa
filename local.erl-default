@@ -12,6 +12,7 @@
 	 lookup_remote_url/1,
 	 lookupregexproute/1,
 	 lookupuser/1,
+	 lookupuser_locations/2,
 	 lookup_url_to_locations/1,
 	 lookup_url_to_addresses/2,
 	 lookup_addresses_to_users/1,
@@ -25,7 +26,7 @@
 	 isours/1,
 	 format_number_for_remote_party_id/3,
 	 get_remote_party_name/2,
-	 get_remote_party_number/2,
+	 get_remote_party_number/4,
 	 rewrite_potn_to_e164/1,
 	 is_request_to_this_proxy/1,
 	 remove_unsuitable_locations/2
@@ -150,8 +151,35 @@ is_request_to_this_proxy(Request) when record(Request, request) ->
 lookupregexproute(User) ->
     lookup:lookupregexproute(User).
 
+%%--------------------------------------------------------------------
+%% Function: lookupuser(URL)
+%%           URL = sipurl record()
+%% Descrip.: The main 'give me a set of locations for one of our
+%%           users' function that incomingproxy uses, when it
+%%           determines that a request is for one of it's homedomains.
+%% Returns : {proxy, URL}               |
+%%           {relay, URL}               |
+%%           {forward, URL}             |
+%%           {response, Status, Reason} |
+%%           none    |   The user was found but has no locations registered
+%%           nomatch     No such user
+%%--------------------------------------------------------------------
 lookupuser(URL) ->
     lookup:lookupuser(URL).
+
+%%--------------------------------------------------------------------
+%% Function: lookupuser_locations(Users, URL)
+%%           Users = list() of string(), SIP users to fetch locations
+%%                                       of
+%%           URL   = sipurl record(), the Request-URI
+%% Descrip.: Return all locations for a list of users that is suitable
+%%           given a Request-URI. By suitable, we mean that we filter
+%%           out SIP locations if Request-URI was SIPS, unless this
+%%           proxy is configured not to.
+%% Returns : Locations = list() of siplocationdb_e record()
+%%--------------------------------------------------------------------
+lookupuser_locations(Users, URL) ->
+    lookup:lookupuser_locations(Users, URL).
 
 %%--------------------------------------------------------------------
 %% Function: remove_unsuitable_locations(URL, Locations)
@@ -204,8 +232,10 @@ homedomain(Domain) ->
     lookup:homedomain(Domain).
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_party_number(URL, DstHost)
-%%           URL     = sipurl record(), From:
+%% Function: get_remote_party_number(User, Header, DstHost)
+%%           User    = string(), SIP authentication username
+%%           Header  = keylist record()
+%%           URI     = sipurl record(), outgoing Request-URI
 %%           DstHost = term(), chosen destination for request
 %% Descrip.: This function is used by the pstnproxy to provide a PSTN
 %%           gateway with usefull caller-id information. PSTN networks
@@ -218,13 +248,13 @@ homedomain(Domain) ->
 %%           none
 %%           Number = string()
 %%--------------------------------------------------------------------
-get_remote_party_number(URL, DstHost) when is_record(URL, sipurl) ->
-    lookup:get_remote_party_number(URL, DstHost).
+get_remote_party_number(User, Header, URI, DstHost) when is_list(User) ->
+    lookup:get_remote_party_number(User, Header, URI, DstHost).
 
 %%--------------------------------------------------------------------
-%% Function: format_number_for_remote_party_id(Number, URL, DstHost)
+%% Function: format_number_for_remote_party_id(Number, Header, DstHost)
 %%           Number  = string(), the number to format
-%%           URL     = sipurl record(), From:
+%%           Header  = keylist record()
 %%           DstHost = term(), destination for request
 %% Descrip.: Hook for the actual formatting once
 %%           get_remote_party_number/2 has found a number to be
@@ -232,8 +262,8 @@ get_remote_party_number(URL, DstHost) when is_record(URL, sipurl) ->
 %% Returns : {ok, Number}
 %%           Number = string()
 %%--------------------------------------------------------------------
-format_number_for_remote_party_id(Number, URL, _DstHost) when is_list(Number), is_record(URL, sipurl) ->
-    {ok, Number}.
+format_number_for_remote_party_id(Number, Header, DstHost) when is_list(Number) ->
+    lookup:format_number_for_remote_party_id(Number, Header, DstHost).
 
 %%--------------------------------------------------------------------
 %% Function: get_remote_party_name(Key, DstHost)

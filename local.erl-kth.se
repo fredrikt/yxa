@@ -12,6 +12,7 @@
 	 lookup_remote_url/1,
 	 lookupregexproute/1,
 	 lookupuser/1,
+	 lookupuser_locations/2,
 	 lookup_url_to_locations/1,
 	 lookup_url_to_addresses/2,
 	 lookup_addresses_to_users/1,
@@ -25,7 +26,7 @@
 	 isours/1,
 	 format_number_for_remote_party_id/3,
 	 get_remote_party_name/2,
-	 get_remote_party_number/2,
+	 get_remote_party_number/4,
 	 rewrite_potn_to_e164/1,
 	 is_request_to_this_proxy/1,
 	 remove_unsuitable_locations/2
@@ -213,8 +214,13 @@ lookupkthid_address(Address) ->
 lookupregexproute(User) ->
     lookup:lookupregexproute(User).
 
+%% Returns : {proxy, URL} | {relay, URL} | {forward, URL} | {response, Status, Reason}
 lookupuser(URL) ->
     lookup:lookupuser(URL).
+
+%% Returns : list() of siplocationdb_e record()
+lookupuser_locations(Users, URL) ->
+    lookup:lookupuser_locations(Users, URL).
 
 %% Returns : list() of sipurl record()
 remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
@@ -259,13 +265,13 @@ isours(URL) ->
 homedomain(Domain) ->
     lookup:homedomain(Domain).
 
-%% Returns: {ok, Number} | none
-get_remote_party_number(URL, DstHost) ->
-    lookup:get_remote_party_number(URL, DstHost).
+%% Returns: {ok, RPI, Number} | none
+get_remote_party_number(User, Header, URI, DstHost) ->
+    lookup:get_remote_party_number(User, Header, URI, DstHost).
 
 %% Returns: {ok, Number} | none
-format_number_for_remote_party_id(Number, ToURI, DstHost) ->
-    {ok, Number}.
+format_number_for_remote_party_id(Number, Header, DstHost) ->
+    lookup:format_number_for_remote_party_id(Number, Header, DstHost).
 
 %% Returns: {ok, DisplayName} | none
 get_remote_party_name(Key, DstHost) ->
