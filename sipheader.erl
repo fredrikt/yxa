@@ -1104,7 +1104,7 @@ test() ->
 
     io:format("test: get_server_transaction_id/1 - 4.2~n"),
     %% check result
-    {{sipurl,"sip","alice",none,"example.org",none,[],{url_param,[]}},
+    {#sipurl{proto="sip", user="alice", pass=none, host="example.org", port=none, param_pairs={url_param,[]}},
      none,
      "f-abc",
      "3c26722ce234@192.0.2.111", {"2", "INVITE"},
@@ -1117,7 +1117,7 @@ test() ->
 
     io:format("test: get_server_transaction_id/1 - 5.2~n"),
     %% check result
-    {{sipurl,"sip","alice",none,"example.org",none,[],{url_param,[]}},
+    {#sipurl{proto="sip", user="alice", pass=none, host="example.org", port=none, param_pairs={url_param,[]}},
      "f-abc",
      "3c26722ce234@192.0.2.111",
      {"2","INVITE"},
