@@ -114,7 +114,7 @@ get_passnumber(User) ->
 check_auth(Env, WantAdmin) ->
     case lists:keysearch(http_authorization, 1, Env) of
 	false ->
-	    {error, [header(false),
+	    {error, [header(unauth, false),
 		     "Not authorized\r\n"
 		    ]};
 	{value, {Key, Value}} ->
@@ -122,7 +122,7 @@ check_auth(Env, WantAdmin) ->
 		true ->
 		    {ok};
 		false ->
-		    {error, [header(false),
+		    {error, [header(unauth, false),
 			     "Not authorized\r\n"
 			    ]}
 	    end
@@ -164,14 +164,14 @@ check_auth2(Header, Env, WantAdmin) ->
     end.
 
 
-header(false) ->
+header(ok) ->
+    ["Content-type: text/html\r\n\r\n"].
+
+header(unauth, Stale) ->
     Auth = sipauth:get_challenge(),
-    ["WWW-Authenticate: " ++ sipheader:auth_print(Auth) ++ "\r\n",
+    ["WWW-Authenticate: " ++ sipheader:auth_print(Auth, Stale) ++ "\r\n",
      "Status: 401 Authenticate\r\n",
      "Content-type: text/html\r\n\r\n"];
-
-header(true) ->
-    ["Content-type: text/html\r\n\r\n"].
 
 header(redirect, URL) ->
     ["Location: " ++ URL ++ "\r\n\r\n"].
@@ -182,7 +182,7 @@ list_users(Env, Input) ->
 	    Message;
 	{ok} ->
 	    {atomic, List} = phone:list_users(),
-	    [header(true),
+	    [header(ok),
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Name</th><th>Numbers</th><th>Flags</th>",
 	     "<th>Classes</th></tr>\n",
@@ -202,7 +202,7 @@ list_phones(Env, Input) ->
 	    Message;
 	{ok} ->
 	    {atomic, List} = phone:list_phones(),
-	    [header(true),
+	    [header(ok),
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Number</th><th>Flags</th><th>Class</th>",
 	     "<th>Expire</th><th>Address</th></tr>\n",
@@ -225,9 +225,9 @@ add_user(Env, Input) ->
 	    Classes = parse_classes(dict:find("classes", Args)),
 	    case {Userfind, Phonefind} of
 		{error, _} ->
-		    [header(true), "Incorrect user name"];
+		    [header(ok), "Incorrect user name"];
 		{_, error} ->
-		    [header(true), "Incorrect phone"];
+		    [header(ok), "Incorrect phone"];
 		{{ok, User}, {ok, Phone}} ->
 		    phone:insert_user(User, none, [Phone], [], Classes),
 		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
@@ -243,10 +243,10 @@ change_user_form(Env, Input) ->
 	    Userfind = dict:find("user", Args),
 	    case Userfind of
 		{error, _} ->
-		    [header(true), "Incorrect user name"];
+		    [header(ok), "Incorrect user name"];
 		{ok, User} ->
 		    [
-		     header(true),
+		     header(ok),
 		     "<h1>", User, "</h1>\n",
 		     "Password:\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
@@ -296,9 +296,9 @@ change_user(Env, Input) ->
 	    Adminfind = dict:find("admin", Args),
 	    case {Userfind, Passwordfind, Adminfind} of
 		{error, _, _} ->
-		    [header(true), "Incorrect user name"];
+		    [header(ok), "Incorrect user name"];
 		{_, error, error} ->
-		    [header(true), "Must "];
+		    [header(ok), "Must "];
 		{{ok, User}, {ok, Password}, _} ->
 		    phone:set_user_password(User, Password),
 		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")];

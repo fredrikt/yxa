@@ -99,7 +99,7 @@ get_user_verified(Header, Method, Authheader) ->
 	    false;
 	Timestamp < Now - 5 ->
 	    logger:log(normal, "Timestamp ~p too old. Now: ~p", [Timestamp, Now]),
-	    false;
+	    stale;
 	Timestamp > Now ->
 	    logger:log(normal, "Timestamp ~p too new. Now: ~p", [Timestamp, Now]),
 	    false;
@@ -118,6 +118,10 @@ check_auth(Header, Method, Number, Tophone) ->
 %    Classlist = [internal, mobile_or_pay, national, local, almostinternal, bogus, international],
     Classallowed = lists:member(Class, Classes),
     if
+	User == false ->
+	    false;
+	User == stale ->
+	    stale;
 	Numberallowed /= true ->
 	    logger:log(normal, "Number ~p not in ~p", [Number, Numberlist]),
 	    false;
@@ -130,9 +134,15 @@ check_auth(Header, Method, Number, Tophone) ->
     end.
 
 can_register(Header, Number) ->
-    User = sipauth:get_user_verified(Header, "REGISTER"),
-    {_, Numberlist, _, _} = get_passnumber(User),
-    lists:member(Number, Numberlist).
+    case sipauth:get_user_verified(Header, "REGISTER") of
+	false ->
+	    false;
+	stale ->
+	    stale;
+	User ->
+	    {_, Numberlist, _, _} = get_passnumber(User),
+	    lists:member(Number, Numberlist)
+    end.
 
 check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method) ->
     Class = get_class(Tophone),
@@ -142,16 +152,14 @@ check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method) ->
 	Classallowed == true ->
 	    apply(Func, [Header, Socket, Arg]);
 	true ->
-	    case keylist:fetch("Proxy-Authorization", Header) of
-		[_] ->
-		    case check_auth(Header, Method, Phone, Tophone) of
-			true -> 
-			    apply(Func, [Header, Socket, Arg]);
-			false ->
-			    siprequest:send_auth_req(Header, Socket,
-						     get_challenge())
-		    end;
-		[] ->
-		    siprequest:send_auth_req(Header, Socket, get_challenge())
+	    case check_auth(Header, Method, Phone, Tophone) of
+		true -> 
+		    apply(Func, [Header, Socket, Arg]);
+		stale ->
+		    siprequest:send_auth_req(Header, Socket,
+					     get_challenge(), true);
+		false ->
+		    siprequest:send_auth_req(Header, Socket,
+					     get_challenge(), false)
 	    end
     end.

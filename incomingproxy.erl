@@ -38,8 +38,10 @@ request("REGISTER", URL, Header, Body, Socket) ->
     case sipauth:can_register(Header, Phone) of
 	true ->
 	    siprequest:process_register_isauth(Header, Socket, {Phone, Location});
-	_ ->
-	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge())
+	stale ->
+	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), true);
+	false ->
+	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), false)
     end;
 
 request(Method, {User, Pass, "kth.se", Port, Parameters}, Header, Body, Socket) ->
