@@ -133,7 +133,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
             case DoResend of
 		true ->
 		    logger:log(normal, "~s: Resend after ~p (request -> ~s): ~s",
-		    	       [Branch, Timeout / 1000, sipurl:print(ReqURI), ReqMethod]),
+		    	       [Branch, Timeout div 1000, sipurl:print(ReqURI), ReqMethod]),
 		    siprequest:send_proxy_request(ReqHeader, Socket,
 						  {ReqMethod, ReqURI, ReqBody,
 						   ["branch=" ++ Branch]}),
@@ -148,7 +148,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 
 	{resendrequest_timeout, Request} ->
 	    {Method, URI, Header, _} = Request,
-	    logger:log(normal, "~s: Sending of ~s ~s timed out after ~p seconds", [Branch, Method, sipurl:print(URI), Timeout / 1000]),
+	    logger:log(normal, "~s: Sending of ~s ~s timed out after ~p seconds", [Branch, Method, sipurl:print(URI), Timeout div 1000]),
 	    Transaction = transactionlist:get_transaction_using_header(Header, TransactionList),
 	    case transactionlist:extract_state(Transaction) of
 		trying ->
@@ -178,7 +178,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 	    Transaction = transactionlist:get_transaction(Id, TransactionList),
 	    Request = transactionlist:extract_request(Transaction),
 	    {_, URI, _, _} = Request,
-	    logger:log(normal, "~s: Request INVITE ~s timeout after ~p seconds", [Branch, sipurl:print(URI), Timeout / 1000]),
+	    logger:log(normal, "~s: Request INVITE ~s timeout after ~p seconds", [Branch, sipurl:print(URI), Timeout div 1000]),
 	    end_invite(Branch, Socket, Parent, OrigRequest, BranchData, Id);
 	    
 	{invite_expire, Id} ->
@@ -454,9 +454,9 @@ update_invite_expire(Branch, Status, AppId, Signal, TimerList) when Status =< 19
 	    siptimer:stop_timers([InviteExpireTimer]),
 	    Timeout = siptimer:extract_timeout(InviteExpireTimer),
 	    OldStarttime = siptimer:extract_starttime(InviteExpireTimer),
-	    SecondsLeft = (OldStarttime + (Timeout / 1000)) - util:timestamp(),
+	    SecondsLeft = (OldStarttime + (Timeout div 1000)) - util:timestamp(),
 	    logger:log(debug, "~s: Received 1xx response to INVITE, 'invite_expire' (Timer C) was about to fire in ~p seconds. Resetting to ~p seconds.",
-	    		[Branch, SecondsLeft, Timeout / 1000]),
+	    		[Branch, SecondsLeft, Timeout div 1000]),
 	    siptimer:revive_timer(InviteExpireTimer, Timeout, TimerList)
     end;
 update_invite_expire(Branch, Status, AppId, Signal, TimerList) ->
