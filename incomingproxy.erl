@@ -64,9 +64,13 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 request(Method, URL, Header, Body, Socket, FromIP) ->
     do_request(Method, URL, Header, Body, Socket, FromIP).
 
-do_request(Method, URL, Header, Body, Socket, FromIP) ->
+do_request(Method, URL, OrigHeader, Body, Socket, FromIP) ->
     logger:log(debug, "~s ~s~n",
 	       [Method, sipurl:print(URL)]),
+    Header = case sipserver:get_env(record_route, false) of
+	true -> siprequest:add_record_route(OrigHeader);
+	false -> OrigHeader
+    end,
     Location = route_request(URL),
     logger:log(debug, "Location: ~p", [Location]),
     LogStr = sipserver:make_logstr({request, Method, URL, Header, Body}, FromIP),
@@ -91,7 +95,11 @@ do_request(Method, URL, Header, Body, Socket, FromIP) ->
 	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method);
 	{forward, Host, Port} ->
 	    logger:log(normal, "~s -> Forward to ~p", [LogStr, sipurl:print_hostport(Host, Port)]),
-	    siprequest:send_proxy_request(Header, Socket, {Method, URL, Body, []}, {none, none, Host, Port, []});
+	    [AddRoute] = sipheader:contact_print([{none, {none, none, Host, Port, []}}]),
+	    NewHeader1 = keylist:prepend({"Route", AddRoute}, Header),
+	    [PushURI] = sipheader:contact_print([{none, URL}]),
+	    NewHeader = keylist:append({"Route", PushURI}, NewHeader1),
+	    siprequest:send_proxy_request(NewHeader, Socket, {Method, URL, Body, []});
 	_ ->
 	    logger:log(error, "~s -> Invalid Location ~p", [LogStr, Location]),
 	    siprequest:send_result(Header, Socket, "", 500, "Internal Server Error")

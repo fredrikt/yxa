@@ -2,7 +2,7 @@
 -export([to/1, from/1, contact/1, via/1, via_print/1, to_print/1,
 	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1,
 	 httparg/1, cseq/1, cseq_print/1, via_params/1, contact_params/1,
-	 build_header/1, dict_to_param/1]).
+	 build_header/1, dict_to_param/1, param_to_dict/1]).
 
 comma(String) ->
     comma([], String, false).
@@ -63,7 +63,7 @@ parse_contact(String) ->
 
 contact_params({_, {wildcard, Parameters}}) ->
     param_to_dict(Parameters);
-contact_params({_, _, _, _, Parameters}) ->
+contact_params({_, {_, _, _, _, Parameters}}) ->
     param_to_dict(Parameters).
 
 via([]) ->
@@ -196,9 +196,14 @@ param_to_dict(Param) ->
     L = lists:map(fun(A) ->
 			  H = string:strip(A,left),
 			  Index = string:chr(H, $=),
-			  Name = httpd_util:to_lower(string:substr(H, 1, Index - 1)),
-			  Value = string:substr(H, Index + 1),
-			  {Name, unescape(Value)}
+			  case Index of
+			      0 ->
+			          {httpd_util:to_lower(H), ""};
+			      _ ->
+				  Name = httpd_util:to_lower(string:substr(H, 1, Index - 1)),
+				  Value = string:substr(H, Index + 1),
+				  {Name, unescape(Value)}
+			  end
 		  end, Param),
     dict:from_list(L).    
 
@@ -230,3 +235,21 @@ print_one_header(Name, Value) ->
 build_header(Header) ->
     Lines = keylist:map(fun print_one_header/2, Header),
     util:concat(Lines, "\r\n").
+
+get_tag([String]) ->
+    Index = string:chr(String, $>),
+    ParamStr = string:substr(String, Index + 1),
+    ParamList = string:tokens(ParamStr, ";"),
+    ParamDict = param_to_dict(ParamList),
+    case dict:find("tag", ParamDict) of
+	error ->
+	    none;
+	{ok, Tag} ->
+	    Tag
+    end.
+
+dialogueid(Header) ->
+    [CallID] = keylist:fetch("Call-ID", Header),
+    FromTag = get_tag(keylist:fetch("From", Header)),
+    ToTag = get_tag(keylist:fetch("To", Header)),
+    {CallID, FromTag, ToTag}.
