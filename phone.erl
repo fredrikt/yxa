@@ -4,7 +4,7 @@
 	 insert_purge_phone/5, insert_purge_class_phone/5,
 	 purge_class_phone/2, expired_phones/0, delete_record/1,
 	 delete_user/1, set_user_password/2, set_user_flags/2,
-	 set_user_numbers/2]).
+	 set_user_numbers/2, set_user_classes/2]).
 
 -include("phone.hrl").
 
@@ -166,6 +166,19 @@ set_user_numbers(User, Numbers) ->
 	end,
     mnesia:transaction(F).
 
+set_user_classes(User, Classes) ->
+    F = fun() ->
+		Q = query
+			[E || E <- table(user),
+			      E.user = User]
+		    end,
+		A = mnemosyne:eval(Q),
+		Update = fun(O) ->
+				 mnesia:write(O#user{classes = Classes})
+			 end,
+		lists:foreach(Update, A)
+	end,
+    mnesia:transaction(F).
 
 expired_phones() ->
     {Meg, Sec, _} = now(),
