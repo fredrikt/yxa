@@ -1,11 +1,22 @@
 -module(sippacket).
--export([parse/3, parse_packet/1, parse_packet/3, parseheader/1, parserequest/1]).
+-export([parse/2, parse_packet/1, parse_packet/2, parseheader/1, parserequest/1]).
 
 parse_packet(Packet) ->
-    parse_packet(Packet, "", none).
+    parse_packet(Packet, none).
 
-parse_packet(Packet, SrcIP, SrcPort) ->
-    logger:log(debug, "Packet from ~s:~p :~n~s~n", [SrcIP, SrcPort, Packet]),
+parse_packet("\r\n", Origin) ->
+    case sipserver:origin2str(Origin, none) of
+	none -> true;
+	S ->
+	    logger:log(debug, "Keep-alive packet from ~s", [S])
+    end,
+    {keepalive};
+parse_packet(Packet, Origin) ->
+    case sipserver:origin2str(Origin, none) of
+	none -> true;
+	S ->
+	    logger:log(debug, "Packet from ~s :~n~s", [S, Packet])
+    end,
     Packetfixed = siputil:linefix(Packet),
     case string:str(Packetfixed, "\n\n") of
 	0 ->
@@ -18,18 +29,22 @@ parse_packet(Packet, SrcIP, SrcPort) ->
 	    {Header, Body}
     end.
 
-parse(Packet, SrcIP, SrcPort) ->
-    {Header, Body} = parse_packet(Packet, SrcIP, SrcPort),
-    {Request, Headerkeylist} = parseheader(Header),
-    case parserequest(Request) of
-	{request, Parsed} ->
-	    % XXX move data from SIP URI:s such as
-	    %   sips:alice@atlanta.com?subject=project%20x&priority=urgent
-	    % into Headerkeylist and strip them from the URI. See
-	    % RFC 3261 19.1.5 Forming Requests from a URI
-	    request(Parsed, Headerkeylist, Body);
-	{response, Parsed} ->
-	    response(Parsed, Headerkeylist, Body)
+parse(Packet, Origin) ->
+    case parse_packet(Packet, Origin) of
+	{keepalive} ->
+	    {drop};
+	{Header, Body} ->
+	    {Request, Headerkeylist} = parseheader(Header),
+	    case parserequest(Request) of
+		{request, Parsed} ->
+		    % XXX move data from SIP URI:s such as
+		    %   sips:alice@atlanta.com?subject=project%20x&priority=urgent
+		    % into Headerkeylist and strip them from the URI. See
+		    % RFC 3261 19.1.5 Forming Requests from a URI
+		    request(Parsed, Headerkeylist, Body);
+		{response, Parsed} ->
+		    response(Parsed, Headerkeylist, Body)
+	    end
     end.
 
 parseheader(Header) ->
@@ -76,6 +91,8 @@ parserequest(Request) ->
 	    Reason = string:strip(string:substr(Rest, Index2 + 1),
 				  left),
 	    {response, {Status, Reason}};
+	[] ->
+	    {broken};
 	Method ->
 	    Index2 = string:rchr(Rest, 32),
 	    URI = string:substr(Rest, 1, Index2 - 1),
