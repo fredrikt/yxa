@@ -1,6 +1,6 @@
 -module(database_call).
 -export([create_call/0, insert_call/4, get_call/1, list_calls/0,
-	 insert_call_unique/4, set_data/2]).
+	 insert_call_unique/4, set_data/2, delete_call/2, get_call_type/2]).
 
 -include("database_call.hrl").
 
@@ -13,7 +13,9 @@ insert_record(Record) ->
     mnesia:transaction(Fun).
 
 create_call() ->
-    mnesia:create_table(call, [{attributes, record_info(fields, call)}]).
+    mnesia:create_table(call, [{attributes, record_info(fields, call)},
+    			       {ram_copies, [node()]}
+    			      ]).
 
 insert_call(Callid, Type, Headers, Data) ->
     insert_record(#call{callid = Callid, type = Type, headers = Headers,
@@ -35,6 +37,21 @@ insert_call_unique(Callid, Type, Headers, Data) ->
 	  end,
     mnesia:transaction(Fun).
 
+delete_call(Callid, Type) ->
+	F = fun() ->
+		    Q = query
+			    [E || E <- table(call),
+				  E.callid = Callid,
+				  E.type = Type]
+			end,
+		    A = mnemosyne:eval(Q),
+		    Delete = fun(O) ->
+				   mnesia:delete_object(O)
+			   end,
+		    lists:foreach(Delete, A)
+	    end,
+    mnesia:transaction(F).
+
 list_calls() ->
     F = fun() ->
 		Q = query
@@ -49,6 +66,17 @@ get_call(Call) ->
 		    Q = query
 			    [{E.type, E.headers, E.data} || E <- table(call),
 							    E.callid = Call]
+			end,
+		    mnemosyne:eval(Q)
+	    end,
+    mnesia:transaction(F).
+
+get_call_type(Call, Type) ->
+	F = fun() ->
+		    Q = query
+			    [{E.headers, E.data} || E <- table(call),
+						    E.callid = Call,
+						    E.type = Type]
 			end,
 		    mnemosyne:eval(Q)
 	    end,
