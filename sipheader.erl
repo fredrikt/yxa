@@ -131,15 +131,22 @@ name_header([$" | String]) ->
 
 name_header(String) ->
     %logger:log(debug, "n: ~p", [String]),
-    case String of
-	[$< | Rest2] ->
-	    Index2 = string:chr(Rest2, $>),
-	    URL = string:substr(Rest2, 1, Index2 - 1),
-	    URI = sipurl:parse(URL),
+    Index1 = string:chr(String, $<),
+    case Index1 of
+	0 ->
+	    URI = sipurl:parse(String),
 	    {none, URI};
-	URL ->
+	_ ->
+	    Index2 = string:chr(String, $>),
+	    URL = string:substr(String, Index1 + 1, Index2 - Index1 - 1),
 	    URI = sipurl:parse(URL),
-	    {none, URI}
+	    Displayname = if
+			      Index1 > 2 ->
+				  string:substr(String, 1, Index1 - 2);
+			      true ->
+				  none
+			  end,
+	    {Displayname, URI}
     end.
 
 auth_print(Auth) ->
