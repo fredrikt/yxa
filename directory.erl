@@ -241,7 +241,8 @@ exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) when record(Handle, ldaphandle
 	[{dn, Dn, attributes, EAttributes} | Rest] ->
 	    case Mode of
 		simple ->
-		    lists:sort(get_valuelist([{dn, Dn, attributes, EAttributes} | Rest], AttrIn));
+		    SearchRes = [{dn, Dn, attributes, EAttributes} | Rest],
+		    lists:sort(get_valuelist(SearchRes, AttrIn));
 		full ->
 		    [{dn, Dn, attributes, EAttributes} | Rest]
 	    end;
@@ -254,10 +255,18 @@ exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) ->
     logger:log(error, "LDAP client: Returning 'error' on query ~p ~p because handle '~p' is not valid", [Type, In, Handle]),
     error.
 
-get_valuelist([], Attribute) ->
-    [];
-get_valuelist([H | T], Attribute) ->
-    lists:append([get_value(H, Attribute)], get_valuelist(T, Attribute)).
+get_valuelist(L, Attribute) ->
+    get_valuelist2(L, Attribute, []).
+    
+get_valuelist2([], Attribute, Res) ->
+    Res;
+get_valuelist2([H | T], Attribute, Res) ->
+    case get_value(H, Attribute) of
+    	none ->
+	    get_valuelist2(T, Attribute, Res);
+	V ->
+	    get_valuelist2(T, Attribute, lists:append(Res, [V]))
+    end.
 
 exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when record(LHandle, ldaphandle), list(Type), list(In), list(Attributes) ->
     Handle = LHandle#ldaphandle.ref,
