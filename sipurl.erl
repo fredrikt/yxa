@@ -316,10 +316,10 @@ unescape_str([$%, H1, H2 | RStr]) ->
 %%--------------------------------------------------------------------
 %% XXX this will break if if the #sipurl.proto field isn't a string()
 print(URL) when record(URL, sipurl) ->
-    lists:flatten(URL#sipurl.proto ++ ":" ++
-		  print_userinfo(URL#sipurl.user, URL#sipurl.pass) ++
-		  print_hostport(URL#sipurl.host, get_port(URL)) ++
-		  print_parameters(URL#sipurl.param_pairs)).
+    URL#sipurl.proto ++ ":" ++ 
+	print_userinfo(URL#sipurl.user, URL#sipurl.pass) ++
+	print_hostport(URL#sipurl.host, get_port(URL)) ++
+	print_parameters(URL#sipurl.param_pairs).
 
 print_userinfo(none, none) ->
     "";
