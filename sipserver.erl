@@ -15,7 +15,8 @@ start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, LocalTablesP) ->
 	none ->
 	    logger:log(normal, "proxy started");
 	_ ->
-	    mnesia:change_config(extra_db_nodes, get_env(databaseservers)),
+	    mnesia:change_config(extra_db_nodes,
+				 sipserver:get_env(databaseservers)),
 	    {Message, Args} = case mnesia:wait_for_tables(RemoteMnesiaTables, infinity) of
 				  ok ->
 				      {"proxy started, all tables found", []};
