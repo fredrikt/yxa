@@ -53,7 +53,7 @@ The configuration file is named <application>.config and contains
 these variables:
 
 common:
-
+-------
 logger_logfile			(default: "sipd.log") Log to this file
 sipauth_realm			(default: "") HTTP Auth realm
 sipauth_password		(default: "") HTTP Auth internal cookie
@@ -67,21 +67,21 @@ ldap_password			(default: "") LDAP password
 ldap_searchbase			(default: "") LDAP search base
 
 pstnproxy:
-
+----------
 proxyaddr			(required) IP address or hostname of
 				PSTN gateway
 classdefs			(default: [{"", unknown}]) Regexps for
 				classifying outgoing phone numbers
 
 incomingproxy:
-
+--------------
 internal_to_e164		(default: []) Regexps for rewriting
 				internal numbers to E.164 numbers
 defaultroute			(required) SIP host name part of default route
 homedomain			(required) List of SIP home domains
 
 adminwww:
-
+---------
 www_baseurl			(required) Base URL for web server
 httpd_config			(required) Path to httpd.conf
 
@@ -90,6 +90,7 @@ Examples
 ========
 
 incomingproxy.config:
+---------------------
 
 [{incomingproxy, [{sipauth_realm, "example.com"},
                   {sipauth_password, ""},
@@ -103,6 +104,8 @@ incomingproxy.config:
                   {ldap_server, "ldap.example.com"}
                  ]}].
 
+pstnproxy.config:
+-----------------
 [{pstnproxy, [{sipauth_realm, "example.com"},
               {sipauth_password, ""},
               {sipauth_unauth_classlist, [internal]},
