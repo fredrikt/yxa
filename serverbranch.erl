@@ -17,7 +17,7 @@ start(Branch, Socket, FromIP, Parent, OrigRequest) ->
 	    {trying, none}
     end,
     TimerData = {[], 0},
-    BranchData = {TimerData, transactionlist:add_transaction(OrigRequest, Response, State, [])},
+    BranchData = {TimerData, transactionlist:add_transaction(OrigRequest, Response, State, transactionlist:empty())},
     Pid = sipserver:safe_spawn(fun process_branch_loop/5, [Branch, Socket, Parent, OrigRequest, BranchData]),
     logger:log(normal, "~s: ~s -> Started server transaction (pid ~p, parent ~p)", [Branch, LogStr, Pid, Parent]),
     Pid.
@@ -64,12 +64,12 @@ process_branch_loop(Branch, Socket, Parent, OrigRequest, BranchData) ->
 			    BranchData
 		    end;
 		Transaction ->
-		    case transactionlist:extract_response(Transaction) of
+		    case transactionlist:extract([response], Transaction) of
 			none ->
 			    logger:log(debug, "~s: Server branch received a resent request (~s ~s), but I have not sent any response yet so I can't resend a response. Ignoring.",
 					[Branch, Method, sipurl:print(URI)]),
 			    BranchData;
-			MostRecentResponse ->
+			[MostRecentResponse] ->
 			    {Status, Reason, ResHeader, ResBody} = MostRecentResponse,
 			    logger:log(normal, "~s: Received duplicate request (~s ~s), resending last response: ~p ~s",
 					[Branch, Method, sipurl:print(URI), Status, Reason]),
@@ -114,8 +114,8 @@ process_branch_loop(Branch, Socket, Parent, OrigRequest, BranchData) ->
     DoQuit = case NewBranchData of
 	{quit} -> true;
 	_ ->
-	    case transactionlist:extract_state(OrigReqTransaction) of
-		terminated -> true;
+	    case transactionlist:extract([state], OrigReqTransaction) of
+		[terminated] -> true;
 		_ -> false
 	    end
     end,
@@ -145,7 +145,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 	    {Status, Reason, RHeader, RBody} = Response,
 	    {OrigReqMethod, OrigReqURI, OrigReqHeader, _} = OrigRequest,
 	    Transaction = transactionlist:get_transaction_using_header(OrigReqHeader, TransactionList),
-	    State = transactionlist:extract_state(Transaction),
+	    State = transactionlist:extract([state], Transaction),
 	    case State of
 		completed ->
 		    logger:log(normal, "~s: Resend after ~p (response to ~s ~s): ~p ~s",
@@ -173,7 +173,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 	    logger:log(normal, "~s: Sending of ~p ~s (response to ~s ~s) timed out after ~p seconds",
 		    	       [Branch, Status, Reason, OrigReqMethod, sipurl:print(OrigReqURI), Timeout div 1000]),
 	    Transaction = transactionlist:get_transaction_using_header(OrigReqHeader, TransactionList),
-	    Id = transactionlist:extract_id(Transaction),
+	    [Id] = transactionlist:extract([id], Transaction),
 	    {quit};
 
 	{quit} ->
@@ -196,9 +196,7 @@ send_response(Branch, Socket, OrigRequest, Response, BranchData) ->
 	    		[Branch, Status, Reason, CSeq]),
 	    BranchData;
 	Transaction ->
-	    ResponseToRequest = transactionlist:extract_request(Transaction),
-	    OldState = transactionlist:extract_state(Transaction),
-	    TransactionId = transactionlist:extract_id(Transaction),
+	    [ResponseToRequest, OldState, TransactionId] = transactionlist:extract([request, state, id], Transaction),
 	    {ResponseToMethod, ResponseToURI, ResponseToHeader, _} = ResponseToRequest,
 	    {Action, SendReliably, NewState} = send_response_statemachine(ResponseToMethod, Status, OldState),
 
@@ -225,7 +223,7 @@ act_on_new_state(Branch, BranchData, TransactionId, OldState, NewState) ->
 	_ ->
 	    NewTransaction = transactionlist:set_state(Transaction, NewState),
 	    NewTransactionList = transactionlist:update_transaction(NewTransaction, TransactionList),
-	    ResponseToRequest = transactionlist:extract_request(NewTransaction),
+	    [ResponseToRequest] = transactionlist:extract([request], NewTransaction),
 	    {ResponseToMethod, ResponseToURI, ResponseToHeader, _} = ResponseToRequest,
 	    case NewState of
 	        completed ->
@@ -305,11 +303,8 @@ send_response_statemachine(Method, Status, terminated) when Status =< 699 ->
 process_received_ack(Branch, Socket, Parent, BranchData, Request, AckToTransaction) ->
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
-    AckToRequest = transactionlist:extract_request(AckToTransaction),
-    AckToResponse = transactionlist:extract_response(AckToTransaction),
+    [AckToRequest, AckToResponse, OldState, Id] = transactionlist:extract([request, response, state, id], AckToTransaction),
     {Status, Reason, _, _} = AckToResponse,
-    OldState = transactionlist:extract_state(AckToTransaction),
-    Id = transactionlist:extract_id(AckToTransaction),
     {AckToMethod, AckToURI, _, _} = AckToRequest,
     logger:log(normal, "~s: Response ~p ~s to request ~s ~s ACK-ed", [Branch, Status, Reason, AckToMethod, sipurl:print(AckToURI)]),
     case AckToMethod of
@@ -317,8 +312,7 @@ process_received_ack(Branch, Socket, Parent, BranchData, Request, AckToTransacti
 	    logger:log(debug, "~s: Received ACK, cancelling resend timers for response ~p ~s (to request ~s ~s) and entering state 'confirmed'",
 	    		[Branch, Status, Reason, AckToMethod, sipurl:print(AckToURI)]),
 	    NewTimerList = siptimer:cancel_timers_with_appid({resendresponse, Id}, TimerList),
-	    NewTransaction1 = transactionlist:set_acked(AckToTransaction, true),
-	    NewTransaction = transactionlist:set_state(NewTransaction1, confirmed),
+	    NewTransaction = transactionlist:set_state(AckToTransaction, confirmed),
 	    NewTransactionList = transactionlist:update_transaction(NewTransaction, TransactionList),
 	    NewBranchData = {{NewTimerList, TimerSeq}, NewTransactionList},
 	    act_on_new_state(Branch, NewBranchData, Id, OldState, confirmed);
@@ -332,8 +326,7 @@ process_received_cancel(Branch, Socket, Parent, OrigRequest, BranchData, Request
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
     {_, URI, Header, Body} = Request,
-    CancelOfId = transactionlist:extract_id(CancelOfTransaction),
-    CancelOfRequest = transactionlist:extract_request(CancelOfTransaction),
+    [CancelOfId, CancelOfRequest] = transactionlist:extract([id, request], CancelOfTransaction),
     {CancelOfMethod, CancelOfURI, CancelOfHeader, _} = CancelOfRequest,
     {OrigReqMethod, OrigReqURI, OrigReqHeader, _} = OrigRequest,
     OrigRequestId = sipheader:cseq(keylist:fetch("CSeq", OrigReqHeader)),

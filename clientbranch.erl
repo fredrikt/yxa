@@ -17,7 +17,7 @@ start_branch(Branch, Socket, FromIP, Parent, OrigRequest, Request, Timeout) ->
 	"INVITE" -> calling;
 	_ -> trying
     end,
-    TransactionList = transactionlist:add_transaction(Request, none, State, []),
+    TransactionList = transactionlist:add_transaction(Request, none, State, transactionlist:empty()),
     TimerData = process_request(Branch, Socket, Timeout, Request, {[], 0}),
     BranchData = {TimerData, TransactionList},
     process_branch_loop(Branch, Socket, Parent, OrigRequest, BranchData),
@@ -91,15 +91,15 @@ process_branch_loop(Branch, Socket, Parent, OrigRequest, BranchData) ->
     DoQuit = case NewBranchData of
 	{quit} -> true;
 	_ ->
-	    case transactionlist:extract_state(OrigReqTransaction) of
-		terminated -> true;
+	    case transactionlist:extract([state], OrigReqTransaction) of
+		[terminated] -> true;
 		_ -> false
 	    end
     end,
     case DoQuit of
 	true ->
 	    Parent ! {clientbranch_terminating, {Branch, self()}},
-	    FetchedRequest = transactionlist:extract_request(OrigReqTransaction),
+	    [FetchedRequest] = transactionlist:extract([request], OrigReqTransaction),
 	    {FetchedReqMethod, FetchedReqURI, _, _} = FetchedRequest,
 	    logger:log(normal, "~s: ending client branch, transaction ~s ~s",
 	    	       [Branch, FetchedReqMethod, sipurl:print(FetchedReqURI)]),
@@ -121,22 +121,14 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
         {resendrequest, Request} ->
 	    {ReqMethod, ReqURI, ReqHeader, ReqBody} = Request,
 	    Transaction = transactionlist:get_transaction_using_header(ReqHeader, TransactionList),
-	    State = transactionlist:extract_state(Transaction),
-	    DoResend = case State of
-        	trying ->
-        	    true;
-        	calling ->
-        	    true;
-        	_ ->
-        	    false
-            end,
-            case DoResend of
+	    [State] = transactionlist:extract([state], Transaction),
+            case lists:member(State, [trying, calling]) of
 		true ->
 		    logger:log(normal, "~s: Resend after ~p (request -> ~s): ~s",
 		    	       [Branch, Timeout div 1000, sipurl:print(ReqURI), ReqMethod]),
-		    siprequest:send_proxy_request(ReqHeader, Socket,
-						  {ReqMethod, ReqURI, ReqBody,
-						   ["branch=" ++ Branch]}),
+		    siprequest:send_proxy_request(Socket,
+						  {ReqMethod, ReqURI, ReqHeader, ReqBody},
+						   ReqURI, ["branch=" ++ Branch]),
 		    NewTimeout = get_request_resend_timeout(ReqMethod, Timeout, State),
 		    NewTimerList = siptimer:revive_timer(Timer, NewTimeout, TimerList),
 		    {{NewTimerList, TimerSeq}, TransactionList};
@@ -150,7 +142,8 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 	    {Method, URI, Header, _} = Request,
 	    logger:log(normal, "~s: Sending of ~s ~s timed out after ~p seconds", [Branch, Method, sipurl:print(URI), Timeout div 1000]),
 	    Transaction = transactionlist:get_transaction_using_header(Header, TransactionList),
-	    case transactionlist:extract_state(Transaction) of
+	    [State] = transactionlist:extract([state], Transaction),
+	    case State of
 		trying ->
 		    fake_request_timeout(Branch, BranchData, Parent, OrigRequest, Request);
 		calling ->
@@ -176,7 +169,7 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 	    
 	{invite_timeout, Id} ->
 	    Transaction = transactionlist:get_transaction(Id, TransactionList),
-	    Request = transactionlist:extract_request(Transaction),
+	    [Request] = transactionlist:extract([request], Transaction),
 	    {_, URI, _, _} = Request,
 	    logger:log(normal, "~s: Request INVITE ~s timeout after ~p seconds", [Branch, sipurl:print(URI), Timeout div 1000]),
 	    end_invite(Branch, Socket, Parent, OrigRequest, BranchData, Id);
@@ -197,18 +190,15 @@ process_timer(Branch, Socket, Parent, OrigRequest, BranchData, Timer) ->
 % it is a response to the same kind of request as our original request,
 % then run it through the state machine to determine what to do.
 process_received_response(Branch, Socket, Parent, BranchData, OrigRequest, Response, Transaction) ->
-    ResponseToRequest = transactionlist:extract_request(Transaction),
-    TransactionId = transactionlist:extract_id(Transaction),
-    OldState = transactionlist:extract_state(Transaction),
+    [ResponseToRequest, TransactionId, OldState] = transactionlist:extract([request, id, state], Transaction),
     {OrigMethod, OrigURI, OrigHeader, _} = OrigRequest,
     {Status, Reason, ResponseHeader, _} = Response,
     {ResponseToMethod, ResponseToURI, ResponseToHeader, _} = ResponseToRequest,
     ResponseToId = sipheader:cseq(keylist:fetch("CSeq", ResponseToHeader)),
-    State = transactionlist:extract_state(Transaction),
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
     % Stop resending of request as soon as possible.
-    NewTimerList1 = case State of
+    NewTimerList1 = case OldState of
 	trying ->
 	    stop_resendrequest_timer(Branch, {resendrequest, ResponseToId}, ResponseToRequest, TimerList);
 	calling ->
@@ -220,7 +210,7 @@ process_received_response(Branch, Socket, Parent, BranchData, OrigRequest, Respo
 	"INVITE" ->
 	    % ACK any 3xx, 4xx, 5xx and 6xx responses if they are responses to an INVITE 
 	    % and we are in either 'calling' or 'proceeding' state
-	    ack_response_to_invite(Branch, State, Socket, Status, Reason, ResponseHeader, ResponseToRequest),
+	    ack_response_to_invite(Branch, OldState, Socket, Status, Reason, ResponseHeader, ResponseToRequest),
 
 	    % Cancel/reset INVITE request expire timer when receiving provisional responses
 	    update_invite_expire(Branch, Status, {resendrequest, ResponseToId}, {invite_expire, ResponseToId}, NewTimerList1);
@@ -229,7 +219,7 @@ process_received_response(Branch, Socket, Parent, BranchData, OrigRequest, Respo
     end,
     NewBranchData1 = {{NewTimerList2, TimerSeq}, TransactionList},
     {BranchAction, NewState} =
-	received_response_state_machine(ResponseToMethod, Status, State),
+	received_response_state_machine(ResponseToMethod, Status, OldState),
     NewBranchData2 = update_transaction_state(Branch, NewBranchData1, TransactionId, Response, NewState, BranchAction),
     {NewBranchData3, NewBranchAction} = act_on_new_state(Branch, Socket, OrigRequest, NewBranchData2, TransactionId, Response, OldState, NewState, BranchAction),
     perform_branchaction(Branch, Socket, Parent, OrigRequest, NewBranchData3, TransactionId, Response, NewState, NewBranchAction).
@@ -238,8 +228,7 @@ update_transaction_state(Branch, BranchData, TransactionId, Response, NewState, 
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
     Transaction = transactionlist:get_transaction(TransactionId, TransactionList),
-    State = transactionlist:extract_state(Transaction),
-    ResponseToRequest = transactionlist:extract_request(Transaction),
+    [State, ResponseToRequest] = transactionlist:extract([state, request], Transaction),
     {Status, Reason, ResponseHeader, _} = Response,
     {ResponseToMethod, ResponseToURI, ResponseToHeader, _} = ResponseToRequest,
     case NewState of
@@ -265,7 +254,7 @@ act_on_new_state(Branch, Socket, OrigRequest, BranchData, TransactionId, Respons
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
     Transaction = transactionlist:get_transaction(TransactionId, TransactionList),
-    ResponseToRequest = transactionlist:extract_request(Transaction),
+    [ResponseToRequest] = transactionlist:extract([request], Transaction),
     {OrigMethod, OrigURI, OrigHeader, _} = OrigRequest,
     {Status, Reason, ResponseHeader, _} = Response,
     {ResponseToMethod, ResponseToURI, ResponseToHeader, _} = ResponseToRequest,
@@ -278,8 +267,8 @@ act_on_new_state(Branch, Socket, OrigRequest, BranchData, TransactionId, Respons
 		proceeding ->
 		    case ResponseToMethod of
 			"INVITE" ->
-			    case transactionlist:extract_cancelled(Transaction) of
-				true ->
+			    case transactionlist:extract([cancelled], Transaction) of
+				[true] ->
 				    logger:log(debug, "~s: A previously cancelled transaction (~s ~s) entered state 'proceeding' upon receiving a ~p ~s response. CANCEL it!",
 				    		[Branch, ResponseToMethod, sipurl:print(ResponseToURI), Status, Reason]),
 				    NewBranchData = cancel_request(Branch, Socket, ResponseToRequest, BranchData),
@@ -320,10 +309,9 @@ perform_branchaction(Branch, Socket, Parent, OrigRequest, BranchData, Transactio
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
     Transaction = transactionlist:get_transaction(TransactionId, TransactionList),
-    ResponseToRequest = transactionlist:extract_request(Transaction),
+    [ResponseToRequest, State] = transactionlist:extract([request, state], Transaction),
     {Status, Reason, ResponseHeader, _} = Response,
     {ResponseToMethod, ResponseToURI, ResponseToHeader, _} = ResponseToRequest,
-    State = transactionlist:extract_state(Transaction),
     case BranchAction of
 	ignore ->
 	    BranchData;
@@ -420,7 +408,7 @@ received_response_state_machine(Method, Status, State) when Status =< 699 ->
 process_received_ack(Branch, Socket, Parent, BranchData, Request, AckToTransaction) ->
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
-    AckToRequest = transactionlist:extract_request(AckToTransaction),
+    [AckToRequest] = transactionlist:extract([request], AckToTransaction),
     {AckToMethod, AckToURI, AckToHeader, _} = AckToRequest,
     case AckToMethod of
 	"INVITE" ->
@@ -428,8 +416,7 @@ process_received_ack(Branch, Socket, Parent, BranchData, Request, AckToTransacti
 	    logger:log(debug, "~s: Received ACK, cancelling resend timers for request ~s ~s and entering state 'confirmed'",
 	    		[Branch, AckToMethod, sipurl:print(AckToURI)]),
 	    NewTimerList = siptimer:cancel_timers_with_appid({resendresponse, Id}, TimerList),
-	    NewTransaction1 = transactionlist:set_acked(AckToTransaction, true),
-	    NewTransaction = transactionlist:set_state(NewTransaction1, confirmed),
+	    NewTransaction = transactionlist:set_state(AckToTransaction, confirmed),
 	    NewTransactionList = transactionlist:update_transaction(NewTransaction, TransactionList),
 	    {{NewTimerList, TimerSeq}, NewTransactionList};
 	_ ->
@@ -500,8 +487,8 @@ process_branch_ack(Branch, Socket, Status, AckHeader, OrigRequest) when Status =
 	Route ->
 	    keylist:set("Route", Route, SendHeader3)
     end,
-    siprequest:send_proxy_request(SendHeader, Socket,
-    				  {"ACK", OrigURI, "", ["branch=" ++ Branch]}).
+    siprequest:send_proxy_request(Socket, {"ACK", OrigURI, SendHeader, ""},
+    					OrigURI, ["branch=" ++ Branch]).
 
 get_resendrequest_timer(Match, []) ->
     none;
@@ -568,14 +555,14 @@ cancel_request(Branch, Socket, OrigRequest, BranchData) ->
 	    logger:log(debug, "~s: Asked to cancel, but no request has been sent. Terminating immediately.", [Branch]),
 	    {quit};
         Transaction ->
-            TransactionId = transactionlist:extract_id(Transaction),
-            CancelRequest = transactionlist:extract_request(Transaction),
+            [TransactionId, CancelRequest] = transactionlist:extract([id, request], Transaction),
 	    {CancelReqMethod, CancelReqURI, _, _} = CancelRequest,
 	    case CancelReqMethod of
 		"INVITE" ->
 		    NewTransaction = transactionlist:set_cancelled(Transaction, true),
 		    NewTransactionList = transactionlist:update_transaction(NewTransaction, TransactionList),
-		    case transactionlist:extract_state(Transaction) of
+		    [State] = transactionlist:extract([state], Transaction),
+		    case State of
 			calling ->
 			    logger:log(debug, "~s: NOT sending CANCEL of previos request (INVITE ~s) right now since we are in state 'calling'",
 			    		[Branch, sipurl:print(CancelReqURI)]),
@@ -606,9 +593,9 @@ cancel_request(Branch, Socket, OrigRequest, BranchData) ->
 end_invite(Branch, Socket, Parent, OrigRequest, BranchData, Id) ->
     {TimerData, TransactionList} = BranchData,
     Transaction = transactionlist:get_transaction(Id, TransactionList),
-    Request = transactionlist:extract_request(Transaction),
+    [Request, State] = transactionlist:extract([request, state], Transaction),
     {Method, URI, _, _} = Request,
-    case transactionlist:extract_state(Transaction) of
+    case State of
 	calling ->
 	    fake_request_timeout(Branch, BranchData, Parent, OrigRequest, Request);
 	proceeding ->
@@ -634,7 +621,7 @@ fake_request_timeout(Branch, BranchData, Parent, OrigRequest, Request) ->
 terminate_transaction(Branch, BranchData, Transaction) ->
     {TimerData, TransactionList} = BranchData,
     {TimerList, TimerSeq} = TimerData,
-    TransactionId = transactionlist:extract_id(Transaction),
+    [TransactionId] = transactionlist:extract([id], Transaction),
     NewTransaction = transactionlist:set_state(Transaction, terminated),
     NewTransactionList = transactionlist:update_transaction(NewTransaction, TransactionList),
     NewTimerList = siptimer:cancel_timers_with_appid({resendrequest, TransactionId}, TimerList),
@@ -674,8 +661,7 @@ terminate_transaction_header(Branch, BranchData, Header) ->
 process_request(Branch, Socket, Timeout, {"INVITE", URI, Header, Body}, TimerData) ->
     {TimerList, TimerSeq} = TimerData,
     logger:log(normal, "~s: Sending INVITE -> ~s", [Branch, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Header, Socket,
-				  {"INVITE", URI, Body, ["branch=" ++ Branch]}),
+    siprequest:send_proxy_request(Socket, {"INVITE", URI, Header, Body}, URI, ["branch=" ++ Branch]),
     T1 = sipserver:get_env(timerT1, 500),
     TimerA = T1,
     TimerB = 64 * T1,
@@ -697,8 +683,7 @@ process_request(Branch, Socket, Timeout, Request, TimerData) ->
     {Method, URI, Header, Body} = Request,
     {TimerList, TimerSeq} = TimerData,
     logger:log(normal, "~s: Sending ~s -> ~s", [Branch, Method, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Header, Socket,
-				  {Method, URI, Body, ["branch=" ++ Branch]}),
+    siprequest:send_proxy_request(Socket, {Method, URI, Header, Body}, URI, ["branch=" ++ Branch]),
     T1 = sipserver:get_env(timerT1, 500),
     TimerE = T1,
     TimerF = 64 * T1,
