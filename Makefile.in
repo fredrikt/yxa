@@ -97,6 +97,7 @@ erl_FILES = \
 	sipurl.erl \
 	sipuserdb.erl \
 	sipuserdb_file.erl \
+	sipuserdb_file_backend.erl \
 	sipuserdb_ldap.erl \
 	sipuserdb_mnesia.erl \
 	siputil.erl \
@@ -125,9 +126,11 @@ hrl_FILES = \
 	database_call.hrl \
 	database_forward.hrl \
 	database_regexproute.hrl \
+	directory.hrl \
 	phone.hrl \
 	sipproxy.hrl \
 	siprecords.hrl \
+	sipuserdb_file.hrl \
 	sipsocket.hrl \
 	socketlist.hrl \
 	transactionstatelist.hrl
@@ -144,12 +147,25 @@ start_FILES = $(boot_FILES:.boot=)
 app_FILES = $(boot_FILES:.boot=.app)
 
 CC = gcc
+CFLAGS = -Wall
 
 beam_FILES = $(erl_FILES:.erl=.beam)
 
-all: $(beam_FILES) bootstrap.sh dtmfserver $(boot_FILES) $(start_FILES)
+SUBDIRS = \
+	cpl \
+	event_handler
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
-install: $(boot_FILES) $(beam_FILES) $(start_FILES)
+all: $(beam_FILES) bootstrap.sh dtmfserver all-recursive $(boot_FILES) $(start_FILES)
+
+$(RECURSIVE_TARGETS):
+	@target=`echo $@ | sed s/-recursive//`; \
+	list='$(SUBDIRS)'; for subdir in $$list; do \
+	echo "Making $$target in $$subdir"; \
+	(cd $$subdir && $(MAKE) $$target) || exit 1; \
+	done
+
+install: $(boot_FILES) $(beam_FILES) $(start_FILES) install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(confdir)
 	$(mkinstalldirs) $(DESTDIR)$(sslcertdir)
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
@@ -162,7 +178,7 @@ install: $(boot_FILES) $(beam_FILES) $(start_FILES)
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
-clean:
+clean: clean-recursive
 	rm -f core *.core *~
 	rm -f bootstrap.sh local.erl
 	rm -f newversion.erl.new version.erl.in
@@ -199,7 +215,7 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 	$(ERLC) -I$(srcdir) -W +debug_info $<
 
 dtmfserver: dtmfserver.o
-	$(CC) $(LDFLAGS) -o dtmfserver dtmfserver.o
+	$(CC) $(LDFLAGS) $(CFLAGS) -o dtmfserver dtmfserver.o
 
 .app-in.app:
 	cp $(srcdir)/$*.app-in $*.app
@@ -240,4 +256,4 @@ appserver: appserver.boot init.sh.in config.status
 	$(create_start_script)
 
 test: autotest.beam
-	$(ERL) -s autotest run shell
+	$(ERL) -s autotest run shell -pz $(SUBDIRS)
