@@ -5,6 +5,20 @@
 -record(keylist, {list}).
 -record(keyelem, {key, casekey, item}).
 
+% This is to support the compact headers we are required to support
+% by RFC3261 7.3.3.
+to_lower("i") -> "call-id";
+to_lower("m") -> "contact";
+to_lower("e") -> "content-encoding";
+to_lower("l") -> "content-length";
+to_lower("c") -> "contact-type";
+to_lower("f") -> "from";
+to_lower("s") -> "subject";
+to_lower("k") -> "supported";
+to_lower("t") -> "to";
+to_lower("v") -> "via";
+% RFC3515 #7
+to_lower("r") -> "refer-to";
 to_lower(Key) when list(Key) ->
     httpd_util:to_lower(Key);
 to_lower(Key) ->
