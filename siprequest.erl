@@ -19,7 +19,7 @@ send_response_to(Socket, Code, Text, Dest, Header, Body) ->
     HLines = lists:map(Printheader, Header),
     Message = siputil:concat_strings([Line1 | HLines]) ++ "\r\n" ++ Body,
     logger:log(debug, "send response(~p):~p", [Dest, Message]),
-    {Protocol, {Host, Port}} = Dest,
+    {Protocol, {Host, Port}, Parameters} = Dest,
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
 
 url_to_hostport({User, Pass, InHost, InPort, Parameters}) ->
@@ -36,7 +36,7 @@ send_proxy_request(Header, Socket, {Action, Dest, Body}) ->
 			  Name ++ ": " ++ siputil:printvalue(Value)
 		  end,
     [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
-				     {siphost:myip(), "5060"}}]),
+				     {siphost:myip(), "5060"}, []}]),
     Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
     HLines = lists:map(Printheader, Keylist2),
     Message = siputil:concat_strings([Line1 | HLines]) ++ "\r\n" ++ Body,

@@ -47,14 +47,21 @@ via([String | Rest]) ->
     Headers = comma(String),
     lists:append(lists:map(fun(H) ->
 				   [Protocol, Sentby] = string:tokens(H, " "),
-				   {Protocol, sipurl:parse_hostport(Sentby)}
+				   [Hostport | Parameters ] = string:tokens(Sentby, ";"),
+				   {Protocol, sipurl:parse_hostport(Hostport), Parameters}
 			   end, Headers),
 		 via(Rest)).
 
+print_parameters([]) ->
+    "";
+
+print_parameters([A | B]) ->
+    ";" ++ A ++ print_parameters(B).
+
 via_print(Via) ->
     lists:map(fun(H) ->
-		      {Protocol, {Host, Port}} = H,
-		      Protocol ++ " " ++ Host ++ ":" ++ Port
+		      {Protocol, {Host, Port}, Parameters} = H,
+		      Protocol ++ " " ++ Host ++ ":" ++ Port ++ print_parameters(Parameters)
 	      end, Via).
 
 contact_print(Contact) ->
