@@ -1,5 +1,5 @@
 -module(admin_www).
--export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2]).
+-export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2, change_classes/2]).
 
 -include("phone.hrl").
 
@@ -120,7 +120,7 @@ print_users([{user, User, Password, Number, Flags, Classes} | List]) ->
      "</td><td>",
      print_flags(Flags),
      "</td><td>",
-     print_classes(Classes),
+     print_classes(lists:sort(Classes)),
      "</td><td>",
      "<form action=\"admin_www%3Achange_user_form\" method=post>\n",
      "<input type=\"hidden\" name=\"user\" value=\"", User,"\" size=\"12\">\n",
@@ -226,7 +226,14 @@ list_users(Env, Input) ->
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Namn</th><th>Nummer</th><th>Flaggor</th>",
 	     "<th>Klasser</th></tr>\n",
-	     print_users(List),
+	     print_users(lists:sort(fun (Elem1, Elem2) -> 
+					    if
+						Elem1#user.user < Elem2#user.user ->
+						    true;
+						true ->
+						    false
+					    end
+				    end, List)),
 	     "</table>\n",
 	     "<form action=\"admin_www%3Aadd_user\" method=post>\n",
 	     "<input type=\"text\" name=\"user\" size=\"12\">\n",
@@ -276,7 +283,7 @@ list_phones(Env, Input) ->
     end.
 
 parse_classes(String) ->
-    [internal, mobile_or_pay, national, local, almostinternal].
+    [internal].
 
 add_user(Env, Input) ->
     case check_auth(Env, true) of
@@ -342,6 +349,21 @@ del_route(Env, Input) ->
     end.
 
 
+print_class_checkboxes(Classes) ->
+    lists:map(fun (Class) ->
+		      C = atom_to_list(Class),
+		      Checked = case lists:member(Class, Classes) of
+				    true ->
+					"CHECKED";
+				    _ ->
+					""
+				end,
+		      ["<input type=\"checkbox\" name=\"class_", C, "\"",
+		       Checked, ">", C, "<BR>"]
+	      end,
+	      lists:usort([internal, national, mobile, pay,
+			   international | Classes])).
+
 change_user_form(Env, Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
@@ -357,12 +379,13 @@ change_user_form(Env, Input) ->
 		    [
 		     header(ok),
 		     "<h1>", User, "</h1>\n",
-		     "Password:\n",
+		     "<h2>Lösenord</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"password\" name=\"password\" size=\"20\">\n",
 		     "<input type=\"submit\" value=\"Ändra lösenord\">\n",
 		     "</form>\n",
+		     "<h2>Nummer</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"text\" name=\"numbers\" size=\"40\" value=\"",
@@ -370,6 +393,7 @@ change_user_form(Env, Input) ->
 		     "\">\n",
 		     "<input type=\"submit\" value=\"Ändra nummer\">\n",
 		     "</form>\n",
+		     "<h2>Administratör</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"hidden\" name=\"admin\" value=\"true\">\n",
@@ -379,6 +403,12 @@ change_user_form(Env, Input) ->
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"hidden\" name=\"admin\" value=\"false\">\n",
 		     "<input type=\"submit\" value=\"Slå av administratörsflaggan\">\n",
+		     "</form>\n",
+		     "<h2>Klasser</h2>\n",
+		     "<form action=\"admin_www%3Achange_classes\" method=post>\n",
+		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
+		     print_class_checkboxes(Classes),
+		     "<input type=\"submit\" value=\"Ändra klasser\">\n",
 		     "</form>\n",
 		     userurl()
 		    ]
@@ -415,15 +445,17 @@ add_user_with_cookie(Env, Input) ->
     ["Content-type: text/plain\r\n\r\n",
      case {Userfind, Passwordfind, Cookiefind} of
 	 {error, _, _} ->
-	     "FORBIDDEN";
+	     "ERROR";
 	 {_, error, _} ->
-	     "FORBIDDEN";
+	     "ERROR";
 	 {_, _, error} ->
-	     "FORBIDDEN";
+	     "ERROR";
 	 {{ok, User}, {ok, Password}, {ok, Cookie}} ->
 	     Classes = [internal],
 	     phone:insert_user(User, Password, [], [], Classes),
-	     "CREATED"
+	     "CREATED";
+	 _ ->
+	     "FORBIDDEN"
      end
     ].
 
@@ -451,6 +483,41 @@ change_user(Env, Input) ->
 		{{ok, User}, _, _, {ok, Numbers}} ->
 		    Numberlist = string:tokens(Numbers, ","),
 		    phone:set_user_numbers(User, Numberlist),
+		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
+	    end
+    end.
+
+findclasses(Args) ->
+    List = lists:filter(fun (A) ->
+				case A of
+				    {"class_" ++ Class, _} ->
+					true;
+				    _ ->
+					false
+				end
+			end,
+			dict:to_list(Args)),
+    lists:map(fun (A) ->
+		      case A of
+			  {"class_" ++ Class, _} ->
+			      list_to_atom(Class)
+		      end
+	      end,
+	      List).
+
+change_classes(Env, Input) ->
+    case check_auth(Env, true) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    Args = sipheader:httparg(Input),
+	    Userfind = dict:find("user", Args),
+	    Classes = findclasses(Args),
+	    case Userfind of
+		error ->
+		    [header(ok), "Du måste ange ett användarnamn"];
+		{ok, User} ->
+		    phone:set_user_classes(User, Classes),
 		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
 	    end
     end.
