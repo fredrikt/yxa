@@ -3,15 +3,16 @@
 	 delete_using_pid/2, delete_expired/1,
 	 empty/0, extract/2, debugfriendly/1, get_client_transaction/3,
 	 get_server_transaction_using_request/2, get_server_transaction_using_response/2,
-	 get_server_transaction_using_pid/2,
+	 get_elem_using_pid/2, get_list_using_pid/2,
 	 set_pid/2, set_appdata/2, set_response_to_tag/2,
 	 update_transactionstate/2, append_response_branch/3,
-	 get_server_transaction_using_stateless_response_branch/3]).
+	 get_server_transaction_using_stateless_response_branch/3,
+	 get_length/1]).
 
 -include("transactionstatelist.hrl").
 
-%-record(transactionstate, {ref, id, ack_id, branch, pid, appdata,
-%	request, response_to_tag, expire}).
+%%-record(transactionstate, {ref, id, ack_id, branch, pid, appdata,
+%%	request, response_to_tag, expire}).
 
 add(Type, Id, AckId, Pid, TStateList) when record(TStateList, transactionstatelist), pid(Pid) ->
     case get_elem(Type, Id, TStateList) of
@@ -37,14 +38,14 @@ add_server_transaction(Request, Pid, TStateList) when record(TStateList, transac
 	    TStateList;
 	Id ->
 	    AckId = case Request of
-		{"INVITE", _, _, _} ->
-		    % For INVITE, we must store an extra Id to match ACK to the INVITE transaction.
-		    % We must do this even for RFC3261 INVITE since the ACK might arrive through
-		    % another proxy that is not RFC3261 compliant.
-		    sipheader:get_server_transaction_ack_id_2543(Request);
-		_ ->
-		    none
-	    end,
+			{"INVITE", _, _, _} ->
+			    %% For INVITE, we must store an extra Id to match ACK to the INVITE transaction.
+			    %% We must do this even for RFC3261 INVITE since the ACK might arrive through
+			    %% another proxy that is not RFC3261 compliant.
+			    sipheader:get_server_transaction_ack_id_2543(Request);
+			_ ->
+			    none
+		    end,
 	    add(server, Id, AckId, Pid, TStateList)
     end.
 
@@ -62,21 +63,21 @@ get_server_transaction_using_request(Request, TransactionList) when record(Trans
 	    {Method, URI, _, _} = Request,
 	    case get_elem(server, Id, TransactionList#transactionstatelist.list) of
 		none when Method == "ACK" ->
-		    % If the UAC is 2543 compliant, but there is a 3261 compliant proxy between UAC and us,
-		    % the 3261 proxy will possibly generate another branch for the ACK than the INVITE
-		    % because the ACK might have a To-tag. If this happens, we must use 2543 methods to find
-		    % the transaction even though RFC3261 17.2.3 only says we should do this if the ACK
-		    % received does NOT have the 3261 magic cookie in the branch parameter.
+		    %% If the UAC is 2543 compliant, but there is a 3261 compliant proxy between UAC and us,
+		    %% the 3261 proxy will possibly generate another branch for the ACK than the INVITE
+		    %% because the ACK might have a To-tag. If this happens, we must use 2543 methods to find
+		    %% the transaction even though RFC3261 17.2.3 only says we should do this if the ACK
+		    %% received does NOT have the 3261 magic cookie in the branch parameter.
 		    logger:log(debug, "Transaction state list: Found no match for ACK transaction using RFC3261 methods, " ++
-				"trying RFC2543 too"),
+			       "trying RFC2543 too"),
 		    get_server_transaction_ack_2543(Request, TransactionList);	
 		T ->
 		    T
 	    end    
     end.
 
-% ACK requests are matched to transactions differently if they are not received from
-% an RFC3261 compliant device, see RFC3261 17.2.3   
+%% ACK requests are matched to transactions differently if they are not received from
+%% an RFC3261 compliant device, see RFC3261 17.2.3   
 get_server_transaction_ack_2543(Request, TransactionList) ->
     case sipheader:get_server_transaction_ack_id_2543(Request) of
 	error ->
@@ -106,17 +107,34 @@ get_client_transaction(Method, Branch, TStateList) when record(TStateList, trans
     Id = {Branch, Method},
     get_elem(client, Id, TStateList).
 
-get_server_transaction_using_pid(Pid, TStateList) when record(TStateList, transactionstatelist), pid(Pid) ->
-    get_server_transaction_using_pid2(Pid, TStateList#transactionstatelist.list);
-get_server_transaction_using_pid(_, _) ->
-    {error, "Invalid arguments passed to get_server_transaction_using_pid()"}.
+get_list_using_pid(Pid, TStateList) when record(TStateList, transactionstatelist), pid(Pid) ->
+    case get_using_pid2(Pid, TStateList#transactionstatelist.list, []) of
+	[] ->
+	    none;
+	L ->
+	    #transactionstatelist{list=L}
+    end;
+get_list_using_pid(_, _) ->
+    {error, "Invalid arguments passed to get_list_using_pid()"}.
 
-get_server_transaction_using_pid2(Pid, []) ->
-    none;
-get_server_transaction_using_pid2(Pid, [H | T]) when record(H, transactionstate), H#transactionstate.pid == Pid ->
-    H;
-get_server_transaction_using_pid2(Pid, [H | T]) when record(H, transactionstate) ->
-    get_server_transaction_using_pid2(Pid, T).
+get_elem_using_pid(Pid, TStateList) when record(TStateList, transactionstatelist), pid(Pid) ->
+    case get_using_pid2(Pid, TStateList#transactionstatelist.list, []) of
+	[] ->
+	    none;
+	[Elem] ->
+	    [Elem];
+	L when list(L) ->
+	    {error, "more than one transactionstate found"};
+	_ ->
+	    {error, "unknown result from get_using_pid2"}
+    end.
+
+get_using_pid2(Pid, [], Res) ->
+    Res;
+get_using_pid2(Pid, [H | T], Res) when record(H, transactionstate), H#transactionstate.pid == Pid ->
+    get_using_pid2(Pid, T, lists:append(Res, [H]));
+get_using_pid2(Pid, [H | T], Res) when record(H, transactionstate) ->
+    get_using_pid2(Pid, T, Res).
 
 get_server_transaction_using_stateless_response_branch(Branch, Method, TStateList) when record(TStateList, transactionstatelist) ->
     Id = {Branch, Method},
@@ -131,7 +149,7 @@ get_server_transaction_using_stateless_response_branch2(Id, [H | T]) ->
 	_ ->
 	    get_server_transaction_using_stateless_response_branch2(Id, T)
     end.
-        
+
 get_elem(Type, Id, TStateList) when record(TStateList, transactionstatelist) ->
     get_elem(Type, Id, TStateList#transactionstatelist.list);
 
@@ -148,12 +166,12 @@ get_elem_ackid(Type, AckId, ToTag, TStateList) when record(TStateList, transacti
 get_elem_ackid(Type, AckId, ToTag, []) ->
     none;
 get_elem_ackid(Type, AckId, ToTag, [H | T]) when record(H, transactionstate),
-	H#transactionstate.type == Type, H#transactionstate.ack_id == AckId, H#transactionstate.response_to_tag == ToTag ->
+H#transactionstate.type == Type, H#transactionstate.ack_id == AckId, H#transactionstate.response_to_tag == ToTag ->
     H;
 get_elem_ackid(Type, AckId, ToTag, [H | T]) when record(H, transactionstate),
-	H#transactionstate.type == Type, H#transactionstate.ack_id == AckId ->
+H#transactionstate.type == Type, H#transactionstate.ack_id == AckId ->
     logger:log(debug, "Transaction state list: Found a transaction with matching ACK-Id, but the to-tag is not ~p (it is ~p) :~n~p",
-		[ToTag, H#transactionstate.response_to_tag, debugfriendly([H])]),
+	       [ToTag, H#transactionstate.response_to_tag, debugfriendly([H])]),
     get_elem_ackid(Type, AckId, ToTag, T);
 get_elem_ackid(Type, AckId, ToTag, [H | T]) when record(H, transactionstate) ->
     get_elem_ackid(Type, AckId, ToTag, T).
@@ -186,7 +204,7 @@ append_response_branch(TState, Branch, Method) when record(TState, transactionst
     case lists:member(Id, In) of
 	true ->
 	    logger:log(debug, "Transaction state list: Stateless response id ~p already stored on element :~n~p",
-			[Id, debugfriendly(TState)]),
+		       [Id, debugfriendly(TState)]),
 	    TState;
 	_ ->
 	    TState#transactionstate{stateless_response_branches=lists:append(In, [Id])}
@@ -213,9 +231,9 @@ del_time(Time, []) ->
 del_time(Time, [H | T]) when record(H, transactionstate), H#transactionstate.expire =< Time, H#transactionstate.expire > 0 ->
     case util:safe_is_process_alive(H#transactionstate.pid) of
 	{true, Pid} ->
-	    % Be nice and tell lingering processes it is time to go
+	    %% Be nice and tell lingering processes it is time to go
 	    logger:log(error, "Transaction layer: Had to tell lingering transaction that it is time to terminate :~n~p",
-			[debugfriendly(H)]),
+		       [debugfriendly(H)]),
 	    Pid ! {expired};	
 	_ ->
 	    true
@@ -233,12 +251,15 @@ update_transactionstate(TState, TStateList) when record(TState, transactionstate
 update_transactionstate(Ref, _, [], TStateList) ->
     logger:log(error, "TStatelist: Asked to update a transactionstate, but I can't find it", [Ref]),
     logger:log(error, "TStatelist: Asked to update a transactionstate with ref=~p, but I can't find it in list :~n~p",
-		[Ref, debugfriendly(TStateList)]),
+	       [Ref, debugfriendly(TStateList)]),
     [];
 update_transactionstate(Ref, NewT, [H | T], TStateList) when record(H, transactionstate), H#transactionstate.ref == Ref ->
     [NewT | T];
 update_transactionstate(Ref, NewT, [H | T], TStateList) when record(H, transactionstate) ->
     lists:append([H], update_transactionstate(Ref, NewT, T, TStateList)).
+
+get_length(T) when record(T, transactionstatelist) ->
+    length(T#transactionstatelist.list).
 
 debugfriendly(TStateList) when record(TStateList, transactionstatelist) ->
     debugfriendly(TStateList#transactionstatelist.list);
@@ -248,16 +269,28 @@ debugfriendly([H | Rest]) when record(H, transactionstate) ->
     Id = H#transactionstate.id,
     Type = H#transactionstate.type,
     PidStr = case H#transactionstate.pid of
-	none -> "none";
-	Pid when pid(Pid) -> pid_to_list(Pid);
-	_ -> "unknown"
-    end,
-    AppData = H#transactionstate.appdata,
-    AppDataStr = io_lib:format("~p", [AppData]),
+		 none -> "none";
+		 Pid when pid(Pid) -> pid_to_list(Pid);
+		 _ -> "unknown"
+	     end,
+    AppDataStr = case H#transactionstate.appdata of
+		     undefined -> "";
+		     _ -> io_lib:format(", AppData=~p", [H#transactionstate.appdata])
+		 end,
     IdStr = io_lib:format("~p", [Id]),
-    AckIdStr = io_lib:format("~p", [H#transactionstate.ack_id]),
-    ToTagStr = io_lib:format("~p", [H#transactionstate.response_to_tag]),
-    BranchCount = length(H#transactionstate.stateless_response_branches),
-    Str = lists:concat(["type=", Type, ", id=", IdStr, ", ack_id=", AckIdStr, ", response_to_tag=",
-			 ToTagStr, ", pid=", PidStr, ", AppData=", AppDataStr, ", Stateless branches=", BranchCount]),
+    AckIdStr = case H#transactionstate.ack_id of
+		   undefined -> "";
+		   none -> "";
+		   _ -> io_lib:format(", ack_id=~p", [H#transactionstate.ack_id])
+	       end,
+    ToTagStr = case H#transactionstate.response_to_tag of
+		   undefined -> "";
+		   _ -> io_lib:format(", response_to_tag=~p", [H#transactionstate.response_to_tag])
+	       end,
+    BranchesStr = case length(H#transactionstate.stateless_response_branches) of
+		      0 -> "";
+		      BranchCount -> lists:concat([", Stateless branches=", BranchCount])
+		  end,
+    Str = lists:concat(["type=", Type, ", id=", IdStr, AckIdStr, ToTagStr,
+			", pid=", PidStr, AppDataStr, BranchesStr]),
     lists:append([lists:flatten(Str)], debugfriendly(Rest)).
