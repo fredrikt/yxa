@@ -482,7 +482,7 @@ expired_phones() ->
 
     F = fun() ->
 		mnesia:select(phone, [{#phone{_ = '_'},
-				       ['<', {element, #phone.expire, '$_'}, Now],
+				       [{'<', {element, #phone.expire, '$_'}, Now}],
 				       [{{{element, #phone.number, '$_'},
 					  {element, #phone.address, '$_'},
 					  {element, #phone.class, '$_'}
