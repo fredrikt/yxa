@@ -77,7 +77,15 @@ safe_spawn_child(Function, Arguments) ->
     case catch apply(Function, Arguments) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from ~p :~n~p", [Function, E]),
-	    true;
+	    error;
+	{siperror, Status, Reason} ->
+	    logger:log(error, "Spawned function ~p generated a SIP-error (ignoring) : ~p ~s",
+			[Function, Status, Reason]),
+	    error;
+	{siperror, Status, Reason, _} ->
+	    logger:log(error, "Spawned function ~p generated a SIP-error (ignoring) : ~p ~s",
+			[Function, Status, Reason]),
+	    error;
 	_ ->
 	    true
     end.
@@ -86,20 +94,40 @@ safe_spawn_child(Module, Function, Arguments) ->
     case catch apply(Module, Function, Arguments) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from ~p:~p :~n~p", [Module, Function, E]),
-	    true;
+	    error;
+	{siperror, Status, Reason} ->
+	    logger:log(error, "Spawned function ~p:~p generated a SIP-error (ignoring) : ~p ~s",
+			[Module, Function, Status, Reason]),
+	    error;
+	{siperror, Status, Reason, _} ->
+	    logger:log(error, "Spawned function ~p:~p generated a SIP-error (ignoring) : ~p ~s",
+			[Module, Function, Status, Reason]),
+	    error;
 	_ ->
 	    true
     end.
 
-internal_error(Header, Socket) ->
-    siprequest:send_result(Header, Socket, "", 500, "Server Internal Error").
+send_result(Request, Socket, Status, Reason, ExtraHeaders) ->
+    case transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders) of
+	ok -> ok;
+	_ ->
+	    {Method, URI, Header, Body} = Request,
+	    logger:log(error, "Sipserver: Failed sending caught error ~p ~s (in response to ~s ~s) " ++
+	    		"using transaction layer - sending directly on the socket we received the request on",
+	    		[Status, Reason, Method, sipurl:print(URI)]),
+	    transportlayer:send_result(Header, Socket, "", Status, Reason, ExtraHeaders)
+    end.
 
-internal_error(Header, Socket, Code, Text) ->
-    siprequest:send_result(Header, Socket, "", Code, Text).
+internal_error(Request, Socket) ->
+    send_result(Request, Socket, 500, "Server Internal Error", []).
 
-internal_error(Header, Socket, Code, Text, ExtraHeaders) ->
-    siprequest:send_result(Header, Socket, "", Code, Text, ExtraHeaders).
+internal_error(Request, Socket, Status, Reason) ->
+    send_result(Request, Socket, Status, Reason, []).
 
+internal_error(Request, Socket, Status, Reason, ExtraHeaders) ->
+    send_result(Request, Socket, Status, Reason, ExtraHeaders).
+
+% note: RequestFun and ResponseFun can actually be pids too.
 process(Packet, Socket, Origin, RequestFun, ResponseFun) ->
     {_, IP, _, _} = Origin,
     case parse_packet(Socket, Packet, Origin) of
@@ -109,13 +137,13 @@ process(Packet, Socket, Origin, RequestFun, ResponseFun) ->
 	    case catch my_apply(RequestFun, request, [Method, URL, Header, Body, Socket, IP], LogStr) of
 		{'EXIT', E} ->
 		    logger:log(error, "=ERROR REPORT==== from RequestFun~n~p", [E]),
-		    internal_error(Header, Socket);
-		{siperror, Code, Text} ->
-		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
-		    internal_error(Header, Socket, Code, Text);
-		{siperror, Code, Text, ExtraHeaders} ->
-		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
-		    internal_error(Header, Socket, Code, Text, ExtraHeaders);
+		    internal_error(Request, Socket);
+		{siperror, Status, Reason} ->
+		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Status, Reason]),
+		    internal_error(Request, Socket, Status, Reason);
+		{siperror, Status, Reason, ExtraHeaders} ->
+		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Status, Reason]),
+		    internal_error(Request, Socket, Status, Reason, ExtraHeaders);
 		_ ->
 		    true
 	    end;
@@ -144,6 +172,10 @@ my_apply(Dst, Type, Args, LogStr) when pid(Dst) ->
 		    % terminate silently
 		    true;
 		{pass_to_core, Ref, NewDst} ->
+		    % Dst (the transaction layer presumably) wants us to apply a function with this
+		    % request/response as argument. This is common when the transaction layer has started
+		    % a new server transaction for this request and wants it passed to the core (or TU)
+		    % but can't do it itself because that would block the transactionlayer process.
 		    my_apply(NewDst, Type, Args, LogStr)
 	    after
 		2000 ->
@@ -168,13 +200,13 @@ parse_packet(Socket, Packet, Origin) ->
 	    logger:log(error, "=ERROR REPORT==== from sippacket:parse()~n~p", [E]),
 	    logger:log(error, "CRASHED parsing packet [client=~s]", [origin2str(Origin, "unknown")]),
 	    false;
-	{siperror, Code, Text} ->
+	{siperror, Status, Reason} ->
 	    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
-	    		[origin2str(Origin, "unknown"), Code, Text]),
+	    		[origin2str(Origin, "unknown"), Status, Reason]),
 	    false;
-	{siperror, Code, Text, ExtraHeaders} ->
+	{siperror, Status, Reason, ExtraHeaders} ->
 	    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
-	    		[origin2str(Origin, "unknown"), Code, Text]),
+	    		[origin2str(Origin, "unknown"), Status, Reason]),
 	    false;
 	{drop} ->
 	    true;
@@ -184,26 +216,32 @@ parse_packet(Socket, Packet, Origin) ->
 		{'EXIT', E} ->
 		    logger:log(error, "=ERROR REPORT==== from sipserver:process_parsed_packet() :~n~p", [E]),
 		    {error};
-		{sipparseerror, Header, Code, Text} ->
+		{sipparseerror, Header, Status, Reason} ->
 		    logger:log(error, "INVALID request [client=~s] ~p ~s",
-				[origin2str(Origin, "unknown"), Code, Text]),
-		    internal_error(Header, Socket, Code, Text);
-		{sipparseerror, Header, Code, Text, ExtraHeaders} ->
+				[origin2str(Origin, "unknown"), Status, Reason]),
+		    parse_do_internal_error(Header, Socket, Status, Reason, []);
+		{sipparseerror, Header, Status, Reason, ExtraHeaders} ->
 		    logger:log(error, "INVALID request [client=~s]: ~s -> ~p ~s",
-		    		[origin2str(Origin, "unknown"), Code, Text]),
-		    internal_error(Header, Socket, Code, Text, ExtraHeaders);
-		{siperror, Code, Text} ->
+		    		[origin2str(Origin, "unknown"), Status, Reason]),
+		    parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders);
+		{siperror, Status, Reason} ->
 		    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
-		    		[origin2str(Origin, "unknown"), Code, Text]),
+		    		[origin2str(Origin, "unknown"), Status, Reason]),
 		    false;
-		{siperror, Code, Text, ExtraHeaders} ->
+		{siperror, Status, Reason, ExtraHeaders} ->
 		    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE",
-		    		[origin2str(Origin, "unknown"), Code, Text]),
+		    		[origin2str(Origin, "unknown"), Status, Reason]),
 		    false;
 		Res ->
 		    Res
 	    end
     end.
+
+parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
+    % Handle errors returned during initial parsing of a request. These errors
+    % occur before the transaction layer is notified of the requests, so there
+    % are never any server transactions to handle the errors. Just send them.
+    transportlayer:send_result(Header, Socket, "", Status, Reason, ExtraHeaders).
 
 process_parsed_packet(Socket, {request, Method, URI, Header, Body}, Origin) ->
     NewHeader1 = fix_topvia_received(Header, Origin),
@@ -390,7 +428,7 @@ check_packet({request, Method, URI, Header, Body}, Origin) ->
     end,
     case sipserver:get_env(detect_loops, true) of
 	true ->
-	    check_for_loop(Header, URI);	
+	    check_for_loop(Header, URI, Method);	
 	_ ->
 	    true
     end;
@@ -400,14 +438,20 @@ check_packet({response, Status, Reason, Header, Body}, Origin) ->
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
     sanity_check_uri("To:", ToURI, Header).
 
-check_for_loop(Header, URI) ->
+check_for_loop(Header, URI, Method) ->
     LoopCookie = siprequest:get_loop_cookie(Header, URI),
     ViaHostname = siprequest:myhostname(),
     ViaPort = siprequest:default_port(sipserver:get_env(listenport, none)),
     case via_indicates_loop(LoopCookie, {ViaHostname, ViaPort},
     			    sipheader:via(keylist:fetch("Via", Header))) of
 	true ->
-	    throw({sipparseerror, Header, 482, "Loop Detected"});	
+	    case Method of
+		"ACK" ->
+		    logger:log(debug, "Loop detected for ACK ~s, dropping packet", [sipurl:print(URI)]),
+		    throw({error, drop});
+		_ ->
+		    throw({sipparseerror, Header, 482, "Loop Detected"})
+	    end;
 	_ ->
 	    true
     end.
