@@ -35,7 +35,6 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
-
 -include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
@@ -53,7 +52,9 @@
 %%--------------------------------------------------------------------
 %% Function: to_norm(Params)
 %%           Params = list() of {Name, Val}
-%%           Name, Val = string(), are treated as case insensitive
+%%           Name = string(), treated as case insensitive
+%%           Val  = string() | none, treated as case insensitive
+%%                                   unless it starts with a quote
 %% Descrip.: convert a contact-parameter list to a normalized (a case
 %%           insensitive form) form
 %% Returns : contact_param record() |
@@ -61,13 +62,19 @@
 %%           component is already present in Params
 %%--------------------------------------------------------------------
 to_norm(Params) when is_list(Params) ->
-    F = fun({Name, Val}) ->
-		{ httpd_util:to_lower(Name),
-		  case Val of
-			[$\" | _] -> Val;  %% quoted value, don't lowercase
-			_ -> httpd_util:to_lower(Val)
-		  end
-		}
+    F = fun({Name, ValIn}) ->
+		Val =
+		    case ValIn of
+			none ->
+			    none;
+			[] ->
+			    none;
+			[$\" | _] ->
+			    ValIn;  %% quoted value, don't lowercase
+			_ when is_list(ValIn) ->
+			    httpd_util:to_lower(ValIn)
+	            end,
+		{ httpd_util:to_lower(Name), Val}
 	end,
     %% make case insensitive
     L = [F(E) || E <- Params],
