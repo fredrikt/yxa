@@ -236,8 +236,12 @@ lookupenum("+" ++ E164) ->
 	    %% to make sure it is not a loop back to this proxy. If it is a remote
 	    %% domain, the username comparison test does not have any effect, so
 	    %% a remote URL with the E164 number as uesrname is OK.
-	    NewE164 = rewrite_potn_to_e164(E164User),
-	    SameE164 = util:casecompare(NewE164, "+" ++ E164),
+	    {NewE164, SameE164} = case rewrite_potn_to_e164(E164User) of
+	    	error ->
+	    		{error, false};
+	    	Res ->
+	    		{Res, util:casecompare(Res, "+" ++ E164)}
+	    end,
 	    if
 		IsMe /= true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying", [URL]),
