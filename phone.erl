@@ -16,14 +16,17 @@ init() ->
     mnesia:create_schema([node()]),
     mnesia:start().
 
+servers() ->
+    sipserver:get_env(databaseservers).
+
 create() ->
     mnesia:create_table(phone, [{attributes, record_info(fields, phone)},
-				{disc_copies, [node()]},
+				{disc_copies, [servers()]},
 				{type, bag}]),
     mnesia:create_table(user, [{attributes, record_info(fields, user)},
-			       {disc_copies, [node()]}]),
+			       {disc_copies, [servers()]}]),
     mnesia:create_table(numbers, [{attributes, record_info(fields, numbers)},
-				  {disc_copies, [node()]},
+				  {disc_copies, [servers()]},
 				  {index, [number]},
 				  {type, bag}]).
 
