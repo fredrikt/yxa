@@ -39,7 +39,7 @@ lookuproute(User) ->
     end.
 
 lookupmail(User) ->
-    case directory:lookupmail(User ++ "@kth.se") of
+    case directory:lookupmail(User) of
 	none ->
 	    none;
 	Phone ->
