@@ -13,7 +13,7 @@ sslcertdir = @sslcertdir@
 mnesiadir = @mnesiadir@
 beamdir = @datadir@/yxa
 sbindir = @sbindir@
-exec_prefix='${prefix}'
+exec_prefix=${prefix}
 builddir = @builddir@
 local_file = @local_file@
 
