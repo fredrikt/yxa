@@ -308,6 +308,6 @@ get_remote_party_name(Key, URI) ->
 	    none;
 	DisplayName ->
 	    [C] = sipheader:contact_print([{DisplayName, URI}]),
-	    C ++ ";screen=no;privacy=off"
+	    C ++ ";screen=yes;privacy=off"
     end.
 
