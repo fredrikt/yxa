@@ -27,7 +27,8 @@ start(ServerHandler, ClientPid, Request, URI, Timeout) when record(Request, requ
     case catch guarded_start(ServerHandler, ClientPid, Request, URI, Timeout) of
 	{'EXIT', Reason} ->
 	    logger:log(error, "=ERROR REPORT==== from sippipe :~n~p", [Reason]),
-	    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error");
+	    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
+	    {error, Reason};
 	Res ->
 	    Res
     end.
@@ -51,8 +52,9 @@ guarded_start(ServerHandler, ClientPid, Request, route, Timeout) ->
 	nomatch ->
 	    logger:log(error, "sippipe: No destination given, and request has no Route header"),
 	    erlang:fault("no destination and no route", [ServerHandler, ClientPid, Request, route, Timeout]);
-	{ok, NewHeader, DstURI, ReqURI} when record(DstURI, sipurl), record(ReqURI, sipurl) ->
-	    {ok, _, ApproxMsgSize} = siprequest:check_proxy_request(Request),
+	{ok, NewHeaderX1, DstURI, ReqURI} when record(DstURI, sipurl), record(ReqURI, sipurl) ->
+	    %% XXX is it right to just ditch NewHeaderX{1,2} here or should we stick it into Request?
+	    {ok, NewHeaderX2, ApproxMsgSize} = siprequest:check_proxy_request(Request),
 	    logger:log(debug, "sippipe: Routing request as per the Route header, Destination ~p, Request-URI ~p",
 		      [sipurl:print(DstURI), sipurl:print(ReqURI)]),
 	    case sipdst:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
@@ -151,12 +153,15 @@ guarded_start2(Branch, ServerHandler, _, Request, [DstIn | DstInT], Timeout) whe
     end.
 
 %% Do piping between a now existing server and client transaction handler.
-final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize) when record(Request, request), pid(ClientPid) ->
+final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize)
+  when is_list(Branch), is_pid(ClientPid), is_record(Request, request), is_list(DstList),
+       is_integer(Timeout), is_integer(ApproxMsgSize) ->
     StartTime = util:timestamp(),
     State=#state{branch=Branch, serverhandler=ServerHandler, clienthandler=ClientPid,
 		 request=Request, dstlist=DstList, approxmsgsize=ApproxMsgSize,
 		 timeout=Timeout, endtime = StartTime + Timeout, warntime = StartTime + 300},
-    logger:log(debug, "sippipe: All preparations finished, entering pipe loop"),
+    logger:log(debug, "sippipe: All preparations finished, entering pipe loop (~p destinations in my list)",
+	       [length(DstList)]),
     loop(State).
 
 
@@ -175,7 +180,7 @@ loop(State) when record(State, state) ->
 			      gen_server:cast(State#state.clienthandler, {cancel, "server transaction cancelled"}),
 			      {ok, State};
 
-			  {branch_result, Branch, NewTransactionState, Response} ->
+			  {branch_result, _Branch, _NewTransactionState, Response} ->
 			      NewState1 = process_client_transaction_response(Response, State),
 			      {ok, NewState1};
 
@@ -183,11 +188,11 @@ loop(State) when record(State, state) ->
 			      NewState1 = State#state{serverhandler=none},
 			      {ok, NewState1};
 
-			  {clienttransaction_terminating, {Branch, ClientPid}} ->
+			  {clienttransaction_terminating, {_Branch, ClientPid}} ->
 			      NewState1 = State#state{clienthandler=none},
 			      {ok, NewState1};
 
-			  {clienttransaction_terminating, {Branch, _}} ->
+			  {clienttransaction_terminating, {_Branch, _}} ->
 			      %% An (at this time) unknown client transaction signals us that it
 			      %% has terminated. This is probably one of our previously started
 			      %% client transactions that is now finishing - just ignore the signal.
@@ -245,7 +250,7 @@ tick(State, Now) when record(State, state), Now >= State#state.warntime ->
 	       [State#state.clienthandler, State#state.serverhandler]),
     {ok, State#state{warntime=Now + 60}};
 
-tick(State, Now) ->
+tick(State, _Now) ->
     {tick, State}.
 
 
@@ -267,7 +272,7 @@ process_client_transaction_response(Response, State) when record(Response, respo
 	{next, NewDstList} ->
 	    %% Continue, possibly with an altered DstList
 	    start_next_client_transaction(State#state{dstlist=NewDstList});
-	_ ->
+	undefined ->
 	    %% Use sippipe defaults
 	    process_client_transaction_response2(Response, State)
     end;
@@ -298,13 +303,13 @@ process_client_transaction_response2(Response, State) when record(Response, resp
 start_next_client_transaction(State) when record(State, state) ->
     DstListIn = State#state.dstlist,
     case DstListIn of
-	[FirstDst] ->
+	[_FirstDst] ->
 	    logger:log(debug, "sippipe: There are no more destinations to try for this target - " ++
 		       "telling server transaction to answer 500 No reachable destination"),
 	    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
 	    transactionlayer:send_response_handler(State#state.serverhandler, 500, "No reachable destination"),
 	    State#state{clienthandler=none, branch=none, dstlist=[]};
-	[FailedDst | DstList] ->
+	[_FailedDst | DstList] ->
 	    NewBranch = get_next_target_branch(State#state.branch),
 	    logger:log(debug, "sippipe: Starting new branch ~p for next destination",
 		       [NewBranch]),
