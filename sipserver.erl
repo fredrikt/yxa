@@ -108,14 +108,21 @@ safe_spawn_child(Module, Function, Arguments) ->
     end.
 
 send_result(Request, Socket, Status, Reason, ExtraHeaders) ->
-    case transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders) of
-	ok -> ok;
+    {Method, URI, _, _} = Request,
+    case Method of
+	"ACK" ->
+	    logger:log(normal, "Sipserver: Suppressing application error response ~p ~s in response to ACK ~s",
+			[Status, Reason, sipurl:print(URI)]);
 	_ ->
-	    {Method, URI, Header, Body} = Request,
-	    logger:log(error, "Sipserver: Failed sending caught error ~p ~s (in response to ~s ~s) " ++
-	    		"using transaction layer - sending directly on the socket we received the request on",
-	    		[Status, Reason, Method, sipurl:print(URI)]),
-	    transportlayer:send_result(Header, Socket, "", Status, Reason, ExtraHeaders)
+	    case transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders) of
+		ok -> ok;	
+		_ ->
+		    {Method, URI, Header, Body} = Request,
+		    logger:log(error, "Sipserver: Failed sending caught error ~p ~s (in response to ~s ~s) " ++
+	    			"using transaction layer - sending directly on the socket we received the request on",
+	    			[Status, Reason, Method, sipurl:print(URI)]),
+		    transportlayer:send_result(Header, Socket, "", Status, Reason, ExtraHeaders)
+	    end
     end.
 
 internal_error(Request, Socket) ->
@@ -241,7 +248,15 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
     % Handle errors returned during initial parsing of a request. These errors
     % occur before the transaction layer is notified of the requests, so there
     % are never any server transactions to handle the errors. Just send them.
-    transportlayer:send_result(Header, Socket, "", Status, Reason, ExtraHeaders).
+    {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    case Method of
+	"ACK" ->
+	    logger:log(normal, "Sipserver: Suppressing parsing error response ~p ~s because CSeq method is ACK",
+			[Status, Reason]);
+	_ ->
+	    transportlayer:send_result(Header, Socket, "", Status, Reason, ExtraHeaders)
+    end,
+    ok.
 
 process_parsed_packet(Socket, {request, Method, URI, Header, Body}, Origin) ->
     NewHeader1 = fix_topvia_received(Header, Origin),
@@ -406,10 +421,8 @@ route_matches_me(Route) ->
 
 check_packet({request, Method, URI, Header, Body}, Origin) ->
     check_supported_uri_scheme(URI, Header),
-    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
-    sanity_check_uri("From:", FromURI, Header),
-    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
-    sanity_check_uri("To:", ToURI, Header),
+    sanity_check_contact("From", Header),
+    sanity_check_contact("To", Header),
     case sipheader:cseq(keylist:fetch("CSeq", Header)) of
 	{unparseable, CSeqStr} ->
 	    logger:log(error, "INVALID CSeq ~p in packet from ~s", [CSeqStr, origin2str(Origin, "unknown")]),
@@ -433,10 +446,8 @@ check_packet({request, Method, URI, Header, Body}, Origin) ->
 	    true
     end;
 check_packet({response, Status, Reason, Header, Body}, Origin) ->
-    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
-    sanity_check_uri("From:", FromURI, Header),
-    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
-    sanity_check_uri("To:", ToURI, Header).
+    sanity_check_contact("From", Header),
+    sanity_check_contact("To", Header).
 
 check_for_loop(Header, URI, Method) ->
     LoopCookie = siprequest:get_loop_cookie(Header, URI),
@@ -445,13 +456,7 @@ check_for_loop(Header, URI, Method) ->
     case via_indicates_loop(LoopCookie, {ViaHostname, ViaPort},
     			    sipheader:via(keylist:fetch("Via", Header))) of
 	true ->
-	    case Method of
-		"ACK" ->
-		    logger:log(debug, "Loop detected for ACK ~s, dropping packet", [sipurl:print(URI)]),
-		    throw({error, drop});
-		_ ->
-		    throw({sipparseerror, Header, 482, "Loop Detected"})
-	    end;
+	    throw({sipparseerror, Header, 482, "Loop Detected"});
 	_ ->
 	    true
     end.
@@ -505,6 +510,19 @@ url2str({unparseable, _}) ->
     "unparseable";
 url2str(URL) ->
     sipurl:print(URL).
+
+sanity_check_contact(Name, Header) ->
+    case keylist:fetch(Name, Header) of
+	[Str] ->
+	    case sipheader:from([Str]) of
+		{_, URI} ->
+		    sanity_check_uri(Name ++ ":", URI, Header);
+		_ ->
+		    throw({sipparseerror, Header, 400, "Invalid " ++ Name ++ ": header"})
+	    end;
+	_ ->
+	    throw({sipparseerror, Header, 400, "Missing " ++ Name ++ ": header"})
+    end.
 
 sanity_check_uri(Desc, {none, _, _, _, _, _}, Header) ->
     throw({sipparseerror, Header, 400, "No user part in " ++ Desc ++ " URL"});
