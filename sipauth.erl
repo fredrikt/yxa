@@ -62,6 +62,10 @@ get_passnumber_try(User) ->
 get_class(Number, []) ->
     unknown;
 
+get_class(Number, [{"^+" ++ Regexp, Class} | Rest]) ->
+    logger:log(error, "sipauth:get_class() Skipping invalid regexp ~p (you probably forgot to escape the plus char)", ["^+" ++ Regexp]),
+    get_class(Number, Rest);
+
 get_class(Number, [{Regexp, Class} | Rest]) ->
     case regexp:first_match(Number, Regexp) of
 	{match, _, _} ->
