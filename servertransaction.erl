@@ -42,28 +42,40 @@ start_link(Request, Socket, LogStr, AppModule, Mode) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init/1
-%% Description: Initiates the server
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
+%% Function: init([Request, Socket, LogStr, AppModule, Mode])
+%%           Request = request record()
+%%           Socket = sipsocket record(), socket this request arrived
+%%                                        on
+%%           LogStr = string(), describes request
+%%           AppModule = atom(), Yxa application module name)
+%%           Mode = atom(), stateless | stateful
+%% Descrip.: Initiates the gen_server
+%% Returns : {ok, State}          |
+%%           {ok, State, Timeout} |
+%%           ignore               |
+%%           {stop, Reason}
 %%--------------------------------------------------------------------
 
 %%
-%% ACK
+%% ACK - no go
 %%
 init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request), Request#request.method == "ACK" ->
-    %% XXX better to start transaction and immediately send 500 Server Internal Error?
-    %% Will require passing ACK to process_received_ack() _after_ checking for resent request.
+    %% Although a bit vague, RFC3261 section 17 (Transactions) do say that
+    %% it is not allowed to send responses to ACK requests, so we simply
+    %% deny to start a server transaction here.
     logger:log(error, "Server transaction: NOT starting transaction for ACK request (ACK ~s)",
 	       [sipurl:print(Request#request.uri)]),
     {stop, "Not starting server transaction for ACK"};
+%%
+%% Anything but ACK
+%%
 init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
     LogTag = Branch ++ " " ++ Method,
     MyToTag = generate_tag(),
+    %% LogTag is essentially Branch + Method, LogStr is a string that
+    %% describes this request (METHOD URI [client=x, from=y, to=z])
     State = #state{branch=Branch, logtag=LogTag, socket=Socket, request=Request,
 		   sipmethod=Method, sipstate=trying, timerlist=siptimer:empty(),
 		   mode=Mode, my_to_tag=MyToTag, logstr=LogStr},
@@ -72,7 +84,7 @@ init([Request, Socket, LogStr, AppModule, Mode]) when record(Request, request) -
     logger:log(normal, "~s: ~s", [LogTag, LogStr]),
     %% RFC3261 17.2.1 says the _transaction layer_ MUST generate a 100 Trying in response
     %% to an INVITE unless it _knows_ the TU will generate a response within 200 ms. We
-    %% can't know that.
+    %% can't know that, so we generate a 100 Trying if this application is stateful.
     MyState = if
 		  Method == "INVITE", State#state.mode == stateful ->
 		      Response = make_response(100, "Trying", "", [], [], State),
@@ -124,7 +136,7 @@ handle_call(Request, From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_cast({sipmessage, Request, Origin, LogStr, GenSrvFrom, AppModule}, State) when record(Request, request), record(Origin, siporigin) ->
+handle_cast({sipmessage, Request, Origin, GenSrvFrom, AppModule}, State) when record(Request, request), record(Origin, siporigin) ->
     LogTag = State#state.logtag,
     OrigRequest = State#state.request,
     {OrigMethod, OrigURI, OrigHeader} = {OrigRequest#request.method, OrigRequest#request.uri, OrigRequest#request.header},

@@ -87,7 +87,7 @@ handle_call({sipmessage, Request, Origin, LogStr}, From, State) when record(Requ
 	none ->
 	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, State);
 	TPid when pid(TPid) ->
-	    gen_server:cast(TPid, {sipmessage, Request, Origin, LogStr, From, AppModule}),
+	    gen_server:cast(TPid, {sipmessage, Request, Origin, From, AppModule}),
 	    %% We do noreply here and send AppModule (and gen_server From) on to TPid and let TPid do gen_server:reply()
 	    {noreply, State, ?TIMEOUT}
     end;
