@@ -1,6 +1,7 @@
 -module(sipheader).
 -export([to/1, from/1, contact/1, via/1, via_print/1, to_print/1,
-	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1, httparg/1]).
+	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1,
+	 httparg/1, cseq/1, cseq_print/1]).
 
 comma(String) ->
     comma([], String, false).
@@ -157,3 +158,10 @@ httparg(String) ->
 			  {Name, unescape(Value)}
 		  end, Headers),
     dict:from_list(L).
+
+cseq([String]) ->
+    [Seq, Method] = string:tokens(String, " "),
+    {Seq, Method}.
+
+cseq_print({Seq, Method}) ->
+    Seq ++ " " ++ Method.
