@@ -298,15 +298,7 @@ create_session_cpl(Request, Origin, LogStr, User, Graph)
 %%           ActionsList = list() of sipproxy_action record()
 %%--------------------------------------------------------------------
 get_actions(URI, DoCPL) when is_record(URI, sipurl) ->
-    LookupURL1 = sipurl:set([{pass, none}, {port, none}, {param, []}], URI),
-    LookupURL = case LookupURL1#sipurl.proto of
-		    "sips" ->
-			%% When looking up the users for a SIPS URI, we change the protocol to SIP -
-			%% just for the lookup though, not for the signalling.
-			sipurl:set([{proto, "sip"}]);
-		    _ ->
-			LookupURL1
-		end,
+    LookupURL = sipurl:set([{pass, none}, {port, none}, {param, []}], URI),
     case local:get_users_for_url(LookupURL) of
 	nomatch ->
 	    nomatch;
@@ -369,10 +361,11 @@ fetch_users_locations_as_actions(Users) ->
 %%--------------------------------------------------------------------
 %% Function: locations_to_actions(Locations)
 %%           Locations = list() of Loc
-%%              Loc = {URL, _Flags, _Class, _Expire} (location
-%%                       database entry)                            |
-%%                    {URL, Timeout}                                |
-%%                    {wait, Timeout}
+%%                 Loc = siplocationdb_e record() |
+%%                       {URL, Timeout}           |
+%%                       {wait, Timeout}
+%%                 URL = sipurl record()
+%%             Timeout = integer()
 %% Descrip.: Turn a list of location database entrys/pseudo-actions
 %%           into a list of sipproxy_action record()s.
 %% Returns : Actions = list() of sipproxy_action record()
@@ -383,7 +376,7 @@ locations_to_actions(L) ->
 locations_to_actions2([], Res) ->
     lists:reverse(Res);
 
-locations_to_actions2([{URL, _Flags, _Class, _Expire} | T], Res) when is_record(URL, sipurl) ->
+locations_to_actions2([#siplocationdb_e{address=URL} | T], Res) when is_record(URL, sipurl) ->
     Timeout = sipserver:get_env(appserver_call_timeout, 40),
     CallAction = #sipproxy_action{action=call, requri=URL, timeout=Timeout},
     locations_to_actions2(T, [CallAction | Res]);
