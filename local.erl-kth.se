@@ -70,6 +70,11 @@
 	 incomingproxy_challenge_before_relay/3
 	]).
 
+%% outgoinproxy
+-export([
+	 outgoingproxy_challenge_before_relay/3
+	]).
+
 %% sippipe
 -export([
 	 sippipe_received_response/3
@@ -86,6 +91,13 @@
 -export([
 	 is_acceptable_socket/7,
 	 is_tls_equivalent/3
+	]).
+
+%% custom log and mail cpl functions
+-export([
+	 cpl_mail/2,
+	 cpl_log/4,
+	 cpl_is_log_dest/1
 	]).
 
 -include("siprecords.hrl").
@@ -380,7 +392,15 @@ canonify_authusername(Username, Header) when is_list(Username), is_record(Header
 % incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
-incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, siporigin) ->
+incomingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
+								is_record(Request, request) ->
+    true.
+
+% outgoingproxy hooks
+%%%%%%%%%%%%%%%%%%%%%%
+
+outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
+								is_record(Request, request) ->
     true.
 
 % sippipe hooks
@@ -412,4 +432,17 @@ is_acceptable_socket(_Socket, _Dir, _Proto, _Host, _Port, _Module, _Subject) ->
 
 %% Returns : true | false | undefined
 is_tls_equivalent(_Proto, _Host, _Port) ->
+    undefined.
+
+
+%%--------------------------------------------------------------------
+%% See cpl/README
+%%--------------------------------------------------------------------
+cpl_log(_LogName, _Comment, _User, _Request) ->
+    undefined.
+    
+cpl_is_log_dest(_LogName) ->
+    undefined.
+
+cpl_mail(_Mail, _User) ->
     undefined.
