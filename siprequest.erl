@@ -1,5 +1,5 @@
 -module(siprequest).
--export([send_redirect/3, process_register_isauth/3,
+-export([send_redirect/3, process_register_isauth/5,
 	 send_auth_req/4, send_proxyauth_req/4,
 	 send_proxy_request/3, location_prio/1, send_answer/3,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5,
@@ -44,10 +44,10 @@ send_proxy_request(Header, Socket, {Action, Dest, Body}) ->
     logger:log(debug, "send request(~p,~p:~p):~p", [Dest, Host, Port, Message]),
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
 
-process_register_isauth(Header, Socket, {Phone, Location}) ->
+process_register_isauth(Header, Socket, Phone, Auxphones, Location) ->
     logger:log(normal, "REGISTER phone ~p at ~s", [Phone, sipurl:print(Location)]),
     Expire = 
-	case keylist:fetch("Expires", Header) of	
+	case keylist:fetch("Expires", Header) of
 	    [E] ->
 		E;
 	    [] ->
@@ -58,6 +58,13 @@ process_register_isauth(Header, Socket, {Phone, Location}) ->
 			     dynamic,
 			     list_to_integer(Expire) + util:timestamp(),
 			     Location),
+    lists:map(fun (Auxphone) ->
+		      phone:insert_purge_phone(Auxphone, [{priority, 50}],
+					       dynamicaux,
+					       list_to_integer(Expire) + util:timestamp(),
+					       Location)
+	      end, Auxphones),
+    
     send_response(Socket, 200, "OK",
 		  [{"via", keylist:fetch("Via", Header)},
 		   {"From", keylist:fetch("From", Header)},

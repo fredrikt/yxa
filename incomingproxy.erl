@@ -114,11 +114,13 @@ request("REGISTER", URL, Header, Body, Socket) ->
     {_, {Phone, _, _, _, _}} = To,
     [{_, Location}] = Contact,
     case sipauth:can_register(Header, Phone) of
-	true ->
-	    siprequest:process_register_isauth(Header, Socket, {Phone, Location});
-	stale ->
+	{true, Numberlist} ->
+	    logger:log(debug, "numberlist: ~p", [Numberlist]),
+	    Auxphones = Numberlist,
+	    siprequest:process_register_isauth(Header, Socket, Phone, Auxphones, Location);
+	{stale, _} ->
 	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), true);
-	false ->
+	{false, _} ->
 	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), false)
     end;
 
