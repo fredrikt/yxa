@@ -567,23 +567,6 @@ get_client_transaction_pid(Response) when is_record(Response, response) ->
     end.
 
 
-log_time_consumption(T1, T2, Limit1, Limit2, Context) when is_integer(Limit1), is_integer(Limit2),
-							   is_list(Context) ->
-    Diff = timer:now_diff(T2, T1) div 1000,
-    if
-	Diff >= Limit2 ->
-	    logger:log(error, "Transcation layer: Warning: Blocked for ~p ms : ~s",
-		       [Diff, Context]);
-	Diff >= Limit1 ->
-	    logger:log(normal, "Transaction layer: Notice: Blocked for ~p ms : ~s",
-		       [Diff, Context]);
-	Diff >= 15 ->
-	    logger:log(debug, "Transaction layer: Spent ~p ms on activity : ~s",
-		       [Diff, Context]);
-	true ->
-	    true
-    end.
-
 %%--------------------------------------------------------------------
 %%% Interface functions
 %%--------------------------------------------------------------------
