@@ -19,7 +19,10 @@ create() ->
 				{disc_copies, [node()]},
 				{type, bag}]),
     mnesia:create_table(user, [{attributes, record_info(fields, user)},
-			       {disc_copies, [node()]}]).
+			       {disc_copies, [node()]}]),
+    mnesia:create_table(numbers, [{attributes, record_info(fields, numbers)},
+				  {disc_copies, [node()]}]),
+    mnesia:add_table_index(numbers, number).
 
 insert_record(Record) ->
     Fun = fun() ->
