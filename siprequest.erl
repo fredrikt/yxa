@@ -24,6 +24,12 @@
 	 process_route_header/2,
 	 check_proxy_request/1,
 	 make_base64_md5_token/1,
+	 stateless_route_proxy_request/1,
+	 fix_content_length/2,
+	 binary_make_message/3,
+	 proxy_add_via/4,
+	 standardcopy/2,
+	 get_approximate_msgsize/1,
 
 	 test/0
 	]).
@@ -42,16 +48,6 @@
 	]).
 
 %%--------------------------------------------------------------------
-%% Transport layer internal exports - don't call these directly!
-%%--------------------------------------------------------------------
--export([
-	 send_proxy_request/4,
-	 send_proxy_response/2,
-	 send_result/5,
-	 send_result/6
-	 ]).
-
-%%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
 -include("sipsocket.hrl").
@@ -68,121 +64,6 @@
 %%====================================================================
 %% External functions
 %%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function: send_response(Socket, Response)
-%%           Socket   = sipsocket record()
-%%           Response = response record()
-%% Descrip.: Prepare to send a response out on a socket.
-%% Returns : Res = term(),
-%%           {senderror, Reason}
-%%           Reason = string()
-%%--------------------------------------------------------------------
-send_response(Socket, Response) when is_record(Response, response) ->
-    {Status, Reason, Header} = {Response#response.status, Response#response.reason,
-				Response#response.header},
-    case sipheader:topvia(Header) of
-	none ->
-	    logger:log(error, "Can't send response ~p ~s, no Via left.",
-		       [Status, Reason]),
-	    {senderror, "malformed response"};
-	error ->
-	    logger:log(error, "Failed getting top Via out of malformed response ~p ~s",
-		       [Status, Reason]),
-	    {senderror, "malformed response"};
-	TopVia when is_record(TopVia, via) ->
-	    send_response_to(Socket, Response, TopVia)
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: send_response_to(Socket, Response, TopVia)
-%%           Socket   = sipsocket record() | none
-%%           Response = response record()
-%%           Via      = via record()
-%% Descrip.: Send a response out on a socket.
-%% Returns : ok                  |
-%%           {senderror, Reason}
-%%           Reason = string()
-%%--------------------------------------------------------------------
-send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, response), record(TopVia, via) ->
-    {Status, Reason, HeaderIn, Body} = {Response#response.status, Response#response.reason,
-					Response#response.header, Response#response.body},
-    Header = fix_content_length(HeaderIn, Body),
-    BinLine1 = list_to_binary(["SIP/2.0 ", integer_to_list(Status), " ", Reason]),
-    BinMsg = binary_make_message(BinLine1, Header, list_to_binary(Body)),
-    case sipdst:get_response_destination(TopVia) of
-	Dst when is_record(Dst, sipdst) ->
-	    case get_response_socket(DefaultSocket, Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port) of
-		SendSocket when is_record(SendSocket, sipsocket) ->
-		    CPid = SendSocket#sipsocket.pid,
-		    SendRes = sipsocket:send(SendSocket, Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, BinMsg),
-		    %% Do costly list operations _after_ we sent the response, to reduce latency
-		    logger:log(debug, "send response(~p bytes, sent to=~s (using ~p)) :~n~s~n",
-			       [size(BinMsg), sipdst:dst2str(Dst), CPid, binary_to_list(BinMsg)]),
-		    case SendRes of
-			ok ->
-			    ok;
-			{error, E} ->
-			    logger:log(error, "Failed sending response to ~s using socket ~p, error ~p",
-				       [sipdst:dst2str(Dst), SendSocket, E]),
-			    {senderror, E}
-		    end;
-		{error, E} ->
-		    logger:log(error, "Failed to get socket to send response to ~s, error ~p",
-			       [sipdst:dst2str(Dst), E]),
-		    logger:log(debug, "Failed to get socket to send response to ~s, error ~p, response :~n~s~n",
-			       [sipdst:dst2str(Dst), E, binary_to_list(BinMsg)]),
-		    {senderror, "Could not get socket"}
-	    end;
-	_ ->
-	    {senderror, "Failed finding destination"}
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: get_response_socket(DefaultSocket, SendProto, SendToHost,
-%%                               Port)
-%%           DefaultSocket = sipsocket record() | none
-%%           SendProto     = atom(), tcp|tcp6|tls|tls6|udp|udp6
-%%           SendToHost    = string()
-%%           Port          = integer()
-%% Descrip.: Check if DefaultSocket is a working socket, and is of the
-%%           protocol requested (SendProto). If so, return the
-%%           DefaultSocket - otherwise go bother the transport layer
-%%           and try to get a socket useable to communicate with
-%%           SendToHost on port Port using protocol SendProto.
-%% Returns : Socket          |
-%%           {error, Reason}
-%%           Socket = sipsocket record()
-%%           Reason = string()
-%%--------------------------------------------------------------------
-get_response_socket(DefaultSocket, SendProto, SendToHost, Port) when is_integer(Port) ->
-    case sipsocket:is_good_socket(DefaultSocket) of
-	true ->
-	    case DefaultSocket#sipsocket.proto of
-		SendProto ->
-		    logger:log(debug, "Siprequest: Using default socket ~p", [DefaultSocket]),
-		    DefaultSocket;
-		_ ->
-		    logger:log(error, "Siprequest: Default socket provided for sending response is protocol ~p, "
-			       "response should be sent over ~p", [DefaultSocket#sipsocket.proto, SendProto]),
-		    {error, "Supplied socket has wrong protocol"}
-	    end;
-	_ ->
-	    logger:log(debug, "Siprequest: No good socket (~p) provided to send_response_to() -"
-		       " asking transport layer for a ~p socket",
-		       [DefaultSocket, SendProto]),
-	    SocketModule = sipsocket:proto2module(SendProto),
-	    case sipsocket:get_socket(SocketModule, SendProto, SendToHost, Port) of
-		{error, E1} ->
-		    {error, E1};
-		none ->
-		    {error, "no socket provided and get_socket() returned 'none'"};
-		S when is_record(S, sipsocket) ->
-		    logger:log(debug, "Siprequest: Extra debug: Get socket ~p ~p ~p ~p returned socket ~p",
-			       [SocketModule, SendProto, SendToHost, Port, S]),
-		    S
-	    end
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: fix_content_length(Header, Body)
@@ -288,89 +169,52 @@ is_loose_router(Route) when is_record(Route, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_proxy_request(Request)
-%% Descrip.: Prepares a request for proxying. Checks Max-Forwards,
-%%           etc. Not guaranteed to return, might
-%%           throw a siperror if the request should not be proxied.
-%% Returns : {ok, NewHeader, ApproxMsgSize} |
+%% Function: stateless_route_proxy_request(Request)
+%%           Request = request record()
+%% Descrip.: Inspect a request that some Yxa application has found it
+%%           should proxy statelessly. Figure out a single sipdst
+%%           destination for this request (sorry, stateless SIP does
+%%           not handle multiple destinations) and return that
+%%           destination plus a new request (the headers might change
+%%           if we have popped a Route header).
+%% Returns : {ok, Dst, NewRequest} |
 %%           throw {siperror, ...}
+%%           Dst        = sipdst record()
+%%           NewRequest = request record()
 %%--------------------------------------------------------------------
-check_proxy_request(Request) when is_record(Request, request) ->
-    NewHeader1 = proxy_check_maxforwards(Request#request.header),
-    check_valid_proxy_request(Request#request.method, NewHeader1),
-    NewHeader2 = fix_content_length(NewHeader1, Request#request.body),
-    BinLine1 = list_to_binary([Request#request.method, " ", sipurl:print(Request#request.uri), " SIP/2.0"]),
-    BinMsg = binary_make_message(BinLine1, NewHeader2, list_to_binary(Request#request.body)),
-    ViaLen = 92 + length(siprequest:myhostname()),
-    %% The size is _approximate_. The exact size cannot be calculated here
-    %% since it is dependent on the right Request-URI and length of the final
-    %% Via header we insert, not the 92 bytes + hostname _estimate_.
-    ApproxMsgSize = size(BinMsg) + ViaLen,
-    {ok, NewHeader2, ApproxMsgSize}.
+stateless_route_proxy_request(Request) when is_record(Request, request) ->
+    {ok, NewHeader, ApproxMsgSize} = check_proxy_request(Request),
+    case stateless_route_proxy_request2(Request#request{header=NewHeader}, ApproxMsgSize) of
+	{ok, [Dst], NewRequest} ->
+	    {ok, Dst, NewRequest};
+	{ok, [Dst | Rest], NewRequest} ->
+	    logger:log(debug, "Warning: request being forwarded statelessly had more than one destination, "
+		       "ignoring all but the first one :~n~p", [sipdst:debugfriendly([Dst | Rest])]),
+	    {ok, Dst, NewRequest};
+	_ ->
+	    {error, "stateless_route_proxy_request() failed"}
+    end.
 
-
-%%--------------------------------------------------------------------
-%% Function: send_proxy_request(Socket, Request, Dst, ViaParameters)
-%%           SrvTHandler   = thandler record() | none
-%%           Request       = request record()
-%%           Dst           = list() of sipdst record() |
-%%                           sipdst record() |
-%%                           sipurl record()
-%%           ViaParameters = list() of {key, value} tuple()
-%% Descrip.: Prepare for proxying a request. The preparation process
-%%           is basically to get us a list() of sipdst records and
-%%           then calling send_to_available_dst().
-%% Returns : throw()         |
-%%           {error, Reason} |
-%%           Result
-%%           Reason = string()
-%%           Result = term(), result of send_to_available_dst().
-%%--------------------------------------------------------------------
-
-%%
-%% Turn Dst into a list()
-%%
-send_proxy_request(Socket, Request, Dst, ViaParameters) when is_record(Dst, sipdst) ->
-    send_proxy_request(Socket, Request, [Dst], ViaParameters);
-
-%%
-%% Explicit destination(s) provided, just send
-%%
-send_proxy_request(Socket, Request, [Dst | DstT], ViaParameters) 
-  when is_record(Socket, sipsocket); Socket == none, is_record(Request, request), is_record(Dst, sipdst) ->
-    {ok, NewHeader1, _ApproxMsgSize} = check_proxy_request(Request),
-    DstList = [Dst | DstT],
-    logger:log(debug, "Siprequest (transport layer) : Destination list for request is (~p entrys) :~n~p",
-	       [length(DstList), sipdst:debugfriendly(DstList)]),
-    NewRequest = Request#request{header=NewHeader1},
-    send_to_available_dst(DstList, NewRequest, ViaParameters);
-
-%%
-%% Dst is URI - turn it into a list of sipdst records. First check Route header though.
-%% XXX we should remove this now that we are only stateful. The TU or transaction layer
-%% should provide us with destinations.
-send_proxy_request(Socket, Request, URI, ViaParameters)
-  when is_record(Socket, sipsocket); Socket == none, is_record(URI, sipurl) ->
-    {ok, _, ApproxMsgSize} = check_proxy_request(Request),
-    case process_route_header(Request#request.header, URI) of
+%% part of stateless_route_proxy_request/1
+stateless_route_proxy_request2(Request, ApproxMsgSize) ->
+    {Header, URI} = {Request#request.header, Request#request.uri},
+    case process_route_header(Header, URI) of
 	nomatch ->
 	    case sipdst:url_to_dstlist(URI, ApproxMsgSize, URI) of
 		DstList when is_list(DstList) ->
-		    send_proxy_request(Socket, Request, DstList, ViaParameters);
+		    {ok, DstList, Request};
 		Unknown ->
 		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI ~s : ~p",
 			       [sipurl:print(URI), Unknown]),
 		    {error, "Failed resolving destination"}
 	    end;
-	{ok, NewHeaderX, DstURI, ReqURI} when is_record(DstURI, sipurl), is_record(ReqURI, sipurl) ->
-	    %% XXX is it correct to just ditch NewHeaderX or should we stuff it into the Request
-	    %% we send to send_proxy_request()?
+	{ok, NewHeader1, DstURI, ReqURI} when is_record(DstURI, sipurl), is_record(ReqURI, sipurl) ->
 	    logger:log(debug, "Siprequest (transport layer) : Routing request as per the Route header,"
 		       " Destination ~p, Request-URI ~p",
 		       [sipurl:print(DstURI), sipurl:print(ReqURI)]),
 	    case sipdst:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
 		DstList when is_list(DstList) ->
-		    send_proxy_request(Socket, Request, DstList, ViaParameters);
+		    {ok, DstList, Request#request{header=NewHeader1}};
 		Unknown ->
 		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI "
 			       "(from Route header) ~s : ~p", [sipurl:print(URI), Unknown]),
@@ -379,66 +223,38 @@ send_proxy_request(Socket, Request, URI, ViaParameters)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_to_available_dst(DstList, Request, ViaParam)
-%%           DstList       = list() of sipdst record()
-%%           Request       = request record()
-%%           ViaParam      = list() of {key, value} tuple()
-%% Descrip.: Sequentially try to get sockets for, and send request
-%%           to, the destinations listed in DstList.
-%% Returns : {ok, Socket, Branch} |
-%%           {error, Reason}      |
-%%           Socket = sipsocket record(), the socket finally used
-%%           Branch = string(), the branch we put in the Via header
-%%           Reason = string()
-%% Note    : XXX This function should no longer accept a list - we are
-%%           always transaction stateful now!
+%% Function: check_proxy_request(Request)
+%%           Request = request record()
+%% Descrip.: Prepares a request for proxying. Checks Max-Forwards,
+%%           etc. Not guaranteed to return, might throw a siperror if
+%%           the request should not be proxied.
+%% Returns : {ok, NewHeader, ApproxMsgSize} |
+%%           throw {siperror, ...}
 %%--------------------------------------------------------------------
-send_to_available_dst([], Request, _ViaParam) when is_record(Request, request) ->
-    {Method, URI, Header, Body} = {Request#request.method, Request#request.uri,
-				   Request#request.header, Request#request.body},
-    BinLine1 = list_to_binary([Method, " ", sipurl:print(URI), " SIP/2.0"]),
-    BinMsg = binary_make_message(BinLine1, Header, list_to_binary(Body)),
-    Message = binary_to_list(BinMsg),
-    logger:log(debug, "Siprequest (transport layer) : Failed sending request"
-	       " (my Via not added, original URI shown) :~n~s", [Message]),
-    {senderror, "failed"};
-send_to_available_dst([Dst | DstT], Request, ViaParam)
-  when is_record(Dst, sipdst), is_record(Request, request) ->
-    IP = Dst#sipdst.addr,
-    Port = Dst#sipdst.port,
-    Proto = Dst#sipdst.proto,
-    SocketModule = sipsocket:proto2module(Proto),
-    DestStr = sipdst:dst2str(Dst),
-    case sipsocket:get_socket(SocketModule, Proto, IP, Port) of
-	{error, What} ->
-	    logger:log(debug, "Siprequest (transport layer) : Failed to get ~p socket for ~s : ~p",
-		       [Proto, DestStr, What]),
-	    %% try next
-	    send_to_available_dst(DstT, Request, ViaParam);
-	SipSocket when is_record(SipSocket, sipsocket) ->
-	    {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
-					       Request#request.header, Request#request.body},
-	    NewHeader1 = proxy_add_via(Header, OrigURI, ViaParam, Proto),
-	    BinLine1 = list_to_binary([Method, " ", sipurl:print(Dst#sipdst.uri), " SIP/2.0"]),
-	    BinMsg = binary_make_message(BinLine1, NewHeader1, list_to_binary(Body)),
-	    SendRes = sipsocket:send(SipSocket, Proto, IP, Port, BinMsg),
-	    case SendRes of
-		ok ->
-		    logger:log(debug, "Siprequest (transport layer) : sent request(dst=~s) :~n~s~n",
-			       [DestStr, binary_to_list(BinMsg)]),
-		    TopVia = sipheader:topvia(NewHeader1),
-		    UsedBranch = lists:flatten(sipheader:get_via_branch_full(TopVia)),
-		    {ok, SipSocket, UsedBranch};
-		{error, E} ->
-		    logger:log(debug, "Siprequest (transport layer) : Failed sending message to ~p:~s:~p, error ~p",
-			       [Proto, IP, Port, E]),
-		    send_to_available_dst(DstT, Request, ViaParam)
-	    end
-    end;
-send_to_available_dst([Dst | DstT], Request, ViaParam) ->
-    logger:log(error, "Siprequest (transport layer) : send_to_available_dst called with illegal dst ~p", [Dst]),
-    send_to_available_dst(DstT, Request, ViaParam).
+check_proxy_request(Request) when is_record(Request, request) ->
+    NewHeader1 = proxy_check_maxforwards(Request#request.header),
+    check_valid_proxy_request(Request#request.method, NewHeader1),
+    NewHeader2 = fix_content_length(NewHeader1, Request#request.body),
+    ApproxMsgSize = get_approximate_msgsize(Request#request{header=NewHeader2}),
+    {ok, NewHeader2, ApproxMsgSize}.
 
+%%--------------------------------------------------------------------
+%% Function: get_approximate_msgsize(Request)
+%%           Request = request record()
+%% Descrip.: Approximate how big a request will be when we send it.
+%%           We must know this when determining if it is OK to send
+%%           it to a UDP destination or not.
+%% Returns : Size = integer()
+%%--------------------------------------------------------------------
+get_approximate_msgsize(Request) when is_record(Request, request) ->
+    BinLine1 = list_to_binary([Request#request.method, " ", sipurl:print(Request#request.uri), " SIP/2.0"]),
+    BinMsg = binary_make_message(BinLine1, Request#request.header, list_to_binary(Request#request.body)),
+    ViaLen = 92 + length(siprequest:myhostname()),
+    %% The size is _approximate_. The exact size cannot be calculated here
+    %% since it is dependent on the right Request-URI and length of the final
+    %% Via header we insert, not the 92 bytes + hostname _estimate_.
+    ApproxMsgSize = size(BinMsg) + ViaLen,
+    ApproxMsgSize.
 
 %%--------------------------------------------------------------------
 %% Function: proxy_check_maxforwards(Header)
@@ -844,14 +660,14 @@ send_auth_req(Header, Socket, Auth, Stale) ->
 		     sipheader:auth_print(Auth, Stale)}],
     Response = #response{status=401, reason="Authentication Required",
 			 header=standardcopy(Header, ExtraHeaders), body=""},
-    send_response(Socket, Response).
+    transportlayer:send_response(Socket, Response).
 
 send_proxyauth_req(Header, Socket, Auth, Stale) ->
     ExtraHeaders = [{"Proxy-Authenticate",
 		     sipheader:auth_print(Auth, Stale)}],
     Response = #response{status=407, reason="Proxy Authentication Required",
                          header=standardcopy(Header, ExtraHeaders), body=""},
-    send_response(Socket, Response).
+    transportlayer:send_response(Socket, Response).
 
 send_redirect(Location, Header, Socket) when is_record(Location, sipurl) ->
     Contact = contact:new(none, Location, []),
@@ -859,18 +675,18 @@ send_redirect(Location, Header, Socket) when is_record(Location, sipurl) ->
 		     sipheader:contact_print([Contact])}],
     Response = #response{status=302, reason="Moved Temporarily",
 			 header=standardcopy(Header, ExtraHeaders), body=""},
-    send_response(Socket, Response).
+    transportlayer:send_response(Socket, Response).
 
 send_notfound(Header, Socket) ->
     Response = #response{status=404, reason="Not found",
 			 header=standardcopy(Header, []), body=""},
-    send_response(Socket, Response).
+    transportlayer:send_response(Socket, Response).
 
 send_notavail(Header, Socket) ->
     ExtraHeaders = [{"Retry-After", ["180"]}],
     Response = #response{status=480, reason="Temporarily unavailable",
                          header=standardcopy(Header, ExtraHeaders), body=""},
-    send_response(Socket, Response).
+    transportlayer:send_response(Socket, Response).
 
 send_answer(Header, Socket, Body) ->
     %% Remember to add a linefeed (\n) to the end of Body
@@ -878,43 +694,7 @@ send_answer(Header, Socket, Body) ->
 		    {"Content-Length", [integer_to_list(length(Body))]}],
     Response = #response{status=200, reason="OK",
 			 header=standardcopy(Header, ExtraHeaders), body=Body},
-    send_response(Socket, Response).
-
-send_result(RequestHeader, Socket, Body, Status, Reason) ->
-    Response = #response{status=Status, reason=Reason,
-			 header=standardcopy(RequestHeader, []), body=Body},
-    send_response(Socket, Response).
-
-send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders) ->
-    Response = #response{status=Status, reason=Reason,
-			 header=standardcopy(RequestHeader, ExtraHeaders), body=Body},
-    send_response(Socket, Response).
-
-%%--------------------------------------------------------------------
-%% Function: send_proxy_response(Socket, Response)
-%%           Socket   = sipsocket record() | none
-%%           Response = response record()
-%% Descrip.: Extract the top Via from Response, and send this response
-%%           to that location (destination).
-%% Returns : {error, invalid_Via} |
-%%           SendResult
-%%           SendResult = term(), result of send_response()
-%%--------------------------------------------------------------------
-send_proxy_response(Socket, Response) when is_record(Response, response) ->
-    case sipheader:via(Response#response.header) of
-	[_Self] ->
-	    logger:log(error,
-		       "Can't proxy response ~p ~s because it contains just one or less Via and that should be mine!",
-		       [Response#response.status, Response#response.reason]),
-	    {error, invalid_Via};
-	[_Self | Via] ->
-	    %% Remove Via matching me (XXX should check that it does)
-	    NewHeader = keylist:set("Via", sipheader:via_print(Via), Response#response.header),
-	    %% Now look for the correct "server transaction" to use when sending this response upstreams
-	    [_NextVia | _] = Via,
-	    NewResponse = Response#response{header=NewHeader},
-	    send_response(Socket, NewResponse)
-    end.
+    transportlayer:send_response(Socket, Response).
 
 %%--------------------------------------------------------------------
 %% Function: make_response(Status, Reason, Body, ExtraHeaders,
