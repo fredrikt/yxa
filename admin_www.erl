@@ -23,7 +23,7 @@
 -include("database_regexproute.hrl").
 -include("siprecords.hrl").
 
-start(normal, Args) ->
+start(normal, _Args) ->
     Pid = sipserver:safe_spawn(admin_www, start, [sipserver:get_env(httpd_config)]),
     {ok, Pid}.
 
@@ -69,7 +69,7 @@ username_to_cn(Username) ->
 	    "&nbsp;";
 	String when list(String) ->
 	    String;
-	E ->
+	_ ->
 	    "error"
     end.
 
@@ -85,24 +85,24 @@ print_flags([Key]) ->
 print_flags([Key | Rest]) ->
     [print_flag(Key) | print_flags(Rest)].
 
-print_one_regexp(Regexp, Flags, Class, Expire, Address) when list(Regexp), record(Address, sipurl) ->
+print_one_regexp(RR) when is_record(RR, regexproute) ->
     ["<tr><td>",
-     Regexp,
+     RR#regexproute.regexp,
      "</td><td>",
-     print_flags(Flags),
+     print_flags(RR#regexproute.flags),
      "</td><td>",
-     atom_to_list(Class),
+     atom_to_list(RR#regexproute.class),
      "</td><td>",
-     util:sec_to_date(Expire),
+     util:sec_to_date(RR#regexproute.expire),
      "</td><td>",
-     sipurl:print(Address),
+     RR#regexproute.address,
      "</td><td>",
-     case Class of
+     case RR#regexproute.class of
 	 permanent ->
 	     [
 	      "<form action=\"admin_www%3Adel_regexp\" method=post>\n",
 	      "<input type=\"hidden\" name=\"number\" value=\"",
-	      Regexp, "\">\n",
+	      RR#regexproute.regexp, "\">\n",
 	      "<input type=\"submit\" value=\"Ta bort\">\n",
 	      "</form>\n"
 	     ];
@@ -199,16 +199,18 @@ print_one_forward(none) ->
 
 print_phones([]) -> [];
 
-print_phones([{regexproute, Regexp, Flags, Class, Expire, Address} | List]) ->
-    [print_one_regexp(Regexp, Flags, Class, Expire, Address) | print_phones(List)];
+print_phones([H | List]) when is_record(H, regexproute) ->
+    [print_one_regexp(H) | print_phones(List)];
 
-print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
-    print_one_phone(Number, Flags, Class, Expire, Address) ++ print_phones(List).
+print_phones([H | List]) when is_record(H, phone) ->
+    print_one_phone(H#phone.number, H#phone.flags, H#phone.class,
+		    H#phone.expire, H#phone.address) ++ print_phones(List).
 
 print_phones_list([]) -> [];
 
-print_phones_list([{Number, {Address, Flags, Class, Expire}} | List]) ->
-    print_one_phone(Number, Flags, Class, Expire, Address) ++ print_phones_list(List).
+print_phones_list([{Number, H} | List]) when is_record(H, siplocationdb_e) ->
+    print_one_phone(Number, H#siplocationdb_e.flags, H#siplocationdb_e.class,
+		    H#siplocationdb_e.expire, H#siplocationdb_e.address) ++ print_phones_list(List).
 
 print_classes([]) ->
     "&nbsp;";
@@ -286,7 +288,7 @@ user_exists(User) ->
     case phone:get_user(User) of
 	{atomic, []} ->
 	    false;
-	{atomic, [A]} ->
+	{atomic, [_]} ->
 	    true;
 	{aborted, _} ->
 	    false
@@ -306,7 +308,7 @@ check_auth(Env, WantAdmin) ->
 	    {error, [header(unauth, false),
 		     "Not authorized\r\n"
 		    ]};
-	{value, {Key, Value}} ->
+	{value, {_Key, Value}} ->
 	    case check_auth2(Value, Env, WantAdmin) of
 		true ->
 		    {ok};
@@ -323,7 +325,7 @@ check_auth_user(Env, User) ->
 	    {error, [header(unauth, false),
 		     "Not authorized\r\n"
 		    ]};
-	{value, {Key, Value}} ->
+	{value, {_Key, Value}} ->
 	    case check_auth_user2(Value, Env, User) of
 		true ->
 		    {ok};
@@ -344,7 +346,7 @@ check_auth2(Header, Env, WantAdmin) ->
     Timestamp = hex:from(Opaque),
     Now = util:timestamp(),
     User = dict:fetch("username", Authorization),
-    {Password, Flags, Classes} = get_pass(User),
+    {Password, Flags, _Classes} = get_pass(User),
     Nonce2 = sipauth:get_nonce(Opaque),
     IsAdmin = lists:member(admin, Flags),
     Response2 = sipauth:get_response(Nonce2, Method,
@@ -362,7 +364,7 @@ check_auth2(Header, Env, WantAdmin) ->
 		    if
 			IsAdmin == true ->
 			    true;
-					  true ->
+			true ->
 			    false
 		    end;
 		true ->
@@ -382,9 +384,8 @@ check_auth_user2(Header, Env, InUser) ->
     Timestamp = hex:from(Opaque),
     Now = util:timestamp(),
     User = dict:fetch("username", Authorization),
-    {Password, Flags, Classes} = get_pass(User),
+    {Password, _Flags, _Classes} = get_pass(User),
     Nonce2 = sipauth:get_nonce(Opaque),
-    IsAdmin = lists:member(admin, Flags),
     Response2 = sipauth:get_response(Nonce2, Method,
 				     URI,
 				     User, Password),
@@ -437,7 +438,7 @@ indexurl_html() ->
 userurl_html() ->
     "<a href=\"" ++ userurl() ++ "\">Tillbaka till anv&auml;ndarlistan</a>".
 
-list_users(Env, Input) ->
+list_users(Env, _Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
 	    Message;
@@ -472,7 +473,7 @@ list_users(Env, Input) ->
 	    ]
     end.
 
-list_numbers(Env, Input) ->
+list_numbers(Env, _Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
 	    Message;
@@ -499,7 +500,7 @@ list_numbers(Env, Input) ->
 	    ]
     end.
 
-list_phones(Env, Input) ->
+list_phones(Env, _Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
 	    Message;
@@ -551,7 +552,7 @@ list_phones(Env, Input) ->
 	    ]
     end.
 
-parse_classes(String) ->
+parse_classes(_String) ->
     [internal].
 
 add_user(Env, Input) ->
@@ -623,20 +624,29 @@ add_regexp(Env, Input) ->
 	    Numberfind = dict:find("number", Args),
 	    Priorityfind = dict:find("priority", Args),
 	    Addressfind = dict:find("address", Args),
-	    case {Numberfind, Priorityfind, Addressfind} of
-		{error, _, _} ->
+	    ValidAddr = case Addressfind of
+			    {ok, Address1} ->
+				Parsed = sipurl:parse(Address1),
+				is_record(Parsed, sipurl);
+			    _ ->
+				false
+			end,
+	    case {Numberfind, Priorityfind, Addressfind, ValidAddr} of
+		{error, _, _, _} ->
 		    [header(ok), "Du m&aring;ste ange en regexp"];
-		{_, error, _} ->
+		{_, error, _, _} ->
 		    [header(ok), "Du m&aring;ste ange prioritet"];
-		{_, _, error} ->
+		{_, _, error, _} ->
 		    [header(ok), "Du m&aring;ste ange en adress"];
-		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
+		{_, _, _, false} ->
+		    [header(ok), "Du m&aring;ste ange en tolkbar adress"];
+		{{ok, Number}, {ok, Priority}, {ok, Address}, true} ->
 		    database_regexproute:insert(Number,
 						[{priority,
 						  list_to_integer(Priority)}],
 						permanent,
 						never,
-						sipurl:parse(Address)),
+						Address),
 		    [header(redirect, phonesurl())]
 	    end
     end.
@@ -700,10 +710,10 @@ change_user_form(Env, Input) ->
 		error ->
 		    [header(ok), "Felaktigt anv&auml;ndarnamn"];
 		{ok, User} ->
-		    {Password, Flags, Classes} = get_pass(User),
+		    {_Password, _Flags, Classes} = get_pass(User),
 		    Numberlist = get_numbers(User),
 		    Phonelist = lists:foldl(fun (A, AccIn) ->
-						    {atomic, List} = phone:get_phone(A),
+						    {ok, List} = phone:get_phone(A),
 						    lists:append(AccIn, lists:map(fun (I) ->
 											  {A, I}
 										  end, List))
@@ -768,9 +778,9 @@ change_user_form(Env, Input) ->
 
 print_disabled(none, never) ->
     "disabled";
-print_disabled({Forwards, 0, Localring}, always) ->
+print_disabled({_Forwards, 0, _Localring}, always) ->
     "disabled";
-print_disabled({Forwards, Timeout, Localring}, noanswer) when Timeout > 0 ->
+print_disabled({_Forwards, Timeout, _Localring}, noanswer) when Timeout > 0 ->
     "disabled";
 print_disabled(_, _) ->
     "".
@@ -856,9 +866,9 @@ show_user_front(User, Numberlist) ->
 
 forward_to_typestring(none) ->
     "never";
-forward_to_typestring({Forwards, 0, Localring}) ->
+forward_to_typestring({_Forwards, 0, _Localring}) ->
     "always";
-forward_to_typestring({Forwards, _, Localring}) ->
+forward_to_typestring({_Forwards, _Timeout, _Localring}) ->
     "noanswer".
 
 show_user_number(User, Number, "never") ->
@@ -974,7 +984,7 @@ httparg(Env, Input) ->
 		{value, {_, Query}} ->
 		    sipheader:httparg(Query)
 	    end;
-	{value, {Key, "POST"}} ->
+	{value, {_Key, "POST"}} ->
 	    sipheader:httparg(Input)
     end.
 
@@ -986,7 +996,6 @@ show_user(Env, Input) ->
 	{error, Message} ->
 	    Message;
 	{ok} ->
-	    {Password, Flags, Classes} = get_pass(User),
 	    Numberlist = get_numbers(User),
 	    case dict:find("number", Args) of
 		error ->
@@ -1029,8 +1038,6 @@ set_forward(Env, Input) ->
 	{error, Message} ->
 	    Message;
 	{ok} ->
-	    {Password, Flags, Classes} = get_pass(User),
-	    
 	    Numberlist = get_numbers(User),
 	    
 	    true = lists:member(Number, Numberlist),
@@ -1050,7 +1057,7 @@ set_forward(Env, Input) ->
     end.
 
 set_admin(User, "true") ->
-    {Password, Flags, Classes} = get_pass(User),
+    {_Password, Flags, _Classes} = get_pass(User),
     case lists:member(admin, Flags) of
 	false ->
 	    phone:set_user_flags(User, [admin | Flags]);
@@ -1058,7 +1065,7 @@ set_admin(User, "true") ->
 	    true
     end;
 set_admin(User, "false") ->
-    {Password, Flags, Classes} = get_pass(User),
+    {_Password, Flags, _Classes} = get_pass(User),
     case lists:member(admin, Flags) of
 	false ->
 	    true;
@@ -1070,7 +1077,7 @@ cookie() ->
     {ok, Data} = file:read_file("www-cookie"),
     binary_to_list(Data).
 
-add_user_with_cookie(Env, Input) ->
+add_user_with_cookie(_Env, Input) ->
     Args = sipheader:httparg(Input),
     Userfind = dict:find("user", Args),
     Passwordfind = dict:find("password", Args),
@@ -1127,7 +1134,7 @@ change_user(Env, Input) ->
 findclasses(Args) ->
     List = lists:filter(fun (A) ->
 				case A of
-				    {"class_" ++ Class, _} ->
+				    {"class_" ++ _Class, _} ->
 					true;
 				    _ ->
 					false
@@ -1159,7 +1166,7 @@ change_classes(Env, Input) ->
 	    end
     end.
 
-wml(Env, Input) ->
+wml(Env, _Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
 	    Message;
