@@ -10,7 +10,9 @@
 %%--------------------------------------------------------------------
 -export([
 	 run/0,
-	 run/1
+	 run/1,
+
+	 run_cover/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -48,15 +50,19 @@
 		       tcp_receiver,
 		       targetlist,
 		       util,
-		       dnsutil
+		       dnsutil,
+		       siplocation,
+		       lookup
 		      ]).
 
 %%====================================================================
 %% External functions
 %%====================================================================
 
+
 %%--------------------------------------------------------------------
-%% Function: run(Mode)
+%% Function: run([Mode])
+%%           run()
 %%           Mode = erl | shell
 %% Descrip.: Test all modules listed in ModulesToAutoTest and print
 %%           the result. If Mode is 'shell' we end with halting the
@@ -152,6 +158,39 @@ test_module(Module) ->
     end.
 
 
+%%--------------------------------------------------------------------
+%% Function: run_cover([Mode])
+%%           Mode = erl | shell
+%% Descrip.: Run our tests after cover-compiling the modules. Show
+%%           some numbers about the coverage ratio before exiting.
+%% Returns : -
+%%--------------------------------------------------------------------
+run_cover([Mode]) ->
+    io:format("Cover-compiling ~p modules...~n", [length(?TEST_MODULES)]),
+
+    %% cover-compile all our test modules
+    lists:map(fun(Module) ->
+		      cover:compile_beam(Module)
+	      end, ?TEST_MODULES),
+
+    %% Run the tests
+    Status = run([erl]),
+
+    %% Calculate coverage
+    {ok, CoveredLines, TotalLines} = aggregate_coverage(?TEST_MODULES),
+    Percent = (CoveredLines / TotalLines * 100),
+
+    io:format("~nTests covered ~p out of ~p lines of code in ~p modules (~p%)~n~n",
+	      [CoveredLines, TotalLines, length(?TEST_MODULES), Percent]),
+
+    if
+	Status == error, Mode == shell -> erlang:halt(1);
+	Status == ok, Mode == shell -> erlang:halt(0);
+	true ->
+	    Status
+    end.
+
+
 %%====================================================================
 %% Behaviour functions
 %%====================================================================
@@ -183,7 +222,21 @@ fake_logger_loop() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: aggregate_coverage(Modules)
+%%           Modules = list() of atom(), list of module names
+%% Descrip.: Aggregate cover analysis data for Modules.
+%% Returns : {ok, CoveredLines, TotalLines}
+%%           CoveredLines = integer(), code lines covered in Modules
+%%           TotalLines   = integer(), total lines of code in Modules
 %%--------------------------------------------------------------------
+aggregate_coverage(Modules) ->
+    aggregate_coverage2(Modules, 0, 0).
+
+aggregate_coverage2([H | T], CoveredLines, TotalLines) ->
+    {ok, {_Module, {Cov, NotCov}}} = cover:analyse(H, coverage, module),
+    aggregate_coverage2(T, CoveredLines + Cov, TotalLines + Cov + NotCov);
+aggregate_coverage2([], CoveredLines, TotalLines) ->
+    {ok, CoveredLines, TotalLines}.
+
+
+
