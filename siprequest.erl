@@ -1,23 +1,32 @@
 -module(siprequest).
--export([send_redirect/3,
-	 send_auth_req/4, send_proxyauth_req/4,
-	 send_proxy_request/3, send_answer/3,
-	 send_notavail/2, send_notfound/2, send_proxy_response/5,
-	 send_result/5, send_result/6, make_answerheader/1,
-	 add_record_route/1, 
-	 add_record_route/3, myhostname/0, default_port/1]).
+-export([send_redirect/3, send_auth_req/4, send_proxyauth_req/4,
+	 send_proxy_request/4, send_answer/3, send_notavail/2,
+	 send_notfound/2, send_proxy_response/5, send_result/5,
+	 send_result/6, make_answerheader/1, add_record_route/1,
+	 add_record_route/3, myhostname/0, default_port/1,
+	 get_loop_cookie/2, generate_branch/0, url_to_dstlist/2]).
 
 send_response(Socket, Code, Text, Header, Body) ->
-    Via = sipheader:via(keylist:fetch("Via", Header)),
-    [Dest | _] = Via,
-    send_response_to(Socket, Code, Text, Dest, Header, Body).
+    case sipheader:topvia(Header) of
+	none ->
+	    logger:log(error, "Can't send response ~p ~s, no Via left.",
+			[Code, Text]),
+	    {senderror, "malformed response"};
+	error ->
+	    logger:log(error, "Failed getting top Via out of malformed response ~p ~s",
+			[Code, Text]),
+	    {senderror, "malformed response"};
+	TopVia ->
+	    send_response_to(Socket, Code, Text, TopVia, Header, Body)
+    end.
 
-send_response_to(Socket, Code, Text, Dest, Header, Body) ->
+send_response_to(DefaultSocket, Code, Text, Dest, HeaderIn, Body) ->
     Line1 = "SIP/2.0 " ++ integer_to_list(Code) ++ " " ++ Text,
+    Header = fix_content_length(HeaderIn, Body),
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
-    {Protocol, {Host, Port}, Parameters} = Dest,
-    PortInt = list_to_integer(default_port(Port)),
-    SendToHost = case dict:find("received", sipheader:param_to_dict(Parameters)) of
+    {Protocol, {Host, DestPort}, Parameters} = Dest,
+    ParamDict = sipheader:param_to_dict(Parameters),
+    SendToHost = case dict:find("received", ParamDict) of
 	{ok, Received} ->
 	    case regexp:first_match(Received, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") of
 		{match, _, _} ->
@@ -29,15 +38,47 @@ send_response_to(Socket, Code, Text, Dest, Header, Body) ->
 	Res ->
 	    Host
     end,
-    logger:log(debug, "send response(~p, send to=~p:~p) :~n~s~n", [Dest, SendToHost, default_port(Port), Message]),
-    case gen_udp:send(Socket, SendToHost, PortInt, Message) of
-	ok ->
-	    ok;
+    {Port, PortInt} = case dict:find("rport", ParamDict) of
+	{ok, []} ->
+	    % This must be an error response generated before the rport fix-up. Ignore rport.
+	    {DestPort, list_to_integer(default_port(DestPort))};
+	{ok, Rport} ->
+	    {Rport, list_to_integer(Rport)};
+	_ ->
+	    {DestPort, list_to_integer(default_port(DestPort))}
+    end,
+    SendSocket = case DefaultSocket of
+	{_, _, _} ->
+	    DefaultSocket;
+	_ ->
+	    case sipsocket:get_socket(sipsocket:via2sipsocketprotocol(Protocol), SendToHost,
+					   PortInt, nevermatch) of
+		none ->
+		    {error, "no socket provided and get_socket() returned 'none'"};
+		S ->
+		    S
+	    end
+    end,
+    case SendSocket of
+	{SocketProto, CPid, _} ->
+	    logger:log(debug, "send response(~p, send to=~s:~s:~p (using ~p)) :~n~s~n",
+    			[Dest, sipsocket:sipproto2str(SocketProto), SendToHost, PortInt, CPid, Message]),
+	    case sipsocket:send(SendSocket, SendToHost, PortInt, Message) of
+		ok ->
+		    ok;
+		{error, E} ->
+		    logger:log(error, "Failed sending response to ~p:~p using socket ~p, error ~p",
+				[SendToHost, PortInt, SendSocket, E]),
+		    {senderror, E}
+	    end;
 	{error, E} ->
-	    logger:log(error, "Failed sending response to ~p:~p, error ~p",
-			[SendToHost, PortInt, E]),
-	    {senderror, E}
+	    logger:log(error, "Failed to get socket to send response to ~p:~p, error ~p, response :~n~s~n",
+			[SendToHost, PortInt, E, Message]),
+	    {senderror, "Could not get socket"}
     end.
+
+fix_content_length(Header, Body) ->
+    keylist:set("Content-Length", [integer_to_list(length(Body))], Header).
 
 default_port(none) ->
     "5060";
@@ -46,39 +87,97 @@ default_port(Port) when integer(Port) ->
 default_port(Port) ->
     Port.
 
-url_to_hostport({User, Pass, InHost, InPort, Parameters}) ->
+url_to_dstlist(URL, ApproxMsgSize) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    case regexp:first_match(Host, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") of
+	{match, _, _} ->
+	    logger:log(debug, "dns resolver: ~p is an IP address, not performing SRV lookup", [Host]),
+	    % RFC3263 4.1 says we SHOULD use UDP for sip: and TCP for sips: when target is IP
+	    % and no transport is indicated in the parameters
+	    ParamDict = sipheader:param_to_dict(Parameters),
+	    Transport = case dict:find("transport", ParamDict) of
+		error ->
+		    [{sipsocket_udp, Host, default_port(Port)}];
+		{ok, "tcp"} ->
+	    	    [{sipsocket_tcp, Host, default_port(Port)}];
+	    	{ok, Proto} ->
+		    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized, defaulting to UDP", [Proto]),
+		    [{sipsocket_udp, Host, default_port(Port)}]
+	    end;
+	_ ->
+	    url_to_dstlist_not_ip(URL, ApproxMsgSize)
+    end.
+
+url_to_dstlist_not_ip(URL, ApproxMsgSize) ->
+    URL = {User, Pass, InHost, InPort, Parameters} = URL,
     case dnsutil:siplookup(InHost) of
-	{error, nxdomain} ->
-	    dnsutil:get_ip_port(InHost, default_port(InPort));
+	[{error, nxdomain} | _] ->
+	    host_port_to_dstlist(InHost, InPort, ApproxMsgSize);
+	[{error, What} | _] ->
+	    % If first element returned from siplookup is an error then they all are.
+	    {error, What};
+	none ->
+	    host_port_to_dstlist(InHost, InPort, ApproxMsgSize);
+	DstList ->
+	    format_dst_list(InHost, InPort, DstList)
+    end.
+
+host_port_to_dstlist(InHost, InPort, ApproxMsgSize) ->
+    % RFC3263 4.1 says we SHOULD use UDP if port is explicitly provided
+    % except if other things (such as packet > 1300 bytes) suggests use
+    % of other transport
+    case dnsutil:get_ip_port(InHost, default_port(InPort)) of
 	{error, What} ->
 	    {error, What};
-	{Host, Port} ->
-	%    InPortInt = list_to_integer(default_port(InPort)),
-	%    if
-	%	Port /= InPortInt ->
-	%	    logger:log(debug, "Warning: When looking up ~p in DNS, port ~p became port ~p",
-	%	    		[InHost, InPortInt, Port]);		
-	%	true -> true
-	%    end,
-	    UsePort = case InPort of
+	{IP, DNSport} ->
+	    case InPort of
 		none ->
-		    integer_to_list(Port);
-		PortInt when integer(InPort) ->
-		    integer_to_list(InPort);
-		PortStr when list(InPort) ->
-		    InPort
-	    end,
-	    DNSPortList = integer_to_list(Port),
-	    if
-		UsePort /= DNSPortList ->
-		    logger:log(debug, "Warning: ~p is specified to use port ~s in DNS, but I'm going to use the supplied port ~s instead",
-		    		[InHost, DNSPortList, UsePort]);		
-		true -> true
-	    end,
-	    dnsutil:get_ip_port(Host, UsePort);
-	none ->
-	    dnsutil:get_ip_port(InHost, default_port(InPort))
+		    logger:log(debug, "Warning: ~p has no SRV records in DNS, defaulting to TCP and then UDP port ~p",
+				[IP, DNSport]),
+		    [{sipsocket_tcp, IP, DNSport}, {sipsocket_udp, IP, DNSport}];
+		_ ->
+		    if
+			ApproxMsgSize > 1200 ->
+			    logger:log(debug, "Warning: ~p has no SRV records in DNS, and an explicit port was given but the message size is > 1200 bytes. Try TCP and then UDP port ~p",
+					[IP, DNSport]),
+			    [{sipsocket_tcp, IP, DNSport}, {sipsocket_udp, IP, DNSport}];
+			true ->
+			    logger:log(debug, "Warning: ~p has no SRV records in DNS, but an explicit port was given. Defaulting to UDP port ~p",
+					[IP, DNSport]),
+			    [{sipsocket_udp, IP, DNSport}]
+		    end
+	    end
     end.
+
+format_dst_list(InHost, InPort, DstList) ->
+    format_dst_list(InHost, InPort, DstList, []).
+
+format_dst_list(InHost, InPort, [], Res) ->
+    Res;
+format_dst_list(InHost, InPort, [{SipProto, Host, Port} | T], Res) ->
+    UsePort = case InPort of
+	none ->
+	    integer_to_list(Port);
+	PortInt when integer(InPort) ->
+	    integer_to_list(InPort);
+	PortStr when list(InPort) ->
+	    InPort
+    end,
+    DNSPortList = integer_to_list(Port),
+    if
+	UsePort /= DNSPortList ->
+	    logger:log(debug, "Warning: ~p is specified to use port ~s in DNS, but I'm going to use the supplied port ~s instead",
+	    		[InHost, DNSPortList, UsePort]);		
+	true -> true
+    end,
+    {OutHost, OutPort} = dnsutil:get_ip_port(Host, UsePort),
+    format_dst_list(InHost, InPort, T, lists:append(Res, [{SipProto, OutHost, OutPort}]));
+format_dst_list(InHost, InPort, [{error, What} | T], Res) ->
+    format_dst_list(InHost, InPort, T, Res);
+format_dst_list(InHost, InPort, [H | T], Res) ->
+    logger:log(debug, "Warning: Unrecognized element returned from dnsutil:siplookup() on host ~p : ~p",
+		[InHost, H]),
+    format_dst_list(InHost, InPort, T, Res).
 
 rewrite_route(Header, URI) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
@@ -111,15 +210,71 @@ is_loose_router(Route) ->
 	    true;
 	_ ->
 	    false
-    end.	    
+    end.
 
-send_proxy_request(Header, Socket, {Method, ReqURI, Body, Parameters}) ->
+send_proxy_request(OrigSocket, Request, DstURI, Parameters) ->
+    {Method, OrigURI, Header, Body} = Request,
+    NewHeader1 = proxy_check_maxforwards(Header),
+    check_valid_proxy_request(Method, NewHeader1),
+    {NewHeader2, NewDest, NewURI} = rewrite_route(NewHeader1, DstURI),
+    Line1 = Method ++ " " ++ sipurl:print(NewURI) ++ " SIP/2.0",
+    NewHeader = fix_content_length(NewHeader2, Body),
+    ApproxMsgSize = length(Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader) ++ "\r\n" ++ Body),
+    case url_to_dstlist(NewDest, ApproxMsgSize) of
+	{error, nxdomain} ->
+	    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN)", [NewDest]),
+	    siprequest:send_result(Header, OrigSocket, "", 604, "Does Not Exist Anywhere");
+	{error, What} ->
+	    logger:log(normal, "Could not resolve destination ~p (~p)", [NewDest, What]),
+	    siprequest:send_result(Header, OrigSocket, "", 500, "Could not resolve destination");
+	DstList when list (DstList) ->
+	    logger:log(debug, "Siprequest: Destination list for ~s is :~n~p",
+			[sipurl:print(NewDest), DstList]),
+	    NewRequest = {Method, NewDest, NewHeader, Body},
+	    TransactionId = sipheader:get_server_transaction_id(NewRequest),
+	    send_to_available_dst(sipurl:print(NewDest), DstList, TransactionId, Line1,
+	    			  NewRequest, Parameters, OrigURI, OrigSocket)
+    end.
+
+send_to_available_dst(DestStr, [], TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket) ->
+    {Method, URI, Header, Body} = Request,
+    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
+    logger:log(debug, "Failed to find destination for request (my Via not added) :~n~s", [Message]),
+    logger:log(error, "Failed to find destination for request ~s ~s", [Method, DestStr]),
+    {senderror, "failed"};
+send_to_available_dst(DestStr, [Dst | T], TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket) ->
+    {Method, URI, Header, Body} = Request,
+    {SipProto, IP, Port} = Dst,
+    PortInt = list_to_integer(Port),
+    logger:log(debug, "FREDRIK: get_socket() PROTO ~p IP ~p PORT ~p", [SipProto, IP, PortInt]),
+    case sipsocket:get_socket(SipProto, IP, PortInt, nevermatch) of
+	{error, What} ->
+	    logger:log(debug, "Failed to get ~p socket (~s:~p) for ~s : ~p", [SipProto, IP, PortInt, DestStr, What]),
+	    % try next
+	    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket);
+	Socket ->
+	    NewHeader1 = proxy_add_via(Header, OrigURI, Parameters, SipProto, OrigSocket),
+	    Message = Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader1) ++ "\r\n" ++ Body,
+	    {SocketProto, _, _} = Socket,
+	    case sipsocket:send(Socket, IP, PortInt, Message) of
+		ok ->
+		    logger:log(debug, "sent request(~p, sent to=~s:~s:~p) :~n~s~n",
+				[DestStr, sipsocket:sipproto2str(SocketProto), IP, PortInt, Message]),
+		    ok;
+		{error, E} ->
+		    logger:log(debug, "Failed sending message to ~s:~s:~p, error ~p",
+				[sipsocket:sipproto2str(SocketProto), IP, PortInt, E]),
+		    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket)
+	    end
+    end.
+
+proxy_check_maxforwards(Header) ->
     MaxForwards =
 	case keylist:fetch("Max-Forwards", Header) of
 	    [M] ->
-		lists:min([255, list_to_integer(M) - 1]);
+		lists:min([sipserver:get_env(max_max_forwards, 255), list_to_integer(M) - 1]);
 	    [] ->
-		70
+		sipserver:get_env(default_max_forwards, 70)
 	end,
     logger:log(debug, "Max-Forwards is ~p", [MaxForwards]),
     if
@@ -127,37 +282,87 @@ send_proxy_request(Header, Socket, {Method, ReqURI, Body, Parameters}) ->
 	    logger:log(normal, "Not proxying request with Max-Forwards < 1"),
 	    throw({siperror, 483, "Too Many Hops"});
 	true ->
-	    true
-    end,
-    check_valid_proxy_request(Method, Header),
-    ViaHostname = myhostname(),
-    Viaadd = sipheader:via_print([{"SIP/2.0/UDP",
-				     {ViaHostname,
-				      default_port(sipserver:get_env(listenport, none))},
-				     Parameters}]),
-    Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
-    {Keylist3, NewDest, NewURI} = rewrite_route(Keylist2, ReqURI),
-    Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
-    Line1 = Method ++ " " ++ sipurl:print(NewURI) ++ " SIP/2.0",
-    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist4) ++ "\r\n" ++ Body,
-    case url_to_hostport(NewDest) of
-	{error, nxdomain} ->
-	    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN)", [NewDest]),
-	    siprequest:send_result(Header, Socket, "", 604, "Does Not Exist Anywhere");
-	{error, What} ->
-	    logger:log(normal, "Could not resolve destination ~p (~p)", [NewDest, What]),
-	    siprequest:send_result(Header, Socket, "", 500, "Could not resolve destination");
-	{Host, Port} ->
-	    PortInt = list_to_integer(Port),
-	    logger:log(debug, "send request(~p, send to=~p:~p) :~n~s~n", [NewDest, Host, PortInt, Message]),
-	    case gen_udp:send(Socket, Host, PortInt, Message) of
-		ok ->
-		    ok;
-		{error, E} ->
-		    logger:log(error, "Failed sending request to ~p:~p, error ~p", [Host, PortInt, E]),
-		    {error, E}
-	    end
+	    keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Header)
     end.
+
+proxy_add_via(Header, OrigURI, Parameters, SocketProto, OrigSocket) ->
+    ViaHostname = myhostname(),
+    ViaParameters1 = case sipserver:get_env(detect_loops, true) of
+	true ->
+	    LoopCookie = get_loop_cookie(Header, OrigURI),
+	    ParamDict = sipheader:param_to_dict(Parameters),
+	    case dict:find("branch", ParamDict) of
+		error ->
+		    case stateless_generate_branch(OrigURI, Header) of
+			error ->
+			    Parameters;
+			Branch ->
+			    % In order to find the correct "server transaction" (ie. TCP socket) to use
+			    % when sending future responses to this request back upstreams, we need to
+			    % associate the stateless branch we generated with the socket the request
+			    % we are now proxying arrived on. If it is a TCP socket.
+			    % We don't check for errors since sockets can vanish but we can route
+			    % responses using the information in Via too.
+			    sipsocket:store_stateless_response_branch(OrigSocket, Branch),
+			    NewBranch = Branch ++ "-o" ++ LoopCookie,
+			    logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
+					[NewBranch]),
+			    Param2 = dict:store("branch", NewBranch, ParamDict),
+		    	    sipheader:dict_to_param(Param2)
+		    end;
+		{ok, Branch} ->
+		    logger:log(debug, "Siprequest: Added loop cookie ~p to branch of request",
+					[LoopCookie]),
+		    Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
+		    sipheader:dict_to_param(Param2)
+	    end;
+	_ ->
+	    Parameters
+    end,
+    ViaPort = default_port(sipserver:get_env(listenport, none)),
+    ViaParameters = case sipserver:get_env(request_rport, false) of
+	true ->
+	    lists:append(ViaParameters1, ["rport"]);
+	_ ->
+	    ViaParameters1
+    end,
+    MyVia = sipheader:via_print([{sipsocket:sipproto2viastr(SocketProto),
+				 {ViaHostname, ViaPort}, ViaParameters}]),
+    keylist:prepend({"Via", MyVia}, Header).
+
+stateless_generate_branch(OrigURI, Header) ->
+    % generate a branch for this request in a way that makes sure that we generate
+    % the same branch for a retransmission of this very same request. RFC3261 #16.11
+    TopVia = sipheader:topvia(Header),
+    case TopVia of
+	{_, {ViaHostname, ViaPort}, Parameters} ->
+	    case sipheader:get_via_branch(TopVia) of
+		"z9hG4bK" ++ RestOfBranch ->
+		    In = lists:flatten(lists:concat([node(), "-rbranch-", RestOfBranch])),
+		    "z9hG4bK-yxa-" ++ string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=);
+		_ ->
+		    % No branch, or non-RFC3261 branch
+		    OrigURIstr = sipurl:print(OrigURI),
+		    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
+		    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
+		    CallId = keylist:fetch("Call-Id", Header),
+		    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+		    In = lists:flatten(lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag, 
+		    				    "-callid-", CallId, "-cseqnum-", CSeqNum])),
+		    "z9hG4bK-yxa-" ++ string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=)
+	    end;
+	_ ->
+	    logger:log(error, "Can't generate stateless branch for this request, it has no top Via!"),
+	    error
+    end.
+
+generate_branch() ->
+    {Megasec, Sec, Microsec} = now(),
+    % We don't need port here since erlang guarantees that Microsecond is never the
+    % same on one node.
+    In = lists:concat([node(), Megasec * 1000000 + Sec, 8, $., Microsec]),
+    Out = string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=),
+    "z9hG4bK-yxa-" ++ Out.
 
 make_answerheader(Header) ->
     RecordRoute = keylist:fetch("Record-Route", Header),
@@ -168,6 +373,29 @@ make_answerheader(Header) ->
 	_ ->
 	    keylist:set("Route", RecordRoute, NewHeader1)
     end.
+
+get_loop_cookie(Header, OrigURI) ->
+    % Generate a loop detection cookie, RFC3261 16.6 #8
+    OrigURIstr = sipurl:print(OrigURI),
+    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
+    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
+    CallId = keylist:fetch("Call-Id", Header),
+    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    ProxyReq = keylist:fetch("Proxy-Require", Header),
+    ProxyAuth = keylist:fetch("Proxy-Authorization", Header),
+    Route = keylist:fetch("Route", Header),
+    {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
+	{_, {TopViaHost1, TopViaPort1}, _} -> {TopViaHost1, default_port(TopViaPort1)};
+	_ -> {myhostname(), sipserver:get_env(listenport, none)}
+    end,
+    TopViaSentBy = sipurl:print_hostport(TopViaHost, TopViaPort),
+    In = lists:flatten(lists:concat([OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag, 
+    				    "-callid-", CallId, "-cseqnum-", CSeqNum,
+    				    "-preq-", ProxyReq, "-pauth-", ProxyAuth,
+    				    "-route-", Route, "-topvia-", TopViaSentBy])),
+    Out = string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=),
+    logger:log(debug, "Siprequest: Created loop cookie ~p from input :~n~p", [Out, In]),
+    Out.    
 
 check_valid_proxy_request("ACK", _) ->
     true;
@@ -239,12 +467,14 @@ send_notfound(Header, Socket) ->
 		  "").
 
 send_notavail(Header, Socket) ->
+    % XXX CHECK THIS! SUSPECT IT SHOULD BE ["180"]
     ExtraHeaders = [{"Retry-After", "180"}],
     send_response(Socket, 480, "Temporarily unavailable",
 		  standardcopy(Header, ExtraHeaders),
 		  "").
 
 send_answer(Header, Socket, Body) ->
+    % XXX CHECK THIS! SUSPECT IT SHOULD BE ["application/sdp"] AND [integer_to_list(length(Body))]
     ExtraHeaders = [{"Content-Type", "application/sdp"},
 		    {"Content-Length",
 		     integer_to_list(length(Body))}],
@@ -262,16 +492,29 @@ send_result(Header, Socket, Body, Code, Description, ExtraHeaders) ->
 		  standardcopy(Header, ExtraHeaders),
 		  Body).
 
-send_proxy_response(Socket, Status, Reason, Header, Body) ->
-    [Self | Via] = sipheader:via(keylist:fetch("Via", Header)),
-    case Via of
-	[] ->
+send_proxy_response(ObsoleteSocket, Status, Reason, Header, Body) ->
+    case sipheader:via(keylist:fetch("Via", Header)) of
+	[Self] ->
 	    logger:log(error, "Can't proxy response ~p ~s because it contains just one or less Via and that should be mine!",
 			[Status, Reason]),
 	    {error, invalid_Via};
+	[Self | Via] ->
+	    % Remove Via matching me (XXX should check that it does)
+	    NewHeader = keylist:set("Via", sipheader:via_print(Via), Header),
+	    % Now look for the correct "server transaction" to use when sending this response upstreams
+	    [NextVia | _] = Via,
+	    NewSocket = get_response_socket_using_via(Self, NextVia),
+	    send_response(NewSocket, Status, Reason, NewHeader, Body)
+    end.
+
+get_response_socket_using_via(MyVia, TopVia) ->
+    % We use our own branch, but the protocol used to receive the 
+    % original request is in the upstreams Via - hence both MyVia
+    % and the upstreams Via (TopVia)
+    {Proto, {Host, Port}, Parameters} = TopVia,
+    case sipheader:get_via_branch(MyVia) of
+	Branch when list(Branch) ->
+	    sipsocket:get_response_socket(sipsocket:via2sipsocketprotocol(Proto), Branch);
 	_ ->
-	    Keylist = keylist:set("Via", sipheader:via_print(Via),
-				  Header),
-	    send_response(Socket, Status, Reason,
-			  Keylist, Body)
+	    none
     end.
