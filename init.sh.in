@@ -14,14 +14,10 @@ DETACH="-detached"
 MYNAME=`basename $0`
 
 # Calculate Erlang arguments
-if [ "x$CONFIGDIR" = "x" ]; then
-    CONFIGPATH="$PROGRAMNAME"
-else
-    CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
-fi
+CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
 
 if [ "x$SSLCERTDIR" = "x" ]; then
-    SSLCERTFILE="ssl/cert.comb"
+    SSLCERTFILE="$CONFIGDIR/ssl/cert.comb"
 else
     SSLCERTFILE="$SSLCERTDIR/cert.comb"
 fi
