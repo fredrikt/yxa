@@ -232,6 +232,20 @@ my %standard_tests = (
 
 	# combined tests
 
+             "STRICT ROUTER TRAVERSAL" =>
+		{
+				Method	=> "INVITE",
+                                RequestURI => "sip:$incomingproxy;lr=true",
+				From	=> $default_from,
+				To	=> "relay-test\@$testserver",
+                                Header  => "Route: <sip:relay-test\@$testserver>\n",
+				sendto	=> $incomingproxy,
+				user	=> $testuser_user,
+				pw	=> $testuser_password,
+				expect  => '^486 Busy Here \(relay-test\)$'
+		},
+
+
 	     "RELAY, AUTH" =>
 		{
 				Method	=> "INVITE",
@@ -775,10 +789,10 @@ sub make_url
 {
     my $in = shift;
     
-    return $in if ($in =~ /^sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\._-]+$/);
-    return $in if ($in =~ /^foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\._-]+$/);
+    return $in if ($in =~ /^sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
+    return $in if ($in =~ /^foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
     
-    return "sip:$in" if ($in =~ /^[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\._-]+$/);
+    return "sip:$in" if ($in =~ /^[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
     
     return undef;
 }
