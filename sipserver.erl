@@ -411,6 +411,11 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
     MyPorts = sipserver:get_all_listenports(),
     MyIP = siphost:myip(),
     HostnameList = lists:append(sipserver:get_env(myhostnames, []), siphost:myip_list()),
+    %% If the URI has a username in it, it is not something we've put in a Record-Route
+    UsernamePresent = case URI#sipurl.user of
+			  none -> false;
+			  T when list(T) -> true
+		      end,
     HostnameIsMyHostname = util:casegrep(URI#sipurl.host, HostnameList),
     %% In theory, we should not treat an absent port number in this Request-URI as
     %% if the default port number was specified in there, but in practice that is
@@ -427,6 +432,7 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
 			 _ -> true
 		     end,
     if
+	UsernamePresent /= false -> false;
 	HostnameIsMyHostname /= true -> false;
 	PortMatches /= true -> false;
 	%% Some SIP-stacks evidently strip parameters
