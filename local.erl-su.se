@@ -45,7 +45,8 @@
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 can_register/2,
-	 is_allowed_pstn_dst/4
+	 is_allowed_pstn_dst/4,
+	 canonify_authusername/2
 	]).
 
 %% sipuserdb
@@ -343,6 +344,20 @@ can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, si
 
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
+
+%% Returns : NewUsername | undefined
+canonify_authusername("ft", Header) when is_record(Header, keylist) ->
+    {_, FromURL} = sipheader:from(Header),
+    canonify_authusername2("ft", FromURL);
+canonify_authusername(Username, Header) when is_list(Username), is_record(Header, keylist) ->
+    undefined.
+
+canonify_authusername2("ft", #sipurl{user="ft", host="it.su.se"}=FromURL) when is_record(FromURL, sipurl) ->
+    logger:log(debug, "Auth: Using authentication username of 'ft.sip1' for this request"),
+    "ft.sip1";
+canonify_authusername2("ft", #sipurl{user="ft", host="pappersk.org"}=FromURL) when is_record(FromURL, sipurl) ->
+    logger:log(debug, "Auth: Using authentication username of 'ft.sip2' for this request"),
+    "ft.sip2".
 
 %% incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%%

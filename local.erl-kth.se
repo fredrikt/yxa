@@ -45,7 +45,8 @@
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 can_register/2,
-	 is_allowed_pstn_dst/4
+	 is_allowed_pstn_dst/4,
+	 canonify_authusername/2
 	]).
 
 %% sipuserdb
@@ -337,6 +338,10 @@ can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, si
 
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
+
+%% Returns : NewAuthDict
+canonify_authusername(Username, Header) when is_list(Username), is_record(Header, keylist) ->
+    undefined.
 
 % incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%

@@ -45,7 +45,8 @@
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 can_register/2,
-	 is_allowed_pstn_dst/4
+	 is_allowed_pstn_dst/4,
+	 canonify_authusername/2
 	]).
 
 %% sipuserdb
@@ -342,6 +343,22 @@ can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, si
 
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
+
+%%--------------------------------------------------------------------
+%% Function: canonify_authusername(Username, Header)
+%%           Username = string()
+%%	     Header   = keylist record()
+%% Descrip.: Possibly make us use another username for this request.
+%%           This is needed if your user database allows more than one
+%%           username per user, or if you have clients that does not
+%%           allow you to set authorization username explicitly and
+%%           the username they assume you have is incorrect.
+%% Returns : NewUsername |
+%%           undefined
+%%           NewUsername = string()
+%%--------------------------------------------------------------------
+canonify_authusername(Username, Header) when is_list(Username), is_record(Header, keylist) ->
+    undefined.
 
 % incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
