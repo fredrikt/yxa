@@ -7,6 +7,7 @@
 %%--------------------------------------------------------------------
 
 -module(util).
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -291,9 +292,11 @@ apply_rewrite([$\\, C | Rest], List) ->
     case digit(C) of
 	error ->
 	    %% Backslash not followed by digit, not a group.
+	    %% XXX shouldn't we preserve the backslash as well as C?
 	    [C | apply_rewrite(Rest, List)];
 	0 ->
 	    %% Backslash followed by the digit zero, not a group.
+	    %% XXX shouldn't we preserve the backslash as well as C?
 	    [C | apply_rewrite(Rest, List)];
 	Number ->
 	    %% Backslash followed by a digit between 1 and 9.
@@ -341,6 +344,8 @@ test() ->
     io:format("test: sec_to_date/1 - 1~n"),
     "2005-01-31 14:06:07" = sec_to_date(1107176767),
 
+    io:format("test: sec_to_date/1 - 2~n"),
+    "never" = sec_to_date(never),
 
     %% test isnumeric(Number)
     %%--------------------------------------------------------------------
@@ -377,6 +382,7 @@ test() ->
 
     io:format("test: apply_rewrite/2 - 3~n"),
     %% double backslash check
+    %% XXX is this really correct? We loose our backslashes - ft
     "a\\1bc123" = apply_rewrite("a\\\\1bc\\1", ["123"]),
 
     io:format("test: apply_rewrite/2 - 4~n"),
@@ -388,6 +394,11 @@ test() ->
     io:format("test: apply_rewrite/2 - 5~n"),
     %% Too few elements in List - we crash on that.
     {'EXIT', {function_clause, _}} = (catch apply_rewrite("\\1bar", [])),
+
+    io:format("test: apply_rewrite/2 - 6~n"),
+    %% backslashes not followed by digits between 1 and 9 (one '0' and one 'c')
+    %% XXX is this really correct? We loose our backslashes - ft
+    "a0bc123" = apply_rewrite("a\\0b\\c\\1", ["123"]),
 
 
     %% test regexp_rewrite(Input, RegexpList)
@@ -488,6 +499,19 @@ test() ->
 
     %% test safe_is_process_alive(PidOrName)
     %%--------------------------------------------------------------------
+    io:format("test: safe_is_process_alive/1 - 0~n"),
+    %% get a reference to a dead process
+    DeadPid = spawn(fun() -> ok end),
+
+    %% use erlang:monitor() to find out when pid is dead (it might be dead already)
+    MonitorRef = erlang:monitor(process, DeadPid),
+    receive
+	{'DOWN', MonitorRef, process, DeadPid, _Reason} -> ok
+    after
+	1000 ->
+	    throw({error, "test: safe_is_process_alive/1: the process I spawned did not exit!"})
+    end,
+
     io:format("test: safe_is_process_alive/1 - 1~n"),
     %% myself as input, should definately be alive
     MyPid = self(),
@@ -506,6 +530,14 @@ test() ->
     %% reference input (invalid)
     {'EXIT', {function_clause, _}} = (catch safe_is_process_alive(make_ref())),
 
+    io:format("test: safe_is_process_alive/1 - 5~n"),
+    %% test dead process
+    {false, DeadPid} = safe_is_process_alive(DeadPid),
+
+    io:format("test: safe_is_process_alive/1 - 6~n"),
+    %% test non-existing registered name
+    {false, undefined} = safe_is_process_alive(util_autotest_does_not_exist),
+
 
     %% test safe_signal(LogTag, PidOrName, Message)
     %%--------------------------------------------------------------------
@@ -521,8 +553,16 @@ test() ->
 	    ok
     after
 	0 ->
-	    throw({error, "did not get signal I sent to myself"})
+	    throw({error, "test: safe_is_process_alive/1: did not get signal I sent to myself"})
     end,
+
+    io:format("test: safe_is_process_alive/1 - 1.2~n"),
+    %% dead pid
+    error = safe_signal("foo", DeadPid, {SafeSignalRef, "test with dead recipient"}),
+
+    io:format("test: safe_is_process_alive/1 - 1.2~n"),
+    %% for 100% coverage
+    error = safe_signal(none, DeadPid, {SafeSignalRef, "test with dead recipient"}),
 
     
     %% test remove_v6_brackets(In)
