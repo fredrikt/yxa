@@ -4,7 +4,7 @@
   {modules, [appserver, logger, util, siputil, sippacket, keylist, sipurl,
 	     siprequest, sipheader, sipanswer, phone, sdp, rtp, siphost,
 	     sipclient, sipserver, sipproxy, local, siptimer,
-	     transactionlist, targetlist, clientbranch, serverbranch,
+	     targetlist, clienttransaction, servertransaction,
 	     siplocation, sipuserdb, sipuserdb_mnesia, sipuserdb_ldap,
 	     sipsocket, sipsocket_tcp, sipsocket_udp, socketlist]},
   {registered, [logger]},

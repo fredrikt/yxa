@@ -6,10 +6,12 @@ BEAM =	incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sipp
 	LDAPv3.beam appserver.beam sipanswer.beam rtp.beam sdp.beam dtmf.beam sound.beam \
 	group_regexp.beam sipclient.beam database_call.beam sipserver.beam \
 	database_regexproute.beam sipproxy.beam gssapi.beam lookup.beam local.beam \
-	testserver.beam siptimer.beam transactionlist.beam targetlist.beam \
-	clientbranch.beam serverbranch.beam database_forward.beam siplocation.beam \
+	testserver.beam siptimer.beam transactionstatelist.beam targetlist.beam \
+	clienttransaction.beam database_forward.beam siplocation.beam \
 	sipuserdb.beam sipuserdb_mnesia.beam bootstrap.beam sipuserdb_ldap.beam \
-	sipsocket.beam sipsocket_tcp.beam sipsocket_udp.beam socketlist.beam
+	sipsocket.beam sipsocket_tcp.beam sipsocket_udp.beam socketlist.beam \
+	transactionlayer.beam servertransaction.beam
+
 CC = gcc
 
 .PRECIOUS: %.boot %.config

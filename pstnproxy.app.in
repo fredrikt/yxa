@@ -4,7 +4,7 @@
   {modules, [pstnproxy, logger, util, siputil, sippacket, keylist, sipurl, 
 	     siprequest, sipheader, sipauth, siphost, hex, phone,
 	     sipserver, local, sipuserdb, sipuserdb_mnesia,
-	     sipuserdb_ldap]},
+	     sipuserdb_ldap, transactionlayer, servertransaction]},
   {registered, []},
   {mod, {pstnproxy, []}},
   {env, []},
