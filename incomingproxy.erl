@@ -11,6 +11,15 @@ init() ->
     database_regexproute:create(),
     timer:apply_interval(60000, ?MODULE, remove_expired_phones, []).
 
+route_request(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    case lookup:homedomain(Host) of
+	true ->
+	    request_to_homedomain(URL);
+	_ ->
+	    request_to_remote(URL)
+    end.
+
 lookupmail(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     Loc1 = local:lookup_homedomain_url(URL),
@@ -53,22 +62,59 @@ lookupdefault(User) ->
 	    none
     end.
 
-lookupphone(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    case lookup:homedomain(Host) of
-	true ->
-	    request_to_homedomain(URL);
+request("REGISTER", URL, Header, Body, Socket, FromIP) ->
+    logger:log(debug, "REGISTER"),
+    To = sipheader:to(keylist:fetch("To", Header)),
+    Contact = sipheader:contact(keylist:fetch("Contact", Header)),
+    {_, {Phone, _, _, _, _}} = To,
+    [{_, Location}] = Contact,
+    case sipauth:can_register(Header, Phone) of
+	{true, Numberlist} ->
+	    logger:log(debug, "numberlist: ~p", [Numberlist]),
+	    Auxphones = Numberlist,
+	    siprequest:process_register_isauth(Header, Socket, Phone, Auxphones, Location);
+	{stale, _} ->
+	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), true);
+	{false, _} ->
+	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), false)
+    end;
+
+request(Method, URL, Header, Body, Socket, FromIP) ->
+    logger:log(debug, "~s ~s~n",
+	       [Method, sipurl:print(URL)]),
+    Location = route_request(URL),
+    logger:log(debug, "Location: ~p", [Location]),
+    case Location of
+	none ->
+	    logger:log(normal, "~s ~s -> Not found", [Method, sipurl:print(URL)]),
+	    siprequest:send_notfound(Header, Socket);
+	{error, Errorcode} ->
+	    logger:log(normal, "~s ~s Error ~p", [Method, sipurl:print(URL), Errorcode]),
+	    siprequest:send_result(Header, Socket, "", Errorcode, "Unknown code");
+	{response, Returncode, Text} ->
+	    logger:log(normal, "~s ~s -> Response ~p ~s", [Method, sipurl:print(URL), Returncode, Text]),
+	    siprequest:send_result(Header, Socket, "", Returncode, Text);
+	{proxy, Loc} ->
+	    logger:log(normal, "~s ~s -> Proxy ~s", [Method, sipurl:print(URL), sipurl:print(Loc)]),
+	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body, []});
+	{redirect, Loc} ->
+	    logger:log(normal, "~s ~s -> Redirect ~s", [Method, sipurl:print(URL), sipurl:print(Loc)]),
+	    siprequest:send_redirect(Loc, Header, Socket);
+	{relay, Loc} ->
+	    logger:log(normal, "~s ~s -> Relay ~s", [Method, sipurl:print(URL), sipurl:print(Loc)]),
+	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method);
 	_ ->
-	    request_to_remote(URL)
+	    logger:log(debug, "Don't know how to process Location ~p", [Location]),
+	    siprequest:send_result(Header, Socket, "", 500, "Internal Server Error")
     end.
 
-sipuser(URL) ->
-    {User, Pass, Host, Port, Parameters} = URL,
-    User.
+response(Status, Reason, Header, Body, Socket, FromIP) ->
+    logger:log(normal, "Response ~p ~s", [Status, Reason]),
+    siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
 
 request_to_homedomain(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    Key = sipuser(URL),
+    Key = local:sipuser(URL),
     logger:log(debug, "Routing: ~p is a local domain", [Host]),
     Loc1 = lookup:lookupuser(Key),
     logger:log(debug, "Routing: lookuproute on ~p -> ~p", [Key, Loc1]),
@@ -96,53 +142,6 @@ request_to_remote(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
     {relay, URL}.
-
-request("REGISTER", URL, Header, Body, Socket, FromIP) ->
-    logger:log(debug, "REGISTER"),
-    To = sipheader:to(keylist:fetch("To", Header)),
-    Contact = sipheader:contact(keylist:fetch("Contact", Header)),
-    {_, {Phone, _, _, _, _}} = To,
-    [{_, Location}] = Contact,
-    case sipauth:can_register(Header, Phone) of
-	{true, Numberlist} ->
-	    logger:log(debug, "numberlist: ~p", [Numberlist]),
-	    Auxphones = Numberlist,
-	    siprequest:process_register_isauth(Header, Socket, Phone, Auxphones, Location);
-	{stale, _} ->
-	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), true);
-	{false, _} ->
-	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), false)
-    end;
-
-request(Method, URL, Header, Body, Socket, FromIP) ->
-    logger:log(normal, "~s ~s~n",
-	       [Method, sipurl:print(URL)]),
-    Location = lookupphone(URL),
-    logger:log(debug, "Location: ~p", [Location]),
-    case Location of
-	none ->
-	    logger:log(normal, "Not found"),
-	    siprequest:send_notfound(Header, Socket);
-	{error, Errorcode} ->
-	    logger:log(normal, "Error ~p", [Errorcode]),
-	    siprequest:send_result(Header, Socket, "", Errorcode, "Unknown code");
-	{response, Returncode, Text} ->
-	    logger:log(normal, "~s ~s -> Response ~p ~s", [Method, sipurl:print(URL), Returncode, Text]),
-	    siprequest:send_result(Header, Socket, "", Returncode, Text);
-	{proxy, Loc} ->
-	    logger:log(normal, "Proxy ~s", [sipurl:print(Loc)]),
-	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body, []});
-	{redirect, Loc} ->
-	    logger:log(normal, "Redirect ~s", [sipurl:print(Loc)]),
-	    siprequest:send_redirect(Loc, Header, Socket);
-	{relay, Loc} ->
-	    logger:log(normal, "Relay ~s", [sipurl:print(Loc)]),
-	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method)
-    end.
-
-response(Status, Reason, Header, Body, Socket, FromIP) ->
-    logger:log(normal, "Response ~p ~s", [Status, Reason]),
-    siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
 
 remove_expired_phones() ->
     {atomic, Expired} = phone:expired_phones(),
