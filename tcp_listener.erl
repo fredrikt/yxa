@@ -75,7 +75,7 @@ start(Proto, Port) when atom(Proto), integer(Port) ->
 	_ when Proto == tls; Proto == tls6 ->
 	    case sipserver:get_env(ssl_server_certfile, none) of
 		none ->
-		    logger:log(normal, "NOT starting ~p listener, no SSL client certificate specified (see README)", [Proto]),
+		    logger:log(normal, "NOT starting ~p listener, no SSL server certificate specified (see README)", [Proto]),
 		    not_started;
 		ClientCert ->
 		    NewOptions = lists:append(Options, [{certfile, ClientCert}]),
@@ -143,12 +143,6 @@ accept_loop(State) when record(State, state) ->
     ListenSocket = State#state.socket,
     Res = case SocketModule:accept(ListenSocket) of
 	      {ok, NewSocket} ->
-		  %% XXX why on earth do we sleep here? must be debugging. REMOVE.
-		  timer:sleep(500),
-		  %%case catch SocketModule:peercert(NewSocket) of
-		  %%    R ->
-		  %%	  logger:log(debug, "Peer certificate :~n~p", [R])
-		  %%  end,
 		  case InetModule:peername(NewSocket) of
 		      {ok, {IPlist, InPortNo}} ->
 			  IP = siphost:makeip(IPlist),
@@ -160,13 +154,6 @@ accept_loop(State) when record(State, state) ->
 		      {error, E} ->
 			  logger:log(error, "TCP listener: Could not get peername after accept() : ~p", [E]),
 			  {ok}
-		  end,
-		  %% XXX receive with timeout 0? must be debugging.
-		  receive
-		      Msg ->
-			  logger:log(normal, "FREDRIK: TCP LISTENER RECEIVED SIGNAL! ~p", [Msg])
-		  after 0 ->
-			  true
 		  end;
 	      {error, closed} ->
 		  logger:log(error, "TCP listener: accept() says the listensocket ~p was closed, no point in me staying alive.", [ListenSocket]),
@@ -217,11 +204,13 @@ start_tcp_connection(SocketModule, Proto, Socket, Local, Remote) ->
 				{error, Reason} ->
 				    logger:log(error, "TCP listener: Could not change controlling process of SSL socket ~p to ~p : ~p",
 					       [Socket, RecvPid, Reason]),
+				    %% XXX close socket here?
 				    error
 			    end;
 			Unknown ->
-			    logger:log(error, "TCP listener: Could not get receiver pid from newly started tcp connection ~p",
-				       [ConnPid]),
+			    logger:log(error, "TCP listener: Could not get receiver pid from newly started tcp connection ~p. Returned :~n~p",
+				       [ConnPid, Unknown]),
+			    %% XXX close socket here?
 			    error
 		    end;
 		_ ->
@@ -230,5 +219,6 @@ start_tcp_connection(SocketModule, Proto, Socket, Local, Remote) ->
 	Unknown ->
 	    logger:log(error, "TCP listener: Failed starting TCP connection for socket ~p : ~p",
 		       [Socket, Unknown]),
+	    %% XXX close socket here?
 	    error
     end.
