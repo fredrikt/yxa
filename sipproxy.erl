@@ -46,7 +46,7 @@ fork(BranchBase, Parent, OrigRequest, [HAction | TAction], Timeout, Targets) whe
 		      [Method, sipurl:print(CallURI), CallTimeout]),
 	    Branch = BranchBase ++ "-UAC" ++ integer_to_list(targetlist:list_length(Targets) + 1),
 	    Request = {Method, CallURI, Header, Body},
-	    DstList = siprequest:url_to_dstlist(CallURI, 500), % XXX do better estimation
+	    DstList = siprequest:url_to_dstlist(CallURI, 500, undefined), % XXX do better estimation
 	    [FirstDst|_] = DstList,
 	    NewTargets = case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, CallTimeout, self()) of
 	    	BranchPid when pid(BranchPid) ->
