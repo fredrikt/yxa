@@ -138,9 +138,7 @@ process_route_header(Header, URI) when is_record(Header, keylist), is_record(URI
 	    {ok, NewHeader, FirstRoute, NewURI};
 	[] ->
 	    nomatch
-    end;
-process_route_header(H, U) ->
-    erlang:fault("process_route_header called with illegal arguments", [H, U]).
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: set_route(Route, Header)
@@ -190,11 +188,14 @@ stateless_route_proxy_request(Request) when is_record(Request, request) ->
 	{ok, [Dst], NewRequest} ->
 	    {ok, Dst, NewRequest};
 	{ok, [Dst | Rest], NewRequest} ->
-	    logger:log(debug, "Warning: request being forwarded statelessly had more than one destination, "
-		       "ignoring all but the first one :~n~p", [sipdst:debugfriendly([Dst | Rest])]),
+	    logger:log(debug, "Siprequest (transport layer) : Warning: request being forwarded "
+		       "statelessly had more than one destination, ignoring all but the first "
+		       "one :~n~p", [sipdst:debugfriendly([Dst | Rest])]),
 	    {ok, Dst, NewRequest};
-	_ ->
-	    {error, "stateless_route_proxy_request() failed"}
+	{error, Reason} ->
+	    logger:log(error, "Siprequest (transport layer) : stateless_route_proxy_request2/2 "
+		       "returned error : ~p", [Reason]),
+	    {error, Reason}
     end.
 
 %% part of stateless_route_proxy_request/1
@@ -251,7 +252,7 @@ check_proxy_request(Request) when is_record(Request, request) ->
 get_approximate_msgsize(Request) when is_record(Request, request) ->
     BinLine1 = list_to_binary([Request#request.method, " ", sipurl:print(Request#request.uri), " SIP/2.0"]),
     BinMsg = binary_make_message(BinLine1, Request#request.header, Request#request.body),
-    ViaLen = 92 + length(siprequest:myhostname()),
+    ViaLen = 92 + length(myhostname()),
     %% The size is _approximate_. The exact size cannot be calculated here
     %% since it is dependent on the right Request-URI and length of the final
     %% Via header we insert, not the 92 bytes + hostname _estimate_.
@@ -292,36 +293,76 @@ proxy_check_maxforwards(Header) ->
 %%           Header      = keylist record()
 %%           OrigURI     = sipurl record()
 %%           Parameters  = string()
-%%           Proto       = ???
+%%           Proto       = atom(), tcp|tcp6|udp|udp6|tls|tls6
 %% Descrip.: Generate a Via header for this proxy and add it to Header
 %% Returns : NewHeader, keylist record()
 %%
 %% XXX rework to only calculate LoopCookie if we are actually going to
 %% use it.
 %%--------------------------------------------------------------------
-proxy_add_via(Header, OrigURI, Parameters, Proto) ->
-    LoopCookie = case sipserver:get_env(detect_loops, true) of
-		     true ->
-			 get_loop_cookie(Header, OrigURI, Proto);
-		     false ->
-			 none
-		 end,
+proxy_add_via(Header, OrigURI, Parameters, Proto) when is_record(Header, keylist), is_record(OrigURI, sipurl),
+						       is_list(Parameters), is_atom(Proto) ->
     ParamDict = sipheader:param_to_dict(Parameters),
-    ViaParameters1 = case dict:find("branch", ParamDict) of
-			 error ->
-			     add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters);
-			 {ok, Branch} ->
-			     add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict)
-		     end,
-    ViaParameters = case sipserver:get_env(request_rport, false) of
-			true ->
-			    lists:append(ViaParameters1, ["rport"]);
-			false ->
-			    ViaParameters1
-		    end,
+
+    %% Make sure we have a 'branch' parameter, and that it contains a loop cookie
+    %% (already present, or added here) unless we are configured to not do loop detection
+    ViaParameters1 =
+	case dict:find("branch", ParamDict) of
+	    error ->
+		LoopCookie = proxy_add_via_get_loopcookie(Header, OrigURI, Proto),
+		add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters);
+	    {ok, Branch1} ->
+		Branch = lists:flatten(Branch1),
+		case branch_contains_loopcookie(Branch) of
+		    true ->
+			logger:log(debug, "Siprequest (transport layer) : NOT adding loop cookie to branch "
+				   "that already contains a loop cookie : ~p", [Branch]),
+			Parameters;
+		    false ->
+			LoopCookie = proxy_add_via_get_loopcookie(Header, OrigURI, Proto),
+			add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict)
+		end
+	end,
+
+    %% Add 'rport' parameter to Via headers of outgoing request, if configured to
+    ViaParameters =
+	case sipserver:get_env(request_rport, false) of
+	    true ->
+		lists:append(ViaParameters1, ["rport"]);
+	    false ->
+		ViaParameters1
+	end,
+
     V = create_via(Proto, ViaParameters),
     MyVia = sipheader:via_print([V]),
     keylist:prepend({"Via", MyVia}, Header).
+
+%% part of proxy_add_via/4. Returns : LoopCookie = string() | none
+proxy_add_via_get_loopcookie(Header, OrigURI, Proto) ->
+    case sipserver:get_env(detect_loops, true) of
+	true ->
+	    get_loop_cookie(Header, OrigURI, Proto);
+	false ->
+	    none
+    end.
+
+%% part of proxy_add_via/4.
+%% Check if there already is a loop cookie in this branch. Necessary to not
+%% get the wrong branch in constructed ACK of non-2xx response to INVITE, and
+%% CANCEL requests we generate.
+%% Returns : true | false
+branch_contains_loopcookie(Branch) when is_list(Branch) ->
+    case Branch of
+	"z9hG4bK-yxa-" ++ RestOfBranch ->
+	    case string:rstr(RestOfBranch, "-o") of
+		0 ->
+		    false;
+		Index when is_integer(Index) ->
+		    true
+	    end;
+	_ ->
+	    false
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: add_loopcookie_to_branch(LoopCookie, Branch, Parameters,
@@ -330,31 +371,18 @@ proxy_add_via(Header, OrigURI, Parameters, Proto) ->
 %%           Branch      = string()
 %%           Parameters  = list() of string()
 %%           ParamDict   = dict()
-%% Descrip.: If LoopCookie is not 'none', add it to the Branch if
-%%           Branch does not already contain a loop cookie. Return
+%% Descrip.: If LoopCookie is not 'none', add it to Branch. Return
 %%           a new Parameters construct.
 %% Returns : NewParameters, list() of string()
 %%--------------------------------------------------------------------
 add_loopcookie_to_branch(none, _Branch, Parameters, _ParamDict) ->
-    %% Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
+    %% Request has a branch, and loop detection is off
     Parameters;
-add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict) ->
-    %% Check if there already is a loop cookie in this branch. Necessary to not
-    %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
-    FlatBranch = lists:flatten(Branch),
-    case string:rstr(FlatBranch, "-o") of
-	0 ->
-	    logger:log(debug, "Siprequest (transport layer) : Added loop cookie ~p to branch of request",
-		       [LoopCookie]),
-	    Param2 = dict:store("branch", lists:concat([FlatBranch, "-o", LoopCookie]), ParamDict),
-	    sipheader:dict_to_param(Param2);
-	Index when is_integer(Index) ->
-	    %% There is already a loop cookie in this branch, don't change it. Necessary to not
-	    %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
-	    logger:log(debug, "Siprequest (transport layer) : NOT adding generated loop cookie ~p to branch " ++
-		       "that already contains a loop cookie : ~p", [LoopCookie, FlatBranch]),
-	    Parameters
-    end.
+add_loopcookie_to_branch(LoopCookie, Branch, _Parameters, ParamDict) ->
+    NewBranch = lists:concat([Branch, "-o", LoopCookie]),
+    Param2 = dict:store("branch", NewBranch, ParamDict),
+    sipheader:dict_to_param(Param2).
+
 
 %%--------------------------------------------------------------------
 %% Function: add_stateless_generated_branch(Header, OrigURI,
@@ -368,9 +396,13 @@ add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict) ->
 %%           a new Parameters construct.
 %% Returns : NewParameters, list() of string()
 %%--------------------------------------------------------------------
-add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters)
-  when is_record(Header, keylist), is_record(OrigURI, sipurl), is_list(LoopCookie), is_list(Parameters) ->
-    case stateless_generate_branch(OrigURI, Header) of
+add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters) ->
+    add_stateless_generated_branch2(Header, OrigURI, LoopCookie, Parameters, node()).
+
+add_stateless_generated_branch2(Header, OrigURI, LoopCookie, Parameters, Node)
+  when is_record(Header, keylist), is_record(OrigURI, sipurl), is_list(LoopCookie); LoopCookie == none,
+       is_list(Parameters) ->
+    case stateless_generate_branch(OrigURI, Header, Node) of
 	error ->
 	    logger:log(error, "Siprequest: Failed adding stateless branch to request, "
 		       "throwing a '500 Server Internal Error'"),
@@ -394,9 +426,11 @@ add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: stateless_generate_branch(OrigURI, Header)
+%% Function: stateless_generate_branch(OrigURI, Header, Node)
 %%           OrigURI = sipurl record(), the original requests URI
 %%           Header  = keylist record()
+%%           Node    = atom(), name of node (to make this code
+%%                                           testable)
 %% Descrip.: Generate a branch suitable for stateless proxying of a
 %%           request (meaning that we make sure that we generate the
 %%           very same branch for a retransmission of the very same
@@ -405,23 +439,27 @@ add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters)
 %%           error
 %%           Branch = string()
 %%--------------------------------------------------------------------
-stateless_generate_branch(OrigURI, Header) ->
+stateless_generate_branch(OrigURI, Header, Nodename) ->
     case sipheader:topvia(Header) of
 	TopVia when is_record(TopVia, via) ->
 	    case sipheader:get_via_branch(TopVia) of
 		"z9hG4bK" ++ RestOfBranch ->
 		    %% The previous hop has put a RFC3261 branch in it's Via. Use that,
 		    %% togehter with our nodename as branch.
-		    In = lists:concat([node(), "-rbranch-", RestOfBranch]),
+		    In = lists:concat([Nodename, "-rbranch-", RestOfBranch]),
 		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)};
 		_ ->
-		    %% No branch, or non-RFC3261 branch
+		    %% No branch, or non-RFC3261 branch. XXX RFC32611 #16.11 suggests
+		    %% to include the Top-Via in the hash we generte here. We don't,
+		    %% but perhaps there was a reason. It was a long time since we were
+		    %% stateless, so I won't change that now - ft 2005-03-22. Revisit
+		    %% this question if/when we have a use case.
 		    OrigURIstr = sipurl:print(OrigURI),
 		    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
 		    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
 		    CallId = keylist:fetch('call-id', Header),
 		    {CSeqNum, _} = sipheader:cseq(keylist:fetch('cseq', Header)),
-		    In = lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
+		    In = lists:concat([Nodename, "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
 				       "-callid-", CallId, "-cseqnum-", CSeqNum]),
 		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)}
 	    end;
@@ -577,8 +615,8 @@ myhostname() ->
     case sipserver:get_env(myhostnames, []) of
 	[] ->
 	    siphost:myip();
-	Hostnames ->
-	    lists:nth(1, Hostnames)
+	[FirstHostname | _] when is_list(FirstHostname) ->
+	    FirstHostname
     end.
 
 %%--------------------------------------------------------------------
@@ -589,7 +627,7 @@ myhostname() ->
 %% Returns : Via = via record()
 %%--------------------------------------------------------------------
 create_via(Proto, Parameters) ->
-    Hostname = siprequest:myhostname(),
+    Hostname = myhostname(),
     Port = sipserver:get_listenport(Proto),
     ViaProto = sipsocket:proto2viastr(Proto),
     #via{proto=ViaProto, host=Hostname, port=Port, param=Parameters}.
@@ -724,8 +762,10 @@ send_answer(Header, Socket, Body) ->
 %%--------------------------------------------------------------------
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket, Request)
   when is_record(SipSocket, sipsocket) ->
+    %% Extract proto from SipSocket
     make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket#sipsocket.proto, Request);
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request) when is_list(Body) ->
+    %% Turn list body into binary
     BinBody = list_to_binary(Body),
     make_response(Status, Reason, BinBody, ExtraHeaders, ViaParameters, Proto, Request);
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
@@ -743,11 +783,7 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
     PlaceHolderVia = sipheader:via_print([V]),
     AnswerHeader3 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader1),
     %% If there is no body, remove the Content-Type we copied above
-    BodyLen = if
-		  is_binary(Body) -> size(Body);
-		  is_list(Body) -> length(Body)
-	      end,
-    AnswerHeader4 = case BodyLen of
+    AnswerHeader4 = case size(Body) of
 			0 -> keylist:delete('content-type', AnswerHeader3);
 			_ -> AnswerHeader3
 		    end,
@@ -822,11 +858,17 @@ test() ->
     MyHostname = myhostname(),
     true = is_list(MyHostname),
 
+
+    %% generate_branch()
+    %%--------------------------------------------------------------------
     %% test that generate_branch gives us a RFC3261 branch
     io:format("test: generate_branch/0 - 1~n"),
     Branch = generate_branch(),
     "z9hG4bK-yxa-" = string:substr(Branch, 1, 12),
 
+
+    %% make_3261_token(In)
+    %%--------------------------------------------------------------------
     %% test that our make_3261_token produces the expected results
     io:format("test: make_3261_token/1 - 1~n"),
     "abcdeXYZ-.!%*_+`'~123_" = make_3261_token("abcdeXYZ-.!%*_+`'~123@"),
@@ -909,7 +951,6 @@ test() ->
     %% add_record_route(Header, SipOrigin)
     %% and implicitly add_record_route/4
     %%--------------------------------------------------------------------
-
     io:format("test: add_record_route/2 - 1~n"),
     EmptyHeader = keylist:from_list([]),
     MyIP = siphost:myip(),
@@ -968,7 +1009,6 @@ test() ->
     [RRoute2, RRoute1] = sipheader:record_route(RRHeader3),
 
 
-
     %% build request header
     %%--------------------------------------------------------------------
     io:format("test: build request header - 1~n"),
@@ -998,6 +1038,11 @@ test() ->
     %% Check that the Record-Route was deleted
     [] = keylist:fetch('record-route', AHeader1),
 
+    io:format("test: make_answerheader/1 - 3~n"),
+    %% Test without a Record-Route header
+    AHeader2 = keylist:delete('record-route', ReqHeader),
+    AHeader2 = make_answerheader(AHeader2),
+
 
     %% get_loop_cookie(ReqHeader, URI, Proto
     %%--------------------------------------------------------------------
@@ -1005,9 +1050,7 @@ test() ->
     "JYJPsr4IqjymexLGUB58yg" = get_loop_cookie(ReqHeader, sipurl:parse("sip:test@example.org"), tcp),
 
 
-
-    %% make_response(Status, Reason, Body, ExtraHeaders, Parameters,
-    %%		     Proto, Request)
+    %% make_response(Status, Reason, Body, ExtraHeaders, Parameters, Proto, Request)
     %%--------------------------------------------------------------------
     io:format("test: make_response/7 - 1.1~n"),
     Response1 = make_response(100, "Trying", "test", [], [], tcp, #request{header=ReqHeader}),
@@ -1058,6 +1101,24 @@ test() ->
     [] = keylist:fetch('route', Response2#response.header),
 
 
+    %% check_valid_proxy_request(Method, Header)
+    %%--------------------------------------------------------------------
+    CVPR_Header = keylist:from_list([{"Proxy-Require", ["fooextension"]}]),
+
+    io:format("test: check_valid_proxy_request/2 - 1~n"),
+    %% verify that we don't reject ACK even if there is a Proxy-Require in there
+    true = check_valid_proxy_request("ACK", CVPR_Header),
+
+    io:format("test: check_valid_proxy_request/2 - 2~n"),
+    %% verify that we don't reject CANCEL even if there is a Proxy-Require in there
+    true = check_valid_proxy_request("CANCEL", CVPR_Header),
+
+    io:format("test: check_valid_proxy_request/2 - 3~n"),
+    %% verify that we reject everything else that has a Proxy-Require (since we don't
+    %% support any extensions)
+    {siperror, 420, "Bad Extension", _EH} = (catch check_valid_proxy_request("OPTIONS", CVPR_Header)),
+
+
     %% check_proxy_request(Request)
     %%--------------------------------------------------------------------
     io:format("test: check_proxy_request/1 - 1~n"),
@@ -1079,10 +1140,10 @@ test() ->
     io:format("test: check_proxy_request/1 - 5~n"),
     %% can't do exact match here since size depends on variables like hostname
     %% or IP address as string which is not the same for everyone
-    case ApproxMsgSize2_2 of
-	_ when ApproxMsgSize2_2 >= 500, ApproxMsgSize2_2 =< 600 ->
+    case (ApproxMsgSize2_2 >= 500) and (ApproxMsgSize2_2 =< 600) of
+	true ->
 	    ok;
-	_ ->
+	false ->
 	    erlang:fault("approximate message size not within bounds", [ApproxMsgSize2_2])
     end,
 
@@ -1170,40 +1231,144 @@ test() ->
     #via{proto="SIP/2.0/TLS", host=MyHostname, port=SipsLPort} = TLSBasicVia,
 
 
+    %% branch_contains_loopcookie(Branch)
+    %%--------------------------------------------------------------------
+    io:format("test: branch_contains_loopcookie/1 - 1~n"),
+    %% contains Yxa loop cookie
+    true = branch_contains_loopcookie("z9hG4bK-yxa-foo-oLOOPCOOKIE"),
+
+    io:format("test: branch_contains_loopcookie/1 - 2~n"),
+    %% contains -oSOMETHING, but does not begin with "z9hG4bK-yxa"
+    false = branch_contains_loopcookie("z9hG4bK-foo-oLOOPCOOKIE"),
+
+    io:format("test: branch_contains_loopcookie/1 - 3~n"),
+    %% begins with "z9hG4bK-yxa", but has no loop cookie
+    false = branch_contains_loopcookie("z9hG4bK-yxa-foo"),
+
+
+    %% stateless_generate_branch(OrigURI, Header, Nodename)
+    %%--------------------------------------------------------------------
+    io:format("test: stateless_generate_branch/3 - 0~n"),
+    SGB_URL1 = sipurl:parse("sip:ft@example.org"),
+
+    io:format("test: stateless_generate_branch/3 - 1~n"),
+    %% test normal case
+    {ok, "z9hG4bK-yxa-S1Xsdm0n23TBxJnAMqP3ww"} =
+	stateless_generate_branch(SGB_URL1, ReqHeader, "test-nodename"),
+
+    io:format("test: stateless_generate_branch/3 - 2~n"),
+    SGB_Header2 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
+    {ok, "z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg"} =
+	stateless_generate_branch(SGB_URL1, SGB_Header2, "test-nodename"),
+
+    io:format("test: stateless_generate_branch/3 - 3~n"),
+    %% Test without Via header
+    error = stateless_generate_branch(SGB_URL1, keylist:delete('via', ReqHeader), "test-nodename"),
+
+
+    %% add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict)
+    %%--------------------------------------------------------------------
+    io:format("test: add_loopcookie_to_branch/4 - 1~n"),
+    %% No loop cookie, transparently returns Parameters
+    ["foo=Bar"] = add_loopcookie_to_branch(none, "foo", ["foo=Bar"], sipheader:param_to_dict([])),
+
+    io:format("test: add_loopcookie_to_branch/4 - 2~n"),
+    %% Normal case
+    ["branch=x-oLOOP"] = add_loopcookie_to_branch("LOOP", "x", ["branch=x"],
+						  sipheader:param_to_dict(["branch=x"])),
+
+
+    %% add_stateless_generated_branch2(Header, OrigURI, LoopCookie, Parameters, Node)
+    %%--------------------------------------------------------------------
+    io:format("test: add_stateless_generated_branch2/5 - 1~n"),
+    {siperror, 500, _} =
+	(catch add_stateless_generated_branch2( keylist:delete('via', ReqHeader),
+					        sipurl:parse("sip:ft@example.org"),
+					        "LOOPCOOKIE", ["branch=x"], 'test-nodename'
+					       )),
+
+    io:format("test: add_stateless_generated_branch2/5 - 2~n"),
+    ASGB_Header1 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
+    ["branch=z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg-oLOOPCOOKIE"] =
+	add_stateless_generated_branch2( ASGB_Header1,
+					 sipurl:parse("sip:ft@example.org"),
+					 "LOOPCOOKIE", [], 'test-nodename'
+					),
+
+    io:format("test: add_stateless_generated_branch2/5 - 3~n"),
+    ASGB_Header1 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
+    ["branch=z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg"] =
+	add_stateless_generated_branch2( ASGB_Header1,
+					 sipurl:parse("sip:ft@example.org"),
+					 none, [], 'test-nodename'
+					),
+
+
     %% proxy_add_via(Header, URI, Parameters, Proto)
     %%--------------------------------------------------------------------
-    io:format("test: proxy_add_via/1 - 1.1~n"),
-    PAVheaderIn1 = keylist:delete("Via", ReqHeader),
+    io:format("test: proxy_add_via/1 - 0~n"),
+    PAV_Header = keylist:delete("Via", ReqHeader),
 
     %% test proxy_add_via/1 with no present Via header
     io:format("test: proxy_add_via/1 - 1.2~n"),
-    PAVheader1 = proxy_add_via(PAVheaderIn1, InURI,
+    PAVheader1 = proxy_add_via(PAV_Header, InURI,
 			       ["branch=z9hG4bK-test"], tcp6),
-    TopVia1 = sipheader:topvia(PAVheader1),
+    PAV_TopVia1 = sipheader:topvia(PAVheader1),
 
     %% get branch from added Via, branch computated depends on your hostname
     %% so we can't check for a static one
     io:format("test: proxy_add_via/1 - 1.3~n"),
-    Branch1 = sipheader:get_via_branch_full(TopVia1),
+    Branch1 = sipheader:get_via_branch_full(PAV_TopVia1),
 
     %% basic check the top via that was added
     io:format("test: proxy_add_via/1 - 1.4~n"),
     #via{proto="SIP/2.0/TCP", host=MyHostname, port=SipLPort,
-	 param=["branch="  ++ Branch1]} = TopVia1,
+	 param=["branch=" ++ Branch1]} = PAV_TopVia1,
+
 
     io:format("test: proxy_add_via/1 - 2.1~n"),
-    PAVheaderIn2 = keylist:set("Via", sipheader:via_print([TLSBasicVia]), ReqHeader),
+    PAV_HeaderIn2 = keylist:set("Via", sipheader:via_print([TLSBasicVia]), PAV_Header),
 
     %% test proxy_add_via/1 with an existing Via header
     io:format("test: proxy_add_via/1 - 2.2~n"),
-    PAVheader2 = proxy_add_via(PAVheaderIn2, InURI,
-			       ["branch=z9hG4bK-test"], tcp6),
+    PAV_Header2 = proxy_add_via(PAV_HeaderIn2, InURI,
+				["branch=z9hG4bK-test"], tcp6),
 
     %% check the two via's that should be present in PAVheader2
     io:format("test: proxy_add_via/1 - 2.3~n"),
-    Branch2 = sipheader:get_via_branch_full(sipheader:topvia(PAVheader2)),
-    TopVia1_NewLoopCookie = TopVia1#via{param=["branch=" ++ Branch2]},
-    [TopVia1_NewLoopCookie, TLSBasicVia] = sipheader:via(PAVheader2),
+    Branch2 = sipheader:get_via_branch_full(sipheader:topvia(PAV_Header2)),
+    PAV_TopVia1_NewLoopCookie = PAV_TopVia1#via{param=["branch=" ++ Branch2]},
+    [PAV_TopVia1_NewLoopCookie, TLSBasicVia] = sipheader:via(PAV_Header2),
+
+
+    %% test with a branch that already contains a loop cookie
+    io:format("test: proxy_add_via/1 - 3.1~n"),
+    PAV_Header3 = proxy_add_via(PAV_Header, InURI,
+				["branch=z9hG4bK-yxa-foo-oLOOPCOOKIE"], tcp6),
+    PAV_TopVia3 = sipheader:topvia(PAV_Header3),
+
+    %% get branch from added Via, branch computated depends on your hostname
+    %% so we can't check for a static one
+    io:format("test: proxy_add_via/1 - 3.2~n"),
+    "z9hG4bK-yxa-foo-oLOOPCOOKIE" = sipheader:get_via_branch_full(PAV_TopVia3),
+
+
+    io:format("test: proxy_add_via/1 - 4.1~n"),
+    PAV_HeaderIn4 = keylist:set("Via", sipheader:via_print([TLSBasicVia]), PAV_Header),
+
+    io:format("test: proxy_add_via/1 - 4.2~n"),
+    %% test without a supplied branch - a stateless branch should be added
+    PAV_Header4 = proxy_add_via(PAV_HeaderIn4, InURI, [], udp),
+    PAV_TopVia4 = sipheader:topvia(PAV_Header4),
+
+    %% get branch from added Via, branch computated depends on your hostname
+    %% so we can't check for a static one
+    io:format("test: proxy_add_via/1 - 4.3~n"),
+    "z9hG4bK-yxa-" ++ PAV_Branch4 = sipheader:get_via_branch_full(PAV_TopVia4),
+
+    %% Make sure there is a loop cookie in the stateless branch that was added
+    io:format("test: proxy_add_via/1 - 4.4~n"),
+    true = branch_contains_loopcookie("z9hG4bK-yxa-" ++ PAV_Branch4),
 
 
     %% test proxy_check_maxforwards(Header)
@@ -1243,5 +1408,149 @@ test() ->
     %% check that we don't allow negative numbers
     MaxFwd_H7 = keylist:set("Max-Forwards", ["-1"], MaxFwd_H1),
     {siperror, 483, _} = (catch proxy_check_maxforwards(MaxFwd_H7)),
+
+
+    %% standardcopy(Header, ExtraHeaders)
+    %%--------------------------------------------------------------------
+    io:format("test: standardcopy/2 - 1.1~n"),
+    SC_H1 = standardcopy(ReqHeader, []),
+
+    %% verify results
+    io:format("test: standardcopy/2 - 1.2~n"),
+    ["SIP/2.0/TLS 130.237.90.1:111", "SIP/2.0/TCP 2001:6b0:5:987::1"] = keylist:fetch('via', SC_H1),
+    ["<sip:test@it.su.se>;tag=f-123"] = keylist:fetch('from', SC_H1),
+    ["<sip:test@it.su.se>;tag=t-123"] = keylist:fetch('to', SC_H1),
+    ["abc123@test"] = keylist:fetch('call-id', SC_H1),
+    ["4711 INVITE"] = keylist:fetch('cseq', SC_H1),
+
+    io:format("test: standardcopy/2 - 1.3~n"),
+    SC_H1_1 = keylist:delete('via',	SC_H1),
+    SC_H1_2 = keylist:delete('from',	SC_H1_1),
+    SC_H1_3 = keylist:delete('to',	SC_H1_2),
+    SC_H1_4 = keylist:delete('call-id',	SC_H1_3),
+    SC_H1_5 = keylist:delete('cseq',	SC_H1_4),
+    %% verify that no more headers than the ones we expected were copied
+    SC_H1_5 = keylist:from_list([]),
+
+    io:format("test: standardcopy/2 - 2.1~n"),
+    %% test standardcopy with one extra header
+    SC_H2_ExtraHeader = [{"Subject", keylist:fetch("subject", ReqHeader)}],
+    SC_H2 = standardcopy(ReqHeader, SC_H2_ExtraHeader),
+
+    %% verify results
+    io:format("test: standardcopy/2 - 2.2~n"),
+    ["test subject short form"] = keylist:fetch("subject", SC_H2),
+
+    io:format("test: standardcopy/2 - 2.3~n"),
+    SC_H2_1 = keylist:delete("subject", SC_H2),
+    %% verify that no more headers than the ones we expected were copied
+    SC_H2_1 = SC_H1,
+
+
+    %% set_request_body(Request, Body)
+    %%--------------------------------------------------------------------
+    SReqB_Header1 = keylist:from_list([{"Content-Length", ["1"]}]),
+    SReqB_Header2 = keylist:from_list([]),
+
+    io:format("test: set_request_body/2 - 1.1~n"),
+    %% set a binary body
+    #request{header=SReqB_Header1_1, body = <<"test">>} =
+	set_request_body(#request{header = SReqB_Header1, body = <<>>}, <<"test">>),
+
+    io:format("test: set_request_body/2 - 1.2~n"),
+    %% verify that Content-Length was set correctly
+    ["4"] = keylist:fetch('content-length', SReqB_Header1_1),
+
+    io:format("test: set_request_body/2 - 2.1~n"),
+    %% set a list body - list bodies are kept for backwards compatibility
+    #request{header=SReqB_Header2_1, body = <<"test">>} =
+	set_request_body(#request{header = SReqB_Header2, body = <<>>}, "test"),
+
+    io:format("test: set_request_body/2 - 2.2~n"),
+    %% verify that Content-Length was set correctly
+    ["4"] = keylist:fetch('content-length', SReqB_Header2_1),
+
+    io:format("test: set_request_body/2 - 3.1~n"),
+    %% delete body
+    #request{header=SReqB_Header3_1, body = <<>>} =
+	set_request_body(#request{header = SReqB_Header1, body = <<"test">>}, <<>>),
+
+    io:format("test: set_request_body/2 - 2.2~n"),
+    %% verify that Content-Length was set correctly
+    ["0"] = keylist:fetch('content-length', SReqB_Header3_1),
+
+
+    %% set_response_body(Request, Body)
+    %%--------------------------------------------------------------------
+    SResB_Header1 = keylist:from_list([{"Content-Length", ["1"]}]),
+    SResB_Header2 = keylist:from_list([]),
+
+    io:format("test: set_response_body/2 - 1.1~n"),
+    %% set a binary body
+    #response{header=SResB_Header1_1, body = <<"test">>} =
+	set_response_body(#response{header = SResB_Header1, body = <<>>}, <<"test">>),
+
+    io:format("test: set_response_body/2 - 1.2~n"),
+    %% verify that Content-Length was set correctly
+    ["4"] = keylist:fetch('content-length', SResB_Header1_1),
+
+    io:format("test: set_response_body/2 - 2.1~n"),
+    %% set a list body - list bodies are kept for backwards compatibility
+    #response{header=SResB_Header2_1, body = <<"test">>} =
+	set_response_body(#response{header = SResB_Header2, body = <<>>}, "test"),
+
+    io:format("test: set_response_body/2 - 2.2~n"),
+    %% verify that Content-Length was set correctly
+    ["4"] = keylist:fetch('content-length', SResB_Header2_1),
+
+    io:format("test: set_response_body/2 - 3.1~n"),
+    %% delete body
+    #response{header=SResB_Header3_1, body = <<>>} =
+	set_response_body(#response{header = SResB_Header1, body = <<"test">>}, <<>>),
+
+    io:format("test: set_response_body/2 - 2.2~n"),
+    %% verify that Content-Length was set correctly
+    ["0"] = keylist:fetch('content-length', SResB_Header3_1),
+
+
+    %% fix_content_length(Header, Body)
+    %%--------------------------------------------------------------------
+    io:format("test: fix_content_length/2 - 1~n"),
+    %% binary body, no Content-Length header
+    ["4"] = keylist:fetch('content-length', fix_content_length(
+					      keylist:from_list([]),
+					      <<"test">>)
+			 ),
+
+    io:format("test: fix_content_length/2 - 2~n"),
+    %% list body, incorrect Content-Length header
+    ["4"] = keylist:fetch('content-length', fix_content_length(
+					      keylist:from_list([{"Content-Length", ["600"]}]),
+					      "test")
+			 ),
+    
+    io:format("test: fix_content_length/2 - 3~n"),
+    %% delete body, incorrect Content-Length header
+    ["0"] = keylist:fetch('content-length', fix_content_length(
+					      keylist:from_list([{"Content-Length", ["600"]}]),
+					      <<>>)
+					     ),
+
+
+    %% proxyauth_without_response(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: proxyauth_without_response/1 - 1~n"),
+    PAWR_Str1 =
+	"Digest username=\"ft\", realm=\"su.se\", uri=\"sip:example.org\", "
+	"response=\"test-response\", nonce=\"test-nonce\", opaque=\"test-opaque\", "
+	"algorithm=md5",
+
+    ["algorithm=md5", "realm=su.se", "uri=sip:example.org", "username=ft"] =
+	lists:sort( proxyauth_without_response(
+		      keylist:from_list([{"Proxy-Authorization", [PAWR_Str1]}])
+		     )),
+
+    io:format("test: proxyauth_without_response/1 - 2~n"),
+    none = proxyauth_without_response( keylist:from_list([]) ),
 
     ok.
