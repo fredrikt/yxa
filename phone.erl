@@ -101,7 +101,7 @@ servers() ->
 %%--------------------------------------------------------------------
 remove_expired_phones() ->
     case expired_phones() of
-	{atomic, Expired} ->
+	{ok, Expired} ->
 	    remove_phones(Expired),
 	    true;
 	{aborted, {no_exists, Table}} ->
@@ -116,22 +116,25 @@ remove_expired_phones() ->
 
 remove_phones(ExpiredPhones) ->
     F = fun({User, Location, Class}) ->
+		URL = if
+			  is_list(Location) ->
+			      sipurl:parse(Location);
+			  true ->
+			      none
+		      end,
 		if
-		    record(Location, sipurl) ->
-			[C] = sipheader:contact_print([contact:new(none, Location, [])]),
-			logger:log(normal, "Location: User ~s ~p contact ~s has expired", [User, Class, C]),
-			delete_phone(User, Class, Location);
+		    is_record(URL, sipurl) ->
+			logger:log(normal, "Location: User ~p ~p location ~p has expired", [User, Class, sipurl:print(URL)]);
 		    true ->
-			logger:log(error, "Location: Unknown data in location database,"
-				   " suggesting you start with a fresh location database! : ~p",
-				   [Location])
-		end
+			logger:log(normal, "Location: User ~p ~p (unrecognized) location ~p has expired", [User, Class, Location])
+		end,
+		delete_phone(User, Location, Class)
 	end,
     lists:foreach(F, ExpiredPhones).
 
 %%--------------------------------------------------------------------
 %% Function: insert_purge_phone(SipUser, Flags, Class, Expire,
-%%           Address, CallId, CSeq)
+%%                              Address, CallId, CSeq)
 %%           SipUser =
 %%           Flags   = list of {Name,Value}
 %%           Name    = string() ?
@@ -141,8 +144,8 @@ remove_phones(ExpiredPhones) ->
 %%           Address = sipurl record()
 %%           CallId  = string()
 %%           CSeq    = integer()
-%% Descrip.: Remove a certain SipUser - sipurl mapping. Then create a
-%%           new entry with a new Expire value
+%% Descrip.: Remove a certain SipUser -> location mapping. Then create
+%%           a new entry with a new Expire value
 %% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
 insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is_record(Address, sipurl) ->
@@ -150,7 +153,8 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is
     %% datastructure could have to be changed in the future
     LocationStr = sipurl:print(Address),
     %% URIstr is not a valid location for this user, it is used to find the user of
-    %% a location.
+    %% a location, when for example we need to determine if we should proxy a request
+    %% without requiring authorization in incomingproxy and appserver.
     URIstr = url_to_requristr(Address),
     Fun = fun() ->
 		  A = mnesia:match_object(#phone{number = SipUser,
@@ -243,17 +247,14 @@ list_numbers() ->
     db_util:tab_to_list(numbers).
 
 %%--------------------------------------------------------------------
-%% Function: get_sipuser_location_binding(SipUser,Location)
-%%           SipUser =
+%% Function: get_sipuser_location_binding(SipUser, Location)
+%%           SipUser  = string()
 %%           Location = sipurl record()
-%% Descrip.: find a phone record(), if it exists, that maps SipUser to
-%%           Location.
+%% Descrip.: Look for a phone record() that maps SipUser to Location.
 %% Returns : {atomic, [LocRec]} | {atomic, []} | ....
 %%           LocRec = phone record()
 %%--------------------------------------------------------------------
-%% XXX this code will break if we actualy use the pass field in
-%% Location, LocationStr only contains user, host and port !
-get_sipuser_location_binding(SipUser,Location) ->
+get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record(Location, sipurl) ->
     Now = util:timestamp(),
     LocationStr = url_to_requristr(Location),
 
@@ -277,14 +278,14 @@ get_sipuser_location_binding(SipUser,Location) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_sipuser_locations(SipUser)
-%%           SipUser =
+%%           SipUser = string()
 %% Descrip.: Fetches all locations for a given number (SIP user)
 %%           from the location database.
 %% Returns : {atomic, Entries} |
 %%           the result of the mnesia:transaction()
 %%           Entries = phone record()
 %%--------------------------------------------------------------------
-get_sipuser_locations(SipUser) ->
+get_sipuser_locations(SipUser) when is_list(SipUser) ->
     Now = util:timestamp(),
 
     F = fun() ->
@@ -302,16 +303,17 @@ get_sipuser_locations(SipUser) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_phone/1
+%% Function: get_phone(SipUser)
+%%           SipUser = string()
 %% Descrip.: Fetches all locations for a given number (SIP user)
 %%           from the location database.
 %% Returns : {atomic, Entries} |
 %%           the result of the mnesia:transaction()
 %%           Entries = list() of {Address, Flags, Class, Expire} (see
 %%           phone record())
-%% XXX depricated - should be replaced by get_sipuser_locations/1
+%% XXX deprecated - should be replaced by get_sipuser_locations/1
 %%--------------------------------------------------------------------
-get_phone(SipUser) ->
+get_phone(SipUser) when is_list(SipUser) ->
     Now = util:timestamp(),
 
     F = fun() ->
@@ -328,7 +330,7 @@ get_phone(SipUser) ->
 	{atomic, L} ->
 	    %% Convert the location strings stored in the database to sipurl record format.
 	    %% We can't store the locations as sipurl records in the database in case we
-	    %% want have to change something in the sipurl record.
+	    %% have to change something in the sipurl record.
 	    Rewrite = fun(Entry) ->
 			      {LocationStr, Flags, Class, Expire} = Entry,
                               case LocationStr of
@@ -338,7 +340,7 @@ get_phone(SipUser) ->
 				      U = sipurl:new([{proto, "sip"}, {user, User}, {pass, Pass},
 						      {host, Host}, {port, Port}, {param, Parameters}]),
                                       {U, Flags, Class, Expire};
-				  _ ->
+				  _ when is_list(LocationStr) ->
 				      {sipurl:parse(LocationStr), Flags, Class, Expire}
 			      end
 		      end,
@@ -471,11 +473,11 @@ set_user_classes(User, Classes) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: expired_phones/0
+%% Function: expired_phones()
 %% Descrip.: Finds all expired entrys from the location database.
-%% Returns : {atomic, Entries} |
+%% Returns : {ok, Entries} |
 %%           the result of the Mnesia transaction
-%%           Entries = {Number, Address, Class}
+%%           Entries = list() of {Number, Address, Class} tuples()
 %%--------------------------------------------------------------------
 expired_phones() ->
     Now = util:timestamp(),
@@ -495,50 +497,31 @@ expired_phones() ->
 	    %% Convert the location strings stored in the database to sipurl record format.
 	    %% We can't store the locations as sipurl records in the database in case we
 	    %% want have to change something in the sipurl record.
-	    Rewrite = fun(Entry) ->
-			      {SipUser, LocationStr, Class} = Entry,
-			      case LocationStr of
-				  {User, Pass, Host, Port, Parameters} ->
-				      %% 2004-04-14, ft@ : This is COMPABILITY code to handle old entrys just enough to
-                                      %% delete them when they expire. Will be removed.
-				      U = sipurl:new([{proto, "sip"}, {user, User}, {pass, Pass}, {host, Host},
-						      {port, Port}, {param, Parameters}]),
-				      {SipUser, U, Class};
-				  _ ->
-				      {SipUser, sipurl:parse(LocationStr), Class}
-			      end
-		      end,
-	    {atomic, lists:map(Rewrite, L)};
+	    {ok, L};
 	Unknown ->
 	    logger:log(error, "Location: expired_phones got unknown result from Mnesia : ~p", [Unknown]),
 	    Unknown
     end.
 
 %%--------------------------------------------------------------------
-%% Function: delete_phone/3
+%% Function: delete_phone(SipUser, Address, Class)
+%%           SipUser = string()
+%%           Class   = atom()
+%%           Address = term()
 %% Descrip.: Removes all entrys matching a number (SIP user), class
-%%           and address from the location database.
+%%           and address from the location database. Address can be
+%%           whatever - this function should not be depending on being
+%%           able to understand Address to remove old records from the
+%%           database.
 %% Returns : The result of the Mnesia transaction
-%% XXX used by remove_phones (and remove_expired_phones)
+%% Note    :  used by remove_phones (and remove_expired_phones)
 %%--------------------------------------------------------------------
-delete_phone(SipUser, Class, Address) when is_record(Address, sipurl) ->
-    AddressStr = sipurl:print(Address),
-    %% 2004-04-14, ft@ : This is COMPABILITY code to flush out records of old format
-    %% from the location database. Will be removed.
-    CompatForm = {Address#sipurl.user, Address#sipurl.pass, Address#sipurl.host, Address#sipurl.port,
-		  Address#sipurl.param},
+delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
     Fun = fun() ->
-		  A1 = mnesia:match_object(#phone{number = SipUser,
-						  class = Class,
-						  address = AddressStr,
-						  _ = '_'}),
-		  %% 2004-04-14, ft@ : This is COMPABILITY code to flush out records of old format
-		  %% from the location database. Will be removed.
-		  A2 = mnesia:match_object(#phone{number = SipUser,
-						  class = Class,
-						  address = CompatForm,
-						  _ = '_'}),
-		  A = A1 ++ A2,
+		  A = mnesia:match_object(#phone{number = SipUser,
+						 class = Class,
+						 address = Address,
+						 _ = '_'}),
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
