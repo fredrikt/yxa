@@ -281,7 +281,18 @@ create_session_nomatch(Request, LogStr) when is_record(Request, request), is_lis
 %%--------------------------------------------------------------------
 create_session_cpl(Request, Origin, LogStr, User, Graph) 
   when is_record(Request, request), is_record(Origin, siporigin), is_list(LogStr), is_list(User) ->
-    erlang:error(cpl_code_not_merged_yet).
+    Res = interpret_cpl:process_cpl_script(Request, User, Graph, incoming),
+    case Res of
+	{server_default_action} ->
+	    %% Loop back to create_session, but tell it to not do CPL again
+	    create_session(Request, Origin, LogStr, false);
+	ok ->
+	    ok;
+	Unknown ->
+	    logger:log(error, "appserver: Unknown return value from process_cpl_script(...) user ~p : ~p",
+		       [User, Unknown]),
+	    throw({siperror, 500, "Server Internal Error"})
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_actions(URI, DoCPL)
