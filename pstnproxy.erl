@@ -3,7 +3,8 @@
 
 start(normal, Args) ->
     Pid = spawn(sipserver, start, [fun init/0, fun request/6,
-				   fun response/6, [user, numbers]]),
+				   fun response/6, [user, numbers],
+				   stateless]),
     {ok, Pid}.
 
 init() ->
@@ -39,27 +40,14 @@ routeRequestToPSTN(FromIP, ToHost) ->
     end.
 
 request("ACK", URL, Header, Body, Socket, FromIP) ->
-    logger:log(debug, "ACK ~p", [sipurl:print(URL)]),
-    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
-    case ToTag of
-	"z9hG4bK-yxa-" ++ Foo ->
-	    case lists:suffix(siprequest:myhostname() ++ "-drop-ACK", Foo) of
-		true ->
-		    logger:log(debug, "Dropping ACK of my challenge"),
-		    LogStr = sipserver:make_logstr({request, "ACK", URL, Header, Body}, FromIP),
-		    logger:log(debug, "~s -> dropped", [LogStr]);
-		false ->
-		    do_request("ACK", URL, Header, Body, Socket, FromIP)
-	    end;
-	_ ->
-	    do_request("ACK", URL, Header, Body, Socket, FromIP)
-    end;
+    do_request("ACK", URL, Header, Body, Socket, FromIP);
 
 request(Method, URL, Header, Body, Socket, FromIP) ->
     do_request(Method, URL, Header, Body, Socket, FromIP).
 
 do_request(Method, URI, Header, Body, Socket, FromIP) ->
     {User, Pass, Host, Port, Parameters} = URI,
+    Request = {Method, URI, Header, Body},
     LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
     case routeRequestToPSTN(FromIP, Host) of
 	true ->
@@ -79,20 +67,21 @@ do_request(Method, URI, Header, Body, Socket, FromIP) ->
 		    toPSTNrequest(Method, URI, Header, Body, Socket, LogStr);
 		_ ->
 		    logger:log(normal, "~s -> PSTN denied, 405 Method Not Allowed", [LogStr]),
-		    siprequest:send_result(Header, Socket, "", 405, "Method Not Allowed")
-		 %   	[{"Allow, ["INVITE", "ACK", "PRACK", "CANCEL", "BYE", "OPTIONS"]}])
+		    ExtraHeaders = [{"Allow", ["INVITE", "ACK", "PRACK", "CANCEL", "BYE", "OPTIONS"]}],
+		    transactionlayer:send_response_request(Request, 405, "Method Not Allowed", ExtraHeaders)
 	    end;
 	false ->
 	    logger:log(normal, "~s -> SIP server", [LogStr]),
 	    toSIPrequest(Method, URI, Header, Body, Socket);
 	_ ->
 	    logger:log(normal, "~s -> 403 Forbidden", [LogStr]),
-	    siprequest:send_result(Header, Socket, "", 403, "Forbidden")
+	    transactionlayer:send_response_request(Request, 403, "Forbidden")
     end.
 
 toSIPrequest(Method, URI, Header, Body, Socket) ->
     {User, Pass, Host, Port, Parameters} = URI,
-    Newlocation = case localhostname(Host) of
+    Request = {Method, URI, Header, Body},
+    NewLocation = case localhostname(Host) of
 	true ->
 	    logger:log(debug, "Performing ENUM lookup on ~p", [User]),
 	    case local:lookupenum(User) of
@@ -105,7 +94,14 @@ toSIPrequest(Method, URI, Header, Body, Socket) ->
 			    % No ENUM and no SIP-proxy configured, return failure so
 			    % that the PBX on the other side of the gateway can try
 			    % PSTN or something
-			    siprequest:send_result(Header, Socket, "", 503, "Service Unavailable"),
+			    %
+			    % XXX choose something else than 503 since some clients
+			    % probably mark this gateway as defunct for some time.
+			    % RFC3261 #16.7 :
+			    % In other words, forwarding a 503 means that the proxy knows it
+			    % cannot service any requests, not just the one for the Request-
+			    % URI in the request which generated the 503.
+			    transactionlayer:send_response_request(Request, 503, "Service Unavailable"),
 			    none;
 			_ ->
 			    {User, none, Proxy, none, []}
@@ -114,7 +110,7 @@ toSIPrequest(Method, URI, Header, Body, Socket) ->
 	_ ->
 	    URI
     end,
-    case Newlocation of
+    case NewLocation of
 	none ->
 	    none;
 	_ ->
@@ -122,13 +118,31 @@ toSIPrequest(Method, URI, Header, Body, Socket) ->
 		true -> siprequest:add_record_route(Header);
 	        false -> Header
 	    end,
-	    {_, _, DstHost, _, _} = Newlocation,
+	    {_, _, DstHost, _, _} = NewLocation,
 	    {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
 	    Newheaders2 = add_caller_identity_for_sip(Method, Newheaders, FromURI),
-	    siprequest:send_proxy_request(Socket, {Method, URI, Newheaders2, Body}, Newlocation, [])
+	    THandler = transactionlayer:get_handler_for_request(Request),
+	    NewRequest = {Method, URI, Newheaders2, Body},
+	    proxy_request(THandler, NewRequest, NewLocation, [])
+    end.
+
+proxy_request(THandler, Request, DstURL, Parameters) ->
+    case siprequest:send_proxy_request(THandler, Request, DstURL, Parameters) of
+	{sendresponse, Status, Reason} ->
+	    {Method, URI, _, _} = Request,
+	    logger:log(error, "Transport layer failed sending ~s ~s to ~s, asked us to respond ~p ~s",
+			[Method, sipurl:print(URI), sipurl:print(DstURL), Status, Reason]),
+	    transactionlayer:send_response_request(Request, Status, Reason);
+	{ok, _} ->
+	    true;
+	Unknown ->
+	    logger:log(error, "Transport layer returned unknown result, responding 500 Server Internal Error"),
+	    logger:log(debug, "ransport layer returned unknown result :~n~p", [Unknown]),
+	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
     end.
 
 toPSTNrequest(Method, URI, Header, Body, Socket, LogStr) ->
+    Request = {Method, URI, Header, Body},
     {DstNumber, _, ToHost, ToPort, _} = URI,
     {NewURI, NewHeaders1} = case localhostname(ToHost) of
 	true ->
@@ -154,17 +168,20 @@ toPSTNrequest(Method, URI, Header, Body, Socket, LogStr) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
     NewHeaders3 = add_caller_identity_for_pstn(Method, NewHeaders2, FromURI, PSTNgateway),
     NewRequest = {Method, URI, NewHeaders3, Body},
-    relay_request_to_pstn(Socket, NewRequest, NewURI, DstNumber, LogStr).
+    THandler = transactionlayer:get_handler_for_request(Request),
+    relay_request_to_pstn(THandler, NewRequest, NewURI, DstNumber, LogStr).
     
-relay_request_to_pstn(Socket, {"ACK", URI, Header, Body}, NewURI, DstNumber, LogStr) ->
+relay_request_to_pstn(THandler, {"ACK", URI, Header, Body}, NewURI, DstNumber, LogStr) ->
+    Request = {"ACK", URI, Header, Body},
     logger:log(normal, "~s -> PSTN ~s (~s)", [LogStr, DstNumber, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Socket, {"ACK", URI, Header, Body}, NewURI, []);
+    siprequest:send_proxy_request(THandler, Request, NewURI, []);
 
-relay_request_to_pstn(Socket, {"CANCEL", URI, Header, Body}, NewURI, DstNumber, LogStr) ->
+relay_request_to_pstn(THandler, {"CANCEL", URI, Header, Body}, NewURI, DstNumber, LogStr) ->
+    Request = {"CANCEL", URI, Header, Body},
     logger:log(normal, "~s -> PSTN ~s (~s)", [LogStr, DstNumber, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Socket, {"CANCEL", URI, Header, Body}, NewURI, []);
+    siprequest:send_proxy_request(THandler, Request, NewURI, []);
 
-relay_request_to_pstn(Socket, Request, NewURI, DstNumber, LogStr) ->
+relay_request_to_pstn(THandler, Request, NewURI, DstNumber, LogStr) ->
     {Method, URI, Header, Body} = Request,
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
@@ -172,22 +189,36 @@ relay_request_to_pstn(Socket, Request, NewURI, DstNumber, LogStr) ->
 	{true, User, Class} ->
 	    logger:log(debug, "Auth: User ~p is allowed to call dst ~s (class ~s)", [User, DstNumber, Class]),
 	    logger:log(normal, "~s -> PSTN ~s (~s)", [LogStr, DstNumber, sipurl:print(NewURI)]),
-	    siprequest:send_proxy_request(Socket, Request, NewURI, []);
+	    siprequest:send_proxy_request(THandler, Request, NewURI, []);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate for dst ~s (class ~s)", [User, DstNumber, Class]),
-	    siprequest:send_proxyauth_req(dropack_to(Header), Socket, sipauth:get_challenge(), true);
+	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
+	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
 	{false, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate for dst ~s (class ~s)", [User, DstNumber, Class]),
-	    siprequest:send_proxyauth_req(dropack_to(Header), Socket, sipauth:get_challenge(), false);
+	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
+	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
 	Unknown ->
 	    logger:log(error, "Auth: Unknown result from sipauth:pstn_is_allowed_call() :~n~p", [Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
+	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
     end.
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
     LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
-    logger:log(normal, "Response to ~s: ~p ~s", [LogStr, Status, Reason]),
-    siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
+    Response = {Status, Reason, Header, Body},
+    case transactionlayer:get_server_handler_for_stateless_response(Response) of
+	{error, E} ->
+	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
+	    logger:log(normal, "Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
+	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
+	none ->
+	    logger:log(normal, "Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
+	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
+	TH ->
+	    logger:log(debug, "Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
+	    transactionlayer:send_proxy_response_handler(TH, Response)
+    end.
+
 
 add_caller_identity_for_pstn("INVITE", Headers, URI, Gateway) ->
     case sipserver:get_env(remote_party_id, false) of
@@ -227,18 +258,3 @@ add_caller_identity_for_sip("INVITE", Headers, URI) ->
     end;
 add_caller_identity_for_sip(_, Headers, _) ->
     Headers.
-
-% Set a To-tag that includes a magic cookie to recognize the ACK of one of our
-% challenges without having to keep state, except if there already is a to-tag
-dropack_to(Header) ->
-    To = keylist:fetch("To", Header),
-    case sipheader:get_tag(To) of
-	none ->
-	    {DistplayName, ToURI} = sipheader:to(To),
-	    MyHostname = siprequest:myhostname(),
-	    NewTo = lists:concat([sipheader:to_print({DistplayName, ToURI}), ";tag=",
-	    			siprequest:generate_branch(), "-", MyHostname, "-drop-ACK"]),
-	    keylist:set("To", [NewTo], Header);
-	_ ->
-	    Header
-    end.

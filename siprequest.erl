@@ -4,7 +4,10 @@
 	 send_notfound/2, send_proxy_response/5, send_result/5,
 	 send_result/6, make_answerheader/1, add_record_route/1,
 	 add_record_route/3, myhostname/0, default_port/1,
-	 get_loop_cookie/2, generate_branch/0, url_to_dstlist/2]).
+	 get_loop_cookie/2, generate_branch/0, url_to_dstlist/2,
+	 make_response/7]).
+
+-include("sipsocket.hrl").
 
 send_response(Socket, Code, Text, Header, Body) ->
     case sipheader:topvia(Header) of
@@ -47,32 +50,35 @@ send_response_to(DefaultSocket, Code, Text, Dest, HeaderIn, Body) ->
 	_ ->
 	    {DestPort, list_to_integer(default_port(DestPort))}
     end,
-    SendSocket = case DefaultSocket of
-	{_, _, _} ->
+    SendSocket = case sipsocket:is_good_socket(DefaultSocket) of
+	true ->
 	    DefaultSocket;
 	_ ->
+	    logger:log(debug, "Siprequest: No good socket (~p) provided to send_response_to() - asking transport layer",
+			[DefaultSocket]),
 	    case sipsocket:get_socket(sipsocket:via2sipsocketprotocol(Protocol), SendToHost,
-					   PortInt, nevermatch) of
+					   PortInt) of
 		none ->
 		    {error, "no socket provided and get_socket() returned 'none'"};
-		S ->
+		S when record(S, sipsocket) ->
 		    S
 	    end
     end,
     case SendSocket of
-	{SocketProto, CPid, _} ->
-	    logger:log(debug, "send response(~p, send to=~s:~s:~p (using ~p)) :~n~s~n",
-    			[Dest, sipsocket:sipproto2str(SocketProto), SendToHost, PortInt, CPid, Message]),
+	SipSocket when record(SipSocket, sipsocket) ->
+	    CPid = SipSocket#sipsocket.pid,
+	    logger:log(debug, "send response(top Via: ~s, send to=~s:~s:~p (using ~p)) :~n~s~n",
+    			[sipheader:via_print([Dest]), sipsocket:sipproto2str(SipSocket), SendToHost, PortInt, CPid, Message]),
 	    case sipsocket:send(SendSocket, SendToHost, PortInt, Message) of
 		ok ->
 		    ok;
 		{error, E} ->
-		    logger:log(error, "Failed sending response to ~p:~p using socket ~p, error ~p",
+		    logger:log(error, "Failed sending response to ~s:~p using socket ~p, error ~p",
 				[SendToHost, PortInt, SendSocket, E]),
 		    {senderror, E}
 	    end;
 	{error, E} ->
-	    logger:log(error, "Failed to get socket to send response to ~p:~p, error ~p, response :~n~s~n",
+	    logger:log(error, "Failed to get socket to send response to ~s:~p, error ~p, response :~n~s~n",
 			[SendToHost, PortInt, E, Message]),
 	    {senderror, "Could not get socket"}
     end.
@@ -212,7 +218,7 @@ is_loose_router(Route) ->
 	    false
     end.
 
-send_proxy_request(OrigSocket, Request, DstURI, Parameters) ->
+send_proxy_request(SrvTHandler, Request, DstURI, Parameters) ->
     {Method, OrigURI, Header, Body} = Request,
     NewHeader1 = proxy_check_maxforwards(Header),
     check_valid_proxy_request(Method, NewHeader1),
@@ -220,51 +226,64 @@ send_proxy_request(OrigSocket, Request, DstURI, Parameters) ->
     Line1 = Method ++ " " ++ sipurl:print(NewURI) ++ " SIP/2.0",
     NewHeader = fix_content_length(NewHeader2, Body),
     ApproxMsgSize = length(Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader) ++ "\r\n" ++ Body),
-    case url_to_dstlist(NewDest, ApproxMsgSize) of
+    {ViaParameters, Dst} = separate_parameters(Parameters),
+    case get_dst(NewDest, ApproxMsgSize, Dst) of
 	{error, nxdomain} ->
 	    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN)", [NewDest]),
-	    siprequest:send_result(Header, OrigSocket, "", 604, "Does Not Exist Anywhere");
+	    {sendresponse, 604, "Does Not Exist Anywhere"};
 	{error, What} ->
 	    logger:log(normal, "Could not resolve destination ~p (~p)", [NewDest, What]),
-	    siprequest:send_result(Header, OrigSocket, "", 500, "Could not resolve destination");
+	    {sendresponse, 500, "Could not resolve destination"};
 	DstList when list (DstList) ->
 	    logger:log(debug, "Siprequest: Destination list for ~s is :~n~p",
 			[sipurl:print(NewDest), DstList]),
 	    NewRequest = {Method, NewDest, NewHeader, Body},
 	    TransactionId = sipheader:get_server_transaction_id(NewRequest),
 	    send_to_available_dst(sipurl:print(NewDest), DstList, TransactionId, Line1,
-	    			  NewRequest, Parameters, OrigURI, OrigSocket)
+	    			  NewRequest, ViaParameters, OrigURI, SrvTHandler)
     end.
 
-send_to_available_dst(DestStr, [], TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket) ->
+separate_parameters(In) ->
+    separate_parameters(In, [], []).
+
+separate_parameters([], Via, Dst) ->
+    {Via, Dst};
+separate_parameters([{dst, D} | T], Via, Dst) ->
+    separate_parameters(T, Via, lists:append(Dst, [D]));
+separate_parameters([H | T], Via, Dst) ->
+    separate_parameters(T, lists:append(Via, [H]), Dst).
+    
+get_dst(URI, ApproxMsgSize, []) ->
+   url_to_dstlist(URI, ApproxMsgSize);
+get_dst(_, _, DstList) ->
+    DstList.
+
+send_to_available_dst(DestStr, [], TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler) ->
     {Method, URI, Header, Body} = Request,
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
-    logger:log(debug, "Failed to find destination for request (my Via not added) :~n~s", [Message]),
-    logger:log(error, "Failed to find destination for request ~s ~s", [Method, DestStr]),
+    logger:log(debug, "Failed sending request (my Via not added) :~n~s", [Message]),
     {senderror, "failed"};
-send_to_available_dst(DestStr, [Dst | T], TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket) ->
+send_to_available_dst(DestStr, [Dst | T], TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler) ->
     {Method, URI, Header, Body} = Request,
     {SipProto, IP, Port} = Dst,
     PortInt = list_to_integer(Port),
-    logger:log(debug, "FREDRIK: get_socket() PROTO ~p IP ~p PORT ~p", [SipProto, IP, PortInt]),
-    case sipsocket:get_socket(SipProto, IP, PortInt, nevermatch) of
+    case sipsocket:get_socket(SipProto, IP, PortInt) of
 	{error, What} ->
 	    logger:log(debug, "Failed to get ~p socket (~s:~p) for ~s : ~p", [SipProto, IP, PortInt, DestStr, What]),
 	    % try next
-	    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket);
-	Socket ->
-	    NewHeader1 = proxy_add_via(Header, OrigURI, Parameters, SipProto, OrigSocket),
+	    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler);
+	SipSocket when record(SipSocket, sipsocket) ->
+	    NewHeader1 = proxy_add_via(Header, Method, OrigURI, Parameters, SipProto, SrvTHandler),
 	    Message = Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader1) ++ "\r\n" ++ Body,
-	    {SocketProto, _, _} = Socket,
-	    case sipsocket:send(Socket, IP, PortInt, Message) of
+	    case sipsocket:send(SipSocket, IP, PortInt, Message) of
 		ok ->
 		    logger:log(debug, "sent request(~p, sent to=~s:~s:~p) :~n~s~n",
-				[DestStr, sipsocket:sipproto2str(SocketProto), IP, PortInt, Message]),
-		    ok;
+				[DestStr, sipsocket:sipproto2str(SipSocket), IP, PortInt, Message]),
+		    {ok, SipSocket};
 		{error, E} ->
 		    logger:log(debug, "Failed sending message to ~s:~s:~p, error ~p",
-				[sipsocket:sipproto2str(SocketProto), IP, PortInt, E]),
-		    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, OrigSocket)
+				[sipsocket:sipproto2str(SipSocket), IP, PortInt, E]),
+		    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler)
 	    end
     end.
 
@@ -285,38 +304,48 @@ proxy_check_maxforwards(Header) ->
 	    keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Header)
     end.
 
-proxy_add_via(Header, OrigURI, Parameters, SocketProto, OrigSocket) ->
+proxy_add_via(Header, Method, OrigURI, Parameters, SocketProto, SrvTHandler) ->
     ViaHostname = myhostname(),
-    ViaParameters1 = case sipserver:get_env(detect_loops, true) of
+    LoopCookie = case sipserver:get_env(detect_loops, true) of
 	true ->
-	    LoopCookie = get_loop_cookie(Header, OrigURI),
-	    ParamDict = sipheader:param_to_dict(Parameters),
-	    case dict:find("branch", ParamDict) of
+	    get_loop_cookie(Header, OrigURI);
+	false ->
+	    none
+    end,
+    ParamDict = sipheader:param_to_dict(Parameters),
+    ViaParameters1 = case dict:find("branch", ParamDict) of
+	error ->
+	    case stateless_generate_branch(OrigURI, Header) of
 		error ->
-		    case stateless_generate_branch(OrigURI, Header) of
-			error ->
-			    Parameters;
-			Branch ->
-			    % In order to find the correct "server transaction" (ie. TCP socket) to use
-			    % when sending future responses to this request back upstreams, we need to
-			    % associate the stateless branch we generated with the socket the request
-			    % we are now proxying arrived on. If it is a TCP socket.
-			    % We don't check for errors since sockets can vanish but we can route
-			    % responses using the information in Via too.
-			    sipsocket:store_stateless_response_branch(OrigSocket, Branch),
-			    NewBranch = Branch ++ "-o" ++ LoopCookie,
-			    logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
-					[NewBranch]),
-			    Param2 = dict:store("branch", NewBranch, ParamDict),
-		    	    sipheader:dict_to_param(Param2)
-		    end;
-		{ok, Branch} ->
-		    logger:log(debug, "Siprequest: Added loop cookie ~p to branch of request",
-					[LoopCookie]),
-		    Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
-		    sipheader:dict_to_param(Param2)
+		    Parameters;
+		Branch ->
+		    % In order to find the correct "server transaction" (ie. TCP socket) to use
+		    % when sending future responses to this request back upstreams, we need to
+		    % associate the stateless branch we generated with the socket the request
+		    % we are now proxying arrived on. If it is a TCP socket.
+		    % We don't check for errors since sockets can vanish but we can route
+		    % responses using the information in Via too.
+		    case Method of
+			"ACK" -> true;	% ACK is part of INVITE transaction or does not get responded to
+			_ ->
+			    transactionlayer:store_stateless_response_branch(SrvTHandler, Branch, Method)
+		    end,
+		    NewBranch = case LoopCookie of
+			none -> Branch;
+			_ -> Branch ++ "-o" ++ LoopCookie
+		    end,
+		    logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
+				[NewBranch]),
+		    Param2 = dict:store("branch", NewBranch, ParamDict),
+	    	    sipheader:dict_to_param(Param2)
 	    end;
-	_ ->
+	{ok, Branch} when LoopCookie /= none ->
+	    logger:log(debug, "Siprequest: Added loop cookie ~p to branch of request",
+				[LoopCookie]),
+	    Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
+	    sipheader:dict_to_param(Param2);
+	{ok, Branch} ->
+	    % Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
 	    Parameters
     end,
     ViaPort = default_port(sipserver:get_env(listenport, none)),
@@ -339,7 +368,7 @@ stateless_generate_branch(OrigURI, Header) ->
 	    case sipheader:get_via_branch(TopVia) of
 		"z9hG4bK" ++ RestOfBranch ->
 		    In = lists:flatten(lists:concat([node(), "-rbranch-", RestOfBranch])),
-		    "z9hG4bK-yxa-" ++ string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=);
+		    "z9hG4bK-yxa-" ++ make_base64_md5_token(In);
 		_ ->
 		    % No branch, or non-RFC3261 branch
 		    OrigURIstr = sipurl:print(OrigURI),
@@ -349,19 +378,41 @@ stateless_generate_branch(OrigURI, Header) ->
 		    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
 		    In = lists:flatten(lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag, 
 		    				    "-callid-", CallId, "-cseqnum-", CSeqNum])),
-		    "z9hG4bK-yxa-" ++ string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=)
+		    "z9hG4bK-yxa-" ++ make_base64_md5_token(In)
 	    end;
 	_ ->
 	    logger:log(error, "Can't generate stateless branch for this request, it has no top Via!"),
 	    error
     end.
 
+% Make md5 of input, base64 of that and RFC3261 token of the result
+make_base64_md5_token(In) ->
+    Out = string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=),
+    make_3261_token(Out).
+
+% RFC 3261 chapter 25 BNF notation of token :
+%      token       =  1*(alphanum / "-" / "." / "!" / "%" / "*"
+%                           / "_" / "+" / "" / "'" / "~" )
+make_3261_token([]) ->
+    [];
+make_3261_token([H | T]) when H >= $a, H =< $z ->
+    [H|make_3261_token(T)];
+make_3261_token([H | T]) when H >= $A, H =< $Z ->
+    [H|make_3261_token(T)];
+make_3261_token([H | T]) when H >= $0, H =< $9 ->
+    [H|make_3261_token(T)];
+make_3261_token([H | T]) when H == $-; H == $.; H == $!; H == $%;
+	H == $*; H == $_; H == $+; H == $`; H == $'; H == $~ ->
+    [H|make_3261_token(T)];
+make_3261_token([H | T]) ->
+    [$_|make_3261_token(T)].
+
 generate_branch() ->
     {Megasec, Sec, Microsec} = now(),
     % We don't need port here since erlang guarantees that Microsecond is never the
     % same on one node.
     In = lists:concat([node(), Megasec * 1000000 + Sec, 8, $., Microsec]),
-    Out = string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=),
+    Out = make_base64_md5_token(In),
     "z9hG4bK-yxa-" ++ Out.
 
 make_answerheader(Header) ->
@@ -382,7 +433,9 @@ get_loop_cookie(Header, OrigURI) ->
     CallId = keylist:fetch("Call-Id", Header),
     {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     ProxyReq = keylist:fetch("Proxy-Require", Header),
-    ProxyAuth = keylist:fetch("Proxy-Authorization", Header),
+    % We must remove the response part from Proxy-Authorization because it includes the method
+    % and thus CANCEL does not match INVITE. Contradictingly but implicitly from RFC3261 16.6 #8.
+    ProxyAuth = proxyauth_without_response(Header),
     Route = keylist:fetch("Route", Header),
     {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
 	{_, {TopViaHost1, TopViaPort1}, _} -> {TopViaHost1, default_port(TopViaPort1)};
@@ -393,9 +446,21 @@ get_loop_cookie(Header, OrigURI) ->
     				    "-callid-", CallId, "-cseqnum-", CSeqNum,
     				    "-preq-", ProxyReq, "-pauth-", ProxyAuth,
     				    "-route-", Route, "-topvia-", TopViaSentBy])),
-    Out = string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=),
+    Out = make_base64_md5_token(In),
     logger:log(debug, "Siprequest: Created loop cookie ~p from input :~n~p", [Out, In]),
     Out.    
+
+proxyauth_without_response(Header) ->
+    case keylist:fetch("Proxy-Authorization", Header) of
+	[] -> none;
+    ProxyAuth ->
+	AuthDict = sipheader:auth(ProxyAuth),
+	NewDict1 = dict:erase("response", AuthDict),
+	NewDict2 = dict:erase("nonce", NewDict1),
+	NewDict3 = dict:erase("cnonce", NewDict2),
+	NewDict4 = dict:erase("opaque", NewDict3),
+	sipheader:dict_to_param(NewDict4)
+    end.
 
 check_valid_proxy_request("ACK", _) ->
     true;
@@ -492,7 +557,7 @@ send_result(Header, Socket, Body, Code, Description, ExtraHeaders) ->
 		  standardcopy(Header, ExtraHeaders),
 		  Body).
 
-send_proxy_response(ObsoleteSocket, Status, Reason, Header, Body) ->
+send_proxy_response(Socket, Status, Reason, Header, Body) ->
     case sipheader:via(keylist:fetch("Via", Header)) of
 	[Self] ->
 	    logger:log(error, "Can't proxy response ~p ~s because it contains just one or less Via and that should be mine!",
@@ -503,18 +568,37 @@ send_proxy_response(ObsoleteSocket, Status, Reason, Header, Body) ->
 	    NewHeader = keylist:set("Via", sipheader:via_print(Via), Header),
 	    % Now look for the correct "server transaction" to use when sending this response upstreams
 	    [NextVia | _] = Via,
-	    NewSocket = get_response_socket_using_via(Self, NextVia),
-	    send_response(NewSocket, Status, Reason, NewHeader, Body)
+	    send_response(Socket, Status, Reason, NewHeader, Body)
     end.
 
-get_response_socket_using_via(MyVia, TopVia) ->
-    % We use our own branch, but the protocol used to receive the 
-    % original request is in the upstreams Via - hence both MyVia
-    % and the upstreams Via (TopVia)
-    {Proto, {Host, Port}, Parameters} = TopVia,
-    case sipheader:get_via_branch(MyVia) of
-	Branch when list(Branch) ->
-	    sipsocket:get_response_socket(sipsocket:via2sipsocketprotocol(Proto), Branch);
-	_ ->
-	    none
-    end.
+
+make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, {SocketProto, _, _}, Request) ->
+    make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SocketProto, Request);
+make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SocketProto, Request) ->
+    {Method, URI, ReqHeader, _} = Request,
+    AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, ["Via", "From", "To", "Call-ID", "CSeq",
+						"Record-Route", "Timestamp", "Content-Type"]),
+					ExtraHeaders),
+    % PlaceHolderVia is an EXTRA Via with our hostname. We could do without this if
+    % we sent it with send_response() instead of send_proxy_response() but it is easier
+    % to just add an extra Via that will be stripped by send_proxy_response() and don't
+    % have to make a difference in how we send out responses.
+    PlaceHolderVia = sipheader:via_print([{sipsocket:sipproto2viastr(SocketProto),
+				     {siprequest:myhostname(),
+				      siprequest:default_port(sipserver:get_env(listenport, none))},
+				     ViaParameters}]),
+    Via = sipheader:via(keylist:fetch("Via", ReqHeader)),
+    AnswerHeader2 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader1),
+    AnswerHeader3 = siprequest:make_answerheader(AnswerHeader2),
+    % If there is a body, calculate Content-Length, otherwise remove the Content-Type we copied above
+    AnswerHeader4 = case Body of
+	"" -> keylist:delete("Content-Type", AnswerHeader3);
+	_ -> keylist:set("Content-Length", [integer_to_list(length(Body))], AnswerHeader3)
+    end,
+    % If this is not a 100 Trying response, remove the Timestamp we copied above.
+    % The preservation of Timestamp headers into 100 Trying response is mandated by RFC 3261 8.2.6.1
+    AnswerHeader5 = case Status of
+	100 -> AnswerHeader4;
+	_ -> keylist:delete("Timestamp", AnswerHeader4)
+    end,
+    {Status, Reason, AnswerHeader5, Body}.

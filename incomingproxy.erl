@@ -3,7 +3,7 @@
 
 start(normal, Args) ->
     Pid = spawn(sipserver, start, [fun init/0, fun request/6,
-				   fun response/6, none]),
+				   fun response/6, none, stateless]),
     {ok, Pid}.
 
 init() ->
@@ -55,7 +55,10 @@ is_request_to_me(_, _, _) ->
 
 request("REGISTER", URL, Header, Body, Socket, FromIP) ->
     {User, Pass, Host, Port, Parameters} = URL,
+    Request = {"REGISTER", URL, Header, Body},
     logger:log(debug, "REGISTER ~p", [sipurl:print(URL)]),
+    THandler = transactionlayer:get_handler_for_request(Request),
+    LogTag = get_branch_from_handler(THandler),
     case local:homedomain(Host) of
 	true ->
 	    LogStr = sipserver:make_logstr({request, "REGISTER", URL, Header, Body}, FromIP),
@@ -67,22 +70,33 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 		{true, SIPuser} ->
 		    Contacts = sipheader:contact(keylist:fetch("Contact", Header)),
 		    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
-		    logger:log(debug, "~s -> Registering contacts for SIPuser ~p", [LogStr, SIPuser]),
-		    siplocation:process_register_isauth(NewHeader, Socket, SIPuser, Contacts);
+		    logger:log(debug, "~s: Registering contacts for SIP user ~p", [LogTag, SIPuser]),
+		    case catch siplocation:process_register_isauth(LogTag ++ ": incomingproxy", NewHeader, SIPuser, Contacts) of
+			{ok, {Status, Reason, ExtraHeaders}} ->
+			    transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders);	
+			{siperror, Status, Reason} ->
+			    transactionlayer:send_response_request(Request, Status, Reason);
+			{siperror, Status, Reason, ExtraHeaders} ->
+			    transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders);
+			_ ->
+			    true
+		    end;
 		{stale, _} ->
 		    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
-		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), true);
+		    ExtraHeaders = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
+		    transactionlayer:send_response_request(Request, 401, "Authentication Required", ExtraHeaders);
 		{false, _} ->
 		    Prio = case keylist:fetch("Authorization", Header) of
 			[] -> debug;
 			_ -> normal
 		    end,
 		    logger:log(Prio, "~s -> Authentication FAILED, sending challenge", [LogStr]),
-		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), false);
+		    ExtraHeaders = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
+		    transactionlayer:send_response_request(Request, 401, "Authentication Required", ExtraHeaders);
 		Unknown ->
 		    logger:log(error, "Register: Unknown result from local:can_register() URL ~p :~n~p",
 		    		[sipurl:print(URL), Unknown]),
-		    throw({siperror, 500, "Server Internal Error"})
+		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
 	    end;
 	_ ->
 	    logger:log(debug, "REGISTER for non-homedomain ~p", [Host]),
@@ -90,21 +104,7 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
     end;
 
 request("ACK", URL, Header, Body, Socket, FromIP) ->
-    logger:log(debug, "ACK ~p", [sipurl:print(URL)]),
-    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
-    case ToTag of
-	"z9hG4bK-yxa-" ++ Foo ->
-	    case lists:suffix(siprequest:myhostname() ++ "-drop-ACK", Foo) of
-		true ->
-		    logger:log(debug, "Dropping ACK of my challenge"),
-		    LogStr = sipserver:make_logstr({request, "ACK", URL, Header, Body}, FromIP),
-		    logger:log(debug, "~s -> dropped", [LogStr]);
-		false ->
-		    do_request({"ACK", URL, Header, Body}, Socket, FromIP)	
-	    end;
-	_ ->
-	    do_request({"ACK", URL, Header, Body}, Socket, FromIP)
-    end;
+    do_request({"ACK", URL, Header, Body}, Socket, FromIP);
 
 request("CANCEL", URL, Header, Body, Socket, FromIP) ->
     do_request({"CANCEL", URL, Header, Body}, Socket, FromIP);
@@ -125,7 +125,7 @@ request(Method, URL, Header, Body, Socket, FromIP) ->
 		    do_request({Method, URL, Header, Body}, Socket, FromIP);
 		false ->
 		    logger:log(normal, "~s -> 403 Forbidden", [LogStr]),
-		    siprequest:send_result(Header, Socket, "", 403, "Forbidden")
+		    transactionlayer:send_response_request(Request, 403, "Forbidden")
 	    end;
 	_ ->
 	    do_request({Method, URL, Header, Body}, Socket, FromIP)
@@ -152,7 +152,8 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 		    end;
 		stale ->
 		    logger:log(debug, "Request from homedomain user: STALE authentication, sending challenge"),
-		    siprequest:send_proxyauth_req(dropack_to(Header), Socket, sipauth:get_challenge(), true);
+		    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
+		    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
 		false ->
 		    Prio = case keylist:fetch("Proxy-Authenticate", Header) of
 			[] -> debug;
@@ -163,7 +164,7 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 		    siprequest:send_proxyauth_req(dropack_to(Header), Socket, sipauth:get_challenge(), false);
 		Unknown ->
 		    logger:log(error, "request: Unknown result from local:get_user_verified_proxy() :~n~p", [Unknown]),
-		    throw({siperror, 500, "Server Internal Error"})
+		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
 	    end;
 	_ ->
 	    true
@@ -180,76 +181,108 @@ do_request(Request, Socket, FromIP) ->
     Location = route_request({Method, URL, Header, Body}),
     logger:log(debug, "Location: ~p", [Location]),
     LogStr = sipserver:make_logstr({request, Method, URL, Header, Body}, FromIP),
+    THandler = transactionlayer:get_handler_for_request(Request),
+    LogTag = get_branch_from_handler(THandler),
     case Location of
 	none ->
-	    logger:log(normal, "~s -> Not found", [LogStr]),
-	    siprequest:send_notfound(Header, Socket);
+	    logger:log(normal, "~s: incomingproxy: 404 Not found", [LogTag]),
+	    transactionlayer:send_response_request(Request, 404, "Not Found");
 	{error, Errorcode} ->
-	    logger:log(normal, "~s -> Error ~p", [LogStr, Errorcode]),
-	    siprequest:send_result(Header, Socket, "", Errorcode, "Unknown code");
+	    logger:log(normal, "~s: incomingproxy: Error ~p", [LogTag, Errorcode]),
+	    transactionlayer:send_response_request(Request, Errorcode, "Unknown code");
 	{response, Returncode, Text} ->
-	    logger:log(normal, "~s -> Response ~p ~s", [LogStr, Returncode, Text]),
-	    siprequest:send_result(Header, Socket, "", Returncode, Text);
+	    logger:log(normal, "~s: incomingproxy: Response ~p ~s", [LogTag, Returncode, Text]),
+	    transactionlayer:send_response_request(Request, Returncode, Text);
 	{proxy, Loc} ->
-	    logger:log(normal, "~s -> Proxy ~s", [LogStr, sipurl:print(Loc)]),
-	    siprequest:send_proxy_request(Socket, Request, Loc, []);
+	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
+	    proxy_request(THandler, Request, Loc, []);
 	{redirect, Loc} ->
-	    logger:log(normal, "~s -> Redirect ~s", [LogStr, sipurl:print(Loc)]),
-	    siprequest:send_redirect(Loc, Header, Socket);
+	    logger:log(normal, "~s: incomingproxy: Redirect ~s", [LogTag, sipurl:print(Loc)]),
+	    Contact = [{none, Location}],
+	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
+	    transactionlayer:send_response_request(Request, 302, "Moved Temporarily", ExtraHeaders);
 	{relay, Loc} ->
-	    logger:log(normal, "~s -> Relay ~s", [LogStr, sipurl:print(Loc)]),
-	    relay_request(Socket, Request, Loc, LogStr);
+	    relay_request(THandler, Request, Loc, LogTag);
 	{forward, Host, Port} ->
-	    logger:log(normal, "~s -> Forward to ~p", [LogStr, sipurl:print_hostport(Host, Port)]),
+	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~p",
+			[LogTag, Method, sipurl:print(URL), sipurl:print_hostport(Host, Port)]),
 	    AddRoute = sipheader:contact_print([{none, {none, none, Host, Port, ["lr=true"]}}]),
 	    NewHeader = keylist:prepend({"Route", AddRoute}, Header),
 	    NewRequest = {Method, URL, NewHeader, Body},
-	    siprequest:send_proxy_request(Socket, NewRequest, URL, []);
+	    proxy_request(THandler, NewRequest, URL, []);
 	{me} ->
-	    request_to_me(Socket, Request, LogStr);
+	    request_to_me(THandler, Request, LogStr);
 	_ ->
-	    logger:log(error, "~s -> Invalid Location ~p", [LogStr, Location]),
-	    siprequest:send_result(Header, Socket, "", 500, "Server Internal Error")
+	    logger:log(error, "~s: incomingproxy: Invalid Location ~p", [LogTag, Location]),
+	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
     end.
 
-relay_request(Socket, {"ACK", OrigURI, Header, Body}, URI, LogStr) ->
+proxy_request(THandler, Request, DstURL, Parameters) ->
+    case siprequest:send_proxy_request(THandler, Request, DstURL, Parameters) of
+	{sendresponse, Status, Reason} ->
+	    {Method, URI, _, _} = Request,
+	    logger:log(error, "Transport layer failed sending ~s ~s to ~s, asked us to respond ~p ~s",
+			[Method, sipurl:print(URI), sipurl:print(DstURL), Status, Reason]),
+	    transactionlayer:send_response_request(Request, Status, Reason);
+	{ok, _} ->
+	    true;
+	Unknown ->
+	    logger:log(error, "Transport layer returned unknown result, responding 500 Server Internal Error"),
+	    logger:log(debug, "transport layer returned unknown result :~n~p", [Unknown]),
+	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
+    end.
+
+relay_request(THandler, {"ACK", OrigURI, Header, Body}, URI, LogTag) ->
     Request = {"ACK", OrigURI, Header, Body},
-    logger:log(normal, "~s -> Relay ~s", [LogStr, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Socket, Request, URI, []);
+    logger:log(normal, "~s: incomingproxy: Relay ~s (unauthenticated)", [LogTag, sipurl:print(URI)]),
+    siprequest:send_proxy_request(THandler, Request, URI, []);
 
-relay_request(Socket, {"CANCEL", OrigURI, Header, Body}, URI, LogStr) ->
+relay_request(THandler, {"CANCEL", OrigURI, Header, Body}, URI, LogTag) ->
     Request = {"CANCEL", OrigURI, Header, Body},
-    logger:log(normal, "~s -> Relay ~s", [LogStr, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Socket, Request, URI, []);
+    logger:log(normal, "~s: incomingproxy: Relay ~s (unauthenticated)", [LogTag, sipurl:print(URI)]),
+    siprequest:send_proxy_request(THandler, Request, URI, []);
 
-relay_request(Socket, {"BYE", OrigURI, Header, Body}, URI, LogStr) ->
+relay_request(THandler, {"BYE", OrigURI, Header, Body}, URI, LogTag) ->
     Request = {"BYE", OrigURI, Header, Body},
-    logger:log(normal, "~s -> Relay ~s", [LogStr, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Socket, Request, URI, []);
+    logger:log(normal, "~s: incomingproxy: Relay ~s (unauthenticated)", [LogTag, sipurl:print(URI)]),
+    siprequest:send_proxy_request(THandler, Request, URI, []);
 
-relay_request(Socket, Request, DstURI, LogStr) ->
+relay_request(THandler, Request, DstURI, LogTag) ->
     {Method, URI, Header, Body} = Request,
     case sipauth:get_user_verified_proxy(Header, Method) of
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
-	    logger:log(normal, "~s -> Relay ~s", [LogStr, sipurl:print(DstURI)]),
-	    siprequest:send_proxy_request(Socket, Request, DstURI, []);
+	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, sipurl:print(DstURI)]),
+	    siprequest:send_proxy_request(THandler, Request, DstURI, []);
 	stale ->
 	    logger:log(debug, "Relay: STALE authentication, sending challenge"),
-	    siprequest:send_proxyauth_req(dropack_to(Header), Socket, sipauth:get_challenge(), true);
+	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
+	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
 	false ->
 	    logger:log(debug, "Relay: Sending challenge"),
-	    logger:log(normal, "~s -> 407 Proxy Authorization Required", [LogStr]),
-	    siprequest:send_proxyauth_req(dropack_to(Header), Socket, sipauth:get_challenge(), false);
+	    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required", [LogTag, sipurl:print(DstURI)]),
+	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
+	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
 	Unknown ->
 	    logger:log(error, "relay_request: Unknown result from sipauth:get_user_verified_proxy() :~n~p", [Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
+	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
     end.
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
     LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
-    logger:log(normal, "Response to ~s: ~p ~s", [LogStr, Status, Reason]),
-    siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
+    Response = {Status, Reason, Header, Body},
+    case transactionlayer:get_server_handler_for_stateless_response(Response) of
+	{error, E} ->
+	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
+	    logger:log(normal, "Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
+	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
+	none ->
+	    logger:log(normal, "Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
+	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
+	TH ->
+	    logger:log(debug, "Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
+	    transactionlayer:send_proxy_response_handler(TH, Response)
+    end.
 
 request_to_homedomain(URL) ->
     request_to_homedomain(URL, init).
@@ -298,16 +331,16 @@ request_to_homedomain_not_sipuser(URL, init) ->
 	    Loc1
     end.
 
-request_to_me(Socket, {"OPTIONS", URI, Header, Body}, LogStr) ->
+request_to_me(THandler, {"OPTIONS", URI, Header, Body}, LogStr) ->
     logger:log(normal, "~s (to me) -> 200 OK", [LogStr]),
     logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and Supported headers. RFC 3261 section 11"),
-    siprequest:send_result(Header, Socket, "", 200, "OK");
+    transactionlayer:send_response_handler(THandler, 200, "OK");
 
-request_to_me(Socket, Request, LogStr) ->
+request_to_me(THandler, Request, LogStr) ->
     {Method, URI, Header, Body} = Request,
     logger:log(debug, "Routing: Dropping non-OPTIONS request to me - I have no state"),
     logger:log(normal, "~s -> 481 Call/Transaction Does Not Exist", [LogStr]),
-    siprequest:send_result(Header, Socket, "", 481, "Call/Transaction Does Not Exist").
+    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 request_to_remote(URL) ->
     case local:lookup_remote_url(URL) of
@@ -340,4 +373,14 @@ dropack_to(Header) ->
 	    keylist:set("To", [NewTo], Header);
 	_ ->
 	    Header
+    end.
+
+get_branch_from_handler(TH) ->
+    CallBranch = transactionlayer:get_branch_from_handler(TH),
+    case string:rstr(CallBranch, "-UAS") of
+	0 ->
+	    CallBranch;
+	Index when integer(Index) ->
+	    BranchBase = string:substr(CallBranch, 1, Index - 1),
+	    BranchBase
     end.
