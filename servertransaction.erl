@@ -4,6 +4,9 @@
 %%% Description : A server transaction gen_server.
 %%%
 %%% Created : 05 Feb 2004 by Fredrik Thulin <ft@lab08.lab.it.su.se>
+%%%
+%%% Note    : Perhaps we should generate a 500 if we don't get adopted
+%%%           in a few seconds from when we start?
 %%%-------------------------------------------------------------------
 -module(servertransaction).
 
@@ -302,7 +305,25 @@ handle_info(timeout, State) ->
 		    logger:log(error, "~s: Stateful server transaction (~s ~s) still alive after 5 minutes! State is ~p, ~s",
 			       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
 		    transactionlayer:debug_show_transactions(),
-		    {noreply, State, ?TIMEOUT};
+		    %% Check if we have a report_to, and if so check that it is alive.
+		    %% This is to avoid lingering processes - we already have information
+		    %% about what happened in the log files.
+		    case State#state.report_to of
+			RPid when pid(RPid) ->
+			    case is_process_alive(RPid) of
+				true ->
+				    logger:log(debug, "~s: Internal state dump :~n~p", [LogTag, State]),
+				    {noreply, State, ?TIMEOUT};
+				false ->
+				    logger:log(debug, "~s: Terminating server transaction process since five "
+					       "minutes has passed and the pid that I report to (~p) is dead", [LogTag, RPid]),
+				    {stop, "Stateful server transaction with dead owner idle for 5 minutes", State}
+			    end;
+			_ ->
+			    logger:log(debug, "~s: Terminating server transaction process since five "
+				       "minutes has passed and noone has adopted us", [LogTag]),
+			    {stop, "Stateful server transaction without owner idle for 5 minutes", State}
+		    end;
 		stateless ->
 		    logger:log(debug, "~s: Stateless server transaction (~s ~s) terminating without having sent a response after 5 minutes",
 			       [LogTag, Method, sipurl:print(URI)]),
