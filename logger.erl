@@ -68,8 +68,9 @@ debug_level(error) -> 30.
 
 do_log(Level, Format, Arguments) when atom(Level), list(Format), list(Arguments) ->
     {Megasec, Sec, USec} = now(),
+    USecStr = string:substr(integer_to_list(USec), 1, 3),
     DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
-    logger ! {log, Level, lists:concat([DateTime, ".", USec]), Format, Arguments, self()},
+    logger ! {log, Level, lists:concat([DateTime, ".", USecStr]), Format, Arguments, self()},
     ok.
 
 log(Level, Format) when atom(Level), list(Format) ->
