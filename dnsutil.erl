@@ -15,6 +15,8 @@ srvlookup(Name) ->
 	    {error, What}
     end.
 
+siplookup([]) ->
+    none;
 siplookup(Domain) ->
     case regexp:first_match(Domain, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") of
 	{match, _, _} ->
@@ -56,12 +58,12 @@ fixplus(Regexp) ->
 applyregexp(Number, []) ->
     none;
 applyregexp(Number, [Regexp | Rest]) ->
-    logger:log(debug, "applyregexp: IN ~p ~p", [Number, Regexp]),
+    logger:log(debug, "Resolver: applyregexp: IN ~p ~p", [Number, Regexp]),
     Rewrite = case string:tokens(Regexp, "!") of
 		  [Lhs, Rhs] ->
 		      NLhs = fixplus(Lhs),
 		      Res = util:regexp_rewrite(Number, [{NLhs, Rhs}]),
-		      logger:log(debug, "applyregexp: OUT ~p", [Res]),
+		      logger:log(debug, "Resolver: applyregexp: OUT ~p", [Res]),
 		      Res;
 		  _ ->
 		      nomatch
@@ -106,12 +108,20 @@ enumregexp([{Order1, Preference1, Regexp1} | Rest]) ->
 enumlookup(none) ->
     none;
 enumlookup("+" ++ Number) ->
-    L1 = enumalldomains(Number, ["e164.arpa", "e164.sunet.se"]),
-    L2 = chooseenum(L1, "SIP+E2U"),
-    L3 = lists:sort(fun sortenum/2, L2),
-    L4 = enumregexp(L3),
-    applyregexp("+" ++ Number, L4);
-enumlookup(Number) ->
+    case sipserver:get_env(enum_domainlist, none) of
+	none ->
+	    logger:log(debug, "Resolver: Not performing ENUM lookup on ~p since enum_domainlist is empty", ["+" ++ Number]),
+	    none;
+	DomainList ->
+	    logger:log(debug, "Resolver: ENUM query for ~p in ~p", ["+" ++ Number, DomainList]),
+	    L1 = enumalldomains(Number, DomainList),
+	    L2 = chooseenum(L1, "SIP+E2U"),
+	    L3 = lists:sort(fun sortenum/2, L2),
+	    L4 = enumregexp(L3),
+	    applyregexp("+" ++ Number, L4)
+    end;
+enumlookup(Foo) ->
+    logger:log(error, "Resolver: ENUM lookup on non-E.164 number (~p)", [Foo]),
     none.
 
 isnaptr(Entry) ->
@@ -123,15 +133,17 @@ isnaptr(Entry) ->
     end.
 
 naptrlookup(Name) ->
-    logger:log(debug, "naptrlookup: ~p", [Name]),
     case inet_res:nslookup(Name, in, ?T_NAPTR) of
 	{ok, Rec} ->
 	    ParseNAPTR = fun(Entry) ->
 				 parsenaptr(Entry#dns_rr.data)
 			 end,
-	    lists:map(ParseNAPTR, lists:filter(fun isnaptr/1,
-					       Rec#dns_rec.anlist));
-	{error, nxdomain} ->
+	    NAPTRs = lists:map(ParseNAPTR, lists:filter(fun isnaptr/1,
+					       Rec#dns_rec.anlist)),
+	    logger:log(debug, "Resolver: naptrlookup: ~p -> found", [Name]),
+	    NAPTRs;
+	{error, E} ->
+	    logger:log(debug, "Resolver: naptrlookup: ~p -> error ~p", [Name, E]),
 	    []
     end.
 
