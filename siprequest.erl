@@ -1,9 +1,9 @@
 -module(siprequest).
 -export([send_redirect/3, process_register_isauth/5,
 	 send_auth_req/4, send_proxyauth_req/4,
-	 send_proxy_request/3, location_prio/1, send_answer/3,
+	 send_proxy_request/3, send_proxy_request/4, send_answer/3,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5,
-	 send_result/5, send_result/6]).
+	 send_result/5, send_result/6, make_answerheader/1]).
 
 send_response(Socket, Code, Text, Header, Body) ->
     Via = sipheader:via(keylist:fetch("Via", Header)),
@@ -54,7 +54,17 @@ rewrite_route(Header, Dest) ->
 	    {Header, Dest}
     end.
 
-send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
+make_answerheader(Header) ->
+    RecordRoute = keylist:fetch("Record-Route", Header),
+    NewHeader1 = keylist:delete("Record-Route", Header),
+    NewHeader2 = case RecordRoute of
+	[] ->
+	    NewHeader1;	
+	_ ->
+	    keylist:set("Route", RecordRoute, NewHeader1)
+    end.
+
+send_proxy_request(Header, Socket, {Action, ReqURI, Body, Parameters}, Dest) ->
     MaxForwards =
 	case keylist:fetch("Max-Forwards", Header) of
 	    [M] ->
@@ -71,7 +81,7 @@ send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
 	    true
     end,
     check_valid_proxy_request(Action, Header),
-    Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
+    Line1 = Action ++ " " ++ sipurl:print(ReqURI) ++ " SIP/2.0",
     [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
 				     {siphost:myip(),
 				      integer_to_list(sipserver:get_env(listenport, 5060))},
@@ -91,6 +101,9 @@ send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
 	    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
 	    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
     end.
+
+send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
+    send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}, Dest).
 
 check_valid_proxy_request("ACK", _) ->
     true;
@@ -137,7 +150,7 @@ process_register_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
     % registers replacing erlier bindings (10.3 #7)
 
     check_valid_register_request(Header),
-    
+
     % try to find a wildcard to process
     case process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) of
 	none ->
@@ -344,27 +357,6 @@ send_result(Header, Socket, Body, Code, Description, ExtraHeaders) ->
 		   {"To", keylist:fetch("To", Header)},
 		   {"Call-ID", keylist:fetch("Call-ID", Header)},
 		   {"CSeq", keylist:fetch("CSeq", Header)} | ExtraHeaders], Body).
-
-location_prio([]) ->
-    {none, [], none, never};
-location_prio([Address]) ->
-    Address;
-location_prio([Address | Rest]) ->
-    Address2 = location_prio(Rest),
-    {Location1, Flags1, Class1, Expire1} = Address,
-    {Location2, Flags2, Class2, Expire2} = Address2,
-    Prio1 = lists:keysearch(priority, 1, Flags1),
-    Prio2 = lists:keysearch(priority, 1, Flags2),
-    case {Prio1, Prio2} of
-	{_, false} ->
-	    Address;
-	{false, _} ->
-	    Address2;
-	{{value, {priority,P1}}, {value, {priority,P2}}} when P1 >= P2 ->
-	    Address;
-	_ ->
-	    Address2
-    end.
 
 send_proxy_response(Socket, Status, Reason, Header, Body) ->
     [Self | Via] = sipheader:via(keylist:fetch("Via", Header)),
