@@ -1,5 +1,8 @@
 -module(lookup).
--export([lookupregexproute/1, lookupuser/1, lookupdefault/1, lookuppotn/1, lookupenum/1, lookuppstn/1, isours/1, homedomain/1]).
+-export([lookupregexproute/1, lookupuser/1, lookupdefault/1, lookuppotn/1,
+	 lookupenum/1, lookuppstn/1, isours/1, homedomain/1,
+	 prioritize_locations/1, get_locations_with_prio/2,
+	 lookupappserver/1]).
 
 -include("database_regexproute.hrl").
 
@@ -52,15 +55,67 @@ lookupaddress(Key) ->
 	    logger:log(debug, "Lookup: Address lookup of ~p -> ~p", [Key, Loc]),
 	    Loc;
 	{atomic, Locations} ->
-	    {Location, _, _, _} = siprequest:location_prio(Locations),
-	    logger:log(debug, "Lookup: Address lookup of ~p -> ~p (best)", [Key, Location]),
-	    case Location of
-		{error, Errorcode} ->
-		    {error, Errorcode};
-		_ ->
-		    {proxy, Location}
+	    BestLocations = prioritize_locations(Locations),
+	    logger:log(debug, "Lookup: Best location(s) of ~p :~n~p", [Key, BestLocations]),
+	    % check if more than one location was found.
+	    case BestLocations of
+	        [] ->
+		    none;
+		[{BestLocation, _, _, _}] ->
+		    {proxy, BestLocation};
+		 _ ->
+		    % More than one location registered for this user, check for appserver...
+		    % (appserver is the program that handles forking of requests)
+		    local:lookupappserver(Key)
 	    end
     end.
+
+lookupappserver(Key) ->
+    AppServer = sipserver:get_env(appserver, none),
+    case AppServer of
+	none ->
+	    logger:log(debug, "Lookup: More than one location is registered for user ~p, but no appserver configured! Aborting.",
+			[Key]),
+	    {response, 480, "Temporarily Unavailable"};
+	_ ->
+	    {Host, Port} = sipurl:parse_hostport(AppServer),
+	    {forward, Host, Port}
+    end.
+
+prioritize_locations([]) ->
+    {none, [], none, never};
+prioritize_locations(Locations) ->
+    BestPrio = lists:min(get_prioritys(Locations)),
+    get_locations_with_prio(BestPrio, Locations).
+
+get_locations_with_prio(Priority, Locations) ->
+    PrioInt = list_to_integer(Priority),
+    L = lists:map(fun ({Location, Flags, Class, Expire}) ->
+		      Prio = lists:keysearch(priority, 1, Flags),
+		      case Prio of
+		          {value, {priority, PrioInt}} ->
+				{Location, Flags, Class, Expire};
+			  _ ->
+				none
+		      end
+	      end, Locations),
+    lists:filter(fun(A) ->
+		case A of
+		    none -> false;
+		    _ -> true
+		end
+	     end, L).
+
+get_prioritys(Locations) ->
+    lists:map(fun ({Location, Flags, Class, Expire}) ->
+		      Prio = lists:keysearch(priority, 1, Flags),
+		      case Prio of
+		          {value, {priority, P}} ->
+				integer_to_list(P);
+			  _ ->
+				none
+		      end
+	      end, Locations).
 
 lookupdefault(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
