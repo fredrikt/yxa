@@ -214,16 +214,43 @@
 %% Note    : the headers field is currently not supported
 %% Note    : tel URIs encoded as sip URIs are currently not supported
 %%--------------------------------------------------------------------
-parse([C1, C2, C3, C4 | RURL] = URLStr) ->
-    case httpd_util:to_lower([C1,C2,C3,C4]) of
-	"sip:" ->
-	    case catch parse_url("sip", RURL) of
-		SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-		_Error ->
+parse("sip:" ++ RURL) ->
+    case parse2("sip", RURL) of
+	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
+	unparseable ->
+	    {unparseable, "sip:" ++ RURL}
+    end;
+parse("sips:" ++ RURL) ->
+    case parse2("sips", RURL) of
+	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
+	unparseable ->
+	    {unparseable, "sips:" ++ RURL}
+    end;
+parse(URLStr) ->
+    case string:chr(URLStr, $:) of
+	N when is_integer(N), N > 0 ->
+	    In = string:substr(URLStr, 1, N - 1),
+	    case httpd_util:to_lower(In) of
+		LC when LC == "sip"; LC == "sips" ->
+		    RURL = string:substr(URLStr, N + 1),
+		    case parse2(LC, RURL) of
+			SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
+			unparseable ->
+			    {unparseable, URLStr}
+		    end;
+		_ ->
 		    {unparseable, URLStr}
 	    end;
 	_ ->
 	    {unparseable, URLStr}
+    end.
+
+%% part of parse/1
+parse2(Proto, RURL) ->
+    case catch parse_url(Proto, RURL) of
+	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
+	_Error ->
+	    unparseable
     end.
 
 %% URL = URL input without the proto: prefix ("sip:" that is)
