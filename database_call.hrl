@@ -1,1 +1,1 @@
--record(call, {callid, headers, pid}).
+-record(call, {callid, type, headers, data}).
