@@ -39,7 +39,7 @@
 %%--------------------------------------------------------------------
 -export([
 	 store_stateless_response_branch/3
-	 ]).
+	]).
 
 %%--------------------------------------------------------------------
 %% Transaction layer internal exports (functions that should only be
@@ -99,7 +99,7 @@
 %% Function: start_link(AppModule, Mode)
 %%           AppModule = atom(), name of Yxa application
 %%           Mode      = stateful | stateless
-%% Descrip.: start the transaction_layer gen_server. 
+%% Descrip.: start the transaction_layer gen_server.
 %%           The transaction_layer is only registered localy (on the
 %%           current node)
 %% Returns : gen_server:start_link/4
@@ -163,12 +163,13 @@ init([AppModule, Mode]) ->
 %%           See documentation of received_new_request() for info
 %%           about the meaning of Reply.
 %%--------------------------------------------------------------------
-handle_call({sipmessage, Request, Origin, LogStr}, From, State) when record(Request, request), record(Origin, siporigin) ->
+handle_call({sipmessage, Request, Origin, LogStr}, From, State)
+  when is_record(Request, request), is_record(Origin, siporigin) ->
     AppModule = State#state.appmodule,
     case get_server_transaction_pid(Request, State#state.tstatelist) of
 	none ->
 	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, State);
-	TPid when pid(TPid) ->
+	TPid when is_pid(TPid) ->
 	    gen_server:cast(TPid, {sipmessage, Request, Origin, From, AppModule}),
 	    %% We do noreply here and send AppModule (and gen_server From) on to TPid and let TPid do gen_server:reply()
 	    {noreply, State, ?TIMEOUT}
@@ -193,14 +194,15 @@ handle_call({sipmessage, Request, Origin, LogStr}, From, State) when record(Requ
 %%           the {sipmessage, Request ...} handle_call() above. See
 %%           it's documentation to understand Reply.
 %%--------------------------------------------------------------------
-handle_call({sipmessage, Response, Origin, LogStr}, From, State) when record(Response, response), record(Origin, siporigin) ->
+handle_call({sipmessage, Response, Origin, LogStr}, _From, State)
+  when is_record(Response, response), is_record(Origin, siporigin) ->
     AppModule = State#state.appmodule,
     case get_client_transaction_pid(Response, State#state.tstatelist) of
 	none ->
 	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
 		       [Response#response.status, Response#response.reason, AppModule]),
 	    {reply, {pass_to_core, AppModule}, State, ?TIMEOUT};
-	TPid when pid(TPid) ->
+	TPid when is_pid(TPid) ->
 	    logger:log(debug, "Transaction layer: Passing response ~p ~s to registered handler ~p",
 		       [Response#response.status, Response#response.reason, TPid]),
 	    gen_server:cast(TPid, {sipmessage, Response, Origin, LogStr}),
@@ -227,7 +229,8 @@ handle_call({sipmessage, Response, Origin, LogStr}, From, State) when record(Res
 %%                       {error, E}
 %%           E         = string(), description of error
 %%--------------------------------------------------------------------
-handle_call({store_stateless_response_branch, Pid, Branch, Method}, From, State) ->
+handle_call({store_stateless_response_branch, Pid, Branch, Method}, _From, State)
+  when is_pid(Pid), is_list(Branch), is_list(Method) ->
     case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, State#state.tstatelist) of
 	none ->
 	    case transactionstatelist:get_elem_using_pid(Pid, State#state.tstatelist) of
@@ -239,12 +242,12 @@ handle_call({store_stateless_response_branch, Pid, Branch, Method}, From, State)
 		    logger:log(error, "Transaction layer: Can't associate stateless response branch ~p with unknown transaction handler ~p",
 			       [Branch, Pid]),
 		    {reply, {error, "server transaction not found"}, State, ?TIMEOUT};
-		ThisElem when record(ThisElem, transactionstate) ->
+		ThisElem when is_record(ThisElem, transactionstate) ->
 		    NewTElem = transactionstatelist:append_response_branch(ThisElem, Branch, Method),
 		    NewL = transactionstatelist:update_transactionstate(NewTElem, State#state.tstatelist),
 		    {reply, {ok}, State#state{tstatelist=NewL}, ?TIMEOUT}
 	    end;
-	ThisElem when record(ThisElem, transactionstate) ->
+	ThisElem when is_record(ThisElem, transactionstate) ->
 	    case ThisElem#transactionstate.pid of
 		Pid ->
 		    %% already associated with that very same server transaction, this is not an error since
@@ -269,11 +272,11 @@ handle_call({store_stateless_response_branch, Pid, Branch, Method}, From, State)
 %%           Pid       = pid()
 %%           E         = string(), description of error
 %%--------------------------------------------------------------------
-handle_call({get_server_transaction_handler, Request}, From, State) when record(Request, request) ->
+handle_call({get_server_transaction_handler, Request}, _From, State) when is_record(Request, request) ->
     case get_server_transaction_pid(Request, State#state.tstatelist) of
 	none ->
 	    {reply, {error, "No state found"}, State, ?TIMEOUT};
-	TPid when pid(TPid) ->
+	TPid when is_pid(TPid) ->
 	    {reply, {ok, TPid}, State, ?TIMEOUT}
     end;
 
@@ -290,11 +293,12 @@ handle_call({get_server_transaction_handler, Request}, From, State) when record(
 %%                       {error, nomatch}
 %%           Pid       = pid()
 %%--------------------------------------------------------------------
-handle_call({get_server_transaction_handler_for_response, Branch, Method}, From, State) ->
+handle_call({get_server_transaction_handler_for_response, Branch, Method}, _From, State)
+  when is_list(Branch), is_list(Method) ->
     case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method, State#state.tstatelist) of
 	none ->
 	    {reply, {error, nomatch}, State, ?TIMEOUT};
-	ThisState when record(ThisState, transactionstate) ->
+	ThisState when is_record(ThisState, transactionstate) ->
 	    TPid = ThisState#transactionstate.pid,
 	    {reply, {ok, TPid}, State, ?TIMEOUT}
     end;
@@ -318,7 +322,8 @@ handle_call({get_server_transaction_handler_for_response, Branch, Method}, From,
 %%           Pid       = pid()
 %%           E         = string(), description of error
 %%--------------------------------------------------------------------
-handle_call({start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, From, State) when record(Request, request) ->
+handle_call({start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, _From, State)
+  when is_record(Request, request) ->
     Method = Request#request.method,
     case transactionstatelist:get_client_transaction(Method, Branch, State#state.tstatelist) of
 	none ->
@@ -348,11 +353,11 @@ handle_call({start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, 
 %%                       {error, E}
 %%           E         = string(), description of error
 %%--------------------------------------------------------------------
-handle_call({store_to_tag, Request, ToTag}, From, State) when record(Request, request) ->
+handle_call({store_to_tag, Request, ToTag}, _From, State) when is_record(Request, request) ->
     case get_server_transaction(Request, State#state.tstatelist) of
 	none ->
 	    {reply, {error, "Transaction not found"}, State, ?TIMEOUT};
-	ThisState when record(ThisState, transactionstate) ->
+	ThisState when is_record(ThisState, transactionstate) ->
 	    NewTState = transactionstatelist:set_response_to_tag(ThisState, ToTag),
 	    NewL = transactionstatelist:update_transactionstate(NewTState, State#state.tstatelist),
 	    {reply, {ok}, State#state{tstatelist=NewL}, ?TIMEOUT}
@@ -448,7 +453,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		       logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list. Transactionlist is :~n~p",
 				  [Pid, transactionstatelist:debugfriendly(State#state.tstatelist)]),
 		       State;
-		   L when record(L, transactionstatelist) ->
+		   L when is_record(L, transactionstatelist) ->
 		       NewL = transactionstatelist:delete_using_pid(Pid, State#state.tstatelist),
 		       logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n(new list is ~p entry(s))",
 				  [transactionstatelist:get_length(L), transactionstatelist:debugfriendly(L), transactionstatelist:get_length(NewL)]),
@@ -470,10 +475,10 @@ handle_info(Msg, State) ->
 %% Descrip.: Shutdown the server
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(normal, State) ->
+terminate(normal, _State) ->
     logger:log(debug, "Transaction layer: Terminating normally"),
     ok;
-terminate(Reason, State) ->
+terminate(Reason, _State) ->
     logger:log(error, "Transaction layer: =ERROR REPORT==== from transaction_layer :~n~p",
 	       [Reason]),
     ok.
@@ -483,7 +488,7 @@ terminate(Reason, State) ->
 %% Purpose : Convert process state when code is changed
 %% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -503,7 +508,7 @@ code_change(OldVsn, State, Extra) ->
 %% Returns : {reply, Reply, State, ?TIMEOUT}
 %%           Reply   = {pass_to_core, AppModule} |
 %%                     {continue}
-%%           
+%%
 %% Notes   :
 %%           Meaning of Reply :
 %%           {continue} means that the transaction layer has taken care
@@ -521,7 +526,8 @@ code_change(OldVsn, State, Extra) ->
 %%
 %% ACK
 %%
-received_new_request(Request, Socket, LogStr, State) when record(State, state), record(Request, request), Request#request.method == "ACK" ->
+received_new_request(Request, _Socket, _LogStr, State)
+  when is_record(State, state), is_record(Request, request), Request#request.method == "ACK" ->
     AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 	       [sipurl:print(Request#request.uri)]),
@@ -530,12 +536,13 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 %%
 %% CANCEL, our mode == stateless
 %%
-received_new_request(Request, Socket, LogStr, State) when record(State, state), record(Request, request), State#state.mode == stateless, Request#request.method == "CANCEL" ->
+received_new_request(Request, Socket, LogStr, State)
+  when is_record(State, state), is_record(Request, request), State#state.mode == stateless, Request#request.method == "CANCEL" ->
     AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: Stateless received CANCEL ~s. Starting transaction but passing to core.",
 	       [sipurl:print(Request#request.uri)]),
     case servertransaction:start_link(Request, Socket, LogStr, AppModule, stateless) of
-	{ok, STPid} when pid(STPid) ->
+	{ok, STPid} when is_pid(STPid) ->
 	    NewL = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
 	    {reply, {pass_to_core, AppModule}, State#state{tstatelist=NewL}, ?TIMEOUT};
 	E ->
@@ -543,11 +550,12 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 	    {reply, {continue}, State, ?TIMEOUT}
     end;
 
-received_new_request(Request, Socket, LogStr, State) when record(State, state), record(Request, request) ->
+received_new_request(Request, Socket, LogStr, State) when is_record(State, state),
+							  is_record(Request, request) ->
     AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
     case servertransaction:start_link(Request, Socket, LogStr, AppModule, State#state.mode) of
-	{ok, STPid} when pid(STPid) ->
+	{ok, STPid} when is_pid(STPid) ->
 	    NewTStateList2 = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
 	    PassToCore = case Request#request.method of
 			     "CANCEL" ->
@@ -564,7 +572,7 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 				 IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
 				 Invite = Request#request{method="INVITE", header=IHeader},
 				 case get_server_transaction_pid(Invite, State#state.tstatelist) of
-				     InvitePid when pid(InvitePid) ->
+				     InvitePid when is_pid(InvitePid) ->
 					 logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
 					 {Status, Reason} = case util:safe_is_process_alive(InvitePid) of
 								{true, _} ->
@@ -609,9 +617,9 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 %%           none
 %%           THandler    = transactionstate record()
 %%--------------------------------------------------------------------
-get_server_transaction(Request, TStateList) when record(Request, request) ->
+get_server_transaction(Request, TStateList) when is_record(Request, request) ->
     transactionstatelist:get_server_transaction_using_request(Request, TStateList);
-get_server_transaction(Response, TStateList) when record(Response, response) ->
+get_server_transaction(Response, TStateList) when is_record(Response, response) ->
     transactionstatelist:get_server_transaction_using_response(Response, TStateList).
 
 %%--------------------------------------------------------------------
@@ -694,7 +702,7 @@ get_client_transaction_pid(Response, TStateList) when is_record(Response, respon
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = keylist record()
-%%           RBody        = string(), response body 
+%%           RBody        = string(), response body
 %% Descrip.: Locate the server transaction handler using a request,
 %%           and then ask the server transaction handler to send a
 %%           response.
@@ -707,13 +715,13 @@ get_client_transaction_pid(Response, TStateList) when is_record(Response, respon
 %%           transasction. Should probably be changed to
 %%           {error, "No server transaction found"} or similar.
 %%--------------------------------------------------------------------
-send_response_request(Request, Status, Reason) when record(Request, request) ->
+send_response_request(Request, Status, Reason) when is_record(Request, request) ->
     send_response_request(Request, Status, Reason, []).
 
-send_response_request(Request, Status, Reason, ExtraHeaders) when record(Request, request) ->
+send_response_request(Request, Status, Reason, ExtraHeaders) when is_record(Request, request) ->
     send_response_request(Request, Status, Reason, ExtraHeaders, "").
 
-send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when record(Request, request) ->
+send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     case get_handler_for_request(Request) of
 	{error, E} ->
@@ -724,7 +732,7 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when record(
 	    logger:log(error, "Transaction layer: No server transaction found for request ~s ~s",
 		       [Method, sipurl:print(URI)]),
 	    none;
-	TH when record(TH, thandler) ->
+	TH when is_record(TH, thandler) ->
 	    logger:log(debug, "Transaction layer: Located server transaction handler ~p", [TH#thandler.pid]),
 	    send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
     end.
@@ -737,19 +745,19 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when record(
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = keylist record()
-%%           RBody        = string(), response body 
+%%           RBody        = string(), response body
 %% Descrip.: Ask a server transaction handler to send a response.
 %% Returns : ok    |
 %%           {error, E}
 %%           E = string(), describes the error
 %%--------------------------------------------------------------------
-send_response_handler(TH, Status, Reason) when record(TH, thandler) ->
+send_response_handler(TH, Status, Reason) when is_record(TH, thandler) ->
     send_response_handler(TH, Status, Reason, []).
 
-send_response_handler(TH, Status, Reason, ExtraHeaders) when record(TH, thandler) ->
+send_response_handler(TH, Status, Reason, ExtraHeaders) when is_record(TH, thandler) ->
     send_response_handler(TH, Status, Reason, ExtraHeaders, "").
 
-send_response_handler(TH, Status, Reason, ExtraHeaders, RBody) when record(TH, thandler) ->
+send_response_handler(TH, Status, Reason, ExtraHeaders, RBody) when is_record(TH, thandler) ->
     case catch gen_server:cast(TH#thandler.pid, {create_response, Status, Reason, ExtraHeaders, RBody}) of
 	ok ->
 	    ok;
@@ -768,7 +776,7 @@ send_response_handler(TH, Status, Reason, ExtraHeaders, RBody) when record(TH, t
 %%           {error, E}
 %%           E = string(), describes the error
 %%--------------------------------------------------------------------
-send_proxy_response_handler(TH, Response) when record(TH, thandler), record(Response, response) ->
+send_proxy_response_handler(TH, Response) when is_record(TH, thandler), is_record(Response, response) ->
     case gen_server:cast(TH#thandler.pid, {forwardresponse, Response}) of
 	ok ->
 	    ok;
@@ -817,11 +825,11 @@ get_handler_for_request(Request) ->
 %%           THandler = thandler record()
 %%           E = string(), describes the error
 %%--------------------------------------------------------------------
-get_server_handler_for_stateless_response(Response) when record(Response, response) ->
+get_server_handler_for_stateless_response(Response) when is_record(Response, response) ->
     TopVia = sipheader:topvia(Response#response.header),
     {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Response#response.header)),
     case sipheader:get_via_branch(TopVia) of
-	Branch when list(Branch) ->
+	Branch when is_list(Branch) ->
 	    case catch gen_server:call(transaction_layer, {get_server_transaction_handler_for_response, Branch, Method}, 1000) of
 		{error, nomatch} ->
 		    none;
@@ -848,16 +856,16 @@ get_server_handler_for_stateless_response(Response) when record(Response, respon
 %%           THandler = thandler record()
 %%           E = string(), describes the error
 %%--------------------------------------------------------------------
-adopt_server_transaction(Request) when record(Request, request) ->
+adopt_server_transaction(Request) when is_record(Request, request) ->
     case get_handler_for_request(Request) of
-	TH when record(TH, thandler) ->
+	TH when is_record(TH, thandler) ->
 	    adopt_server_transaction_handler(TH);
-	Unknown ->
+	_ ->
 	    {error, "unknown result from get_handler_for_request"}
     end.
 
 %% See adopt_server_transaction/1 above
-adopt_server_transaction_handler(TH) when record(TH, thandler) ->
+adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
     case catch gen_server:call(TH#thandler.pid, {set_report_to, self()}, 1000) of
 	{error, E} ->
 	    {error, E};
@@ -878,7 +886,7 @@ adopt_server_transaction_handler(TH) when record(TH, thandler) ->
 %%           error
 %%           Branch = string()
 %%--------------------------------------------------------------------
-get_branch_from_handler(TH) when record(TH, thandler) ->
+get_branch_from_handler(TH) when is_record(TH, thandler) ->
     TPid = TH#thandler.pid,
     case catch gen_server:call(TPid, {get_branch}, 500) of
 	{ok, Branch} ->
@@ -914,7 +922,8 @@ start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
     %% XXX we probably want a shorter timeout on this, but since we send out the initial request
     %% in clienttransaction:init() it can take some time (if a TCP connection has to be established
     %% first etc).
-    case catch gen_server:call(transaction_layer, {start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, 10000) of
+    case catch gen_server:call(transaction_layer, {start_client_transaction, Request, SocketIn,
+						   Dst, Branch, Timeout, Parent}, 10000) of
 	{error, E} ->
 	    {error, E};
 	{ok, Pid} ->
@@ -936,7 +945,7 @@ start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
 %%           {error, E}
 %%           E = string(), description of error
 %%--------------------------------------------------------------------
-store_to_tag(Request, ToTag) when record(Request, request) ->
+store_to_tag(Request, ToTag) when is_record(Request, request) ->
     case catch gen_server:call(transaction_layer, {store_to_tag, Request, ToTag}, 2500) of
 	{error, E} ->
 	    {error, E};
@@ -965,9 +974,9 @@ store_to_tag(Request, ToTag) when record(Request, request) ->
 %%           {error, E}
 %%           E = string(), description of error
 %%--------------------------------------------------------------------
-store_stateless_response_branch(none, Branch, Method) ->
+store_stateless_response_branch(none, _Branch, _Method) ->
     ok;
-store_stateless_response_branch(TH, Branch, Method) when record(TH, thandler) ->
+store_stateless_response_branch(TH, Branch, Method) when is_record(TH, thandler) ->
     HPid = TH#thandler.pid,
     case catch gen_server:call(transaction_layer, {store_stateless_response_branch, HPid, Branch, Method}, 1000) of
 	{ok} ->
@@ -988,7 +997,7 @@ store_stateless_response_branch(TH, Branch, Method) when record(TH, thandler) ->
 %% Returns : true  |
 %%           false
 %%--------------------------------------------------------------------
-is_good_transaction(TH) when record(TH, thandler) ->
+is_good_transaction(TH) when is_record(TH, thandler) ->
     case util:safe_is_process_alive(TH#thandler.pid) of
 	{true, _} ->
 	    true;
@@ -1010,7 +1019,7 @@ is_good_transaction(_) ->
 %%           none
 %%           Pid = pid()
 %%--------------------------------------------------------------------
-get_pid_from_handler(TH) when record(TH, thandler) ->
+get_pid_from_handler(TH) when is_record(TH, thandler) ->
     TH#thandler.pid;
 get_pid_from_handler(_) ->
     none.
@@ -1042,16 +1051,16 @@ send_challenge_request(Request, Type, Stale, RetryAfter) ->
 %%           as In, first locate the real server transaction handler.
 %% Returns : ok
 %%--------------------------------------------------------------------
-send_challenge(TH, www, Stale, RetryAfter) when record(TH, thandler) ->
+send_challenge(TH, www, Stale, RetryAfter) when is_record(TH, thandler) ->
     AuthHeader = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), Stale)}],
     send_challenge2(TH, 401, "Authentication Required", AuthHeader, RetryAfter);
-send_challenge(TH, proxy, Stale, RetryAfter) when record(TH, thandler) ->
+send_challenge(TH, proxy, Stale, RetryAfter) when is_record(TH, thandler) ->
     AuthHeader = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), Stale)}],
     send_challenge2(TH, 407, "Proxy Authentication Required", AuthHeader, RetryAfter).
 
-send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when record(TH, thandler)->
+send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when is_record(TH, thandler)->
     RetryHeader = case RetryAfter of
-		      I when integer(I) ->
+		      I when is_integer(I) ->
 			  [{"Retry-After", [integer_to_list(RetryAfter)]}];
 		      _ ->
 			  []
