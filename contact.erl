@@ -20,9 +20,9 @@
 %% Note: string:tokens/2 is used in some places where where sequences
 %%       of separator char() are not allowed, but tokens/2 will only
 %%       "see" one separator char().
-%% Note: contens of quoted-string are not checked
+%% Note: contents of quoted-string are not checked
 %%       - there is no need to, it should just be passed along
-%%         acording to RFC 3261
+%%         according to RFC 3261
 %% Note: SIP/SIPS-URIs are not parsed into sipurl records, this
 %%       has been done to reduce the amount of parsing needed to be
 %%       done and must therefor be done later - if needed
@@ -41,7 +41,7 @@
 %% - XXX
 %% * contact_param.erl lowercases name-value fields, is this ok for
 %%   contact-params ?
-%% - yes, this is default acording to the BNF chapter, as I could
+%% - yes, this is default according to the BNF chapter, as I could
 %%   find no statement to the contrary this presumably applies to
 %%   contact-params as well.
 %% * should char() ranges used by contact-params be check for
@@ -173,7 +173,7 @@
 %%                /  %xFC-FD 5UTF8-CONT
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 -module(contact).
-
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -305,11 +305,17 @@ parse_params(ParamsStr) ->
     NameValList = [parse_param(Param) || Param <- Params],
     contact_param:to_norm(NameValList).
 
-%% return: {NameStr,ValueStr} | throw()
+%% return: {NameStr, ValueStr} | throw()
 parse_param(ParamStr) ->
-    {Name, Value} = sipparse_util:split_fields(ParamStr, $=),
+    {Name, ValueStripped} =
+	case sipparse_util:split_fields(ParamStr, $=) of
+	    {Name2, Value} ->
+		VS = strip(Value, both, [?CR,?LF,?SP,?HTAB]),
+		{Name2, VS};
+	    {Name2} ->
+		{Name2, ""}
+	end,
     NameStripped = strip(Name, both, [?CR,?LF,?SP,?HTAB]),
-    ValueStripped = strip(Value, both, [?CR,?LF,?SP,?HTAB]),
 
     ParamName = httpd_util:to_lower(NameStripped),
 
@@ -549,7 +555,7 @@ set_display_name(Contact, DispName) ->
 %%           set_urlstr(Contact, URI)
 %%           Contact = contact record()
 %%           URLstr  = string()
-%%           SipURL  = sipurl record() 
+%%           SipURL  = sipurl record()
 %% Descrip.: change the sipurl contained in Contact
 %% Returns : contact record()
 %%--------------------------------------------------------------------
@@ -657,7 +663,7 @@ test() ->
 		   contact_param = contact_param:to_norm([])
 		  }],
     P2 = parse(["<sip:alice@pc33.atlanta.com>"]),
-    
+
     %% test name_addr with display-name
     io:format("test: parse/1 - 5~n"),
     P5 = [#contact{display_name = "Mr. Watson",
@@ -761,6 +767,15 @@ test() ->
 	{unparseable, _Reason} -> ok;
 	_ -> throw({error, test_failed})
     end,
+
+    %% test contact-parameters without a value
+    io:format("test: parse/1 - 15~n"),
+    P15 = [#contact{display_name = none,
+		    urlstr = "sip:example.org",
+		    contact_param = contact_param:to_norm([{"foo", none}, {"lr", "true"}, {"bar", none},
+							   {"baz", none}])
+		   }],
+    P15 = parse(["sip:example.org;foo;lr=true;bar;baz"]),
 
     %% print/1
     %%--------------------------------------------------------------------
