@@ -1,5 +1,5 @@
 -module(siprequest).
--export([send_redirect/4, process_register_isauth/3,
+-export([send_redirect/3, process_register_isauth/3,
 	 send_auth_req/4, send_proxyauth_req/4,
 	 send_proxy_request/3, location_prio/1, send_answer/3,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5,
@@ -45,7 +45,7 @@ send_proxy_request(Header, Socket, {Action, Dest, Body}) ->
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
 
 process_register_isauth(Header, Socket, {Phone, Location}) ->
-    logger:log(normal, "REGISTER phone ~p at ~p", [Phone, Location]),
+    logger:log(normal, "REGISTER phone ~p at ~s", [Phone, sipurl:print(Location)]),
     Expire = 
 	case keylist:fetch("Expires", Header) of	
 	    [E] ->
@@ -84,7 +84,7 @@ send_proxyauth_req(Header, Socket, Auth, Stale) ->
 		   {"CSeq", keylist:fetch("CSeq", Header)},
 		   {"Proxy-Authenticate", sipheader:auth_print(Auth, Stale)}], "").
 
-send_redirect(Phone, Location, Header, Socket) ->
+send_redirect(Location, Header, Socket) ->
     Contact = [{none, Location}],
     send_response(Socket, 302, "Moved Temporarily",
 		  [{"via", keylist:fetch("Via", Header)},
