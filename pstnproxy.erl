@@ -128,7 +128,7 @@ toPSTNrequest(Method, URI, Header, Body, Socket, LogTag) ->
 	true ->
 	    case local:lookuppstn(DstNumber) of
 		{proxy, Dst} ->
-		    {Dst, Header};	
+		    {Dst, Header};
 		{relay, Dst} ->
 		    {Dst, Header};
 		_ ->
@@ -179,11 +179,16 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) ->
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> STALE authentication, sending challenge",
 		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
 	    transactionlayer:send_challenge(THandler, proxy, true, none);
-	{false, User, Class} ->
-	    logger:log(debug, "Auth: User ~p must authenticate for dst ~s (class ~s)", [User, DstNumber, Class]),
+	{false, none, Class} ->
+	    logger:log(debug, "Auth: Need authentication for dst ~s (class ~s)", [DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> needs authentication, sending challenge",
 		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
 	    transactionlayer:send_challenge(THandler, proxy, false, none);
+	{false, User, Class} ->
+	    logger:log(debug, "Auth: User ~p not allowed dst ~s in class unknown - answer 403 Forbidden", [User, DstNumber]),
+	    logger:log(normal, "~s: pstnproxy: User ~p not allowed relay ~s to PSTN ~s class ~p -> 403 Forbidden",
+		       [LogTag, User, Method, DstNumber, Class]),
+	    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
 	Unknown ->
 	    logger:log(error, "Auth: Unknown result from sipauth:pstn_is_allowed_call() :~n~p", [Unknown]),
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
