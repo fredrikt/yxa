@@ -1,5 +1,13 @@
 -module(logger).
--export([start/1, recvloop/1, log/2, log/3]).
+-export([start/0, start/1, recvloop/1, log/2, log/3]).
+
+start() ->
+    case application:get_env(logger_logfile) of
+	{ok, Filename} ->
+	    start(Filename);
+	undefined ->
+	    start("sipd.log")
+    end.
 
 start(Filename) ->
     {ok, IoDevice} = file:open(Filename, [append]),
