@@ -149,13 +149,10 @@ check_for_tables([H | T]) ->
 	H ->
 	    check_for_tables(T)
     catch
-	E: {aborted, {no_exists, H, Type}} ->
+	_E: {aborted, {no_exists, H, Type}} ->
 	    logger:log(error, "Startup problem: Mnesia table '~p' does not exist - did you bootstrap Yxa? "
 		       "(see README file)~n", [H]),
-	    %% make sure logger gets the time to write the error to the log file
-	    timer:sleep(1000),
-	    logger:quit(none),
-	    erlang:halt(1)
+	    throw('Missing Mnesia table - Yxa probably not bootstrapped')
     end;
 check_for_tables([]) ->
     ok.
