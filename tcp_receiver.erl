@@ -7,15 +7,15 @@
 
 -module(tcp_receiver).
 
--export([start_link/4, recv_loop/2]).
+-export([start_link/5, recv_loop/2]).
 
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
 
--record(state, {socketmodule, socket, parent, local, remote}).
+-record(state, {socketmodule, socket, parent, local, remote, sipsocket}).
 
-start_link(SocketModule, Socket, Local, Remote) ->
-    State = #state{socketmodule=SocketModule, socket=Socket, parent=self(), local=Local, remote=Remote},    
+start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
+    State = #state{socketmodule=SocketModule, socket=Socket, parent=self(), local=Local, remote=Remote, sipsocket=SipSocket},    
     Pid = spawn_link(?MODULE, recv_loop, [State, []]),
     Pid.
 
@@ -177,14 +177,15 @@ tcp_read_sip_message(MessageType, Header, BodyIn, DataIn, State) when record(Sta
 		    logger:log(debug, "TCP receiver: Failed reading ~p bytes more data : ~p", [CLen, Res]),
 		    []
 	    end;
-	_ ->
+	Unknown ->
+	    logger:log(debug, "TCP receiver: Non-integer Content-Length spotted : ~p", [Unknown]),
 	    case MessageType of
 		request ->
 		    logger:log(debug, "TCP receiver: Non-existing or invalid Content-Length in request from ~s:~p, " ++
 			       "(socket ~p), discarding message :~n~p", [IP, Port, Socket, DataIn]),
 		    logger:log(error, "TCP receiver: Non-existing or invalid Content-Length in request from ~s:~p, " ++
 			       "answering 400 Bad Request and closing socket", [IP, Port]),
-		    SipSocket = {module=sipsocket_tcp, pid=Parent, data={IP, Port}},
+		    SipSocket = State#state.sipsocket,
 		    transportlayer:send_result(Header, SipSocket, "", 400, "Bad Request",
 					       [{"Reason", ["Non-existing or invalid Content-Length"]}]);
 		response ->
