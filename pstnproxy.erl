@@ -30,7 +30,7 @@ request(Method, URL, Header, Body, Socket) ->
     Route = "<" ++ sipurl:print({User, Pass, Host, Port,
 				 ["maddr=" ++ siphost:myip()]}) ++ ">",
     Newheaders = keylist:append({"Record-route", Route}, Header),
-    siprequest:send_proxy_request(Newheaders, Socket, {Method, Newlocation, Body}).
+    siprequest:send_proxy_request(Newheaders, Socket, {Method, Newlocation, Body, []}).
 
 request2(Method, Phone, Header, Body, Socket) ->
     Newlocation = {Phone, none, sipserver:get_env(proxyaddr), "5060", []},
@@ -42,7 +42,7 @@ request2(Method, Phone, Header, Body, Socket) ->
     Newheaders = keylist:append({"Record-route", Route}, Header),
     sipauth:check_and_send_auth(Newheaders, Socket, Fromphone, Phone,
 				{siprequest, send_proxy_request},
-				{Method, Newlocation, Body},
+				{Method, Newlocation, Body, []},
 				Method, Classdefs).
 
 response(Status, Reason, Header, Body, Socket) ->

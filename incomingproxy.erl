@@ -170,13 +170,13 @@ request(Method, URL, Header, Body, Socket) ->
 	    siprequest:send_result(Header, Socket, "", Errorcode, "Unknown code");
 	{proxy, Loc} ->
 	    logger:log(normal, "Proxy ~s", [sipurl:print(Loc)]),
-	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body});
+	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body, []});
 	{redirect, Loc} ->
 	    logger:log(normal, "Redirect ~s", [sipurl:print(Loc)]),
 	    siprequest:send_redirect(Loc, Header, Socket);
 	{relay, Loc} ->
 	    logger:log(normal, "Relay ~s", [sipurl:print(Loc)]),
-	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body}, Method)
+	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method)
     end.
 
 response(Status, Reason, Header, Body, Socket) ->

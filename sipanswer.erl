@@ -77,7 +77,7 @@ sendack(Socket, Header, Url) ->
 		  {"CSeq", [sipheader:cseq_print({CSeqID, "ACK"})]}],
     siprequest:send_proxy_request(Sendheader,
 				  Socket,
-				  {"ACK", Url, ""}).
+				  {"ACK", Url, "", []}).
 
 recvresponse(Socket, Header, Url, Body, Status) ->
     io:format("~p ~p~n", [Body, Status]),
@@ -150,7 +150,7 @@ start(Header, Body, Mode, Status, Number) ->
     Dest = sdp:parse(Body),
     [CallID] = keylist:fetch("Call-ID", Header),
     Pid = spawn(sipanswer, control, [Dest, CallID, self()]),
-    case database_call:insert_call_unique(CallID, Header, Pid) of
+    case database_call:insert_call_unique(CallID, answer, Header, [Pid]) of
 	{atomic, ok} ->
 	    receive
 		{sipanswer, port, Listenport} ->

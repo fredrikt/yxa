@@ -42,13 +42,13 @@ rewrite_route(Header, Dest) ->
 	    {Header, Dest}
     end.
 
-send_proxy_request(Header, Socket, {Action, Dest, Body}) ->
+send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
     Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
     Printheader = fun({Name, Value}) ->
 			  Name ++ ": " ++ siputil:printvalue(Value)
 		  end,
     [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
-				     {siphost:myip(), "5060"}, []}]),
+				     {siphost:myip(), "5060"}, Parameters}]),
     Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
     {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
     HLines = lists:map(Printheader, Keylist3),
