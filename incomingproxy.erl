@@ -32,21 +32,18 @@ lookupmail(User) ->
 	    end
     end.
 
-globalrewrite("0000" ++ Number) ->
-    "+" ++ Number;
-globalrewrite("000" ++ Number) ->
-    "+46" ++ Number;
-globalrewrite("00" ++ Number) ->
-    "+468" ++ Number;
-globalrewrite("0" ++ Number) ->
-    none;
-globalrewrite(Number) ->
-    "+468790" ++ Number.
+enumlookup(Number) ->
+    case util:regexp_rewrite(Number, sipserver:get_env(internal_to_e164, [])) of
+	nomatch ->
+	    none;
+	E164 ->
+	    dnsutil:enumlookup(E164)
+    end.
 
 lookupdefault(User) ->
     case util:isnumeric(User) of
 	true ->
-	    case dnsutil:enumlookup(globalrewrite(User)) of
+	    case enumlookup(User) of
 		none ->
 		    {proxy, {User, none, sipserver:get_env(defaultroute), none, []}};
 		URL ->
@@ -56,19 +53,28 @@ lookupdefault(User) ->
 	    none
     end.
 
-lookupphone(User) ->
-    Loc1 = lookuproute(User),
-    Loc2 = case Loc1 of
-	       none ->
-		   lookupmail(User);
-	       Loc1 ->
-		   Loc1
-	   end,
-    case Loc2 of
-	none ->
-	    lookupdefault(User);
-	Loc2 ->
-	    Loc2
+homedomain(Domain) ->
+    util:casecompare(sipserver:get_env(homedomain), Domain).
+
+lookupphone(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    case homedomain(Host) of
+	true ->
+	    Loc1 = lookuproute(User),
+	    Loc2 = case Loc1 of
+		       none ->
+			   lookupmail(User);
+		       Loc1 ->
+			   Loc1
+		   end,
+	    case Loc2 of
+		none ->
+		    lookupdefault(User);
+		Loc2 ->
+		    Loc2
+	    end;
+	_ ->
+	    {redirect, URL}
     end.
 
 request("REGISTER", URL, Header, Body, Socket) ->
@@ -88,10 +94,10 @@ request("REGISTER", URL, Header, Body, Socket) ->
 	    siprequest:send_auth_req(Header, Socket, sipauth:get_challenge(), false)
     end;
 
-request(Method, {User, Pass, "kth.se", Port, Parameters}, Header, Body, Socket) ->
+request(Method, URL, Header, Body, Socket) ->
     logger:log(normal, "~s ~s~n",
-	       [Method, sipurl:print({User, Pass, "kth.se", Port, Parameters})]),
-    Location = lookupphone(User),
+	       [Method, sipurl:print(URL)]),
+    Location = lookupphone(URL),
     logger:log(debug, "Location: ~p", [Location]),
     case Location of
 	none ->
@@ -103,11 +109,7 @@ request(Method, {User, Pass, "kth.se", Port, Parameters}, Header, Body, Socket) 
 	{redirect, Loc} ->
 	    logger:log(normal, "Redirect ~s", [sipurl:print(Loc)]),
 	    siprequest:send_redirect(Loc, Header, Socket)
-    end;
-
-request(Method, URL, Header, Body, Socket) ->
-%    logger:log(normal, "Redirect ~s", [sipurl:print(URL)]),
-    siprequest:send_redirect(URL, Header, Socket).
+    end.
 
 response(Status, Reason, Header, Body, Socket) ->
     logger:log(normal, "Response ~p ~s", [Status, Reason]),
