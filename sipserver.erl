@@ -93,72 +93,75 @@ parse_packet(Socket, Packet, IP, InPortNo) ->
 	    false;
 	Parsed ->
 	    % From here on, we can generate responses to the UAC on error
-	    NewParsed = case Parsed of
-		{request, Method, URI, Header, Body} ->
-		    % Check "sent-by" in top-Via to see if we MUST add a
-		    % received= parameter (RFC 3261 18.2.1)
-		    {TopViaProtocol, {TopViaHost, TopViaPort}, TopViaParameters} = topvia(Header),
-		    NewHeader1 = case TopViaHost of
-			IP ->
-			    Header;
-			_ ->
-			    NewParameters = lists:append(TopViaParameters, ["received=" ++ IP]),
-			    NewVia = {TopViaProtocol, {TopViaHost, TopViaPort}, NewParameters},
-			    logger:log(debug, "Sipserver: TopViaHost ~p does not match IP ~p, appending received=~s parameter", [TopViaHost, IP, IP]),
-			    [FirstVia | Via] = sipheader:via(keylist:fetch("Via", Header)),
-			    keylist:set("Via", sipheader:via_print(lists:append([NewVia], Via)), Header)
-		    end,
-		    {{_, NewURI}, NewHeader} = case received_from_strict_router(URI, NewHeader1) of
-			true ->
-			    logger:log(debug, "Sipserver: Received request with a Request-URI I (probably) put in a Record-Route. Pop real Request-URI from Route-header."),
-			    ReverseRoute = lists:reverse(sipheader:contact(keylist:fetch("Route", NewHeader1))),
-			    [NewReqURI | NewReverseRoute] = ReverseRoute,
-			    case NewReverseRoute of
-		                [] ->
-		                    {NewReqURI, keylist:delete("Route", NewHeader1)};
-		                _ ->
-		                    {NewReqURI, keylist:set("Route", sipheader:contact_print(lists:reverse(NewReverseRoute)), NewHeader1)}
-		            end;
-			_ ->
-			    {{none, URI}, NewHeader1}
-		    end,
-		    {request, Method, NewURI, NewHeader, Body};
-		{response, Status, Reason, Header, Body} ->
-		    % Check that top-Via is ours (RFC 3261 18.1.2),
-		    % silently drop message if it is not.
-		    ViaHostname = siprequest:myhostname(),
-		    MyViaNoParam = {"SIP/2.0/UDP", {ViaHostname,
-					siprequest:default_port(sipserver:get_env(listenport, none))}, []},
-		    {Protocol, {Host, Port}, _} = topvia(Header),
-		    TopViaNoParam = {Protocol, {Host, siprequest:default_port(Port)}, []},
-		    case TopViaNoParam of
-		        MyViaNoParam ->
-			    {response, Status, Reason, Header, Body};
-			_ ->
-			    logger:log(error, "INVALID top-Via in response [client=~s]. Top-Via (~s (without parameters)) does not match mine (~s). Discarding.",
-					[IP, sipheader:via_print([TopViaNoParam]), sipheader:via_print([MyViaNoParam])]),
-			    {invalid}
-		    end
-	    end,
-	    case NewParsed of
-		{invalid} ->
-		    {invalid};
-		_ ->
-		    case catch check_packet(NewParsed, IP) of
-			{'EXIT', E} ->
-			    logger:log(error, "=ERROR REPORT==== from sipserver:check_packet()~n~p", [E]),
-			    logger:log(error, "CRASHED parsing packet [client=~s]", [IP]),
-			    {invalid};
-			{siperror, Code, Text} ->
-			    logger:log(error, "INVALID packet [client=~s] -> ~p ~s", [IP, Code, Text]),
-			    {invalid};
-			{siperror, Code, Text, ExtraHeaders} ->
-			    logger:log(error, "INVALID packet [client=~s] -> ~p ~s", [IP, Code, Text]),
-			    {invalid};
-			LogStr ->
-			    {NewParsed, LogStr}
-		    end
+	    case catch process_parsed_packet(Socket, Parsed, IP, InPortNo) of
+		{'EXIT', E} ->
+		    logger:log(error, "=ERROR REPORT==== from sipserver:process_parsed_packet() :~n~p", [E]),
+		    {error};
+		{sipparseerror, Header, Code, Text} ->
+		    logger:log(error, "INVALID request [client=~s] ~p ~s", [IP, Code, Text]),
+		    internal_error(Header, Socket, Code, Text);
+		{sipparseerror, Header, Code, Text, ExtraHeaders} ->
+		    logger:log(error, "INVALID request [client=~s]: ~s -> ~p ~s", [IP, Code, Text]),
+		    internal_error(Header, Socket, Code, Text, ExtraHeaders);
+		{siperror, Code, Text} ->
+		    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE", [IP, Code, Text]),
+		    false;
+		{siperror, Code, Text, ExtraHeaders} ->
+		    logger:log(error, "INVALID packet [client=~s] ~p ~s, CAN'T SEND RESPONSE", [IP, Code, Text]),
+		    false;
+		Res ->
+		    Res
 	    end
+    end.
+
+process_parsed_packet(Socket, {request, Method, URI, Header, Body}, IP, InPortNo) ->
+    check_packet({request, Method, URI, Header, Body}, IP),
+    % Check "sent-by" in top-Via to see if we MUST add a
+    % received= parameter (RFC 3261 18.2.1)
+    {TopViaProtocol, {TopViaHost, TopViaPort}, TopViaParameters} = topvia(Header),
+    NewHeader1 = case TopViaHost of
+	IP ->
+	    Header;
+	_ ->
+	    NewParameters = lists:append(TopViaParameters, ["received=" ++ IP]),
+	    NewVia = {TopViaProtocol, {TopViaHost, TopViaPort}, NewParameters},
+	    logger:log(debug, "Sipserver: TopViaHost ~p does not match IP ~p, appending received=~s parameter", [TopViaHost, IP, IP]),
+	    [FirstVia | Via] = sipheader:via(keylist:fetch("Via", Header)),
+	    keylist:set("Via", sipheader:via_print(lists:append([NewVia], Via)), Header)
+    end,
+    {{_, NewURI}, NewHeader} = case received_from_strict_router(URI, NewHeader1) of
+	true ->
+	    logger:log(debug, "Sipserver: Received request with a Request-URI I (probably) put in a Record-Route. Pop real Request-URI from Route-header."),
+	    ReverseRoute = lists:reverse(sipheader:contact(keylist:fetch("Route", NewHeader1))),
+	    [NewReqURI | NewReverseRoute] = ReverseRoute,
+	    case NewReverseRoute of
+                [] ->
+                    {NewReqURI, keylist:delete("Route", NewHeader1)};
+                _ ->
+                    {NewReqURI, keylist:set("Route", sipheader:contact_print(lists:reverse(NewReverseRoute)), NewHeader1)}
+            end;
+	_ ->
+	    {{none, URI}, NewHeader1}
+    end,
+    LogStr = make_logstr({request, Method, NewURI, NewHeader, Body}, IP),
+    {{request, Method, NewURI, NewHeader, Body}, LogStr};
+process_parsed_packet(Socket, {response, Status, Reason, Header, Body}, IP, InPortNo) ->
+    check_packet({response, Status, Reason, Header, Body}, IP),
+    % Check that top-Via is ours (RFC 3261 18.1.2),
+    % silently drop message if it is not.
+    ViaHostname = siprequest:myhostname(),
+    MyViaNoParam = {"SIP/2.0/UDP", {ViaHostname,
+				siprequest:default_port(sipserver:get_env(listenport, none))}, []},
+				{Protocol, {Host, Port}, _} = topvia(Header),
+    TopViaNoParam = {Protocol, {Host, siprequest:default_port(Port)}, []},
+    case TopViaNoParam of
+        MyViaNoParam ->
+	    LogStr = make_logstr({response, Status, Reason, Header, Body}, IP),
+	    {{response, Status, Reason, Header, Body}, LogStr};
+	_ ->
+	    logger:log(error, "INVALID top-Via in response [client=~s]. Top-Via (~s (without parameters)) does not match mine (~s). Discarding.",
+			[IP, sipheader:via_print([TopViaNoParam]), sipheader:via_print([MyViaNoParam])]),
+	    {invalid}
     end.
 
 received_from_strict_router(URI, Header) ->
@@ -190,30 +193,29 @@ topvia(Header) ->
     [TopVia | _] = Via,
     TopVia.
 
-check_packet({request, Method, URL, Header, Body}, IP) ->
+check_packet({request, Method, URI, Header, Body}, IP) ->
+    check_supported_uri_scheme(URI, Header),
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
-    sanity_check_uri("From:", FromURI),
+    sanity_check_uri("From:", FromURI, Header),
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
-    sanity_check_uri("To:", ToURI),
+    sanity_check_uri("To:", ToURI, Header),
     {CSeqNum, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     if
 	CSeqMethod /= Method ->
-	    throw({siperror, 400, "CSeq " ++ CSeqMethod ++ " does not match request Method " ++ Method});
+	    throw({sipparseerror, Header, 400, "CSeq Method " ++ CSeqMethod ++ " does not match request Method " ++ Method});
 	true -> true
-    end,
-    make_logstr({request, Method, URL, Header, Body}, IP);
+    end;
 check_packet({response, Status, Reason, Header, Body}, IP) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
-    sanity_check_uri("From:", FromURI),
+    sanity_check_uri("From:", FromURI, Header),
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
-    sanity_check_uri("To:", ToURI),
-    make_logstr({response, Status, Reason, Header, Body}, IP).
+    sanity_check_uri("To:", ToURI, Header).
 
-make_logstr({request, Method, URL, Header, Body}, IP) ->
+make_logstr({request, Method, URI, Header, Body}, IP) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
     io_lib:format("~s ~s [client=~s, from=<~s>, to=<~s>]", 
-		[Method, sipurl:print(URL), IP, sipurl:print(FromURI), sipurl:print(ToURI)]);
+		[Method, sipurl:print(URI), IP, url2str(FromURI), url2str(ToURI)]);
 make_logstr({response, Status, Reason, Header, Body}, IP) ->
     {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
@@ -221,18 +223,34 @@ make_logstr({response, Status, Reason, Header, Body}, IP) ->
     case keylist:fetch("Warning", Header) of
 	[] ->
 	    io_lib:format("~s [client=~s, from=<~s>, to=<~s>]", 
-			[CSeqMethod, IP, sipurl:print(FromURI), sipurl:print(ToURI)]);
+			[CSeqMethod, IP, url2str(FromURI), url2str(ToURI)]);
 	[Warning] ->
 	    io_lib:format("~s [client=~s, from=<~s>, to=<~s>, warning=~p]", 
-			[CSeqMethod, IP, sipurl:print(FromURI), sipurl:print(ToURI), Warning])
+			[CSeqMethod, IP, url2str(FromURI), url2str(ToURI), Warning])
     end.
 
-sanity_check_uri(Desc, {none, _, _, _, _, _}) ->
-    throw({siperror, 400, "No user part in " ++ Desc ++ " URL"});
-sanity_check_uri(Desc, {_, _, none, _, _}) ->
-    throw({siperror, 400, "No host part in " ++ Desc ++ " URL"});
-sanity_check_uri(Desc, URI) ->
+url2str({unparseable, _}) ->
+    "unparseable";
+url2str(URL) ->
+    sipurl:print(URL).
+
+sanity_check_uri(Desc, {none, _, _, _, _, _}, Header) ->
+    throw({sipparseerror, Header, 400, "No user part in " ++ Desc ++ " URL"});
+sanity_check_uri(Desc, {_, _, none, _, _}, Header) ->
+    throw({sipparseerror, Header, 400, "No host part in " ++ Desc ++ " URL"});
+sanity_check_uri(_, URI, _) ->
     URI.
+
+check_supported_uri_scheme({unparseable, URIstr}, Header) ->
+    case string:chr(URIstr, $:) of
+	0 ->
+	    throw({sipparseerror, Header, 416, "Unsupported URI Scheme"});
+	Index ->
+	    Scheme = string:substr(URIstr, 1, Index),
+	    throw({sipparseerror, Header, 416, "Unsupported URI Scheme (" ++ Scheme ++ ")"})
+    end;
+check_supported_uri_scheme(URI, _) ->
+    true.
 
 get_env(Name) ->
     {ok, Value} = application:get_env(Name),
