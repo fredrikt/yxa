@@ -124,9 +124,11 @@ remove_phones(ExpiredPhones) ->
 		      end,
 		if
 		    is_record(URL, sipurl) ->
-			logger:log(normal, "Location: User ~p ~p location ~p has expired", [User, Class, sipurl:print(URL)]);
+			logger:log(normal, "Location: User ~p ~p location ~p has expired",
+				   [User, Class, sipurl:print(URL)]);
 		    true ->
-			logger:log(normal, "Location: User ~p ~p (unrecognized) location ~p has expired", [User, Class, Location])
+			logger:log(normal, "Location: User ~p ~p (unrecognized) location ~p has expired",
+				   [User, Class, Location])
 		end,
 		delete_phone(User, Location, Class)
 	end,
@@ -307,10 +309,9 @@ get_sipuser_locations(SipUser) when is_list(SipUser) ->
 %%           SipUser = string()
 %% Descrip.: Fetches all locations for a given number (SIP user)
 %%           from the location database.
-%% Returns : {atomic, Entries} |
+%% Returns : {ok, Entries} |
 %%           the result of the mnesia:transaction()
-%%           Entries = list() of {Address, Flags, Class, Expire} (see
-%%           phone record())
+%%           Entries = list() of siplocationdb_e record()
 %% XXX deprecated - should be replaced by get_sipuser_locations/1
 %%--------------------------------------------------------------------
 get_phone(SipUser) when is_list(SipUser) ->
@@ -326,29 +327,16 @@ get_phone(SipUser) when is_list(SipUser) ->
 					 }}]
 				      }])
 	end,
-    case mnesia:transaction(F) of
-	{atomic, L} ->
-	    %% Convert the location strings stored in the database to sipurl record format.
-	    %% We can't store the locations as sipurl records in the database in case we
-	    %% have to change something in the sipurl record.
-	    Rewrite = fun(Entry) ->
-			      {LocationStr, Flags, Class, Expire} = Entry,
-                              case LocationStr of
-                                  {User, Pass, Host, Port, Parameters} ->
-				      %% 2004-04-14, ft@ : This is COMPABILITY code to handle old entrys just enough to
-				      %% delete them when they expire. Will be removed.
-				      U = sipurl:new([{proto, "sip"}, {user, User}, {pass, Pass},
-						      {host, Host}, {port, Port}, {param, Parameters}]),
-                                      {U, Flags, Class, Expire};
-				  _ when is_list(LocationStr) ->
-				      {sipurl:parse(LocationStr), Flags, Class, Expire}
-			      end
-		      end,
-	    {atomic, lists:map(Rewrite, L)};
-	Unknown ->
-	    logger:log(error, "Location: get_phone got unknown result from Mnesia : ~p", [Unknown]),
-	    Unknown
-    end.
+    {atomic, L} = mnesia:transaction(F),
+    %% Convert the location strings stored in the database to sipurl record format.
+    %% We can't store the locations as sipurl records in the database in case we
+    %% have to change something in the sipurl record.
+    Rewrite = fun(Entry) ->
+		      {LocationStr, Flags, Class, Expire} = Entry,
+		      #siplocationdb_e{address=sipurl:parse(LocationStr), flags=Flags,
+				       class=Class, expire=Expire}
+	      end,
+    {ok, lists:map(Rewrite, L)}.
 
 %%--------------------------------------------------------------------
 %% Function:
@@ -494,9 +482,6 @@ expired_phones() ->
 
     case mnesia:transaction(F) of
 	{atomic, L} ->
-	    %% Convert the location strings stored in the database to sipurl record format.
-	    %% We can't store the locations as sipurl records in the database in case we
-	    %% want have to change something in the sipurl record.
 	    {ok, L};
 	Unknown ->
 	    logger:log(error, "Location: expired_phones got unknown result from Mnesia : ~p", [Unknown]),
