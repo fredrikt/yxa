@@ -8,6 +8,7 @@
 	 pstn_call_check_auth/5,
 	 is_allowed_pstn_dst/4,
 	 can_use_address/2,
+	 can_use_address_detail/2,
 	 realm/0]).
 
 % A1 = username ":" realm ":" password
@@ -196,39 +197,56 @@ is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
 	    true
     end.
 
-can_use_address(User, Address) when list(User), list(Address) ->
+can_use_address(User, Address) ->
+    case local:can_use_address_detail(User, Address) of
+	{Verdict, _} -> Verdict;
+	R -> R
+    end.
+
+can_use_address_detail(User, Address) when list(User), list(Address) ->
     URL = sipurl:parse(Address),
     case local:get_users_for_url(URL) of
 	[User] ->
 	    logger:log(debug, "Auth: User ~p is allowed to use address ~p",
 	    		[User, sipurl:print(URL)]),
-	    true;
+	    {true, ok};
 	[OtherUser] ->
 	    logger:log(debug, "Auth: User ~p may NOT use use address ~p (belongs to user ~p)",
 	    		[User, sipurl:print(URL), OtherUser]),
-	    false;
+	    {false, eperm};
 	[] ->
 	    logger:log(debug, "Auth: No users found for address ~p, use by user ~p NOT permitted",
 	    		[sipurl:print(URL), User]),
-	    false;
- 	Users when list(Users) ->
-	    logger:log(debug, "Auth: Use of address ~p NOT permitted. Address maps to more than one user : ~p",
-	    		[sipurl:print(URL), Users]),
-	    false;
+	    {false, nomatch};
+	nomatch ->
+	    logger:log(debug, "Auth: No users found for address ~p, use by user ~p NOT permitted",
+	    		[sipurl:print(URL), User]),
+	    {false, nomatch};
+	Users when list(Users) ->
+	    case lists:member(User, Users) of
+		true ->
+		    {true, ok};
+		false ->
+		    logger:log(debug, "Auth: Use of address ~p NOT permitted. Address maps to more than one user, but not to ~p (~p)",
+		    		[sipurl:print(URL), User, Users]),
+		    {false, eperm}
+	    end;
 	Unknown ->
 	    logger:log(debug, "Auth: Use of address ~p NOT permitted. Unknown result from get_users_for_url : ~p",
 	    		[sipurl:print(URL), Unknown]),
-	    false
+	    {false, error}
     end;
-can_use_address(User, Address) ->
+can_use_address_detail(User, Address) ->
     logger:log(debug, "Auth: can_use_address() called with incorrect arguments, User ~p Address ~p",
 		[User, Address]),
-    false.
+    {false, error}.
 
 can_register(Header, Address) ->
     case local:get_user_verified(Header, "REGISTER") of
 	{authenticated, User} ->
-	    {local:can_use_address(User, Address), User};
+	    {local:can_use_address_detail(User, Address), User};
+	{stale, User} ->
+	    {stale, User};
 	_ ->
 	    logger:log(debug, "Auth: Registration of address ~p NOT permitted", [Address]),
 	    {false, none}

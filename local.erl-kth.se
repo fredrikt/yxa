@@ -30,6 +30,7 @@
 	 get_user_verified/2,
 	 get_user_verified_proxy/2,
 	 can_use_address/2,
+	 can_use_address_detail/2,
 	 can_register/2,
 	 is_allowed_pstn_dst/4,
     % sipuserdb
@@ -284,6 +285,9 @@ get_user_verified_proxy(Header, Method) ->
 
 can_use_address(User, Address) ->
     sipauth:can_use_address(User, Address).
+
+can_use_address_detail(User, Address) ->
+    sipauth:can_use_address_detail(User, Address).
 
 can_register(Header, User) ->
     sipauth:can_register(Header, User).
