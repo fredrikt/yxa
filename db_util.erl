@@ -62,7 +62,7 @@ tab_to_list(MnesiaTab) ->
 %%--------------------------------------------------------------------
 delete_all_entries(MnesiaTab) ->
     F = fun() ->
-		Fun = fun(Rec, Acc) ->
+		Fun = fun(Rec, _Acc) ->
 			      mnesia:delete_object(Rec)
 		      end,
 		mnesia:foldl(Fun, dummy_acc, MnesiaTab)
@@ -106,7 +106,8 @@ delete_with_key(Db, Key) ->
     F = fun() ->
 		mnesia:delete({Db, Key})
 	end,
-    Rec = mnesia:transaction(F).
+    Rec = mnesia:transaction(F),
+    Rec.
 
 %%--------------------------------------------------------------------
 %% Function: match_object(Pattern)
