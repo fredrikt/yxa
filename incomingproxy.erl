@@ -54,8 +54,21 @@ lookupmail(User) ->
 lookupimplicit(User) ->
     none.
 
+isnumeric(Number) ->
+    case catch list_to_integer(Number) of
+	Num when integer(Num) ->
+	    true;
+	_ ->
+	    false
+    end.
+
 lookupdefault(User) ->
-    {User, none, "sip-pstn.kth.se", none, []}.
+    case isnumeric(User) of
+	true ->
+	    {User, none, "sip-pstn.kth.se", none, []};
+	false ->
+	    none
+    end.
 
 lookupphone(User) ->
     Loc1 = lookuproute(User),
