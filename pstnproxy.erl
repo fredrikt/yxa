@@ -225,6 +225,8 @@ request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_r
 	    proxy_request(THandler, NewRequest, NewURI);
 	{reply, Status, Reason} ->
 	    transactionlayer:send_response_handler(THandler, Status, Reason);
+	{reply, Status, Reason, ExtraHeaders} ->
+	    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
 	none ->
 	    none
     end.
@@ -233,11 +235,13 @@ request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_r
 %% Function: determine_sip_location(URI)
 %%           URI = sipurl record()
 %% Descrip.: Find out how to act on a request from PSTN to SIP.
-%% Returns : {reply, Status, Reason}  |
-%%           {proxy, NewURI}          |
+%% Returns : {reply, Status, Reason}               |
+%%           {reply, Status, Reason, ExtraHeaders} |
+%%           {proxy, NewURI}                       |
 %%           none
 %%           Status = integer(), SIP status code
 %%           Reason = string(), SIP reason phrase
+%%           ExtraHeaders = list() of {Key, Value} tuple()
 %%           NewURI = sipurl record()
 %%--------------------------------------------------------------------
 determine_sip_location(URI) when is_record(URI, sipurl) ->
@@ -245,8 +249,17 @@ determine_sip_location(URI) when is_record(URI, sipurl) ->
     logger:log(debug, "pstnproxy: Performing ENUM lookup on ~p", [User]),
     %% XXX handle {proxy, Loc} return from lookupenum? Should never happen in pstnproxy...
     case local:lookupenum(User) of
-	{relay, Loc} ->
-	    {proxy, Loc};
+	{relay, Loc} when is_record(Loc, sipurl) ->
+	    case sipserver:get_env(pstnproxy_redirect_on_enum, false) of
+		true ->
+		    %% Redirect caller to the destination we found in ENUM instead of
+		    %% proxying the request.
+		    Contact = contact:new(none, Loc, []),
+		    ExtraHeaders = [{"Contact", sipheader:contact_print([Contact])}],
+		    {reply, 302, "Moved Temporarily", ExtraHeaders};
+		false ->
+		    {proxy, Loc}
+	    end;
 	none ->
 	    case get_sipproxy() of
 		ProxyURL when is_record(ProxyURL, sipurl) ->
