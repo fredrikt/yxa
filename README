@@ -331,6 +331,49 @@ appserver.config:
 	      {listenport, 5070}
              ]}].
 
+sipuserdb_file user database :
+------------------------------
+[
+ {user, [
+	 {name, "ft.sip1"},
+	 {password, "secret"},
+	 {classes, [internal,national,mobile]}
+	]},
+ {user, [
+	 {name, "foo@example.org"},
+	 {password, "secret2"},
+	 {classes, [internal]}
+	]},
+
+ {address, [
+	    {user, "ft.sip1"},
+	    {address, "sip:ft@example.org"}
+	   ]},
+ {address, [
+	    {user, "ft.sip1"},
+	    {address, "sip:all@example.org"}
+	   ]},
+
+ {address, [
+	    {user, "ft.sip2"},
+	    {address, "sip:info@example.org"}
+	   ]},
+ {address, [
+	    {user, "ft.sip2"},
+	    {address, "sip:all@example.org"}
+	   ]}
+].
+
+This is a simple user database. If I have two phones, and let one REGISTER
+with 'To: sip:ft@example.org' and authentication username 'ft.sip1', and
+the other REGISTER with 'To: sip:info@example.org' and authentication
+username 'foo@example.org' (NOTE: no "sip:"), calls to sip:ft@example.org
+will cause phone #1 to ring and calls to sip:info@example.org will cause
+phone #2 to ring. Calls to sip:all@example.org will cause both phones to
+ring, provided that I have an incomingproxy and an appserver set up and
+configured.
+
+
 =============
 User database
 =============
@@ -339,9 +382,10 @@ Yxa has a modular interface for user database backends. The entry point is
 the sipuserdb module, which looks at your configuration to determine which
 database backends to query, and in what order. The default is to just look
 in the Mnesia database (tables user and numbers), but there is also an
-LDAP module available. The schema for storing SIP user information in LDAP
-is not yet finished, and is currently not even included in the Yxa source,
-but the sipuserdb_ldap module is used in production at Stockholm university.
+LDAP module, and a plain text file, backend available. The schema for
+storing SIP user information in LDAP is not yet finished, and is currently
+not even included in the Yxa source, but the sipuserdb_ldap module is used
+in production at Stockholm university.
 
 sipuserdb_ldap configuration parameters :
 
@@ -353,6 +397,15 @@ ldap_telephonenumberattribute	(default: telephoneNumber) User phone number
 				attribute.
 ldap_passwordattribute		(default: sipPassword) User authentication
 				password attribute.
+
+sipuserdb_file configuration parameters :
+
+sipuserdb_file_filename		(required) Filename (including path) of
+				your user database. See above (section
+				Examples) for format of this file.
+sipuserdb_file_refresh_interval	(default: 60) Interval (in seconds) between
+				checks for updated user database file.
+
 
 =============
 Bootstrapping
