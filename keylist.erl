@@ -41,14 +41,14 @@ appendlist(Keylist, List) when record(Keylist, keylist) ->
 from_list(List) ->
     appendlist(empty(), List).
 
-append({Key, Value}, List) when record(List, keylist) ->
+append({Key, NewValueList}, List) when record(List, keylist) ->
     mod(Key, fun (Valuelist) ->
-			 lists:append(Valuelist, [Value])
+			 lists:append(Valuelist, NewValueList)
 		 end, List).
 
-prepend({Key, Value}, List) when record(List, keylist) ->
+prepend({Key, NewValueList}, List) when record(List, keylist) ->
     mod(Key, fun (Valuelist) ->
-			 lists:append([Value], Valuelist)
+			 lists:append(NewValueList, Valuelist)
 		 end, List).
 
 delete(Key, List) when record(List, keylist) ->
@@ -105,6 +105,6 @@ copy(Keylist, Keys) when record(Keylist, keylist) ->
 
 map(Func, Keylist) when record(Keylist, keylist) ->
     Pred = fun(Elem) ->
-		   Func(Elem#keyelem.key, Elem#keyelem.item)
+		   Func(Elem#keyelem.key, Elem#keyelem.casekey, Elem#keyelem.item)
 	   end,
     lists:map(Pred, Keylist#keylist.list).
