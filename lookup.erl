@@ -416,7 +416,7 @@ homedomain(Domain) ->
 	_ ->
 	    %% Domain did not match configured sets of homedomain, check against list
 	    %% of hostnames and also my IP address
-	    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip()]),
+	    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip_list()]),
 	    util:casegrep(Domain, HostnameList)
     end.
 
