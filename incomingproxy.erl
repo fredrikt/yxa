@@ -134,6 +134,8 @@ request(Method, URL, Header, Body, Socket, FromIP) ->
 		false ->
 		    logger:log(normal, "~s -> 403 Forbidden", [LogStr]),
 		    transactionlayer:send_response_request(Request, 403, "Forbidden");
+		drop ->
+		    ok;
 		Unknown ->
 		    logger:log(error, "~s: Unknown result from verify_homedomain_user() :~n~p",
 		    		[LogStr, Unknown]),
@@ -164,7 +166,8 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 		    end;
 		stale ->
 		    logger:log(debug, "Request from homedomain user: STALE authentication, sending challenge"),
-		    transactionlayer:send_challenge_request(Request, proxy, true, none);
+		    transactionlayer:send_challenge_request(Request, proxy, true, none),
+		    drop;
 		false ->
 		    Prio = case keylist:fetch("Proxy-Authenticate", Header) of
 			[] -> debug;
@@ -172,10 +175,12 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 		    end,
 		    logger:log(Prio, "~s -> Request from unauthorized homedomain user, sending challenge",
 		    		[LogStr]),
-		    transactionlayer:send_challenge_request(Request, proxy, false, none);
+		    transactionlayer:send_challenge_request(Request, proxy, false, none),
+		    drop;
 		Unknown ->
 		    logger:log(error, "request: Unknown result from local:get_user_verified_proxy() :~n~p", [Unknown]),
-		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
+		    transactionlayer:send_response_request(Request, 500, "Server Internal Error"),
+		    drop
 	    end;
 	_ ->
 	    true
