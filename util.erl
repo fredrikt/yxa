@@ -1,5 +1,5 @@
 -module(util).
--export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2]).
+-export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -84,3 +84,8 @@ join([A], Separator) ->
     A;
 join([String | Rest], Separator) ->
     String ++ Separator ++ join(Rest, Separator).
+
+concat([], Separator) ->
+    [];
+concat([A | B], Separator) ->
+    A ++ Separator ++ concat(B, Separator).
