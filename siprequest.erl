@@ -3,7 +3,7 @@
 	 send_auth_req/4, send_proxyauth_req/4,
 	 send_proxy_request/3, location_prio/1, send_answer/3,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5,
-	 send_result/5]).
+	 send_result/5, send_result/6]).
 
 send_response(Socket, Code, Text, Header, Body) ->
     Via = sipheader:via(keylist:fetch("Via", Header)),
@@ -195,7 +195,7 @@ send_result(Header, Socket, Body, Code, Description, ExtraHeaders) ->
 		   {"From", keylist:fetch("From", Header)},
 		   {"To", keylist:fetch("To", Header)},
 		   {"Call-ID", keylist:fetch("Call-ID", Header)},
-		   {"CSeq", keylist:fetch("CSeq", Header)}, ExtraHeaders], Body).
+		   {"CSeq", keylist:fetch("CSeq", Header)} | ExtraHeaders], Body).
 
 location_prio([]) ->
     {none, [], none, never};
