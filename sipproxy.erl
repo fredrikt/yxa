@@ -40,9 +40,9 @@ fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Actions, Timeout, Targets)
 		_ ->
 		    logger:log(normal, "sipproxy: Reached end of Actions-list for ~s ~s, cancelling pending targets.",
 		    		[Method, sipurl:print(ReqURI)]),
-		    cancel_pending_targets(Targets),
-		    Parent ! {no_more_actions}
+		    cancel_pending_targets(Targets)
 	    end,
+	    Parent ! {no_more_actions},
 	    logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [Timeout]),
 	    process_wait(Parent, OrigRequest, Socket, Targets,
 			 false, util:timestamp() + Timeout, stayalive),
