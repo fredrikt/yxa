@@ -49,6 +49,8 @@
 %% needed for file:read_file_info
 -include_lib("kernel/include/file.hrl").
 
+%% how often we will log errors with our periodical reading of the
+%% user database file
 -define(LOG_THROTTLE_SECONDS, 300).
 
 %%====================================================================
@@ -541,19 +543,32 @@ get_addresses_using_user2(Username, [H | T], Res) when record(H, address) ->
 %% Returns: ListOfUsernames
 %%--------------------------------------------------------------------
 get_users_using_address(Address) when list(Address) ->
-    R = get_user_records_for_url(sipurl:parse(Address), fetch_addresses(), []),
-    collect_usernames(R);
+    %% Check that Address is a parseable URL. It really does not have to
+    %% be - it is often the result of canonization of a Request-URI, URL
+    %% or address of some form.
+    case sipurl:parse(Address) of
+	URL when record(URL, sipurl) ->
+	    case get_user_records_for_url(URL, fetch_addresses(), []) of
+		error ->
+		    [];
+		R when list(R) ->
+		    collect_usernames(R)
+	    end;
+	_ ->
+	    %% unparseable URL
+	    []
+    end;
 get_users_using_address(URL) when record(URL, sipurl) ->
     R = get_user_records_for_url(URL, fetch_addresses(), []),
     collect_usernames(R).
 
 
 %% Function: get_user_records_for_url/4
-%% Description: Given an address (list) or URL (sipurl record), locate
-%%              and return all address records in the userdb, fetched
-%%              from the persistent sipuserdb_file process,
-%%              that matches using URI address matching rules, or
-%%              the user records matching the address.
+%% Description: Given an URL (sipurl record), locate and return all
+%%              address records in the userdb, fetched from the
+%%	        persistent sipuserdb_file process, that matches using
+%%              URI address matching rules, or the user records
+%%              matching the address.
 %% Returns: ListOfUserRecords |
 %%          error
 %%--------------------------------------------------------------------
