@@ -2,9 +2,10 @@
 %% -------------------------------------------------------------------
 
 -record(sipproxy_action, {
-	  action, 
-	  timeout, 
-	  requri
+	  action,
+	  timeout,
+	  requri,
+	  user
 	 }).
 
 %% sipproxy response record. only used internally when processing responses,
@@ -17,3 +18,11 @@
 	  created	%% true | false, was this a response record or not?
 	  }).
 
+%% the functions that read forwards from a database returns them in this form
+-record(sipproxy_forward, {
+	  user,		%% SIP username to make this forward call as (appserver/pstnproxy)
+	  forwards,	%% list() of sipurl record()
+	  timeout,	%% integer(), number of seconds to call these forwards
+	  localring	%% true | false, whether to ring on location database entrys
+	  		%% at the same time as the forward destinations or not
+	 }).
