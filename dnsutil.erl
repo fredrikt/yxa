@@ -95,14 +95,23 @@ enumlookup("+" ++ Number) ->
 enumlookup(Number) ->
     none.
 
+isnaptr(Entry) ->
+    if
+	Entry#dns_rr.type == ?T_NAPTR ->
+	    true;
+	true ->
+	    false
+    end.
+
 naptrlookup(Name) ->
     logger:log(debug, "naptrlookup: ~p~n", [Name]),
-    case inet_res:nslookup(Name, in, 35) of
+    case inet_res:nslookup(Name, in, ?T_NAPTR) of
 	{ok, Rec} ->
 	    ParseNAPTR = fun(Entry) ->
 				 parsenaptr(Entry#dns_rr.data)
 			 end,
-	    lists:map(ParseNAPTR, Rec#dns_rec.anlist);
+	    lists:map(ParseNAPTR, lists:filter(fun isnaptr/1,
+					       Rec#dns_rec.anlist));
 	{error, nxdomain} ->
 	    []
     end.
