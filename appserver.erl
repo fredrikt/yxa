@@ -333,7 +333,7 @@ process_messages(State) when record(State, state) ->
 			      logger:log(debug, "Appserver glue: received callhandler_terminating from my ForkPid ~p (CallHandlerPid is ~p) - setting ForkPid to 'none'",
 					 [ForkPid, CallHandlerPid]),
 			      NewState1 = State#state{forkpid=none},
-			      NewState2 = case util:safe_is_process_alive(CallHandler) of
+			      NewState2 = case util:safe_is_process_alive(CallHandlerPid) of
 					      {true, _} ->
 						  case NewState1#state.completed of
 						      false ->
