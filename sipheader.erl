@@ -56,19 +56,19 @@ via([String | Rest]) ->
 
 print_parameters([]) ->
     "";
-
 print_parameters([A | B]) ->
     ";" ++ A ++ print_parameters(B).
 
 via_print(Via) ->
     lists:map(fun(H) ->
 		      {Protocol, {Host, Port}, Parameters} = H,
-		      Protocol ++ " " ++ Host ++ ":" ++ Port ++ print_parameters(Parameters)
+		      Protocol ++ " " ++ sipurl:print_hostport(Host, Port) ++ print_parameters(Parameters)
 	      end, Via).
 
 via_params({Protocol, Hostport, Parameters}) ->
     param_to_dict(Parameters).
 
+% XXX skriv ut <URI> ist. f URI?
 contact_print(Contact) ->
     lists:map(fun(H) ->
 		      name_print(H)
