@@ -296,8 +296,9 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 				       [SIPUser, sipurl:print(FromURI)]),
 			    false
 		    end;
-		stale ->
-		    logger:log(normal, "~s: incomingproxy: From: address requires authentication (stale)", [LogTag]),
+		{stale, SIPuser} ->
+		    logger:log(normal, "~s: incomingproxy: From: address requires authentication (stale, user ~p)",
+			       [LogTag, SIPuser]),
 		    transactionlayer:send_challenge_request(Request, proxy, true, none),
 		    drop;
 		false ->
@@ -618,16 +619,17 @@ relay_request(THandler, Request, Dst, Origin, LogTag) when is_record(Request, re
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, relay_dst2str(Dst)]),
 	    sippipe:start(THandler, none, Request, Dst, 900);
-	stale ->
+	{stale, User} ->
 	    case local:incomingproxy_challenge_before_relay(Origin, Request, Dst) of
 		false ->
-		    logger:log(debug, "Relay: STALE authentication, but local policy says we should not challenge"),
+		    logger:log(debug, "Relay: STALE authentication (user ~p), but local policy says we "
+			       "should not challenge", [User]),
 		    sippipe:start(THandler, none, Request, Dst, 900);
-		_ ->
+		true ->
 		    logger:log(debug, "Relay: STALE authentication, sending challenge"),
-		    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication ->"
+		    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication (user ~p) ->"
 			       " 407 Proxy Authentication Required",
-			       [LogTag, relay_dst2str(Dst)]),
+			       [LogTag, relay_dst2str(Dst), User]),
 		    transactionlayer:send_challenge(THandler, proxy, true, none)
 	    end;
 	false ->
