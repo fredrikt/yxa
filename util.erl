@@ -22,7 +22,9 @@
 	 concat/2,
 	 safe_is_process_alive/1,
 	 safe_signal/3,
-	 remove_v6_brackets/1
+	 remove_v6_brackets/1,
+
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -181,8 +183,11 @@ join([String | Rest], Separator) ->
 %% Descrip.: create a single string from the Strings entries, each
 %%           entry ends with the Separator.
 %% Returns : list()
+%%
 %% XXX badly chosen function name - I mostly associate this name with
 %% functions that add a element to a list - hsten
+%%
+%% XXX Function seems to be unused, and kind of useless (?).
 %%--------------------------------------------------------------------
 concat([], _Separator) ->
     [];
@@ -313,3 +318,225 @@ digit(_Digit) ->
 %% Test functions
 %%====================================================================
 
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+
+    %% test timestamp()
+    %%--------------------------------------------------------------------
+    io:format("test: timestamp/0 - 1~n"),
+    %% we can't test more than that this function returns an integer...
+    Timestamp1 = timestamp(),
+    true = is_integer(Timestamp1),
+
+    io:format("test: timestamp/0 - 2~n"),
+    %% ... and that the integer returned is at least 1.1 billion
+    true = (Timestamp1 >= 1100000000),    
+
+    %% test sec_to_date(Seconds)
+    %%--------------------------------------------------------------------
+    io:format("test: sec_to_date/1 - 1~n"),
+    "2005-01-31 14:06:07" = sec_to_date(1107176767),
+
+
+    %% test isnumeric(Number)
+    %%--------------------------------------------------------------------
+    io:format("test: isnumeric/1 - 1~n"),
+    %% small number
+    true = isnumeric("123"),
+
+    io:format("test: isnumeric/1 - 2~n"),
+    %% big number
+    true = isnumeric(string:copies("123", 10)),
+
+    io:format("test: isnumeric/1 - 3~n"),
+    %% not only number
+    false = isnumeric(" 123"),
+
+    io:format("test: isnumeric/1 - 4~n"),
+    %% not number at all
+    false = isnumeric("X"),
+
+    io:format("test: isnumeric/1 - 5~n"),
+    %% not even a string
+    false = isnumeric({1,2,3}),
+
+    
+    %% test apply_rewrite(Rewrite, List)
+    %%--------------------------------------------------------------------
+    io:format("test: apply_rewrite/2 - 1~n"),
+    %% single group to replace
+    "first@foo" = apply_rewrite("\\1@foo", ["first"]),
+
+    io:format("test: apply_rewrite/2 - 2~n"),
+    %% two groups
+    "abc123def456" = apply_rewrite("abc\\1def\\2", ["123", "456"]),
+
+    io:format("test: apply_rewrite/2 - 3~n"),
+    %% double backslash check
+    "a\\1bc123" = apply_rewrite("a\\\\1bc\\1", ["123"]),
+
+    io:format("test: apply_rewrite/2 - 4~n"),
+    %% Two groups, only one used in rewrite. Such a List might not be
+    %% possible for regexp_rewrite to call us with, but we currently
+    %% don't check that.
+    "foobar" = apply_rewrite("\\1bar", ["foo", "456"]),
+
+    io:format("test: apply_rewrite/2 - 5~n"),
+    %% Too few elements in List - we crash on that.
+    {'EXIT', {function_clause, _}} = (catch apply_rewrite("\\1bar", [])),
+
+
+    %% test regexp_rewrite(Input, RegexpList)
+    %%--------------------------------------------------------------------
+    io:format("test: regexp_rewrite/2 - 1~n"),
+    %% Single regexp
+    "foobar" = regexp_rewrite("123foobar456", [{".*foo(...)", "foo\\1"}]),
+
+    io:format("test: regexp_rewrite/2 - 2~n"),
+    %% More than one regexp
+    "foobar" = regexp_rewrite("123foobar456", [{"nomatch", "abc123"},
+					       {".*foo(...)", "foo\\1"}]),
+
+    io:format("test: regexp_rewrite/2 - 3~n"),
+    %% No matching regexp
+    nomatch = regexp_rewrite("123f00bar456", [{"nomatch", "abc123"},
+					      {".*foo(...)", "foo\\1"}]),
+
+    %% test casecompare(Str1, Str2)
+    %%--------------------------------------------------------------------
+    io:format("test: casecompare/2 - 1~n"),
+    true = casecompare("abc", "ABC"),
+
+    io:format("test: casecompare/2 - 2~n"),
+    true = casecompare("", ""),
+
+    io:format("test: casecompare/2 - 3~n"),
+    true = casecompare(none, none),
+
+    io:format("test: casecompare/2 - 4~n"),
+    false = casecompare("zzz", "zzzz"),
+
+    io:format("test: casecompare/2 - 5~n"),
+    false = casecompare("zzz", none),
+
+    io:format("test: casecompare/2 - 6~n"),
+    false = casecompare(none, "A"),
+
+
+    %% test casegrep(String, List)
+    %%--------------------------------------------------------------------
+    io:format("test: casegrep/2 - 1~n"),
+    true = casegrep("test", ["test"]),
+
+    io:format("test: casegrep/2 - 2~n"),
+    true = casegrep("test", ["foo", "TEST"]),
+
+    io:format("test: casegrep/2 - 3~n"),
+    true = casegrep("teSt", [none, "test"]),
+
+    io:format("test: casegrep/2 - 4~n"),
+    true = casegrep(none, ["test", none]),
+
+    io:format("test: casegrep/2 - 5~n"),
+    false = casegrep(none, ["test", "foo"]),
+
+    io:format("test: casegrep/2 - 6~n"),
+    false = casegrep("bar", ["test", "foo"]),
+
+
+    %% test join(Strings, Separator)
+    %%--------------------------------------------------------------------
+    io:format("test: join/2 - 1~n"),
+    %% straight forward
+    "hi world" = join(["hi", "world"], " "),
+
+    io:format("test: join/2 - 2~n"),
+    %% a single element
+    "hi" = join(["hi"], " "),
+
+    io:format("test: join/2 - 3~n"),
+    %% empty separator
+    "hiworld" = join(["hi", "world"], ""),
+
+    io:format("test: join/2 - 3~n"),
+    %% empty Strings
+    [] = join([], "neverseen"),
+
+
+    %% test concat(Strings, Separator)
+    %%--------------------------------------------------------------------
+    io:format("test: concat/2 - 1~n"),
+    %% straight forward
+    "hi world " = concat(["hi", "world"], " "),
+
+    io:format("test: concat/2 - 2~n"),
+    %% a single element
+    "hi " = concat(["hi"], " "),
+
+    io:format("test: concat/2 - 3~n"),
+    %% empty separator
+    "hiworld" = concat(["hi", "world"], ""),
+
+    io:format("test: concat/2 - 4~n"),
+    %% empty Strings
+    [] = concat([], "neverseen"),
+
+
+    %% test safe_is_process_alive(PidOrName)
+    %%--------------------------------------------------------------------
+    io:format("test: safe_is_process_alive/1 - 1~n"),
+    %% myself as input, should definately be alive
+    MyPid = self(),
+    {true, MyPid} = safe_is_process_alive(MyPid),
+
+    io:format("test: safe_is_process_alive/1 - 2~n"),
+    %% atom input (valid) of a process that should really be alive
+    {true, LoggerPid} = safe_is_process_alive(logger),
+    true = is_pid(LoggerPid),
+
+    io:format("test: safe_is_process_alive/1 - 3~n"),
+    %% list input (invalid)
+    {'EXIT', {function_clause, _}} = (catch safe_is_process_alive("foo")),
+
+    io:format("test: safe_is_process_alive/1 - 4~n"),
+    %% reference input (invalid)
+    {'EXIT', {function_clause, _}} = (catch safe_is_process_alive(make_ref())),
+
+
+    %% test safe_signal(LogTag, PidOrName, Message)
+    %%--------------------------------------------------------------------
+    io:format("test: safe_is_process_alive/1 - 1.1~n"),
+    %% send message to ourselves
+    SafeSignalRef = make_ref(),
+    ok = safe_signal("foo", self(), {SafeSignalRef, "test"}),
+
+    io:format("test: safe_is_process_alive/1 - 1.2~n"),
+    %% check that we got the message
+    receive
+	{SafeSignalRef, "test"} ->
+	    ok
+    after
+	0 ->
+	    throw({error, "did not get signal I sent to myself"})
+    end,
+
+    
+    %% test remove_v6_brackets(In)
+    %%--------------------------------------------------------------------
+    io:format("test: remove_v6_brackets/1 - 1~n"),
+    "[non-IPv6-address]" = remove_v6_brackets("[non-IPv6-address]"),
+
+    io:format("test: remove_v6_brackets/1 - 2~n"),
+    "2001::abc" = remove_v6_brackets("[2001::abc]"),
+
+    io:format("test: remove_v6_brackets/1 - 3~n"),
+    "[2001::" = remove_v6_brackets("[2001::"),
+
+    io:format("test: remove_v6_brackets/1 - 4~n"),
+    "2001::]" = remove_v6_brackets("2001::]"),
+
+    ok.
