@@ -1,8 +1,9 @@
 -module(sipsocket_udp).
--export([start/3, send/4, is_reliable_transport/1, get_socket/3, get_response_socket/1,
-	 associate_transaction_with_socket/2, store_stateless_response_branch/2]).
+-export([start/1, send/4, is_reliable_transport/1, get_socket/2]).
 
-start(Port, RequestFun, ResponseFun) ->
+-include("sipsocket.hrl").
+
+start(Port) ->
     UDPsocket = case gen_udp:open(Port, [{reuseaddr, true}]) of
 	{ok, S} ->
 	    S;
@@ -12,7 +13,7 @@ start(Port, RequestFun, ResponseFun) ->
 	    erlang:fault("Could not open UDP socket", [Port])
     end,
     register(udp_listener, self()),
-    ReceiverPid = sipserver:safe_spawn(fun udp_recvloop_start/3, [UDPsocket, RequestFun, ResponseFun]),
+    ReceiverPid = sipserver:safe_spawn(fun udp_recvloop_start/1, [UDPsocket]),
     Local = case inet:sockname(UDPsocket) of
 	{ok, {IPlist, LocalPort}} ->
 	    {siphost:makeip(IPlist), LocalPort};
@@ -21,11 +22,12 @@ start(Port, RequestFun, ResponseFun) ->
     end,
     gen_udp:controlling_process(UDPsocket, ReceiverPid),
     SocketList = socketlist:add(listener, ReceiverPid, Local, {"0.0.0.0", 0}, 0, socketlist:empty()),
-    udp_listenerloop(SocketList, RequestFun, ResponseFun).
+    udp_listenerloop(SocketList).
 
-udp_listenerloop(SocketList, RequestFun, ResponseFun) ->
+udp_listenerloop(SocketList) ->
     Res = receive
-	{get_socket, Pid, Host, Port, Header} ->
+	{get_socket, Pid, Host, Port} ->
+	    % sipsocket_udp is not multi-socket, we just have a singe UDP socket and that is 'listener'.
 	    case socketlist:get_using_id(listener, SocketList) of
 		[] ->
 		    logger:log(error, "Sipsocket TCP: Failed fetching socket with id 'listener' from list :~n~p",
@@ -33,8 +35,8 @@ udp_listenerloop(SocketList, RequestFun, ResponseFun) ->
 		    Pid ! {failed_getting_socket, self(), Host, Port, "UDP socket down"};
 		SElem ->
 		    [CPid, Local, Remote] = socketlist:extract([pid, local, remote], SElem),
-		    ThisSocket = {sipsocket_udp, CPid, {Local, Remote}},
-		    Pid ! {got_socket, self(), Host, Port, ThisSocket}
+		    SipSocket = #sipsocket{module=sipsocket_udp, pid=CPid, data={Local, Remote}},
+		    Pid ! {got_socket, self(), Host, Port, SipSocket}
 		end;
 	{quit} ->
     	    {quit};
@@ -46,26 +48,27 @@ udp_listenerloop(SocketList, RequestFun, ResponseFun) ->
 	    ok;
 	_ ->
 	    % We don't check for expired records here since UDP sockets does not expire
-	    udp_listenerloop(SocketList, RequestFun, ResponseFun)
+	    udp_listenerloop(SocketList)
     end.
 
-udp_recvloop_start(Socket, RequestFun, ResponseFun) ->
+udp_recvloop_start(Socket) ->
     log_listening(debug, "UDP", Socket),
-    udp_recvloop(Socket, RequestFun, ResponseFun).
-udp_recvloop(Socket, RequestFun, ResponseFun) ->
+    udp_recvloop(Socket).
+udp_recvloop(Socket) ->
     receive
 	{udp, Socket, IPlist, InPortNo, Packet} ->
-	    ThisSocket = {sipsocket_udp, self(), none},
-	    Origin = {sipsocket:sipproto2str(?MODULE), siphost:makeip(IPlist), InPortNo, ThisSocket},
-	    sipserver:safe_spawn(sipserver, process, [Packet, ThisSocket, Origin,
-						      RequestFun, ResponseFun]);
+	    SipSocket = #sipsocket{module=sipsocket_udp, pid=self(), data=none},
+	    Origin = {sipsocket:sipproto2str(?MODULE), siphost:makeip(IPlist), InPortNo, SipSocket},
+	    TransactionLayer = erlang:whereis(transaction_layer),
+	    sipserver:safe_spawn(sipserver, process, [Packet, SipSocket, Origin, TransactionLayer, TransactionLayer]);
 	{send, Pid, {SendToHost, PortInt, Message}} ->
+	    % Unfortunately there seems to be no way to receive ICMP port unreachables in erlang gen_udp...
 	    SendRes = gen_udp:send(Socket, SendToHost, PortInt, Message),
 	    Pid ! {send_result, self(), SendRes};
 	Unknown ->
 	    logger:log(error, "Sipsocket UDP: Received unknown signal in udp_recvloop : ~n~p", [Unknown])
     end,
-    udp_recvloop(Socket, RequestFun, ResponseFun).
+    udp_recvloop(Socket).
 
 
 log_listening(LogLevel, Class, Socket) ->
@@ -79,7 +82,8 @@ log_listening(LogLevel, Class, Socket) ->
 	    error
     end.
 
-send({sipsocket_udp, Pid, _}, SendToHost, PortInt, Message) ->
+send(SipSocket, SendToHost, PortInt, Message) when record(SipSocket, sipsocket) ->
+    Pid = SipSocket#sipsocket.pid,
     case util_safe_is_process_alive(Pid) of
 	true ->
 	    Pid ! {send, self(), {SendToHost, PortInt, Message}},
@@ -98,16 +102,16 @@ send(InvalidSocket, SendToHost, PortInt, Message) ->
     logger:log(error, "Sipsocket UDP: Could not send message to ~p:~p, invalid socket : ~p",
 		[SendToHost, PortInt, InvalidSocket]).
 
-get_socket(SendToHost, PortInt, Header) ->
+get_socket(Host, Port) when list(Host), integer(Port) ->
     % Need to find our UDP listening socket
     UdpListener = erlang:whereis(udp_listener),
     case util_safe_is_process_alive(UdpListener) of
 	true ->
-	    UdpListener ! {get_socket, self(), SendToHost, PortInt, Header},
+	    UdpListener ! {get_socket, self(), Host, Port},
 	    receive
-	        {failed_getting_socket, Pid, SendToHost, PortInt, E} ->
+	        {failed_getting_socket, Pid, Host, Port, E} ->
 		    {error, E};
-	        {got_socket, Pid, SendToHost, PortInt, Socket} ->
+	        {got_socket, Pid, Host, Port, Socket} ->
 		    Socket
 	    after
 	        1500 ->
@@ -116,15 +120,6 @@ get_socket(SendToHost, PortInt, Header) ->
 	false ->
 	    {error, "UDP listener dead"}
     end.
-
-get_response_socket(_) ->
-    none.
-
-associate_transaction_with_socket(TransactionId, Socket) ->
-    ok.
-
-store_stateless_response_branch(Branch, Socket) ->
-    ok.
 
 is_reliable_transport(_) -> false.
 

@@ -1,7 +1,7 @@
 -module(sipserver).
--export([start/4, process/5, get_env/1, get_env/2, make_logstr/2, safe_spawn/2, safe_spawn/3, safe_spawn_child/2, safe_spawn_child/3, origin2str/2]).
+-export([start/5, process/5, get_env/1, get_env/2, make_logstr/2, safe_spawn/2, safe_spawn/3, safe_spawn_child/2, safe_spawn_child/3, origin2str/2]).
 
-start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables) ->
+start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, Mode) ->
     mnesia:start(),
     apply(InitFun, []),
     logger:start(),
@@ -31,8 +31,15 @@ start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables) ->
 	    logger:log(normal, Message, Args)
     end,
     Port = sipserver:get_env(listenport, 5060),
-    Sockets = sipsocket:start(Port, RequestFun, ResponseFun),
-    sipsocket:reopen_sockets(Sockets, Port, RequestFun, ResponseFun).
+    TLPid = transactionlayer:start(RequestFun, ResponseFun, Mode),
+    Sockets = sipsocket:start(Port),
+    restart_services(Port, Sockets, TLPid, RequestFun, ResponseFun, Mode).
+    
+restart_services(Port, Sockets, TransportPid, RequestFun, ResponseFun, Mode) ->
+    timer:sleep(3000),
+    sipsocket:check_alive(Port, Sockets),
+    transactionlayer:check_alive(RequestFun, ResponseFun, Mode),
+    restart_services(Port, Sockets, TransportPid, RequestFun, ResponseFun, Mode).
 
 find_remote_mnesia_tables(RemoteMnesiaTables) ->
     logger:log(debug, "Initializing remote Mnesia tables ~p", [RemoteMnesiaTables]),
@@ -99,28 +106,17 @@ process(Packet, Socket, Origin, RequestFun, ResponseFun) ->
 	{{request, Method, URL, Header, Body}, LogStr} ->
 	    Request = {Method, URL, Header, Body},
 	    TransactionId = sipheader:get_server_transaction_id(Request),
-	    case sipsocket:associate_transaction_with_socket(Socket, TransactionId) of
-		ok ->
-		    case catch my_apply(RequestFun, request, [Method, URL, Header, Body, Socket, IP], LogStr) of
-			{'EXIT', E} ->
-			    logger:log(error, "=ERROR REPORT==== from RequestFun~n~p", [E]),
-			    internal_error(Header, Socket);
-			{siperror, Code, Text} ->
-			    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
-			    internal_error(Header, Socket, Code, Text);
-			{siperror, Code, Text, ExtraHeaders} ->
-			    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
-			    internal_error(Header, Socket, Code, Text, ExtraHeaders);
-			_ ->
-			    true
-		    end;
-		{error, unavailable} ->
-		    logger:log(error, "Sipserver: ~s -> 503 Service Unavailable", [LogStr]),
-		    internal_error(Header, Socket, 503, "Service Unavailable"),
-		    true;
-		{error, E} ->
-		    logger:log(error, "Sipserver: ~s -> 500 Server Internal Error", [LogStr]),
-		    internal_error(Header, Socket),
+	    case catch my_apply(RequestFun, request, [Method, URL, Header, Body, Socket, IP], LogStr) of
+		{'EXIT', E} ->
+		    logger:log(error, "=ERROR REPORT==== from RequestFun~n~p", [E]),
+		    internal_error(Header, Socket);
+		{siperror, Code, Text} ->
+		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
+		    internal_error(Header, Socket, Code, Text);
+		{siperror, Code, Text, ExtraHeaders} ->
+		    logger:log(error, "INVALID request: ~s -> ~p ~s", [LogStr, Code, Text]),
+		    internal_error(Header, Socket, Code, Text, ExtraHeaders);
+		_ ->
 		    true
 	    end;
 	{{response, Status, Reason, Header, Body}, LogStr} ->
@@ -130,21 +126,39 @@ process(Packet, Socket, Origin, RequestFun, ResponseFun) ->
     end.
 
 my_apply(Dst, Type, Args, LogStr) when pid(Dst) ->
-    case is_process_alive(Dst) of
-	true ->
+    % Dst is a process. This should be the transaction layer process, or possibly some
+    % other process that understands the same signals as the transaction layer.
+    case util:safe_is_process_alive(Dst) of
+	{true, _} ->
+	    Ref = make_ref(),
 	    case Type of
 		request ->
 		    [Method, URL, Header, Body, Socket, IP] = Args,
-		    Dst ! {sipmessage, request, {Method, URL, Header, Body}, Socket, LogStr};
+		    Dst ! {sipmessage, self(), Ref, request, {Method, URL, Header, Body}, Socket, LogStr};
 		response ->
 		    [Status, Reason, Header, Body, Socket, IP] = Args,
-		    Dst ! {sipmessage, response, {Status, Reason, Header, Body}, Socket, LogStr}
+		    Dst ! {sipmessage, self(), Ref, response, {Status, Reason, Header, Body}, Socket, LogStr}
+	    end,
+	    receive
+		{continue, Ref} ->
+		    % terminate silently
+		    true;
+		{pass_to_core, Ref, NewDst} ->
+		    my_apply(NewDst, Type, Args, LogStr)
+	    after
+		2000 ->
+		    logger:log(error, "Sipserver: Got no response from request/response-handler pid ~p regarding ~p : ~s",
+				[Dst, Type, LogStr]),
+		    {siperror, 500, "Server Internal Error"}
 	    end;
 	false ->
 	    logger:log(error, "Sipserver: Can't send signal about new SIP-message to pid ~p because it is not alive",
 			[Dst]),
 	    {siperror, 500, "Server Internal Error"}
     end;
+my_apply(undefined, _, _, _) ->
+    logger:log(error, "Sipserver: Can't send request to 'undefined' - presumably this is because the transaction layer is not alive"),
+    {siperror, 500, "Server Internal Error"};
 my_apply(Dst, _, Args, LogStr) ->
     apply(Dst, Args).
 
@@ -213,7 +227,7 @@ process_parsed_packet(Socket, {request, Method, URI, Header, Body}, Origin) ->
     LogStr = make_logstr({request, Method, NewURI, NewHeader4, Body}, Origin),
     {{request, Method, NewURI, NewHeader4, Body}, LogStr};
 process_parsed_packet(Socket, {response, Status, Reason, Header, Body}, Origin) ->
-    {_, IP, _, {SocketProto, _, _}} = Origin,
+    {_, IP, _, SipSocket} = Origin,
     check_packet({response, Status, Reason, Header, Body}, Origin),
     % Check that top-Via is ours (RFC 3261 18.1.2),
     % silently drop message if it is not.
@@ -221,11 +235,19 @@ process_parsed_packet(Socket, {response, Status, Reason, Header, Body}, Origin) 
     % Create a Via that looks like the one we would have produced if we sent the request
     % this is an answer to, but don't include parameters since they might have changed
     MyPort = siprequest:default_port(sipserver:get_env(listenport, none)),
-    MyViaNoParam = {sipsocket:sipproto2viastr(SocketProto), {ViaHostname, MyPort}, []},
+    MyViaNoParam = {sipsocket:sipproto2viastr(SipSocket), {ViaHostname, MyPort}, []},
     {TopViaProtocol, {TopViaHost, TopViaPort}, _} = sipheader:topvia(Header),
+    SentByMeNoParam = {TopViaProtocol, {ViaHostname, MyPort}, []},
     TopViaNoParam = {TopViaProtocol, {TopViaHost, siprequest:default_port(TopViaPort)}, []},
     case TopViaNoParam of
         MyViaNoParam ->
+	    LogStr = make_logstr({response, Status, Reason, Header, Body}, Origin),
+	    {{response, Status, Reason, Header, Body}, LogStr};
+	SentByMeNoParam ->
+	    % This can happen if we for example send a request out on a TCP socket, but the
+	    % other end responds over UDP.
+ 	    logger:log(debug, "Sipserver: Warning: received response [client=~s] matching me, but different protocol ~p (received on: ~p)",
+			[origin2str(Origin, "unknown"), TopViaProtocol, sipsocket:sipproto2viastr(SipSocket)]),
 	    LogStr = make_logstr({response, Status, Reason, Header, Body}, Origin),
 	    {{response, Status, Reason, Header, Body}, LogStr};
 	_ ->
@@ -419,8 +441,8 @@ make_logstr({request, Method, URI, Header, Body}, Origin) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
     ClientStr = origin2str(Origin, "unknown"),
-    io_lib:format("~s ~s [client=~s, from=<~s>, to=<~s>]", 
-		[Method, sipurl:print(URI), ClientStr, url2str(FromURI), url2str(ToURI)]);
+    lists:flatten(io_lib:format("~s ~s [client=~s, from=<~s>, to=<~s>]", 
+		[Method, sipurl:print(URI), ClientStr, url2str(FromURI), url2str(ToURI)]));
 make_logstr({response, Status, Reason, Header, Body}, Origin) ->
     {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
@@ -428,11 +450,11 @@ make_logstr({response, Status, Reason, Header, Body}, Origin) ->
     ClientStr = origin2str(Origin, "unknown"),
     case keylist:fetch("Warning", Header) of
 	[] ->
-	    io_lib:format("~s [client=~s, from=<~s>, to=<~s>]", 
-			[CSeqMethod, ClientStr, url2str(FromURI), url2str(ToURI)]);
+	    lists:flatten(io_lib:format("~s [client=~s, from=<~s>, to=<~s>]", 
+			[CSeqMethod, ClientStr, url2str(FromURI), url2str(ToURI)]));
 	[Warning] ->
-	    io_lib:format("~s [client=~s, from=<~s>, to=<~s>, warning=~p]", 
-			[CSeqMethod, ClientStr, url2str(FromURI), url2str(ToURI), Warning])
+	    lists:flatten(io_lib:format("~s [client=~s, from=<~s>, to=<~s>, warning=~p]", 
+			[CSeqMethod, ClientStr, url2str(FromURI), url2str(ToURI), Warning]))
     end.
 
 url2str({unparseable, _}) ->
