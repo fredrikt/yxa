@@ -4,7 +4,9 @@
 	 httparg/1, cseq/1, cseq_print/1, via_params/1, contact_params/1,
 	 build_header/1, dict_to_param/1, param_to_dict/1, dialogueid/1,
 	 get_tag/1, topvia/1, via_sentby/1, get_client_transaction_id/1,
-	 get_server_transaction_id/1, get_via_branch/1]).
+	 get_server_transaction_id/1, get_server_transaction_ack_id_2543/1, 
+	 get_via_branch/1,
+	 get_server_transaction_id_using_3261_response_header/1]).
 
 comma(String) ->
     comma([], String, false).
@@ -217,7 +219,7 @@ param_to_dict(Param) ->
     dict:from_list(L).    
 
 dict_to_param(Dict) ->
-    list_to_parameters(dict:to_list(Dict)).
+    list_to_parameters(lists:keysort(1, dict:to_list(Dict))).
     
 list_to_parameters([]) ->
     [];
@@ -288,7 +290,7 @@ via_sentby(Via) ->
     {Protocol, Host, Port}.
 
 get_server_transaction_id(Request) ->
-    case catch safe_get_server_transaction_id(Request) of
+    case catch guarded_get_server_transaction_id(Request) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from get_server_transaction_id(~p) :~n~p", [Request, E]),
 	    error;
@@ -297,7 +299,7 @@ get_server_transaction_id(Request) ->
     end.
 
 get_client_transaction_id(Response) ->
-    case catch safe_get_client_transaction_id(Response) of
+    case catch guarded_get_client_transaction_id(Response) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from get_client_transaction_id(~p) :~n~p", [Response, E]),
 	    error;
@@ -305,43 +307,71 @@ get_client_transaction_id(Response) ->
 	    Id
     end.
 
-safe_get_server_transaction_id(Request) ->
-    {Method, URI, Header, Body} = Request,
+get_server_transaction_ack_id_2543(Request) ->
+    % When using this function, you have to make sure the To-tag
+    % of this ACK matches the To-tag of the response you think this
+    % might be the ACK for! RFC3261 17.2.3
+    case catch guarded_get_server_transaction_ack_id_2543(Request) of
+	{'EXIT', E} ->
+	    logger:log(error, "=ERROR REPORT==== from get_server_transaction_ack_id_2543(~p) :~n~p", [Request, E]),
+	    error;
+	Id ->
+	    Id
+    end.
+
+
+guarded_get_server_transaction_id(Request) ->
+    {Method, URI, Header, Body} = case Request of
+	{"ACK", URI1, Header1, Body1} ->
+	    % RFC3261 17.2.3, when looking for server transaction for ACK, the method of the transaction is INVITE
+	    {"INVITE", URI1, Header1, Body1};
+	_ ->
+	    Request
+    end,	    
     TopVia = sipheader:topvia(Header),
     Branch = get_via_branch(TopVia),
     case Branch of
 	"z9hG4bK" ++ RestOfBranch ->
-	    get_server_transaction_id_3261(Method, TopVia);
+	    guarded_get_server_transaction_id_3261(Method, TopVia);
 	_ ->
-	    get_server_transaction_id_2543(Request, TopVia)
+	    guarded_get_server_transaction_id_2543(Request, TopVia)
     end.
 
-safe_get_client_transaction_id(Response) ->
+guarded_get_server_transaction_ack_id_2543({_, URI, Header, _}) ->
+    TopVia = remove_branch(sipheader:topvia(Header)),
+    [CallID] = keylist:fetch("Call-ID", Header),
+    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
+    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
+    {URI, FromTag, CallID, CSeqNum, TopVia}.
+
+remove_branch(Via) ->
+    {Proto, HostPort, Param} = Via,
+    ParamDict = sipheader:param_to_dict(Param),
+    NewDict = dict:erase("branch", ParamDict),
+    NewVia = {Proto, HostPort, sipheader:dict_to_param(NewDict)},
+    NewVia.
+
+guarded_get_client_transaction_id(Response) ->
     {_, _, Header, _} = Response,
     TopVia = sipheader:topvia(Header),
     Branch = get_via_branch(TopVia),
     {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     {Branch, CSeqMethod}.
 
-get_server_transaction_id_3261("ACK", TopVia) ->
-    % The transaction for an ACK has method INVITE. RFC3261 17.2.3
-    get_server_transaction_id_3261("INVITE", TopVia);
-get_server_transaction_id_3261(Method, TopVia) ->
-    Branch = get_via_branch(TopVia),
+get_server_transaction_id_using_3261_response_header(Header) ->
+    TopVia = topvia(Header),
+    {_, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    guarded_get_server_transaction_id_3261(CSeqMethod, TopVia).
+
+guarded_get_server_transaction_id_3261(Method, TopVia) ->
+    Branch = get_via_branch_full(TopVia),
     SentBy = via_sentby(TopVia),
     {Branch, SentBy, Method}.
 
-get_server_transaction_id_2543({"ACK", URI, Header, _}, TopVia) ->
-    % When using this function, you have to make sure the To-tag
-    % of this ACK matches the To-tag of the response you think this
-    % might be the ACK for! RFC3261 17.2.3
-    [CallID] = keylist:fetch("Call-ID", Header),
-    {_, CSeqNum} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
-    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
-    {URI, FromTag, CallID, CSeqNum, TopVia};
-
-get_server_transaction_id_2543({Method, URI, Header, _}, TopVia) ->
+guarded_get_server_transaction_id_2543({"ACK", _, _, _}, _) ->
+    is_2543_ack;
+guarded_get_server_transaction_id_2543({Method, URI, Header, _}, TopVia) ->
     [CallID] = keylist:fetch("Call-ID", Header),
     CSeq = sipheader:cseq(keylist:fetch("CSeq", Header)),
     FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
@@ -376,3 +406,11 @@ get_via_branch({_, {ViaHostname, ViaPort}, Parameters}) ->
     end;
 get_via_branch(_) ->
     none.
+
+get_via_branch_full({_, {ViaHostname, ViaPort}, Parameters}) ->
+    case dict:find("branch", sipheader:param_to_dict(Parameters)) of
+	error ->
+	    none;
+	{ok, Branch} ->
+	    Branch
+    end.
