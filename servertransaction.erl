@@ -22,7 +22,20 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {branch, logtag, socket, report_to, request, response, sipmethod, sipstate, timerlist, mode, my_to_tag, logstr}).
+-record(state, {
+	  branch,
+	  logtag,
+	  socket,
+	  report_to,
+	  request,
+	  response,
+	  sipmethod,
+	  sipstate,
+	  cancelled=false,
+	  timerlist,
+	  mode,
+	  my_to_tag
+	 }).
 
 -define(TIMEOUT, 300 * 1000).
 
@@ -78,7 +91,7 @@ init([Request, Socket, LogStr, _AppModule, Mode]) when record(Request, request) 
     %% describes this request (METHOD URI [client=x, from=y, to=z])
     State = #state{branch=Branch, logtag=LogTag, socket=Socket, request=Request,
 		   sipmethod=Method, sipstate=trying, timerlist=siptimer:empty(),
-		   mode=Mode, my_to_tag=MyToTag, logstr=LogStr},
+		   mode=Mode, my_to_tag=MyToTag},
     logger:log(debug, "~s: Server transaction: Started new server transaction for request ~s ~s.",
 	       [LogTag, Method, sipurl:print(URI)]),
     logger:log(normal, "~s: ~s", [LogTag, LogStr]),
@@ -114,8 +127,15 @@ handle_call({set_report_to, Pid}, From, State) ->
     LogTag = State#state.logtag,
     Reply = case State#state.report_to of
 		undefined ->
-		    logger:log(debug, "~s: Server transaction adopted by ~p", [LogTag, Pid]),
-		    {reply, {ok}, State#state{report_to=Pid}, ?TIMEOUT};
+		    case State#state.cancelled of
+			true ->
+			    logger:log(debug, "~s: Pid ~p attempted to adopt cancelled server transaction",
+				      [LogTag, Pid]),
+			    {reply, {error, cancelled}, State, ?TIMEOUT};
+			false ->
+			    logger:log(debug, "~s: Server transaction adopted by ~p", [LogTag, Pid]),
+			    {reply, {ok}, State#state{report_to=Pid}, ?TIMEOUT}
+		    end;
 		_ ->
 		    {reply, {error, "Already set"}, State, ?TIMEOUT}
 	    end,
@@ -230,12 +250,15 @@ handle_cast({cancelled}, State) ->
 			    %% We don't generate the 487 Request Cancelled here, parent does other stuff first and then
 			    %% tell us to send that response.
 			    ReportTo ! {servertransaction_cancelled, self()},
-			    {noreply, State, ?TIMEOUT};
+			    {noreply, State#state{cancelled=true}, ?TIMEOUT};
 			_ ->
-			    %% XXX store this and immediately signal that we have been cancelled if someone calls set_report_to on us?
-			    logger:log(debug, "~s: Server transaction cancelled, acting alone. Answering 500 Server Internal Error.", [LogTag]),
-			    Response = make_response(500, "Server Internal Error", "", [], [], State),
-			    {ok, NewState} = do_response(created, Response, State),
+			    %% Noone has adopted this server transaction yet (called set_report_to) - cancel the request
+			    %% and store that we have been cancelled so that we can notify whoever tries to adopt us
+			    %% later on.
+			    logger:log(debug, "~s: Server transaction cancelled, acting alone. Answering 487 Request Cancelled.", [LogTag]),
+			    Response = make_response(487, "Request Cancelled", "", [], [], State),
+			    NewState1 = State#state{cancelled=true},
+			    {ok, NewState} = do_response(created, Response, NewState1),
 			    {noreply, NewState, ?TIMEOUT}
 		    end;
 		_ ->
