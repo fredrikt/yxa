@@ -14,6 +14,7 @@ start(normal, Args) ->
 start(ConfigFile) ->
     mnesia:start(),
     logger:start(),
+    directory:start(),
     mnesia:change_config(extra_db_nodes, sipserver:get_env(databaseservers)),
     {Message, Args} = case mnesia:wait_for_tables([phone,user], infinity) of
 			  ok ->
@@ -30,19 +31,24 @@ sleep() ->
     sleep().
 
 username_to_uid(Username) ->
-    case directory:lookup_mail2uid(Username ++ "@kth.se") of
-	 none ->
+    case local:get_users_for_address_of_record(Username) of
+	none ->
 	    "&nbsp;";
-	String ->
-	    String
+	String when list(String) ->
+	    String;
+	_ ->
+	    "error"
     end.
 
 username_to_cn(Username) ->
-    case directory:lookup_mail2cn(Username ++ "@kth.se") of
-	 none ->
+    Res = directory:lookup_mail2cn(Username),
+    case Res of
+	none ->
 	    "&nbsp;";
-	String ->
-	    String
+	String when list(String) ->
+	    String;
+	E ->
+	    "error"
     end.
 
 print_flag(Key) when atom(Key) ->
