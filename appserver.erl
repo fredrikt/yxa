@@ -17,9 +17,6 @@
 	 response/3
 	]).
 
-%% Internal exports
--export([start_actions/4]).
-
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -59,7 +56,7 @@
 %%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 init() ->
-    [[user, numbers, phone], stateful, none].
+    [[user, numbers, phone, cpl_script_graph], stateful, none].
 
 
 
@@ -92,7 +89,7 @@ request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, s
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 		       [LogStr, SIPuser]),
 	    transportlayer:stateless_proxy_request(Request)
-    end, 
+    end,
     ok;
 
 %%
@@ -123,7 +120,19 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 	true ->
 	    request_to_me(Request, LogStr);
 	false ->
-	    create_session(NewRequest, Origin, LogStr)
+	    %% Ok, request was not for this proxy itself - now just make sure it has no Route-header before
+	    %% we fork it. If it has a Route header, this proxy probably added a Record-Route in a previous
+	    %% fork, and this request should just be proxyed - not forked.
+	    case keylist:fetch('route', Request#request.header) of
+		[] ->
+		    create_session(NewRequest, Origin, LogStr, true);
+		_ ->
+		    %% XXX check credentials here - our appserver is currently an open relay!
+		    logger:log(debug, "Appserver: Request '~s ~s' has Route header. Forwarding statelessly.",
+			       [Request#request.method, sipurl:print(Request#request.uri)]),
+		    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
+		    transportlayer:stateless_proxy_request(Request)
+	    end
     end,
     ok.
 
@@ -152,7 +161,7 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
 
 
 %%--------------------------------------------------------------------
-%% Function: request_to_me(Request, LogTag) 
+%% Function: request_to_me(Request, LogTag)
 %%           Request = request record()
 %%           LogTag  = string()
 %% Descrip.: Request is meant for this proxy, if it is OPTIONS we
@@ -167,87 +176,249 @@ request_to_me(#request{method="OPTIONS"}=Request, LogTag) ->
     transactionlayer:send_response_request(Request, 200, "OK");
 
 request_to_me(Request, LogTag) when is_record(Request, request) ->
-    logger:log(normal, "~s: appserver: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist", 
+    logger:log(normal, "~s: appserver: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
 	       [LogTag]),
     transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist").
 
 
 %%--------------------------------------------------------------------
-%% Function: create_session(Request, Origin, LogStr)
+%% Function: create_session(Request, Origin, LogStr, DoCPL)
 %%           Request = request record()
 %%           Origin  = siporigin record()
 %%           LogStr  = string()
+%%           DoCPL   = true | false, do CPL or not
 %% Descrip.: Request was not meant for this proxy itself - find out if
 %%           this request is for one of our users, and if so find out
 %%           what actions to perform for the request.
 %% Returns : void() | throw({siperror, ...})
 %%--------------------------------------------------------------------
-create_session(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
-    URI = Request#request.uri,
-    case keylist:fetch('route', Request#request.header) of
-	[] ->
-	    case get_actions(URI) of
-		nomatch ->
-		    case local:get_user_with_contact(URI) of
-			none ->
-			    logger:log(normal, "Appserver: ~s -> 404 Not Found (no actions, unknown user)",
-				       [LogStr]),
-			    transactionlayer:send_response_request(Request, 404, "Not Found");
-			SIPuser when is_list(SIPuser) ->
-			    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
-				       [LogStr, SIPuser]),
-			    transportlayer:stateless_proxy_request(Request)
-		    end;
-		{Users, Actions} ->
-		    logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
-		    %% XXX do we need to trap the EXIT from this process inside appserver_glue?
-		    case appserver_glue:start(Request, Actions) of
-			{ok, P} when is_pid(P) ->
-			    true;
-			_ ->
-			    throw({siperror, 500, "Server Internal Error"})
-		    end
-	    end;
-	_ ->
-	    logger:log(debug, "Appserver: Request ~s ~s has Route header. Forwarding statelessly.",
-		       [Request#request.method, sipurl:print(URI)]),
-	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
+create_session(Request, Origin, LogStr, DoCPL) when is_record(Request, request), is_record(Origin, siporigin) ->
+    case get_actions(Request#request.uri, DoCPL) of
+	nomatch ->
+	    create_session_nomatch(Request, LogStr);
+	{cpl, User, Graph} ->
+	    create_session_cpl(Request, Origin, LogStr, User, Graph);
+	{Users, Actions} ->
+	    create_session_actions(Request, Users, Actions)
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: create_session_actions(Request, Users, Actions)
+%%           Request = request record()
+%%           Users   = list() of string(), list of SIP usernames
+%%           Actions = list() of sipproxy_action record()
+%% Descrip.: The request was turned into a set of Actions (derived
+%%           from it's URI matching a set of Users).
+%% Returns : void() | throw({siperror, ...})
+%% Note    : When we start the appserver_glue process, we should
+%%           ideally not do a spawn but instead just execute it.
+%%           Currently this is the way we do it though (to keep the
+%%           code clean). Since this process is the parent of the
+%%           server transaction, we must stay alive until the
+%%           process that does the actual work exits - so we monitor
+%%           it.
+%%--------------------------------------------------------------------
+create_session_actions(Request, Users, Actions) when is_record(Request, request), is_list(Users),
+						     is_list(Actions) ->
+    logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
+    {ok, Pid} = appserver_glue:start_link(Request, Actions),
+    MonitorRef = erlang:monitor(process, Pid),
+    receive
+	{'DOWN', MonitorRef, process, Pid, _Info} ->
+	    ok;
+	Msg ->
+	    %% We don't exit/crash on this since it might be a late reply from a gen_sever:call() that
+	    %% timed out. Since we have apparently chosen to ignore the timeout earlier, we don't
+	    %% consider this an error.
+	    logger:log(error, "Appserver: Received unknown signal after starting appserver_glue worker : ~p",
+		       [Msg]),
+	    create_session_actions(Request, Users, Actions)
+    after 1200 * 1000 ->
+	    %% We should _really_ never get here, but just as an additional safeguard...
+	    logger:log(error, "appserver: ERROR: the appserver_glue process I started (~p) never finished! Exiting.",
+		       [Pid]),
+	    erlang:error(appserver_glue_never_finished)
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: create_session_actions(Request, Logstr)
+%%           Request = request record()
+%%           LogStr  = string(), describes the request
+%% Descrip.: No actions found for this request. Check if we should
+%%           forward it anyways, or respond '404 Not Found'.
+%% Returns : void() | throw({siperror, ...})
+%%--------------------------------------------------------------------
+create_session_nomatch(Request, LogStr) when is_record(Request, request), is_list(LogStr) ->
+    %% Check if the Request-URI is the registered location of one of our users. If we added
+    %% a Record-Route to an earlier request, this might be an in-dialog request destined
+    %% for one of our users. Such in-dialog requests will have the users Contact (registered
+    %% location hopefully) as Request-URI.
+    case local:get_user_with_contact(Request#request.uri) of
+	none ->
+	    logger:log(normal, "Appserver: ~s -> 404 Not Found (no actions, unknown user)",
+		       [LogStr]),
+	    transactionlayer:send_response_request(Request, 404, "Not Found");
+	SIPuser when is_list(SIPuser) ->
+	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
+		       [LogStr, SIPuser]),
 	    transportlayer:stateless_proxy_request(Request)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_actions(URI)
-%%           URI = sipuri record()
+%% Function: create_session_cpl(Request, Origin, LogStr, User, Graph)
+%%           Request = request record()
+%%           Origin  = siporigin record()
+%%           LogStr  = string()
+%%           User    = string(), SIP username of CPL script owner
+%%           Graph   = term(), CPL graph
+%% Descrip.: We found a CPL script that should be applied to this
+%%           request (or perhaps have this request applied to it). Do
+%%           that and handle any return values. Noteably handle a CPL
+%%           return value of '{server_default_action}' by calling
+%%           create_session(...) again, but this time with DoCPL set
+%%           to 'false' to not end up here again.
+%% Returns : void() | throw({siperror, ...})
+%%--------------------------------------------------------------------
+create_session_cpl(Request, Origin, LogStr, User, Graph) 
+  when is_record(Request, request), is_record(Origin, siporigin), is_list(LogStr), is_list(User) ->
+    erlang:error(cpl_code_not_merged_yet).
+
+%%--------------------------------------------------------------------
+%% Function: get_actions(URI, DoCPL)
+%%           URI   = sipuri record()
+%%           DoCPL = true | false, do CPL or not
 %% Descrip.: Find the SIP user(s) for a URI and make a list() of
 %%           sipproxy_action to take for a request destined for that
 %%           user(s).
-%% Returns : {UserList, ActionsList} | throw()
+%% Returns : {UserList, ActionsList} |
+%%           {cpl, User, Graph}      |
+%%           nomatch                 |
+%%           throw()
 %%           UserList    = list() of SIP usernames (strings)
 %%           ActionsList = list() of sipproxy_action record()
 %%--------------------------------------------------------------------
-get_actions(URI) when is_record(URI, sipurl) ->
-    LookupURL = sipurl:set([{pass, none}, {port, none}, {param, []}], URI),
+get_actions(URI, DoCPL) when is_record(URI, sipurl) ->
+    LookupURL1 = sipurl:set([{pass, none}, {port, none}, {param, []}], URI),
+    LookupURL = case LookupURL1#sipurl.proto of
+		    "sips" ->
+			%% When looking up the users for a SIPS URI, we change the protocol to SIP -
+			%% just for the lookup though, not for the signalling.
+			sipurl:set([{proto, "sip"}]);
+		    _ ->
+			LookupURL1
+		end,
     case local:get_users_for_url(LookupURL) of
 	nomatch ->
 	    nomatch;
 	Users when is_list(Users) ->
 	    logger:log(debug, "Appserver: Found user(s) ~p for URI ~s", [Users, sipurl:print(LookupURL)]),
-	    case fetch_actions_for_users(Users) of
-		[] -> nomatch;
-		Actions when is_list(Actions) ->
-		    WaitAction = #sipproxy_action{action=wait, timeout=sipserver:get_env(appserver_call_timeout, 40)},
-		    {Users, lists:append(Actions, [WaitAction])}
-	    end;
-	Unknown ->
-	    logger:log(error, "Appserver: Unexpected result from lookup_address_to_users(~p) : ~p",
-		       [sipurl:print(LookupURL), Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
+	    get_actions_users(Users, DoCPL)
     end.
 
+%% part of get_actions() - single user, look for a CPL script
+get_actions_users([User], true) when is_list(User) ->
+    case local:get_cpl_for_user(User) of
+	{ok, Graph} ->
+	    {cpl, User, Graph};
+	nomatch ->
+	    get_actions_users2([User])
+    end;
+%% part of get_actions() - more than one user, or DoCPL == false
+get_actions_users(Users, _DoCPL) when is_list(Users) ->
+    get_actions_users2(Users).
+
+%% part of get_actions(), more than one user or DoCPL was false
+get_actions_users2(Users) when is_list(Users) ->
+    case fetch_actions_for_users(Users) of
+	[] -> nomatch;
+	Actions when is_list(Actions) ->
+	    WaitAction = #sipproxy_action{action=wait, timeout=sipserver:get_env(appserver_call_timeout, 40)},
+	    {Users, lists:append(Actions, [WaitAction])}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: fetch_actions_for_users(Users)
+%%           Users = list() of string(), list of SIP usernames
+%% Descrip.: Construct a list of sipproxy_action record()s for a list
+%%           of users, based on the contents of the location database
+%%           and the KTH-only 'forwards' database. Just ignore the
+%%           'forwards' part.
+%% Returns : Actions = list() of sipproxy_action record()
+%%--------------------------------------------------------------------
+fetch_actions_for_users(Users) ->
+    Actions = fetch_users_locations_as_actions(Users),
+    case local:get_forwards_for_users(Users) of
+	nomatch ->
+	    Actions;
+	[] ->
+	    Actions;
+	Forwards when is_list(Forwards) ->
+	    %% Append forwards found to Actions
+	    forward_call_actions(Forwards, Actions)
+    end.
+
+%% part of fetch_actions_for_users/1
+fetch_users_locations_as_actions(Users) ->
+    case local:get_locations_for_users(Users) of
+	[] ->
+	    [];
+	Locations when is_list(Locations) ->
+	    locations_to_actions(Locations)
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: locations_to_actions(Locations)
+%%           Locations = list() of Loc
+%%              Loc = {URL, _Flags, _Class, _Expire} (location
+%%                       database entry)                            |
+%%                    {URL, Timeout}                                |
+%%                    {wait, Timeout}
+%% Descrip.: Turn a list of location database entrys/pseudo-actions
+%%           into a list of sipproxy_action record()s.
+%% Returns : Actions = list() of sipproxy_action record()
+%%--------------------------------------------------------------------
+locations_to_actions(L) ->
+    locations_to_actions2(L, []).
+
+locations_to_actions2([], Res) ->
+    lists:reverse(Res);
+
+locations_to_actions2([{URL, _Flags, _Class, _Expire} | T], Res) when is_record(URL, sipurl) ->
+    Timeout = sipserver:get_env(appserver_call_timeout, 40),
+    CallAction = #sipproxy_action{action=call, requri=URL, timeout=Timeout},
+    locations_to_actions2(T, [CallAction | Res]);
+
+locations_to_actions2([{URL, Timeout} | T], Res) when is_record(URL, sipurl), is_integer(Timeout) ->
+    CallAction = #sipproxy_action{action=call, requri=URL, timeout=Timeout},
+    locations_to_actions2(T, [CallAction | Res]);
+
+locations_to_actions2([{wait, Timeout} | T], Res) ->
+    CallAction = #sipproxy_action{action=wait, timeout=Timeout},
+    locations_to_actions2(T, [CallAction | Res]).
+
+%%--------------------------------------------------------------------
+%% Function: forward_call_actions(ForwardList, Actions)
+%%           ForwardList = list() of {Forwards, Timeout, Localring}
+%%                         tuple()
+%%              Forwards = list() of sipurl record(), forward
+%%                         destinations - call sipproxy_action
+%%              Timeout  = integer(), wait timeout - timeout for wait
+%%                         sipproxy_action placed after the call
+%%                         sipproxy_actions generated for Forwards
+%%             LocalRing = wether to ring on location database entrys
+%%                         at the same time as the forward dest-
+%%                         inations or not
+%%           DoCPL = true | false, do CPL or not
+%% Descrip.: This is something Magnus at KTH developed to suit their
+%%           needs of forwarding calls. He hasn't to this date
+%%           committed all of the implementation - so don't use it.
+%%           Use CPL to accomplish forwards instead.
+%% Returns : NewActions = list() of sipproxy_action record()
+%%--------------------------------------------------------------------
 %% forward_call_actions/2 helps fetch_actions_for_users/1 make a list of
 %% sipproxy_action out of a list of forwards, a timeout value and
 %% "concurrent ringing or not" information
-forward_call_actions([{Forwards, Timeout, Localring}], Actions) ->
+forward_call_actions([{Forwards, Timeout, Localring}], Actions) when is_integer(Timeout) ->
     FwdTimeout = sipserver:get_env(appserver_forward_timeout, 40),
     Func = fun(Forward) ->
     		   #sipproxy_action{action=call, requri=Forward, timeout=FwdTimeout}
@@ -257,7 +428,7 @@ forward_call_actions([{Forwards, Timeout, Localring}], Actions) ->
 	true ->
 	    WaitAction = #sipproxy_action{action=wait, timeout=Timeout},
 	    lists:append(Actions, [WaitAction | ForwardActions]);
-	_ ->
+	false ->
 	    case Timeout of
 		0 ->
 		    ForwardActions;
@@ -265,82 +436,4 @@ forward_call_actions([{Forwards, Timeout, Localring}], Actions) ->
 		    WaitAction = #sipproxy_action{action=wait, timeout=Timeout},
 		    lists:append(Actions, [WaitAction | ForwardActions])
 	    end
-    end.
-
-fetch_actions_for_users(Users) ->
-    Actions = fetch_users_locations_as_actions(Users),
-    case local:get_forwards_for_users(Users) of
-	nomatch ->
-	    Actions;
-	[] ->
-	    Actions;
-	{aborted, {no_exists, forward}} ->
-	    %% ehh? better let the Unknown thing below handle this?
-	    Actions;
-	Forwards when is_list(Forwards) ->
-	    forward_call_actions(Forwards, Actions);
-	Unknown ->
-	    logger:log(error, "Appserver: Unexpected result from get_forwards_for_user(~p) in fetch_actions_for_users : ~p",
-		       [Users, Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
-    end.
-
-fetch_users_locations_as_actions(Users) ->
-    case local:get_locations_for_users(Users) of
-	nomatch ->
-	    [];
-	Locations when is_list(Locations) ->
-	    locations_to_actions(Locations);
-	Unknown ->
-	    logger:log(error, "Appserver: Unexpected result from get_locations_for_users(~p) in "
-		       "fetch_users_locations_as_actions : ~p", [Users, Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
-    end.
-
-locations_to_actions(L) ->
-    locations_to_actions2(L, []).
-
-locations_to_actions2([], Res) ->
-    lists:reverse(Res);
-
-locations_to_actions2([{Location, _Flags, _Class, _Expire} | T], Res) when is_record(Location, sipurl) ->
-    Timeout = sipserver:get_env(appserver_call_timeout, 40),
-    CallAction = #sipproxy_action{action=call, requri=Location, timeout=Timeout},
-    locations_to_actions2(T, [CallAction | Res]);
-
-locations_to_actions2([{URL, Timeout} | T], Res) when is_record(URL, sipurl), is_integer(Timeout) ->
-    CallAction = #sipproxy_action{action=call, requri=URL, timeout=Timeout},
-    locations_to_actions2(T, [CallAction | Res]);
-
-locations_to_actions2([{wait, Timeout} | T], Res) ->
-    CallAction = #sipproxy_action{action=wait, timeout=Timeout},
-    locations_to_actions2(T, [CallAction | Res]);
-
-locations_to_actions2([H | T], Res) ->
-    logger:log(error, "appserver: Illegal location in locations_to_actions2: ~p", [H]),
-    locations_to_actions2(T, Res).
-
-%%--------------------------------------------------------------------
-%% Function: start_actions(BranchBase, GluePid, OrigRequest, Actions)
-%%           BranchBase = string(), the "base" part of the server
-%%                        transactions branch - so that we can get
-%%                        sipproxy to generate intuitive branches for
-%%                        it's corresponding client transactions
-%%           GluePid = pid(), the pid to which sipproxy should report
-%%           OrigRequest = request record()
-%%           Actions = list() of sipproxy_action record()
-%% Descrip.: This function is spawned by the appserver glue process
-%%           and executes sipproxy:start() in this new thread.
-%% Returns : void(), does not matter.
-%%--------------------------------------------------------------------
-start_actions(BranchBase, GluePid, OrigRequest, Actions) when is_record(OrigRequest, request) ->
-    {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
-    Timeout = 32,
-    %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals GluePid
-    %% when it is done.
-    case sipproxy:start(BranchBase, GluePid, OrigRequest, Actions, Timeout) of
-	ok ->
-	    logger:log(debug, "Appserver forker: sipproxy fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]);
-	{error, What} ->
-	    logger:log(error, "Appserver forker: sipproxy fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What])
     end.
