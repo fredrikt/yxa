@@ -1,17 +1,67 @@
+%%%-------------------------------------------------------------------
+%%% File    : siprequest.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: Various functions related to SIP requests.
+%%%
+%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 -module(siprequest).
--export([send_redirect/3, send_auth_req/4, send_proxyauth_req/4,
-	 send_proxy_request/4, send_answer/3, send_notavail/2,
-	 send_notfound/2, send_proxy_response/2, send_result/5,
-	 send_result/6, make_answerheader/1, add_record_route/2,
-	 add_record_route/4, myhostname/0, create_via/2,
-	 default_port/2,
-	 get_loop_cookie/3, generate_branch/0,
-	 make_response/7, process_route_header/2, check_proxy_request/1,
-	 make_base64_md5_token/1]).
+%%-compile(export_all).
 
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([send_redirect/3,
+	 send_auth_req/4,
+	 send_proxyauth_req/4,
+	 send_proxy_request/4,
+	 send_answer/3,
+	 send_notavail/2,
+	 send_notfound/2,
+	 send_proxy_response/2,
+	 send_result/5,
+	 send_result/6,
+	 make_answerheader/1,
+	 add_record_route/2,
+	 add_record_route/4,
+	 myhostname/0,
+	 create_via/2,
+	 default_port/2,
+	 get_loop_cookie/3,
+	 generate_branch/0,
+	 make_response/7,
+	 process_route_header/2,
+	 check_proxy_request/1,
+	 make_base64_md5_token/1
+	]).
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
 
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+
+%%====================================================================
+%% External functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: send_response(Socket, Response)
+%%           Socket   = sipsocket record()
+%%           Response = response record()
+%% Descrip.: Prepare to send a response out on a socket.
+%% Returns : Res = term(),
+%%           {senderror, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
 send_response(Socket, Response) when record(Response, response) ->
     {Status, Reason, Header} = {Response#response.status, Response#response.reason,
 				Response#response.header},
@@ -28,6 +78,16 @@ send_response(Socket, Response) when record(Response, response) ->
 	    send_response_to(Socket, Response, TopVia)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: send_response_to(Socket, Response, TopVia)
+%%           Socket   = sipsocket record() | none
+%%           Response = response record()
+%%           Via      = via record()
+%% Descrip.: Send a response out on a socket.
+%% Returns : ok                  |
+%%           {senderror, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
 send_response_to(DefaultSocket, Response, TopVia) when record(Response, response), record(TopVia, via) ->
     {Status, Reason, HeaderIn, Body} = {Response#response.status, Response#response.reason,
 					Response#response.header, Response#response.body},
@@ -58,6 +118,23 @@ send_response_to(DefaultSocket, Response, TopVia) when record(Response, response
 	    {senderror, "Failed finding destination"}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_response_socket(DefaultSocket, SendProto, SendToHost,
+%%                               Port)
+%%           DefaultSocket = sipsocket record() | none
+%%           SendProto     = atom(), tcp|tcp6|tls|tls6|udp|udp6
+%%           SendToHost    = string()
+%%           Port          = integer()
+%% Descrip.: Check if DefaultSocket is a working socket, and is of the
+%%           protocol requested (SendProto). If so, return the
+%%           DefaultSocket - otherwise go bother the transport layer
+%%           and try to get a socket useable to communicate with
+%%           SendToHost on port Port using protocol SendProto.
+%% Returns : Socket          |
+%%           {error, Reason}
+%%           Socket = sipsocket record()
+%%           Reason = string()
+%%--------------------------------------------------------------------
 get_response_socket(DefaultSocket, SendProto, SendToHost, Port) when integer(Port) ->
     case sipsocket:is_good_socket(DefaultSocket) of
 	true ->
@@ -85,28 +162,55 @@ get_response_socket(DefaultSocket, SendProto, SendToHost, Port) when integer(Por
 		    S
 	    end
     end.
-    
+
+%%--------------------------------------------------------------------
+%% Function: fix_content_length(Header, Body)
+%%           Header = keylist record()
+%%           Body   = string()
+%% Descrip.: Before sending out requests/responses, make sure the
+%%           Content-Length is correct (don't trust the length
+%%           computed by some previous hop). This is partly for
+%%           backwards compliance with RFC2543 UAC's who were not
+%%           required to include a Content-Length.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
 fix_content_length(Header, Body) ->
     keylist:set("Content-Length", [integer_to_list(length(Body))], Header).
 
+%%--------------------------------------------------------------------
+%% Function: default_port(Proto, Port)
+%%           Proto = atom(), udp | udp6 | tcp | tcp6 | tls | tcp6 |
+%%                   string(), "sip" | "sips"
+%%           Port  = integer() | none
+%% Descrip.: Yucky function returning a "default port number" as a
+%%           string, based on input Proto and Port.
+%% Returns : PortString = string()
+%%--------------------------------------------------------------------
 default_port(Proto, none) when Proto == udp; Proto == udp6; Proto == tcp; Proto == tcp6; Proto == "sip" ->
     "5060";
 default_port(Proto, none) when Proto == tls; Proto == tls6 ; Proto == "sips" ->
     "5061";
 default_port(_, Port) when integer(Port) ->
     integer_to_list(Port);
-default_port(_, Port) ->
+default_port(_, Port) when list(Port) ->
     Port.
 
 %%--------------------------------------------------------------------
-%% Function: process_route_header/2
-%% Description: Looks at the Route header. If it exists, we return a
-%%              new destination URL for this request, and if there was
-%%              no loose router flag in the new destination we append
-%%              the original Request-URI to the list of routes, to
-%%              traverse strict (RFC2543) proxys.
-%% Returns: {ok, NewHeader, NewDestURI, NewRequestURI}  |
-%%          nomatch
+%% Function: process_route_header(Header, URI)
+%%           Header = keylist record()
+%%           URI    = sipurl record()
+%% Descrip.: Looks at the Route header. If it exists, we return a new
+%%           destination URL for this request, and if there was no
+%%           loose router flag in the new destination we append the
+%%           original Request-URI to the list of routes, to traverse
+%%           strict (RFC2543) proxys.
+%% Returns : {ok, NewHeader, NewDestURI, NewRequestURI}  |
+%%           nomatch, there was no Route: header
+%%           NewHeader     = keylist record()
+%%           NewDestURI    = sipurl record(), this is what you should
+%%                                            use as destination
+%%           NewRequestURI = sipurl record(), this is what you should
+%%                                            use as request URI
 %%--------------------------------------------------------------------
 process_route_header(Header, URI) when record(URI, sipurl) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
@@ -127,11 +231,26 @@ process_route_header(Header, URI) when record(URI, sipurl) ->
 	    nomatch
     end.
 
+%%--------------------------------------------------------------------
+%% Function: set_route(Route, Header)
+%%           Route = term() | []
+%% Descrip.: If Route is an empty list ([]), delete any existing
+%%           Route: headers from Header. Otherwise, set the Route:
+%%           header(s) in Header to Route.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
 set_route([], Header) ->
     keylist:delete("Route", Header);
 set_route(Route, Header) ->
     keylist:set("Route", sipheader:contact_print(Route), Header).
 
+%%--------------------------------------------------------------------
+%% Function: is_loose_router(Route)
+%%           Route = term() | []
+%% Descrip.: Look for a loose router indicator ("lr") in the
+%%           contact-parameters of Route.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 is_loose_router(Route) ->
     case dict:find("lr", sipheader:contact_params(Route)) of
 	{ok, E} ->
@@ -140,11 +259,12 @@ is_loose_router(Route) ->
 	    false
     end.
 
-%% Function: check_proxy_request/3
-%% Description: Prepares a request for proxying. Checks Max-Forwards,
-%%              etc. Not guaranteed to return, might
-%%              throw a siperror if the request should not be proxied.
-%% Returns: {ok, NewHeader, ApproxMsgSize}
+%%--------------------------------------------------------------------
+%% Function: check_proxy_request(Request)
+%% Descrip.: Prepares a request for proxying. Checks Max-Forwards,
+%%           etc. Not guaranteed to return, might
+%%           throw a siperror if the request should not be proxied.
+%% Returns : {ok, NewHeader, ApproxMsgSize}
 %%--------------------------------------------------------------------
 check_proxy_request(Request) when record(Request, request) ->
     NewHeader1 = proxy_check_maxforwards(Request#request.header),
@@ -158,10 +278,34 @@ check_proxy_request(Request) when record(Request, request) ->
     ApproxMsgSize = length(Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader2) ++ "\r\n" ++ Request#request.body) + ViaLen,
     {ok, NewHeader2, ApproxMsgSize}.
 
+%%--------------------------------------------------------------------
+%% Function: send_proxy_request(SrvTHandler, Request, Dst,
+%%                              ViaParameters)
+%%           SrvTHandler   = thandler record() | none
+%%           Request       = request record()
+%%           Dst           = list() of sipdst record() |
+%%                           sipdst record() |
+%%                           sipurl record()
+%%           ViaParameters = list() of {key, value} tuple()
+%% Descrip.: Prepare for proxying a request. The preparation process
+%%           is basically to get us a list() of sipdst records and
+%%           then calling send_to_available_dst().
+%% Returns : throw()         |
+%%           {error, Reason} |
+%%           Result
+%%           Reason = string()
+%%           Result = term(), result of send_to_available_dst().
+%%--------------------------------------------------------------------
 
+%%
+%% Turn Dst into a list()
+%%
 send_proxy_request(SrvTHandler, Request, Dst, ViaParameters) when record(Dst, sipdst) ->
     send_proxy_request(SrvTHandler, Request, [Dst], ViaParameters);
 
+%%
+%% Explicit destination(s) provided, just send
+%%
 send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters) when record(Request, request), record(Dst, sipdst) ->
     {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
 				       Request#request.header, Request#request.body},
@@ -172,6 +316,9 @@ send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters) when recor
     NewRequest = Request#request{header=NewHeader1},
     send_to_available_dst(DstList, NewRequest, ViaParameters, SrvTHandler);
 
+%%
+%% Dst is URI - turn it into a list of sipdst records. First check Route header though.
+%%
 send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when record(URI, sipurl) ->
     {ok, _, ApproxMsgSize} = check_proxy_request(Request),
     case process_route_header(Request#request.header, URI) of
@@ -195,6 +342,21 @@ send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when record(URI, si
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: send_to_available_dst(DstList, Request, ViaParam,
+%%                                 SrvTHandler)
+%%           DstList       = list() of sipdst record()
+%%           Request       = request record()
+%%           ViaParam      = list() of {key, value} tuple()
+%%           SrvTHandler   = thandler record()
+%% Descrip.: Sequentially try to get sockets for, and send request
+%%           to, the destinations listed in DstList.
+%% Returns : {ok, Socket, Branch} |
+%%           {error, Reason}      |
+%%           Socket = sipsocket record(), the socket finally used
+%%           Branch = string(), the branch we put in the Via header
+%%           Reason = string()
+%%--------------------------------------------------------------------
 send_to_available_dst([], Request, ViaParam, SrvTHandler) when record(Request, request) ->
     Line1 = Request#request.method ++ " " ++ sipurl:print(Request#request.uri) ++ " SIP/2.0",
     lists:flatten(Message = Line1 ++ "\r\n" ++ sipheader:build_header(Request#request.header) ++ "\r\n" ++ Request#request.body),
@@ -213,7 +375,7 @@ send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) when record(
 	    send_to_available_dst(DstT, Request, ViaParam, SrvTHandler);
 	SipSocket when record(SipSocket, sipsocket) ->
 	    {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
-					   Request#request.header, Request#request.body},
+					       Request#request.header, Request#request.body},
 	    NewHeader1 = proxy_add_via(Header, Method, OrigURI, ViaParam, Proto, SrvTHandler),
 	    Line1 = Method ++ " " ++ sipurl:print(Dst#sipdst.uri) ++ " SIP/2.0",
 	    Message = lists:flatten(Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader1) ++ "\r\n" ++ Body),
@@ -235,6 +397,16 @@ send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) ->
     send_to_available_dst(DstT, Request, ViaParam, SrvTHandler).
 
 
+%%--------------------------------------------------------------------
+%% Function: proxy_check_maxforwards(Header)
+%%           Header = keylist record()
+%% Descrip.: Check Max-Forwards in Header to make sure it is not less
+%%           than one when we have subtracted one (1) from it. Return
+%%           a new Header with the new Max-Forwards.
+%% Returns : NewHeader |
+%%           throw({siperror, ...})
+%%           NewHeader = keylist record()
+%%--------------------------------------------------------------------
 proxy_check_maxforwards(Header) ->
     MaxForwards =
 	case keylist:fetch("Max-Forwards", Header) of
@@ -337,7 +509,7 @@ add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict) ->
 %% Returns : NewParameters, list() of string()
 %%--------------------------------------------------------------------
 add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters, SrvTHandler)
-  when is_record(Header, keylist), is_list(Method), is_record(OrigURI, sipurl), 
+  when is_record(Header, keylist), is_list(Method), is_record(OrigURI, sipurl),
        is_list(LoopCookie), is_list(Parameters) ->
     case stateless_generate_branch(OrigURI, Header) of
 	error ->
@@ -371,9 +543,19 @@ add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters, 
 	    sipheader:dict_to_param(Param2)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: stateless_generate_branch(OrigURI, Header)
+%%           OrigURI = sipurl record(), the original requests URI
+%%           Header  = keylist record()
+%% Descrip.: Generate a branch suitable for stateless proxying of a
+%%           request (meaning that we make sure that we generate the
+%%           very same branch for a retransmission of the very same
+%%           request). This is specified in RFC3261 #16.11.
+%% Returns : Branch |
+%%           error
+%%           Branch = string()
+%%--------------------------------------------------------------------
 stateless_generate_branch(OrigURI, Header) ->
-    %% generate a branch for this request in a way that makes sure that we generate
-    %% the same branch for a retransmission of this very same request. RFC3261 #16.11
     case sipheader:topvia(Header) of
 	TopVia when record(TopVia, via) ->
 	    case sipheader:get_via_branch(TopVia) of
@@ -387,7 +569,7 @@ stateless_generate_branch(OrigURI, Header) ->
 		    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
 		    CallId = keylist:fetch("Call-Id", Header),
 		    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-		    In = lists:flatten(lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag, 
+		    In = lists:flatten(lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
 						     "-callid-", CallId, "-cseqnum-", CSeqNum])),
 		    "z9hG4bK-yxa-" ++ make_base64_md5_token(In)
 	    end;
@@ -396,7 +578,13 @@ stateless_generate_branch(OrigURI, Header) ->
 	    error
     end.
 
-%% Make md5 of input, base64 of that and RFC3261 token of the result
+%%--------------------------------------------------------------------
+%% Function: make_base64_md5_token(In)
+%%           In = term(), indata - anything accepted by erlang:md5()
+%% Descrip.: Make md5 of input, base64 of that and RFC3261 token of
+%%           the result.
+%% Returns : Result of make_3261_token()
+%%--------------------------------------------------------------------
 make_base64_md5_token(In) ->
     Out = string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=),
     make_3261_token(Out).
@@ -418,6 +606,11 @@ H == $*; H == $_; H == $+; H == $`; H == $'; H == $~ ->
 make_3261_token([H | T]) ->
     [$_|make_3261_token(T)].
 
+%%--------------------------------------------------------------------
+%% Function: generate_branch()
+%% Descrip.: Generate a branch that is 'unique across space and time'.
+%% Returns : Branch = string()
+%%--------------------------------------------------------------------
 generate_branch() ->
     {Megasec, Sec, Microsec} = now(),
     %% We don't need port here since erlang guarantees that Microsecond is never the
@@ -426,25 +619,39 @@ generate_branch() ->
     Out = make_base64_md5_token(In),
     "z9hG4bK-yxa-" ++ Out.
 
+%%--------------------------------------------------------------------
+%% Function: make_answerheader(Header)
+%% Descrip.: Turn Request-Route header from request, into Route header
+%%           to include in a response (answer).
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
 make_answerheader(Header) ->
     RecordRoute = keylist:fetch("Record-Route", Header),
     NewHeader1 = keylist:delete("Record-Route", Header),
     NewHeader2 = case RecordRoute of
 		     [] ->
-			 NewHeader1;	
+			 NewHeader1;
 		     _ ->
 			 keylist:set("Route", RecordRoute, NewHeader1)
 		 end.
 
+%%--------------------------------------------------------------------
+%% Function: get_loop_cookie(Header, OrigURI, Proto)
+%%           Header  = keylist record()
+%%           OrigURI = sipurl record(), original requests URI
+%%           Proto   = term(), the protocol the request was received
+%%           over
+%% Descrip.: Generate a loop detection cookie, RFC3261 16.6 #8.
+%% Returns : Cookie = string()
+%%--------------------------------------------------------------------
 get_loop_cookie(Header, OrigURI, Proto) ->
-    %% Generate a loop detection cookie, RFC3261 16.6 #8
     OrigURIstr = sipurl:print(OrigURI),
     FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
     ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
     CallId = keylist:fetch("Call-Id", Header),
     {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     ProxyReq = keylist:fetch("Proxy-Require", Header),
-    %% We must remove the response part from Proxy-Authorization because it includes the method
+    %% We must remove the response part from Proxy-Authorization because it changes with the method
     %% and thus CANCEL does not match INVITE. Contradictingly but implicitly from RFC3261 16.6 #8.
     ProxyAuth = proxyauth_without_response(Header),
     Route = keylist:fetch("Route", Header),
@@ -456,14 +663,21 @@ get_loop_cookie(Header, OrigURI, Proto) ->
 				       {myhostname(), sipserver:get_listenport(Proto)}
 			       end,
     TopViaSentBy = sipurl:print_hostport(TopViaHost, TopViaPort),
-    In = lists:flatten(lists:concat([OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag, 
+    In = lists:flatten(lists:concat([OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
 				     "-callid-", CallId, "-cseqnum-", CSeqNum,
 				     "-preq-", ProxyReq, "-pauth-", ProxyAuth,
 				     "-route-", Route, "-topvia-", TopViaSentBy])),
     Out = make_base64_md5_token(In),
     logger:log(debug, "Siprequest: Created loop cookie ~p from input :~n~p", [Out, In]),
-    Out.    
+    Out.
 
+%%--------------------------------------------------------------------
+%% Function: proxyauth_without_response(Header)
+%%           Header  = keylist record()
+%% Descrip.: Helper-function for get_loop_cookie(). Remove parts of
+%%           Proxy-Authorization header that change based on method.
+%% Returns : Result = list() of string() ???
+%%--------------------------------------------------------------------
 proxyauth_without_response(Header) ->
     case keylist:fetch("Proxy-Authorization", Header) of
 	[] -> none;
@@ -476,10 +690,20 @@ proxyauth_without_response(Header) ->
 	    sipheader:dict_to_param(NewDict4)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: check_valid_proxy_request(Method, Header)
+%%           Method = string()
+%%           Header = keylist record()
+%% Descrip.: Check if a request has any Proxy-Require header that
+%%           includes an extension that we don't support. Always
+%%           return true on ACK and CANCEL - we can never reject
+%%           those.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 check_valid_proxy_request("ACK", _) ->
     true;
 check_valid_proxy_request("CANCEL", _) ->
-    true;    
+    true;
 check_valid_proxy_request(Method, Header) ->
     ProxyRequire = keylist:fetch("Proxy-Require", Header),
     case ProxyRequire of
@@ -490,6 +714,12 @@ check_valid_proxy_request(Method, Header) ->
 	    throw({siperror, 420, "Bad Extension", [{"Unsupported", ProxyRequire}]})
     end.
 
+%%--------------------------------------------------------------------
+%% Function: myhostname()
+%% Descrip.: Get my hostname (the first one in the list, or my IP
+%%           address if I have no list of configured hostnames).
+%% Returns : Hostname = string()
+%%--------------------------------------------------------------------
 myhostname() ->
     case sipserver:get_env(myhostnames, []) of
 	[] ->
@@ -498,9 +728,12 @@ myhostname() ->
 	    lists:nth(1, Hostnames)
     end.
 
-%% Function: create_via/2
-%% Description: Create a Via for this proxy, given the protocol.
-%% Returns: Via
+%%--------------------------------------------------------------------
+%% Function: create_via(Proto, Parameters)
+%%           Proto      = term()
+%%           Parameters = list() of string()
+%% Descrip.: Create a Via for this proxy, given the protocol.
+%% Returns : Via = via record()
 %%--------------------------------------------------------------------
 create_via(Proto, Parameters) ->
     Hostname = siprequest:myhostname(),
@@ -508,6 +741,16 @@ create_via(Proto, Parameters) ->
     ViaProto = sipsocket:proto2viastr(Proto),
     #via{proto=ViaProto, host=Hostname, port=Port, param=Parameters}.
 
+%%--------------------------------------------------------------------
+%% Function: add_record_route(Proto, Hostname, Port, Header)
+%%           Proto      = term()
+%%           Hostname   = string()
+%%           Port       = integer() | none ???
+%%           Header     = keylist record()
+%% Descrip.: Prepend a Record-Route header for Proto:Host:Port to the
+%%           Header keylist.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
 add_record_route(Proto, Hostname, Port, Header) ->
     Param1 = ["maddr=" ++ siphost:myip(), "lr=true"],
     Param2 = case Proto of
@@ -528,10 +771,28 @@ add_record_route(Proto, Hostname, Port, Header) ->
 	_ ->
 	    keylist:prepend({"Record-Route", [Route]}, Header)
     end.
+%%--------------------------------------------------------------------
+%% Function: add_record_route(Header, Origin)
+%%           Header = keylist record()
+%%           Origin = siporigin record()
+%% Descrip.: Prepend a Record-Route header for this proxy, based on
+%%           the Origin record, to Header.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
 add_record_route(Header, Origin) when record(Origin, siporigin) ->
     Port = sipserver:get_listenport(Origin#siporigin.proto),
     add_record_route(Origin#siporigin.proto, myhostname(), Port, Header).
 
+%%--------------------------------------------------------------------
+%% Function: standardcopy(Header, ExtraHeaders)
+%%           Header = keylist record()
+%%           ExtraHeaders = keylist record()
+%% Descrip.: Copy the headers that are required for all responses
+%%           (Via, From, To, Call-Id, CSeq) plus any extra requested
+%%           headers from a source Header keylist and create a new
+%%           keylist based on these.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
 standardcopy(Header, ExtraHeaders) ->
     keylist:appendlist(keylist:copy(Header,
 				    ["Via", "From", "To",
@@ -591,6 +852,16 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders) ->
 			 header=standardcopy(RequestHeader, ExtraHeaders), body=Body},
     send_response(Socket, Response).
 
+%%--------------------------------------------------------------------
+%% Function: send_proxy_response(Socket, Response)
+%%           Socket   = sipsocket record() | none
+%%           Response = response record()
+%% Descrip.: Extract the top Via from Response, and send this response
+%%           to that location (destination).
+%% Returns : {error, invalid_Via} |
+%%           SendResult
+%%           SendResult = term(), result of send_response()
+%%--------------------------------------------------------------------
 send_proxy_response(Socket, Response) when record(Response, response) ->
     case sipheader:via(keylist:fetch("Via", Response#response.header)) of
 	[Self] ->
@@ -606,6 +877,20 @@ send_proxy_response(Socket, Response) when record(Response, response) ->
 	    send_response(Socket, NewResponse)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: make_response(Status, Reason, Body, ExtraHeaders,
+%%                         ViaParameters, SipSocket, Request)
+%%           Status    = integer(), SIP status code
+%%           Reason    = string(), SIP reason phrase
+%%           Body      = string()
+%%           ExtraHeaders = keylist record()
+%%           ViaParameters = list() of string()
+%%           SipSocket = sipsocket record() | atom(), protocol
+%%                       (tcp | tcp6 | tls | tls6 | udp | udp6)
+%%           Request   = request record()
+%% Descrip.: Create a response given a request.
+%% Returns : Response = response record()
+%%--------------------------------------------------------------------
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket, Request) when record(SipSocket, sipsocket) ->
     make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket#sipsocket.proto, Request);
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request) when record(Request, request) ->
