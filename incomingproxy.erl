@@ -10,7 +10,7 @@ start() ->
     phone:create(),
     logger:start("sipd.log"),
     {ok, Socket} = gen_udp:open(5060, [{reuseaddr, true}]),
-    timer:apply_interval(60000, sipd, remove_expired_phones, []),
+    timer:apply_interval(60000, incomingproxy, remove_expired_phones, []),
     logger:log(normal, "proxy started"),
     recvloop(Socket).
 
