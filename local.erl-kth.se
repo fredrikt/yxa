@@ -299,7 +299,7 @@ get_forwards_for_users(Users) ->
     case sipuserdb:get_forwards_for_users(Users) of
 	{Forwards, Timeout, Localring} when list(Forwards) ->
 	    Func = fun(Forward) ->
-			   #sipurl{proto="sip", user=Forward, pass=none, host="kth.se", port=none, param=[]}
+			   sipurl:new([{proto, "sip"}, {user, Forward}, {host, "kth.se"}])
 		   end,
 	    NewForwards = lists:map(Func, Forwards),
 	    {NewForwards, Timeout, Localring};
