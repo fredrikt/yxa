@@ -676,7 +676,7 @@ change_user_form(Env, Input) ->
 	    Args = sipheader:httparg(Input),
 	    Userfind = dict:find("user", Args),
 	    case Userfind of
-		{error, _} ->
+		error ->
 		    [header(ok), "Felaktigt anv&auml;ndarnamn"];
 		{ok, User} ->
 		    {Password, Flags, Classes} = get_pass(User),
