@@ -14,7 +14,7 @@ send_response(Socket, Code, Text, Header, Body) ->
 send_response_to(Socket, Code, Text, Dest, Header, Body) ->
     Line1 = "SIP/2.0 " ++ integer_to_list(Code) ++ " " ++ Text,
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
-    logger:log(debug, "send response(~p):~p", [Dest, Message]),
+    logger:log(debug, "send response(~p):~n~s~n", [Dest, Message]),
     {Protocol, {Host, Port}, Parameters} = Dest,
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
 
