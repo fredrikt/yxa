@@ -333,14 +333,14 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 %%--------------------------------------------------------------------
 do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Origin, siporigin) ->
     {Method, URI} = {RequestIn#request.method, RequestIn#request.uri},
-    logger:log(debug, "~s ~s~n", [Method, sipurl:print(URI)]),
+    logger:log(debug, "incomingproxy: Processing request ~s ~s~n", [Method, sipurl:print(URI)]),
     Header = case sipserver:get_env(record_route, false) of
 		 true -> siprequest:add_record_route(RequestIn#request.header, Origin);
 		 false -> RequestIn#request.header
 	     end,
     Request = RequestIn#request{header = Header},
     Location = route_request(Request),
-    logger:log(debug, "Location: ~p", [Location]),
+    logger:log(debug, "incomingproxy: Location: ~p", [Location]),
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
     case Location of
@@ -351,7 +351,7 @@ do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Orig
 	    logger:log(normal, "~s: incomingproxy: Error ~p", [LogTag, Errorcode]),
 	    transactionlayer:send_response_handler(THandler, Errorcode, "Unknown code");
 	{response, Status, Reason} ->
-	    logger:log(normal, "~s: incomingproxy: Response ~p ~s", [LogTag, Status, Reason]),
+	    logger:log(normal, "~s: incomingproxy: Response '~p ~s'", [LogTag, Status, Reason]),
 	    transactionlayer:send_response_handler(THandler, Status, Reason);
 	{proxy, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
@@ -546,8 +546,8 @@ request_to_remote(URL) when is_record(URL, sipurl) ->
 %%--------------------------------------------------------------------
 request_to_me(THandler, Request, LogTag) when is_record(Request, request), Request#request.method == "OPTIONS" ->
     logger:log(normal, "~s: incomingproxy: OPTIONS to me -> 200 OK", [LogTag]),
-    logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
-	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
+    %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and 
+    %% Supported headers. RFC 3261 section 11.
     transactionlayer:send_response_handler(THandler, 200, "OK");
 
 request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
