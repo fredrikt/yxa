@@ -53,7 +53,11 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 		    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
 		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), true);
 		{false, _} ->
-		    logger:log(normal, "~s -> Authentication FAILED, sending challenge", [LogStr]),
+		    Prio = case keylist:fetch("Authorization", Header) of
+			[] -> debug;
+			_ -> normal
+		    end,
+		    logger:log(Prio, "~s -> Authentication FAILED, sending challenge", [LogStr]),
 		    siprequest:send_auth_req(NewHeader, Socket, sipauth:get_challenge(), false)
 	    end;
 	_ ->
