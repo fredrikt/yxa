@@ -396,6 +396,3 @@ If you are using Linux, then you will need to
 since Yxa wants to use separate sockets for v6 and v4. IPv6 support has only
 been tested on Linux 2.4.x where x >= 20.
 
-Warning: there also seems to be some kind of problem with UDP packets
-received over IPv6 sockets being truncated at 1024 bytes. You have been
-warned.
