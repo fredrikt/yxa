@@ -20,7 +20,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {debug_iodev, normal_iodev, error_iodev}).
+-record(state, {debug_iodev, debug_fn, normal_iodev, normal_fn, error_iodev, error_fn}).
 
 %%====================================================================
 %% External functions
@@ -54,10 +54,15 @@ start_link(AppName) ->
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
 init([Basename]) ->
-    DebugIoDevice = safe_open(lists:concat([Basename, ".debug"]), [append]),
-    NormalIoDevice = safe_open(lists:concat([Basename, ".log"]), [append]),
-    ErrorIoDevice = safe_open(lists:concat([Basename, ".error"]), [append]),
-    {ok, #state{debug_iodev=DebugIoDevice, normal_iodev=NormalIoDevice, error_iodev=ErrorIoDevice}}.
+    DebugFn = lists:concat([Basename, ".debug"]),
+    NormalFn = lists:concat([Basename, ".log"]),
+    ErrorFn = lists:concat([Basename, ".error"]),
+    {ok, DebugIoDevice} = safe_open(DebugFn, [append]),
+    {ok, NormalIoDevice} = safe_open(NormalFn, [append]),
+    {ok, ErrorIoDevice} = safe_open(ErrorFn, [append]),
+    {ok, #state{debug_iodev=DebugIoDevice, debug_fn=DebugFn,
+		normal_iodev=NormalIoDevice, normal_fn=NormalFn,
+		error_iodev=ErrorIoDevice, error_fn=ErrorFn}}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_call/3
@@ -69,6 +74,28 @@ init([Basename]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
+handle_call({rotate_logs}, From, State) ->
+    %% Create rotation suffix from current time
+    {Megasec, Sec, USec} = now(),
+    USecStr = string:substr(integer_to_list(USec), 1, 3),
+    DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
+    case string:tokens(DateTime, " ") of
+	[Date, Time] ->
+	    Suffix = "-" ++ Date ++ "_" ++ Time,
+	    {Res, NewState} = rotate([debug, normal, error], Suffix, State),
+	    {reply, Res, NewState};
+	_ ->
+	    {reply, {error, "Could not create suitable suffix"}, State}
+    end;
+
+handle_call({rotate_logs, Suffix}, From, State) ->
+    {Res, NewState} = rotate([debug, normal, error], Suffix, State),
+    {reply, Res, NewState};
+
+handle_call({rotate_logs, Suffix, Logs}, From, State) when list(Logs) ->
+    {Res, NewState} = rotate(Logs, Suffix, State),
+    {reply, Res, NewState};
+
 handle_call({quit}, From, State) ->
     {stop, normal, {ok}, State};
 
@@ -147,7 +174,7 @@ code_change(OldVsn, State, Extra) ->
 safe_open(Filename, Args) ->
     case file:open(Filename, Args) of
 	{ok, FD} ->
-	    FD;
+	    {ok, FD};
 	{error, E} ->
 	    erlang:fault("Error opening logfile", [Filename, Args])
     end.
@@ -184,6 +211,68 @@ do_log(Level, Format, Arguments) when atom(Level), list(Format), list(Arguments)
     LogTS = lists:concat([DateTime, ".", USecStr]),
     gen_server:cast(logger, {log, Level, LogTS, Format, Arguments, self()}),
     ok.
+
+
+rotate([], Suffix, State) when record(State, state) ->
+    {ok, State};
+rotate([debug | T], Suffix, State) when record(State, state) ->
+    case rotate_file(State#state.debug_iodev, State#state.debug_fn, Suffix) of
+	{ok, NewIoDev} ->
+	    logger:log(debug, "Rotated debug logfile with suffix ~p", [Suffix]),
+	    rotate(T, Suffix, State#state{debug_iodev=NewIoDev});
+	{error, E} ->
+	    logger:log(error, "Failed rotating debug logfile with suffix ~p : ~p", [Suffix, E]),
+	    {{error, "Failed rotating debug logfile"}, State}
+    end;
+
+rotate([normal | T], Suffix, State) when record(State, state) ->
+    case rotate_file(State#state.normal_iodev, State#state.normal_fn, Suffix) of
+	{ok, NewIoDev} ->
+	    logger:log(debug, "Rotated normal logfile with suffix ~p", [Suffix]),
+	    rotate(T, Suffix, State#state{normal_iodev=NewIoDev});
+	{error, E} ->
+	    logger:log(error, "Failed rotating normal logfile with suffix ~p : ~p", [Suffix, E]),
+	    {{error, "Failed rotating normal logfile"}, State}
+    end;
+
+rotate([error | T], Suffix, State) when record(State, state) ->
+    case rotate_file(State#state.error_iodev, State#state.error_fn, Suffix) of
+	{ok, NewIoDev} ->
+	    logger:log(debug, "Rotated error logfile with suffix ~p", [Suffix]),
+	    rotate(T, Suffix, State#state{error_iodev=NewIoDev});
+	{error, E} ->
+	    logger:log(error, "Failed rotating error logfile with suffix ~p : ~p", [Suffix, E]),
+	    {{error, "Failed rotating error logfile"}, State}
+    end;
+
+rotate([H | T], Suffix, State) when record(State, state) ->
+    logger:log(error, "Invalid log level ~p supplied to rotate", [H]),
+    {{error, "Invalid log level supplied to rotate"}, State}.
+
+
+rotate_file(IoDev, Filename, Suffix) ->
+    %% Open new file before we try to rename old one to make sure
+    %% there isn't any permission problems etc. with us creating a new
+    %% logfile
+    %% XXX is there a mktemp() available in Erlang?
+    TmpFile = Filename ++ Suffix ++ ".rotate",
+    case catch safe_open(TmpFile, [append]) of
+        {ok, NewIoDev} ->
+	    %% Try to rename the old logfile
+	    case file:rename(Filename, Filename ++ Suffix) of
+		ok ->
+		    %% Rename temporary file to the right filename
+		    %% XXX Can we trap errors here? 
+		    file:rename(TmpFile, Filename),
+		    {ok, NewIoDev};
+		_ ->
+		    file:close(NewIoDev),
+		    %% XXX unlink TmpFile or not? It would be a race...
+		    error
+	    end;
+	_ ->
+	    error
+    end.
 
 %%--------------------------------------------------------------------
 %%% Interface functions
