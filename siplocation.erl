@@ -163,8 +163,12 @@ remove_expired_phones() ->
     case phone:expired_phones() of
 	{atomic, Expired} ->
 	    remove_phones(Expired);
-	{aborted, _} ->
-	    true
+	{aborted, {no_exists, Table}} ->
+	    logger:log(error, "Location: Mnesia says that table '~p' does not exist - did you bootstrap Yxa? (See README file)", [Table]),
+	    error;
+	E ->
+	    logger:log(error, "Location: phone:expired_phones() returned unknown result : ~p", [E]),
+	    error
     end.
 
 remove_phones([]) ->
