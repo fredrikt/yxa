@@ -96,11 +96,11 @@ init([]) ->
 	    logger:log(error, E),
 	    ignore;
 	Fn when list(Fn) ->
-	    case sipserver:get_env(sipuserdb_file_refresh_interval, 60 * 1000) of
+	    case sipserver:get_env(sipuserdb_file_refresh_interval, 60) of
 		X when X == 0; X == none ->
 		    ok;
 		Interval when integer(Interval) ->
-		    {ok, T} = timer:send_interval(Interval, sipuserdb_file, {check_file})
+		    {ok, T} = timer:send_interval(Interval * 1000, sipuserdb_file, {check_file})
 	    end,
 	    case get_mtime(Fn) of
 		{ok, MTime} ->
