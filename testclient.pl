@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# testclient.pl is a minimalistic SIP user agent used in testing 
+# testclient.pl is a minimalistic SIP user agent used in testing
 # Yxa - the Erlang SIP server/stack
 #
 # Author : Fredrik Thulin <ft@it.su.se>
@@ -354,7 +354,7 @@ foreach $name (keys %standard_tests) {
     next if ($skip);
 
     $standard_testcount++;
-    
+
     # Don't restart testclient.pl so many times that you get the same PID twice the same second, please ;)
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
 
@@ -366,10 +366,10 @@ foreach $name (keys %standard_tests) {
     }
 
     $callid_seq++;
-    
+
     my $res += perform_test ($name, $standard_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, $branch, undef);
     $standard_okcount += $res;
-    
+
     push (@standard_failed, "\"$name\"") if (! $res);
 }
 
@@ -405,7 +405,7 @@ foreach $name (keys %local_tests) {
     next if ($skip);
 
     $local_testcount++;
-    
+
     # Don't restart testclient.pl so many times that you get the same PID twice the same second, please ;)
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
 
@@ -417,10 +417,10 @@ foreach $name (keys %local_tests) {
     }
 
     $callid_seq++;
-    
+
     my $res += perform_test ($name, $local_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, $branch, undef);
     $local_okcount += $res;
-    
+
     push (@local_failed, "\"$name\"") if (! $res);
 }
 
@@ -454,15 +454,15 @@ sub perform_test
     my $branch = shift;
     my $authrequestresponse = shift;
     my $proto;
-    
+
     my %testparams = %$paramref;
-    
+
     my ($msg, $response, $code, $text);
-    
+
     my $dst = $testparams{sendto} || $testserver;
-    
+
     my $Socket = new FileHandle;
-    
+
     if ($use_udp) {
 	my $iaddr = gethostbyname(hostname());
 	my $paddr = sockaddr_in(0, $iaddr);	# 0 means let kernel pick
@@ -471,19 +471,19 @@ sub perform_test
 	$proto = "UDP";
     } else {
 	my ($sendto, $sendto_ip, $sendto_port) = resolve_destination ($dst);
-	
+
 	my $dst = sockaddr_in($sendto_port, inet_aton($sendto_ip));
-	
+
 	my $iaddr = inet_aton($sendto_ip);
 	#my $paddr = sockaddr_in(0, $dst); # 0 means let kernel pick local port
 	my $paddr = sockaddr_in($sendto_port, $iaddr);
-	
+
 	socket($Socket, PF_INET, SOCK_STREAM, getprotobyname("tcp")) or die "socket: $!";
 	connect($Socket, $paddr) or die ("connect: $!\n"), return undef;
 	warn ("Connected to $sendto_ip:$sendto_port\n");
 	$proto = "TCP";
     }
-	
+
     my $mysockaddr = getsockname($Socket);
     my ($family, $localport, $myaddr) = unpack('S n a4 x8', $mysockaddr);
 
@@ -495,12 +495,12 @@ sub perform_test
     my $MaxForwards = defined ($testparams{MaxForwards})?$testparams{MaxForwards}:'10';  # RFC3261 says 70 but that is not suitable for testing
     my $testheader = $testparams{Header} || '';
     my $sipuri = $testparams{RequestURI} || parse_sipurl ($To) or warn ("Could not create a Request URI!\n"), return 0;
-    
+
     my $proxyauthheader = '';
     if ($authrequestresponse) {
 	my $username = $testparams{user};
 	my $password = $testparams{pw};
-	
+
 	my $response_headername = 'Proxy-Authorization';
 	my $pa = fetch_header ('Proxy-Authenticate', $authrequestresponse);
 	if (! $pa) {
@@ -509,21 +509,21 @@ sub perform_test
 	}
 	warn ("FAILED, got '$code $text' but no Proxy-Authenticate header\n"), return 0 if (! $pa);
 	my $mda = auth_parse($pa);
-	
+
 	if (defined ($username) and
 		    defined ($password)) {
-	    
+
 	    my $realm = $mda->{realm};
 	    my $nonce = $mda->{nonce};
 	    my $opaque = $mda->{opaque};
-	    
+
 	    my ($hostname, $ip, $port) = resolve_destination ($dst);
 	    my $uri = "sip:$ip";
-	    
+
 	    my $A1 = md5_hex ("$username:$realm:$password");
 	    my $A2 = md5_hex ("$Method:$uri");
 	    my $response = md5_hex ("$A1:$nonce:$A2");
-	    
+
 	    $proxyauthheader = "$response_headername: Digest username=\"$username\",realm=\"$realm\",uri=\"$uri\",response=\"$response\",nonce=\"$nonce\",opaque=\"$opaque\",algorithm=md5\n";
 
 	    # must make branch different since the new INVITE is a separate transaction
@@ -533,7 +533,7 @@ sub perform_test
 	    return 0;
 	}
     }
-	
+
     my $my_via = "SIP/2.0/$proto $hostname:$localport";
 
     $my_via .= ";branch=$branch" if ($branch);
@@ -553,7 +553,7 @@ $testheader$proxyauthheader
 
     warn ("  Retrying with authentication :\n") if ($authrequestresponse);
     warn ("---\nTest '$testname' (send to $dst) :\n") if (! $authrequestresponse);
-    
+
     warn ("	SEND: $Method $sipuri\n") if ($quiet);
     send_message ($Socket, $use_udp, $testname, $msg, $dst, $quiet) or close ($Socket), return 0;
     if ($testparams{cancel_immediately} and $Method eq 'INVITE') {
@@ -585,7 +585,7 @@ $testheader$proxyauthheader
     } else {
 	$match = regexp_match ("$code $text", $testparams{expect});
     }
-	
+
     if (! $match) {
 	if ($code eq '407' or $code eq '401') {
 	    # we got a 407 Proxy Authorization Required or
@@ -598,9 +598,9 @@ $testheader$proxyauthheader
 		return 0;
 	    }
 	    warn ("\tNeeds authentication...\n") if (! $quiet);
-	    
+
 	    $CSeq++;
-			
+
 	    if (defined ($testparams{user}) and defined ($testparams{pw})) {
 		return perform_test ($testname, $paramref, $use_udp, $quiet, $hostname, $CSeq, $CallID, $branch, $response);
 	    } else {
@@ -623,7 +623,7 @@ $testheader$proxyauthheader
     } else {
 	warn ("OK (match /$testparams{expect}/)\n");
     }
-	
+
     close ($Socket);
     return 1;
 }
@@ -632,7 +632,7 @@ sub regexp_match
 {
     my $a = shift;
     my $b = shift;
-	
+
     return ($a =~ /$b/);
 }
 
@@ -667,10 +667,10 @@ sub send_ack
 		    "Max-Forwards: $MaxForwards",
 		    "User-Agent: testclient.pl",
 		    $extra_headers);
-			      
+
     send_message($Socket, $is_udp, $testname, $ack, $dst, $quiet);
 }
-	
+
 sub send_message
 {
     my $Socket = shift;
@@ -679,13 +679,13 @@ sub send_message
     my $msg_in = shift;
     my $dst_in = shift;
     my $quiet = shift;
-    
+
     my $proto = $is_udp?"UDP":"TCP";
-    
+
     my ($sendto, $sendto_ip, $sendto_port) = resolve_destination ($dst_in);
-    
+
     my $msg = join("\r\n", split("\n", $msg_in)) . "\r\n\r\n";
-    
+
     if ($is_udp) {
 	my $dst = sockaddr_in($sendto_port, inet_aton($sendto_ip));
 	send($Socket, $msg, 0, $dst) == length($msg) or warn ("FAILED, Can't send to $sendto ($sendto_ip) port $sendto_port ($proto) : $!"), return undef;
@@ -705,25 +705,25 @@ sub read_response
     my $testname = shift;
     my $CallID = shift;
     my $quiet = shift;
-    
+
     my $timeout = 5;
 
     my $proto = $is_udp?"UDP":"TCP";
-	
+
     while (1) {
 	if ($is_udp) {
 	    my $rin = '';
 	    vec ($rin, fileno ($Socket), 1) = 1;
-	    
+
 	    if (select (my $rout = $rin, undef, undef, $timeout)) {
 		my $msg;
 		(my $hispaddr = recv ($Socket, $msg, 8192, 0))        || die "recv: $!";
 		my ($port, $hisiaddr) = sockaddr_in ($hispaddr);
 		my $host = gethostbyaddr ($hisiaddr, AF_INET);
 		my $ip = inet_ntoa ($hisiaddr);
-		
+
 		warn ("  *** RECV from $host ($ip) port $port (UDP) :\n\t" . join ("\n\t", split ("\n", $msg)) . "\n\n") unless ($quiet);
-		
+
 		if (callid_match ($CallID, $msg)) {
 		    my ($code, $text) = get_response ($msg);
 		    if (is_provisional_response ($msg)) {
@@ -748,17 +748,17 @@ sub read_response
 		  next unless @headers;  # ignore extra crlf between messages
 		  push(@headers, $rad);
 		  my $clen = int (fetch_header("Content-Length", join("", @headers)));
-		  
+
 		  while ($clen > 0) {
 		      # XXX do timeout
 		      $rad = <$Socket>;
 		      push (@headers, $rad);
-		      $clen -= length($rad);						
+		      $clen -= length($rad);
 		  }
-		  
+
 		  my $msg = join("", @headers);
-		  
-					
+
+
 		  if ($quiet) {
 		      my ($code, $text) = get_response ($msg);
 		      warn (" RECV: $code $text\n");
@@ -766,7 +766,7 @@ sub read_response
 		      #warn ("  *** RECV from $host ($ip) port $port (TCP) :\n " . join ("\n   ", split ("\n", $msg)) . "\n\n");
 		      warn ("  *** RECV (TCP) :\n\t" . join ("\n\t", split ("\n", $msg)) . "\n\n");
 		  }
-		  
+
 		  if (is_provisional_response ($msg)) {
 		      # extend timeout since we got a provisional response
 		      my $timeout = 60;
@@ -775,14 +775,14 @@ sub read_response
 		  } else {
 		      return $msg;
 		  }
-	      }			
+	      }
 	      push(@headers, $rad);
 	  }
 	    warn ("Did not receive complete response : " . join("", @headers) . "\n");
 	    return undef;
 	}
     }
-    
+
     return 1;
 }
 
@@ -790,14 +790,14 @@ sub resolve_destination
 {
     my $hostname = shift;
     my $port = "5060";
-	
+
     if ($hostname =~ /^(.+):(\d+)$/) {
 	$port = $2;
 	$hostname = $1;
     }
 
     my $ip = gethostbyname ($hostname);
-	
+
     die ("Can't resolve '$hostname'") unless ($ip);
 
     return ($hostname, inet_ntoa($ip), $port);
@@ -806,20 +806,20 @@ sub resolve_destination
 sub is_provisional_response
 {
     my $msg = shift;
-	
+
     my ($code, $text) = get_response ($msg);
-    
+
     return ($code >= 100 and $code <= 199);
 }
 
 sub get_response
 {
     my $in = (split ("\n", shift))[0];
-	
+
     if ($in =~ /^SIP\/2\.0 (\d+)\s(.+?)[\r\n]*$/) {
 	return (int ($1), $2);
     }
-    
+
     return (0, '');
 }
 
@@ -827,7 +827,7 @@ sub callid_match
 {
     my $CallID = shift;
     my $msg = shift;
-	
+
     return (fetch_header ('Call-ID', $msg) eq $CallID);
 }
 
@@ -839,11 +839,11 @@ sub fetch_first_header
     my @m = (grep /^$name:\s*.+/i, split ("\n", $headers));
 
     my $rad = $m[0];
-    
+
     if ($rad =~ /^$name:\s*(.+?)[\r\n]*$/i) {
 	return $1;
     }
-    
+
     return undef;
 }
 
@@ -853,34 +853,34 @@ sub fetch_header
     my $headers = shift;
 
     my @m = (grep /^$name:\s*.+/i, split ("\n", $headers));
-    
+
     return undef if (1 != @m);
-    
+
     my $rad = $m[0];
-    
+
     if ($rad =~ /^$name:\s*(.+?)[\r\n]*$/i) {
 	return $1;
     }
-    
+
     return undef;
 }
 
 sub check_method
 {
     my $in = uc (shift);
-	
+
     return undef if ($in !~ /^[A-Z]+$/);
-	
+
     return $in;
 }
 
 sub parse_sipurl
 {
     my $in = shift;
-	
+
     return $1 if ($in =~ /<(sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+)>/);
     return $1 if ($in =~ /<(foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+)>/);
-	
+
     return $in if ($in =~ /^sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
     return $in if ($in =~ /^foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
 
@@ -892,12 +892,12 @@ sub parse_sipurl
 sub make_url
 {
     my $in = shift;
-    
+
     return $in if ($in =~ /^sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
     return $in if ($in =~ /^foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
-    
+
     return "sip:$in" if ($in =~ /^[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
-    
+
     return undef;
 }
 
@@ -930,16 +930,16 @@ sub read_local_config
     foreach my $fn (@f_locs) {
 	if (-r $fn) {
 	    warn ("$0: Loading local configuration from '$fn'\n") unless ($quiet);
-	    
+
 	    { package Settings; do $fn; }
 
 	    die ("$0: Error in configuration file '$fn': $@\n") if ($@ ne '');
-	    
+
 	    $cfg_loaded = 1;
 	    last;
 	}
     }
-    
+
     if (! $cfg_loaded) {
 	warn ("$0: No local configuration found, looked for it in the following locations :\n\t",
 	      join ("\n\t", @f_locs), "\n") unless $quiet;
