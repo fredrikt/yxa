@@ -22,6 +22,15 @@ beamdir = $(prefix)/share/yxa
 systools_make_script = \
 	erl -noshell -run systools make_script $* -run init stop
 
+create_start_script = \
+	sed -e 's!@PROGRAMNAME@!$*!' \
+	    -e 's!@CONFIGDIR@!$(configdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@BUILDDIR@!$(builddir)!' < $(srcdir)/init.sh.in > $@.new && \
+	chmod +x $@.new && \
+	mv $@.new $@
+
 LOCAL_ERL = local.erl-default
 
 erl_FILES = \
@@ -115,12 +124,11 @@ boot_FILES = \
 
 start_FILES = $(erl_FILES:.boot=.start)
 
-
 CC = gcc
 
 beam_FILES = $(erl_FILES:.erl=.beam)
 
-all: $(beam_FILES) bootstrap.sh dtmfserver $(boot_FILES)
+all: $(beam_FILES) bootstrap.sh dtmfserver $(boot_FILES) $(start_FILES)
 
 install:
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
@@ -131,12 +139,13 @@ install:
 clean:
 	rm -f core *.core *~ config.status config.log
 	rm -f bootstrap.sh local.erl
-	rm -f version.erl newversion.erl.new version.erl.in
+	rm -f newversion.erl.new version.erl.in
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out dtmfserver 
 
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
+#$(start_FILES): $(boot_FILES)
 
 SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES:
@@ -180,3 +189,16 @@ adminwww.boot: adminwww.app adminwww.rel
 appserver.boot: appserver.app appserver.rel
 	$(systools_make_script)
 
+incomingproxy.start: incomingproxy.boot incomingproxy.config init.sh.in
+	$(create_start_script)
+
+pstnproxy.start: pstnproxy.boot pstnproxy.config init.sh.in
+	$(create_start_script)
+
+adminwww.start: adminwww.boot adminwww.config init.sh.in
+	$(create_start_script)
+
+appserver.start: appserver.boot appserver.config init.sh.in
+	$(create_start_script)
+
+%.start: %.boot %.config init.sh.in
