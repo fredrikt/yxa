@@ -317,35 +317,35 @@ test() ->
     %% This is the '3.1.1.1  A short tortuous INVITE' from draft-ietf-sipping-torture-tests-04.txt,
     %% except the body which wasn't very special
     _Message6 =
-	"INVITE sip:vivekg@chair-dnrc.example.com;unknownparam SIP/2.0"
-	"TO :"
-	" sip:vivekg@chair-dnrc.example.com ;   tag    = 1918181833n"
-	"from   : \"J Rosenberg \\\"\"       <sip:jdrosen@example.com>"
-	"  ;"
-	"  tag = 98asjd8"
-	"MaX-fOrWaRdS: 0068"
-	"Call-ID: wsinv.ndaksdj@192.0.2.1"
-	"Content-Length   : 4"
-	"cseq: 0009"
-	"  INVITE"
-	"Via  : SIP  /   2.0"
-	" /UDP"
-	"    192.0.2.2;branch=390skdjuw"
-	"s :"
-	"NewFangledHeader:   newfangled value"
-	" continued newfangled value"
-	"UnknownHeaderWithUnusualValue: ;;,,;;,;"
-	"Content-Type: application/sdp"
-	"Route:"
-	" <sip:services.example.com;lr;unknownwith=value;unknown-no-value>"
-	"v:  SIP  / 2.0  / TCP     spindle.example.com   ;"
-	"  branch  =   z9hG4bK9ikj8  ,"
-	" SIP  /    2.0   / UDP  192.168.255.111   ; branch="
-	" z9hG4bK30239"
-	"m:\"Quoted string \"\"\" <sip:jdrosen@example.com> ; newparam ="
-	"      newvalue ;"
-	"  secondparam ; q = 0.33"
-	""
+	"INVITE sip:vivekg@chair-dnrc.example.com;unknownparam SIP/2.0\r\n"
+	"TO :\r\n"
+	" sip:vivekg@chair-dnrc.example.com ;   tag    = 1918181833n\r\n"
+	"from   : \"J Rosenberg \\\"\"       <sip:jdrosen@example.com>\r\n"
+	"  ;\r\n"
+	"  tag = 98asjd8\r\n"
+	"MaX-fOrWaRdS: 0068\r\n"
+	"Call-ID: wsinv.ndaksdj@192.0.2.1\r\n"
+	"Content-Length   : 4\r\n"
+	"cseq: 0009\r\n"
+	"  INVITE\r\n"
+	"Via  : SIP  /   2.0\r\n"
+	" /UDP\r\n"
+	"    192.0.2.2;branch=390skdjuw\r\n"
+	"s :\r\n"
+	"NewFangledHeader:   newfangled value\r\n"
+	" continued newfangled value\r\n"
+	"UnknownHeaderWithUnusualValue: ;;,,;;,;\r\n"
+	"Content-Type: application/sdp\r\n"
+	"Route:\r\n"
+	" <sip:services.example.com;lr;unknownwith=value;unknown-no-value>\r\n"
+	"v:  SIP  / 2.0  / TCP     spindle.example.com   ;\r\n"
+	"  branch  =   z9hG4bK9ikj8  ,\r\n"
+	" SIP  /    2.0   / UDP  192.168.255.111   ; branch=\r\n"
+	" z9hG4bK30239\r\n"
+	"m:\"Quoted string \"\"\" <sip:jdrosen@example.com> ; newparam =\r\n"
+	"      newvalue ;\r\n"
+	"  secondparam ; q = 0.33\r\n"
+	"\r\n"
 	"test",
     _URL6 = sipurl:parse("sip:vivekg@chair-dnrc.example.com;unknownparam"),
 
@@ -384,13 +384,43 @@ test() ->
     Body9 = "This\nis\rbody\n\r\n\r\n_and should have it's line breaks preserved\r\n",
     Message9 =
 	"INVITE sip:a@example.org SIP/2.0\r\n"
-	"Via: SIP/2.0/TLS 192.0.2.1, SIP/2.0/FOO 192.0.2.78\r\n" 
+	"Via: SIP/2.0/TLS 192.0.2.1, SIP/2.0/FOO 192.0.2.78\r\n"
 	"\r\n" ++ Body9,
-	
+
     io:format("test: parse/1 request - 9~n"),
     %% verify that we don't mess with line breaks in body
     {request, "INVITE", _, _,  Body9} = parse(Message9, none),
-    
+
+    Message10 =
+	"INVITE sip:a@example.org SIP/2.0\n"
+	"Via: SIP/2.0/TLS 192.0.2.1\n"
+	"Content-Length: 20\n"
+	"\n"
+	"partial",
+
+    io:format("test: parse/1 request - 10.1~n"),
+    %% make sure we can handle message where body is not yet fully received
+    %% (also test \n instead of \r\n throughout the message)
+    {request, "INVITE", _, Header10, "partial"} = parse(Message10, none),
+
+    io:format("test: parse/1 request - 10.2~n"),
+    %% verify the Content-Length is untouched (to not re-introduce bug)
+    ["20"] = keylist:fetch('content-length', Header10),
+
+    Message11 =
+	"INVITE sip:a@example.org SIP/2.0\r"
+	"Via: SIP/2.0/TLS 192.0.2.1\r"
+	"\r"
+	"body",
+
+    io:format("test: parse/1 request - 11.1~n"),
+    %% verify that we can parse message with broken line endings (\r)
+    {request, "INVITE", _, Header11, "body"} = parse(Message11, none),
+
+    io:format("test: parse/1 request - 11.2~n"),
+    %% verify the only header
+    ["SIP/2.0/TLS 192.0.2.1"] = keylist:fetch('via', Header11),
+
 
     %% RESPONSES
 
