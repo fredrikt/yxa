@@ -1,7 +1,30 @@
 %%%-------------------------------------------------------------------
 %%% File    : clienttransaction.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : Client transaction.
+%%% Descrip.: Client transaction.
+%%%
+%%%           When you start a client transaction, it will try to send
+%%%           the request to the destination you have specified, and
+%%%           send responses to the Pid you tell it to (Parent
+%%%           argument to start()). Parent should expect to receive
+%%%           the following signals :
+%%%
+%%%           {clienttransaction_terminating, Pid, Branch}
+%%%           {branch_result, Pid, Branch, SipState, Response}
+%%%
+%%%               Pid      = pid(), this client transactions pid
+%%%               Branch   = string(), the SIP branch used by this
+%%%                          client transaction
+%%%               SipState = atom(), current SIP state
+%%%               Response = response record() | {Status, Reason} for
+%%%                          generated responses
+%%%                 Status = integer(), SIP status code
+%%%                 Reason = string(), SIP reason phrase
+%%%
+%%%           You can tell the client transaction to terminate
+%%%           gracefully by using gen_server:cast() to send it a
+%%%
+%%%           {cancel, Msg, ExtraHeaders}
 %%%
 %%% Created : 06 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -15,7 +38,7 @@
 %%--------------------------------------------------------------------
 %% External exports
 -export([
-	 start/6,
+	 start_link/6,
 	 test/0
 	]).
 
@@ -27,17 +50,20 @@
 	  socket_in,	%% sipsocket record(), the socket the original request was received on
 	  logtag,	%% string(), a prefix for logging
 	  socket,	%% sipsocket record(), the socket the transport layer sent out our request on
-	  report_to,	%% pid() | none, our parent ('none' in case this is for example an independent CANCEL)
+	  parent,	%% pid() of our parent, must be kept to recognize exit messages from it
+	  report_to,	%% pid() | none, the pid we should notify of progress ('none' in case this is
+	  		%%   for example an independent CANCEL)
 	  request,	%% request record(), the request we are supposed to send
-	  response,	%% response record(), the last(???) response we have received()
+	  response,	%% response record(), the last response we have received that caused a sipstate change
 	  sipstate,	%% atom(), trying|calling|proceeding|completed|terminated
 	  timerlist,	%% siptimerlist record(), list of timers managed by siptimer module
 	  dst,		%% sipdst record(), the destination for our request
 	  timeout,	%% integer(), our definite timeout before ending an INVITE - NB: only applies to INVITE
 	  cancelled=false,	%% atom(), true | false - have we cancelled ourselves? that is, sent out a CANCEL
-	  do_cancel=false,	%% atom(), true | false - have we been instructed to cancel?
+	  do_cancel=false,	%% atom(), {true, EH} | false - have we been instructed to cancel?
 	  tl_branch,	%% string(), the branch the transaction layer actually used when sending our request
-	  initialized=no	%% atom(), yes | no - have we finished our initialization process
+	  initialized=no,	%% atom(), yes | no - have we finished our initialization process
+	  cancel_pid	%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that transaction
 	 }).
 
 -include("sipsocket.hrl").
@@ -47,18 +73,28 @@
 %% External functions
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: start/6
-%% Descrip.: Starts the server
+%% Function: start_link(Request, SocketIn, Dst, Branch, Timeout,
+%%                      ReportTo)
+%% Descrip.: Starts the server, see init/1 description for details.
 %%--------------------------------------------------------------------
-start(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
-    gen_server:start(?MODULE, [Request, SocketIn, Dst, Branch, Timeout, Parent], []).
+start_link(Request, SocketIn, Dst, Branch, Timeout, ReportTo) ->
+    %% It is intentional to call gen_server:start(...) here even though
+    %% this function is called start_link. That is because of a 'problem'
+    %% with gen_servers in Erlang/OTP (at least R10B-2). If you use
+    %% gen_server:start_link(...) to start your gen_server, you won't be
+    %% able to trap 'EXIT' signals from the parent process, even if you
+    %% set process_flag(trap_exit, true)! We set up a link to this process
+    %% in the init/1 callback to achieve the same effect (although with
+    %% a bitter taste).
+    gen_server:start(?MODULE, [Request, SocketIn, Dst, Branch, Timeout, ReportTo, self()], []).
 
 %%====================================================================
 %% Server functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, SocketIn, Dst, Branch, Timeout, Parent])
+%% Function: init([Request, SocketIn, Dst, Branch, Timeout, ReportTo,
+%%                 Parent])
 %%           Request  = request record()
 %%           SocketIn = sipsocket record(), the default socket we
 %%                      should give to the transport layer for this
@@ -67,6 +103,7 @@ start(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
 %%                                       client transaction
 %%           Branch   = string()
 %%           Timeout  = integer(), timeout for INVITE transactions
+%%           ReportTo = pid() | none, where we should report events
 %%           Parent   = pid(), the process that initiated this client
 %% Descrip.: Initiates a client transaction handler. Set us up for
 %%           an immediate timeout signal in which we will try to send
@@ -76,7 +113,7 @@ start(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, SocketIn, Dst, Branch, Timeout, Parent])
+init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
        is_integer(Timeout), is_pid(Parent); Parent == none ->
     RegBranch = sipheader:remove_loop_cookie(Branch),
@@ -94,7 +131,13 @@ init([Request, SocketIn, Dst, Branch, Timeout, Parent])
 	    %% from the transactionstatelist when we exit).
 	    TPid = erlang:whereis(transaction_layer),
 	    true = link(TPid),
-	    case init2([Request, SocketIn, Dst, Branch, Timeout, Parent]) of
+	    %% Link to parent from init/1 instead of using gen_server:start_link to
+	    %% be able to trap EXIT signals from parent process. See comment in start_link
+	    %% above for more details.
+	    true = link(Parent),
+	    %% Trap exit signals so that we can cancel ongoing INVITEs if our parent dies
+	    process_flag(trap_exit, true),
+	    case init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
 		Reply ->
@@ -106,7 +149,7 @@ init([Request, SocketIn, Dst, Branch, Timeout, Parent])
 	    {stop, "Transaction layer failed"}
     end.
 
-init2([Request, SocketIn, Dst, Branch, Timeout, Parent])
+init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
        is_integer(Timeout), is_pid(Parent); Parent == none ->
     {Method, URI} = {Request#request.method, Request#request.uri},
@@ -118,7 +161,7 @@ init2([Request, SocketIn, Dst, Branch, Timeout, Parent])
     State = #state{branch=Branch, logtag=LogTag, socket=SocketIn, request=Request,
 		   sipstate=SipState, timerlist=siptimer:empty(),
 		   dst=Dst, socket_in=SocketIn, timeout=Timeout,
-		   report_to=Parent},
+		   parent=Parent, report_to=ReportTo},
     logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~s).",
 	       [LogTag, Method, sipurl:print(URI), sipdst:dst2str(Dst)]),
     %% Timeout 0 so that the spawned process immediately gets a timeout signal
@@ -142,7 +185,7 @@ handle_call(Request, From, State) ->
     LogTag = State#state.logtag,
     logger:log(error, "~s: Client transaction received unknown gen_server call :~n~p",
 	       [LogTag, Request]),
-    check_quit({reply, {error, "unknown gen_server call", State}}, From).
+    check_quit({reply, {error, "unknown gen_server call"}, State}, From).
 
 
 %%--------------------------------------------------------------------
@@ -176,24 +219,26 @@ handle_cast({sipmessage, Response, Origin, _LogStr}, State) when is_record(Respo
     check_quit({noreply, NewState});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({cancel, Msg}, State)
-%%           Msg = string()
+%% Function: handle_cast({cancel, Msg, ExtraHeaders}, State)
+%%           Msg          = string()
+%%           ExtraHeaders = list() of {key, value} tuple() with extra
+%%                          headers that should be included in the
+%%                          CANCEL we send (if we send one).
 %% Descrip.: We have been asked to cancel. Do so if we are not already
 %%           cancelled. 'Doing so' means start an independent CANCEL
 %%           client transaction, and mark ourselves as cancelled.
-%% Returns : {noreply, State}          |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_cast({cancel, Msg}, State=#state{cancelled=true}) ->
+handle_cast({cancel, Msg, _ExtraHeaders}, State=#state{cancelled=true}) ->
     LogTag = State#state.logtag,
     logger:log(debug, "~s: Ignoring signal to cancel (~s) when in SIP-state '~p', I am already cancelled.",
 	       [LogTag, Msg, State#state.sipstate]),
     check_quit({noreply, State});
-handle_cast({cancel, Msg}, State=#state{cancelled=false}) ->
+handle_cast({cancel, Msg, ExtraHeaders}, State=#state{cancelled=false}) ->
     LogTag = State#state.logtag,
     logger:log(debug, "~s: Branch requested to cancel (~s) when in SIP-state '~p'",
 	       [LogTag, Msg, State#state.sipstate]),
-    NewState = cancel_request(State),
+    NewState = cancel_request(State, ExtraHeaders),
     check_quit({noreply, NewState});
 
 %%--------------------------------------------------------------------
@@ -214,7 +259,18 @@ handle_cast({expired}, State) ->
 %%--------------------------------------------------------------------
 handle_cast({quit}, State) ->
     logger:log(debug, "~s: Received signal to quit", [State#state.logtag]),
-    check_quit({stop, normal, State}).
+    check_quit({stop, normal, State});
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Msg, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_cast(Msg, State) ->
+    LogTag = State#state.logtag,
+    logger:log(error, "~s: Client transaction received unknown gen_server cast :~n~p",
+	       [LogTag, Msg]),
+    check_quit({noreply, State}).
 
 
 %%--------------------------------------------------------------------
@@ -268,6 +324,53 @@ handle_info({siptimer, TRef, TDesc}, State) ->
 handle_info(timeout, #state{initialized=no}=State) ->
     {noreply, initiate_request(State#state{initialized=yes})};
 
+%%--------------------------------------------------------------------
+%% Function: handle_info({'EXIT', Pid, Reason}, State)
+%%           Pid    = pid()
+%%           Reason = normal | term()
+%% Descrip.: Handle exit signals from the processes we are linked to.
+%%           If we are an INVITE transction and our parent exits with
+%%           anything other than 'normal', we cancel ourselves if we
+%%           haven't completed yet.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_info({'EXIT', Pid, Reason}, #state{parent=Parent}=State) when Pid == Parent ->
+    LogTag = State#state.logtag,
+    Request = State#state.request,
+    Method = Request#request.method,
+    NewState1 = case should_cancel_on_parent_exit(Method, State) of
+		    true ->
+			URI = Request#request.uri,
+			logger:log(normal, "~s: My parent (~p) exited, cancelling myself (~s ~p)",
+				   [LogTag, Parent, Method, sipurl:print(URI)]),
+			cancel_request(State);
+		    false ->
+			logger:log(debug, "~s: My parent (~p) exited, but this client transaction can't (or shouldn't) "
+				   "be cancelled now", [LogTag, Parent]),
+			State
+		end,
+    
+    %% clear report_to if it was the same as our parent (most oftenly is)
+    NewState2 = case State#state.report_to of
+		   Parent ->
+		       NewState1#state{report_to=none};
+		   _ ->
+		       NewState1
+	       end,
+
+    %% Log reason for parent exit, if it wasn't 'normal'
+    case Reason of
+	normal -> ok;
+	_ ->
+	    logger:log(debug, "~s: Parent ~p exit reason : ~p", [LogTag, Parent, Reason])
+    end,
+
+    check_quit({noreply, NewState2});
+
+handle_info({'EXIT', Pid, normal}, #state{cancel_pid=CancelPid}=State) when Pid == CancelPid ->
+    %% the CANCEL client transaction we had started has now exited, just ignore signal
+    check_quit({noreply, State});
+
 handle_info(Info, State) ->
     logger:log(error, "Client transaction: Received unknown gen_server info :~n~p", [Info]),
     check_quit({noreply, State}).
@@ -279,41 +382,18 @@ handle_info(Info, State) ->
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
-    %% XXX what to do on siperror? No meaning in sending that to our peer. Should be
-    %% reported to report_to as if we received a 5xx perhaps?
     LogTag = State#state.logtag,
-    case Reason of
-    	{'EXIT', E} ->
-	    logger:log(error, "=ERROR REPORT==== from clienttransaction :~n~p", [E]);
-	{siperror, Status, Reason} ->
-	    logger:log(error, "Client transaction threw an exception (~p ~s) - handling of that is not implemented",
-		       [Status, Reason]);
-	{siperror, Status, Reason, _ExtraHeaders} ->
-	    logger:log(error, "Client transaction threw an exception (~p ~s) - handling of that is not implemented",
-		       [Status, Reason]);
-	_ ->
-	    SipState = State#state.sipstate,
-	    case Reason of
-		normal ->
-		    logger:log(debug, "~s: Client transaction terminating in state ~p", [LogTag, SipState]);
-		_ ->
-		    logger:log(error, "~s: Client transaction terminating in state ~p, reason : ~p",
-			       [LogTag, SipState, Reason])
-	    end,
-	    true
-    end,
     ReportTo = State#state.report_to,
     case util:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} ->
 	    logger:log(debug, "~s: Informing my parent (~p) that I am terminating now",
 		       [LogTag, ReportTo]),
-	    Branch = State#state.branch,
-	    ReportTo ! {clienttransaction_terminating, {Branch, self()}};
+	    ReportTo ! {clienttransaction_terminating, self(), State#state.branch};
 	{false, _} ->
 	    logger:log(debug, "~s: Client transaction orphaned ('~p' not alive) - can't "
 		       "inform parent that I am terminating now", [LogTag, ReportTo])
     end,
-    ok.
+    Reason.
 
 
 %%--------------------------------------------------------------------
@@ -329,8 +409,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: check_quit(Res, From)
-%%           Res  = term(), gen_server:cast() return value
+%% Function: check_quit(Res)
+%%           check_quit(Res, From)
+%%           Res  = term(), gen_server:call/cast/info() return value
 %%           From = term(), gen_server from-value | none
 %% Descrip.: Extract the state record() from Res, and check if it's
 %%           sipstate is 'terminated'. If it is then turn Res into a
@@ -338,6 +419,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%           gen_server:reply() first.
 %% Returns : {noreply, State}          |
 %%           {stop, Reason, State}            (terminate/2 is called)
+%% Note    : Not all variants of gen_server call/cast/info return
+%%           values are covered in these functions - only the ones we
+%%           actually use!
 %%--------------------------------------------------------------------
 check_quit(Res) ->
     check_quit(Res, none).
@@ -346,22 +430,20 @@ check_quit(Res) ->
 %% if so return {stop ...}
 check_quit(Res, From) ->
     case Res of
-	{_, _, State, _} when is_record(State, state) ->
+	{stop, _Reason, State} when is_record(State, state) ->
 	    check_quit2(Res, From, State);
-	{_, _, State} when is_record(State, state) ->
+	{reply, _Reply, State} when is_record(State, state) ->
 	    check_quit2(Res, From, State);
-	{_, State, _} when is_record(State, state) ->
-	    check_quit2(Res, From, State);
-	{_, State} when is_record(State, state) ->
-	    check_quit2(Res, From, State);
-	_ ->
-	    Res
+	{noreply, State} when is_record(State, state) ->
+	    check_quit2(Res, From, State)
     end.
 
 check_quit2(Res, From, #state{sipstate=terminated}=State) ->
     RStr = case State#state.response of
 	       Re when is_record(Re, response) ->
 		   io_lib:format("last received response was ~p ~s", [Re#response.status, Re#response.reason]);
+	       {Status, Reason} ->
+		   lists:concat(["created response ", Status, " ", Reason]);
 	       undefined ->
 		   "no responses received"
 	   end,
@@ -371,22 +453,17 @@ check_quit2(Res, From, #state{sipstate=terminated}=State) ->
     logger:log(debug, "~s: Client transaction (~s ~s) terminating in state '~p', ~s",
 	       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
     %% If there was a reply to be sent, we must send that before changing Res into
-    %% a stop.
-    NewReply = case Res of
-		   {reply, Reply, _, _} ->
-		       send_reply(Reply, From, State),
-		       {stop, normal, State};
-		   {reply, Reply, _} ->
-		       send_reply(Reply, From, State),
-		       {stop, normal, State};
-		   {stop, _, _, _}  ->
-		       Res;
-		   {stop, _, _} ->
-		       Res;
-		   _ ->
-		       {stop, normal, State}
-	       end,
-    NewReply;
+    %% a stop. Only include clauses for variants we actually use.
+    NewRes = case Res of
+		 {reply, Reply, _State} ->
+		     send_reply(Reply, From, State),
+		     {stop, normal, State};
+		 {stop, _Reason, _State} ->
+		     Res;
+		 _ ->
+		     {stop, normal, State}
+	     end,
+    NewRes;
 check_quit2(Res, _From, _State) ->
     %% sipstate was not 'terminated'
     Res.
@@ -556,21 +633,19 @@ get_request_resend_timeout(_Method, OldTimeout, State) when State == trying; Sta
 %%--------------------------------------------------------------------
 process_received_response(Response, State) when is_record(State, state), is_record(Response, response) ->
     OldSipState = State#state.sipstate,
-    Request = State#state.request,
-    Method = Request#request.method,
+    Method = (State#state.request)#request.method,
     Status = Response#response.status,
     %% Stop resending of request as soon as possible.
     NewState1 = stop_resendrequest_timer(State),
     NewState2 =
 	case Method of
-	    "INVITE" ->
+	    "INVITE" when Status >= 100, Status =< 199 ->
+		%% Cancel/reset INVITE request expire timer when receiving provisional responses
+		update_invite_expire(Status, NewState1);
+	    "INVITE" when Status >= 300, Status =< 699  ->
 		%% ACK any 3xx, 4xx, 5xx and 6xx responses if they are responses to an INVITE
 		%% and we are in either 'calling' or 'proceeding' state
-		NewState2_1 = ack_non_1xx_or_2xx_response_to_invite(Method, Response, NewState1),
-
-		%% Cancel/reset INVITE request expire timer when receiving provisional responses
-		NewState2_2 = update_invite_expire(Status, NewState2_1),
-		NewState2_2;
+		ack_non_1xx_or_2xx_response_to_invite(Response, NewState1);
 	    _ ->
 		NewState1
 	end,
@@ -660,14 +735,14 @@ act_on_new_sipstate2(proceeding, BranchAction, State) when is_record(State, stat
 	    Response = State#state.response,
 	    {Status, Reason} = {Response#response.status, Response#response.reason},
 	    case State#state.do_cancel of
-		true ->
+		{true, ExtraHeaders} ->
 		    logger:log(debug, "~s: A previously cancelled transaction (INVITE ~s) "
 			       "entered state 'proceeding' upon receiving a '~p ~s' response. "
 			       "CANCEL ourselves!", [LogTag, sipurl:print(URI), Status, Reason]),
 		    NewState1 = State#state{do_cancel=false},
-		    NewState2 = cancel_request(NewState1),
+		    NewState2 = cancel_request(NewState1, ExtraHeaders),
 		    {NewState2, ignore};
-		_ ->
+		false ->
 		    {State, BranchAction}
 	    end;
 	_ ->
@@ -761,6 +836,8 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
     LogTag = State#state.logtag,
     Response = State#state.response,
     {Status, Reason} = {Response#response.status, Response#response.reason},
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
     ReportTo = State#state.report_to,
     case util:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} when is_pid(ReportTo) ->
@@ -768,16 +845,21 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 		       [LogTag, ReportTo, Status, Reason]),
 	    Branch = State#state.branch,
 	    SipState = State#state.sipstate,
-	    ReportTo ! {branch_result, Branch, SipState, Response};
+	    ReportTo ! {branch_result, self(), Branch, SipState, Response},
+	    if
+		Status >= 200 ->
+		    %% Make event out of final response
+		    L = [{dst, sipdst:dst2str(State#state.dst)}],
+		    event_handler:uac_result(Branch, Method, URI, Status, Reason, L);
+		true -> true
+	    end;
+	{false, undefined} ->
+	    %% ReportTo == undefined, we never had a parent (typically this was a
+	    %% fire-and-forget CANCEL transaction)
+	    logger:log(debug, "~s: Independent client transaction terminating, final response : '~p ~s'",
+		       [LogTag, Status, Reason]);
 	{false, _} ->
-	    %% XXX is this an error? Not for independent CANCEL transactions, but
-	    %% maybe for others?
-	    LogLevel =
-		case (State#state.request)#request.method of
-		    "CANCEL" -> debug;
-		    _ -> error
-		end,
-	    logger:log(LogLevel, "~s: Client transaction orphaned ('~p' not alive) - not sending "
+	    logger:log(error, "~s: Client transaction orphaned ('~p' not alive) - not sending "
 		       "response '~p ~s' to anyone", [LogTag, ReportTo, Status, Reason])
     end,
     State.
@@ -962,32 +1044,13 @@ initiate_request(State) when is_record(State, state) ->
 	    %% transport error, generate 503 Service Unavailable
 	    logger:log(normal, "~s: Transport layer failed sending ~s ~s to ~s, pretend we got an "
 		       "'503 Service Unavailable'", [LogTag, Method, sipurl:print(URI), SocketDstStr]),
-	    init_fake_request_response(503, "Service Unavailable", State)
+	    fake_request_response(503, "Service Unavailable", State)
     end.
-
-%%--------------------------------------------------------------------
-%% Function: init_fake_request_response(Status, Reason, State)
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%%           State  = state record()
-%% Descrip.: Fake receiving an error response. This variant is only
-%%           used from within initiate_request/1.
-%% Returns : NewState = state record()
-%% Notes   : XXX this function is probably not needed anymore since we
-%%           are no longer calling initiate_request() from init/1.
-%%--------------------------------------------------------------------
-init_fake_request_response(Status, Reason, State) when is_record(State, state) ->
-    NewState1 = fake_request_response(Status, Reason, State),
-    %% Since initiate_request() is called from our init() we can't terminate right now. Add a
-    %% timer that terminates this client transaction.
-    TDesc = lists:concat(["Terminate transaction that never started after fake response ", Status, " ", Reason]),
-    NewState = add_timer(1, TDesc, {terminate_transaction}, NewState1),
-    NewState.
 
 get_initial_resend_timer(Socket, T1) ->
     case sipsocket:is_reliable_transport(Socket) of
 	true -> 0;
-	_ -> T1
+	false -> T1
     end.
 
 add_timer(Timeout, Description, AppSignal, State) when is_record(State, state) ->
@@ -1009,24 +1072,16 @@ fake_request_response(Status, Reason, State) when is_record(State, state) ->
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = State#state.logtag,
-    Proto = case State#state.dst of
-		Dst when is_record(Dst, sipdst) ->
-		    Dst#sipdst.proto;
-		_ ->
-		    logger:log(error, "~s: Client transaction dst is malformed, defaulting to UDP SIP "
-			       "protocol for fake response ~p ~s", [LogTag, Status, Reason]),
-		    udp
-	    end,
     logger:log(debug, "~s: ~s ~s - pretend we got an '~p ~s' (and enter SIP state terminated)",
 	       [LogTag, Method, sipurl:print(URI), Status, Reason]),
-    FakeResponse = siprequest:make_response(Status, Reason, "", [], [], Proto, Request),
+    FakeResponse = {Status, Reason},
     ReportTo = State#state.report_to,
     case util:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} ->
 	    logger:log(debug, "~s: Client transaction forwarding fake response '~p ~s' to ~p",
 		       [LogTag, Status, Reason, ReportTo]),
 	    Branch = State#state.branch,
-	    ReportTo ! {branch_result, Branch, terminated, FakeResponse};
+	    ReportTo ! {branch_result, self(), Branch, terminated, FakeResponse};
 	{false, _} ->
 	    logger:log(debug, "~s: Client transaction orphaned ('~p' not alive) - not sending "
 		       "fake response '~p ~s' to anyone", [LogTag, ReportTo, Status, Reason])
@@ -1094,7 +1149,11 @@ terminate_transaction(State) when is_record(State, state) ->
 
 %%--------------------------------------------------------------------
 %% Function: cancel_request(State)
-%%           State = state record()
+%%           cancel_request(State, ExtraHeaders)
+%%           State        = state record()
+%%           ExtraHeaders = list() of {key, value} tuple() with extra
+%%                          headers that should be included in the
+%%                          CANCEL we send (if we send one).
 %% Descrip.: We have been asked to cancel. Cancel is tricky business,
 %%           if we are still in state 'calling' we have to just mark
 %%           ourselves as cancelled and then wait for a 1xx to arrive
@@ -1103,6 +1162,9 @@ terminate_transaction(State) when is_record(State, state) ->
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 cancel_request(State) when is_record(State, state) ->
+    cancel_request(State, []).
+
+cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraHeaders) ->
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = State#state.logtag,
@@ -1116,7 +1178,7 @@ cancel_request(State) when is_record(State, state) ->
 		    logger:log(debug, "~s: Stopping resend of INVITE ~s, but NOT starting CANCEL client transaction " ++
 			       "right now since we are in state 'calling'", [LogTag, sipurl:print(URI)]),
 		    NewState2 = stop_resendrequest_timer(NewState1),
-		    NewState3 = NewState2#state{do_cancel=true},
+		    NewState3 = NewState2#state{do_cancel={true, ExtraHeaders}},
 		    NewState3;
 		proceeding ->
 		    logger:log(debug, "~s: Stopping resends of INVITE ~s and starting a CANCEL client transaction",
@@ -1188,12 +1250,13 @@ start_cancel_transaction(State) when is_record(State, state) ->
     %% XXX is the 32 * T1 correct for CANCEL?
     case transactionlayer:start_client_transaction(CancelRequest, Socket, Dst, Branch, 32 * T1, none) of
 	P when is_pid(P) ->
-	    logger:log(debug, "~s: Started CANCEL client transaction with pid ~p", [LogTag, P]);
+	    logger:log(debug, "~s: Started CANCEL client transaction with pid ~p", [LogTag, P]),
+	    NewState#state{cancel_pid=P};
 	{error, E} ->
 	    %% XXX what to do here?
-	    logger:log(error, "~s: Failed starting CANCEL client transaction : ~p", [LogTag, E])
-    end,
-    NewState.
+	    logger:log(error, "~s: Failed starting CANCEL client transaction : ~p", [LogTag, E]),
+	    NewState
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: update_invite_expire(Status, State)
@@ -1222,9 +1285,7 @@ update_invite_expire(Status, State) when is_record(State, state), Status >= 101,
 	    NewTimerList = siptimer:reset_timers(InviteExpireTimerList, State#state.timerlist),
 	    NewState = State#state{timerlist=NewTimerList},
 	    NewState
-    end;
-update_invite_expire(_Status, State) ->
-    State.
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: ack_non_1xx_or_2xx_response_to_invite(Method, Response,
@@ -1236,21 +1297,7 @@ update_invite_expire(_Status, State) ->
 %%           response received was a 3xx, 4xx, 5xx or 6xx.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-%%
-%% Status >= 100, =< 299
-%%
-ack_non_1xx_or_2xx_response_to_invite("INVITE", #response{status=Status}=Response, State)
-  when is_record(State, state), Status >= 100, Status =< 299 ->
-    LogTag = State#state.logtag,
-    Request = State#state.request,
-    URI = Request#request.uri,
-    logger:log(debug, "~s: Not ACK-ing 1xx or 2xx response to INVITE ~s: ~p ~s",
-	       [LogTag, sipurl:print(URI), Status, Response#response.reason]),
-    State;
-%%
-%% Status >= 300, =< 699
-%%
-ack_non_1xx_or_2xx_response_to_invite("INVITE", #response{status=Status}=Response, State)
+ack_non_1xx_or_2xx_response_to_invite(#response{status=Status}=Response, State)
   when is_record(State, state), Status >= 300, Status =< 699 ->
     LogTag = State#state.logtag,
     Request = State#state.request,
@@ -1264,7 +1311,9 @@ ack_non_1xx_or_2xx_response_to_invite("INVITE", #response{status=Status}=Respons
 %% Function: generate_ack(Response, State)
 %%           Response = response record()
 %%           State    = state record()
-%% Descrip.: Send an ACK.
+%% Descrip.: Send an ACK. We only do this to non-2xx final responses
+%%           when our original request was an INVITE. This function
+%%           will not be called unless this is an INVITE UAC.
 %% Returns : NewState = state record()
 %% Note    : We do not set up any timers for retransmission since if
 %%           this ACK is lost we will receive a retransmitted response
@@ -1273,22 +1322,8 @@ ack_non_1xx_or_2xx_response_to_invite("INVITE", #response{status=Status}=Respons
 %%           as per section 13.2.2.4 (2xx Responses) of RFC3261 that
 %%           is handled by the UAC core, NOT the transaction layer.
 %%--------------------------------------------------------------------
-%%
-%% Status >= 100, =< 199
-%%
 generate_ack(#response{status=Status}=Response, State)
-  when is_record(State, state), Status >= 100, Status =< 199 ->
-    LogTag = State#state.logtag,
-    %% XXX when running in UAC mode (not proxy), we might want to
-    %% generate a PRACK here or should that be done by the TU (application)?
-    logger:log(debug, "~s: Not ACK-ing 1xx response '~p ~s'.",
-	       [LogTag, Status, Response#response.reason]);
-
-%%
-%% Status >= 200, =< 699
-%%
-generate_ack(#response{status=Status}=Response, State)
-  when is_record(State, state), Status >= 200, Status =< 699 ->
+  when is_record(State, state), Status >= 300, Status =< 699 ->
     Request = State#state.request,
     {URI, Header} = {Request#request.uri, Request#request.header},
     RHeader = Response#response.header,
@@ -1319,6 +1354,22 @@ generate_ack(#response{status=Status}=Response, State)
     ACKRequest = siprequest:set_request_body(#request{method="ACK", uri=URI, header=SendHeader}, <<>>),
     transportlayer:send_proxy_request(Socket, ACKRequest, Dst, ["branch=" ++ Branch]),
     ok.
+
+%%--------------------------------------------------------------------
+%% Function: should_cancel_on_parent_exit(Method, State)
+%%           Method = list(), our SIP request method
+%%           State  = state record()
+%% Descrip.: Check if an abnormal exit of our parent should lead to
+%%           us cancelling now.
+%% Returns : true | false
+%% Note    : Perhaps we shouldn't require our parent to not crash if
+%%           report_to is not the same as parent? XXX
+%%--------------------------------------------------------------------
+should_cancel_on_parent_exit("INVITE", #state{sipstate=SipState, cancelled=false, do_cancel=false})
+  when SipState == proceeding; SipState == calling ->
+    true;
+should_cancel_on_parent_exit(_Method, State) when is_record(State, state) ->
+    false.
 
 %%====================================================================
 %% Test functions
@@ -1379,7 +1430,7 @@ test() ->
     {ignore, completed} = received_response_state_machine("INVITE", 400, completed),
     {ignore, completed} = received_response_state_machine("INVITE", 500, completed),
     {ignore, completed} = received_response_state_machine("INVITE", 600, completed),
-    
+
     io:format("test: received_response_state_machine/3 INVITE - 5~n"),
     %% When in either the "Calling" or "Proceeding" states, reception of a
     %% 2xx response MUST cause the client transaction to enter the
@@ -1420,7 +1471,7 @@ test() ->
     {tell_parent, proceeding} = received_response_state_machine("OPTIONS", 199, trying),
 
     io:format("test: received_response_state_machine/3 non-INVITE - 2~n"),
-    %% If a final response (status codes 200-699) is received while in the 
+    %% If a final response (status codes 200-699) is received while in the
     %% "Trying" state, the response MUST be passed to the TU, and the client
     %% transaction MUST transition to the "Completed" state.
     {tell_parent, completed} = received_response_state_machine("OPTIONS", 200, trying),
@@ -1488,5 +1539,5 @@ test() ->
     4000 = get_request_resend_timeout("OPTIONS", 1000, proceeding),
     4000 = get_request_resend_timeout("OPTIONS", 2000, proceeding),
     4000 = get_request_resend_timeout("OPTIONS", 4000, proceeding),
-    
+
     ok.
