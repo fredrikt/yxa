@@ -80,11 +80,11 @@ send_proxy_response(Socket, Response)
 %%           {ok, SipSocket, UsedBranch} |
 %%           Reason     = string()
 %%           SipSocket  = sipsocket record(), the socket used
-%%           UsedBranch = string(), the complete branch finally used 
+%%           UsedBranch = string(), the complete branch finally used
 %% Note    : To use this function, you should already have called
 %%           check_proxy_request (directly or indirectly).
 %%--------------------------------------------------------------------
-send_proxy_request(Socket, Request, Dst, ViaParameters) 
+send_proxy_request(Socket, Request, Dst, ViaParameters)
   when is_record(Socket, sipsocket); Socket == none, is_record(Request, request), is_record(Dst, sipdst) ->
     IP = Dst#sipdst.addr,
     Port = Dst#sipdst.port,
@@ -101,25 +101,33 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
 	    NewHeader1 = siprequest:proxy_add_via(Header, OrigURI, ViaParameters, Proto),
 	    NewHeader2 = siprequest:fix_content_length(NewHeader1, Body),
 	    BinLine1 = list_to_binary([Method, " ", sipurl:print(Dst#sipdst.uri), " SIP/2.0"]),
-	    BinMsg = siprequest:binary_make_message(BinLine1, NewHeader2, list_to_binary(Body)),
+	    BinMsg = siprequest:binary_make_message(BinLine1, NewHeader2, Body),
 	    SendRes = sipsocket:send(SipSocket, Proto, IP, Port, BinMsg),
 	    case SendRes of
 		ok ->
-		    logger:log(debug, "Siprequest (transport layer) : sent request(dst=~s) :~n~s~n",
-			       [DestStr, binary_to_list(BinMsg)]),
+		    %% Log the request we just sent out. Since we have it in binary format already,
+		    %% and list operations on big lists are quite expensive, we avoid making it a
+		    %% list that would then be made a binary again by the logger, by using the
+		    %% special logger:log_iolist() here.
+		    LogPrefix1 = <<"Siprequest (transport layer) : sent request(">>,
+		    LogPrefix2 = io_lib:format("~p bytes, dst=~s) :", [size(BinMsg), DestStr]),
+		    logger:log_iolist(debug, [LogPrefix1, LogPrefix2, 10, BinMsg, 10]),
 		    TopVia = sipheader:topvia(NewHeader2),
 		    UsedBranch = lists:flatten(sipheader:get_via_branch_full(TopVia)),
 		    {ok, SipSocket, UsedBranch};
 		{error, E} ->
-		    logger:log(debug, "Siprequest (transport layer) : Failed sending message to ~p:~s:~p, error ~p",
-			       [Proto, IP, Port, E]),
+		    %% Don't log the actual request when we fail, since that would fill up our logs
+		    %% with requests failed for one destination (TCP for example) and then succeeding
+		    %% for another (UDP for example).
+		    logger:log(debug, "Siprequest (transport layer) : Failed sending request (~p bytes) to ~p:~s:~p, error ~p",
+			       [size(BinMsg), Proto, IP, Port, E]),
 		    {error, E}
 	    end
     end.
 
 send_result(RequestHeader, Socket, Body, Status, Reason)
   when is_record(RequestHeader, keylist), is_record(Socket, sipsocket); Socket == none,
-       is_list(Body), is_integer(Status), is_list(Reason) ->
+       is_binary(Body); is_list(Body), is_integer(Status), is_list(Reason) ->
     Response1 = #response{status=Status, reason=Reason,
 			  header=siprequest:standardcopy(RequestHeader, [])},
     Response = siprequest:set_response_body(Response1, Body),
@@ -127,7 +135,7 @@ send_result(RequestHeader, Socket, Body, Status, Reason)
 
 send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
   when is_record(RequestHeader, keylist), is_record(Socket, sipsocket); Socket == none,
-       is_list(Body), is_integer(Status), is_list(Reason), is_record(ExtraHeaders, keylist) ->
+       is_binary(Body); is_list(Body), is_integer(Status), is_list(Reason), is_record(ExtraHeaders, keylist) ->
     Response1 = #response{status=Status, reason=Reason,
 			  header=siprequest:standardcopy(RequestHeader, ExtraHeaders)},
     Response = siprequest:set_response_body(Response1, Body),
@@ -158,7 +166,7 @@ stateless_proxy_request(LogTag, Request) when is_list(LogTag), is_record(Request
 %%           Socket   = sipsocket record()
 %%           Response = response record()
 %% Descrip.: Prepare to send a response out on a socket.
-%% Returns : Res = term(),
+%% Returns : Res = term(), result of send_response_to(...) |
 %%           {senderror, Reason}
 %%           Reason = string()
 %%--------------------------------------------------------------------
@@ -167,12 +175,7 @@ send_response(Socket, Response) when is_record(Response, response) ->
 				Response#response.header},
     case sipheader:topvia(Header) of
 	none ->
-	    logger:log(error, "Can't send response ~p ~s, no Via left.",
-		       [Status, Reason]),
-	    {senderror, "malformed response"};
-	error ->
-	    logger:log(error, "Failed getting top Via out of malformed response ~p ~s",
-		       [Status, Reason]),
+	    logger:log(error, "Transport layer: Can't send response '~p ~s', no Via left.", [Status, Reason]),
 	    {senderror, "malformed response"};
 	TopVia when is_record(TopVia, via) ->
 	    send_response_to(Socket, Response, TopVia)
@@ -193,16 +196,21 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
 					Response#response.header, Response#response.body},
     Header = siprequest:fix_content_length(HeaderIn, Body),
     BinLine1 = list_to_binary(["SIP/2.0 ", integer_to_list(Status), " ", Reason]),
-    BinMsg = siprequest:binary_make_message(BinLine1, Header, list_to_binary(Body)),
+    BinMsg = siprequest:binary_make_message(BinLine1, Header, Body),
     case sipdst:get_response_destination(TopVia) of
 	Dst when is_record(Dst, sipdst) ->
 	    case get_good_socket(DefaultSocket, Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port) of
 		SendSocket when is_record(SendSocket, sipsocket) ->
 		    CPid = SendSocket#sipsocket.pid,
 		    SendRes = sipsocket:send(SendSocket, Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, BinMsg),
-		    %% Do costly list operations _after_ we sent the response, to reduce latency
-		    logger:log(debug, "send response(~p bytes, sent to=~s (using ~p)) :~n~s~n",
-			       [size(BinMsg), sipdst:dst2str(Dst), CPid, binary_to_list(BinMsg)]),
+		    %% Log the response we just sent out. Log after send to minimize latency. Since we have it
+		    %% in binary format already, and list operations on big lists are quite expensive, we avoid
+		    %% making it a list that would then be made a binary again by the logger, by using the special
+		    %% logger:log_iolist() here.
+		    LogPrefix = io_lib:format("send response(~p bytes, sent to=~s (using ~p)) :",
+					      [size(BinMsg), sipdst:dst2str(Dst), CPid]),
+		    LogPrefixBin = list_to_binary([LogPrefix]),
+		    logger:log_iolist(debug, [LogPrefixBin, 10, BinMsg, 10]),
 		    case SendRes of
 			ok ->
 			    ok;
