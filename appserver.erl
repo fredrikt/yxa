@@ -241,7 +241,7 @@ create_session_actions(Request, Users, Actions) when is_record(Request, request)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_session_actions(Request, Logstr)
+%% Function: create_session_nomatch(Request, Logstr)
 %%           Request = request record()
 %%           LogStr  = string(), describes the request
 %% Descrip.: No actions found for this request. Check if we should
@@ -304,40 +304,42 @@ get_actions(URI, DoCPL) when is_record(URI, sipurl) ->
 	    nomatch;
 	Users when is_list(Users) ->
 	    logger:log(debug, "Appserver: Found user(s) ~p for URI ~s", [Users, sipurl:print(LookupURL)]),
-	    get_actions_users(Users, DoCPL)
+	    get_actions_users(Users, URI#sipurl.proto, DoCPL)
     end.
 
 %% part of get_actions() - single user, look for a CPL script
-get_actions_users([User], true) when is_list(User) ->
+get_actions_users([User], Proto, true) when is_list(User), is_list(Proto) ->
     case local:get_cpl_for_user(User) of
 	{ok, Graph} ->
 	    {cpl, User, Graph};
 	nomatch ->
-	    get_actions_users2([User])
+	    get_actions_users2([User], Proto)
     end;
 %% part of get_actions() - more than one user, or DoCPL == false
-get_actions_users(Users, _DoCPL) when is_list(Users) ->
-    get_actions_users2(Users).
+get_actions_users(Users, Proto, _DoCPL) when is_list(Users), is_list(Proto) ->
+    get_actions_users2(Users, Proto).
 
 %% part of get_actions(), more than one user or DoCPL was false
-get_actions_users2(Users) when is_list(Users) ->
-    case fetch_actions_for_users(Users) of
+get_actions_users2(Users, Proto) when is_list(Users), is_list(Proto) ->
+    case fetch_actions_for_users(Users, Proto) of
 	[] -> nomatch;
 	Actions when is_list(Actions) ->
-	    WaitAction = #sipproxy_action{action=wait, timeout=sipserver:get_env(appserver_call_timeout, 40)},
+	    WaitAction = #sipproxy_action{action=wait,
+					  timeout=sipserver:get_env(appserver_call_timeout, 40)},
 	    {Users, lists:append(Actions, [WaitAction])}
     end.
 
 %%--------------------------------------------------------------------
-%% Function: fetch_actions_for_users(Users)
+%% Function: fetch_actions_for_users(Users, Proto)
 %%           Users = list() of string(), list of SIP usernames
+%%           Proto = string(), OrigURI proto ("sips" | "sip" | ...)
 %% Descrip.: Construct a list of sipproxy_action record()s for a list
 %%           of users, based on the contents of the location database
 %%           and the KTH-only 'forwards' database. Just ignore the
 %%           'forwards' part.
 %% Returns : Actions = list() of sipproxy_action record()
 %%--------------------------------------------------------------------
-fetch_actions_for_users(Users) ->
+fetch_actions_for_users(Users, Proto) ->
     Actions = fetch_users_locations_as_actions(Users),
     case local:get_forwards_for_users(Users) of
 	nomatch ->
@@ -346,17 +348,13 @@ fetch_actions_for_users(Users) ->
 	    Actions;
 	Forwards when is_list(Forwards) ->
 	    %% Append forwards found to Actions
-	    forward_call_actions(Forwards, Actions)
+	    forward_call_actions(Forwards, Actions, Proto)
     end.
 
 %% part of fetch_actions_for_users/1
 fetch_users_locations_as_actions(Users) ->
-    case local:get_locations_for_users(Users) of
-	[] ->
-	    [];
-	Locations when is_list(Locations) ->
-	    locations_to_actions(Locations)
-    end.
+    Locations = local:get_locations_for_users(Users),
+    locations_to_actions(Locations).
 
 %%--------------------------------------------------------------------
 %% Function: locations_to_actions(Locations)
@@ -370,7 +368,7 @@ fetch_users_locations_as_actions(Users) ->
 %%           into a list of sipproxy_action record()s.
 %% Returns : Actions = list() of sipproxy_action record()
 %%--------------------------------------------------------------------
-locations_to_actions(L) ->
+locations_to_actions(L) when is_list(L) ->
     locations_to_actions2(L, []).
 
 locations_to_actions2([], Res) ->
@@ -378,29 +376,25 @@ locations_to_actions2([], Res) ->
 
 locations_to_actions2([#siplocationdb_e{address=URL} | T], Res) when is_record(URL, sipurl) ->
     Timeout = sipserver:get_env(appserver_call_timeout, 40),
-    CallAction = #sipproxy_action{action=call, requri=URL, timeout=Timeout},
+    CallAction = #sipproxy_action{action=call,
+				  requri=URL,
+				  timeout=Timeout},
     locations_to_actions2(T, [CallAction | Res]);
 
 locations_to_actions2([{URL, Timeout} | T], Res) when is_record(URL, sipurl), is_integer(Timeout) ->
-    CallAction = #sipproxy_action{action=call, requri=URL, timeout=Timeout},
+    CallAction = #sipproxy_action{action=call,
+				  requri=URL,
+				  timeout=Timeout},
     locations_to_actions2(T, [CallAction | Res]);
 
 locations_to_actions2([{wait, Timeout} | T], Res) ->
-    CallAction = #sipproxy_action{action=wait, timeout=Timeout},
-    locations_to_actions2(T, [CallAction | Res]).
+    WaitAction = #sipproxy_action{action=wait,
+				  timeout=Timeout},
+    locations_to_actions2(T, [WaitAction | Res]).
 
 %%--------------------------------------------------------------------
 %% Function: forward_call_actions(ForwardList, Actions)
-%%           ForwardList = list() of {Forwards, Timeout, Localring}
-%%                         tuple()
-%%              Forwards = list() of sipurl record(), forward
-%%                         destinations - call sipproxy_action
-%%              Timeout  = integer(), wait timeout - timeout for wait
-%%                         sipproxy_action placed after the call
-%%                         sipproxy_actions generated for Forwards
-%%             LocalRing = wether to ring on location database entrys
-%%                         at the same time as the forward dest-
-%%                         inations or not
+%%           ForwardList = list() of sipproxy_forward record()
 %%           DoCPL = true | false, do CPL or not
 %% Descrip.: This is something Magnus at KTH developed to suit their
 %%           needs of forwarding calls. He hasn't to this date
@@ -411,22 +405,59 @@ locations_to_actions2([{wait, Timeout} | T], Res) ->
 %% forward_call_actions/2 helps fetch_actions_for_users/1 make a list of
 %% sipproxy_action out of a list of forwards, a timeout value and
 %% "concurrent ringing or not" information
-forward_call_actions([{Forwards, Timeout, Localring}], Actions) when is_integer(Timeout) ->
-    FwdTimeout = sipserver:get_env(appserver_forward_timeout, 40),
-    Func = fun(Forward) ->
-    		   #sipproxy_action{action=call, requri=Forward, timeout=FwdTimeout}
-	   end,
-    ForwardActions = lists:map(Func, Forwards),
-    case Localring of
-	true ->
-	    WaitAction = #sipproxy_action{action=wait, timeout=Timeout},
+forward_call_actions([Fwd], Actions, Proto) when is_record(Fwd, sipproxy_forward), is_list(Actions),
+						 is_list(Proto) ->
+    {User, Forwards, Timeout, Localring} = {Fwd#sipproxy_forward.user,
+					    Fwd#sipproxy_forward.forwards,
+					    Fwd#sipproxy_forward.timeout,
+					    Fwd#sipproxy_forward.localring},
+    ForwardActions = forward_call_actions_create_calls(Forwards, Localring, User, Proto),
+    case {Localring, Timeout} of
+	{_, 0} ->
+	    %% No timeout in between original actions and ForwardActions
+	    lists:append(Actions, ForwardActions);
+	{true, _} ->
+	    WaitAction = #sipproxy_action{action  = wait,
+					  timeout = Timeout},
 	    lists:append(Actions, [WaitAction | ForwardActions]);
-	false ->
-	    case Timeout of
-		0 ->
-		    ForwardActions;
-		_ ->
-		    WaitAction = #sipproxy_action{action=wait, timeout=Timeout},
-		    lists:append(Actions, [WaitAction | ForwardActions])
-	    end
+	{false, _} ->
+	    WaitAction = #sipproxy_action{action  = wait,
+					  timeout = Timeout},
+	    lists:append(Actions, [WaitAction | ForwardActions])
     end.
+
+%% part of forward_call_actions/3 - turn a list of forward URIs into a list of sipproxy_action call records
+forward_call_actions_create_calls(Forwards, Localring, User, Proto) when is_list(Forwards),
+									 Localring == true ; Localring == false,
+									 is_list(Proto), is_list(User) ->
+    FwdTimeout = sipserver:get_env(appserver_forward_timeout, 40),
+    forward_call_actions_create_calls2(Forwards, FwdTimeout, Localring, User, Proto, []).
+
+forward_call_actions_create_calls2([H | T], Timeout, Localring, User, Proto, Res) when is_record(H, sipurl) ->
+    %% Preserve SIPS protocol if original request was SIPS
+    FwdURI = case {Proto, H#sipurl.proto} of
+		 {"sips", "sip"} ->
+		     %% Turn SIP URI into SIPS
+		     H#sipurl{proto="sips"};
+		 {"sips", _NonSip} ->
+		     %% ignore this forward since original request was SIPS and
+		     %% this forwards URI is not upgradeable to a SIPS URI
+		     logger:log(debug, "Appserver: Ignoring forward ~p since original request was a "
+				"SIPS request and I can't upgrade protocol ~p to SIPS",
+				[sipurl:print(H), H#sipurl.proto]),
+		     ignore;
+		 {_Proto1, _Proto2} ->
+		     H
+	     end,
+    case FwdURI of
+	ignore ->
+	    forward_call_actions_create_calls2(T, Timeout, Localring, User, Proto, Res);
+	_ ->
+	    This = #sipproxy_action{action  = call,
+				    requri  = FwdURI,
+				    timeout = Timeout,
+				    user    = User},
+	    forward_call_actions_create_calls2(T, Timeout, Localring, User, Proto, [This | Res])
+    end;
+forward_call_actions_create_calls2([], _Timeout, _Localring, _User, _Proto, Res) ->
+    lists:reverse(Res).
