@@ -21,6 +21,9 @@ print_parameters([]) ->
 print_parameters([A | B]) ->
     ";" ++ A ++ print_parameters(B).
 
+print({wildcard, Parameters}) ->
+    "*" ++ print_parameters(Parameters);
+
 print({none, none, Host, Port, Parameters}) ->
     "sip:" ++ print_hostport(Host, Port) ++ print_parameters(Parameters);
 
