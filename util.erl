@@ -1,6 +1,6 @@
 -module(util).
 -export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2,
-	 safe_is_process_alive/1, safe_signal/3]).
+	 safe_is_process_alive/1, safe_signal/3, remove_v6_brackets/1]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -127,3 +127,22 @@ safe_signal(LogTag, PidIn, Message) ->
 	{false, Pid} ->
 	    error
     end.
+
+remove_v6_brackets([$[ | H]) ->
+    %% Might be IPv6 formatted address, check if it ends with "]"
+    case string:substr(H, length(H), 1) of
+	"]" ->
+	    A = string:substr(H, 1, length(H) - 1),
+	    case inet_parse:ipv6_address(A) of
+		{ok, _} ->
+		    A;
+		_ ->
+		    %% what was between [ and ] was not a valid v6 address
+		    "[" ++ A ++ "]"
+	    end;
+	U ->
+	    %% No ending "]"
+	    "[" ++ H
+    end;
+remove_v6_brackets(H) ->
+    H.
