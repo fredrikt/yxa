@@ -319,21 +319,22 @@ enumalldomains2(Number, [Domain | Rest], Res) ->
 chooseenum([], Type) ->
     [];
 chooseenum([Elem | Rest], Type) when record(Elem, naptrrecord), Elem#naptrrecord.flags == "u", Elem#naptrrecord.replacement == "" ->
-    case Elem#naptrrecord.services of
+    Services = Elem#naptrrecord.services,
+    case Services of
 	Type ->
 	    %% exact match of Type
 	    [Elem | chooseenum(Rest, Type)];
-	OtherType ->
+	_ ->
+	    %% Does not match Type, see if Services begins with Type followed by a colon
 	    TypeColon = Type ++ ":",
-	    case string:substr(OtherType, 1, length(Type) + 1) of
+	    case string:substr(Elem#naptrrecord.services, 1, length(Type) + 1) of
 		TypeColon ->
 		    %% Type matches, but there is also a subtype (which we ignore)
 		    [Elem | chooseenum(Rest, Type)];
 		_ ->
+		    %% Services matches neither Type nor Type:
 		    chooseenum(Rest, Type)
-	    end;
-	_ ->
-	    chooseenum(Rest, Type)
+	    end
     end;
 chooseenum([H | Rest], Type) when record(H, naptrrecord), H#naptrrecord.flags /= "u" ->
     logger:log(debug, "Resolver: Skipping ENUM NAPTR because flags is not 'u' : ~p", [H]),
