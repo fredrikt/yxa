@@ -48,6 +48,7 @@
 %%--------------------------------------------------------------------
 
 -module(sipurl).
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -216,7 +217,7 @@
 parse([C1, C2, C3, C4 | RURL] = URLStr) ->
     case httpd_util:to_lower([C1,C2,C3,C4]) of
 	"sip:" ->
-	    case catch parse_url(RURL, URLStr) of
+	    case catch parse_url("sip", RURL) of
 		SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
 		_Error ->
 		    {unparseable, URLStr}
@@ -225,8 +226,9 @@ parse([C1, C2, C3, C4 | RURL] = URLStr) ->
 	    {unparseable, URLStr}
     end.
 
+%% URL = URL input without the proto: prefix ("sip:" that is)
 %% Returns : sipurl record() | throw() (if parse failed)
-parse_url(URL, URLStr) ->
+parse_url(Proto, URL) ->
     {User, Password, HostportParametersHeaders} =
 	case sipparse_util:split_fields(URL, $@) of
 	    {Userinfo, HostportParametersHeaderRest} ->
@@ -263,10 +265,10 @@ parse_url(URL, URLStr) ->
 
     case is_bnf_compliant_url(User, Password, Host, Port, Parameters) of
 	true ->
-	    new([{proto, "sip"}, {user, User}, {pass, Password}, {host, Host},
+	    new([{proto, Proto}, {user, User}, {pass, Password}, {host, Host},
 		 {port, Port}, {param, Parameterlist}]);
 	false ->
-	    {unparseable, URLStr}
+	    unparseable
     end.
 
 %% The parse functions are somewhat lax compared to the BNF specification so this
@@ -954,6 +956,16 @@ test() ->
     io:format("test: parse/1 - 9~n"),
     ParsedUrl9 = parse("sip:%3Alice:%3A@[1:1:1:1:2:2:2:2];transp%3b%3Bort=TCP"),
 
+    %% Parse url with quoted comma-separated lists as parameters
+    ParsedUrl10 = #sipurl{proto = "sip",
+			 user = "alice", pass = none,
+			 host = "example.org", port = none,
+			 param = ["foo=\"bar, baZ\""],
+			 param_pairs = url_param:to_norm(["foo=\"bar, baZ\""])
+			},
+    io:format("test: parse/1 - 9~n"),
+    ParsedUrl10 = parse("sip:alice@example.org;foo=\"bar, baZ\""),
+
     %% print(URL)
     %%--------------------------------------------------------------------
     %% test host
@@ -1048,17 +1060,17 @@ test() ->
     A3 = parse("sip:biloxi.com;transport=tcp;method=REGISTER"),
     B3 = parse("sip:biloxi.com;method=REGISTER;transport=tcp"),
     true = url_is_equal(A3, B3),
-						%     io:format("test: url_is_equal/2 - 3~n"),
-						%     A3 = parse("sip:biloxi.com;transport=tcp;method=REGISTER?to=sip:bob%40biloxi.com"),
-						%     B3 = parse("sip:biloxi.com;method=REGISTER;transport=tcp?to=sip:bob%40biloxi.com"),
-						%     true = url_is_equal(A3, B3),
+    %%     io:format("test: url_is_equal/2 - 3~n"),
+    %%     A3 = parse("sip:biloxi.com;transport=tcp;method=REGISTER?to=sip:bob%40biloxi.com"),
+    %%     B3 = parse("sip:biloxi.com;method=REGISTER;transport=tcp?to=sip:bob%40biloxi.com"),
+    %%     true = url_is_equal(A3, B3),
 
     %% equal, only different order on the header parameters
     %% XXX headers are currently not tested
-						%     io:format("test: url_is_equal/2 - 4~n"),
-						%     A4 = parse("sip:alice@atlanta.com?subject=project%20x&priority=urgent"),
-						%     B4 = parse("sip:alice@atlanta.com?priority=urgent&subject=project%20x"),
-						%     true = url_is_equal(A4, B4),
+    %%     io:format("test: url_is_equal/2 - 4~n"),
+    %%     A4 = parse("sip:alice@atlanta.com?subject=project%20x&priority=urgent"),
+    %%     B4 = parse("sip:alice@atlanta.com?priority=urgent&subject=project%20x"),
+    %%     true = url_is_equal(A4, B4),
 
     %% not equal, different usernames
     io:format("test: url_is_equal/2 - 5~n"),
@@ -1086,16 +1098,15 @@ test() ->
 
     %% not equal, different header component
     %% io:format("test: url_is_equal/2 - 9~n"),
-						%     A9 = parse("sip:carol@chicago.com"),
-						%     B9 = parse("sip:carol@chicago.com?Subject=next%20meeting"),
-						%     false = url_is_equal(A9, B9),
+    %%     A9 = parse("sip:carol@chicago.com"),
+    %%     B9 = parse("sip:carol@chicago.com?Subject=next%20meeting"),
+    %%     false = url_is_equal(A9, B9),
 
     %% not equal, different host
     io:format("test: url_is_equal/2 - 10~n"),
     A10 = parse("sip:bob@phone21.boxesbybob.com"),
     B10 = parse("sip:bob@192.0.2.4"),
     false = url_is_equal(A10, B10),
-
 
     ok.
 
@@ -1130,14 +1141,14 @@ is_mark($~) -> true;
 is_mark($*) -> true;
 is_mark($') -> true;
 is_mark($() -> true;
-	is_mark($)) -> true;
-	is_mark(_) -> false.
+is_mark($)) -> true;
+is_mark(_) -> false.
 
 is_unreserved(Char) ->
     sipparse_util:is_alphanum(Char) or is_mark(Char).
 
 is_param_unreserved($[) -> true;
-		    is_param_unreserved($]) -> true;
+is_param_unreserved($]) -> true;
 is_param_unreserved($/) -> true;
 is_param_unreserved($:) -> true;
 is_param_unreserved($&) -> true;
@@ -1158,7 +1169,7 @@ is_hexdig(Char) ->
     end.
 
 is_escaped([$%, H1, H2]) ->
-	    is_hexdig(H1) or is_hexdig(H2).
+    is_hexdig(H1) or is_hexdig(H2).
 
 %% 'true' if char is any non-escaped password char
 is_password_without_escape($&) -> true;
@@ -1186,16 +1197,16 @@ is_password("=" ++ Str) ->
     is_password(Str);
 is_password("+" ++ Str) ->
     is_password(Str);
-is_password("$" ++ Str) ->
+is_password("\$" ++ Str) ->
     is_password(Str);
 is_password("," ++ Str) ->
     is_password(Str);
 is_password([$%, C2, C3 | Str]) ->
-	     is_escaped([$%, C2, C3]) andalso is_password(Str);
-			 is_password([Char | Str]) ->
-				is_unreserved(Char) andalso is_password(Str);
-			 is_password(_) ->
-				false.
+    is_escaped([$%, C2, C3]) andalso is_password(Str);
+is_password([Char | Str]) ->
+    is_unreserved(Char) andalso is_password(Str);
+is_password(_) ->
+    false.
 
 %%--------------------------------------------------------------------
 %% Function: is_user(Str)
@@ -1219,7 +1230,7 @@ is_user([$%, C1, C2 | Str]) ->
 %% Function: is_parameters(Parameters)
 %%           Parameters = string()
 %% Descrip.: parse uri-parameter string, return true if there are no
-%%           duplicat ";" or "=" and all other chars are correct and
+%%           duplicate ";" or "=" and all other chars are correct and
 %%           properly escaped
 %% Returns : true | false
 %%--------------------------------------------------------------------
@@ -1230,7 +1241,7 @@ is_parameters(Parameters) ->
     Match = ";;",
     %% string:tokens in is_uri_parameters/1 below will consume several ";"
     %% in sucession and consider it as one separator, as sequences like
-    %% ";;" are ilegal, this is checked for hear instead
+    %% ";;" are illegal, this is checked for here instead
     case regexp:first_match(Parameters, Match) of
 	{match, _, _} -> false;
 	_ ->
@@ -1248,7 +1259,7 @@ is_uri_parameter(Str) ->
     Match = "==",
     %% string:tokens/2 below will consume several "==" in sucession
     %% and consider it as one separator, as sequences like
-    %% "==" are ilegal, this is checked for hear instead
+    %% "==" are illegal, this is checked for here instead
     case regexp:first_match(Str, Match) of
 	{match, _, _} -> false;
 	_ ->
@@ -1260,11 +1271,11 @@ is_uri_parameter(Str) ->
 	    end
     end.
 
-%% checks name or value string in uri-parameter for ilegal chars
+%% checks name or value string in uri-parameter for illegal chars
 %% returns 'false' if any are found
 is_paramchar_str([]) -> true;
 is_paramchar_str([$% | Str]) ->
-		  [C1, C2 | R] = Str,
-		  is_escaped([$%, C1, C2]) andalso is_paramchar_str(R);
-			      is_paramchar_str([Char | Str]) ->
-				     (is_param_unreserved(Char) or is_unreserved(Char)) andalso is_paramchar_str(Str).
+    [C1, C2 | R] = Str,
+    is_escaped([$%, C1, C2]) andalso is_paramchar_str(R);
+is_paramchar_str([Char | Str]) ->
+    (is_param_unreserved(Char) or is_unreserved(Char)) andalso is_paramchar_str(Str).
