@@ -1,6 +1,7 @@
 -module(siprequest).
 -export([send_redirect/4, process_register_isauth/3,
-	 send_auth_req/4, send_proxy_request/3, location_prio/1,
+	 send_auth_req/4, send_proxyauth_req/4,
+	 send_proxy_request/3, location_prio/1,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5]).
 
 send_response(Socket, Code, Text, Header, Body) ->
@@ -65,6 +66,15 @@ process_register_isauth(Header, Socket, {Phone, Location}) ->
 		   {"Expires", [Expire]}], "").
 
 send_auth_req(Header, Socket, Auth, Stale) ->
+    send_response(Socket, 401, "Authentication Required",
+		  [{"via", keylist:fetch("Via", Header)},
+		   {"From", keylist:fetch("From", Header)},
+		   {"To", keylist:fetch("To", Header)},
+		   {"Call-ID", keylist:fetch("Call-ID", Header)},
+		   {"CSeq", keylist:fetch("CSeq", Header)},
+		   {"WWW-Authenticate", sipheader:auth_print(Auth, Stale)}], "").
+
+send_proxyauth_req(Header, Socket, Auth, Stale) ->
     send_response(Socket, 407, "Proxy Authentication Required",
 		  [{"via", keylist:fetch("Via", Header)},
 		   {"From", keylist:fetch("From", Header)},
