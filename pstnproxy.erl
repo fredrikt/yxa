@@ -72,8 +72,12 @@ request(Method, URL, Header, Body, Socket) ->
     Newlocation = {User, none, "kth.se", none, []},
     siprequest:send_proxy_request(Header, Socket, {Method, Newlocation, Body}).
 
+proxyaddr() ->
+    {ok, Addr} = application:get_env(proxyaddr),
+    Addr.
+
 request2(Method, Phone, Header, Body, Socket) ->
-    Newlocation = {Phone, none, sipconfig:proxyaddr(), "5060", []},
+    Newlocation = {Phone, none, proxyaddr(), "5060", []},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     {Fromphone, _, _, _, _} = FromURI,
     Classdefs = classdefs(),
