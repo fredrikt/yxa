@@ -46,7 +46,9 @@
 		       clienttransaction,
 		       sipdst,
 		       tcp_receiver,
-		       targetlist
+		       targetlist,
+		       util,
+		       dnsutil
 		      ]).
 
 %%====================================================================
