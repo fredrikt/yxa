@@ -110,3 +110,33 @@
 -record(contact_param, {
 	  pairs
 	 }).
+
+%%--------------------------------------------------------------------
+%% dnsutil.erl records
+%%--------------------------------------------------------------------
+
+%% SRV entry lookup result
+-record(sipdns_srv, {
+	  proto,	%% tcp | udp | tls
+	  host,		%% string(), hostname
+	  port		%% integer()
+	  }).
+
+%% host-port lookup result
+-record(sipdns_hostport, {
+	  family,	%% inet | inet6
+	  addr,		%% string(), IPv4 or IPv6 address
+	  port		%% integer() | none
+	  }).
+
+%%--------------------------------------------------------------------
+%% siplocation.erl records
+%%--------------------------------------------------------------------
+
+%% Location DB entry
+-record(siplocationdb_e, {
+	  address,	%% string(), parseable with sipurl:parse(...)
+	  flags,	%% list() of {Name, Value}
+	  class,	%% atom(), static | dynamic
+	  expire	%% integer(), util:timestamp/0 time when this record expires
+	  }).
