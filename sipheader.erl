@@ -2,7 +2,7 @@
 -export([to/1, from/1, contact/1, via/1, via_print/1, to_print/1,
 	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1,
 	 httparg/1, cseq/1, cseq_print/1, via_params/1, contact_params/1,
-	 build_header/1, dict_to_param/1, param_to_dict/1]).
+	 build_header/1, dict_to_param/1, param_to_dict/1, dialogueid/1]).
 
 comma(String) ->
     comma([], String, false).
