@@ -249,8 +249,8 @@ fetch_actions_for_users(Users) ->
 	Forwards when list(Forwards) ->
 	    forward_call_actions(Forwards, Actions);
 	Unknown ->
-	    logger:log(error, "Appserver: Unexpected result from get_forwards_for_user(~p) in fetch_actions_for_users",
-		       [Users]),
+	    logger:log(error, "Appserver: Unexpected result from get_forwards_for_user(~p) in fetch_actions_for_users : ~p",
+		       [Users, Unknown]),
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
@@ -261,8 +261,8 @@ fetch_users_locations_as_actions(Users) ->
 	Locations when list(Locations) ->
 	    locations_to_actions(Locations);
 	Unknown ->
-	    logger:log(error, "Appserver: Unexpected result from get_locations_for_users(~p) in fetch_users_locations_as_actions",
-		       [Users]),
+	    logger:log(error, "Appserver: Unexpected result from get_locations_for_users(~p) in fetch_users_locations_as_actions : ~p",
+		       [Users, Unknown]),
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
@@ -373,7 +373,15 @@ process_messages(State) when record(State, state) ->
 			  %% Signals from our sipproxy process (ForkPid)
 			  %%
 			  {sipproxy_response, ForkPid, Branch, Response} when record(Response, response) ->
-			      NewState1 = handle_sipproxy_response(Response, State),
+			      NewState1 = case CallHandler of
+					      none ->
+						  {Status, Reason} = {Response#response.status, Response#response.reason},
+						  logger:log(error, "Appserver glue: Received a response (~p ~s) that I can't forward since CallHandler is 'none'",
+							     [Status, Reason]),
+						  State;
+					      _ ->
+						  handle_sipproxy_response(Response, State)
+					  end,
 			      {ok, NewState1};
 
 			  {sipproxy_all_terminated, ForkPid, FinalResponse} ->
@@ -394,7 +402,7 @@ process_messages(State) when record(State, state) ->
 						      {Status, Reason} ->
 							  logger:log(debug, "Appserver glue: received sipproxy_all_terminated - asking CallHandler ~p " ++
 								     "to answer ~p ~s", [CallHandler, Status, Reason]),
-							  transactionlayer:send_response_handler(CallHandler, Status, Reason),
+							  safe_callhandler_send_response(CallHandler, Status, Reason),
 							  %% XXX check that this is really a final response?
 							  State#state{completed=true};
 						      none ->
@@ -416,13 +424,13 @@ process_messages(State) when record(State, state) ->
 						      false ->
 							  Request = State#state.request,
 							  {Method, URI} = {Request#request.method, Request#request.uri},
-							  logger:log(debug, "Appserver glue: received no_more_actions when NOT cancelled " ++
+							  logger:log(debug, "Appserver glue: received sipproxy_no_more_actions when NOT cancelled " ++
 								     "(and not completed), responding 408 Request Timeout to original request ~s ~s",
 								     [Method, sipurl:print(URI)]),
-							  transactionlayer:send_response_handler(CallHandler, 408, "Request Timeout"),
+							  safe_callhandler_send_response(CallHandler, 408, "Request Timeout"),
 							  State#state{completed=true};
 						      _ ->
-							  logger:log(debug, "Appserver glue: received no_more_actions when already completed - ignoring"),
+							  logger:log(debug, "Appserver glue: received sipproxy_no_more_actions when already completed - ignoring"),
 							  State
 						  end
 					  end,
@@ -476,6 +484,13 @@ process_messages(State) when record(State, state) ->
 	    process_messages(NewState)
     end.
 
+safe_callhandler_send_response(none, Status, Reason) ->
+    logger:log(error, "Appserver glue: CallHandler is gone, can't ask it to send '~p ~s' response", [Status, Reason]),
+    error;
+safe_callhandler_send_response(TH, Status, Reason) ->
+    %% XXX do catch here since we are supposed to be safe?
+    transactionlayer:send_response_handler(TH, Status, Reason).
+
 %%
 %% Method is INVITE and we are already completed
 %%
@@ -514,9 +529,15 @@ handle_sipproxy_response(Response, State) when record(Response, response), recor
     {Method, URI} = {Request#request.method, Request#request.uri},
     {Status, Reason} = {Response#response.status, Response#response.reason},
     CallHandler = State#state.callhandler,
-    logger:log(debug, "Appserver glue: Forwarding response ~p ~s to ~s ~s to CallHandler ~p",
+    logger:log(debug, "Appserver glue: Forwarding response '~p ~s' to '~s ~s' to CallHandler ~p",
 	       [Status, Reason, Method, sipurl:print(URI), CallHandler]),
-    transactionlayer:send_proxy_response_handler(CallHandler, Response),
+    case transactionlayer:is_good_transaction(CallHandler) of
+	true ->
+	    transactionlayer:send_proxy_response_handler(CallHandler, Response);
+	false ->
+	    logger:log(error, "Appserver glue: Can't forward response '~p ~s' to bad CallHandler '~p'",
+		       [Status, Reason, CallHandler])
+    end,
     if
 	Status >= 200 ->
 	    State#state{completed=true};
