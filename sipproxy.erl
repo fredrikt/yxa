@@ -1,13 +1,58 @@
 -module(sipproxy).
--export([fork/9, process_request/7, process_branch_loop/7, start_UAS/9, generate_branch/0, get_branch/1]).
+-export([fork/8, generate_branch/0, get_branch/1]).
 
 % This is the start() function of sipproxy. sipproxy can presently
 % accomplish 'stateless forking'. It can follow an Actions list and
 % fork a request to several Targets.
 %
-% You start it by calling the start() method with a set of Actions. Currenly
+% You start it by calling the fork() method with a set of Actions. Currenly
 % supported actions are a list of 'call' and 'wait'. You can mix calls and
 % waits freely.
+
+fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Actions, Timeout, Targets) ->
+    % XXX detect Max-Forwards: 1 here instead of when sending the requests
+    % out since siprequest:send_proxy_request() would send the errors
+    % right back to the caller
+    {Method, ReqURI, Header, Body} = OrigRequest,
+    case Actions of
+	[{call, CallTimeout, CallURI} | Rest] ->
+	    logger:log(debug, "sipproxy: calling ~s with timeout ~p",
+		      [sipurl:print(CallURI), CallTimeout]),
+	    Branch = BranchBase ++ "-UAC" ++ integer_to_list(length(Targets) + 1),
+	    Request = {Method, CallURI, Header, Body},
+	    BranchPid = clientbranch:start(Branch, Socket, FromIP, self(), OrigRequest, Request, CallTimeout),
+	    NewTargets = targetlist:add_target(Branch, Request, BranchPid, calling, none, Targets),
+	    fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Rest, Timeout, NewTargets);
+	[{wait, Time} | Rest] ->
+	    logger:log(debug, "sipproxy: waiting ~p seconds", [Time]),
+	    case process_wait(Parent, OrigRequest, Socket, Targets,
+			      false, util:timestamp() + Time, calling) of
+		{discontinue, NewTargets} ->
+		    logger:log(debug, "sipproxy: discontinue processing"),
+		    fork(BranchBase, Parent, OrigRequest, FromIP, Socket, [], Timeout, NewTargets);
+		NewTargets ->
+		    fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Rest, Timeout, NewTargets)
+	    end;
+	[] ->
+	    case allterminated(Targets) of
+		true ->
+		    logger:log(debug, "sipproxy: All targets are terminated, staying alive to handle resends");
+		_ ->
+		    logger:log(normal, "sipproxy: Reached end of Actions-list for ~s ~s, cancelling pending targets.",
+		    		[Method, sipurl:print(ReqURI)]),
+		    cancel_pending_targets(Targets),
+		    Parent ! {no_more_actions}
+	    end,
+	    logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [Timeout]),
+	    process_wait(Parent, OrigRequest, Socket, Targets,
+			 false, util:timestamp() + Timeout, stayalive),
+	    Parent ! {callhandler_terminating, self()}
+    end.
+
+generate_branch() ->
+    {Megasec, Sec, Microsec} = now(),
+    "z9hG4bK-yxa-" ++ hex:to(Sec, 8) ++ hex:to(Microsec, 8).
+
 get_branch(Header) ->
     case sipheader:via(keylist:fetch("Via", Header)) of
 	[Via | _] ->
@@ -22,398 +67,325 @@ get_branch(Header) ->
 	    none
     end.
 
-cancel_targets(Targets) ->
-    % send {cancel} to all PIDs in states other than completed
+cancel_pending_targets(Targets) ->
+    % send {cancel} to all PIDs in states other than completed and terminated
     NewTargets1 = cancel_targets_state(Targets, calling),
     cancel_targets_state(NewTargets1, proceeding).
 
+cancel_all_targets(Targets) ->
+    % send {cancel} to all PIDs in states other than terminated
+    NewTargets1 = cancel_targets_state(Targets, trying),
+    NewTargets1 = cancel_targets_state(Targets, calling),
+    NewTargets2 = cancel_targets_state(NewTargets1, proceeding),
+    cancel_targets_state(NewTargets2, completed).
+
 cancel_targets_state(Targets, State) ->
-    % send {cancel} to all PIDs in a specific State
-    lists:map(fun ({Branch, BranchURI, Pid, BranchState}) ->
+    % send {cancel} to all PIDs in a specific State, return updated TargetList
+    lists:map(fun (ThisTarget) ->
+    			BranchState = targetlist:extract_state(ThisTarget),
     			case BranchState of
     			    State ->
+    			        Pid = targetlist:extract_pid(ThisTarget),
 				Pid ! {cancel, "cancel_targets_state"},
-				{Branch, BranchURI, Pid, completed};
+				%NewTarget1 = targetlist:set_state(ThisTarget, completed),
+				targetlist:set_endresult(ThisTarget, cancelled);
 			    _ ->
-				{Branch, BranchURI, Pid, BranchState}
+				ThisTarget
 			end
 	      end, Targets).
 
-cancel_targets_except(BranchList, Targets) ->
-    lists:map(fun ({Branch, BranchURI, Pid, BranchState}) ->
-    			case util:casegrep(Branch, BranchList) of
-			    true ->
-				{Branch, BranchURI, Pid, BranchState};
-    			    _ ->
-    			        % Only send cancel if in state 'calling' or 'proceeding'
-				case BranchState of
-				    calling ->
-					Pid ! {cancel, "cancel_targets_except"},
-					{Branch, BranchURI, Pid, completed};
-				    proceeding ->
-					Pid ! {cancel, "cancel_targets_except"},
-					{Branch, BranchURI, Pid, completed};
-				    _ ->
-					{Branch, BranchURI, Pid, BranchState}
-				end,
-				{Branch, BranchURI, Pid, completed}
-			end
-	      end, Targets).
-
-% Spawn a new erlang process and make it send something (INVITE, SUBSCRIBE
-% etc) through the process_request() function. process_request() will go
-% into a process_branch_loop() loop to resend stuff until asked to stop.
-start_branch(Socket, Method, ReqURI, Timeout, URI, Header, Body, FromIP, Parent) ->
-    Branch = generate_branch(),
-    LogStr = sipserver:make_logstr({request, Method, ReqURI, Header, Body}, FromIP),
-    Pid = spawn(?MODULE, process_request, [Method, Socket, Timeout, URI, Branch,
-					   Header, Body]),
-    logger:log(normal, "~s: (new pid ~p, parent ~p) ~s -> Fork to ~s", [Branch, Pid, Parent, LogStr, sipurl:print(URI)]),
-    {Branch, URI, Pid, calling}.
-
-% This is the same as start_branch() with the exception that we don't send anything
-% until requested to.
-start_UAS(Branch, Method, Socket, ReqURI, Timeout, URI, Header, Body, FromIP) ->
-    LogStr = sipserver:make_logstr({request, Method, ReqURI, Header, Body}, FromIP),
-    Pid = spawn(?MODULE, process_branch_loop, [Socket, ReqURI, Branch, Header, Body, [], {idle, 0, none}]),
-    logger:log(normal, "~s -> Started UAS (PID ~p)", [LogStr, Pid]),
-    Pid.
-
-stop_timers(_, _, _, []) ->
-    true;
-stop_timers(Branch, response, Parameters, TimerList) ->
-    {Status, Reason} = Parameters,
-    logger:log(normal, "~s: Stopping timers - response ~p ~s", [Branch, Status, Reason]),
-    lists:map(fun (TRef) ->
-		      timer:cancel(TRef)
-		end, TimerList);
-stop_timers(Branch, request, Parameters, TimerList) ->
-    logger:log(normal, "~s: Stopping timers - request ~p", [Branch, Parameters]),
-    lists:map(fun (TRef) ->
-		      timer:cancel(TRef)
-		end, TimerList).
-
-% Send a SIP-message and arrange for it to be resent as per the SIP specification.
-% This function is called as a start of a new branch.
-% The first send_after() causes the message to be resent,
-% the second send_after() will cause us to stop resending this message and
-% the third send_after() will start sending CANCELs to this request, if reached.
-% Start looping process_branch_loop() for this branch.
-process_request(Method, Socket, Timeout, URI, Branch, Header, Body) ->
-    logger:log(debug, "~s: process_request() Sending ~s -> ~s", [Branch, Method, sipurl:print(URI)]),
-    siprequest:send_proxy_request(Header, Socket,
-				  {Method, URI, Body, ["branch=" ++ Branch]}),
-    TimerA = 500,
-    TimerB = TimerA * 64,
-    {ok, ResendTimer} = timer:send_after(TimerA, {timer, timerA, Method, {Header, Body}}),
-    {ok, StopResendTimer} = timer:send_after(TimerB, {stopresend}),
-    TimerList = case Timeout of
-	none ->
-	    [ResendTimer, StopResendTimer];
-	_ ->
-	   {ok, TT} = timer:send_after(Timeout * 1000, {cancel, "process_request " ++ Method ++ " timeout"}),
-	   [ResendTimer, StopResendTimer, TT]
-    end,
-    process_branch_loop(Socket, URI, Branch, Header, Body, TimerList,
-			{request, TimerA * 2, Method}).
-
-% This is the main loop for a branch. Receive messages and act on them.
-process_branch_loop(Socket, URI, Branch, Header, Body, Timers, {Type, TimerA, Parameters}) ->
-    receive
-	{cancel, Msg} ->
-	    logger:log(debug, "~s: Branch requested to 'cancel' (~s)", [Branch, Msg]),
-	    stop_timers(Branch, Type, Parameters, Timers),
-	    logger:log(normal, "~s: Sending CANCEL -> ~p", [Branch, sipurl:print(URI)]),
-	    process_branch_cancel(Socket, URI, Branch, Header, Body);
-	{ack, AckHeader, Status, Reason} ->
-	    stop_timers(Branch, Type, Parameters, Timers),
-	    logger:log(normal, "~s: Sending ACK -> ~s", [Branch, sipurl:print(URI)]),
-	    process_branch_ack(Socket, URI, Branch, Header, "", AckHeader, Status, Reason);
-
-	{forwardresponse, ResponseHeader, ResponseBody, Status, Reason} ->
-	    stop_timers(Branch, Type, Parameters, Timers),
-	    logger:log(normal, "~s: Forwarding ~p ~s -> ~s", [Branch, Status, Reason, sipurl:print(URI)]),
-	    process_forwardresponse(Socket, URI, Branch, Header, Body, ResponseHeader, ResponseBody, Status, Reason);
-	{sendresponse, Status, Reason} ->
-	    stop_timers(Branch, Type, Parameters, Timers),
-	    logger:log(normal, "~s: Sending ~p ~s -> ~s", [Branch, Status, Reason, sipurl:print(URI)]),
-	    process_sendresponse(Socket, URI, Branch, Header, "", Status, Reason);
-
-	{timer, timerA, sendresponse, Parameters} ->
-	    {ResponseHeader, ResponseBody, Status, Reason} = Parameters,
-	    logger:log(normal, "~s: Resend after ~p (response -> ~s): Sending ~p ~s",
-	    	       [Branch, TimerA, sipurl:print(URI), Status, Reason]),
-	    timer:send_after(TimerA, {timer, timerA, response, Parameters}),
-	    siprequest:send_proxy_response(Socket, Status, Reason,
-					   ResponseHeader, ResponseBody),
-	    process_branch_loop(Socket, URI, Branch, Header, Body, Timers,
-				{response, TimerA * 2, Parameters});
-
-	{timer, timerA, Method, Parameters} ->
-	    {ReqHeader, ReqBody} = Parameters,
-	    logger:log(normal, "~s: Resend after ~p (request -> ~s): resending ~s",
-	    	       [Branch, TimerA, sipurl:print(URI), Method]),
-	    timer:send_after(TimerA, {timer, timerA, Method, Parameters}),
-	    siprequest:send_proxy_request(ReqHeader, Socket,
-					  {Method, URI, ReqBody,
-					   ["branch=" ++ Branch]}),
-	    process_branch_loop(Socket, URI, Branch, Header, Body, Timers,
-				{Method, TimerA * 2, Parameters});
-
-	{stopresend} ->
-	    stop_timers(Branch, Type, Parameters, Timers),
-	    process_branch_loop(Socket, URI, Branch, Header, Body, [], {Type, TimerA, Parameters});
-	{quit} ->
-	    stop_timers(Branch, Type, Parameters, Timers),
-	    logger:log(normal, "~s: handling ~s: quitting branch",
-	    	       [Branch, sipurl:print(URI)]),
-	    true
-    end.
-
-% This branches dialogue should be cancelled.
-process_branch_cancel(Socket, URI, Branch, Header, Body) ->
-    {CSeq, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    CancelHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeq, "CANCEL"})],
-			    Header),
-    logger:log(debug, "~s: process_branch_cancel() Sending ~s -> ~s", [Branch, "CANCEL", sipurl:print(URI)]),
-    siprequest:send_proxy_request(CancelHeader, Socket,
-				  {"CANCEL", URI, Body, ["branch=" ++ Branch]}),
-    TimerA = 500,
-    TimerB = TimerA * 64,
-    {ok, ResendTimer} = timer:send_after(TimerA, {timer, timerA, "CANCEL", {Header, Body}}),
-    {ok, StopResendTimer} = timer:send_after(TimerB, {stopresend}),
-    {ok, TT} = timer:send_after(64 * 1000, {quit}),
-    TimerList = [ResendTimer, StopResendTimer, TT],
-    process_branch_loop(Socket, URI, Branch, Header, Body, TimerList,
-			{request, TimerA * 2, "CANCEL"}).
-
-% Send an ACK, requires some special processing to figure out where to
-% direct it.
-process_branch_ack(Socket, URI, Branch, Header, Body, AckHeader, Status, Reason) ->
-    {CSeqID, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", AckHeader)),
-    ExtraHeaders = [{"CSeq", sipheader:cseq_print({CSeqID, "ACK"})}], 
-    SendHeader = keylist:appendlist(keylist:copy(Header,
-						 ["Via", "From", "To",
-						  "Call-ID"]),
-				    ExtraHeaders),
-    process_request("ACK", Socket, none, URI, Branch, SendHeader, Body).
-
-% This branch should answer something.
-process_sendresponse(Socket, URI, Branch, Header, Body, Status, Reason) ->
-    logger:log(debug, "~s: process_sendresponse() Sending ~p ~s -> ~s", [Branch, Status, Reason, sipurl:print(URI)]),
-    siprequest:send_result(Header, Socket, Body, Status, Reason),
-    TimerA = 500,
-    TimerB = TimerA * 64,
-    {ok, ResendTimer} = timer:send_after(TimerA, {timer, timerA, sendresponse, {Header, Body, Status, Reason}}),
-    {ok, StopResendTimer} = timer:send_after(TimerB, {stopresend}),
-    % XXX what is the right thing to do when noone answers our responses? send CANCEL?
-    process_branch_loop(Socket, URI, Branch, Header, Body,
-    			[ResendTimer, StopResendTimer],
-			{response, TimerA * 2, {Status, Reason}}).
-
-% This branch should forward an answer.
-process_forwardresponse(Socket, URI, Branch, Header, Body, ResHeader, ResBody, Status, Reason) ->
-    siprequest:send_proxy_response(Socket, Status, Reason,
-				   ResHeader, ResBody),
-    process_branch_loop(Socket, URI, Branch, Header, Body,
-    			[], {response, 0, {Status, Reason}}).
-
-generate_branch() ->
-    {Megasec, Sec, Microsec} = now(),
-    "z9hG4bK-yxa-" ++ hex:to(Sec, 8) ++ hex:to(Microsec, 8).
-
-response_action(Response, calling) when Response == 100 ->
-    logger:log(debug, "Decision: Received 100, going from 'calling' to 'proceeding'"),
-    {ignore, proceeding, none};
-response_action(Response, BranchState) when Response == 100 ->
-    logger:log(debug, "Decision: Received 100, always ignoring (current branch state ~p)", [BranchState]),
-    {ignore, BranchState, none};
-
-response_action(Response, calling) when Response =< 199 ->
-    % This was the first provisional response received, forward it to the originator.
-    logger:log(debug, "Decision: Received first 1xx ~p, branch = calling -> enter proceeding", [Response]),
-    {ignore, proceeding, none};
-response_action(Response, BranchState) when Response =< 199 ->
-    % This was NOT the first provisional response, just ignore it.
-    logger:log(debug, "Decision: Received 1xx ~p when in state ~p, ignoring", [Response, BranchState]),
-    {ignore, BranchState, none};
-
-response_action(Response, calling) when Response =< 299 ->
-    % We have a winner! This branch received the first 2xx response.
-    logger:log(debug, "Decision: Received 2xx ~p, branch = calling, complete this branch", [Response]),
-    {ignore, completed, cancel};
-response_action(Response, proceeding) when Response =< 299 ->
-    % We have a winner! This branch received the first 2xx response.
-    logger:log(debug, "Decision: Received 2xx ~p, branch = proceeding, complete this branch", [Response]),
-    {ignore, completed, cancel};
-response_action(Response, BranchState) when Response =< 299 ->
-    % This is NOT the first 2xx response. Ignore and finish this branch.
-    logger:log(debug, "Decision: Received 2xx ~p when in state ~p, ignoring", [Response, BranchState]),
-    {ignore, BranchState, none};
-
-response_action(Response, terminated) when Response =< 599 ->
-    % This branch was allready terminated, re-send ACK in case it got lost.
-    logger:log(debug, "Decision: Received 4xx or 5xx ~p -> when terminated, ACK again", [Response]),
-    {ack, terminated, none};
-response_action(Response, BranchState) when Response =< 599 ->
-    % Ok, this branch is now finished.
-    logger:log(debug, "Decision: Received 4xx or 5xx ~p -> ACK and change this branches state from '~p' to 'terminated'", [Response, BranchState]),
-    {ack, terminated, none};
-
-response_action(Response, BranchState) when Response =< 699 ->
-    % Global failure, ack and finish all branches.
-    logger:log(debug, "Decision: Received 6xx ~p -> ACK (Branch state was '~p')", [Response, BranchState]),
-    {sendandack, terminated, cancel}.
-
-find_target(Branch, Targets) ->
-    case lists:keysearch(Branch, 1, Targets) of
-	false ->
-	    none;
-	{value, {_, BranchURI, Pid, BranchState}} ->
-	    {BranchURI, Pid, BranchState}
-    end.
-
-fork(Method, Parent, ReqURI, Header, Body, FromIP, Socket, Actions, Targets) ->
-    case Actions of
-	[{call, Timeout, URI} | Rest] ->
-	    logger:log(debug, "sipproxy: calling ~s with timeout ~p",
-		      [sipurl:print(URI), Timeout]),
-	    NewTargets = [start_branch(Socket, Method, ReqURI, Timeout, URI, Header, Body, FromIP, Parent)
-			  | Targets],
-	    fork(Method, Parent, ReqURI, Header, Body, FromIP, Socket, Rest, NewTargets);
-	[{wait, Time} | Rest] ->
-	    logger:log(normal, "sipproxy: waiting ~p seconds", [Time]),
-	    case process_wait(Parent, ReqURI, Header, Body, Socket, Targets,
-			      false, util:timestamp() + Time) of
-		{discontinue, NewTargets} ->
-		    logger:log(debug, "sipproxy: discontinue processing"),
-		    fork(Method, Parent, ReqURI, Header, Body, FromIP, Socket, [], NewTargets);
-		NewTargets ->
-		    fork(Method, Parent, ReqURI, Header, Body, FromIP, Socket, Rest, NewTargets)
-	    end;
-	[] ->
-	    case allterminated(Targets) of
-		true ->
-		    logger:log(normal, "sipproxy: All targets are terminated"),
-		    Parent ! {all_terminated};
-		_ ->
-		    logger:log(debug, "sipproxy: Reached end of Actions-list"),
-		    cancel_targets(Targets),
-		    Parent ! {no_more_actions}
-	    end,
-	    logger:log(normal, "sipproxy: waiting 32 seconds for final responses"),
-	    process_wait(Parent, ReqURI, Header, Body, Socket, Targets,
-			 false, util:timestamp() + 32),
-	    Parent ! {callhandler_terminating}
-    end.
-
-evaluate_response(Targets, Header, Response) ->
-    Branch = get_branch(Header),
-    {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    case Method of
-	"INVITE" ->
-	    case find_target(Branch, Targets) of
-		none ->
-		    logger:log(debug, "process_response() could not find branch ~p in target-list", [Branch]),
-		    true;
-		{BranchURI, BranchPid, BranchState} ->
-		    logger:log(debug, "~s: Rolling the dice, response was ~p and state is ~p", [Branch, Response, BranchState]),
-		    {BranchAction, NewBranchState, OtherBranchesAction} =
-			response_action(Response, BranchState),
-		    case NewBranchState of
-			BranchState ->
-			    % No update of Targets required.
-			    {BranchAction, NewBranchState, OtherBranchesAction, Targets};
-			_ ->
-			    logger:log(debug, "~s: Changing BranchState from '~p' to '~p', OtherBranchesAction '~p'", 
-					[Branch, BranchState, NewBranchState, OtherBranchesAction]),
-			    NewTargets = lists:keyreplace(Branch, 1, Targets, {Branch, BranchURI, BranchPid, NewBranchState}),
-			    logger:log(debug, "sipproxy: NewTargets list :~n~p", [NewTargets]),
-			    {BranchAction, NewBranchState, OtherBranchesAction, NewTargets}
-		    end
-	    end;
-	_ ->
-	    logger:log(debug, "~s: Ignoring ~p response to ~p (not response to INVITE)", [Branch, Response, Method]),
-	    {ignore, none, none, Targets}
-    end.
-
-process_response(Branch, Status, Reason, Header, Socket, ResponseHeader, ResponseBody, ReqURI, Targets) ->
-    {_, Method} = sipheader:cseq(keylist:fetch("CSeq", ResponseHeader)),
-    logger:log(normal, "~s: Response to ~s: ~p ~s", [Branch, Method, Status, Reason]),
-    {BranchURI, BranchPid, BranchState} = find_target(Branch, Targets),
-    BranchPid ! {stopresend},
-    {BranchAction, NewBranchState, OtherBranchesAction, NewTargets1} =
-	evaluate_response(Targets, ResponseHeader, Status),
-    logger:log(debug, "~s: ~p ~s BranchPid ~p, Action ~p", [Branch, Status, Reason, BranchPid, BranchAction]),
-    case BranchAction of
-	ignore ->
-	    true;
-	ack ->
-	    BranchPid ! {ack, ResponseHeader, Status, Reason};
-	quit ->
-	    logger:log(debug, "~s: terminating PID ~p", [Branch, BranchPid]),
-	    BranchPid ! {quit}
-    end,
-    NewTargets1.
-
-allterminated([]) ->
-    true;
-allterminated([{_, _, _, terminated} | Rest]) ->
-    allterminated(Rest);
-allterminated([_ | Rest]) ->
-    false.
-
-process_wait(Parent, ReqURI, Header, Body, Socket, Targets, true, AbsTime) ->
-    logger:log(debug, "sipproxy: All Targets terminated. Ending process_wait(), returning discontinue."),
+process_wait(Parent, OrigRequest, Socket, Targets, true, AbsTime, State) ->
+    logger:log(debug, "sipproxy: All Targets terminated or completed. Ending process_wait(), returning discontinue. debugfriendly(TargetList) :~n~p",
+    		[targetlist:debugfriendly(Targets)]),
     {discontinue, Targets};
-process_wait(Parent, ReqURI, Header, Body, Socket, Targets, false, AbsTime) ->
+process_wait(Parent, OrigRequest, Socket, Targets, false, AbsTime, State) ->
     Time = lists:max([AbsTime - util:timestamp(), 0]),
-    receive
-	{cancel} ->
-	    logger:log(debug, "sipproxy: process_wait() received 'cancel', calling cancel_targets()"),
-	    cancel_targets(Targets);
-	{cancel_all_branches_except, BranchList} ->
-	    cancel_targets_except(BranchList, Targets);
-	{siprequest, "CANCEL", {_, CHeader, _}} ->
-	    Branch = get_branch(CHeader),
-	    logger:log(error, "sipproxy: A CANCEL? Of one of my branches? Ignoring (Branch: ~p)", [Branch]),
-	    process_wait(Parent, ReqURI, Header, Body, Socket, 
-	    		 Targets, allterminated(Targets), AbsTime);
-	{siprequest, "ACK", {AckURI, AckHeader, AckBody}} ->
-	    {_, BranchPid, BranchState} = find_target(get_branch(AckHeader), Targets),
-	    BranchPid ! {stopresend},
-	    case BranchState of
-		terminated ->
-		    logger:log(debug, "~s: Received ACK when 'terminated' - that means we can RIP now"),
-		    BranchPid ! {quit};
-		_ ->
-		    logger:log(debug, "~s: Received ACK, stopped any resends but otherwise ignoring")
-	    end,
-	    process_wait(Parent, ReqURI, Header, Body, Socket, 
-	    		 Targets, allterminated(Targets), AbsTime);
-	{siprequest, "BYE", {ByeURI, ByeHeader, ByeBody}} ->
-	    Branch = get_branch(ByeHeader),
-	    logger:log(error, "sipproxy: A BYE? Of one of my branches? Ignoring (Branch: ~p)", [Branch]),
-	    process_wait(Parent, ReqURI, Header, Body, Socket, 
-	    		 Targets, allterminated(Targets), AbsTime);
-	{response, {Status, Reason, ResponseHeader, ResponseBody}} ->
-	    Branch = get_branch(ResponseHeader),
-	    % Always signal parent when we receive a response. Parent is responsible for
-	    % filtering these.
-	    logger:log(debug, "sipproxy: Notifying parent ~p of response ~p ~s to branch ~p", [Parent, Status, Reason, Branch]),
-    	    Parent ! {response, Branch, {Status, Reason, ResponseHeader, ResponseBody}},
-	    NewTargets = case find_target(Branch, Targets) of
+    ProcessNewTargets = receive
+	{cancel_all} ->
+	    logger:log(debug, "sipproxy: process_wait() received 'cancel_all', calling cancel_all_targets()"),
+	    cancel_all_targets(Targets);
+	{cancel_pending} ->
+	    logger:log(debug, "sipproxy: process_wait() received 'cancel_pending', calling cancel_pending_targets()"),
+	    cancel_pending_targets(Targets);
+
+	{request, Request} ->
+	    {Method, URI, Header, Body} = Request,
+	    Branch = get_branch(Header),
+	    case targetlist:get_target(Branch, Targets) of
 		none ->
-		    logger:log(error, "sipproxy: No target found for branch ~p response ~p ~s", [Branch, Status, Reason]),
-		    Targets;
-	    _ ->
-		    process_response(Branch, Status, Reason, Header, Socket,
-				     ResponseHeader, ResponseBody, ReqURI, Targets)
+		    logger:log(error, "sipproxy: Received an ~s for an unknown Target (branch ~p), ignoring", [Method, Branch]);
+		ThisTarget ->
+		    BranchPid = targetlist:extract_pid(ThisTarget),
+		    logger:log(debug, "sipproxy: Forwarding ~s request to branch ~p pid ~p", [Method, Branch, BranchPid]),
+		    safe_signal(BranchPid, {request, Request})
 	    end,
-	    process_wait(Parent, ReqURI, Header, Body, Socket,
-			 NewTargets, allterminated(NewTargets), AbsTime)
+	    Targets;
+
+	{response, Response} ->
+	    {Status, Reason, Header, Body} = Response,
+	    {_, ResponseToMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+	    Branch = get_branch(Header),
+	    case targetlist:get_target(Branch, Targets) of
+		none ->
+		    logger:log(normal, "sipproxy: Received response ~p ~s to ~s for an unknown Target (branch ~p), sending to parent (Pid ~p) for stateless forwarding.",
+		    			[Status, Reason, ResponseToMethod, Branch, Parent]),
+		    Parent ! {response, notarget, Response};
+		ThisTarget ->
+		    case targetlist:extract_state(ThisTarget) of
+			terminated ->
+			    logger:log(normal, "sipproxy: Response ~p ~s to terminated branch ~p, sending to parent (Pid ~p) for stateless forwarding.",
+			    		[Status, Reason, Branch, Parent]),
+			    Parent ! {response, notarget, Response};
+			_ ->
+			    FetchedRequest = targetlist:extract_initialrequest(ThisTarget),
+			    {FetchedMethod, FetchedURI, _, _} = FetchedRequest,
+			    BranchPid = targetlist:extract_pid(ThisTarget),
+			    logger:log(debug, "sipproxy: Forwarding response ~p ~s to ~s, branch ~p to pid ~p (original request ~s ~s)", 
+					    [Status, Reason, ResponseToMethod, Branch, BranchPid, FetchedMethod, sipurl:print(FetchedURI)]),
+			    safe_signal(BranchPid, {response, Response})
+		    end
+	    end,
+	    Targets;
+
+	{branch_result, Branch, NewBranchState, Response, ResponseToRequest} ->
+	    {ResponseToMethod, ResponseToURI, _, _} = ResponseToRequest,
+	    {Status, Reason, _, _} = Response,
+	    case targetlist:get_target(Branch, Targets) of
+		none ->
+		    logger:log(error, "sipproxy: Received branch result ~p ~s to ~s ~s from an unknown Target (branch ~p), ignoring.",
+		    			[Status, Reason, ResponseToMethod, sipurl:print(ResponseToURI), Branch]),
+		    Targets;
+		ThisTarget ->
+		    NewTarget1 = targetlist:set_state(ThisTarget, NewBranchState),
+		    NewTarget2 = targetlist:set_endresult(NewTarget1, Response),	% XXX only do this for final responses?
+		    NewTargets = targetlist:update_target(NewTarget2, Targets),
+		    logger:log(debug, "sipproxy: Received branch result ~p ~s to ~s ~s from branch ~p. My Targets-list now contain :~n~p",
+		    		[Status, Reason, ResponseToMethod, sipurl:print(ResponseToURI), Branch, targetlist:debugfriendly(NewTargets)]),
+		    case forward_immediately(ResponseToMethod, Status) of
+			true ->
+			    logger:log(debug, "sipproxy: Forwarding response ~p ~s (in response to ~s ~s) to my parent (PID ~p) immediately",
+			    		[Status, Reason, ResponseToMethod, sipurl:print(ResponseToURI), Parent]),
+			    Parent ! {response, Branch, Response};
+			_ ->
+			    logger:log(debug, "sipproxy: Not forwarding response ~p ~s (in response to ~s ~s) immediately",
+			    		[Status, Reason, ResponseToMethod, sipurl:print(ResponseToURI)])
+		    end,
+		    cancel_pending_if_invite_2xx_or_6xx(ResponseToMethod, Status, NewTargets)
+	    end;
+
+	{resend_response, Request} ->
+	    {Method, URI, _, _} = Request,
+	    logger:log(error, "sipproxy: Dropping request to resend response (to request ~s ~s), such a request should NOT be sent to client transactions.",
+	    		[Method, sipurl:print(URI)]),
+	    Targets;
+
+	{clientbranch_terminating, {Branch, ClientPid}} ->
+	    case targetlist:get_target(Branch, Targets) of
+		none ->
+		    logger:log(error, "sipproxy: Received 'clientbranch_terminating' (from Pid ~p) from an unknown Target (branch ~p), ignoring.",
+		    			[ClientPid, Branch]),
+		    Targets;
+		ThisTarget ->
+		    NewTarget1 = targetlist:set_state(ThisTarget, terminated),
+		    UpdatedTargets = targetlist:update_target(NewTarget1, Targets),
+		    logger:log(debug, "sipproxy: Received notification that branch ~p PID ~p has terminated. Targetlist :~n~p", 
+		    		[Branch, ClientPid, targetlist:debugfriendly(UpdatedTargets)]),
+		    UpdatedTargets
+	    end;
+	    	    	
+	{showtargets} ->
+	    logger:log(debug, "sipproxy: Received 'showtargets' request, debugfriendly(TargetList) :~n~p",
+    			[targetlist:debugfriendly(Targets)]),
+    	    Targets;
+    	    
+	Msg ->
+	    logger:log(error, "sipproxy: Received unknown message ~p, ignoring", [Msg]),
+	    Targets
     after
 	Time * 1000 ->
 	    logger:log(debug, "sipproxy: This wait's time (~p seconds) is over", [Time]),
-	    Targets
+	    {return}
+    end,
+    case ProcessNewTargets of
+	{return} ->
+	    Targets;
+	_ ->
+	    NewState = report_upstreams_statemachine(Parent, ProcessNewTargets, State),
+	    TimeLeft = lists:max([AbsTime - util:timestamp(), 0]),
+	    AllTerminated = allterminated(ProcessNewTargets),
+	    EndProcessing = end_processing(AbsTime, ProcessNewTargets, NewState),
+	    logger:log(debug, "sipproxy: State changer, State=~p, NewState=~p, TimeLeft=~p, AllTerminated=~p. EndProcessing = ~p",
+	    		[State, NewState, TimeLeft, AllTerminated, EndProcessing]),
+	    process_wait(Parent, OrigRequest, Socket, 
+	    		 ProcessNewTargets, EndProcessing, AbsTime, NewState)
     end.
+
+allterminated(TargetList) ->
+    TargetsCalling = targetlist:get_targets_in_state(calling, TargetList),
+    TargetsTrying = targetlist:get_targets_in_state(trying, TargetList),
+    TargetsProceeding = targetlist:get_targets_in_state(proceeding, TargetList),
+    TargetsCompleted = targetlist:get_targets_in_state(completed, TargetList),
+    if
+	TargetsCalling /= [] -> false;
+	TargetsTrying /= [] -> false;
+	TargetsProceeding /= [] -> false;
+	%TargetsCompleted /= [] -> false;
+	true -> true
+    end.
+
+end_processing(AbsTime, _, stayalive) ->
+    Now = util:timestamp(),
+    if
+	Now =< AbsTime -> false;
+	true -> true
+    end;
+end_processing(_, _, completed) ->
+    true;
+end_processing(_, TargetList, State) ->
+    allterminated(TargetList).
+
+report_upstreams_statemachine(Parent, Targets, calling) ->
+    case allterminated(Targets) of
+	true ->
+	    Responses = targetlist:get_responses(Targets),
+	    logger:log(debug, "sipproxy: All targets are terminated, evaluating responses :~n~p", [printable_responses(Responses)]),
+	    ForwardResponse = case Responses of
+		[] ->
+		    logger:log(normal, "sipproxy: No responses to choose between, answering 408 Request Timeout"),
+		    {408, "Request Timeout"};
+		_ ->
+		    case make_final_response(Responses) of
+			none ->
+			    logger:log(normal, "sipproxy: Found no suitable response in list ~p, answering 408 Request Timeout", [printable_responses(Responses)]),
+			    {408, "Request Timeout"};
+			FinalResponse ->
+			    {Status, Reason, _, _} = FinalResponse,
+			    logger:log(normal, "sipproxy: Picked response ~p ~s from the list of responses available (~p).",
+			    		[Status, Reason, printable_responses(Responses)]),
+			    FinalResponse
+		    end
+	    end,
+	    logger:log(debug, "sipproxy: Sending the result to parent Pid ~p.", [Parent]),
+	    Parent ! {all_terminated, ForwardResponse, Targets},
+	    completed;
+	false ->
+	    calling
+    end;
+report_upstreams_statemachine(Parent, Targets, State) ->
+    State.
+
+safe_signal(Pid, Message) ->
+    case Pid of
+	none ->
+	    logger:log(debug, "sipproxy: Dropped message to pid 'none' : ~p", [Message]),
+	    false;
+	_ ->
+	    case is_process_alive(Pid) of
+		true ->
+		    Pid ! Message,
+		    true;
+		false ->
+		    logger:log(debug, "sipproxy: Can't send signal to pid ~p - not alive", [Pid]),
+		    false
+	    end
+    end.
+
+forward_immediately(Method, Status) when Status =< 99 ->
+    logger:log(error, "sipproxy: Invalid response ~p to ~s", [Status, Method]),
+    false;
+forward_immediately("INVITE", Status) when Status =< 299 ->
+    true;
+forward_immediately(Method, Status) when Status =< 199 ->
+    true;
+forward_immediately(Method, Status) ->
+    false.
+
+cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, Targets) when Status =< 199 ->
+    Targets;
+cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, Targets) when Status =< 299 ->
+    logger:log(debug, "sipproxy: Cancelling pending targets since one INVITE transaction resulted in a 2xx response ~p", [Status]),
+    cancel_pending_targets(Targets);
+cancel_pending_if_invite_2xx_or_6xx(Method, Status, Targets) when Status =< 599 ->
+    Targets;
+cancel_pending_if_invite_2xx_or_6xx(Method, Status, Targets) when Status =< 699 ->
+    logger:log(debug, "sipproxy: Cancelling pending targets since one branch resulted in a 6xx response ~p", [Status]),
+    cancel_pending_targets(Targets).
+
+printable_responses([]) ->
+    [];
+printable_responses([{Status, Reason, _, _} | Rest]) ->
+    lists:append([integer_to_list(Status) ++ " " ++ Reason], printable_responses(Rest));
+printable_responses([Response | Rest]) ->
+    lists:append([Response], printable_responses(Rest)).
+
+% look for 6xx responses, then pick the lowest but prefer 
+% 401, 407, 415, 420 and 484
+%
+% It is not by accident we look for 2xx here as well, it is because this response-list
+% will be used to resend responses to non-INVITE if we receive them retransmitted
+make_final_response(Responses) ->
+    TwoxxResponses = get_xx_responses(200, Responses),
+    ThreexxResponses = get_xx_responses(300, Responses),
+    FourxxResponses = get_xx_responses(400, Responses),
+    FivexxResponses = get_xx_responses(500, Responses),
+    SixxxResponses = get_xx_responses(600, Responses),
+    if
+	SixxxResponses /= [] ->
+	    aggregate_authreqs(lists:nth(1, SixxxResponses), Responses);
+	TwoxxResponses /= [] ->
+	    aggregate_authreqs(lists:nth(1, TwoxxResponses), Responses);
+	ThreexxResponses /= [] ->
+	    aggregate_authreqs(lists:nth(1, ThreexxResponses), Responses);
+	FourxxResponses /= [] ->
+	    BestFourxx = prefer_response([401, 407, 415, 420, 484], FourxxResponses),
+	    aggregate_authreqs(BestFourxx, Responses);
+	FivexxResponses /= [] ->
+	    % XXX RFC 3261 says we SHOULD avoid 503 Service Unavailable!
+	    aggregate_authreqs(lists:nth(1, FivexxResponses), Responses);
+	true ->
+	    logger:log(debug, "Appserver: No response to my liking"),
+	    none
+    end.	    
+
+aggregate_authreqs(BestResponse, Responses) ->
+    {BestStatus, _, _, _} = BestResponse,
+    WWWAuth = collect_auth_headers("WWW-Authenticate", Responses),
+    ProxyAuth = collect_auth_headers("Proxy-Authenticate", Responses),
+    DoAggregate = case BestStatus of
+	401 -> true;
+	407 -> true;
+	_ -> false
+    end,
+    case DoAggregate of
+	true ->
+	    logger:log(debug, "Adding aggregated authentication headers to response"),
+	    % XXX finish this
+	    BestResponse;
+	_ ->
+	    BestResponse
+    end.    
+
+% XXX implement this
+collect_auth_headers(Key, Responses) ->
+    [].
+    
+
+% XXX implement this
+prefer_response(PreferenceList, Responses) ->
+    lists:nth(1, Responses).
+
+get_xx_responses(Min, Responses) ->
+    Max = Min + 99,
+    lists:keysort(1, get_range_responses(Min, Max, Responses)).
+    
+get_range_responses(Min, Max, []) ->
+    [];
+get_range_responses(Min, Max, [{Status, Reason, Header, Body} | Rest]) ->
+    if
+	Status < Min -> get_range_responses(Min, Max, Rest);
+	Status > Max -> get_range_responses(Min, Max, Rest);
+	true ->
+	    lists:append([{Status, Reason, Header, Body}], get_range_responses(Min, Max, Rest))
+    end.
+
+
