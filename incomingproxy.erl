@@ -42,9 +42,12 @@ lookupregexproute(User) ->
 lookuproute(User) ->
     case phone:get_phone(User) of
 	{atomic, []} ->
-	    lookupregexproute(User);
+	    Loc = lookupregexproute(User),
+	    logger:log(debug, "Routing: Phone-lookup of ~p -> ~p", [User, Loc]),
+	    Loc;
 	{atomic, Locations} ->
 	    {Location, _, _, _} = siprequest:location_prio(Locations),
+	    logger:log(debug, "Routing: Phone-lookup of ~s -> ~p", [User, Location]),
 	    case Location of
 		{error, Errorcode} ->
 		    {error, Errorcode};
