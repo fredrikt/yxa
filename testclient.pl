@@ -13,12 +13,30 @@ use Socket;
 use Sys::Hostname;
 use FileHandle;
 use Getopt::Std;
-use vars qw ($opt_h $opt_d $opt_q $opt_u);
+use vars qw ($opt_h $opt_q $opt_u $opt_2 $opt_3);
 
-getopts ('hdqu');
+getopts ('hqu23');
 
-my $quiet = defined ($opt_q);
-my $use_udp = defined ($opt_u);
+if (defined ($opt_h)) {
+    die (<<EOT);
+Syntax: $0 [options] [test name ...]
+
+    Options :
+
+        -h   this text
+	-q   quiet mode, less verbose
+	-u   use UDP
+	-2   do not generate RFC3261 branches
+	-3   always generate RFC3261 branches
+
+    Special test names :
+
+        ALL-STANDARD\t All the standard tests defined in testclient.pl
+        ALL-LOCAL\t All the tests you have configured in your local configuration file
+	ALL\t\t All tests, both standard and local. This is the default
+
+EOT
+}
 
 my $hostname = hostname();
 
@@ -275,6 +293,17 @@ my %standard_tests = (
 
 	    );
 
+my $quiet = defined ($opt_q);
+my $use_udp = defined ($opt_u);
+my $rfc3261_branch = 'yes';
+
+if ($opt_2 and $opt_3) {
+    die ("$0: Specifying both -2 and -3 is not valid\n");
+}
+
+$rfc3261_branch = 'no' if ($opt_2);
+$rfc3261_branch = 'must' if ($opt_3);
+
 my @testlist;
 foreach my $t (@ARGV) {
     $t =~ s/,$//g; # remove trailing commas to make copy-paste work
@@ -309,15 +338,36 @@ foreach $name (keys %standard_tests) {
 	    $skip = 1;
 	}
     }
+
+    if ($standard_tests{$name}{branch} =~ /.*3261$/) {
+	if ($rfc3261_branch eq 'no') {
+	    warn ("Skipped standard test '$name' because it requires RFC3261 branch\n");
+	    $skip = 1;
+	}
+    } elsif ($standard_tests{$name}{branch} =~ /.*2543$/) {
+	if ($rfc3261_branch eq 'must') {
+	    warn ("Skipped standard test '$name' because it requires RFC2543 branch\n");
+	    $skip = 1;
+	}
+    }
+
     next if ($skip);
 
     $standard_testcount++;
     
     # Don't restart testclient.pl so many times that you get the same PID twice the same second, please ;)
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
+
+    my $branch = 'z9hG4bK-yxa-testclient-' . md5_hex ($CallID);
+
+    if ($standard_tests{$name}{branch} =~ /.*2543$/ or
+	$rfc3261_branch eq 'no') {
+	$branch = '';
+    }
+
     $callid_seq++;
     
-    my $res += perform_test ($name, $standard_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, undef);
+    my $res += perform_test ($name, $standard_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, $branch, undef);
     $standard_okcount += $res;
     
     push (@standard_failed, "\"$name\"") if (! $res);
@@ -339,15 +389,36 @@ foreach $name (keys %local_tests) {
 	    $skip = 1;
 	}
     }
+
+    if ($local_tests{$name}{branch} =~ /.*3261$/) {
+	if ($rfc3261_branch eq 'no') {
+	    warn ("Skipped local test '$name' because it requires RFC3261 branch\n");
+	    $skip = 1;
+	}
+    } elsif ($local_tests{$name}{branch} =~ /.*2543$/) {
+	if ($rfc3261_branch eq 'must') {
+	    warn ("Skipped local test '$name' because it requires RFC2543 branch\n");
+	    $skip = 1;
+	}
+    }
+
     next if ($skip);
 
     $local_testcount++;
     
     # Don't restart testclient.pl so many times that you get the same PID twice the same second, please ;)
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
+
+    my $branch = 'z9hG4bK-yxa-testclient-' . md5_hex ($CallID);
+
+    if ($standard_tests{$name}{branch} =~ /.*2543$/ or
+	$rfc3261_branch eq 'no') {
+	$branch = '';
+    }
+
     $callid_seq++;
     
-    my $res += perform_test ($name, $local_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, undef);
+    my $res += perform_test ($name, $local_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, $branch, undef);
     $local_okcount += $res;
     
     push (@local_failed, "\"$name\"") if (! $res);
@@ -380,6 +451,7 @@ sub perform_test
     my $hostname = shift;
     my $CSeq = shift;
     my $CallID = shift;
+    my $branch = shift;
     my $authrequestresponse = shift;
     my $proto;
     
@@ -408,7 +480,7 @@ sub perform_test
 	
 	socket($Socket, PF_INET, SOCK_STREAM, getprotobyname("tcp")) or die "socket: $!";
 	connect($Socket, $paddr) or die ("connect: $!\n"), return undef;
-	warn ("CONNECTED TO $sendto_ip\n");
+	warn ("Connected to $sendto_ip:$sendto_port\n");
 	$proto = "TCP";
     }
 	
@@ -453,6 +525,9 @@ sub perform_test
 	    my $response = md5_hex ("$A1:$nonce:$A2");
 	    
 	    $proxyauthheader = "$response_headername: Digest username=\"$username\",realm=\"$realm\",uri=\"$uri\",response=\"$response\",nonce=\"$nonce\",opaque=\"$opaque\",algorithm=md5\n";
+
+	    # must make branch different since the new INVITE is a separate transaction
+	    $branch .= ".1" if ($branch);
 	} else {
 	    warn ("FAILED, Could not find/parse Proxy-Authenticate/WWW-Authenticate in response requiring authentication\n");
 	    return 0;
@@ -460,7 +535,9 @@ sub perform_test
     }
 	
     my $my_via = "SIP/2.0/$proto $hostname:$localport";
-	
+
+    $my_via .= ";branch=$branch" if ($branch);
+
     $msg = "$Method $sipuri SIP/2.0
 Via: ${my_via}
 From: $From
@@ -519,7 +596,7 @@ $testheader$proxyauthheader
 	    $CSeq++;
 			
 	    if (defined ($testparams{user}) and defined ($testparams{pw})) {
-		return perform_test ($testname, $paramref, $use_udp, $quiet, $hostname, $CSeq, $CallID, $response);
+		return perform_test ($testname, $paramref, $use_udp, $quiet, $hostname, $CSeq, $CallID, $branch, $response);
 	    } else {
 		warn ("FAILED - got '$code $text' but I have no credentials for this test\n");
 		close ($Socket);
@@ -842,7 +919,7 @@ sub base64_decode
 
 sub read_local_config
 {
-    my @f_locs = ("/etc/testclient.conf", "/usr/local/etc/testclient.conf", "$ENV{HOME}/testclient.conf", "./testclient.conf");
+    my @f_locs = ("$ENV{HOME}/testclient.conf", "/etc/testclient.conf", "/usr/local/etc/testclient.conf", "./testclient.conf");
     my $cfg_loaded = 0;
     foreach my $fn (@f_locs) {
 	if (-r $fn) {
