@@ -1,5 +1,5 @@
 -module(dnsutil).
--export([siplookup/1, enumlookup/1]).
+-export([siplookup/1, enumlookup/1, get_ip_port/2]).
 
 -include("inet_dns.hrl").
 
@@ -10,18 +10,31 @@ srvlookup(Name) ->
 			       Entry#dns_rr.data
 			  end,
 	    lists:map(ParseSRV, Rec#dns_rec.anlist);
-	{error, nxdomain} ->
-	    []
+	{error, What} ->
+	    logger:log(debug, "dns resolver: Error ~p when resolving ~p IN SRV", [What, Name]),
+	    {error, What}
     end.
 
 siplookup(Domain) ->
     case srvlookup("_sip._udp." ++ Domain) of
 	[] ->
 	    none;
+	{error, What} ->
+	    {error, What};
 	[{_, _, Port, Host} | _] ->
 	    {Host, Port}
     end.
 
+get_ip_port(Host, Port) ->
+    Res = inet:getaddr(Host, inet),
+    case Res of
+	{error, What} ->
+	    logger:log(debug, "dns resolver: Error ~p when resolving ~p inet", [What, Host]),
+	    {error, What};
+	{ok, IP} ->
+	    {IP, Port}
+    end.
+    
 number2enum([], Domain) ->
     Domain;
 

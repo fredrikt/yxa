@@ -127,8 +127,8 @@ lookupphone(URL) ->
 		none ->
 		    case isours(User) of
 			true ->
-			    logger:log(debug, "Routing: ~p is one of our users, returning none", [User]),
-			    none;
+			    logger:log(debug, "Routing: ~p is one of our users, returning 480 Users location currently unknown", [User]),
+			    {response, 480, "Users location currently unknown"};
 			false ->
 			    logger:log(debug, "Routing: ~p isn't one of our users - routing towards default", [User]),
 			    lookupdefault(User)
@@ -170,6 +170,9 @@ request(Method, URL, Header, Body, Socket, FromIP) ->
 	{error, Errorcode} ->
 	    logger:log(normal, "Error ~p", [Errorcode]),
 	    siprequest:send_result(Header, Socket, "", Errorcode, "Unknown code");
+	{response, Returncode, Text} ->
+	    logger:log(normal, "~s ~s -> Response ~p ~s", [Method, sipurl:print(URL), Returncode, Text]),
+	    siprequest:send_result(Header, Socket, "", Returncode, Text);
 	{proxy, Loc} ->
 	    logger:log(normal, "Proxy ~s", [sipurl:print(Loc)]),
 	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body, []});

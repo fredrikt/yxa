@@ -20,10 +20,14 @@ send_response_to(Socket, Code, Text, Dest, Header, Body) ->
 
 url_to_hostport({User, Pass, InHost, InPort, Parameters}) ->
     case dnsutil:siplookup(InHost) of
+	{error, nxdomain} ->
+	    dnsutil:get_ip_port(InHost, InPort);
+	{error, What} ->
+	    {error, What};
 	{Host, Port} ->
-	    {Host, integer_to_list(Port)};
+	    dnsutil:get_ip_port(Host, integer_to_list(Port));
 	none ->
-	    {InHost, InPort}
+	    dnsutil:get_ip_port(InHost, InPort)
     end.
 
 rewrite_route(Header, Dest) ->
@@ -65,9 +69,17 @@ send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
 	    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
 	    Keylist4 = keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Keylist3),
 	    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist4) ++ "\r\n" ++ Body,
-	    {Host, Port} = url_to_hostport(Newdest),
-	    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
-	    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
+	    case url_to_hostport(Newdest) of
+		{error, nxdomain} ->
+		    logger:log(normal, "Could not resolve destination ~p (NXDOMAIN), returning 604 Does Not Exist Anywhere", [Newdest]),
+		    siprequest:send_result(Header, Socket, "", 604, "Does Not Exist Anywhere");
+		{error, What} ->
+		    logger:log(normal, "Could not resolve destination ~p (~p), returning 500 Could not resolve destination", [Newdest, What]),
+		    siprequest:send_result(Header, Socket, "", 500, "Could not resolve destination");
+		{Host, Port} ->
+		    logger:log(debug, "send request(~p,~p:~p):~n~s~n", [Newdest, Host, Port, Message]),
+		    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message)
+	    end
     end.
 
 process_register_isauth(Header, Socket, Phone, Auxphones, Location) ->
