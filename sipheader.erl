@@ -1,8 +1,8 @@
 -module(sipheader).
 -export([to/1, from/1, contact/1, via/1, via_print/1, to_print/1,
 	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1,
-	 httparg/1, cseq/1, cseq_print/1, via_params/1,
-	 build_header/1]).
+	 httparg/1, cseq/1, cseq_print/1, via_params/1, contact_params/1,
+	 build_header/1, dict_to_param/1]).
 
 comma(String) ->
     comma([], String, false).
@@ -36,12 +36,36 @@ from([String]) ->
 
 contact([]) ->
     [];
+    
+contact(["'*'"]) ->
+    logger:log(debug, "n: wildcard contact header (IS THIS SYNTAX USED?)"),
+    [{none, {wildcard, []}}];
+
+contact(["*"]) ->
+    logger:log(debug, "n: wildcard contact header"),
+    [{none, {wildcard, []}}];
+
+contact(["'*';" ++ Parameters]) ->
+    logger:log(debug, "n: wildcard contact header (parameters ~p) (IS THIS SYNTAX USED?)", [Parameters]),
+    [{none, {wildcard, [Parameters]}}];
+
+contact(["*;" ++ Parameters]) ->
+    logger:log(debug, "n: wildcard contact header (parameters ~p)", [Parameters]),
+    [{none, {wildcard, [Parameters]}}];
+
 contact([String | Rest]) ->
     Headers = comma(String),
     lists:append(lists:map(fun(H) ->
 				   name_header(H)
 			   end, Headers),
 		 contact(Rest)).
+
+contact_params([]) ->
+    none;
+contact_params({_, {wildcard, Parameters}}) ->
+    param_to_dict(Parameters);
+contact_params({_, _, _, _, Parameters}) ->
+    param_to_dict(Parameters).
 
 via([]) ->
     [];
@@ -65,6 +89,8 @@ via_print(Via) ->
 		      Protocol ++ " " ++ sipurl:print_hostport(Host, Port) ++ print_parameters(Parameters)
 	      end, Via).
 
+via_params([]) ->
+    none;
 via_params({Protocol, Hostport, Parameters}) ->
     param_to_dict(Parameters).
 
@@ -77,6 +103,9 @@ contact_print(Contact) ->
 to_print(To) ->
     name_print(To).
 
+name_print({_, wildcard, Parameters}) ->
+    sipurl:print({wildcard, Parameters});
+    
 name_print({none, URI}) ->
     sipurl:print(URI);
 
@@ -105,7 +134,7 @@ name_header([$" | String]) ->
     end;
 
 name_header(String) ->
-    logger:log(debug, "n: ~p", [String]),
+    %logger:log(debug, "n: ~p", [String]),
     case String of
 	[$< | Rest2] ->
 	    Index2 = string:chr(Rest2, $>),
@@ -166,11 +195,22 @@ param_to_dict(Param) ->
     L = lists:map(fun(A) ->
 			  H = string:strip(A,left),
 			  Index = string:chr(H, $=),
-			  Name = string:substr(H, 1, Index - 1),
+			  Name = httpd_util:to_lower(string:substr(H, 1, Index - 1)),
 			  Value = string:substr(H, Index + 1),
 			  {Name, unescape(Value)}
 		  end, Param),
     dict:from_list(L).    
+
+dict_to_param(Dict) ->
+    list_to_parameters(dict:to_list(Dict)).
+    
+list_to_parameters([]) ->
+    [];
+list_to_parameters([{Key, Value}]) ->
+    [Key ++ "=" ++ Value];
+list_to_parameters([{Key, Value} | Rest]) ->
+    [Key ++ "=" ++ Value, list_to_parameters(Rest)].
+    
 
 httparg(String) ->
     Headers = string:tokens(String, "&"),
