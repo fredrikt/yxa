@@ -4,7 +4,7 @@
 	 send_proxy_request/3, send_proxy_request/4, send_answer/3,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5,
 	 send_result/5, send_result/6, make_answerheader/1,
-	 locations_to_contacts/1]).
+	 locations_to_contacts/1, add_record_route/3]).
 
 send_response(Socket, Code, Text, Header, Body) ->
     Via = sipheader:via(keylist:fetch("Via", Header)),
@@ -119,6 +119,11 @@ check_valid_proxy_request(Method, Header) ->
 	    logger:log(normal, "Proxy Request check: The client requires unsupported extension(s) ~p", [ProxyRequire]),
 	    throw({siperror, 420, "Bad Extension", [{"Unsupported", ProxyRequire}]})
     end.
+
+add_record_route(Hostname, Port, Header) ->
+    Route = "<" ++ sipurl:print({none, none, Hostname, Port,
+				["maddr=" ++ siphost:myip()]}) ++ ">",
+				keylist:prepend({"Record-Route", Route}, Header).
 
 register_contact(Phone, Location, Priority, Header) ->
     {_, Contact} = Location,
