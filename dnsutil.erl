@@ -28,15 +28,30 @@ number2enum([], Domain) ->
 number2enum([C | Rest], Domain) ->
     [C, $. | number2enum(Rest, Domain)].
 
+fixplus("^+" ++ Regexp) ->
+    logger:log(debug,"applyregexp: E.164 subscriber has used an invalid regexp, working around ^+ escape-problem"),
+    "^\\+" ++ Regexp;
+fixplus(Regexp) ->
+    Regexp.
+
 applyregexp(Number, []) ->
     none;
 applyregexp(Number, [Regexp | Rest]) ->
-    logger:log(debug, "applyregexp: ~p ~p~n", [Number, Regexp]),
-    case string:tokens(Regexp, "!") of
-	["^.*$", To] ->
-	    To;
+    logger:log(debug, "applyregexp: IN ~p ~p~n", [Number, Regexp]),
+    Rewrite = case string:tokens(Regexp, "!") of
+		  [Lhs, Rhs] ->
+		      NLhs = fixplus(Lhs),
+		      Res = util:regexp_rewrite(Number, [{NLhs, Rhs}]),
+		      logger:log(debug, "applyregexp: OUT ~p~n", [Res]),
+		      Res;
+		  _ ->
+		      nomatch
+	      end,
+    case Rewrite of
+	nomatch ->
+	    applyregexp(Number, Rest);
 	_ ->
-	    applyregexp(Number, Rest)
+	    Rewrite
     end.
 
 enumalldomains(Number, []) ->
