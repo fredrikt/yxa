@@ -14,7 +14,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start/0,
+	 start_link/0,
 	 send_proxy_request/4,
 	 send_proxy_response/2,
 	 send_result/5,
@@ -36,7 +36,7 @@
 %% External functions
 %%====================================================================
 
-start() ->
+start_link() ->
     sipsocket:start_link().
 
 %%--------------------------------------------------------------------
@@ -99,14 +99,15 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
 	    {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
 					       Request#request.header, Request#request.body},
 	    NewHeader1 = siprequest:proxy_add_via(Header, OrigURI, ViaParameters, Proto),
+	    NewHeader2 = siprequest:fix_content_length(NewHeader1, Body),
 	    BinLine1 = list_to_binary([Method, " ", sipurl:print(Dst#sipdst.uri), " SIP/2.0"]),
-	    BinMsg = siprequest:binary_make_message(BinLine1, NewHeader1, list_to_binary(Body)),
+	    BinMsg = siprequest:binary_make_message(BinLine1, NewHeader2, list_to_binary(Body)),
 	    SendRes = sipsocket:send(SipSocket, Proto, IP, Port, BinMsg),
 	    case SendRes of
 		ok ->
 		    logger:log(debug, "Siprequest (transport layer) : sent request(dst=~s) :~n~s~n",
 			       [DestStr, binary_to_list(BinMsg)]),
-		    TopVia = sipheader:topvia(NewHeader1),
+		    TopVia = sipheader:topvia(NewHeader2),
 		    UsedBranch = lists:flatten(sipheader:get_via_branch_full(TopVia)),
 		    {ok, SipSocket, UsedBranch};
 		{error, E} ->
@@ -119,15 +120,17 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
 send_result(RequestHeader, Socket, Body, Status, Reason)
   when is_record(RequestHeader, keylist), is_record(Socket, sipsocket); Socket == none,
        is_list(Body), is_integer(Status), is_list(Reason) ->
-    Response = #response{status=Status, reason=Reason,
-			 header=siprequest:standardcopy(RequestHeader, []), body=Body},
+    Response1 = #response{status=Status, reason=Reason,
+			  header=siprequest:standardcopy(RequestHeader, [])},
+    Response = siprequest:set_response_body(Response1, Body),
     send_response(Socket, Response).
 
 send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
   when is_record(RequestHeader, keylist), is_record(Socket, sipsocket); Socket == none,
        is_list(Body), is_integer(Status), is_list(Reason), is_record(ExtraHeaders, keylist) ->
-    Response = #response{status=Status, reason=Reason,
-			 header=siprequest:standardcopy(RequestHeader, ExtraHeaders), body=Body},
+    Response1 = #response{status=Status, reason=Reason,
+			  header=siprequest:standardcopy(RequestHeader, ExtraHeaders)},
+    Response = siprequest:set_response_body(Response1, Body),
     send_response(Socket, Response).
 
 %%--------------------------------------------------------------------
