@@ -77,6 +77,7 @@ get_user_verified2(Method, ["GSSAPI" ++ Authheader]) ->
     Authorization = sipheader:auth(["GSSAPI" ++ Authheader]),
     Info = dict:fetch("info", Authorization),
     {Response, Username} = gssapi:request(Info),
+    %% XXX shouldn't we return {authenticated, Username} here?
     Username;
 
 get_user_verified2(Method, Authheader) ->
@@ -116,10 +117,10 @@ get_user_verified2(Method, Authheader) ->
 	    false;
 	Nonce /= Nonce2 ->
 	    logger:log(normal, "Auth: Nonce ~p /= ~p, authentication failed for user ~p", [Nonce, Nonce2, User]),
-	    stale;
+	    {stale, User};
 	Timestamp < Now - 30 ->
 	    logger:log(normal, "Auth: Timestamp ~p too old. Now: ~p, authentication failed for user ~p", [Timestamp, Now, User]),
-	    stale;
+	    {stale, User};
 	Timestamp > Now ->
 	    logger:log(normal, "Auth: Timestamp ~p too new. Now: ~p, authentication failed for user ~p", [Timestamp, Now, User]),
 	    false;
