@@ -15,6 +15,13 @@ start(normal, [AppModule]) ->
     [RemoteMnesiaTables, Mode, AppSupdata] = apply(AppModule, init, []),
     case sipserver_sup:start_link(AppModule, Mode, AppSupdata) of
 	{ok, Supervisor} ->
+	    case siphost:myip() of
+		"127.0.0.1" ->
+		    logger:log(normal, "NOTICE: siphost:myip() returns 127.0.0.1, it is either "
+			       "broken on your platform or you have no interfaces (except loopback) up");
+		_ ->
+		    true
+	    end,
 	    case RemoteMnesiaTables of
 		none ->
 		    logger:log(normal, "proxy started, supervisor is ~p", [Supervisor]);
@@ -60,13 +67,13 @@ start(normal, [AppModule]) ->
     end.
 
 find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor) ->
-    logger:log(debug, "Initializing remote Mnesia tables ~p (supervisor is ~p)", [RemoteMnesiaTables, Supervisor]),
-    find_remote_mnesia_tables1(RemoteMnesiaTables, RemoteMnesiaTables, 0).
+    logger:log(debug, "Initializing remote Mnesia tables ~p", [RemoteMnesiaTables]),
+    find_remote_mnesia_tables1(Supervisor, RemoteMnesiaTables, RemoteMnesiaTables, 0).
 
-find_remote_mnesia_tables1(OrigTableList, RemoteMnesiaTables, Count) ->
+find_remote_mnesia_tables1(Supervisor, OrigTableList, RemoteMnesiaTables, Count) ->
     case mnesia:wait_for_tables(RemoteMnesiaTables, 10000) of
 	ok ->
-	    {"proxy started, all tables found", []};
+	    {"proxy started, all tables found, supervisor is ~p", [Supervisor]};
 	{timeout, BadTabList} ->
 	    if
 		Count == 3 ->
@@ -74,14 +81,14 @@ find_remote_mnesia_tables1(OrigTableList, RemoteMnesiaTables, Count) ->
 		    StopRes = mnesia:stop(),
 		    StartRes = mnesia:start(),
 		    logger:log(debug, "Mnesia stop() -> ~p, start() -> ~p", [StopRes, StartRes]),
-		    find_remote_mnesia_tables1(OrigTableList, OrigTableList, Count + 1);
+		    find_remote_mnesia_tables1(Supervisor, OrigTableList, OrigTableList, Count + 1);
 		Count == 6 ->
 		    logger:log(error, "Could not initiate remote Mnesia tables ~p, exiting.", [BadTabList]),
 		    logger:quit(none),
 		    erlang:fault("Mnesia table init error", RemoteMnesiaTables);
 		true ->
 		    logger:log(debug, "Still waiting for tables ~p", [BadTabList]),
-		    find_remote_mnesia_tables1(OrigTableList, BadTabList, Count + 1)
+		    find_remote_mnesia_tables1(Supervisor, OrigTableList, BadTabList, Count + 1)
 	    end
     end.
 
@@ -325,7 +332,7 @@ process_parsed_packet(Socket, Response, Origin) when record(Response, response),
 		    LogStr = make_logstr(Response, Origin),
 		    {Response, LogStr};
 		_ ->
-		    logger:log(error, "INVALID top-Via in response [client=~s]. Top-Via (~s (without parameters)) does not match mine (~s). Discarding.",
+		    logger:log(error, "INVALID top-Via in response [client=~s]. Top-Via (without parameters) (~s) does not match mine (~s). Discarding.",
 			       [origin2str(Origin, "unknown"), sipheader:via_print([TopVia#via{param=[]}]), sipheader:via_print([MyViaNoParam])]),
 		    {invalid}
 	    end
@@ -572,7 +579,7 @@ sanity_check_contact(Type, Name, Header) ->
     case keylist:fetch(Name, Header) of
 	[Str] ->
 	    case sipheader:from([Str]) of
-		{_, URI} ->
+		{_, URI} when record(URI, sipurl) ->
 		    sanity_check_uri(Type, Name ++ ":", URI, Header);
 		_ ->
 		    throw({sipparseerror, Type, Header, 400, "Invalid " ++ Name ++ ": header"})
@@ -636,4 +643,6 @@ get_listenport(Proto) ->
 
 %% In some places, we need to get a list of all ports which are valid for this proxy.
 get_all_listenports() ->
+    %% XXX implement the rest of this. Have to fetch a list of the ports we listen on
+    %% from the transport layer.
     [get_listenport(udp)].
