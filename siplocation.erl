@@ -431,38 +431,37 @@ process_non_wildcard_contact(LogTag, SipUser, Location, RequestCallId, RequestCS
     %% check if SipUser-Location binding exists in database
     case R of
 	[] ->
-	    %% a new SipUser
+	    %% User has no bindings in the location database, register this one
 	    register_contact(LogTag, SipUser, Location, Priority, ExpireHeader,RequestCallId, RequestCSeq);
 	[SipUserLocation] ->
-	    %% SipUser exists in database
-	    same_call_id(LogTag, SipUser, Location, SipUserLocation, Priority,
-			 RequestCallId, RequestCSeq, ExpireHeader)
+	    %% User has exactly one binding in the location database matching this one, do some checking
+	    check_same_call_id(LogTag, SipUser, Location, SipUserLocation, Priority,
+			       RequestCallId, RequestCSeq, ExpireHeader)
     end.
 
-%% DBLocation = phone record()  |    currently stored sipuser-location info
-%% ReqLocation = contact record()     sipuser-location binding data in REGISTER request
-same_call_id(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
-
+%% DBLocation = phone record(), currently stored sipuser-location info
+%% ReqLocation = contact record(), sipuser-location binding data in REGISTER request
+check_same_call_id(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
     case RequestCallId == DBLocation#phone.callid of
 	true ->
 	    %% request has same call-id so a binding already exists
-	    greater_cseq(LogTag, SipUser, ReqLocation, DBLocation,
-			 Priority, RequestCallId, RequestCSeq, ExpireHeader);
+	    check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation,
+			       Priority, RequestCallId, RequestCSeq, ExpireHeader);
 	false ->
-	    %% call-id differs so the UAC has probably been restarted
+	    %% call-id differs, so the UAC has probably been restarted.
 	    case parse_register_contact_expire(ExpireHeader, ReqLocation) == 0 of
 		true ->
-		    %% unregister bindning
+		    %% zero expire-time, unregister bindning
 		    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
 			       [LogTag, SipUser, DBLocation#phone.requristr, Priority]),
 		    phone:delete_record(DBLocation);
 		false ->
-		    %% update the binding
-		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader,RequestCallId, RequestCSeq)
+		    %% non-zero expire-time, update the binding
+		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader, RequestCallId, RequestCSeq)
 	    end
     end.
 
-greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
+check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
     %% only process reqest if cseq is > than the last one processed i.e. ignore
     %% old, out of order requests
     case RequestCSeq > DBLocation#phone.cseq of
@@ -547,11 +546,11 @@ parse_register_expire(ExpireHeader, Contact) when is_record(Contact, contact) ->
 	%% no expire - use default
 	none ->
 	    3600;
-	%% expire value supplied by request - we can choose to accept,
-	%% change (shorten/increase expire period) or reject to short expire
-	%% times with a 423 (Interval Too Brief) error.
-	%% Currently implementation only limits the max expire period
 	ContactExpire ->
+	    %% expire value supplied by request - we can choose to accept,
+	    %% change (shorten/increase expire period) or reject too short expire
+	    %% times with a 423 (Interval Too Brief) error.
+	    %% Currently implementation only limits the max expire period
 	    MaxRegisterTime = sipserver:get_env(max_register_time, 43200),
 
 	    lists:min([MaxRegisterTime, ContactExpire])
