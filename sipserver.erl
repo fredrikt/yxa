@@ -162,10 +162,11 @@ parse_packet(Socket, Packet, IP, InPortNo) ->
     end.
 
 received_from_strict_router(URI, Header) ->
-    MyHostname = siprequest:myhostname(),
     MyPort = siprequest:default_port(sipserver:get_env(listenport, none)),
     MyIP = siphost:myip(),
     {User, Pass, Host, URIPort, Parameters} = URI,
+    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip()]),
+    HostnameIsMyHostname = util:casegrep(Host, HostnameList),
     Port = siprequest:default_port(URIPort),
     MAddrMatch = case dict:find("maddr", sipheader:param_to_dict(Parameters)) of
 	{ok, MyIP} -> true;
@@ -176,7 +177,7 @@ received_from_strict_router(URI, Header) ->
 	_ -> true
     end,
     if
-	Host /= MyHostname -> false;
+	HostnameIsMyHostname /= true -> false;
 	Port /= MyPort -> false;
 	% Some SIP-stacks evidently strip parameters
 	%MAddrMatch /= true -> false;
