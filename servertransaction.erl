@@ -1,7 +1,7 @@
 -module(servertransaction).
 -export([start/5]).
 
--record(state, {branch, logtag, socket, report_to, request, response, sipmethod, sipstate, timerlist, mode}).
+-record(state, {branch, logtag, socket, report_to, request, response, sipmethod, sipstate, timerlist, mode, my_to_tag}).
 
 start({"ACK", URI, _, _}, Socket, LogStr, RequestFun, Mode) ->
     % XXX better to start transaction and immediately send 500 Server Internal Error?
@@ -17,9 +17,10 @@ start(Request, Socket, LogStr, RequestFun, Mode) ->
     % as formulated in the RFC (section 17.2.1), but we proceed from trying to proceeding
     % on the first 100 Trying. We do this because we don't want to mandate every application
     % to be transaction stateful.
+    MyToTag = generate_tag(),
     MyState = #state{branch=Branch, logtag=LogTag, socket=Socket, request=Request,
 			sipmethod=Method, sipstate=trying, timerlist=siptimer:empty(),
-			mode=Mode},
+			mode=Mode, my_to_tag=MyToTag},
     TransactionPid = sipserver:safe_spawn(fun spawned/2, [MyState, LogStr]),
     TransactionPid.
     
@@ -98,15 +99,17 @@ loop(State) when record(State, state) ->
 	    {Method, URI, Header, _} = Request,
 	    logger:log(debug, "~s: Server transaction received a request, checking if it is a resend (~s ~s)",
 			[LogTag, Method, sipurl:print(URI)]),
-	    % XXX check CSeq number too?
+	    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+	    {_, _, OrigHeader, _} = State#state.request,
+	    {OrigCSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", OrigHeader)),
 	    if
-		Method == OrigMethod, URI == OrigURI ->
+		Method == OrigMethod, URI == OrigURI, CSeqNum == OrigCSeqNum ->
 		    case State#state.response of
 			{Status, Reason, RHeader, RBody} ->
 			    logger:log(normal, "~s: Received a retransmission of request (~s ~s), resending response ~p ~s",
 					[LogTag, Method, sipurl:print(URI), Status, Reason]),
 			    ServerPid ! {continue, MsgRef},
-			    siprequest:send_proxy_response(State#state.socket, Status, Reason, RHeader, RBody);
+			    transportlayer:send_proxy_response(State#state.socket, State#state.response);
 			_ ->
 			    case State#state.report_to of
 				P when pid(P) ->
@@ -122,9 +125,9 @@ loop(State) when record(State, state) ->
 			    end
 		    end;
 		true ->
-		    logger:log(normal, "~s: Server transaction: Received request is not particulary alike the first one (~s ~s /= ~s ~s). " ++
+		    logger:log(normal, "~s: Server transaction: Received request is not particulary alike the first one (~p ~s ~s /= ~p ~s ~s). " ++
 				"Dropping it on the floor.",
-				[LogTag, Method, sipurl:print(URI), OrigMethod, sipurl:print(OrigURI)]),
+				[LogTag, CSeqNum, Method, sipurl:print(URI), OrigCSeqNum, OrigMethod, sipurl:print(OrigURI)]),
 		    ServerPid ! {continue, MsgRef},
 		    true
 	    end,
@@ -266,7 +269,7 @@ process_timer(Timer, State) when record(State, state) ->
 			completed ->
 			    logger:log(debug, "~s: Resend after ~p (response to ~s ~s): ~p ~s",
 			    	       [LogTag, siptimer:timeout2str(Timeout), Method, sipurl:print(URI), Status, Reason]),
-			    siprequest:send_proxy_response(State#state.socket, Status, Reason, RHeader, RBody),
+			    transportlayer:send_proxy_response(State#state.socket, State#state.response),
 			    NewTimeout = case Method of
 				"INVITE" ->
 				    % Use Timer Value T2 for INVITE responses
@@ -414,7 +417,7 @@ send_response(Response, SendReliably, State) when record(State, state) ->
     end,
     logger:log(debug, "~s: Sending response to ~s ~s : ~p ~s", 
     		[LogTag, Method, sipurl:print(URI), Status, Reason]),
-    siprequest:send_proxy_response(Socket, Status, Reason, RHeader, RBody),
+    transportlayer:send_proxy_response(Socket, Response),
     NewState1 = case SendReliably of
 	true ->
 	    T1 = sipserver:get_env(timerT1, 500),
@@ -510,5 +513,30 @@ process_received_ack(State) when record(State, state) ->
 	    State
     end.
 
-make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, State) when record(State, state) ->
-    siprequest:make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, State#state.socket, State#state.request).
+make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State) when record(State, state), Status == 100 ->
+    siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State#state.socket, State#state.request);
+
+make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State) when record(State, state) ->
+    Request = State#state.request,
+    {Method, URI, Header, Body} = Request,
+    To = keylist:fetch("To", Header),
+    Req = case sipheader:get_tag(To) of
+	none ->
+	    {DistplayName, ToURI} = sipheader:to(To),
+	    NewTo = lists:concat([sipheader:to_print({DistplayName, ToURI}), ";tag=",
+	    			  State#state.my_to_tag]),
+	    NewHeader = keylist:set("To", [NewTo], Header),
+	    {Method, URI, NewHeader, Body};
+	_ ->
+	    Request
+    end,
+    siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State#state.socket, Req).
+
+generate_tag() ->
+    % Erlang guarantees that subsequent calls to now() generate increasing values (on the same node).
+    {Megasec, Sec, Microsec} = now(),
+    In = lists:concat([node(), Megasec * 1000000 + Sec, 8, $., Microsec]),
+    Out = siprequest:make_base64_md5_token(In),
+    % RFC3261 #19.3 says tags must have at least 32 bits randomness,
+    % don't make them longer than they have to be.
+    "yxa-" ++ string:substr(Out, 1, 9).
