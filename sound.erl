@@ -18,7 +18,7 @@ inputloop(Handle, Parent, Socket) ->
 
 inputloop(Handle, Parent, Socket, Dtmf, Capture, Dest) ->
     receive
-	{udp, Socket, IP, InPortNo, Packet} ->
+	{udp, Socket, _IP, _InPortNo, Packet} ->
 	    {_, _, _, _, _, _, _, Sound} = rtp:parse(list_to_binary(Packet)),
 	    case Dtmf of
 		none ->
@@ -104,7 +104,7 @@ play_sound_start(Parent, Handle, Socket, {Address, Port}, Data) ->
 play_sound_stop(Pid) ->
     Pid ! {sound, sendloop, quit}.
 
-sendloop(Handle, Parent, Socket, Address, Port, []) ->
+sendloop(Handle, Parent, _Socket, _Address, _Port, []) ->
     Parent ! {sound, play_sound, Handle, finished},
     true;
 
