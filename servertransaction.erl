@@ -211,6 +211,8 @@ loop(State) when record(State, state) ->
 	    {ok, NewState1};
 	    
 	{quit} ->
+	    logger:log(debug, "~s: Got signal to quit right away, doing so (when in state ~p)",
+			[LogTag, State#state.sipstate]),
 	    {quit, State};
 
 	Unknown ->
@@ -224,6 +226,7 @@ loop(State) when record(State, state) ->
 		stateful ->
 		    logger:log(error, "~s: Server transaction (~s ~s) still alive after 5 minutes!",
 				[LogTag, ZMethod, sipurl:print(ZURI)]),
+		    transactionlayer:debug_show_transactions(),
 		    {error, State};
 		stateless ->
 		    logger:log(debug, "~s: Stateless server transaction (~s ~s) terminating without having sent a response after 5 minutes",
