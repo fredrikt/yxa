@@ -359,6 +359,7 @@ foreach $name (keys %standard_tests) {
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
 
     my $branch = 'z9hG4bK-yxa-testclient-' . md5_hex ($CallID);
+    my $fromtag = ';tag=ft-' . substr (md5_hex ("ft-${CallID}"), 1, 8); 
 
     if ($standard_tests{$name}{branch} =~ /.*2543$/ or
 	$rfc3261_branch eq 'no') {
@@ -367,7 +368,19 @@ foreach $name (keys %standard_tests) {
 
     $callid_seq++;
 
-    my $res += perform_test ($name, $standard_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, $branch, undef);
+    my %params = (testname	=> $name,
+		  callid_seq	=> $callid_seq,
+		  testparamsref	=> $standard_tests{$name},
+		  use_udp	=> $use_udp,
+		  hostname	=> $hostname,
+		  cseq		=> '1',
+		  callid	=> $CallID,
+		  branch	=> $branch,
+		  authresponse	=> undef,
+		  from_tag	=> $fromtag
+		  );
+
+    my $res += perform_test ($quiet, \%params);
     $standard_okcount += $res;
 
     push (@standard_failed, "\"$name\"") if (! $res);
@@ -410,15 +423,29 @@ foreach $name (keys %local_tests) {
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
 
     my $branch = 'z9hG4bK-yxa-testclient-' . md5_hex ($CallID);
+    my $fromtag = ';tag=ft-' . substr (md5_hex ("ft-${CallID}"), 1, 8); 
 
-    if ($standard_tests{$name}{branch} =~ /.*2543$/ or
+    if ($local_tests{$name}{branch} =~ /.*2543$/ or
 	$rfc3261_branch eq 'no') {
 	$branch = '';
     }
 
     $callid_seq++;
 
-    my $res += perform_test ($name, $local_tests{$name}, $use_udp, $quiet, $hostname, '1', $CallID, $branch, undef);
+    my %params = (testname	=> $name,
+		  callid_seq	=> $callid_seq,
+		  testparamsref	=> $local_tests{$name},
+		  use_udp	=> $use_udp,
+		  hostname	=> $hostname,
+		  cseq		=> '1',
+		  callid	=> $CallID,
+		  branch	=> $branch,
+		  authresponse	=> undef,
+		  from_tag	=> $fromtag
+		  );
+
+    my $res += perform_test ($quiet, \%params);
+
     $local_okcount += $res;
 
     push (@local_failed, "\"$name\"") if (! $res);
@@ -444,19 +471,23 @@ exit ($standard_failstr eq '' and $local_failstr eq '');
 
 sub perform_test
 {
-    my $testname = shift;
-    my $paramref = shift;
-    my $use_udp = shift;
     my $quiet = shift;
-    my $hostname = shift;
-    my $CSeq = shift;
-    my $CallID = shift;
-    my $branch = shift;
-    my $authrequestresponse = shift;
+    my $params_ref = shift;
+
+    my $testname		= $$params_ref{testname};
+    my $callid_seq		= $$params_ref{callid_seq};
+    my $testparamsref		= $$params_ref{testparamsref};
+    my $use_udp			= $$params_ref{use_udp};
+    my $hostname		= $$params_ref{hostname};
+    my $CSeq			= $$params_ref{cseq};
+    my $CallID			= $$params_ref{callid};
+    my $branch			= $$params_ref{branch};
+    my $authrequestresponse	= $$params_ref{authresponse};
+    my $FromTag			= $$params_ref{from_tag};
+
     my $proto;
-
-    my %testparams = %$paramref;
-
+    my %testparams = %{$testparamsref};
+    
     my ($msg, $response, $code, $text);
 
     my $dst = $testparams{sendto} || $testserver;
@@ -471,6 +502,7 @@ sub perform_test
 	$proto = "UDP";
     } else {
 	my ($sendto, $sendto_ip, $sendto_port) = resolve_destination ($dst);
+	warn ("Destination '$dst' resolved to $sendto_ip:$sendto_port\n") unless ($quiet);
 
 	my $dst = sockaddr_in($sendto_port, inet_aton($sendto_ip));
 
@@ -479,7 +511,7 @@ sub perform_test
 	my $paddr = sockaddr_in($sendto_port, $iaddr);
 
 	socket($Socket, PF_INET, SOCK_STREAM, getprotobyname("tcp")) or die "socket: $!";
-	connect($Socket, $paddr) or die ("connect: $!\n"), return undef;
+	connect($Socket, $paddr) or die ("Failed connecting to tcp:$sendto_ip:$sendto_port: $!\n"), return undef;
 	warn ("Connected to $sendto_ip:$sendto_port\n");
 	$proto = "TCP";
     }
@@ -540,7 +572,7 @@ sub perform_test
 
     $msg = "$Method $sipuri SIP/2.0
 Via: ${my_via}
-From: $From
+From: ${From}${FromTag}
 To: $To
 Call-ID: $CallID
 CSeq: $CSeq $CSeqMethod
@@ -602,7 +634,9 @@ $testheader$proxyauthheader
 	    $CSeq++;
 
 	    if (defined ($testparams{user}) and defined ($testparams{pw})) {
-		return perform_test ($testname, $paramref, $use_udp, $quiet, $hostname, $CSeq, $CallID, $branch, $response);
+		$$params_ref{authresponse} = $response;
+		#return perform_test ($testname, $callid_seq, $paramref, $use_udp, $quiet, $hostname, $CSeq, $CallID, $branch, $response);
+		return perform_test ($quiet, $params_ref);
 	    } else {
 		warn ("FAILED - got '$code $text' but I have no credentials for this test\n");
 		close ($Socket);
