@@ -64,7 +64,7 @@ process_request(Request, LogTag) when record(Request, request), Request#request.
     URI = Request#request.uri,
     case localhostname(URI#sipurl.host) of
 	true ->
-	    Contacts = sipheader:contact(keylist:fetch("Contact", Request#request.header)),
+	    Contacts = sipheader:contact(Request#request.header),
 	    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
 	    transactionlayer:send_response_request(Request, 200, "OK",
 						   [{"Expires", ["0"]},
@@ -78,7 +78,8 @@ process_request(Request, LogTag) when record(Request, request), Request#request.
 %%
 %% INVITE or MESSAGE
 %%
-process_request(Request, LogTag) when record(Request, request), Request#request.method == "INVITE"; Request#request.method == "MESSAGE" ->
+process_request(Request, LogTag) when record(Request, request), Request#request.method == "INVITE"; 
+Request#request.method == "MESSAGE" ->
     case get_user(Request#request.uri) of
 	{404, Reason} ->
 	    logger:log(normal, "~s: Testserver classic response: '404 ~p'", [LogTag, Reason]),
