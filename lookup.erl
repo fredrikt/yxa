@@ -7,6 +7,7 @@
 	 lookup_address_to_users/1,
 	 lookupdefault/1,
 	 lookuppotn/1,
+	 lookupnumber/1,
 	 lookupenum/1,
 	 lookuppstn/1,
 	 isours/1,
@@ -162,46 +163,68 @@ lookupdefault(URL) ->
 	    case DefaultRoute of
 		none ->
 		    logger:log(debug, "Lookup: No default route - dropping request"),
-		    {response, 500, "Can't route request"};	% XXX rätt error-code?
+		    {response, 500, "Can't route request"};	%% XXX is 500 the correct error-code?
 		Hostname ->
 		    {Host, Port} = sipurl:parse_hostport(Hostname),
 		    NewURI = {User, none, Host, Port, []},
 		    logger:log(debug, "Lookup: Default-routing to ~s", [sipurl:print(NewURI)]),
-		    % XXX we should preserve the Request-URI by proxying this as a loose router.
-		    % It is almost useless to only preserve the User-info IMO. We can do this
-		    % by returning {forward, Host, Port} instead.
+		    %% XXX we should preserve the Request-URI by proxying this as a loose router.
+		    %% It is almost useless to only preserve the User-info IMO. We can do this
+		    %% by returning {forward, Host, Port} instead.
 		    {proxy, NewURI}
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: lookuppotn/1
+%% Description: Look Up Plain Old Telephone Number. Figures out where
+%%              to route a numerical destination. First we try to
+%%              rewrite it to E164 and do ENUM lookup, and if that
+%%              fails, lookuppstn() on it. Then we try our fallback
+%%              numerical route matching, lookupnumber().
+%% Returns: {proxy, URL}          |
+%%          {relay, URL}          |
+%%          none
+%%--------------------------------------------------------------------
 lookuppotn("+" ++ E164) ->
     Loc1 = case util:isnumeric(E164) of
-	true ->
-	    Res1 = lookupenum("+" ++ E164),
-    	    logger:log(debug, "Lookup: ENUM lookup on ~s -> ~p", ["+" ++ E164, Res1]),
-	    case Res1 of
-	    	none ->
-    		    Res2 = lookuppstn("+" ++ E164),
-    		    logger:log(debug, "Lookup: PSTN lookup on ~s -> ~p", ["+" ++ E164, Res2]),
-	    	    Res2;
-    		Res1 ->
-		    Res1
-	    end;
-	_ ->
-	    none
-    end;
+	       true ->
+		   Res1 = lookupenum("+" ++ E164),
+		   logger:log(debug, "Lookup: ENUM lookup on ~s -> ~p", ["+" ++ E164, Res1]),
+		   case Res1 of
+		       none ->
+			   Res2 = lookuppstn("+" ++ E164),
+			   logger:log(debug, "Lookup: PSTN lookup on ~s -> ~p", ["+" ++ E164, Res2]),
+			   Res2;
+		       Res1 ->
+			   Res1
+		   end;
+	       _ ->
+		   none
+	   end;
 lookuppotn(Number) ->
-    Res = rewrite_potn_to_e164(Number),
-    case Res of
-        none ->
-            none;
+    case rewrite_potn_to_e164(Number) of
         "+" ++ E164 ->
 	    lookuppotn("+" ++ E164);
 	_ ->
-	    none
+            %% Number could not be rewritten to E164, check to see if lookupnumber()
+            %% can make anything out of it.
+	    case local:lookupnumber(Number) of
+		error ->
+		    none;
+		R ->
+		    R
+	    end
     end.	    
 
-
+%%--------------------------------------------------------------------
+%% Function: lookupenum/1
+%% Description: Does ENUM resolving on an E164 number. If the input
+%%              number is not an E164 number, it is converted first.
+%% Returns: {proxy, URL}          |
+%%          {relay, URL}          |
+%%          none
+%%--------------------------------------------------------------------
 lookupenum("+" ++ E164) ->
     case dnsutil:enumlookup("+" ++ E164) of
 	none ->
@@ -209,18 +232,22 @@ lookupenum("+" ++ E164) ->
 	URL ->
 	    {E164User, _, E164Host, _, _} = sipurl:parse(URL),
 	    IsMe = homedomain(E164Host),
+	    %% Try to rewrite the userpart of the returned URL into a E164 number
+	    %% to make sure it is not a loop back to this proxy. If it is a remote
+	    %% domain, the username comparison test does not have any effect, so
+	    %% a remote URL with the E164 number as uesrname is OK.
 	    NewE164 = rewrite_potn_to_e164(E164User),
 	    SameE164 = util:casecompare(NewE164, "+" ++ E164),
 	    if
 		IsMe /= true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying", [URL]),
 		    {relay, sipurl:parse(URL)};
-		NewE164 == none ->
+		NewE164 == error ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain but not E.164 URL ~p, proxying", [URL]),
 		    {proxy, sipurl:parse(URL)};
 		SameE164 == true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain (~p) and the same E.164 number (~p == ~p), avoiding loop",
-			    		[E164Host, E164User, "+" ++ E164]),
+			       [E164Host, E164User, "+" ++ E164]),
 		    none;
 		true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in homedomain E.164 URL ~p, proxying", [URL]),
@@ -228,17 +255,25 @@ lookupenum("+" ++ E164) ->
 	    end
     end;
 lookupenum(Number) ->
-    Res = rewrite_potn_to_e164(Number),
-    case Res of
-        none ->
+    case rewrite_potn_to_e164(Number) of
+        error ->
             none;
         "+" ++ E164 ->
 	    lookupenum("+" ++ E164);
 	_ ->
-	    none
-    end.	    
+	    error
+    end.
 
-    
+%%--------------------------------------------------------------------
+%% Function: lookuppstn/1
+%% Description: Rewrites a number to a PSTN URL using the e164_to_pstn
+%%              configuration regexp. If the number is not E164, it
+%%              is converted using rewrite_potn_to_e164() first.
+%% Returns: {proxy, URL}          |
+%%          {relay, URL}          |
+%%          none                  |
+%%          error
+%%--------------------------------------------------------------------
 lookuppstn("+" ++ E164) ->
     case util:isnumeric(E164) of
 	true ->
@@ -247,29 +282,97 @@ lookuppstn("+" ++ E164) ->
 		    none;
 		PSTN ->
 		    logger:log(debug, "Rewrite: ~s to PSTN URL ~p", ["+" ++ E164, PSTN]),
-		    {proxy, sipurl:parse("sip:" ++ PSTN)}
+		    case parse_url_with_default_protocol("sip", PSTN) of
+			error ->
+			    logger:log(error, "Lookup: Failed parsing result of rewrite ~p using 'e164_to_pstn'",
+				       ["+" ++ E164]),
+			    none;
+			URL ->
+			    {proxy, URL}
+		    end
 	    end;
 	_ ->
-	    none
+	    error
     end;
 lookuppstn(Number) ->
-    Res = rewrite_potn_to_e164(Number),
-    case Res of
-        none ->
-            none;
+    case rewrite_potn_to_e164(Number) of
         "+" ++ E164 ->
 	    lookuppstn("+" ++ E164);
-	_ ->
-	    none
+        _ ->
+	    %% Number could not be rewritten to E164, check to see if lookupnumber()
+	    %% can make anything out of it.
+	    case local:lookupnumber(Number) of
+		error ->
+		    none;
+		R ->
+		    R
+	    end
     end.	    
 
-
+%%--------------------------------------------------------------------
+%% Function: lookupnumber/1
+%% Description: Check if there are any numerical matching rules that
+%%              apply (configured regexp 'number_to_pstn'). Called by
+%%              lookuppotn/1 and lookuppstn/1 when the input number is
+%%              not rewriteable to a E164 number.
+%% Returns: {proxy, URL}          |
+%%          {relay, URL}          |
+%%          none                  |
+%%          error
+%%--------------------------------------------------------------------
+lookupnumber(Number) ->
+    %% Check if Number is all digits
+    case util:isnumeric(Number) of
+	true ->
+	    %% Try to rewrite Number using configured regexp 'number_to_pstn'
+	    case util:regexp_rewrite(Number, sipserver:get_env(number_to_pstn, [])) of
+		[] ->
+		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn'"),
+		    error;
+		Res when list(Res) ->
+		    %% Check to see if what we got is a parseable URL
+		    URL = parse_url_with_default_protocol("sip", Res),
+		    case URL of
+			{_, _, Host, _, _} ->
+			    %% Check if it is a local URL or a remote
+			    case homedomain(Host) of
+				true ->
+				    {proxy, URL};
+				_ ->
+				    {relay, URL}
+			    end;
+			Unknown ->
+			    logger:log(error, "Lookup: Rewrite of number ~p did not result in a parseable URL : ~p",
+				       [Number, Res]),
+			    error
+		    end;
+		nomatch ->
+		    %% Regexp did not match
+		    none;
+		Unknown ->
+		    %% Regexp rewrite failed
+		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn', result : ~p",
+			       [Unknown]),
+		    error
+	    end;
+	_ ->
+	    %% Number was not numeric
+	    error
+    end.
+    
+%%--------------------------------------------------------------------
+%% Function: rewrite_potn_to_e164/1
+%% Description: Rewrite a number to an E164 number using our local
+%%              numbering plan (configured regexp 'internal_to_e164').
+%% Returns: Number                | (Number is a list starting with +)
+%%          error
+%%--------------------------------------------------------------------
 rewrite_potn_to_e164("+" ++ E164) ->
     case util:isnumeric(E164) of
 	true ->
 	    "+" ++ E164;
 	_ ->
-	    none
+	    error
     end;
 rewrite_potn_to_e164(Number) when list(Number) ->
     case util:isnumeric(Number) of
@@ -278,13 +381,13 @@ rewrite_potn_to_e164(Number) when list(Number) ->
 		"+" ++ E164 ->
 		    rewrite_potn_to_e164("+" ++ E164);
 		_ ->
-		    none
+		    error
 	    end;
 	_ ->
-	    none
+	    error
     end;
 rewrite_potn_to_e164(_) ->
-    none.
+    error.
 
 isours(URL) ->
     case local:get_users_for_url(URL) of
@@ -307,6 +410,8 @@ homedomain(Domain) ->
 	true ->
 	    true;
 	_ ->
+	    %% Domain did not match configured sets of homedomain, check against list
+	    %% of hostnames and also my IP address
 	    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip()]),
 	    util:casegrep(Domain, HostnameList)
     end.
@@ -322,29 +427,34 @@ get_remote_party_number(URL, DstHost) ->
 		    none;
 		Unknown ->
 		    logger:log(error, "Lookup: Unexpected results from local:get_telephonenumber_for_user() for user ~p in get_remote_party_number: ~p",
-				[User, Unknown]),
+			       [User, Unknown]),
 		    none
 	    end;
 	nomatch ->
 	    logger:log(debug, "Lookup: No user(s) match address ~p, can't get telephone number",
-			[sipurl:print(URL)]),
+		       [sipurl:print(URL)]),
 	    none;
 	[] ->
 	    logger:log(debug, "Lookup: No user(s) match address ~p, can't get telephone number",
-			[sipurl:print(URL)]),
+		       [sipurl:print(URL)]),
 	    none;
 	Users when list(Users) ->
 	    logger:log(debug, "Lookup: Multiple users match address ~p, can't get telephone number",
-			[sipurl:print(URL)]),
+		       [sipurl:print(URL)]),
 	    none;
 	Unknown ->
 	    logger:log(error, "Lookup: Unexpected results from local:get_users_for_url() for URL ~p in get_remote_party_number: ~p",
-			[sipurl:print(URL), Unknown]),
+		       [sipurl:print(URL), Unknown]),
 	    none
     end.
 
 format_number_for_remote_party_id(Number, ToURI, DstHost) ->
-    rewrite_potn_to_e164(Number).
+    case rewrite_potn_to_e164(Number) of
+	error ->
+	    none;
+	Res ->
+	    Res
+    end.
 
 get_remote_party_name(Key, URI) when list(Key) ->
     case directory:lookup_tel2name(Key) of
@@ -360,3 +470,42 @@ get_remote_party_name(Key, URI) when list(Key) ->
 get_remote_party_name(Key, URI) ->
     logger:log(error, "Lookup: Could not get remote party name for non-list argument ~p", [Key]),
     none.
+
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+%% In some places, we allow lookups to result in URL strings without
+%% protocol. First try to parse them as-is, and if that does not work
+%% then make sure there is no protocol specified that we apparently
+%% do not handle, and if not then prepend them with Proto: and try again.
+parse_url_with_default_protocol(Proto, URLstr) ->
+    URL1 = sipurl:parse(URLstr),
+    case URL1 of
+	{_, _, _, _, _} ->
+	    URL1;
+	_ ->
+	    case string:chr(URLstr, $@) of
+		0 ->
+		    error;
+		AtIndex ->
+		    %% There is an at-sign in there
+		    UserPart = string:substr(URLstr, 1, AtIndex - 1),
+		    case string:chr(UserPart, $:) of
+			0 ->
+			    %% There is no colon in the userpart of URLstr, try with our default protocol
+			    URL2 = sipurl:parse(Proto ++ ":" ++ URLstr),
+			    case URL2 of
+				{_, _, _, _, _} ->
+				    URL2;
+				_ ->
+				    error
+			    end;
+			_ ->
+			    %% There is already a protocol in URLstr, but apparently not one
+			    %% that sipurl:parse() can handle.
+			    error
+		    end
+	    end
+    end.
