@@ -30,26 +30,28 @@ request(Method, URI, OrigHeader, Body, Socket, FromIP) ->
 			true ->
 			    case sipproxy:get_branch(Header) of
 				none ->
-				    logger:log(normal, "appserver: Received ~s ~s matching existing transaction, sending on to GluePid ~p", [Method, sipurl:print(URI), Pid]),
+				    logger:log(normal, "Appserver: Received ~s ~s matching existing transaction, sending on to GluePid ~p", [Method, sipurl:print(URI), Pid]),
 				    safe_signal(Pid, {siprequest, callbranch, {Method, URI, Header, Body}});
 				Branch ->
-				    logger:log(normal, "appserver: Received ~s ~s matching existing transaction, sending on to GluePid ~p", [Method, sipurl:print(URI), Pid]),
+				    logger:log(normal, "Appserver: Received ~s ~s matching existing transaction, sending on to GluePid ~p", [Method, sipurl:print(URI), Pid]),
 				    safe_signal(Pid, {siprequest, Branch, {Method, URI, Header, Body}})
 			    end;		
 			false ->
-			    logger:log(normal, "appserver: Received ~s ~s matching existing transaction with dead GluePid ~p. Removing transaction from database and starting new.",
+			    logger:log(normal, "Appserver: Received ~s ~s matching existing transaction with dead GluePid ~p. Removing transaction from database and starting new.",
 			    		[Method, sipurl:print(URI), Pid]),
 			    DialogueID = sipheader:dialogueid(Header),
 			    delete_call(DialogueID),
 			    create_session(Method, URI, Header, Body, Socket, FromIP)
 		    end;
 		_ ->
-		    logger:log(debug, "appserver: Found dialogue, but this requests URI (~s) does not match original requests URI (~s), proxying.",
+		    logger:log(debug, "Appserver: Found dialogue, but this requests URI (~s) does not match original requests URI (~s), proxying.",
 		    		[sipurl:print(URI), sipurl:print(OrigURI)]),
+		    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+		    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (new Request-URI)", [LogStr]),
 		    siprequest:send_proxy_request(Header, Socket, {Method, URI, Body, []})
 	    end;
 	Foo ->
-	    logger:log(error, "appserver: Unknown database content returned :~n~p", [Foo])
+	    logger:log(error, "Appserver: Unknown database content returned :~n~p", [Foo])
     end.
 
 create_session("INVITE", URI, Header, Body, Socket, FromIP) ->
@@ -61,12 +63,13 @@ create_session("INVITE", URI, Header, Body, Socket, FromIP) ->
 	    OrigRequest = {"INVITE", URI, Header, Body},
 	    CallPid = serverbranch:start(CallBranch, Socket, FromIP, self(), OrigRequest),
 	    Actions = get_actions(URI),
-	    Key = local:sipuser(URI),
 	    case Actions of
 		nomatch ->
-		    logger:log(normal, "Appserver: No actions found for INVITE ~s (SIP user ~p), answering 404 Not Found", [sipurl:print(URI), Key]),
+		    logger:log(normal, "Appserver: No actions found for INVITE ~s (unknown user), will answer 404 Not Found",
+		    		[sipurl:print(URI)]),
 		    fork_actions(BranchBase, CallBranch, CallPid, OrigRequest, Socket, FromIP, {sendresponse, 404, "Not Found"});
 		_ ->
+		    Key = local:sipuser(URI),
 		    logger:log(debug, "Appserver: User ~p actions :~n~p", [Key, Actions]),
 		    fork_actions(BranchBase, CallBranch, CallPid, OrigRequest, Socket, FromIP, Actions)
 	    end;
@@ -84,22 +87,23 @@ create_session(Method, URI, Header, Body, Socket, FromIP) ->
 	    CallBranch = BranchBase ++ "-UAS",
 	    OrigRequest = {Method, URI, Header, Body},
 	    Actions = get_actions(URI),
-	    Key = local:sipuser(URI),
 	    case Actions of
 		nomatch ->
-		    logger:log(normal, "Appserver: No actions found for ~s ~s (SIP user ~p), answering 404 Not Found",
-		    		[Method, sipurl:print(URI), Key]),
+		    LogStr = sipserver:make_logstr({request, "INVITE", URI, Header, Body}, FromIP),
+		    logger:log(normal, "Appserver: ~s -> 404 Not Found (no actions found)",
+		    		[LogStr]),
 		    AnswerHeader = siprequest:make_answerheader(Header),
 		    siprequest:send_notfound(AnswerHeader, Socket);
 		_ ->
 		    CallPid = serverbranch:start(CallBranch, Socket, FromIP, self(), OrigRequest),
+		    Key = local:sipuser(URI),
 		    logger:log(debug, "Appserver: User ~p actions :~n~p", [Key, Actions]),
 		    fork_actions(BranchBase, CallBranch, CallPid, OrigRequest, Socket, FromIP, Actions)
 	    end;
 	_ ->
 	    logger:log(debug, "Appserver: Request ~s ~s has Route header. Forwarding statelessly.", [Method, sipurl:print(URI)]),
 	    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
-	    logger:log(normal, "~s: Forwarding statelessly", [LogStr]),
+	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
 	    siprequest:send_proxy_request(Header, Socket, {Method, URI, Body, []})
     end.
 
@@ -129,23 +133,25 @@ do_request(Method, URI, OrigHeader, Body, Socket, FromIP) ->
 			_ ->
 			    case targetlist:get_target(Branch, Targets) of
 				none ->
-				    logger:log(debug, "appserver: Could not find target for branch ~p in debugfriendly(Targets) :~n~p",
+				    logger:log(debug, "Appserver: Could not find target for branch ~p in debugfriendly(Targets) :~n~p",
 				    		[Branch, targetlist:debugfriendly(Targets)]),
 				    logger:log(normal, "~s -> glue PID ~p (callbranch, since branch ~s is not recognized)", [LogStr, Pid, Branch]),
 				    safe_signal(Pid, {siprequest, callbranch, {Method, URI, Header, Body}});
 				Target ->
 				    BranchPid = targetlist:extract_pid(Target),
-				    logger:log(debug, "appserver: Forwarding request ~s ~s to BranchPid ~p", [Method, sipurl:print(URI), BranchPid]),
+				    logger:log(debug, "Appserver: Forwarding request ~s ~s to BranchPid ~p", [Method, sipurl:print(URI), BranchPid]),
 				    safe_signal(BranchPid, {request, {Method, URI, Header, Body}})
 			    end
 		    end;
 		_ ->
-		    logger:log(debug, "appserver: Found dialogue, but this requests URI (~s) does not match original requests URI (~s), proxying.",
+		    logger:log(debug, "Appserver: Found dialogue, but this requests URI (~s) does not match original requests URI (~s), proxying.",
 		    		[sipurl:print(URI), sipurl:print(OrigURI)]),
+		    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+		    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (new Request-URI)", [LogStr]),
 		    siprequest:send_proxy_request(Header, Socket, {Method, URI, Body, []})
 	    end;
 	Foo ->
-	    logger:log(error, "appserver: Unknown database content returned :~n~p", [Foo])
+	    logger:log(error, "Appserver: Unknown database content returned :~n~p", [Foo])
     end.
 
 delete_call(DialogueID) ->
@@ -161,10 +167,11 @@ response(Status, Reason, Header, Body, Socket, FromIP) ->
 	    % transaction can be found
 	    DialogueID = sipheader:dialogueid(Header),
 	    logger:log(debug, "Response to ~s: ~p ~s -> Call ~p not found, forwarding statelessly", [LogStr, Status, Reason, DialogueID]),
+	    logger:log(normal, "Appserver: Response to ~s: ~p ~s -> Forwarding statelessly (no dialogue found)", [LogStr, Status, Reason]),
 	    siprequest:send_proxy_response(Socket, Status, Reason, Header, Body);
 	{OrigRequest, {GluePid, CallBranch, TargetList}} ->
 	    Branch = sipproxy:get_branch(Header),
-	    logger:log(normal, "~s: Response to ~s: ~p ~s", [Branch, LogStr, Status, Reason]),
+	    logger:log(normal, "~s: Received response to ~s: ~p ~s", [Branch, LogStr, Status, Reason]),
 	    case Branch of
 		CallBranch ->
 		    logger:log(debug, "Response to CallBranch ~s: ~p ~s -> Glue PID ~p", [LogStr, Status, Reason, GluePid]),
@@ -174,7 +181,7 @@ response(Status, Reason, Header, Body, Socket, FromIP) ->
 		    safe_signal(GluePid, {response, {Status, Reason, Header, Body}})
 	    end;
 	Foo ->
-	    logger:log(error, "appserver: Unknown database content returned :~n~p", [Foo])
+	    logger:log(error, "Appserver: Unknown database content returned :~n~p", [Foo])
     end.
 
 get_actions(URI) ->
@@ -435,13 +442,6 @@ safe_signal(Pid, Message) ->
     end.
 
 % XXX Store Route-Set when creating early or completed dialogue
-%
-% 16.2 :
-% 2. URI scheme check
-%   
-%  If the Request-URI has a URI whose scheme is not understood by the
-%  proxy, the proxy SHOULD reject the request with a 416 (Unsupported
-%  URI Scheme) response.
 %
 % Reject requests with too low Max-Forwards before forking
 %
