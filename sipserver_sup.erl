@@ -116,7 +116,7 @@ start_transportlayer(Supervisor) ->
     %% Start the transport layer now that we have initialized everything
     TransportLayer = {transportlayer,
 		      {transportlayer, start_link, []},
-		      permanent, 2000, supervisor, [transportlayer]},
+		      permanent, infinity, supervisor, [transportlayer]},
     my_start_children(Supervisor, [TransportLayer]).
 
 
