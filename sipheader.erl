@@ -1,7 +1,8 @@
 -module(sipheader).
 -export([to/1, from/1, contact/1, via/1, via_print/1, to_print/1,
 	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1,
-	 httparg/1, cseq/1, cseq_print/1, via_params/1]).
+	 httparg/1, cseq/1, cseq_print/1, via_params/1,
+	 build_header/1]).
 
 comma(String) ->
     comma([], String, false).
@@ -169,3 +170,10 @@ cseq([String]) ->
 
 cseq_print({Seq, Method}) ->
     Seq ++ " " ++ Method.
+
+print_one_header({Name, Value}) ->
+    Name ++ ": " ++ util:join(Value, ",").
+
+build_header(Header) ->
+    Lines = lists:map(fun print_one_header/1, Header),
+    util:concat(Lines, "\r\n").
