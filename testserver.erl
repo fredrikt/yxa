@@ -1,42 +1,46 @@
 -module(testserver).
--export([init/0, request/6, response/6]).
+-export([init/0, request/3, response/3]).
 
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
+
+%% Function: init/0
+%% Description: Yxa applications must export an init/0 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
 init() ->
     database_call:create([node()]),
-    [[fun request/6, fun response/6], none, stateful, {append, []}].
+    [none, stateful, {append, []}].
 
-localhostname(Hostname) ->
-    util:casegrep(Hostname, sipserver:get_env(myhostnames)).
-
-request(Method, URL, Header, Body, Socket, FromIP) ->
-    Request = {Method, URL, Header, Body},
+%% Function: request/3
+%% Description: Yxa applications must export an request/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
-    case Method of
+    case Request#request.method of
         "REGISTER" ->
-            process_request(Method, URL, Header, Body, Socket, LogTag);
-	"INVITE" ->
-	    packet_check_ok(Header, LogTag),
-	    process_request(Method, URL, Header, Body, Socket, LogTag);
+            process_request(Request, LogTag);
+	_ when Request#request.method == "INVITE"; Request#request.method == "MESSAGE" ->
+	    packet_check_ok(Request#request.header, LogTag),
+	    process_request(Request, LogTag);
 	"ACK" ->
-	    process_request(Method, URL, Header, Body, Socket, LogTag);
+	    process_request(Request, LogTag);
 	"CANCEL" ->
-	    process_request(Method, URL, Header, Body, Socket, LogTag);
+	    process_request(Request, LogTag);
 	"BYE" ->
-	    process_request(Method, URL, Header, Body, Socket, LogTag);
+	    process_request(Request, LogTag);
 	_ ->
 	    logger:log(normal, "~s -- NOT IMPLEMENTED", [LogTag]),
 	    transactionlayer:send_response_handler(THandler, 501, "Not Implemented")
     end.
 
-process_request("REGISTER", URI, Header, Body, Socket, LogTag) ->
-    {User, Pass, Host, Port, Parameters} = URI,
-    Request = {"REGISTER", URI, Header, Body},
+process_request(Request, LogTag) when record(Request, request), Request#request.method == "REGISTER" ->
+    {User, Pass, Host, Port, Parameters} = Request#request.uri,
     case localhostname(Host) of
 	true ->
-	    %% delete any present Record-Route header (RFC3261, #10.3)
-	    NewHeader = keylist:delete("Record-Route", Header),
-	    Contacts = sipheader:contact(keylist:fetch("Contact", NewHeader)),
+	    Contacts = sipheader:contact(keylist:fetch("Contact", Request#request.header)),
 	    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
 	    transactionlayer:send_response_request(Request, 200, "OK",
 						   [{"Expires", ["0"]},
@@ -47,33 +51,34 @@ process_request("REGISTER", URI, Header, Body, Socket, LogTag) ->
 	    transactionlayer:send_response_request(Request, 501, "Not Implemented")
     end;
 
-process_request("INVITE", URI, Header, Body, Socket, LogTag) ->
-    siprequest:send_result(Header, Socket, "", 100, "Trying"),
-    Request = {"INVITE", URI, Header, Body},
-    case get_user(URI) of
+process_request(Request, LogTag) when record(Request, request), Request#request.method == "INVITE"; Request#request.method == "MESSAGE" ->
+    case get_user(Request#request.uri) of
 	{404, Reason} ->
 	    logger:log(normal, "~s: Testserver classic response: '404 ~p'", [LogTag, Reason]),
 	    transactionlayer:send_response_request(Request, 404, Reason);
 	{Status, Reason} ->
 	    logger:log(normal, "~s: Testserver response: '~p ~s'", [LogTag, Status, Reason]),
-	    transactionlayer:send_response_request(Request, Status, Reason)
+	    transactionlayer:send_response_request(Request, Status, Reason);
+	nomatch ->
+	    {User, _, _, _, _} = Request#request.uri,
+	    S = lists:flatten(io_lib:format("Busy Here (~s)", [User])),
+	    logger:log(normal, "~s: Testserver built-in response: '486 ~s'", [LogTag, S]),
+	    transactionlayer:send_response_request(Request, 486, S)
     end;
 
-process_request(Method, URI, Header, Body, Socket, LogTag) ->
-    logger:log(normal, "~s: testserver: ~s ~s dropped", [LogTag, Method, sipurl:print(URI)]),
+process_request(Request, LogTag) when record(Request, request) ->
+    logger:log(normal, "~s: testserver: ~s ~s dropped",
+	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
     true.
 
 get_user(URI) ->
     Key = sipurl:print(URI),
-    Res = regexp_locate_user(Key, sipserver:get_env(user_db, "")),
+    Res = regexp_locate_user(Key, sipserver:get_env(user_db, [])),
     logger:log(debug, "Locate user: ~s -> ~p", [Key, Res]),
-    case Res of
-        nomatch ->
-	    {404, "Not Found"};
-        Res ->
-	    Res
-    end.
+    Res.
 
+regexp_locate_user(Input, []) ->
+    nomatch;
 regexp_locate_user(Input, [{Regexp, Code, Text} | Rest]) ->
     case regexp:match(Input, Regexp) of
 	{match, _, _} ->
@@ -85,8 +90,12 @@ regexp_locate_user(Input, [{Regexp, Code, Text} | Rest]) ->
 	    []
     end.
 
-response(Status, Reason, Header, Body, Socket, FromIP) ->
-    logger:log(normal, "~p ~p - dropping", [Status, Reason]),
+%% Function: response/3
+%% Description: Yxa applications must export an response/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+    logger:log(normal, "~p ~p - dropping", [Response#response.status, Response#response.reason]),
     true.
 
 packet_check_ok(Header, LogTag) ->
@@ -112,3 +121,6 @@ get_branch_from_handler(TH) ->
             BranchBase = string:substr(CallBranch, 1, Index - 1),
 	    BranchBase
     end.
+
+localhostname(Hostname) ->
+    util:casegrep(Hostname, sipserver:get_env(myhostnames)).

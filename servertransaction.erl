@@ -12,6 +12,9 @@
 %% Include files
 %%--------------------------------------------------------------------
 
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
+
 %%--------------------------------------------------------------------
 %% External exports
 -export([start_link/5]).
@@ -23,6 +26,7 @@
 
 -define(TIMEOUT, 300 * 1000).
 
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -30,8 +34,8 @@
 %% Function: start_link/0
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(Request, Socket, LogStr, RequestFun, Mode) ->
-    gen_server:start_link(?MODULE, [Request, Socket, LogStr, RequestFun, Mode], []).
+start_link(Request, Socket, LogStr, AppModule, Mode) ->
+    gen_server:start_link(?MODULE, [Request, Socket, LogStr, AppModule, Mode], []).
 
 %%====================================================================
 %% Server functions
@@ -45,13 +49,13 @@ start_link(Request, Socket, LogStr, RequestFun, Mode) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
-init([{"ACK", URI, _, _}, Socket, LogStr, RequestFun, Mode]) ->
+init([{"ACK", URI, _, _}, Socket, LogStr, AppModule, Mode]) ->
     %% XXX better to start transaction and immediately send 500 Server Internal Error?
     %% Will require passing ACK to process_received_ack() _after_ checking for resent request.
     logger:log(error, "Server transaction: NOT starting transaction for ACK request (ACK ~s)",
 	       [sipurl:print(URI)]),
     error;
-init([Request, Socket, LogStr, RequestFun, Mode]) ->
+init([Request, Socket, LogStr, AppModule, Mode]) ->
     {Method, URI, _, _} = Request,
     Branch = siprequest:generate_branch() ++ "-UAS",
     LogTag = Branch ++ " " ++ Method,
@@ -115,11 +119,11 @@ handle_call(Request, From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_cast({sipmessage, request, Request, Socket, LogStr, GenSrvFrom, RequestFun}, State) ->
+handle_cast({sipmessage, Request, Origin, LogStr, GenSrvFrom, AppModule}, State) when record(Request, request), record(Origin, siporigin) ->
     LogTag = State#state.logtag,
     OrigRequest = State#state.request,
     {OrigMethod, OrigURI, _, _} = OrigRequest,
-    {Method, URI, Header, _} = Request,
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     logger:log(debug, "~s: Server transaction received a request (~s ~s), checking if it is an ACK or a resend",
 	       [LogTag, Method, sipurl:print(URI)]),
     {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
@@ -136,7 +140,7 @@ handle_cast({sipmessage, request, Request, Socket, LogStr, GenSrvFrom, RequestFu
 				   stateless ->
 				       logger:log(debug, "~s: Received ACK ~s when stateless, pass to core.",
 						  [LogTag, sipurl:print(OrigURI)]),
-				       gen_server:reply(GenSrvFrom, {pass_to_core, RequestFun}),
+				       gen_server:reply(GenSrvFrom, {pass_to_core, AppModule}),
 				       State
 			       end,
 		    {noreply, NewState, ?TIMEOUT};	    
@@ -160,7 +164,7 @@ handle_cast({sipmessage, request, Request, Socket, LogStr, GenSrvFrom, RequestFu
 					       [LogTag, Method, sipurl:print(URI)]),
 				    %% It looks like we are a stateless server transaction. Tell ServerPid
 				    %% to pass this retransmission on to the core.
-				    gen_server:reply(GenSrvFrom, {pass_to_core, RequestFun})
+				    gen_server:reply(GenSrvFrom, {pass_to_core, AppModule})
 			    end
 		    end,
 		    {noreply, State, ?TIMEOUT};

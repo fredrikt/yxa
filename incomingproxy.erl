@@ -1,14 +1,22 @@
 -module(incomingproxy).
 
--export([init/0, request/6, response/6]).
+%% Standard Yxa SIP-application exports
+-export([init/0, request/3, response/3]).
 
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
+
+%% Function: init/0
+%% Description: Yxa applications must export an init/0 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
 init() ->
     Registrar = {registrar, {registrar, start_link, []}, permanent, 2000, worker, [registrar]},
-    [[fun request/6, fun response/6], none, stateful, {append, [Registrar]}].
+    [none, stateful, {append, [Registrar]}].
 
 
-route_request(Request) ->
-    {Method, URL, Header, Body} = Request,
+route_request(Request) when record(Request, request) ->
+    {Method, URL, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     {User, Pass, Host, Port, Parameters} = URL,
     Loc1 = case local:homedomain(Host) of
 	true ->
@@ -51,15 +59,22 @@ is_request_to_me("OPTIONS", URL, Header) ->
 is_request_to_me(_, _, _) ->
     false.
 
-request("REGISTER", URL, Header, Body, Socket, FromIP) ->
+%% Function: request/3
+%% Description: Yxa applications must export an request/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+
+%%
+%% REGISTER
+%%
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "REGISTER" ->
+    {Method, URL, Header, Body} = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
     {User, Pass, Host, Port, Parameters} = URL,
-    Request = {"REGISTER", URL, Header, Body},
     logger:log(debug, "REGISTER ~p", [sipurl:print(URL)]),
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
     case local:homedomain(Host) of
 	true ->
-	    LogStr = sipserver:make_logstr({request, "REGISTER", URL, Header, Body}, FromIP),
 	    logger:log(debug, "~s -> processing", [LogStr]),
 	    % delete any present Record-Route header (RFC3261, #10.3)
 	    NewHeader = keylist:delete("Record-Route", Header),
@@ -105,34 +120,41 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 	    end;
 	_ ->
 	    logger:log(debug, "REGISTER for non-homedomain ~p", [Host]),
-	    do_request({"REGISTER", URL, Header, Body}, Socket, FromIP)
+	    do_request({"REGISTER", URL, Header, Body}, Origin)
     end;
 
-request(Method, URI, Header, Body, Socket, FromIP) when Method == "ACK" ->
-    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+%%
+%% ACK
+%%
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "ACK" ->
     logger:log(normal, "incomingproxy: ~s -> Forwarding ACK received in core statelessly",
     		[LogStr]),
-    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, []);
+    transportlayer:send_proxy_request(none, Request, Request#request.uri, []);
 
-request(Method, URL, Header, Body, Socket, FromIP) when Method == "CANCEL" ->
-    do_request({Method, URL, Header, Body}, Socket, FromIP);
+%%
+%% CANCEL
+%%
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "CANCEL" ->
+    do_request(Request, Origin);
 
-% Here we have a request that is not CANCEL or ACK (or REGISTER).
-% Check if the From: address matches our homedomains, and if so
-% call verify_homedomain_user() to make sure the user is
-% authorized and authenticated to use this From: address
-request(Method, URL, Header, Body, Socket, FromIP) ->
-    Request = {Method, URL, Header, Body},
-    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
+%%
+%% Request other than REGISTER, ACK or CANCEL
+%%
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
+    {_, FromURI} = sipheader:from(keylist:fetch("From", Request#request.header)),
     {_, _, Host, _, _} = FromURI,
+    THandler = transactionlayer:get_handler_for_request(Request),
+    LogTag = get_branch_from_handler(THandler),
+    %% Check if the From: address matches our homedomains, and if so
+    %% call verify_homedomain_user() to make sure the user is
+    %% authorized and authenticated to use this From: address
     case local:homedomain(Host) of
 	true ->
-	    LogStr = sipserver:make_logstr({request, Method, URL, Header, Body}, FromIP),
-	    case verify_homedomain_user(Socket, Request, LogStr) of
+	    case verify_homedomain_user(Request, LogStr) of
 		true ->
-		    do_request(Request, Socket, FromIP);
+		    do_request(Request, Origin);
 		false ->
-		    logger:log(normal, "~s -> 403 Forbidden", [LogStr]),
+		    logger:log(normal, "~s: incomingproxy: Not authorized to use this From: -> 403 Forbidden", [LogTag]),
 		    transactionlayer:send_response_request(Request, 403, "Forbidden");
 		drop ->
 		    ok;
@@ -142,11 +164,12 @@ request(Method, URL, Header, Body, Socket, FromIP) ->
 		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
 	    end;
 	_ ->
-	    do_request(Request, Socket, FromIP)
+	    do_request(Request, Origin)
     end.
 
-verify_homedomain_user(Socket, Request, LogStr) ->
-    {Method, URI, Header, Body} = Request,
+verify_homedomain_user(Request, LogStr) when record(Request, request) ->
+    Method = Request#request.method,
+    Header = Request#request.header,
     case sipserver:get_env(always_verify_homedomain_user, true) of
 	true ->
 	    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
@@ -186,17 +209,17 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 	    true
     end.
 
-do_request(Request, Socket, FromIP) ->
-    {Method, URL, OrigHeader, Body} = Request,
+do_request(RequestIn, Origin) when record(RequestIn, request), record(Origin, siporigin) ->
+    {Method, URI} = {RequestIn#request.method, RequestIn#request.uri},
     logger:log(debug, "~s ~s~n",
-	       [Method, sipurl:print(URL)]),
+	       [Method, sipurl:print(URI)]),
     Header = case sipserver:get_env(record_route, false) of
-	true -> siprequest:add_record_route(OrigHeader);
-	false -> OrigHeader
+	true -> siprequest:add_record_route(RequestIn#request.header, Origin);
+	false -> RequestIn#request.header
     end,
-    Location = route_request({Method, URL, Header, Body}),
+    Request = RequestIn#request{header = Header},
+    Location = route_request(Request),
     logger:log(debug, "Location: ~p", [Location]),
-    LogStr = sipserver:make_logstr({request, Method, URL, Header, Body}, FromIP),
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
     case Location of
@@ -218,52 +241,62 @@ do_request(Request, Socket, FromIP) ->
 	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
 	    transactionlayer:send_response_handler(THandler, 302, "Moved Temporarily", ExtraHeaders);
 	{relay, Loc} ->
-	    relay_request(THandler, Request, Loc, LogTag);
+	    relay_request(THandler, Request, Loc, Origin, LogTag);
 	{forward, Host, Port} ->
 	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~p",
-			[LogTag, Method, sipurl:print(URL), sipurl:print_hostport(Host, Port)]),
-	    AddRoute = sipheader:contact_print([{none, {none, none, Host, Port, ["lr=true"]}}]),
-	    NewHeader = keylist:prepend({"Route", AddRoute}, Header),
-	    NewRequest = {Method, URL, NewHeader, Body},
-	    proxy_request(THandler, NewRequest, URL, []);
+			[LogTag, Method, sipurl:print(URI), sipurl:print_hostport(Host, Port)]),
+	    DstList = siprequest:host_port_to_dstlist(Host, siprequest:default_port(Port), 500, URI),
+	    proxy_request(THandler, Request, DstList, []);
 	{me} ->
-	    request_to_me(THandler, Request, LogStr);
+	    request_to_me(THandler, Request, LogTag);
 	_ ->
 	    logger:log(error, "~s: incomingproxy: Invalid Location ~p", [LogTag, Location]),
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
     end.
 
-proxy_request(THandler, Request, DstURL, Parameters) ->
-    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURL, none, Parameters, 900]).
+proxy_request(THandler, Request, DstList, Parameters) when record(Request, request) ->
+    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstList, Parameters, 900]).
 
-relay_request(THandler, {Method, OrigURI, Header, Body}, URI, LogTag) when Method == "CANCEL"; Method == "BYE" ->
-    Request = {Method, OrigURI, Header, Body},
-    logger:log(normal, "~s: incomingproxy: Relay ~s (unauthenticated)", [LogTag, sipurl:print(URI)]),
-    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, URI, none, [], 900]);
+relay_request(THandler, Request, URI, Origin, LogTag) when record(Request, request), Request#request.method == "CANCEL"; Request#request.method == "BYE" ->
+    logger:log(normal, "~s: incomingproxy: Relay ~s ~s (unauthenticated)",
+	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
+    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, URI, [], 900]);
 
-relay_request(THandler, Request, DstURI, LogTag) ->
-    {Method, URI, Header, Body} = Request,
+relay_request(THandler, Request, DstURI, Origin, LogTag) when record(Request, request) ->
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     case sipauth:get_user_verified_proxy(Header, Method) of
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, sipurl:print(DstURI)]),
-	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, none, [], 900]);
+	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, [], 900]);
 	stale ->
-	    logger:log(debug, "Relay: STALE authentication, sending challenge"),
-	    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication -> 407 Proxy Authentication Required",
-			[LogTag, sipurl:print(DstURI)]),
-	    transactionlayer:send_challenge(THandler, proxy, true, none);
+	    case local:incomingproxy_challenge_before_relay(Origin, Request, DstURI) of
+		false ->
+		    logger:log(debug, "Relay: STALE authentication, but local policy says we should not challenge"),
+		    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, [], 900]);
+		_ ->
+		    logger:log(debug, "Relay: STALE authentication, sending challenge"),
+		    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication -> 407 Proxy Authentication Required",
+			       [LogTag, sipurl:print(DstURI)]),
+		    transactionlayer:send_challenge(THandler, proxy, true, none)
+	    end;
 	false ->
-	    logger:log(debug, "Relay: Failed authentication, sending challenge"),
-	    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required", [LogTag, sipurl:print(DstURI)]),
-	    transactionlayer:send_challenge(THandler, proxy, false, none);
+            case local:incomingproxy_challenge_before_relay(Origin, Request, DstURI) of
+                false ->
+                    logger:log(debug, "Relay: Failed authentication, but local policy says we should not challenge"),
+                    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, [], 900]);
+                _ ->
+		    logger:log(debug, "Relay: Failed authentication, sending challenge"),
+		    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required", [LogTag, sipurl:print(DstURI)]),
+		    transactionlayer:send_challenge(THandler, proxy, false, none)
+	    end;
 	Unknown ->
 	    logger:log(error, "relay_request: Unknown result from sipauth:get_user_verified_proxy() :~n~p", [Unknown]),
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
     end.
 
-response(Status, Reason, Header, Body, Socket, FromIP) ->
-    LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
+response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+    {Status, Reason, Header, Body} = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
     logger:log(normal, "Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
     Response = {Status, Reason, Header, Body},
     transportlayer:send_proxy_response(none, Response).
@@ -315,15 +348,13 @@ request_to_homedomain_not_sipuser(URL, init) ->
 	    Loc1
     end.
 
-request_to_me(THandler, {"OPTIONS", URI, Header, Body}, LogStr) ->
-    logger:log(normal, "~s (to me) -> 200 OK", [LogStr]),
+request_to_me(THandler, Request, LogTag) when record(Request, request), Request#request.method == "OPTIONS" ->
+    logger:log(normal, "~s: incomingproxy: OPTIONS to me -> 200 OK", [LogTag]),
     logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and Supported headers. RFC 3261 section 11"),
     transactionlayer:send_response_handler(THandler, 200, "OK");
 
-request_to_me(THandler, Request, LogStr) ->
-    {Method, URI, Header, Body} = Request,
-    logger:log(debug, "Routing: Dropping non-OPTIONS request to me - I have no state"),
-    logger:log(normal, "~s -> 481 Call/Transaction Does Not Exist", [LogStr]),
+request_to_me(THandler, Request, LogTag) when record(Request, request) ->
+    logger:log(normal, "~s: incomingproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist", [LogTag]),
     transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 request_to_remote(URL) ->

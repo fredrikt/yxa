@@ -1,22 +1,32 @@
 -module(appserver).
--export([init/0, request/6, response/6]).
+
+%% Standard Yxa SIP-application exports
+-export([init/0, request/3, response/3]).
 
 -include("sipproxy.hrl").
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
 
 -record(state, {request, sipmethod, callhandler, forkpid, cancelled, completed}).
 
+%% Function: init/0
+%% Description: Yxa applications must export an init/0 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
 init() ->
-    [[fun request/6, fun response/6], [user, numbers, phone], stateful, none].
+    [[user, numbers, phone], stateful, none].
 
-
-request(Method, URI, Header, Body, Socket, FromIP) when Method == "REGISTER" ->
-    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+%% Function: request/3
+%% Description: Yxa applications must export an request/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "REGISTER" ->
     logger:log(normal, "Appserver: ~s Method not applicable here -> 403 Forbidden", [LogStr]),
-    transactionlayer:send_response_request({Method, URI, Header, Body}, 403, "Forbidden");
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    transactionlayer:send_response_request(CompatRequest, 403, "Forbidden");
 
-request(Method, URI, Header, Body, Socket, FromIP) when Method == "ACK" ->
-    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
-    case local:get_user_with_contact(URI) of
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "ACK" ->
+    case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(debug, "Appserver: ~s -> no transaction state, unknown user, ignoring",
 	    		[LogStr]),
@@ -24,55 +34,57 @@ request(Method, URI, Header, Body, Socket, FromIP) when Method == "ACK" ->
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 	    		[LogStr, SIPuser]),
-	    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, [])
+	    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+	    transportlayer:send_proxy_request(none, CompatRequest, Request#request.uri, [])
     end;
 
-request(Method, URI, Header, Body, Socket, FromIP) when Method == "CANCEL" ->
-    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
-    case local:get_user_with_contact(URI) of
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "CANCEL" ->
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, " ++
 	    	"answer 481 Call/Transaction Does Not Exist", [LogStr]),
-	    transactionlayer:send_response_request({Method, URI, Header, Body}, 481, "Call/Transaction Does Not Exist");
+	    transactionlayer:send_response_request(CompatRequest, 481, "Call/Transaction Does Not Exist");
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 	    		[LogStr, SIPuser]),
-	    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, [])
+	    transportlayer:send_proxy_request(none, CompatRequest, Request#request.uri, [])
     end;
 	    
 
-request(Method, URI, OrigHeader, Body, Socket, FromIP) ->
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
     Header = case sipserver:get_env(record_route, false) of
-	true -> siprequest:add_record_route(OrigHeader);
-	false -> OrigHeader
+	true -> siprequest:add_record_route(Request#request.header, Origin);
+	false -> Request#request.header
     end,
-    create_session(Method, URI, Header, Body, Socket, FromIP).
+    NewRequest = Request#request{header=Header},
+    create_session(Request, Origin, LogStr).
 
-create_session(Method, URI, Header, Body, Socket, FromIP) ->
+create_session(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
     % create header suitable for answering the incoming request
-    Request = {Method, URI, Header, Body},
-    case keylist:fetch("Route", Header) of
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    URI = Request#request.uri,
+    case keylist:fetch("Route", Request#request.header) of
 	[] ->
 	    case get_actions(URI) of
 		nomatch ->
-		    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
 		    case local:get_user_with_contact(URI) of
 			none ->
 			    logger:log(normal, "Appserver: ~s -> 404 Not Found (no actions, unknown user)",
 			    		[LogStr]),
-			    transactionlayer:send_response_request(Request, 404, "Not Found");
+			    transactionlayer:send_response_request(CompatRequest, 404, "Not Found");
 			SIPuser ->
 			    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
 			    		[LogStr, SIPuser]),
-			    THandler = transactionlayer:get_handler_for_request(Request),
-			    transportlayer:send_proxy_request(THandler, {Method, URI, Header, Body}, URI, [])
+			    THandler = transactionlayer:get_handler_for_request(CompatRequest),
+			    transportlayer:send_proxy_request(THandler, CompatRequest, URI, [])
 		    end;
 		{Users, Actions} ->
 		    logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
-		    case transactionlayer:adopt_server_transaction(Request) of
+		    case transactionlayer:adopt_server_transaction(CompatRequest) of
 			{error, E} ->
 			    logger:log(error, "Appserver: Failed to adopt server transaction for request ~s ~s : ~p",
-					[Method, sipurl:print(URI), E]),
+					[Request#request.method, sipurl:print(URI), E]),
 			    throw({siperror, 500, "Server Internal Error"});
 			CallHandler ->
 			    CallBranch = transactionlayer:get_branch_from_handler(CallHandler),
@@ -82,35 +94,41 @@ create_session(Method, URI, Header, Body, Socket, FromIP) ->
 				    throw({siperror, 500, "Server Internal Error"});
 				Index when integer(Index) ->
 				    BranchBase = string:substr(CallBranch, 1, Index - 1),
-				    fork_actions(BranchBase, CallBranch, CallHandler, Request, Socket, FromIP, Actions)
+				    Socket = Origin#siporigin.sipsocket,
+				    FromIP = Origin#siporigin.addr,
+				    fork_actions(BranchBase, CallBranch, CallHandler, CompatRequest, Socket, FromIP, Actions)
 			    end
 		    end
 	    end;
 	_ ->
-	    logger:log(debug, "Appserver: Request ~s ~s has Route header. Forwarding statelessly.", [Method, sipurl:print(URI)]),
-	    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+	    logger:log(debug, "Appserver: Request ~s ~s has Route header. Forwarding statelessly.",
+		       [Request#request.method, sipurl:print(URI)]),
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
-	    THandler = transactionlayer:get_handler_for_request(Request),
-	    transportlayer:send_proxy_request(THandler, {Method, URI, Header, Body}, URI, [])
+	    THandler = transactionlayer:get_handler_for_request(CompatRequest),
+	    transportlayer:send_proxy_request(THandler, CompatRequest, URI, [])
     end.
 
-response(Status, Reason, Header, Body, Socket, FromIP) ->
-    LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
+%% Function: response/3
+%% Description: Yxa applications must export an response/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
     % RFC 3261 16.7 says we MUST act like a stateless proxy when no
     % transaction can be found
-    LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
-    Response = {Status, Reason, Header, Body},
-    case transactionlayer:get_server_handler_for_stateless_response(Response) of
+    CompatResponse = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
+    Status = Response#response.status,
+    Reason = Response#response.reason,
+    case transactionlayer:get_server_handler_for_stateless_response(CompatResponse) of
 	{error, E} ->
 	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
 	    logger:log(normal, "Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
-	    transportlayer:send_proxy_response(none, Response);
+	    transportlayer:send_proxy_response(none, CompatResponse);
 	none ->
 	    logger:log(normal, "Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
-	    transportlayer:send_proxy_response(none, Response);
+	    transportlayer:send_proxy_response(none, CompatResponse);
 	TH ->
 	    logger:log(debug, "Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
-	    transactionlayer:send_proxy_response_handler(TH, Response)
+	    transactionlayer:send_proxy_response_handler(TH, CompatResponse)
     end.
 
 get_actions(URI) ->

@@ -1,9 +1,17 @@
 -module(pstnproxy).
 
--export([init/0, request/6, response/6]).
+%% Standard Yxa SIP-application exports
+-export([init/0, request/3, response/3]).
 
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
+
+%% Function: init/0
+%% Description: Yxa applications must export an init/0 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
 init() ->
-    [[fun request/6, fun response/6], [user, numbers], stateful, none].
+    [[user, numbers], stateful, none].
 
 
 localhostname(Hostname) ->
@@ -36,30 +44,32 @@ routeRequestToPSTN(FromIP, ToHost, THandler, LogTag) ->
 	    end
     end.
 
+%% Function: request/3
+%% Description: Yxa applications must export an request/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+
 % ACK requests that end up here could not be matched to a server transaction,
 % most probably they are ACK to 2xx of INVITE (or we have crashed) - proxy
 % statelessly.
-request(Method, URI, Header, Body, Socket, FromIP) when Method == "ACK" ->
-    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "ACK" ->
     logger:log(normal, "pstnproxy: ~s -> Forwarding ACK received in core statelessly",
     		[LogStr]),
-    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, []);
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    transportlayer:send_proxy_request(none, CompatRequest, Request#request.uri, []);
 
-request(Method, URL, Header, Body, Socket, FromIP) ->
-    do_request(Method, URL, Header, Body, Socket, FromIP).
-
-do_request(Method, URI, Header, Body, Socket, FromIP) ->
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
     {User, Pass, Host, Port, Parameters} = URI,
-    Request = {Method, URI, Header, Body},
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
-    case routeRequestToPSTN(FromIP, Host, THandler, LogTag) of
+    case routeRequestToPSTN(Origin#siporigin.addr, Host, THandler, LogTag) of
 	true ->
 	    logger:log(debug, "~s: pstnproxy: Route request to PSTN gateway", [LogTag]),
 	    AllowedMethods = ["INVITE", "ACK", "PRACK", "CANCEL", "BYE", "OPTIONS"],
 	    case lists:member(Method, AllowedMethods) of
 		true ->
-		    toPSTNrequest(Method, URI, Header, Body, Socket, LogTag);
+		    toPSTNrequest(Request, Origin, THandler, LogTag);
 		_ ->
 		    logger:log(normal, "~s: pstnproxy: Method ~s not allowed for PSTN destination",
 				[LogTag, Method]),
@@ -68,14 +78,14 @@ do_request(Method, URI, Header, Body, Socket, FromIP) ->
 	    end;
 	false ->
 	    logger:log(normal, "~s: pstnproxy: Route request to SIP server", [LogTag]),
-	    toSIPrequest(Method, URI, Header, Body, Socket);
+	    toSIPrequest(Request, Origin, THandler);
 	_ ->
 	    true
     end.
 
-toSIPrequest(Method, URI, Header, Body, Socket) ->
+toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Origin, siporigin) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
     {User, Pass, Host, Port, Parameters} = URI,
-    Request = {Method, URI, Header, Body},
     NewLocation = case localhostname(Host) of
 	true ->
 	    logger:log(debug, "Performing ENUM lookup on ~p", [User]),
@@ -96,7 +106,7 @@ toSIPrequest(Method, URI, Header, Body, Socket) ->
 			    % In other words, forwarding a 503 means that the proxy knows it
 			    % cannot service any requests, not just the one for the Request-
 			    % URI in the request which generated the 503.
-			    transactionlayer:send_response_request(Request, 503, "Service Unavailable"),
+			    transactionlayer:send_response_handler(THandler, 503, "Service Unavailable"),
 			    none;
 			_ ->
 			    {User, none, Proxy, none, []}
@@ -109,20 +119,19 @@ toSIPrequest(Method, URI, Header, Body, Socket) ->
 	none ->
 	    none;
 	_ ->
-	    Newheaders = case sipserver:get_env(record_route, true) of
-		true -> siprequest:add_record_route(Header);
-	        false -> Header
+	    NewHeader1 = case sipserver:get_env(record_route, true) of
+		true -> siprequest:add_record_route(Request#request.header, Origin);
+	        false -> Request#request.header
 	    end,
 	    {_, _, DstHost, _, _} = NewLocation,
-	    {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
-	    Newheaders2 = add_caller_identity_for_sip(Method, Newheaders, FromURI),
-	    THandler = transactionlayer:get_handler_for_request(Request),
-	    NewRequest = {Method, URI, Newheaders2, Body},
+	    {_, FromURI} = sipheader:to(keylist:fetch("From", NewHeader1)),
+	    NewHeader = add_caller_identity_for_sip(Method, NewHeader1, FromURI),
+	    NewRequest = Request#request{header=NewHeader},
 	    proxy_request(THandler, NewRequest, NewLocation, [])
     end.
 
-toPSTNrequest(Method, URI, Header, Body, Socket, LogTag) ->
-    Request = {Method, URI, Header, Body},
+toPSTNrequest(Request, Origin, THandler, LogTag) when record(Request, request), record(Origin, siporigin) ->
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     {DstNumber, _, ToHost, ToPort, _} = URI,
     {NewURI, NewHeaders1} = case localhostname(ToHost) of
 	true ->
@@ -145,26 +154,31 @@ toPSTNrequest(Method, URI, Header, Body, Socket, LogTag) ->
     end,
     {_, _, PSTNgateway, _, _} = NewURI,
     NewHeaders2 = case sipserver:get_env(record_route, true) of
-	true -> siprequest:add_record_route(NewHeaders1);
+	true -> siprequest:add_record_route(NewHeaders1, Origin);
         false -> NewHeaders1
     end,
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
     NewHeaders3 = add_caller_identity_for_pstn(Method, NewHeaders2, FromURI, PSTNgateway),
-    NewRequest = {Method, URI, NewHeaders3, Body},
+    NewRequest = Request#request{header=NewHeaders3},
     THandler = transactionlayer:get_handler_for_request(Request),
     relay_request_to_pstn(THandler, NewRequest, NewURI, DstNumber, LogTag).
     
-proxy_request(THandler, Request, DstURL, Parameters) ->
-    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURL, none, Parameters, 900]).
+proxy_request(THandler, Request, DstURL, Parameters) when record(Request, request) ->
+    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURL, Parameters, 900]).
 
-relay_request_to_pstn(THandler, {Method, OrigURI, Header, Body}, DstURI, DstNumber, LogTag) when Method == "CANCEL"; Method == "BYE" ->
-    Request = {Method, OrigURI, Header, Body},
+%%
+%% CANCEL or BYE
+%%
+relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when record(Request, request), Request#request.method == "CANCEL"; Request#request.method == "BYE" ->
     logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) (unauthenticated)",
-		[LogTag, Method, DstNumber, sipurl:print(DstURI)]),
-    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, none, [], 900]);
+		[LogTag, Request#request.method, DstNumber, sipurl:print(DstURI)]),
+    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, [], 900]);
 
-relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) ->
-    {Method, URI, Header, Body} = Request,
+%%
+%% Anything except CANCEL or BYE
+%%
+relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when record(Request, request) ->
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
     logger:log(debug, "~s: pstnproxy: Relay ~s to PSTN ~s (~s)", [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
@@ -173,7 +187,7 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) ->
 	    logger:log(debug, "Auth: User ~p is allowed to call dst ~s (class ~s)", [User, DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (authenticated, class ~p) (~s)",
 		       [LogTag, Method, DstNumber, Class, sipurl:print(DstURI)]),
-	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, none, [], 900]);
+	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, [], 900]);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)", [User, DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> STALE authentication, sending challenge",
@@ -194,8 +208,12 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) ->
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
     end.
 
-response(Status, Reason, Header, Body, Socket, FromIP) ->
-    LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
+%% Function: response/3
+%% Description: Yxa applications must export an request/3 function.
+%% Returns: See XXX
+%%--------------------------------------------------------------------
+response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+    {Status, Reason, Header, Body} = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
     logger:log(normal, "Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
     Response = {Status, Reason, Header, Body},
     transportlayer:send_proxy_response(none, Response).
