@@ -11,7 +11,8 @@ BEAM =	incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sipp
 	sipuserdb.beam sipuserdb_mnesia.beam bootstrap.beam sipuserdb_ldap.beam \
 	sipsocket.beam sipsocket_tcp.beam sipsocket_udp.beam socketlist.beam \
 	transactionlayer.beam servertransaction.beam sippipe.beam \
-	transportlayer.beam
+	transportlayer.beam tcp_dispatcher.beam tcp_listener.beam \
+	tcp_connection.beam tcp_receiver.beam registrar.beam sipserver_sup.beam
 
 CC = gcc
 
