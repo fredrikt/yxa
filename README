@@ -1,0 +1,117 @@
+============
+Applications
+============
+
+Applications included are:
+
+adminwww:
+
+Web server that provides an https administration interface
+
+incomingproxy:
+
+Handles registrations and proxies requests. Implements partial ENUM
+and LDAP searches.
+
+pstnproxy:
+
+Designed as an authentication frontend to an insecure PSTN gateway.
+
+============
+Installation
+============
+
+Create a build directory somewhere and copy the "Makefile.template"
+from the source directory here and name it "Makefile". Edit the srcdir
+variable and change the STARTSCRIPT variable to whatever
+application(s) you want to build there.
+
+Type "make" in your build directory.
+
+===
+SSL
+===
+
+If you want to use SSL (normally enabled), either put your combined
+private and public X.509 key in ssl/cert.comb or edit the ssl.config
+in the source directory and do "make sslkey" to get a self-signed
+certificate. The certificate password must be "foobar" if you use
+"make sslkey".
+
+=====================
+Distributed operation
+=====================
+
+If you want to setup a distributed erlang system, you must have the
+same ~/.erlang.cookie file on all nodes.
+
+=============
+Configuration
+=============
+
+The configuration file is named <application>.config and contains
+these variables:
+
+common:
+
+logger_logfile			(default: "sipd.log") Log to this file
+sipauth_realm			(default: "") HTTP Auth realm
+sipauth_password		(default: "") HTTP Auth internal cookie
+sipauth_unauth_classlist	(default: []) Classes that anyone can call
+databaseservers			(required if using remote databases)
+				Erlang node specification of the database
+				servers
+ldap_server			(required) LDAP server host name
+ldap_username			(default: "") LDAP user name
+ldap_password			(default: "") LDAP password
+ldap_searchbase			(default: "") LDAP search base
+
+pstnproxy:
+
+proxyaddr			(required) IP address or hostname of
+				PSTN gateway
+classdefs			(default: [{"", unknown}]) Regexps for
+				classifying outgoing phone numbers
+
+incomingproxy:
+
+internal_to_e164		(default: []) Regexps for rewriting
+				internal numbers to E.164 numbers
+defaultroute			(required) SIP host name part of default route
+homedomain			(required) SIP home domain
+
+adminwww:
+
+www_baseurl			(required) Base URL for web server
+
+
+========
+Examples
+========
+
+incomingproxy.config:
+
+[{incomingproxy, [{sipauth_realm, "example.com"},
+                  {sipauth_password, ""},
+                  {defaultroute, "sip-pstn.example.com"},
+                  {logger_logfile, "incomingproxy.log"},
+                  {internal_to_e164, [{"^00(.+)$", "+\\1"},
+                                      {"^0(.+)$", "+46\\1"},
+                                      {"^(.+)$", "+468\\1"}
+                                     ]},
+                  {homedomain, "example.com"},
+                  {ldap_server, "ldap.example.com"}
+                 ]}].
+
+[{pstnproxy, [{sipauth_realm, "example.com"},
+              {sipauth_password, ""},
+              {sipauth_unauth_classlist, [internal]},
+              {proxyaddr, "pstn-gw.example.com"},
+              {classdefs, [{"^[1-9]", national},
+                           {"^0[1-9]", national},
+                           {"^00", international},
+                           {"", unknown}
+                          ]},
+              {logger_logfile, "pstnproxy.log"},
+              {databaseservers, ['incomingproxy@sip-incoming.example.com']}
+             ]}].
