@@ -166,8 +166,8 @@ send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters) when recor
 				       Request#request.header, Request#request.body},
     {ok, NewHeader1, ApproxMsgSize} = check_proxy_request(Request),
     DstList = [Dst | DstT],
-    logger:log(debug, "Siprequest: Destination list for request is :~n~p",
-	       [sipdst:debugfriendly(DstList)]),
+    logger:log(debug, "Siprequest (transport layer) : Destination list for request is (~p entrys) :~n~p",
+	       [length(DstList), sipdst:debugfriendly(DstList)]),
     NewRequest = Request#request{header=NewHeader1},
     send_to_available_dst(DstList, NewRequest, ViaParameters, SrvTHandler);
 
@@ -179,17 +179,17 @@ send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when record(URI, si
 		DstList when list(DstList) ->
 		    send_proxy_request(SrvTHandler, Request, DstList, ViaParameters);
 		Unknown ->
-		    logger:log(error, "Siprequest: Failed resolving URI ~s : ~p", [sipurl:print(URI), Unknown]),
+		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI ~s : ~p", [sipurl:print(URI), Unknown]),
 		    {error, "Failed resolving destination"}
 	    end;
 	{ok, NewHeader, DstURI, ReqURI} when record(DstURI, sipurl), record(ReqURI, sipurl) ->
-	    logger:log(debug, "sippipe: Routing request as per the Route header, Destination ~p, Request-URI ~p",
+	    logger:log(debug, "Siprequest (transport layer) : Routing request as per the Route header, Destination ~p, Request-URI ~p",
 		       [sipurl:print(DstURI), sipurl:print(ReqURI)]),
 	    case sipdst:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
 		DstList when list(DstList) ->
 		    send_proxy_request(SrvTHandler, Request, DstList, ViaParameters);
 		Unknown ->
-		    logger:log(error, "Siprequest: Failed resolving URI (from Route header) ~s : ~p", [sipurl:print(URI), Unknown]),
+		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI (from Route header) ~s : ~p", [sipurl:print(URI), Unknown]),
 		    {error, "Failed resolving destination"}
 	    end
     end.
@@ -197,7 +197,7 @@ send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when record(URI, si
 send_to_available_dst([], Request, ViaParam, SrvTHandler) when record(Request, request) ->
     Line1 = Request#request.method ++ " " ++ sipurl:print(Request#request.uri) ++ " SIP/2.0",
     lists:flatten(Message = Line1 ++ "\r\n" ++ sipheader:build_header(Request#request.header) ++ "\r\n" ++ Request#request.body),
-    logger:log(debug, "Failed sending request (my Via not added, original URI shown) :~n~s", [Message]),
+    logger:log(debug, "Siprequest (transport layer) : Failed sending request (my Via not added, original URI shown) :~n~s", [Message]),
     {senderror, "failed"};
 send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) when record(Dst, sipdst), record(Request, request) ->
     IP = Dst#sipdst.addr,
@@ -207,7 +207,7 @@ send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) when record(
     DestStr = sipdst:dst2str(Dst),
     case sipsocket:get_socket(SocketModule, Proto, IP, Port) of
 	{error, What} ->
-	    logger:log(debug, "Failed to get ~p socket (~s:~p) for ~s : ~p", [Proto, IP, Port, DestStr, What]),
+	    logger:log(debug, "Siprequest (transport layer) : Failed to get ~p socket for ~s : ~p", [Proto, DestStr, What]),
 	    %% try next
 	    send_to_available_dst(DstT, Request, ViaParam, SrvTHandler);
 	SipSocket when record(SipSocket, sipsocket) ->
@@ -218,19 +218,19 @@ send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) when record(
 	    Message = lists:flatten(Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader1) ++ "\r\n" ++ Body),
 	    case sipsocket:send(SipSocket, Proto, IP, Port, Message) of
 		ok ->
-		    logger:log(debug, "sent request(dst=~s) :~n~s~n",
+		    logger:log(debug, "Siprequest (transport layer) : sent request(dst=~s) :~n~s~n",
 			       [DestStr, Message]),
 		    TopVia = sipheader:topvia(NewHeader1),
 		    UsedBranch = lists:flatten(sipheader:get_via_branch_full(TopVia)),
 		    {ok, SipSocket, UsedBranch};
 		{error, E} ->
-		    logger:log(debug, "Failed sending message to ~p:~s:~p, error ~p",
+		    logger:log(debug, "Siprequest (transport layer) : Failed sending message to ~p:~s:~p, error ~p",
 			       [Proto, IP, Port, E]),
 		    send_to_available_dst(DstT, Request, ViaParam, SrvTHandler)
 	    end
     end;
 send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) ->
-    logger:log(error, "Siprequest: send_to_available_dst called with illegal dst ~p", [Dst]),
+    logger:log(error, "Siprequest (transport layer) : send_to_available_dst called with illegal dst ~p", [Dst]),
     send_to_available_dst(DstT, Request, ViaParam, SrvTHandler).
 
 
@@ -278,12 +278,12 @@ proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
 				     end,
 				     NewBranch = case LoopCookie of
 						     none ->
-							 logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
+							 logger:log(debug, "Siprequest (transport layer) : Added statelessly generated branch ~p to request",
 								    [Branch]),
 							 Branch;
 						     _ ->
 							 NewBranch1 = Branch ++ "-o" ++ LoopCookie,
-							 logger:log(debug, "Siprequest: Added statelessly generated branch (plus loop cookie) ~p to request",
+							 logger:log(debug, "Siprequest (transport layer) : Added statelessly generated branch (plus loop cookie) ~p to request",
 								    [NewBranch1]),
 							 NewBranch1
 						 end,
@@ -296,15 +296,15 @@ proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
 			     FlatBranch = lists:flatten(Branch),
 			     case string:rstr(FlatBranch, "-o") of
 				 0 ->
-				     logger:log(debug, "Siprequest: Added loop cookie ~p to branch of request",
+				     logger:log(debug, "Siprequest (transport layer) : Added loop cookie ~p to branch of request",
 						[LoopCookie]),
 				     Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
 				     sipheader:dict_to_param(Param2);
 				 Index when integer(Index) ->
 				     %% There is already a loop cookie in this branch, don't change it. Necessary to not
 				     %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
-				     logger:log(debug, "Siprequets: NOT adding generated loop cookie ~p to branch that already " ++
-						"contains a loop cookie : ~p", [LoopCookie, FlatBranch]),
+				     logger:log(debug, "Siprequets (transport layer) : NOT adding generated loop cookie ~p to branch " ++
+						"that already contains a loop cookie : ~p", [LoopCookie, FlatBranch]),
 				     Parameters
 			     end;
 			 {ok, Branch} ->
@@ -342,7 +342,7 @@ stateless_generate_branch(OrigURI, Header) ->
 		    "z9hG4bK-yxa-" ++ make_base64_md5_token(In)
 	    end;
 	_ ->
-	    logger:log(error, "Can't generate stateless branch for this request, it has no top Via!"),
+	    logger:log(error, "Siprequets (transport layer) : Can't generate stateless branch for this request, it has no top Via!"),
 	    error
     end.
 
