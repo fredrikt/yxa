@@ -101,9 +101,9 @@ init_mnesia(none) ->
     try table_update:update() of
 	ok -> ok
     catch
-	error: Reason ->
-	    logger:log(error, "Startup problem: Mnesia table updating failed with reason :~n~p",
-		       [Reason]),
+	EType: Reason ->
+	    logger:log(error, "Startup problem: Mnesia table updating failed with '~p' reason :~n~p",
+		       [EType, Reason]),
 	    timer:sleep(3 * 1000),
 
 	    %% Although very verbose (and only outputted to the console), the output of
@@ -144,16 +144,18 @@ init_mnesia(RemoteTables) when is_list(RemoteTables) ->
 %%--------------------------------------------------------------------
 check_for_tables([H | T]) ->
     %% check if table exists
-    case catch mnesia:table_info(H, record_name) of
-	{'EXIT', {aborted, {no_exists, H, arity}}} ->
+    Type = record_name,
+    try mnesia:table_info(H, Type) of
+	H ->
+	    check_for_tables(T)
+    catch
+	E: {aborted, {no_exists, H, Type}} ->
 	    logger:log(error, "Startup problem: Mnesia table '~p' does not exist - did you bootstrap Yxa? "
 		       "(see README file)~n", [H]),
 	    %% make sure logger gets the time to write the error to the log file
 	    timer:sleep(1000),
 	    logger:quit(none),
-	    erlang:halt(1);
-	H ->
-	    check_for_tables(T)
+	    erlang:halt(1)
     end;
 check_for_tables([]) ->
     ok.
