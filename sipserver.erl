@@ -142,11 +142,11 @@ parse_packet(Socket, Packet, IP, InPortNo) ->
 	    end,
 	    case NewParsed of
 		{invalid} ->
-		    false;
+		    {invalid};
 		_ ->
-		    case catch make_logstr(NewParsed, IP) of
+		    case catch check_packet(NewParsed, IP) of
 			{'EXIT', E} ->
-			    logger:log(error, "=ERROR REPORT==== from sipserver:make_logstr()~n~p", [E]),
+			    logger:log(error, "=ERROR REPORT==== from sipserver:check_packet()~n~p", [E]),
 			    logger:log(error, "CRASHED parsing packet [client=~s]", [IP]),
 			    {invalid};
 			{siperror, Code, Text} ->
@@ -189,6 +189,25 @@ topvia(Header) ->
     [TopVia | _] = Via,
     TopVia.
 
+check_packet({request, Method, URL, Header, Body}, IP) ->
+    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
+    sanity_check_uri("From:", FromURI),
+    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
+    sanity_check_uri("To:", ToURI),
+    {CSeqNum, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    if
+	CSeqMethod /= Method ->
+	    throw({siperror, 400, "CSeq " ++ CSeqMethod ++ " does not match request Method " ++ Method});
+	true -> true
+    end,
+    make_logstr({request, Method, URL, Header, Body}, IP);
+check_packet({response, Status, Reason, Header, Body}, IP) ->
+    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
+    sanity_check_uri("From:", FromURI),
+    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
+    sanity_check_uri("To:", ToURI),
+    make_logstr({response, Status, Reason, Header, Body}, IP).
+
 make_logstr({request, Method, URL, Header, Body}, IP) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
     {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
@@ -206,6 +225,13 @@ make_logstr({response, Status, Reason, Header, Body}, IP) ->
 	    io_lib:format("~s [client=~s, from=<~s>, to=<~s>, warning=~p]", 
 			[CSeqMethod, IP, sipurl:print(FromURI), sipurl:print(ToURI), Warning])
     end.
+
+sanity_check_uri(Desc, {none, _, _, _, _, _}) ->
+    throw({siperror, 400, "No user part in " ++ Desc ++ " URL"});
+sanity_check_uri(Desc, {_, _, none, _, _}) ->
+    throw({siperror, 400, "No host part in " ++ Desc ++ " URL"});
+sanity_check_uri(Desc, URI) ->
+    URI.
 
 get_env(Name) ->
     {ok, Value} = application:get_env(Name),
