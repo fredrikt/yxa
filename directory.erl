@@ -1,5 +1,5 @@
 -module(directory).
--export([lookupmail/1, ldapmailsearch/2]).
+-export([ldapmailsearch/2]).
 
 ldapmailsearch(Mail, Attribute) ->
     {ok, Handle} = eldap:open([sipserver:get_env(ldap_server)], []),
@@ -27,48 +27,4 @@ ldapmailsearch(Mail, Attribute) ->
 	    end;
 	_ ->
 	    none
-    end.
-
-do_recv(Sock, Text) ->
-    receive
-	{tcp, Sock, Data} ->
-	    do_recv(Sock, Text ++ Data);
-	{tcp_closed, Sock} ->
-	    Text
-    end.
-
-lookupkthid(KTHid) ->
-    Server = "yorick.admin.kth.se",
-    {ok, Sock} = gen_tcp:connect(Server, 80, 
-				 [list, {packet, 0}]),
-    ok = gen_tcp:send(Sock, "GET /service/personsokning/kthid2tele.asp?kthid=" ++ KTHid ++ " HTTP/1.0\r\n\r\n"),
-    
-    Text = do_recv(Sock, ""),
-    {Header, Body} = sippacket:parse_packet(Text),
-    {Request, Headerkeylist} = sippacket:parseheader(Header),
-    ok = gen_tcp:close(Sock),
-    Numbers = string:tokens(Body, "\r\n"),
-    case Numbers of
-	[] ->
-	    none;
-	[Number | _] ->
-	    Number
-    end.
-
-lookupkthid_address(Address) ->
-    case group_regexp:groups(Address, "(u[0-9]......)@kth.se") of
-	{match, [KTHid]} ->
-	    lookupkthid(KTHid);
-	nomatch ->
-	    none;
-	{error, Error} ->
-	    none
-    end.
-
-lookupmail(Mail) ->
-    case ldapmailsearch(Mail, "uid") of
-	none ->
-	    lookupkthid_address(Mail);
-	KTHid ->
-	    lookupkthid_address(KTHid ++ "@kth.se")
     end.

@@ -56,8 +56,9 @@ lookuproute(User) ->
 	    end
     end.
 
-lookupmail(User, Host) ->
-    Loc1 = directory:lookupmail(User ++ "@" ++ Host),
+lookupmail(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    Loc1 = local:lookup_homedomain_url(URL),
     logger:log(debug, "Routing: lookupmail ~p @ ~p -> ~p", [User, Host, Loc1]),
     case Loc1 of
 	none ->
@@ -131,7 +132,7 @@ request_to_homedomain(URL) ->
     logger:log(debug, "Routing: lookuproute on ~p -> ~p", [Key, Loc1]),
     Loc2 = case Loc1 of
 	       none ->
-		   lookupmail(User, Host);
+		   lookupmail(URL);
 	       Loc1 ->
 		   Loc1
 	   end,
