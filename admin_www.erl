@@ -551,10 +551,16 @@ change_user_form(Env, Input) ->
 		{ok, User} ->
 		    {Password, Flags, Classes} = get_pass(User),
 		    Numberlist = get_numbers(User),
+		    Phonelist = lists:foldl(fun (A, AccIn) ->
+						    {atomic, List} = phone:get_phone(A),
+						    lists:append(AccIn, List)
+					    end, [], Numberlist),
 		    [
 		     header(ok),
 		     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
+		     "<h2>KTH-ID</h2>", username_to_uid(User),
 		     "<h2>L&ouml;senord</h2>\n",
+		     
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"password\" name=\"password\" size=\"20\">\n",
@@ -568,6 +574,12 @@ change_user_form(Env, Input) ->
 		     "\">\n",
 		     "<input type=\"submit\" value=\"&Auml;ndra nummer\">\n",
 		     "</form>\n",
+		     "<h2>Klasser</h2>\n",
+		     "<form action=\"admin_www%3Achange_classes\" method=post>\n",
+		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
+		     print_class_checkboxes(Classes),
+		     "<input type=\"submit\" value=\"&Auml;ndra klasser\">\n",
+		     "</form>\n",
 		     "<h2>Administrat&ouml;r</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
@@ -578,12 +590,6 @@ change_user_form(Env, Input) ->
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"hidden\" name=\"admin\" value=\"false\">\n",
 		     "<input type=\"submit\" value=\"Sl&aring; av administrat&ouml;rsflaggan\">\n",
-		     "</form>\n",
-		     "<h2>Klasser</h2>\n",
-		     "<form action=\"admin_www%3Achange_classes\" method=post>\n",
-		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
-		     print_class_checkboxes(Classes),
-		     "<input type=\"submit\" value=\"&Auml;ndra klasser\">\n",
 		     "</form>\n",
 		     userurl_html()
 		    ]
