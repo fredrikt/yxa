@@ -1,5 +1,5 @@
 -module(util).
--export([timestamp/0, sec_to_date/1, isnumeric/1]).
+-export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -18,6 +18,50 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
 isnumeric(Number) ->
     case regexp:first_match(Number, "^[0-9]+$") of
 	{match, _, _} ->
+	    true;
+	_ ->
+	    false
+    end.
+
+digit(Digit) when integer(Digit), Digit >= $0, Digit =< $9 ->
+    Digit - $0;
+digit(Digit) ->
+    error.
+
+apply_rewrite([], List) ->
+    [];
+apply_rewrite([$\\, $\\ | Rest], List) ->
+    [$\\ | apply_rewrite(Rest, List)];
+apply_rewrite([$\\, C | Rest], List) ->
+    case digit(C) of
+	error ->
+	    [C | apply_rewrite(Rest, List)];
+	0 ->
+	    [C | apply_rewrite(Rest, List)];	    
+	Number ->
+	    lists:nth(Number, List) ++ apply_rewrite(Rest, List)
+    end;
+apply_rewrite([C | Rest], List) ->
+    [C | apply_rewrite(Rest, List)].
+
+regexp_rewrite(Input, []) ->
+    nomatch;
+
+regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
+    case group_regexp:groups(Input, Regexp) of
+	{match, List} ->
+	    apply_rewrite(Rewrite, List);
+	nomatch ->
+	    regexp_rewrite(Input, Rest);
+	{error, Error} ->
+	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error]),
+	    []
+    end.
+
+casecompare(String1, String2) ->
+    S1 = httpd_util:to_lower(String1),
+    case httpd_util:to_lower(String2) of
+	S1 ->
 	    true;
 	_ ->
 	    false
