@@ -3,7 +3,7 @@
 %%% Author  : Fredrik Thulin <ft@it.su.se>
 %%% Descrip.: A server transaction gen_server.
 %%%
-%%% Created : 05 Feb 2004 by Fredrik Thulin <ft@lab08.lab.it.su.se>
+%%% Created : 05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 %%%
 %%% Note    : Perhaps we should generate a 500 if we don't get adopted
 %%%           in a few seconds from when we start?
@@ -16,8 +16,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/4,
-	 start/4,
+	 start_link/3,
 	 test/0
 	]).
 
@@ -45,19 +44,19 @@
 %% Records
 %%--------------------------------------------------------------------
 -record(state, {
-	  branch,
-	  logtag,
-	  socket,
-	  report_to,
-	  request,
-	  response,
-	  sipmethod,
-	  sipstate,
-	  cancelled=false,
-	  timerlist,
-	  my_to_tag,
-	  appmodule,
-	  initialized=false
+	  branch,		%% string(), our branch identifier
+	  logtag,		%% string(), prefix to use when logging
+	  socket,		%% sipsocket record(), the socket the request was received on -
+	  			%% RFC3261 requires us to send responses using the very same socket
+	  report_to,		%% undefined | pid(), to whom we should report if we are cancelled
+	  parent,		%% pid(), our parent process - to handle trapped EXITs from it
+	  request,		%% request record(), the request we are handling
+	  response,		%% undefined | response record(), the last response we sent
+	  sipstate,		%% atom(), trying|proceeding|completed|confirmed|terminated
+	  cancelled=false,	%% bool(), have we been cancelled?
+	  timerlist,		%% siptimerlist record(), our current set of timers
+	  my_to_tag		%% string(), To-tag to use if we generate a response (as opposed to
+	  			%% if we forward a response)
 	 }).
 
 %%--------------------------------------------------------------------
@@ -65,59 +64,80 @@
 %%--------------------------------------------------------------------
 -define(TIMEOUT, 300 * 1000).
 
-
 %%====================================================================
 %% External functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, Socket, LogStr, AppModule)
+%% Function: start_link(Request, Socket, LogStr)
+%%           start(Request, Socket, LogStr)
 %%           Request   = request record()
 %%           Socket    = sipsocket record(), the socket this request
 %%                                         was received on
 %%           LogStr    = string(), description of request
-%%           AppModule = atom(), the name of the Yxa application that
-%%                               we are part of
 %% Descrip.: Starts the server
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
-start_link(Request, Socket, LogStr, AppModule) ->
-    gen_server:start_link(?MODULE, [Request, Socket, LogStr, AppModule, none], []).
+start_link(Request, Socket, LogStr) ->
+    %% It is intentional to call gen_server:start(...) here even though
+    %% this function is called start_link. That is because of a 'problem'
+    %% with gen_servers in Erlang/OTP (at least R10B-2). If you use
+    %% gen_server:start_link(...) to start your gen_server, you won't be
+    %% able to trap 'EXIT' signals from the parent process, even if you
+    %% set process_flag(trap_exit, true)! We set up a link to this process
+    %% in the init/1 callback to achieve the same effect (although with
+    %% a bitter taste).
+    gen_server:start(?MODULE, [Request, Socket, LogStr, self()], []).
 
-start(Request, Socket, LogStr, AppModule) ->
-    gen_server:start(?MODULE, [no_link, Request, Socket, LogStr, AppModule], []).
 
 %%====================================================================
 %% Server functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, Socket, LogStr, AppModule, Mode])
+%% Function: init([Request, Socket, LogStr])
 %%           Request   = request record()
 %%           Socket    = sipsocket record(), the socket this request
 %%                                         was received on
 %%           LogStr    = string(), description of request
-%%           AppModule = atom(), the name of the Yxa application that
-%%                               we are part of
 %% Descrip.: Initiates the server transaction gen_server
 %% Returns : {ok, State, Timeout} |
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
 
-init([no_link, Request, Socket, LogStr, AppModule]) ->
+%%
+%% ACK - no go
+%%
+init([#request{method="ACK"}=Request, _Socket, _LogStr, _Parent]) ->
+    %% Although a bit vague, RFC3261 section 17 (Transactions) do say that
+    %% it is not allowed to send responses to ACK requests, so we simply
+    %% deny to start a server transaction here. The transcation_layer will
+    %% never try to start a server transcation for ACK requests anyways.
+    logger:log(error, "Server transaction: NOT starting transaction for ACK request (ACK ~s)",
+	       [sipurl:print(Request#request.uri)]),
+    {stop, "Not starting server transaction for ACK"};
+
+%%
+%% Anything but ACK
+%%
+init([Request, Socket, LogStr, Parent]) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
     Desc = lists:concat([Branch, ": ", Method, " ", sipurl:print(URI)]),
     %% Get ourselves into the transaction state list first of all
     case transactionstatelist:add_server_transaction(Request, self(), Desc) of
 	ok ->
-	    %% Started with start() and not start_link() - link to transaction_layer
-	    %% immediately (so that it removes this transaction from the transactionstatelist
-	    %% when we exit).
+	    %% Link to transaction_layer immediately (so that it removes this
+	    %% transaction from the transactionstatelist when we exit/crash).
 	    TPid = erlang:whereis(transaction_layer),
 	    true = link(TPid),
-	    case init([Request, Socket, LogStr, AppModule, Branch]) of
+	    %% Link to parent from init/1 instead of using gen_server:start_link to
+	    %% be able to trap EXIT signals from parent process. See comment in start_link
+	    %% above for more details.
+	    true = link(Parent),
+	    process_flag(trap_exit, true),
+	    case init2([Request, Socket, LogStr, Branch, Parent]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
 		Reply ->
@@ -128,44 +148,41 @@ init([no_link, Request, Socket, LogStr, AppModule]) ->
 	    %% a resend (us) and then exit. XXX implement the notifying, for now
 	    %% just log.
 	    logger:log(normal, "~s: Early resend, exiting.", [LogStr]),
-	    {stop, resend};
-	_ ->
-	    {stop, "Failed registering with transaction_layer"}
-    end;
+	    {stop, resend}
+    end.
 
-%%
-%% ACK - no go
-%%
-init([#request{method="ACK"}=Request, _Socket, _LogStr, _AppModule, _BranchIn]) ->
-    %% Although a bit vague, RFC3261 section 17 (Transactions) do say that
-    %% it is not allowed to send responses to ACK requests, so we simply
-    %% deny to start a server transaction here.
-    logger:log(error, "Server transaction: NOT starting transaction for ACK request (ACK ~s)",
-	       [sipurl:print(Request#request.uri)]),
-    {stop, "Not starting server transaction for ACK"};
-%%
-%% Anything but ACK
-%%
-init([Request, Socket, LogStr, AppModule, BranchIn]) when is_record(Request, request) ->
+init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
-    Branch = case BranchIn of
-		 none ->
-		     siprequest:generate_branch() ++ "-UAS";
-		 _ -> BranchIn
-	     end,
     LogTag = Branch ++ " " ++ Method,
     MyToTag = generate_tag(),
+
     %% LogTag is essentially Branch + Method, LogStr is a string that
     %% describes this request (METHOD URI [client=x, from=y, to=z])
-    State = #state{branch=Branch, logtag=LogTag, socket=Socket, request=Request,
-		   sipmethod=Method, sipstate=trying, timerlist=siptimer:empty(),
-		   my_to_tag=MyToTag, appmodule=AppModule},
-    logger:log(debug, "~s: Server transaction: Started new server transaction for request ~s ~s.",
+    State = #state{branch=Branch, logtag=LogTag, socket=Socket, request=Request, sipstate=trying,
+		   timerlist=siptimer:empty(), my_to_tag=MyToTag, parent=Parent},
+
+    logger:log(debug, "~s: Started new server transaction for request ~s ~s.",
 	       [LogTag, Method, sipurl:print(URI)]),
     logger:log(normal, "~s: ~s", [LogTag, LogStr]),
-    %% Make sure init/1 does not block caller by doing everything possibly time consuming
-    %% after returning from init/1 (by causing an immediate timeout signal)
-    {ok, State, 0}.
+
+    %% Create event about new request received
+    DId = sipheader:dialogid(Request#request.header),
+    event_handler:new_request(Method, URI, Branch, DId),
+
+    %% RFC3261 17.2.1 says the _transaction layer_ MUST generate a 100 Trying in response
+    %% to an INVITE unless it _knows_ the TU will generate a response within 200 ms. We
+    %% can't know that, so we generate a 100 Trying.
+    NewState =
+	if
+	    Method == "INVITE" ->
+		Response = make_response(100, "Trying", <<>>, [], [], State),
+		{ok, NewState1} = do_response(created, Response, State),
+		NewState1;
+	    true ->
+		State
+	end,
+
+    {ok, NewState, ?TIMEOUT}.
 
 
 %%--------------------------------------------------------------------
@@ -201,43 +218,67 @@ handle_call({get_branch}, From, State) ->
 %%           if we have already been cancelled.
 %% Returns : {reply, Reply, State, Timeout} |
 %%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           Reply  = {ok}            |
-%%                    {error, Reason}
-%%           Reason = cancelled | string()
+%%           Reply  = ok               |
+%%                    {error, Error}   |
+%%                    {ignore, Reason} |
+%%           Error  = string()
+%%           Reason = cancelled | completed
+%% Note    : If we already have a report_to, we will reject the call
+%%           even if report_to is the same pid as the call asks us to
+%%           set it to. This might be relaxed later, but for now you
+%%           should not try to adopt a server transcation twice.
 %%--------------------------------------------------------------------
-handle_call({set_report_to, Pid}, From, State) when is_pid(Pid) ->
+handle_call({set_report_to, Pid}, _From, #state{report_to=RTo}=State) when is_pid(Pid), is_pid(RTo) ->
+    {reply, {error, "Server transaction already adopted"}, State, ?TIMEOUT};
+handle_call({set_report_to, Pid}, From, #state{report_to=undefined}=State) when is_pid(Pid) ->
     LogTag = State#state.logtag,
-    Reply = case State#state.report_to of
-		undefined ->
-		    case State#state.cancelled of
-			true ->
-			    logger:log(debug, "~s: Pid ~p attempted to adopt cancelled server transaction",
-				       [LogTag, Pid]),
-			    {reply, {error, cancelled}, State, ?TIMEOUT};
-			false ->
-			    logger:log(debug, "~s: Server transaction adopted by ~p", [LogTag, Pid]),
-			    {reply, {ok}, State#state{report_to=Pid}, ?TIMEOUT}
-		    end;
-		_ ->
-		    {reply, {error, "Already set"}, State, ?TIMEOUT}
-	    end,
+    Reply =
+	case State#state.cancelled of
+	    true ->
+		logger:log(debug, "~s: Pid ~p attempted to adopt cancelled server transaction",
+			   [LogTag, Pid]),
+		{reply, {ignore, cancelled}, State, ?TIMEOUT};
+	    false ->
+		case lists:member(State#state.sipstate, [trying, proceeding]) of
+		    true ->
+			logger:log(debug, "~s: Server transaction adopted by ~p", [LogTag, Pid]),
+			{reply, ok, State#state{report_to=Pid}, ?TIMEOUT};
+		    false ->
+			logger:log(debug, "~s: Pid ~p attempted to adopt cancelled server transaction"
+				   "already in state '~p'", [LogTag, Pid, State#state.sipstate]),
+			{reply, {ignore, completed}, State, ?TIMEOUT}
+		end
+	end,
     check_quit(Reply, From);
 
+handle_call(Request, From, State) ->
+    LogTag = State#state.logtag,
+    logger:log(error, "~s: Received unknown gen_server call from ~p :~n~p",
+	       [LogTag, From, Request]),
+    Reply = {reply, error, State, ?TIMEOUT},
+    check_quit(Reply, From).
+
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({siprequest, Request, Origin}, From, State)
+%% Function: handle_cast(Msg, State)
+%% Descrip.: Handling cast messages
+%% Returns : {noreply, State}          |
+%%           {noreply, State, Timeout} |
+%%           {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast({siprequest, Request, Origin}, State)
 %%           Request = request record()
 %%           Origin  = siporigin record()
 %% Descrip.: The transaction layer has received a request that matches
 %%           this server transaction. It should be either a resend of
 %%           the previous request, or an ACK that matches a non-2xx
 %%           response to INVITE that we are sending reliably.
-%% Returns : {continue} |
-%%           {pass_to_core, AppModule} |
-%%           {noreply ...}
+%% Returns : {noreply, NewState, ?TIMEOUT}
 %%--------------------------------------------------------------------
-handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, request),
-							     is_record(Origin, siporigin) ->
+handle_cast({siprequest, Request, Origin}, State) when is_record(Request, request),
+						       is_record(Origin, siporigin) ->
     {LogTag, OrigRequest} = {State#state.logtag, State#state.request},
     {OrigMethod, OrigURI, OrigHeader} = {OrigRequest#request.method, OrigRequest#request.uri,
 					 OrigRequest#request.header},
@@ -250,55 +291,34 @@ handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, 
     %% the original one. A resent request's URI should be byte-by-byte comparable to
     %% the original one, so in that case we don't use sipurl:url_is_equal().
     URIisEqual = sipurl:url_is_equal(OrigURI, URI),
-    Reply = if
-		OrigMethod == "INVITE", Method == "ACK", URIisEqual == true ->
-		    %% Received an ACK with a Request-URI that matches our original one
-		    LogTag = State#state.logtag,
-		    %% gen_server:reply before processing
-		    gen_server:reply(From, {continue}),
-		    NewState1 = process_received_ack(State),
-		    {noreply, NewState1, ?TIMEOUT};
-		Method == OrigMethod, URI == OrigURI, CSeqNum == OrigCSeqNum ->
-		    %% This is a resent request, check if we have a response stored that we can resend
-		    case State#state.response of
-			Re when is_record(Re, response) ->
-			    {Status, Reason} = {Re#response.status, Re#response.reason},
-			    logger:log(normal, "~s: Received a retransmission of request (~s ~s), resending "
-				       "response '~p ~s'", [LogTag, Method, sipurl:print(URI), Status, Reason]),
-			    %% gen_server:reply before processing
-			    gen_server:reply(From, {continue}),
-			    transportlayer:send_proxy_response(State#state.socket, Re);
-			_ ->
-			    %% No response stored
-			    logger:log(normal, "~s: Received a retransmission of request (~s ~s) but I "
-				       "have no response to resend!", [LogTag, Method, sipurl:print(URI)]),
-			    gen_server:reply(From, {continue})
-		    end,
-		    {noreply, State, ?TIMEOUT};
-		true ->
-		    logger:log(normal, "~s: Server transaction: Received request is not particulary alike "
-			       "the first one (~p ~s ~s /= ~p ~s ~s). Dropping it on the floor.",
-			       [LogTag, CSeqNum, Method, sipurl:print(URI),
-				OrigCSeqNum, OrigMethod, sipurl:print(OrigURI)]),
-		    {reply, {continue}, State, ?TIMEOUT}
-	    end,
-    check_quit(Reply);
-
-handle_call(Request, From, State) ->
-    LogTag = State#state.logtag,
-    logger:log(error, "~s: Received unknown gen_server call from ~p :~n~p",
-	       [LogTag, From, Request]),
-    Reply = ok,
-    check_quit({reply, Reply, State, ?TIMEOUT}, From).
-
-
-%%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
-%%--------------------------------------------------------------------
+    NewState =
+	if
+	    OrigMethod == "INVITE", Method == "ACK", URIisEqual == true ->
+		%% Received an ACK with a Request-URI that matches our original one
+		LogTag = State#state.logtag,
+		process_received_ack(State);
+	    Method == OrigMethod, URI == OrigURI, CSeqNum == OrigCSeqNum ->
+		%% This is a resent request, check if we have a response stored that we can resend
+		case State#state.response of
+		    Re when is_record(Re, response) ->
+			{Status, Reason} = {Re#response.status, Re#response.reason},
+			logger:log(normal, "~s: Received a retransmission of request (~s ~s), resending "
+				   "response '~p ~s'", [LogTag, Method, sipurl:print(URI), Status, Reason]),
+			transportlayer:send_proxy_response(State#state.socket, Re);
+		    _ ->
+			%% No response stored
+			logger:log(normal, "~s: Received a retransmission of request (~s ~s) but I "
+				   "have no response to resend!", [LogTag, Method, sipurl:print(URI)])
+		end,
+		State;
+	    true ->
+		logger:log(normal, "~s: Server transaction: Received request is not particulary alike "
+			   "the first one (~p ~s ~s /= ~p ~s ~s). Dropping it on the floor.",
+			   [LogTag, CSeqNum, Method, sipurl:print(URI),
+			    OrigCSeqNum, OrigMethod, sipurl:print(OrigURI)]),
+		State
+	end,
+    check_quit({noreply, NewState, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({{create_response, Status, Reason,
@@ -306,13 +326,13 @@ handle_call(Request, From, State) ->
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = list() of {Key, ValueList} typles
-%%           RBody        = list(), body to use in response
+%%           RBody        = binary(), body to use in response
 %% Descrip.: The TU (transaction user) instructs us to create a
 %%           response to our request (and send it).
 %% Returns : {noreply, NewState, ?TIMEOUT}
 %%--------------------------------------------------------------------
 handle_cast({create_response, Status, Reason, ExtraHeaders, RBody}, State)
-  when is_integer(Status), is_list(Reason), is_list(ExtraHeaders), is_list(RBody) ->
+  when is_integer(Status), is_list(Reason), is_list(ExtraHeaders), is_binary(RBody) ->
     Response = make_response(Status, Reason, RBody, ExtraHeaders, [], State),
     {ok, NewState1} = do_response(created, Response, State),
     check_quit({noreply, NewState1, ?TIMEOUT});
@@ -342,7 +362,7 @@ handle_cast({expired}, State) ->
     check_quit({stop, "Server transaction expired", State});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({expired}, State)
+%% Function: handle_cast({cancelled}, State)
 %% Descrip.: The transaction layer tells us that it has received a
 %%           CANCEL matching our request. If our report_to is set, we
 %%           inform the TU and let it do whatever it wants before
@@ -356,8 +376,8 @@ handle_cast({cancelled}, State) ->
     LogTag = State#state.logtag,
     SipState = State#state.sipstate,
     Reply =
-	case lists:member(SipState, [completed, confirmed, terminated]) of
-	    false ->
+	case lists:member(SipState, [trying, proceeding]) of
+	    true ->
 		ReportTo = State#state.report_to,
 		case util:safe_is_process_alive(ReportTo) of
 		    {true, ReportTo} ->
@@ -376,12 +396,12 @@ handle_cast({cancelled}, State) ->
 			logger:log(debug, "~s: Server transaction orphaned ('~p' not alive) - can't inform "
 				   "parent that I have been cancelled. Answering '487 Request Cancelled'.",
 				   [LogTag, ReportTo]),
-			Response = make_response(487, "Request Cancelled", "", [], [], State),
+			Response = make_response(487, "Request Cancelled", <<>>, [], [], State),
 			NewState1 = State#state{cancelled=true},
 			{ok, NewState} = do_response(created, Response, NewState1),
 			{noreply, NewState, ?TIMEOUT}
 		end;
-	    _ ->
+	    false ->
 		logger:log(debug, "~s: Server transaction cancelled when in state ~p - ignoring.",
 			   [LogTag, SipState]),
 		{noreply, State, ?TIMEOUT}
@@ -405,6 +425,7 @@ handle_cast(Msg, State) ->
 	       [LogTag, Msg]),
     check_quit({noreply, State, ?TIMEOUT}).
 
+
 %%--------------------------------------------------------------------
 %% Function: handle_info(Msg, State)
 %% Descrip.: Handling all non call/cast messages
@@ -415,33 +436,10 @@ handle_cast(Msg, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_info(timeout, State)
-%% Descrip.: State has initialized=false, this is the continuation of
-%%           init/1.
-%% Returns : {noreply, State, ?TIMEOUT}
-%%--------------------------------------------------------------------
-handle_info(timeout, #state{initialized=false}=State) ->
-    %% RFC3261 17.2.1 says the _transaction layer_ MUST generate a 100 Trying in response
-    %% to an INVITE unless it _knows_ the TU will generate a response within 200 ms. We
-    %% can't know that, so we generate a 100 Trying if this application is stateful.
-    Request = State#state.request,
-    Method = Request#request.method,
-    NewState =
-	if
-	    Method == "INVITE" ->
-		Response = make_response(100, "Trying", "", [], [], State),
-		{ok, NewState1} = do_response(created, Response, State),
-		NewState1#state{initialized=true};
-	    true ->
-		State#state{initialized=true}
-	end,
-    {noreply, NewState, ?TIMEOUT};
-
-%%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Timeout received, our mode is 'stateful'. Check if we
-%%           have report_to set, and if so check if that process is
-%%           still alive. Try to find a reason to terminate (better
-%%           than having processes linger forever).
+%% Descrip.: Timeout received. Check if we have report_to set, and if
+%%           so check if that process is still alive. Try to find a
+%%           reason to terminate (better than having processes linger
+%%           forever).
 %% Returns : {noreply, State, ?TIMEOUT} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%           Reason = string()
@@ -457,30 +455,34 @@ handle_info(timeout, State) ->
 	       undefined ->
 		   "no responses sent"
 	   end,
-    logger:log(error, "~s: Stateful server transaction (~s ~s) still alive after 5 minutes! State is ~p, ~s",
+    logger:log(error, "~s: Stateful server transaction (~s ~s) still alive after 5 minutes! SIP-state is ~p, ~s. "
+	       "Answering '500 Server Internal Error'.",
 	       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
+    logger:log(debug, "~s: Internal state dump :~n~p", [LogTag, State]),
     transactionlayer:debug_show_transactions(),
-    %% Check if we have a report_to, and if so check that it is alive.
-    %% This is to avoid lingering processes - we already have information
-    %% about what happened in the log files.
-    Reply =
-	case State#state.report_to of
-	    RPid when is_pid(RPid) ->
-		case is_process_alive(RPid) of
-		    true ->
-			logger:log(debug, "~s: Internal state dump :~n~p", [LogTag, State]),
-			{noreply, State, ?TIMEOUT};
-		    false ->
-			logger:log(debug, "~s: Terminating server transaction process since five "
-				   "minutes has passed and the pid that I report to (~p) is dead", [LogTag, RPid]),
-			{stop, "Stateful server transaction with dead owner idle for 5 minutes", State}
-		end;
-	    _ ->
-		logger:log(debug, "~s: Terminating server transaction process since five "
-			   "minutes has passed and noone has adopted us", [LogTag]),
-		{stop, "Stateful server transaction without owner idle for 5 minutes", State}
-	end,
-    check_quit(Reply);
+
+    logger:log(debug, "~s: Sending exit signal to parent (~p) and report_to (~p)",
+	       [LogTag, State#state.parent, State#state.report_to]),
+    %% Send exit signals to our parent and report_to pids to try and avoid having stale
+    %% processes hanging around until the whole system is restarted the next time (might take years!)
+    %% It isn't enough to just terminate this server transaction process when we finish after
+    %% the 500 error is delivered. If we terminate normally (which we would), then processes linked
+    %% to us wouldn't get killed. Use catch to not fall on our face if one of them is dead already.
+    Parent = State#state.parent,
+    (catch exit(Parent, servertransaction_timed_out)),
+    ReportTo = State#state.report_to,
+    case ReportTo of
+	Parent -> ok;
+	_ when is_pid(ReportTo) ->
+	    (catch exit(ReportTo, servertransaction_timed_out))
+    end,
+
+    %% Generate a 500 Server Internal Error. Maybe we should just exit() since the other end
+    %% is unlikely to remember this transaction state by now.
+    SendResponse = make_response(500, "Server Internal Error", <<>>, [], [], State),
+    {ok, NewState} = do_response(created, SendResponse, State),
+
+    check_quit({noreply, NewState, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({siptimer, TRef, TDesc}, State)
@@ -495,18 +497,64 @@ handle_info({siptimer, TRef, TDesc}, State) ->
     NewState =
 	case siptimer:get_timer(TRef, State#state.timerlist) of
 	    none ->
-		logger:log(error, "~s: Unknown timer (~p:~p) fired! Ignoring. LIST ~n~p", [LogTag, TRef, TDesc, State#state.timerlist]),
+		logger:log(error, "~s: Unknown timer (~p:~p) fired! Ignoring. LIST ~n~p",
+			   [LogTag, TRef, TDesc, State#state.timerlist]),
 		State;
 	    Timer ->
 		case process_timer(Timer, State) of
 		    NewState1 when is_record(NewState1, state) ->
 			NewState1;
 		    Unknown ->
+			%% Don't apply the 'let it crash' philosophy inside servertransaction
+			%% until we have some other process that will take care of the sending
+			%% of an '500 Server Internal Error' for us.
 			logger:log(error, "~s: Server transaction: process_timer() returned unknown result :~n~p",
 				   [LogTag, Unknown]),
 			State
 		end
 	end,
+    check_quit({noreply, NewState, ?TIMEOUT});
+
+%%--------------------------------------------------------------------
+%% Function: handle_info({'EXIT', Parent, Reason}, State)
+%%           Parent = pid()
+%%           Reason = term()
+%% Descrip.: Handle trapped EXIT signal from Parent. If we haven't
+%%           sent a final response yet, we will generate a
+%%           '500 Server Internal Error'.
+%% Returns : {noreply, NewState, ?TIMEOUT}
+%%--------------------------------------------------------------------
+
+%%
+%% normal exit, SipState = completed | confirmed | terminated
+%%
+handle_info({'EXIT', Pid, normal}, #state{parent=Parent, sipstate=SipState}=State)
+  when Pid == Parent, SipState == completed; SipState == confirmed; SipState == terminated ->
+    %% Parent exits normally when we are done, just ignore signal.
+    check_quit({noreply, State, ?TIMEOUT});
+
+%%
+%% non-normal exit, SipState = completed | confirmed | terminated
+%%
+handle_info({'EXIT', Pid, Reason}, #state{parent=Parent, sipstate=SipState}=State)
+  when Pid == Parent, SipState == completed; SipState == confirmed; SipState == terminated ->
+    %% Parent exits abnormally when we are done, just log the event.
+    logger:log(error, "~s: Parent ~p exited ABNORMALLY, my SIP-state is ~p so I'll ignore it.",
+	       [State#state.logtag, Parent, SipState]),
+    logger:log(debug, "~s: Parent ~p exit reason : ~p", [State#state.logtag, Parent, Reason]),
+    check_quit({noreply, State, ?TIMEOUT});
+
+%%
+%% normal or non-normal exit, SipState = something-other-than-finished, generate 500 response
+%%
+handle_info({'EXIT', Pid, Reason}, #state{parent=Parent}=State) when Pid == Parent ->
+    LogTag = State#state.logtag,
+    SipState = State#state.sipstate,
+    logger:log(error, "~s: Caught exit signal from parent ~p when in SIP-state ~p, "
+	       "generating '500 Server Internal Error'", [LogTag, Parent, SipState]),
+    logger:log(debug, "~s: Parent ~p exit reason : ~p", [LogTag, Parent, Reason]),
+    Response = make_response(500, "Server Internal Error", <<>>, [], [], State),
+    {ok, NewState} = do_response(created, Response, State),
     check_quit({noreply, NewState, ?TIMEOUT});
 
 handle_info(Info, State) ->
@@ -532,26 +580,28 @@ terminate(Reason, State) ->
 	    %% Don't log when we have never had a report_to
 	    true;
 	{false, R} ->
-	    logger:log(debug, "~s: Server transaction orphaned ('~p' not alive) - can't inform parent that I am terminating now",
-		       [LogTag, R])
+	    logger:log(debug, "~s: Server transaction orphaned ('~p' not alive) - can't inform parent "
+		       "that I am terminating now", [LogTag, R])
     end,
-    ok.
+    Reason.
 
 %%--------------------------------------------------------------------
-%% Func: code_change/3
-%% Purpose: Convert process state when code is changed
-%% Returns: {ok, NewState}
+%% Function: code_change(OldVsn, State, Extra)
+%% Descrip.: Convert process state when code is changed
+%% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
 
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: check_quit(Res, From)
-%%           Res  = term(), gen_server:call()/cast() return value
+%% Function: check_quit(Res)
+%%           check_quit(Res, From)
+%%           Res  = term(), gen_server:call/cast/info() return value
 %%           From = term(), gen_server from-value | none
 %% Descrip.: Extract the state record() from Res, and check if it's
 %%           sipstate is 'terminated'. If it is then turn Res into a
@@ -559,27 +609,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%           gen_server:reply() first.
 %% Returns : {noreply, State}          |
 %%           {stop, Reason, State}            (terminate/2 is called)
+%% Note    : Not all variants of gen_server call/cast/info return
+%%           values are covered in these functions - only the ones we
+%%           actually use!
 %%--------------------------------------------------------------------
 check_quit(Res) ->
     check_quit(Res, none).
 
-%% Before returing a call()/cast() reply, check if the SIP-state is terminated and
-%% if so return {stop ...}
 check_quit(Res, From) ->
     case Res of
-	{_, _, State, _} when is_record(State, state) ->
+	{reply, _Reply, State, _Timeout} when is_record(State, state) ->
 	    check_quit2(Res, From, State);
-	{_, _, State} when is_record(State, state) ->
+	{stop, _Reason, State} when is_record(State, state) ->
 	    check_quit2(Res, From, State);
-	{_, State, _} when is_record(State, state) ->
-	    check_quit2(Res, From, State);
-	{_, State} when is_record(State, state) ->
-	    check_quit2(Res, From, State);
-	_ ->
-	    Res
+	{noreply, State, _Timeout} when is_record(State, state) ->
+	    check_quit2(Res, From, State)
     end.
 
 check_quit2(Res, From, #state{sipstate=terminated}=State) ->
+    %% State#state.terminated is terminated, do some logging and (perhaps) any requested replying,
+    %% then terminate.
     RStr = case State#state.response of
 	       Re when is_record(Re, response) ->
 		   io_lib:format("last sent response was '~p ~s'", [Re#response.status, Re#response.reason]);
@@ -592,19 +641,15 @@ check_quit2(Res, From, #state{sipstate=terminated}=State) ->
     logger:log(debug, "~s: Server transaction (~s ~s) terminating in state '~p', ~s",
 	       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
     %% If there was a reply to be sent, we must send that before changing Res into
-    %% a stop.
+    %% a stop. Only include clauses for variants we actually use.
     NewReply = case Res of
 		   {reply, Reply, _, _} ->
 		       send_reply(Reply, From, State),
 		       {stop, normal, State};
-		   {reply, Reply, _} ->
-		       send_reply(Reply, From, State),
-		       {stop, normal, State};
-		   {stop, _, _, _}  ->
-		       Res;
-		   {stop, _, _} ->
+		   {stop, _Reason, _State} ->
 		       Res;
 		   _ ->
+		       %% {noreply, ...} or something
 		       {stop, normal, State}
 	       end,
     NewReply;
@@ -748,6 +793,11 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 			   [LogTag, What, Status, Reason]),
 		store_transaction_result(NewSipState, Request, Status, Reason, LogTag),
 		{ok, NewState2} = send_response(Response, SendReliably, State),
+		%% Make event out of the fact that we are sending a response
+		ToTagUsed = sipheader:get_tag(keylist:fetch('to', Response#response.header)),
+		L = [{request_method, ResponseToMethod}, {request_uri, sipurl:print(ResponseToURI)},
+		     {to_tag, ToTagUsed}],
+		event_final_response(State#state.branch, Created, Status, Reason, L),
 		enter_sip_state(NewSipState, NewState2);
 	    E ->
 		logger:log(error, "~s: State machine does not allow us to send '~p ~s' in response to '~s ~s' "
@@ -757,6 +807,15 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 		State
 	end,
     {ok, NewState}.
+
+%% generate a uas_result event with information about the original request
+%% and the response we are now sending. part of do_response().
+event_final_response(Created, Branch, Status, Reason, L) when Status >= 200 ->
+    event_handler:uas_result(Branch, Created, Status, Reason, L),
+    ok;
+event_final_response(_Created, _Method, _Reason, _Branch, _L) ->
+    %% Don't make events out of every non-final response we send
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: store_transaction_result(SipState, Request, Status,
@@ -950,7 +1009,8 @@ enter_sip_state(completed, State) when is_record(State, state) ->
 		       [LogTag, siptimer:timeout2str(TimerJ)]),
 	    %% Install TimerJ (default 32 seconds) RFC 3261 17.2.2. Until TimerJ fires we
 	    %% resend our response whenever we receive a request resend.
-	    JDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++ " (Timer J)",
+	    JDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++
+		" (Timer J)",
 	    add_timer(TimerJ, JDesc, {terminate_transaction}, NewState1)
     end;
 
@@ -975,7 +1035,8 @@ enter_sip_state(confirmed, State) when is_record(State, state) ->
 		       "Timer I with a timeout of ~s seconds.",  [LogTag, siptimer:timeout2str(TimerI)]),
 	    %% Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we
 	    %% absorb any additional ACK requests that might arrive.
-	    IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++ " (Timer I)",
+	    IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++ 
+		" (Timer I)",
 	    add_timer(TimerI, IDesc, {terminate_transaction}, NewState1);
 	_ ->
 	    logger:log(error, "~s: Entered state 'confirmed'. Original request was NOT an INVITE (it was ~s ~s). " ++
@@ -1003,7 +1064,7 @@ process_received_ack(State) when is_record(State, state), is_record(State#state.
     Response = State#state.response,
     {Status, Reason} = {Response#response.status, Response#response.reason},
     LogTag = State#state.logtag,
-    logger:log(normal, "~s: Response ~p ~s to request ~s ~s ACK-ed",
+    logger:log(normal, "~s: Response '~p ~s' to request ~s ~s ACK-ed",
 	       [LogTag, Status, Reason, Method, sipurl:print(URI)]),
     case Method of
 	"INVITE" ->
@@ -1013,7 +1074,7 @@ process_received_ack(State) when is_record(State, state), is_record(State#state.
 		    logger:log(error, "~s: Received ACK when in state '~p' - ignoring", [LogTag, SipState]),
 		    State;
 		false ->
-		    logger:log(debug, "~s: Received ACK, cancelling resend timers for response ~p ~s "
+		    logger:log(debug, "~s: Received ACK, cancelling resend timers for response '~p ~s' "
 			       "(to request ~s ~s) and entering state 'confirmed'",
 			       [LogTag, Status, Reason, Method, sipurl:print(URI)]),
 		    TimerList = State#state.timerlist,
@@ -1023,7 +1084,7 @@ process_received_ack(State) when is_record(State, state), is_record(State#state.
 		    NewState
 	    end;
 	_ ->
-	    logger:log(debug, "~s: Received ACK to non-INVITE request ~s ~s (response being ACKed is ~p ~s) "
+	    logger:log(debug, "~s: Received ACK to non-INVITE request ~s ~s (response being ACKed is '~p ~s') "
 		       "- ignoring", [LogTag, Method, sipurl:print(URI), Status, Reason]),
 	    State
     end;
@@ -1038,7 +1099,7 @@ process_received_ack(State) when is_record(State, state) ->
 %%                         ViaParameters, State)
 %%           Status        = integer(), SIP status code
 %%           Reason        = string(), SIP reason phrase
-%%           RBody         = list(), body of response
+%%           RBody         = integer(), body of response
 %%           ExtraHeaders  = list() of {Key, ValueList} typles
 %%           ViaParameters = term()
 %%           State         = state record()
@@ -1048,23 +1109,22 @@ process_received_ack(State) when is_record(State, state) ->
 %% Returns : Response = response record()
 %%--------------------------------------------------------------------
 make_response(100, Reason, RBody, ExtraHeaders, ViaParameters, State)
-  when is_record(State, state), is_list(Reason), is_list(RBody), is_list(ExtraHeaders) ->
+  when is_record(State, state), is_list(Reason), is_binary(RBody), is_list(ExtraHeaders) ->
     %% We don't need to set To-tag for 100 Trying. 100 Trying are not supposed
     %% to have a To-Tag.
     siprequest:make_response(100, Reason, RBody, ExtraHeaders, ViaParameters,
 			     State#state.socket, State#state.request);
 
 make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
-  when is_record(State, state), is_integer(Status), is_list(Reason), is_list(RBody),
-       is_list(ExtraHeaders) ->
+  when is_record(State, state), is_integer(Status), is_list(Reason), is_binary(RBody), is_list(ExtraHeaders) ->
     Request = State#state.request,
     Header = Request#request.header,
     To = keylist:fetch('to', Header),
     Req = case sipheader:get_tag(To) of
 	      none ->
 		  {DisplayName, ToURI} = sipheader:to(To),
-		  NewTo = sipheader:contact_print(
-			    [ contact:new(DisplayName, ToURI, [{"tag", State#state.my_to_tag}]) ]),
+		  [NewTo] = sipheader:contact_print(
+			      [ contact:new(DisplayName, ToURI, [{"tag", State#state.my_to_tag}]) ]),
 		  NewHeader = keylist:set("To", [NewTo], Header),
 		  Request#request{header=NewHeader};
 	      _ ->
@@ -1079,7 +1139,7 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
 %%           bits of randomness (specified by RFC3261 #19.3).
 %%           there. Then use siprequest:make_response/7 to create a
 %%           response from our requests headers.
-%% Returns : Response = response record()
+%% Returns : Tag = string()
 %%--------------------------------------------------------------------
 generate_tag() ->
     %% Erlang guarantees that subsequent calls to now() generate increasing values (on the same node).
@@ -1088,6 +1148,7 @@ generate_tag() ->
     Out = siprequest:make_base64_md5_token(In),
     %% don't make the tag longer than it has to be.
     "yxa-" ++ string:substr(Out, 1, 9).
+
 
 %%====================================================================
 %% Test functions
@@ -1109,14 +1170,14 @@ test() ->
 
     %% 17.2.1 INVITE Server Transaction
 
-    io:format("test: send_response_state_machine/3 INVITE - 1~n"),
+    io:format("test: send_response_statemachine/3 INVITE - 1~n"),
     %% When a server transaction is constructed for a request, it enters the
     %% "Proceeding" state.
     %% Send 100 Trying only in 'trying'. 'trying' for INVITE is not in the RFC3261
     %% spec, it is our internal way of saying "we haven't sent a 100 Trying yet".
     {send, false, proceeding} = send_response_statemachine("INVITE", 100, trying),
 
-    io:format("test: send_response_state_machine/3 INVITE - 2~n"),
+    io:format("test: send_response_statemachine/3 INVITE - 2~n"),
     %% The TU passes any number of provisional responses to the server
     %% transaction.  So long as the server transaction is in the
     %% "Proceeding" state, each of these MUST be passed to the transport
@@ -1127,7 +1188,7 @@ test() ->
     {send, false, proceeding} = send_response_statemachine("INVITE", 183, proceeding),
     {send, false, proceeding} = send_response_statemachine("INVITE", 199, proceeding),
 
-    io:format("test: send_response_state_machine/3 INVITE - 3~n"),
+    io:format("test: send_response_statemachine/3 INVITE - 3~n"),
     %% If, while in the "Proceeding" state, the TU passes a 2xx response to
     %% the server transaction, the server transaction MUST pass this
     %% response to the transport layer for transmission.  It is not
@@ -1136,7 +1197,7 @@ test() ->
     %% transition to the "Terminated" state.
     {send, false, terminated} = send_response_statemachine("INVITE", 200, proceeding),
 
-    io:format("test: send_response_state_machine/3 INVITE - 4~n"),
+    io:format("test: send_response_statemachine/3 INVITE - 4~n"),
     %% While in the "Proceeding" state, if the TU passes a response with
     %% status code from 300 to 699 to the server transaction, the response
     %% MUST be passed to the transport layer for transmission, and the state
@@ -1151,7 +1212,7 @@ test() ->
 
     %% own conclusions
 
-    io:format("test: send_response_state_machine/3 INVITE - 5~n"),
+    io:format("test: send_response_statemachine/3 INVITE - 5~n"),
     %% Don't send 100 Trying in any other state than 'trying'. This means that the TU
     %% will be ignored if it asks us to send out a 100 Trying, since we did that ourselves
     %% when in our internal mode (for INVITE) 'trying'.
@@ -1159,7 +1220,7 @@ test() ->
     {ignore, false, completed} = send_response_statemachine("INVITE", 100, completed),
     {ignore, false, terminated} = send_response_statemachine("INVITE", 100, terminated),
 
-    io:format("test: send_response_state_machine/3 INVITE - 6~n"),
+    io:format("test: send_response_statemachine/3 INVITE - 6~n"),
     %% don't send any more responses once we have sent a final response
     {ignore, false, completed} = send_response_statemachine("INVITE", 100, completed),
     {ignore, false, completed} = send_response_statemachine("INVITE", 200, completed),
@@ -1168,7 +1229,7 @@ test() ->
     {ignore, false, completed} = send_response_statemachine("INVITE", 500, completed),
     {ignore, false, completed} = send_response_statemachine("INVITE", 600, completed),
 
-    io:format("test: send_response_state_machine/3 INVITE - 7~n"),
+    io:format("test: send_response_statemachine/3 INVITE - 7~n"),
     %% don't send any more responses if we should happen to end up here even if we are
     %% really supposed to have terminated (like if we are emptying our mailbox before
     %% _really_ terminating)
@@ -1183,22 +1244,22 @@ test() ->
 
     %% The state machine is initialized in the "Trying" state ...
 
-    io:format("test: send_response_state_machine/3 non-INVITE - 1~n"),
+    io:format("test: send_response_statemachine/3 non-INVITE - 1~n"),
     %% While in the "Trying" state, if the TU passes a provisional response
     %% to the server transaction, the server transaction MUST enter the
     %% "Proceeding" state.  The response MUST be passed to the transport
     %% layer for transmission.
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 100, trying),
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, trying),
-    
-    io:format("test: send_response_state_machine/3 non-INVITE - 2~n"),
+
+    io:format("test: send_response_statemachine/3 non-INVITE - 2~n"),
     %% Any further provisional responses that are received from the TU while in the
     %% "Proceeding" state MUST be passed to the transport layer for transmission.
     %% Yxa note: we filter out 100 Trying
     {ignore, false, proceeding} = send_response_statemachine("OPTIONS", 100, proceeding),
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, proceeding),
 
-    io:format("test: send_response_state_machine/3 non-INVITE - 3~n"),
+    io:format("test: send_response_statemachine/3 non-INVITE - 3~n"),
     %% If the TU passes a final response (status codes 200-699) to the server while
     %% in the "Proceeding" state, the transaction MUST enter the "Completed" state,
     %% and the response MUST be passed to the transport layer for transmission.
@@ -1209,7 +1270,7 @@ test() ->
     {send, false, completed} = send_response_statemachine("OPTIONS", 600, proceeding),
     {send, false, completed} = send_response_statemachine("OPTIONS", 699, proceeding),
 
-    io:format("test: send_response_state_machine/3 non-INVITE - 4~n"),
+    io:format("test: send_response_statemachine/3 non-INVITE - 4~n"),
     %% Any other final responses passed by the TU to the server transaction MUST
     %% be discarded while in the "Completed" state.
     {ignore, false, completed} = send_response_statemachine("OPTIONS", 200, completed),
@@ -1221,7 +1282,7 @@ test() ->
 
     %% own conclusions
 
-    io:format("test: send_response_state_machine/3 non-INVITE - 5~n"),
+    io:format("test: send_response_statemachine/3 non-INVITE - 5~n"),
     %% provisional responses received from the TU when already completed is ignored
     {ignore, false, completed} = send_response_statemachine("OPTIONS", 100, completed),
     {ignore, false, completed} = send_response_statemachine("OPTIONS", 199, completed),
