@@ -192,7 +192,8 @@ get_socket_from_list(Host, Port, SocketList) ->
 connect_to_remote(SocketModule, RequestorPid, Host, Port) ->
     logger:log(debug, "Sipsocket TCP: No cached connection to remote host ~s:~p, trying to connect",
 	       [Host, Port]),
-    case SocketModule:connect(Host, Port, [binary, {packet, 0}, {active, false}]) of
+    ConnectTimeout = sipserver:get_env(tcp_connect_timeout, 20) * 1000,
+    case SocketModule:connect(Host, Port, [binary, {packet, 0}, {active, false}], ConnectTimeout) of
 	{ok, NewSocket} ->
 	    Local = case inet:sockname(NewSocket) of
 			{ok, {IPlist, LocalPort}} ->
@@ -204,8 +205,17 @@ connect_to_remote(SocketModule, RequestorPid, Host, Port) ->
 	    Remote = {Host, Port},
 	    case tcp_connection:start_link(SocketModule, NewSocket, out, Local, Remote) of
 		{ok, Pid} ->
-		    SipSocket = #sipsocket{module=sipsocket_tcp, pid=Pid, data={Local, Remote}},
-		    gen_server:reply(RequestorPid, {ok, SipSocket});
+		    %% Must change controlling process of new socket since this pid will terminate
+		    case SocketModule:controlling_process(NewSocket, Pid) of
+			ok ->
+			    SipSocket = #sipsocket{module=sipsocket_tcp, pid=Pid, data={Local, Remote}},
+			    gen_server:reply(RequestorPid, {ok, SipSocket});
+			_ ->
+			    logger:log(debug, "Sipsocket TCP: Failed to change controlling process for socket ~p to tcp_connection pid ~p",
+				       [NewSocket, Pid]),
+			    gen_server:reply(RequestorPid, {error, "failed changing controllig process of socket"}),
+			    SocketModule:close(NewSocket)
+		    end;
 		{'EXIT', Reason} ->
 		    logger:log(error, "Sipsocket TCP: TCP dispatcher failed adding new socket ~p " ++
 			       "(connected to remote peer ~s:~p) : ~p", [NewSocket, Host, Port, Reason]),
@@ -221,6 +231,9 @@ connect_to_remote(SocketModule, RequestorPid, Host, Port) ->
 	    end;
 	{error, econnrefused} ->
 	    gen_server:reply(RequestorPid, {error, "Connection refused"});
+	{error, ehostunreach} ->
+	    %% If we don't get a connection before ConnectTimeout, we end up here
+	    gen_server:reply(RequestorPid, {error, "Host unreachable"});
 	{error, E} ->
 	    logger:log(error, "Sipsocket TCP: Failed connecting to ~s:~p : ~s (~p)", [Host, Port, inet:format_error(E), E]),
 	    gen_server:reply(RequestorPid, {error, inet:format_error(E)})
