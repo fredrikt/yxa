@@ -76,7 +76,7 @@ lookupdefault(User) ->
 		none ->
 		    {proxy, {User, none, sipserver:get_env(defaultroute), none, []}};
 		URL ->
-		    {redirect, sipurl:parse(URL)}
+		    {relay, sipurl:parse(URL)}
 	    end;
 	false ->
 	    none
@@ -118,7 +118,7 @@ lookupphone(URL) ->
 		    Loc2
 	    end;
 	_ ->
-	    {redirect, URL}
+	    {relay, URL}
     end.
 
 request("REGISTER", URL, Header, Body, Socket) ->
@@ -152,7 +152,10 @@ request(Method, URL, Header, Body, Socket) ->
 	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body});
 	{redirect, Loc} ->
 	    logger:log(normal, "Redirect ~s", [sipurl:print(Loc)]),
-	    siprequest:send_redirect(Loc, Header, Socket)
+	    siprequest:send_redirect(Loc, Header, Socket);
+	{relay, Loc} ->
+	    logger:log(normal, "Relay ~s", [sipurl:print(Loc)]),
+	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body}, Method)
     end.
 
 response(Status, Reason, Header, Body, Socket) ->
