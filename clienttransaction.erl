@@ -329,7 +329,7 @@ handle_info(timeout, #state{initialized=no}=State) ->
 %%           Pid    = pid()
 %%           Reason = normal | term()
 %% Descrip.: Handle exit signals from the processes we are linked to.
-%%           If we are an INVITE transction and our parent exits with
+%%           If we are an INVITE transaction and our parent exits with
 %%           anything other than 'normal', we cancel ourselves if we
 %%           haven't completed yet.
 %% Returns : {noreply, State}
@@ -345,8 +345,9 @@ handle_info({'EXIT', Pid, Reason}, #state{parent=Parent}=State) when Pid == Pare
 				   [LogTag, Parent, Method, sipurl:print(URI)]),
 			cancel_request(State);
 		    false ->
-			logger:log(debug, "~s: My parent (~p) exited, but this client transaction can't (or shouldn't) "
-				   "be cancelled now", [LogTag, Parent]),
+			logger:log(debug, "~s: My parent (~p) exited, but this client transaction can't "
+				   "(or shouldn't) be cancelled now (my state is ~p, cancelled=~p)",
+				   [LogTag, Parent, State#state.sipstate, State#state.cancelled]),
 			State
 		end,
     
