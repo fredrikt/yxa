@@ -11,8 +11,12 @@ makeip({A1, A2, A3, A4, A5, A6, A7, A8}) ->
     "[" ++ httpd_util:to_lower(A) ++ "]".
 
 myip() ->
-    [A | _] = get_iplist(),
-    A.
+    case get_iplist() of
+	[A | _] ->
+	    A;
+	[] ->
+	    "127.0.0.1"
+    end.
 
 %% XXX make this return all addresses, currently IPv6 addresses
 %% are not returned!
