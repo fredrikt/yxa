@@ -17,7 +17,7 @@ MYNAME=`basename $0`
 CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
 
 if [ "x$SSLCERTDIR" = "x" ]; then
-    SSLCERTFILE="$CONFIGDIR/ssl/cert.comb"
+    SSLCERTFILE="$CONFIGDIR/yxa/cert.comb"
 else
     SSLCERTFILE="$SSLCERTDIR/cert.comb"
 fi
