@@ -370,6 +370,7 @@ normalize2("to") ->			'to';
 normalize2("via") ->			'via';
 normalize2("warning") ->		'warning';
 normalize2("www-authenticate") ->	'www-authenticate';
+normalize2("x-yxa-peer-auth") ->	'x-yxa-peer-auth';
 normalize2(In) when is_list(In) ->	In.
 
 %%--------------------------------------------------------------------
