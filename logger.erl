@@ -31,6 +31,7 @@
 	 start_link/1,
 	 log/2,
 	 log/3,
+	 log_iolist/2,
 	 quit/1
 	]).
 
@@ -115,6 +116,13 @@ log(Level, Format) when is_atom(Level), is_list(Format) ->
 log(Level, Format, Arguments) when is_atom(Level), is_list(Format),
 				   is_list(Arguments) ->
     do_log(Level, Format, Arguments).
+
+log_iolist(Level, IOlist) when is_atom(Level) ->
+    LogTS = get_ts(now()),
+    L = atom_to_list(Level),
+    P = pid_to_list(self()),
+    gen_server:cast(logger, {log, Level, [LogTS, 32, L, P, $:, IOlist]}),
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: quit(Msg)
@@ -245,7 +253,7 @@ handle_call(Unknown, _From, State) ->
 %%           makes the log/2 and log/3 calls non-blocking.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data) ->
+handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data); is_list(Data) ->
     case Level of
 	error ->
 	    log_to_device(State#state.error_iodev, Data),
@@ -300,15 +308,15 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate/2
-%% Description: Shutdown the server
-%% Returns: any (ignored by gen_server)
+%% Function: terminate(Reason, State)
+%% Descrip.: Shutdown the server
+%% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(_Reason, State) ->
+terminate(Reason, State) ->
     file:close(State#state.error_iodev),
     file:close(State#state.normal_iodev),
     file:close(State#state.debug_iodev),
-    ok.
+    Reason.
 
 %%--------------------------------------------------------------------
 %% Func: code_change/3
@@ -348,12 +356,21 @@ log_to_device(IoDevice, Data) ->
     file:write(IoDevice, Data).
 
 log_to_stdout(Data) ->
-    %% XXX is there a way to avoid transforming this back to a list
-    %% just to output it to stdout?
-    io:format("~s", [binary_to_list(Data)]).
+    try
+	io:put_chars(Data)
+    catch
+	exit: {ebadf, _} ->
+	    %% When our supervisor shuts down it's children, we will loose
+	    %% our ability to log to stdout before we are shut down, when
+	    %% we are logging other processes shutdowns and the logger
+	    %% process will in fact crash, diverting attention from the
+	    %% real reason for shutdown. We therefor need to ignore 'ebadf'
+	    %% errors :(
+	    ok
+    end.
 
 %%--------------------------------------------------------------------
-%% Function: create_filename_time_suffix/0
+%% Function: create_filename_time_suffix()
 %% Descrip.: Return a date string (european style) suitable for
 %%           appending to a filename when rotating it.
 %% Returns : string()
@@ -387,10 +404,6 @@ needs_rotating(In, Size, State) when record(State, state) ->
 		      _ ->
 			  %% Either error returned from read_file_info, or file size is within limits.
 			  %% We don't check (care) which one... check next file in list.
-			  %%
-			  %% XXX is this a good idea ? the files should not be unreadable !
-			  %% should we throw some kind of error ?
-			  %% at least it is true that we don't know if the files need rotating.
 			  Acc
 		  end
 	  end,
@@ -460,16 +473,19 @@ rotate_file(Filename, Suffix) ->
 
 %% do_log is executed in caller pid (by log/2 or log/3), not in
 %% persistent logger process.
-do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format), is_list(Arguments) ->
+do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format); is_binary(Format),
+				      is_list(Arguments) ->
     %%				      Level == debug; Level == normal; Level == error ->
-    {Megasec, Sec, USec} = now(),
-    USecStr = format_usec(USec, 3),
-    DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
-    LogTS = lists:concat([DateTime, ".", USecStr]),
+    LogTS = get_ts(now()),
     Data = format_msg(LogTS, Level, self(), Format, Arguments),
     gen_server:cast(logger, {log, Level, Data}),
     ok.
 
+%% get timestamp
+get_ts({Megasec, Sec, USec}) -> 
+    USecStr = format_usec(USec, 3),
+    DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
+    list_to_binary([DateTime, $., USecStr]).
 
 %% Precision = integer(),range = 1 - 6
 format_usec(Usec, Precision) ->
@@ -479,7 +495,7 @@ format_usec(Usec, Precision) ->
 
 %%--------------------------------------------------------------------
 %% Function: format_msg(TimeStamp, Level, Pid, Format, Arguments)
-%%           TimeStamp = string()
+%%           TimeStamp = binary()
 %%           Level     = atom()
 %%           Pid       = pid()
 %%           Format    = string()
@@ -489,8 +505,7 @@ format_usec(Usec, Precision) ->
 %% Returns : LogMsg = binary()
 %%--------------------------------------------------------------------
 format_msg(TimeStamp, Level, Pid, Format, Arguments) ->
-    Tag = io_lib:format("~s ~p~p:", [TimeStamp, Level, Pid]),
-    BinTag = list_to_binary(Tag),
+    %% make binary out of Format and Arguments
     Msg = case catch io_lib:format(Format, Arguments) of
 	      {'EXIT', E} ->
 		  Tmp = io_lib:format("LOG FORMATTING ERROR ~p, Format : ~p", [E, Format]),
@@ -498,5 +513,6 @@ format_msg(TimeStamp, Level, Pid, Format, Arguments) ->
 	      Res when is_list(Res) ->
 		  list_to_binary(Res)
 	  end,
+    Tag = io_lib:format("~p~p:", [Level, Pid]),
     %% The 10 is the trailing linefeed
-    concat_binary([BinTag, Msg, 10]).
+    list_to_binary([TimeStamp, 32, Tag, Msg, 10]).
