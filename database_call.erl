@@ -1,6 +1,7 @@
 -module(database_call).
 -export([create_call/0, insert_call/4, get_call/1, list_calls/0,
-	 insert_call_unique/4, set_data/2, delete_call_type/2, get_call_type/2]).
+	 insert_call_unique/4, set_data_type/3, delete_call_type/2, get_call_type/2,
+	 fetch_call/2, fetch_dialogue/2, delete_all_calls/0]).
 
 -include("database_call.hrl").
 
@@ -52,6 +53,19 @@ delete_call_type(Callid, Type) ->
 	    end,
     mnesia:transaction(F).
 
+delete_all_calls() ->
+    F = fun() ->
+		Q = query
+			[E || E <- table(call)]
+		    end,
+		    A = mnemosyne:eval(Q),
+		    Delete = fun(O) ->
+				   mnesia:delete_object(O)
+			   end,
+		    lists:foreach(Delete, A)
+	end,
+    mnesia:transaction(F).
+
 list_calls() ->
     F = fun() ->
 		Q = query
@@ -82,11 +96,12 @@ get_call_type(Call, Type) ->
 	    end,
     mnesia:transaction(F).
 
-set_data(CallID, Data) ->
+set_data_type(CallID, Data, Type) ->
     F = fun() ->
 		Q = query
 			[E || E <- table(call),
-			      E.callid = CallID]
+			      E.callid = CallID,
+			      E.type = Type]
 		    end,
 		A = mnemosyne:eval(Q),
 		Update = fun(O) ->
@@ -95,3 +110,29 @@ set_data(CallID, Data) ->
 		lists:foreach(Update, A)
 	end,
     mnesia:transaction(F).
+
+fetch_dialogue({CallID, FromTag, none}, Type) ->
+    case get_call_type({CallID, FromTag, none}, Type) of
+	{atomic, [Record]} ->
+	    {{CallID, FromTag, none}, Record};
+	{atomic, []} ->
+	     nomatch
+    end;
+fetch_dialogue(DialogueID, Type) ->
+    case database_call:get_call_type(DialogueID, Type) of
+	{atomic, [Record]} ->
+	    {DialogueID, Record};
+	{atomic, []} ->
+	    {CallID, FromTag, _} = DialogueID,
+	    fetch_dialogue({CallID, FromTag, none}, Type)
+    end.
+        
+fetch_call(Header, Type) ->
+    DialogueID = sipheader:dialogueid(Header),
+    case fetch_dialogue(DialogueID, Type) of
+	{_, Call} ->
+	    Call;
+	_ ->
+	    nomatch
+    end.
+
