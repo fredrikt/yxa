@@ -1,7 +1,7 @@
 -module(sipheader).
 -export([to/1, from/1, contact/1, via/1, via_print/1, to_print/1,
 	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1,
-	 httparg/1, cseq/1, cseq_print/1]).
+	 httparg/1, cseq/1, cseq_print/1, via_params/1]).
 
 comma(String) ->
     comma([], String, false).
@@ -64,6 +64,9 @@ via_print(Via) ->
 		      {Protocol, {Host, Port}, Parameters} = H,
 		      Protocol ++ " " ++ Host ++ ":" ++ Port ++ print_parameters(Parameters)
 	      end, Via).
+
+via_params({Protocol, Hostport, Parameters}) ->
+    param_to_dict(Parameters).
 
 contact_print(Contact) ->
     lists:map(fun(H) ->
@@ -147,17 +150,19 @@ unescape([$%, C1, C2 | Rest]) ->
 unescape([C | Rest]) ->
     [C | unescape(Rest)].
 
-httparg(String) ->
-    Headers = string:tokens(String, "&"),
+param_to_dict(Param) ->
     L = lists:map(fun(A) ->
 			  H = string:strip(A,left),
 			  Index = string:chr(H, $=),
 			  Name = string:substr(H, 1, Index - 1),
 			  Value = string:substr(H, Index + 1),
-			  
 			  {Name, unescape(Value)}
-		  end, Headers),
-    dict:from_list(L).
+		  end, Param),
+    dict:from_list(L).    
+
+httparg(String) ->
+    Headers = string:tokens(String, "&"),
+    param_to_dict(Headers).
 
 cseq([String]) ->
     [Seq, Method] = string:tokens(String, " "),
