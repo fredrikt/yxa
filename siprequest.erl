@@ -283,15 +283,14 @@ fetch_contacts(Phone) ->
 
 locations_to_contacts([]) ->
     [];
-locations_to_contacts([{Location, Flags, Class, Expire}]) ->
-    [print_contact(Location, Expire)];
 locations_to_contacts([{Location, Flags, Class, Expire} | Rest]) ->
-    [print_contact(Location, Expire), locations_to_contacts(Rest)].
+    lists:append([print_contact(Location, Expire)], locations_to_contacts(Rest)).
 
 print_contact(Location, Expire) ->
     % make sure we don't end up with a negative Expires
     NewExpire = lists:max([0, Expire - util:timestamp()]),
-    "<" ++ sipheader:contact_print([{none, Location}]) ++ ">;expires=" ++ integer_to_list(NewExpire).
+    [C] = sipheader:contact_print([{none, Location}]),
+    C ++ ";expires=" ++ integer_to_list(NewExpire).
 
 process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
