@@ -3,7 +3,8 @@
 	 send_auth_req/4, send_proxyauth_req/4,
 	 send_proxy_request/3, send_proxy_request/4, send_answer/3,
 	 send_notavail/2, send_notfound/2, send_proxy_response/5,
-	 send_result/5, send_result/6, make_answerheader/1]).
+	 send_result/5, send_result/6, make_answerheader/1,
+	 locations_to_contacts/1]).
 
 send_response(Socket, Code, Text, Header, Body) ->
     Via = sipheader:via(keylist:fetch("Via", Header)),
