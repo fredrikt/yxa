@@ -9,36 +9,65 @@ start(normal, Args) ->
 init() ->
     true.
 
-request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body, Socket, FromIP) ->
-    logger:log(normal, "~s sip:~s@sip-pstn.kth.se", [Method, User]),
-    case Method of
-	"INVITE" ->
-	    request2(Method, User, Header, Body, Socket);
-	"ACK" ->
-	    request2(Method, User, Header, Body, Socket);
-	"CANCEL" ->
-	    request2(Method, User, Header, Body, Socket);
-	"BYE" ->
-	    request2(Method, User, Header, Body, Socket);
+localhostname(Hostname) ->
+    util:casegrep(Hostname, sipserver:get_env(myhostnames)).
+
+pstngateway(Hostname) ->
+    util:casegrep(Hostname, sipserver:get_env(pstngatewaynames)).
+
+routeRequestToPSTN(FromIP, ToHost) ->
+    case pstngateway(FromIP) of
+	true ->
+	    logger:log(debug, "Routing: Source IP ~s is PSTN gateway, route to SIP proxy", [FromIP]),
+	    false;		
 	_ ->
-	    siprequest:send_result(Header, Socket, "", 501, "Not Implemented")
-    end;
+	    case localhostname(ToHost) of
+		true ->
+		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway", [FromIP, ToHost]),
+		    true;
+		_ ->
+		    logger:log(debug, "Routing: Denied request from ~s to ~s - not my problem", [FromIP, ToHost]),
+		    nomatch
+	    end
+    end.
 
 request(Method, URL, Header, Body, Socket, FromIP) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    logger:log(normal, "~s ~s@sip-pstn.kth.se", [Method, sipurl:print(URL)]),
-    Newlocation = {User, none, "kth.se", none, []},
+    logger:log(normal, "~s ~s", [Method, sipurl:print(URL)]),
+    case routeRequestToPSTN(FromIP, Host) of
+	true ->
+	    case Method of
+		"INVITE" ->
+		    toPSTNrequest(Method, User, Header, Body, Socket);
+		"ACK" ->
+		    toPSTNrequest(Method, User, Header, Body, Socket);
+		"CANCEL" ->
+		    toPSTNrequest(Method, User, Header, Body, Socket);
+		"BYE" ->
+		    toPSTNrequest(Method, User, Header, Body, Socket);
+		_ ->
+		    siprequest:send_result(Header, Socket, "", 501, "Not Implemented")
+	    end;
+	false ->
+	    toSIPrequest(Method, URL, Header, Body, Socket);
+	_ ->
+	    siprequest:send_result(Header, Socket, "", 403, "Forbidden")
+    end.
+
+toSIPrequest(Method, URL, Header, Body, Socket) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    Newlocation = {User, none, sipserver:get_env(sipproxy), "5060", []},
     Route = "<" ++ sipurl:print({User, Pass, Host, Port,
 				 ["maddr=" ++ siphost:myip()]}) ++ ">",
     Newheaders = keylist:append({"Record-route", Route}, Header),
     siprequest:send_proxy_request(Newheaders, Socket, {Method, Newlocation, Body, []}).
 
-request2(Method, Phone, Header, Body, Socket) ->
-    Newlocation = {Phone, none, sipserver:get_env(proxyaddr), "5060", []},
+toPSTNrequest(Method, Phone, Header, Body, Socket) ->
+    Newlocation = {Phone, none, lists:nth(1, sipserver:get_env(pstngatewaynames)), "5060", []},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     {Fromphone, _, _, _, _} = FromURI,
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
-    Route = "<" ++ sipurl:print({Phone, none, "sip-pstn.kth.se", "5060",
+    Route = "<" ++ sipurl:print({Phone, none, lists:nth(1, sipserver:get_env(myhostnames)), "5060",
 				 ["maddr=" ++ siphost:myip()]}) ++ ">",
     Newheaders = keylist:append({"Record-route", Route}, Header),
     sipauth:check_and_send_auth(Header, Newheaders, Socket, Fromphone, Phone,
