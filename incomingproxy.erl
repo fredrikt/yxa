@@ -56,6 +56,16 @@ lookupdefault(User) ->
 homedomain(Domain) ->
     util:casecompare(sipserver:get_env(homedomain), Domain).
 
+isours(Number) ->
+    case phone:get_users_for_number(Number) of
+	{atomic, []} ->
+	    false;
+	{atomic, _} ->
+	    true;
+	{aborted, _} ->
+	    false
+    end.
+
 lookupphone(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     case homedomain(Host) of
@@ -69,7 +79,12 @@ lookupphone(URL) ->
 		   end,
 	    case Loc2 of
 		none ->
-		    lookupdefault(User);
+		    case isours(User) of
+			true ->
+			    none;
+			false ->
+			    lookupdefault(User)
+		    end;
 		Loc2 ->
 		    Loc2
 	    end;
