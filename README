@@ -51,6 +51,9 @@ Installation
 4) Change into the 'build' directory you created in step 3.
 
 5) Run ../configure && make && sudo make install
+   If you are building source retreived from CVS, you will have to generate
+   the "configure" script by running "autoconf" in the source directory first.
+   The autoconf version known to work with the current sources is 2.59.
 
 6) Bootstrap your new installation. See "Bootstrapping" below.
 
@@ -60,10 +63,7 @@ Configure options special to Yxa :
    --with-erlang	The path to your Erlang/OTP installation's
 			'bin' directory.
    --with-mnesiadir	The path to where you want your Mnesia
-			database files. Default is current directory,
-			which might not be what you want (if you
-			start Yxa on system startup, these files would
-			probably end up in '/').
+			database files. Default is "/var/yxa/db".
    --with-sslcertdir	The path to where you keep your SSL certificate
 			files (cert.comb).
    --with-local		The suffix of local.erl-file you want. local.erl
@@ -86,6 +86,10 @@ in the source directory and do "make sslkey" to get a self-signed
 certificate. The certificate password must be "foobar" if you use
 "make sslkey". This SSL is only for use by the Erlang distributed operation
 system (see below), it has nothing to do with SIP TLS.
+
+If you get an error like "problems making Certificate Request" and
+ ... "string too long" ... then you did not change the "req_distinguished_name"
+in ssl.config to your hostname.
 
 =====================
 Distributed operation
@@ -299,7 +303,7 @@ incomingproxy.config:
 ---------------------
 
 [{incomingproxy, [{sipauth_realm, "example.com"},
-                  {sipauth_password, ""},
+                  {sipauth_password, "secret"},
                   {defaultroute, "other-sipserver.example.com"},
                   {logger_logbasename, "/var/log/incomingproxy"},
                   {internal_to_e164, [{"^00(.+)$", "+\\1"},
@@ -322,7 +326,7 @@ incomingproxy.config:
 pstnproxy.config:
 -----------------
 [{pstnproxy, [{sipauth_realm, "example.com"},
-              {sipauth_password, ""},
+              {sipauth_password, "secret"},
               {sipauth_unauth_classlist, [internal]},
 	      {logger_logbasename, "/var/log/pstnproxy"},
               {pstngatewaynames, ["pstn-gw.example.com", "10.10.1.1"]},
@@ -345,7 +349,7 @@ pstnproxy.config:
 appserver.config:
 -----------------
 [{appserver, [{sipauth_realm, "example.com"},
-	      {sipauth_password, "xubique"},
+	      {sipauth_password, "secret"},
 	      {logger_logbasename, "/var/log/appserver"},
 	      {internal_to_e164, [{"^00(.+)$", "+\\1"},
 				  {"^0(.+)$", "+46\\1"},
@@ -356,6 +360,36 @@ appserver.config:
 	      {record_route, true},
 	      {listenport, 5070}
              ]}].
+
+adminwww.config :
+-----------------
+(NOTE: the adminwww isn't currently maintained, so maybe you should not use it)
+
+[{adminwww, [{httpd_config, "/path/to/yxa/httpd.conf"},
+             {sipauth_realm, "example.com"},
+             {sipauth_password, "secret"},
+             {logger_logbasename, "/var/log/adminwww"},
+             {www_baseurl, "https://sipserver.example.com:8080/"},
+             {databaseservers, ['incomingproxy@sip-incoming.example.com']}
+            ]}].
+
+/path/to/yxa/httpd.conf :
+-------------------------
+(NOTE: the adminwww isn't currently maintained, so maybe you should not use it)
+
+DocumentRoot /path/to/yxa/src/httpd/docs
+ServerRoot /path/to/yxa/src/httpd
+Port 8080
+ServerName sipserver.example.com
+Modules mod_esi mod_log mod_get mod_alias
+ErrorLog /var/log/yxa-httpd-error.log
+TransferLog /var/log/yxa-httpd-access.log
+DirectoryIndex index.html
+ErlScriptAlias /erl admin_www
+SocketType ssl
+SSLCertificateFile /path/to/ssl/cert.comb
+SSLVerifyClient 0
+
 
 sipuserdb_file user database :
 ------------------------------
@@ -450,9 +484,7 @@ Example :
 You should now have the necessary Mnesia databases and a user called 'admin'
 with the password in bootstrap.sh which you can use to add SIP users to
 your system through the web interface. In order to use the web interface,
-you must have added 'adminwww.start' to the STARTSCRIPT variable in the
-Makefile (see Installation above) and you must start the web interface by
-executing ./adminwww.start.
+you must start it by executing ./adminwww once you have compiled everything.
 
 All of the Yxa application can run just fine without root permissions.
 
