@@ -7,8 +7,8 @@ start(normal, Args) ->
     {ok, Pid}.
 
 init() ->
-    phone:create(),
-    database_regexproute:create(),
+%    phone:create(),
+%    database_regexproute:create(),
     timer:apply_interval(60000, ?MODULE, remove_expired_phones, []).
 
 route_request(URL) ->
