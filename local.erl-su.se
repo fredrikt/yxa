@@ -1,8 +1,13 @@
 -module(local).
--export([url2mnesia_userlist/1,
+
+-export([
+	 url2mnesia_userlist/1,
 	 canonify_user/1,
-	 canonify_numberlist/1,
-    % lookup
+	 canonify_numberlist/1
+	]).
+
+%% lookup
+-export([
 	 lookup_homedomain_url/1,
 	 lookup_remote_url/1,
 	 lookupregexproute/1,
@@ -22,20 +27,29 @@
 	 get_remote_party_name/2,
 	 get_remote_party_number/2,
 	 rewrite_potn_to_e164/1,
-	 is_request_to_this_proxy/1,
-    % siplocation
+	 is_request_to_this_proxy/1
+	]).
+
+%% siplocation
+-export([
 	 prioritize_locations/2,
 	 homedomain/1,
 	 get_locations_for_users/1,
-	 get_user_with_contact/1,
-    % sipauth
+	 get_user_with_contact/1
+	]).
+
+%% sipauth
+-export([
 	 get_user_verified/2,
 	 get_user_verified_proxy/2,
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 can_register/2,
-	 is_allowed_pstn_dst/4,
-    % sipuserdb
+	 is_allowed_pstn_dst/4
+	]).
+
+%% sipuserdb
+-export([
 	 get_addresses_for_user/1,
 	 get_addresses_for_users/1,
 	 get_users_for_address_of_record/1,
@@ -45,19 +59,25 @@
 	 get_classes_for_user/1,
 	 get_password_for_user/1,
 	 get_telephonenumber_for_user/1,
-	 get_forwards_for_users/1,
-    % incomginproxy
-	 incomingproxy_challenge_before_relay/3,
-    % sippipe
+	 get_forwards_for_users/1
+	]).
+
+%% incomginproxy
+-export([
+	 incomingproxy_challenge_before_relay/3
+	]).
+
+%% sippipe
+-export([
 	 sippipe_received_response/3
 	]).
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
-url2mnesia_userlist(URL) when record(URL, sipurl), is_list(URL#sipurl.user) ->
+url2mnesia_userlist(URL) when is_record(URL, sipurl), is_list(URL#sipurl.user) ->
     [URL#sipurl.user ++ "@" ++ URL#sipurl.host];
-url2mnesia_userlist(URL) when record(URL, sipurl) ->
+url2mnesia_userlist(URL) when is_record(URL, sipurl) ->
     [].
 
 % Turn a SIP username into an address which can be reached from anywhere.
@@ -68,7 +88,7 @@ canonify_user("sip:" ++ User) ->
     "sip:" ++ User;
 canonify_user(Fulluser) ->
     case string:tokens(Fulluser, "@") of
-        [User, Host] ->
+        [_User, _Host] ->
             "sip:" ++ Fulluser;
         [User] ->
 	    "sip:" ++ User ++ "@sip.su.se"
@@ -96,12 +116,12 @@ canonify_numberlist([Number | Rest]) ->
     end.
 
 
-% Routing hooks
-%%%%%%%%%%%%%%%%
+%% Routing hooks
+%%%%%%%%%%%%%%%%%
 
-% This function looks up the telephone number of the user in LDAP and
-% if a telephone number is found, looks it up using lookuppotn() which
-% first looks in ENUM and secondly looks for a PSTN gateway for the number
+%% This function looks up the telephone number of the user in LDAP and
+%% if a telephone number is found, looks it up using lookuppotn() which
+%% first looks in ENUM and secondly looks for a PSTN gateway for the number
 lookup_homedomain_url(URL) when record(URL, sipurl) ->
     {User, Host} = {URL#sipurl.user, URL#sipurl.host},
     Mail = User ++ "@" ++ Host,
@@ -126,7 +146,7 @@ lookup_homedomain_url(URL) when record(URL, sipurl) ->
 	    Loc1
     end.
 
-% same as lookup_mail2tel but looks for the mail address in the mailLocalAddress attribute
+%% same as lookup_mail2tel but looks for the mail address in the mailLocalAddress attribute
 lookup_mailLocalAddress2tel(Mail) ->
     case sipserver:get_env(ldap_server, none) of
 	none ->
@@ -146,15 +166,15 @@ mail2tel(Mail) ->
 	    Loc1
     end.
 
-lookup_remote_url(URL) ->
+lookup_remote_url(_URL) ->
     none.
 
 is_request_to_this_proxy(Request) when record(Request, request) ->
     lookup:is_request_to_this_proxy(Request).
 
 
-% lookup.erl hooks
-%%%%%%%%%%%%%%%%%%%
+%% lookup.erl hooks
+%%%%%%%%%%%%%%%%%%%%
 
 lookupregexproute(User) ->
     lookup:lookupregexproute(User).
@@ -164,20 +184,20 @@ lookupuser(URL) ->
 
 lookup_url_to_locations(URL) ->
     lookup:lookup_url_to_locations(URL).
-    
+
 lookup_url_to_addresses(Src, URL) ->
     lookup:lookup_url_to_addresses(Src, URL).
-    
+
 lookup_addresses_to_users(Addresses) ->
     lookup:lookup_addresses_to_users(Addresses).
-    
+
 lookup_address_to_users(Address) ->
     lookup:lookup_address_to_users(Address).
 
 lookupappserver(Key) ->
     lookup:lookupappserver(Key).
 
-prioritize_locations(Key, Locations) ->
+prioritize_locations(_Key, Locations) ->
     siplocation:prioritize_locations(Locations).
 
 lookupdefault(URL) ->
@@ -201,6 +221,7 @@ isours(URL) ->
 homedomain(Domain) ->
     lookup:homedomain(Domain).
 
+%% Returns: {ok, Number} | none
 get_remote_party_number(URL, DstHost) ->
     lookup:get_remote_party_number(URL, DstHost).
 
@@ -208,18 +229,20 @@ get_remote_party_number(URL, DstHost) ->
 			 {"^\\+468674(7[0-9][0-9][0-9])\$",       "\\1"},
 			 {"^\\+4685537(8[0-9][0-9][0-9]+)\$",   "\\1"}]).
 
-format_number_for_remote_party_id(Number, ToURI, "sip1.telia.com") ->
-    rewrite_potn_to_e164(Number);
-format_number_for_remote_party_id(Number, ToURI, "sip2.telia.com") ->
-    rewrite_potn_to_e164(Number);
-format_number_for_remote_party_id(Number, ToURI, DstHost) ->
+%% Returns: {ok, Number} | none
+format_number_for_remote_party_id(Number, _ToURI, "sip1.telia.com") ->
+    {ok, rewrite_potn_to_e164(Number)};
+format_number_for_remote_party_id(Number, _ToURI, "sip2.telia.com") ->
+    {ok, rewrite_potn_to_e164(Number)};
+format_number_for_remote_party_id(Number, _ToURI, _DstHost) ->
     case util:regexp_rewrite(Number, ?E164toInternal) of
 	nomatch ->
-	    Number;
+	    {ok, Number};
 	Match ->
-	    Match
+	    {ok, Match}
     end.
 
+%% Returns: {ok, DisplayName} | none
 get_remote_party_name(Key, DstHost) ->
     case rewrite_potn_to_e164(Key) of
 	"+" ++ E164 ->
@@ -231,26 +254,26 @@ rewrite_potn_to_e164(Key) ->
     lookup:rewrite_potn_to_e164(Key).
 
 
-% userdb hooks
-%%%%%%%%%%%%%%%
+%% userdb hooks
+%%%%%%%%%%%%%%%%
 
-% Looks up exactly one user with an Address. Used
-% for example in REGISTER. If there are multiple
-% users with an address, this function returns {error}.
+%% Looks up exactly one user with an Address. Used
+%% for example in REGISTER. If there are multiple
+%% users with an address, this function returns {error}.
 get_user_with_address(Address) ->
    sipuserdb:get_user_with_address(Address).
 
-% Looks up all users with a given address. Used
-% to find out to which users we should send a request.
+%% Looks up all users with a given address. Used
+%% to find out to which users we should send a request.
 get_users_for_address_of_record(Address) ->
     sipuserdb:get_users_for_address_of_record(Address).
 
 get_users_for_addresses_of_record(Addresses) ->
     sipuserdb:get_users_for_addresses_of_record(Addresses).
 
-% Gets all addresses for a user. Used for example
-% to check if a request from a user has an acceptable
-% From: header.
+%% Gets all addresses for a user. Used for example
+%% to check if a request from a user has an acceptable
+%% From: header.
 get_addresses_for_user(User) ->
     sipuserdb:get_addresses_for_user(User).
 
@@ -259,7 +282,7 @@ get_addresses_for_users(Users) ->
 
 get_users_for_url(URL) ->
     sipuserdb:get_users_for_url(URL).
-    
+
 get_password_for_user(User) ->
     sipuserdb:get_password_for_user(User).
 
@@ -277,24 +300,24 @@ get_forwards_for_users(Users) ->
     sipuserdb:get_forwards_for_users(Users).
 
 
-% Location lookup hooks
-%%%%%%%%%%%%%%%%%%%%%%%%
+%% Location lookup hooks
+%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Looks up all contacts for a list of users. Used
-% to find out where a set of users are to see where
-% we should route a request.
+%% Looks up all contacts for a list of users. Used
+%% to find out where a set of users are to see where
+%% we should route a request.
 get_locations_for_users(Users) ->
     siplocation:get_locations_for_users(Users).
 
-% Checks if any of our users are registered at the
-% location specified. Used to determine if we should
-% proxy requests to a URI without authorization.
+%% Checks if any of our users are registered at the
+%% location specified. Used to determine if we should
+%% proxy requests to a URI without authorization.
 get_user_with_contact(URI) ->
     siplocation:get_user_with_contact(URI).
 
 
-% AAA hooks
-%%%%%%%%%%%%
+%% AAA hooks
+%%%%%%%%%%%%%
 
 get_user_verified(Header, Method) ->
     sipauth:get_user_verified(Header, Method).
@@ -302,25 +325,35 @@ get_user_verified(Header, Method) ->
 get_user_verified_proxy(Header, Method) ->
     sipauth:get_user_verified_proxy(Header, Method).
 
-can_use_address(User, Address) ->
-    sipauth:can_use_address(User, Address).
+%% Returns: true | false
+can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
+    sipauth:can_use_address(User, URL).
 
-can_use_address_detail(User, Address) ->
-    sipauth:can_use_address_detail(User, Address).
+%% Returns: true | false
+can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
+    sipauth:can_use_address_detail(User, URL).
 
-can_register(Header, User) ->
-    sipauth:can_register(Header, User).
+%% Returns : {{Verdict, Reason}, User} |
+%%           {stale, User}             |
+%%           {false, none}
+%%           Verdict = true | false
+%%           Reason  = ok | eperm | nomatch | error
+can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, sipurl) ->
+    sipauth:can_register(Header, ToURL).
 
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
 
-% incomingproxy hooks
-%%%%%%%%%%%%%%%%%%%%%%
+%% incomingproxy hooks
+%%%%%%%%%%%%%%%%%%%%%%%
 
-incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, siporigin), record(Request, request) ->
+incomingproxy_challenge_before_relay(Origin, Request, _Dst)
+  when is_record(Origin, siporigin), is_record(Request, request) ->
     true.
 
-% sippipe hooks
-%%%%%%%%%%%%%%%%
-sippipe_received_response(Request, Response, DstList) ->
-    none.
+%% sippipe hooks
+%%%%%%%%%%%%%%%%%
+
+%% Returns: undefined | {huntstop, Status, Reason} | {next, NewDstList}
+sippipe_received_response(_Request, _Response, _DstList) ->
+    undefined.

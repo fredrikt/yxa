@@ -1,8 +1,13 @@
 -module(local).
--export([url2mnesia_userlist/1,
+
+-export([
+	 url2mnesia_userlist/1,
 	 canonify_user/1,
-	 canonify_numberlist/1,
-    % lookup
+	 canonify_numberlist/1
+	]).
+
+%% lookup
+-export([
 	 lookup_homedomain_url/1,
 	 lookup_remote_url/1,
 	 lookupregexproute/1,
@@ -22,20 +27,29 @@
 	 get_remote_party_name/2,
 	 get_remote_party_number/2,
 	 rewrite_potn_to_e164/1,
-	 is_request_to_this_proxy/1,
-    % siplocation
+	 is_request_to_this_proxy/1
+	]).
+
+%% siplocation
+-export([
 	 prioritize_locations/2,
 	 homedomain/1,
 	 get_locations_for_users/1,
-	 get_user_with_contact/1,
-    % sipauth
+	 get_user_with_contact/1
+	]).
+
+%% sipauth
+-export([
 	 get_user_verified/2,
 	 get_user_verified_proxy/2,
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 can_register/2,
-	 is_allowed_pstn_dst/4,
-    % sipuserdb
+	 is_allowed_pstn_dst/4
+	]).
+
+%% sipuserdb
+-export([
 	 get_addresses_for_user/1,
 	 get_addresses_for_users/1,
 	 get_users_for_address_of_record/1,
@@ -45,11 +59,17 @@
 	 get_classes_for_user/1,
 	 get_password_for_user/1,
 	 get_telephonenumber_for_user/1,
-	 get_forwards_for_users/1,
-    % incomingproxy
-	incomingproxy_challenge_before_relay/3,
-    % sippipe
-	sippipe_received_response/3        
+	 get_forwards_for_users/1
+	]).
+
+%% incomginproxy
+-export([
+	 incomingproxy_challenge_before_relay/3
+	]).
+
+%% sippipe
+-export([
+	 sippipe_received_response/3
 	]).
 
 -include("siprecords.hrl").
@@ -210,12 +230,15 @@ isours(URL) ->
 homedomain(Domain) ->
     lookup:homedomain(Domain).
 
+%% Returns: {ok, Number} | none
 get_remote_party_number(URL, DstHost) ->
     lookup:get_remote_party_number(URL, DstHost).
 
+%% Returns: {ok, Number} | none
 format_number_for_remote_party_id(Number, ToURI, DstHost) ->
-    Number.
+    {ok, Number}.
 
+%% Returns: {ok, DisplayName} | none
 get_remote_party_name(Key, DstHost) ->
     lookup:get_remote_party_name(local:rewrite_potn_to_e164(Key), DstHost).
 
@@ -298,14 +321,19 @@ get_user_verified(Header, Method) ->
 get_user_verified_proxy(Header, Method) ->
     sipauth:get_user_verified_proxy(Header, Method).
 
-can_use_address(User, Address) ->
-    sipauth:can_use_address(User, Address).
+can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
+    sipauth:can_use_address(User, URL).
 
-can_use_address_detail(User, Address) ->
-    sipauth:can_use_address_detail(User, Address).
+can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
+    sipauth:can_use_address_detail(User, URL).
 
-can_register(Header, User) ->
-    sipauth:can_register(Header, User).
+%% Returns : {{Verdict, Reason}, User} |
+%%           {stale, User}             |
+%%           {false, none}
+%%           Verdict = true | false
+%%           Reason  = ok | eperm | nomatch | error
+can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, sipurl) ->
+    sipauth:can_register(Header, ToURL).
 
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
