@@ -72,6 +72,8 @@
 -define(T_AAAA,         28).            %% ipv6 address
 %% SRV (RFC 2052)
 -define(T_SRV,          33).            %% services
+%% NAPTR
+-define(T_NAPTR,        35).            %% NAPTR
 %%      non standard
 -define(T_UINFO,	100).		%% user (finger) information
 -define(T_UID,		101).		%% user ID
