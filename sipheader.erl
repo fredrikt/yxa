@@ -223,8 +223,12 @@ httparg(String) ->
     param_to_dict(Headers).
 
 cseq([String]) ->
-    [Seq, Method] = string:tokens(String, " "),
-    {Seq, Method}.
+    case string:tokens(String, " ") of
+	[Seq, Method] ->
+	    {Seq, Method};
+	_ ->
+	    {unparseable, String}
+    end.
 
 cseq_print({Seq, Method}) ->
     Seq ++ " " ++ Method.
