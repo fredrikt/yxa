@@ -208,17 +208,16 @@ from([String]) ->
 %% they may benefit from their own record type.
 %%--------------------------------------------------------------------
 contact(Header) when is_record(Header, keylist) ->
-    contact(Header, "Contact").
+    contact(Header, contact).
 
 route(Header) when is_record(Header, keylist) ->
-    contact(Header, "Route").
+    contact(Header, route).
 
 record_route(Header) when is_record(Header, keylist) ->
-    contact(Header, "Record-Route").
+    contact(Header, 'record-route').
 
-
-contact(Header, HeaderFieldName) when is_record(Header, keylist) ->
-    V = keylist:fetch(HeaderFieldName, Header),
+contact(Header, Name) when is_record(Header, keylist), is_atom(Name); is_list(Name) ->
+    V = keylist:fetch(Name, Header),
     contact:parse(V).
 
 %%--------------------------------------------------------------------
@@ -245,7 +244,7 @@ via([String | Rest]) ->
 				   Port = case util:isnumeric(P) of
 					      true ->
 						  list_to_integer(P);
-					      %% XXX how are badly formated entries handled ?
+    					      %% XXX how are badly formated entries handled ?
 					      %% silently ignoring them seems like a bad choice
 					      _ ->
 						  none
@@ -457,31 +456,40 @@ httparg(String) ->
 %%           Header = keylist record()
 %% Descrip.: parse header data
 %% Returns : {Seq, Method} | {unparseable, String}
+%%           Seq    = integer()
+%%           Method = string()
 %%--------------------------------------------------------------------
 cseq(Header) when is_record(Header, keylist) ->
     cseq(keylist:fetch('cseq', Header));
 
 cseq([String]) ->
     case string:tokens(String, " ") of
-	[Seq, Method] ->
+	[Seq, Method] when is_list(Seq), is_list(Method) ->
+	    %% XXX return Seq as integer
 	    {Seq, Method};
 	_ ->
 	    {unparseable, String}
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: cseq_print({Seq, Method})
+%%           Seq    = integer()
+%%           Method = string()
 %% Descrip.: print data parsed with cseq/1
-%% Returns :
+%% Returns : string()
 %%--------------------------------------------------------------------
-cseq_print({Seq, Method}) ->
+cseq_print({Seq, Method}) when is_list(Seq), is_list(Method) ->
+    %% XXX Seq should be integer
     Seq ++ " " ++ Method.
 
 %%--------------------------------------------------------------------
 %% Function: callid(Header)
 %%           Header = keylist record()
-%% Descrip.: get call from header
+%% Descrip.: get call-id from header
 %% Returns : string()
+%% XXX does not handle non-existing Call-Id, but that means our
+%% callers might not either, so the right solution might not be to
+%% make us return [] or 'none' if there is no Call-Id.
 %%--------------------------------------------------------------------
 callid(Header) when is_record(Header, keylist) ->
     [CallId] = keylist:fetch('call-id', Header),
@@ -1011,5 +1019,96 @@ test() ->
 
     %% test commas inside <>!
 
-    ok.
+    %% test get_server_transaction_id
+    %%--------------------------------------------------------------------
 
+    io:format("test: get_server_transaction_id/1 - 1.1~n"),
+    %% get Id for INVITE with RFC3261 branch tag in top Via
+    InviteHeader1 = keylist:from_list([
+				       {"Via",	["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-really-unique"]},
+				       {"From", ["<sip:alice@example.org>;tag=f-abc"]},
+				       {"To",	["<sip:bob@example.org>"]},
+				       {"Call-ID", ["3c26722ce234@192.0.2.111"]},
+				       {"CSeq",	["2 INVITE"]}
+				      ]),
+    Invite1 = #request{method="INVITE", uri=sipurl:parse("sip:alice@example.org"),
+		       header=InviteHeader1, body=""},
+    Invite1Id = get_server_transaction_id(Invite1),
+
+    io:format("test: get_server_transaction_id/1 - 1.2~n"),
+    %% check result
+    {"z9hG4bK-really-unique", {"SIP/2.0/TLS", "sip.example.org", 5061}, "INVITE"} = Invite1Id,
+    
+    io:format("test: get_server_transaction_id/1 - 2~n"),
+    %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123"
+    AckInvite1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], InviteHeader1),
+    AckInvite1Header1  = keylist:set("CSeq", ["2 ACK"], AckInvite1Header_1),
+    AckInvite1 = #request{method="ACK", uri=sipurl:parse("sip:alice@example.org"),
+			  header=AckInvite1Header1, body=""},
+
+    AckInvite1Id = get_server_transaction_id(AckInvite1),
+
+    io:format("test: get_server_transaction_id/1 - 3~n"),
+    %% Test that the INVITE id matches the ACK id
+    Invite1Id = AckInvite1Id,
+
+    io:format("test: get_server_transaction_id/1 - 4.1~n"),
+    %% get Id for INVITE with RFC2543 branch tag in top Via
+    Invite2543_1Header = keylist:from_list([
+					    {"Via",	["SIP/2.0/TLS sip.example.org:5061;branch=not-really-unique"]},
+					    {"From",	["<sip:alice@example.org>;tag=f-abc"]},
+					    {"To",	["<sip:bob@example.org>"]},
+					    {"Call-ID", ["3c26722ce234@192.0.2.111"]},
+					    {"CSeq",	["2 INVITE"]}
+					   ]),
+    Invite2543_1 = #request{method="INVITE", uri=sipurl:parse("sip:alice@example.org"),
+			    header=Invite2543_1Header, body=""},
+    Invite2543_1Id = get_server_transaction_id(Invite2543_1),
+
+    io:format("test: get_server_transaction_id/1 - 4.2~n"),
+    %% check result
+    {{sipurl,"sip","alice",none,"example.org",none,[],{url_param,[]}},
+     none,
+     "f-abc",
+     "3c26722ce234@192.0.2.111", {"2", "INVITE"},
+     {via, "SIP/2.0/TLS", "sip.example.org", 5061, ["branch=not-really-unique"]}
+    } = Invite2543_1Id,
+
+    io:format("test: get_server_transaction_id/1 - 5.1~n"),
+    %% for RFC2543 INVITE, we must also get the ACK-id to match future ACKs with this INVITE
+    Invite2543_1AckId = get_server_transaction_ack_id_2543(Invite2543_1),
+
+    io:format("test: get_server_transaction_id/1 - 5.2~n"),
+    %% check result
+    {{sipurl,"sip","alice",none,"example.org",none,[],{url_param,[]}},
+     "f-abc",
+     "3c26722ce234@192.0.2.111",
+     {"2","INVITE"},
+     {via,"SIP/2.0/TLS","sip.example.org",5061,[]}
+    } = Invite2543_1AckId,
+    
+    io:format("test: get_server_transaction_id/1 - 6~n"),
+    %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123", check that 
+    %% get_server_transaction_id refuses and tells us it is an 2543 ACK
+    AckInvite2543_1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], Invite2543_1Header),
+    AckInvite2543_1Header   = keylist:set("CSeq", ["2 ACK"], AckInvite2543_1Header_1),
+    AckInvite2543_1 = #request{method="ACK", uri=sipurl:parse("sip:alice@example.org"),
+			       header=AckInvite2543_1Header, body=""},
+
+    is_2543_ack = get_server_transaction_id(AckInvite2543_1),
+
+    io:format("test: get_server_transaction_id/1 - 7~n"),
+    %% now get the 2543 ACK id from the ACK
+    AckInvite2543_1Id = get_server_transaction_ack_id_2543(AckInvite2543_1),
+
+    io:format("test: get_server_transaction_id/1 - 8~n"),
+    %% check that the 2543 ACK id matches the 2543 INVITE id
+    AckInvite2543_1Id = Invite2543_1AckId,
+
+    %% get_client_transaction_id/1
+    %%--------------------------------------------------------------------
+    io:format("test: get_client_transaction_id/1 - 1~n"),
+    Response1 = #response{status=699, reason="foo", header=Invite2543_1Header, body=""},
+    {"not-really-unique", "INVITE"} = get_client_transaction_id(Response1),
+
+    ok.
