@@ -1,7 +1,7 @@
 {application, adminwww,
  [{description, "WWW admin interface"},
   {vsn,"0.0"},
-  {modules, [admin_www, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, phone, sipauth, sipconfig, siphost, dnsutil, hex]},
+  {modules, [admin_www, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, phone, sipauth, siphost, dnsutil, hex]},
   {registered, []},
   {mod, {admin_www, []}},
   {env, []},

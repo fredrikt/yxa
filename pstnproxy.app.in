@@ -1,7 +1,7 @@
 {application, pstnproxy,
  [{description, "PSTN SIP proxy"},
   {vsn,"0.0"},
-  {modules, [pstnproxy, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, sipauth, sipconfig, siphost, hex, phone]},
+  {modules, [pstnproxy, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, sipauth, siphost, hex, phone]},
   {registered, []},
   {mod, {pstnproxy, []}},
   {env, []},

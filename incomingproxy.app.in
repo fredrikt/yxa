@@ -1,7 +1,7 @@
 {application, incomingproxy,
  [{description, "Incoming SIP proxy"},
   {vsn,"0.0"},
-  {modules, [incomingproxy, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, phone, sipauth, sipconfig, siphost, dnsutil, directory, 'LDAPv3', eldap]},
+  {modules, [incomingproxy, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, phone, sipauth, siphost, dnsutil, directory, 'LDAPv3', eldap]},
   {registered, []},
   {mod, {incomingproxy, []}},
   {env, []},
