@@ -10,7 +10,8 @@ start([AdminPassword]) ->
     init_db_module([phone,
 		    database_regexproute,
 		    database_forward,
-		    database_call
+		    database_call,
+		    cpl_db
 		   ], node()),
 
     io:format("* Updating any pre-existing table definitions~n"),
@@ -19,8 +20,10 @@ start([AdminPassword]) ->
     io:format("* Creating admin-user~n"),
     phone:insert_user("admin", AdminPassword, [admin], []),
 
-    ok = mnesia:stop(),
-    io:format("~nBootstrapping complete.~n~n").
+    io:format("* Stopping Mnesia~n"),
+    stopped = mnesia:stop(),
+    io:format("~nBootstrapping complete.~n~n"),
+    ok.
 
 create_schema(Node) ->
     case mnesia:create_schema([Node]) of
