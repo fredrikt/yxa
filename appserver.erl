@@ -186,7 +186,7 @@ request_to_me(Request, LogTag) when is_record(Request, request) ->
 create_session(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
     %% create header suitable for answering the incoming request
     URI = Request#request.uri,
-    case keylist:fetch("Route", Request#request.header) of
+    case keylist:fetch('route', Request#request.header) of
 	[] ->
 	    case get_actions(URI) of
 		nomatch ->

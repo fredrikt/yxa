@@ -363,7 +363,7 @@ tcp_read_sip_message(MessageType, Header, BodyIn, DataIn, State) when record(Sta
 %%           Length = integer()
 %%--------------------------------------------------------------------
 get_content_length(Header) ->
-    case keylist:fetch("Content-Length", Header) of
+    case keylist:fetch('content-length', Header) of
 	[CLenStr] ->
 	    case util:isnumeric(CLenStr) of
 		true ->

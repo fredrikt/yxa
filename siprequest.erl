@@ -268,7 +268,7 @@ process_route_header(H, U) ->
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
 set_route([], Header) ->
-    keylist:delete("Route", Header);
+    keylist:delete('route', Header);
 set_route(Route, Header) ->
     keylist:set("Route", sipheader:contact_print(Route), Header).
 
@@ -452,7 +452,7 @@ send_to_available_dst([Dst | DstT], Request, ViaParam) ->
 %%--------------------------------------------------------------------
 proxy_check_maxforwards(Header) ->
     MaxForwards =
-	case keylist:fetch("Max-Forwards", Header) of
+	case keylist:fetch('max-forwards', Header) of
 	    [M] ->
 		lists:min([sipserver:get_env(max_max_forwards, 255), list_to_integer(M) - 1]);
 	    [] ->
@@ -594,10 +594,10 @@ stateless_generate_branch(OrigURI, Header) ->
 		_ ->
 		    %% No branch, or non-RFC3261 branch
 		    OrigURIstr = sipurl:print(OrigURI),
-		    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
-		    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
-		    CallId = keylist:fetch("Call-Id", Header),
-		    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+		    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
+		    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
+		    CallId = keylist:fetch('call-id', Header),
+		    {CSeqNum, _} = sipheader:cseq(keylist:fetch('cseq', Header)),
 		    In = lists:flatten(lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
 						     "-callid-", CallId, "-cseqnum-", CSeqNum])),
 		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)}
@@ -655,8 +655,8 @@ generate_branch() ->
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
 make_answerheader(Header) ->
-    RecordRoute = keylist:fetch("Record-Route", Header),
-    NewHeader1 = keylist:delete("Record-Route", Header),
+    RecordRoute = keylist:fetch('record-route', Header),
+    NewHeader1 = keylist:delete('Record-Route', Header),
     NewHeader2 = case RecordRoute of
 		     [] ->
 			 NewHeader1;
@@ -676,15 +676,15 @@ make_answerheader(Header) ->
 %%--------------------------------------------------------------------
 get_loop_cookie(Header, OrigURI, Proto) ->
     OrigURIstr = sipurl:print(OrigURI),
-    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
-    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
-    CallId = keylist:fetch("Call-Id", Header),
+    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
+    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
+    CallId = keylist:fetch('call-id', Header),
     {CSeqNum, _} = sipheader:cseq(Header),
-    ProxyReq = keylist:fetch("Proxy-Require", Header),
+    ProxyReq = keylist:fetch('proxy-require', Header),
     %% We must remove the response part from Proxy-Authorization because it changes with the method
     %% and thus CANCEL does not match INVITE. Contradictingly but implicitly from RFC3261 16.6 #8.
     ProxyAuth = proxyauth_without_response(Header),
-    Route = keylist:fetch("Route", Header),
+    Route = keylist:fetch('route', Header),
     {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
 				   TopVia when is_record(TopVia, via) ->
 				       P = sipsocket:viaproto2proto(TopVia#via.proto),
@@ -709,7 +709,7 @@ get_loop_cookie(Header, OrigURI, Proto) ->
 %% Returns : Result = list() of string() ???
 %%--------------------------------------------------------------------
 proxyauth_without_response(Header) ->
-    case keylist:fetch("Proxy-Authorization", Header) of
+    case keylist:fetch('proxy-authorization', Header) of
 	[] -> none;
 	ProxyAuth ->
 	    AuthDict = sipheader:auth(ProxyAuth),
@@ -735,7 +735,7 @@ check_valid_proxy_request("ACK", _) ->
 check_valid_proxy_request("CANCEL", _) ->
     true;
 check_valid_proxy_request(_Method, Header) ->
-    ProxyRequire = keylist:fetch("Proxy-Require", Header),
+    ProxyRequire = keylist:fetch('proxy-require', Header),
     case ProxyRequire of
 	[] ->
 	    true;
@@ -836,8 +836,7 @@ add_record_route(Header, Origin) when is_record(Origin, siporigin) ->
 %%--------------------------------------------------------------------
 standardcopy(Header, ExtraHeaders) ->
     keylist:appendlist(keylist:copy(Header,
-				    ["Via", "From", "To",
-				     "Call-ID", "CSeq"]),
+				    [via, from, to, 'call-id', cseq]),
 		       ExtraHeaders).
 
 send_auth_req(Header, Socket, Auth, Stale) ->
@@ -937,8 +936,8 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket, Requ
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
   when is_record(Request, request) ->
     ReqHeader = Request#request.header,
-    AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, ["Via", "From", "To", "Call-ID", "CSeq",
-								"Record-Route", "Timestamp", "Content-Type"]),
+    AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, [via, from, to, 'call-id', cseq,
+								'record-route', "Timestamp", 'content-type']),
 				       ExtraHeaders),
     %% PlaceHolderVia is an EXTRA Via with our hostname. We could do without this if
     %% we sent it with send_response() instead of send_proxy_response() but it is easier
@@ -950,7 +949,7 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
     AnswerHeader3 = siprequest:make_answerheader(AnswerHeader2),
     %% If there is a body, calculate Content-Length, otherwise remove the Content-Type we copied above
     AnswerHeader4 = case Body of
-			"" -> keylist:delete("Content-Type", AnswerHeader3);
+			"" -> keylist:delete('content-type', AnswerHeader3);
 			_ -> keylist:set("Content-Length", [integer_to_list(length(Body))], AnswerHeader3)
 		    end,
     %% If this is not a 100 Trying response, remove the Timestamp we copied above.
@@ -965,6 +964,7 @@ binary_make_message(BinLine1, Header, BinBody) when is_binary(BinLine1), is_reco
 						    is_binary(BinBody) ->
     BinHeaders = sipheader:build_header_binary(Header),
     concat_binary([BinLine1, 13, 10, BinHeaders, 13, 10, BinBody]).
+
 
 %%--------------------------------------------------------------------
 %% Function: test()
@@ -1154,7 +1154,7 @@ test() ->
     %% check that our Record-Route was turned into a Route
     io:format("test: make_answerheader/1 - 1~n"),
     AHeader1 = make_answerheader(ReqHeader),
-    ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch("Route", AHeader1),
+    ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch('route', AHeader1),
 
 
     %% get_loop_cookie(ReqHeader, URI, Proto
@@ -1181,7 +1181,7 @@ test() ->
 
     %% correct Content-Length added
     io:format("test: make_response/7 - 1.4~n"),
-    ["4"] = keylist:fetch("Content-Length", Response1#response.header),
+    ["4"] = keylist:fetch('content-length', Response1#response.header),
 
     %% Foo header not copied
     io:format("test: make_response/7 - 1.5~n"),
@@ -1210,7 +1210,7 @@ test() ->
 
     %% Record-Route turned into Route
     io:format("test: make_response/7 - 2.6~n"),
-    ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch("Route", Response2#response.header),
+    ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch('route', Response2#response.header),
 
     %% check_proxy_request(Request)
     %%--------------------------------------------------------------------
@@ -1224,11 +1224,11 @@ test() ->
 
     %% check that Content-Length has been properly set in ReqHeader2_2
     io:format("test: check_proxy_request/1 - 3~n"),
-    ["3"] = keylist:fetch("Content-Length", ReqHeader2_2),
+    ["3"] = keylist:fetch('content-length', ReqHeader2_2),
 
     %% check that requests get a default Max-Forwards if they lack it
     io:format("test: check_proxy_request/1 - 4~n"),
-    ["70"] = keylist:fetch("Max-Forwards", ReqHeader2_2),
+    ["70"] = keylist:fetch('max-forwards', ReqHeader2_2),
 
     %% check that the approximate message size is reasonable
     io:format("test: check_proxy_request/1 - 5~n"),

@@ -1162,7 +1162,7 @@ start_cancel_transaction(State) when is_record(State, state) ->
     Request = State#state.request,
     {URI, Header} = {Request#request.uri, Request#request.header},
     logger:log(debug, "~s: initiate_cancel() Sending CANCEL ~s", [LogTag, sipurl:print(URI)]),
-    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    {CSeqNum, _} = sipheader:cseq(Header),
     CancelId = {CSeqNum, "CANCEL"},
     %% Delete all Via headers. initiate_request() uses send_proxy_request() which
     %% will add one for this proxy, and that is the only one that should be in a
@@ -1170,11 +1170,11 @@ start_cancel_transaction(State) when is_record(State, state) ->
     %% headers. All this according to RFC 3261 9.1 Client Behaviour.
     CancelHeader1 = keylist:set("CSeq", [sipheader:cseq_print(CancelId)],
 				Header),
-    CancelHeader2 = keylist:delete("Via", CancelHeader1),
-    CancelHeader3 = keylist:delete("Require", CancelHeader2),
-    CancelHeader4 = keylist:delete("Proxy-Require", CancelHeader3),
-    CancelHeader5 = keylist:delete("Content-Type", CancelHeader4),
-    CancelHeader6 = keylist:delete("Content-Length", CancelHeader5),
+    CancelHeader2 = keylist:delete('via', CancelHeader1),
+    CancelHeader3 = keylist:delete('require', CancelHeader2),
+    CancelHeader4 = keylist:delete('proxy-require', CancelHeader3),
+    CancelHeader5 = keylist:delete('content-type', CancelHeader4),
+    CancelHeader6 = keylist:delete('content-length', CancelHeader5),
     CancelHeader = keylist:set("Content-Length", ["0"], CancelHeader6),
     CancelRequest = #request{method="CANCEL", uri=URI, header=CancelHeader, body=""},
     T1 = sipserver:get_env(timerT1, 500),
@@ -1294,21 +1294,21 @@ generate_ack(#response{status=Status}=Response, State)
 	Status =< 299 ->
 	    logger:log(debug, "~s: generate_ack() Sending ACK of 2xx response ~p -> ~s",
 		       [LogTag, Status, sipurl:print(URI)]),
-	    {CSeq, _} = sipheader:cseq(keylist:fetch("CSeq", Header));
+	    {CSeq, _} = sipheader:cseq(Header);
 	true ->
 	    logger:log(debug, "~s: generate_ack() Sending ACK of non-2xx response ~p -> ~s",
 		       [LogTag, Status, sipurl:print(URI)]),
-	    {CSeq, _} = sipheader:cseq(keylist:fetch("CSeq", RHeader))
+	    {CSeq, _} = sipheader:cseq(RHeader)
     end,
     %% Don't copy any Via headers. send_proxy_request() will add one for this proxy,
     %% and that is the only one that should be in an ACK. RFC 3261 17.1.1.3
     %% copy() To and then set() it to preserve order...
-    SendHeader1 = keylist:copy(Header, ["From", "Call-ID"]),
+    SendHeader1 = keylist:copy(Header, ['from', 'call-id']),
     %% get To: from the response we are ACKing (to preserve To-tag)
-    SendHeader2 = keylist:set("To", keylist:fetch("To", RHeader), SendHeader1),
+    SendHeader2 = keylist:set("To", keylist:fetch('to', RHeader), SendHeader1),
     SendHeader3 = keylist:set("CSeq", [sipheader:cseq_print({CSeq, "ACK"})], SendHeader2),
     %% Copy Route-header from original request, if present (mandated by RFC 3261 17.1.1.3)
-    SendHeader = case keylist:fetch("Route", Header) of
+    SendHeader = case keylist:fetch('route', Header) of
 		     [] ->
 			 SendHeader3;
 		     Route ->

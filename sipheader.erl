@@ -164,7 +164,7 @@ comma(Parsed, [], false, false) ->
 %%           Expire = numerical string()
 %%--------------------------------------------------------------------
 expire(Header) when is_record(Header, keylist) ->
-    keylist:fetch("Expires", Header).
+    keylist:fetch('expires', Header).
 
 %%--------------------------------------------------------------------
 %% Function: to([String])
@@ -176,7 +176,7 @@ expire(Header) when is_record(Header, keylist) ->
 %% Returns : {Displayname, URI} (see name_header/1)
 %%--------------------------------------------------------------------
 to(Header) when is_record(Header, keylist) ->
-    to(keylist:fetch("To", Header));
+    to(keylist:fetch('to', Header));
 
 to([String]) ->
     name_header(String).
@@ -185,13 +185,13 @@ to([String]) ->
 %% Function: from([String])
 %%           from(Header)
 %%           String = string(), the contents of a FROM header (usually
-%%           the result of keylist:fetch("From", Header))
+%%           the result of keylist:fetch('from', Header))
 %%           Header = keylist record()
 %% Descrip.: parse header data
 %% Returns : {Displayname, URI} (see name_header/1)
 %%--------------------------------------------------------------------
 from(Header) when is_record(Header, keylist) ->
-    from(keylist:fetch("From", Header));
+    from(keylist:fetch('from', Header));
 
 from([String]) ->
     name_header(String).
@@ -225,14 +225,14 @@ contact(Header, HeaderFieldName) when is_record(Header, keylist) ->
 %% Function: via(ViaList)
 %%           via(Header)
 %%           ViaList = list() of string(), string() = the contents of
-%%                     Via: header. StrList is usually the result of
-%%                     keylist:fetch("Via", Header)
+%%                     Via: header. Usually the result of
+%%                     keylist:fetch('via', Header)
 %%           Header = keylist record()
 %% Descrip.: parse header data
 %% Returns : list() of via record()
 %%--------------------------------------------------------------------
 via(Header) when is_record(Header, keylist) ->
-    via(keylist:fetch("Via", Header));
+    via(keylist:fetch('via', Header));
 
 via([]) ->
     [];
@@ -292,7 +292,8 @@ via_print(Via) when is_list(Via) ->
 	      end, Via).
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: via_params(Via)
+%%           Via = via record()
 %% Descrip.: convert parameters stored in Via to a dictionary
 %% Returns : dict()
 %%--------------------------------------------------------------------
@@ -341,34 +342,34 @@ auth_print(Auth, Stale) ->
 %% Descrip.: parse authrization header
 %% Returns : throw() | dict()
 %%--------------------------------------------------------------------
-auth([In]) ->
+auth([In]) when is_list(In) ->
     %% lowercase first word (to implement case insensitivity)
-    %% XXX what does this code do ???
-    case string:chr(In, $\ ) of
+    case string:chr(In, $\ ) of	%% Find first space ($\ ) is a space
 	0 ->
-	    In;	% uhm, is really broken
+	    %% no space found, really badly formatted data
+	    logger:log(error, "sipheader:auth() called with unparsable input (~p)", [In]),
+	    throw({siperror, 500, "Server Internal Error"});
 	Index ->
-	    H = string:substr(In, 1, Index - 1),
-	    LH = httpd_util:to_lower(H),
-	    T = string:substr(In, Index + 1),
-	    Out = lists:flatten(LH ++ " " ++ T),
-	    auth2(Out)
+	    FirstWord = string:substr(In, 1, Index - 1),
+	    Rest = string:substr(In, Index + 1),
+	    LCfw = httpd_util:to_lower(FirstWord),
+	    auth2(LCfw, Rest)
     end.
 
-auth2("gssapi " ++ String) ->
+auth2("gssapi", String) ->
     Headers = comma(String),
     F = fun get_name_and_value/1,
     L = lists:map(F , Headers),
     dict:from_list(L);
 
-auth2("digest " ++ String) ->
+auth2("digest", String) ->
     Headers = comma(String),
     F = fun get_name_and_value/1,
     L = lists:map(F, Headers),
     dict:from_list(L);
 
-auth2(In) ->
-    logger:log(error, "sipheader:auth() called with unrecognized authentication data (~p)", [In]),
+auth2(Type, String) ->
+    logger:log(error, "sipheader:auth2() called with unrecognized authentication data (~p, ~p)", [Type, String]),
     throw({siperror, 500, "Server Internal Error"}).
 
 get_name_and_value(Str) ->
@@ -458,7 +459,7 @@ httparg(String) ->
 %% Returns : {Seq, Method} | {unparseable, String}
 %%--------------------------------------------------------------------
 cseq(Header) when is_record(Header, keylist) ->
-    cseq(keylist:fetch("CSeq", Header));
+    cseq(keylist:fetch('cseq', Header));
 
 cseq([String]) ->
     case string:tokens(String, " ") of
@@ -483,7 +484,7 @@ cseq_print({Seq, Method}) ->
 %% Returns : string()
 %%--------------------------------------------------------------------
 callid(Header) when is_record(Header, keylist) ->
-    [CallId] = keylist:fetch("Call-Id", Header),
+    [CallId] = keylist:fetch('call-id', Header),
     CallId.
 
 %%--------------------------------------------------------------------
@@ -510,20 +511,20 @@ build_header_unsafe_binary(Header) ->
 
 print_one_header_binary(_, _, []) ->
     [];
-print_one_header_binary(Name, CaseKey, ValueList) ->
+print_one_header_binary(Key, Name, ValueList) ->
     %% certain headers that have multple values are written on a single line separated by "," -
     %% this is not because any RFC says so but because these are common headers that look
     %% considerably much better when appearing on one line
     OneLine =
 	if
-	    CaseKey == "accept" ->		true;
-	    CaseKey == "allow" ->		true;
-	    CaseKey == "allow-events" ->	true;
-	    CaseKey == "supported" ->		true;
-	    CaseKey == "require" ->		true;
-	    CaseKey == "proxy-require" ->	true;
-	    CaseKey == "rtp-rxstat" ->		true;	%% Cisco 79xx
-	    CaseKey == "rtp-txstat" ->		true;	%% Cisco 79xx
+	    Key == accept ->		true;
+	    Key == allow ->		true;
+	    Key == 'allow-events' ->	true;
+	    Key == supported ->		true;
+	    Key == require ->		true;
+	    Key == 'proxy-require' ->	true;
+	    Key == 'rtp-rxstat' ->	true;	%% Cisco 79xx
+	    Key == 'rtp-txstat' ->	true;	%% Cisco 79xx
 	    true -> false
 	end,
     MakeBin = fun(V) ->                      list_to_binary(V)
@@ -582,8 +583,8 @@ dialogueid(Header) when is_record(Header, keylist) ->
 
 get_dialogid(Header) ->
     CallID = sipheader:callid(Header),
-    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
-    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
+    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
+    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
     {CallID, FromTag, ToTag}.
 
 %%--------------------------------------------------------------------
@@ -707,7 +708,7 @@ guarded_get_server_transaction_ack_id_2543(Request) when is_record(Request, requ
     TopVia = remove_branch(sipheader:topvia(Header)),
     CallID = sipheader:callid(Header),
     {CSeqNum, _} = sipheader:cseq(Header),
-    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
+    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
     %% We are supposed to match only on the CSeq number, but the entry we are
     %% matching against is an INVITE and that INVITE had it's Id generated with
     %% the full CSeq. Make it possible to match the INVITE with this Id.
@@ -720,22 +721,28 @@ remove_branch(Via) when is_record(Via, via) ->
     Via#via{param=sipheader:dict_to_param(NewDict)}.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: get_via_branch(TopVia)
+%% Descrip.: Get the branch from the TopVia parameters, and then
+%%           remove any Yxa loop cookie from it. This function should
+%%           typically only be called on a Via that matches this proxy
+%%           so that should be ok - we won't be altering anyone elses
+%%           branches.
+%% Returns : Branch = string() | none
 %%--------------------------------------------------------------------
 get_via_branch(TopVia) when is_record(TopVia, via) ->
     case get_via_branch_full(TopVia) of
 	"z9hG4bK-yxa-" ++ RestOfBranch ->
 	    remove_loop_cookie("z9hG4bK-yxa-" ++ RestOfBranch);
-	Res ->
-	    Res
+	L when is_list(L) ->
+	    L;
+	none ->
+	    none
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: remove_loop_cookie(Branch)
 %% Descrip.:
-%% Returns :
+%% Returns : Branch | NewBranch = string()
 %%--------------------------------------------------------------------
 remove_loop_cookie(Branch) ->
     case Branch of
@@ -759,7 +766,7 @@ remove_loop_cookie(Branch) ->
 %%--------------------------------------------------------------------
 %% Function:
 %% Descrip.:
-%% Returns :
+%% Returns : Branch = string() | none
 %%--------------------------------------------------------------------
 get_via_branch_full(Via) when is_record(Via, via) ->
     case dict:find("branch", sipheader:param_to_dict(Via#via.param)) of
@@ -837,57 +844,6 @@ via_is_equal(A, B, [parameters | T]) ->
 via_is_equal(A, B, []) when is_record(A, via), is_record(B, via) ->
     true.
 
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.: autotest callback
-%% Returns :
-%%--------------------------------------------------------------------
-test() ->
-
-    %% comma
-    %%--------------------------------------------------------------------
-    %% test empty string
-    io:format("test: comma/1 - 1~n"),
-    [""] = comma(""),
-
-    %% test string without comma
-    io:format("test: comma/1 - 2~n"),
-    ["foobar"] = comma("foobar"),
-
-    %% test with single comma
-    io:format("test: comma/1 - 3~n"),
-    ["foo","bar"] = comma("foo,bar"),
-
-    %% test with several comma
-    io:format("test: comma/1 - 4~n"),
-    ["fo","ob","ar"] = comma("fo,ob,ar"),
-
-    %% test with quotes inside string
-    io:format("test: comma/1 - 5~n"),
-    ["foobar: \"this is a string\""] = comma("foobar: \"this is a string\""),
-
-    %% test with commas inside quoted string part
-    io:format("test: comma/1 - 6~n"),
-    ["foobar: \"this, is, a, string,\""] = comma("foobar: \"this, is, a, string,\""),
-
-    %% test with commas outside quoutes
-    io:format("test: comma/1 - 7~n"),
-    ["foobar:", "\",this is a string\""] = comma("foobar:, \",this is a string\""),
-
-    %% test with commas outside and inside quoutes
-    io:format("test: comma/1 - 8~n"),
-    ["foobar:", "\",this is a ,string\"", "foo"] = comma("foobar:, \",this is a ,string\",foo"),
-
-    %% preceding comma
-    io:format("test: comma/1 - 9~n"),
-    ["fo","ob","ar",""] = comma("fo,ob,ar,"),
-
-    %% trailing comma
-    io:format("test: comma/1 - 10~n"),
-    ["","fo","ob","ar"] = comma(",fo,ob,ar"),
-
-
-    ok.
 
 %%====================================================================
 %% Behaviour functions
@@ -995,6 +951,65 @@ guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, 
     {URI, Header} = {Request#request.uri, Request#request.header},
     CallID = sipheader:callid(Header),
     CSeq = sipheader:cseq(Header),
-    FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
-    ToTag = sipheader:get_tag(keylist:fetch("To", Header)),
+    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
+    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
     {URI, ToTag, FromTag, CallID, CSeq, TopVia}.
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+
+    %% comma
+    %%--------------------------------------------------------------------
+    %% test empty string
+    io:format("test: comma/1 - 1~n"),
+    [""] = comma(""),
+
+    %% test string without comma
+    io:format("test: comma/1 - 2~n"),
+    ["foobar"] = comma("foobar"),
+
+    %% test with single comma
+    io:format("test: comma/1 - 3~n"),
+    ["foo","bar"] = comma("foo,bar"),
+
+    %% test with several comma
+    io:format("test: comma/1 - 4~n"),
+    ["fo","ob","ar"] = comma("fo,ob,ar"),
+
+    %% test with quotes inside string
+    io:format("test: comma/1 - 5~n"),
+    ["foobar: \"this is a string\""] = comma("foobar: \"this is a string\""),
+
+    %% test with commas inside quoted string part
+    io:format("test: comma/1 - 6~n"),
+    ["foobar: \"this, is, a, string,\""] = comma("foobar: \"this, is, a, string,\""),
+
+    %% test with commas outside quoutes
+    io:format("test: comma/1 - 7~n"),
+    ["foobar:", "\",this is a string\""] = comma("foobar:, \",this is a string\""),
+
+    %% test with commas outside and inside quoutes
+    io:format("test: comma/1 - 8~n"),
+    ["foobar:", "\",this is a ,string\"", "foo"] = comma("foobar:, \",this is a ,string\",foo"),
+
+    %% trailing comma
+    io:format("test: comma/1 - 9~n"),
+    ["fo","ob","ar",""] = comma("fo,ob,ar,"),
+
+    %% preceeding comma
+    io:format("test: comma/1 - 10~n"),
+    ["","fo","ob","ar"] = comma(",fo,ob,ar"),
+
+    %% test commas inside <>!
+
+    ok.
+

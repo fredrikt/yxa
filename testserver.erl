@@ -129,7 +129,7 @@ packet_check_ok(Header, LogTag) ->
 
 
 check_no_unsupported_extension(Header, LogTag) ->
-    Require = keylist:fetch("Require", Header),
+    Require = keylist:fetch('require', Header),
     case Require of
 	[] ->
 	    true;

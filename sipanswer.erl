@@ -81,9 +81,9 @@ sine_gen(Num) ->
 sendack(Socket, Header, Url) ->
     {CSeqID, _CSeqMethod} = sipheader:cseq(Header),
     Sendheader = [{"Via", []},
-		  {"From", keylist:fetch("From", Header)},
-		  {"To", keylist:fetch("To", Header)},
-		  {"Call-ID", keylist:fetch("Call-ID", Header)},
+		  {"From", keylist:fetch('from', Header)},
+		  {"To", keylist:fetch('to', Header)},
+		  {"Call-ID", keylist:fetch('call-id', Header)},
 		  {"CSeq", [sipheader:cseq_print({CSeqID, "ACK"})]}],
     siprequest:send_proxy_request(Socket,
 				  {"ACK", Url, Sendheader, ""}, Url, []).
@@ -157,7 +157,7 @@ control_1(Dest, Callid, Parent, RecvPid, Url) ->
 
 start(Header, Body, _Mode, _Status, _Number) ->
     Dest = sdp:parse(Body),
-    [CallID] = keylist:fetch("Call-ID", Header),
+    CallID = sipheader:callid(Header),
     Pid = spawn(sipanswer, control, [Dest, CallID, self()]),
     case database_call:insert_call_unique(CallID, answer, Header, [Pid]) of
 	{atomic, ok} ->

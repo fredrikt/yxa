@@ -692,7 +692,7 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
 		     {ok, MyIP} -> true;
 		     _ -> false
 		 end,
-    HeaderHasRoute = case keylist:fetch("Route", Header) of
+    HeaderHasRoute = case keylist:fetch('route', Header) of
 			 [] -> false;
 			 _ -> true
 		     end,
@@ -911,7 +911,7 @@ make_logstr(Response, Origin) when is_record(Response, response) ->
     {_, FromURI} = sipheader:from(Header),
     {_, ToURI} = sipheader:to(Header),
     ClientStr = origin2str(Origin, "unknown"),
-    case keylist:fetch("Warning", Header) of
+    case keylist:fetch('warning', Header) of
 	[Warning] when is_list(Warning) ->
 	    lists:flatten(io_lib:format("~s [client=~s, from=<~s>, to=<~s>, warning=~p]",
 					[CSeqMethod, ClientStr, url2str(FromURI), url2str(ToURI), Warning]));

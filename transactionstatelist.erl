@@ -177,7 +177,7 @@ get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
 	    logger:log(error, "Transaction state list: Could not get server transaction RFC2543 ack-id for request"),
 	    error;
 	Id ->
-	    ToTag = sipheader:get_tag(keylist:fetch("To", Request#request.header)),
+	    ToTag = sipheader:get_tag(keylist:fetch('to', Request#request.header)),
 	    case get_elem_ackid(Id, ToTag) of
 		none ->
 		    logger:log(debug, "Transaction state list: ACK request does not match any existing transaction"),

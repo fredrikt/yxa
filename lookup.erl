@@ -446,7 +446,7 @@ is_request_to_this_proxy2("OPTIONS", URL, Header) when is_record(URL, sipurl) ->
     %% RFC3261 # 11 says a proxy that receives an OPTIONS request with a Max-Forwards less than one
     %% MAY treat it as a request to the proxy.
     MaxForwards =
-        case keylist:fetch("Max-Forwards", Header) of
+        case keylist:fetch('max-forwards', Header) of
             [M] ->
                 lists:min([255, list_to_integer(M) - 1]);
             [] ->

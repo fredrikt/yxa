@@ -234,8 +234,8 @@ handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, 
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     logger:log(debug, "~s: Server transaction received a request (~s ~s), checking if it is an ACK or a resend",
 	       [LogTag, Method, sipurl:print(URI)]),
-    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    {OrigCSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", OrigHeader)),
+    {CSeqNum, _} = sipheader:cseq(Header),
+    {OrigCSeqNum, _} = sipheader:cseq(OrigHeader),
     %% XXX use sipurl:url_is_equal/2 here! or maybe not... if it is a resend
     %% then the URI is byte-by-byte comparable.
     Reply = if
@@ -856,7 +856,7 @@ send_response(Response, SendReliably, State) when is_record(Response, response),
 	    %% Tell transactionlayer pid about this response to INVITE - it needs to know
 	    %% what To-tag we have used in order to match any ACK:s received for this
 	    %% response back to this server transaction.
-	    case sipheader:get_tag(keylist:fetch("To", RHeader)) of
+	    case sipheader:get_tag(keylist:fetch('to', RHeader)) of
 		none ->
 		    logger:log(debug, "~s: Warning: No To-tag in response received (~p ~s) - transaction"
 			       "layer might not be able to route the ACK to us!", [LogTag, Status, Reason]),
@@ -1048,7 +1048,7 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
        is_list(ExtraHeaders) ->
     Request = State#state.request,
     Header = Request#request.header,
-    To = keylist:fetch("To", Header),
+    To = keylist:fetch('to', Header),
     Req = case sipheader:get_tag(To) of
 	      none ->
 		  {DisplayName, ToURI} = sipheader:to(To),

@@ -472,7 +472,7 @@ cancel_corresponding_transaction(Request, STPid) when is_record(Request, request
     %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
     %% transaction that is being handled by 'assuming the method is anything but
     %% CANCEL or ACK'.
-    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    {CSeqNum, _} = sipheader:cseq(Header),
     %% When looking for the corresponding INVITE transaction, we have to change the
     %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
     %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
@@ -560,7 +560,7 @@ get_client_transaction(Response) when is_record(Response, response) ->
     Header = Response#response.header,
     TopVia = sipheader:topvia(Header),
     Branch = sipheader:get_via_branch(TopVia),
-    {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+    {_, Method} = sipheader:cseq(Header),
     transactionstatelist:get_client_transaction(Method, Branch).
 
 %%--------------------------------------------------------------------

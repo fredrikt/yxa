@@ -128,7 +128,8 @@ parseheader(Message) ->
 			  Name = string:strip(string:substr(Line, 1, Index - 1), right),
 			  Value = string:strip(string:substr(Line, Index + 1),
 					       left),
-			  {Name, split_header_value(httpd_util:to_lower(Name), Value)}
+			  Key = keylist:normalize(Name),
+			  {Key, Name, split_header_value(Key, Value)}
 		  end,
     Headerlist = lists:map(Parseheader, Rest),
     Header = keylist:from_list(Headerlist),
@@ -153,9 +154,9 @@ split_header_value(_Key, []) ->
 split_header_value(Key, Value) ->
     %% Luckily, none of these headers have a compact form.
     %% all values are lower case, so lists:member can be used
-    case lists:member(Key, ["www-authenticate", "authorization",
-			    "proxy-authenticate", "proxy-authorization",
-			    "date"]) of
+    case lists:member(Key, ['www-authenticate', authorization,
+			    'proxy-authenticate', 'proxy-authorization',
+			    date]) of
 	true ->
 	    %% Except the headers listed in RFC3261 7.3.1 and some other that needs
 	    %% to be excepted from standard header comma splitting
@@ -254,7 +255,7 @@ test() ->
 
     %% verify single Via
     io:format("test: parse/1 request - 1.2~n"),
-    ["SIP/2.0/TCP one.example.org"] = keylist:fetch("Via", Header1),
+    ["SIP/2.0/TCP one.example.org"] = keylist:fetch('via', Header1),
 
     Message2 = 
 	"INVITE sip:test@example.org SIP/2.0\r\n"
@@ -272,11 +273,11 @@ test() ->
 
     io:format("test: parse/1 request - 2.2~n"),
     %% Verify To:
-    ["<sip:to@example.org>"] = keylist:fetch("To", Header2),
+    ["<sip:to@example.org>"] = keylist:fetch('to', Header2),
 
     io:format("test: parse/1 request - 2.3~n"),
     %% Verify Via's
-    ["SIP/2.0/TCP two.example.org", "SIP/2.0/UDP one.example.org"] = keylist:fetch("Via", Header2),
+    ["SIP/2.0/TCP two.example.org", "SIP/2.0/UDP one.example.org"] = keylist:fetch('via', Header2),
 
     _Message3 = "INVITE sip:test@example.org   SIP/2.0\r\n",
     _URL3 = sipurl:parse("sip:test@example.org"),
@@ -298,7 +299,7 @@ test() ->
     %% verify the Via's
     io:format("test: parse/1 request - 4.2~n"),
     ["SIP/2.0/TLS four.example.org", "SIP/2.0/TCP three.example.org", "SIP/2.0/TCP two.example.org",
-     "SIP/2.0/UDP one.example.org"] = keylist:fetch("Via", Header4),
+     "SIP/2.0/UDP one.example.org"] = keylist:fetch('via', Header4),
 
     _Message5 = 
 	"INVITE sip:test@example.org SIP/2.0\r\n"
@@ -313,7 +314,7 @@ test() ->
     io:format("test: parse/1 request - 5.2 (disabled)~n"),
     %% verify the three Via's
 %%    ["SIP/2.0/TLS three.example.org", "SIP/2.0/TCP two.example.org", "SIP/2.0/UDP one.example.org"] =
-%%    keylist:fetch("Via", Header5),
+%%    keylist:fetch('via', Header5),
     
     %% This is the '3.1.1.1  A short tortuous INVITE' from draft-ietf-sipping-torture-tests-04.txt,
     %% except the body which wasn't very special
@@ -381,7 +382,7 @@ test() ->
 
     io:format("test: parse/1 request - 8.2~n"),
     %% verify the Via header so we know keylist is created as it should
-    ["SIP/2.0/TLS 192.0.2.1", "SIP/2.0/FOO 192.0.2.78"] = keylist:fetch("Via", Header8),
+    ["SIP/2.0/TLS 192.0.2.1", "SIP/2.0/FOO 192.0.2.78"] = keylist:fetch('via', Header8),
 
     %% RESPONSES
 
@@ -392,7 +393,7 @@ test() ->
 
     %% verify the Via header so we know keylist is created as it should
     io:format("test: parse/1 response - 1.2~n"),
-    ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch("Via", RHeader1),
+    ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch('via', RHeader1),
     
     RMessage2 =       
         "SIP/2.0 100 \r\n"
@@ -402,7 +403,7 @@ test() ->
 
     %% verify the Via header so we know keylist is created as it should
     io:format("test: parse/1 response - 2.2~n"),
-    ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch("Via", RHeader2),
+    ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch('via', RHeader2),
     
     %% '3.1.2.19  Overlarge response code' from draft-ietf-sipping-torture-tests-04.txt
     %% (in a shorter form) - the draft says you should just ignore responses with

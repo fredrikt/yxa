@@ -19,7 +19,7 @@ start(BranchBase, Parent, Request, Actions, Timeout) when record(Request, reques
 	      {ok, _, ApproxMsgSize} ->
 		  %% sipproxy should never be invoked on a request that contains
 		  %% a Route header, but we check just in case someone screws up.
-		  case keylist:fetch("Route", Request#request.header) of
+		  case keylist:fetch('route', Request#request.header) of
 		      [] ->
 			  State = #state{parent=Parent, branchbase=BranchBase, request=Request, 
 					 actions=Actions, timeout=Timeout, targets=targetlist:empty(),

@@ -219,7 +219,7 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
 		       [LogTag, SipUser, sipurl:print(ToURL)]),
 	    transactionlayer:send_response_handler(THandler, 404, "Not Found");
 	{false, none} ->
-	    Prio = case keylist:fetch("Authorization", Header) of
+	    Prio = case keylist:fetch('authorization', Header) of
 		       [] -> debug;
 		       _ -> normal
 		   end,
@@ -240,7 +240,7 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
 %% Returns : true | SipError
 %%--------------------------------------------------------------------
 is_valid_register_request(Header) ->
-    Require = keylist:fetch("Require", Header),
+    Require = keylist:fetch('require', Header),
     case Require of
 	[] ->
 	    true;
@@ -286,7 +286,7 @@ verify_homedomain_user(Request, LogTag) when is_record(Request, request) ->
 		    transactionlayer:send_challenge_request(Request, proxy, true, none),
 		    drop;
 		false ->
-		    case keylist:fetch("Proxy-Authenticate", Header) of
+		    case keylist:fetch('proxy-authenticate', Header) of
 			[] ->
 			    logger:log(normal, "~s: incomingproxy: From: address requires authentication", [LogTag]),
 			    transactionlayer:send_challenge_request(Request, proxy, false, none),
@@ -386,7 +386,7 @@ do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Orig
 %%--------------------------------------------------------------------
 route_request(Request) when is_record(Request, request) ->
     URL = Request#request.uri,
-    case keylist:fetch("Route", Request#request.header) of
+    case keylist:fetch('route', Request#request.header) of
 	[] ->
 	    Loc1 = case local:homedomain(URL#sipurl.host) of
 		       true ->

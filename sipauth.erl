@@ -130,7 +130,7 @@ classify_number(Number, [{Regexp, Class} | Rest]) ->
 %%           User = string(), SIP authentication username
 %%--------------------------------------------------------------------
 get_user_verified(Header, Method) ->
-    case keylist:fetch("Authorization", Header) of
+    case keylist:fetch('authorization', Header) of
 	[] ->
 	    logger:log(debug, "Auth: get_user_verified: No Authorization header, returning false"),
 	    false;
@@ -154,7 +154,7 @@ get_user_verified(Header, Method) ->
 %%           User = string(), SIP authentication username
 %%--------------------------------------------------------------------
 get_user_verified_proxy(Header, Method) ->
-    case keylist:fetch("Proxy-Authorization", Header) of
+    case keylist:fetch('proxy-authorization', Header) of
 	[] ->
 	    logger:log(debug, "Auth: get_user_verified_proxy: No Proxy-Authorization header, returning false"),
 	    false;
@@ -322,7 +322,7 @@ pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
 %%           false
 %%--------------------------------------------------------------------
 is_allowed_pstn_dst(User, _ToNumber, Header, Class) ->
-    case keylist:fetch("Route", Header) of
+    case keylist:fetch('route', Header) of
 	[] ->
 	    case local:get_classes_for_user(User) of
 		nomatch ->
