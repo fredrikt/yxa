@@ -52,7 +52,10 @@
 		       util,
 		       dnsutil,
 		       siplocation,
-		       lookup
+		       lookup,
+		       sipauth,
+		       sipproxy,
+		       sipuserdb_file_backend
 		      ]).
 
 %%====================================================================
