@@ -35,7 +35,7 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
--define(SERVER, ?MODULE).
+-define(SERVER, transportlayer).
 
 %%--------------------------------------------------------------------
 %% Records
@@ -59,9 +59,9 @@ start_link() ->
 %% Function: init([])
 %% Descrip.: Initialize the supervisor with child specs for one
 %%           sipsocket_udp and one tcp_dispatcher worker process.
-%% Returns : {ok,  {SupFlags,  [ChildSpec]}} |
-%%           ignore                          |
-%%           {error, Reason}   
+%% Returns : {ok, {SupFlags, [ChildSpec]}} |
+%%           ignore                        |
+%%           {error, Reason}
 %%--------------------------------------------------------------------
 init([]) ->
     logger:log(debug, "Transport layer supervisor started"),
@@ -69,11 +69,15 @@ init([]) ->
 	   permanent, 2000, worker, [sipsocket_udp]},
     TCP = {tcp_dispatcher, {tcp_dispatcher, start_link, []},
 	   permanent, 2000, worker, [tcp_dispatcher]},
-    {ok,{{one_for_one,5,60}, [UDP, TCP]}}.
+    TCPlisteners = tcp_dispatcher:get_listenerspecs(),
+    MyList = [UDP, TCP] ++ TCPlisteners,
+    {ok, {{one_for_one, 5, 60}, MyList}}.
+
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
 
 %%====================================================================
 %% Interface functions
@@ -133,7 +137,7 @@ proto2module(tls)  -> sipsocket_tcp;
 proto2module(tls6) -> spisocket_tcp;
 proto2module(udp)  -> sipsocket_udp;
 proto2module(udp6) -> sipsocket_udp.
-    
+
 proto2viastr(Socket) when is_record(Socket, sipsocket) ->
     proto2viastr(Socket#sipsocket.proto);
 proto2viastr(tcp)  -> "SIP/2.0/TCP";

@@ -16,6 +16,13 @@
 -export([start_link/0]).
 
 %%--------------------------------------------------------------------
+%% Transport layer internal exports
+%%--------------------------------------------------------------------
+-export([
+	 get_listenerspecs/0
+	]).
+
+%%--------------------------------------------------------------------
 %% Internal exports - gen_server callbacks
 %%--------------------------------------------------------------------
 -export([init/1,
@@ -72,7 +79,20 @@ start_link() ->
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
 init([]) ->
+    %% This is a system process that traps EXIT signals from TCP/TLS connection handlers
     process_flag(trap_exit, true),
+    {ok, #state{socketlist=socketlist:empty()}, ?TIMEOUT}.
+
+%%--------------------------------------------------------------------
+%% Function: get_listenerspecs()
+%% Descrip.: Get a OTP supservisor child specification for all TCP
+%%           listeners.
+%% Returns : SupSpec
+%%           SupSpec = OTP supervisor child specification. Extra
+%%                     processes this application want the
+%%                     sipserver_sup to start and maintain.
+%%--------------------------------------------------------------------
+get_listenerspecs() ->
     Port = sipserver:get_listenport(tcp),
     TLSport = sipserver:get_listenport(tls),
     TCPlisteners = [{tcp, Port}, {tcp6, Port}],
@@ -82,63 +102,46 @@ init([]) ->
 			%% than has a ssl.erl that handles inet6. Current version (R9C-0) treats
 			%% inet6 as an invalid gen_tcp option.
 			lists:append(TCPlisteners, [{tls, TLSport}]);
-		    _ ->
+		    false ->
 			TCPlisteners
 		end,
-    SocketList = start_listeners(Listeners),
-    {ok, #state{socketlist=SocketList}, ?TIMEOUT}.
+    format_listener_specs(Listeners).
 
 %%--------------------------------------------------------------------
-%% Function: start_listeners(L)
+%% Function: format_listener_specs(L)
 %%           L     = list() of {Proto, Port} tuple()
 %%           Proto = atom()
 %%           Port  = integer()
-%% Descrip.: Start a tcp_listener process for each Proto:Port in L.
-%% Returns : SocketList
-%%           SocketList = socketlist record()
+%% Descrip.: Format a OTP supservisor child specification for each
+%%           entry in L.
+%% Returns : SupSpec
+%%           SupSpec = OTP supervisor child specification. Extra
+%%                     processes this application want the
+%%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
-start_listeners(L) ->
-    start_listeners(L, socketlist:empty()).
+format_listener_specs(L) ->
+    format_listener_specs(L, []).
 
-start_listeners([], SocketList) ->
-    SocketList;
-start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer(Port), Proto == tcp6; Proto == tls6 ->
+format_listener_specs([], Res) ->
+    lists:reverse(Res);
+format_listener_specs([{Proto, Port} | T], Res)
+  when is_atom(Proto), is_integer(Port), Proto == tcp6; Proto == tls6 ->
     case sipserver:get_env(enable_v6, false) of
 	true ->
-	    NewSocketList = case catch tcp_listener:start(Proto, Port) of
-				{ok, Local6, Listener6} ->
-				    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=Listener6, data={Local6, none}},
-				    %% Add with timeout of 0 since listening sockets should never be expired
-				    socketlist:add({listener, Proto, Port}, Listener6, Proto, Local6, none, SipSocket, 0, SocketList);
-				not_started ->
-				    SocketList;
-				{'EXIT', Reason} ->
-				    logger:log(error, "Failed starting IPv6 TCP listener (~p) : ~p", [Proto, Reason]),
-				    SocketList;
-				Unknown ->
-				    logger:log(error, "Failed starting IPv6 TCP listener (~p) : ~p", [Proto, Unknown]),
-				    SocketList
-			    end,
-	    start_listeners(T, NewSocketList);
-	_ ->
-	    start_listeners(T, SocketList)
+	    Id = {listener, Proto, Port},
+	    MFA = {tcp_listener, start_link, [Proto, Port]},
+	    Spec = {Id, MFA, permanent, brutal_kill, worker, [tcp_listener]},
+	    format_listener_specs(T, [Spec | Res]);
+	false ->
+	    format_listener_specs(T, Res)
     end;
-start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer(Port), Proto == tcp; Proto == tls ->
-    NewSocketList = case catch tcp_listener:start(Proto, Port) of
-			{ok, Local, Listener} ->
-			    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=Listener, data={Local, none}},
-			    %% Add with timeout of 0 since listening sockets should never be expired
-			    socketlist:add({listener, Proto, Port}, Listener, Proto, Local, none, SipSocket, 0, SocketList);
-			not_started ->
-			    SocketList;
-			{'EXIT', Reason} ->
-			    logger:log(error, "Failed starting IPv4 TCP listener (~p) : ~p", [Proto, Reason]),
-			    SocketList;
-			Unknown ->
-			    logger:log(error, "Failed starting IPv4 TCP listener (~p) : ~p", [Proto, Unknown]),
-			    SocketList
-		    end,
-    start_listeners(T, NewSocketList).
+format_listener_specs([{Proto, Port} | T], Res)
+  when is_atom(Proto), is_integer(Port), Proto == tcp; Proto == tls ->
+    Id = {listener, Proto, Port},
+    MFA = {tcp_listener, start_link, [Proto, Port]},
+    Spec = {Id, MFA, permanent, brutal_kill, worker, [tcp_listener]},
+    format_listener_specs(T, [Spec | Res]).
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Msg, From, State)
@@ -190,29 +193,40 @@ handle_call({get_socket, Proto, Host, Port}, From, State) when is_atom(Proto), i
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({register_sipsocket, Dir, SipSocket}, From,
+%% Function: handle_call({register_sipsocket, Type, SipSocket}, From,
 %%                       State)
-%%           Dir = in | out, Direction (or, who initiated the socket)
+%%           Type = in | out | listener, Direction (or, who initiated
+%%                                                  the socket)
 %%           SipSocket = sipsocket record()
-%% Descrip.: Add a socket to our list.
-%% Returns : {reply, Reply, NewState, ?TIMEOUT} |
+%% Descrip.: Add a socket to our list. Called by tcp_connection
+%%           handlers when they have established a connection (inbound
+%%           or outbound).
+%% Returns : {reply, Reply, NewState, ?TIMEOUT}
 %%           Reply = ok              |
 %%                   {error, Reason}
-%%           Reason    = string()
+%%           Reason = string()
 %%--------------------------------------------------------------------
-handle_call({register_sipsocket, Dir, SipSocket}, _From, State) when is_atom(Dir), is_record(SipSocket, sipsocket) ->
+handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Type), is_record(SipSocket, sipsocket) ->
     CPid = SipSocket#sipsocket.pid,
+    %% Link to the connection handler to receive EXIT signals from it so that we
+    %% can remove it from our list.
     case catch link(CPid) of
 	true ->
 	    {Local, Remote} = SipSocket#sipsocket.data,
 	    Proto = SipSocket#sipsocket.proto,
-	    Ident = case Dir of
+	    Ident = case Type of
+			listener ->
+			    {_IP, Port} = Local,
+			    {listener, Proto, Port};
 			in ->
 			    {from, Proto, Remote};
 			out ->
 			    {to, Proto, Remote}
 		    end,
-	    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, 0, State#state.socketlist) of
+	    %% Socket expiration not implemented. Perhaps not even needed. If you are thinking of
+	    %% implementing it remember that listening sockets should always have timeout 0.
+	    Timeout = 0,	
+	    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, Timeout, State#state.socketlist) of
 		{error, E} ->
 		    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
 		    {reply, {error, E}, State, ?TIMEOUT};
@@ -220,7 +234,7 @@ handle_call({register_sipsocket, Dir, SipSocket}, _From, State) when is_atom(Dir
 		    {reply, ok, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
 	    end;
 	_ ->
-	    {reply, {error, "Could not link to pid"}, State, ?TIMEOUT}
+	    {reply, {error, "Could not link to sipsocket pid"}, State, ?TIMEOUT}
     end;
 
 %%--------------------------------------------------------------------
@@ -233,7 +247,11 @@ handle_call({monitor_get_socketlist}, _From, State) ->
     {reply, {ok, State#state.socketlist}, State, ?TIMEOUT};
 
 handle_call({quit}, _From, State) ->
-    {stop, "Asked to quit", State}.
+    {stop, "Asked to quit", State};
+
+handle_call(Msg, _From, State) ->
+    logger:log(error, "TCP dispatcher: Received unknown gen_server call : ~p", [Msg]),
+    {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State)
@@ -244,7 +262,7 @@ handle_call({quit}, _From, State) ->
 %%--------------------------------------------------------------------
 
 handle_cast(Msg, State) ->
-    logger:log(error, "TCP dispatcher: 'cast' invoked but not handled : ~p", [Msg]),
+    logger:log(error, "TCP dispatcher: Received unknown gen_server cast : ~p", [Msg]),
     {noreply, State, ?TIMEOUT}.
 
 
@@ -285,18 +303,21 @@ handle_info(timeout, State) ->
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
 	normal -> logger:log(debug, "TCP dispatcher: Received normal exit-signal from process ~p", [Pid]);
-	_ -> logger:log(error, "TCP dispatcher: =ERROR REPORT==== Received non-normal exit signal from process ~p :~n~p", [Pid, Reason])
+	_ -> logger:log(error, "TCP dispatcher: =ERROR REPORT==== Received non-normal exit signal "
+			"from process ~p :~n~p", [Pid, Reason])
     end,
     NewState = case socketlist:get_using_pid(Pid, State#state.socketlist) of
 		   none ->
-		       logger:log(debug, "TCP dispatcher: Received exit signal from ~p not in my list. Socketlist is :~n~p",
-				  [Pid, socketlist:debugfriendly(State#state.socketlist)]),
+		       logger:log(error, "TCP dispatcher: Received exit signal from ~p not in my list.", [Pid]),
+		       logger:log(debug, "TCP dispatcher: Socketlist is :~n~p",
+				  [socketlist:debugfriendly(State#state.socketlist)]),
 		       State;
 		   L when is_record(L, socketlist) ->
 		       NewL = socketlist:delete_using_pid(Pid, State#state.socketlist),
-		       logger:log(debug, "TCP dispatcher: Deleting ~p entry(s) from socketlist :~n~p~n(new list is ~p entry(s))",
-				  [socketlist:get_length(L), socketlist:debugfriendly(L), socketlist:get_length(NewL)]),
-		       %%logger:log(debug, "TCP dispatcher: Extra debug: Socketlist is now :~n~p", [socketlist:debugfriendly(NewL)]),
+		       logger:log(debug, "TCP dispatcher: Deleting ~p entry(s) from socketlist :~n~p~n"
+				  "(new list is ~p entry(s))", [socketlist:get_length(L),
+								socketlist:debugfriendly(L),
+								socketlist:get_length(NewL)]),
 		       State#state{socketlist=NewL}
 	       end,
     {noreply, NewState, ?TIMEOUT};
@@ -313,16 +334,14 @@ handle_info(Unknown, State) ->
 terminate(Reason, _State) ->
     case Reason of
         normal -> logger:log(error, "TCP dispatcher terminating normally");
-        _ -> logger:log(error, "TCP dispatcher terminating : ~p", [Reason]),
-	     %% XXX why do we sleep here? Is it to make sure the error message gets logged?
-	     timer:sleep(500)
+        _ -> logger:log(error, "TCP dispatcher terminating : ~p", [Reason])
     end,
-    ok.
+    Reason.
 
 %%--------------------------------------------------------------------
-%% Func: code_change/3
-%% Purpose: Convert process state when code is changed
-%% Returns: {ok, NewState}
+%% Function: code_change(OldVsn, State, Extra)
+%% Descrip.: Convert process state when code is changed
+%% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

@@ -13,7 +13,14 @@
 %% External exports
 %%--------------------------------------------------------------------
 
--export([start/2]).
+-export([start_link/2]).
+
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+-export([
+	 start_listening/5
+	]).
 
 %%--------------------------------------------------------------------
 %% Include files
@@ -27,12 +34,12 @@
 %%--------------------------------------------------------------------
 
 -record(state, {
-	  socketmodule,
-	  inetmodule,
-	  proto,
-	  port,
-	  socket,
-	  local
+	  socketmodule,	%% atom(), gen_tcp | ssl
+	  inetmodule,	%% atom(), inet | ssl
+	  proto,	%% atom(), tcp | tcp6 | tls | tls6
+	  port,		%% integer(), the port this tcp_listener instance listen on
+	  socket,	%% term(), our listening socket
+	  local		%% tuple(), {LocalIP, LocalPort}
 	 }).
 
 
@@ -45,47 +52,52 @@
 %% The ssl module does not support reuseaddr
 -define(SSL_SOCKETOPTS, [binary, {packet, 0}, {active, once}, {nodelay, true}]).
 
+
 %%====================================================================
 %% External functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start(Proto, Port)
+%% Function: start_link(Proto, Port)
 %%           Proto = atom(), tcp | tcp6 | tls | tls6
 %%           Port  = integer()
 %% Descrip.: Starts the listener.
-%% Returns : {ok, Local, Pid} |
-%%           not_started
-%%           Local = {IP, Port} tuple()
-%%           Pid   = pid(), we spawn a process that does accept() on
-%%                   this socket. Pid is that processes pid.
+%% Returns : {ok, Pid} |
+%%           ignore
+%%           Pid = pid(), the process we spawn that does accept().
 %%--------------------------------------------------------------------
-start(Proto, Port) when atom(Proto), integer(Port) ->
-    {InetModule, SocketModule, Options} = case Proto of
-					      tcp ->
-						  {inet, gen_tcp, lists:append(?SOCKETOPTS, [inet])};
-					      tcp6 ->
-						  {inet, gen_tcp, lists:append(?SOCKETOPTS, [inet6])};
-					      tls ->
-						  {ssl, ssl, ?SSL_SOCKETOPTS};
-					      tls6 ->
-						  {ssl, ssl, lists:append(?SSL_SOCKETOPTS, [inet6])}
-					  end,
-    case Proto of
-	_ when Proto == tls; Proto == tls6 ->
+start_link(Proto, Port) when is_atom(Proto), is_integer(Port) ->
+    {ok, InetModule, SocketModule, Options} = get_settings(Proto),
+    case (Proto == tls) or (Proto == tls6) of
+	true ->
 	    case sipserver:get_env(ssl_server_certfile, none) of
 		none ->
-		    logger:log(normal, "NOT starting ~p listener, no SSL server certificate specified (see README)", [Proto]),
-		    not_started;
+		    logger:log(normal, "NOT starting ~p listener on port ~p, no SSL server certificate specified "
+			       "(see README)", [Proto, Port]),
+		    ignore;
 		ClientCert ->
 		    NewOptions = lists:append(Options, [{certfile, ClientCert}]),
-		    start2(Proto, Port, InetModule, SocketModule, NewOptions)
+		    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, NewOptions]),
+		    {ok, Pid}
 	    end;
-	_ ->
-	    start2(Proto, Port, InetModule, SocketModule, Options)
+	false ->
+	    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
+	    {ok, Pid}
     end.
 
-start2(Proto, Port, InetModule, SocketModule, Options) ->
+%%--------------------------------------------------------------------
+%% Function: start_listening(Proto, Port, InetModule, SocketModule,
+%%                           Options)
+%%           Proto = atom(), tcp | tcp6 | tls | tls6
+%%           Port  = integer()
+%%           InetModule   = atom(), inet | ssl
+%%           SocketModule = atom(), gen_tcp | ssl
+%%           Options      = term(), socket options
+%% Descrip.: Starts listening on a port, then enters accept_loop.
+%% Returns : does not return
+%%--------------------------------------------------------------------
+start_listening(Proto, Port, InetModule, SocketModule, Options)
+  when is_atom(Proto), is_integer(Port), is_atom(InetModule), is_atom(SocketModule), is_list(Options) ->
     TCPsocket = case SocketModule:listen(Port, Options) of
 		    {ok, S} ->
 			S;
@@ -93,30 +105,36 @@ start2(Proto, Port, InetModule, SocketModule, Options) ->
 			logger:log(error, "TCP listener: Could not open socket - module ~p, proto ~p, port ~p : ~p (~s)",
 				   [SocketModule, Proto, Port, E1, InetModule:format_error(E1)]),
 			logger:log(debug, "TCP socketopts : ~p", [Options]),
-			throw("Could not open socket");
-		    Unknown ->
-			logger:log(error, "TCP listener: Unknown result from listen()  - module ~p, proto ~p, port ~p : ~p)",
-				   [SocketModule, Proto, Port, Unknown]),
-			throw("Could not open socket")
+			erlang:error({"Could not open socket", {error, E1}},
+				    [Proto, Port, InetModule, SocketModule, Options])
 		end,
     Local = case catch InetModule:sockname(TCPsocket) of
 		{ok, {IPlist, LocalPort}} ->
 		    {siphost:makeip(IPlist), LocalPort};
 		{error, E2} ->
 		    logger:log(error, "TCP listener: ~p:sockname() returned error ~p", [InetModule, E2]),
-		    {get_defaultaddr(Proto), 0};
-		Unknown2 ->
-		    logger:log(error, "TCP listener: ~p:sockname() returned unknown data : ~p", [InetModule, Unknown2]),
-		    {get_defaultaddr(Proto), 0}
+		    {get_defaultaddr(Proto), Port}
 	    end,
-    State = #state{socketmodule=SocketModule, inetmodule=InetModule, proto=Proto, port=Port, socket=TCPsocket, local=Local},
-    ListenerPid = sipserver:safe_spawn_fun(fun accept_loop_start/1, [State]),
-    {ok, Local, ListenerPid}.
+    State = #state{socketmodule=SocketModule, inetmodule=InetModule, proto=Proto, port=Port, socket=TCPsocket,
+		   local=Local},
+    %% Now register with the tcp_dispatcher
+    Remote = none,
+    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=self(), data={Local, Remote}},
+    ok = gen_server:call(tcp_dispatcher, {register_sipsocket, listener, SipSocket}),
+    accept_loop_start(State).
 
-get_defaultaddr(tcp) -> "0.0.0.0";
-get_defaultaddr(tcp6) -> "[::]".
 
-accept_loop_start(State) when record(State, state) ->
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: accept_loop_start(State)
+%%           State = state record()
+%% Descrip.: Log a small message before starting the real accept_loop.
+%% Returns : does not return
+%%--------------------------------------------------------------------
+accept_loop_start(State) when is_record(State, state) ->
     {IP, Port} = State#state.local,
     Desc = case State#state.proto of
 	       tcp -> "TCP";
@@ -137,37 +155,31 @@ accept_loop_start(State) when record(State, state) ->
 %% Returns : Should never return, but if the listening socket gets
 %%           closed for some reason we return the atom() ok.
 %%--------------------------------------------------------------------
-accept_loop(State) when record(State, state) ->
+accept_loop(State) when is_record(State, state) ->
     SocketModule = State#state.socketmodule,
     InetModule = State#state.inetmodule,
     ListenSocket = State#state.socket,
-    Res = case SocketModule:accept(ListenSocket) of
-	      {ok, NewSocket} ->
-		  case InetModule:peername(NewSocket) of
-		      {ok, {IPlist, InPortNo}} ->
-			  IP = siphost:makeip(IPlist),
-			  Remote = {IP, InPortNo},
-			  Local = State#state.local,
-			  Proto = State#state.proto,
-			  start_tcp_connection(SocketModule, Proto, NewSocket, Local, Remote),
-			  ok;
-		      {error, E} ->
-			  logger:log(error, "TCP listener: Could not get peername after accept() : ~p", [E]),
-			  {ok}
-		  end;
-	      {error, closed} ->
-		  logger:log(error, "TCP listener: accept() says the listensocket ~p was closed, no point in me staying alive.", [ListenSocket]),
-		  {quit};
-	      {error, E} ->
-		  logger:log(error, "TCP listener: accept() returned error : ~s (~p)", [inet:format_error(E), E]),
-		  timer:sleep(1000),
-		  {error}
-	  end,
-    case Res of
-	{quit} ->
-	    ok;
-	_ ->
-	    accept_loop(State)
+    case SocketModule:accept(ListenSocket) of
+	{ok, NewSocket} ->
+	    case InetModule:peername(NewSocket) of
+		{ok, {IPlist, InPortNo}} ->
+		    IP = siphost:makeip(IPlist),
+		    Remote = {IP, InPortNo},
+		    Local = State#state.local,
+		    Proto = State#state.proto,
+		    start_tcp_connection(SocketModule, Proto, NewSocket, Local, Remote),
+		    accept_loop(State);
+		{error, E} ->
+		    logger:log(error, "TCP listener: Could not get peername after accept() : ~p", [E]),
+		    erlang:error({"Could not get peername after accept", {error, E}}, [State])
+	    end;
+	{error, closed} ->
+	    logger:log(error, "TCP listener: accept() says the listensocket ~p was closed, "
+		       "no point in me staying alive.", [ListenSocket]),
+	    erlang:error("Listening socket closed", [State]);
+	{error, E} ->
+	    logger:log(error, "TCP listener: accept() returned error : ~s (~p)", [inet:format_error(E), E]),
+	    erlang:error({"Accept failed", {error, E}}, [State])
     end.
 
 %%--------------------------------------------------------------------
@@ -189,36 +201,52 @@ accept_loop(State) when record(State, state) ->
 %%           This must be done from here since the SSL socket handler
 %%           only allows the current controlling process to change who
 %%           is it's controlling process.
-%% Returns : ok    |
-%%           error
+%% Returns : ok | throw(...)
 %%--------------------------------------------------------------------
+%%
+%% SSL socket
+%%
+start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
+    {ok, ConnPid} = tcp_connection:start_link(in, ssl, Proto, Socket, Local, Remote),
+    {ok, RecvPid} = gen_server:call(ConnPid, {get_receiver}),
+    case ssl:controlling_process(Socket, RecvPid) of
+	ok -> ok;
+	{error, Reason} ->
+	    logger:log(error, "TCP listener: Could not change controlling process of "
+		       "SSL socket ~p to ~p : ~p", [Socket, RecvPid, Reason]),
+	    erlang:error({"Failed changing controlling process for SSL socket", {error, Reason}},
+			 [ssl, Proto, Socket, Local, Remote])
+    end;
+%%
+%% Non-SSL socket
+%%
 start_tcp_connection(SocketModule, Proto, Socket, Local, Remote) ->
-    case tcp_connection:start_link(in, SocketModule, Proto, Socket, Local, Remote) of
-	{ok, ConnPid} ->
-	    case SocketModule of
-		ssl ->
-		    case catch gen_server:call(ConnPid, {get_receiver}) of
-			{ok, RecvPid} ->
-			    case SocketModule:controlling_process(Socket, RecvPid) of
-				ok -> ok;
-				{error, Reason} ->
-				    logger:log(error, "TCP listener: Could not change controlling process of SSL socket ~p to ~p : ~p",
-					       [Socket, RecvPid, Reason]),
-				    %% XXX close socket here?
-				    error
-			    end;
-			Unknown ->
-			    logger:log(error, "TCP listener: Could not get receiver pid from newly started tcp connection ~p. Returned :~n~p",
-				       [ConnPid, Unknown]),
-			    %% XXX close socket here?
-			    error
-		    end;
-		_ ->
-		    ok
-	    end;
-	Unknown ->
-	    logger:log(error, "TCP listener: Failed starting TCP connection for socket ~p : ~p",
-		       [Socket, Unknown]),
-	    %% XXX close socket here?
-	    error
-    end.
+    {ok, _ConnPid} = tcp_connection:start_link(in, SocketModule, Proto, Socket, Local, Remote),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: get_defaultaddr(Proto)
+%%           Proto = tcp | tcp6
+%% Descrip.: Get the "any" address.
+%% Returns : Addr = string()
+%%--------------------------------------------------------------------
+get_defaultaddr(tcp) -> "0.0.0.0";
+get_defaultaddr(tcp6) -> "[::]".
+
+%%--------------------------------------------------------------------
+%% Function: get_settings(Proto)
+%%           Proto = tcp | tcp6 | tls | tls6
+%% Descrip.: Get the variable things depending on protocol.
+%% Returns : {ok, InetModule, SocketModule, Options}
+%%           InetModule   = atom(), inet | ssl
+%%           SocketModule = atom(), gen_tcp | ssl
+%%           Options      = term(), socket options
+%%--------------------------------------------------------------------
+get_settings(tcp) ->
+    {ok, inet, gen_tcp, [inet | ?SOCKETOPTS]};
+get_settings(tcp6) ->
+    {ok, inet, gen_tcp, [inet6 | ?SOCKETOPTS]};
+get_settings(tls) ->
+    {ok, ssl, ssl, ?SSL_SOCKETOPTS};
+get_settings(tls6) ->
+    {ok, ssl, ssl, [inet6 | ?SSL_SOCKETOPTS]}.
