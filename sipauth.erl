@@ -39,7 +39,9 @@ get_passnumber(Usertext) ->
 		    Res;
 		{error} ->
 		    {none, [], [], []}
-	    end
+	    end;
+	_ ->
+	    {none, [], [], []}
     end.
 
 get_passnumber_try(User) ->
