@@ -24,8 +24,17 @@ request("ACK", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
 request("CANCEL", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
     true;
 
-request("INVITE", {User, Pass, Host, Port, Parameters}, Header, Body, Socket) ->
-    case sipanswer:start(Header, Body, bounce, none, none) of
+request("INVITE", {"messages", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+    case sipanswer:start(Header, Body, start, none, none) of
+	{ok, Replybody} ->
+	    logger:log(debug, "body:~p", [Replybody]),
+	    siprequest:send_answer(Header, Socket, Replybody);
+	{error, _} ->
+	    true
+    end;
+
+request("INVITE", {"bounce", Pass, Host, Port, Parameters}, Header, Body, Socket) ->
+    case sipanswer:bounce(Header, Body, start, none, none) of
 	{ok, Replybody} ->
 	    logger:log(debug, "body:~p", [Replybody]),
 	    siprequest:send_answer(Header, Socket, Replybody);

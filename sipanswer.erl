@@ -1,5 +1,5 @@
 -module(sipanswer).
--export([start/5, control/3, alaw_encode/1, sine/1, sine_gen/1, testsine/0, alaw_decode/1]).
+-export([start/5, bounce/5, control/3, alaw_encode/1, sine/1, sine_gen/1, testsine/0, alaw_decode/1]).
 
 printlist([]) ->
     true;
@@ -160,3 +160,6 @@ start(Header, Body, Mode, Status, Number) ->
 	    Pid ! {siprequest, bye},
 	    {error, duplicate}
     end.
+
+bounce(Header, Body, Mode, Status, Number) ->
+    {ok, Body}.
