@@ -104,10 +104,10 @@ start_link(AppName) ->
 
 %%--------------------------------------------------------------------
 %% Function: log(Level, Format, Arguments)
-%%           Level = normal | debug | error
-%%           Format = string(), a io:format format string
+%%           Level     = normal | debug | error
+%%           Format    = string(), a io:format format string
 %%           Arguments = list(), a io:format argument list
-%% Descrip.: log a log entry
+%% Descrip.: Log a log entry.
 %% Returns : ok
 %%--------------------------------------------------------------------
 log(Level, Format) when is_atom(Level), is_list(Format) ->
@@ -117,6 +117,14 @@ log(Level, Format, Arguments) when is_atom(Level), is_list(Format),
 				   is_list(Arguments) ->
     do_log(Level, Format, Arguments).
 
+%%--------------------------------------------------------------------
+%% Function: log_iolist(Level, IOlist)
+%%           Level  = normal | debug | error
+%%           IOlist = I/O list
+%% Descrip.: Log a log entry, without formatting the data in any way
+%%           (except adding the timestamp-pid-level prefix).
+%% Returns : ok
+%%--------------------------------------------------------------------
 log_iolist(Level, IOlist) when is_atom(Level) ->
     LogTS = get_ts(now()),
     L = atom_to_list(Level),
@@ -127,8 +135,8 @@ log_iolist(Level, IOlist) when is_atom(Level) ->
 %%--------------------------------------------------------------------
 %% Function: quit(Msg)
 %%           Msg = none | [] | term()
-%% Descrip.: terminate the logger process. if Msg is term(), it will
-%%           be sent to the log before quiting "log(normal, Msg)"
+%% Descrip.: Terminate the logger process. If Msg is term(), it will
+%%           be sent to the log before quitting "log(normal, Msg)".
 %% Returns : ok | {error, "logger error"}
 %%--------------------------------------------------------------------
 quit(Msg) ->
@@ -152,12 +160,10 @@ quit(Msg) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init/1
+%% Function: init([Basename])
+%%           Basename = string(), log filename base
 %% Description: Initiates the server
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
+%% Returns: {ok, State}
 %%--------------------------------------------------------------------
 init([Basename]) ->
     %% Check if we should rotate log files when they reach a upper
@@ -245,7 +251,7 @@ handle_call(Unknown, _From, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State)
-%%           Msg = {log, Level, Data}
+%%           Msg   = {log, Level, Data}
 %%           Level = debug | normal | error
 %%           Data  = binary(), what we should write to the log file
 %% Descrip.: Write a log message to one or more of our log files (and
@@ -284,6 +290,7 @@ handle_cast(Unknown, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({check_logfile_size, Size}, State)
+%%           Size = integer(), max logfile size tolerated
 %% Descrip.: Periodically gets invoked by timer. Check if any of our
 %%           logfiles are greater than our configured limit, if so -
 %%           call rotate() on them.
@@ -340,16 +347,18 @@ safe_open(Filename, Args) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: log_to_device(IoDevice, Level, TimeStamp, Format, Arguments, Pid)
+%% Function: log_to_device(IoDevice, Level, TimeStamp, Format,
+%%                         Arguments, Pid)
 %%           log_to_stdout(Level, TimeStamp, Format, Arguments, Pid)
 %%           Level, TimeStamp, Pid = used to identify the message
-%%           Format, Arguments = used by io:format
-%%           IoDevice = where to send io:format out put (a file)
+%%           Format, Arguments = used by io:format()
+%%           IoDevice = where to send io:format() output (a file
+%%                      descriptor)
 %% Descrip.: log a message
 %% Returns : -
 %% Note    : catch is used to ensure that formating error in io:format
 %%           calls are logged - they may otherwise simply crash the
-%%           logger with out feedback, if the logger is run without
+%%           logger without feedback, if the logger is run without
 %%           a erlang shell to look at
 %%--------------------------------------------------------------------
 log_to_device(IoDevice, Data) ->
@@ -384,8 +393,8 @@ create_filename_time_suffix() ->
 
 %%--------------------------------------------------------------------
 %% Function: needs_rotating(In, Size, State)
-%%           In = list() of atom(), level atoms - debug, normal, error
-%%           Size = integer(), max size before rotating
+%%           In    = list() of atom(), debug | normal | error
+%%           Size  = integer(), max size before rotating
 %%           State = gen_server handle_xxx function state
 %% Descrip.: Check a list of log files to see if any of
 %%           them are larger than Size bytes. Return a list of all
