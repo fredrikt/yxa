@@ -61,7 +61,7 @@ start_link(AppName) ->
 init([Basename]) ->
     %% Check if we should rotate log files when they reach a upper
     %% limit in size (bytes). Defaults to 250 MB.
-    case sipserver:get_env(max_log_filesize, 250 * 1024 * 1024) of
+    case sipserver:get_env(max_logfile_size, 250 * 1024 * 1024) of
 	none -> ok;
 	Size ->
 	    %% Set up a timer to do the size checking every 60 seconds
