@@ -1,5 +1,5 @@
 -module(directory).
--export([lookupphone/1, lookupmail/1]).
+-export([lookupphone/1, lookupmail/1, ldapmailsearch/2]).
 
 lookupphone("9532") ->
     "Magnus Ahltorp";
@@ -10,21 +10,21 @@ lookupphone("9516") ->
 lookupphone(Phone) ->
     "Okänd".
 
-ldapsearch(Mail) ->
+ldapmailsearch(Mail, Attribute) ->
     {ok, Handle} = eldap:open(["ldap.kth.se"], []),
     ok = eldap:simple_bind(Handle, "dc=kth, dc=se", ""),
     Filter = eldap:equalityMatch("mail", Mail),
     {ok, Result} = eldap:search(Handle, [{base, "dc=kth, dc=se"},
 					 {filter, Filter},
-					 {attributes,["uid"]}]),
+					 {attributes,[Attribute]}]),
     eldap:close(Handle),
     {eldap_search_result, List, _} = Result,
     case List of
 	[] ->
 	    none;
 	[{eldap_entry, _, Attributes} | _] ->
-	    {value, {"uid", [Uid | _]}} = lists:keysearch("uid", 1, Attributes),
-	    Uid
+	    {value, {Attribute, [Value | _]}} = lists:keysearch(Attribute, 1, Attributes),
+	    Value
     end.
 
 do_recv(Sock, Text) ->
@@ -54,7 +54,7 @@ lookupkthid(KTHid) ->
     end.
 
 lookupmail(Mail) ->
-    case ldapsearch(Mail ++ "@kth.se") of
+    case ldapmailsearch(Mail ++ "@kth.se", "uid") of
 	none ->
 	    lookupkthid(Mail);
 	KTHid ->
