@@ -90,7 +90,7 @@ lookupuser(URL) when is_record(URL, sipurl) ->
 			    {forward, AppS};
 			_ ->
 			    logger:log(debug, "Lookup: User ~p has a CPL script, but I could not find an appserver",
-				      [User]),
+				       [User]),
 			    %% Fallback to just looking in the location database
 			    lookupuser_locations([User], URL)
 		    end;
@@ -110,13 +110,14 @@ lookupuser_locations(Users, URL) ->
     case local:get_locations_for_users(Users) of
 	Locations1 when is_list(Locations1) ->
 	    Locations = local:prioritize_locations([Users], Locations1),
-	    % check if more than one location was found.
+						% check if more than one location was found.
 	    case Locations of
 	        [] ->
-		    % User exists but has no currently known locations
+						% User exists but has no currently known locations
 		    case local:lookupregexproute(sipurl:print(URL)) of
 			none ->
-			    logger:log(debug, "Lookup: No locations found for URL ~p, and no matching regexp rules.", [sipurl:print(URL)]),
+			    logger:log(debug, "Lookup: No locations found for URL ~p, and no matching regexp rules.",
+				       [sipurl:print(URL)]),
 			    none;
 			Loc ->
 			    logger:log(debug, "Lookup: Regexp-route lookup of ~p -> ~p", [sipurl:print(URL), Loc]),
@@ -125,8 +126,8 @@ lookupuser_locations(Users, URL) ->
 		[{BestLocation, _, _, _}] ->
 		    {proxy, BestLocation};
 		_ ->
-		    % More than one location registered for this address, check for appserver...
-		    % (appserver is the program that handles forking of requests)
+		    %% More than one location registered for this address, check for appserver...
+		    %% (appserver is the program that handles forking of requests)
 		    local:lookupappserver(URL)
 	    end
     end.
@@ -152,7 +153,7 @@ lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
 	    local:prioritize_locations([Users], Locations);
 	Unknown ->
 	    logger:log(error, "Lookup: Unknown result from local:get_users_for_url() in lookup_url_to_locations: ~p",
-			[Unknown]),
+		       [Unknown]),
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
@@ -172,9 +173,9 @@ lookup_url_to_addresses(sipuserdb_mnesia, URL) when is_record(URL, sipurl) ->
     Standard = lookup_url_to_addresses(lookup, URL),
     Addr1 = local:url2mnesia_userlist(URL),
     Addr2 = case util:isnumeric(User) of
-	true -> [User];
-	_ -> []
-    end,
+		true -> [User];
+		_ -> []
+	    end,
     lists:append([Standard, Addr1, Addr2]);
 lookup_url_to_addresses(_Src, URL) when is_record(URL, sipurl) ->
     %% Make a list of all possible addresses we
@@ -358,24 +359,27 @@ lookupenum("+" ++ E164) ->
 	    %% domain, the username comparison test does not have any effect, so
 	    %% a remote URL with the E164 number as uesrname is OK.
 	    {NewE164, SameE164} = case rewrite_potn_to_e164(E164User) of
-	    	error ->
-	    		{error, false};
-	    	Res ->
-	    		{Res, util:casecompare(Res, "+" ++ E164)}
-	    end,
+				      error ->
+					  {error, false};
+				      Res ->
+					  {Res, util:casecompare(Res, "+" ++ E164)}
+				  end,
 	    if
 		IsMe /= true ->
-		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying", [sipurl:print(URL)]),
+		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying",
+			       [sipurl:print(URL)]),
 		    {relay, URL};
 		NewE164 == error ->
-		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain but not E.164 URL ~p, proxying", [sipurl:print(URL)]),
+		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain but not E.164 URL ~p, proxying",
+			       [sipurl:print(URL)]),
 		    {proxy, URL};
 		SameE164 == true ->
-		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain (~p) and the same E.164 number (~p == ~p), avoiding loop",
-			       [E164Host, E164User, "+" ++ E164]),
+		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain (~p) and the same E.164 number "
+			       "(~p == ~p), avoiding loop", [E164Host, E164User, "+" ++ E164]),
 		    none;
 		true ->
-		    logger:log(debug, "Lookup: ENUM lookup resulted in homedomain E.164 URL ~p, proxying", [sipurl:print(URL)]),
+		    logger:log(debug, "Lookup: ENUM lookup resulted in homedomain E.164 URL ~p, proxying",
+			       [sipurl:print(URL)]),
 		    {proxy, URL}
 	    end
     end;
@@ -457,7 +461,7 @@ lookupnumber(Number) ->
 	    case util:regexp_rewrite(Number, sipserver:get_env(number_to_pstn, [])) of
 		[] ->
 		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn'",
-			      [Number]),
+			       [Number]),
 		    error;
 		Res when is_list(Res) ->
 		    %% Check to see if what we got is a parseable URL
@@ -626,8 +630,8 @@ get_remote_party_number(URL, DstHost) when is_record(URL, sipurl), is_list(DstHo
 		    logger:log(debug, "Lookup: No telephone number found for user ~p", [User]),
 		    none;
 		Unknown ->
-		    logger:log(error, "Lookup: Unexpected results from local:get_telephonenumber_for_user() for user ~p in get_remote_party_number: ~p",
-			       [User, Unknown]),
+		    logger:log(error, "Lookup: Unexpected results from local:get_telephonenumber_for_user() "
+			       "for user ~p in get_remote_party_number: ~p", [User, Unknown]),
 		    none
 	    end;
 	nomatch ->
@@ -643,8 +647,8 @@ get_remote_party_number(URL, DstHost) when is_record(URL, sipurl), is_list(DstHo
 		       [sipurl:print(URL)]),
 	    none;
 	Unknown ->
-	    logger:log(error, "Lookup: Unexpected results from local:get_users_for_url() for URL ~p in get_remote_party_number: ~p",
-		       [sipurl:print(URL), Unknown]),
+	    logger:log(error, "Lookup: Unexpected results from local:get_users_for_url() for URL ~p in "
+		       "get_remote_party_number: ~p", [sipurl:print(URL), Unknown]),
 	    none
     end.
 
@@ -690,12 +694,13 @@ get_remote_party_name(Key, URI) when is_list(Key), is_record(URI, sipurl) ->
 		       "of choosing a name from a list, I'm not going to try.", [Key]),
 	    none;
 	Unknown ->
-	    logger:log(error, "Lookup: Failed to get name for remote party ~p, unexpected result from lookup_tel2name : ~p",
-		    		[Key, Unknown]),
+	    logger:log(error, "Lookup: Failed to get name for remote party ~p, unexpected result from "
+		       "lookup_tel2name : ~p", [Key, Unknown]),
 	    none
     end;
 get_remote_party_name(Key, URI) ->
-    logger:log(error, "Lookup: Could not get remote party name for non-list argument ~p or non-URL argument ~p", [Key, URI]),
+    logger:log(error, "Lookup: Could not get remote party name for non-list argument ~p or non-URL argument ~p",
+	       [Key, URI]),
     none.
 
 
