@@ -45,7 +45,12 @@ lookuproute(User) ->
 	    lookupregexproute(User);
 	{atomic, Locations} ->
 	    {Location, _, _, _} = siprequest:location_prio(Locations),
-	    {proxy, Location}
+	    case Location of
+		{error, Errorcode} ->
+		    {error, Errorcode};
+		_ ->
+		    {proxy, Location}
+	    end
     end.
 
 lookupmail(User, Host) ->
@@ -147,6 +152,9 @@ request(Method, URL, Header, Body, Socket) ->
 	none ->
 	    logger:log(normal, "Not found"),
 	    siprequest:send_notfound(Header, Socket);
+	{error, Errorcode} ->
+	    logger:log(normal, "Error ~p", [Errorcode]),
+	    siprequest:send_result(Header, Socket, "", Errorcode, "Unknown code");
 	{proxy, Loc} ->
 	    logger:log(normal, "Proxy ~s", [sipurl:print(Loc)]),
 	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body});
