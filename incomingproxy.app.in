@@ -5,7 +5,7 @@
 	     siprequest, sipheader, phone, sipauth, siphost, dnsutil,
 	     directory, 'LDAPv3', eldap, sipserver, database_regexproute,
 	     gssapi, local, lookup, siplocation, sipuserdb, sipuserdb_mnesia,
-	     sipuserdb_ldap, servertransaction]},
+	     sipuserdb_ldap, servertransaction, sippipe, transportlayer]},
   {registered, []},
   {mod, {incomingproxy, []}},
   {env, []},
