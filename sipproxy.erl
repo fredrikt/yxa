@@ -23,7 +23,7 @@ get_branch(Header) ->
     case sipheader:via(keylist:fetch("Via", Header)) of
 	[Via | _] ->
 	    case dict:find("branch", sipheader:via_params(Via)) of
-		{error} ->
+		error ->
 		    none;
 		{ok, Branch} ->
 		    Branch
