@@ -33,12 +33,21 @@ all the users registered user agents.
 Installation
 ============
 
-Create a build directory somewhere and copy the "Makefile.template"
-from the source directory here and name it "Makefile". Edit the srcdir
-variable and change the STARTSCRIPT variable to whatever
-application(s) you want to build there.
+1) Create a build directory somewhere and copy the "Makefile.template"
+from the source directory here and name it "Makefile".
 
-Type "make" in your build directory.
+2) Edit the srcdir variable in your new Makefile and change the
+STARTSCRIPT variable to whatever application(s) you want to build
+in this build directory.
+
+3) Create a local.erl suiting your needs or symlink local.erl to
+one of the ones provided with Yxa (local.erl-su.se and
+local.erl-kth.se).
+
+4) Edit init.sh.in and replace the smodule stuff with whatever you
+need to set up a runtime environment containing Erlang.
+
+5) Type "make" in your build directory.
 
 ===
 SSL
@@ -167,10 +176,20 @@ enum_domainlist			(default: []) List of domains in which to look
 max_register_time		(default: 43200) If registers have an 'expire'
 				of more than this many seconds, use this
 				value instead.
+
 adminwww:
 ---------
 www_baseurl			(required) Base URL for web server
 httpd_config			(required) Path to httpd.conf
+
+appserver:
+----------
+timerT1				(default: 500) See RFC 3261. You should
+				probably not touch this.
+timerT2				(default: 4000) See RFC 3261. You should
+				probably not touch this.
+timerT4				(default: 5000) See RFC 3261. You should
+				probably not touch this.
 
 ========
 Examples
@@ -231,6 +250,21 @@ appserver.config:
 	      {listenport, 5070}
              ]}].
 
-To insert an admin user (for bootstrap reasons) type this at an erlang prompt:
 
-phone:insert_user("username", "password", [admin], []).
+=============
+Bootstrapping
+=============
+
+In your build directory, you should have a file called bootstrap.sh. Edit
+the ADMINPW environment variable in this file and execute it from the build
+directory where you are going to run your incomingproxy from (and of course
+on the same host where you are going to run your incomingproxy).
+
+You should now have the necessary Mnesia databases and a user called 'admin'
+with the password in bootstrap.sh which you can use to add SIP users to
+your system through the web interface. In order to use the web interface,
+you must have added 'adminwww.start' to the STARTSCRIPT variable in the
+Makefile (see Installation above) and you must start the web interface by
+executing ./adminwww.start.
+
+All of the Yxa application can run just fine without root permissions.
