@@ -137,21 +137,13 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+
     %% RFC 3261 16.7 says we MUST act like a stateless proxy when no
     %% transaction can be found
     {Status, Reason} = {Response#response.status, Response#response.reason},
-    case transactionlayer:get_server_handler_for_stateless_response(Response) of
-	{error, E} ->
-	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
-	    logger:log(normal, "appserver: Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
-	    transportlayer:send_proxy_response(none, Response);
-	none ->
-	    logger:log(normal, "appserver: Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
-	    transportlayer:send_proxy_response(none, Response);
-	TH ->
-	    logger:log(debug, "appserver: Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
-	    transactionlayer:send_proxy_response_handler(TH, Response)
-    end,
+    logger:log(normal, "incomingproxy: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
+	       [LogStr, Status, Reason]),
+    transportlayer:send_proxy_response(none, Response),
     ok.
 
 

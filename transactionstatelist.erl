@@ -35,8 +35,6 @@
 	 set_response_to_tag/2,
 	 set_result/2,
 	 update_transactionstate/1,
-	 append_response_branch/3,
-	 get_server_transaction_using_stateless_response_branch/3,
 	 get_length/0,
 	 get_all_entries/0
 	]).
@@ -289,28 +287,6 @@ get_using_pid2(Pid) ->
     fetch_using_ref_tuples(RefList).
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction_using_stateless_response_branch
-%%                   (Branch, Method, TStateList)
-%%           Branch     = string()
-%%           Method     = string()
-%%           TStateList = transactionstatelist record()
-%% Descrip.: Look for a server transaction that has a statelessly
-%%           generated branch id in it's list of such id's. When
-%%           running stateful, no transactions has such id's.
-%% Returns : Entry |
-%%           none
-%%           Entry = transactionstate record()
-%% Notes   : This code is probably very slow, but it should be removed
-%%           rather than improved. It is only used if we are running
-%%           in stateless mode - and no current Yxa applications are.
-%%           Stateless SIP is the root of all evil. Make sure you
-%%           don't have to use this code.
-%%--------------------------------------------------------------------
-get_server_transaction_using_stateless_response_branch(_Branch, _Method, TStateList)
-  when is_record(TStateList, transactionstatelist) ->
-    {error, "NOT IMPLEMENTED"}.
-
-%%--------------------------------------------------------------------
 %% Function: get_elem(Type, Id)
 %%           Type       = atom() (client | server)
 %%           Id         = term()
@@ -418,32 +394,6 @@ set_response_to_tag(TState, Value) when is_record(TState, transactionstate) ->
 %%--------------------------------------------------------------------
 set_result(TState, Value) when is_record(TState, transactionstate), is_list(Value) ->
     TState#transactionstate{result = Value}.
-
-%%--------------------------------------------------------------------
-%% Function: append_response_branch(TState, Branch, Method)
-%%           TState = transactionstate record()
-%%           Branch = string()
-%%           Method = string()
-%% Descrip.: Append an entry to this transcationstate's list of
-%%           stateless response branches, unless the very same entry
-%%           is already there. This is only used when running as a
-%%           stateless SIP stack.
-%% Returns : NewTState = transactionstate record()
-%% Notes   : Stateless SIP is the root of all evil. Make sure you
-%%           don't have to use this code.
-%%--------------------------------------------------------------------
-append_response_branch(TState, Branch, Method) when is_record(TState, transactionstate) ->
-    In = TState#transactionstate.stateless_response_branches,
-    Id = {Branch, Method},
-    case lists:member(Id, In) of
-	true ->
-	    logger:log(debug, "Transaction state list: Stateless response id ~p already stored on element :~n~p",
-		       [Id, debugfriendly(TState)]),
-	    TState;
-	_ ->
-	    NewL = lists:append(In, [Id]),
-	    TState#transactionstate{stateless_response_branches=NewL}
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: delete_expired()

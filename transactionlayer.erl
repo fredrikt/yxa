@@ -25,7 +25,6 @@
 	 send_response_handler/3,
 	 send_response_handler/4,
 	 send_proxy_response_handler/2,
-	 get_server_handler_for_stateless_response/1,
 	 is_good_transaction/1,
 	 get_pid_from_handler/1,
 	 send_challenge_request/4,
@@ -39,7 +38,6 @@
 %% invoked from the transport layer).
 %%--------------------------------------------------------------------
 -export([
-	 store_stateless_response_branch/3,
 	 from_transportlayer/3
 	]).
 
@@ -150,107 +148,6 @@ handle_call({add_client_transaction, Method, Branch, CTPid, Desc}, _From, State)
   when is_list(Method), is_list(Branch), is_pid(CTPid), is_list(Desc) ->
     Res = transactionstatelist:add_client_transaction(Method, Branch, CTPid, Desc),
     {reply, Res, State, ?TIMEOUT};
-
-%%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg     = {store_stateless_response_branch, Pid, Branch,
-%%                      Method}
-%%           Pid     = pid()
-%%           Branch  = string()
-%%           Method  = string()
-%% Descrip.: When sending out requests statelessly, the transport
-%%           layer (in our implementation) knows what server
-%%           transaction the request originally arrived on. To make it
-%%           possible to know exactly on which socket we should send
-%%           out any responses we receive to this stateless request
-%%           we must associate the branch we used in the request we
-%%           sent out, with the server transaction of the original
-%%           request.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply     = {ok}               |
-%%                       {error, E}
-%%           E         = string(), description of error
-%%--------------------------------------------------------------------
-handle_call({store_stateless_response_branch, Pid, Branch, Method}, _From, State)
-  when is_pid(Pid), is_list(Branch), is_list(Method) ->
-    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method) of
-	none ->
-	    case transactionstatelist:get_elem_using_pid(Pid) of
-		{error, E} ->
-		    logger:log(error, "Transaction layer: Error associating stateless response branch ~p with pid ~p~n: ~p",
-			       [Branch, Pid, E]),
-		    {reply, {error, E}, State, ?TIMEOUT};
-		none ->
-		    logger:log(error, "Transaction layer: Can't associate stateless response branch ~p with unknown transaction handler ~p",
-			       [Branch, Pid]),
-		    {reply, {error, "server transaction not found"}, State, ?TIMEOUT};
-		ThisElem when is_record(ThisElem, transactionstate) ->
-		    NewTElem = transactionstatelist:append_response_branch(ThisElem, Branch, Method),
-		    ok = transactionstatelist:update_transactionstate(NewTElem),
-		    {reply, {ok}, State, ?TIMEOUT}
-	    end;
-	ThisElem when is_record(ThisElem, transactionstate) ->
-	    case ThisElem#transactionstate.pid of
-		Pid ->
-		    %% already associated with that very same server transaction, this is not an error since
-		    %% it can happen when a stateless application receives retransmissions of a request
-		    {reply, {ok}, State, ?TIMEOUT};
-		OtherPid ->
-		    logger:log(error, "Transaction layer: Asked to associate branch ~p with transaction with pid ~p, " ++
-			       "but branch is already associated with transaction handled by ~p!", [Branch, Pid, OtherPid]),
-		    E = "branch already associated with another server transaction",
-		    {reply, {error, E}, State, ?TIMEOUT}
-	    end
-    end;
-
-%%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg      = {start_client_transaction, Request, SocketIn,
-%%                      Dst, Branch, Timeout, Parent}
-%%           Request  = request record()
-%%           SocketIn = sipsocket record(), the default socket we
-%%                      should give to the transport layer for this
-%%                      request. XXX remove - don't do stateless.
-%%           Dst      = sipdst record(), the destination for this
-%%                                       client transaction
-%%           Branch   = string()
-%%           Timeout  = integer(), timeout for INVITE transactions
-%%           Parent   = pid(), the process that initiated this client
-%% Descrip.: Start a new client transaction.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply     = {ok, Pid}          |
-%%                       {error, E}
-%%           Pid       = pid()
-%%           E         = string(), description of error
-%%--------------------------------------------------------------------
-handle_call({sXtart_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, _From, State)
-  when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch), is_integer(Timeout),
-       is_pid(Parent); Parent == none ->
-    T1 = erlang:now(),
-    {Method, URI} = {Request#request.method, Request#request.uri},
-    Reply =
-	case transactionstatelist:get_client_transaction(Method, Branch) of
-	    none ->
-		case clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, Parent) of
-		    {ok, CPid} ->
-			RegBranch = sipheader:remove_loop_cookie(Branch),
-			Desc = lists:flatten(
-				 io_lib:format("~s: ~s ~s (dst ~s)", [RegBranch, Method,
-								      sipurl:print(URI), sipdst:dst2str(Dst)])),
-			ok = transactionstatelist:add_client_transaction(Method, RegBranch, CPid, Desc),
-			{reply, {ok, CPid}, State, ?TIMEOUT};
-		    _ ->
-			{reply, {error, "Failed starting client transaction"}, State, ?TIMEOUT}
-		end;
-	    _ ->
-		logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
-		{reply, {error, "Transaction already exists"}, State, ?TIMEOUT}
-	end,
-    T2 = erlang:now(),
-    S = io_lib:format("gen_server:call({start_client_transaction, ...}) (~s ~s)",
-		      [Method, sipurl:print(URI)]),
-    log_time_consumption(T1, T2, 200, 100, S),
-    Reply;
 
 %%--------------------------------------------------------------------
 %% Function: handle_call({store_to_tag, Request, ToTag}, From, State)
@@ -820,41 +717,6 @@ get_handler_for_request(Request) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_handler_for_stateless_response(Response)
-%%           Response = response record()
-%% Descrip.: Return the server transaction handler using a response.
-%%           If we operate without keeping track of which server
-%%           transaction to send a received response to in order to
-%%           forward it upstreams, we can use this function to find
-%%           out which server transaction to use by looking for the
-%%           association, between server transaction and forwarded
-%%           requests branch, created by the transport layer with
-%%           store_to_tag(). This does only apply to stateless
-%%           operation, which is NOT the default operating mode for
-%%           any current Yxa applications.
-%% Returns : THandler   |
-%%           none       |
-%%           {error, E}
-%%           THandler = thandler record()
-%%           E = string(), describes the error
-%%--------------------------------------------------------------------
-get_server_handler_for_stateless_response(Response) when is_record(Response, response) ->
-    TopVia = sipheader:topvia(Response#response.header),
-    {_, Method} = sipheader:cseq(keylist:fetch("CSeq", Response#response.header)),
-    case sipheader:get_via_branch(TopVia) of
-	Branch when is_list(Branch) ->
-	    case transactionstatelist:get_server_transaction_using_stateless_response_branch(Branch, Method) of
-		none ->
-		    none;
-		ThisState when is_record(ThisState, transactionstate) ->
-		    TPid = ThisState#transactionstate.pid,
-		    #thandler{pid=TPid}
-	    end;
-	_ ->
-	    {error, "No branch in top via of response"}
-    end.
-
-%%--------------------------------------------------------------------
 %% Function: adopt_server_transaction(Request)
 %%           Request = request record()
 %% Descrip.: Adopt a server transaction. Adoption means that the
@@ -1004,38 +866,6 @@ store_appdata(Request, Value) when is_record(Request, request) ->
 	    ok;
 	Unknown ->
 	    logger:log(debug, "Transaction layer: Failed storing appdata, gen_server call result :~n~p",
-		       [Unknown]),
-	    {error, "Transaction layer failure"}
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: store_stateless_response_branch(TH, Branch, Method)
-%%           TH      = thandler record() | none
-%%           Branch  = string()
-%%           Method  = string()
-%% Descrip.: When sending out requests statelessly, the transport
-%%           layer (in our implementation) knows what server
-%%           transaction the request originally arrived on. To make it
-%%           possible to know exactly on which socket we should send
-%%           out any responses we receive to this stateless request
-%%           we must associate the branch we used in the request we
-%%           sent out, with the server transaction of the original
-%%           request.
-%% Returns : ok         |
-%%           {error, E}
-%%           E = string(), description of error
-%%--------------------------------------------------------------------
-store_stateless_response_branch(none, _Branch, _Method) ->
-    ok;
-store_stateless_response_branch(TH, Branch, Method) when is_record(TH, thandler) ->
-    HPid = TH#thandler.pid,
-    case catch gen_server:call(transaction_layer, {store_stateless_response_branch, HPid, Branch, Method}, ?STATELESS_STORE_TIMEOUT) of
-	{ok} ->
-	    ok;
-	{error, E} ->
-	    {error, E};
-	Unknown ->
-	    logger:log(debug, "Transaction layer: Failed storing stateless response branch, gen_server call result :~n~p",
 		       [Unknown]),
 	    {error, "Transaction layer failure"}
     end.
