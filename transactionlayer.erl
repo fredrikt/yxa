@@ -413,7 +413,7 @@ send_response_request(Request, Status, Reason, ExtraHeaders) when record(Request
     send_response_request(Request, Status, Reason, ExtraHeaders, "").
 
 send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when record(Request, request) ->
-    {Method, URI} = {Request#request.header, Request#request.uri},
+    {Method, URI} = {Request#request.method, Request#request.uri},
     case get_handler_for_request(Request) of
 	{error, E} ->
 	    logger:log(error, "Transaction layer: Failed locating server transaction handler for request ~s ~s : ~p",
