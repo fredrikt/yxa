@@ -84,14 +84,20 @@ If you want to use SSL (normally enabled), either put your combined
 private and public X.509 key in ssl/cert.comb or edit the ssl.config
 in the source directory and do "make sslkey" to get a self-signed
 certificate. The certificate password must be "foobar" if you use
-"make sslkey".
+"make sslkey". This SSL is only for use by the Erlang distributed operation
+system (see below), it has nothing to do with SIP TLS.
 
 =====================
 Distributed operation
 =====================
 
 If you want to setup a distributed erlang system, you must have the
-same ~/.erlang.cookie file on all nodes.
+same ~/.erlang.cookie file on all nodes. Also, if you have SSL (see SSL topic
+above) enabled on one node, you must have it enabled on all the other nodes
+as well. Distributed operation includes having the same Mnesia-tables readable
+on more than the local node, so you most probably should do this if you run
+more than one Yxa node.
+
 
 =============
 Configuration
