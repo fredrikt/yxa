@@ -102,7 +102,7 @@ start_listeners(L) ->
 
 start_listeners([], SocketList) ->
     SocketList;
-start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port), Proto == tcp6; Proto == tls6 ->
+start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer(Port), Proto == tcp6; Proto == tls6 ->
     case sipserver:get_env(enable_v6, false) of
 	true ->
 	    NewSocketList = case catch tcp_listener:start(Proto, Port) of
@@ -123,7 +123,7 @@ start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port)
 	_ ->
 	    start_listeners(T, SocketList)
     end;
-start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port), Proto == tcp; Proto == tls ->
+start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer(Port), Proto == tcp; Proto == tls ->
     NewSocketList = case catch tcp_listener:start(Proto, Port) of
 			{ok, Local, Listener} ->
 			    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=Listener, data={Local, none}},
@@ -172,7 +172,7 @@ start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port)
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({get_socket, Proto, Host, Port}, From, State) ->
+handle_call({get_socket, Proto, Host, Port}, From, State) when is_atom(Proto), is_list(Host), is_integer(Port) ->
     case get_socket_from_list(Host, Port, State#state.socketlist) of
 	none ->
 	    %% We must spawn a tcp_connection process to take care of making this new connection
@@ -183,7 +183,7 @@ handle_call({get_socket, Proto, Host, Port}, From, State) ->
 	    {noreply, State, ?TIMEOUT};
 	{error, E} ->
 	    {reply, {error, E}, State, ?TIMEOUT};
-	SipSocket when record(SipSocket, sipsocket) ->
+	SipSocket when is_record(SipSocket, sipsocket) ->
 	    logger:log(debug, "Sipsocket TCP: Use existing connection to ~s:~p", [Host, Port]),
 	    {reply, {ok, SipSocket}, State, ?TIMEOUT}
     end;
@@ -200,7 +200,7 @@ handle_call({get_socket, Proto, Host, Port}, From, State) ->
 %%                   {error, Reason}
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({register_sipsocket, Dir, SipSocket}, From, State) when record(SipSocket, sipsocket) ->
+handle_call({register_sipsocket, Dir, SipSocket}, _From, State) when is_atom(Dir), is_record(SipSocket, sipsocket) ->
     CPid = SipSocket#sipsocket.pid,
     case catch link(CPid) of
 	true ->
@@ -222,7 +222,7 @@ handle_call({register_sipsocket, Dir, SipSocket}, From, State) when record(SipSo
 	    {reply, {error, "Could not link to pid"}, State, ?TIMEOUT}
     end;
 
-handle_call({quit}, From, State) ->
+handle_call({quit}, _From, State) ->
     {stop, "Asked to quit", State}.
 
 
@@ -283,7 +283,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		       logger:log(debug, "TCP dispatcher: Received exit signal from ~p not in my list. Socketlist is :~n~p",
 				  [Pid, socketlist:debugfriendly(State#state.socketlist)]),
 		       State;
-		   L when record(L, socketlist) ->
+		   L when is_record(L, socketlist) ->
 		       NewL = socketlist:delete_using_pid(Pid, State#state.socketlist),
 		       logger:log(debug, "TCP dispatcher: Deleting ~p entry(s) from socketlist :~n~p~n(new list is ~p entry(s))",
 				  [socketlist:get_length(L), socketlist:debugfriendly(L), socketlist:get_length(NewL)]),
@@ -301,7 +301,7 @@ handle_info(Unknown, State) ->
 %% Descrip.: Shutdown the server
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(Reason, _State) ->
     case Reason of
         normal -> logger:log(error, "TCP dispatcher terminating normally");
         _ -> logger:log(error, "TCP dispatcher terminating : ~p", [Reason]),
@@ -315,7 +315,7 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -331,13 +331,11 @@ code_change(OldVsn, State, Extra) ->
 %% Returns : SipSocket |
 %%           none
 %%           SipSocket = sipsocket record()
-%%
-%% Note    : XXX enforce integer port
 %%--------------------------------------------------------------------
-get_socket_from_list(Host, Port, SocketList) ->
+get_socket_from_list(Host, Port, SocketList) when is_list(Host), is_integer(Port) ->
     case socketlist:get_using_remote({Host, Port}, SocketList) of
-	SListElem when record(SListElem, socketlistelem) ->
-	    [CPid, Local, Remote, SipSocket] = socketlist:extract([pid, local, remote, sipsocket], SListElem),
+	SListElem when is_record(SListElem, socketlistelem) ->
+	    [CPid, SipSocket] = socketlist:extract([pid, sipsocket], SListElem),
 	    logger:log(debug, "Sipsocket TCP: Reusing existing connection to ~s:~p (~p)",
 		       [Host, Port, CPid]),
 	    SipSocket;
