@@ -380,6 +380,8 @@ parse_name_addr(Str) ->
     %% remove any spaces around Str data in "Contact : ... ,Str, ...."
     Stripped = strip(Str, both, [?CR,?LF,?SP,?HTAB]),
     %% Check for optional display name
+    %% XXX what if there is a '<' in a quoted display name? Is that valid or invalid?
+    %% The string:tokens() will fail on it.
     {DisplayName, Rest} =
 	case string:tokens(Stripped, "<") of
 	    [DispName, R] ->
@@ -389,22 +391,23 @@ parse_name_addr(Str) ->
 		DispNameNoWhiteSpaces = strip(DispName, both, [?CR,?LF,?SP,?HTAB]),
 		StrippedName =
 		    case DispNameNoWhiteSpaces of
-			[$\" | _] ->
-			    string:strip(DispNameNoWhiteSpaces, both, $\");
-			%% not quoted - display name is a token
+			[34 | _] ->	%% 34 is "
+			    %% quoted display name
+			    %% XXX remove the quotes but leave any escaped quotes untouched!
+			    string:strip(DispNameNoWhiteSpaces, both, 34);	%% 34 is "
 			_ ->
-			    %% check if is a token
-						true = sipparse_util:is_token(DispNameNoWhiteSpaces),
-						DispNameNoWhiteSpaces
-					end,
-					 {StrippedName, R};
-					 [R] ->
-						{none, R}
-					end,
+			    %% not quoted - check if it is a token
+			    true = sipparse_util:is_token(DispNameNoWhiteSpaces),
+			    DispNameNoWhiteSpaces
+		    end,
+		{StrippedName, R};
+	    [R] ->
+		{none, R}
+	end,
     %% get the xxx contents of "<xxx>"
-					 [AddrSpec] = string:tokens(Rest, ">"),
-					 SipUrl = AddrSpec, %% sipurl:parse(AddrSpec),
-					 {DisplayName, SipUrl}.
+    [AddrSpec] = string:tokens(Rest, ">"),
+    SipUrl = AddrSpec, %% sipurl:parse(AddrSpec),
+    {DisplayName, SipUrl}.
 
 
 parse_addr_spec(Str) ->
@@ -762,13 +765,31 @@ test() ->
     end,
 
     %% test contact-parameters without a value
-    io:format("test: parse/1 - 15~n"),
+    io:format("test: parse/1 - 16~n"),
     P15 = [#contact{display_name = none,
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([{"foo", none}, {"lr", "true"}, {"bar", none},
 							   {"baz", none}])
 		   }],
     P15 = parse(["sip:example.org;foo;lr=true;bar;baz"]),
+
+    %% test display name with escaped quotes in it
+    io:format("test: parse/1 - 17 (disabled)~n"),
+%%    [#contact{display_name = "Fredrik \\\"",
+%%	      urlstr = "sip:example.org",
+%%	      contact_param = []}] =
+%%	parse(["\"Fredrik \\\" sip:example.org"]),
+
+    %% test display name with <> in it.
+    %% XXX not sure if such display names are valid or not. We should probably parse them
+    %% anyways to be liberal in what we accept.
+    io:format("test: parse/1 - 18 (disabled)~n"),
+%%    [#contact{display_name = "Fredrik <X> Y",
+%%	      urlstr = "sip:example.org",
+%%	      contact_param = []}] =
+%%	parse(["\"Fredrik <X> Y\" sip:example.org"]),
+    
+
 
     %% print/1
     %%--------------------------------------------------------------------
