@@ -273,9 +273,14 @@ report_upstreams_statemachine(State) when record(State, state), State#state.fina
 			none ->
 			    logger:log(normal, "sipproxy: Found no suitable response in list ~p, answering 408 Request Timeout", [printable_responses(Responses)]),
 			    {408, "Request Timeout"};
+			{503, Reason, _, _} ->
+			    %% RFC3261 16.7 (Choosing the best response) bullet 6 says that if
+			    %% we only have a 503, we should send a 500 instead
+			    logger:log(normal, "sipproxy: Turning best response '503 ~p' into a '500 Only response to fork was 503'", [Reason]),
+			    {500, "Only response to fork was 503"};
 			FinalResponse ->
 			    {Status, Reason, _, _} = FinalResponse,
-			    logger:log(debug, "sipproxy: Picked response ~p ~s from the list of responses available (~p).",
+			    logger:log(debug, "sipproxy: Picked response '~p ~s' from the list of responses available (~p).",
 			    		[Status, Reason, printable_responses(Responses)]),
 			    FinalResponse
 		    end
@@ -298,10 +303,11 @@ check_forward_immediately(Request, Response, Branch, State) when record(State, s
 	    Parent = NewState#state.parent,
 	    logger:log(debug, "sipproxy: Forwarding response ~p ~s (in response to ~s ~s) to my parent (PID ~p) immediately",
 	    		[Status, Reason, Method, sipurl:print(URI), Parent]),
-	    % RFC 3261 16.7 bullet 5 (Check response for forwarding) says we MUST process any
-	    % response chosen for immediate forwarding as described in
-	    % "Aggregate Authorization Header Field Values" through "Record-Route"
-	    % XXX but it is a bit unclear to me if this is actually just to be done in FINAL responses or not
+	    %% RFC 3261 16.7 bullet 5 (Check response for forwarding) says we MUST process any
+	    %% response chosen for immediate forwarding as described in
+	    %% "Aggregate Authorization Header Field Values" through "Record-Route".
+	    %% This makes sense if it is an 401 or an 407 that forward_immediately() tells us
+	    %% to forward immediately - otherwise this is a no-op.
 	    Targets = NewState#state.targets,
 	    Responses = targetlist:get_responses(Targets),
 	    FwdResponse = aggregate_authreqs(Response, Responses),
@@ -353,7 +359,6 @@ printable_responses([Response | Rest]) ->
 % look for 6xx responses, then pick the lowest but prefer
 % 401, 407, 415, 420 and 484 if we choose a 4xx and avoid
 % 503 if we choose a 5xx.
-% XXX if there is only a 503, we SHOULD generate a 500 instead - RFC3261 #16.7 bullet 6.
 make_final_response(Responses) ->
     TwoxxResponses = get_xx_responses(200, Responses),
     ThreexxResponses = get_xx_responses(300, Responses),
@@ -362,17 +367,16 @@ make_final_response(Responses) ->
     SixxxResponses = get_xx_responses(600, Responses),
     if
 	SixxxResponses /= [] ->
-	    aggregate_authreqs(lists:nth(1, SixxxResponses), Responses);
+	    pick_response(6, SixxxResponses);
 	TwoxxResponses /= [] ->
-	    aggregate_authreqs(lists:nth(1, TwoxxResponses), Responses);
+	    pick_response(2, TwoxxResponses);
 	ThreexxResponses /= [] ->
-	    aggregate_authreqs(lists:nth(1, ThreexxResponses), Responses);
+	    pick_response(3, ThreexxResponses);
 	FourxxResponses /= [] ->
-	    BestFourxx = prefer_response([407, 401, 415, 420, 484], FourxxResponses),
+	    BestFourxx = pick_response(4, FourxxResponses),
 	    aggregate_authreqs(BestFourxx, Responses);
 	FivexxResponses /= [] ->
-	    % XXX RFC 3261 says we SHOULD avoid 503 Service Unavailable!
-	    aggregate_authreqs(lists:nth(1, FivexxResponses), Responses);
+	    pick_response(5, FivexxResponses);
 	true ->
 	    logger:log(debug, "Appserver: No response to my liking"),
 	    none
@@ -383,15 +387,14 @@ aggregate_authreqs(BestResponse, Responses) ->
     case Status of
 	407 ->
 	    ProxyAuth = collect_auth_headers(Status, "Proxy-Authenticate", Responses),
-	    logger:log(normal, "Aggregating ~p Proxy-Authenticate headers into response ~p ~s",
-			[length(ProxyAuth), Status, Reason]),
-	    logger:log(normal, "FREDRIK: PROXY AUTH :~n~p", [ProxyAuth]),
+	    logger:log(debug, "Aggregating ~p Proxy-Authenticate headers into response '407 ~s'",
+		      [length(ProxyAuth), Reason]),
 	    NewHeader = keylist:set("Proxy-Authenticate", ProxyAuth, Header),
 	    {Status, Reason, NewHeader, Body};
 	401 ->
 	    WWWAuth = collect_auth_headers(Status, "WWW-Authenticate", Responses),
-	    logger:log(normal, "Aggregating ~p WWW-Authenticate headers into response ~p ~s",
-			[length(WWWAuth), Status, Reason]),
+	    logger:log(debug, "Aggregating ~p WWW-Authenticate headers into response '401 ~s'",
+                       [length(WWWAuth), Reason]),
 	    NewHeader = keylist:set("WWW-Authenticate", WWWAuth, Header),
 	    {Status, Reason, NewHeader, Body};
 	_ ->
@@ -409,10 +412,44 @@ collect_auth_headers2(Status, Key, [{Status, _, Header, _} | T], Res) ->
 collect_auth_headers2(Status, Key, [H | T], Res) ->
     collect_auth_headers2(Status, Key, T, Res).
 
-% XXX implement this
-prefer_response(PreferenceList, Responses) ->
+pick_response(4, FourxxResponses) ->
+    lists:nth(1, lists:sort(fun pick_4xx_sort/2, FourxxResponses));
+pick_response(5, FivexxResponses) ->
+    lists:nth(1, lists:sort(fun avoid_503_sort/2, FivexxResponses));
+pick_response(Nxx, Responses) ->
     lists:nth(1, Responses).
 
+pick_4xx_sort(A, B) ->
+    Apref = is_4xx_preferred(A),
+    Bpref = is_4xx_preferred(B),
+    if
+	Apref == Bpref ->
+	    % A and B is either both in the preferred list, or both NOT in the preferred list.
+	    % Pick using numerical sort of response codes.
+	    {Anum, _, _, _} = A,
+	    {Bnum, _, _, _} = B,
+	    if
+		Anum =< Bnum ->
+		   true;
+		true ->
+		   false
+	    end;	    
+	Apref == true ->
+	    true;
+	true ->
+	    false
+    end.
+    
+is_4xx_preferred({Status, _, _, _}) ->
+    lists:member(Status, [401, 407, 415, 420, 484]).
+
+avoid_503_sort({503, _, _, _}, _) ->
+    false;
+avoid_503_sort({Anum, _, _, _}, {Bnum, _, _, _}) when Anum =< Bnum ->
+    true;
+avoid_503_sort(_, _) ->
+    false.
+    
 get_xx_responses(Min, Responses) ->
     Max = Min + 99,
     lists:keysort(1, get_range_responses(Min, Max, Responses)).
