@@ -27,14 +27,20 @@ request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body,
 request(Method, URL, Header, Body, Socket) ->
     {User, Pass, Host, Port, Parameters} = URL,
     Newlocation = {User, none, "kth.se", none, []},
-    siprequest:send_proxy_request(Header, Socket, {Method, Newlocation, Body}).
+    Route = "<" ++ sipurl:print({User, Pass, Host, Port,
+				 ["maddr=" ++ siphost:myip()]}) ++ ">",
+    Newheaders = keylist:append({"Record-route", Route}, Header),
+    siprequest:send_proxy_request(Newheaders, Socket, {Method, Newlocation, Body}).
 
 request2(Method, Phone, Header, Body, Socket) ->
     Newlocation = {Phone, none, sipserver:get_env(proxyaddr), "5060", []},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     {Fromphone, _, _, _, _} = FromURI,
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
-    sipauth:check_and_send_auth(Header, Socket, Fromphone, Phone,
+    Route = "<" ++ sipurl:print({Phone, none, "sip-pstn.kth.se", "5060",
+				 ["maddr=" ++ siphost:myip()]}) ++ ">",
+    Newheaders = keylist:append({"Record-route", Route}, Header),
+    sipauth:check_and_send_auth(Newheaders, Socket, Fromphone, Phone,
 				{siprequest, send_proxy_request},
 				{Method, Newlocation, Body},
 				Method, Classdefs).
