@@ -153,6 +153,17 @@ do_recv(Sock, Text) ->
 	    Text
     end.
 
+parse_packet(Packet) ->
+    Packetfixed = siputil:linefix(Packet),
+    case string:str(Packetfixed, "\n\n") of
+	0 ->
+	    {Packetfixed, ""};
+	Headerlen ->
+	    HeaderStr = string:substr(Packetfixed, 1, Headerlen),
+	    BodyStr = string:substr(Packetfixed, Headerlen + 2),
+	    {HeaderStr, BodyStr}
+    end.
+
 lookupkthid(KTHid) ->
     Server = "yorick.admin.kth.se",
     {ok, Sock} = gen_tcp:connect(Server, 80, 
@@ -160,8 +171,7 @@ lookupkthid(KTHid) ->
     ok = gen_tcp:send(Sock, "GET /service/personsokning/kthid2tele.asp?kthid=" ++ KTHid ++ " HTTP/1.0\r\n\r\n"),
     
     Text = do_recv(Sock, ""),
-    {Header, Body} = sippacket:parse_packet(Text),
-    {Request, Headerkeylist} = sippacket:parseheader(Header),
+    {Header, Body} = parse_packet(Text),
     ok = gen_tcp:close(Sock),
     Numbers = string:tokens(Body, "\r\n"),
     case Numbers of
