@@ -62,7 +62,7 @@
 %%           {senderror, Reason}
 %%           Reason = string()
 %%--------------------------------------------------------------------
-send_response(Socket, Response) when record(Response, response) ->
+send_response(Socket, Response) when is_record(Response, response) ->
     {Status, Reason, Header} = {Response#response.status, Response#response.reason,
 				Response#response.header},
     case sipheader:topvia(Header) of
@@ -74,7 +74,7 @@ send_response(Socket, Response) when record(Response, response) ->
 	    logger:log(error, "Failed getting top Via out of malformed response ~p ~s",
 		       [Status, Reason]),
 	    {senderror, "malformed response"};
-	TopVia when record(TopVia, via) ->
+	TopVia when is_record(TopVia, via) ->
 	    send_response_to(Socket, Response, TopVia)
     end.
 
@@ -88,16 +88,16 @@ send_response(Socket, Response) when record(Response, response) ->
 %%           {senderror, Reason}
 %%           Reason = string()
 %%--------------------------------------------------------------------
-send_response_to(DefaultSocket, Response, TopVia) when record(Response, response), record(TopVia, via) ->
+send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, response), record(TopVia, via) ->
     {Status, Reason, HeaderIn, Body} = {Response#response.status, Response#response.reason,
 					Response#response.header, Response#response.body},
     Line1 = "SIP/2.0 " ++ integer_to_list(Status) ++ " " ++ Reason,
     Header = fix_content_length(HeaderIn, Body),
     Message = lists:flatten(Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body),
     case sipdst:get_response_destination(TopVia) of
-	Dst when record(Dst, sipdst) ->
+	Dst when is_record(Dst, sipdst) ->
 	    case get_response_socket(DefaultSocket, Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port) of
-		SendSocket when record(SendSocket, sipsocket) ->
+		SendSocket when is_record(SendSocket, sipsocket) ->
 		    CPid = SendSocket#sipsocket.pid,
 		    logger:log(debug, "send response(top Via: ~s, send to=~s (using ~p)) :~n~s~n",
 			       [sipheader:via_print([TopVia]), sipdst:dst2str(Dst), CPid, Message]),
@@ -135,7 +135,7 @@ send_response_to(DefaultSocket, Response, TopVia) when record(Response, response
 %%           Socket = sipsocket record()
 %%           Reason = string()
 %%--------------------------------------------------------------------
-get_response_socket(DefaultSocket, SendProto, SendToHost, Port) when integer(Port) ->
+get_response_socket(DefaultSocket, SendProto, SendToHost, Port) when is_integer(Port) ->
     case sipsocket:is_good_socket(DefaultSocket) of
 	true ->
 	    case DefaultSocket#sipsocket.proto of
@@ -156,7 +156,7 @@ get_response_socket(DefaultSocket, SendProto, SendToHost, Port) when integer(Por
 		    {error, E1};
 		none ->
 		    {error, "no socket provided and get_socket() returned 'none'"};
-		S when record(S, sipsocket) ->
+		S when is_record(S, sipsocket) ->
 		    logger:log(debug, "Siprequest: Extra debug: Get socket ~p ~p ~p ~p returned socket ~p",
 			       [SocketModule, SendProto, SendToHost, Port, S]),
 		    S
@@ -190,9 +190,9 @@ default_port(Proto, none) when Proto == udp; Proto == udp6; Proto == tcp; Proto 
     "5060";
 default_port(Proto, none) when Proto == tls; Proto == tls6 ; Proto == "sips" ->
     "5061";
-default_port(_, Port) when integer(Port) ->
+default_port(_, Port) when is_integer(Port) ->
     integer_to_list(Port);
-default_port(_, Port) when list(Port) ->
+default_port(_, Port) when is_list(Port) ->
     Port.
 
 %%--------------------------------------------------------------------
@@ -212,7 +212,7 @@ default_port(_, Port) when list(Port) ->
 %%           NewRequestURI = sipurl record(), this is what you should
 %%                                            use as request URI
 %%--------------------------------------------------------------------
-process_route_header(Header, URI) when record(URI, sipurl) ->
+process_route_header(Header, URI) when is_record(URI, sipurl) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
     case Route of
         [{_, FirstRoute} | NewRoute1] ->
@@ -253,7 +253,7 @@ set_route(Route, Header) ->
 %%--------------------------------------------------------------------
 is_loose_router(Route) ->
     case dict:find("lr", sipheader:contact_params(Route)) of
-	{ok, E} ->
+	{ok, _} ->
 	    true;
 	_ ->
 	    false
@@ -266,7 +266,7 @@ is_loose_router(Route) ->
 %%           throw a siperror if the request should not be proxied.
 %% Returns : {ok, NewHeader, ApproxMsgSize}
 %%--------------------------------------------------------------------
-check_proxy_request(Request) when record(Request, request) ->
+check_proxy_request(Request) when is_record(Request, request) ->
     NewHeader1 = proxy_check_maxforwards(Request#request.header),
     check_valid_proxy_request(Request#request.method, NewHeader1),
     NewHeader2 = fix_content_length(NewHeader1, Request#request.body),
@@ -300,16 +300,15 @@ check_proxy_request(Request) when record(Request, request) ->
 %%
 %% Turn Dst into a list()
 %%
-send_proxy_request(SrvTHandler, Request, Dst, ViaParameters) when record(Dst, sipdst) ->
+send_proxy_request(SrvTHandler, Request, Dst, ViaParameters) when is_record(Dst, sipdst) ->
     send_proxy_request(SrvTHandler, Request, [Dst], ViaParameters);
 
 %%
 %% Explicit destination(s) provided, just send
 %%
-send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters) when record(Request, request), record(Dst, sipdst) ->
-    {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
-				       Request#request.header, Request#request.body},
-    {ok, NewHeader1, ApproxMsgSize} = check_proxy_request(Request),
+send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters)
+  when is_record(Request, request), is_record(Dst, sipdst) ->
+    {ok, NewHeader1, _ApproxMsgSize} = check_proxy_request(Request),
     DstList = [Dst | DstT],
     logger:log(debug, "Siprequest (transport layer) : Destination list for request is (~p entrys) :~n~p",
 	       [length(DstList), sipdst:debugfriendly(DstList)]),
@@ -319,22 +318,24 @@ send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters) when recor
 %%
 %% Dst is URI - turn it into a list of sipdst records. First check Route header though.
 %%
-send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when record(URI, sipurl) ->
+send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when is_record(URI, sipurl) ->
     {ok, _, ApproxMsgSize} = check_proxy_request(Request),
     case process_route_header(Request#request.header, URI) of
 	nomatch ->
 	    case sipdst:url_to_dstlist(URI, ApproxMsgSize, URI) of
-		DstList when list(DstList) ->
+		DstList when is_list(DstList) ->
 		    send_proxy_request(SrvTHandler, Request, DstList, ViaParameters);
 		Unknown ->
 		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI ~s : ~p", [sipurl:print(URI), Unknown]),
 		    {error, "Failed resolving destination"}
 	    end;
-	{ok, NewHeader, DstURI, ReqURI} when record(DstURI, sipurl), record(ReqURI, sipurl) ->
+	{ok, _NewHeader, DstURI, ReqURI} when is_record(DstURI, sipurl), is_record(ReqURI, sipurl) ->
+	    %% XXX is it correct to just ditch NewHeader or should we stuff it into the Request
+	    %% we send to send_proxy_request()?
 	    logger:log(debug, "Siprequest (transport layer) : Routing request as per the Route header, Destination ~p, Request-URI ~p",
 		       [sipurl:print(DstURI), sipurl:print(ReqURI)]),
 	    case sipdst:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
-		DstList when list(DstList) ->
+		DstList when is_list(DstList) ->
 		    send_proxy_request(SrvTHandler, Request, DstList, ViaParameters);
 		Unknown ->
 		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI (from Route header) ~s : ~p", [sipurl:print(URI), Unknown]),
@@ -357,12 +358,13 @@ send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when record(URI, si
 %%           Branch = string(), the branch we put in the Via header
 %%           Reason = string()
 %%--------------------------------------------------------------------
-send_to_available_dst([], Request, ViaParam, SrvTHandler) when record(Request, request) ->
+send_to_available_dst([], Request, _ViaParam, _SrvTHandler) when is_record(Request, request) ->
     Line1 = Request#request.method ++ " " ++ sipurl:print(Request#request.uri) ++ " SIP/2.0",
     lists:flatten(Message = Line1 ++ "\r\n" ++ sipheader:build_header(Request#request.header) ++ "\r\n" ++ Request#request.body),
     logger:log(debug, "Siprequest (transport layer) : Failed sending request (my Via not added, original URI shown) :~n~s", [Message]),
     {senderror, "failed"};
-send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) when record(Dst, sipdst), record(Request, request) ->
+send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler)
+  when is_record(Dst, sipdst), is_record(Request, request) ->
     IP = Dst#sipdst.addr,
     Port = Dst#sipdst.port,
     Proto = Dst#sipdst.proto,
@@ -373,7 +375,7 @@ send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) when record(
 	    logger:log(debug, "Siprequest (transport layer) : Failed to get ~p socket for ~s : ~p", [Proto, DestStr, What]),
 	    %% try next
 	    send_to_available_dst(DstT, Request, ViaParam, SrvTHandler);
-	SipSocket when record(SipSocket, sipsocket) ->
+	SipSocket when is_record(SipSocket, sipsocket) ->
 	    {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
 					       Request#request.header, Request#request.body},
 	    NewHeader1 = proxy_add_via(Header, Method, OrigURI, ViaParam, Proto, SrvTHandler),
@@ -485,7 +487,7 @@ add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict) ->
 		       [LoopCookie]),
 	    Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
 	    sipheader:dict_to_param(Param2);
-	Index when integer(Index) ->
+	Index when is_integer(Index) ->
 	    %% There is already a loop cookie in this branch, don't change it. Necessary to not
 	    %% get the wrong branch in constructed ACK of non-2xx response to INVITE.
 	    logger:log(debug, "Siprequest (transport layer) : NOT adding generated loop cookie ~p to branch " ++
@@ -557,7 +559,7 @@ add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters, 
 %%--------------------------------------------------------------------
 stateless_generate_branch(OrigURI, Header) ->
     case sipheader:topvia(Header) of
-	TopVia when record(TopVia, via) ->
+	TopVia when is_record(TopVia, via) ->
 	    case sipheader:get_via_branch(TopVia) of
 		"z9hG4bK" ++ RestOfBranch ->
 		    In = lists:flatten(lists:concat([node(), "-rbranch-", RestOfBranch])),
@@ -603,7 +605,7 @@ make_3261_token([H | T]) when H >= $0, H =< $9 ->
 make_3261_token([H | T]) when H == $-; H == $.; H == $!; H == $%;
 H == $*; H == $_; H == $+; H == $`; H == $'; H == $~ ->
     [H|make_3261_token(T)];
-make_3261_token([H | T]) ->
+make_3261_token([_H | T]) ->
     [$_|make_3261_token(T)].
 
 %%--------------------------------------------------------------------
@@ -633,7 +635,8 @@ make_answerheader(Header) ->
 			 NewHeader1;
 		     _ ->
 			 keylist:set("Route", RecordRoute, NewHeader1)
-		 end.
+		 end,
+    NewHeader2.
 
 %%--------------------------------------------------------------------
 %% Function: get_loop_cookie(Header, OrigURI, Proto)
@@ -656,7 +659,7 @@ get_loop_cookie(Header, OrigURI, Proto) ->
     ProxyAuth = proxyauth_without_response(Header),
     Route = keylist:fetch("Route", Header),
     {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
-				   TopVia when record(TopVia, via) ->
+				   TopVia when is_record(TopVia, via) ->
 				       P = sipsocket:viaproto2proto(TopVia#via.proto),
 				       {TopVia#via.host, default_port(P, TopVia#via.port)};
 				   _ ->
@@ -704,7 +707,7 @@ check_valid_proxy_request("ACK", _) ->
     true;
 check_valid_proxy_request("CANCEL", _) ->
     true;
-check_valid_proxy_request(Method, Header) ->
+check_valid_proxy_request(_Method, Header) ->
     ProxyRequire = keylist:fetch("Proxy-Require", Header),
     case ProxyRequire of
 	[] ->
@@ -779,7 +782,7 @@ add_record_route(Proto, Hostname, Port, Header) ->
 %%           the Origin record, to Header.
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
-add_record_route(Header, Origin) when record(Origin, siporigin) ->
+add_record_route(Header, Origin) when is_record(Origin, siporigin) ->
     Port = sipserver:get_listenport(Origin#siporigin.proto),
     add_record_route(Origin#siporigin.proto, myhostname(), Port, Header).
 
@@ -813,7 +816,7 @@ send_proxyauth_req(Header, Socket, Auth, Stale) ->
                          header=standardcopy(Header, ExtraHeaders), body=""},
     send_response(Socket, Response).
 
-send_redirect(Location, Header, Socket) when record(Location, sipurl) ->
+send_redirect(Location, Header, Socket) when is_record(Location, sipurl) ->
     Contact = [{none, Location}],
     ExtraHeaders = [{"Contact",
 		     sipheader:contact_print(Contact)}],
@@ -862,17 +865,17 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders) ->
 %%           SendResult
 %%           SendResult = term(), result of send_response()
 %%--------------------------------------------------------------------
-send_proxy_response(Socket, Response) when record(Response, response) ->
+send_proxy_response(Socket, Response) when is_record(Response, response) ->
     case sipheader:via(keylist:fetch("Via", Response#response.header)) of
-	[Self] ->
+	[_Self] ->
 	    logger:log(error, "Can't proxy response ~p ~s because it contains just one or less Via and that should be mine!",
 		       [Response#response.status, Response#response.reason]),
 	    {error, invalid_Via};
-	[Self | Via] ->
+	[_Self | Via] ->
 	    %% Remove Via matching me (XXX should check that it does)
 	    NewHeader = keylist:set("Via", sipheader:via_print(Via), Response#response.header),
 	    %% Now look for the correct "server transaction" to use when sending this response upstreams
-	    [NextVia | _] = Via,
+	    [_NextVia | _] = Via,
 	    NewResponse = Response#response{header=NewHeader},
 	    send_response(Socket, NewResponse)
     end.
@@ -891,9 +894,11 @@ send_proxy_response(Socket, Response) when record(Response, response) ->
 %% Descrip.: Create a response given a request.
 %% Returns : Response = response record()
 %%--------------------------------------------------------------------
-make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket, Request) when record(SipSocket, sipsocket) ->
+make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket, Request)
+  when is_record(SipSocket, sipsocket) ->
     make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket#sipsocket.proto, Request);
-make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request) when record(Request, request) ->
+make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
+  when is_record(Request, request) ->
     ReqHeader = Request#request.header,
     AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, ["Via", "From", "To", "Call-ID", "CSeq",
 								"Record-Route", "Timestamp", "Content-Type"]),
@@ -904,7 +909,6 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
     %% have to make a difference in how we send out responses.
     V = create_via(Proto, ViaParameters),
     PlaceHolderVia = sipheader:via_print([V]),
-    Via = sipheader:via(keylist:fetch("Via", ReqHeader)),
     AnswerHeader2 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader1),
     AnswerHeader3 = siprequest:make_answerheader(AnswerHeader2),
     %% If there is a body, calculate Content-Length, otherwise remove the Content-Type we copied above
