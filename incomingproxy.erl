@@ -45,7 +45,7 @@ lookupmail(User) ->
 	Phone ->
 	    case lookuproute(Phone) of
 		none ->
-		    none;
+		    lookupdefault(Phone);
 		Loc ->
 		    Loc
 	    end
