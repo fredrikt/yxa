@@ -1,48 +1,58 @@
 -module(sipserver).
--export([start/5, process/5, get_env/1, get_env/2, make_logstr/2, safe_spawn/2, safe_spawn/3, safe_spawn_child/2, safe_spawn_child/3, origin2str/2]).
+-export([start/2, process/5, get_env/1, get_env/2, make_logstr/2, safe_spawn/2, safe_spawn/3, safe_spawn_child/2, safe_spawn_child/3, origin2str/2]).
 
-start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, Mode) ->
+start(normal, [AppModule]) ->
     mnesia:start(),
-    apply(InitFun, []),
-    logger:start(),
-    directory:start(),
-    case RemoteMnesiaTables of
-	none ->
-	    logger:log(normal, "proxy started");
-	_ ->
-	    DbNodes = case sipserver:get_env(databaseservers, none) of
-		none ->
-		    logger:log(error, "This application needs remote tables ~p but you haven't configured any databaseservers, exiting.",
-		    		[RemoteMnesiaTables]),
-		    logger:quit(none),
-		    erlang:fault("No databaseservers configured");
-		Res ->
-		    Res
-	    end,
-	    logger:log(debug, "Mnesia extra db nodes : ~p", [DbNodes]),
-	    case mnesia:change_config(extra_db_nodes,
-				 sipserver:get_env(databaseservers)) of
-		{error, Reason} ->
-		    logger:log(error, "Startup: Could not add configured databaseservers: ~p", [mnesia:error_description(Reason)]);
-		_ ->
-		    true
-	    end,
-	    {Message, Args} = find_remote_mnesia_tables(RemoteMnesiaTables),
-	    logger:log(normal, Message, Args)
-    end,
+    [AppCallbacks, RemoteMnesiaTables, Mode, AppSupdata] = apply(AppModule, init, []),
     Port = sipserver:get_env(listenport, 5060),
-    TLPid = transactionlayer:start(RequestFun, ResponseFun, Mode),
-    Sockets = sipsocket:start(Port),
-    restart_services(Port, Sockets, TLPid, RequestFun, ResponseFun, Mode).
-    
-restart_services(Port, Sockets, TransportPid, RequestFun, ResponseFun, Mode) ->
-    timer:sleep(3000),
-    sipsocket:check_alive(Port, Sockets),
-    transactionlayer:check_alive(RequestFun, ResponseFun, Mode),
-    restart_services(Port, Sockets, TransportPid, RequestFun, ResponseFun, Mode).
+    case sipserver_sup:start_link(Port, AppCallbacks, Mode, AppSupdata) of
+	{ok, Supervisor} ->
+	    case RemoteMnesiaTables of
+		none ->
+		    logger:log(normal, "proxy started, supervisor is ~p", [Supervisor]);
+		_ ->
+		    DbNodes = case sipserver:get_env(databaseservers, none) of
+				  none ->
+				      logger:log(error, "Startup: This application needs remote tables ~p but you " ++
+						 "haven't configured any databaseservers, exiting.",
+						 [RemoteMnesiaTables]),
+				      logger:quit(none),
+				      erlang:fault("No databaseservers configured");
+				  Res ->
+				      Res
+			      end,
+		    logger:log(debug, "Mnesia extra db nodes : ~p", [DbNodes]),
+		    case mnesia:change_config(extra_db_nodes,
+					      sipserver:get_env(databaseservers)) of
+			{error, Reason} ->
+			    logger:log(error, "Startup: Could not add configured databaseservers: ~p", [mnesia:error_description(Reason)]),
+			    logger:quit(none),
+			    erlang:fault("Could not add configured databaseservers");
+			_ ->
+			    true
+		    end,
+		    {Message, Args} = find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor),
+		    logger:log(normal, Message, Args)
+	    end,
+	    %% Start the transport layer now that we have initialized everything
+	    TransportLayer = {transportlayer,
+			      {transportlayer, start, [Port]},
+			      permanent, 2000, supervisor, [transportlayer]},
+	    case supervisor:start_child(Supervisor, TransportLayer) of
+		{error, E} ->
+		    logger:log(error, "Sipserver: Failed starting the transport layer : ~p", [E]),
+		    {error, E};
+		{ok, _} ->
+		    {ok, Supervisor};
+		{ok, _, _} ->
+		    {ok, Supervisor}
+	    end;
+	Unknown ->
+	    io:format("Failed starting supervisor :~n~p", [Unknown])
+    end.
 
-find_remote_mnesia_tables(RemoteMnesiaTables) ->
-    logger:log(debug, "Initializing remote Mnesia tables ~p", [RemoteMnesiaTables]),
+find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor) ->
+    logger:log(debug, "Initializing remote Mnesia tables ~p (supervisor is ~p)", [RemoteMnesiaTables, Supervisor]),
     find_remote_mnesia_tables1(RemoteMnesiaTables, RemoteMnesiaTables, 0).
 
 find_remote_mnesia_tables1(OrigTableList, RemoteMnesiaTables, Count) ->
@@ -140,7 +150,6 @@ process(Packet, Socket, Origin, RequestFun, ResponseFun) ->
     case parse_packet(Socket, Packet, Origin) of
 	{{request, Method, URL, Header, Body}, LogStr} ->
 	    Request = {Method, URL, Header, Body},
-	    TransactionId = sipheader:get_server_transaction_id(Request),
 	    case catch my_apply(RequestFun, request, [Method, URL, Header, Body, Socket, IP], LogStr) of
 		{'EXIT', E} ->
 		    logger:log(error, "=ERROR REPORT==== from RequestFun~n~p", [E]),
@@ -160,44 +169,31 @@ process(Packet, Socket, Origin, RequestFun, ResponseFun) ->
 	    true
     end.
 
-my_apply(Dst, Type, Args, LogStr) when pid(Dst) ->
-    % Dst is a process. This should be the transaction layer process, or possibly some
-    % other process that understands the same signals as the transaction layer.
-    case util:safe_is_process_alive(Dst) of
-	{true, _} ->
-	    Ref = make_ref(),
-	    case Type of
-		request ->
-		    [Method, URL, Header, Body, Socket, IP] = Args,
-		    Dst ! {sipmessage, self(), Ref, request, {Method, URL, Header, Body}, Socket, LogStr};
-		response ->
-		    [Status, Reason, Header, Body, Socket, IP] = Args,
-		    Dst ! {sipmessage, self(), Ref, response, {Status, Reason, Header, Body}, Socket, LogStr}
-	    end,
-	    receive
-		{continue, Ref} ->
-		    % terminate silently
-		    true;
-		{pass_to_core, Ref, NewDst} ->
-		    % Dst (the transaction layer presumably) wants us to apply a function with this
-		    % request/response as argument. This is common when the transaction layer has started
-		    % a new server transaction for this request and wants it passed to the core (or TU)
-		    % but can't do it itself because that would block the transactionlayer process.
-		    my_apply(NewDst, Type, Args, LogStr)
-	    after
-		2000 ->
-		    logger:log(error, "Sipserver: Got no response from request/response-handler pid ~p regarding ~p : ~s",
-				[Dst, Type, LogStr]),
-		    {siperror, 500, "Server Internal Error"}
-	    end;
-	false ->
-	    logger:log(error, "Sipserver: Can't send signal about new SIP-message to pid ~p because it is not alive",
-			[Dst]),
+my_apply(transaction_layer, Type, Args, LogStr) ->
+    %% Dst is the transaction layer.
+    Msg = case Type of
+	      request ->
+		  [Method, URL, Header, Body, Socket, IP] = Args,
+		  {sipmessage, request, {Method, URL, Header, Body}, Socket, LogStr};
+	      response ->
+		  [Status, Reason, Header, Body, Socket, IP] = Args,
+		  {sipmessage, response, {Status, Reason, Header, Body}, Socket, LogStr}
+	  end,
+    case gen_server:call(transaction_layer, Msg, 2000) of
+	{continue} ->
+	    %% terminate silently
+	    true;
+	{pass_to_core, NewDst} ->
+	    %% Dst (the transaction layer presumably) wants us to apply a function with this
+	    %% request/response as argument. This is common when the transaction layer has started
+	    %% a new server transaction for this request and wants it passed to the core (or TU)
+	    %% but can't do it itself because that would block the transactionlayer process.
+	    my_apply(NewDst, Type, Args, LogStr);
+	_ ->
+	    logger:log(error, "Sipserver: Got no or unknown response from transaction_layer regarding ~p : ~s",
+		       [Type, LogStr]),
 	    {siperror, 500, "Server Internal Error"}
     end;
-my_apply(undefined, _, _, _) ->
-    logger:log(error, "Sipserver: Can't send request to 'undefined' - presumably this is because the transaction layer is not alive"),
-    {siperror, 500, "Server Internal Error"};
 my_apply(Dst, _, Args, LogStr) ->
     apply(Dst, Args).
 
