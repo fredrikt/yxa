@@ -60,8 +60,6 @@ contact([String | Rest]) ->
 			   end, Headers),
 		 contact(Rest)).
 
-contact_params([]) ->
-    none;
 contact_params({_, {wildcard, Parameters}}) ->
     param_to_dict(Parameters);
 contact_params({_, _, _, _, Parameters}) ->
@@ -89,8 +87,6 @@ via_print(Via) ->
 		      Protocol ++ " " ++ sipurl:print_hostport(Host, Port) ++ print_parameters(Parameters)
 	      end, Via).
 
-via_params([]) ->
-    none;
 via_params({Protocol, Hostport, Parameters}) ->
     param_to_dict(Parameters).
 
