@@ -84,7 +84,7 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 	    end;
 	_ ->
 	    logger:log(debug, "REGISTER for non-homedomain ~p", [URL#sipurl.host]),
-	    do_request({"REGISTER", URL, Header, Body}, Origin)
+	    do_request(Request, Origin)
     end;
 
 %%
