@@ -1,6 +1,8 @@
 -module(incomingproxy).
 -export([start/2, remove_expired_phones/0]).
 
+-include("database_regexproute.hrl").
+
 start(normal, Args) ->
     Pid = spawn(sipserver, start, [fun init/0, fun request/5,
 				   fun response/5, none, true]),
@@ -8,12 +10,39 @@ start(normal, Args) ->
 
 init() ->
     phone:create(),
+    database_regexproute:create(),
     timer:apply_interval(60000, ?MODULE, remove_expired_phones, []).
+
+lookupregexproute(User) ->
+    {atomic, Routes} = database_regexproute:list(),
+    Sortedroutes = lists:sort(fun (Elem1, Elem2) -> 
+				      Prio1 = lists:keysearch(priority, 1, Elem1#regexproute.flags),
+				      Prio2 = lists:keysearch(priority, 1, Elem2#regexproute.flags),
+				      case {Prio1, Prio2} of
+					  {_, false} ->
+					      true;
+					  {false, _} ->
+					      false;
+					  {{value, {priority,P1}}, {value, {priority,P2}}} when P1 >= P2 ->
+					      true;
+					  _ ->
+					      false
+				      end
+			      end, Routes),
+    Rules = lists:map(fun(R) ->
+			      {R#regexproute.regexp, sipurl:print(R#regexproute.address)}
+		      end, Sortedroutes),
+    case util:regexp_rewrite(User, Rules) of
+	nomatch ->
+	    none;
+	Result ->
+	    {proxy, sipurl:parse(Result)}
+    end.
 
 lookuproute(User) ->
     case phone:get_phone(User) of
 	{atomic, []} ->
-	    none;
+	    lookupregexproute(User);
 	{atomic, Locations} ->
 	    {Location, _, _, _} = siprequest:location_prio(Locations),
 	    {proxy, Location}
