@@ -22,6 +22,7 @@
 	 start_client_transaction/6,
 	 adopt_server_transaction/1,
 	 adopt_server_transaction_handler/1,
+	 adopt_st_and_get_branchbase/1,
 	 send_response_handler/3,
 	 send_response_handler/4,
 	 send_proxy_response_handler/2,
@@ -74,7 +75,6 @@
 %%--------------------------------------------------------------------
 %% My State
 -record(state, {
-	  appmodule	% Which Yxa application this is
 	 }).
 
 %% A container record to make it clear that all communication with
@@ -111,9 +111,8 @@ start_link(AppModule) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule, Mode])
+%% Function: init([AppModule])
 %%           AppModule = atom(), name of Yxa application
-%%           Mode      = stateful | stateless
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}          |
 %%           {ok, State, Timeout} |
@@ -128,7 +127,7 @@ init([AppModule]) ->
     Settings = ets:new(transaction_layer_settings, [protected, set, named_table]),
     true = ets:insert_new(Settings, {appmodule, AppModule}),
     logger:log(debug, "Transaction layer started"),
-    {ok, #state{appmodule=AppModule}, ?TIMEOUT}.
+    {ok, #state{}, ?TIMEOUT}.
 
 
 %%--------------------------------------------------------------------
@@ -251,7 +250,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		       "(new list is ~p entry(s))", [Deleted, transactionstatelist:debugfriendly(L),
 						     transactionstatelist:get_length()]),
 	    true
-	end,
+    end,
     {noreply, State, ?TIMEOUT};
 
 handle_info(Msg, State) ->
@@ -264,8 +263,11 @@ handle_info(Msg, State) ->
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(normal, _State) ->
-    logger:log(debug, "Transaction layer: Terminating normally"),
+    logger:log(debug, "Transaction layer: Terminating normally."),
     ok;
+terminate(shutdown, _State) ->
+    logger:log(debug, "Transaction layer: Shutting down."),
+    shutdown;
 terminate(Reason, _State) ->
     logger:log(error, "Transaction layer: =ERROR REPORT==== from transaction_layer :~n~p",
 	       [Reason]),
@@ -297,13 +299,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%           in the transaction_layer. This is to achieve better
 %%           concurrency by not doing alot of work in the
 %%           transaction_layer process.
-%% Returns : {reply, Reply, State, ?TIMEOUT}
-%%           Reply   = {pass_to_core, AppModule} |
-%%                     {continue}
+%% Returns : {pass_to_core, AppModule} |
+%%           continue
 %%
 %% Notes   :
 %%           Meaning of Reply :
-%%           {continue} means that the transaction layer has taken care
+%%           continue means that the transaction layer has taken care
 %%           of this Request and no further action should be taken by
 %%           the caller of this function.
 %%
@@ -327,38 +328,32 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %% ACK
 %%
-received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, _AppModule) ->
-    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
+received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, AppModule) ->
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 	       [sipurl:print(Request#request.uri)]),
     {pass_to_core, AppModule};
 
 received_new_request(Request, Socket, LogStr, AppModule) when is_record(Request, request) ->
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
-    case servertransaction:start(Request, Socket, LogStr, AppModule) of
+    case servertransaction:start_link(Request, Socket, LogStr) of
 	{ok, STPid} when is_pid(STPid) ->
-	    Method = Request#request.method,
-	    PassToCore = case Method of
-			     "CANCEL" ->
-				 cancel_corresponding_transaction(Request, STPid);
-			     _ ->
-				 true
-			 end,
-	    case PassToCore of
+	    %% returns true if it is a CANCEL and we find a transaction to cancel, otherwise false
+	    case cancel_corresponding_transaction(Request, STPid) of
 		true ->
-		    logger:log(debug, "Transaction layer: Telling sipserver to apply this applications "
+		    logger:log(debug, "Transaction layer: Telling SIP message handler to start this applications "
 			       "request function."),
 		    {pass_to_core, AppModule};
-		_ ->
-		    {continue}
+		false ->
+		    continue
 	    end;
 	{error, resend} ->
 	    logger:log(debug, "Transaction layer: Failed starting server transaction (was a resend) - "
 		       "ignoring request"),
-	    {continue};
+	    continue;
 	E ->
+	    %%% XXX erlang:exit() here so that we might return a 500 response (statelessly)?
 	    logger:log(error, "Transaction layer: Failed starting server transaction (~p) - ignoring request", [E]),
-	    {continue}
+	    continue
     end.
 
 %%--------------------------------------------------------------------
@@ -374,7 +369,7 @@ received_new_request(Request, Socket, LogStr, AppModule) when is_record(Request,
 %% Returns : PassToCore
 %%           PassToCore = true | false
 %%--------------------------------------------------------------------
-cancel_corresponding_transaction(Request, STPid) when is_record(Request, request), is_pid(STPid) ->
+cancel_corresponding_transaction(#request{method="CANCEL"}=Request, STPid) when is_pid(STPid) ->
     Header = Request#request.header,
     %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
     %% transaction that is being handled by 'assuming the method is anything but
@@ -393,7 +388,7 @@ cancel_corresponding_transaction(Request, STPid) when is_record(Request, request
 	    {Status, Reason} =
 		case util:safe_is_process_alive(InvitePid) of
 		    {true, _} ->
-			logger:log(debug, "Transaction layer: Cancelling other transaction handled by ~p " ++
+			logger:log(debug, "Transaction layer: Cancelling original request handled by ~p " ++
 				   "and responding 200 Ok", [InvitePid]),
 			gen_server:cast(InvitePid, {cancelled}),
 			{200, "Ok"};
@@ -402,15 +397,18 @@ cancel_corresponding_transaction(Request, STPid) when is_record(Request, request
 				   "pid '~p', responding 481 Call/Transaction Does Not Exist", [InvitePid]),
 			{481, "Call/Transaction Does Not Exist"}
 		end,
-	    gen_server:cast(STPid, {create_response, Status, Reason, [], ""}),
+	    gen_server:cast(STPid, {create_response, Status, Reason, [], <<>>}),
 	    %% Don't pass to core
 	    false;
 	_ ->
-	    logger:log(debug, "Transaction layer: Could not find transaction for CANCEL, "
+	    logger:log(debug, "Transaction layer: Could not find transaction to cancel, "
 		       "pass it on to application core."),
 	    %% Pass to core
 	    true
-    end.
+    end;
+cancel_corresponding_transaction(Request, STPid) when is_record(Request, request), is_pid(STPid) ->
+    %% Request method not CANCEL, pass to core
+    true.
 
 %%--------------------------------------------------------------------
 %% Function: get_server_transaction(R)
@@ -430,7 +428,7 @@ get_server_transaction(Response) when is_record(Response, response) ->
 %%--------------------------------------------------------------------
 %% Function: get_server_transaction_pid(R)
 %%           R           = request record() | response record()
-%% Descrip.: Find a server transaction given either a request or a 
+%% Descrip.: Find a server transaction given either a request or a
 %%           response record(). Return it's pid.
 %% Returns : Pid |
 %%           none
@@ -521,7 +519,7 @@ send_response_request(Request, Status, Reason) when is_record(Request, request) 
     send_response_request(Request, Status, Reason, []).
 
 send_response_request(Request, Status, Reason, ExtraHeaders) when is_record(Request, request) ->
-    send_response_request(Request, Status, Reason, ExtraHeaders, "").
+    send_response_request(Request, Status, Reason, ExtraHeaders, <<>>).
 
 send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
@@ -557,9 +555,10 @@ send_response_handler(TH, Status, Reason) when is_record(TH, thandler) ->
     send_response_handler(TH, Status, Reason, []).
 
 send_response_handler(TH, Status, Reason, ExtraHeaders) when is_record(TH, thandler) ->
-    send_response_handler(TH, Status, Reason, ExtraHeaders, "").
+    send_response_handler(TH, Status, Reason, ExtraHeaders, <<>>).
 
-send_response_handler(TH, Status, Reason, ExtraHeaders, RBody) when is_record(TH, thandler) ->
+send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
+  when is_record(TH, thandler), is_integer(Status), is_list(Reason), is_list(ExtraHeaders), is_binary(RBody) ->
     case catch gen_server:cast(TH#thandler.pid, {create_response, Status, Reason, ExtraHeaders, RBody}) of
 	ok ->
 	    ok;
@@ -613,10 +612,12 @@ get_handler_for_request(Request) ->
 %%           server transaction will inform whoever is adopting it
 %%           if the server transaction gets cancelled, and when it
 %%           terminates.
-%% Returns : THandler   |
+%% Returns : THandler         |
+%%           {ignore, Reason} |
 %%           {error, E}
 %%           THandler = thandler record()
-%%           E = string(), describes the error
+%%           Reason   = cancelled | completed
+%%           E        = string(), describes the error
 %%--------------------------------------------------------------------
 adopt_server_transaction(Request) when is_record(Request, request) ->
     case get_handler_for_request(Request) of
@@ -629,12 +630,61 @@ adopt_server_transaction(Request) when is_record(Request, request) ->
 %% See adopt_server_transaction/1 above
 adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
     case catch gen_server:call(TH#thandler.pid, {set_report_to, self()}, ?STORE_TIMEOUT) of
+	{ignore, Reason} ->
+	    {ignore, Reason};
+	ok ->
+	    TH;
 	{error, E} ->
 	    {error, E};
-	{ok} ->
-	    TH;
 	_ ->
 	    {error, "Server transaction handler failed"}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: adopt_st_and_get_branchbase(TH)
+%% Function: adopt_st_and_get_branchbase(Request)
+%%           TH      = thandler record()
+%%           Request = request record()
+%% Descrip.: Adopt a server transaction, and get it's branch. This is
+%%           just a helper function for applications, since this is
+%%           typically what they do anyways. If you want to know for
+%%           example the real reason it returns 'ignore', use the more
+%%           articulate adopt_server_transaction_handler/1.
+%% Returns : BranchBase |
+%%           error      |
+%%           ignore
+%%           BranchBase = string(), the server transactions branch,
+%%                        minus the "-UAS" suffix
+%%--------------------------------------------------------------------
+adopt_st_and_get_branchbase(Request) when is_record(Request, request) ->
+    case get_handler_for_request(Request) of
+	TH when is_record(TH, thandler) ->
+	    adopt_st_and_get_branchbase(TH);
+	{error, Reason} ->
+	    logger:log(error, "Transaction layer: Could not find transaction handler for request : ~p",
+		       [Reason]),
+	    error
+    end;
+adopt_st_and_get_branchbase(TH) when is_record(TH, thandler) ->
+    case adopt_server_transaction_handler(TH) of
+	{ignore, _Reason} ->
+	    ignore;
+	{error, E} ->
+	    logger:log(error, "Transaction layer: Could not adopt server transaction handler ~p : ~p", [TH, E]),
+	    error;
+	TH ->
+	    case get_branch_from_handler(TH) of
+		error ->
+		    error;
+		Branch when is_list(Branch) ->
+		    case string:rstr(Branch, "-UAS") of
+			0 ->
+			    {ok, TH, Branch};
+			Index when is_integer(Index) ->
+			    BranchBase = string:substr(Branch, 1, Index - 1),
+			    {ok, TH, BranchBase}
+		    end
+	    end
     end.
 
 %%--------------------------------------------------------------------
@@ -653,8 +703,8 @@ get_branch_from_handler(TH) when is_record(TH, thandler) ->
     case catch gen_server:call(TPid, {get_branch}, ?STORE_TIMEOUT) of
 	{ok, Branch} ->
 	    Branch;
-	_ ->
-	    logger:log(error, "Transaction layer: Failed getting branch from pid ~p", [TPid]),
+	Unknown ->
+	    logger:log(error, "Transaction layer: Failed getting branch from pid ~p : ~p", [TPid, Unknown]),
 	    error
     end.
 
@@ -665,7 +715,7 @@ transaction_terminating(TransactionPid) ->
 
 %%--------------------------------------------------------------------
 %% Function: start_client_transaction(Request, SocketIn, Dst, Branch,
-%%                                    Timeout, Parent)
+%%                                    Timeout, ReportTo)
 %%           Request  = request record()
 %%           SocketIn = sipsocket record(), XXX which socket is this?
 %%           Dst      = sipdst record(), the destination for this
@@ -673,7 +723,7 @@ transaction_terminating(TransactionPid) ->
 %%           Branch   = string(), branch parameter to use
 %%           Timeout  = integer(), timeout for INVITE transactions
 %%                                 (seconds from now)
-%%           Parent   = pid(), who the client transaction should
+%%           ReportTo = pid(), who the client transaction should
 %%                      report to
 %% Descrip.: Start a new client transaction.
 %% Returns : Pid        |
@@ -681,10 +731,10 @@ transaction_terminating(TransactionPid) ->
 %%           Pid = pid()
 %%           E   = string()
 %%--------------------------------------------------------------------
-start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent)
+start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, ReportTo)
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch), is_integer(Timeout),
-       is_pid(Parent); Parent == none ->
-    case clienttransaction:start(Request, SocketIn, Dst, Branch, Timeout, Parent) of
+       is_pid(ReportTo); ReportTo == none ->
+    case clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, ReportTo) of
 	{ok, CPid} ->
 	    CPid;
 	_ ->
@@ -803,7 +853,7 @@ get_pid_from_handler(_) ->
 %%           E = string()
 %%--------------------------------------------------------------------
 send_challenge_request(Request, Type, Stale, RetryAfter) ->
-    case transactionlayer:get_handler_for_request(Request) of
+    case get_handler_for_request(Request) of
 	TH when is_record(TH, thandler) ->
 	    send_challenge(TH, Type, Stale, RetryAfter);
 	_ ->
@@ -883,12 +933,8 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 	    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
 	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule);
 	STPid when is_pid(STPid) ->
-	    case gen_server:call(STPid, {siprequest, Request, Origin}) of
-		{pass_to_core, AppModule1} ->
-		    {pass_to_core, AppModule1};
-		{continue} ->
-		    continue
-	    end
+	    gen_server:cast(STPid, {siprequest, Request, Origin}),
+	    continue
     end;
 
 %%--------------------------------------------------------------------
@@ -896,7 +942,7 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 %% Descrip.: The transport layer passes us a response it has just
 %%           received.
 %% Returns : {pass_to_core, AppModule} |
-%%           {continue}
+%%           continue
 %%           AppModule = atom(), Yxa application module name
 %%--------------------------------------------------------------------
 from_transportlayer(Response, Origin, LogStr) when is_record(Response, response),
@@ -905,7 +951,7 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
     case get_client_transaction_pid(Response) of
 	none ->
 	    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
-	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
+	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response(...).",
 		       [Response#response.status, Response#response.reason, AppModule]),
 	    {pass_to_core, AppModule};
 	CTPid when is_pid(CTPid) ->
