@@ -66,7 +66,7 @@ init([Server]) ->
 		     case ldap_connect(Server) of
 			 H2 when record(H2, ldaphandle) -> H2;
 			 {error, E} ->
-			     logger:log(error, "Directory: Could not connect to LDAP server ~p " ++
+			     logger:log(error, "LDAP client: Could not connect to LDAP server ~p " ++
 					"at the moment : ~p", [Server, E]),
 			     error
 		     end
@@ -136,13 +136,8 @@ handle_info(timeout, State) ->
 		H when record(H, ldaphandle) ->
 		    logger:log(debug, "LDAP client: Opened new connection to server ~s", [Server]),
 		    {noreply, State#state{handle=H, querycount=0}, ?TIMEOUT};
-		{'EXIT', E} ->
+		E ->
 		    logger:log(error, "LDAP client: Could not reconnect to LDAP server ~p : ~p", [Server, E]),
-		    %% Keep using old handle in hope that it is still working.
-		    {noreply, State, ?TIMEOUT};
-		Unknown ->
-		    logger:log(error, "LDAP client: Could not reconnect to LDAP server ~p, unknown " ++
-			       "result from ldap_connect :~n~p", [Server, Unknown]),
 		    %% Keep using old handle in hope that it is still working.
 		    {noreply, State, ?TIMEOUT}
 	    end;
@@ -209,18 +204,19 @@ ldapsearch_wrapper(Mode, Args, State) when record(State, state) ->
     case exec_ldapsearch(Mode, Handle, Args) of
 	error ->
 	    logger:log(error, "LDAP client: Error returned from exec_ldapsearch (~p), " ++
-		       "closing LDAP handle ~p and retrying query", [Mode, Handle]),
+		       "closing LDAP handle '~p', opening new handle and retrying query", [Mode, Handle]),
 	    ldap_close(Handle),
 	    case catch ldap_connect(Server) of
-		{'EXIT', E} ->
-		    logger:log(error, "LDAP client: Could not connect to LDAP server ~p : ~p", [Server, E]),
-		    %% This is bad. We have closed our old handle and could not get a new one...
-		    {error, error};
 		NewHandle when record(NewHandle, ldaphandle) ->
 		    logger:log(debug, "LDAP client: Retrying query using new LDAP handle ~p", [NewHandle]),
 		    %% New handle returned, retry query and return new handle plus result of retry
 		    Res = exec_ldapsearch(Mode, NewHandle, Args),
-		    {NewHandle, Res}
+		    {NewHandle, Res};
+		Unknown ->
+		    logger:log(error, "LDAP client: Could not connect to LDAP server ~p, ldap_connect() returned ~p",
+			       [Server, Unknown]),
+		    %% This is bad. We have closed our old handle and could not get a new one...
+		    {error, error}
 	    end;
 	Res ->
 	    {Handle, Res}
@@ -247,7 +243,10 @@ exec_ldapsearch(Mode, Handle, [Type, In, Attribute]) when record(Handle, ldaphan
 	    logger:log(error, "LDAP client: Unknown result from ldapsearch_unsafe (handle ~p, query ~p ~p) :~n~p",
 		       [Handle, Type, In, Unknown]),
 	    error
-    end.
+    end;
+exec_ldapsearch(Mode, Handle, [Type, In, Attribute]) ->
+    logger:log(error, "LDAP client: Returning 'error' on query ~p ~p because handle '~p' is not valid", [Type, In, Handle]),
+    error.
 
 get_valuelist([], Attribute) ->
     [];
@@ -309,32 +308,49 @@ ldap_connect(Server) when list(Server) ->
 		    #ldaphandle{ref=Handle};
 		E ->
 		    logger:log(error, "LDAP client: ldap_connect: eldap:simple_bind failed : ~p", [E]),
-		    {error, E}
+		    {error, "eldap:simple_bind failed"}
 	    end;
-	E ->
+	{error, E} ->
 	    logger:log(error, "LDAP client: ldap_connect: eldap:open() failed. Server ~p, UseSSL ~p : ~p",
 		       [Server, UseSSL, E]),
-	    {error, E}
+	    {error, "eldap:open failed"};
+	Unknown ->
+	    logger:log(error, "LDAP client: ldap_connect: eldap:open() Server ~p, UseSSL ~p failed - unknown data returned: ~p",
+		       [Server, UseSSL, Unknown]),
+	    {error, "eldap:open failed"}
     end.
 
 ldap_close(H) when record(H, ldaphandle) ->
-    logger:log(debug, "LDAP client: Closing LDAP handle ~p", [H#ldaphandle.ref]),
-    eldap:close(H#ldaphandle.ref);
+    logger:log(debug, "LDAP client: Closing LDAP handle '~p'", [H#ldaphandle.ref]),
+    eldap:close(H#ldaphandle.ref),
+    ok;
 ldap_close(_) ->
     ok.
 
 %% query_ldapclient is executed by the interface functions in the calling process,
 %% not in the persistent ldap_client gen_server.
 query_ldapclient(Query) ->
-    case catch gen_server:call(ldap_client, Query, 1500) of
-	{ok, Res} ->
-	    Res;
-	{error, E} ->
-	    logger:log(error, "Directory: LDAP client returned error : ~p", [E]),
-	    error;
-	Unknown ->
-	    logger:log(error, "Directory: LDAP client returned unknown result : ~p", [Unknown]),
-	    gen_server:cast(ldap_client, {ping_of_death, self()}),
+    case util:safe_is_process_alive(ldap_client) of
+	{true, Pid} ->
+	    %% We must remember which pid we send this query to, so that if the ldap_client
+	    %% process dies while processing our query and the sipserver_sup starts a new
+	    %% ldap_client, we don't kill the new ldap_client with our ping_of_death
+	    case catch gen_server:call(Pid, Query, 1500) of
+		{ok, Res} ->
+		    Res;
+		{error, E} ->
+		    logger:log(error, "Directory: LDAP client ~p returned error : ~p", [Pid, E]),
+		    error;
+		{'EXIT', {timeout, _}} ->
+		    logger:log(error, "Directory: LDAP client ~p timed out", [Pid]),
+		    error;
+		Unknown ->
+		    logger:log(error, "Directory: LDAP client ~p returned unknown result : ~p", [Pid, Unknown]),
+		    catch gen_server:cast(Pid, {ping_of_death, self()}),
+		    error
+	    end;
+	{false, Pid} ->
+	    logger:log(error, "Directory: LDAP client '~p' not alive", [Pid]),
 	    error
     end.
 
