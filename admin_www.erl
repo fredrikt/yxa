@@ -311,10 +311,10 @@ phonesurl() ->
     sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Alist_phones".
 
 indexurl_html() ->
-    "<a href=\"" ++ indexurl() ++ "\">Tillbaka till förstasidan</a>".
+    "<a href=\"" ++ indexurl() ++ "\">Tillbaka till f&ouml;rstasidan</a>".
 
 userurl_html() ->
-    "<a href=\"" ++ userurl() ++ "\">Tillbaka till användarlistan</a>".
+    "<a href=\"" ++ userurl() ++ "\">Tillbaka till anv&auml;ndarlistan</a>".
 
 list_users(Env, Input) ->
     case check_auth(Env, true) of
@@ -324,7 +324,7 @@ list_users(Env, Input) ->
 	    {atomic, List} = phone:list_users(),
 	    [header(ok),
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
-	     "<tr><th>Användarnamn</th><th>Nummer</th><th>Flaggor</th>",
+	     "<tr><th>Anv&auml;ndarnamn</th><th>Nummer</th><th>Flaggor</th>",
 	     "<th>Klasser</th><th>KTH-ID</th><th>Namn</th></tr>\n",
 	     print_users(lists:sort(fun (Elem1, Elem2) -> 
 					    if
@@ -360,7 +360,7 @@ list_numbers(Env, Input) ->
 	    [header(ok),
 	     "<h1>Alla allokerade nummer</h1>\n",
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
-	     "<tr><th>Nummer</th><th>Användarnamn</th><th>KTH-ID</th><th>Namn</th></tr>\n",
+	     "<tr><th>Nummer</th><th>Anv&auml;ndarnamn</th><th>KTH-ID</th><th>Namn</th></tr>\n",
 	     print_numbers_list(lists:sort(fun (Elem1, Elem2) -> 
 						   if
 						       Elem1#numbers.number < Elem2#numbers.number ->
@@ -385,7 +385,7 @@ list_phones(Env, Input) ->
 	     "<h1>Nummertabell</h1>\n",
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
-	     "<th>Går ut</th><th>Adress</th></tr>\n",
+	     "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
 	     print_phones(lists:sort(fun (Elem1, Elem2) -> 
 					     if
 						 Elem1#phone.number < Elem2#phone.number ->
@@ -395,17 +395,17 @@ list_phones(Env, Input) ->
 					     end
 				     end, List)),
 	     "</table>\n",
-	     "<h1>Lägg till medflyttning</h1>\n",
+	     "<h1>L&auml;gg till medflyttning</h1>\n",
 	     "<form action=\"admin_www%3Aadd_route\" method=post>\n",
 	     "Nummer: <input type=\"text\" name=\"number\">\n",
 	     "Prioritet: <input type=\"text\" name=\"priority\">\n",
 	     "Adress: <input type=\"text\" name=\"address\">\n",
-	     "<input type=\"submit\" value=\"Lägg till\">\n",
+	     "<input type=\"submit\" value=\"L&auml;gg till\">\n",
 	     "</form>\n",
 	     "<h1>Regler</h1>\n",
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
-	     "<th>Går ut</th><th>Adress</th></tr>\n",
+	     "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
 	     print_phones(lists:sort(fun (Elem1, Elem2) -> 
 					     if
 						 Elem1#regexproute.regexp < Elem2#regexproute.regexp ->
@@ -415,12 +415,12 @@ list_phones(Env, Input) ->
 					     end
 				     end, Regexps)),
 	     "</table>\n",
-	     "<h1>Lägg till regel</h1>\n",
+	     "<h1>L&auml;gg till regel</h1>\n",
 	     "<form action=\"admin_www%3Aadd_regexp\" method=post>\n",
 	     "Regel: <input type=\"text\" name=\"number\">\n",
 	     "Prioritet: <input type=\"text\" name=\"priority\">\n",
 	     "Adress: <input type=\"text\" name=\"address\">\n",
-	     "<input type=\"submit\" value=\"Lägg till\">\n",
+	     "<input type=\"submit\" value=\"L&auml;gg till\">\n",
 	     "</form>\n",
 	     indexurl_html()
 	    ]
@@ -440,7 +440,7 @@ add_user(Env, Input) ->
 	    Classes = parse_classes(dict:find("classes", Args)),
 	    case {Userfind, Phonefind} of
 		{error, _} ->
-		    [header(ok), "Felaktigt användarnamn"];
+		    [header(ok), "Felaktigt anv&auml;ndarnamn"];
 		{_, error} ->
 		    [header(ok), "Felaktigt telefonnummer"];
 		{{ok, User}, {ok, Phone}} ->
@@ -460,11 +460,11 @@ add_route(Env, Input) ->
 	    Addressfind = dict:find("address", Args),
 	    case {Numberfind, Priorityfind, Addressfind} of
 		{error, _, _} ->
-		    [header(ok), "Du måste ange ett nummer"];
+		    [header(ok), "Du m&aring;ste ange ett nummer"];
 		{_, error, _} ->
-		    [header(ok), "Du måste ange prioritet"];
+		    [header(ok), "Du m&aring;ste ange prioritet"];
 		{_, _, error} ->
-		    [header(ok), "Du måste ange en adress"];
+		    [header(ok), "Du m&aring;ste ange en adress"];
 		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
 		    phone:insert_purge_phone(Number,
 					     [{priority,
@@ -487,11 +487,11 @@ add_regexp(Env, Input) ->
 	    Addressfind = dict:find("address", Args),
 	    case {Numberfind, Priorityfind, Addressfind} of
 		{error, _, _} ->
-		    [header(ok), "Du måste ange en regexp"];
+		    [header(ok), "Du m&aring;ste ange en regexp"];
 		{_, error, _} ->
-		    [header(ok), "Du måste ange prioritet"];
+		    [header(ok), "Du m&aring;ste ange prioritet"];
 		{_, _, error} ->
-		    [header(ok), "Du måste ange en adress"];
+		    [header(ok), "Du m&aring;ste ange en adress"];
 		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
 		    database_regexproute:insert(Number,
 						[{priority,
@@ -512,7 +512,7 @@ del_route(Env, Input) ->
 	    Numberfind = dict:find("number", Args),
 	    case {Numberfind} of
 		{error} ->
-		    [header(ok), "Du måste ange ett nummer"];
+		    [header(ok), "Du m&aring;ste ange ett nummer"];
 		{{ok, Number}} ->
 		    phone:purge_class_phone(Number, permanent),
 		    [header(redirect, phonesurl())]
@@ -528,7 +528,7 @@ del_regexp(Env, Input) ->
 	    Numberfind = dict:find("number", Args),
 	    case {Numberfind} of
 		{error} ->
-		    [header(ok), "Du måste ange ett nummer"];
+		    [header(ok), "Du m&aring;ste ange ett nummer"];
 		{{ok, Number}} ->
 		    database_regexproute:purge_class(Number, permanent),
 		    [header(redirect, phonesurl())]
@@ -560,18 +560,18 @@ change_user_form(Env, Input) ->
 	    Userfind = dict:find("user", Args),
 	    case Userfind of
 		{error, _} ->
-		    [header(ok), "Felaktigt användarnamn"];
+		    [header(ok), "Felaktigt anv&auml;ndarnamn"];
 		{ok, User} ->
 		    {Password, Flags, Classes} = get_pass(User),
 		    Numberlist = get_numbers(User),
 		    [
 		     header(ok),
 		     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
-		     "<h2>Lösenord</h2>\n",
+		     "<h2>L&ouml;senord</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"password\" name=\"password\" size=\"20\">\n",
-		     "<input type=\"submit\" value=\"Ändra lösenord\">\n",
+		     "<input type=\"submit\" value=\"&AUML;ndra l&ouml;senord\">\n",
 		     "</form>\n",
 		     "<h2>Nummer</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
@@ -579,24 +579,24 @@ change_user_form(Env, Input) ->
 		     "<input type=\"text\" name=\"numbers\" size=\"40\" value=\"",
 		     print_numbers(Numberlist),
 		     "\">\n",
-		     "<input type=\"submit\" value=\"Ändra nummer\">\n",
+		     "<input type=\"submit\" value=\"&AUML;ndra nummer\">\n",
 		     "</form>\n",
-		     "<h2>Administratör</h2>\n",
+		     "<h2>Administrat&ouml;r</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"hidden\" name=\"admin\" value=\"true\">\n",
-		     "<input type=\"submit\" value=\"Slå på administratörsflaggan\">\n",
+		     "<input type=\"submit\" value=\"Sl&aring; p&aring; administrat&ouml;rsflaggan\">\n",
 		     "</form>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"hidden\" name=\"admin\" value=\"false\">\n",
-		     "<input type=\"submit\" value=\"Slå av administratörsflaggan\">\n",
+		     "<input type=\"submit\" value=\"Sl&aring; av administrat&ouml;rsflaggan\">\n",
 		     "</form>\n",
 		     "<h2>Klasser</h2>\n",
 		     "<form action=\"admin_www%3Achange_classes\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     print_class_checkboxes(Classes),
-		     "<input type=\"submit\" value=\"Ändra klasser\">\n",
+		     "<input type=\"submit\" value=\"&AUML;ndra klasser\">\n",
 		     "</form>\n",
 		     userurl_html()
 		    ]
@@ -658,9 +658,9 @@ change_user(Env, Input) ->
 	    Numbersfind = dict:find("numbers", Args),
 	    case {Userfind, Passwordfind, Adminfind, Numbersfind} of
 		{error, _, _, _} ->
-		    [header(ok), "Du måste ange ett användarnamn"];
+		    [header(ok), "Du m&aring;ste ange ett anv&auml;ndarnamn"];
 		{_, error, error, error} ->
-		    [header(ok), "Du måste ange lösenord, admin eller nummer"];
+		    [header(ok), "Du m&aring;ste ange l&ouml;senord, admin eller nummer"];
 		{{ok, User}, {ok, Password}, _, _} ->
 		    phone:set_user_password(User, Password),
 		    [header(redirect, userurl())];
@@ -702,7 +702,7 @@ change_classes(Env, Input) ->
 	    Classes = findclasses(Args),
 	    case Userfind of
 		error ->
-		    [header(ok), "Du måste ange ett användarnamn"];
+		    [header(ok), "Du m&aring;ste ange ett anv&auml;ndarnamn"];
 		{ok, User} ->
 		    phone:set_user_classes(User, Classes),
 		    [header(redirect, userurl())]
