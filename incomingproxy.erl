@@ -3,7 +3,7 @@
 
 start(normal, Args) ->
     Pid = spawn(sipserver, start, [fun init/0, fun request/6,
-				   fun response/6, none, stateless]),
+				   fun response/6, none, stateful]),
     {ok, Pid}.
 
 init() ->
@@ -113,11 +113,14 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 	    do_request({"REGISTER", URL, Header, Body}, Socket, FromIP)
     end;
 
-request("ACK", URL, Header, Body, Socket, FromIP) ->
-    do_request({"ACK", URL, Header, Body}, Socket, FromIP);
+request(Method, URI, Header, Body, Socket, FromIP) when Method == "ACK" ->
+    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+    logger:log(normal, "incomingproxy: ~s -> Forwarding ACK received in core statelessly",
+    		[LogStr]),
+    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, []);
 
-request("CANCEL", URL, Header, Body, Socket, FromIP) ->
-    do_request({"CANCEL", URL, Header, Body}, Socket, FromIP);
+request(Method, URL, Header, Body, Socket, FromIP) when Method == "CANCEL" ->
+    do_request({Method, URL, Header, Body}, Socket, FromIP);
 
 % Here we have a request that is not CANCEL or ACK (or REGISTER).
 % Check if the From: address matches our homedomains, and if so
@@ -233,34 +236,12 @@ do_request(Request, Socket, FromIP) ->
     end.
 
 proxy_request(THandler, Request, DstURL, Parameters) ->
-    case siprequest:send_proxy_request(THandler, Request, DstURL, Parameters) of
-	{sendresponse, Status, Reason} ->
-	    {Method, URI, _, _} = Request,
-	    logger:log(error, "Transport layer failed sending ~s ~s to ~s, asked us to respond ~p ~s",
-			[Method, sipurl:print(URI), sipurl:print(DstURL), Status, Reason]),
-	    transactionlayer:send_response_request(Request, Status, Reason);
-	{ok, _} ->
-	    true;
-	Unknown ->
-	    logger:log(error, "Transport layer returned unknown result, responding 500 Server Internal Error"),
-	    logger:log(debug, "transport layer returned unknown result :~n~p", [Unknown]),
-	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
-    end.
+    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURL, none, Parameters, 900]).
 
-relay_request(THandler, {"ACK", OrigURI, Header, Body}, URI, LogTag) ->
-    Request = {"ACK", OrigURI, Header, Body},
+relay_request(THandler, {Method, OrigURI, Header, Body}, URI, LogTag) when Method == "CANCEL"; Method == "BYE" ->
+    Request = {Method, OrigURI, Header, Body},
     logger:log(normal, "~s: incomingproxy: Relay ~s (unauthenticated)", [LogTag, sipurl:print(URI)]),
-    siprequest:send_proxy_request(THandler, Request, URI, []);
-
-relay_request(THandler, {"CANCEL", OrigURI, Header, Body}, URI, LogTag) ->
-    Request = {"CANCEL", OrigURI, Header, Body},
-    logger:log(normal, "~s: incomingproxy: Relay ~s (unauthenticated)", [LogTag, sipurl:print(URI)]),
-    siprequest:send_proxy_request(THandler, Request, URI, []);
-
-relay_request(THandler, {"BYE", OrigURI, Header, Body}, URI, LogTag) ->
-    Request = {"BYE", OrigURI, Header, Body},
-    logger:log(normal, "~s: incomingproxy: Relay ~s (unauthenticated)", [LogTag, sipurl:print(URI)]),
-    siprequest:send_proxy_request(THandler, Request, URI, []);
+    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, URI, none, [], 900]);
 
 relay_request(THandler, Request, DstURI, LogTag) ->
     {Method, URI, Header, Body} = Request,
@@ -268,9 +249,11 @@ relay_request(THandler, Request, DstURI, LogTag) ->
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, sipurl:print(DstURI)]),
-	    siprequest:send_proxy_request(THandler, Request, DstURI, []);
+	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, none, [], 900]);
 	stale ->
 	    logger:log(debug, "Relay: STALE authentication, sending challenge"),
+	    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication -> 407 Proxy Authentication Required",
+			[LogTag, sipurl:print(DstURI)]),
 	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
 	    transactionlayer:send_response_handler(THandler, 407, "Proxy Authentication Required", ExtraHeaders);
 	false ->
@@ -285,19 +268,9 @@ relay_request(THandler, Request, DstURI, LogTag) ->
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
     LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
+    logger:log(normal, "Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
     Response = {Status, Reason, Header, Body},
-    case transactionlayer:get_server_handler_for_stateless_response(Response) of
-	{error, E} ->
-	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
-	    logger:log(normal, "Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
-	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
-	none ->
-	    logger:log(normal, "Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
-	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
-	TH ->
-	    logger:log(debug, "Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
-	    transactionlayer:send_proxy_response_handler(TH, Response)
-    end.
+    transportlayer:send_proxy_response(none, Response).
 
 request_to_homedomain(URL) ->
     request_to_homedomain(URL, init).
