@@ -232,6 +232,21 @@ my %standard_tests = (
 
 	# combined tests
 
+
+
+             "ROUTE PROCESSING" =>
+		{
+				Method	=> "MESSAGE",
+				From	=> $default_from,
+				To	=> "relay-test\@$testserver",
+                                Header  => "Route: <sip:$incomingproxy>\n",
+				sendto	=> $incomingproxy,
+				user	=> $testuser_user,
+				pw	=> $testuser_password,
+				expect  => '^486 Busy Here \(relay-test\)$'
+		},
+
+
              "STRICT ROUTER TRAVERSAL" =>
 		{
 				Method	=> "INVITE",
@@ -478,7 +493,7 @@ $testheader$proxyauthheader
     }
 
     if ($Method eq 'INVITE' and $code >= 200) {
-	send_ack($response, $my_via, $sipuri, $Socket, $use_udp, $testname, $dst, $quiet) or close ($Socket), return 0;
+	send_ack($response, $my_via, $sipuri, $Socket, $use_udp, $testname, $testheader, $dst, $quiet) or close ($Socket), return 0;
     }
 
     my $match = 0;
@@ -546,12 +561,18 @@ sub send_ack
     my $Socket = shift;
     my $is_udp = shift;
     my $testname = shift;
+    my $testheader = shift;
     my $dst = shift;
     my $quiet = shift;
     my $MaxForwards;
 
     my $cseq = fetch_header("CSeq", $response);
     $cseq =~ s/INVITE/ACK/g;
+
+    my $extra_headers = "";
+    if ($testheader) {
+	$extra_headers = "$testheader\n";
+    }
 
     my $ack = join ("\n", "ACK $sipuri SIP/2.0",
 		    "Via: $my_via",
@@ -562,7 +583,7 @@ sub send_ack
 		    "Content-Length: 0",
 		    "Max-Forwards: $MaxForwards",
 		    "User-Agent: testclient.pl",
-		    "");
+		    $extra_headers);
 			      
     send_message($Socket, $is_udp, $testname, $ack, $dst, $quiet);
 }
@@ -774,11 +795,11 @@ sub parse_sipurl
 {
     my $in = shift;
 	
-    return $1 if ($in =~ /<(sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\._-]+)>/);
-    return $1 if ($in =~ /<(foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\._-]+)>/);
+    return $1 if ($in =~ /<(sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+)>/);
+    return $1 if ($in =~ /<(foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+)>/);
 	
-    return $in if ($in =~ /^sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\._-]+$/);
-    return $in if ($in =~ /^foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\._-]+$/);
+    return $in if ($in =~ /^sip:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
+    return $in if ($in =~ /^foo:[a-zA-Z0-9\._-]+\@[a-zA-Z0-9\.:_-]+$/);
 
     warn ("parse_sipurl: '$in' did not parse\n");
 
