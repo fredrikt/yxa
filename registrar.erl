@@ -45,7 +45,7 @@ start_link() ->
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
 init([]) ->
-    timer:apply_interval(60000, siplocation, remove_expired_phones, []),
+    timer:apply_interval(60000, phone, remove_expired_phones, []),
     logger:log(debug, "Registrar started"),
     {ok, #state{}}.
 
@@ -59,7 +59,7 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call(Request, From, State) ->
+handle_call(Request, _From, State) ->
     logger:log(error, "Registrar: Received unknown gen_server call : ~p", [Request]),
     {reply, {error, "Unknown gen_server call", State}}.
 
@@ -90,7 +90,7 @@ handle_info(Info, State) ->
 %% Description: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(Reason, _State) ->
     case Reason of
 	normal -> true;
 	_ -> logger:log(error, "Registrar terminating : ~p", [Reason])
@@ -102,7 +102,7 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
