@@ -6,12 +6,19 @@
 PROGRAMNAME="@PROGRAMNAME@"
 CONFIGDIR="@CONFIGDIR@"
 SSLCERTDIR="@SSLCERTDIR@"
-MNESIADIR="@MNESIADIR@/$PROGRAMNAME"
+MNESIABASE="@MNESIADIR@"
+MNESIADIR="$MNESIABASE/$PROGRAMNAME"
 beamdir="@beamdir@"
 erl="@erl@"
 DETACH="-detached"
 
 MYNAME=`basename $0`
+
+if [ "x$MYNAME" = "xbootstrap.sh" ]; then
+    # Adjust Mnesia dir path when bootstrapping so that it is the same as when
+    # we run the real system (incomingproxy is database server node)
+    MNESIADIR="$MNESIABASE/incomingproxy"
+fi
 
 # Calculate Erlang arguments
 CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
