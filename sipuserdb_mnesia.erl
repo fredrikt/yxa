@@ -86,7 +86,7 @@ get_users_for_address_of_record(Address) ->
 		{atomic, []} ->
 		    UserList;
 		{atomic, NumberUsers} ->
-		    lists:usort(UserList, lists:sort(NumberUsers));
+		    lists:umerge(lists:usort(UserList), lists:usort(NumberUsers));
 		Unknown2 ->
 		    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_users_for_number(), address ~p result : ~p",
 			       [Address, Unknown2]),
