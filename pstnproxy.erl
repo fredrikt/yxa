@@ -10,7 +10,7 @@ init() ->
     true.
 
 request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body, Socket, FromIP) ->
-    logger:log(normal, Method),
+    logger:log(normal, "~s sip:~s@sip-pstn.kth.se", [Method, User]),
     case Method of
 	"INVITE" ->
 	    request2(Method, User, Header, Body, Socket);
@@ -26,6 +26,7 @@ request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body,
 
 request(Method, URL, Header, Body, Socket, FromIP) ->
     {User, Pass, Host, Port, Parameters} = URL,
+    logger:log(normal, "~s ~s@sip-pstn.kth.se", [Method, sipurl:print(URL)]),
     Newlocation = {User, none, "kth.se", none, []},
     Route = "<" ++ sipurl:print({User, Pass, Host, Port,
 				 ["maddr=" ++ siphost:myip()]}) ++ ">",
@@ -46,4 +47,5 @@ request2(Method, Phone, Header, Body, Socket) ->
 				Method, Classdefs).
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
+    logger:log(normal, "~p", [Status]),
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
