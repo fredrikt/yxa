@@ -89,7 +89,7 @@ canonify_user("sip:" ++ User) ->
     "sip:" ++ User;
 canonify_user(Fulluser) ->
     case string:tokens(Fulluser, "@") of
-        [User, Host] ->
+        [_User, _Host] ->
             "sip:" ++ Fulluser;
         [User] ->
 	    "sip:" ++ User ++ "@" ++ sipauth:realm()
@@ -123,7 +123,7 @@ canonify_numberlist([Number | Rest]) ->
 lookup_homedomain_url(URL) when record(URL, sipurl) ->
     none.
 
-lookup_remote_url(URL) ->
+lookup_remote_url(_URL) ->
     none.
 
 is_request_to_this_proxy(Request) when record(Request, request) ->
@@ -154,7 +154,7 @@ lookup_address_to_users(Address) ->
 lookupappserver(Key) ->
     lookup:lookupappserver(Key).
 
-prioritize_locations(Key, Locations) ->
+prioritize_locations(_Key, Locations) ->
     siplocation:prioritize_locations(Locations).
 
 lookupdefault(URL) ->
@@ -207,7 +207,7 @@ get_remote_party_number(URL, DstHost) when is_record(URL, sipurl) ->
 %% Returns : {ok, Number}
 %%           Number = string()
 %%--------------------------------------------------------------------
-format_number_for_remote_party_id(Number, URL, DstHost) when is_list(Number), is_record(URL, sipurl) ->
+format_number_for_remote_party_id(Number, URL, _DstHost) when is_list(Number), is_record(URL, sipurl) ->
     {ok, Number}.
 
 %%--------------------------------------------------------------------
@@ -363,7 +363,7 @@ canonify_authusername(Username, Header) when is_list(Username), is_record(Header
 % incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
-incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, siporigin), record(Request, request) ->
+incomingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origin, siporigin), is_record(Request, request) ->
     true.
 
 % sippipe hooks
@@ -391,6 +391,6 @@ incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, s
 %%           Reason = string(), SIP reason phrase
 %%           NewDstList = list() of sipdst record()
 %%--------------------------------------------------------------------
-sippipe_received_response(Request, Response, DstList) when is_record(Request, request),
+sippipe_received_response(Request, Response, _DstList) when is_record(Request, request),
 							   is_record(Response, response) ->
     undefined.
