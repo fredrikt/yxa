@@ -160,8 +160,12 @@ parse_register_expire(Header, Contact) ->
     end.
 
 remove_expired_phones() ->
-    {atomic, Expired} = phone:expired_phones(),
-    remove_phones(Expired).
+    case phone:expired_phones() of
+	{atomic, Expired} ->
+	    remove_phones(Expired);
+	{aborted, _} ->
+	    true
+    end.
 
 remove_phones([]) ->
     true;
