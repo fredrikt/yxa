@@ -112,7 +112,9 @@ lookupphone(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     case homedomain(Host) of
 	true ->
+	    logger:log(debug, "Routing: ~p is a local domain", [Host]),
 	    Loc1 = lookuproute(User),
+	    logger:log(debug, "Routing: lookuproute on ~p @ ~p -> ~p", [User, Host, Loc1]),
 	    Loc2 = case Loc1 of
 		       none ->
 			   lookupmail(User, Host);
@@ -123,14 +125,17 @@ lookupphone(URL) ->
 		none ->
 		    case isours(User) of
 			true ->
+			    logger:log(debug, "Routing: ~p is one of our users, returning none", [User]),
 			    none;
 			false ->
+			    logger:log(debug, "Routing: ~p isn't one of our users - routing towards default", [User]),
 			    lookupdefault(User)
 		    end;
 		Loc2 ->
 		    Loc2
 	    end;
 	_ ->
+	    logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
 	    {relay, URL}
     end.
 
