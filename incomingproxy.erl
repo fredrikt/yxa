@@ -283,7 +283,7 @@ route_request(Request) when record(Request, request) ->
 	[] ->
 	    Loc1 = case local:homedomain(URL#sipurl.host) of
 		       true ->
-			   case is_request_to_me(Method, URL, Header) of
+			   case local:is_request_to_this_proxy(Request) of
 			       true ->
 				   {me};
 			       _ ->
@@ -304,36 +304,6 @@ route_request(Request) when record(Request, request) ->
 	    logger:log(debug, "Routing: Request has Route header, following Route."),
 	    {relay, route}
     end.
-
-
-%% Function: is_request_to_me/3
-%% Description: Check if a request is destined for this proxy. Not
-%%              for a domain handled by this proxy, but for this
-%%              proxy itself.
-%% Returns : true  |
-%%           false
-%%--------------------------------------------------------------------
-is_request_to_me(_, URL, Header) when record(URL, sipurl), URL#sipurl.user == none ->
-    true;
-is_request_to_me("OPTIONS", URL, Header) when record(URL, sipurl) ->
-    % RFC3261 # 11 says a proxy that receives an OPTIONS request with a Max-Forwards less than one
-    % MAY treat it as a request to the proxy.
-    MaxForwards =
-	case keylist:fetch("Max-Forwards", Header) of
-	    [M] ->
-		lists:min([255, list_to_integer(M) - 1]);
-	    [] ->
-		70
-	end,
-    if
-	MaxForwards < 1 ->
-	    logger:log(debug, "Routing: Request is OPTIONS and Max-Forwards < 1, treating it as a request to me."),
-	    true;
-	true ->
-	    false
-    end;
-is_request_to_me(_, URL, _) when record(URL, sipurl) ->
-    false.
 
 
 %% Function: request_to_homedomain/1
