@@ -1,8 +1,6 @@
 -module(incomingproxy).
 -export([start/2, remove_expired_phones/0]).
 
--include("database_regexproute.hrl").
-
 start(normal, Args) ->
     Pid = spawn(sipserver, start, [fun init/0, fun request/6,
 				   fun response/6, none, true]),
@@ -13,49 +11,6 @@ init() ->
     database_regexproute:create(),
     timer:apply_interval(60000, ?MODULE, remove_expired_phones, []).
 
-lookupregexproute(User) ->
-    {atomic, Routes} = database_regexproute:list(),
-    Sortedroutes = lists:sort(fun (Elem1, Elem2) -> 
-				      Prio1 = lists:keysearch(priority, 1, Elem1#regexproute.flags),
-				      Prio2 = lists:keysearch(priority, 1, Elem2#regexproute.flags),
-				      case {Prio1, Prio2} of
-					  {_, false} ->
-					      true;
-					  {false, _} ->
-					      false;
-					  {{value, {priority,P1}}, {value, {priority,P2}}} when P1 >= P2 ->
-					      true;
-					  _ ->
-					      false
-				      end
-			      end, Routes),
-    Rules = lists:map(fun(R) ->
-			      {R#regexproute.regexp, sipurl:print(R#regexproute.address)}
-		      end, Sortedroutes),
-    case util:regexp_rewrite(User, Rules) of
-	nomatch ->
-	    none;
-	Result ->
-	    {proxy, sipurl:parse(Result)}
-    end.
-
-lookuproute(User) ->
-    case phone:get_phone(User) of
-	{atomic, []} ->
-	    Loc = lookupregexproute(User),
-	    logger:log(debug, "Routing: Phone-lookup of ~p -> ~p", [User, Loc]),
-	    Loc;
-	{atomic, Locations} ->
-	    {Location, _, _, _} = siprequest:location_prio(Locations),
-	    logger:log(debug, "Routing: Phone-lookup of ~s -> ~p", [User, Location]),
-	    case Location of
-		{error, Errorcode} ->
-		    {error, Errorcode};
-		_ ->
-		    {proxy, Location}
-	    end
-    end.
-
 lookupmail(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     Loc1 = local:lookup_homedomain_url(URL),
@@ -64,7 +19,7 @@ lookupmail(URL) ->
 	none ->
 	    none;
 	Loc1 ->
-	    case lookuproute(Loc1) of
+	    case lookup:lookupuser(Loc1) of
 		none ->
 		    lookupdefault(Loc1);
 		Loc2 ->
@@ -98,22 +53,9 @@ lookupdefault(User) ->
 	    none
     end.
 
-homedomain(Domain) ->
-    util:casegrep(Domain, sipserver:get_env(homedomain)).
-
-isours(Number) ->
-    case phone:get_users_for_number(Number) of
-	{atomic, []} ->
-	    false;
-	{atomic, _} ->
-	    true;
-	{aborted, _} ->
-	    false
-    end.
-
 lookupphone(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    case homedomain(Host) of
+    case lookup:homedomain(Host) of
 	true ->
 	    request_to_homedomain(URL);
 	_ ->
@@ -128,7 +70,7 @@ request_to_homedomain(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     Key = sipuser(URL),
     logger:log(debug, "Routing: ~p is a local domain", [Host]),
-    Loc1 = lookuproute(Key),
+    Loc1 = lookup:lookupuser(Key),
     logger:log(debug, "Routing: lookuproute on ~p -> ~p", [Key, Loc1]),
     Loc2 = case Loc1 of
 	       none ->
@@ -138,7 +80,7 @@ request_to_homedomain(URL) ->
 	   end,
     case Loc2 of
 	none ->
-	    case isours(Key) of
+	    case lookup:isours(Key) of
 		true ->
 		    logger:log(debug, "Routing: ~p is one of our users, returning 480 Users location currently unknown", [Key]),
 		    {response, 480, "Users location currently unknown"};
