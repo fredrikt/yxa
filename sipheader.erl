@@ -20,7 +20,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 expire/1,
+	 expires/1,
 	 to/1,
 	 from/1,
 	 contact/1,
@@ -157,13 +157,13 @@ comma(Parsed, [], false, false) ->
     [lists:reverse(string:strip(Parsed, both))].
 
 %--------------------------------------------------------------------
-%% Function: expire(Header)
+%% Function: expires(Header)
 %%           Header = keylist record()
 %% Descrip.: get the value of the "Expires" header
-%% Returns : [Expire] | []
-%%           Expire = numerical string()
+%% Returns : [Expires] | []
+%%           Expires = numerical string()
 %%--------------------------------------------------------------------
-expire(Header) when is_record(Header, keylist) ->
+expires(Header) when is_record(Header, keylist) ->
     keylist:fetch('expires', Header).
 
 %%--------------------------------------------------------------------
@@ -265,9 +265,10 @@ topvia(Header) when is_record(Header, keylist) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: print_parameters(In)
+%%           In = list() of string()
 %% Descrip.: print string() separated by ";"
-%% Returns :
+%% Returns : Res = string()
 %%--------------------------------------------------------------------
 print_parameters([]) ->
     "";
@@ -275,9 +276,11 @@ print_parameters([A | B]) ->
     ";" ++ A ++ print_parameters(B).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.: print via record() or list() of via record()
-%% Returns :
+%% Function: via_print(Via)
+%%           Via = via record()
+%% Descrip.: Print via record() or list() of via record().
+%% Returns : list() of ViaStr
+%%           ViaStr = string()
 %%--------------------------------------------------------------------
 via_print(Via) when is_record(Via, via) ->
     via_print([Via]);
@@ -314,20 +317,28 @@ contact_print2([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
+%% Function: auth_print(Auth)
+%%           auth_print(Auth, Stale)
+%%           Auth     = {Realm, Nonce, Opaque} tuple()
+%%             Realm  = string()
+%%             Nonce  = string()
+%%             Opaque = string()
+%%           Stale    = true | false
+%% Descrip.: Generate the value of an WWW-Authenticate that we need
+%%           when challenging a REGISTER, or a Proxy-Authenticate that
+%%           we put in other challenges of a request.
 %% Returns :
 %%--------------------------------------------------------------------
-auth_print(Auth) ->
+auth_print(Auth) when is_tuple(Auth) ->
     auth_print(Auth, false).
 
-auth_print(Auth, Stale) ->
+auth_print(Auth, Stale) when is_tuple(Auth), is_atom(Stale) ->
     {Realm, Nonce, Opaque} = Auth,
     ["Digest realm=\"" ++ Realm ++ "\", nonce=\"" ++ Nonce ++ "\", opaque=\"" ++ Opaque ++ "\"" ++
      case Stale of
 	 true ->
 	     ", stale=true";
-	 _ ->
+	 false ->
 	     ""
      end
     ].
@@ -335,7 +346,7 @@ auth_print(Auth, Stale) ->
 %%--------------------------------------------------------------------
 %% Function: auth([In])
 %%           In = string()
-%% Descrip.: parse authrization header
+%% Descrip.: Parse an authorization header.
 %% Returns : throw() | dict()
 %%--------------------------------------------------------------------
 auth([In]) when is_list(In) ->
@@ -352,22 +363,23 @@ auth([In]) when is_list(In) ->
 	    auth2(LCfw, Rest)
     end.
 
-auth2("gssapi", String) ->
-    Headers = comma(String),
-    F = fun get_name_and_value/1,
-    L = lists:map(F , Headers),
-    dict:from_list(L);
 
-auth2("digest", String) ->
+%% auth2: part of auth/1, Returns : dict() | throw({siperror, ...})
+%%
+%% Type is "digest" or "gssapi"
+%%
+auth2(Type, String) when Type == "digest"; Type == "gssapi", is_list(String) ->
     Headers = comma(String),
-    F = fun get_name_and_value/1,
-    L = lists:map(F, Headers),
+    L = lists:map(fun get_name_and_value/1, Headers),
     dict:from_list(L);
-
+%%
+%% Type is something we don't recognize
+%%
 auth2(Type, String) ->
     logger:log(error, "sipheader:auth2() called with unrecognized authentication data (~p, ~p)", [Type, String]),
     throw({siperror, 500, "Server Internal Error"}).
 
+%% part of auth2, Returns : {Name, UnquotedValue}
 get_name_and_value(Str) ->
     H = string:strip(Str,left),
     Index = string:chr(H, $=),
@@ -408,10 +420,10 @@ param_to_dict(Param) ->
 		  end, Param),
     dict:from_list(L).
 
-%% convert (2) hex codes to singel 8 bit char
+%% convert (2) hex codes to single 8 bit char
 unescape([]) ->
     [];
-unescape([$%, C1, C2 | Rest]) ->
+unescape([37, C1, C2 | Rest]) ->	%% 37 is $%
     [hex:from([C1, C2]) | unescape(Rest)];
 unescape([C | Rest]) ->
     [C | unescape(Rest)].
@@ -495,8 +507,12 @@ callid(Header) when is_record(Header, keylist) ->
 %%--------------------------------------------------------------------
 %% Function: build_header_binary(Header)
 %%           Header = keylist record()
-%% Descrip.: build a sip header
-%% Returns : binary() | throw()
+%% Descrip.: Build a SIP header we can combine with a first line and
+%%           body to create a message to send out on the wire. We try
+%%           to prioritize speed here, so we don't spend extra cycles
+%%           making the resulting data uniformed. We might return a
+%%           list of lists of binaries, or just binaries.
+%% Returns : I/O list() | throw()
 %%--------------------------------------------------------------------
 build_header_binary(Header) when is_record(Header, keylist) ->
     case catch build_header_unsafe_binary(Header) of
@@ -517,28 +533,33 @@ build_header_unsafe_binary(Header) ->
 print_one_header_binary(_, _, []) ->
     [];
 print_one_header_binary(Key, Name, ValueList) ->
-    %% certain headers that have multple values are written on a single line separated by "," -
+    %% certain headers that have multiple values are written on a single line separated by "," -
     %% this is not because any RFC says so but because these are common headers that look
     %% considerably much better when appearing on one line
     OneLine =
 	if
-	    Key == accept ->		true;
-	    Key == allow ->		true;
+	    Key == 'accept' ->		true;
+	    Key == 'allow' ->		true;
 	    Key == 'allow-events' ->	true;
-	    Key == supported ->		true;
-	    Key == require ->		true;
+	    Key == 'supported' ->	true;
+	    Key == 'require' ->		true;
 	    Key == 'proxy-require' ->	true;
 	    Key == 'rtp-rxstat' ->	true;	%% Cisco 79xx
 	    Key == 'rtp-txstat' ->	true;	%% Cisco 79xx
 	    true -> false
 	end,
-    MakeBin = fun(V) ->                      list_to_binary(V)
-              end,
-    BinValueList = lists:map(MakeBin, ValueList),
     BinName = list_to_binary(Name),
-    print_one_header_binary2(OneLine, BinName, BinValueList).
+    print_one_header_binary2(OneLine, BinName, ValueList, []).
 
-print_one_header_binary2(true, BinName, BinValueList) ->
+%% print_one_header_binary2 - convert all the values to binarys
+print_one_header_binary2(OneLine, BinName, [H | T], Res) ->
+    print_one_header_binary2(OneLine, BinName, T, [list_to_binary(H) | Res]);
+print_one_header_binary2(OneLine, BinName, [], Res) ->
+    print_one_header_binary3(OneLine, BinName, lists:reverse(Res)).
+    
+%% print_one_header_binary3 - create the binary representation of this header
+%% and all it's values
+print_one_header_binary3(true, BinName, BinValueList) ->
     %% return as one line
     OneLine = fun(Value, Acc) ->
 		      case Acc of
@@ -552,17 +573,18 @@ print_one_header_binary2(true, BinName, BinValueList) ->
 	      end,
     BinValues = lists:foldl(OneLine, [], BinValueList),
     list_to_binary([BinName, $:, 32, BinValues, 13, 10]);
-print_one_header_binary2(false, BinName, [First | Rest]) ->
+
+print_one_header_binary3(false, BinName, [First | Rest]) ->
     %% Return one "Key: Value" for every element in BinValueList
     This = list_to_binary([BinName, $:, 32, First, 13, 10]),	%% Name: First\r\n
-    [This | print_one_header_binary2(false, BinName, Rest)];
-print_one_header_binary2(false, _BinName, []) ->
+    [This | print_one_header_binary3(false, BinName, Rest)];
+print_one_header_binary3(false, _BinName, []) ->
     [].
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: get_tag([String])
+%% Descrip.: Get From- or To-tag from from- or to-header value.
+%% Returns : Tag = string() | none
 %%--------------------------------------------------------------------
 get_tag([String]) ->
     Index = string:chr(String, $>),
@@ -592,9 +614,13 @@ dialogid(Header) when is_record(Header, keylist) ->
     {CallID, FromTag, ToTag}.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
+%% Function: via_sentby(Via)
+%%           Via = via record()
+%% Descrip.: Extract sent-by part of a via record()
 %% Returns : {Proto, Host, Port}
+%%           Proto = string()
+%%           Host  = string()
+%%           Port  = integer()
 %%--------------------------------------------------------------------
 via_sentby(Via) when is_record(Via, via) ->
     {Via#via.proto, Via#via.host, Via#via.port}.
@@ -971,7 +997,7 @@ guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, 
 %%--------------------------------------------------------------------
 test() ->
 
-    %% test comma/1
+    %% test comma(String)
     %%--------------------------------------------------------------------
     %% test empty string
     io:format("test: comma/1 - 1~n"),
@@ -1016,7 +1042,7 @@ test() ->
     %% test commas inside <>!
 
 
-    %% test via/1
+    %% test via(ViaList)
     %%--------------------------------------------------------------------
     io:format("test: via/1 - 1~n"),
     [#via{proto="SIP/2.0/TLS", host="192.0.2.123", port=none, param=[]}] =
@@ -1054,9 +1080,9 @@ test() ->
     io:format("test: via/1 - 9~n"),
     %% test unparsable via - fail inside sipparse_util:parse_hostport() since there is a 500 in the address
     {'EXIT', _} = (catch via(["SIP/2.0/TLS 192.0.2.500:5060"])),
-    
-    
-    %% test get_server_transaction_id/1
+
+
+    %% test get_server_transaction_id(Request)
     %%--------------------------------------------------------------------
 
     io:format("test: get_server_transaction_id/1 - 1.1~n"),
@@ -1075,7 +1101,7 @@ test() ->
     io:format("test: get_server_transaction_id/1 - 1.2~n"),
     %% check result
     {"z9hG4bK-really-unique", {"SIP/2.0/TLS", "sip.example.org", 5061}, "INVITE"} = Invite1Id,
-    
+
     io:format("test: get_server_transaction_id/1 - 2~n"),
     %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123"
     AckInvite1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], InviteHeader1),
@@ -1123,9 +1149,9 @@ test() ->
      {"2","INVITE"},
      {via,"SIP/2.0/TLS","sip.example.org",5061,[]}
     } = Invite2543_1AckId,
-    
+
     io:format("test: get_server_transaction_id/1 - 6~n"),
-    %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123", check that 
+    %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123", check that
     %% get_server_transaction_id refuses and tells us it is an 2543 ACK
     AckInvite2543_1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], Invite2543_1Header),
     AckInvite2543_1Header   = keylist:set("CSeq", ["2 ACK"], AckInvite2543_1Header_1),
@@ -1143,27 +1169,28 @@ test() ->
     AckInvite2543_1Id = Invite2543_1AckId,
 
 
-    %% test get_client_transaction_id/1
+    %% test get_client_transaction_id(Response)
     %%--------------------------------------------------------------------
     io:format("test: get_client_transaction_id/1 - 1~n"),
     Response1 = #response{status=699, reason="foo", header=Invite2543_1Header, body = <<>>},
     {"not-really-unique", "INVITE"} = get_client_transaction_id(Response1),
 
 
-    %% test contact/1. No full test of parameters - we don't test the actual contact parsing here.
+    %% test contact(Header)
+    %% No full test of parameters - we don't test the actual contact parsing here.
     %%--------------------------------------------------------------------
     ContactHeader1 = keylist:from_list([
 					{"From", ["Test <sip:alice@example.org>;tag=f-abc"]},
 					{"Contact", ["<sip:bob@example.org>;lr=true"]}
 				       ]),
-    
+
     io:format("test: contact/1 - 1~n"),
     %% test using list key
     [#contact{urlstr="sip:bob@example.org"}] = contact(ContactHeader1),
 
 
-
-    %% test contact/2. No full test of parameters - we don't test the actual contact parsing here.
+    %% test contact(Header, Name).
+    %% No full test of parameters - we don't test the actual contact parsing here.
     %%--------------------------------------------------------------------
     io:format("test: contact/2 - 1~n"),
     %% test using atom key
@@ -1173,5 +1200,148 @@ test() ->
     %% test using list key
     [#contact{urlstr="sip:alice@example.org"}] = contact(ContactHeader1, "From"),
 
+
+    %% test via_sentby(Via)
+    %%--------------------------------------------------------------------
+    io:format("test: via_sentby/1 - 1~n"),
+    {"proto", "host", 1234} = via_sentby(#via{proto="proto", host="host", port=1234}),
+					 
+					 
+    %% test via_print(Via)
+    %%--------------------------------------------------------------------
+    ViaPrint1 = #via{proto = "SIP/2.0/UDP",
+		     host = "example.org",
+		     port = 5060,
+		     param = ["foo=bar", "user=ft"]
+		    },
+    ViaPrint1_Str = "SIP/2.0/UDP example.org:5060;foo=bar;user=ft",
+
+    ViaPrint2 = ViaPrint1#via{port = none},
+    ViaPrint2_Str = "SIP/2.0/UDP example.org;foo=bar;user=ft",
+
+    io:format("test: via_print/1 - 1~n"),
+    %% one Via
+    [ViaPrint1_Str] = via_print([ViaPrint1]),
+
+    io:format("test: via_print/1 - 2~n"),
+    %% two Vias
+    [ViaPrint1_Str, ViaPrint2_Str] = via_print([ViaPrint1, ViaPrint2]),
+
+    
+    %% test auth([In])
+    %%--------------------------------------------------------------------
+    AuthIn1 = ["Digest response=\"1response1\", uri=\"2bar2\""],
+    AuthIn2 = ["GSSAPI response=\"1response1\", uri=\"2bar2\""],
+    AuthIn3 = ["Unknown response=\"1response1\", uri=\"2bar2\""],
+
+    AuthOut = [{"response","1response1"},{"uri","2bar2"}],
+
+    io:format("test: auth/1 - 1~n"),
+    %% digest
+    AuthOut = lists:keysort(1, dict:to_list(
+				 sipheader:auth(AuthIn1)
+				)),
+
+    io:format("test: auth/1 - 2~n"),
+    %% GSSAPI
+    AuthOut = lists:keysort(1, dict:to_list(
+				 sipheader:auth(AuthIn2)
+				)),
+
+    io:format("test: auth/1 - 3~n"),
+    %% Unknown
+    {siperror, 500, "Server Internal Error"} = (catch sipheader:auth(AuthIn3)),
+
+
+    %% test param_to_dict(Param)
+    %%--------------------------------------------------------------------
+    io:format("test: param_to_dict/1 - 1~n"),
+    %% test simple case
+    [{"foo", "bar"}] = dict:to_list(
+			 sipheader:param_to_dict(["foo=bar"])
+			),
+
+    io:format("test: param_to_dict/1 - 1~n"),
+    %% test more complicated case - uppercase in key, escaped characters in value and multiple entrys
+    ["foo=bAr", "user=ft"] = dict_to_param( sipheader:param_to_dict(["Foo=b%41r", "user=ft"]) ),
+
+
+    %% test cseq(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: cseq/1 - 1~n"),
+    %% test valid CSeq
+    {"1", "INVITE"} = cseq( keylist:from_list([{"CSeq", ["1 INVITE"]}]) ),
+
+    io:format("test: cseq/1 - 2~n"),
+    %% test invalid CSeq
+    {unparseable, "INVITE_1"} = cseq( keylist:from_list([{"CSeq", ["INVITE_1"]}]) ),
+
+
+    %% test cseq_print({Seq, Method})
+    %%--------------------------------------------------------------------
+    io:format("test: cseq_print/1 - 1~n"),
+    "1 INVITE" = cseq_print({"1", "INVITE"}),
+
+
+    %% test callid(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: callid/1 - 1~n"),
+    "call-id-test" = callid( keylist:from_list([{"Call-Id", ["call-id-test"]}]) ),
+
+
+    %% test build_header_binary(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: build_header_binary/1 - 1~n"),
+    %% test single header
+    [[<<"Call-Id: call-id-test\r\n">>]] = build_header_binary( keylist:from_list([{"Call-Id", ["call-id-test"]}]) ),
+
+    io:format("test: build_header_binary/1 - 2~n"),
+    %% test multiple values
+    [[<<"Via: via1\r\n">>, <<"Via: via2\r\n">>]] = build_header_binary( keylist:from_list([{"Via", ["via1", "via2"]}]) ),
+
+
+    io:format("test: build_header_binary/1 - 3~n"),
+    %% test more complex case
+    BuildHeaderBin_H1 = keylist:from_list([{"Via", ["via1", "via2"]},
+					   {"Call-Id", ["call-id-test"]},
+					   {"Accept", ["accept1", "accept2"]},
+					   {"Date", ["Thu, 10 Feb 2005 14:41:04 GMT"]}
+					  ]),
+
+    [[<<"Via: via1\r\n">>,
+      <<"Via: via2\r\n">>],
+     [<<"Call-Id: call-id-test\r\n">>],
+     <<"Accept: accept1, accept2\r\n">>,
+     [<<"Date: Thu, 10 Feb 2005 14:41:04 GMT\r\n">>]] = build_header_binary(BuildHeaderBin_H1),
+
+
+    %% test get_tag([String])
+    %%--------------------------------------------------------------------
+    io:format("test: get_tag/1 - 1~n"),
+    "foo" = get_tag(["\"Fredrik\" <sip:ft@example.org>;test=auto;tag=foo"]),
+
+    io:format("test: get_tag/1 - 2~n"),
+    "foo" = get_tag(["\"Fredrik\" <sip:ft@example.org>;tag=foo;test=auto"]),
+
+    io:format("test: get_tag/1 - 3~n"),
+    none = get_tag(["\"Fredrik\" <sip:ft@example.org>;test=auto"]),
+
+
+    %% test dialogid(Header)
+    %%--------------------------------------------------------------------
+    DialogHeader1 = keylist:from_list([{"Call-Id", ["call-id-test"]},
+				       {"From", ["<sip:ft@example.org>;tag=fromtag"]},
+				       {"To", ["<sip:ft@example.org>;tag=totag"]}
+				      ]),
+
+    io:format("test: dialogid/1 - 1~n"),
+    {"call-id-test", "fromtag", "totag"} = dialogid(DialogHeader1),
+
+    io:format("test: dialogid/1 - 2~n"),
+    {"call-id-test", "fromtag", none} = dialogid(keylist:set("To", ["foo"], DialogHeader1)),
+
+    io:format("test: dialogid/1 - 3~n"),
+    {"call-id-test", none, "totag"} = dialogid(keylist:set("From", ["foo"], DialogHeader1)),
+    
 
     ok.
