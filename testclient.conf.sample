@@ -1,0 +1,22 @@
+# sample testclient.conf
+#
+
+$mydomain = 'example.com';
+$incomingproxy = 'incomingproxy.example.com';
+$pstnproxy = 'pstnproxy.example.com';
+$testserver = 'incomingproxy.example.com:5070';
+$testuser_address = 'test@example.com';
+$testuser_user = 'test';
+$testuser_password = 'foo';
+
+%local_tests = (
+	     "LOCAL-OPTIONS" =>
+		{
+				Method	=> "OPTIONS",
+				RequestURI => "sip:$incomingproxy",
+		     		From	=> $default_from,
+		     		To	=> $testuser_address,
+		     		sendto	=> $incomingproxy,
+				expect	=> 200
+		}
+);
