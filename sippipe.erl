@@ -23,20 +23,34 @@
 %% Returns: Does not matter
 %%--------------------------------------------------------------------
 
-start(ServerHandler, ClientPid, Request, URI, Timeout) when record(URI, sipurl) ->
+start(ServerHandler, ClientPid, Request, URI, Timeout) when record(Request, request) ->
+    case catch guarded_start(ServerHandler, ClientPid, Request, URI, Timeout) of
+	{'EXIT', Reason} ->
+	    logger:log(error, "=ERROR REPORT==== from sippipe :~n~p", [Reason]),
+	    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error");
+	Res ->
+	    Res
+    end.
+
+%%
+%% Dst is an URI
+%%
+guarded_start(ServerHandler, ClientPid, Request, URI, Timeout) when record(URI, sipurl) ->
     %% URI input
     Dst = #sipdst{uri=URI},
     logger:log(debug, "sippipe: Made sipdst record out of URI input : ~s", [sipurl:print(URI)]),
-    start(ServerHandler, ClientPid, Request, [Dst], Timeout);
+    guarded_start(ServerHandler, ClientPid, Request, [Dst], Timeout);
 
-start(ServerHandler, ClientPid, Request, route, Timeout) ->
+%%
+%% Dst == route
+%%
+guarded_start(ServerHandler, ClientPid, Request, route, Timeout) ->
     %% Request should have a Route header
     %% URI passed to process_route_header is foo here
     case siprequest:process_route_header(Request#request.header, Request#request.uri) of
 	nomatch ->
 	    logger:log(error, "sippipe: No destination given, and request has no Route header"),
-	    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
-	    error;
+	    erlang:fault("no destination and no route", [ServerHandler, ClientPid, Request, route, Timeout]);
 	{ok, NewHeader, DstURI, ReqURI} when record(DstURI, sipurl), record(ReqURI, sipurl) ->
 	    {ok, _, ApproxMsgSize} = siprequest:check_proxy_request(Request),
 	    logger:log(debug, "sippipe: Routing request as per the Route header, Destination ~p, Request-URI ~p",
@@ -52,7 +66,7 @@ start(ServerHandler, ClientPid, Request, route, Timeout) ->
 		    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving Route destination"),
 		    error;
                 DstList when list(DstList) ->
-                    start(ServerHandler, ClientPid, Request, DstList, Timeout);
+                    guarded_start(ServerHandler, ClientPid, Request, DstList, Timeout);
                 Unknown ->
                     logger:log(error, "sippipe: Failed resolving URI ~s : ~p", [sipurl:print(DstURI), Unknown]),
 		    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving Route destination"),
@@ -66,7 +80,7 @@ start(ServerHandler, ClientPid, Request, route, Timeout) ->
     end;
 
 %% First, we want to get the branch base from an existing ServerHandler
-start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(Request, request), list(DstList) ->
+guarded_start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(Request, request), list(DstList) ->
     case transactionlayer:is_good_transaction(ServerHandler) of
 	true ->
 	    %% Adopt server transaction and then continue
@@ -75,7 +89,7 @@ start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(Request, 
 		    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
 		    error;
 		Branch ->
-		    start2(Branch, ServerHandler, ClientPid, Request, DstList, Timeout)
+		    guarded_start2(Branch, ServerHandler, ClientPid, Request, DstList, Timeout)
 	    end;
 	false ->
 	    %% Either dead transaction handler, or none supplied. Try to find a valid handler
@@ -93,19 +107,26 @@ start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(Request, 
 			    transactionlayer:send_response_handler(STHandler, 500, "Server Internal Error"),
 			    error;
 			Branch ->
-			    start2(Branch, STHandler, ClientPid, Request, DstList, Timeout)
+			    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout)
 		    end
 	    end	
     end.
 
-%% A client pid was supplied to us, go to work
-start2(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout) when record(Request, request), ClientPid /= none ->
-    start3(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout);
+%%
+%% ClientPid /= none
+%%
+guarded_start2(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout) when record(Request, request), ClientPid /= none ->
+    %% A client pid was supplied to us, go to work
+    final_start(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout);
 
-%% No client transaction handler is specified, start a client transaction on the first
-%% element from the destination list, after making sure it is complete.
-start2(Branch, ServerHandler, _, Request, [Dst | DstT], Timeout) when record(Request, request), record(Dst, sipdst) ->
-    case resolve_if_necessary([Dst | DstT]) of
+%%
+%% ClientPid == none
+%%
+guarded_start2(Branch, ServerHandler, _, Request, [DstIn | DstInT], Timeout) when record(Request, request), record(DstIn, sipdst) ->
+    %% No client transaction handler is specified, start a client transaction on the first
+    %% element from the destination list, after making sure it is complete.
+    DstListIn = [DstIn | DstInT],
+    case resolve_if_necessary(DstListIn) of
 	[] ->
 	    logger:log(error, "sippipe: Failed starting sippipe, no valid destination(s) found"),
 	    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
@@ -114,7 +135,7 @@ start2(Branch, ServerHandler, _, Request, [Dst | DstT], Timeout) when record(Req
 	    DstList = [FirstDst | DstT],
 	    case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, Timeout, self()) of
 		BranchPid when pid(BranchPid) ->
-		    start3(Branch, ServerHandler, BranchPid, Request, DstList, Timeout);
+		    final_start(Branch, ServerHandler, BranchPid, Request, DstList, Timeout);
 		{error, E} ->
 		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
 		    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
@@ -123,11 +144,12 @@ start2(Branch, ServerHandler, _, Request, [Dst | DstT], Timeout) when record(Req
     end.
 
 %% Do piping between a now existing server and client transaction handler.
-start3(Branch, ServerHandler, ClientPid, Request, DstList, Timeout) when record(Request, request) ->
+final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout) when record(Request, request) ->
     StartTime = util:timestamp(),
     State=#state{branch=Branch, serverhandler=ServerHandler, clienthandler=ClientPid,
 		 request=Request, dstlist=DstList,
 		 timeout=Timeout, endtime = StartTime + Timeout, warntime = StartTime + 300},
+    logger:log(debug, "sippipe: All preparations finished, entering pipe loop"),
     loop(State).
 
 
