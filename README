@@ -236,6 +236,18 @@ remote_party_id			(default: false) If you set this to true, then
 				function will try to look up a name to use
 				in calls from the PSTN gateway, but I haven't
 				seen a phone that displays this yet.
+pstnproxy_no_sip_dst_code:	(default: 480) SIP error code to return for
+				requests from PSTN to SIP when the destination is
+				not found in ENUM, and no sipproxy has been
+				configured. This is configurable since you might
+				want your gateway to act in a special way in this
+				situation, for example falling back to using PSTN
+				or something.
+pstnproxy_redirect_on_enum:	(default: false) If you set this to true, we will
+				send a redirect (302) back to the caller when we
+				find a destination for the request in ENUM,
+				instead of proxying to the destination (only
+				applys to calls from PSTN to SIP).
 
 incomingproxy:
 --------------
