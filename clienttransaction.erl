@@ -69,13 +69,14 @@ loop(State) when record(State, state) ->
 	    {ok, NewState1};
 	    
 	{cancel, Msg} ->
-	    logger:log(debug, "~s: Branch requested to cancel (~s) when in SIP-state '~p' (already cancelled: ~p)",
-			[LogTag, Msg, State#state.sipstate, State#state.cancelled]),
 	    NewState1 = case State#state.cancelled of
 		true ->
-		    logger:log(debug, "~s: Ignoring signal to cancel, I am already cancelled.", [LogTag]),
+		    logger:log(debug, "~s: Ignoring signal to cancel (~s) when in SIP-state '~p', I am already cancelled.",
+				[LogTag, Msg, State#state.sipstate]),
 		    State;
 		_ ->
+		    logger:log(debug, "~s: Branch requested to cancel (~s) when in SIP-state '~p'",
+				[LogTag, Msg, State#state.sipstate]),
 		    cancel_request(State)
 	    end,
 	    {ok, NewState1};
@@ -143,7 +144,7 @@ process_timer(Timer, State) when record(State, state) ->
 		    logger:log(debug, "~s: Resend after ~s (request -> ~s): ~s",
 		    	       [LogTag, siptimer:timeout2str(Timeout), sipurl:print(URI), Method]),
 		    Branch = State#state.branch,
-		    siprequest:send_proxy_request(State#state.socket, State#state.request,
+		    transportlayer:send_proxy_request(State#state.socket, State#state.request,
 						   URI, ["branch=" ++ Branch, {dst, State#state.dst}]),
 		    NewTimeout = get_request_resend_timeout(Method, Timeout, SipState),
 		    NewTimerList = siptimer:revive_timer(Timer, NewTimeout, State#state.timerlist),
@@ -156,7 +157,7 @@ process_timer(Timer, State) when record(State, state) ->
 	    end;
 
 	{resendrequest_timeout} ->
-	    logger:log(normal, "~s: Sending of ~s ~s timed out after ~p seconds",
+	    logger:log(normal, "~s: Sending of ~s ~s timed out after ~s seconds",
 			[LogTag, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
 	    SipState = State#state.sipstate,
 	    case SipState of
@@ -293,15 +294,25 @@ act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State) when record(S
 		    % Install TimerD with a minimum value of 32 seconds (RFC 3261 17.1.1.2)
 		    % or TimerK (T4, default 5 seconds) in case of non-INVITE request (17.1.2.2)
 		    % to stay alive for a few seconds collecting resends
-		    NewState2 = case Method of
-			"INVITE" ->
-			    TimerD = 32000,
-			    DDesc = "terminate client transaction INVITE " ++ sipurl:print(URI) ++ " (Timer D)",
-			    add_timer(TimerD, DDesc, {terminate_transaction}, NewState1);
+		    NewState2 = case sipsocket:is_reliable_transport(State#state.socket) of
+			true ->
+			    logger:log(debug, "~s: Transitioning to SIP-state 'terminated' (almost) immediately "
+					"since the transport used for this branch is reliable.",
+					[LogTag]),
+			    TimerDK = 1,
+			    DKDesc = "terminate client transaction " ++ sipurl:print(URI) ++ " (Timer D or Timer K)",
+			    add_timer(TimerDK, DKDesc, {terminate_transaction}, NewState1);
 			_ ->
-			    TimerK = sipserver:get_env(timerT4, 5000),
-			    KDesc = "terminate client transaction " ++ Method ++ " " ++ sipurl:print(URI) ++ " (Timer K)",
-			    add_timer(TimerK, KDesc, {terminate_transaction}, NewState1)
+			    case Method of
+				"INVITE" ->
+				    TimerD = 32 * 1000,
+				    DDesc = "terminate client transaction INVITE " ++ sipurl:print(URI) ++ " (Timer D)",
+				    add_timer(TimerD, DDesc, {terminate_transaction}, NewState1);
+				_ ->
+				    TimerK = sipserver:get_env(timerT4, 5000),
+				    KDesc = "terminate client transaction " ++ Method ++ " " ++ sipurl:print(URI) ++ " (Timer K)",
+				    add_timer(TimerK, KDesc, {terminate_transaction}, NewState1)
+			    end
 		    end,
 		    {NewState2, BranchAction};
 		terminated ->
@@ -332,7 +343,7 @@ perform_branchaction(BranchAction, State) when record(State, state) ->
 					[LogTag, R, Status, Reason]),
 			    Branch = State#state.branch,
 			    SipState = State#state.sipstate,
-			    R ! {branch_result, Branch, SipState, Response, Request};
+			    R ! {branch_result, Branch, SipState, Response};
 			_ ->
 			    logger:log(error, "~s: Client transaction orphaned ('~p' not alive) - not sending response ~p ~s to anyone",
 					[LogTag, R, Status, Reason])
@@ -462,7 +473,7 @@ initiate_request(State) when record(State, state) ->
     Dst = State#state.dst,
     Timeout = State#state.timeout,
     logger:log(normal, "~s: Sending ~s ~s", [LogTag, Method, sipurl:print(URI)]),
-    case siprequest:send_proxy_request(State#state.socket_in, Request, URI, ["branch=" ++ Branch, {dst, Dst}]) of
+    case transportlayer:send_proxy_request(State#state.socket_in, Request, URI, ["branch=" ++ Branch, {dst, Dst}]) of
 	{sendresponse, Status, Reason} ->
 	    logger:log(error, "~s: Transport layer failed sending ~s ~s to ~p, asked us to respond ~p ~s",
 			[LogTag, Method, sipurl:print(URI), Status, Reason]),
@@ -524,7 +535,7 @@ fake_request_response(Status, Reason, NewSipState, State) when record(State, sta
 	    logger:log(debug, "~s: Client transaction fowarding fake response ~p ~s to ~p",
 			[LogTag, Status, Reason, R]),
 	    Branch = State#state.branch,
-	    R ! {branch_result, Branch, NewSipState, FakeResponse, Request};
+	    R ! {branch_result, Branch, NewSipState, FakeResponse};
 	{false, R} ->
 	    logger:log(debug, "~s: Client transaction orphaned ('~p' not alive) - not sending fake response ~p ~s to anyone",
 			[LogTag, R, Status, Reason])
@@ -578,7 +589,7 @@ cancel_request(State) when record(State, state) ->
 	    case SipState of
 		calling ->
 		    logger:log(debug, "~s: Stopping resend of INVITE ~s, but NOT starting CANCEL client transaction " ++
-				" right now since we are in state 'calling'", [LogTag, sipurl:print(URI)]),
+				"right now since we are in state 'calling'", [LogTag, sipurl:print(URI)]),
 		    NewState2 = stop_resendrequest_timer(NewState1),
 		    NewState3 = NewState2#state{do_cancel=true},
 		    NewState3;
@@ -712,7 +723,10 @@ generate_ack({Status, Reason, RHeader, RBody}, State) when record(State, state),
     end,
     Socket = State#state.socket,
     Dst = State#state.dst,
-    Branch = State#state.branch,
+    % Must use branch from response (really from original request sent out, but that
+    % should be what is in the response) to make sure we get the exact same branch in this ACK.
+    TopVia = sipheader:topvia(RHeader),
+    Branch = sipheader:get_via_branch_full(TopVia),
     ACKRequest = {"ACK", URI, SendHeader, ""},
-    siprequest:send_proxy_request(Socket, ACKRequest, URI, ["branch=" ++ Branch, {dst, Dst}]),
+    transportlayer:send_proxy_request(Socket, ACKRequest, URI, ["branch=" ++ Branch, {dst, Dst}]),
     ok.
