@@ -9,28 +9,32 @@
 -module(sipsocket).
 
 -behaviour(supervisor).
-%%--------------------------------------------------------------------
-%% Include files
-%%--------------------------------------------------------------------
-
--include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
 -export([send/5,
 	 is_reliable_transport/1,
-	 get_socket/4,
+	 get_socket/2,
 	 viaproto2proto/1,
 	 proto2viastr/1,
 	 is_good_socket/1,
-	 proto2module/1]).
+	 proto2module/1,
+	 
+	 behaviour_info/1
+	]).
 
 %%--------------------------------------------------------------------
 %% Internal exports
 %%--------------------------------------------------------------------
 -export([start_link/0,
-	 init/1]).
+	 init/1
+	]).
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
 %% Macros
@@ -41,15 +45,34 @@
 %% Records
 %%--------------------------------------------------------------------
 
+
 %%====================================================================
 %% External functions
 %%====================================================================
+
 %%--------------------------------------------------------------------
 %% Function: start_link/0
 %% Descrip.: Starts the supervisor
 %%--------------------------------------------------------------------
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+
+%%--------------------------------------------------------------------
+%% Function: behaviour_info(callbacks)
+%% Descrip.: Describe all the API functions a module indicating it is
+%%           a sipsocket behaviour module must export. List of tuples
+%%           of the function names and their arity.
+%% Returns : list() of tuple()
+%%--------------------------------------------------------------------
+behaviour_info(callbacks) ->
+    [{start, 1},
+     {send, 5},
+     {is_reliable_transport, 1},
+     {get_socket, 1}
+    ];
+behaviour_info(_Other) ->
+    undefined.
+
 
 %%====================================================================
 %% Server functions
@@ -86,10 +109,10 @@ init([]) ->
 %%--------------------------------------------------------------------
 %% Function: send(Socket, Proto, Host, Port, Message)
 %%           Socket  = sipsocket record()
-%%           Proto   = atom(), (at least tcp|tcp6|udp|udp6|tls)
+%%           Proto   = atom(), tcp|tcp6|udp|udp6|tls|tls6|...
 %%           Host    = string()
 %%           Port    = integer()
-%%           Message = term()
+%%           Message = term(), I/O list to send
 %% Descrip.: Locate a sipsocket module through the Socket record(),
 %%           and then ask that sipsocket module to send Message to
 %%           Host, port Port using protocol Proto. Currently, none of
@@ -105,20 +128,17 @@ send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_a
     SipSocketM:send(Socket, Proto, Host, Port, Message).
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Module, Proto, Host, Port)
+%% Function: get_socket(Module, Dst)
 %%           Module = atom()
-%%           Proto  = atom(), (at least tcp | tcp6 | udp | udp6 | tls)
-%%           Host   = string()
-%%           Port   = integer()
+%%           Dst    = sipdst record()
 %% Descrip.: Get a socket, cached or new, useable to send messages to
-%%           Host on port Port using protocol Proto from sipsocket
-%%           module Module.
+%%           Dst from sipsocket module Module.
 %% Returns : Res
 %%           Res = term(), result of apply() but typically a
 %%                         sipsocket record()
 %%--------------------------------------------------------------------
-get_socket(Module, Proto, Host, Port) when is_atom(Module), is_atom(Proto), is_integer(Port) ->
-    Module:get_socket(Proto, Host, Port).
+get_socket(Module, Dst) when is_atom(Module), is_record(Dst, sipdst) ->
+    Module:get_socket(Dst).
 
 %%--------------------------------------------------------------------
 %% Function: is_reliable_transport(Socket)

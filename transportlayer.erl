@@ -90,7 +90,7 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
     Port = Dst#sipdst.port,
     Proto = Dst#sipdst.proto,
     DestStr = sipdst:dst2str(Dst),
-    case get_good_socket(Socket, Proto, IP, Port) of
+    case get_good_socket(Socket, Dst) of
 	{error, What} ->
 	    logger:log(debug, "Siprequest (transport layer) : Failed to get ~p socket for ~s : ~p",
 		       [Proto, DestStr, What]),
@@ -199,7 +199,7 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
     BinMsg = siprequest:binary_make_message(BinLine1, Header, Body),
     case sipdst:get_response_destination(TopVia) of
 	Dst when is_record(Dst, sipdst) ->
-	    case get_good_socket(DefaultSocket, Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port) of
+	    case get_good_socket(DefaultSocket, Dst) of
 		SendSocket when is_record(SendSocket, sipsocket) ->
 		    CPid = SendSocket#sipsocket.pid,
 		    SendRes = sipsocket:send(SendSocket, Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, BinMsg),
@@ -236,12 +236,9 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
 
 
 %%--------------------------------------------------------------------
-%% Function: get_good_socket(DefaultSocket, SendProto, SendToHost,
-%%                           Port)
+%% Function: get_good_socket(DefaultSocket, Dst)
 %%           DefaultSocket = sipsocket record() | none
-%%           SendProto     = atom(), tcp|tcp6|tls|tls6|udp|udp6
-%%           SendToHost    = string()
-%%           Port          = integer()
+%%           Dst           = sipdst record()
 %% Descrip.: Check if DefaultSocket is a working socket, and is of the
 %%           protocol requested (SendProto). If so, return the
 %%           DefaultSocket - otherwise go bother the transport layer
@@ -252,31 +249,33 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
 %%           Socket = sipsocket record()
 %%           Reason = string()
 %%--------------------------------------------------------------------
-get_good_socket(DefaultSocket, SendProto, SendToHost, Port) when is_integer(Port) ->
+%%
+%% Default socket provided, check that it is still valid
+%%
+get_good_socket(#sipsocket{proto=Proto}=DefaultSocket, #sipdst{proto=Proto}=Dst) ->
     case sipsocket:is_good_socket(DefaultSocket) of
 	true ->
-	    case DefaultSocket#sipsocket.proto of
-		SendProto ->
-		    logger:log(debug, "Siprequest: Using default socket ~p", [DefaultSocket]),
-		    DefaultSocket;
-		_ ->
-		    logger:log(error, "Siprequest: Default socket provided for sending message is protocol ~p, "
-			       "but message should be sent over ~p", [DefaultSocket#sipsocket.proto, SendProto]),
-		    {error, "Supplied socket has wrong protocol"}
-	    end;
-	_ ->
+	    logger:log(debug, "Siprequest: Using default socket ~p", [DefaultSocket]),
+	    DefaultSocket;
+	false ->
 	    logger:log(debug, "Siprequest: No good socket (~p) provided - asking transport layer for a ~p socket",
-		       [DefaultSocket, SendProto]),
-	    SocketModule = sipsocket:proto2module(SendProto),
-	    case sipsocket:get_socket(SocketModule, SendProto, SendToHost, Port) of
-		{error, E1} ->
-		    {error, E1};
-		none ->
-		    {error, "no socket provided and get_socket() returned 'none'"};
-		S when is_record(S, sipsocket) ->
-		    logger:log(debug, "Siprequest: Extra debug: Get socket ~p ~p ~p ~p returned socket ~p",
-			       [SocketModule, SendProto, SendToHost, Port, S]),
-		    S
-	    end
+		       [DefaultSocket, Proto]),
+	    get_good_socket(none, Dst)
+    end;
+%%
+%% No default socket provided
+%%
+get_good_socket(none, Dst) when is_record(Dst, sipdst) ->
+    Proto = Dst#sipdst.proto,
+    SocketModule = sipsocket:proto2module(Proto),
+    case sipsocket:get_socket(SocketModule, Dst) of
+	S when is_record(S, sipsocket) ->
+	    {Host, Port} = {Dst#sipdst.addr, Dst#sipdst.port},
+	    logger:log(debug, "Siprequest: Extra debug: Get socket ~p ~p ~p ~p returned socket ~p",
+		       [SocketModule, Proto, Host, Port, S]),
+	    S;
+	{error, Reason} ->
+	    {error, Reason};
+	none ->
+	    {error, "Failed getting a socket"}
     end.
-

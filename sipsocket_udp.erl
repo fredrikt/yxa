@@ -4,7 +4,17 @@
 %%% Descrip.: Transportlayer UDP all-in-one handler. Receive UDP
 %%%           datagrams and, if they are not keep alives (or too
 %%%           short), spawn sipserver:process(...) on the received
-%%%           packets.
+%%%           packets. Send packets using either our IPv4 or our IPv6
+%%%           socket.
+%%%
+%%% Note    : This module should be split in two, one server process
+%%%           and one interface module which can be a sipsocket
+%%%           behaviour module, like the TCP sipsocket code.
+%%%
+%%% Note    : Our UDP code does not support multiple interfaces
+%%%           correctly. We should get one socket per interface (and
+%%%           protocol), to be able to implement RFC3581 (rport)
+%%%           correctly.
 %%%
 %%% Created : 15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -20,7 +30,7 @@
 	 start_link/0,
 	 send/5,
 	 is_reliable_transport/1,
-	 get_socket/3
+	 get_socket/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -135,10 +145,8 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_socket, Proto, Host, Port}, From, State)
+%% Function: handle_call({get_socket, Proto}, From, State)
 %%           Proto = atom(), udp | udp6
-%%           Host  = string()
-%%           Port  = integer()
 %% Descrip.: Get a socket for a certain protocol (Proto).
 %%           sipsocket_udp is currently not multi-socket, we just have
 %%           a single UDP socket for each protocol and that is
@@ -149,9 +157,7 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({get_socket, Proto, _Host, _Port}, _From, State) when is_atom(Proto) ->
-    %% sipsocket_udp is currently not multi-socket, we just have a singe UDP socket and that is 'listener'
-    %% for each Proto.
+handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
     Id = {listener, Proto, sipserver:get_listenport(Proto)},
     case socketlist:get_using_id(Id, State#state.socketlist) of
 	[] ->
@@ -320,28 +326,24 @@ send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Proto, Host, Port)
-%%           Proto     = atom(), udp | udp6
-%%           Host      = string()
-%%           Port      = integer()
-%% Descrip.: Return a socket suitable for communicating with Host:Port
-%%           using protocol Proto.
+%% Function: get_socket(Dst)
+%%           Dst = sipdst record()
+%% Descrip.: Return a socket suitable for communicating with this dst.
 %% Returns : SipSocket       |
 %%           {error, Reason}
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_socket(Proto, Host, Port) when is_atom(Proto), is_list(Host), is_integer(Port),
-				   Proto == udp; Proto == udp6 ->
-    case catch gen_server:call(sipsocket_udp, {get_socket, Proto, Host, Port}, 1500) of
+get_socket(#sipdst{proto=Proto}) when Proto == udp; Proto == udp6 ->
+    case catch gen_server:call(sipsocket_udp, {get_socket, Proto}, 1500) of
 	{ok, SipSocket} ->
 	    SipSocket;
 	{error, E} ->
-	    logger:log(error, "Sipsocket UDP: Failed fetching socket for ~s:~p : ~p", [Host, Port, E]),
+	    logger:log(error, "Sipsocket UDP: Failed fetching socket for protocol ~p : ~p", [Proto, E]),
 	    {error, E};
 	Unknown ->
-	    logger:log(error, "Sipsocket UDP: Unknown get_socket response from sipsocket_udp ~s:~p : ~p",
-		       [Host, Port, Unknown]),
+	    logger:log(error, "Sipsocket UDP: Unknown get_socket response from sipsocket_udp (protocol ~p) : ~p",
+		       [Proto, Unknown]),
 	    {error, "sipsocked_udp failed"}
     end.
 

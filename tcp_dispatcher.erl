@@ -85,7 +85,7 @@ init([]) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_listenerspecs()
-%% Descrip.: Get a OTP supservisor child specification for all TCP
+%% Descrip.: Get an OTP supservisor child specification for all TCP
 %%           listeners.
 %% Returns : SupSpec
 %%           SupSpec = OTP supervisor child specification. Extra
@@ -96,13 +96,13 @@ get_listenerspecs() ->
     Port = sipserver:get_listenport(tcp),
     TLSport = sipserver:get_listenport(tls),
     TCPlisteners = [{tcp, Port}, {tcp6, Port}],
-    Listeners = case sipserver:get_env(enable_experimental_tls, false) of
-		    true ->
+    Listeners = case sipserver:get_env(tls_disable_server, false) of
+		    false ->
 			%% XXX add tls6 to this list when there is an Erlang version released
 			%% than has a ssl.erl that handles inet6. Current version (R9C-0) treats
 			%% inet6 as an invalid gen_tcp option.
 			lists:append(TCPlisteners, [{tls, TLSport}]);
-		    false ->
+		    true ->
 			TCPlisteners
 		end,
     format_listener_specs(Listeners).
@@ -155,13 +155,11 @@ format_listener_specs([{Proto, Port} | T], Res)
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_socket, Proto, Host, Port}, From, State)
-%%           Proto = atom(), tcp | tcp6 | tls
-%%           Host  = string()
-%%           Port  = integer()
-%% Descrip.: Look for a cached connection to Proto:Host:Port. If one
-%%           is found, return {reply, ...} with it. Else, start a
-%%           tcp_connection process that tries to connect to the
+%% Function: handle_call({get_socket, Dst}, From, State)
+%%           Dst = sipdst record()
+%% Descrip.: Look for a cached connection to the destination in Dst.
+%%           If one is found, return {reply, ...} with it. Else, start
+%%           a tcp_connection process that tries to connect to the
 %%           Proto:Host:Port and will do gen_server:reply(...) when it
 %%           either succeeds or fails. We must do it this way since we
 %%           can't block the tcp_dispatcher process. There is a race
@@ -175,19 +173,26 @@ format_listener_specs([{Proto, Port} | T], Res)
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({get_socket, Proto, Host, Port}, From, State) when is_atom(Proto), is_list(Host), is_integer(Port) ->
-    case get_socket_from_list(Proto, Host, Port, State#state.socketlist) of
+handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
+    case get_socket_from_list(Dst, State#state.socketlist) of
 	none ->
 	    %% We must spawn a tcp_connection process to take care of making this new connection
-	    %% since the tcp_dispatcher may not be blocked by time consuming operations
-	    CH = tcp_connection:start_link(connect, Proto, Host, Port, From),
-	    logger:log(debug, "Sipsocket TCP: No cached connection to remote host ~p:~s:~p, trying to connect "
-		       "(started connection handler ~p)", [Proto, Host, Port, CH]),
-	    {noreply, State, ?TIMEOUT};
+	    %% since the tcp_dispatcher may not be blocked by time consuming operations. The spawned
+	    %% process will do a gen_server:reply(...).
+	    case tcp_connection:start_link(connect, Dst, From) of
+		{ok, CH} ->
+		    logger:log(debug, "TCP dispatcher: No cached connection to remote destination ~s, trying to "
+			       "connect (started TCP connection handler ~p)", [sipdst:dst2str(Dst), CH]),
+		    {noreply, State, ?TIMEOUT};
+		E ->
+		    logger:log(error, "TCP dispatcher: Failed starting TCP connection handler for destination "
+			       "~s : ~p", [sipdst:dst2str(Dst), E]),
+		    {reply, {error, "tcp_connection handler problem"}, State, ?TIMEOUT}
+	    end;
 	{error, E} ->
 	    {reply, {error, E}, State, ?TIMEOUT};
 	SipSocket when is_record(SipSocket, sipsocket) ->
-	    logger:log(debug, "Sipsocket TCP: Use existing connection to ~p:~s:~p", [Proto, Host, Port]),
+	    logger:log(debug, "TCP dispatcher: Using existing connection to ~s", [sipdst:dst2str(Dst)]),
 	    {reply, {ok, SipSocket}, State, ?TIMEOUT}
     end;
 
@@ -351,24 +356,32 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: get_socket_from_list(Proto, Host, Port, SocketList)
-%%           Proto = atom(), tcp | tcp6 | tls | tls6
-%%           Host  = string()
-%%           Port  = term()
+%% Function: get_socket_from_list(Dst, SocketList)
+%%           Dst        = sipdst record()
 %%           SocketList = socketlist record()
-%% Descrip.: Look for an entry with remote {Host, Port} in SocketList
+%% Descrip.: Look for an entry matching Dst in SocketList
 %% Returns : SipSocket |
 %%           none
 %%           SipSocket = sipsocket record()
 %%--------------------------------------------------------------------
-get_socket_from_list(Proto, Host, Port, SocketList) when is_list(Host), is_integer(Port),
-							 Proto == tcp; Proto == tcp6;
-							 Proto == tls; Proto == tls6 ->
+get_socket_from_list(#sipdst{proto=Proto}=Dst, SocketList) when Proto == tcp; Proto == tcp6;
+								Proto == tls; Proto == tls6 ->
+    {Host, Port} = {Dst#sipdst.addr, Dst#sipdst.port},
     case socketlist:get_using_remote(Proto, {Host, Port}, SocketList) of
 	SListElem when is_record(SListElem, socketlistelem) ->
+	    case (Proto == tls) or (Proto == tls6) of
+		true ->
+		    %% XXX this is a TLS socket, we must check that the cached connection is valid
+		    %% considering the ssl_hostname in Dst!
+		    logger:log(debug, "Warning: Reusing cached connection to TLS destination without "
+			       "verifying that the certificate is valid for ssl_hostname ~p!",
+			       [Dst#sipdst.ssl_hostname]);
+		false ->
+		    ok
+	    end,
 	    [CPid, SipSocket] = socketlist:extract([pid, sipsocket], SListElem),
-	    logger:log(debug, "Sipsocket TCP: Reusing existing connection to ~p:~s:~p (~p)",
-		       [Proto, Host, Port, CPid]),
+	    logger:log(debug, "Sipsocket TCP: Reusing existing connection to ~s (~p)",
+		       [sipdst:dst2str(Dst), CPid]),
 	    SipSocket;
 	_ ->
 	    none

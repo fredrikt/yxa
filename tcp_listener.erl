@@ -75,8 +75,8 @@ start_link(Proto, Port) when is_atom(Proto), is_integer(Port) ->
 		    logger:log(normal, "NOT starting ~p listener on port ~p, no SSL server certificate specified "
 			       "(see README)", [Proto, Port]),
 		    ignore;
-		ClientCert ->
-		    NewOptions = lists:append(Options, [{certfile, ClientCert}]),
+		CertFile ->
+		    NewOptions = lists:append(Options, [{certfile, CertFile}]),
 		    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, NewOptions]),
 		    {ok, Pid}
 	    end;
@@ -207,15 +207,20 @@ accept_loop(State) when is_record(State, state) ->
 %% SSL socket
 %%
 start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
-    {ok, ConnPid} = tcp_connection:start_link(in, ssl, Proto, Socket, Local, Remote),
-    {ok, RecvPid} = gen_server:call(ConnPid, {get_receiver}),
-    case ssl:controlling_process(Socket, RecvPid) of
-	ok -> ok;
-	{error, Reason} ->
-	    logger:log(error, "TCP listener: Could not change controlling process of "
-		       "SSL socket ~p to ~p : ~p", [Socket, RecvPid, Reason]),
-	    erlang:error({"Failed changing controlling process for SSL socket", {error, Reason}},
-			 [ssl, Proto, Socket, Local, Remote])
+    case tcp_connection:start_link(in, ssl, Proto, Socket, Local, Remote) of
+	{ok, ConnPid} ->
+	    {ok, RecvPid} = gen_server:call(ConnPid, {get_receiver}),
+	    case ssl:controlling_process(Socket, RecvPid) of
+		ok -> ok;
+		{error, Reason} ->
+		    logger:log(error, "TCP listener: Could not change controlling process of "
+			       "SSL socket ~p to ~p : ~p", [Socket, RecvPid, Reason]),
+		    erlang:error({"Failed changing controlling process for SSL socket", {error, Reason}},
+				 [ssl, Proto, Socket, Local, Remote])
+	    end;
+	ignore ->
+	    %% SSL socket was not acceptable. This is already logged and everything, so just return.
+	    ok
     end;
 %%
 %% Non-SSL socket

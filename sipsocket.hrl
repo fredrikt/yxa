@@ -11,12 +11,14 @@
 
 %% sipdst is the Transport Layer destination record.
 -record(sipdst, {
-	  proto, % string() lower case, e.g. "sip" | ... , protocol
-	  addr,  % string(), typically IP address
-	  port,  % integer()
-	  uri    % sipurl record() | undefined
+	  proto,	% atom(), tcp | tcp6 | udp | udp6 | tls | tls6
+	  addr,		% string(), typically IP address
+	  port,		% integer()
+	  uri,		% sipurl record() | undefined
+	  ssl_hostname	% string() | undefined, name to verify SSL certificate against
 	 }).
 
+%% Information about the origin of a received SIP request/response
 -record(siporigin, {
 	  proto,    % atom(), tcp|tcp6|udp|udp6|tls|tls6 ...
 	  addr,     % string()
