@@ -7,39 +7,17 @@ PROGRAMNAME="@PROGRAMNAME@"
 CONFIGDIR="@CONFIGDIR@"
 SSLCERTDIR="@SSLCERTDIR@"
 MNESIADIR="@MNESIADIR@"
-BUILDDIR="@BUILDDIR@"
+beamdir="@beamdir@"
+erl="@erl@"
 DETACH="-detached"
 
-HOSTNAME=`hostname`
 MYNAME=`basename $0`
-
-# Set up environment to include path to Erlang
-case $HOSTNAME in
-    *.kth.se)
-	. /mpkg/modules/current/init/sh
-	module add erlang
-	;;
-    *.su.se)
-	. /afs/su.se/common/etc/smodule/sh.init
-	module add erlang
-	;;
-    *)
-	PATH="$PATH:/usr/local/bin"
-	export PATH
-	;;
-esac
 
 # Calculate Erlang arguments
 if [ "x$CONFIGDIR" = "x" ]; then
     CONFIGPATH="$PROGRAMNAME"
 else
     CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
-fi
-
-if [ "x$BUILDDIR" = "x" ]; then
-    SEARCHPATHPARAMETERS=""
-else
-    SEARCHPATHPARAMETERS="-pz $BUILDDIR"
 fi
 
 if [ "x$SSLCERTDIR" = "x" ]; then
@@ -71,7 +49,7 @@ if [ "x$MYNAME" = "xbootstrap.sh" ]; then
     fi
 
 	# yes, the name should be incomingproxy
-    erl $SEARCHPATHPARAMETERS -name incomingproxy -noshell $MNESIAPARAMETERS \
+    $(ERL) -pz $(beamdir) -name incomingproxy -noshell $MNESIAPARAMETERS \
 	-run bootstrap start "$ADMINPW" -run init stop
 else
     if [ ! -r "${CONFIGPATH}.config" ]; then
@@ -79,7 +57,8 @@ else
 	exit 1
     fi
 
-    erl -boot $PROGRAMNAME $SEARCHPATHPARAMETERS -name $PROGRAMNAME -config $CONFIGPATH \
+    $(erl) -boot $PROGRAMNAME -pz $(beamdir) \
+	-name $PROGRAMNAME -config $CONFIGPATH \
 	-proto_dist inet_ssl -ssl_dist_opt client_certfile $SSLCERTFILE \
 	-ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2 \
 	$MNESIAPARAMETERS $DETACH
