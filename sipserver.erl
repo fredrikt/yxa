@@ -1,13 +1,7 @@
 -module(sipserver).
 -export([start/5, process/6, get_env/1, get_env/2, make_logstr/2]).
 
-start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, LocalTablesP) ->
-    case LocalTablesP of
-	true ->
-	    mnesia:create_schema([node()]);
-	_ ->
-	    true
-    end,
+start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, _LocalTablesP) ->
     mnesia:start(),
     apply(InitFun, []),
     logger:start(),
