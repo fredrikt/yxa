@@ -8,7 +8,7 @@ timestamp() ->
 
 sec_to_date(never) ->
     "never";
-sec_to_date(Seconds) when integer(Seconds) ->
+sec_to_date(Seconds) when is_integer(Seconds) ->
     Nowtime = {Seconds div 1000000, Seconds rem 1000000, 0},
     lists:flatten(localtime_to_string(calendar:now_to_local_time(Nowtime))).
 
@@ -16,7 +16,7 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
     io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w",
 		  [Year, Month, Day, Hour, Minute, Second]).
 
-isnumeric(Number) when list(Number) ->
+isnumeric(Number) when is_list(Number) ->
     case regexp:first_match(Number, "^[0-9]+$") of
 	{match, _, _} ->
 	    true;
@@ -26,10 +26,19 @@ isnumeric(Number) when list(Number) ->
 isnumeric(_) ->
     false.
 
-digit(Digit) when integer(Digit), Digit >= $0, Digit =< $9 ->
-    Digit - $0;
-digit(Digit) ->
-    error.
+regexp_rewrite(Input, []) ->
+    nomatch;
+
+regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
+    case group_regexp:groups(Input, Regexp) of
+	{match, List} ->
+	    apply_rewrite(Rewrite, List);
+	nomatch ->
+	    regexp_rewrite(Input, Rest);
+	{error, Error} ->
+	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error]),
+	    []
+    end.
 
 apply_rewrite([], List) ->
     [];
@@ -47,19 +56,10 @@ apply_rewrite([$\\, C | Rest], List) ->
 apply_rewrite([C | Rest], List) ->
     [C | apply_rewrite(Rest, List)].
 
-regexp_rewrite(Input, []) ->
-    nomatch;
-
-regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
-    case group_regexp:groups(Input, Regexp) of
-	{match, List} ->
-	    apply_rewrite(Rewrite, List);
-	nomatch ->
-	    regexp_rewrite(Input, Rest);
-	{error, Error} ->
-	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error]),
-	    []
-    end.
+digit(Digit) when is_integer(Digit), Digit >= $0, Digit =< $9 ->
+    Digit - $0;
+digit(Digit) ->
+    error.
 
 casecompare(none, none) ->
     true;
@@ -99,11 +99,11 @@ concat([], Separator) ->
 concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
 
-safe_is_process_alive(Pid) when pid(Pid) ->
+safe_is_process_alive(Pid) when is_pid(Pid) ->
     {is_process_alive(Pid), Pid};
-safe_is_process_alive(Name) when atom(Name) ->
+safe_is_process_alive(Name) when is_atom(Name) ->
     case erlang:whereis(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    case is_process_alive(Pid) of
 		true ->
 		    {true, Pid};
@@ -121,7 +121,7 @@ safe_signal(LogTag, PidIn, Message) ->
 	{true, Pid} ->
 	    Pid ! Message,
 	    ok;
-	{false, Pid} when list(LogTag) ->
+	{false, Pid} when is_list(LogTag) ->
 	    logger:log(error, LogTag ++ "Can't send signal ~p to pid ~p - not alive or not pid", [Message, Pid]),
 	    error;
 	{false, Pid} ->
