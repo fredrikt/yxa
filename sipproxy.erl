@@ -83,7 +83,7 @@ cancel_targets_state(Targets, State) ->
 mark_cancelled([], TargetList) ->
     TargetList;
 mark_cancelled([H | T], TargetList) ->
-    NewTarget = targetlist:set_endresult(H, cancelled),
+    NewTarget = targetlist:set_cancelled(H, true),
     NewTargetList = targetlist:update_target(NewTarget, TargetList),
     mark_cancelled(T, NewTargetList).
 
@@ -109,24 +109,25 @@ process_wait(false, State) when record(State, state) ->
 	    NewState1 = State#state{targets=NewTargets, mystate=NewMyState},
 	    {ok, NewState1};
 
-	{branch_result, Branch, NewTransactionState, Response, ResponseToRequest} ->
-	    {ResponseToMethod, ResponseToURI, _, _} = ResponseToRequest,
+	{branch_result, Branch, NewTransactionState, Response} ->
 	    {Status, Reason, _, _} = Response,
 	    NewState1 = case targetlist:get_using_branch(Branch, Targets) of
 		none ->
-		    logger:log(error, "sipproxy: Received branch result ~p ~s to ~s ~s from an unknown Target (branch ~p), ignoring.",
-		    			[Status, Reason, ResponseToMethod, sipurl:print(ResponseToURI), Branch]),
+		    logger:log(error, "sipproxy: Received branch result ~p ~s from an unknown Target (branch ~p), ignoring.",
+		    			[Status, Reason, Branch]),
 		    State;
 		ThisTarget ->
+		    [ResponseToRequest] = targetlist:extract([request], ThisTarget),
+		    {RMethod, RURI, _, _} = ResponseToRequest,
 		    NewTarget1 = targetlist:set_state(ThisTarget, NewTransactionState),
 		    NewTarget2 = targetlist:set_endresult(NewTarget1, Response),	% XXX only do this for final responses?
 		    NewTargets1 = targetlist:update_target(NewTarget2, Targets),
 		    NewTargets = try_next_destination(Response, ThisTarget, NewTargets1, State),
-		    logger:log(debug, "sipproxy: Received branch result ~p ~s to ~s ~s from branch ~p. My Targets-list now contain :~n~p",
-		    		[Status, Reason, ResponseToMethod, sipurl:print(ResponseToURI), Branch, targetlist:debugfriendly(NewTargets)]),
+		    logger:log(debug, "sipproxy: Received branch result ~p ~s (request: ~s ~s) from branch ~p. My Targets-list now contain :~n~p",
+		    		[Status, Reason, RMethod, sipurl:print(RURI), Branch, targetlist:debugfriendly(NewTargets)]),
 		    NewState2 = State#state{targets=NewTargets},
 		    NewState3 = check_forward_immediately(ResponseToRequest, Response, Branch, NewState2),
-		    NewState4 = cancel_pending_if_invite_2xx_or_6xx(ResponseToMethod, Status, NewState3),
+		    NewState4 = cancel_pending_if_invite_2xx_or_6xx(RMethod, Status, NewState3),
 		    NewState4
 	    end,
 	    {ok, NewState1};
@@ -300,6 +301,7 @@ check_forward_immediately(Request, Response, Branch, State) when record(State, s
 	    % RFC 3261 16.7 bullet 5 (Check response for forwarding) says we MUST process any
 	    % response chosen for immediate forwarding as described in
 	    % "Aggregate Authorization Header Field Values" through "Record-Route"
+	    % XXX but it is a bit unclear to me if this is actually just to be done in FINAL responses or not
 	    Targets = NewState#state.targets,
 	    Responses = targetlist:get_responses(Targets),
 	    FwdResponse = aggregate_authreqs(Response, Responses),
