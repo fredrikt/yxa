@@ -305,7 +305,7 @@ remote_party_id			(default: false) If you set this to true, then
 				in calls from the PSTN gateway, but I haven't
 				seen a phone that displays this yet.
 
-pstnproxy_no_sip_dst_code:	(default: 480) SIP error code to return for
+pstnproxy_no_sip_dst_code	(default: 480) SIP error code to return for
 				requests from PSTN to SIP when the destination is
 				not found in ENUM, and no sipproxy has been
 				configured. This is configurable since you might
@@ -313,11 +313,15 @@ pstnproxy_no_sip_dst_code:	(default: 480) SIP error code to return for
 				situation, for example falling back to using PSTN
 				or something.
 
-pstnproxy_redirect_on_enum:	(default: false) If you set this to true, we will
+pstnproxy_redirect_on_enum	(default: false) If you set this to true, we will
 				send a redirect (302) back to the caller when we
 				find a destination for the request in ENUM,
 				instead of proxying to the destination (only
 				applys to calls from PSTN to SIP).
+
+x_yxa_peer_auth_secret		(default: "") Shared secret for this pstnproxy
+				to use for allowing requests forwarded to PSTN
+				on behalf of a particular user using appserver.
 
 incomingproxy:
 --------------
@@ -388,6 +392,13 @@ appserver_call_timeout		(default: 40) The number of seconds to ring
 
 appserver_forward_timeout	(default: 40) The same as appserver_call_timeout
 				but for forwarded calls.
+
+x_yxa_peer_auth			(default: []) List of {host, secret} shared
+				secrets to use when sending out requests on
+				behalf of a user with forwards or a CPL script.
+				Example : [{"pstnproxy.example.com", "secret"}]}.
+				See also x_yxa_peer_auth_secret to make pstnproxy
+				at pstnproxy.example.com accept the requests.
 
 
 ========
