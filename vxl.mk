@@ -4,7 +4,7 @@ BEAM = incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sipp
 
 CC = gcc
 
-.PRECIOUS: %.boot
+.PRECIOUS: %.boot %.config
 
 all: $(BEAM) $(STARTSCRIPT)
 
@@ -32,12 +32,15 @@ sslkey:
 	cd ssl && openssl req -x509 -in cert.req -text -key cert.pem -out cert.cert
 	cat ssl/cert.cert ssl/cert.pem > ssl/cert.comb
 
-%.start: %.boot
+%.start: %.boot %.config
 	echo "#!/bin/sh" > $@
 	echo ". /mpkg/modules/current/init/sh" >> $@
 	echo "module add erlang" >> $@
-	echo "erl -boot " $* " -name " $* " -proto_dist inet_ssl -ssl_dist_opt client_certfile ssl/cert.comb -ssl_dist_opt server_certfile ssl/cert.comb -ssl_dist_opt verify 2 -detached" >> $@
+	echo "erl -boot " $* " -name " $* " -config " $* " -proto_dist inet_ssl -ssl_dist_opt client_certfile ssl/cert.comb -ssl_dist_opt server_certfile ssl/cert.comb -ssl_dist_opt verify 2 -detached" >> $@
 	chmod +x $@
+
+%.config:
+	test -f $@ || ( echo "% Write your configuration here"; echo "[{$*, []}]." ) > $@
 
 %.app: %.app.in
 	cp $< $@
