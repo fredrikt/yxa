@@ -1,4 +1,5 @@
 {release, {"KTH SIP application server","0.0"}, {erts, "5.2"},
  [{kernel,"2.8.0"},
   {stdlib,"1.11.0"},
+  {ssl, "2.3.5"},
   {appserver, "0.0"}]}.
