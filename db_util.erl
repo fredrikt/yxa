@@ -11,7 +11,9 @@
 	 tab_to_list/1,
 	 delete_all_entries/1,
 	 insert_record/1,
-	 delete_record/1
+	 delete_record/1,
+	 delete_with_key/2,
+	 match_object/1
 	]).
 
 %%--------------------------------------------------------------------
