@@ -214,10 +214,9 @@ format_number_for_remote_party_id(Number, ToURI, DstHost) ->
 
 get_remote_party_name(Key, DstHost) ->
     case rewrite_potn_to_e164(Key) of
-	none ->
-	    none;
 	"+" ++ E164 ->
-	    lookup:get_remote_party_name("+" ++ E164, Key)
+	    lookup:get_remote_party_name("+" ++ E164, Key);
+	_ -> none
     end.
 
 rewrite_potn_to_e164(Key) ->
