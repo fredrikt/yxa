@@ -52,6 +52,10 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 			    transactionlayer:send_response_handler(THandler, Status, Reason);
 			{siperror, Status, Reason, ExtraHeaders} ->
 			    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
+			{'EXIT', Reason} ->
+			    logger:log(error, "=ERROR REPORT==== siplocation:process_register_isauth() failed :~n~p~n",
+				       [Reason]),
+			    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error");
 			_ ->
 			    true
 		    end;
@@ -93,13 +97,15 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
     transportlayer:send_proxy_request(none, Request, Request#request.uri, []);
 
 %%
-%% CANCEL
+%% CANCEL or BYE
 %%
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "CANCEL" ->
+%% These requests cannot be challenged, since they can't be resubmitted. Bypass
+%% check of authorized From: address
+request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "CANCEL"; Request#request.method == "BYE" ->
     do_request(Request, Origin);
 
 %%
-%% Request other than REGISTER, ACK or CANCEL
+%% Request other than REGISTER, ACK, CANCEL or BYE
 %%
 request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Request#request.header)),
@@ -231,7 +237,7 @@ do_request(RequestIn, Origin) when record(RequestIn, request), record(Origin, si
 	    proxy_request(THandler, Request, Loc, []);
 	{redirect, Loc} ->
 	    logger:log(normal, "~s: incomingproxy: Redirect ~s", [LogTag, sipurl:print(Loc)]),
-	    Contact = [{none, Location}],
+	    Contact = [{none, Loc}],
 	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
 	    transactionlayer:send_response_handler(THandler, 302, "Moved Temporarily", ExtraHeaders);
 	{relay, Loc} ->
@@ -286,7 +292,7 @@ route_request(Request) when record(Request, request) ->
     end.
 
 
-%% Function: route_request/1
+%% Function: is_request_to_me/3
 %% Description: Check if a request is destined for this proxy. Not
 %%              for a domain handled by this proxy, but for this
 %%              proxy itself.
