@@ -1,6 +1,10 @@
 VPATH=/afs/e.kth.se/home/2002/map/sip/erlang/kth.se
 
-all: $(BEAM) $(BOOT) $(STARTSCRIPT)
+BEAM = incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sippacket.beam keylist.beam sipurl.beam siprequest.beam sipheader.beam phone.beam sipauth.beam sipconfig.beam siphost.beam dnsutil.beam admin_www.beam hex.beam directory.beam eldap.beam LDAPv3.beam appserver.beam
+
+.PRECIOUS: %.boot
+
+all: $(BEAM) $(STARTSCRIPT)
 
 clean:
 	rm -f *.beam *.boot *.app *.rel *~ *.script *.start
@@ -26,7 +30,7 @@ sslkey:
 	cd ssl && openssl req -x509 -in cert.req -text -key cert.pem -out cert.cert
 	cat ssl/cert.cert ssl/cert.pem > ssl/cert.comb
 
-%.start:
+%.start: %.boot
 	echo "#!/bin/sh" > $@
 	echo ". /mpkg/modules/current/init/sh" >> $@
 	echo "module add erlang" >> $@
