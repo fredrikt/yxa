@@ -5,7 +5,7 @@
 	 send_result/6, make_answerheader/1, add_record_route/1,
 	 add_record_route/3, myhostname/0, default_port/1,
 	 get_loop_cookie/2, generate_branch/0, url_to_dstlist/2,
-	 make_response/7]).
+	 make_response/7, rewrite_route/2, make_base64_md5_token/1]).
 
 -include("sipsocket.hrl").
 
@@ -58,6 +58,8 @@ send_response_to(DefaultSocket, Code, Text, Dest, HeaderIn, Body) ->
 			[DefaultSocket]),
 	    case sipsocket:get_socket(sipsocket:via2sipsocketprotocol(Protocol), SendToHost,
 					   PortInt) of
+		{error, E1} ->
+		    {error, E1};
 		none ->
 		    {error, "no socket provided and get_socket() returned 'none'"};
 		S when record(S, sipsocket) ->
@@ -330,19 +332,39 @@ proxy_add_via(Header, Method, OrigURI, Parameters, SocketProto, SrvTHandler) ->
 			_ ->
 			    transactionlayer:store_stateless_response_branch(SrvTHandler, Branch, Method)
 		    end,
-		    NewBranch = case LoopCookie of
-			none -> Branch;
-			_ -> Branch ++ "-o" ++ LoopCookie
+		    % Check if there already is a loop cookie in this branch. Necessary to not
+		    % get the wrong branch in constructed ACK of non-2xx response to INVITE.
+		    NewBranch = case string:rstr(Branch, "-o") of
+			0 ->
+			    case LoopCookie of
+				none -> Branch;
+				_ ->
+				    NewBranch1 = Branch ++ "-o" ++ LoopCookie,
+				    logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
+						[NewBranch1]),
+				    NewBranch1
+			    end;
+			Index when integer(Index) ->
+			    logger:log(debug, "Siprequets: NOT adding generated loop cookie ~p to branch that already " ++
+					"contains a loop cookie : ~p", [LoopCookie, Branch]),
+			    Branch
 		    end,
-		    logger:log(debug, "Siprequest: Added statelessly generated branch ~p to request",
-				[NewBranch]),
 		    Param2 = dict:store("branch", NewBranch, ParamDict),
 	    	    sipheader:dict_to_param(Param2)
 	    end;
 	{ok, Branch} when LoopCookie /= none ->
-	    logger:log(debug, "Siprequest: Added loop cookie ~p to branch of request",
-				[LoopCookie]),
-	    Param2 = dict:append("branch", "-o" ++ LoopCookie, ParamDict),
+	    Param2 = case string:rstr(Branch, "-o") of
+		0 ->
+		    logger:log(debug, "Siprequest: Added loop cookie ~p to branch of request",
+					[LoopCookie]),
+		    dict:append("branch", "-o" ++ LoopCookie, ParamDict);
+		Index when integer(Index) ->
+		    % There is already a loop cookie in this branch, don't change it. Necessary to not
+		    % get the wrong branch in constructed ACK of non-2xx response to INVITE.
+		    logger:log(debug, "Siprequets: NOT adding generated loop cookie ~p to branch that already " ++
+				"contains a loop cookie : ~p", [LoopCookie, Branch]),
+		    ParamDict
+	    end,		   
 	    sipheader:dict_to_param(Param2);
 	{ok, Branch} ->
 	    % Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
