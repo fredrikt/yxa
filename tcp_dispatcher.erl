@@ -160,7 +160,7 @@ start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer
 %%           is found, return {reply, ...} with it. Else, start a
 %%           tcp_connection process that tries to connect to the
 %%           Proto:Host:Port and will do gen_server:reply(...) when it
-%%           either suceeds or fails. We must do it this way since we
+%%           either succeeds or fails. We must do it this way since we
 %%           can't block the tcp_dispatcher process. There is a race
 %%           here where we might end up having more than one
 %%           connection to Proto:Host:Port at the same time, but that
@@ -177,9 +177,9 @@ handle_call({get_socket, Proto, Host, Port}, From, State) when is_atom(Proto), i
 	none ->
 	    %% We must spawn a tcp_connection process to take care of making this new connection
 	    %% since the tcp_dispatcher may not be blocked by time consuming operations
-	    tcp_connection:start_link(connect, Proto, Host, Port, From),
-	    logger:log(debug, "Sipsocket TCP: No cached connection to remote host ~p:~s:~p, trying to connect",
-		       [Proto, Host, Port]),
+	    CH = tcp_connection:start_link(connect, Proto, Host, Port, From),
+	    logger:log(debug, "Sipsocket TCP: No cached connection to remote host ~p:~s:~p, trying to connect "
+		       "(started connection handler ~p)", [Proto, Host, Port, CH]),
 	    {noreply, State, ?TIMEOUT};
 	{error, E} ->
 	    {reply, {error, E}, State, ?TIMEOUT};
