@@ -2,9 +2,9 @@
 -export([add/7, empty/0, list_length/1, debugfriendly/1,
 	 get_using_branch/2, get_targets_in_state/2, get_responses/1,
 	 extract/2, set_pid/2, set_state/2, set_endresult/2, set_dstlist/2,
-         update_target/2]).
+	 set_cancelled/2, update_target/2]).
 
--record(target, {ref, branch, request, pid, state, timeout, endresult, dstlist}).
+-record(target, {ref, branch, request, pid, state, timeout, endresult, dstlist, cancelled}).
 -record(targetlist, {list}).
 
 % This module is used by sipproxy to handle a list of actions we are working
@@ -21,7 +21,7 @@ add(Branch, Request, Pid, State, Timeout, DstList, TargetList) when record(Targe
     case get_using_branch(Branch, TargetList) of
 	none ->
 	    NewTarget = #target{ref=make_ref(), branch=Branch, request=Request, pid=Pid, state=State,
-		   		endresult=none, dstlist=DstList, timeout=Timeout},
+		   		endresult=none, dstlist=DstList, timeout=Timeout, cancelled=false},
 	    #targetlist{list=lists:append(TargetList#targetlist.list, [NewTarget])};
 	_ ->
 	    logger:log(error, "targetlist: Asked to add target with duplicate branch ~p to list :~n~p",
@@ -57,12 +57,11 @@ debugfriendly([H | T]) when record(H, target) ->
     {Method, URI, _, _} = H#target.request,
     RespStr = case H#target.endresult of
 	none -> "no response";
-        cancelled -> "cancelled";
 	{Status, Reason, _, _} ->
 	    lists:concat(["response=", Status, " ", Reason])
     end,
     Str = lists:concat(["pid=", pid_to_list(H#target.pid), "branch=", H#target.branch, ", request=", Method, " ",
-		sipurl:print(URI), ", ", RespStr, ", state=" , H#target.state]),
+		sipurl:print(URI), ", ", RespStr, ", cancelled=", H#target.cancelled, ", state=" , H#target.state]),
     lists:append([lists:flatten(Str)], debugfriendly(T)).
 get_using_branch(Branch, TargetList) when record(TargetList, targetlist) ->
     get_using_branch(Branch, TargetList#targetlist.list);
@@ -118,7 +117,9 @@ extract([timeout | T], Target, Res) when record(Target, target) ->
 extract([dstlist | T], Target, Res) when record(Target, target) ->
     extract(T, Target, lists:append(Res, [Target#target.dstlist]));
 extract([endresult | T], Target, Res) when record(Target, target) ->
-    extract(T, Target, lists:append(Res, [Target#target.endresult])).
+    extract(T, Target, lists:append(Res, [Target#target.endresult]));
+extract([cancelled | T], Target, Res) when record(Target, target) ->
+    extract(T, Target, lists:append(Res, [Target#target.cancelled])).
 
 set_pid(Target, Value) when record(Target, target) ->
     Target#target{pid=Value}.
@@ -128,4 +129,6 @@ set_endresult(Target, Value) when record(Target, target) ->
     Target#target{endresult=Value}.
 set_dstlist(Target, Value) when record(Target, target) ->
     Target#target{dstlist=Value}.
+set_cancelled(Target, Value) when record(Target, target) ->
+    Target#target{cancelled=Value}.
 
