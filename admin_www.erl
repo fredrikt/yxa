@@ -6,15 +6,13 @@
 -include("phone.hrl").
 -include("database_regexproute.hrl").
 
-server_node() -> 'incomingproxy@granit.e.kth.se'.
-
 start(normal, Args) ->
-    Pid = spawn(admin_www, start, ["/afs/e.kth.se/home/2002/map/sip/erlang/kth.se/httpd.conf"]),
+    Pid = spawn(admin_www, start, [sipserver:get_env(httpd_config)]),
     {ok, Pid}.
 
 start(ConfigFile) ->
     mnesia:start(),
-    mnesia:change_config(extra_db_nodes, [server_node()]),
+    mnesia:change_config(extra_db_nodes, sipserver:get_env(databaseservers)),
     {Message, Args} = case mnesia:wait_for_tables([phone,user], infinity) of
 			  ok ->
 			      {"web server started, all tables found~n", []};
@@ -304,10 +302,19 @@ header(redirect, URL) ->
     ["Location: " ++ URL ++ "\r\n\r\n"].
 
 indexurl() ->
-    "<a href=\"https://granit.e.kth.se:8080/index.html\">Tillbaka till förstasidan</a>".
+    sipserver:get_env(www_baseurl) ++ "index.html".
 
 userurl() ->
-    "<a href=\"https://granit.e.kth.se:8080/erl/admin_www%3Alist_users\">Tillbaka till användarlistan</a>".
+    sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Alist_users".
+
+phonesurl() ->
+    sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Alist_phones".
+
+indexurl_html() ->
+    "<a href=\"" ++ indexurl() ++ "\">Tillbaka till förstasidan</a>".
+
+userurl_html() ->
+    "<a href=\"" ++ userurl() ++ "\">Tillbaka till användarlistan</a>".
 
 list_users(Env, Input) ->
     case check_auth(Env, true) of
@@ -340,7 +347,7 @@ list_users(Env, Input) ->
 	     "<li>mobile: mobilsamtal\n",
 	     "<li>pay: betalsamtal\n",
 	     "</ul>\n",
-	     indexurl()
+	     indexurl_html()
 	    ]
     end.
 
@@ -363,7 +370,7 @@ list_numbers(Env, Input) ->
 						   end
 					   end, List)),
 	     "</table>\n",
-	     indexurl()
+	     indexurl_html()
 	    ]
     end.
 
@@ -415,7 +422,7 @@ list_phones(Env, Input) ->
 	     "Adress: <input type=\"text\" name=\"address\">\n",
 	     "<input type=\"submit\" value=\"Lägg till\">\n",
 	     "</form>\n",
-	     indexurl()
+	     indexurl_html()
 	    ]
     end.
 
@@ -438,7 +445,7 @@ add_user(Env, Input) ->
 		    [header(ok), "Felaktigt telefonnummer"];
 		{{ok, User}, {ok, Phone}} ->
 		    phone:insert_user(User, none, [Phone], [], Classes),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
+		    [header(redirect, userurl())]
 	    end
     end.
 
@@ -465,7 +472,7 @@ add_route(Env, Input) ->
 					     permanent,
 					     never,
 					     sipurl:parse(Address)),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+		    [header(redirect, phoneurl())]
 	    end
     end.
 
@@ -492,7 +499,7 @@ add_regexp(Env, Input) ->
 						permanent,
 						never,
 						sipurl:parse(Address)),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+		    [header(redirect, phoneurl())]
 	    end
     end.
 
@@ -508,7 +515,7 @@ del_route(Env, Input) ->
 		    [header(ok), "Du måste ange ett nummer"];
 		{{ok, Number}} ->
 		    phone:purge_class_phone(Number, permanent),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+		    [header(redirect, phoneurl())]
 	    end
     end.
 
@@ -524,7 +531,7 @@ del_regexp(Env, Input) ->
 		    [header(ok), "Du måste ange ett nummer"];
 		{{ok, Number}} ->
 		    database_regexproute:purge_class(Number, permanent),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+		    [header(redirect, phoneurl())]
 	    end
     end.
 
@@ -591,7 +598,7 @@ change_user_form(Env, Input) ->
 		     print_class_checkboxes(Classes),
 		     "<input type=\"submit\" value=\"Ändra klasser\">\n",
 		     "</form>\n",
-		     userurl()
+		     userurl_html()
 		    ]
 	    end
     end.
@@ -656,14 +663,14 @@ change_user(Env, Input) ->
 		    [header(ok), "Du måste ange lösenord, admin eller nummer"];
 		{{ok, User}, {ok, Password}, _, _} ->
 		    phone:set_user_password(User, Password),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")];
+		    [header(redirect, userurl())];
 		{{ok, User}, _, {ok, Admin}, _} ->
 		    set_admin(User, Admin),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")];
+		    [header(redirect, userurl())];
 		{{ok, User}, _, _, {ok, Numbers}} ->
 		    Numberlist = string:tokens(Numbers, ","),
 		    phone:set_user_numbers(User, Numberlist),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
+		    [header(redirect, userurl())]
 	    end
     end.
 
@@ -698,7 +705,7 @@ change_classes(Env, Input) ->
 		    [header(ok), "Du måste ange ett användarnamn"];
 		{ok, User} ->
 		    phone:set_user_classes(User, Classes),
-		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_users")]
+		    [header(redirect, userurl())]
 	    end
     end.
 
