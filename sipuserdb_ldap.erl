@@ -1,5 +1,6 @@
 -module(sipuserdb_ldap).
--export([get_user_with_address/1,
+-export([yxa_init/0,
+	 get_user_with_address/1,
 	 get_users_for_address_of_record/1,
 	 get_users_for_addresses_of_record/1,
 	 get_users_for_url/1,
@@ -15,6 +16,18 @@
 
 % LDAP userdb module
 
+%% Function: yxa_init/0
+%% Description: Perform any necessary startup initialization and
+%%              return an OTP supervisor child spec if we want to add
+%%              to sipserver_sup's list. If this sipuserdb_module
+%%              needs to be persistent, it should be a gen_server and
+%%              init should just return a spec so that the gen_server
+%%              is started by the supervisor.
+%% Returns: Spec |
+%%          []
+%%--------------------------------------------------------------------
+yxa_init() ->
+    [].
 
 % Looks up exactly one user with an Address. Used
 % for example in REGISTER. If there are multiple
@@ -33,7 +46,7 @@ get_user_with_address(Address) ->
 		none ->
 		    logger:log(debug, "userdb-ldap: No user found for address ~p in LDAP (server ~p)", [Address, Server]),
 		    nomatch;
-		[{dn, Dn, attributes, EAttributes}] -> 
+		[{dn, Dn, attributes, EAttributes}] ->
 		    case directory:get_value(EAttributes, UserAttribute) of
 			QRes when list(QRes) ->
 			    logger:log(debug, "userdb-ldap: Found LDAP user for ~p, dn ~p: ~p", [Address, Dn, QRes]),
@@ -50,7 +63,7 @@ get_user_with_address(Address) ->
 		Unknown ->
 		    logger:log(debug, "userdb-ldap: Query for exactly one user matching address ~p failed, ldapsearch returned : ~p",
 		    		[Address, Unknown]),
-		    error		    
+		    error
 	    end
     end.
 
@@ -86,7 +99,7 @@ get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, [Address | Rest]
 	    error;
 	none ->
 	    get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, Rest);
-	Users when list(Users) -> 
+	Users when list(Users) ->
 	    lists:append(Users, get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, Rest))
     end.
 
@@ -123,7 +136,7 @@ get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, [User | Re
 	    error;
 	none ->
 	    get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, Rest);
-	Addresses when list(Addresses) -> 
+	Addresses when list(Addresses) ->
 	    lists:append(Addresses, get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, Rest))
     end.
 

@@ -1,5 +1,11 @@
+%%% File    : sipuserdb.erl
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Description : Yxa user database.
+%%% Created : 30 Sep 2003 by Fredrik Thulin <ft@it.su.se>
+
 -module(sipuserdb).
--export([get_user_with_address/1,
+-export([yxa_init/0,
+	 get_user_with_address/1,
 	 get_users_for_address_of_record/1,
 	 get_users_for_addresses_of_record/1,
 	 get_users_for_url/1,
@@ -12,6 +18,19 @@
 	 get_forward_for_user/1
 	]).
 
+%% Function: yxa_init/0
+%% Description: Called by sipserver_sip when the application is
+%%              starting. Invokes the init/0 function of each
+%%              configured sipuserdb module. Returns a list of
+%%              OTP supervisor child specifications, or empty.
+%% Returns: Spec
+%%--------------------------------------------------------------------
+yxa_init() ->
+    Modules = sipserver:get_env(userdb_modules, [sipuserdb_mnesia]),
+    Res = lists:foldl(fun(M, Acc) ->
+			    Acc ++ apply(M, yxa_init, [])
+		    end, [], Modules),
+    Res.
 
 % Looks up exactly one user with an Address. Used
 % for example in REGISTER. If there are multiple

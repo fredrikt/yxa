@@ -1,5 +1,6 @@
 -module(sipuserdb_mnesia).
--export([get_user_with_address/1,
+-export([yxa_init/0,
+	 get_user_with_address/1,
 	 get_users_for_address_of_record/1,
 	 get_users_for_addresses_of_record/1,
 	 get_users_for_url/1,
@@ -16,6 +17,18 @@
 
 %% Mnesia userdb module
 
+%% Function: yxa_init/0
+%% Description: Perform any necessary startup initialization and
+%%              return an OTP supervisor child spec if we want to add
+%%              to sipserver_sup's list. If this sipuserdb_module
+%%              needs to be persistent, it should be a gen_server and
+%%              init should just return a spec so that the gen_server
+%%              is started by the supervisor.
+%% Returns: Spec |
+%%          []
+%%--------------------------------------------------------------------
+yxa_init() ->
+    [].
 
 %% Looks up exactly one user with an Address. Used
 %% for example in REGISTER. If there are multiple
@@ -96,7 +109,7 @@ get_users_for_addresses_of_record2([H | T], Res) ->
 
 
 %% Function: get_addresses_for_users/1
-%% Description: Iterate over a list of users, return all their 
+%% Description: Iterate over a list of users, return all their
 %%              addresses without duplicates. Uses the next function,
 %%              get_addresses_for_user/1.
 %% Returns: ListOfAddresses
