@@ -23,18 +23,27 @@ myip() ->
 myip_list() ->
     get_iplist().
 
-get_if([]) ->
-    [];
+get_if(L) ->
+    get_if(L, []).
 
-get_if([A | R]) ->
-    {ok, B} = inet:ifget(A, [addr, flags]),
+get_if([], Res) ->
+    Res;
+
+get_if([H | T], Res) ->
+    {ok, B} = inet:ifget(H, [addr, flags]),
     {value, {flags, Flags}} = lists:keysearch(flags, 1, B),
     case lists:member(loopback,Flags) of
 	true ->
-	    get_if(R);
+	    %% Ignore interfaces with loopback flag
+	    get_if(T, Res);
 	false ->
-	    {value, {addr, Addr}} = lists:keysearch(addr, 1, B),
-	    [makeip(Addr) | get_if(R)]
+	    case lists:keysearch(addr, 1, B) of
+		{value, {addr, Addr}} ->
+		    get_if(T, [makeip(Addr) | Res]);
+		_ ->
+		    %% Interface has no address, might happen on BSD
+		    get_if(T, Res)
+	    end
     end.
 
 get_iplist() ->
