@@ -152,8 +152,10 @@ get_server_transaction_using_request(Request) when is_record(Request, request) -
 		    logger:log(debug, "Transaction state list: Found no matching server "
 			       "transaction for ACK using RFC3261 methods, trying RFC2543 too"),
 		    get_server_transaction_ack_2543(Request);
-		T ->
-		    T
+		none ->
+		    none;
+		Res when is_record(Res, transactionstate) ->
+		    Res
 	    end
     end.
 
@@ -174,7 +176,7 @@ get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
     %% an RFC3261 compliant device, see RFC3261 17.2.3
     case sipheader:get_server_transaction_ack_id_2543(Request) of
 	error ->
-	    logger:log(error, "Transaction state list: Could not get server transaction RFC2543 ACK id for request"),
+	    logger:log(error, "Transaction state list: Could not get server transaction RFC2543 ack-id for request"),
 	    error;
 	Id ->
 	    ToTag = sipheader:get_tag(keylist:fetch("To", Request#request.header)),
@@ -182,9 +184,10 @@ get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
 		none ->
 		    logger:log(debug, "Transaction state list: ACK request does not match any existing transaction"),
 		    %% If this ever happens, this extra debug output will probably be crucial to
-		    %% diagnose why.
-		    %%logger:log(debug, "Transaction state list: Extra debug: Looked for server transaction with id ~p "
-			%%       "AND to-tag ~p in list :~n~p", [Id, ToTag, debugfriendly()]),
+		    %% diagnose why. However, it can't be enabled per default in case there are
+		    %% a _lot_ of transactions on your server.
+		    %%logger:log(debug, "Transaction state list: Extra debug: Looked for server transaction with ack-id ~p "
+		    %%	       "AND to-tag ~p in list :~n~p", [Id, ToTag, debugfriendly()]),
 		    none;
 		Res when is_record(Res, transactionstate) ->
 		    Res
