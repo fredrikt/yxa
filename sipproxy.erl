@@ -15,7 +15,7 @@
 % waits freely.
 
 start(BranchBase, Parent, Request, Actions, Timeout) when record(Request, request) ->
-    case siprequest:check_proxy_request(Request) of
+    case catch siprequest:check_proxy_request(Request) of
 	{ok, _, ApproxMsgSize} ->
 	    case keylist:fetch("Route", Request#request.header) of
 		[] ->
@@ -30,8 +30,16 @@ start(BranchBase, Parent, Request, Actions, Timeout) when record(Request, reques
 		    logger:log(debug, "sipproxy: Can't fork request with Route header"),
 		    {error, "Request with Route header could not be forked"}
 	    end;
-	_ ->
-	    logger:log(debug, "sipproxy: check_proxy_request did not say it was OK to proxy request"),
+	{siperror, Status, Reason} ->
+	    %% siprequest:check_proxy_request() did a throw() - something it does if
+	    %% for example Max-Forwards is 1. Pass this on to Parent and then return.
+	    logger:log(debug, "sipproxy: caught siperror throw() from check_proxy_request : ~p ~s",
+		       [Status, Reason]),
+	    util:safe_signal("sipproxy :", Parent, {all_terminated, {Status, Reason}}),
+	    E = io_lib:format("Request could not be forked (~p ~s)", [Status, Reason]),
+	    {error, lists:flatten(E)};
+	Unknown ->
+	    logger:log(debug, "sipproxy: check_proxy_request returned unknown result :~n~p", [Unknown]),
 	    {error, "Request could not be forked"}
     end.
 
