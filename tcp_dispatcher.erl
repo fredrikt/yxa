@@ -109,7 +109,7 @@ start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer
 				{ok, Local6, Listener6} ->
 				    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=Listener6, data={Local6, none}},
 				    %% Add with timeout of 0 since listening sockets should never be expired
-				    socketlist:add({listener, Proto, Port}, Listener6, Local6, none, SipSocket, 0, SocketList);
+				    socketlist:add({listener, Proto, Port}, Listener6, Proto, Local6, none, SipSocket, 0, SocketList);
 				not_started ->
 				    SocketList;
 				{'EXIT', Reason} ->
@@ -128,7 +128,7 @@ start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer
 			{ok, Local, Listener} ->
 			    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=Listener, data={Local, none}},
 			    %% Add with timeout of 0 since listening sockets should never be expired
-			    socketlist:add({listener, Proto, Port}, Listener, Local, none, SipSocket, 0, SocketList);
+			    socketlist:add({listener, Proto, Port}, Listener, Proto, Local, none, SipSocket, 0, SocketList);
 			not_started ->
 			    SocketList;
 			{'EXIT', Reason} ->
@@ -173,18 +173,18 @@ start_listeners([{Proto, Port} | T], SocketList) when is_atom(Proto), is_integer
 %%           Reason    = string()
 %%--------------------------------------------------------------------
 handle_call({get_socket, Proto, Host, Port}, From, State) when is_atom(Proto), is_list(Host), is_integer(Port) ->
-    case get_socket_from_list(Host, Port, State#state.socketlist) of
+    case get_socket_from_list(Proto, Host, Port, State#state.socketlist) of
 	none ->
 	    %% We must spawn a tcp_connection process to take care of making this new connection
 	    %% since the tcp_dispatcher may not be blocked by time consuming operations
 	    tcp_connection:start_link(connect, Proto, Host, Port, From),
-	    logger:log(debug, "Sipsocket TCP: No cached '~p' connection to remote host ~s:~p, trying to connect",
+	    logger:log(debug, "Sipsocket TCP: No cached connection to remote host ~p:~s:~p, trying to connect",
 		       [Proto, Host, Port]),
 	    {noreply, State, ?TIMEOUT};
 	{error, E} ->
 	    {reply, {error, E}, State, ?TIMEOUT};
 	SipSocket when is_record(SipSocket, sipsocket) ->
-	    logger:log(debug, "Sipsocket TCP: Use existing connection to ~s:~p", [Host, Port]),
+	    logger:log(debug, "Sipsocket TCP: Use existing connection to ~p:~s:~p", [Proto, Host, Port]),
 	    {reply, {ok, SipSocket}, State, ?TIMEOUT}
     end;
 
@@ -205,13 +205,14 @@ handle_call({register_sipsocket, Dir, SipSocket}, _From, State) when is_atom(Dir
     case catch link(CPid) of
 	true ->
 	    {Local, Remote} = SipSocket#sipsocket.data,
+	    Proto = SipSocket#sipsocket.proto,
 	    Ident = case Dir of
 			in ->
-			    {connection_from, Remote};
+			    {from, Proto, Remote};
 			out ->
-			    {connection_to, Remote}
+			    {to, Proto, Remote}
 		    end,
-	    case socketlist:add(Ident, CPid, Local, Remote, SipSocket, 0, State#state.socketlist) of
+	    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, 0, State#state.socketlist) of
 		{error, E} ->
 		    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
 		    {reply, {error, E}, State, ?TIMEOUT};
@@ -222,9 +223,17 @@ handle_call({register_sipsocket, Dir, SipSocket}, _From, State) when is_atom(Dir
 	    {reply, {error, "Could not link to pid"}, State, ?TIMEOUT}
     end;
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({monitor_get_socketlist}, From, State)
+%% Descrip.: The stack monitor is requesting our list of connections.
+%% Returns : {reply, {ok, List} State, ?TIMEOUT}
+%%           List = socketlist record()
+%%--------------------------------------------------------------------
+handle_call({monitor_get_socketlist}, _From, State) ->
+    {reply, {ok, State#state.socketlist}, State, ?TIMEOUT};
+
 handle_call({quit}, _From, State) ->
     {stop, "Asked to quit", State}.
-
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State)
@@ -323,21 +332,24 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: get_socket_from_list(Host, Port, SocketList)
-%%           Host = string()
-%%           Port = term()
+%% Function: get_socket_from_list(Proto, Host, Port, SocketList)
+%%           Proto = atom(), tcp | tcp6 | tls | tls6
+%%           Host  = string()
+%%           Port  = term()
 %%           SocketList = socketlist record()
 %% Descrip.: Look for an entry with remote {Host, Port} in SocketList
 %% Returns : SipSocket |
 %%           none
 %%           SipSocket = sipsocket record()
 %%--------------------------------------------------------------------
-get_socket_from_list(Host, Port, SocketList) when is_list(Host), is_integer(Port) ->
-    case socketlist:get_using_remote({Host, Port}, SocketList) of
+get_socket_from_list(Proto, Host, Port, SocketList) when is_list(Host), is_integer(Port),
+							 Proto == tcp; Proto == tcp6;
+							 Proto == tls; Proto == tls6 ->
+    case socketlist:get_using_remote(Proto, {Host, Port}, SocketList) of
 	SListElem when is_record(SListElem, socketlistelem) ->
 	    [CPid, SipSocket] = socketlist:extract([pid, sipsocket], SListElem),
-	    logger:log(debug, "Sipsocket TCP: Reusing existing connection to ~s:~p (~p)",
-		       [Host, Port, CPid]),
+	    logger:log(debug, "Sipsocket TCP: Reusing existing connection to ~p:~s:~p (~p)",
+		       [Proto, Host, Port, CPid]),
 	    SipSocket;
 	_ ->
 	    none
