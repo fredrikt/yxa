@@ -30,6 +30,18 @@ url_to_hostport({User, Pass, InHost, InPort, Parameters}) ->
 	    {InHost, InPort}
     end.
 
+rewrite_route(Header, Dest) ->
+    Route = sipheader:contact(keylist:fetch("Route", Header)),
+    case Route of
+	[{_, Newdest} | Newroute] ->
+	    {keylist:set("Route",
+			 sipheader:contact_print(Newroute),
+			 Header),
+	     Newdest};
+	[] ->
+	    {Header, Dest}
+    end.
+
 send_proxy_request(Header, Socket, {Action, Dest, Body}) ->
     Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
     Printheader = fun({Name, Value}) ->
@@ -38,10 +50,11 @@ send_proxy_request(Header, Socket, {Action, Dest, Body}) ->
     [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
 				     {siphost:myip(), "5060"}, []}]),
     Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
-    HLines = lists:map(Printheader, Keylist2),
+    {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
+    HLines = lists:map(Printheader, Keylist3),
     Message = siputil:concat_strings([Line1 | HLines]) ++ "\r\n" ++ Body,
-    {Host, Port} = url_to_hostport(Dest),
-    logger:log(debug, "send request(~p,~p:~p):~p", [Dest, Host, Port, Message]),
+    {Host, Port} = url_to_hostport(Newdest),
+    logger:log(debug, "send request(~p,~p:~p):~p", [Newdest, Host, Port, Message]),
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
 
 process_register_isauth(Header, Socket, Phone, Auxphones, Location) ->
