@@ -1,11 +1,15 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_udp.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transportlayer UDP all-in-one handler.
+%%% Descrip.: Transportlayer UDP all-in-one handler. Receive UDP
+%%%           datagrams and, if they are not keep alives (or too
+%%%           short), spawn sipserver:process(...) on the received
+%%%           packets.
 %%%
 %%% Created : 15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(sipsocket_udp).
+%%-compile(export_all).
 
 -behaviour(gen_server).
 
@@ -44,7 +48,7 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
--define(SOCKETOPTS, [{reuseaddr, true}]).
+-define(SOCKETOPTS, [{reuseaddr, true}, binary]).
 %% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
 -define(SOCKETOPTSv6, [{reuseaddr, true}, inet6, {buffer, 8 * 1024}]).
 
@@ -91,7 +95,7 @@ start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, 
 	{ok, Socket} ->
 	    Local = get_localaddr(Socket, "0.0.0.0"),
 	    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp, pid=self(), data={Local, none}},
-	    NewSocketList = socketlist:add({listener, udp, Port}, self(), udp, Local, none, SipSocket, 
+	    NewSocketList = socketlist:add({listener, udp, Port}, self(), udp, Local, none, SipSocket,
 					   0, State#state.socketlist),
 	    start_listening(T, Port, State#state{socket=Socket, socketlist=NewSocketList});
 	{error, Reason} ->
@@ -106,7 +110,7 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 		{ok, Socket} ->
 		    Local = get_localaddr(Socket, "[::]"),
 		    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp6, pid=self(), data={Local, none}},
-		    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket, 
+		    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket,
 						   0, State#state.socketlist),
 		    start_listening(T, Port, State#state{socket6=Socket, socketlist=NewSocketList});
 		{error, Reason} ->
@@ -137,7 +141,7 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 %%           Port  = integer()
 %% Descrip.: Get a socket for a certain protocol (Proto).
 %%           sipsocket_udp is currently not multi-socket, we just have
-%%           a singe UDP socket for each protocol and that is
+%%           a single UDP socket for each protocol and that is
 %%           'listener'. Locate and return it.
 %% Returns : {reply, Reply, State}
 %%           Reply = {ok, SipSocket} |
@@ -216,7 +220,7 @@ handle_cast(Msg, State) ->
 %%           InPortNo = integer()
 %%           Packet   = list()
 %% Descrip.: Handle data received (as a signal) from one of our
-%%           sockets. Spawn sipserver:process() on each message.
+%%           sockets.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
 handle_info({udp, Socket, IPlist, InPortNo, Packet}, State) when is_integer(InPortNo) ->
@@ -229,10 +233,8 @@ handle_info({udp, Socket, IPlist, InPortNo, Packet}, State) when is_integer(InPo
 		    logger:log(error, "Sipsocket UDP: Received gen_server info 'udp' "
 			       "from unknown source '~p', ignoring", [Socket])
 	end,
-    SipSocket = #sipsocket{module=sipsocket_udp, proto=Proto, pid=self(), data=none},
-    Origin = #siporigin{proto=Proto, addr=siphost:makeip(IPlist), port=InPortNo, 
-			receiver=self(), sipsocket=SipSocket},
-    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transaction_layer]),
+    IP = siphost:makeip(IPlist),
+    received_packet(Packet, IP, InPortNo, Proto),
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -304,7 +306,7 @@ get_localaddr(Socket, DefaultAddr) ->
 send(SipSocket, Proto, _Host, _Port, _Message)
   when is_record(SipSocket, sipsocket), SipSocket#sipsocket.proto /= Proto ->
     {error, "Protocol mismatch"};
-send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket), 
+send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket),
 						 is_integer(Port), is_atom(Proto),
 						 Proto == udp; Proto == udp6 ->
     Pid = SipSocket#sipsocket.pid,
@@ -350,3 +352,47 @@ get_socket(Proto, Host, Port) when is_atom(Proto), is_list(Host), is_integer(Por
 %%--------------------------------------------------------------------
 is_reliable_transport(_) ->
     false.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: terminate(Reason, State)
+%% Descrip.: Check if a received packet is a keepalive or possibly a
+%%           SIP message. For the latter case, we spawn
+%%           sipserver:process(...) on the packet, after creating the
+%%           necessary sipsocket and origin records.
+%% Returns : ok
+%%--------------------------------------------------------------------
+received_packet(<<"\r\n">>, IP, Port, Proto) ->
+    logger:log(debug, "Keepalive packet (CRLF) received from ~p:~s:~p", [Proto, IP, Port]),
+    ok;
+received_packet(Packet, IP, Port, Proto) when is_binary(Packet), size(Packet) =< 20 ->
+    %% Too short to be anywhere near a real SIP message
+    case is_only_nulls(Packet) of
+	true ->
+	    logger:log(debug, "Keepalive packet (~p NULLs) received from ~p:~s:~p",
+		       [size(Packet), Proto, IP, Port]);
+	false ->
+	    logger:log(debug, "Packet received from ~p:~s:~p too short to be a SIP message :~n~p~n"
+		       "(as list: ~p)", [Proto, IP, Port, Packet, binary_to_list(Packet)])
+    end,
+    ok;
+received_packet(Packet, IP, Port, Proto) when is_binary(Packet), is_list(IP), is_integer(Port), is_atom(Proto) ->
+    SipSocket = #sipsocket{module=sipsocket_udp, proto=Proto, pid=self(), data=none},
+    Origin = #siporigin{proto=Proto, addr=IP, port=Port,
+			receiver=self(), sipsocket=SipSocket},
+    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transaction_layer]),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: is_only_nulls(Packet)
+%%           Packet = binary(), a packet received from the network
+%% Descrip.: Check if a binary packet is only NULL bytes or not.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_only_nulls(Packet) when is_binary(Packet) ->
+    ZeroList = lists:duplicate(size(Packet), 0),
+    (Packet == list_to_binary(ZeroList)).
