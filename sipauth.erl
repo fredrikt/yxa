@@ -104,18 +104,21 @@ get_user_verified(Header, Method, Authheader) ->
 			     dict:fetch("uri", Authorization),
 			     User, Password),
     if
+	Password == none ->
+	    logger:log(normal, "Authorization failed for non-existing user ~p", [User]),
+	    false;
 	Response /= Response2 ->
 	    %logger:log(normal, "Response ~p /= Response2 ~p", [Response, Response2]),
-	    logger:log(normal, "Authorization failed for user ~s", [User]),
+	    logger:log(normal, "Authorization failed for user ~p", [User]),
 	    false;
 	Nonce /= Nonce2 ->
-	    logger:log(normal, "Nonce ~p /= ~p", [Nonce, Nonce2]),
+	    logger:log(normal, "Nonce ~p /= ~p, authorization failed for user ~p", [Nonce, Nonce2, User]),
 	    stale;
 	Timestamp < Now - 5 ->
-	    logger:log(normal, "Timestamp ~p too old. Now: ~p", [Timestamp, Now]),
+	    logger:log(normal, "Timestamp ~p too old. Now: ~p, authorization failed for user ~p", [Timestamp, Now, User]),
 	    stale;
 	Timestamp > Now ->
-	    logger:log(normal, "Timestamp ~p too new. Now: ~p", [Timestamp, Now]),
+	    logger:log(normal, "Timestamp ~p too new. Now: ~p, authorization failed for user ~p", [Timestamp, Now, User]),
 	    false;
 	true ->
 	    User
