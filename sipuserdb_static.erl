@@ -1,11 +1,12 @@
-%%% File    : sipuserdb_mnesia.erl
-%%% Author  : Fredrik <ft@it.su.se>
+%%% File    : sipuserdb_static.erl
+%%% Author  : Fredrik Thulin <ft@it.su.se>
 %%% Purpose : A static user database module. The user data you want to
 %%%           edit is in the file sipuserdb_static.hrl.
-%%% Created : 16 Apr 2004 by Fredrik <ft@it.su.se>
+%%% Created : 16 Apr 2004 by Fredrik Thulin <ft@it.su.se>
 
 -module(sipuserdb_static).
--export([get_user_with_address/1,
+-export([yxa_init/0,
+	 get_user_with_address/1,
 	 get_users_for_address_of_record/1,
 	 get_users_for_addresses_of_record/1,
 	 get_users_for_url/1,
@@ -20,7 +21,7 @@
 
 -include("siprecords.hrl").
 
--compile(export_all).
+%%-compile(export_all).
 
 %% Static userdb module
 
@@ -33,6 +34,19 @@
 %%
 -include("sipuserdb_static.hrl").
 
+%% Function: yxa_init/0
+%% Description: Perform any necessary startup initialization and
+%%              return an OTP supervisor child spec if we want to add
+%%              to sipserver_sup's list. If this sipuserdb_module
+%%              needs to be persistent, it should be a gen_server and
+%%              init should just return a spec so that the gen_server
+%%              is started by the supervisor.
+%% Returns: Spec |
+%%          []
+%%--------------------------------------------------------------------
+yxa_init() ->
+    io:format("sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate immediately!~n"),
+    [].
 
 %% Function: get_user_with_address/1
 %% Description: Looks up exactly one user with an Address. Used for
@@ -43,6 +57,7 @@
 %%          error
 %%--------------------------------------------------------------------
 get_user_with_address(Address) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     case get_users_using_address(Address) of
 	[] ->
 	    logger:log(debug, "userdb-static: No user with address ~p", [Address]),
@@ -67,6 +82,7 @@ get_user_with_address(Address) ->
 %%          error
 %%--------------------------------------------------------------------
 get_users_for_address_of_record(Address) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     case get_users_using_address(Address) of
 	L when list(L) ->
 	    L;
@@ -84,6 +100,7 @@ get_users_for_address_of_record(Address) ->
 %% Returns: ListOfUsernames
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(In) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     get_users_for_addresses_of_record2(In, []).
 
 get_users_for_addresses_of_record2([], Res) ->
@@ -104,6 +121,7 @@ get_users_for_addresses_of_record2([H | T], Res) ->
 %% Returns: ListOfAddresses
 %%--------------------------------------------------------------------
 get_addresses_for_users(In) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     get_addresses_for_users2(In, []).
 
 get_addresses_for_users2([], Res) ->
@@ -127,6 +145,7 @@ get_addresses_for_users2([H | T], Res) ->
 %%          error
 %%--------------------------------------------------------------------
 get_addresses_for_user(Username) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-static: No such user ~p", [Username]),
@@ -134,7 +153,7 @@ get_addresses_for_user(Username) ->
 	User when record(User, user) ->
 	    collect_addresses(get_addresses_using_user(User));
 	Unknown ->
-	    logger:log(error, "userdb-static: Unexpected result from phone:get_user(), user ~p result : ~p",
+	    logger:log(error, "userdb-static: Unexpected result from get_user(), user ~p result : ~p",
 		       [Username, Unknown]),
 	    error
     end.
@@ -150,6 +169,7 @@ get_addresses_for_user(Username) ->
 %% Returns: ListOfUsernames
 %%--------------------------------------------------------------------
 get_users_for_url(URL) when record(URL, sipurl) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     Addresses = local:lookup_url_to_addresses(sipuserdb_static, URL),
     logger:log(debug, "userdb-static: Looking for users matching address(es) ~p derived from URL ~p",
 	       [Addresses, sipurl:print(URL)]),
@@ -167,6 +187,7 @@ get_users_for_url(URL) when record(URL, sipurl) ->
 %%          error
 %%--------------------------------------------------------------------
 get_password_for_user(Username) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-static: No such user ~p when fetching password", [Username]),
@@ -189,6 +210,7 @@ get_password_for_user(Username) ->
 %%          nomatch
 %%--------------------------------------------------------------------
 get_classes_for_user(Username) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-static: No such user ~p when fetching password", [Username]),
@@ -217,6 +239,7 @@ get_classes_for_user(Username) ->
 %%          error
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(Username) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-static: No such user ~p when fetching telephone number", [Username]),
@@ -261,6 +284,7 @@ get_telephonenumber_for_user(Username) ->
 %% Returns: ForwardList
 %%--------------------------------------------------------------------
 get_forwards_for_users(In) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     get_forwards_for_users2(In, []).
 
 get_forwards_for_users2([], Res) ->
@@ -282,6 +306,7 @@ get_forwards_for_users2([H | T], Res) ->
 %%          error
 %%--------------------------------------------------------------------
 get_forward_for_user(Username) ->
+    logger:log(error, "sipuserdb_statis is OBSOLETED by sipuserdb_file, you should migrate your user database immediately!"),
     case get_user(Username) of
 	nomatch ->
 	    logger:log(debug, "userdb-static: No forwards found for user ~p", [Username]),
@@ -375,7 +400,7 @@ get_users_using_address(URL) when record(URL, sipurl) ->
 %%              that matches using URI address matching rules, or
 %%              the user records matching the address.
 %% Returns: ListOfUserRecords |
-%%          error 
+%%          error
 %%--------------------------------------------------------------------
 get_user_records_for_url(URL, [], Res) ->
     %% Make list sorted and remove duplicates
