@@ -138,6 +138,9 @@ stateless_challenges		(default: false) Send challenges without state
 				function send_challenge2().
 tcp_connection_idle_timeout	(default: 300) Number of seconds of inactivity
 				before we close a TCP connection.
+tcp_connect_timeout		(default: 20) Number of seconds before we time
+				out trying to establish a TCP connection to a
+				remote host.
 userdb_modules			(default: [sipuserdb_mnesia]) User database
 				backend(s) to use. See "User database" section
 				below.
