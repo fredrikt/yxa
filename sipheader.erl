@@ -131,6 +131,18 @@ auth_print(Auth, Stale) ->
      end
     ].
 
+auth(["GSSAPI " ++ String]) ->
+    Headers = comma(String),
+    L = lists:map(fun(A) ->
+			  H = string:strip(A,left),
+			  Index = string:chr(H, $=),
+			  Name = string:substr(H, 1, Index - 1),
+			  Value = string:substr(H, Index + 1),
+			  
+			  {Name, unquote(Value)}
+		  end, Headers),
+    dict:from_list(L);
+
 auth(["Digest " ++ String]) ->
     Headers = comma(String),
     L = lists:map(fun(A) ->
