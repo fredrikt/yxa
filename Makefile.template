@@ -1,5 +1,18 @@
-srcdir = /path/to/source/sip/erlang/kth.se/vxl.mk
+srcdir = /path/to/directory/containing/vxl.mk
+# If you want to be able to start the Yxa applications without first
+# changing working directory into your build directory you have to
+# define these :
+#sslcertdir = /path/to/directory/containing/cert.comb
+#builddir = /path/to/your/selected/build/directory
+#
+# If you want to install parallel versions of Yxa (or just want a
+# clean build directory) you can specify where you want your Mnesia
+# database and config files by defining these :
+#mnesiadir = /path/to/mnesia/storage/dir
+#configdir = /path/to/directory/containing/yxa/config/files
 
-STARTSCRIPT = incomingproxy.start
+# List the 'start' name of each application you want to have a startup
+# script created for in this build directory here :
+STARTSCRIPT = incomingproxy.start pstnproxy.start adminwww.start appserver.start 
 
 include $(srcdir)/vxl.mk

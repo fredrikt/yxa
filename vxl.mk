@@ -9,21 +9,25 @@ CC = gcc
 all: $(BEAM) $(STARTSCRIPT) bootstrap.sh
 
 clean:
-	rm -f *.beam *.boot *.app *.rel *~ *.script *.start
+	rm -f *.beam *.boot *.app *.rel *~ *.script *.start bootstrap.sh
 
 sslkey:
-	mkdir ssl || true
-	chmod 700 ssl
-	cp $(srcdir)/ssl.config ssl/ssl.config
-	cd ssl && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
-	cd ssl && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
-	cd ssl && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
-	cat ssl/cert.cert ssl/cert.pem > ssl/cert.comb
+	mkdir -p $(sslcertdir)
+	chmod 700 $(sslcertdir)
+	test -f $(sslcertdir)/ssl.config || cp $(srcdir)/ssl.config $(sslcertdir)/ssl.config
+	cd $(sslcertdir) && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
+	cd $(sslcertdir) && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
+	cd $(sslcertdir) && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
+	cat $(sslcertdir)/cert.cert $(sslcertdir)/cert.pem > $(sslcertdir)/cert.comb
 
 %.start: %.boot %.config init.sh.in
-	cp $(srcdir)/init.sh.in $@
-	echo "erl -boot " $* " -name " $* " -config " $* " -proto_dist inet_ssl -ssl_dist_opt client_certfile ssl/cert.comb -ssl_dist_opt server_certfile ssl/cert.comb -ssl_dist_opt verify 2 -detached" >> $@
-	chmod +x $@
+	sed -e 's!@PROGRAMNAME@!$*!' \
+	    -e 's!@CONFIGDIR@!$(configdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@BUILDDIR@!$(builddir)!' < $(srcdir)/init.sh.in > $@.new
+	chmod +x $@.new
+	mv $@.new $@
 
 %.config:
 	test -f $@ || ( echo "% Write your configuration here"; echo "[{$*, []}]." ) > $@
@@ -44,7 +48,10 @@ dtmfserver: dtmfserver.o
 	$(CC) $(LDFLAGS) -o dtmfserver dtmfserver.o
 
 bootstrap.sh: init.sh.in
-	cp $(srcdir)/init.sh.in $@
-	echo "ADMINPW='verysecret'" >> $@
-	echo "erl -name incomingproxy -noshell -run bootstrap start \"\$$ADMINPW\" -run init stop" >> $@
-	chmod +x $@
+	sed -e 's!@PROGRAMNAME@!$*!' \
+	    -e 's!@CONFIGDIR@!$(configdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@BUILDDIR@!$(builddir)!' < $(srcdir)/init.sh.in > $@.new
+	chmod +x $@.new
+	mv $@.new $@
