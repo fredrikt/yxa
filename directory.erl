@@ -18,8 +18,15 @@ ldapmailsearch(Mail, Attribute) ->
 	[] ->
 	    none;
 	[{eldap_entry, _, Attributes} | _] ->
-	    {value, {Attribute, [Value | _]}} = lists:keysearch(Attribute, 1, Attributes),
-	    Value
+	    case Attributes of
+		[] ->
+		    none;
+		Attributes ->
+		    {value, {Attribute, [Value | _]}} = lists:keysearch(Attribute, 1, Attributes),
+		    Value
+	    end;
+	_ ->
+	    none
     end.
 
 do_recv(Sock, Text) ->
