@@ -2,9 +2,10 @@
 %%% File    : sipauth.erl
 %%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
 %%% Description : SIP authentication functions.
-%%% Created : DD MMM YYYY by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%-------------------------------------------------------------------
 -module(sipauth).
+
 %%-compile(export_all).
 
 -export([get_response/5,
@@ -18,6 +19,9 @@
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 realm/0]).
+
+
+-include("siprecords.hrl").
 
 %% MD5 digest 'formula'
 %%
@@ -158,8 +162,8 @@ get_user_verified_proxy(Header, Method) ->
 	    get_user_verified2(Method, Authheader)
     end.
 
-get_user_verified2(Method, ["GSSAPI" ++ Authheader]) ->
-    Authorization = sipheader:auth(["GSSAPI" ++ Authheader]),
+get_user_verified2(Method, ["GSSAPI" ++ R] = Authheader) ->
+    Authorization = sipheader:auth(Authheader),
     Info = dict:fetch("info", Authorization),
     {Response, Username} = gssapi:request(Info),
     %% XXX this is definately broken! What does gssapi:request() return anyways?
@@ -189,6 +193,7 @@ get_user_verified2(Method, Authheader) ->
 				  "result of get_password_for_user was : ~p", [User, E]),
 		       throw({siperror, 500, "Server Internal Error"})
 	       end,
+
     Nonce2 = get_nonce(Opaque),
     Response2 = get_response(Nonce2, Method,
 			     dict:fetch("uri", Authorization),
@@ -218,11 +223,11 @@ get_user_verified2(Method, Authheader) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: pstn_call_check_auth(Method, Header, Address, ToNumberIn,
+%% Function: pstn_call_check_auth(Method, Header, URL, ToNumberIn,
 %%                                Classdefs)
 %%           Method     = string()
 %%           Header     = keylist record()
-%%           Address    = string(), From-address in request
+%%           URL        = sipurl record(), From-address in request
 %%           ToNumberIn = string(), destination, local or E.164 number
 %%           Classdefs  = term()
 %% Descrip.: Check if the destination is allowed for this user, and
@@ -232,7 +237,8 @@ get_user_verified2(Method, Authheader) ->
 %%           User    = string(), SIP authentication username
 %%           Class   = atom(), the class that this ToNumberIn matched
 %%--------------------------------------------------------------------
-pstn_call_check_auth(Method, Header, Address, ToNumberIn, Classdefs) ->
+pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
+  when is_list(Method), is_record(Header, keylist), is_record(URL, sipurl), is_list(ToNumberIn) ->
     ToNumber = case local:rewrite_potn_to_e164(ToNumberIn) of
 		   error -> ToNumberIn;
 		   N -> N
@@ -244,12 +250,14 @@ pstn_call_check_auth(Method, Header, Address, ToNumberIn, Classdefs) ->
 	    %% just check that if this is one of our SIP users, they
 	    %% are permitted to use the From: address
 	    logger:log(debug, "Auth: ~p is of class ~p which does not require authorization", [ToNumber, Class]),
+	    Address = sipurl:print(URL),
 	    case local:get_user_with_address(Address) of
 		nomatch ->
-		    logger:log(debug, "Auth: Address ~p does not match any of my users, no need to verify.", [Address]),
+		    logger:log(debug, "Auth: Address ~p does not match any of my users, no need to verify.", 
+			       [Address]),
 		    {true, unknown, Class};
 		User when list(User) ->
-		    Allowed = local:can_use_address(User, Address),
+		    Allowed = local:can_use_address(User, URL),
 		    {Allowed, User, Class};
 		Unknown ->
 		    logger:log(error, "Auth: Unknown result returned from get_user_for_address(~p) : ~p",
@@ -263,12 +271,12 @@ pstn_call_check_auth(Method, Header, Address, ToNumberIn, Classdefs) ->
 		stale ->
 		    {stale, none, Class};
 		{authenticated, User} ->
-		    UserAllowedToUseAddress = local:can_use_address(User, Address),
+		    UserAllowedToUseAddress = local:can_use_address(User, URL),
 		    AllowedCallToNumber = local:is_allowed_pstn_dst(User, ToNumber, Header, Class),
 		    if
 			UserAllowedToUseAddress /= true ->
 			    logger:log(normal, "Auth: User ~p is not allowed to use address ~p (when placing PSTN "
-				       "call to ~s (class ~p))", [User, Address, ToNumber, Class]),
+				       "call to ~s (class ~p))", [User, sipurl:print(URL), ToNumber, Class]),
 			    {false, User, Class};
 			AllowedCallToNumber /= true ->
 			    logger:log(normal, "Auth: User ~p not allowed to call ~p in class ~p",
@@ -314,34 +322,31 @@ is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: can_use_address(User, Address)
+%% Function: can_use_address(User, URL)
 %%           User    = string()
-%%           Address = string()
-%% Descrip.:
+%%           URL     = sipurl record()
+%% Descrip.: Check if a given User may use address Address as From:
+%%           by using the function can_use_address_detail/2 not caring
+%%           about the reason it returns.
 %% Returns : true  |
-%%           false |
-%%           R
-%%           R = local:can_use_address_detail() result
-%%
-%% Note    : Should be changed to just return true or false
+%%           false
 %%--------------------------------------------------------------------
-can_use_address(User, Address) ->
-    case local:can_use_address_detail(User, Address) of
-	{Verdict, _} -> Verdict;
-	R -> R
+can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
+    case local:can_use_address_detail(User, URL) of
+	{true, _} -> true;
+	{false, _} -> false
     end.
 
 %%--------------------------------------------------------------------
-%% Function: can_use_address_detail(User, Address)
+%% Function: can_use_address_detail(User, URL)
 %%           User    = string()
-%%           Address = string()
+%%           URL     = sipurl record()
 %% Descrip.: Check if a given User may use address Address as From:
 %% Returns : {Verdict, Reason}
 %%           Verdict = true | false
 %%           Reason  = ok | eperm | nomatch | error
 %%--------------------------------------------------------------------
-can_use_address_detail(User, Address) when list(User), list(Address) ->
-    URL = sipurl:parse(Address),
+can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
 	[User] ->
 	    logger:log(debug, "Auth: User ~p is allowed to use address ~p",
@@ -379,12 +384,12 @@ can_use_address_detail(User, Address) ->
     {false, error}.
 
 %%--------------------------------------------------------------------
-%% Function: can_register(Header, Address)
-%%           Header  = keylist record()
-%%           Address = string()
+%% Function: can_register(Header, ToURL)
+%%           Header = keylist record()
+%%           ToURL  = sipurl record()
 %% Descrip.: Check if a REGISTER message authenticates OK, and check
 %%           that the User returned from credentials check actually
-%%           may use this From: (NOT To:, so third party registrations
+%%           may use this To: (NOT From:, so third party registrations
 %%           are not denied per se by this check).
 %% Returns : {{Verdict, Reason}, User} |
 %%           {stale, User}             |
@@ -392,13 +397,13 @@ can_use_address_detail(User, Address) ->
 %%           Verdict = true | false
 %%           Reason  = ok | eperm | nomatch | error
 %%--------------------------------------------------------------------
-can_register(Header, Address) ->
+can_register(Header, ToURL) ->
     case local:get_user_verified(Header, "REGISTER") of
 	{authenticated, User} ->
-	    {local:can_use_address_detail(User, Address), User};
+	    {local:can_use_address_detail(User, ToURL), User};
 	{stale, User} ->
 	    {stale, User};
 	_ ->
-	    logger:log(debug, "Auth: Registration of address ~p NOT permitted", [Address]),
+	    logger:log(debug, "Auth: Registration of address ~p NOT permitted", [sipurl:print(ToURL)]),
 	    {false, none}
     end.
