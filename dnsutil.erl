@@ -1,5 +1,5 @@
 -module(dnsutil).
--export([siplookup/1, enumlookup/1, get_ip_port/2]).
+-export([siplookup/1, enumlookup/1, enumlookup/2, get_ip_port/2]).
 
 -include("inet_dns.hrl").
 
@@ -154,7 +154,17 @@ chooseenum([], Type) ->
 chooseenum([Elem | Rest], Type) ->
     case Elem of
 	{Order, Preference, "u", Type, Regexp, ""} ->
+	    %% exact match of Type
 	    [{Order, Preference, Regexp} | chooseenum(Rest, Type)];
+	{Order, Preference, "u", OtherType, Regexp, ""} ->
+	    TypeColon = Type ++ ":",
+	    case string:substr(OtherType, 1, length(Type) + 1) of
+		TypeColon ->
+		    %% Type matches, but there is also a subtype
+		    [{Order, Preference, Regexp} | chooseenum(Rest, Type)];
+		_ ->
+		    chooseenum(Rest, Type)
+	    end;
 	_ ->
 	    chooseenum(Rest, Type)
     end.
@@ -180,17 +190,20 @@ enumlookup("+" ++ Number) ->
 	    logger:log(debug, "Resolver: Not performing ENUM lookup on ~p since enum_domainlist is empty", ["+" ++ Number]),
 	    none;
 	DomainList ->
-	    logger:log(debug, "Resolver: ENUM query for ~p in ~p", ["+" ++ Number, DomainList]),
-	    L1 = enumalldomains(Number, DomainList),
-	    % SIP+E2U is RFC2916 and E2U+SIP is 2916bis
-	    L2 = lists:append(chooseenum(L1, "SIP+E2U"), chooseenum(L1, "E2U+SIP")),
-	    L3 = lists:sort(fun sortenum/2, L2),
-	    L4 = enumregexp(L3),
-	    applyregexp("+" ++ Number, L4)
+	    enumlookup("+" ++ Number, DomainList)
     end;
 enumlookup(Foo) ->
     logger:log(error, "Resolver: ENUM lookup on non-E.164 number (~p)", [Foo]),
     none.
+
+enumlookup("+" ++ Number, DomainList) ->
+    logger:log(debug, "Resolver: ENUM query for ~p in ~p", ["+" ++ Number, DomainList]),
+    L1 = enumalldomains(Number, DomainList),
+    %% SIP+E2U is RFC2916 and E2U+SIP is 2916bis
+    L2 = lists:append([chooseenum(L1, "SIP+E2U"), chooseenum(L1, "E2U+SIP")]),
+    L3 = lists:sort(fun sortenum/2, L2),
+    L4 = enumregexp(L3),
+    applyregexp("+" ++ Number, L4).
 
 isnaptr(Entry) ->
     if
