@@ -53,7 +53,29 @@ url_to_hostport({User, Pass, InHost, InPort, Parameters}) ->
 	{error, What} ->
 	    {error, What};
 	{Host, Port} ->
-	    dnsutil:get_ip_port(Host, integer_to_list(Port));
+	%    InPortInt = list_to_integer(default_port(InPort)),
+	%    if
+	%	Port /= InPortInt ->
+	%	    logger:log(debug, "Warning: When looking up ~p in DNS, port ~p became port ~p",
+	%	    		[InHost, InPortInt, Port]);		
+	%	true -> true
+	%    end,
+	    UsePort = case InPort of
+		none ->
+		    integer_to_list(Port);
+		PortInt when integer(InPort) ->
+		    integer_to_list(InPort);
+		PortStr when list(InPort) ->
+		    InPort
+	    end,
+	    DNSPortList = integer_to_list(Port),
+	    if
+		UsePort /= DNSPortList ->
+		    logger:log(debug, "Warning: ~p is specified to use port ~s in DNS, but I'm going to use the supplied port ~s instead",
+		    		[InHost, DNSPortList, UsePort]);		
+		true -> true
+	    end,
+	    dnsutil:get_ip_port(Host, UsePort);
 	none ->
 	    dnsutil:get_ip_port(InHost, default_port(InPort))
     end.
@@ -64,7 +86,7 @@ rewrite_route(Header, URI) ->
         [{_, NewDest} | NewRoute1] ->
 	    case route_matches_me({none, NewDest}) of
 		true ->
-		    logger:log(debug, "First Route ~p matches me, removing it.", sipheader:contact_print([{none, NewDest}])),
+		    logger:log(debug, "Routing: First Route ~p matches me, removing it.", [sipheader:contact_print([{none, NewDest}])]),
 		    case NewRoute1 of
 			[] ->
 			    rewrite_route(keylist:delete("Route", Header), URI);
@@ -95,17 +117,14 @@ rewrite_route(Header, URI) ->
     end.
 
 route_matches_me(Route) ->
-    {_, {_, _, Host, Port, _}} = Route,
-    MyName = myhostname(),
-    MyIP = siphost:myip(),
+    {_, {_, _, Host, RoutePort, _}} = Route,
+    Port = default_port(RoutePort),
+    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip()]),
+    HostnameIsMyHostname = util:casegrep(Host, HostnameList),
     MyPort = default_port(sipserver:get_env(listenport, none)),
     if
 	Port /= MyPort -> false;
-	Host /= MyName ->
-	    if
-		Host == MyIP -> true;
-		true -> false
-	    end;
+	HostnameIsMyHostname /= true -> false;
 	true ->	true
     end.	   
 
@@ -284,13 +303,19 @@ fetch_contacts(Phone) ->
 locations_to_contacts([]) ->
     [];
 locations_to_contacts([{Location, Flags, Class, Expire} | Rest]) ->
-    lists:append([print_contact(Location, Expire)], locations_to_contacts(Rest)).
+    lists:append(print_contact(Location, Expire), locations_to_contacts(Rest)).
 
 print_contact(Location, Expire) ->
-    % make sure we don't end up with a negative Expires
-    NewExpire = lists:max([0, Expire - util:timestamp()]),
     [C] = sipheader:contact_print([{none, Location}]),
-    C ++ ";expires=" ++ integer_to_list(NewExpire).
+    case Expire of
+	never ->
+	    logger:log(debug, "Not adding permanent contact ~p to REGISTER response", [C]),
+	    [];
+	_ ->
+	    % make sure we don't end up with a negative Expires
+	    NewExpire = lists:max([0, Expire - util:timestamp()]),
+	    [C ++ ";expires=" ++ integer_to_list(NewExpire)]
+    end.
 
 process_register_wildcard_isauth(Header, Socket, Phone, Auxphones, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
