@@ -146,6 +146,15 @@ userdb_modules			(default: [sipuserdb_mnesia]) User database
 				below.
 enable_v6			(default: false) Enables IPv6 support. Read the
 				IPv6 paragraph below before enabling this!
+max_logfile_size		(default: 262144000 (250 MB)) Max filesize (in
+				bytes) before the logfiles are rotated. This
+				option will probably go away when we invent a
+				controlling mechanism so that things like
+				logfile size can be checked outside of Yxa
+				instead, but this is needed for now since Erlang
+				crashes when the logfles reach 2 GB. We only
+				check if the file size exceeds this limit every
+				60 seconds, not after every write.
 
 pstnproxy:
 ----------
