@@ -1,105 +1,229 @@
+%%       ___How REGISTER requests are processed___
+%% - - - - - - - - - - - - - - - - - -
+%%
+%%    UAC     UAC     UAC    ....     (e.g. IP-phones)
+%%      \      |      /
+%%       \    _|_____/_
+%%        \__/         \__
+%%        /               \
+%%       |    Internet     |
+%%        \__           __/
+%%           \_________/
+%%                |
+%% - - - - - - - -|- - - - - - - - - - YXA
+%%           \    |    /
+%%            \   |   /
+%%         -----------------
+%%        | Transport layer |    requests are received from the
+%%         -----------------     network
+%%                |
+%%        -------------------
+%%       | Transaction layer |   sipserver is used to spawn one
+%%        -------------------    process per sip request and process
+%%          /       |       \    them asynchronously
+%%         /        |        \
+%%    sipserver   sipserver   sipserver ...
+%%        |
+%% - - - -|- - - - - - - - - - - - - - PROCESS PROCESSING REQUEST
+%%        |
+%%    incomingproxy.erl          entry point in processing REGISTER
+%%        |                      request
+%%        |
+%%    siplocation.erl            the database update calls are done
+%%        |                      in this module
+%%        |
+%% - - - -|- - - - - - - - - - - - - - DATABASE UPDATES
+%%   \    |    /
+%%    \   |   /
+%%     mnesia                    mnesia supplies transaction support,
+%%                               so that requests can be processed
+%%                               atomically and can also
+%%                               (transparently) be distributed on
+%%                               several erlang nodes
+%%
+%%       ___Notes on the current RFC compliance___
+%%
+%% RFC 3261 chapter 10.3 p62 - "REGISTER requests MUST be processed
+%% by a registrar in the order that they are received."
+%% RFC 3261 chapter 10.3 p64 - "... , it MUST remove the binding only
+%% if the CSeq in the request is higher than the value stored for
+%% that binding.  Otherwise, the update MUST be aborted and the
+%% request fails." - in regards to request that arrive out of order
+%%
+%% The first quote is can be interpreted in a number of ways which
+%% contradict the actions taken in the second quote:
+%%
+%% * the "simple way" - process REGISTERs in order
+%% - this is hard because the transport layer receives messages from
+%%   various sources on different physical connections. It also limits
+%%   scalability (parallelism) in the system.
+%%
+%% * would it be enough to process REGISTERs for the same UAC
+%%   (Call-ID) in order ?
+%% - this would be doable but would require solutions like delaying
+%%   REGISTERs[1] which have CSeq number which are to high
+%%   (NewCSeq - OldCSeq >= 2) compared to the last entry in the DB.
+%% - looking at quote no.2 we can conclude that we don't need to
+%%   reorder requests that were received out of order, when they come
+%%   from the network.
+%% - If REGISTERs are sent very quickly in succession - something that
+%%   is unlikely to occur in practice, the asynchronous nature of
+%%   YXAs request processing may indeed result in out of order
+%%   processing, but it would be much rarer than out of order
+%%   request received from the network - which don't need to be
+%%   reordered. The two REGISTERs could of course be received from a
+%%   single client pipelined using TCP, but see the conclusions below.
+%%
+%%  [1]: spawning a "wait & retry" process or resending request
+%%       to the process mailbox
+%%
+%%  Conclusion:
+%%  * Quote no.1 appears incorrect in requiring all REGISTERs to be
+%%    processed "in order". The requirement appears to be a
+%%    "best effort" attempt at processing requests in order.
+%%  * Full compliance to quote no. 1 appears both unnecessary,
+%%    tedious to implement and to make the system less scalable - so
+%%    the current implementation will be retained.
+%%
+%%--------------------------------------------------------------------
+
 -module(siplocation).
--export([process_register_isauth/4, prioritize_locations/1,
-	 debugfriendly_locations/1, get_locations_for_users/1,
-	 get_user_with_contact/1, remove_expired_phones/0]).
 
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([
+	 process_register_isauth/4,
+	 prioritize_locations/1,
+	 debugfriendly_locations/1,
+	 get_locations_for_users/1,
+	 get_user_with_contact/1
+	]).
+
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("siprecords.hrl").
+-include("phone.hrl").
 
-register_contact(LogTag, SipUser, {_, Location}, Priority, Header) when record(Location, sipurl) ->
-    Expire = parse_register_expire(Header, Location),
-    NewContact = remove_expires_parameter(Location),
-    logger:log(normal, "~s: REGISTER ~s at ~s (priority ~p, expire in ~p)",
-	       [LogTag, SipUser, sipurl:print(NewContact), Priority, Expire]),
-    phone:insert_purge_phone(SipUser, [{priority, Priority}],
-			     dynamic,
-			     Expire + util:timestamp(),
-			     NewContact).
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
 
-remove_expires_parameter(Contact) when record(Contact, sipurl) ->
-    Param1 = sipheader:contact_params({none, Contact}),
-    Param2 = dict:erase("expires", Param1),
-    Parameters = sipheader:dict_to_param(Param2),
-    Contact#sipurl{pass=none, param=Parameters}.
+%%====================================================================
+%% External functions
+%%====================================================================
 
-unregister_contact(LogTag, SipUser, Contact, Priority) ->
-    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
-	       [LogTag, SipUser, sipurl:print(Contact), Priority]),
-    phone:insert_purge_phone(SipUser, [{priority, Priority}],
-			     dynamic,
-			     util:timestamp(),
-			     Contact).
 
+
+%%--------------------------------------------------------------------
+%% Function: process_register_isauth(LogTag, Header, SipUser,
+%%           Contacts)
+%%           LogTag      = string(),
+%%           Header      = keylist record()
+%%           SipUser     = SIP authentication username (#phone.number
+%%                         field entry, when using mnesia userdb)
+%%           Contacts    = list() of contact record()
+%% Descrip.:
+%% Returns : {ok, {Status, Reason, ExtraHeaders}}
+%%           {siperror, Status, Reason}
+%%           {siperror, Status, Reason, ExtraHeaders}
+%%           Status = integer(), SIP status code
+%%           Reason = string(), SIP reason phrase
+%%           ExtraHeaders = list() of {Key, NewValueList} see
+%%           keylist:appendlist/2
+%%--------------------------------------------------------------------
 process_register_isauth(LogTag, Header, SipUser, Contacts) ->
-    % XXX RFC3261 says to store Call-ID and CSeq and to check these on
-    % registers replacing erlier bindings (10.3 #7)
+    process_updates(LogTag, Header, SipUser, Contacts).
 
-    check_valid_register_request(Header),
+%% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6 and 7
+%% remove, add or update contact info in location (phone) database
 
-    % try to find a wildcard to process
+%% REGISTER request had no contact header
+process_updates(_LogTag, _Header, SipUser, []) ->
+    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
+    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}};
+
+process_updates(LogTag, Header, SipUser, Contacts) ->
+    %% Processing REGISTER Request - step 6
+    %% check for and process wildcard (request contact = *)
     case process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) of
 	none ->
-	    % no wildcard, loop through all Contacts
-	    lists:map(fun (Location) ->
-			register_contact(LogTag, SipUser, Location, 100, Header)
-		      end, Contacts);
-	_ ->
-	    none
-    end,
-    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}}.
-
-check_valid_register_request(Header) ->
-    Require = keylist:fetch("Require", Header),
-    case Require of
-	[] ->
-	    true;
-	_ ->
-	    logger:log(normal, "Request check: The client requires unsupported extension(s) ~p", [Require]),
-	    throw({siperror, 420, "Bad Extension", [{"Unsupported", Require}]})
+	    %% Processing REGISTER Request - step 7
+	    %% No wildcard found, register/update/remove entries in Contacts.
+	    %% Process registration atomicly - change all or nothing in database.
+	    F = fun() ->
+			process_non_wildcard_contacts(LogTag, SipUser, Contacts, Header)
+		end,
+	    case mnesia:transaction(F) of
+		{aborted, Reason} ->
+		    logger:log(error,
+			       "Location database: REGISTER request failed to add/update/remove one or more contacts,"
+			       " failed due to: ~n~p", [Reason]),
+		    {siperror, 500, "Server Internal Error", []};
+		{atomic, _ResultOfFun} ->
+		    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
+		    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}}
+	    end;
+	ok ->
+	    %% wildcard found and processed
+	    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
+	    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}};
+	SipError ->
+	    SipError
     end.
 
+
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% Function: fetch_contacts(SipUser)
+%% Descrip.: find all the locations where a specific sipuser can be
+%%           located (e.g. all the users phones)
+%% Returns : none | list of string()
+%%           string() is formated as a contact field-value
+%%           (see RFC 3261)
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 fetch_contacts(SipUser) ->
-    case phone:get_phone(SipUser) of
+    case phone:get_sipuser_locations(SipUser) of
 	{atomic, Locations} ->
-	    locations_to_contacts(Locations, []);
+	    locations_to_contacts(Locations);
 	_ ->
 	    none
     end.
 
-locations_to_contacts([], Res) ->
+%% return: list() of string() (contact:print/1 of contact record())
+locations_to_contacts(Locations) ->
+    locations_to_contacts2(Locations, []).
+
+locations_to_contacts2([], Res) ->
     Res;
-locations_to_contacts([{Location, Flags, Class, Expire} | T], Res) when record(Location, sipurl) ->
-    locations_to_contacts(T, lists:append(Res, print_contact(Location, Expire)));
-locations_to_contacts([H | T], Res) ->
-    logger:log(error, "location: invalid location in locations_to_contacts : ~p", [H]),
-    locations_to_contacts(T, Res).
+locations_to_contacts2([H | T], Res) ->
+    Location = H#phone.address,
+    Expire = H#phone.expire,
 
-print_contact(Location, Expire) when record(Location, sipurl) ->
-    [C] = sipheader:contact_print([{none, Location}]),
-    case Expire of
-	never ->
-	    logger:log(debug, "Not adding permanent contact ~p to REGISTER response", [C]),
-	    [];
-	_ ->
-	    %% make sure we don't end up with a negative Expires
-	    NewExpire = lists:max([0, Expire - util:timestamp()]),
-	    [C ++ ";expires=" ++ integer_to_list(NewExpire)]
-    end.
+    %% Expires can't be less than 0 so make sure we don't end up with a negative Expires
+    NewExpire = lists:max([0, Expire - util:timestamp()]),
+    Contact = contact:new(Location, [{"expire", integer_to_list(NewExpire)}]),
 
+    locations_to_contacts2(T, [contact:print(Contact) | Res]).
+
+
+%% return = ok       | wildcard processed
+%%          none     | no wildcard found
+%%          SipError   db error
+%% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6
 process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
 	true ->
 	    logger:log(debug, "Location: Processing valid wildcard un-register"),
-	    case phone:get_phone(SipUser) of
-		{atomic, Entrys} ->
-		    %% loop through all Entrys and unregister them
-		    lists:map(fun (Entry) ->
-				      {Location, Flags, Class, Expire} = Entry,
-				      Prio = case lists:keysearch(priority, 1, Flags) of
-						 {value, {priority, P}} -> P;
-						 _ -> 100
-					     end,
-				      unregister_contact(LogTag, SipUser, Location, Prio)
-			      end, Entrys);
+	    case phone:get_sipuser_locations(SipUser) of
+		{atomic, SipUserLocations} ->
+		    unregister(LogTag, Header, SipUser, SipUserLocations);
 		_ ->
 		    none
 	    end;
@@ -107,158 +231,412 @@ process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) ->
 	    none
     end.
 
-is_valid_wildcard_request(Header, [{_, {wildcard, Parameters}}]) ->
-    case keylist:fetch("Expires", Header) of
-	["0"] ->
-	    % A single wildcard contact with an Expires header of 0, now just check that
-	    % Parameters does not contain any expire value except possibly zero
-	    case dict:find("expires", sipheader:contact_params({none, {wildcard, Parameters}})) of
-		{ok, E} ->
-		    case E of
-			"0" ->
-			    true;
-			_ ->
-			    %logger:log(debug, "Location: Wildcard with non-zero contact expires parameter (~p), invalid IMO", [Parameters]),
-			    throw({siperror, 400, "Wildcard with non-zero contact expires parameter"})
-		    end;
+%% return = ok       | wildcard processed
+%%          SipError   db error
+%% unregister all SipUser entries
+unregister(LogTag, Header, _SipUser, Locations) ->
+    %% unregister all Locations entries
+    F = fun() ->
+		unregister_contacts(LogTag, Header, Locations)
+	end,
+    %% process unregistration atomically - change all or nothing in database
+    case mnesia:transaction(F) of
+	{aborted, Reason} ->
+	    logger:log(error, "Database: unregister of registrations failed for one or more"
+		       " contact entries, due to: ~p",
+		       [Reason]),
+	    {siperror, 500, "Server Internal Error", []};
+	{atomic, _ResultOfFun} ->
+	    ok
+    end.
+
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% Function: is_valid_wildcard_request(Header, Contacts)
+%%           Header      = keylist record(), the sip request headers
+%%           Contacts    = list() of contact record()
+%% Descrip.: determine if request is a properly formed wildcard
+%%           request (see RFC 3261 Chapter 10 page 64 - step 6)
+%% Returns : true     |
+%%           SipError
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% there is only one Contact and it's a wildcard
+is_valid_wildcard_request(Header, [ #contact{urlstr = "*"} ]) ->
+    Expire = sipheader:expire(Header),
+    case Expire of
+	[$0 | _] ->
+	    %% cast to integer so that "0", "00" ... and so on are all considered as 0
+	    case catch list_to_integer(Expire) of
+		0 ->
+		    true;
 		_ ->
-		    true
+		    {siperror, 400, "Wildcard with non-zero contact expires parameter, invalid (RFC3261 10.2.2)"}
 	    end;
+	[] ->
+	    {siperror, 400, "Wildcard without Expires header, invalid (RFC3261 10.2.2)"};
 	_ ->
-	    throw({siperror, 400, "Wildcard without 'Expires: 0', invalid (RFC3261 10.2.2)"})
+	    {siperror, 400, "Wildcard with non-zero contact expires parameter, invalid (RFC3261 10.2.2)"}
     end;
-is_valid_wildcard_request(Header, Contacts) ->
-    % More than one Contacts (or just one non-wildcard), make sure there
-    % are no wildcards since that would be invalid
+
+%% There are 2+ elements in Contacts, make sure that none of them are wildcards
+%% - there can only be one wildcard
+is_valid_wildcard_request(_Header, Contacts) ->
     case wildcard_grep(Contacts) of
 	true ->
-	    %logger:log(debug, "Location: Wildcard present but not alone, invalid (RFC3261 10.3 #6)"),
-	    throw({siperror, 400, "Wildcard present but not alone, invalid (RFC3261 10.3 #6)"});
+	    {siperror, 400, "Wildcard present but not alone, invalid (RFC3261 10.3 #6)"};
 	_ ->
-	    none
+	    false
     end.
 
+%% is there a wildcard in the contacts list ?
+%% return = true | false
 wildcard_grep([]) ->
-    nomatch;
-wildcard_grep([{_, {wildcard, Parameters}} | Rest]) ->
+    false;
+wildcard_grep([ #contact{urlstr = "*"} | _Rest]) ->
     true;
-wildcard_grep([Foo | Rest]) ->
+wildcard_grep([_Foo | Rest]) ->
     wildcard_grep(Rest).
-    
-parse_register_expire(Header, Contact) when record(Contact, sipurl) ->
-    MaxRegisterTime = sipserver:get_env(max_register_time, 43200),
-    case dict:find("expires", sipheader:contact_params({none, Contact})) of
-	{ok, E1} ->
-	    % Contact parameters has an expire value, use that
-	    lists:min([MaxRegisterTime, list_to_integer(E1)]);
-	error ->
-	    case keylist:fetch("Expires", Header) of
-		[E2] ->
-		    % Request has an Expires header, use that
-		    lists:min([MaxRegisterTime, list_to_integer(E2)]);
-		[] ->
-		    % Default expire
-		    3600
-	    end
-    end.
 
-remove_expired_phones() ->
-    case phone:expired_phones() of
-	{atomic, Expired} ->
-	    remove_phones(Expired);
-	{aborted, {no_exists, Table}} ->
-	    logger:log(error, "Location: Mnesia says that table '~p' does not exist - did you bootstrap Yxa? (See README file)", [Table]),
-	    error;
-	E ->
-	    logger:log(error, "Location: phone:expired_phones() returned unknown result : ~p", [E]),
-	    error
-    end.
 
-remove_phones([]) ->
-    true;
-
-remove_phones([{User, Location, Class} | Rest]) ->
-    case Location of
-	_ when record(Location, sipurl) ->
-	    [C] = sipheader:contact_print([{none, Location}]),
-	    logger:log(normal, "Location: User ~s ~p contact ~s has expired", [User, Class, C]),
-	    phone:delete_phone(User, Class, Location);
-	Unknown ->
-	    logger:log(error, "Location: Unknown data in location database, suggesting you start with a fresh location database! : ~p",
-		       [Unknown])
-    end,
-    remove_phones(Rest);
-remove_phones([H | T]) ->
-    logger:log(error, "Location: Unknown data passed to remove_phones : ~p", [H]),
-    remove_phones(T).
-
-% Checks if any of our users are registered at the
-% location specified. Used to determine if we should
-% proxy requests to a URI without authorization.
-get_user_with_contact(URI) when record(URI, sipurl) ->
+%%--------------------------------------------------------------------
+%% Function: get_user_with_contact(URI)
+%%           URI = sipurl record()
+%% Descrip.: Checks if any of our users are registered at the
+%%           location specified. Used to determine if we should
+%%           proxy requests to a URI without authorization.
+%% Returns : none | SIPuser
+%%           SIPuser = #phone.number field value
+%%--------------------------------------------------------------------
+get_user_with_contact(URI) when is_record(URI, sipurl) ->
     case phone:get_phone_with_requri(URI) of
+	%% XXX can there be more than 1 matching SIPUser
+	%% - yes, should a list() of SIPuser be returned instead ?
 	{atomic, [SIPuser | _]} ->
 	    SIPuser;
+	%% no one using URI found
 	_ ->
 	    none
     end.
 
-% Looks up all locations for a list of users. Used
-% to find out where a set of users are to see where
-% we should route a request.
+%%--------------------------------------------------------------------
+%% Function: get_locations_for_users(SipUserList)
+%%           SipUserList = list of ???
+%% Descrip.: Looks up all locations for a list of users. Used
+%%           to find out where a set of users are to see where
+%%           we should route a request.
+%% Returns : list() of {Address, Flags, Class, Expire}
+%% XXX usage of phone:get_sipuser_locations/1 rather than get_phone/1
+%% would be preferable
+%%--------------------------------------------------------------------
 get_locations_for_users([]) ->
     [];
 get_locations_for_users([User | Rest]) ->
     Locations = case phone:get_phone(User) of
-	{atomic, L} ->
-	    L;
-	Unknown ->
-	    logger:log(debug, "Location: Unknown result from phone:get_phone() in get_locations_for_users : ~p",
-			[Unknown]),
-	    []
-    end,
-    lists:append(Locations, get_locations_for_users(Rest)).
+		    {atomic, L} ->
+			L;
+		    Unknown ->
+			logger:log(debug, "Location: Unknown result from phone:get_phone() "
+				   "in get_locations_for_users : ~n~p",
+				   [Unknown]),
+			[]
+		end,
+    Locations ++ get_locations_for_users(Rest).
 
-prioritize_locations([]) ->
+%%--------------------------------------------------------------------
+%% Function: prioritize_locations(Locations)
+%%           Locations = list of Loc
+%%           Loc = {Contact, Flags, Class, Expire}
+%%           Flags = {Name, Value}
+%% Descrip.:
+%% Returns : list of Loc
+%%--------------------------------------------------------------------
+prioritize_locations(Locations) when is_list(Locations) ->
+    BestPrio = safe_min(get_priorities(Locations)),
+    get_locations_with_prio(BestPrio, Locations).
+
+%% lists:min/1 doesn't like empty lists
+safe_min([]) ->
     [];
-prioritize_locations(Locations) when list(Locations) ->
-    BestPrio = lists:min(get_prioritys(Locations)),
-    get_locations_with_prio(list_to_integer(BestPrio), Locations);
-prioritize_locations(Unknown) ->
-    logger:log(error, "prioritize_locations() called with non-list argument ~p", [Unknown]),
-    [].
+safe_min(L) ->
+    lists:min(L).
 
+%% Descrip. = examine all Flags entries in Locations and return all
+%%            priority values (if any are given)
+%% Returns  = list of integer()
+get_priorities(Locations) ->
+    F = fun ({_Location, Flags, _Class, _Expire}, Acc) ->
+		Prio = lists:keysearch(priority, 1, Flags),
+		case Prio of
+		    {value, {priority, P}} ->
+			[P | Acc];
+		    _ ->
+			Acc
+		end
+	end,
+    lists:foldl(F, [], Locations).
+
+%% Descrip. = find the Location/s that has the "best" priority in the Flags part of the tuple.
+%%            Note that some may lack a {priority, PrioVal} entry
+%% Returns  = list of Location (all with same "best" priority - Priority)
 get_locations_with_prio(_, []) ->
     [];
 get_locations_with_prio(Priority, [Location | Rest]) ->
-    {Contact, Flags, Class, Expire} = Location,
+    {_Contact, Flags, _Class, _Expire} = Location,
     Prio = lists:keysearch(priority, 1, Flags),
     case Prio of
 	{value, {priority, Priority}} ->
-	    lists:append([{Contact, Flags, Class, Expire}], get_locations_with_prio(Priority, Rest));
-	  _ ->
+	    [Location] ++ get_locations_with_prio(Priority, Rest);
+	_ ->
 	    get_locations_with_prio(Priority, Rest)
     end.
 
-get_prioritys(Locations) ->
-    lists:map(fun ({Location, Flags, Class, Expire}) ->
-		      Prio = lists:keysearch(priority, 1, Flags),
-		      case Prio of
-		          {value, {priority, P}} ->
-				integer_to_list(P);
-			  _ ->
-				none
-		      end
-	      end, Locations).
+%%--------------------------------------------------------------------
+%% Function: process_non_wildcard_contacts(LogTag, SipUser, Location,
+%%           Header)
+%%           LogTag    = string(),
+%%           SipUser   =
+%%           Locations = list() of contact record(), binding to add for
+%%                       SipUser
+%%           RequestHeader = keylist record()
+%% Descrip.: process a SIP Contact entry (thats not a wildcard)
+%%           and do the appropriate db add/rm/update, see:
+%%           RFC 3261 chapter 10.3 - Processing REGISTER Request -
+%%           step 7 for more details
+%% Returns : -
+%%--------------------------------------------------------------------
+process_non_wildcard_contacts(LogTag, SipUser, Locations, RequestHeader) ->
+    RequestCallId = sipheader:callid(RequestHeader),
+    {CSeq, _}  = sipheader:cseq(RequestHeader),
+    RequestCSeq = list_to_integer(CSeq),
 
+    %% get expire value from request header only once, this will speed up the calls to
+    %% parse_register_contact_expire/2 that are done for each Locations entry
+    ExpireHeader = sipheader:expire(RequestHeader),
+    F = fun(Location) ->
+		process_non_wildcard_contact(LogTag, SipUser, Location,
+					     RequestCallId, RequestCSeq, ExpireHeader)
+	end,
+    lists:foreach(F, Locations).
+
+
+
+process_non_wildcard_contact(LogTag, SipUser, Location, RequestCallId, RequestCSeq, ExpireHeader) ->
+    {atomic, R} = phone:get_sipuser_location_binding(SipUser, sipurl:parse(Location#contact.urlstr)),
+    Priority = 100,
+    %% check if SipUser-Location binding exists in database
+    case R of
+	[] ->
+	    %% a new SipUser
+	    register_contact(LogTag, SipUser, Location, Priority, ExpireHeader,RequestCallId, RequestCSeq);
+	[SipUserLocation] ->
+	    %% SipUser exists in database
+	    same_call_id(LogTag, SipUser, Location, SipUserLocation, Priority,
+			 RequestCallId, RequestCSeq, ExpireHeader)
+    end.
+
+%% DBLocation = phone record()  |    currently stored sipuser-location info
+%% ReqLocation = contact record()     sipuser-location binding data in REGISTER request
+same_call_id(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
+
+    case RequestCallId == DBLocation#phone.callid of
+	true ->
+	    %% request has same call-id so a binding already exists
+	    greater_cseq(LogTag, SipUser, ReqLocation, DBLocation,
+			 Priority, RequestCallId, RequestCSeq, ExpireHeader);
+	false ->
+	    %% call-id differs so the UAC has probably been restarted
+	    case parse_register_contact_expire(ExpireHeader, ReqLocation) == 0 of
+		true ->
+		    %% unregister bindning
+		    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
+			       [LogTag, SipUser, DBLocation#phone.requristr, Priority]),
+		    phone:delete_record(DBLocation);
+		false ->
+		    %% update the binding
+		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader,RequestCallId, RequestCSeq)
+	    end
+    end.
+
+greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
+    %% only process reqest if cseq is > than the last one processed i.e. ignore
+    %% old, out of order requests
+    case RequestCSeq > DBLocation#phone.cseq of
+	true ->
+	    case parse_register_contact_expire(ExpireHeader, ReqLocation) == 0 of
+		true ->
+		    %% unregister bindning
+		    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
+			       [LogTag, SipUser, DBLocation#phone.requristr, Priority]),
+		    phone:delete_record(DBLocation);
+		false ->
+		    %% update the binding
+		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader,RequestCallId, RequestCSeq)
+	    end;
+	false ->
+	    %% RFC 3261 doesn't appear to document the proper error code for this case
+	    throw({siperror, 403, "Request out of order, contained old CSeq number"})
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function:
+%% Descrip.: function intended for debugging purpouses
+%% Returns :
+%%--------------------------------------------------------------------
 debugfriendly_locations([]) ->
     [];
 debugfriendly_locations([Location | Rest]) ->
-    [Prio] = get_prioritys([Location]),
+    Prio = case get_priorities([Location]) of
+	       [] -> none;
+	       [P] -> P
+	   end,
     {Contact, _, _, Expire} = Location,
-    % make sure we don't end up with a negative Expires
+    %% make sure we don't end up with a negative Expires
     NewExpire = lists:max([0, Expire - util:timestamp()]),
-    [C] = sipheader:contact_print([{none, Contact}]),
+    C = contact:print(contact:new(Contact)),
     Res = lists:concat(["priority ", Prio, ": ", C, ";expires=", NewExpire]),
     lists:append([Res], debugfriendly_locations(Rest)).
-    
+
+%%====================================================================
+%% Behaviour functions
+%%====================================================================
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: register_contact(LogTag, SipUser, Location, Priority,
+%%                            ExpireHeader)
+%%           LogTag        = string()
+%%           SipUser       = string()
+%%           Location      = contact record()
+%%           Priority      = integer()
+%%           ExpireHeader  =
+%%           RequestCallId = string()
+%%           RequestCSeq   = integer()
+%% Descrip.: add or update a Location entry
+%% Returns : -
+%%--------------------------------------------------------------------
+register_contact(LogTag, SipUser, Location, Priority, ExpireHeader,RequestCallId, RequestCSeq)
+  when is_record(Location, contact) ->
+    Expire = parse_register_expire(ExpireHeader, Location),
+    logger:log(normal, "~s: REGISTER ~s at ~s (priority ~p, expire in ~p)",
+	       [LogTag, SipUser, Location#contact.urlstr, Priority, Expire]),
+    phone:insert_purge_phone(SipUser, [{priority, Priority}],
+			     dynamic,
+			     Expire + util:timestamp(),
+			     sipurl:parse(Location#contact.urlstr),
+			     RequestCallId,
+			     RequestCSeq).
+
+%% determine expiration time for a specific contact. Use default
+%% value if contact/header supplies no expiration period.
+%% Returns : integer(), time in seconds
+parse_register_expire(ExpireHeader, Contact) when is_record(Contact, contact) ->
+    ContactExpire = parse_register_contact_expire(ExpireHeader, Contact),
+    case ContactExpire of
+	%% no expire - use default
+	none ->
+	    3600;
+	%% expire value supplied by request - we can choose to accept,
+	%% change (shorten/increase expire period) or reject to short expire
+	%% times with a 423 (Interval Too Brief) error.
+	%% Currently implementation only limits the max expire period
+	ContactExpire ->
+	    MaxRegisterTime = sipserver:get_env(max_register_time, 43200),
+
+	    lists:min([MaxRegisterTime, ContactExpire])
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: unregister_contacts(LogTag, RequestHeader, Location)
+%%           LogTag = string(),
+%%           RequestHeader = keylist record(),
+%%           Locations = list of phone record(),
+%% Descrip.: handles wildcard based removal (RFC 3261 chapter 10
+%%           page 64 - step 6), this function handles a single
+%%           Location (sipuser-location bindning)
+%% Returns : ok |
+%%           throw(SipError)
+%%--------------------------------------------------------------------
+unregister_contacts(LogTag, RequestHeader, Locations) when is_record(RequestHeader, keylist),
+							   is_list(Locations) ->
+    RequestCallId = sipheader:callid(RequestHeader),
+    {CSeq, _}  = sipheader:cseq(RequestHeader),
+    RequestCSeq = list_to_integer(CSeq),
+
+    F = fun(Location) ->
+		unregister_contact(LogTag, Location, RequestCallId, RequestCSeq)
+	end,
+    lists:foreach(F, Locations).
+
+
+unregister_contact(LogTag, Location, RequestCallId, RequestCSeq) when is_record(Location, phone) ->
+    SameCallId = (RequestCallId == Location#phone.callid),
+    HigherCSeq = (list_to_integer(RequestCSeq) == Location#phone.cseq),
+
+    %% RFC 3261 chapter 10 page 64 - step 6 check to see if
+    %% sipuser-location binding (stored in Location) should be removed
+    RemoveLocation = case {SameCallId, HigherCSeq} of
+			 {true, true} -> true;
+			 {false, _} -> true;
+			 _ -> false
+		     end,
+
+    case RemoveLocation of
+	true ->
+	    phone:delete_record(Location),
+
+	    Flags = Location#phone.flags,
+	    Priority = case lists:keysearch(priority, 1, Flags) of
+			   {value, {priority, P}} -> P;
+			   _ -> 100
+		       end,
+
+	    SipUser = Location#phone.number,
+	    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
+		       [LogTag, SipUser, Location#phone.requristr, Priority]),
+	    ok;
+	false ->
+	    %% Request CSeq value was to old, abort Request
+	    %% RFC 3261 doesn't appear to document the proper error code for this case
+	    throw({siperror, 403, "Request out of order, contained old CSeq number"})
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: parse_register_contact_expire(Header, Contact)
+%%           parse_register_contact_expire(ExpireHeader, Contact)
+%%           Header  = keylist record(), the request headers
+%%           ExpireHeader = sipheader:expire(Header) return value
+%%           Contact = contact record(), a contact entry from a request
+%% Descrip.: determine the expire time supplied for a contact in a SIP
+%%           REGISTER request
+%% Returns : integer() |
+%%           none        if no expire was supplied
+%% Note    : Test order may not be changed as it is specified by
+%%           RFC 3261 chapter 10 page 64 - step 6
+%%--------------------------------------------------------------------
+parse_register_contact_expire(ExpireHeader, Contact) when is_list(ExpireHeader),
+							  is_record(Contact, contact) ->
+    %% first check if "Contact" has a expire parameter
+    case contact_param:find(Contact#contact.contact_param, "expires") of
+	[ContactExpire] ->
+	    list_to_integer(ContactExpire);
+	[] ->
+	    %% then check for a expire header
+	    case ExpireHeader of
+		[HExpire] ->
+		    list_to_integer(HExpire);
+		[] ->
+		    %% no expire found
+		    none
+	    end
+    end;
+
+parse_register_contact_expire(Header, Contact) when is_record(Header, keylist),
+						    is_record(Contact, contact) ->
+    ExpireHeader = sipheader:expire(Header),
+    parse_register_contact_expire(ExpireHeader, Contact).
+
