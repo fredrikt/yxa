@@ -48,8 +48,8 @@ lookuproute(User) ->
 	    {proxy, Location}
     end.
 
-lookupmail(User) ->
-    case directory:lookupmail(User) of
+lookupmail(User, Host) ->
+    case directory:lookupmail(User ++ "@" ++ Host) of
 	none ->
 	    none;
 	Phone ->
@@ -102,7 +102,7 @@ lookupphone(URL) ->
 	    Loc1 = lookuproute(User),
 	    Loc2 = case Loc1 of
 		       none ->
-			   lookupmail(User);
+			   lookupmail(User, Host);
 		       Loc1 ->
 			   Loc1
 		   end,
