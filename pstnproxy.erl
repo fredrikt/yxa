@@ -38,7 +38,7 @@
 %% Returns : [Tables, Mode, SupData]
 %%           Tables  = list() of atom(), remote mnesia tables the Yxa
 %%                     startup sequence should make sure are available
-%%           Mode    = stateful (or 'stateless' but DON'T use that).
+%%           Mode    = stateful
 %%           SupData = {append, SupSpec} |
 %%                     none
 %%           SupSpec = OTP supervisor child specification. Extra
@@ -67,32 +67,36 @@ request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, s
     %% statelessly.
     logger:log(normal, "pstnproxy: ~s -> Forwarding ACK received in core statelessly",
 	       [LogStr]),
-    transportlayer:send_proxy_request(none, Request, Request#request.uri, []),
+    transportlayer:stateless_proxy_request("incomingproxy", Request),
     ok;
 
 %%
 %% Anything except ACK
 %%
-request(Request, Origin, _LogStr) when record(Request, request), record(Origin, siporigin) ->
-    {Method, URI} = {Request#request.method, Request#request.uri},
+request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
+    Method = Request#request.method,
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
-    case routeRequestToPSTN(Origin#siporigin.addr, URI#sipurl.host, THandler, LogTag) of
-	true ->
+    case route_request(Request, Origin, THandler, LogTag) of
+	pstn ->
 	    logger:log(debug, "~s: pstnproxy: Route request to PSTN gateway", [LogTag]),
 	    AllowedMethods = ["INVITE", "ACK", "PRACK", "CANCEL", "BYE", "OPTIONS"],
 	    case lists:member(Method, AllowedMethods) of
 		true ->
-		    toPSTNrequest(Request, Origin, THandler, LogTag);
+		    request_to_pstn(Request, Origin, THandler, LogTag);
 		_ ->
 		    logger:log(normal, "~s: pstnproxy: Method ~s not allowed for PSTN destination",
 			       [LogTag, Method]),
 		    ExtraHeaders = [{"Allow", AllowedMethods}],
 		    transactionlayer:send_response_handler(THandler, 405, "Method Not Allowed", ExtraHeaders)
 	    end;
-	false ->
+	sip ->
 	    logger:log(normal, "~s: pstnproxy: Route request to SIP server", [LogTag]),
-	    toSIPrequest(Request, Origin, THandler)
+	    request_to_sip(Request, Origin, THandler);
+	me ->
+	    request_to_me(THandler, Request, LogTag);
+	drop ->
+	    ok
     end,
     ok.
 
@@ -118,21 +122,32 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
 
 
 %%--------------------------------------------------------------------
-%% Function: routeRequestToPSTN(FromIP, ToHost, THandler, LogTag)
+%% Function: route_request(FromIP, ToHost, THandler, LogTag)
 %%           FromIP   = string()
 %%           ToHost   = string(), Host part of Request-URI
 %%           THandler = term(), server transaction handle
 %%           LogTag   = string(), prefix for logging
 %% Descrip.: Determines if we should route this request to one of
 %%           our PSTN gateways or not.
-%% Returns: true  |
-%%          false
+%% Returns: pstn |
+%%          sip  |
+%%          me   |
+%%          drop
 %%--------------------------------------------------------------------
-routeRequestToPSTN(FromIP, ToHost, THandler, LogTag) ->
+route_request(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin) ->
+    case local:is_request_to_this_proxy(Request) of
+	true ->
+	    me;
+	false ->
+	    URI = Request#request.uri,
+	    route_request2(Origin#siporigin.addr, URI#sipurl.host, THandler, LogTag)
+    end.
+
+route_request2(FromIP, ToHost, THandler, LogTag) ->
     case pstngateway(FromIP) of
 	true ->
 	    logger:log(debug, "Routing: Source IP ~s is PSTN gateway, route to SIP proxy", [FromIP]),
-	    false;
+	    sip;
 	_ ->
 	    IsLocalHostname = localhostname(ToHost),
 	    IsPstnGatewayHostname = pstngateway(ToHost),
@@ -140,15 +155,15 @@ routeRequestToPSTN(FromIP, ToHost, THandler, LogTag) ->
 		IsLocalHostname == true ->
 		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway",
 			       [FromIP, ToHost]),
-		    true;
+		    pstn;
 		IsPstnGatewayHostname == true ->
 		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway",
 			       [FromIP, ToHost]),
-		    true;
+		    pstn;
 		true ->
 		    logger:log(normal, "~s: pstnproxy: Denied request from ~s to ~s - not my problem", [LogTag, FromIP, ToHost]),
 		    transactionlayer:send_response_handler(THandler, 403, "Forbidden"),
-		    nomatch
+		    drop
 	    end
     end.
 
@@ -177,7 +192,7 @@ pstngateway(Hostname) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: toSIPrequest(Request, Origin, THandler)
+%% Function: request_to_sip(Request, Origin, THandler)
 %%           Request  = request record()
 %%           Origin   = siporigin record()
 %%           THandler = term(), server transaction handle
@@ -189,7 +204,7 @@ pstngateway(Hostname) ->
 %%           a phone number.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Origin, siporigin) ->
+request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_record(Origin, siporigin) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     NewLocation = case localhostname(URI#sipurl.host) of
 		      true ->
@@ -201,8 +216,9 @@ toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Or
 				  Loc;
 			      _ ->
 				  %% Parse configured sipproxy but exchange user with user from Request-URI
-				  case sipurl:parse_url_with_default_protocol("sip", sipserver:get_env(sipproxy, none)) of
-				      ProxyURL when record(ProxyURL, sipurl) ->
+				  DefaultProxy = sipserver:get_env(sipproxy, none),
+				  case sipurl:parse_url_with_default_protocol("sip", DefaultProxy) of
+				      ProxyURL when is_record(ProxyURL, sipurl) ->
 					  ProxyURL#sipurl{user=User, pass=none};
 				      none ->
 					  %% No ENUM and no SIP-proxy configured, return failure so
@@ -225,7 +241,7 @@ toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Or
     case NewLocation of
 	none ->
 	    none;
-	_ when record(NewLocation, sipurl) ->
+	_ when is_record(NewLocation, sipurl) ->
 	    NewHeader1 = case sipserver:get_env(record_route, true) of
 			     true -> siprequest:add_record_route(Request#request.header, Origin);
 			     false -> Request#request.header
@@ -238,7 +254,7 @@ toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Or
 
 
 %%--------------------------------------------------------------------
-%% Function: toPSTNrequest(Request, Origin, THandler, LogTag)
+%% Function: request_to_pstn(Request, Origin, THandler, LogTag)
 %%           Request  = request record()
 %%           Origin   = siporigin record()
 %%           THandler = term(), server transaction handle
@@ -248,7 +264,7 @@ toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Or
 %%           one and make it so.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-toPSTNrequest(Request, Origin, THandler, LogTag) when record(Request, request), record(Origin, siporigin) ->
+request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin) ->
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
     %% XXX check port to, not just hostname? Maybe not since pstnproxy by definition
@@ -266,12 +282,12 @@ toPSTNrequest(Request, Origin, THandler, LogTag) when record(Request, request), 
 			PSTNgateway1 = lists:nth(1, sipserver:get_env(pstngatewaynames)),
 			logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
 			case sipurl:parse_url_with_default_protocol("sip", PSTNgateway1) of
-			    GwURL when record(GwURL, sipurl) ->
+			    GwURL when is_record(GwURL, sipurl) ->
 				NewURI2 = GwURL#sipurl{user=DstNumber, pass=none},
 				{NewURI2, Header};
 			    _ ->
-				logger:log(error, "pstnproxy: Failed parsing configuration value 'pstngatewaynames' (~p)",
-					   [PSTNgateway1]),
+				logger:log(error, "pstnproxy: Failed parsing configuration value "
+					   "'pstngatewaynames' (~p)", [PSTNgateway1]),
 				{URI, Header}
 			end
 		end;
@@ -288,6 +304,27 @@ toPSTNrequest(Request, Origin, THandler, LogTag) when record(Request, request), 
     NewRequest = Request#request{header=NewHeaders3},
     THandler = transactionlayer:get_handler_for_request(Request),
     relay_request_to_pstn(THandler, NewRequest, NewURI, DstNumber, LogTag).
+
+%%--------------------------------------------------------------------
+%% Function: request_to_me(THandler, Request, LogTag)
+%%           THandler = term(), server transaction handle
+%%           Request  = request record()
+%%           LogTag   = string()
+%% Descrip.: Request is meant for this proxy, if it is OPTIONS we
+%%           respond 200 Ok, otherwise we respond 481 Call/
+%%           transaction does not exist.
+%% Returns : Does not matter.
+%%--------------------------------------------------------------------
+request_to_me(THandler, #request{method="OPTIONS"}=Request, LogTag) when is_record(Request, request) ->
+    logger:log(normal, "~s: pstnproxy: OPTIONS to me -> 200 OK", [LogTag]),
+    logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
+	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
+    transactionlayer:send_response_handler(THandler, 200, "OK");
+
+request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
+    logger:log(normal, "~s: pstnproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
+	       [LogTag]),
+    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 
 %%--------------------------------------------------------------------
@@ -372,7 +409,7 @@ get_branch_from_handler(TH) ->
     case string:rstr(CallBranch, "-UAS") of
 	0 ->
 	    CallBranch;
-	Index when integer(Index) ->
+	Index when is_integer(Index) ->
 	    BranchBase = string:substr(CallBranch, 1, Index - 1),
 	    BranchBase
     end.
@@ -421,7 +458,7 @@ relay_request_to_pstn(THandler, #request{method=Method}=Request, DstURI, DstNumb
 %%
 %% Anything except CANCEL or BYE
 %%
-relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when record(Request, request) ->
+relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_record(Request, request) ->
     {Method, Header} = {Request#request.method, Request#request.header},
     {_, FromURI} = sipheader:from(Header),
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
