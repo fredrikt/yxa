@@ -30,6 +30,28 @@ process(Packet, Socket) ->
 	    response(Status, Reason, Header, Body, Socket)
     end.
 
+classdefs() ->
+    [
+     {"^0007[12]", pay},
+     {"^000900", pay},
+     {"^000939", pay},
+     {"^000944", pay},
+     {"^0007[0346]", mobile},
+     {"^00[1-9]", national},
+     {"^[46-9]", internal},
+     {"^10", internal},
+     {"^112", internal},
+     {"^00010", mobile},
+     {"^000[2-68]", national},
+     {"^0001[1-9]", national},
+     {"^00077", national},
+     {"^0009[125-9]", national},
+     {"^00090[1-9]", national},
+     {"^00093[0-8]", national},
+     {"^00094[0-35-9]", national},
+     {"^0000", international}
+    ].
+
 request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body, Socket) ->
     logger:log(normal, Method),
     case Method of
@@ -54,10 +76,11 @@ request2(Method, Phone, Header, Body, Socket) ->
     Newlocation = {Phone, none, sipconfig:proxyaddr(), "5060", []},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     {Fromphone, _, _, _, _} = FromURI,
+    Classdefs = classdefs(),
     sipauth:check_and_send_auth(Header, Socket, Fromphone, Phone,
 				{siprequest, send_proxy_request},
 				{Method, Newlocation, Body},
-				Method).
+				Method, Classdefs).
 
 response(Status, Reason, Header, Body, Socket) ->
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).

@@ -1,5 +1,5 @@
 -module(sipauth).
--export([check_and_send_auth/7, get_response/5,
+-export([check_and_send_auth/8, get_response/5,
 	get_nonce/1, get_user_verified/2, get_challenge/0,
 	can_register/2]).
 
@@ -40,36 +40,15 @@ get_passnumber(User) ->
 	    {none, [], [], []}
     end.
 
-get_class("0000" ++ _) ->
-    international;
-get_class("0007" ++ _) ->
-    mobile_or_pay;
-get_class("000" ++ _) ->
-    national;
-get_class("00" ++ _) ->
-    local;
-get_class("0" ++ _) ->
-    almostinternal;
-get_class("1" ++ _) ->
-    internal;
-get_class("2" ++ _) ->
-    internal;
-get_class("3" ++ _) ->
-    internal;
-get_class("4" ++ _) ->
-    internal;
-get_class("5" ++ _) ->
-    internal;
-get_class("6" ++ _) ->
-    internal;
-get_class("7" ++ _) ->
-    internal;
-get_class("8" ++ _) ->
-    internal;
-get_class("9" ++ _) ->
-    internal;
-get_class(_) ->
-    bogus.
+get_class(Number, [{Regexp, Class} | Rest]) ->
+    case regexp:first_match(Number, Regexp) of
+	{match, _, _} ->
+	    Class;
+	nomatch ->
+	    get_class(Number, Rest);
+	{error, Error} ->
+	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error])
+    end.
 
 get_user_verified(Header, Method) ->
     Authheader = keylist:fetch("Authorization", Header),
@@ -118,11 +97,11 @@ get_user_verified(Header, Method, Authheader) ->
 	    User
     end.
 
-check_auth(Header, Method, Number, Tophone) ->
+check_auth(Header, Method, Number, Tophone, Classdefs) ->
     User = get_user_verified_proxy(Header, Method),
     {_, Numberlist, _, Classes} = get_passnumber(User),
     Numberallowed = lists:member(Number, Numberlist),
-    Class = get_class(Tophone),
+    Class = get_class(Tophone, Classdefs),
 %    Classlist = [internal, mobile_or_pay, national, local, almostinternal, bogus, international],
     Classallowed = lists:member(Class, Classes),
     if
@@ -157,15 +136,15 @@ can_register(Header, Number) ->
 	    end
     end.
 
-check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method) ->
-    Class = get_class(Tophone),
+check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs) ->
+    Class = get_class(Tophone, Classdefs),
     Classlist = [internal, local, bogus],
     Classallowed = lists:member(Class, Classlist),
     if
 	Classallowed == true ->
 	    apply(Func, [Header, Socket, Arg]);
 	true ->
-	    case check_auth(Header, Method, Phone, Tophone) of
+	    case check_auth(Header, Method, Phone, Tophone, Classdefs) of
 		true -> 
 		    apply(Func, [Header, Socket, Arg]);
 		stale ->
