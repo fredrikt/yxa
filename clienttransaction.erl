@@ -121,6 +121,7 @@ init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
     Desc = lists:flatten(
 	     io_lib:format("~s: ~s ~s (dst ~s)", [RegBranch, Method,
 						  sipurl:print(URI), sipdst:dst2str(Dst)])),
+    LogTag = lists:concat([RegBranch, " ", Method]),
     %% Get ourselves into the transaction state list first of all
     case transactionstatelist:add_client_transaction(Method, RegBranch, self(), Desc) of
 	{duplicate, _} ->
@@ -137,7 +138,7 @@ init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
 	    true = link(Parent),
 	    %% Trap exit signals so that we can cancel ongoing INVITEs if our parent dies
 	    process_flag(trap_exit, true),
-	    case init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent]) of
+	    case init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent, LogTag]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
 		Reply ->
@@ -149,11 +150,10 @@ init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
 	    {stop, "Transaction layer failed"}
     end.
 
-init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
+init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
        is_integer(Timeout), is_pid(Parent); Parent == none ->
     {Method, URI} = {Request#request.method, Request#request.uri},
-    LogTag = lists:flatten(Branch ++ " " ++ Method),
     SipState = case Method of
 		   "INVITE" -> calling;
 		   _ -> trying
@@ -231,7 +231,7 @@ handle_cast({sipmessage, Response, Origin, _LogStr}, State) when is_record(Respo
 %%--------------------------------------------------------------------
 handle_cast({cancel, Msg, _ExtraHeaders}, State=#state{cancelled=true}) ->
     LogTag = State#state.logtag,
-    logger:log(debug, "~s: Ignoring signal to cancel (~s) when in SIP-state '~p', I am already cancelled.",
+    logger:log(debug, "~s: Ignoring signal to cancel (~s) when in SIP-state '~p'. I am already cancelled.",
 	       [LogTag, Msg, State#state.sipstate]),
     check_quit({noreply, State});
 handle_cast({cancel, Msg, ExtraHeaders}, State=#state{cancelled=false}) ->
@@ -1114,10 +1114,14 @@ fake_request_timeout(State) when is_record(State, state) ->
 %% Function: end_invite(State)
 %%           State = state record()
 %% Descrip.: Ends an INVITE transaction. This is called when our user
-%%           specified timeout occurs, or when Timer C fires.
-%%           Whichever happens first.
+%%           specified timeout (timer invite_timeout) occurs, or when
+%%           Timer C fires. Whichever happens first.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
+end_invite(#state{cancelled=true}=State) ->
+    logger:log(debug, "~s: End invite: Not doing anything since request is already cancelled.",
+	       [State#state.logtag]),
+    State;
 end_invite(State) when is_record(State, state) ->
     Request = State#state.request,
     URI = Request#request.uri,
@@ -1127,7 +1131,7 @@ end_invite(State) when is_record(State, state) ->
 	calling ->
 	    fake_request_timeout(State);
 	proceeding ->
-	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state 'proceeding' - cancel request" ++
+	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state 'proceeding' - cancel request "
 		       "(by starting a separate CANCEL transaction)", [LogTag, sipurl:print(URI)]),
 	    cancel_request(State);
 	_ ->
@@ -1164,6 +1168,13 @@ terminate_transaction(State) when is_record(State, state) ->
 cancel_request(State) when is_record(State, state) ->
     cancel_request(State, []).
 
+cancel_request(#state{cancelled=true}=State, _ExtraHeaders) ->
+    LogTag = State#state.logtag,
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    logger:log(debug, "~s: NOT starting CANCEL transaction for request (~s ~s) "
+	       "since we are already cancelled", [LogTag, Method, sipurl:print(URI)]),
+    State;
 cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraHeaders) ->
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
@@ -1194,6 +1205,8 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 	_ ->
 	    %% RFC 3261 9.1 says a stateful proxy SHOULD NOT send CANCEL of non-INVITE requests.
 	    %% We enter 'completed' state to collect any final responses that might arrive.
+	    %% XXX what if no final responses arrive? What will be our final response in that case?
+	    %% XXX exactly what happens with final responses arrived when we are in state 'completed'?
 	    logger:log(debug, "~s: Request was non-INVITE (~s) - not starting CANCEL transaction. "
 		       "Going into 'completed' state.", [LogTag, Method]),
 	    %% Terminate any resend request timers, and set up TimerK to fire in default 5 seconds,
@@ -1223,28 +1236,26 @@ start_cancel_transaction(State) when is_record(State, state) ->
     LogTag = State#state.logtag,
     Request = State#state.request,
     {URI, Header} = {Request#request.uri, Request#request.header},
-    logger:log(debug, "~s: initiate_cancel() Sending CANCEL ~s", [LogTag, sipurl:print(URI)]),
+    logger:log(debug, "~s: Starting new client transaction: CANCEL ~s", [LogTag, sipurl:print(URI)]),
     {CSeqNum, _} = sipheader:cseq(Header),
     CancelId = {CSeqNum, "CANCEL"},
-    %% Delete all Via headers. initiate_request() uses send_proxy_request() which
-    %% will add one for this proxy, and that is the only one that should be in a
-    %% CANCEL. Set CSeq method to CANCEL and delete all Require and Proxy-Require
-    %% headers. All this according to RFC 3261 9.1 Client Behaviour.
+    %% Delete all Via headers. The new client transaction will use send_proxy_request() which
+    %% will add one for this proxy, and that is the only one that should be in a CANCEL.
+    %% Set CSeq method to CANCEL and delete all Require and Proxy-Require headers. All this
+    %% according to RFC3261 #9.1 (Client Behaviour).
     CancelHeader1 = keylist:set("CSeq", [sipheader:cseq_print(CancelId)],
 				Header),
     CancelHeader2 = keylist:delete('via', CancelHeader1),
     CancelHeader3 = keylist:delete('require', CancelHeader2),
     CancelHeader4 = keylist:delete('proxy-require', CancelHeader3),
     CancelHeader5 = keylist:delete('content-type', CancelHeader4),
-    CancelHeader6 = keylist:delete('content-length', CancelHeader5),
-    CancelHeader = keylist:set("Content-Length", ["0"], CancelHeader6),
-    CancelRequest = siprequest:set_request_body(#request{method="CANCEL", uri=URI, header=CancelHeader}, <<>>),
+    CancelRequest = siprequest:set_request_body(#request{method="CANCEL", uri=URI, header=CancelHeader5}, <<>>),
     T1 = sipserver:get_env(timerT1, 500),
     NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
     Socket = State#state.socket,
     Dst = State#state.dst,
-    %% Must use branch from original request sent out, so that next hop can match
-    %% this ACK to the right transaction. tl_branch is not necessarily the same as branch
+    %% Must use branch from original request sent out, so that next hop can match this
+    %% CANCEL to the right transaction. tl_branch is not necessarily the same as branch
     %% since the transport layer can be configured to add a stateless loop cookie.
     Branch = State#state.tl_branch,
     %% XXX is the 32 * T1 correct for CANCEL?
