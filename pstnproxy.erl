@@ -69,7 +69,7 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 %%--------------------------------------------------------------------
 response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
-    logger:log(normal, "Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
+    logger:log(normal, "pstnproxy: Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response).
 
 
@@ -143,7 +143,7 @@ toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Or
 		      true ->
 			  %% Hostname matches me
 			  User = URI#sipurl.user,
-			  logger:log(debug, "Performing ENUM lookup on ~p", [User]),
+			  logger:log(debug, "pstnproxy: Performing ENUM lookup on ~p", [User]),
 			  case local:lookupenum(User) of
 			      {relay, Loc} ->
 				  Loc;

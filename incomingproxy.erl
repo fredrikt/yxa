@@ -139,7 +139,7 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 %%--------------------------------------------------------------------
 response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
-    logger:log(normal, "Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
+    logger:log(normal, "incomingproxy: Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response).
 
 

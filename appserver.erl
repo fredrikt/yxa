@@ -86,13 +86,13 @@ response(Response, Origin, LogStr) when record(Response, response), record(Origi
     case transactionlayer:get_server_handler_for_stateless_response(Response) of
 	{error, E} ->
 	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
-	    logger:log(normal, "Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
+	    logger:log(normal, "appserver: Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
 	    transportlayer:send_proxy_response(none, Response);
 	none ->
-	    logger:log(normal, "Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
+	    logger:log(normal, "appserver: Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
 	    transportlayer:send_proxy_response(none, Response);
 	TH ->
-	    logger:log(debug, "Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
+	    logger:log(debug, "appserver: Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
 	    transactionlayer:send_proxy_response_handler(TH, Response)
     end.
 
