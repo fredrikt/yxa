@@ -63,7 +63,7 @@ init([AppModule, Mode]) ->
     process_flag(trap_exit, true),
     TStateList = transactionstatelist:empty(),
     logger:log(debug, "Transaction layer started"),
-    {ok, #state{appmodule=AppModule, mode=Mode, tstatelist=TStateList}}.
+    {ok, #state{appmodule=AppModule, mode=Mode, tstatelist=TStateList}, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_call/3
@@ -223,7 +223,7 @@ handle_cast(Msg, State) ->
 
 handle_info(timeout, State) ->
     NewL = transactionstatelist:delete_expired(State#state.tstatelist),
-    {noreply, State#state{tstatelist=NewL}};
+    {noreply, State#state{tstatelist=NewL}, ?TIMEOUT};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
@@ -232,7 +232,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end,
     NewState = case transactionstatelist:get_list_using_pid(Pid, State#state.tstatelist) of
 		   none ->
-		       logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list. Socketlist is :~n~p",
+		       logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list. Transactionlist is :~n~p",
 				  [Pid, transactionstatelist:debugfriendly(State#state.tstatelist)]),
 		       State;
 		   L when record(L, transactionstatelist) ->
@@ -327,8 +327,8 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 					 logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
 					 {Status, Reason} = case util:safe_is_process_alive(InvitePid) of
 								{true, _} ->
-								    logger:log(debug, "Transaction layer: Cancelling other transaction handled by ~p " ++
-									       "and responding 200 Ok", [InvitePid]),
+								    logger:log(debug, "Transaction layer: Cancelling the transaction handled by ~p " ++
+									       "and responding 200 Ok to this CANCEL transaction", [InvitePid]),
 								    gen_server:cast(InvitePid, {cancelled}),
 								    {200, "Ok"};
 								_ ->
