@@ -131,7 +131,7 @@ boot_FILES = \
 	adminwww.boot \
 	appserver.boot
 
-start_FILES = $(boot_FILES:.boot=.start)
+start_FILES = $(boot_FILES:.boot=)
 
 CC = gcc
 
@@ -140,6 +140,7 @@ beam_FILES = $(erl_FILES:.erl=.beam)
 all: $(beam_FILES) bootstrap.sh dtmfserver $(boot_FILES) $(start_FILES)
 
 install: $(boot_FILES) $(beam_FILES) $(start_FILES)
+	$(mkinstalldirs) $(DESTDIR)$(sysconfdir)
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
 	for p in $(beam_FILES) $(boot_FILES) ; do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
@@ -197,14 +198,14 @@ appserver.boot: appserver.app appserver.rel
 bootstrap.sh: init.sh.in config.status
 	$(create_start_script)
 
-incomingproxy.start: incomingproxy.boot init.sh.in config.status
+incomingproxy: incomingproxy.boot init.sh.in config.status
 	$(create_start_script)
 
-pstnproxy.start: pstnproxy.boot init.sh.in config.status
+pstnproxy: pstnproxy.boot init.sh.in config.status
 	$(create_start_script)
 
-adminwww.start: adminwww.boot init.sh.in config.status
+adminwww: adminwww.boot init.sh.in config.status
 	$(create_start_script)
 
-appserver.start: appserver.boot init.sh.in config.status
+appserver: appserver.boot init.sh.in config.status
 	$(create_start_script)
