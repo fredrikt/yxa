@@ -423,7 +423,7 @@ add_user(Env, Input) ->
 		{_, error} ->
 		    [header(ok), "Felaktigt telefonnummer"];
 		{{ok, User}, {ok, Phone}} ->
-		    phone:insert_user(User, none, [Phone], [], Classes),
+		    phone:insert_user(User, none, [], Classes),
 		    [header(redirect, userurl())]
 	    end
     end.
