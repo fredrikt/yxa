@@ -67,36 +67,46 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 	    NewHeader = keylist:delete("Record-Route", Header),
 	    {_, ToURL} = sipheader:to(keylist:fetch("To", Header)),
 	    case local:can_register(NewHeader, sipurl:print(ToURL)) of
-		{true, SIPuser} ->
+		{{true, _}, SIPuser} ->
 		    Contacts = sipheader:contact(keylist:fetch("Contact", Header)),
 		    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
 		    logger:log(debug, "~s: Registering contacts for SIP user ~p", [LogTag, SIPuser]),
 		    case catch siplocation:process_register_isauth(LogTag ++ ": incomingproxy", NewHeader, SIPuser, Contacts) of
 			{ok, {Status, Reason, ExtraHeaders}} ->
-			    transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders);	
+			    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);	
 			{siperror, Status, Reason} ->
-			    transactionlayer:send_response_request(Request, Status, Reason);
+			    transactionlayer:send_response_handler(THandler, Status, Reason);
 			{siperror, Status, Reason, ExtraHeaders} ->
-			    transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders);
+			    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
 			_ ->
 			    true
 		    end;
 		{stale, _} ->
 		    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
 		    ExtraHeaders = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
-		    transactionlayer:send_response_request(Request, 401, "Authentication Required", ExtraHeaders);
-		{false, _} ->
+		    transactionlayer:send_response_handler(THandler, 401, "Authentication Required", ExtraHeaders);
+		{{false, eperm}, SipUser} when SipUser /= none ->
+		    logger:log(normal, "~s: incomingproxy: SipUser ~p NOT ALLOWED to REGISTER address ~s",
+				[LogTag, SipUser, sipurl:print(ToURL)]),
+		    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
+		{{false, nomatch}, SipUser} when SipUser /= none ->
+		    logger:log(normal, "~s: incomingproxy: SipUser ~p tried to REGISTER invalid address ~s",
+				[LogTag, SipUser, sipurl:print(ToURL)]),
+		    transactionlayer:send_response_handler(THandler, 404, "Not Found");
+		{false, none} ->
 		    Prio = case keylist:fetch("Authorization", Header) of
 			[] -> debug;
 			_ -> normal
 		    end,
+		    % XXX send new challenge (current behavior) or send 403 Forbidden when authentication fails?
 		    logger:log(Prio, "~s -> Authentication FAILED, sending challenge", [LogStr]),
-		    ExtraHeaders = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
-		    transactionlayer:send_response_request(Request, 401, "Authentication Required", ExtraHeaders);
+		    ExtraHeaders = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)},
+		    		    {"Retry-After", ["3"]}],
+		    transactionlayer:send_response_handler(THandler, 401, "Authentication Required", ExtraHeaders);
 		Unknown ->
 		    logger:log(error, "Register: Unknown result from local:can_register() URL ~p :~n~p",
 		    		[sipurl:print(URL), Unknown]),
-		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
+		    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
 	    end;
 	_ ->
 	    logger:log(debug, "REGISTER for non-homedomain ~p", [Host]),
