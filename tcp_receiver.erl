@@ -35,7 +35,8 @@
 	  parent,
 	  local,
 	  remote,
-	  sipsocket
+	  sipsocket,
+	  linked=no
 	 }).
 
 %%====================================================================
@@ -68,8 +69,20 @@ start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
 %%           and terminate.
 %% Returns : void()
 %%--------------------------------------------------------------------
+recv_loop(#state{linked=no, socketmodule=ssl}=State, DataIn) when is_list(DataIn) ->
+    %% Socket is SSL and this is the first time we enter recv_loop(). Link to sockets pid
+    %% and set us up to receive exit signals from our parent and from the sockets pid.
+    process_flag(trap_exit, true),
+    SocketPid = ssl:pid(State#state.socket),
+    true = link(SocketPid),
+    recv_loop(State#state{linked=yes}, DataIn);
 recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.socketmodule == ssl ->
     Socket = State#state.socket,
+    SocketPid = ssl:pid(State#state.socket),
+    %% Must set {active, once} here even if tcp_listener did it right before us -
+    %% it seems as if the SSL socket looses this status when controlling process is changed.
+    ssl:setopts(State#state.socket, [{active, once}]),
+    Parent = State#state.parent,
     Rest = receive
 	       {ssl, Socket, B} ->
 		   L = binary_to_list(B),
@@ -78,7 +91,6 @@ recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.so
 		   %% remove_separator() removes any leading CR or LF
 		   NewDataIn = lists:append(DataIn, L),
 		   SoFar = remove_separator(NewDataIn),
-		   ssl:setopts(Socket, [{active, once}]),
 		   %% Look for header-body separator
 		   case has_header_body_separator(SoFar) of
 		       false ->
@@ -103,6 +115,21 @@ recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.so
 		   logger:log(error, "TCP receiver: SSL error from socket ~p : ~p", [Socket, Reason]),
 		   DataIn;
 
+	       {quit_receiver, Parent} ->
+		   logger:log(debug, "TCP receiver: Closing SSL socket ~p and terminating upon request from my parent",
+			      [Socket]),
+		   {quit};
+
+	       {'EXIT', SocketPid, Reason} ->
+		   logger:log(debug, "TCP receiver: SSL socket ~p terminated, shutting down. Reason was : ~p",
+			      [Socket, Reason]),
+		   {close};
+
+	       {'EXIT', Parent, Reason} ->
+		   logger:log(debug, "TCP receiver: SSL connection handler ~p terminated, shutting down. Reason was : ~p",
+			      [Parent, Reason]),
+		   {quit};
+
 	       Unknown ->
 		   logger:log(error, "TCP receiver: Received unknown signal :~n~p", [Unknown]),
 		   DataIn
@@ -111,12 +138,14 @@ recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.so
 	   end,
     case Rest of
 	{connection_closed} ->
-	    ssl:close(State#state.socket),
-	    gen_server:cast(State#state.parent, {connection_closed, self()});
+	    gen_server:cast(Parent, {connection_closed, self()});
 	{close} ->
+	    ssl:close(State#state.socket),	%% Maybe not needed, but better safe than sorry
+	    gen_server:cast(Parent, {close, self()});
+	{quit} ->
 	    ssl:close(State#state.socket),
-	    gen_server:cast(State#state.parent, {close, self()});
-	_ when list(Rest) ->
+	    ok;
+	_ when is_list(Rest) ->
 	    recv_loop(State, Rest)
     end;
 

@@ -136,7 +136,7 @@ init([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
 		_ ->
 		    ok
 	    end,
-	    logger:log(debug, "TCP connection: ~s ~s:~p (proto ~p, socket ~p, started receiver ~p)", [S, IP, Port, Proto, Socket, Receiver]),
+	    logger:log(debug, "TCP connection: ~s ~p:~s:~p (socket ~p, started receiver ~p)", [S, Proto, IP, Port, Socket, Receiver]),
 	    Timeout = sipserver:get_env(tcp_connection_idle_timeout, 300) * 1000,
 	    Now = util:timestamp(),
 	    State = #state{socketmodule=SocketModule, proto=Proto, socket=Socket, receiver=Receiver, local=Local, remote=Remote,
@@ -175,7 +175,7 @@ init([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
 %%           Reply = {send_result, SendRes}
 %%           SendRes = term(), result of SocketModule:send()
 %%--------------------------------------------------------------------
-handle_call({send, {Host, Port, Message}}, From, State) when State#state.on == true ->
+handle_call({send, {_Host, _Port, Message}}, _From, State) when State#state.on == true ->
     %% XXX verify that Host:Port matches host and port in State#State.sipsocket!
     SocketModule = State#state.socketmodule,
     SendRes = case catch SocketModule:send(State#state.socket, Message) of
@@ -193,9 +193,9 @@ handle_call({send, {Host, Port, Message}}, From, State) when State#state.on == t
 %%           Pid    = pid()
 %%           Reason = string()
 %%--------------------------------------------------------------------
-handle_call({get_receiver}, From, State) when State#state.on == true ->
+handle_call({get_receiver}, _From, State) when State#state.on == true ->
     {reply, {ok, State#state.receiver}, State, State#state.timeout};
-handle_call({get_receiver}, From, State) ->
+handle_call({get_receiver}, _From, State) ->
     {reply, {error, "Not started"}, State, State#state.timeout}.
 
 
@@ -236,8 +236,8 @@ handle_cast({connect_to_remote, Proto, Host, Port, GenServerFrom}, State) when S
 			      end,
     Host2 = util:remove_v6_brackets(Host),
     {TimeSpent, ConnectRes} = timer:tc(SocketModule, connect, [Host2, Port, Options, ConnectTimeout]),
-    logger:log(debug, "TCP connection: Extra debug: Time spent connecting to ~s:~p (~p) : ~p ms",
-	       [Host, Port, Proto, ConnectTimeout div 1000]),
+    logger:log(debug, "TCP connection: Extra debug: Time spent connecting to ~p:~s:~p : ~p ms",
+	       [Proto, Host, Port, TimeSpent div 1000]),
     case ConnectRes of
 	{ok, NewSocket} ->
 	    Local = case InetModule:sockname(NewSocket) of
@@ -252,12 +252,13 @@ handle_cast({connect_to_remote, Proto, Host, Port, GenServerFrom}, State) when S
 	    case init([out, SocketModule, Proto, NewSocket, Local, Remote]) of
 		{ok, NewState, Timeout} ->
 		    SipSocket = NewState#state.sipsocket,
-		    logger:log(debug, "TCP conncetion: Extra debug: Connected to ~s:~p (~p), socket ~p", [Host, Port, Proto, SipSocket]),
+		    logger:log(debug, "TCP connection: Extra debug: Connected to ~p:~s:~p, socket ~p", [Proto, Host, Port, SipSocket]),
 		    %% This is the answer to a 'gen_server:call(tcp_dispatcher, {get_socket ...)' that
 		    %% someone (GenServerFrom) made, but where there were no cached connection available.
 		    gen_server:reply(GenServerFrom, {ok, SipSocket}),
 		    {noreply, NewState, Timeout};
 		Res ->
+		    logger:log(debug, "TCP connection: init() returned unknown data : ~p", [Res]),
 		    gen_server:reply(GenServerFrom, {error, "Failed initializing tcp_connection handler"}),
 		    {stop, "Failed initializing tcp_connection handler", State}
 	    end;
@@ -269,8 +270,8 @@ handle_cast({connect_to_remote, Proto, Host, Port, GenServerFrom}, State) when S
 	    gen_server:reply(GenServerFrom, {error, "Host unreachable"}),
 	    {stop, normal, State};
 	{error, E} ->
-	    logger:log(error, "TCP connection: Failed connecting to ~s:~p (proto ~p) : ~p (~s)",
-		       [Host, Port, Proto, E, inet:format_error(E)]),
+	    logger:log(error, "TCP connection: Failed connecting to ~p:~s:~p : ~p (~s)",
+		       [Proto, Host, Port, E, inet:format_error(E)]),
 	    gen_server:reply(GenServerFrom, {error, "Failed connecting to remote host"}),
 	    {stop, normal, State}
     end;
@@ -294,10 +295,12 @@ handle_cast({recv, Data}, State) when State#state.on == true ->
 %% Descrip.: A request to close this connection.
 %% Returns : {stop, normal, NewState}
 %%--------------------------------------------------------------------
-handle_cast({close, From}, State) ->
+handle_cast({close, _From}, State) ->
+    %% XXX check that From is someone sensible?
     Duration = util:timestamp() - State#state.starttime,
     {IP, Port} = State#state.remote,
-    logger:log(debug, "TCP connection: Closing connection with ~s:~p (duration: ~p seconds)", [IP, Port, Duration]),
+    logger:log(debug, "TCP connection: Closing connection with ~p:~s:~p (duration: ~p seconds)", 
+	       [State#state.proto, IP, Port, Duration]),
     SocketModule = State#state.socketmodule,
     SocketModule:close(State#state.socket),
     {stop, normal, State#state{socket=undefined}};
@@ -309,12 +312,11 @@ handle_cast({close, From}, State) ->
 %% Returns : {stop, normal, NewState}
 %%--------------------------------------------------------------------
 %% Our receiver signals us that it detected that the other end closed the connection.
-handle_cast({connection_closed, From}, State) ->
-    %% XXX check that From is our receiver process?
+handle_cast({connection_closed, FromPid}, #state{receiver=FromPid}=State) when is_pid(FromPid) ->
     Duration = util:timestamp() - State#state.starttime,
     {IP, Port} = State#state.remote,
-    logger:log(debug, "TCP connection: Connection with ~s:~p closed by foreign host (duration: ~p seconds)",
-	       [IP, Port, Duration]),
+    logger:log(debug, "TCP connection: Connection with ~p:~s:~p closed by foreign host (duration: ~p seconds)",
+	       [State#state.proto, IP, Port, Duration]),
     %% Call close() on the socket just to make sure. For SSL, the TCP receiver will have done this for us.
     case State#state.socketmodule of
 	ssl -> true;
@@ -339,17 +341,26 @@ handle_cast(Msg, State) ->
 %%--------------------------------------------------------------------
 %% Function: handle_info(timeout, State)
 %% Descrip.: This connection has neither received nor sent any data in
-%%           our configured maximum time period. Close the connection.
-%% Returns : {stop, normal, NewState}          (terminate/2 is called)
+%%           our configured maximum time period. Make the socket go
+%%           away.
+%% Returns : {noreply, State, ?TIMEOUT}          (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_info(timeout, State) when State#state.on == true ->
     {IP, Port} = State#state.remote,
     Timeout = State#state.timeout,
-    logger:log(debug, "Sipsocket TCP: Connection with ~s:~p timed out after ~p seconds, socket handler terminating.",
-	       [IP, Port, Timeout div 1000]),
-    exit(State#state.receiver, normal),
-    SocketModule = State#state.socketmodule,
-    SocketModule:close(State#state.socket),
+    logger:log(debug, "Sipsocket TCP: Connection with ~p:~s:~p timed out after ~p seconds, connection handler terminating.",
+	       [State#state.proto, IP, Port, Timeout div 1000]),
+    case State#state.socketmodule of
+	ssl ->
+	    %% For SSL, we signal the receiver and let it close the connection
+	    %% and terminate quietly
+	    State#state.receiver ! {quit_receiver, self()},
+	    true;
+	gen_tcp ->
+	    %% the tcp_receiver will notice that the socket is closed and exit
+	    logger:log(debug, "Sipsocket TCP: Closing socket ~p", [State#state.socket]),
+	    gen_tcp:close(State#state.socket)
+    end,
     {stop, normal, State#state{socket=undefined}};
 
 handle_info(Info, State) ->
@@ -361,9 +372,9 @@ handle_info(Info, State) ->
 %% Descrip.: Shutdown the server
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(normal, State) ->
+terminate(normal, _State) ->
     ok;
-terminate(Reason, State) ->
+terminate(Reason, _State) ->
     logger:log(error, "TCP connection: Terminating for some other reason than 'normal' : ~n~p",
 	       [Reason]),
     ok.
@@ -373,7 +384,7 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%--------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
