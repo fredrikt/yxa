@@ -75,9 +75,8 @@ sendack(Socket, Header, Url) ->
 		  {"To", keylist:fetch("To", Header)},
 		  {"Call-ID", keylist:fetch("Call-ID", Header)},
 		  {"CSeq", [sipheader:cseq_print({CSeqID, "ACK"})]}],
-    siprequest:send_proxy_request(Sendheader,
-				  Socket,
-				  {"ACK", Url, "", []}).
+    siprequest:send_proxy_request(Socket,
+				  {"ACK", Url, Sendheader, ""}, Url, []).
 
 recvresponse(Socket, Header, Url, Body, Status) ->
     io:format("~p ~p~n", [Body, Status]),
