@@ -293,7 +293,7 @@ update_transactionstate(TState, TStateList) when record(TState, transactionstate
     #transactionstatelist{list=update_transactionstate(Ref, TState, TStateList#transactionstatelist.list, TStateList)}.
 
 update_transactionstate(Ref, _, [], TStateList) ->
-    logger:log(error, "Transaction state list: Asked to update a transactionstate, but I can't find it", [Ref]),
+    logger:log(error, "Transaction state list: Asked to update a transactionstate with ref=~p, but I can't find it", [Ref]),
     logger:log(debug, "Transaction state list: Asked to update a transactionstate with ref=~p, but I can't find it in list :~n~p",
 	       [Ref, debugfriendly(TStateList)]),
     [];
