@@ -6,16 +6,16 @@
 %%%
 %%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%
-%%% Note: with the current implementation - the logger being 
-%%%       registered as 'logger' there can be only one logger per 
-%%%       node. Running the same application on several nodes both 
-%%%       wich have the same file:get_cwd/0 will result in both 
+%%% Note: with the current implementation - the logger being
+%%%       registered as 'logger' there can be only one logger per
+%%%       node. Running the same application on several nodes both
+%%%       wich have the same file:get_cwd/0 will result in both
 %%%       using the same log files UNLESS they have a different
 %%%       configured logger_logbasename.
-%%% Note: Erlang/OTP has it's own log module - disk_log, that among 
+%%% Note: Erlang/OTP has it's own log module - disk_log, that among
 %%%       other things is able to do log rotation. People having used
 %%%       it is not all happy though.
-%%% 
+%%%
 %%%-------------------------------------------------------------------
 -module(logger).
 
@@ -27,10 +27,10 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/0, 
-	 start_link/1, 
-	 log/2, 
-	 log/3, 
+	 start_link/0,
+	 start_link/1,
+	 log/2,
+	 log/3,
 	 quit/1
 	]).
 
@@ -38,11 +38,11 @@
 %% Internal exports - gen_server callbacks
 %%--------------------------------------------------------------------
 -export([
-	 init/1, 
-	 handle_call/3, 
-	 handle_cast/2, 
-	 handle_info/2, 
-	 terminate/2, 
+	 init/1,
+	 handle_call/3,
+	 handle_cast/2,
+	 handle_info/2,
+	 terminate/2,
 	 code_change/3
 	]).
 
@@ -56,8 +56,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
-%% used to keep track of the files, used by the log functions, one 
-%% file type of file is keept for each type of log (debug, normal, 
+%% used to keep track of the files, used by the log functions, one
+%% file type of file is keept for each type of log (debug, normal,
 %% error)
 -record(state, {
 	  debug_iodev,  % file descriptor
@@ -82,9 +82,9 @@
 %%--------------------------------------------------------------------
 %% Function: start_link(AppName)
 %%           start_link()
-%% Descrip.: start the server. 
+%% Descrip.: start the server.
 %%           start_link/0 uses the current application as AppName.
-%%           The logger is only registered localy (on the current 
+%%           The logger is only registered localy (on the current
 %%           node)
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
@@ -102,7 +102,7 @@ start_link(AppName) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: log(Level, Format, Arguments) 
+%% Function: log(Level, Format, Arguments)
 %%           Level = normal | debug | error
 %%           Format = string(), a io:format format string
 %%           Arguments = list(), a io:format argument list
@@ -112,14 +112,14 @@ start_link(AppName) ->
 log(Level, Format) when is_atom(Level), is_list(Format) ->
     log(Level, Format, []).
 
-log(Level, Format, Arguments) when is_atom(Level), is_list(Format), 
+log(Level, Format, Arguments) when is_atom(Level), is_list(Format),
 				   is_list(Arguments) ->
     do_log(Level, Format, Arguments).
 
 %%--------------------------------------------------------------------
 %% Function: quit(Msg)
 %%           Msg = none | [] | term()
-%% Descrip.: terminate the logger process. if Msg is term(), it will 
+%% Descrip.: terminate the logger process. if Msg is term(), it will
 %%           be sent to the log before quiting "log(normal, Msg)"
 %% Returns : ok | {error, "logger error"}
 %%--------------------------------------------------------------------
@@ -156,7 +156,7 @@ init([Basename]) ->
     %% limit in size (bytes). Defaults to 250 MB.
     DefaultSize = 250 * 1024 * 1024,
     case sipserver:get_env(max_logfile_size, DefaultSize) of
-	none -> 
+	none ->
 	    %% max_logfile_size = none, don't rotate logs
 	    ok;
 	Size ->
@@ -188,11 +188,11 @@ init([Basename]) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Msg, From, State)
-%%           Msg = {rotate_logs}               | 
+%%           Msg = {rotate_logs}               |
 %%                 {rotate_logs, Suffix}       |
 %%                 {rotate_logs, Suffix, Logs} |
 %%                 {quit}                           quit logger
-%%           Suffix = string(), log date suffix to use, 
+%%           Suffix = string(), log date suffix to use,
 %%                              default = current time
 %%           Logs = atom(), logs to update, default = all logs
 %% Descrip.: Handling call messages
@@ -250,7 +250,7 @@ handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data) ->
 	error ->
 	    log_to_device(State#state.error_iodev, Data),
 	    log_to_device(State#state.normal_iodev, Data),
-	    log_to_device(State#state.debug_iodev, Data), 
+	    log_to_device(State#state.debug_iodev, Data),
 	    log_to_stdout(Data);
 	normal ->
 	    log_to_device(State#state.normal_iodev, Data),
@@ -293,7 +293,7 @@ handle_info({check_logfile_size, Size}, State) ->
 	    Suffix = create_filename_time_suffix(),
 	    {_, NewState} = rotate(L, Suffix, State),
 	    {noreply, NewState}
-    end;   
+    end;
 
 handle_info(Info, State) ->
     logger:log(error, "Logger: Received unknown signal :~n~p", [Info]),
@@ -340,7 +340,7 @@ safe_open(Filename, Args) ->
 %% Descrip.: log a message
 %% Returns : -
 %% Note    : catch is used to ensure that formating error in io:format
-%%           calls are logged - they may otherwise simply crash the 
+%%           calls are logged - they may otherwise simply crash the
 %%           logger with out feedback, if the logger is run without
 %%           a erlang shell to look at
 %%--------------------------------------------------------------------
@@ -356,7 +356,7 @@ log_to_stdout(Data) ->
 %% Function: create_filename_time_suffix/0
 %% Descrip.: Return a date string (european style) suitable for
 %%           appending to a filename when rotating it.
-%% Returns : string() 
+%% Returns : string()
 %%--------------------------------------------------------------------
 create_filename_time_suffix() ->
     {Megasec, Sec, _USec} = now(),
@@ -376,29 +376,29 @@ create_filename_time_suffix() ->
 %% Returns : list() of atom()
 %%--------------------------------------------------------------------
 needs_rotating(In, Size, State) when record(State, state) ->
-    Fun = fun(H, Acc) -> 
-		Fn = level2filename(H, State),
-		case file:read_file_info(Fn) of
-		    {ok, FileInfo} when FileInfo#file_info.size > Size ->
-			%% file_info record returned, and size is larger than Size
-			logger:log(debug, "Logger: Rotating '~p' logfile ~p since it is larger than ~p bytes (~p)",
-				   [H, Fn, Size, FileInfo#file_info.size]),
-			[H | Acc];
-		    %% Either error returned from read_file_info, or file size is within limits.
-		    %% We don't check (care) which one... check next file in list.
-		    %%
-		    %% XXX is this a good idea ? the files should not be unreadable ! 
-		    %% should we throw some kind of error ?
-		    %% at least it is true that we don't know if the files need rotating.
-		    _ ->
-			Acc
-		end
-	end,
+    Fun = fun(H, Acc) ->
+		  Fn = level2filename(H, State),
+		  case file:read_file_info(Fn) of
+		      {ok, FileInfo} when FileInfo#file_info.size > Size ->
+			  %% file_info record returned, and size is larger than Size
+			  logger:log(debug, "Logger: Rotating '~p' logfile ~p since it is larger than ~p bytes (~p)",
+				     [H, Fn, Size, FileInfo#file_info.size]),
+			  [H | Acc];
+		      _ ->
+			  %% Either error returned from read_file_info, or file size is within limits.
+			  %% We don't check (care) which one... check next file in list.
+			  %%
+			  %% XXX is this a good idea ? the files should not be unreadable !
+			  %% should we throw some kind of error ?
+			  %% at least it is true that we don't know if the files need rotating.
+			  Acc
+		  end
+	  end,
     lists:foldl(Fun, [], In).
 
 
 %% return {ok, State} | {{error, Str}, State}
-%% stop processing after the first error encountered 
+%% stop processing after the first error encountered
 %% XXX process all log files, even if some fail?
 rotate([], _Suffix, State) when record(State, state) ->
     {ok, State};
@@ -433,7 +433,7 @@ rotate_file(Filename, Suffix) ->
     %% Open new file before we try to rename old one to make sure
     %% there isn't any permission problems etc. with us creating a new
     %% logfile.
-    %% A successfull usage will create a new empty "Filename" file, 
+    %% A successfull usage will create a new empty "Filename" file,
     %% and rename the old log as "Filename ++ Suffix". Suffix is a date marker.
     %% XXX is there a mktemp() available in Erlang?
     TmpFile = Filename ++ Suffix ++ ".rotate",
@@ -461,7 +461,7 @@ rotate_file(Filename, Suffix) ->
 %% do_log is executed in caller pid (by log/2 or log/3), not in
 %% persistent logger process.
 do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format), is_list(Arguments) ->
-%%				      Level == debug; Level == normal; Level == error ->
+    %%				      Level == debug; Level == normal; Level == error ->
     {Megasec, Sec, USec} = now(),
     USecStr = format_usec(USec, 3),
     DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
