@@ -249,17 +249,17 @@ lookupenum("+" ++ E164) ->
 	    end,
 	    if
 		IsMe /= true ->
-		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying", [URL]),
+		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying", [sipurl:print(URL)]),
 		    {relay, URL};
 		NewE164 == error ->
-		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain but not E.164 URL ~p, proxying", [URL]),
+		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain but not E.164 URL ~p, proxying", [sipurl:print(URL)]),
 		    {proxy, URL};
 		SameE164 == true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in a homedomain (~p) and the same E.164 number (~p == ~p), avoiding loop",
 			       [E164Host, E164User, "+" ++ E164]),
 		    none;
 		true ->
-		    logger:log(debug, "Lookup: ENUM lookup resulted in homedomain E.164 URL ~p, proxying", [URL]),
+		    logger:log(debug, "Lookup: ENUM lookup resulted in homedomain E.164 URL ~p, proxying", [sipurl:print(URL)]),
 		    {proxy, URL}
 	    end
     end;
