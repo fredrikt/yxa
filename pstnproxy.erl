@@ -1,44 +1,79 @@
+%%%-------------------------------------------------------------------
+%%% File    : pstnproxy.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: An SIP application level 'firewall' to defend a PSTN
+%%%           gateway from misuse and to make sure users are
+%%%           authorized to make calls to different 'classes' of
+%%%           numbers (configured through regular expressions). Also
+%%%           perform ENUM lookups on requests _from_ the PSTN gw.
+%%%
+%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 -module(pstnproxy).
 
-%% Standard Yxa SIP-application exports
--export([init/0, request/3, response/3]).
+%%--------------------------------------------------------------------
+%%% Standard Yxa SIP-application callback functions
+%%--------------------------------------------------------------------
+-export([
+	 init/0,
+	 request/3,
+	 response/3
+	]).
 
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
-%%--------------------------------------------------------------------
-%%% Standard Yxa SIP-application exported functions
-%%--------------------------------------------------------------------
 
+%%====================================================================
+%% Behaviour functions
+%% Standard Yxa SIP-application callback functions
+%%====================================================================
 
-%% Function: init/0
-%% Description: Yxa applications must export an init/0 function.
-%% Returns: See XXX
+%%--------------------------------------------------------------------
+%% Function: init()
+%% Descrip.: Yxa applications must export an init/0 function.
+%% Returns : [Tables, Mode, SupData]
+%%           Tables  = list() of atom(), remote mnesia tables the Yxa
+%%                     startup sequence should make sure are available
+%%           Mode    = stateful (or 'stateless' but DON'T use that).
+%%           SupData = {append, SupSpec} |
+%%                     none
+%%           SupSpec = OTP supervisor child specification. Extra
+%%                     processes this application want the
+%%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 init() ->
     [[user, numbers], stateful, none].
 
 
-%% Function: request/3
-%% Description: Yxa applications must export an request/3 function.
-%% Returns: See XXX
+%%--------------------------------------------------------------------
+%% Function: request(Request, Origin, LogStr)
+%%           Request = request record()
+%%           Origin  = siporigin record()
+%%           LogStr  = string(), description of response
+%% Descrip.: Yxa applications must export an request/3 function.
+%% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 
 %%
 %% ACK
 %%
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin), Request#request.method == "ACK" ->
+request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     %% ACK requests that end up here could not be matched to a server transaction,
     %% most probably they are ACK to 2xx of INVITE (or we have crashed) - proxy
     %% statelessly.
     logger:log(normal, "pstnproxy: ~s -> Forwarding ACK received in core statelessly",
 	       [LogStr]),
-    transportlayer:send_proxy_request(none, Request, Request#request.uri, []);
+    transportlayer:send_proxy_request(none, Request, Request#request.uri, []),
+    ok;
 
 %%
 %% Anything except ACK
 %%
-request(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
+request(Request, Origin, _LogStr) when record(Request, request), record(Origin, siporigin) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
@@ -57,20 +92,24 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 	    end;
 	false ->
 	    logger:log(normal, "~s: pstnproxy: Route request to SIP server", [LogTag]),
-	    toSIPrequest(Request, Origin, THandler);
-	_ ->
-	    true
-    end.
+	    toSIPrequest(Request, Origin, THandler)
+    end,
+    ok.
 
 
-%% Function: response/3
-%% Description: Yxa applications must export an request/3 function.
-%% Returns: See XXX
 %%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when record(Response, response), record(Origin, siporigin) ->
+%% Function: response(Response, Origin, LogStr)
+%%           Response = response record()
+%%           Origin   = siporigin record()
+%%           LogStr   = string(), description of response
+%% Descrip.: Yxa applications must export an response/3 function.
+%% Returns : Yet to be specified. Return 'ok' for now.
+%%--------------------------------------------------------------------
+response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(normal, "pstnproxy: Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
-    transportlayer:send_proxy_response(none, Response).
+    transportlayer:send_proxy_response(none, Response),
+    ok.
 
 
 %%--------------------------------------------------------------------
@@ -78,9 +117,14 @@ response(Response, Origin, LogStr) when record(Response, response), record(Origi
 %%--------------------------------------------------------------------
 
 
-%% Function: routeRequestToPSTN/1
-%% Description: Determines if we should route this request to one of
-%%              our PSTN gateways or not.
+%%--------------------------------------------------------------------
+%% Function: routeRequestToPSTN(FromIP, ToHost, THandler, LogTag)
+%%           FromIP   = string()
+%%           ToHost   = string(), Host part of Request-URI
+%%           THandler = term(), server transaction handle
+%%           LogTag   = string(), prefix for logging
+%% Descrip.: Determines if we should route this request to one of
+%%           our PSTN gateways or not.
 %% Returns: true  |
 %%          false
 %%--------------------------------------------------------------------
@@ -88,7 +132,7 @@ routeRequestToPSTN(FromIP, ToHost, THandler, LogTag) ->
     case pstngateway(FromIP) of
 	true ->
 	    logger:log(debug, "Routing: Source IP ~s is PSTN gateway, route to SIP proxy", [FromIP]),
-	    false;		
+	    false;
 	_ ->
 	    IsLocalHostname = localhostname(ToHost),
 	    IsPstnGatewayHostname = pstngateway(ToHost),
@@ -109,33 +153,41 @@ routeRequestToPSTN(FromIP, ToHost, THandler, LogTag) ->
     end.
 
 
-%% Function: localhostname/1
-%% Description: Check if given hostname matches one of ours.
-%% Returns: true  |
-%%          false
+%%--------------------------------------------------------------------
+%% Function: localhostname(Hostname)
+%%           Hostname = string()
+%% Descrip.: Check if given hostname matches one of ours.
+%% Returns : true  |
+%%           false
 %%--------------------------------------------------------------------
 localhostname(Hostname) ->
     util:casegrep(Hostname, sipserver:get_env(myhostnames)).
 
 
-%% Function: pstngateway/1
-%% Description: Check if given hostname matches one of our PSTN
-%%              gateways hostnames.
-%% Returns: true  |
-%%          false
+%%--------------------------------------------------------------------
+%% Function: pstngateway(Hostname)
+%%           Hostname = string()
+%% Descrip.: Check if given hostname matches one of our PSTN
+%%           gateways hostnames.
+%% Returns : true  |
+%%           false
 %%--------------------------------------------------------------------
 pstngateway(Hostname) ->
     util:casegrep(Hostname, sipserver:get_env(pstngatewaynames)).
 
 
-%% Function: toSIPrequest/3
-%% Description: It has been determined that we should send this
-%%              request to a VoIP destination (i.e. anything else than
-%%              one of our PSTN gateways). If the host part of the
-%%              request URI matches this proxy, then do an ENUM lookup
-%%              on the user part of the request URI, if it looks like
-%%              a phone number.
-%% Returns: Does not matter
+%%--------------------------------------------------------------------
+%% Function: toSIPrequest(Request, Origin, THandler)
+%%           Request  = request record()
+%%           Origin   = siporigin record()
+%%           THandler = term(), server transaction handle
+%% Descrip.: It has been determined that we should send this
+%%           request to a VoIP destination (i.e. anything else than
+%%           one of our PSTN gateways). If the host part of the
+%%           request URI matches this proxy, then do an ENUM lookup
+%%           on the user part of the request URI, if it looks like
+%%           a phone number.
+%% Returns : Does not matter
 %%--------------------------------------------------------------------
 toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Origin, siporigin) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
@@ -178,104 +230,125 @@ toSIPrequest(Request, Origin, THandler) when record(Request, request), record(Or
 			     true -> siprequest:add_record_route(Request#request.header, Origin);
 			     false -> Request#request.header
 			 end,
-	    {_, FromURI} = sipheader:to(keylist:fetch("From", NewHeader1)),
+	    {_, FromURI} = sipheader:from(NewHeader1),
 	    NewHeader = add_caller_identity_for_sip(Method, NewHeader1, FromURI),
 	    NewRequest = Request#request{header=NewHeader},
 	    proxy_request(THandler, NewRequest, NewLocation)
     end.
 
 
-%% Function: toPSTNrequest/3
-%% Description: It has been determined that we should send this
-%%              request to one of our PSTN gateways. Figure out which
-%%              one and make it so.
-%% Returns: Does not matter
+%%--------------------------------------------------------------------
+%% Function: toPSTNrequest(Request, Origin, THandler, LogTag)
+%%           Request  = request record()
+%%           Origin   = siporigin record()
+%%           THandler = term(), server transaction handle
+%%           LogTag   = string(), prefix for logging
+%% Descrip.: It has been determined that we should send this
+%%           request to one of our PSTN gateways. Figure out which
+%%           one and make it so.
+%% Returns : Does not matter
 %%--------------------------------------------------------------------
 toPSTNrequest(Request, Origin, THandler, LogTag) when record(Request, request), record(Origin, siporigin) ->
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
-    {DstNumber, ToHost, ToPort} = {URI#sipurl.user, URI#sipurl.host, URI#sipurl.port},
-    {NewURI, NewHeaders1} = case localhostname(ToHost) of
-				true ->
-				    case local:lookuppstn(DstNumber) of
-					{proxy, Dst} ->
-					    {Dst, Header};
-					{relay, Dst} ->
-					    {Dst, Header};
-					_ ->
-					    %% Route to default PSTN gateway
-					    PSTNgateway1 = lists:nth(1, sipserver:get_env(pstngatewaynames)),
-					    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
-					    case sipurl:parse_url_with_default_protocol("sip", PSTNgateway1) of
-						GwURL when record(GwURL, sipurl) ->
-						    NewURI2 = GwURL#sipurl{user=DstNumber, pass=none},
-						    {NewURI2, Header};
-						_ ->
-						    logger:log(error, "pstnproxy: Failed parsing configuration value 'pstngatewaynames' (~p)",
-							       [PSTNgateway1]),
-						    {URI, Header}
-					    end
-				    end;
-				_ ->
-				    {URI, Header}
-			    end,
+    {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
+    %% XXX check port to, not just hostname? Maybe not since pstnproxy by definition
+    %% should be running alone on a host.
+    {NewURI, NewHeaders1} =
+	case localhostname(ToHost) of
+	    true ->
+		case local:lookuppstn(DstNumber) of
+		    {proxy, Dst} ->
+			{Dst, Header};
+		    {relay, Dst} ->
+			{Dst, Header};
+		    _ ->
+			%% Route to default PSTN gateway
+			PSTNgateway1 = lists:nth(1, sipserver:get_env(pstngatewaynames)),
+			logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
+			case sipurl:parse_url_with_default_protocol("sip", PSTNgateway1) of
+			    GwURL when record(GwURL, sipurl) ->
+				NewURI2 = GwURL#sipurl{user=DstNumber, pass=none},
+				{NewURI2, Header};
+			    _ ->
+				logger:log(error, "pstnproxy: Failed parsing configuration value 'pstngatewaynames' (~p)",
+					   [PSTNgateway1]),
+				{URI, Header}
+			end
+		end;
+	    _ ->
+		{URI, Header}
+	end,
     PSTNgateway = NewURI#sipurl.host,
     NewHeaders2 = case sipserver:get_env(record_route, true) of
 		      true -> siprequest:add_record_route(NewHeaders1, Origin);
 		      false -> NewHeaders1
 		  end,
-    {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
+    {_, FromURI} = sipheader:from(Header),
     NewHeaders3 = add_caller_identity_for_pstn(Method, NewHeaders2, FromURI, PSTNgateway),
     NewRequest = Request#request{header=NewHeaders3},
     THandler = transactionlayer:get_handler_for_request(Request),
     relay_request_to_pstn(THandler, NewRequest, NewURI, DstNumber, LogTag).
 
 
-%% Function: add_caller_identity_for_pstn/4
-%% Description: If configured to, add Remote-Party-Id information
-%%              about caller to this request before it is sent to a
-%%              PSTN gateway. Useful to get proper caller-id.
-%% Returns: New headers
 %%--------------------------------------------------------------------
-add_caller_identity_for_pstn("INVITE", Headers, URI, Gateway) when record(URI, sipurl) ->
+%% Function: add_caller_identity_for_pstn(Method, Headers, URI,
+%%                                        Gateway)
+%%           Method  = string()
+%%           Headers = keylist record()
+%%           URI     = sipurl record()
+%%           Gateway = string()
+%% Descrip.: If configured to, add Remote-Party-Id information
+%%           about caller to this request before it is sent to a
+%%           PSTN gateway. Useful to get proper caller-id.
+%% Returns : NewHeader, keylist record()
+%%--------------------------------------------------------------------
+add_caller_identity_for_pstn("INVITE", Headers, URI, Gateway) when is_record(URI, sipurl) ->
     case sipserver:get_env(remote_party_id, false) of
 	true ->
 	    case local:get_remote_party_number(URI, Gateway) of
-		Number when list(Number) ->
-		    RpURI = URI#sipurl{proto="sip", user=Number, param=["party=calling", "screen=yes", "privacy=off"]},
-		    RemotePartyId = sipurl:print(RpURI),
+		{ok, Number} when is_list(Number) ->
+		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
+		    RPURI = sipurl:set([{user, Number}, {pass, none}, {param, []}], URI),
+		    RPI = contact:new(none, RPURI, Parameters),
+		    RemotePartyId = contact:print(RPI),
 		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
 		    NewHeaders1 = keylist:set("Remote-Party-Id", [RemotePartyId], Headers),
 		    logger:log(debug, "P-Preferred-Identity: ~s", ["tel:" ++ Number]),
 		    keylist:set("P-Preferred-Identity", ["tel:" ++ Number], NewHeaders1);
-		_ ->
+		none ->
 		    Headers
 	    end;
 	_ ->
 	    Headers
     end;
-add_caller_identity_for_pstn(_, Headers, _, _) ->
+add_caller_identity_for_pstn(_Method, Headers, _URI, _Gateway) when is_record(Headers, keylist) ->
     %% non-INVITE request, don't add Remote-Party-Id
     Headers.
 
 
-%% Function: add_caller_identity_for_sip/4
-%% Description: If configured to, add Remote-Party-Id information
-%%              about caller to this request received from one of our
-%%              PSTN gateways. Useful to get the name of the person
-%%              calling in your phones display - if you have the name
-%%              available in some database.
-%% Returns: New headers
 %%--------------------------------------------------------------------
-add_caller_identity_for_sip("INVITE", Headers, URI) when record(URI, sipurl) ->
+%% Function: add_caller_identity_for_sip(Method, Headers, URI)
+%%           Method  = string()
+%%           Headers = keylist record()
+%%           URI     = sipurl record()
+%% Descrip.: If configured to, add Remote-Party-Id information
+%%           about caller to this request received from one of our
+%%           PSTN gateways. Useful to get the name of the person
+%%           calling in your phones display - if you have the name
+%%           available in some database.
+%% Returns : NewHeader, keylist record()
+%%--------------------------------------------------------------------
+add_caller_identity_for_sip("INVITE", Headers, URI) when is_record(URI, sipurl) ->
     case sipserver:get_env(remote_party_id, false) of
 	true ->
 	    case local:get_remote_party_name(URI#sipurl.user, URI) of
-		DisplayName when list(DisplayName) ->
-		    [RPI] = sipheader:contact_print([{DisplayName, URI}]),
-		    RemotePartyId = RPI ++ ";party=calling;screen=yes;privacy=off",
+		{ok, DisplayName} when is_list(DisplayName) ->
+		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
+		    RPI = contact:new(DisplayName, URI, Parameters),
+		    RemotePartyId = contact:print(RPI),
 		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
 		    keylist:set("Remote-Party-Id", [RemotePartyId], Headers);
-		_ ->
+		none ->
 		    Headers
 	    end;
 	_ ->
@@ -286,11 +359,13 @@ add_caller_identity_for_sip(_, Headers, _) ->
     Headers.
 
 
-%% Function: get_branch_from_handler/1
-%% Description: Get branch from server transaction handler and then
-%%              remove the -UAS suffix. The result is used as a tag
-%%              when logging actions.
-%% Returns: Branch
+%%--------------------------------------------------------------------
+%% Function: get_branch_from_handler(TH)
+%%           TH = term(), server transaction handle
+%% Descrip.: Get branch from server transaction handler and then
+%%           remove the -UAS suffix. The result is used as a tag
+%%           when logging actions.
+%% Returns : Branch, string()
 %%--------------------------------------------------------------------
 get_branch_from_handler(TH) ->
     CallBranch = transactionlayer:get_branch_from_handler(TH),
@@ -303,46 +378,60 @@ get_branch_from_handler(TH) ->
     end.
 
 
-%% Function: proxy_request/3
-%% Description: Proxy a request somewhere without authentication.
-%% Returns: Does not matter
 %%--------------------------------------------------------------------
-proxy_request(THandler, Request, Dst) when record(Request, request) ->
-    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, Dst, 900]).
+%% Function: proxy_request(THandler, Request, DstURI)
+%%           THandler = term(), server transcation handle
+%%           Request  = request record()
+%%           DstURI   = sipurl record()
+%% Descrip.: Proxy a request somewhere without authentication.
+%% Returns : Does not matter
+%%--------------------------------------------------------------------
+proxy_request(THandler, Request, DstURI) when is_record(Request, request),
+					      is_record(DstURI, sipurl) ->
+    sippipe:start(THandler, none, Request, DstURI, 900).
 
 
-%% Function: relay_request/5
-%% Description: Relay request to one of our PSTN gateways. If there is
-%%              not valid credentials present in the request,
-%%              challenge user unless the number is in a class which
-%%              does not require authentication. Never challenge
-%%              CANCEL or BYE since they can't be resubmitted and
-%%              therefor cannot be challenged.
-%% Returns: Does not matter
+%%--------------------------------------------------------------------
+%% Function: relay_request_to_pstn(THandler, Request, DstURI,
+%%                                 DstNumber, LogTag)
+%%           THandler  = term(), server transaction handle
+%%           Request   = request record()
+%%           DstURI    = sipurl record()
+%%           DstNumber = string(), destination number in unspecified
+%%                       format (as entered, not E.164)
+%%           LogTag    = string(), prefix for logging
+%% Descrip.: Relay request to one of our PSTN gateways. If there is
+%%           not valid credentials present in the request,
+%%           challenge user unless the number is in a class which
+%%           does not require authentication. Never challenge
+%%           CANCEL or BYE since they can't be resubmitted and
+%%           therefor cannot be challenged.
+%% Returns : Does not matter
 %%--------------------------------------------------------------------
 
 %%
 %% CANCEL or BYE
 %%
-relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when record(Request, request), Request#request.method == "CANCEL"; Request#request.method == "BYE" ->
+relay_request_to_pstn(THandler, #request{method=Method}=Request, DstURI, DstNumber, LogTag) when Method == "CANCEL";
+												 Method == "BYE" ->
     logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) (unauthenticated)",
 	       [LogTag, Request#request.method, DstNumber, sipurl:print(DstURI)]),
-    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, 900]);
+    sippipe:start(THandler, none, Request, DstURI, 900);
 
 %%
 %% Anything except CANCEL or BYE
 %%
 relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when record(Request, request) ->
-    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
-    {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
+    {Method, Header} = {Request#request.method, Request#request.header},
+    {_, FromURI} = sipheader:from(Header),
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
     logger:log(debug, "~s: pstnproxy: Relay ~s to PSTN ~s (~s)", [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
-    case sipauth:pstn_call_check_auth(Method, Header, sipurl:print(FromURI), DstNumber, Classdefs) of
+    case sipauth:pstn_call_check_auth(Method, Header, FromURI, DstNumber, Classdefs) of
 	{true, User, Class} ->
 	    logger:log(debug, "Auth: User ~p is allowed to call dst ~s (class ~s)", [User, DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (authenticated, class ~p) (~s)",
 		       [LogTag, Method, DstNumber, Class, sipurl:print(DstURI)]),
-	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, 900]);
+	    sippipe:start(THandler, none, Request, DstURI, 900);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)", [User, DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> STALE authentication, sending challenge",
