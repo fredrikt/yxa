@@ -31,6 +31,16 @@ else
     mnesiadir="$with_mnesiadir"
 fi])
 
+AC_ARG_WITH(sslcertdir,
+	AC_HELP_STRING([--with-sslcertdir=dir],
+		[use dir as path to your SSL certificates]),
+[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_sslcertdir" = "X"; then
+    sslcertdir=""
+else
+    sslcertdir="$with_sslcertdir"
+fi])
+
+
 AC_ARG_WITH(local,
 	AC_HELP_STRING([--with-local=file],
 		[use file as local erlang configuration file]),
@@ -42,6 +52,7 @@ fi],[local_file="default"])
 
 AC_SUBST(DESTDIR)
 AC_SUBST(mnesiadir)
+AC_SUBST(sslcertdir)
 AC_SUBST(local_file)
 AC_SUBST(ERL)
 AC_SUBST(ERLC)
