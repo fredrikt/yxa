@@ -271,7 +271,7 @@ unregister(LogTag, Header, _SipUser, Locations) ->
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% there is only one Contact and it's a wildcard
 is_valid_wildcard_request(Header, [ #contact{urlstr = "*"} ]) ->
-    case sipheader:expire(Header) of
+    case sipheader:expires(Header) of
 	[Expire] ->
 	    %% cast to integer so that "0", "00" ... and so on are all considered as 0
 	    case catch list_to_integer(Expire) of
@@ -419,7 +419,7 @@ process_non_wildcard_contacts(LogTag, SipUser, Locations, RequestHeader) ->
 
     %% get expire value from request header only once, this will speed up the calls to
     %% parse_register_contact_expire/2 that are done for each Locations entry
-    ExpireHeader = sipheader:expire(RequestHeader),
+    ExpireHeader = sipheader:expires(RequestHeader),
     F = fun(Location) ->
 		process_non_wildcard_contact(LogTag, SipUser, Location,
 					     RequestCallId, RequestCSeq, ExpireHeader)
@@ -617,7 +617,7 @@ unregister_contact(LogTag, Location, RequestCallId, RequestCSeq) when is_record(
 %% Function: parse_register_contact_expire(Header, Contact)
 %%           parse_register_contact_expire(ExpireHeader, Contact)
 %%           Header  = keylist record(), the request headers
-%%           ExpireHeader = sipheader:expire(Header) return value
+%%           ExpireHeader = sipheader:expires(Header) return value
 %%           Contact = contact record(), a contact entry from a request
 %% Descrip.: determine the expire time supplied for a contact in a SIP
 %%           REGISTER request
@@ -645,7 +645,7 @@ parse_register_contact_expire(ExpireHeader, Contact) when is_list(ExpireHeader),
 
 parse_register_contact_expire(Header, Contact) when is_record(Header, keylist),
 						    is_record(Contact, contact) ->
-    ExpireHeader = sipheader:expire(Header),
+    ExpireHeader = sipheader:expires(Header),
     parse_register_contact_expire(ExpireHeader, Contact).
 
     
