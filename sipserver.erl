@@ -1,5 +1,5 @@
 -module(sipserver).
--export([start/5, process/6, get_env/1, get_env/2, make_logstr/2]).
+-export([start/5, process/6, get_env/1, get_env/2, make_logstr/2, safe_spawn/2, safe_spawn_child/2]).
 
 start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, _LocalTablesP) ->
     mnesia:start(),
@@ -30,17 +30,17 @@ start(InitFun, RequestFun, ResponseFun, RemoteMnesiaTables, _LocalTablesP) ->
 recvloop(Socket, RequestFun, ResponseFun) ->
     receive
 	{udp, Socket, IPlist, InPortNo, Packet} ->
-	    spawn(?MODULE, process, [Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun]),
+	    safe_spawn(fun process/6, [Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun]),
 	    recvloop(Socket, RequestFun, ResponseFun)
     end.
 
-process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
-    case catch do_process(Packet, Socket, IPlist, InPortNo,
-			  RequestFun, ResponseFun) of
+safe_spawn(Function, Arguments) ->
+    spawn(?MODULE, safe_spawn_child, [Function, Arguments]).
+
+safe_spawn_child(Function, Arguments) ->
+    case catch apply(Function, Arguments) of
 	{'EXIT', E} ->
-	    logger:log(error, "=ERROR REPORT==== from do_process()~n~p", [E]),
-	    IP = siphost:makeip(IPlist),
-	    logger:log(error, "CRASHED processing packet [client=~s]", [IP]),
+	    logger:log(error, "=ERROR REPORT==== from ~p :~n~p", [Function, E]),
 	    true;
 	_ ->
 	    true
@@ -55,7 +55,7 @@ internal_error(Header, Socket, Code, Text) ->
 internal_error(Header, Socket, Code, Text, ExtraHeaders) ->
     siprequest:send_result(Header, Socket, "", Code, Text, ExtraHeaders).
 
-do_process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
+process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
     IP = siphost:makeip(IPlist),
     case parse_packet(Socket, Packet, IP, InPortNo) of
 	{{request, Method, URL, Header, Body}, LogStr} ->
@@ -93,27 +93,64 @@ parse_packet(Socket, Packet, IP, InPortNo) ->
 	    false;
 	Parsed ->
 	    % From here on, we can generate responses to the UAC on error
-	    {Type, Header} = case Parsed of
-		{request, Method, _, Header2, _} ->
-		    {Method, Header2};
-		{response, Status, Reason, Header2, _} ->
-		    {integer_to_list(Status) ++ " " ++ Reason, Header2}
+	    NewParsed = case Parsed of
+		{request, Method, URI, Header, Body} ->
+		    % Check "sent-by" in top-Via to see if we MUST add a
+		    % received= parameter (RFC 3261 18.2.1)
+		    {TopViaProtocol, {TopViaHost, TopViaPort}, TopViaParameters} = topvia(Header),
+		    NewHeader1 = case TopViaHost of
+			IP ->
+			    Header;
+			_ ->
+			    NewParameters = lists:append(TopViaParameters, ["received=" ++ IP]),
+			    NewVia = {TopViaProtocol, {TopViaHost, TopViaPort}, NewParameters},
+			    logger:log(debug, "Sipserver: TopViaHost ~p does not match IP ~p, appending received=~s parameter", [TopViaHost, IP, IP]),
+			    [FirstVia | Via] = sipheader:via(keylist:fetch("Via", Header)),
+			    keylist:set("Via", sipheader:via_print(lists:append([NewVia], Via)), Header)
+		    end,
+		    {request, Method, URI, NewHeader1, Body};
+		{response, Status, Reason, Header, Body} ->
+		    % Check that top-Via is ours (RFC 3261 18.1.2),
+		    % silently drop message if it is not.
+		    ViaHostname = siprequest:myhostname(),
+		    MyViaNoParam = {"SIP/2.0/UDP", {ViaHostname,
+					siprequest:default_port(sipserver:get_env(listenport, none))}, []},
+		    {Protocol, {Host, Port}, _} = topvia(Header),
+		    TopViaNoParam = {Protocol, {Host, siprequest:default_port(Port)}, []},
+		    case TopViaNoParam of
+		        MyViaNoParam ->
+			    {response, Status, Reason, Header, Body};
+			_ ->
+			    logger:log(error, "INVALID top-Via in response [client=~s]. Top-Via (~s (without parameters)) does not match mine (~s). Discarding.",
+					[IP, sipheader:via_print([TopViaNoParam]), sipheader:via_print([MyViaNoParam])]),
+			    {invalid}
+		    end
 	    end,
-	    case catch make_logstr(Parsed, IP) of
-		{'EXIT', E} ->
-		    logger:log(error, "=ERROR REPORT==== from sipserver:make_logstr()~n~p", [E]),
-		    internal_error(Header, Socket),
-		    logger:log(error, "CRASHED parsing packet [client=~s]", [IP]);
-		{siperror, Code, Text} ->
-		    logger:log(error, "INVALID packet ~s [client=~s] -> ~p ~s", [Type, IP, Code, Text]),
-		    internal_error(Header, Socket, Code, Text);
-		{siperror, Code, Text, ExtraHeaders} ->
-		    logger:log(error, "INVALID packet ~s [client=~s] -> ~p ~s", [Type, IP, Code, Text]),
-		    internal_error(Header, Socket, Code, Text, ExtraHeaders);
-		LogStr ->
-		    {Parsed, LogStr}
+	    case NewParsed of
+		{invalid} ->
+		    false;
+		_ ->
+		    case catch make_logstr(NewParsed, IP) of
+			{'EXIT', E} ->
+			    logger:log(error, "=ERROR REPORT==== from sipserver:make_logstr()~n~p", [E]),
+			    logger:log(error, "CRASHED parsing packet [client=~s]", [IP]),
+			    {invalid};
+			{siperror, Code, Text} ->
+			    logger:log(error, "INVALID packet [client=~s] -> ~p ~s", [IP, Code, Text]),
+			    {invalid};
+			{siperror, Code, Text, ExtraHeaders} ->
+			    logger:log(error, "INVALID packet [client=~s] -> ~p ~s", [IP, Code, Text]),
+			    {invalid};
+			LogStr ->
+			    {NewParsed, LogStr}
+		    end
 	    end
     end.
+
+topvia(Header) ->
+    Via = sipheader:via(keylist:fetch("Via", Header)),
+    [TopVia | _] = Via,
+    TopVia.
 
 make_logstr({request, Method, URL, Header, Body}, IP) ->
     {_, FromURI} = sipheader:from(keylist:fetch("From", Header)),
