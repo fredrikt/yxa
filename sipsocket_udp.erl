@@ -79,9 +79,9 @@ start_listening([udp6 | T], Port, State) when integer(Port), record(State, state
 		    NewSocketList = socketlist:add({listener, udp6}, self(), Local, none, SipSocket, 0, State#state.socketlist),
 		    start_listening(T, Port, State#state{socket6=Socket, socketlist=NewSocketList});
 		{error, Reason} ->
-		    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",
+		    logger:log(error, "Could not open IPv6 UDP socket (options ~p), port ~p : ~s",
 			       [?SOCKETOPTSv6, Port, inet:format_error(Reason)]),
-		    {stop, "Could not open UDP socket"}
+		    {stop, "Could not open IPv6 UDP socket"}
 	    end;
 	_ ->
 	    start_listening(T, Port, State)
