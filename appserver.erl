@@ -27,6 +27,20 @@ request(Method, URI, Header, Body, Socket, FromIP) when Method == "ACK" ->
 	    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, [])
     end;
 
+request(Method, URI, Header, Body, Socket, FromIP) when Method == "CANCEL" ->
+    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
+    case local:get_user_with_contact(URI) of
+	none ->
+	    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, " ++
+	    	"answer 481 Call/Transaction Does Not Exist", [LogStr]),
+	    transactionlayer:send_response_request({Method, URI, Header, Body}, 481, "Call/Transaction Does Not Exist");
+	SIPuser ->
+	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
+	    		[LogStr, SIPuser]),
+	    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, [])
+    end;
+	    
+
 request(Method, URI, OrigHeader, Body, Socket, FromIP) ->
     Header = case sipserver:get_env(record_route, false) of
 	true -> siprequest:add_record_route(OrigHeader);
@@ -225,9 +239,9 @@ process_messages(State) when record(State, state) ->
 	{all_terminated, FinalResponse} ->
 	    NewState1 = case State#state.cancelled of
 		true ->
-		    logger:log(debug, "Appserver glue: received all_terminated when in state '~p' - request was cancelled. " ++
+		    logger:log(debug, "Appserver glue: received all_terminated - request was cancelled. " ++
 		    		      "Ask CallHandler ~p to send 487 Request Terminated and entering state 'completed'",
-		    		       [State, CallHandler]),
+		    		       [CallHandler]),
 		    transactionlayer:send_response_handler(CallHandler, 487, "Request Cancelled"),
 		    State#state{completed=true};
 		_ ->
