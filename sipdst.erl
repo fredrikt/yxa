@@ -6,7 +6,8 @@
 
 -module(sipdst).
 
--export([url_to_dstlist/3, get_response_destination/1, dst2str/1]).
+-export([url_to_dstlist/3, get_response_destination/1, dst2str/1,
+	 debugfriendly/1]).
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
@@ -106,6 +107,21 @@ dst2str(Dst) when record(Dst, sipdst), Dst#sipdst.uri /= undefined ->
 %% No URI, for example Response sipdst record
 dst2str(Dst) when record(Dst, sipdst) ->
     lists:flatten(io_lib:format("~p:~s:~p", [Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port])).
+
+debugfriendly(Dst) when record(Dst, sipdst) ->
+    debugfriendly2([Dst], []);
+debugfriendly(L) ->
+    debugfriendly2(L, []).
+
+debugfriendly2([], Res) ->
+    lists:reverse(Res);
+debugfriendly2([H|T], Res) when record(H, sipdst) ->
+    Str = dst2str(H),
+    debugfriendly2(T, [Str | Res]);
+debugfriendly2([H|T], Res) ->
+    Str = io_lib:format("INVALID sipdst: ~p", [H]),
+    debugfriendly2(T, [Str | Res]).
+
 
 %%--------------------------------------------------------------------
 %%% Internal functions
