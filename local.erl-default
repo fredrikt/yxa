@@ -68,7 +68,7 @@ canonify_user(Fulluser) ->
         [User, Host] ->
             "sip:" ++ Fulluser;
         [User] ->
-	    "sip:" ++ User ++ sipauth:realm()
+	    "sip:" ++ User ++ "@" ++ sipauth:realm()
     end.
 
 % Turns numbers into fully qualified tel: URLs or if that is not
