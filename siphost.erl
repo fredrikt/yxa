@@ -7,20 +7,8 @@ makeip({A1, A2, A3, A4}) ->
 	integer_to_list(A3) ++ "." ++
 	integer_to_list(A4);
 makeip({A1, A2, A3, A4, A5, A6, A7, A8}) ->
-    "[" ++
-	ipv6ify(A1) ++ ":" ++
-	ipv6ify(A2) ++ ":" ++
-	ipv6ify(A3) ++ ":" ++
-	ipv6ify(A4) ++ ":" ++
-	ipv6ify(A5) ++ ":" ++
-	ipv6ify(A6) ++ ":" ++
-	ipv6ify(A7) ++ ":" ++
-	ipv6ify(A8) ++ "]".
-
-ipv6ify(0) ->
-    "0";
-ipv6ify(A) ->
-    hex:to(A, 4).
+    A = inet_parse:ntoa({A1, A2, A3, A4, A5, A6, A7, A8}),
+    "[" ++ httpd_util:to_lower(A) ++ "]".
 
 myip() ->
     [A | _] = get_iplist(),
