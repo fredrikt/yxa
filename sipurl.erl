@@ -42,8 +42,11 @@ print_userinfo(User, Pass) ->
 print_hostport(Host, none) ->
     Host;
 
-print_hostport(Host, Port) ->
-    Host ++ ":" ++ Port.
+print_hostport(Host, Port) when integer(Port) ->
+    lists:flatten(Host ++ ":" ++ integer_to_list(Port));
+
+print_hostport(Host, Port) when list(Port) ->
+    lists:flatten(Host ++ ":" ++ Port).
 
 parse_userinfo(Userinfo) ->
     case string:tokens(Userinfo, ":") of
@@ -55,6 +58,15 @@ parse_userinfo(Userinfo) ->
 	    {none, none}
     end.
 
+parse_hostport([$[ | IPv6Hostport]) ->
+    HostpartEnd = string:chr(IPv6Hostport, $]),
+    IPv6Host = "[" ++ string:substr(IPv6Hostport, 1, HostpartEnd),
+    case string:substr(IPv6Hostport, HostpartEnd) of
+	"]:" ++ Port ->
+	    {IPv6Host, Port};
+	_ ->
+	    {IPv6Host, none}
+    end;
 parse_hostport(Hostport) ->
     case string:tokens(Hostport, ":") of
 	[Host, Port] ->
