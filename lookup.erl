@@ -2,7 +2,9 @@
 -export([lookupregexproute/1, lookupuser/1, lookupdefault/1, lookuppotn/1,
 	 lookupenum/1, lookuppstn/1, isours/1, homedomain/1,
 	 prioritize_locations/1, get_locations_with_prio/2,
-	 lookupappserver/1]).
+	 lookupappserver/1, rewrite_potn_to_e164/1,
+	 get_remote_party_number/3, format_number_for_remote_party_id/3,
+	 get_remote_party_name/2]).
 
 -include("database_regexproute.hrl").
 
@@ -169,11 +171,11 @@ lookupenum("+" ++ E164) ->
 	    none;
 	URL ->
 	    {E164User, _, E164Host, _, _} = sipurl:parse(URL),
-	    IsHomeDomain = homedomain(E164Host),
+	    IsMe = is_me(E164Host),
 	    NewE164 = rewrite_potn_to_e164(E164User),
 	    SameE164 = util:casecompare(NewE164, "+" ++ E164),
 	    if
-		IsHomeDomain /= true ->
+		IsMe /= true ->
 		    logger:log(debug, "Lookup: ENUM lookup resulted in remote URL ~p, relaying", [URL]),
 		    {relay, sipurl:parse(URL)};
 		NewE164 == none ->
@@ -267,11 +269,43 @@ in_userdb(Key) ->
 	{atomic, []} ->
 	    false;
 	{atomic, Foo} ->
-	    logger:log(debug, "FREDRIK: in_userdb ~p returning true (~p)", [Key, Foo]),
 	    true;
 	{aborted, _} ->
 	    false
     end.
 
+is_me(Hostname) ->
+    case homedomain(Hostname) of
+	true ->
+	    true;
+	_ ->
+	    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip()]),
+	    util:casegrep(Hostname, HostnameList)
+    end.
+
 homedomain(Domain) ->
     util:casegrep(Domain, sipserver:get_env(homedomain, [])).
+
+get_remote_party_number(Key, URI, DstHost) ->
+    {_, _, Host, _, _} = URI,
+    case phone:get_numbers_for_user(Key) of
+	{atomic, [FirstNumber | _]} ->
+	    Number = local:format_number_for_remote_party_id(FirstNumber, URI, DstHost),
+	    [Addr] = sipheader:contact_print([{none, {Number, none, Host, none, ["user=phone"]}}]),
+	    Addr ++ ";screen=no;privacy=off";
+	_ ->
+	    none
+    end.
+
+format_number_for_remote_party_id(Number, ToURI, DstHost) ->
+    rewrite_potn_to_e164(Number).
+
+get_remote_party_name(Key, URI) ->
+    case directory:lookup_tel2name(Key) of
+	none ->
+	    none;
+	DisplayName ->
+	    [C] = sipheader:contact_print([{DisplayName, URI}]),
+	    C ++ ";screen=no;privacy=off"
+    end.
+
