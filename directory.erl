@@ -1,5 +1,5 @@
 -module(directory).
--export([ldapsearch/4, lookup_mail2tel/1, lookup_mail2uid/1, lookup_mail2cn/1]).
+-export([ldapsearch/4, lookup_mail2tel/1, lookup_mail2uid/1, lookup_mail2cn/1, lookup_tel2name/1]).
 
 ldapsearch(Server, Type, In, Attribute) ->
     case catch ldapsearch_unsafe(Server, Type, In, Attribute) of
@@ -70,3 +70,14 @@ lookup_mail2cn(Mail) ->
 	    logger:log(debug, "Directory: LDAP server ~s cn lookup on ~p -> ~p", [Server, Mail, Res]),
 	    Res
     end.
+
+lookup_tel2name(Number) ->
+    case sipserver:get_env(ldap_server, none) of
+	none ->
+	    none;
+	Server ->
+	    Res = ldapsearch(Server, "telephoneNumber", Number, "displayName"),
+	    logger:log(debug, "Directory: LDAP server ~s displayName lookup on ~p -> ~p", [Server, Number, Res]),
+	    Res
+    end.
+
