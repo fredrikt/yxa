@@ -115,3 +115,7 @@ incomingproxy.config:
               {logger_logfile, "pstnproxy.log"},
               {databaseservers, ['incomingproxy@sip-incoming.example.com']}
              ]}].
+
+To insert an admin user (for bootstrap reasons) type this at an erlang prompt:
+
+phone:insert_user("username", "password", [admin], []).
