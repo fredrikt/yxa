@@ -114,32 +114,45 @@ lookupphone(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     case homedomain(Host) of
 	true ->
-	    logger:log(debug, "Routing: ~p is a local domain", [Host]),
-	    Loc1 = lookuproute(User),
-	    logger:log(debug, "Routing: lookuproute on ~p @ ~p -> ~p", [User, Host, Loc1]),
-	    Loc2 = case Loc1 of
-		       none ->
-			   lookupmail(User, Host);
-		       Loc1 ->
-			   Loc1
-		   end,
-	    case Loc2 of
-		none ->
-		    case isours(User) of
-			true ->
-			    logger:log(debug, "Routing: ~p is one of our users, returning 480 Users location currently unknown", [User]),
-			    {response, 480, "Users location currently unknown"};
-			false ->
-			    logger:log(debug, "Routing: ~p isn't one of our users - routing towards default", [User]),
-			    lookupdefault(User)
-		    end;
-		Loc2 ->
-		    Loc2
-	    end;
+	    request_to_homedomain(URL);
 	_ ->
-	    logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
-	    {relay, URL}
+	    request_to_remote(URL)
     end.
+
+sipuser(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    User.
+
+request_to_homedomain(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    Key = sipuser(URL),
+    logger:log(debug, "Routing: ~p is a local domain", [Host]),
+    Loc1 = lookuproute(Key),
+    logger:log(debug, "Routing: lookuproute on ~p -> ~p", [Key, Loc1]),
+    Loc2 = case Loc1 of
+	       none ->
+		   lookupmail(User, Host);
+	       Loc1 ->
+		   Loc1
+	   end,
+    case Loc2 of
+	none ->
+	    case isours(Key) of
+		true ->
+		    logger:log(debug, "Routing: ~p is one of our users, returning 480 Users location currently unknown", [Key]),
+		    {response, 480, "Users location currently unknown"};
+		false ->
+		    logger:log(debug, "Routing: ~p isn't one of our users - routing towards default", [Key]),
+		    lookupdefault(Key)
+	    end;
+	Loc2 ->
+	    Loc2
+    end.
+
+request_to_remote(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    logger:log(debug, "Routing: ~p is not a local domain, relaying", [Host]),
+    {relay, URL}.
 
 request("REGISTER", URL, Header, Body, Socket, FromIP) ->
     logger:log(debug, "REGISTER"),
