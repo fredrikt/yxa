@@ -283,7 +283,7 @@ my_send_result(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
 	    %% ' The client transaction is also responsible for receiving responses
 	    %%   and delivering them to the TU, filtering out any response
 	    %%   retransmissions or disallowed responses (such as a response to ACK).'
-	    logger:log(normal, "Sipserver: Suppressing application error response ~p ~s in response to ACK ~s",
+	    logger:log(normal, "Sipserver: Suppressing application error response '~p ~s' in response to ACK ~s",
 		       [Status, Reason, sipurl:print(Request#request.uri)]);
 	_ ->
 	    case transactionlayer:send_response_request(Request, Status, Reason, ExtraHeaders) of
@@ -338,6 +338,14 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 	    try	my_apply(Dst, Request, Origin, LogStr) of
 		_ -> true
 	    catch
+		error:
+		  E ->
+		    ST = erlang:get_stacktrace(),
+		    logger:log(error, "=ERROR REPORT==== from SIP message handler (in sipserver:process()) :~n"
+			       "~p, stacktrace : ~p", [E, ST]),
+		    internal_error(Request, SipSocket),
+		    %% pass the error on
+		    erlang:error({caught_error, E, ST});
 		exit:
 		  E ->
 		    logger:log(error, "=ERROR REPORT==== from SIP message handler (in sipserver:process()) :~n~p", [E]),
@@ -383,8 +391,8 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 %%           ApplyResult = result of applications request/3 or
 %%                         response/3 function.
 %%--------------------------------------------------------------------
-my_apply(transaction_layer, R, Origin, LogStr) when is_record(R, request);
-						    is_record(R, response), is_record(Origin, siporigin) ->
+my_apply(transaction_layer, R, Origin, LogStr) when is_record(R, request); is_record(R, response),
+						    is_record(Origin, siporigin) ->
     %% Dst is the transaction layer.
     case transactionlayer:from_transportlayer(R, Origin, LogStr) of
 	continue ->
