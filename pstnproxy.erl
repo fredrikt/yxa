@@ -41,6 +41,8 @@ request(Method, URL, Header, Body, Socket, FromIP) ->
 		    toPSTNrequest(Method, User, Header, Body, Socket);
 		"ACK" ->
 		    toPSTNrequest(Method, User, Header, Body, Socket);
+		"PRACK" ->
+		    toPSTNrequest(Method, User, Header, Body, Socket);
 		"CANCEL" ->
 		    toPSTNrequest(Method, User, Header, Body, Socket);
 		"BYE" ->
