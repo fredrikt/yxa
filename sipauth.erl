@@ -9,10 +9,28 @@
 % resp = H(H(A1) ":" nonce ":" H(A2))
 
 realm() ->
-    "kth.se".
+    case application:get_env(sipauth_realm) of
+	{ok, Realm} ->
+	    Realm;
+	undefined ->
+	    ""
+    end.
 
 my_password() ->
-    "foobarhemligt".
+    case application:get_env(sipauth_password) of
+	{ok, Password} ->
+	    Password;
+	undefined ->
+	    ""
+    end.
+
+unauth_classlist() ->
+    case application:get_env(sipauth_unauth_classlist) of
+	{ok, List} ->
+	    List;
+	undefined ->
+	    []
+    end.
 
 get_nonce(Timestamp) ->
     hex:to(erlang:md5(Timestamp ++ ":" ++ my_password())).
@@ -102,7 +120,6 @@ check_auth(Header, Method, Number, Tophone, Classdefs) ->
     {Numberallowed, _} = can_use_name(User, Number),
     {_, _, _, Classes} = get_passnumber(User),
     Class = get_class(Tophone, Classdefs),
-%    Classlist = [internal, mobile_or_pay, national, local, almostinternal, bogus, international],
     Classallowed = lists:member(Class, Classes),
     if
 	User == false ->
@@ -141,7 +158,7 @@ can_register(Header, Number) ->
 
 check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs) ->
     Class = get_class(Tophone, Classdefs),
-    Classlist = [internal, local, bogus],
+    Classlist = unauth_classlist(),
     Classallowed = lists:member(Class, Classlist),
     if
 	Classallowed == true ->
