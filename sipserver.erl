@@ -56,6 +56,11 @@ start(normal, [AppModule]) ->
 	    case supervisor:start_child(Supervisor, TransportLayer) of
 		{error, E} ->
 		    logger:log(error, "Sipserver: Failed starting the transport layer : ~p", [E]),
+		    %% We must sleep a few seconds here, so that the supervisor does not shut down
+		    %% the logger process while it is still logging (yes, that was what happened
+		    %% with the result being that the logger process crashed and produced a mis-
+		    %% guiding error 'ebadf' from io:format()).
+		    timer:sleep(3),
 		    {error, E};
 		{ok, _} ->
 		    {ok, Supervisor};
