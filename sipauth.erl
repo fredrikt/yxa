@@ -28,16 +28,30 @@ get_response(Nonce, Method, URI, User, Password) ->
     A2 = hex:to(erlang:md5(Method ++ ":" ++ URI)),
     hex:to(erlang:md5(A1 ++ ":" ++ Nonce ++ ":" ++ A2)).
 
-get_passnumber(User) ->
+get_passnumber(Usertext) ->
+    {User, Host} = canon_user(Usertext),
+    case {get_passnumber_try(User ++ "@" ++ Host), realm()} of
+	{{ok, Res}, _} ->
+	    Res;
+	{{error}, Host} ->
+	    case get_passnumber_try(User) of
+		{ok, Res} ->
+		    Res;
+		{error} ->
+		    {none, [], [], []}
+	    end
+    end.
+
+get_passnumber_try(User) ->
     case phone:get_user(User) of
 	{atomic, []} ->
-	    {none, [], [], []};
+	    {error};
 	{atomic, [A]} ->
 	    {Password, Flags, Classes} = A,
 	    {atomic, Numbers} = phone:get_numbers_for_user(User),
-	    {Password, Numbers, Flags, Classes};
+	    {ok, {Password, Numbers, Flags, Classes}};
 	{aborted, _} ->
-	    {none, [], [], []}
+	    {error}
     end.
 
 get_class(Number, []) ->
@@ -68,6 +82,12 @@ get_user_verified_proxy(Header, Method) ->
        true ->
 	    get_user_verified(Header, Method, Authheader)
     end.
+
+get_user_verified(Header, Method, ["GSSAPI" ++ Authheader]) ->
+    Authorization = sipheader:auth(["GSSAPI" ++ Authheader]),
+    Info = dict:fetch("info", Authorization),
+    {Response, Username} = gssapi:request(Info),
+    Username;
 
 get_user_verified(Header, Method, Authheader) ->
     Authorization = sipheader:auth(Authheader),
@@ -123,6 +143,14 @@ check_auth(Header, Method, Number, Tophone, Classdefs) ->
 	    true
     end.
 
+canon_user(Fulluser) ->
+    case string:tokens(Fulluser, "@") of
+	[User, Host] ->
+	    {User, Host};
+	[User] ->
+	    {User, realm()}
+    end.
+
 can_use_name(User, Number) ->
     case User of
 	false ->
@@ -131,8 +159,9 @@ can_use_name(User, Number) ->
 	    {stale, []};
 	User ->
 	    {_, Numberlist, _, _} = get_passnumber(User),
-	    case Number of
-		User ->
+	    CanonUser = canon_user(User),
+	    case canon_user(Number) of
+		CanonUser ->
 		    {true, Numberlist};
 		_ ->
 		    {lists:member(Number, Numberlist), []}
