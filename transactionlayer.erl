@@ -2,7 +2,7 @@
 -export([start/3, check_alive/3, send_response_request/3, send_response_request/4,
 	 transaction_terminating/1, get_handler_for_request/1,
 	 get_branch_from_handler/1, start_client_transaction/6,
-	 store_to_tag/2, adopt_server_transaction/1,
+	 store_to_tag/2, adopt_server_transaction/1, adopt_server_transaction_handler/1,
 	 send_response_handler/3, send_response_handler/4,
 	 send_proxy_response_handler/2, get_server_handler_for_stateless_response/1,
 	 store_stateless_response_branch/3, is_good_transaction/1,
@@ -414,19 +414,22 @@ get_server_handler_for_stateless_response(Response) ->
 adopt_server_transaction(Request) ->
     case get_handler_for_request(Request) of
 	TH when record(TH, thandler) -> 
-	    Pid = TH#thandler.pid,
-	    util:safe_signal("Transaction layer: ", Pid, {set_report_to, self()}),
-	    receive
-		{failed_setting_report_to, Pid, E} ->
-		    {error, E};
-		{set_report_to, Pid} ->
-		    TH
-	    after
-		1000 ->
-		    {error, unavailable}
-	    end;
+	    adopt_server_transaction_handler(TH);
 	Unknown ->
 	   {error, "unknown result from get_handler_for_request"}
+    end.
+
+adopt_server_transaction_handler(TH) when record(TH, thandler) ->
+    Pid = TH#thandler.pid,
+    util:safe_signal("Transaction layer: ", Pid, {set_report_to, self()}),
+    receive
+	{failed_setting_report_to, Pid, E} ->
+	    {error, E};
+	{set_report_to, Pid} ->
+	    TH
+    after
+	1000 ->
+	    {error, unavailable}
     end.
 
 get_branch_from_handler(TH) when record(TH, thandler) ->
