@@ -1,18 +1,45 @@
+%%--------------------------------------------------------------------
 %%% File    : sippipe.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : Try a given set of destinations sequentially
-%%%               until we get a final response from one or them,
-%%%               or have no destinations left to try.
+%%% Descrip.: Try a given set of destinations sequentially until we
+%%%           get a final response from one or them, or have no
+%%%           destinations left to try.
 %%%
 %%% Created :  20 Feb 2004 by Fredrik Thulin <ft@it.su.se>
-
+%%--------------------------------------------------------------------
 -module(sippipe).
--export([start/5]).
 
--record(state, {branch, serverhandler, clienthandler, request, dstlist, timeout, starttime, endtime, warntime, approxmsgsize}).
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([
+	 start/5
+	]).
 
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
+
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+-record(state, {branch,
+		serverhandler,
+		clienthandler,
+		request,
+		dstlist,
+		timeout,
+		starttime,
+		endtime,
+		warntime,
+		approxmsgsize
+	       }).
+
+%%====================================================================
+%% External functions
+%%====================================================================
 
 %%--------------------------------------------------------------------
 %% Function: start(ServerHandler, ClientPid, Request, Dst, Timeout)
@@ -22,13 +49,13 @@
 %%                           with the server transaction
 %%           Request       = request record(), original request
 %%           Dst           = list() of sipdst() record |
-%%                           
-%% Description: Try to be flexible. If we are provided with a URI
-%%              as DstList, we resolve it into a list of sipdst
-%%              records. If we are given a client transaction handle,
-%%              we start out with that one. Otherwise we start a
-%%              client transaction and then enter loop/1.
-%% Returns: Does not matter
+%%
+%% Descrip.: Try to be flexible. If we are provided with a URI as
+%%           DstList, we resolve it into a list of sipdst records.
+%%           If we are given a client transaction handle, we start out
+%%           with that one. Otherwise we start a client transaction
+%%           and then enter loop/1.
+%% Returns : Does not matter
 %%--------------------------------------------------------------------
 start(ServerHandler, ClientPid, Request, Dst, Timeout) when is_record(Request, request) ->
     case catch guarded_start(ServerHandler, ClientPid, Request, Dst, Timeout) of
@@ -59,7 +86,7 @@ guarded_start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_recor
 %%
 %% ClientPid /= none
 %%
-guarded_start2(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout, ApproxMsgSize) 
+guarded_start2(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout, ApproxMsgSize)
   when is_record(Request, request), ClientPid /= none ->
     %% A client pid was supplied to us, go to work
     final_start(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout, ApproxMsgSize);
@@ -100,9 +127,10 @@ final_start(Branch, ServerHandler, ClientPid, Request, [Dst|_]=DstList, Timeout,
     loop(State).
 
 
-%% Function: loop/1
-%% Description: Main loop.
-%% Returns: Does not matter - does not return until we are finished.
+%%--------------------------------------------------------------------
+%% Function: loop(State)
+%% Descrip.: Main loop.
+%% Returns : Does not matter - does not return until we are finished.
 %%--------------------------------------------------------------------
 loop(State) when is_record(State, state) ->
 
@@ -132,7 +160,7 @@ loop(State) when is_record(State, state) ->
 			      %% has terminated. This is probably one of our previously started
 			      %% client transactions that is now finishing - just ignore the signal.
 			      {ok, State};
-			      
+
 			  Msg ->
 			      logger:log(error, "sippipe: Received unknown message ~p, ignoring", [Msg]),
 			      {error, State}
@@ -152,11 +180,15 @@ loop(State) when is_record(State, state) ->
 	    end
     end.
 
-%% Function: tick/1
-%% Description: Check to see if it is time to warn, or perhaps time
-%%              to die.
-%% Returns: {quit, State} |
-%%          {Res, State}
+%%--------------------------------------------------------------------
+%% Function: tick(State, Now)
+%%           Now = integer(), current time
+%% Descrip.: Check to see if it is time to warn, or perhaps time
+%%           to die.
+%% Returns : {quit, NewState} |
+%%           {Res, NewState}
+%%           NewState = state record()
+%%           Res      = quit | ok | tick
 %%--------------------------------------------------------------------
 
 %%
@@ -189,13 +221,16 @@ tick(State, _Now) ->
     {tick, State}.
 
 
-%% Function: process_client_transaction_response/2
-%% Description: We have received a response. Check if we should do
-%%              something.
-%% Returns: New State
 %%--------------------------------------------------------------------
-process_client_transaction_response(Response, State) when is_record(Response, response), is_record(State, state), Response#response.status >= 200 ->
-    logger:log(debug, "sippipe: Received final response '~p ~s'", [Response#response.status, Response#response.reason]),
+%% Function: process_client_transaction_response(Response, State)
+%%           Response = response record()
+%% Descrip.: We have received a response. Check if we should do
+%%           something.
+%% Returns : NewState = state record()
+%%--------------------------------------------------------------------
+process_client_transaction_response(#response{status=Status}=Response, State)
+  when is_record(Response, response), is_record(State, state), Status >= 200 ->
+    logger:log(debug, "sippipe: Received final response '~p ~s'", [Status, Response#response.reason]),
     %% This is a final response. See if local:sippipe_received_response() has an oppinion on what
     %% we should do next.
     case local:sippipe_received_response(State#state.request, Response, State#state.dstlist) of
@@ -212,7 +247,8 @@ process_client_transaction_response(Response, State) when is_record(Response, re
 	    process_client_transaction_response2(Response, State)
     end;
 process_client_transaction_response(Response, State) when is_record(Response, response), is_record(State, state) ->
-    logger:log(debug, "sippipe: Piping non-final response '~p ~s' to server transaction", [Response#response.status, Response#response.reason]),
+    logger:log(debug, "sippipe: Piping non-final response '~p ~s' to server transaction",
+	       [Response#response.status, Response#response.reason]),
     transactionlayer:send_proxy_response_handler(State#state.serverhandler, Response),
     State.
 
@@ -227,13 +263,13 @@ process_client_transaction_response2(Response, State) when is_record(Response, r
 	    State
     end.
 
-%% Function: start_next_client_transaction/1
-%% Description: When this function is called, any previous client
-%%              transactions will have received a final response.
-%%              Start the next client transaction from
-%%              State#state.dstlist, or send a 500 response in case
-%%              we have no destinations left.
-%% Returns: New State
+%%--------------------------------------------------------------------
+%% Function: start_next_client_transaction(State)
+%% Descrip.: When this function is called, any previous client
+%%           transactions will have received a final response. Start
+%%           the next client transaction from State#state.dstlist, or
+%%           send a 500 response in case we have no destinations left.
+%% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 start_next_client_transaction(State) when is_record(State, state) ->
     DstListIn = State#state.dstlist,
@@ -270,11 +306,14 @@ start_next_client_transaction(State) when is_record(State, state) ->
 	    NewState
     end.
 
-%% Function: adopt_st_and_get_branch/1
-%% Description: Adopt a server transaction, and get it's branch.
-%% Returns: error     |
-%%          cancelled |
-%%          Branch
+%%--------------------------------------------------------------------
+%% Function: adopt_st_and_get_branch(TH)
+%%           TH = term(), server transaction handle
+%% Descrip.: Adopt a server transaction, and get it's branch.
+%% Returns : Branch    |
+%%           error     |
+%%           cancelled
+%%           Branch = string()
 %%--------------------------------------------------------------------
 adopt_st_and_get_branch(TH) ->
     case transactionlayer:adopt_server_transaction_handler(TH) of
@@ -289,8 +328,8 @@ adopt_st_and_get_branch(TH) ->
 	    Branch
     end.
 
-%% Query a transaction handler for it's branch, and remove the -UAS suffix
-%% in order to get the 'branch base'
+%% Part of adopt_st_and_get_branch(). Query a transaction handler for it's branch,
+%% and remove the -UAS suffix in order to get the 'branch base'.
 get_branch_from_handler(TH) ->
     CallBranch = transactionlayer:get_branch_from_handler(TH),
     case string:rstr(CallBranch, "-UAS") of
@@ -301,10 +340,12 @@ get_branch_from_handler(TH) ->
 	    BranchBase
     end.
 
-%% Function: get_next_target_branch/1
-%% Description: Given the current branch as input, return the next one
-%%              to use.
-%% Returns: NewBranch
+%%--------------------------------------------------------------------
+%% Function: get_next_target_branch(In)
+%%           In = string()
+%% Descrip.: Given the current branch as input, return the next one
+%%           to use.
+%% Returns: NewBranch = string()
 %%--------------------------------------------------------------------
 get_next_target_branch(In) ->
     case string:rchr(In, $.) of
@@ -321,16 +362,20 @@ get_next_target_branch(In) ->
 	    end
     end.
 
-%% Function: resolve_if_necessary/2
-%% Description: Look at the first element of the input DstList. If it
-%%              is a URI instead of a sipdst record, then resolve the
-%%              URI into sipdst record(s) and prepend the new
-%%              record(s) to the input DstList and return the new list
-%% Returns: NewDstList
+%%--------------------------------------------------------------------
+%% Function: resolve_if_necessary(DstList, ApproxMsgSize)
+%%           DstList       = list() of sipdst record()
+%%           ApproxMsgSize = integer()
+%% Descrip.: Look at the first element of the input DstList. If it is
+%%           a URI instead of a sipdst record, then resolve the URI
+%%           into sipdst record(s) and prepend the new record(s) to
+%%           the input DstList and return the new list
+%% Returns : NewDstList = list() of sipdst record()
 %%--------------------------------------------------------------------
 resolve_if_necessary([], _) ->
     [];
-resolve_if_necessary([Dst | T], ApproxMsgSize) when is_record(Dst, sipdst), Dst#sipdst.proto == undefined; Dst#sipdst.addr == undefined; Dst#sipdst.port == undefined ->
+resolve_if_necessary([#sipdst{proto=Proto, addr=Addr, port=Port}=Dst | T], ApproxMsgSize)
+  when Proto == undefined, Addr == undefined, Port == undefined ->
     URI = Dst#sipdst.uri,
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
     case URI of
@@ -355,11 +400,12 @@ resolve_if_necessary(Unknown, _) ->
     logger:log(error, "sippipe: Unrecognized destination input data : ~p", [Unknown]),
     [].
 
-%% Function: all_terminated/1
-%% Description: Check if both server transaction and client
-%%              transaction are dead. If so, return 'true'.
-%% Returns: true  |
-%%          false
+%%--------------------------------------------------------------------
+%% Function: all_terminated(State)
+%% Descrip.: Check if both server transaction and client transaction
+%%           are dead. If so, return 'true'.
+%% Returns : true  |
+%%           false
 %%--------------------------------------------------------------------
 all_terminated(State) when is_record(State, state) ->
     ServerAlive = transactionlayer:is_good_transaction(State#state.serverhandler),
@@ -370,16 +416,40 @@ all_terminated(State) when is_record(State, state) ->
 	true -> true
     end.
 
-%% Function: client_transaction_alive/1
-%% Description: Check if the client transaction is dead.
-%% Returns: true  |
-%%          false
+%%--------------------------------------------------------------------
+%% Function: client_transaction_alive(State)
+%% Descrip.: Check if the client transaction is dead.
+%% Returns : true  |
+%%           false
 %%--------------------------------------------------------------------
 client_transaction_alive(State) when is_record(State, state) ->
     case util:safe_is_process_alive(State#state.clienthandler) of
 	{true, _} -> true;
 	_ -> false
     end.
+
+%%====================================================================
+%% Startup functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: start_get_dstlist(ServerHandler, Request, ApproxMsgSize,
+%%                             Dst)
+%%           ServerHandler = term(), server transaction handle
+%%           Request       = request record()
+%%           ApproxMsgSize = integer(), approximate size of formatted
+%%                                      request
+%%           Dst           = sipurl record() | route |
+%%                           list() of sipdst record()
+%% Descrip.: Get an initial list of destinations for this request.
+%%           This might mean we pop the destination from a Route
+%%           header, in which case we return a new request.
+%% Returns : {ok, DstList, NewRequest} |
+%%           error
+%%           DstList    = list of sipdst record()
+%%           NewRequest = request record()
+%%--------------------------------------------------------------------
 
 %%
 %% Dst is an URI
@@ -432,6 +502,20 @@ start_get_dstlist(_ServerHandler, Request, _ApproxMsgSize, [Dst | _] = DstList) 
 										     is_record(Dst, sipdst) ->
     {ok, DstList, Request}.
 
+%%--------------------------------------------------------------------
+%% Function: start_get_servertransaction(ServerHandler, Request)
+%%           ServerHandler = none | term(), server transaction handle
+%%           Request       = request record()
+%% Descrip.: Assure we have a working server transaction handle.
+%%           Either we get one as ServerHandler argument, or we try to
+%%           find one using the transaction layer. If the server
+%%           transaction has already been cancelled, we return 'ok'.
+%% Returns : {ok, STHandler, Branch} |
+%%           ok                      |
+%%           error
+%%           STHandler = term()
+%%           Branch    = string()
+%%--------------------------------------------------------------------
 start_get_servertransaction(none, Request) when is_record(Request, request) ->
     %% No server transaction handler supplied. Try to find a valid handler using the request.
     case transactionlayer:get_handler_for_request(Request) of
@@ -468,4 +552,3 @@ start_get_servertransaction(ServerHandler, Request) when is_record(Request, requ
 	    logger:log(error, "sippipe: Server transaction given to me (~p) is not alive", [ServerHandler]),
 	    error
     end.
-
