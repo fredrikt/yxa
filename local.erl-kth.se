@@ -1,14 +1,92 @@
 -module(local).
--export([sipuser/1, lookup_homedomain_url/1, lookup_remote_url/1,
-	 lookupregexproute/1, lookupuser/1, lookupaddress/1,
-	 lookupappserver/1, prioritize_locations/2, lookupdefault/1,
-	 lookuppotn/1, lookupenum/1, lookuppstn/1, isours/1,
-	 homedomain/1, get_remote_party_number/3,
-	 format_number_for_remote_party_id/3, get_remote_party_name/3]).
+-export([url2mnesia_userlist/1,
+	 canonify_user/1,
+	 canonify_numberlist/1,
+    % lookup
+	 lookup_homedomain_url/1,
+	 lookup_remote_url/1,
+	 lookupregexproute/1,
+	 lookupuser/1,
+	 lookup_url_to_locations/1,
+	 lookup_url_to_addresses/2,
+	 lookup_addresses_to_users/1,
+	 lookup_address_to_users/1,
+	 lookupappserver/1,
+	 lookupdefault/1,
+	 lookuppotn/1,
+	 lookupenum/1,
+	 lookuppstn/1,
+	 isours/1,
+	 format_number_for_remote_party_id/3,
+	 get_remote_party_name/2,
+	 get_remote_party_number/2,
+	 rewrite_potn_to_e164/1,
+    % siplocation
+	 prioritize_locations/2,
+	 homedomain/1,
+	 get_locations_for_users/1,
+	 get_user_with_contact/1,
+    % sipauth
+	 get_user_verified/2,
+	 get_user_verified_proxy/2,
+	 can_use_address/2,
+	 can_register/2,
+	 is_allowed_pstn_dst/4,
+    % sipuserdb
+	 get_addresses_for_user/1,
+	 get_addresses_for_users/1,
+	 get_users_for_address_of_record/1,
+	 get_users_for_addresses_of_record/1,
+	 get_users_for_url/1,
+	 get_user_with_address/1,
+	 get_classes_for_user/1,
+	 get_password_for_user/1,
+	 get_telephonenumber_for_user/1,
+	 get_forwards_for_users/1
+	]).
 
-sipuser(URL) ->
+url2mnesia_userlist(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    User.
+    [User ++ "@" ++ Host, User].
+
+% Turn a SIP username into an address which can be reached from anywhere.
+% Used for example from the Mnesia userdb-module. It should be possible
+% to call Mnesia users based on their username, but the username might
+% need sip: prepended to it, or a default domain name appended to it.
+canonify_user("sip:" ++ User) ->
+    "sip:" ++ User;
+canonify_user(Fulluser) ->
+    case string:tokens(Fulluser, "@") of
+        [User, Host] ->
+            "sip:" ++ Fulluser;
+        [User] ->
+	    "sip:" ++ User ++ "@" ++ sipauth:realm()
+    end.
+
+% Turns numbers into fully qualified tel: URLs or if that is not
+% possible, return empty list. Used from some userdb-modules which
+% get non-fully qualified phone numbers (like local extension numbers)
+% back from the database.
+canonify_numberlist([]) ->
+    [];
+canonify_numberlist(["tel:+" ++ E164 | Rest]) ->
+    lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
+canonify_numberlist(["+" ++ E164 | Rest]) ->
+    case util:isnumeric(E164) of
+	true ->
+	    lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
+	_ ->
+	    canonify_numberlist(Rest)
+    end;
+canonify_numberlist([Number | Rest]) ->
+    case rewrite_potn_to_e164(Number) of
+	"+" ++ E164 -> lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
+	_ -> canonify_numberlist(Rest)
+    end.
+
+
+% Routing hooks
+%%%%%%%%%%%%%%%%
 
 lookup_homedomain_url(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
@@ -69,7 +147,10 @@ lookupkthid_address(Address) ->
 	    none
     end.
 
-% local.erl hooks
+
+
+% lookup.erl hooks
+%%%%%%%%%%%%%%%%%%%
 
 lookupregexproute(User) ->
     lookup:lookupregexproute(User).
@@ -77,8 +158,17 @@ lookupregexproute(User) ->
 lookupuser(URL) ->
     lookup:lookupuser(URL).
 
-lookupaddress(Key) ->
-    lookup:lookupaddress(Key).
+lookup_url_to_locations(URL) ->
+    lookup:lookup_url_to_locations(URL).
+    
+lookup_url_to_addresses(Src, URL) ->
+    lookup:lookup_url_to_addresses(Src, URL).
+    
+lookup_addresses_to_users(Addresses) ->
+    lookup:lookup_addresses_to_users(Addresses).
+    
+lookup_address_to_users(Address) ->
+    lookup:lookup_address_to_users(Address).
 
 lookupappserver(Key) ->
     lookup:lookupappserver(Key).
@@ -104,11 +194,91 @@ isours(URL) ->
 homedomain(Domain) ->
     lookup:homedomain(Domain).
 
-get_remote_party_number(Key, ToURI, DstHost) ->
-    lookup:get_remote_party_number(Key, ToURI, DstHost).
+get_remote_party_number(URL, DstHost) ->
+    lookup:get_remote_party_number(URL, DstHost).
 
 format_number_for_remote_party_id(Number, ToURI, DstHost) ->
     Number.
 
-get_remote_party_name(Key, ToURI, DstHost) ->
-    lookup:get_remote_party_name(lookup:rewrite_potn_to_e164(Key), ToURI).
+get_remote_party_name(Key, DstHost) ->
+    lookup:get_remote_party_name(local:rewrite_potn_to_e164(Key), Key).
+
+rewrite_potn_to_e164(Key) ->
+    lookup:rewrite_potn_to_e164(Key).
+
+
+% userdb hooks
+%%%%%%%%%%%%%%%
+
+% Looks up exactly one user with an Address. Used
+% for example in REGISTER. If there are multiple
+% users with an address, this function returns {error}.
+get_user_with_address(Address) ->
+   sipuserdb:get_user_with_address(Address).
+
+% Looks up all users with a given address. Used
+% to find out to which users we should send a request.
+get_users_for_address_of_record(Address) ->
+    sipuserdb:get_users_for_address_of_record(Address).
+
+get_users_for_addresses_of_record(Addresses) ->
+    sipuserdb:get_users_for_addresses_of_record(Addresses).
+
+% Gets all addresses for a user. Used for example
+% to check if a request from a user has an acceptable
+% From: header.
+get_addresses_for_user(User) ->
+    sipuserdb:get_addresses_for_user(User).
+
+get_addresses_for_users(Users) ->
+    sipuserdb:get_addresses_for_users(Users).
+
+get_users_for_url(URL) ->
+    sipuserdb:get_users_for_url(URL).
+    
+get_password_for_user(User) ->
+    sipuserdb:get_password_for_user(User).
+
+get_classes_for_user(User) ->
+    sipuserdb:get_classes_for_user(User).
+
+get_telephonenumber_for_user(User) ->
+    sipuserdb:get_telephonenumber_for_user(User).
+
+get_forwards_for_users(Users) ->
+    sipuserdb:get_forwards_for_users(Users).
+
+
+% Location lookup hooks
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Looks up all contacts for a list of users. Used
+% to find out where a set of users are to see where
+% we should route a request.
+get_locations_for_users(Users) ->
+    siplocation:get_locations_for_users(Users).
+
+% Checks if any of our users are registered at the
+% location specified. Used to determine if we should
+% proxy requests to a URI without authorization.
+get_user_with_contact(URI) ->
+    siplocation:get_user_with_contact(URI).
+
+
+% AAA hooks
+%%%%%%%%%%%%
+
+get_user_verified(Header, Method) ->
+    sipauth:get_user_verified(Header, Method).
+
+get_user_verified_proxy(Header, Method) ->
+    sipauth:get_user_verified_proxy(Header, Method).
+
+can_use_address(User, Address) ->
+    sipauth:can_use_address(User, Address).
+
+can_register(Header, User) ->
+    sipauth:can_register(Header, User).
+
+is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
+    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
