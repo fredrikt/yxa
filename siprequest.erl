@@ -26,7 +26,7 @@ send_response(Socket, Code, Text, Header, Body) ->
 send_response_to(DefaultSocket, Code, Text, Dest, HeaderIn, Body) ->
     Line1 = "SIP/2.0 " ++ integer_to_list(Code) ++ " " ++ Text,
     Header = fix_content_length(HeaderIn, Body),
-    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
+    Message = lists:flatten(Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body),
     {Protocol, {Host, DestPort}, Parameters} = Dest,
     ParamDict = sipheader:param_to_dict(Parameters),
     SendToHost = case dict:find("received", ParamDict) of
@@ -276,7 +276,7 @@ send_to_available_dst(DestStr, [Dst | T], TransactionId, Line1, Request, Paramet
 	    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler);
 	SipSocket when record(SipSocket, sipsocket) ->
 	    NewHeader1 = proxy_add_via(Header, Method, OrigURI, Parameters, SipProto, SrvTHandler),
-	    Message = Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader1) ++ "\r\n" ++ Body,
+	    Message = lists:flatten(Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader1) ++ "\r\n" ++ Body),
 	    case sipsocket:send(SipSocket, IP, PortInt, Message) of
 		ok ->
 		    logger:log(debug, "sent request(~p, sent to=~s:~s:~p) :~n~s~n",
