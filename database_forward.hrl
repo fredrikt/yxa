@@ -1,1 +1,9 @@
--record(forward, {number, forwards, timeout, localring}).
+%%
+%% -------------------------------------------------------------------
+
+-record(forward, {
+	  number, 
+	  forwards, 
+	  timeout, 
+	  localring
+	 }).

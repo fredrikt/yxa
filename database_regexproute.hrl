@@ -1,1 +1,10 @@
--record(regexproute, {regexp, flags, class, expire, address}).
+%%
+%% -------------------------------------------------------------------
+
+-record(regexproute, {
+	  regexp, 
+	  flags, 
+	  class, 
+	  expire, 
+	  address
+	 }).

@@ -1,1 +1,9 @@
--record(call, {callid, type, headers, data}).
+%%
+%% -------------------------------------------------------------------
+
+-record(call, {
+	  callid, 
+	  type, 
+	  headers, 
+	  data
+	 }).
