@@ -1,3 +1,5 @@
+srcdir = /path/to/source/sip/erlang/kth.se/vxl.mk
+
 STARTSCRIPT = incomingproxy.start
 
-include /path/to/source/sip/erlang/kth.se/vxl.mk
+include $(srcdir)/vxl.mk
