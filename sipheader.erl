@@ -91,7 +91,7 @@
 comma(String) ->
     comma([], String, false, false).
 
-% comma(Parsed, Rest, Inquote, InUriQuote)
+%% comma(Parsed, Rest, Inquote, InUriQuote)
 
 %% Parsed     = current segment of string since last comma (,)
 %% Rest       = the remainder of the string to split along comma (,)
@@ -156,7 +156,7 @@ comma(Parsed, [Char | Rest], false, false) ->
 comma(Parsed, [], false, false) ->
     [lists:reverse(string:strip(Parsed, both))].
 
-%--------------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% Function: expires(Header)
 %%           Header = keylist record()
 %% Descrip.: get the value of the "Expires" header
@@ -307,11 +307,11 @@ via_params(Via) when is_record(Via, via) ->
 %%           those contacts as strings
 %% Returns : list() of string()
 %%--------------------------------------------------------------------
-contact_print(ContactList) when is_list(ContactList) ->
-    contact_print2(ContactList, []).
+contact_print(Contacts) when is_list(Contacts) ->
+    contact_print2(Contacts, []).
 
-contact_print2([Contact | R], Res) when is_record(Contact, contact) ->
-    contact_print2(R, [contact:print(Contact) | Res]);
+contact_print2([H | T], Res) when is_record(H, contact) ->
+    contact_print2(T, [contact:print(H) | Res]);
 contact_print2([], Res) ->
     lists:reverse(Res).
 
@@ -388,10 +388,9 @@ get_name_and_value(Str) ->
     {Name, unquote(Value)}.
 
 %% removes single pair of quotes, returns contents in between these first two quotes
-unquote([$" | QString]) ->
-    Index = string:chr(QString, $"),
+unquote([34 | QString]) ->	%% 34 is $"
+    Index = string:chr(QString, 34),	%% 34 is $"
     string:substr(QString, 1, Index - 1);
-
 unquote(QString) ->
     QString.
 
@@ -437,20 +436,24 @@ unescape([C | Rest]) ->
 %% XXX should certain chars in the "value" part be hex encoded ?
 %%--------------------------------------------------------------------
 dict_to_param(Dict) ->
-    list_to_parameters(lists:keysort(1, dict:to_list(Dict))).
+    list_to_parameters2(lists:keysort(1, dict:to_list(Dict)), []).
 
-list_to_parameters([]) ->
-    [];
-list_to_parameters([{Key, Value}]) ->
-    [Key ++ "=" ++ Value];
-list_to_parameters([{Key, Value} | Rest]) ->
-    [Key ++ "=" ++ Value | list_to_parameters(Rest)].
+%% list_to_parameters2/2 - part of dict_to_param/1
+list_to_parameters2([{Key, []} | T], Res) ->
+    %% Empty value (like "lr" or "rport")
+    list_to_parameters2(T, [Key | Res]);
+list_to_parameters2([{Key, Value} | T], Res) ->
+    %% Non-empty value
+    list_to_parameters2(T, [Key ++ "=" ++ Value | Res]);
+list_to_parameters2([], Res) ->
+    lists:reverse(Res).
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: httparg(String)
+%% Descrip.: Make dict out of parameters separated by ampersand (&).
+%% Returns : dict()
+%% Note    : Only used in admin_www. Perhaps move there?
 %%--------------------------------------------------------------------
 httparg(String) ->
     Headers = string:tokens(String, "&"),
@@ -530,8 +533,10 @@ build_header_unsafe_binary(Header) ->
     Lines.
 
 
-print_one_header_binary(_, _, []) ->
-    [];
+print_one_header_binary(Key, Name, []) ->
+    %% Header without value. We should accept those from other SIP devices, but we should
+    %% not send them out ourselves, so we reject them here.
+    erlang:error(header_without_value, [Key, Name, []]);
 print_one_header_binary(Key, Name, ValueList) ->
     %% certain headers that have multiple values are written on a single line separated by "," -
     %% this is not because any RFC says so but because these are common headers that look
@@ -556,7 +561,7 @@ print_one_header_binary2(OneLine, BinName, [H | T], Res) ->
     print_one_header_binary2(OneLine, BinName, T, [list_to_binary(H) | Res]);
 print_one_header_binary2(OneLine, BinName, [], Res) ->
     print_one_header_binary3(OneLine, BinName, lists:reverse(Res)).
-    
+
 %% print_one_header_binary3 - create the binary representation of this header
 %% and all it's values
 print_one_header_binary3(true, BinName, BinValueList) ->
@@ -760,18 +765,14 @@ remove_branch(Via) when is_record(Via, via) ->
 %% Returns : Branch = string() | none
 %%--------------------------------------------------------------------
 get_via_branch(TopVia) when is_record(TopVia, via) ->
-    case get_via_branch_full(TopVia) of
-	"z9hG4bK-yxa-" ++ RestOfBranch ->
-	    remove_loop_cookie("z9hG4bK-yxa-" ++ RestOfBranch);
-	L when is_list(L) ->
-	    L;
-	none ->
-	    none
-    end.
+    Branch = get_via_branch_full(TopVia),
+    remove_loop_cookie(Branch).
 
 %%--------------------------------------------------------------------
 %% Function: remove_loop_cookie(Branch)
-%% Descrip.:
+%%           Branch = string() | none
+%% Descrip.: Removes our special Yxa loop cookie from a branch, if it
+%%           really is an Yxa generated branch.
 %% Returns : Branch | NewBranch = string()
 %%--------------------------------------------------------------------
 remove_loop_cookie(Branch) ->
@@ -789,13 +790,17 @@ remove_loop_cookie(Branch) ->
 		_ ->
 		    Branch
 	    end;
-        _ ->
-	    Branch
+        _ when is_list(Branch) ->
+	    Branch;
+	none ->
+	    none
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
+%% Function: get_via_branch_full(Via)
+%%           Via = via record()
+%% Descrip.: Get the whole Via branch (inclusive any loop cookie) from
+%%           Via.
 %% Returns : Branch = string() | none
 %%--------------------------------------------------------------------
 get_via_branch_full(Via) when is_record(Via, via) ->
@@ -804,23 +809,25 @@ get_via_branch_full(Via) when is_record(Via, via) ->
 	    none;
 	{ok, Branch} ->
 	    Branch
-    end;
-get_via_branch_full(_) ->
-    none.
+    end.
 
 %%--------------------------------------------------------------------
-%% Function: via_is_equal/2
+%% Function: via_is_equal(A, B)
+%%           A, B = via record()
 %% Descrip.: Compare two Via records according to the rules in
 %%           RFC3261 20.42 (Via)
 %% Returns : true  |
 %%           false
 %%--------------------------------------------------------------------
 via_is_equal(A, B) when is_record(A, via), is_record(B, via) ->
-    via_is_equal(A, B, [proto, host, port, param]).
+    via_is_equal(A, B, [proto, host, port, parameters]).
 
 
 %%--------------------------------------------------------------------
-%% Function: via_is_equal/3
+%% Function: via_is_equal(A, B, CmpList)
+%%           A, B = via record()
+%%           CmpList = list() of proto|host|port|parameters - what to
+%%                     compare
 %% Descrip.: Compare one or more parts of two Via records according
 %%           to RFC3261 20.42.
 %% Returns : true  |
@@ -858,9 +865,11 @@ via_is_equal(A, B, [port | _T]) when is_record(A, via), is_record(B, via) ->
 %% Parameters. All parameters must be present and their values must be equal
 %% for the vias to be considerered equal.
 %%
-via_is_equal(A, B, [parameters | T]) ->
-    Alist = lists:keysort(1, dict:to_list(A#via.param)),
-    Blist = lists:keysort(1, dict:to_list(B#via.param)),
+via_is_equal(A, B, [parameters | T]) when is_record(A, via), is_record(B, via) ->
+    %% XXX we should probably do this case insensitive or whatever, but for now
+    %% we just compare that the two Via's sorted parameters are identical.
+    Alist = lists:sort(A#via.param),
+    Blist = lists:sort(B#via.param),
     case Alist of
 	Blist ->
 	    via_is_equal(A, B, T);
@@ -896,7 +905,7 @@ name_header(String) ->
     Index1 = string:rchr(String, $<),
     case Index1 of
 	0 ->
-	    % No "<", just an URI? XXX Check that it is parseable?
+	    %% No "<", just an URI? XXX Check that it is parseable?
 	    URI = sipurl:parse(String),
 	    {none, URI};
 	_ ->
@@ -907,6 +916,8 @@ name_header(String) ->
 	    {Displayname, URI}
     end.
 
+%% part of name_header/1. XXX this function fails on escaped quotes inside String
+%% XXX there is a similar function in the module contact. Merge them.
 parse_displayname(String) ->
     LeftQuoteIndex = string:chr(String, $\"),
     case LeftQuoteIndex of
@@ -916,7 +927,7 @@ parse_displayname(String) ->
 	    TempString = string:substr(String, LeftQuoteIndex + 1),
 	    RightQuoteIndex = string:chr(TempString, $\"),
 	    empty_displayname(string:substr(TempString, 1, RightQuoteIndex - 1))
-    end.
+					 end.
 
 empty_displayname([]) ->
     none;
@@ -1031,15 +1042,22 @@ test() ->
     io:format("test: comma/1 - 8~n"),
     ["foobar:", "\",this is a ,string\"", "foo"] = comma("foobar:, \",this is a ,string\",foo"),
 
-    %% trailing comma
+    %% test escaped chars inside quotes
     io:format("test: comma/1 - 9~n"),
+    ["hi","\" world \\\" \"","foo"] = comma("hi, \" world \\\" \", foo"),
+
+    %% trailing comma
+    io:format("test: comma/1 - 10~n"),
     ["fo","ob","ar",""] = comma("fo,ob,ar,"),
 
     %% preceeding comma
-    io:format("test: comma/1 - 10~n"),
+    io:format("test: comma/1 - 11~n"),
     ["","fo","ob","ar"] = comma(",fo,ob,ar"),
 
-    %% test commas inside <>!
+    %% comma inside <>
+    io:format("test: comma/1 - 12~n"),
+    ["this","is <sip:a,b@example.com>","URI","comma","test"] =
+	comma("this, is <sip:a,b@example.com>, URI, comma, test"),
 
 
     %% test via(ViaList)
@@ -1082,9 +1100,124 @@ test() ->
     {'EXIT', _} = (catch via(["SIP/2.0/TLS 192.0.2.500:5060"])),
 
 
+    %% test topvia(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: topvia/1 - 1~n"),
+    %% test simple case
+    [TopVia_1] = via(["SIP/2.0/TLS sip.example.org:5061"]),
+    TopVia_1 = topvia( keylist:from_list([{"Via", ["SIP/2.0/TLS sip.example.org:5061",
+						   "SIP/2.0/TLS foo.example.org:5060"]}])),
+
+    io:format("test: topvia/1 - 2~n"),
+    %% test without via
+    none = topvia( keylist:from_list([])),
+
+
+    %% test get_via_branch(TopVia)
+    %%--------------------------------------------------------------------
+    io:format("test: get_via_branch/1 - 1~n"),
+    %% test Yxa branch
+    [GetViaBranch_1] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-yxa-abc123-oloopcookie"]),
+    "z9hG4bK-yxa-abc123" = get_via_branch(GetViaBranch_1),
+
+    io:format("test: get_via_branch/1 - 2~n"),
+    %% test Yxa branch without loop cookie
+    [GetViaBranch_2] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-yxa-abc123"]),
+    "z9hG4bK-yxa-abc123" = get_via_branch(GetViaBranch_2),
+
+    io:format("test: get_via_branch/1 - 3~n"),
+    %% test non-Yxa branch
+    [GetViaBranch_3] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-abc123-oloopcookie"]),
+    "z9hG4bK-abc123-oloopcookie" = get_via_branch(GetViaBranch_3),
+
+    io:format("test: get_via_branch/1 - 3~n"),
+    %% test Via without branch
+    [GetViaBranch_4] = via(["SIP/2.0/TLS sip.example.org:5061"]),
+    none = get_via_branch(GetViaBranch_4),
+
+
+    %% test via_params(Via)
+    %%--------------------------------------------------------------------
+    io:format("test: via_params/1 - 1~n"),
+    %% test simple case
+    [ViaParams_Via1] = via(["SIP/2.0/TCP 192.0.2.123;transport=tcp;rport"]),
+    ["rport", "transport=tcp"] = dict_to_param( via_params(ViaParams_Via1) ),
+
+
+    %% test name_header(String)
+    %%--------------------------------------------------------------------
+    io:format("test: name_header/1 - 1~n"),
+    %% test without Display Name, just URI
+    NameHeaderURI1 = sipurl:parse("sip:ft@example.org"),
+    {none, NameHeaderURI1} = name_header("sip:ft@example.org"),
+
+    io:format("test: name_header/1 - 1~n"),
+    %% test without Display Name, just URI inside <>
+    NameHeaderURI1 = sipurl:parse("sip:ft@example.org"),
+    {none, NameHeaderURI1} = name_header("<sip:ft@example.org>"),
+
+    io:format("test: name_header/1 - 3~n"),
+    %% test with unqouted Display Name
+    {"Fredrik", NameHeaderURI1} = name_header("Fredrik    <sip:ft@example.org>"),
+
+    io:format("test: name_header/1 - 4~n"),
+    %% test with qouted Display Name
+    {"testing, Fredrik", NameHeaderURI1} = name_header("\"testing, Fredrik\" <sip:ft@example.org>"),
+
+    io:format("test: name_header/1 - 5~n"),
+    %% test with URI missing <>
+    {none, {unparseable, "Fredrik sip:ft@example.org"}} = name_header("Fredrik sip:ft@example.org"),
+
+    io:format("test: name_header/1 - 6 (disabled)~n"),
+    %% test with quoted quotes in the display name
+    %%{"Quoted \\\" here", NameHeaderURI1} = name_header("\"Quoted \\\" here\" <sip:ft@example.org>"),
+        
+
+    %% test via_is_equal(A, B)
+    %%--------------------------------------------------------------------
+    [ViaIsEqual1] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-really-unique"]),
+    [ViaIsEqual2] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-not-the-same"]),	%% different branch
+    [ViaIsEqual3] = via(["SIP/2.0/TLS sip.example.org:5062;branch=z9hG4bK-really-unique"]),	%% different port
+    [ViaIsEqual4] = via(["SIP/2.0/TLS sip.example.net:5061;branch=z9hG4bK-really-unique"]),	%% different host
+    [ViaIsEqual5] = via(["SIP/2.0/TCP sip.example.org:5061;branch=z9hG4bK-really-unique"]),	%% different protocol
+
+    io:format("test: via_is_equal/2 - 1~n"),
+    %% two of the same
+    true = via_is_equal(ViaIsEqual1, ViaIsEqual1),
+
+    io:format("test: via_is_equal/2 - 2~n"),
+    %% different branch parameter
+    false = via_is_equal(ViaIsEqual1, ViaIsEqual2),
+
+    io:format("test: via_is_equal/2 - 3~n"),
+    %% different port
+    false = via_is_equal(ViaIsEqual1, ViaIsEqual3),
+
+    io:format("test: via_is_equal/2 - 4~n"),
+    %% different host
+    false = via_is_equal(ViaIsEqual1, ViaIsEqual4),
+
+    io:format("test: via_is_equal/2 - 5~n"),
+    %% different protocol
+    false = via_is_equal(ViaIsEqual1, ViaIsEqual5),
+
+
+    %% test via_is_equal(A, B, CmpList)
+    %%--------------------------------------------------------------------
+    io:format("test: via_is_equal/3 - 1~n"),
+    true = via_is_equal(ViaIsEqual1, ViaIsEqual2, [proto, host, port]),
+
+    io:format("test: via_is_equal/3 - 2~n"),
+    false = via_is_equal(ViaIsEqual1, ViaIsEqual2, [parameters]),
+
+    io:format("test: via_is_equal/3 - 2~n"),
+    %% test with same parameters, but different order
+    true = via_is_equal(ViaIsEqual1#via{param=["a=b", "b=a"]},
+			ViaIsEqual2#via{param=["b=a", "a=b"]}, [parameters]),
+
+
     %% test get_server_transaction_id(Request)
     %%--------------------------------------------------------------------
-
     io:format("test: get_server_transaction_id/1 - 1.1~n"),
     %% get Id for INVITE with RFC3261 branch tag in top Via
     InviteHeader1 = keylist:from_list([
@@ -1205,8 +1338,8 @@ test() ->
     %%--------------------------------------------------------------------
     io:format("test: via_sentby/1 - 1~n"),
     {"proto", "host", 1234} = via_sentby(#via{proto="proto", host="host", port=1234}),
-					 
-					 
+
+
     %% test via_print(Via)
     %%--------------------------------------------------------------------
     ViaPrint1 = #via{proto = "SIP/2.0/UDP",
@@ -1224,33 +1357,61 @@ test() ->
     [ViaPrint1_Str] = via_print([ViaPrint1]),
 
     io:format("test: via_print/1 - 2~n"),
+    %% one Via, not in list
+    [ViaPrint1_Str] = via_print(ViaPrint1),
+
+    io:format("test: via_print/1 - 3~n"),
     %% two Vias
     [ViaPrint1_Str, ViaPrint2_Str] = via_print([ViaPrint1, ViaPrint2]),
 
-    
+
+    %% test auth_print(Auth)
+    %%--------------------------------------------------------------------
+    io:format("test: auth_print/1 - 1~n"),
+    ["Digest realm=\"su.se\", nonce=\"nonce\", opaque=\"opaque\""] =
+	auth_print({"su.se", "nonce", "opaque"}),
+
+
+    %% test auth_print(Auth, Stale)
+    %%--------------------------------------------------------------------
+    io:format("test: auth_print/2 - 1~n"),
+    ["Digest realm=\"su.se\", nonce=\"nonce\", opaque=\"opaque\", stale=true"] =
+	auth_print({"su.se", "nonce", "opaque"}, true),
+
+    io:format("test: auth_print/2 - 2~n"),
+    ["Digest realm=\"su.se\", nonce=\"nonce\", opaque=\"opaque\""] =
+	auth_print({"su.se", "nonce", "opaque"}, false),
+
+
+
     %% test auth([In])
     %%--------------------------------------------------------------------
     AuthIn1 = ["Digest response=\"1response1\", uri=\"2bar2\""],
-    AuthIn2 = ["GSSAPI response=\"1response1\", uri=\"2bar2\""],
+    AuthIn2 = ["GSSAPI response=\"1response1\", uri=\"2bar2\", noquote=test"],
     AuthIn3 = ["Unknown response=\"1response1\", uri=\"2bar2\""],
 
-    AuthOut = [{"response","1response1"},{"uri","2bar2"}],
+    AuthOut1 = [{"response","1response1"}, {"uri","2bar2"}],
+    AuthOut2 = [{"noquote", "test"}, {"response","1response1"}, {"uri","2bar2"}],
 
     io:format("test: auth/1 - 1~n"),
     %% digest
-    AuthOut = lists:keysort(1, dict:to_list(
-				 sipheader:auth(AuthIn1)
-				)),
+    AuthOut1 = lists:keysort(1, dict:to_list( auth(AuthIn1) )),
 
     io:format("test: auth/1 - 2~n"),
     %% GSSAPI
-    AuthOut = lists:keysort(1, dict:to_list(
-				 sipheader:auth(AuthIn2)
-				)),
+    AuthOut2 = lists:keysort(1, dict:to_list( auth(AuthIn2) )),
 
     io:format("test: auth/1 - 3~n"),
     %% Unknown
-    {siperror, 500, "Server Internal Error"} = (catch sipheader:auth(AuthIn3)),
+    {siperror, 500, "Server Internal Error"} = (catch auth(AuthIn3)),
+
+    io:format("test: auth/1 - 4~n"),
+    %% Invalid
+    {siperror, 500, "Server Internal Error"} = (catch auth(["TestInvalid"])),
+
+    io:format("test: auth/1 - 4~n"),
+    %% Not handled - not sure if we should or not..
+    {'EXIT', _} = (catch auth(["Digest foo"])),
 
 
     %% test param_to_dict(Param)
@@ -1258,12 +1419,12 @@ test() ->
     io:format("test: param_to_dict/1 - 1~n"),
     %% test simple case
     [{"foo", "bar"}] = dict:to_list(
-			 sipheader:param_to_dict(["foo=bar"])
+			 param_to_dict(["foo=bar"])
 			),
 
     io:format("test: param_to_dict/1 - 1~n"),
     %% test more complicated case - uppercase in key, escaped characters in value and multiple entrys
-    ["foo=bAr", "user=ft"] = dict_to_param( sipheader:param_to_dict(["Foo=b%41r", "user=ft"]) ),
+    ["foo=bAr", "user=ft"] = dict_to_param( param_to_dict(["Foo=b%41r", "user=ft"]) ),
 
 
     %% test cseq(Header)
@@ -1299,7 +1460,6 @@ test() ->
     %% test multiple values
     [[<<"Via: via1\r\n">>, <<"Via: via2\r\n">>]] = build_header_binary( keylist:from_list([{"Via", ["via1", "via2"]}]) ),
 
-
     io:format("test: build_header_binary/1 - 3~n"),
     %% test more complex case
     BuildHeaderBin_H1 = keylist:from_list([{"Via", ["via1", "via2"]},
@@ -1313,6 +1473,10 @@ test() ->
      [<<"Call-Id: call-id-test\r\n">>],
      <<"Accept: accept1, accept2\r\n">>,
      [<<"Date: Thu, 10 Feb 2005 14:41:04 GMT\r\n">>]] = build_header_binary(BuildHeaderBin_H1),
+
+    io:format("test: build_header_binary/1 - 4~n"),
+    %% test Reason-header without value
+    {siperror, 500, _Reason} = (catch build_header_binary( keylist:from_list([{"Reason", []}]) )),
 
 
     %% test get_tag([String])
@@ -1342,6 +1506,50 @@ test() ->
 
     io:format("test: dialogid/1 - 3~n"),
     {"call-id-test", none, "totag"} = dialogid(keylist:set("From", ["foo"], DialogHeader1)),
-    
+
+
+    %% test expires(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: expires/1 - 1~n"),
+    ["123"] = expires(keylist:from_list([{"Expires", ["123"]}])),
+
+
+    %% test from(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: from/1 - 1~n"),
+    FromURL1 = sipurl:parse("sip:ft@example.org"),
+    {"Fredrik", FromURL1} = from(keylist:from_list([{"From", ["Fredrik <sip:ft@example.org>"]}])),
+
+
+    %% test to(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: to/1 - 1~n"),
+    ToURL1 = sipurl:parse("sip:ft@example.org"),
+    {"Fredrik", ToURL1} = to(keylist:from_list([{"To", ["\"Fredrik\" <sip:ft@example.org>"]}])),
+
+
+    %% test route(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: route/1 - 1~n"),
+    [RouteContact1] = route(keylist:from_list([{"Route", ["<sip:example.org>"]}])),
+    #contact{urlstr = "sip:example.org"} = RouteContact1,
+
+
+    %% test record_route(Header)
+    %%--------------------------------------------------------------------
+    io:format("test: record_route/1 - 1~n"),
+    [RecordRouteContact1] = record_route(keylist:from_list([{"Record-Route", ["<sip:rr.example.org>"]}])),
+    #contact{urlstr = "sip:rr.example.org"} = RecordRouteContact1,
+
+
+    %% test contact_print(Contacts)
+    %%--------------------------------------------------------------------
+    io:format("test: contact_print/1 - 1~n"),
+    ["<sip:example.org>","<sip:rr.example.org>"] = contact_print([RouteContact1, RecordRouteContact1]),
+
+
+    %% test httparg(String)
+    %%--------------------------------------------------------------------
+    ["bar","baz=true","foo"] = dict_to_param( httparg("foo&bar&baz=true") ),
 
     ok.
