@@ -6,6 +6,12 @@
 
 -include_lib("mnemosyne/include/mnemosyne.hrl").
 
+insert_record(Record) ->
+    Fun = fun() ->
+		  mnesia:write(Record)
+	  end,
+    mnesia:transaction(Fun).
+
 create_call() ->
     mnesia:create_table(call, [{attributes, record_info(fields, call)}]).
 
