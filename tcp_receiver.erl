@@ -1,26 +1,73 @@
+%%%-------------------------------------------------------------------
 %%% File    : tcp_receiver.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : TCP receiver does blocking read on a single socket
-%%% and signals parent when a complete SIP request/response has been
-%%% received.
+%%% Descrip.: TCP receiver does blocking read on a single socket and
+%%%           signals parent when a complete SIP request/response has
+%%%           been received.
 %%% Created : 15 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
 
 -module(tcp_receiver).
 
--export([start_link/5, recv_loop/2]).
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([start_link/5]).
 
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+-export([recv_loop/2]).
+
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
 
--record(state, {socketmodule, socket, parent, local, remote, sipsocket}).
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+-record(state, {
+	  socketmodule,
+	  socket,
+	  parent,
+	  local,
+	  remote,
+	  sipsocket
+	 }).
 
+%%====================================================================
+%% External functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: start_link/6
+%% Descrip.: Spawn a tcp_receiver process into it's recv_loop().
+%% Returns : void()
+%%--------------------------------------------------------------------
 start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
-    State = #state{socketmodule=SocketModule, socket=Socket, parent=self(), local=Local, remote=Remote, sipsocket=SipSocket},    
+    State = #state{socketmodule=SocketModule, socket=Socket, parent=self(), local=Local, remote=Remote, sipsocket=SipSocket},
     Pid = spawn_link(?MODULE, recv_loop, [State, []]),
     Pid.
 
-%% tcp_receiver() for SSL sockets waits for data from a socket. When data is
-%% available, we ...
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: recv_loop(State, DataIn)
+%%           State  = state record()
+%%           DataIn = list()
+%% Descrip.: SSL version: Wait for data from our socket. When data is
+%%           available we check to see if we have received a complete
+%%           SIP message yet. If so, continue process it. Then loop
+%%           back to self. If we detect that the socket has been
+%%           closed, tell our parent before we break out of the loop
+%%           and terminate.
+%% Returns : void()
+%%--------------------------------------------------------------------
 recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.socketmodule == ssl ->
     Socket = State#state.socket,
     Rest = receive
@@ -70,15 +117,17 @@ recv_loop(State, DataIn) when record(State, state), list(DataIn), State#state.so
 	    recv_loop(State, Rest)
     end;
 
-% tcp_receiver() constantly tries to read from a socket, and when data is available
-% it is checked to see if we have a complete SIP message. if we do, we safe_spawn
-% a sipserver:process() on the received message.
+%%--------------------------------------------------------------------
+%% Function: recv_loop(State, DataIn)
+%%           State  = state record()
+%%           DataIn = list()
+%% Descrip.: Constantly try to read data from our socket. Loop back to
+%%           self. If we detect that the socket has been closed, tell
+%%           our parent before we break out of the loop and terminate.
+%% Returns : void()
+%%--------------------------------------------------------------------
 recv_loop(State, DataIn) when record(State, state) ->
     Parent = State#state.parent,
-    %% do_recv() reads data until it finds the CRLFCRLF between header and body. It is possible
-    %% that it also reads into the body of the message, but as soon as we have the header we
-    %% use tcp_read_sip_message() instead, which looks at the Content-Length and keeps reading
-    %% until the message boundry is reached.
     case do_recv(DataIn, State) of
 	Data when list(Data) ->
 	    recv_loop(State, Data);
@@ -91,7 +140,26 @@ recv_loop(State, DataIn) when record(State, state) ->
 	    gen_server:cast(Parent, {close, self()})
     end.
 
-%% Read data until we encounter the header/body separator "\r\n\r\n"
+%%--------------------------------------------------------------------
+%% Function: do_recv(DataIn, State)
+%%           State  = state record()
+%%           DataIn = list()
+%% Descrip.: Read data from our socket and add it to whatever data was
+%%           supplied in DataIn until a SIP message header/body
+%%           separator ("\r\n\r\n") is seen. It is possible that we
+%%           also get part or a whole body of the message, but as soon
+%%           as we have the header we use tcp_read_sip_message()
+%%           instead.
+%% Returns : DataOut             |
+%%           {connection_closed} |
+%%           {close}
+%%           {error, Reason}
+%%           DataOut = list(), whatever we have left in our buffer
+%%                     when we have processed all SIP messages in it.
+%%                     Will get passed to us as DataIn on the next
+%%                     itteration.
+%%           Reason = string()
+%%--------------------------------------------------------------------
 do_recv(DataIn, State) ->
     SocketModule = State#state.socketmodule,
     Socket = State#state.socket,
@@ -108,6 +176,7 @@ do_recv(DataIn, State) ->
 		    do_recv(SoFar, State);
 		true ->
 		    Rest = header_received(SoFar, State),
+		    %% XXX don't try to do length() on Rest if it is not a list!
 		    logger:log(debug, "TCP receiver: My buffer now contains ~p bytes of data", [length(Rest)]),
 		    Rest
 	    end;
@@ -129,10 +198,28 @@ has_header_body_separator(Data) ->
 	    true
     end.
 
-%% We have found the separator between Header and Body. We can now extract the
-%% Content-Length header and read until we have the whole message. We migth get
-%% more than just this message though, if the sender sends us two requests at
-%% once. In that case, we return the extra data back to do_recv().
+%%--------------------------------------------------------------------
+%% Function: header_received(Data, State)
+%%           Data  = list()
+%%           State = state record()
+%% Descrip.: Data contains at least one SIP messages complete header.
+%%           Parse it and hand it over to tcp_read_sip_message().
+%%           If we aren't given a parseable header as input, we return
+%%           a instruction to close this socket.
+%%           When tcp_read_sip_message() has received a complete SIP
+%%           message (and handled it), it might have received more
+%%           data (part or whole of the next request/response sent to
+%%           us on this socket). If that is the case we invoke
+%%           ourselves again on this data in case it contains a
+%%           header/body separator, or we return the extra bytes to
+%%           our caller in case it does not.
+%% Returns : DataOut             |
+%%           {connection_closed} |
+%%           {close}
+%%           DataOut = list(), whatever we have left in our buffer
+%%           when we have processed all SIP messages in it. Will get
+%%           passed to us as DataIn on the next itteration.
+%%--------------------------------------------------------------------
 header_received(Data, State) when list(Data), record(State, state) ->
     Rest = case catch sippacket:parse(Data, none) of
 	       Request when record(Request, request) ->
@@ -166,10 +253,30 @@ header_received(Data, State) when list(Data), record(State, state) ->
 		       "Closing socket.", [Rest]),
 	    {close}
     end.
-   
 
-% tcp_read_sip_message() is used to read the remainder of the message when we have the header
-% and therefor can use the Content-Length to determine when we are done.
+
+%%--------------------------------------------------------------------
+%% Function: tcp_read_sip_message(MessageType, Header, BodyIn, DataIn,
+%%                                State)
+%%           MessageType = request | response
+%%           Header      = keylist record()
+%%           BodyIn      = list(), whatever part of the body that was
+%%                         received before we were invoked
+%%           DataIn      = list(), the data we have received yet, in
+%%                         unparsed form
+%%           State       = state record()
+%% Descrip.: A parseable header of a SIP message has been received
+%%           (and possibly also parts of or the whole body). Calculate
+%%           how much more data (if any) we must read to have the
+%%           whole message (through the Content-Length header), and
+%%           wait until we have received it all. Then send this SIP
+%%           message to our parent.
+%% Returns : DataOut             |
+%%           {connection_closed} |
+%%           {close}
+%%           DataOut = list(), whatever we have left in our buffer
+%%           when we have one (1) SIP messages in it.
+%%--------------------------------------------------------------------
 tcp_read_sip_message(MessageType, Header, BodyIn, DataIn, State) when record(State, state) ->
     {IP, Port} = State#state.remote,
     Parent = State#state.parent,
@@ -212,6 +319,14 @@ tcp_read_sip_message(MessageType, Header, BodyIn, DataIn, State) when record(Sta
 	    {close}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_content_length(Header)
+%%           Header = keylist record()
+%% Descrip.: Get Content-Length and return it as an integer value.
+%% Returns : Length  |
+%%           invalid
+%%           Length = integer()
+%%--------------------------------------------------------------------
 get_content_length(Header) ->
     case keylist:fetch("Content-Length", Header) of
 	[CLenStr] ->
@@ -228,9 +343,21 @@ get_content_length(Header) ->
 	_ ->
 	    invalid
     end.
-    
-% Wait for a pre-determined ammount of more data from an SSL socket.
-tcp_read_more_data(SocketModule, Socket, Len, DataIn) when Len > 0, SocketModule == ssl -> 
+
+%%--------------------------------------------------------------------
+%% Function: tcp_read_more_data(SocketModule, Socket, Len, DataIn)
+%%           SocketModule = atom(), socket module to use
+%%           Socket       = term(), the socket
+%%           Len          = integer(), how much more data to wait for
+%%           DataIn       = list()
+%% Descrip.: SSL version: Wait for a pre-determined ammount of more
+%%           data from a socket.
+%% Returns : DataOut             |
+%%           {connection_closed} |
+%%           {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+tcp_read_more_data(SocketModule, Socket, Len, DataIn) when Len > 0, SocketModule == ssl ->
     receive
 	{ssl, Socket, B} ->
 	    Data = binary_to_list(B),
@@ -252,8 +379,19 @@ tcp_read_more_data(SocketModule, Socket, Len, DataIn) when Len > 0, SocketModule
 	    {error, E}
     end;
 
-% Read a pre-determined ammount of more data from a socket.
-tcp_read_more_data(SocketModule, Socket, Len, DataIn) when Len > 0 -> 
+%%--------------------------------------------------------------------
+%% Function: tcp_read_more_data(SocketModule, Socket, Len, DataIn)
+%%           SocketModule = atom(), socket module to use
+%%           Socket       = term(), the socket
+%%           Len          = integer(), how much more data to read
+%%           DataIn       = list()
+%% Descrip.: Read a pre-determined ammount of more data from a socket.
+%% Returns : DataOut             |
+%%           {connection_closed} |
+%%           {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+tcp_read_more_data(SocketModule, Socket, Len, DataIn) when Len > 0 ->
     case SocketModule:recv(Socket, 0) of
 	{ok, B} ->
 	    Data = binary_to_list(B),
@@ -275,7 +413,14 @@ tcp_read_more_data(SocketModule, Socket, Len, DataIn) when Len > 0 ->
 tcp_read_more_data(SocketModule, Socket, Len, In) ->
     In.
 
-% RFC3261 7.5
+%%--------------------------------------------------------------------
+%% Function: remove_separator(Data)
+%%           Data = list()
+%% Descrip.: RFC3261 7.5. Remove linefeeds between messages (often
+%%           used as keepalive messages).
+%% Returns : DataOut
+%%           DataOut = list()
+%%--------------------------------------------------------------------
 remove_separator([H|T]) when H == $\r;H == $\n ->
     remove_separator(T);
 remove_separator(L) ->

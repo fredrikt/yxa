@@ -1,14 +1,30 @@
 %%%-------------------------------------------------------------------
 %%% File    : tcp_dispatcher.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : TCP dispatcher initially does gen_tcp:listen() and
-%%% then keeps track of all existing TCP connections.
+%%% Descrip.: TCP dispatcher initially does gen_tcp:listen() and
+%%%           then keeps track of all existing TCP connections.
 %%%
 %%% Created : 12 Mar 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(tcp_dispatcher).
 
 -behaviour(gen_server).
+
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([start_link/0]).
+
+%%--------------------------------------------------------------------
+%% Internal exports - gen_server callbacks
+%%--------------------------------------------------------------------
+-export([init/1,
+	 handle_call/3,
+	 handle_cast/2,
+	 handle_info/2,
+	 terminate/2,
+	 code_change/3]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -16,37 +32,44 @@
 -include("socketlist.hrl").
 -include("sipsocket.hrl").
 
--define(TIMEOUT, 10 * 1000).
 %%--------------------------------------------------------------------
-%% External exports
--export([start_link/0]).
+%% Records
+%%--------------------------------------------------------------------
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-record(state, {
+	  socketlist	%% Our list of existing TCP connections
+	 }).
 
--record(state, {socketlist}).
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+
+%% Our standard wakeup interval - how often we should look for expired
+%% entrys in our socketlist.
+-define(TIMEOUT, 10 * 1000).
 
 %%====================================================================
 %% External functions
 %%====================================================================
+
 %%--------------------------------------------------------------------
-%% Function: start_link/1
-%% Description: Starts the server
+%% Function: start_link()
+%% Descrip.: Starts the server
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, tcp_dispatcher}, ?MODULE, [], []).
 
 %%====================================================================
-%% Server functions
+%% Behaviour functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init/1
-%% Description: Initiates the server
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
+%% Function: init([])
+%% Descrip.: Initiates the server
+%% Returns : {ok, State}          |
+%%           {ok, State, Timeout} |
+%%           ignore               |
+%%           {stop, Reason}
 %%--------------------------------------------------------------------
 init([]) ->
     process_flag(trap_exit, true),
@@ -65,6 +88,15 @@ init([]) ->
     SocketList = start_listeners(Listeners),
     {ok, #state{socketlist=SocketList}, ?TIMEOUT}.
 
+%%--------------------------------------------------------------------
+%% Function: start_listeners(L)
+%%           L     = list() of {Proto, Port} tuple()
+%%           Proto = atom()
+%%           Port  = integer()
+%% Descrip.: Start a tcp_listener process for each Proto:Port in L.
+%% Returns : SocketList
+%%           SocketList = socketlist record()
+%%--------------------------------------------------------------------
 start_listeners(L) ->
     start_listeners(L, socketlist:empty()).
 
@@ -109,14 +141,36 @@ start_listeners([{Proto, Port} | T], SocketList) when atom(Proto), integer(Port)
     start_listeners(T, NewSocketList).
 
 %%--------------------------------------------------------------------
-%% Function: handle_call/3
-%% Description: Handling call messages
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_call(Msg, From, State)
+%% Descrip.: Handling call messages
+%% Returns : {reply, Reply, State}          |
+%%           {reply, Reply, State, Timeout} |
+%%           {noreply, State}               |
+%%           {noreply, State, Timeout}      |
+%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%           {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({get_socket, Proto, Host, Port}, From, State)
+%%           Proto = atom(), tcp | tcp6 | tls
+%%           Host  = string()
+%%           Port  = integer()
+%% Descrip.: Look for a cached connection to Proto:Host:Port. If one
+%%           is found, return {reply, ...} with it. Else, start a
+%%           tcp_connection process that tries to connect to the
+%%           Proto:Host:Port and will do gen_server:reply(...) when it
+%%           either suceeds or fails. We must do it this way since we
+%%           can't block the tcp_dispatcher process. There is a race
+%%           here where we might end up having more than one
+%%           connection to Proto:Host:Port at the same time, but that
+%%           should be OK.
+%% Returns : {reply, Reply, NewState, ?TIMEOUT} |
+%%           {noreply, NewState, ?TIMEOUT}
+%%           Reply = {ok, SipSocket} |
+%%                   {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
 %%--------------------------------------------------------------------
 handle_call({get_socket, Proto, Host, Port}, From, State) ->
     case get_socket_from_list(Host, Port, State#state.socketlist) of
@@ -135,6 +189,17 @@ handle_call({get_socket, Proto, Host, Port}, From, State) ->
     end;
 
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({register_sipsocket, Dir, SipSocket}, From,
+%%                       State)
+%%           Dir = in | out, Direction (or, who initiated the socket)
+%%           SipSocket = sipsocket record()
+%% Descrip.: Add a socket to our list.
+%% Returns : {reply, Reply, NewState, ?TIMEOUT} |
+%%           Reply = ok              |
+%%                   {error, Reason}
+%%           Reason    = string()
+%%--------------------------------------------------------------------
 handle_call({register_sipsocket, Dir, SipSocket}, From, State) when record(SipSocket, sipsocket) ->
     CPid = SipSocket#sipsocket.pid,
     case catch link(CPid) of
@@ -162,27 +227,52 @@ handle_call({quit}, From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast/2
-%% Description: Handling cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_cast(Msg, State)
+%% Descrip.: Handling cast messages
+%% Returns : {noreply, State}          |
+%%           {noreply, State, Timeout} |
+%%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
+
 handle_cast(Msg, State) ->
     logger:log(error, "TCP dispatcher: 'cast' invoked but not handled : ~p", [Msg]),
     {noreply, State, ?TIMEOUT}.
 
+
 %%--------------------------------------------------------------------
-%% Function: handle_info/2
-%% Description: Handling all non call/cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_info(Msg, State)
+%% Descrip.: Handling all non call/cast messages
+%% Returns : {noreply, State}          |
+%%           {noreply, State, Timeout} |
+%%           {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+
+%%--------------------------------------------------------------------
+%% Function: handle_info(timeout, State)
+%% Descrip.: Wake up and delete expired sockets from our list.
+%% Returns : {reply, Reply, NewState, ?TIMEOUT} |
+%%           Reply = ok              |
+%%                   {error, Reason}
+%%           Reason    = string()
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
+    %% XXX not sure we actually ever add sockets with an expire time set
     SocketList1 = socketlist:delete_expired(State#state.socketlist),
     {noreply, State#state{socketlist=SocketList1}, ?TIMEOUT};
 
+%%--------------------------------------------------------------------
+%% Function: handle_info({'EXIT', Pid, Reason}, State)
+%%           Pid    = pid()
+%%           Reason = normal | term()
+%% Descrip.: Trap exit signals from socket handlers and act on them.
+%%           Log if they exit with an error, and remove them from our
+%%           list of existing sockets.
+%% Returns : {noreply, NewState, ?TIMEOUT}
+%%
+%% Note    : XXX how should we handle the situation if it is a
+%%           listener that exits?
+%%--------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
 	normal -> logger:log(debug, "TCP dispatcher: Received normal exit-signal from process ~p", [Pid]);
@@ -207,14 +297,15 @@ handle_info(Unknown, State) ->
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate/2
-%% Description: Shutdown the server
-%% Returns: any (ignored by gen_server)
+%% Function: terminate(Reason, State)
+%% Descrip.: Shutdown the server
+%% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     case Reason of
         normal -> logger:log(error, "TCP dispatcher terminating normally");
         _ -> logger:log(error, "TCP dispatcher terminating : ~p", [Reason]),
+	     %% XXX why do we sleep here? Is it to make sure the error message gets logged?
 	     timer:sleep(500)
     end,
     ok.
@@ -231,6 +322,18 @@ code_change(OldVsn, State, Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% Function: get_socket_from_list(Host, Port, SocketList)
+%%           Host = string()
+%%           Port = term()
+%%           SocketList = socketlist record()
+%% Descrip.: Look for an entry with remote {Host, Port} in SocketList
+%% Returns : SipSocket |
+%%           none
+%%           SipSocket = sipsocket record()
+%%
+%% Note    : XXX enforce integer port
+%%--------------------------------------------------------------------
 get_socket_from_list(Host, Port, SocketList) ->
     case socketlist:get_using_remote({Host, Port}, SocketList) of
 	SListElem when record(SListElem, socketlistelem) ->

@@ -189,7 +189,7 @@ get_ip_port(Host, Port) when list(Port) ->
 get_ip_port(Host, Port) when integer(Port) ; Port == none ->
     V6List = case sipserver:get_env(enable_v6, true) of
 		 true ->
-		     %% XXX inet:getaddr with proto inet6 is not documented, check that it is supported.
+		     %% XXX inet:gethostbyname with proto inet6 is not documented, and not supported.
 		     case get_ip_port2(inet6, Host, Port) of
 			 {error, _} ->
 			     %% Ignore v6 errors (they are logged in get_ip_port2 though)
@@ -216,6 +216,7 @@ get_ip_port(Host, Port) when integer(Port) ; Port == none ->
     end.
 
 get_ip_port2(Family, Host, Port) when Family == inet ; Family == inet6 ->
+    %% XXX inet:gethostbyname with proto inet6 is not documented, and not supported.
     case inet:gethostbyname(Host, Family) of
 	{error, What} ->
 	    logger:log(debug, "Resolver: Error ~p when resolving ~p ~p", [What, Host, Family]),

@@ -122,6 +122,7 @@ del_pid(Pid, [H | T]) when record(H, socketlistelem) ->
 del_time(Time, []) ->
     [];
 del_time(Time, [H | T]) when record(H, socketlistelem), H#socketlistelem.expire < Time, H#socketlistelem.expire > 0 ->
+    %% XXX signal expired socket pid so that it can exit?
     logger:log(debug, "socketlist: Extra debug : Record expired :~n~p", [debugfriendly([H])]),
     del_time(Time, T);
 del_time(Time, [H | T]) when record(H, socketlistelem) ->

@@ -100,7 +100,7 @@ delete_call_type(Callid, Type) ->
 		    Delete = fun(O) ->
 				     mnesia:delete_object(O)
 			     end,
-		    %% !!! list ops are unnecessary, as call is a set table (each key is unique)
+		    %% XXX list ops are unnecessary, as call is a set table (each key is unique)
 		    %% and callid is the key - so there can only be one match
 		    lists:foreach(Delete, A)
 	    end,
@@ -166,7 +166,7 @@ set_data_type(CallID, Data, Type) ->
 		Update = fun(O) ->
 				 mnesia:write(O#call{data = Data})
 			 end,
-		%% !!! list ops are unnecessary, as call is a set table (each key is unique)
+		%% XXX list ops are unnecessary, as call is a set table (each key is unique)
 		%% and callid is the key - so there can only be one match
 		lists:foreach(Update, A)
 	end,

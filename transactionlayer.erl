@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : transactionlayer.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : Transactionlayer
+%%% Descrip.: Transactionlayer
 %%% Created : 05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(transactionlayer).
@@ -71,7 +71,6 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
-
 %% My State
 -record(state, {
 	  tstatelist,	% The transaction layers list of transactions
@@ -85,6 +84,9 @@
 	  pid
 	 }).
 
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
 %% Wake up every seven seconds to remove expired transactions from
 %% State#state.tstatelist.
 -define(TIMEOUT, 7 * 1000).
@@ -136,7 +138,6 @@ init([AppModule, Mode]) ->
 %%           {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Msg, From, State)
@@ -362,15 +363,13 @@ handle_call(Request, From, State) ->
     {noreply, State, ?TIMEOUT}.
 
 
-
 %%--------------------------------------------------------------------
-%% Function: handle_cast/2
+%% Function: handle_cast(Msg, State)
 %% Descrip.: Handling cast messages
 %% Returns : {noreply, State}          |
 %%           {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({unregister_pid, Pid}, State)
@@ -410,8 +409,9 @@ handle_cast(Msg, State) ->
     logger:log(debug, "Transaction layer: Received unknown gen_server cast : ~p", [Msg]),
     {noreply, State, ?TIMEOUT}.
 
+
 %%--------------------------------------------------------------------
-%% Function: handle_info/2
+%% Function: handle_info(Msg, State)
 %% Descrip.: Handling all non call/cast messages
 %% Returns : {noreply, State}          |
 %%           {noreply, State, Timeout} |

@@ -2,10 +2,13 @@
 %%
 %% -------------------------------------------------------------------
 
+%% Container record to make sure noone modifies a transaction list
+%% without using functions exported by transactionstatelist module
 -record(transactionstatelist, {
 	  list
 	 }).
 
+%% Transaction layer data about ongoing transactions
 -record(transactionstate, {
 	  ref, 
 	  type, 
