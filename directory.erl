@@ -222,11 +222,17 @@ ldapsearch_wrapper(Mode, Args, State) when record(State, state) ->
 	    {Handle, Res}
     end.
 
-exec_ldapsearch(Mode, Handle, [Type, In, Attribute]) when record(Handle, ldaphandle) ->
-    case catch exec_ldapsearch_unsafe(Handle, Type, In, [Attribute]) of
+exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) when record(Handle, ldaphandle) ->
+    AttributeArg = case Mode of
+	simple ->
+	    [AttrIn];
+	full ->
+	    AttrIn
+    end,
+    case catch exec_ldapsearch_unsafe(Handle, Type, In, AttributeArg) of
 	{'EXIT', E} ->
 	    logger:log(error, "=ERROR REPORT==== from ldapsearch_unsafe(~p, ~p, ~p, ~p) :~n~p",
-		       [Handle, Type, In, Attribute, E]),
+		       [Handle, Type, In, AttributeArg, E]),
 	    error;
 	none ->
 	    none;
@@ -235,7 +241,7 @@ exec_ldapsearch(Mode, Handle, [Type, In, Attribute]) when record(Handle, ldaphan
 	[{dn, Dn, attributes, EAttributes} | Rest] ->
 	    case Mode of
 		simple ->
-		    lists:sort(get_valuelist([{dn, Dn, attributes, EAttributes} | Rest], Attribute));
+		    lists:sort(get_valuelist([{dn, Dn, attributes, EAttributes} | Rest], AttrIn));
 		full ->
 		    [{dn, Dn, attributes, EAttributes} | Rest]
 	    end;
@@ -244,7 +250,7 @@ exec_ldapsearch(Mode, Handle, [Type, In, Attribute]) when record(Handle, ldaphan
 		       [Handle, Type, In, Unknown]),
 	    error
     end;
-exec_ldapsearch(Mode, Handle, [Type, In, Attribute]) ->
+exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) ->
     logger:log(error, "LDAP client: Returning 'error' on query ~p ~p because handle '~p' is not valid", [Type, In, Handle]),
     error.
 
