@@ -31,6 +31,16 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
+-define(TEST_MODULES, [
+		       url_param,
+		       contact_param,
+		       sipparse_util,
+		       sipurl,
+		       contact,
+		       sipheader,
+		       siprequest,
+		       sippacket
+		      ]).
 
 %%====================================================================
 %% External functions
@@ -67,16 +77,7 @@ run([Mode]) ->
     io:format("**********************************************************************~n"),
     io:format("*                      AUTOTEST STARTED            ~s  *~n",[TimeStr]),
     io:format("**********************************************************************~n"),
-    ModulesToAutoTest = [
-			 url_param,
-			 contact_param,
-			 sipparse_util,
-			 sipurl,
-			 contact,
-			 sipheader,
-			 siprequest
-			],
-    Results = [{Module, test_module(Module)} || Module <- ModulesToAutoTest],
+    Results = [{Module, test_module(Module)} || Module <- ?TEST_MODULES],
     
 
     io:format("~n"),
