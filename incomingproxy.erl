@@ -34,7 +34,7 @@
 %% Returns : [Tables, Mode, SupData]
 %%           Tables  = list() of atom(), remote mnesia tables the Yxa
 %%                     startup sequence should make sure are available
-%%           Mode    = stateful (or 'stateless' but DON'T use that).
+%%           Mode    = stateful
 %%           SupData = {append, SupSpec} |
 %%                     none
 %%           SupSpec = OTP supervisor child specification. Extra
@@ -71,7 +71,7 @@ request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Orig
 request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     logger:log(normal, "incomingproxy: ~s -> Forwarding ACK received in core statelessly",
 	       [LogStr]),
-    transportlayer:send_proxy_request(none, Request, Request#request.uri, []),
+    transportlayer:stateless_proxy_request("incomingproxy", Request),
     ok;
 
 %%
@@ -347,7 +347,7 @@ do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Orig
 	{forward, FwdURL} when is_record(FwdURL, sipurl), FwdURL#sipurl.user == none, FwdURL#sipurl.pass == none ->
 	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~s",
 		       [LogTag, Method, sipurl:print(URI), sipurl:print(FwdURL)]),
-	    {ok, _, ApproxMsgSize} = siprequest:check_proxy_request(Request),
+	    ApproxMsgSize = siprequest:get_approximate_msgsize(Request#request{uri=FwdURL}),
 	    case sipdst:url_to_dstlist(FwdURL, ApproxMsgSize, URI) of
 		{error, nxdomain} ->
 		    logger:log(debug, "incomingproxy: Failed resolving FwdURL : NXDOMAIN"
