@@ -88,7 +88,8 @@ debugfriendly([{Id, Request, Response, Cancelled, Acked, State} | Rest]) ->
     RespStr = case Response of
 	none -> "no response";
 	{Status, Reason, _, _} ->
-	    "response=" ++ integer_to_list(Status) ++ " " ++ Reason
+	    lists:concat(["response=", Status, " ", Reason])
     end,
-    Str = Method ++ " " ++ sipurl:print(URI) ++ ", " ++ RespStr ++ ", cancelled=" ++ atom_to_list(Cancelled) ++ ", acked=" ++ atom_to_list(Acked) ++ ", state=" ++ atom_to_list(State), 
-    lists:append([{Id, Str}], debugfriendly(Rest)).
+    {CSeq, _} = Id,
+    Str = lists:concat([CSeq, " ", Method, ": ", sipurl:print(URI), ", ", RespStr, ", cancelled=", Cancelled, ", acked=", Acked, ", state=", State]), 
+    lists:append([Str], debugfriendly(Rest)).

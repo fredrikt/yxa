@@ -27,19 +27,15 @@ add_target(Branch, InitialRequest, Pid, State, EndResult, TargetList) ->
 
 debugfriendly([]) ->
     [];
-%debugfriendly([{Branch, {Method, URI, _, _}, Pid, State, {Status, Reason, _, _}} | Rest]) ->
-%    lists:append([{Branch, {Method, sipurl:print(URI)}, Pid, State, {Status, Reason}}], debugfriendly(Rest));
-%debugfriendly([{Branch, {Method, URI, _, _}, Pid, State, EndResult} | Rest]) ->
-%    lists:append([{Branch, {Method, sipurl:print(URI)}, Pid, State, EndResult}], debugfriendly(Rest)).
 debugfriendly([{Branch, Request, Pid, State, EndResult} | Rest]) ->
     {Method, URI, _, _} = Request,
     RespStr = case EndResult of
 	none -> "no response";
         cancelled -> "cancelled";
 	{Status, Reason, _, _} ->
-	    "response=" ++ integer_to_list(Status) ++ " " ++ Reason
+	    lists:concat(["response=", Status, " ", Reason])
     end,
-    Str = "branch=" ++ Branch ++ ", request=" ++ Method ++ " " ++ sipurl:print(URI) ++ ", " ++ RespStr ++ ", state=" ++ atom_to_list(State),
+    Str = lists:concat(["branch=", Branch, ", request=", Method, " ", sipurl:print(URI), ", ", RespStr, ", state=" , State]),
     lists:append([{Pid, Str}], debugfriendly(Rest));
 debugfriendly([Unknown | Rest]) ->
     lists:append([{"UNKNOWN: ", Unknown}], debugfriendly(Rest)).
