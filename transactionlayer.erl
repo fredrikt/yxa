@@ -231,13 +231,13 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	_ -> logger:log(error, "Transaction layer: =ERROR REPORT==== Received non-normal exit signal from process ~p :~n~p", [Pid, Reason])
     end,
     NewState = case transactionstatelist:get_list_using_pid(Pid, State#state.tstatelist) of
-                   none ->
-                       logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list. Socketlist is :~n~p",
+		   none ->
+		       logger:log(debug, "Transaction layer: Received exit signal from ~p not in my list. Socketlist is :~n~p",
 				  [Pid, transactionstatelist:debugfriendly(State#state.tstatelist)]),
-                       State;
-                   L when record(L, transactionstatelist) ->
+		       State;
+		   L when record(L, transactionstatelist) ->
 		       NewL = transactionstatelist:delete_using_pid(Pid, State#state.tstatelist),
-                       logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n(new list is ~p entry(s))",
+		       logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n(new list is ~p entry(s))",
 				  [transactionstatelist:get_length(L), transactionstatelist:debugfriendly(L), transactionstatelist:get_length(NewL)]),
 		       %%logger:log(debug, "Transaction layer: Extra debug: Transactionlist is now :~n~p", [transactionstatelist:debugfriendly(NewL)]),
 		       State#state{tstatelist=NewL};
@@ -245,7 +245,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		       logger:log(error, "Transaction layer: Unknown result returned from get_list_using_pid :~n~p",
 				  [Unknown]),
 		       State
-               end,
+	       end,
     {noreply, NewState, ?TIMEOUT};
 
 handle_info(Msg, State) ->
