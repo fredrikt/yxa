@@ -1,18 +1,38 @@
 -module(bootstrap).
--export([start/1]).
 
+-export([start/1,
+	 replica/1
+	]).
+
+-define(DB_MODULES, [phone,
+		     database_regexproute,
+		     database_forward,
+		     database_call,
+		     cpl_db
+		    ]).
+
+-define(MNESIA_TABLES, [cpl_script_graph,
+			forward,
+			numbers,
+			phone,
+			regexproute
+		       ]).
+
+
+%%--------------------------------------------------------------------
+%% Function: start([AdminPassword])
+%%           AdminPassword = string()
+%% Descrip.: Create a first Mnesia database server at the node where
+%%           this is run (through the execution of "bootstrap.sh").
+%% Returns : ok | does not return
+%%--------------------------------------------------------------------
 start([AdminPassword]) ->
     io:format("Bootstrapping Yxa on node ~p :~n", [node()]),
     ok = create_schema(node()),
     ok = mnesia:start(),
 
     io:format("* Creating tables on this Mnesia node (~p)~n", [node()]),
-    init_db_module([phone,
-		    database_regexproute,
-		    database_forward,
-		    database_call,
-		    cpl_db
-		   ], node()),
+    init_db_module(?DB_MODULES, node()),
 
     io:format("* Updating any pre-existing table definitions~n"),
     ok = table_update:update(),
@@ -43,4 +63,69 @@ init_db_module([H | T], Node) ->
     H:create([Node]),
     init_db_module(T, Node);
 init_db_module([], _Node) ->
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: replica([Master])
+%%           Master = string()
+%% Descrip.: Create a second Mnesia database server at the node where
+%%           this is run (through the execution of "bootstrap.sh").
+%% Returns : ok | does not return
+%%--------------------------------------------------------------------
+replica([Master]) ->
+    MasterNode = list_to_atom(Master),
+    io:format("Making Yxa on node ~p a Mnesia replica node~n", [node()]),
+    
+    io:format("* Starting Mnesia~n"),
+    ok = mnesia:start(),
+
+    io:format("* Adding master Mnesia db_node ~p~n", [MasterNode]),
+    case mnesia:change_config(extra_db_nodes, [MasterNode]) of
+	{ok, []} ->
+	    %% If Mnesia on the current node already knew to link up with MasterNode,
+	    %% change_config says 'ok' but with an empty list. This is however exactly
+	    %% the same thing that happens if we fail to connect to the remote node
+	    %% because of an distribution mechanism failure so we need to make sure
+	    %% we are online...
+	    case lists:member(MasterNode, mnesia:system_info(running_db_nodes)) of
+		true ->
+		    ok;
+		false ->
+		    erlang:error("Failed connecting to master node - Erlang distribution problem? "
+				 "Are you running SSL on the master node but not on this?")
+	    end;
+	{ok, [MasterNode]} ->
+	    ok;
+	{error, E} ->
+	    erlang:error(E)
+    end,
+
+    AllTables = [schema | ?MNESIA_TABLES],
+
+    io:format("* Waiting for tables : ~w~n", [AllTables]),
+    ok = mnesia:wait_for_tables(AllTables, 60 * 1000),
+
+    io:format("* Replicating ~p tables :~n", [length(AllTables)]),
+    ok = replicate_tables(AllTables),
+    
+    io:format("~nReplica created successfully.~n~n"),
+    ok.
+
+
+replicate_tables([H | T]) ->
+    case lists:member(node(), mnesia:table_info(H, disc_copies)) of
+	true ->
+	    io:format("~25w: Table is already present on disc at node ~p~n", [H, node()]);
+	false ->
+	    case lists:member(node(), mnesia:table_info(H, ram_copies)) of
+		true ->
+		    io:format("~25w: Changing table from a ram table to a disc table~n", [H]),
+		    {atomic, ok} = mnesia:change_table_copy_type(H, node(), disc_copies);
+		false ->
+		    io:format("~25w: Copying table to this node~n", [H]),
+		    {atomic, ok} = mnesia:add_table_copy(H, node(), disc_copies)
+	    end
+    end,
+    replicate_tables(T);
+replicate_tables([]) ->
     ok.
