@@ -2,10 +2,12 @@
 -export([send_redirect/3, send_auth_req/4, send_proxyauth_req/4,
 	 send_proxy_request/4, send_answer/3, send_notavail/2,
 	 send_notfound/2, send_proxy_response/5, send_result/5,
-	 send_result/6, make_answerheader/1, add_record_route/1,
-	 add_record_route/3, myhostname/0, default_port/1,
-	 get_loop_cookie/2, generate_branch/0, url_to_dstlist/2,
-	 make_response/7, rewrite_route/2, make_base64_md5_token/1]).
+	 send_result/6, make_answerheader/1, add_record_route/2,
+	 add_record_route/4, myhostname/0,
+	 default_port/1, default_port/2,
+	 get_loop_cookie/3, generate_branch/0, url_to_dstlist/3,
+	 make_response/7, rewrite_route/2, make_base64_md5_token/1,
+	 host_port_to_dstlist/4]).
 
 -include("sipsocket.hrl").
 
@@ -23,169 +25,350 @@ send_response(Socket, Code, Text, Header, Body) ->
 	    send_response_to(Socket, Code, Text, TopVia, Header, Body)
     end.
 
-send_response_to(DefaultSocket, Code, Text, Dest, HeaderIn, Body) ->
+send_response_to(DefaultSocket, Code, Text, TopVia, HeaderIn, Body) ->
     Line1 = "SIP/2.0 " ++ integer_to_list(Code) ++ " " ++ Text,
     Header = fix_content_length(HeaderIn, Body),
     Message = lists:flatten(Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body),
-    {Protocol, {Host, DestPort}, Parameters} = Dest,
+    {SendToHost, SendProto} = get_response_destination(TopVia),
+    {_, {_, DestPort}, Parameters} = TopVia,
     ParamDict = sipheader:param_to_dict(Parameters),
-    SendToHost = case dict:find("received", ParamDict) of
-		     {ok, Received} ->
-			 case regexp:first_match(Received, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\$") of
-			     {match, _, _} ->
-				 Received;
-			     _ ->
-				 logger:log(debug, "Malformed received= parameter (not an IP address): ~p", [Received]),
-				 Host
-			 end;
-		     Res ->
-			 Host
-		 end,
-    {Port, PortInt} = case dict:find("rport", ParamDict) of
-			  {ok, []} ->
-			      %% This must be an error response generated before the rport fix-up. Ignore rport.
-			      {DestPort, list_to_integer(default_port(DestPort))};
-			  {ok, Rport} ->
-			      {Rport, list_to_integer(Rport)};
-			  _ ->
-			      {DestPort, list_to_integer(default_port(DestPort))}
-		      end,
-    SendSocket = case sipsocket:is_good_socket(DefaultSocket) of
-		     true ->
-			 DefaultSocket;
-		     _ ->
-			 logger:log(debug, "Siprequest: No good socket (~p) provided to send_response_to() - asking transport layer",
-				    [DefaultSocket]),
-			 case sipsocket:get_socket(sipsocket:via2sipsocketprotocol(Protocol), SendToHost,
-						   PortInt) of
-			     {error, E1} ->
-				 {error, E1};
-			     none ->
-				 {error, "no socket provided and get_socket() returned 'none'"};
-			     S when record(S, sipsocket) ->
-				 S
-			 end
-		 end,
-    case SendSocket of
-	SipSocket when record(SipSocket, sipsocket) ->
-	    CPid = SipSocket#sipsocket.pid,
-	    logger:log(debug, "send response(top Via: ~s, send to=~s:~s:~p (using ~p)) :~n~s~n",
-		       [sipheader:via_print([Dest]), sipsocket:sipproto2str(SipSocket), SendToHost, PortInt, CPid, Message]),
-	    case sipsocket:send(SendSocket, SendToHost, PortInt, Message) of
+    Port = case dict:find("rport", ParamDict) of
+	       {ok, []} ->
+		   %% This must be an error response generated before the rport fix-up. Ignore rport.
+		   list_to_integer(default_port(SendProto, DestPort));
+	       {ok, Rport} ->
+		   list_to_integer(Rport);
+	       _ ->
+		   list_to_integer(default_port(SendProto, DestPort))
+	   end,
+    case get_response_socket(DefaultSocket, SendProto, SendToHost, Port) of
+	SendSocket when record(SendSocket, sipsocket) ->
+	    CPid = SendSocket#sipsocket.pid,
+	    logger:log(debug, "send response(top Via: ~s, send to=~p:~s:~p (using ~p)) :~n~s~n",
+		       [sipheader:via_print([TopVia]), SendProto, SendToHost, Port, CPid, Message]),
+	    case sipsocket:send(SendSocket, SendProto, SendToHost, Port, Message) of
 		ok ->
 		    ok;
 		{error, E} ->
 		    logger:log(error, "Failed sending response to ~s:~p using socket ~p, error ~p",
-			       [SendToHost, PortInt, SendSocket, E]),
+			       [SendToHost, Port, SendSocket, E]),
 		    {senderror, E}
 	    end;
 	{error, E} ->
 	    logger:log(error, "Failed to get socket to send response to ~s:~p, error ~p, response :~n~s~n",
-		       [SendToHost, PortInt, E, Message]),
+		       [SendToHost, Port, E, Message]),
 	    {senderror, "Could not get socket"}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_response_destination/1
+%% Description: Argument is the top Via header in a response, this
+%%              function extracts the destination and protocol we
+%%              should use.
+%% Returns: {Address, Proto} | error
+%%
+%%   Address is a string that might be IPv4 address (from received=),
+%%   IPv6 address (from received=), or whatever was in the host part
+%%   of the Via.
+%%
+%%   Proto is an atom, tcp|udp|tcp6|udp6|tls|tls6.
+%%--------------------------------------------------------------------
+get_response_destination(TopVia) ->
+    {Protocol, {Host, _}, Parameters} = TopVia,
+    ParamDict = sipheader:param_to_dict(Parameters),
+    Proto = sipsocket:viaproto2proto(Protocol),
+    case dict:find("received", ParamDict) of
+	{ok, Received} ->
+	    case address_to_address_and_proto(Received, Proto) of
+		{error, E1} ->
+		    logger:log(debug, "Warning: Malformed received= parameter (~p) : ~p", [E1, Received]),
+		    %% received= parameter not usable, try host part of Via instead
+		    case address_to_address_and_proto(Host, Proto) of
+			{error, E2} ->
+			    logger:log(debug, "Warning: Invalid host part of Via (~p) : ~p", [E1, Host]),
+			    logger:log(error, "Failed getting a response destination out of Via : ~p", [TopVia]),
+			    error;
+			R ->
+			    R
+		    end;
+		R ->
+		    R
+	    end;
+	Res ->
+	    %% There was no received= parameter. Do the same checks but on the Via
+	    %% hostname (which is then almost certainly an IP-address).
+	    case address_to_address_and_proto(Host, Proto) of
+		{error, E3} ->
+		    logger:log(debug, "Warning: No received= and invalid host part of Via (~p) : ~p", [E3, Host]),
+		    logger:log(error, "Failed getting a response destination out of Via : ~p", [TopVia]),
+		    error;
+		R ->
+		    R
+	    end
+    end.
+
+get_response_socket(DefaultSocket, SendProto, SendToHost, Port) when integer(Port) ->
+    case sipsocket:is_good_socket(DefaultSocket) of
+	true ->
+	    case DefaultSocket#sipsocket.proto of
+		SendProto ->
+		    logger:log(debug, "Siprequest: Using default socket ~p", [DefaultSocket]),
+		    DefaultSocket;
+		_ ->
+		    logger:log(error, "Siprequest: Default socket provided for sending response is protocol ~p, " ++
+			       "response should be sent over ~p", [DefaultSocket#sipsocket.proto, SendProto]),
+		    {error, "Supplied socket has wrong protocol"}
+	    end;
+	_ ->
+	    logger:log(debug, "Siprequest: No good socket (~p) provided to send_response_to() - asking transport layer for a ~p socket",
+		       [DefaultSocket, SendProto]),
+	    SocketModule = sipsocket:proto2module(SendProto),
+	    case sipsocket:get_socket(SocketModule, SendProto, SendToHost, Port) of
+		{error, E1} ->
+		    {error, E1};
+		none ->
+		    {error, "no socket provided and get_socket() returned 'none'"};
+		S when record(S, sipsocket) ->
+		    logger:log(debug, "Siprequest: Extra debug: Get socket ~p ~p ~p ~p returned socket ~p",
+			       [SocketModule, SendProto, SendToHost, Port, S]),
+		    S
+	    end
+    end.
+    
+%%--------------------------------------------------------------------
+%% Function: address_to_address_and_proto/1
+%% Description: When looking at Via headers, we often have a protocol
+%%              from the SIP/2.0/UDP but we need to look at the
+%%              address to determine if our sipdst proto should be
+%%              udp or udp6. This function does that.
+%% Returns: {Address, Proto} | {error, Reason}
+%%   Proto is an atom, tcp|udp|tcp6|udp6|tls|tls6.
+%%--------------------------------------------------------------------
+address_to_address_and_proto(Addr, DefaultProto) ->
+    case regexp:first_match(Addr, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\$") of
+	{match, _, _} ->
+	    %% XXX assure DefaultProto was v4 type?
+	    {Addr, DefaultProto};
+	_ ->
+	    case sipserver:get_env(enable_v6, false) of
+		true ->
+		    %% Check if it matches IPv6 address syntax
+		    case regexp:first_match(Addr, "^\\[[0-9a-fA-F:]+\\]\$") of
+			{match, _, _} ->
+			    Proto6 = case DefaultProto of
+					 tcp -> tcp6;
+					 udp -> udp6;
+					 tls -> tls6
+				     end,
+			    {Addr, Proto6};
+			_ ->
+			    {error, "not an IPv4 or IPv6 address"}
+		    end;
+		false ->
+		    {error, "not an IPv4 address"}
+	    end
     end.
 
 fix_content_length(Header, Body) ->
     keylist:set("Content-Length", [integer_to_list(length(Body))], Header).
 
-default_port(none) ->
+default_port(P) ->
+    logger:log(debug, "WARNING: Assuming protocol in default_port"),
+    default_port(udp, P).
+
+default_port(Proto, none) when Proto == udp; Proto == udp6; Proto == tcp; Proto == tcp6 ->
     "5060";
-default_port(Port) when integer(Port) ->
+default_port(Proto, none) when Proto == tls; Proto == tls6->
+    "5061";
+default_port(_, Port) when integer(Port) ->
     integer_to_list(Port);
-default_port(Port) ->
+default_port(_, Port) ->
     Port.
 
-url_to_dstlist(URL, ApproxMsgSize) ->
+%%--------------------------------------------------------------------
+%% Function: url_to_dstlist/3
+%% Description: Make a list of sipdst records from an URL. We need the
+%%              approximate message size to determine if we can use
+%%              UDP or have to do TCP only.
+%% Returns: ListOfDsts | {error, Reason}
+%%--------------------------------------------------------------------
+url_to_dstlist(URL, ApproxMsgSize, ReqURI) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    case regexp:first_match(Host, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\$") of
+    %% Check if Host is either IPv4 or IPv6 address
+    case regexp:first_match(Host, "^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)|(\\[[0-9a-fA-F:]+\\])\$") of
 	{match, _, _} ->
 	    logger:log(debug, "dns resolver: ~p is an IP address, not performing SRV lookup", [Host]),
 	    %% RFC3263 4.1 says we SHOULD use UDP for sip: and TCP for sips: when target is IP
 	    %% and no transport is indicated in the parameters
 	    ParamDict = sipheader:param_to_dict(Parameters),
-	    Transport = case dict:find("transport", ParamDict) of
-			    error ->
-				[{sipsocket_udp, Host, default_port(Port)}];
-			    {ok, "tcp"} ->
-				[{sipsocket_tcp, Host, default_port(Port)}];
-			    {ok, Proto} ->
-				logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized, defaulting to UDP", [Proto]),
-				[{sipsocket_udp, Host, default_port(Port)}]
-			end;
+	    %% Find requested transport from Parameters and lowercase it
+	    TransportStr = case dict:find("transport", ParamDict) of
+			       {ok, V} ->
+				   httpd_util:to_lower(V);
+			       _ ->
+				   none
+			   end,
+	    Proto = case TransportStr of
+			none -> udp;
+			"tcp" -> tcp;
+			"udp" -> udp;
+			Unknown -> 
+			    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized, defaulting to UDP", [Unknown]),
+			    udp
+		    end,
+	    case address_to_address_and_proto(Host, Proto) of
+		{error, E} ->
+		    logger:log(debug, "Warning: Could not make a destination of ~p:~p (~p)",
+			       [Host, Port, E]),
+		    {error, "Coult not make destination out of URL"};
+		{UseAddr, UseProto} ->
+		    UsePort = default_port(UseProto, Port),
+		    [#sipdst{proto=UseProto, addr=UseAddr, port=UsePort, uri=ReqURI}]
+	    end;
 	_ ->
-	    url_to_dstlist_not_ip(URL, ApproxMsgSize)
+	    url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
     end.
 
-url_to_dstlist_not_ip(URL, ApproxMsgSize) ->
-    URL = {User, Pass, InHost, InPort, Parameters} = URL,
+%%--------------------------------------------------------------------
+%% Function: url_to_dstlist_not_ip/3
+%% Description: Called from url_to_dstlist/1 when the Host part of the
+%% URI was not an IP address
+%% Returns: ListOfDsts | {error, Reason}
+%%--------------------------------------------------------------------
+url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) ->
+    {User, Pass, InHost, InPort, Parameters} = URL,
     case dnsutil:siplookup(InHost) of
 	[{error, nxdomain} | _] ->
-	    host_port_to_dstlist(InHost, InPort, ApproxMsgSize);
+	    %% A SRV-lookup of the Host part of the URL returned NXDOMAIN, this is
+	    %% not an error and we will now try to resolve the Host-part directly
+	    %% (look for A or AAAA record)
+	    host_port_to_dstlist(InHost, InPort, ApproxMsgSize, ReqURI);
 	[{error, What} | _] ->
 	    %% If first element returned from siplookup is an error then they all are.
 	    {error, What};
 	none ->
-	    host_port_to_dstlist(InHost, InPort, ApproxMsgSize);
+	    host_port_to_dstlist(InHost, InPort, ApproxMsgSize, ReqURI);
 	DstList ->
-	    format_dst_list(InHost, InPort, DstList)
+	    format_siplookup_result(InPort, ReqURI, ApproxMsgSize, DstList)
     end.
 
-host_port_to_dstlist(InHost, InPort, ApproxMsgSize) ->
+%%--------------------------------------------------------------------
+%% Function: host_port_to_dstlist/4
+%% Description: Resolves a hostname and returns a list of sipdst
+%%              records. Needs approximate message size to determine
+%%              if UDP protocol is applicable or should be excluded.
+%%              Inport should either be an integer, or the atom 'none'
+%%              to use the default port for the different protocols
+%%              the resolving might turn up.
+%% Returns: ListOfDsts | {error, Reason}
+%%--------------------------------------------------------------------
+host_port_to_dstlist(InHost, PortStr, ApproxMsgSize, URI) when list(PortStr) ->
+    host_port_to_dstlist(InHost, list_to_integer(PortStr), ApproxMsgSize, URI);
+host_port_to_dstlist(InHost, InPort, ApproxMsgSize, URI) when integer(InPort) ; InPort == none ->
     %% RFC3263 4.1 says we SHOULD use UDP if port is explicitly provided
     %% except if other things (such as packet > 1300 bytes) suggests use
     %% of other transport
-    case dnsutil:get_ip_port(InHost, default_port(InPort)) of
+    case dnsutil:get_ip_port(InHost, InPort) of
 	{error, What} ->
 	    {error, What};
-	{IP, DNSport} ->
+	L when list(L) ->
+	    %% L is a list of tuples like {IP, Addr, Port}. IP is string,
+	    %% Addr is another tuple (get_ip_port uses inet:getaddr()).
+	    TCP = make_sipdst_from_hostport(tcp, URI, L),
+	    UDP = make_sipdst_from_hostport(udp, URI, L),
 	    case InPort of
 		none ->
-		    logger:log(debug, "Warning: ~p has no SRV records in DNS, defaulting to TCP and then UDP port ~p",
-			       [IP, DNSport]),
-		    [{sipsocket_tcp, IP, DNSport}, {sipsocket_udp, IP, DNSport}];
+		    logger:log(debug, "Warning: ~p has no SRV records in DNS, defaulting to TCP and then UDP",
+			       [InHost]),
+		    lists:append(TCP, UDP);
 		_ ->
 		    if
 			ApproxMsgSize > 1200 ->
-			    logger:log(debug, "Warning: ~p has no SRV records in DNS, and an explicit port was given but the message size is > 1200 bytes. Try TCP and then UDP port ~p",
-				       [IP, DNSport]),
-			    [{sipsocket_tcp, IP, DNSport}, {sipsocket_udp, IP, DNSport}];
+			    logger:log(debug, "Warning: ~p has no SRV records in DNS, and an explicit port was given (~p) " ++
+				       "but the message size is > 1200 bytes. Resolving hostname and trying TCP and then UDP.",
+				       [InHost]),
+			    lists:append(TCP, UDP);
 			true ->
-			    logger:log(debug, "Warning: ~p has no SRV records in DNS, but an explicit port was given. Defaulting to UDP port ~p",
-				       [IP, DNSport]),
-			    [{sipsocket_udp, IP, DNSport}]
+			    logger:log(debug, "Warning: ~p has no SRV records in DNS, but an explicit port was given (~p). " ++
+				       "Resolving hostname and defaulting to UDP.", [InHost, InPort]),
+			    UDP
 		    end
 	    end
     end.
 
-format_dst_list(InHost, InPort, DstList) ->
-    format_dst_list(InHost, InPort, DstList, []).
+%%--------------------------------------------------------------------
+%% Function: make_sipdst_from_hostport/3
+%% Description: Turns the result of a dnsutil:get_ip_port() into a
+%% list of sipdst records. get_ip_port() return a list of tuples like
+%%    {IP, Addr, Port}
+%% where IP is a string ("10.0.0.1", "[2001:6b0:5:987::1]") and Addr
+%% is the same IP but in tuple representation. This allows us to easily
+%% determine if it is a IPv4 or IPv6 address, and to convert Proto
+%% as necessary.
+%% Returns: ListOfDsts | {error, Reason}
+%%--------------------------------------------------------------------
+make_sipdst_from_hostport(Proto, URI, L) ->
+    make_sipdst_from_hostport2(Proto, URI, L, []).
 
-format_dst_list(InHost, InPort, [], Res) ->
+make_sipdst_from_hostport2(Proto, URI, [], Res) ->
     Res;
-format_dst_list(InHost, InPort, [{SipProto, Host, Port} | T], Res) ->
+make_sipdst_from_hostport2(Proto, URI, [{Addr, {A1, A2, A3, A4}, Port} | T], Res) ->
+    UsePort = list_to_integer(default_port(Proto, Port)),
+    Dst = #sipdst{proto=Proto, addr=Addr, port=UsePort, uri=URI},
+    make_sipdst_from_hostport2(Proto, URI, T, lists:append(Res, [Dst]));
+make_sipdst_from_hostport2(Proto, URI, [{Addr, {A1, A2, A3, A4, A5, A6, A7, A8}, Port} | T], Res) ->
+    NewProto = case Proto of
+		   tcp -> tcp6;
+		   udp -> udp6;
+		   tls -> tls6
+	       end,
+    UsePort = list_to_integer(default_port(NewProto, Port)),
+    Dst = #sipdst{proto=NewProto, addr=Addr, port=UsePort, uri=URI},
+    make_sipdst_from_hostport2(Proto, URI, T, lists:append(Res, [Dst])).
+
+
+%%--------------------------------------------------------------------
+%% Function: format_siplookup_result/4
+%% Description: Turns the result of a dnsutil:siplookup() into a list
+%% of sipdst records.
+%% Returns: ListOfDsts | {error, Reason}
+%%--------------------------------------------------------------------
+format_siplookup_result(PortStr, ReqURI, ApproxMsgSize, DstList) when list(PortStr) ->
+    format_siplookup_result(list_to_integer(PortStr), ReqURI, ApproxMsgSize, DstList);
+format_siplookup_result(InPort, ReqURI, ApproxMsgSize, DstList) when integer(InPort) ->
+    format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, DstList, []);
+format_siplookup_result(none, ReqURI, ApproxMsgSize, DstList) ->
+    format_siplookup_result2(none, ReqURI, ApproxMsgSize, DstList, []).
+
+format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [], Res) ->
+    Res;
+format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [{Proto, Host, Port} | T], Res) when integer(Port) ->
+    %% If InPort is none, then use the port from DNS. Otherwise, use InPort.
+    %% This is to handle if we for example receive a request with a Request-URI of
+    %% sip.example.net:5070, and sip.example.net has SRV-records saying port 5060. In
+    %% that case, we should still send our request to port 5070.
     UsePort = case InPort of
-		  none ->
-		      integer_to_list(Port);
-		  PortInt when integer(InPort) ->
-		      integer_to_list(InPort);
-		  PortStr when list(InPort) ->
-		      InPort
+		  _ when integer(InPort) -> InPort;
+		  none -> Port
 	      end,
-    DNSPortList = integer_to_list(Port),
     if
-	UsePort /= DNSPortList ->
-	    logger:log(debug, "Warning: ~p is specified to use port ~s in DNS, but I'm going to use the supplied port ~s instead",
-		       [InHost, DNSPortList, UsePort]);		
+	UsePort /= Port ->
+	    logger:log(debug, "Warning: ~p is specified to use port ~p in DNS, but I'm going to use the supplied port ~p instead",
+		       [Host, Port, UsePort]);		
 	true -> true
     end,
-    {OutHost, OutPort} = dnsutil:get_ip_port(Host, UsePort),
-    format_dst_list(InHost, InPort, T, lists:append(Res, [{SipProto, OutHost, OutPort}]));
-format_dst_list(InHost, InPort, [{error, What} | T], Res) ->
-    format_dst_list(InHost, InPort, T, Res);
-format_dst_list(InHost, InPort, [H | T], Res) ->
-    logger:log(debug, "Warning: Unrecognized element returned from dnsutil:siplookup() on host ~p : ~p",
-	       [InHost, H]),
-    format_dst_list(InHost, InPort, T, Res).
+    DstList = case host_port_to_dstlist(Host, UsePort, ApproxMsgSize, ReqURI) of
+		  {error, _} ->
+		      [];
+		  L when list(L) ->
+		      L
+	      end,
+    format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, T, lists:append(Res, DstList));
+format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [{error, What} | T], Res) ->
+    format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, T, Res);
+format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, [H | T], Res) ->
+    logger:log(debug, "Warning: Skipping unrecognized element when formatting siplookup results : ~p", [H]),
+    format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, T, Res).
 
 rewrite_route(Header, URI) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
@@ -250,13 +433,15 @@ separate_parameters(In) ->
 
 separate_parameters([], Via, Dst) ->
     {Via, Dst};
-separate_parameters([{dst, D} | T], Via, Dst) ->
+separate_parameters([{dst, D} | T], Via, Dst) when record(D, sipdst) ->
     separate_parameters(T, Via, lists:append(Dst, [D]));
+separate_parameters([{dst, E} | T], Via, Dst) ->
+    erlang:fault("illegal dst parameter, not sipdst", [E]);
 separate_parameters([H | T], Via, Dst) ->
     separate_parameters(T, lists:append(Via, [H]), Dst).
 
 get_dst(URI, ApproxMsgSize, []) ->
-    url_to_dstlist(URI, ApproxMsgSize);
+    url_to_dstlist(URI, ApproxMsgSize, undefined);
 get_dst(_, _, DstList) ->
     DstList.
 
@@ -265,29 +450,36 @@ send_to_available_dst(DestStr, [], TransactionId, Line1, Request, Parameters, Or
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
     logger:log(debug, "Failed sending request (my Via not added) :~n~s", [Message]),
     {senderror, "failed"};
-send_to_available_dst(DestStr, [Dst | T], TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler) ->
+send_to_available_dst(DestStr, [Dst | T], TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler) when record(Dst, sipdst) ->
     {Method, URI, Header, Body} = Request,
-    {SipProto, IP, Port} = Dst,
-    PortInt = list_to_integer(Port),
-    case sipsocket:get_socket(SipProto, IP, PortInt) of
+    IP = Dst#sipdst.addr,
+    Port = Dst#sipdst.port,
+    Proto = Dst#sipdst.proto,
+    SocketModule = sipsocket:proto2module(Proto),
+    case sipsocket:get_socket(SocketModule, Proto, IP, Port) of
 	{error, What} ->
-	    logger:log(debug, "Failed to get ~p socket (~s:~p) for ~s : ~p", [SipProto, IP, PortInt, DestStr, What]),
-						% try next
+	    logger:log(debug, "Failed to get ~p socket (~s:~p) for ~s : ~p", [Proto, IP, Port, DestStr, What]),
+	    %% try next
 	    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler);
 	SipSocket when record(SipSocket, sipsocket) ->
-	    NewHeader1 = proxy_add_via(Header, Method, OrigURI, Parameters, SipProto, SrvTHandler),
+	    NewHeader1 = proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler),
 	    Message = lists:flatten(Line1 ++ "\r\n" ++ sipheader:build_header(NewHeader1) ++ "\r\n" ++ Body),
-	    case sipsocket:send(SipSocket, IP, PortInt, Message) of
+	    case sipsocket:send(SipSocket, Proto, IP, Port, Message) of
 		ok ->
-		    logger:log(debug, "sent request(~p, sent to=~s:~s:~p) :~n~s~n",
-			       [DestStr, sipsocket:sipproto2str(SipSocket), IP, PortInt, Message]),
-		    {ok, SipSocket};
+		    logger:log(debug, "sent request(~p, sent to=~p:~s:~p) :~n~s~n",
+			       [DestStr, Proto, IP, Port, Message]),
+		    TopVia = sipheader:topvia(NewHeader1),
+		    UsedBranch = lists:flatten(sipheader:get_via_branch_full(TopVia)),
+		    {ok, SipSocket, UsedBranch};
 		{error, E} ->
-		    logger:log(debug, "Failed sending message to ~s:~s:~p, error ~p",
-			       [sipsocket:sipproto2str(SipSocket), IP, PortInt, E]),
+		    logger:log(debug, "Failed sending message to ~p:~s:~p, error ~p",
+			       [Proto, IP, Port, E]),
 		    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler)
 	    end
-    end.
+    end;
+send_to_available_dst(DestStr, [Dst | T], TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler) ->
+    logger:log(error, "Siprequest: send_to_available_dst called with illegal dst ~p", [Dst]),
+    send_to_available_dst(DestStr, T, TransactionId, Line1, Request, Parameters, OrigURI, SrvTHandler).
 
 proxy_check_maxforwards(Header) ->
     MaxForwards =
@@ -306,11 +498,11 @@ proxy_check_maxforwards(Header) ->
 	    keylist:set("Max-Forwards", [integer_to_list(MaxForwards)], Header)
     end.
 
-proxy_add_via(Header, Method, OrigURI, Parameters, SocketProto, SrvTHandler) ->
+proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
     ViaHostname = myhostname(),
     LoopCookie = case sipserver:get_env(detect_loops, true) of
 		     true ->
-			 get_loop_cookie(Header, OrigURI);
+			 get_loop_cookie(Header, OrigURI, Proto);
 		     false ->
 			 none
 		 end,
@@ -328,7 +520,7 @@ proxy_add_via(Header, Method, OrigURI, Parameters, SocketProto, SrvTHandler) ->
 				     %% We don't check for errors since sockets can vanish but we can route
 				     %% responses using the information in Via too.
 				     case Method of
-					 "ACK" -> true;	% ACK is part of INVITE transaction or does not get responded to
+					 "ACK" -> true;	%% ACK is part of INVITE transaction or does not get responded to
 					 _ ->
 					     transactionlayer:store_stateless_response_branch(SrvTHandler, Branch, Method)
 				     end,
@@ -367,14 +559,14 @@ proxy_add_via(Header, Method, OrigURI, Parameters, SocketProto, SrvTHandler) ->
 			     %% Request has a branch, and loop detection is off (or get_loop_cookie() returned 'none').
 			     Parameters
 		     end,
-    ViaPort = default_port(sipserver:get_env(listenport, none)),
     ViaParameters = case sipserver:get_env(request_rport, false) of
 			true ->
 			    lists:append(ViaParameters1, ["rport"]);
 			_ ->
 			    ViaParameters1
 		    end,
-    MyVia = sipheader:via_print([{sipsocket:sipproto2viastr(SocketProto),
+    ViaPort = sipserver:get_listenport(Proto),
+    MyVia = sipheader:via_print([{sipsocket:proto2viastr(Proto),
 				  {ViaHostname, ViaPort}, ViaParameters}]),
     keylist:prepend({"Via", MyVia}, Header).
 
@@ -444,7 +636,7 @@ make_answerheader(Header) ->
 			 keylist:set("Route", RecordRoute, NewHeader1)
 		 end.
 
-get_loop_cookie(Header, OrigURI) ->
+get_loop_cookie(Header, OrigURI, Proto) ->
     %% Generate a loop detection cookie, RFC3261 16.6 #8
     OrigURIstr = sipurl:print(OrigURI),
     FromTag = sipheader:get_tag(keylist:fetch("From", Header)),
@@ -457,8 +649,11 @@ get_loop_cookie(Header, OrigURI) ->
     ProxyAuth = proxyauth_without_response(Header),
     Route = keylist:fetch("Route", Header),
     {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
-				   {_, {TopViaHost1, TopViaPort1}, _} -> {TopViaHost1, default_port(TopViaPort1)};
-				   _ -> {myhostname(), sipserver:get_env(listenport, none)}
+				   {TopViaProto, {TopViaHost1, TopViaPort1}, _} ->
+				       P = sipsocket:viaproto2proto(TopViaProto),
+				       {TopViaHost1, default_port(P, TopViaPort1)};
+				   _ ->
+				       {myhostname(), sipserver:get_listenport(Proto)}
 			       end,
     TopViaSentBy = sipurl:print_hostport(TopViaHost, TopViaPort),
     In = lists:flatten(lists:concat([OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag, 
@@ -503,9 +698,19 @@ myhostname() ->
 	    lists:nth(1, Hostnames)
     end.
 
-add_record_route(Hostname, Port, Header) ->
-    Route = "<" ++ sipurl:print({none, none, Hostname, default_port(Port),
-				 ["maddr=" ++ siphost:myip(), "lr=true"]}) ++ ">",
+add_record_route(Proto, Hostname, Port, Header) ->
+    Param1 = ["maddr=" ++ siphost:myip(), "lr=true"],
+    Param2 = case Proto of
+		 none -> Param1;
+		 _ ->
+		     case Proto of
+			 _ when Proto == tcp; Proto == tcp6 ->
+			     lists:append(Param1, ["transport=TCP"]);
+			 _ ->
+			     Param1
+		     end
+	     end,
+    Route = "<" ++ sipurl:print({none, none, Hostname, Port, Param2}) ++ ">",
     [CRoute] = sipheader:contact([Route]),
     case sipheader:contact(keylist:fetch("Record-Route", Header)) of
 	[CRoute | _] ->
@@ -513,8 +718,9 @@ add_record_route(Hostname, Port, Header) ->
 	_ ->
 	    keylist:prepend({"Record-Route", [Route]}, Header)
     end.
-add_record_route(Header) ->
-    add_record_route(myhostname(), sipserver:get_env(listenport, none), Header).
+add_record_route(Header, Origin) when record(Origin, siporigin) ->
+    Port = sipserver:get_listenport(Origin#siporigin.proto),
+    add_record_route(Origin#siporigin.proto, myhostname(), Port, Header).
 
 standardcopy(Header, ExtraHeaders) ->
     keylist:appendlist(keylist:copy(Header,
@@ -591,9 +797,9 @@ send_proxy_response(Socket, Status, Reason, Header, Body) ->
     end.
 
 
-make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, {SocketProto, _, _}, Request) ->
-    make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SocketProto, Request);
-make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SocketProto, Request) ->
+make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket, Request) when record(SipSocket, sipsocket) ->
+    make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket#sipsocket.proto, Request);
+make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request) ->
     {Method, URI, ReqHeader, _} = Request,
     AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, ["Via", "From", "To", "Call-ID", "CSeq",
 								"Record-Route", "Timestamp", "Content-Type"]),
@@ -602,9 +808,8 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SocketProto, Re
     %% we sent it with send_response() instead of send_proxy_response() but it is easier
     %% to just add an extra Via that will be stripped by send_proxy_response() and don't
     %% have to make a difference in how we send out responses.
-    PlaceHolderVia = sipheader:via_print([{sipsocket:sipproto2viastr(SocketProto),
-					   {siprequest:myhostname(),
-					    siprequest:default_port(sipserver:get_env(listenport, none))},
+    PlaceHolderVia = sipheader:via_print([{sipsocket:proto2viastr(Proto),
+					   {siprequest:myhostname(), sipserver:get_listenport(Proto)},
 					   ViaParameters}]),
     Via = sipheader:via(keylist:fetch("Via", ReqHeader)),
     AnswerHeader2 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader1),

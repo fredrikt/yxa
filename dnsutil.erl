@@ -18,8 +18,8 @@ srvlookup(Proto, Name) ->
 siplookup([]) ->
     none;
 siplookup(Domain) ->
-    TCP = srvlookup(sipsocket_tcp, "_sip._tcp." ++ Domain),
-    UDP = srvlookup(sipsocket_udp, "_sip._udp." ++ Domain),
+    TCP = srvlookup(tcp, "_sip._tcp." ++ Domain),
+    UDP = srvlookup(udp, "_sip._udp." ++ Domain),
     combine_srvresults(lists:sort(fun sortsrv/2, lists:flatten([TCP, UDP]))).
 
 combine_srvresults(List) ->
@@ -43,8 +43,8 @@ sortsrv({_, {Order1, Preference1, Port1, Host1}}, {_, {Order2, Preference2, Port
 		Preference1 < Preference2 ->
 		    true;
 		Preference1 == Preference2 ->
-		    % This string sorting is just to make the process deterministic
-		    % so that a stateless proxy always chooses the same destination
+		    %% This string sorting is just to make the process deterministic
+		    %% so that a stateless proxy always chooses the same destination
 		    Str1 = Host1 ++ ":" ++ integer_to_list(Port1),
 		    Str2 = Host2 ++ ":" ++ integer_to_list(Port2),
 		    case lists:min([Str1, Str2]) of
@@ -59,27 +59,55 @@ sortsrv({_, {Order1, Preference1, Port1, Host1}}, {_, {Order2, Preference2, Port
 	true ->
 	    false
     end;
-% SRV record always beats error
+%% SRV record always beats error
 sortsrv({SipProto, {Order, Preference, Port, Host}}, {error, _}) ->
     true;
-% SRV record always beats error
+%% SRV record always beats error
 sortsrv({error, _}, {SipProto, {Order, Preference, Port, Host}}) ->
     false;
-% NXDOMAIN always beats other errors
+%% NXDOMAIN always beats other errors
 sortsrv({error, nxdomain}, {error, _}) ->
     true;
-% make errors come last
+%% make errors come last
 sortsrv({error, _}, {error, _}) ->
     false.
 
-get_ip_port(Host, Port) ->
+get_ip_port(Host, Port) when list(Port) ->
+    get_ip_port(Host, list_to_integer(Port));
+get_ip_port(Host, Port) when integer(Port) ; Port == none ->
+    V6List = case sipserver:get_env(enable_v6, false) of
+		 true ->
+		     %% XXX inet:getaddr with proto inet6 is not documented, check that it is supported.
+		     Res6 = inet:getaddr(Host, inet6),
+		     case Res6 of
+			 {error, What6} ->
+			     logger:log(debug, "dns resolver: Error ~p when resolving ~p inet6", [What6, Host]),
+			     [];
+			 {ok, {0, 0, 0, 0, 0, 65535, _, _}} ->
+			     %% IPv4-mapped address, ignore
+			     %% XXX optimize so that we don't query again for v4 address below?
+			     [];
+			 {ok, V6Addr} ->
+			     [{siphost:makeip(V6Addr), V6Addr, Port}]
+		     end;
+		 _ ->
+		     %% IPv6 is disabled
+		     []
+	     end,
     Res = inet:getaddr(Host, inet),
     case Res of
-	{error, What} ->
-	    logger:log(debug, "dns resolver: Error ~p when resolving ~p inet", [What, Host]),
-	    {error, What};
+	{error, What4} ->
+	    logger:log(debug, "dns resolver: Error ~p when resolving ~p inet", [What4, Host]),
+	    case V6List of
+		[] ->
+		    {error, What4};
+		_ ->
+		    V6List
+	    end;
 	{ok, {A1,A2,A3,A4}} ->
-	    {siphost:makeip({A1,A2,A3,A4}), Port}
+	    V4Addr = {A1,A2,A3,A4},
+	    V4List = [{siphost:makeip(V4Addr), V4Addr, Port}],
+	    lists:append(V6List, V4List)
     end.
     
 number2enum([], Domain) ->
