@@ -1,5 +1,5 @@
 -module(sipurl).
--export([parse/1, parse_hostport/1, print/1]).
+-export([parse/1, parse_hostport/1, print/1, print_hostport/2]).
 
 parse("sip:" ++ URL) ->
 %    logger:log(debug, "url: ~p", [URL]),
