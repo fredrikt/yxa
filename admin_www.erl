@@ -246,7 +246,6 @@ check_auth(Env, WantAdmin) ->
 
 check_auth2(Header, Env, WantAdmin) ->
     Authorization = sipheader:auth([Header]),
-    io:format("in: ~p~n", [Header]),
     {value, {_, Method}} = lists:keysearch(request_method, 1, Env),
     {value, {_, URI}} = lists:keysearch(script_name, 1, Env),
     Response = dict:fetch("response", Authorization),
@@ -258,14 +257,12 @@ check_auth2(Header, Env, WantAdmin) ->
     {Password, Flags, Classes} = get_pass(User),
     Nonce2 = sipauth:get_nonce(Opaque),
     IsAdmin = lists:member(admin, Flags),
-    io:format("nonce: ~p ~p~n", [Nonce, Nonce2]),
     Response2 = sipauth:get_response(Nonce2, Method,
 				     URI,
 				     User, Password),
     Response3 = sipauth:get_response(Nonce2, "GET",
 				     URI,
 				     User, Password),
-    io:format("response: ~p ~p ~p~n", [Response, Response2, Response3]),
     if 
 	Password == "" ->
 	    false;
@@ -294,7 +291,6 @@ header(unauth, Stale) ->
     Ret = ["WWW-Authenticate: " ++ sipheader:auth_print(Auth, Stale) ++ "\r\n",
 	   "Status: 401 Authenticate\r\n",
 	   "Content-type: text/html\r\n\r\n"],
-    io:format("out: ~p~n", [lists:flatten(Ret)]),
     Ret;
 
 header(redirect, URL) ->
@@ -668,8 +664,12 @@ add_user_with_cookie(Env, Input) ->
 	 {_, _, error} ->
 	     "ERROR";
 	 {{ok, User}, {ok, Password}, {ok, Cookie}} ->
-	     phone:insert_user_or_password(User, Password),
-	     "CREATED";
+	     case phone:insert_user_or_password(User, Password) of
+		 {atomic, ok} ->
+		     "CREATED";
+		 _ ->
+		     "ERROR"
+	     end;
 	 _ ->
 	     "FORBIDDEN"
      end
