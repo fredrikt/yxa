@@ -22,6 +22,7 @@
 -include("phone.hrl").
 -include("database_regexproute.hrl").
 -include("siprecords.hrl").
+-include("sipproxy.hrl").
 
 start(normal, _Args) ->
     Pid = sipserver:safe_spawn(admin_www, start, [sipserver:get_env(httpd_config)]),
@@ -163,7 +164,7 @@ print_one_phone(Number, Flags, Class, Expire, Address) ->
      end,
      "</td></tr>\n"].
 
-print_one_forward({Forwards, Timeout, Localring}) ->
+print_one_forward(#sipproxy_forward{forwards=Forwards, timeout=Timeout, localring=Localring}) ->
     Printfunc = fun (Number) ->
 			[
 			 "<tr><td>",
@@ -778,17 +779,17 @@ change_user_form(Env, Input) ->
 
 print_disabled(none, never) ->
     "disabled";
-print_disabled({_Forwards, 0, _Localring}, always) ->
+print_disabled(#sipproxy_forward{timeout = 0}, always) ->
     "disabled";
-print_disabled({_Forwards, Timeout, _Localring}, noanswer) when Timeout > 0 ->
+print_disabled(#sipproxy_forward{timeout = Timeout}, noanswer) when Timeout > 0 ->
     "disabled";
-print_disabled(_, _) ->
+print_disabled(Forward, _When) when is_record(Forward, sipproxy_forward) ->
     "".
 
 show_user_front(User, Numberlist) ->
     Printfunc = fun (Number) ->
 			Forward = case database_forward:fetch(Number) of
-				      {atomic, [F]} ->
+				      {ok, [F]} ->
 					  F;
 				      _ ->
 					  none
@@ -866,9 +867,9 @@ show_user_front(User, Numberlist) ->
 
 forward_to_typestring(none) ->
     "never";
-forward_to_typestring({_Forwards, 0, _Localring}) ->
+forward_to_typestring(#sipproxy_forward{timeout=0}) ->
     "always";
-forward_to_typestring({_Forwards, _Timeout, _Localring}) ->
+forward_to_typestring(F) when is_record(F, sipproxy_forward) ->
     "noanswer".
 
 show_user_number(User, Number, "never") ->
@@ -897,17 +898,21 @@ show_user_number(User, Number, "never") ->
 
 show_user_number(User, Number, InType) ->
     Forward = case database_forward:fetch(Number) of
-		  {atomic, [F]} ->
-		      F;
+		  {ok, [SingleFwd]} ->
+		      SingleFwd;
 		  _ ->
 		      none
 	      end,
-    {Forwards, Timeout, Localring} = case Forward of
-					 none ->
-					     {[""], 20, false};
-					 _ ->
-					     Forward
-				     end,
+    {Forwards, Timeout, Localring} = 
+	case Forward of
+	    none ->
+		{[""], 20, false};
+	    F when is_record(Forward, sipproxy_forward) ->
+		{F#sipproxy_forward.forwards,
+		 F#sipproxy_forward.timeout,
+		 F#sipproxy_forward.localring
+		}
+	end,
     Type = case InType of
 	       "change" ->
 		   forward_to_typestring(Forward);
