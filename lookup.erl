@@ -24,7 +24,7 @@
 -include("siprecords.hrl").
 
 lookupregexproute(User) ->
-    {atomic, Routes} = database_regexproute:list(),
+    Routes = database_regexproute:list(),
     Sortedroutes = lists:sort(fun (Elem1, Elem2) -> 
 				      Prio1 = lists:keysearch(priority, 1, Elem1#regexproute.flags),
 				      Prio2 = lists:keysearch(priority, 1, Elem2#regexproute.flags),

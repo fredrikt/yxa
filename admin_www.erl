@@ -425,7 +425,8 @@ list_users(Env, Input) ->
 	{error, Message} ->
 	    Message;
 	{ok} ->
-	    {atomic, List} = phone:list_users(),
+	    %% {atomic, List} = phone:list_users(),
+	    List = phone:list_users(),
 	    [header(ok),
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Anv&auml;ndarnamn</th><th>Nummer</th><th>Flaggor</th>",
@@ -460,8 +461,10 @@ list_numbers(Env, Input) ->
 	{error, Message} ->
 	    Message;
 	{ok} ->
-	    {atomic, List} = phone:list_numbers(),
-	    {atomic, PhoneList} = phone:list_phones(),
+	    %% {atomic, List} = phone:list_numbers(),
+	    List = phone:list_numbers(),
+	    %% {atomic, PhoneList} = phone:list_phones(),
+	    PhoneList = phone:list_phones(),
 	    List2 = lists:map(fun (Elem) ->
 					  #numbers{number = Elem#phone.number, user="*"}
 				  end, PhoneList),
@@ -487,7 +490,8 @@ list_phones(Env, Input) ->
 	{error, Message} ->
 	    Message;
 	{ok} ->
-	    {atomic, List} = phone:list_phones(),
+	    %% {atomic, List} = phone:list_phones(),
+	    List = phone:list_phones(),
 	    {atomic, Regexps} = database_regexproute:list(),
 	    [header(ok),
 	     "<h1>Nummertabell</h1>\n",
