@@ -556,7 +556,13 @@ $testheader$proxyauthheader
     
     warn ("	SEND: $Method $sipuri\n") if ($quiet);
     send_message ($Socket, $use_udp, $testname, $msg, $dst, $quiet) or close ($Socket), return 0;
-    
+    if ($testparams{cancel_immediately} and $Method eq 'INVITE') {
+	my $msg2 = $msg;
+	$msg2 =~ s/^INVITE /CANCEL /o;
+	$msg2 =~ s/^CSeq: $CSeq INVITE$/CSeq: $CSeq CANCEL/m;
+	send_message ($Socket, $use_udp, $testname, $msg2, $dst, $quiet) or close ($Socket), return 0;
+    }
+
     $response = read_response ($Socket, $use_udp, $testname, $CallID, $quiet) or close ($Socket), return 0;
 
     close ($Socket), return 1 if (! defined ($testparams{expect}));
