@@ -44,8 +44,15 @@
 	 get_classes_for_user/1,
 	 get_password_for_user/1,
 	 get_telephonenumber_for_user/1,
-	 get_forwards_for_users/1
+	 get_forwards_for_users/1,
+    % incomingproxy
+	incomingproxy_challenge_before_relay/3,
+    % sippipe
+	sippipe_received_response/3        
 	]).
+
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
 
 url2mnesia_userlist(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
@@ -298,3 +305,14 @@ can_register(Header, User) ->
 
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
+
+% incomingproxy hooks
+%%%%%%%%%%%%%%%%%%%%%%
+
+incomingproxy_challenge_before_relay(Origin, Request, Dst) when record(Origin, siporigin) ->
+    true.
+
+% sippipe hooks
+%%%%%%%%%%%%%%%%
+sippipe_received_response(Requets, Response, DstList) ->
+    none.
