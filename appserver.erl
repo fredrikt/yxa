@@ -1,16 +1,13 @@
 -module(appserver).
--export([start/2, create_session/6]).
+-export([init/0, request/6, response/6]).
+
+-include("sipproxy.hrl").
 
 -record(state, {request, sipmethod, callhandler, forkpid, cancelled, completed}).
 
-start(normal, Args) ->
-    Pid = spawn(sipserver, start, [fun init/0, fun request/6,
-				   fun response/6, [user, numbers, phone],
-				   stateful]),
-    {ok, Pid}.
-
 init() ->
-    true.
+    [[fun request/6, fun response/6], [user, numbers, phone], stateful, none].
+
 
 request(Method, URI, Header, Body, Socket, FromIP) when Method == "REGISTER" ->
     LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
@@ -64,10 +61,6 @@ create_session(Method, URI, Header, Body, Socket, FromIP) ->
 					[Method, sipurl:print(URI), E]),
 			    throw({siperror, 500, "Server Internal Error"});
 			CallHandler ->
-			    case Method of
-				"INVITE" -> transactionlayer:send_response_handler(CallHandler, 100, "Trying");
-				_ -> true
-			    end,
 			    CallBranch = transactionlayer:get_branch_from_handler(CallHandler),
 			    case string:rstr(CallBranch, "-UAS") of
 				0 ->
@@ -117,7 +110,8 @@ get_actions(URI) ->
 	    case fetch_actions_for_users(Users) of
 		[] -> nomatch;
 		Actions when list(Actions) ->
-		    {Users, lists:append(Actions, [{wait, sipserver:get_env(appserver_call_timeout, 40)}])}
+		    WaitAction = #sipproxy_action{action=wait, timeout=sipserver:get_env(appserver_call_timeout, 40)},
+		    {Users, lists:append(Actions, [WaitAction])}
 	    end;
 	Unknown ->
 	    logger:log(error, "Appserver: Unexpected result from lookup_address_to_users(~p) : ~p",
@@ -128,18 +122,20 @@ get_actions(URI) ->
 forward_call_actions([{Forwards, Timeout, Localring}], Actions) ->
     FwdTimeout = sipserver:get_env(appserver_forward_timeout, 40),
     Func = fun(Forward) ->
-		   {call, FwdTimeout, Forward}
+    		   #sipproxy_action{action=call, requri=Forward, timeout=FwdTimeout}
 	   end,
     ForwardActions = lists:map(Func, Forwards),
     case Localring of
 	true ->
-	    lists:append(Actions, [{wait, Timeout} | ForwardActions]);
+	    WaitAction = #sipproxy_action{action=wait, timeout=Timeout},
+	    lists:append(Actions, [WaitAction | ForwardActions]);
 	_ ->
 	    case Timeout of
 		0 ->
 		    ForwardActions;
 		_ ->
-		    lists:append(Actions, [{wait, Timeout} | ForwardActions])
+		    WaitAction = #sipproxy_action{action=wait, timeout=Timeout},
+		    lists:append(Actions, [WaitAction | ForwardActions])
 	    end
     end.
 
@@ -172,10 +168,15 @@ fetch_users_locations_as_actions(Users) ->
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
-locations_to_actions([]) ->
-    [];
-locations_to_actions([{Location, Flags, Class, Expire} | Rest]) ->
-    lists:append([{call, sipserver:get_env(appserver_call_timeout, 40), Location}], locations_to_actions(Rest)).
+locations_to_actions(L) ->
+    locations_to_actions2(L, []).
+    
+locations_to_actions2([], Res) ->
+    Res;
+locations_to_actions2([{Location, Flags, Class, Expire} | T], Res) ->
+    Timeout = sipserver:get_env(appserver_call_timeout, 40),
+    CallAction = #sipproxy_action{action=call, requri=Location, timeout=Timeout},
+    locations_to_actions2(T, lists:append([CallAction], Res)).
 
 fork_actions(BranchBase, CallBranch, CallHandler, Request, Socket, FromIP, Actions) ->
     {Method, URI, OrigHeader, _} = Request,

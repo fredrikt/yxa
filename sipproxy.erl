@@ -1,27 +1,47 @@
 -module(sipproxy).
 -export([fork/5]).
 
-% This is the start() function of sipproxy. sipproxy can presently
-% accomplish 'stateless forking'. It can follow an Actions list and
-% fork a request to several Targets.
+-include("sipproxy.hrl").
+
+-record(state, {parent, request, targets, endtime, final_response_sent, mystate}).
+% mystate is either calling, cancelled, completed or stayalive
+
+% This is the "start" function of sipproxy, fork(). sipproxy can fork a request
+% according to a list of sipproxy_action elements.
 %
 % You start it by calling the fork() method with a set of Actions. Currenly
 % supported actions are a list of 'call' and 'wait'. You can mix calls and
 % waits freely.
 
--record(state, {parent, request, targets, endtime, final_response_sent, mystate}).
-% mystate is either calling, cancelled, completed or stayalive
-
 fork(BranchBase, Parent, OrigRequest, Actions, Timeout) ->
     fork(BranchBase, Parent, OrigRequest, Actions, Timeout, targetlist:empty()).
 
-fork(BranchBase, Parent, OrigRequest, Actions, Timeout, Targets) ->
+fork(BranchBase, Parent, OrigRequest, [], Timeout, Targets) ->
+    {Method, ReqURI, Header, Body} = OrigRequest,
+    case allterminated(Targets) of
+	true ->
+	    logger:log(debug, "sipproxy: All targets are terminated, staying alive to handle resends");
+	_ ->
+	    logger:log(normal, "sipproxy: Reached end of Actions-list for ~s ~s, cancelling pending targets.",
+	    		[Method, sipurl:print(ReqURI)]),
+	    cancel_pending_targets(Targets)
+    end,
+    util:safe_signal("sipproxy :", Parent, {no_more_actions}),
+    logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [Timeout]),
+    InitState = #state{parent=Parent, request=OrigRequest, targets=Targets,
+			endtime=util:timestamp() + Timeout, mystate=stayalive},
+    process_wait(false, InitState),
+    util:safe_signal("sipproxy :", Parent, {callhandler_terminating, self()}),
+    ok;
+fork(BranchBase, Parent, OrigRequest, [HAction | TAction], Timeout, Targets) when record(HAction, sipproxy_action) ->
     % XXX detect Max-Forwards: 1 here instead of when sending the requests
     % out since siprequest:send_proxy_request() would send the errors
     % right back to the caller
     {Method, ReqURI, Header, Body} = OrigRequest,
-    case Actions of
-	[{call, CallTimeout, CallURI} | Rest] ->
+    case HAction#sipproxy_action.action of
+	call ->
+	    CallURI = HAction#sipproxy_action.requri,
+	    CallTimeout = HAction#sipproxy_action.timeout,
 	    logger:log(debug, "sipproxy: forking ~s request to ~s with timeout ~p",
 		      [Method, sipurl:print(CallURI), CallTimeout]),
 	    Branch = BranchBase ++ "-UAC" ++ integer_to_list(targetlist:list_length(Targets) + 1),
@@ -35,8 +55,9 @@ fork(BranchBase, Parent, OrigRequest, Actions, Timeout, Targets) ->
 		    logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
 		    Targets
 	    end,
-	    fork(BranchBase, Parent, OrigRequest, Rest, Timeout, NewTargets);
-	[{wait, Time} | Rest] ->
+	    fork(BranchBase, Parent, OrigRequest, TAction, Timeout, NewTargets);
+	wait ->
+	    Time = HAction#sipproxy_action.timeout,
 	    logger:log(debug, "sipproxy: waiting ~p seconds", [Time]),
 	    InitState = #state{parent=Parent, request=OrigRequest, targets=Targets,
 				endtime=util:timestamp() + Time, mystate=calling,
@@ -46,23 +67,8 @@ fork(BranchBase, Parent, OrigRequest, Actions, Timeout, Targets) ->
 		    logger:log(debug, "sipproxy: discontinue processing"),
 		    fork(BranchBase, Parent, OrigRequest, [], Timeout, NewTargets);
 		NewTargets ->
-		    fork(BranchBase, Parent, OrigRequest, Rest, Timeout, NewTargets)
-	    end;
-	[] ->
-	    case allterminated(Targets) of
-		true ->
-		    logger:log(debug, "sipproxy: All targets are terminated, staying alive to handle resends");
-		_ ->
-		    logger:log(normal, "sipproxy: Reached end of Actions-list for ~s ~s, cancelling pending targets.",
-		    		[Method, sipurl:print(ReqURI)]),
-		    cancel_pending_targets(Targets)
-	    end,
-	    util:safe_signal("sipproxy :", Parent, {no_more_actions}),
-	    logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [Timeout]),
-	    InitState = #state{parent=Parent, request=OrigRequest, targets=Targets,
-				endtime=util:timestamp() + Timeout, mystate=stayalive},
-	    process_wait(false, InitState),
-	    util:safe_signal("sipproxy :", Parent, {callhandler_terminating, self()})
+		    fork(BranchBase, Parent, OrigRequest, TAction, Timeout, NewTargets)
+	    end
     end.
 
 cancel_pending_targets(Targets) ->
@@ -75,7 +81,7 @@ cancel_targets_state(Targets, State) ->
     TargetsInState = targetlist:get_targets_in_state(State, Targets),
     lists:map(fun (ThisTarget) ->
     			[Pid] = targetlist:extract([pid], ThisTarget),
-			util:safe_signal("sipproxy :", Pid, {cancel, "cancel_targets_state"})
+			gen_server:cast(Pid, {cancel, "cancel_targets_state"})
 	      end, TargetsInState),
     NewTargets = mark_cancelled(TargetsInState, Targets),
     NewTargets.
@@ -388,13 +394,13 @@ aggregate_authreqs(BestResponse, Responses) ->
 	407 ->
 	    ProxyAuth = collect_auth_headers(Status, "Proxy-Authenticate", Responses),
 	    logger:log(debug, "Aggregating ~p Proxy-Authenticate headers into response '407 ~s'",
-		      [length(ProxyAuth), Reason]),
+		       [length(ProxyAuth), Reason]),
 	    NewHeader = keylist:set("Proxy-Authenticate", ProxyAuth, Header),
 	    {Status, Reason, NewHeader, Body};
 	401 ->
 	    WWWAuth = collect_auth_headers(Status, "WWW-Authenticate", Responses),
 	    logger:log(debug, "Aggregating ~p WWW-Authenticate headers into response '401 ~s'",
-                       [length(WWWAuth), Reason]),
+		       [length(WWWAuth), Reason]),
 	    NewHeader = keylist:set("WWW-Authenticate", WWWAuth, Header),
 	    {Status, Reason, NewHeader, Body};
 	_ ->
