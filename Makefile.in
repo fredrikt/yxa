@@ -2,11 +2,21 @@
 #
 
 srcdir = @srcdir@
+top_srcdir = @top_srcdir@
 VPATH = @srcdir@
 prefix = @prefix@
 DESTDIR = @DESTDIR@
+SHELL = @SHELL@
+
+beamdir = $(prefix)/share/yxa
 
 ERLC = erlc
+
+INSTALL = @INSTALL@
+install_DATA = @INSTALL_DATA@
+install_PROGRAM = @INSTALL_PROGRAM@
+
+mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 
 erl_FILES = \
 	LDAPv3.erl \
@@ -26,7 +36,6 @@ erl_FILES = \
 	hex.erl \
 	incomingproxy.erl \
 	keylist.erl \
-	local.erl \
 	logger.erl \
 	lookup.erl \
 	phone.erl \
@@ -96,6 +105,12 @@ CC = gcc
 beam_FILES = $(erl_FILES:.erl=.beam)
 
 all: $(beam_FILES) bootstrap.sh dtmfserver
+
+install:
+	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	for p in $(beam_FILES) ; do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
 
 clean:
 	rm -f core *.core *.beam *~ *.script *.start bootstrap.sh version.erl
