@@ -116,11 +116,9 @@ unquote(QString) ->
     QString.
 
 name_header([$" | String]) ->
-    Index1 = string:chr(String, $"),
-    QString = string:substr(String, Index1),
-    Index2 = string:chr(QString, $"),
-    Displayname = string:substr(QString, 1, Index2 - 1),
-    Rest = string:strip(string:substr(QString, Index2 + 1), left),
+    NameEnd = string:chr(String, $"),
+    Displayname = string:substr(String, 1, NameEnd - 1),
+    Rest = string:substr(String, NameEnd + 2),
     case Rest of
 	[$< | Rest2] ->
 	    Index3 = string:chr(Rest2, $>),
