@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : transactionlayer.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : Transactionlayer 
+%%% Description : Transactionlayer
 %%% Created : 05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(transactionlayer).
@@ -99,7 +99,7 @@ handle_call({sipmessage, Response, Origin, LogStr}, From, State) when record(Res
     case get_client_transaction_pid(Response, State#state.tstatelist) of
 	none ->
 	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
-	    		[Response#response.status, Response#response.reason, AppModule]),
+		       [Response#response.status, Response#response.reason, AppModule]),
 	    {reply, {pass_to_core, AppModule}, State, ?TIMEOUT};
 	TPid when pid(TPid) ->
 	    logger:log(debug, "Transaction layer: Passing response ~p ~s to registered handler ~p",
@@ -136,8 +136,8 @@ handle_call({store_stateless_response_branch, Pid, Branch, Method}, From, State)
 			       "but branch is already associated with transaction handled by ~p!", [Branch, Pid, OtherPid]),
 		    E = "branch already associated with another server transaction",
 		    {reply, {error, E}, State, ?TIMEOUT}
-		end
-    end;	
+	    end
+    end;
 
 handle_call({get_server_transaction_handler, Request}, From, State) when record(Request, request) ->
     case get_server_transaction_pid(Request, State#state.tstatelist) of
@@ -181,7 +181,7 @@ handle_call({store_to_tag, Request, ToTag}, From, State) when record(Request, re
 	    NewTState = transactionstatelist:set_response_to_tag(ThisState, ToTag),
 	    NewL = transactionstatelist:update_transactionstate(NewTState, State#state.tstatelist),
 	    {reply, {ok}, State#state{tstatelist=NewL}, ?TIMEOUT}
-	end;
+    end;
 
 handle_call(Request, From, State) ->
     logger:log(debug, "Transaction layer: Received unknown gen_server call (from ~p) : ~p", [From, Request]),
@@ -283,7 +283,7 @@ code_change(OldVsn, State, Extra) ->
 received_new_request(Request, Socket, LogStr, State) when record(State, state), record(Request, request), Request#request.method == "ACK" ->
     AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
-		[sipurl:print(Request#request.uri)]),
+	       [sipurl:print(Request#request.uri)]),
     {reply, {pass_to_core, AppModule}, State, ?TIMEOUT};
 
 %%
@@ -292,7 +292,7 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 received_new_request(Request, Socket, LogStr, State) when record(State, state), record(Request, request), State#state.mode == stateless, Request#request.method == "CANCEL" ->
     AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: Stateless received CANCEL ~s. Starting transaction but passing to core.",
-		[sipurl:print(Request#request.uri)]),
+	       [sipurl:print(Request#request.uri)]),
     case servertransaction:start_link(Request, Socket, LogStr, AppModule, stateless) of
 	{ok, STPid} when pid(STPid) ->
 	    NewL = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
@@ -335,7 +335,7 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 								    logger:log(debug, "Transaction layer: Transaction to be cancelled handled by dead " ++
 									       "pid '~p', responding 481 Call/Transaction Does Not Exist", [InvitePid]),
 								    {481, "Call/Transaction Does Not Exist"}
-							    end,	
+							    end,
 					 gen_server:cast(STPid, {create_response, Status, Reason, [], ""}),
 					 false;
 				     _ ->
@@ -391,13 +391,13 @@ get_client_transaction(Response, TStateList) when record(Response, response) ->
 get_client_transaction_pid(Response, TStateList) when record(Response, response) ->
     case get_client_transaction(Response, TStateList) of
 	none ->
-	    none;	
+	    none;
 	TState ->
 	    case transactionstatelist:extract([pid], TState) of
 		[TPid] when pid(TPid) ->
 		    TPid;
 		_ ->
-		    none	    
+		    none
 	    end
     end.
 
@@ -417,11 +417,11 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when record(
     case get_handler_for_request(Request) of
 	{error, E} ->
 	    logger:log(error, "Transaction layer: Failed locating server transaction handler for request ~s ~s : ~p",
-			[Method, sipurl:print(URI), E]),
+		       [Method, sipurl:print(URI), E]),
 	    none;
 	none ->
 	    logger:log(error, "Transaction layer: No server transaction found for request ~s ~s",
-			[Method, sipurl:print(URI)]),
+		       [Method, sipurl:print(URI)]),
 	    none;
 	TH when record(TH, thandler) ->
 	    logger:log(debug, "Transaction layer: Located server transaction handler ~p", [TH#thandler.pid]),
@@ -481,10 +481,10 @@ get_server_handler_for_stateless_response(Response) when record(Response, respon
 
 adopt_server_transaction(Request) when record(Request, request) ->
     case get_handler_for_request(Request) of
-	TH when record(TH, thandler) -> 
+	TH when record(TH, thandler) ->
 	    adopt_server_transaction_handler(TH);
 	Unknown ->
-	   {error, "unknown result from get_handler_for_request"}
+	    {error, "unknown result from get_handler_for_request"}
     end.
 
 adopt_server_transaction_handler(TH) when record(TH, thandler) ->
