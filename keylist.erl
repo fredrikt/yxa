@@ -1,6 +1,6 @@
 -module(keylist).
 -export([fetch/2, keys/1, from_list/1, append/2, prepend/2,
-	 deletefirst/2, set/3]).
+	 delete/2, deletefirstvalue/2, set/3]).
 
 listfetch(Key, []) ->
     [];
@@ -48,7 +48,11 @@ prepend({Key, Value}, List) ->
 			 lists:append([Value], Valuelist)
 		 end, List).
 
-deletefirst(Key, List) ->
+delete(Key, List) ->
+    Casekey = httpd_util:to_lower(Key),
+    del(Casekey, List).
+
+deletefirstvalue(Key, List) ->
     Casekey = httpd_util:to_lower(Key),
     mod(Casekey, fun (Valuelist) ->
 			 case Valuelist of
@@ -71,3 +75,10 @@ mod(Key, Func, [{Key, Valuelist} | List]) ->
     [{Key, Func(Valuelist)} | List];
 mod(Key, Func, [{Key2, Valuelist} | List]) ->
     [{Key2, Valuelist} | mod(Key, Func, List)].
+
+del(Key, []) ->
+    [];
+del(Key, [{Key, Valuelist} | List]) ->
+    List;
+del(Key, [{Key2, Valuelist} | List]) ->
+    [{Key2, Valuelist} | del(Key, List)].
