@@ -12,7 +12,9 @@ parse("sip:" ++ URL) ->
 	[Hostport] ->
 	    {Host, Port} = parse_hostport(Hostport),
 	    {none, none, Host, Port, Parameters}
-    end.
+    end;
+parse(URL) ->
+    {unparseable, URL}.
 
 print_parameters([]) ->
     "";
