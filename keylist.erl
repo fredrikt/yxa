@@ -1,3 +1,27 @@
+%%--------------------------------------------------------------------
+%% Note: It may be preferable to store the #keyelem.casekey field as
+%% an atom() rather than a string() - this should speed up
+%% patternmatching, but don't store random strings as atom(), as
+%% atoms are not GCed. It may be possible to convert the header tags
+%% to atom() when parsed initially so that yxa can treat them as atom()
+%% internaly and only output them as string().
+%%
+%% Note: this module does some costly list operations, such as
+%% appendning elements to the end of lists.
+%% There may be a datastructure better suited for this need, of adding
+%% elements to both front and end of lists, but note that most
+%% #keyelem.item are probably short, so that the overhead of smarter
+%% datastructures may still be more costly.
+%% It may also be beneficial, when several elements are added to the
+%% end of a list - to reverse it, append the new elements in revese
+%% order and then reverse the new list back to it's proper order.
+%% This results in O(3N+2M) rather than O(N * M) (aproximate - M
+%% grows for each element in N) list hd/1 calls
+%% (N = new list of elements to add, M = the orginal list). If N is
+%% small compared to M this results in roughly a O(2M) vs a O(N*M)
+%% algorithm.
+%%--------------------------------------------------------------------
+
 -module(keylist).
 
 %%--------------------------------------------------------------------
@@ -23,12 +47,12 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
+
 -include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
-
 -record(keyelem, {
 	  %% string(), stores a sip header field name in a
 	  %% non-normalized form, may be in upper or lower case, or
@@ -37,7 +61,8 @@
 	  %% string(), stores a sip header field name normalized to a
 	  %% standard format by to_lower/1
 	  casekey,
-	  item     % list() of string(), stores field specific entries
+	  %% list() of string(), stores field specific entries
+	  item
 	 }).
 
 %%--------------------------------------------------------------------
@@ -51,23 +76,27 @@
 %%--------------------------------------------------------------------
 %% Function: fetch(Key, List)
 %%           Key = string(), the name of a field in a sip message
-%%           header - all RFC 3261 formats are accepted
+%%                 header - all RFC 3261 formats are accepted
 %%           List = keylist record()
-%% Descrip.: return the contens that of the header that matches Key
-%% Returns : E#keyelem.item
+%% Descrip.: return the contents of the header that matches Key
+%% Returns : list() of string(), the value of Key - Key may have
+%%           several values associated with it (e.g. the "Via"
+%%           header in sip requests)
 %%--------------------------------------------------------------------
 fetch(Key, List) when record(List, keylist) ->
     fetchcase(to_lower(Key), List#keylist.list);
+%% XXX redundant check
 fetch(Key, List) ->
     erlang:fault("Keylist not wellformed", [Key, List]).
 
-fetchcase(Key, []) ->
+fetchcase(_Key, []) ->
     [];
-fetchcase(Key, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey == Key ->
+fetchcase(Key, [Elem | _List]) when record(Elem, keyelem), Elem#keyelem.casekey == Key ->
     Elem#keyelem.item;
 fetchcase(Key, [Elem | List]) when record(Elem, keyelem) ->
     fetchcase(Key, List);
 fetchcase(Key, [Elem | List]) ->
+%% XXX ok to crash process ? redundant check it will result in a crash any way
     erlang:fault("Keylist element not wellformed", [Key, [Elem | List]]).
 
 %%--------------------------------------------------------------------
@@ -86,7 +115,7 @@ appendlist(Keylist, List) when record(Keylist, keylist) ->
 %%--------------------------------------------------------------------
 %% Function: from_list(List)
 %%           List = list() of {Key, Item}
-%% Descrip.: create a empty keylist and add the List elements with
+%% Descrip.: create an empty keylist and add the List elements with
 %%           append/2
 %% Returns : keylist record()
 %%--------------------------------------------------------------------
@@ -101,11 +130,11 @@ empty() ->
 
 %%--------------------------------------------------------------------
 %% Function: append({Key, NewValueList}, List)
-%%           Key = string(), the name of a field in a sip message
+%%           Key = string(), the name of a header in a sip message
 %%           NewValueList = new entries for keyelem identified by Key
 %%           List = keylist record()
 %% Descrip.: add NewValueList to tail of element (#keyelem.item) in
-%%           List (or create new entry if Key is unkown)
+%%           List (or create new entry if Key is unknown)
 %% Returns : keylist record()
 %%--------------------------------------------------------------------
 append({Key, NewValueList}, List) when record(List, keylist) ->
@@ -115,11 +144,11 @@ append({Key, NewValueList}, List) when record(List, keylist) ->
 
 %%--------------------------------------------------------------------
 %% Function: prepend({Key, NewValueList}, List)
-%%           Key = string(), the name of a field in a sip message
+%%           Key = string(), the name of a header in a sip message
 %%           NewValueList = new entries for keyelem identified by Key
 %%           List = keylist record()
 %% Descrip.: add NewValueList to head of element (#keyelem.item) in
-%%           List (or create new entry if Key is unkown)
+%%           List (or create new entry if Key is unnkown)
 %% Returns : keylist record()
 %%--------------------------------------------------------------------
 prepend({Key, NewValueList}, List) when record(List, keylist) ->
@@ -129,9 +158,9 @@ prepend({Key, NewValueList}, List) when record(List, keylist) ->
 
 %%--------------------------------------------------------------------
 %% Function: delete(Key, List)
-%%           Key = string(), the name of a field in a sip message
+%%           Key = string(), the name of a header in a sip message
 %%           List = keylist record()
-%% Descrip.: remove a entry from keylist record() (#keylist.list)
+%% Descrip.: remove an entry from keylist record() (#keylist.list)
 %% Returns : keylist record()
 %%--------------------------------------------------------------------
 delete(Key, List) when record(List, keylist) ->
@@ -141,7 +170,7 @@ delete(Key, List) when record(List, keylist) ->
 %% Descrip.: delete first element (E) in List,
 %%           where E#keyelem.casekey == to_lower(Key)
 %% Returns : list() of keyelem records()
-del(Key, []) ->
+del(_Key, []) ->
     [];
 del(Key, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey == Key ->
     List;
@@ -150,7 +179,7 @@ del(Key, [Elem | List]) when record(Elem, keyelem) ->
 
 %%--------------------------------------------------------------------
 %% Function: deletefirstvalue(Key, List)
-%%           Key = string(), the name of a field in a sip message
+%%           Key = string(), the name of a header in a sip message
 %%           List = keylist record()
 %% Descrip.: remove the first entry from a element (#keyelem.item)
 %%           in keylist record() (#keylist.list)
@@ -159,7 +188,7 @@ del(Key, [Elem | List]) when record(Elem, keyelem) ->
 deletefirstvalue(Key, List) when record(List, keylist) ->
     mod(Key, fun (Valuelist) ->
 			 case Valuelist of
-			     [Item | Rest] ->
+			     [_Item | Rest] ->
 				 Rest;
 			     [] ->
 				 []
@@ -168,7 +197,7 @@ deletefirstvalue(Key, List) when record(List, keylist) ->
 
 %%--------------------------------------------------------------------
 %% Function: set(Key, Valuelist, List)
-%%           Key = string(), the name of a field in a sip message
+%%           Key = string(), the name of a header in a sip message
 %%           ValueList =
 %%           List = keylist record()
 %% Descrip.: replace all items in E#keyelem.item where Key matches
@@ -186,10 +215,32 @@ set(Key, Valuelist, List) when record(List, keylist) ->
 %%           Keys = list() of string()
 %% Descrip.: return Keylist only containing the fields in Keys
 %% Returns : keylist record()
+%% Note    : use of atom() as keys (for well known keys) should
+%%           improve patternmatch speed. When matching a
+%%           E#keyelem.casekey against Casekey in the alternative
+%%           solution below, it may also be worth using one of the OTP
+%%           set modules so that the member check becomes O(log N)
+%%           instead of O(N).
 %%--------------------------------------------------------------------
+%% This code (untested) should do the same thing and should be less
+%% confusing
+%%
+% copy(Keylist, Keys) when record(Keylist, keylist) ->
+%     Casekeys = to_lower_list(Keys),
+%     KeyElems = Keylist#keylist.list,
+%     Copies = [E ||
+% 		 %% determine if E from Keylist should be copied
+% 		 lists:member(E#keyelem.casekey, Casekeys),
+% 		 E <- KeyElems ],
+%     #keylist{list = Copies}.
+%%--------------------------------------------------------------------
+
+%% XXX I can't quite figure out how this works - hsten
+%% XXX but it does work ;) - ft
+
 copy(Keylist, Keys) when record(Keylist, keylist) ->
     Casekeys = to_lower_list(Keys),
-    Func = fun(Key, Item) ->
+    Func = fun(Key, _Item) ->
 		   lists:member(Key, Casekeys)
 	   end,
     filter(Func, Keylist).
@@ -213,11 +264,10 @@ filter(Func, Keylist) when record(Keylist, keylist) ->
 %% Returns : list() of term()
 %%--------------------------------------------------------------------
 map(Func, Keylist) when record(Keylist, keylist) ->
-    Pred = fun(Elem) ->
-		   Func(Elem#keyelem.key, Elem#keyelem.casekey, Elem#keyelem.item)
-	   end,
-    lists:map(Pred, Keylist#keylist.list).
-
+    F = fun(Elem) ->
+		Func(Elem#keyelem.key, Elem#keyelem.casekey, Elem#keyelem.item)
+	end,
+    lists:map(F, Keylist#keylist.list).
 
 %%====================================================================
 %% Behaviour functions
@@ -229,8 +279,8 @@ map(Func, Keylist) when record(Keylist, keylist) ->
 
 %%--------------------------------------------------------------------
 %% Function: to_lower(Key)
-%%           Key = string(), the name of a field in a sip message
-%% Descrip.: convert header key, to a standard format - lowercase and
+%%           Key = string(), the name of a header in a sip message
+%% Descrip.: convert header key to a standard format - lowercase and
 %%           verbose string()
 %% Returns : string()
 %% XXX something like "normalize" might be a more descriptive name
@@ -238,7 +288,7 @@ map(Func, Keylist) when record(Keylist, keylist) ->
 %%--------------------------------------------------------------------
 
 % This is to support the compact headers we are required to support
-% by RFC3261 7.3.3.
+% by RFC3261 #7.3.3.
 to_lower("i") -> "call-id";
 to_lower("m") -> "contact";
 to_lower("e") -> "content-encoding";
@@ -258,7 +308,7 @@ to_lower(Key) ->
 
 %%--------------------------------------------------------------------
 %% Function: to_lower_list(Keys)
-%%           Keys = list() of string(), the name of a field in a sip
+%%           Keys = list() of string(), the name of a header in a sip
 %%           message
 %% Descrip.: convert header key, to a standard format - lowercase and
 %%           verbose string()
@@ -271,7 +321,7 @@ to_lower_list(Keys) ->
 
 %%--------------------------------------------------------------------
 %% Function: mod(Key, Func, List)
-%%           Key = string(), the name of a field in a sip message
+%%           Key = string(), the name of a header in a sip message
 %%           Func = fun()
 %%           List = keylist record()
 %% Descrip.: apply Func to all elements E;
@@ -292,32 +342,7 @@ modcase(Key, Casekey, Func, []) ->
 	      casekey=Casekey,
 	      item=Func([])}];
 %% stop after first addition
-modcase(Key, Casekey, Func, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey == Casekey ->
+modcase(_Key, Casekey, Func, [Elem | List]) when record(Elem, keyelem), Elem#keyelem.casekey == Casekey ->
     [Elem#keyelem{item=Func(Elem#keyelem.item)} | List];
 modcase(Key, Casekey, Func, [Elem | List]) when record(Elem, keyelem) ->
     [Elem | modcase(Key, Casekey, Func, List)].
-
-
-%%--------------------------------------------------------------------
-%% Note: It may be preferable to store the #keyelem.casekey field as
-%% a atom() rather than a string() - this should speed up
-%% patternmatching, but don't store random strings as atom(), as
-%% atoms are not GCed. It may be possible to convert the headers tags
-%% to atom() when parsed initialy so that yxa can treat them as atom()
-%% internaly and only output them as string().
-%%
-%% Note: this module does some costly list operations, appendning
-%% elements to the end of lists.
-%% There may be datastructure better suited for this need, of adding
-%% elements to both front and end of lists, but note that most
-%% #keyelem.item are probably short, so that the overhead of smarter
-%% datastructures may still be more costly.
-%% It may also be benificial, when several elements are added to the
-%% end of a list - to reverse it, append the new elements in revese
-%% order and then reverse the new list back to it's proper order.
-%% This results in O(3N+2M) rather than O(N * M) (aproximate - M
-%% grows for each element in N) list hd/1 calls
-%% (N = new list of elements to add, M = the orginal list). If N is
-%% small compared to M this results in roughly a O(2M) vs a O(N*M)
-%% algorithm.
-%%--------------------------------------------------------------------
