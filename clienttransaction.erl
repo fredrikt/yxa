@@ -19,7 +19,11 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {branch, socket_in, logtag, socket, report_to, request, response, sipstate, timerlist, dst, timeout, cancelled, do_cancel}).
+-record(state, {branch, socket_in, logtag, socket, report_to, request, response, sipstate,
+	timerlist, dst, timeout, cancelled, do_cancel, tl_branch}).
+
+-include("sipsocket.hrl").
+-include("siprecords.hrl").
 
 %%====================================================================
 %% External functions
@@ -43,7 +47,7 @@ start_link(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, SocketIn, Dst, Branch, Timeout, Parent]) ->
+init([Request, SocketIn, Dst, Branch, Timeout, Parent]) when record(Dst, sipdst) ->
     {Method, URI, _, _} = Request,
     LogTag = lists:flatten(Branch ++ " " ++ Method),
     SipState = case Method of
@@ -57,7 +61,10 @@ init([Request, SocketIn, Dst, Branch, Timeout, Parent]) ->
     logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~p).",
 	       [LogTag, Method, sipurl:print(URI), Dst]),
     State = initiate_request(NewState1),
-    {ok, State}.
+    {ok, State};
+init([Request, SocketIn, Dst, Branch, Timeout, Parent]) ->
+    logger:log(error, "Client transaction: Will not start, invalid dst ~p", [Dst]),
+    {stop, "Invalid arguments for client transaction"}.
 
 
 %%--------------------------------------------------------------------
@@ -83,16 +90,16 @@ handle_call(Request, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_cast({sipmessage, response, Response, ResponseSocket, LogStr}, State) ->
+handle_cast({sipmessage, Response, Origin, LogStr}, State) when record(Response, response), record(Origin, siporigin) ->
     %% We have received a response to one of our requests.
     LogTag = State#state.logtag,
-    {Status, Reason, _, _} = Response,
+    CompatResponse = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
     LogLevel = if
-		   Status >= 200 -> normal;
+		   Response#response.status >= 200 -> normal;
 		   true -> debug
 	       end,
-    logger:log(LogLevel, "~s: Received response ~p ~s", [LogTag, Status, Reason]),
-    NewState = process_received_response(Response, State),
+    logger:log(LogLevel, "~s: Received response ~p ~s", [LogTag, Response#response.status, Response#response.reason]),
+    NewState = process_received_response(CompatResponse, State),
     check_quit({noreply, NewState});
 
 handle_cast({cancel, Msg}, State) ->
@@ -595,13 +602,14 @@ initiate_request(State) when record(State, state) ->
     Branch = State#state.branch,
     Dst = State#state.dst,
     Timeout = State#state.timeout,
-    logger:log(normal, "~s: Sending ~s ~s", [LogTag, Method, sipurl:print(URI)]),
+    logger:log(normal, "~s: Sending ~s ~s (~p:~s:~p)", [LogTag, Method, sipurl:print(URI),
+							Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
     case transportlayer:send_proxy_request(State#state.socket_in, Request, URI, ["branch=" ++ Branch, {dst, Dst}]) of
 	{sendresponse, Status, Reason} ->
 	    logger:log(error, "~s: Transport layer failed sending ~s ~s to ~p, asked us to respond ~p ~s",
 		       [LogTag, Method, sipurl:print(URI), Status, Reason]),
 	    init_fake_request_response(Status, Reason, State);
-	{ok, SendingSocket} ->
+	{ok, SendingSocket, TLBranch} ->
 	    T1 = sipserver:get_env(timerT1, 500),
 	    TimerA = get_initial_resend_timer(SendingSocket, T1),
 	    TimerB = 64 * T1,
@@ -621,7 +629,7 @@ initiate_request(State) when record(State, state) ->
 			    _ ->
 				NewState2
 			end,
-	    NewState6 = NewState5#state{socket=SendingSocket},
+	    NewState6 = NewState5#state{socket=SendingSocket, tl_branch=TLBranch},
 	    NewState6;
 	_ ->
 	    %% transport error, generate 503 Service Unavailable
@@ -650,17 +658,17 @@ fake_request_response(Status, Reason, State) when record(State, state) ->
     Request = State#state.request,
     {Method, URI, Header, _} = Request,
     LogTag = State#state.logtag,
-    SipProto = case State#state.dst of
-		   {P, _, _} ->
-		       P;
-		   _ ->
-		       logger:log(error, "~s: Client transaction dst is malformed, defaulting to UDP SIP protocol for fake response ~p ~s",
-				  [LogTag, Status, Reason]),
-		       sipsocket_udp
-	       end,
+    Proto = case State#state.dst of
+		Dst when record(Dst, sipdst) ->
+		    Dst#sipdst.proto;
+		_ ->
+		    logger:log(error, "~s: Client transaction dst is malformed, defaulting to UDP SIP protocol for fake response ~p ~s",
+			       [LogTag, Status, Reason]),
+		    udp
+	    end,
     logger:log(normal, "~s: ~s ~s - pretend we got an '~p ~s' (and enter SIP state terminated)",
 	       [LogTag, Method, sipurl:print(URI), Status, Reason]),
-    FakeResponse = siprequest:make_response(Status, Reason, "", [], [], SipProto, Request),
+    FakeResponse = siprequest:make_response(Status, Reason, "", [], [], Proto, Request),
     case util:safe_is_process_alive(State#state.report_to) of
 	{true, R} ->
 	    logger:log(debug, "~s: Client transaction forwarding fake response ~p ~s to ~p",
@@ -768,7 +776,10 @@ start_cancel_transaction(State) when record(State, state) ->
     NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
     Socket = State#state.socket,
     Dst = State#state.dst,
-    Branch = State#state.branch,
+    %% Must use branch from original request sent out, so that next hop can match
+    %% this ACK to the right transaction. tl_branch is not necessarily the same as branch
+    %% since the transport layer can be configured to add a stateless loop cookie.
+    Branch = State#state.tl_branch,
     %% XXX is the 32 * T1 correct for CANCEL?
     case transactionlayer:start_client_transaction(CancelRequest, Socket, Dst, Branch, 32 * T1, none) of
 	P when pid(P) ->
@@ -854,10 +865,10 @@ generate_ack({Status, Reason, RHeader, RBody}, State) when record(State, state),
 		 end,
     Socket = State#state.socket,
     Dst = State#state.dst,
-    %% Must use branch from response (really from original request sent out, but that
-    %% should be what is in the response) to make sure we get the exact same branch in this ACK.
-    TopVia = sipheader:topvia(RHeader),
-    Branch = sipheader:get_via_branch_full(TopVia),
+    %% Must use branch from original request sent out, so that next hop can match
+    %% this ACK to the right transaction. tl_branch is not necessarily the same as branch
+    %% since the transport layer can be configured to add a stateless loop cookie.
+    Branch = State#state.tl_branch,
     ACKRequest = {"ACK", URI, SendHeader, ""},
     transportlayer:send_proxy_request(Socket, ACKRequest, URI, ["branch=" ++ Branch, {dst, Dst}]),
     ok.
