@@ -1,13 +1,13 @@
 -module(transactionlist).
 -export([add_transaction/4, get_transaction/2, get_transaction_using_header/2, 
 	 get_transaction_using_response/2, get_transaction_using_request/2,
-	 extract_id/1, extract_request/1, extract_response/1, extract_cancelled/1, extract_state/1,
-	 set_response/2, set_cancelled/2, set_acked/2, set_state/2,
-	 update_transaction/2, debugfriendly/1]).
+	 extract/2, set_response/2, set_cancelled/2, set_state/2,
+	 update_transaction/2, debugfriendly/1, empty/0]).
 
-% RequestEntry :
-%
-%   {Id, Request, Response, Cancelled, Acked, State}
+-record(transactionlist, {list}).
+-record(transaction, {ref, id, request, response, cancelled, state}).
+
+% Transaction :
 %
 %	Id	    = CSeq {num, method}
 %	Request	    = {Method, URI, Header, Body}
@@ -16,29 +16,36 @@
 %	Acked	    = true or false
 %	State	    = calling/trying, proceeding, completed, terminated
  
-add_transaction(Request, Response, State, TransactionList) ->
+add_transaction(Request, Response, State, TList) when record(TList, transactionlist) ->
     {Method, URI, Header, Body} = Request,
     Id = sipheader:cseq(keylist:fetch("CSeq", Header)),
-    case get_transaction_using_header(Header, TransactionList) of
+    case get_transaction_using_header(Header, TList) of
 	none ->
-	    Transaction = {Id, Request, Response, false, false, State},
-	    lists:append(TransactionList, [Transaction]);
+	    NewT = #transaction{ref=make_ref(), id=Id, request=Request, response=Response, state=State},
+	    #transactionlist{list=lists:append(TList#transactionlist.list, [NewT])};
 	_ ->
 	    logger:log(error, "transactionlist: Asked to add ~p request with duplicate Id ~p to list :~n~p",
-	    	       [Method, Id, debugfriendly(TransactionList)]),
-	    TransactionList
+	    	       [Method, Id, debugfriendly(TList)]),
+	    TList
     end.
 
-get_transaction(Id, TransactionList) when list(TransactionList) ->
-    case lists:keysearch(Id, 1, TransactionList) of
-	false ->
-	    %logger:log(debug, "transactionlist: No match looking for transaction ~p", [Id]),
-	    none;
-	{value, T} ->
-	    T
-    end.
+empty() ->
+    #transactionlist{list=[]}.
 
-get_transaction_using_header(Header, TransactionList) ->
+get_transaction(Id, TransactionList) when record(TransactionList, transactionlist) ->
+    %logger:log(normal, "FREDRIK: GET TRANSACTION ~p FROM LIST : ~n~p", [Id, TransactionList]),
+    get_transaction_id(Id, TransactionList#transactionlist.list).
+   
+get_transaction_id(Id, []) ->
+    %logger:log(debug, "transactionlist: No match looking for transaction ~p", [Id]),
+    none;
+get_transaction_id(Id, [H | T]) when record(H, transaction), H#transaction.id == Id ->
+    H;
+get_transaction_id(Id, [H | T]) when record(H, transaction) ->
+    %logger:log(normal, "FREDRIK: NO MATCH ~p~nREST :~n~p", [H, T]),
+    get_transaction_id(Id, T).
+
+get_transaction_using_header(Header, TransactionList) when record(TransactionList, transactionlist) ->
     {CSeq, CSeqMethod} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     Id = case CSeqMethod of
 	"ACK" -> {CSeq, "INVITE"};
@@ -54,42 +61,58 @@ get_transaction_using_response(Response, TransactionList) ->
     {Status, Reason, Header, _} = Response,
     get_transaction_using_header(Header, TransactionList).
 
-extract_id({Id, Request, Response, Cancelled, Acked, State}) ->
-    Id.
-extract_request({Id, Request, Response, Cancelled, Acked, State}) ->
-    Request.
-extract_response({Id, Request, Response, Cancelled, Acked, State}) ->
-    Response.
-extract_cancelled({Id, Request, Response, Cancelled, Acked, State}) ->
-    Cancelled.
-extract_state({Id, Request, Response, Cancelled, Acked, State}) ->
-    State.
+extract(Values, Transaction) when record(Transaction, transaction) ->
+    extract(Values, Transaction, []).
 
-set_response({Id, Request, _, Cancelled, Acked, State}, Response) ->
-    {Id, Request, Response, Cancelled, Acked, State}.
+extract([], Transaction, Res) when record(Transaction, transaction) ->
+    Res;
+extract([id | T], Transaction, Res) when record(Transaction, transaction) ->
+    extract(T, Transaction, lists:append(Res, [Transaction#transaction.id]));
+extract([request | T], Transaction, Res) when record(Transaction, transaction) ->
+    extract(T, Transaction, lists:append(Res, [Transaction#transaction.request]));
+extract([response | T], Transaction, Res) when record(Transaction, transaction) ->
+    extract(T, Transaction, lists:append(Res, [Transaction#transaction.response]));
+extract([cancelled | T], Transaction, Res) when record(Transaction, transaction) ->
+    extract(T, Transaction, lists:append(Res, [Transaction#transaction.cancelled]));
+extract([state | T], Transaction, Res) when record(Transaction, transaction) ->
+    extract(T, Transaction, lists:append(Res, [Transaction#transaction.state])).
 
-set_cancelled({Id, Request, Response, _, Acked, State}, Cancelled) ->
-    {Id, Request, Response, Cancelled, Acked, State}.
+set_response(Transaction, Value) when record(Transaction, transaction) ->
+    Transaction#transaction{response = Value}.
 
-set_acked({Id, Request, Response, Cancelled, _, State}, Acked) ->
-    {Id, Request, Response, Cancelled, Acked, State}.
+set_cancelled(Transaction, Value) when record(Transaction, transaction) ->
+    Transaction#transaction{cancelled = Value}.
 
-set_state({Id, Request, Response, Cancelled, Acked, _}, State) ->
-    {Id, Request, Response, Cancelled, Acked, State}.
+set_state(Transaction, Value) when record(Transaction, transaction) ->
+    Transaction#transaction{state = Value}.
 
-update_transaction(Transaction, TransactionList) ->
-    {Id, Request, Response, Cancelled, Acked, State} = Transaction,
-    lists:keyreplace(Id, 1, TransactionList, Transaction).
+update_transaction(Transaction, TList) when record(Transaction, transaction), record(TList, transactionlist) ->
+    Ref = Transaction#transaction.ref,
+    #transactionlist{list=update_transaction(Ref, Transaction, TList#transactionlist.list, TList)}.
 
+update_transaction(Ref, _, [], TList) ->
+    logger:log(error, "Transactionlist: Asked to update a transaction, but I can't find it", [Ref]),
+    logger:log(error, "Transactionlist: Asked to update a transaction with ref=~p, but I can't find it in list :~n~p",
+		[Ref, debugfriendly(TList)]),
+    [];
+update_transaction(Ref, NewT, [H | T], TList) when record(H, transaction), H#transaction.ref == Ref ->
+    [NewT | T];
+update_transaction(Ref, NewT, [H | T], TList) when record(H, transaction) ->
+    lists:append([H], update_transaction(Ref, NewT, T, TList)).
+
+debugfriendly(TList) when record(TList, transactionlist) ->
+    debugfriendly(TList#transactionlist.list);
 debugfriendly([]) ->
     [];
-debugfriendly([{Id, Request, Response, Cancelled, Acked, State} | Rest]) ->
-    {Method, URI, _, _} = Request,
-    RespStr = case Response of
+debugfriendly([H | Rest]) when record(H, transaction) ->
+    {Method, URI, _, _} = H#transaction.request,
+    RespStr = case H#transaction.response of
 	none -> "no response";
 	{Status, Reason, _, _} ->
 	    lists:concat(["response=", Status, " ", Reason])
     end,
-    {CSeq, _} = Id,
-    Str = lists:concat([CSeq, " ", Method, ": ", sipurl:print(URI), ", ", RespStr, ", cancelled=", Cancelled, ", acked=", Acked, ", state=", State]), 
+    {CSeq, _} = H#transaction.id,
+    Cancelled = H#transaction.cancelled,
+    State = H#transaction.state,
+    Str = lists:concat([CSeq, " ", Method, ": ", sipurl:print(URI), ", ", RespStr, ", cancelled=", Cancelled, ", state=", State]), 
     lists:append([Str], debugfriendly(Rest)).
