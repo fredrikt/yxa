@@ -351,7 +351,7 @@ tcp_read_sip_message(MessageType, Header, BodyIn, DataIn, Parent, Socket, Local,
 		    logger:log(error, "Sipsocket TCP: Non-existing or invalid Content-Length in request from ~s:~p, " ++
 				      "answering 400 Bad Request and closing socket", [IP, Port]),
 		    SipSocket = {module=sipsocket_tcp, pid=Parent, data={IP, Port}},
-		    siprequest:send_result(Header, SipSocket, "", 400, "Bad Request",
+		    transportlayer:send_result(Header, SipSocket, "", 400, "Bad Request",
 					   [{"Reason", ["Non-existing or invalid Content-Length"]}]);
 		response ->
 		    logger:log(debug, "Sipsocket TCP: Non-existing or invalid Content-Length in response from ~s:~p " ++
