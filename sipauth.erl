@@ -99,8 +99,8 @@ get_user_verified(Header, Method, Authheader) ->
 
 check_auth(Header, Method, Number, Tophone, Classdefs) ->
     User = get_user_verified_proxy(Header, Method),
-    {_, Numberlist, _, Classes} = get_passnumber(User),
-    Numberallowed = lists:member(Number, Numberlist),
+    {Numberallowed, _} = can_use_name(User, Number),
+    {_, _, _, Classes} = get_passnumber(User),
     Class = get_class(Tophone, Classdefs),
 %    Classlist = [internal, mobile_or_pay, national, local, almostinternal, bogus, international],
     Classallowed = lists:member(Class, Classes),
@@ -110,7 +110,7 @@ check_auth(Header, Method, Number, Tophone, Classdefs) ->
 	User == stale ->
 	    stale;
 	Numberallowed /= true ->
-	    logger:log(normal, "Number ~p not in ~p", [Number, Numberlist]),
+	    logger:log(normal, "Number ~p not allowed caller id", [Number]),
 	    false;
 	Classallowed /= true ->
 	    logger:log(normal, "Number ~p not allowed to call ~p in class ~p",
@@ -120,8 +120,8 @@ check_auth(Header, Method, Number, Tophone, Classdefs) ->
 	    true
     end.
 
-can_register(Header, Number) ->
-    case get_user_verified(Header, "REGISTER") of
+can_use_name(User, Number) ->
+    case User of
 	false ->
 	    {false, []};
 	stale ->
@@ -135,6 +135,9 @@ can_register(Header, Number) ->
 		    {lists:member(Number, Numberlist), []}
 	    end
     end.
+
+can_register(Header, Number) ->
+    can_use_name(get_user_verified(Header, "REGISTER"), Number).
 
 check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs) ->
     Class = get_class(Tophone, Classdefs),
