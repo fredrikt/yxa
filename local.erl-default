@@ -105,6 +105,8 @@ lookup_homedomain_url(URL) when record(URL, sipurl) ->
 lookup_remote_url(URL) ->
     none.
 
+is_request_to_this_proxy(Request) when record(Request, request) ->
+    lookup:is_request_to_this_proxy(Request).
 
 
 % lookup.erl hooks
