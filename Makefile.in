@@ -8,7 +8,7 @@ prefix = @prefix@
 DESTDIR = @DESTDIR@
 SHELL = @SHELL@
 
-sysconfdir = @sysconfdir@
+confdir = @sysconfdir@
 sslcertdir = @sslcertdir@
 mnesiadir = @mnesiadir@
 beamdir = @libdir@/yxa/ebin
@@ -32,7 +32,7 @@ systools_make_script = \
 
 create_start_script = \
 	sed -e 's!@PROGRAMNAME@!$@!' \
-	    -e 's!@CONFIGDIR@!$(sysconfdir)!' \
+	    -e 's!@CONFIGDIR@!$(confdir)!' \
 	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
 	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
 	    -e 's!@erl@!$(ERL)!' \
@@ -132,6 +132,7 @@ boot_FILES = \
 	appserver.boot
 
 start_FILES = $(boot_FILES:.boot=)
+app_FILES = $(boot_FILES:.boot=.app)
 
 CC = gcc
 
@@ -140,10 +141,10 @@ beam_FILES = $(erl_FILES:.erl=.beam)
 all: $(beam_FILES) bootstrap.sh dtmfserver $(boot_FILES) $(start_FILES)
 
 install: $(boot_FILES) $(beam_FILES) $(start_FILES)
-	$(mkinstalldirs) $(DESTDIR)$(sysconfdir)
-	$(mkinstalldirs) $(DESTDIR)$(sysconfdir)/yxa
+	$(mkinstalldirs) $(DESTDIR)$(confdir)
+	$(mkinstalldirs) $(DESTDIR)$(sslcertdir)
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
-	for p in $(beam_FILES) $(boot_FILES) ; do \
+	for p in $(beam_FILES) $(boot_FILES) $(app_FILES); do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
 	done
 	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)

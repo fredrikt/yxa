@@ -35,10 +35,10 @@ AC_ARG_WITH(sslcertdir,
 	AC_HELP_STRING([--with-sslcertdir=dir],
 		[use dir as path to your SSL certificates]),
 [if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_sslcertdir" = "X"; then
-    sslcertdir=""
+    sslcertdir='${confdir}'
 else
     sslcertdir="$with_sslcertdir"
-fi])
+fi],[sslcertdir='${confdir}'])
 
 
 AC_ARG_WITH(local,
