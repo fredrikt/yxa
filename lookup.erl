@@ -24,9 +24,20 @@
 -include("database_regexproute.hrl").
 -include("siprecords.hrl").
 
+%%--------------------------------------------------------------------
+%% Function: lookupregexproute(User)
+%%           User = string(), ???
+%% Descrip.: See if we have a regexp that matches User in the Mnesia
+%%           regexp route table. If we find one, we return a proxy
+%%           tuple with the resulting destination. The regexps in the
+%%           database have a priority field, where higher priority
+%%           is better.
+%% Returns : {proxy, URL} |
+%%           none
+%%--------------------------------------------------------------------
 lookupregexproute(User) ->
     Routes = database_regexproute:list(),
-    Sortedroutes = lists:sort(fun (Elem1, Elem2) -> 
+    Sortedroutes = lists:sort(fun (Elem1, Elem2) ->
 				      Prio1 = lists:keysearch(priority, 1, Elem1#regexproute.flags),
 				      Prio2 = lists:keysearch(priority, 1, Elem2#regexproute.flags),
 				      case {Prio1, Prio2} of
@@ -50,12 +61,55 @@ lookupregexproute(User) ->
 	    {proxy, sipurl:parse(Result)}
     end.
 
-lookupuser(URL) when record(URL, sipurl) ->
-    case local:lookup_url_to_locations(URL) of
+%%--------------------------------------------------------------------
+%% Function: lookupuser(URL)
+%%           URL = sipurl record()
+%% Descrip.: The main 'give me a set of locations for one of our
+%%           users' function that incomingproxy uses, when it
+%%           determines that a request is for one of it's homedomains.
+%% Returns : {proxy, URL}               |
+%%           {relay, URL}               |
+%%           {forward, URL}             |
+%%           {response, Status, Reason} |
+%%           none    |   The user was found but has no locations registered
+%%           nomatch     No such user
+%%--------------------------------------------------------------------
+lookupuser(URL) when is_record(URL, sipurl) ->
+    case local:get_users_for_url(URL) of
 	nomatch ->
-	    % User does not exist in any of our databases.
 	    nomatch;
-	Locations when list(Locations) ->
+	[User] when is_list(User) ->
+	    %% single user, look if the user has a CPL script
+	    case local:user_has_cpl_script(User, incoming) of
+		true ->
+		    %% let appserver handle requests for users with CPL scripts
+		    case local:lookupappserver(URL) of
+			{forward, AppS} ->
+			    logger:log(debug, "Lookup: User ~p has a CPL script, forwarding to appserver : ~p",
+				       [User, sipurl:print(AppS)]),
+			    {forward, AppS};
+			_ ->
+			    logger:log(debug, "Lookup: User ~p has a CPL script, but I could not find an appserver",
+				      [User]),
+			    %% Fallback to just looking in the location database
+			    lookupuser_locations([User], URL)
+		    end;
+		false ->
+		    lookupuser_locations([User], URL)
+	    end;
+	Users when is_list(Users) ->
+	    lookupuser_locations(Users, URL);
+	Unknown ->
+	    logger:log(error, "Lookup: Unknown result from local:lookup_url_to_locations() "
+		       "of URL ~p in lookupuser : ~n~p", [sipurl:print(URL), Unknown]),
+	    throw({siperror, 500, "Server Internal Error"})
+    end.
+
+%% part of lookupuser()
+lookupuser_locations(Users, URL) ->
+    case local:get_locations_for_users(Users) of
+	Locations1 when is_list(Locations1) ->
+	    Locations = local:prioritize_locations([Users], Locations1),
 	    % check if more than one location was found.
 	    case Locations of
 	        [] ->
@@ -74,18 +128,26 @@ lookupuser(URL) when record(URL, sipurl) ->
 		    % More than one location registered for this address, check for appserver...
 		    % (appserver is the program that handles forking of requests)
 		    local:lookupappserver(URL)
-	    end;
-	Unknown ->
-	    logger:log(error, "Lookup: Unknown result from local:lookup_url_to_locations() of URL ~p in lookupuser : ~n~p",
-			[sipurl:print(URL), Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
+	    end
     end.
 
-lookup_url_to_locations(URL) when record(URL, sipurl) ->
+%%--------------------------------------------------------------------
+%% Function: lookup_url_to_locations(URL)
+%%           URL = sipurl record()
+%% Descrip.: Turn an URL into a set of locations. The URL might map to
+%%           more than one user, in which case the locations for all
+%%           matched users are returned. Locations is returned
+%%           according to the priority values they have in the
+%%           location database.
+%% Returns : {proxy, URL} |
+%%           nomatch      |
+%%           throw({siperror, ...})
+%%--------------------------------------------------------------------
+lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
 	nomatch ->
 	    nomatch;
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    Locations = local:get_locations_for_users(Users),
 	    local:prioritize_locations([Users], Locations);
 	Unknown ->
@@ -93,30 +155,47 @@ lookup_url_to_locations(URL) when record(URL, sipurl) ->
 			[Unknown]),
 	    throw({siperror, 500, "Server Internal Error"})
     end.
-    
-lookup_url_to_addresses(sipuserdb_mnesia, URL) when record(URL, sipurl) ->
+
+%%--------------------------------------------------------------------
+%% Function: lookup_url_to_addresses(Src, URL)
+%%           Src = atom(), who is asking
+%%           URL = sipurl record()
+%% Descrip.: Make up a bunch of possible userdb keys from an URL.
+%%           Since our userdbs store different addresses implicitly
+%%           sometimes, we do this mess to make sure we find one or
+%%           more users for requests destined to an URL.
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
+lookup_url_to_addresses(sipuserdb_mnesia, URL) when is_record(URL, sipurl) ->
     User = URL#sipurl.user,
-    % sipuserdb_mnesia is extra liberal with usernames
+    %% sipuserdb_mnesia is extra liberal with usernames
     Standard = lookup_url_to_addresses(lookup, URL),
     Addr1 = local:url2mnesia_userlist(URL),
     Addr2 = case util:isnumeric(User) of
 	true -> [User];
 	_ -> []
-    end,	
+    end,
     lists:append([Standard, Addr1, Addr2]);
-lookup_url_to_addresses(_Src, URL) when record(URL, sipurl) ->
-    % Make a list of all possible addresses we
-    % can create out of this URL
+lookup_url_to_addresses(_Src, URL) when is_record(URL, sipurl) ->
+    %% Make a list of all possible addresses we
+    %% can create out of this URL
     Tel = local:canonify_numberlist([URL#sipurl.user]),
     lists:append([sipurl:print(sipurl:set([{pass, none}, {port, none}, {param, []}], URL))], Tel).
 
-lookup_addresses_to_users(Addresses) ->
+%%--------------------------------------------------------------------
+%% Function: lookup_addresses_to_users(Addresses)
+%%           Addresses = list() of term()
+%% Descrip.: Get a list of users that match an input list of
+%%           addresses.
+%% Returns : list() of string(), list of usernames or empty list
+%%--------------------------------------------------------------------
+lookup_addresses_to_users(Addresses) when is_list(Addresses) ->
     case local:get_users_for_addresses_of_record(Addresses) of
 	[] ->
 	    [];
 	nomatch ->
 	    [];
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    Res = lists:sort(Users),
 	    logger:log(debug, "Lookup: Addresses ~p belongs to one or more users : ~p", [Addresses, Res]),
 	    Res;
@@ -127,31 +206,48 @@ lookup_addresses_to_users(Addresses) ->
 	    []
     end.
 
+%%--------------------------------------------------------------------
+%% Function: lookup_address_to_users(Address)
+%%           Address = term()
+%% Descrip.: Get a list of users that match a single address.
+%% Returns : list() of string(), list of usernames or empty list
+%%--------------------------------------------------------------------
 lookup_address_to_users(Address) ->
     case local:get_users_for_address_of_record(Address) of
 	[] ->
 	    [];
 	nomatch ->
 	    [];
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    Res = lists:sort(Users),
 	    logger:log(debug, "Lookup: Address ~p belongs to one or more users : ~p", [Address, Res]),
 	    Res;
 	Unknown ->
-	    logger:log(error, "Lookup: lookup_address_to_users: unknown result from local:get_users_for_address_of_record(~p) : ~p",
-	    		[Address, Unknown]),
+	    logger:log(error, "Lookup: lookup_address_to_users: unknown result from "
+		       "local:get_users_for_address_of_record(~p) : ~p", [Address, Unknown]),
 	    []
     end.
 
-lookupappserver(Key) ->
+%%--------------------------------------------------------------------
+%% Function: lookupappserver(Key)
+%%           Key = sipurl record()
+%% Descrip.: Get the configured appserver to use for Key. Used in
+%%           incomingproxy.
+%% Returns : {forward, URL}             |
+%%           {response, Status, Reason}
+%%           URL    = sipurl record()
+%%           Status = integer(), SIP status code
+%%           Reason = string(), SIP reason phrase
+%%--------------------------------------------------------------------
+lookupappserver(Key) when is_record(Key, sipurl) ->
     case sipserver:get_env(appserver, none) of
 	none ->
-	    logger:log(debug, "Lookup: Requested to provide appserver for ~p, but no appserver configured! Returning 480 Temporarily Unavailable.",
-			[Key]),
+	    logger:log(debug, "Lookup: Requested to provide appserver for ~p, but no appserver configured! "
+		       "Returning 480 Temporarily Unavailable.", [Key]),
 	    {response, 480, "Temporarily Unavailable"};
 	AppServer ->
 	    case sipurl:parse_url_with_default_protocol("sip", AppServer) of
-		URL when record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
+		URL when is_record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
 		    {forward, URL};
 		_ ->
 		    logger:log(error, "Failed parsing configured appserver ~p", [AppServer]),
@@ -159,23 +255,31 @@ lookupappserver(Key) ->
 	    end
     end.
 
-lookupdefault(URL) when record(URL, sipurl) ->
+%%--------------------------------------------------------------------
+%% Function: lookupdefault(URL)
+%%           URL = sipurl record()
+%% Descrip.: Get the configured default route. Used in incomingproxy.
+%% Returns : {proxy, DefaultRoute} |
+%%           {response, Status, Reason}
+%%           DefaultRoute = sipurl record()
+%%           Status       = integer(), SIP status code
+%%           Reason       = string(), SIP reason phrase
+%%--------------------------------------------------------------------
+lookupdefault(URL) when is_record(URL, sipurl) ->
     case homedomain(URL#sipurl.host) of
 	true ->
-	    logger:log(debug, "Lookup: Cannot default-route request to a local domain (~s), aborting", 
+	    logger:log(debug, "Lookup: Cannot default-route request to a local domain (~s), aborting",
 		       [URL#sipurl.host]),
 	    none;
-        _ ->
+        false ->
 	    DefaultRoute = sipserver:get_env(defaultroute, none),
 	    case DefaultRoute of
 		none ->
 		    logger:log(debug, "Lookup: No default route - dropping request"),
 		    {response, 500, "Can't route request"};	%% XXX is 500 the correct error-code?
-		Hostname ->
+		Hostname when is_list(Hostname) ->
 		    {Host, Port} = sipparse_util:parse_hostport(Hostname),
-		    NewURI = sipurl:new([{user, URL#sipurl.user}, {pass, none}, {host, Host}, {port, Port}]), 
-		    
-
+		    NewURI = sipurl:new([{user, URL#sipurl.user}, {pass, none}, {host, Host}, {port, Port}]),
 		    logger:log(debug, "Lookup: Default-routing to ~s", [sipurl:print(NewURI)]),
 		    %% XXX we should preserve the Request-URI by proxying this as a loose router.
 		    %% It is almost useless to only preserve the User-info IMO. We can do this
@@ -185,15 +289,18 @@ lookupdefault(URL) when record(URL, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookuppotn/1
-%% Description: Look Up Plain Old Telephone Number. Figures out where
-%%              to route a numerical destination. First we try to
-%%              rewrite it to E164 and do ENUM lookup, and if that
-%%              fails, lookuppstn() on it. Then we try our fallback
-%%              numerical route matching, lookupnumber().
-%% Returns: {proxy, URL}          |
-%%          {relay, URL}          |
-%%          none
+%% Function: lookuppotn(Number)
+%%           Number = string()
+%% Descrip.: Look Up Plain Old Telephone Number. Figures out where
+%%           to route a numerical destination. First we try to
+%%           rewrite it to E.164 and do ENUM lookup, and if that
+%%           fails, lookuppstn() on it. Then we try our fallback
+%%           numerical route matching, lookupnumber(). Used in both
+%%           incomingproxy and pstnproxy.
+%% Returns : {proxy, URL} |
+%%           {relay, URL} |
+%%           none
+%%           URL = sipurl record()
 %%--------------------------------------------------------------------
 lookuppotn("+" ++ E164) ->
     Loc1 = case util:isnumeric(E164) of
@@ -225,15 +332,17 @@ lookuppotn(Number) ->
 		R ->
 		    R
 	    end
-    end.	    
+    end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupenum/1
-%% Description: Does ENUM resolving on an E164 number. If the input
-%%              number is not an E164 number, it is converted first.
-%% Returns: {proxy, URL}          |
-%%          {relay, URL}          |
-%%          none
+%% Function: lookupenum(Number)
+%%           Number = string()
+%% Descrip.: Does ENUM resolving on an E164 number. If the input
+%%           number is not an E164 number, it is converted first.
+%% Returns : {proxy, URL} |
+%%           {relay, URL} |
+%%           none
+%%           URL = sipurl record()
 %%--------------------------------------------------------------------
 lookupenum("+" ++ E164) ->
     case dnsutil:enumlookup("+" ++ E164) of
@@ -281,14 +390,16 @@ lookupenum(Number) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookuppstn/1
-%% Description: Rewrites a number to a PSTN URL using the e164_to_pstn
-%%              configuration regexp. If the number is not E164, it
-%%              is converted using rewrite_potn_to_e164() first.
-%% Returns: {proxy, URL}          |
-%%          {relay, URL}          |
-%%          none                  |
-%%          error
+%% Function: lookuppstn(Number)
+%%           Number = string()
+%% Descrip.: Rewrites a number to a PSTN URL using the e164_to_pstn
+%%           configuration regexp. If the number is not E164, it
+%%           is converted using rewrite_potn_to_e164() first.
+%% Returns : {proxy, URL}          |
+%%           {relay, URL}          |
+%%           none                  |
+%%           error
+%%           URL = sipurl record()
 %%--------------------------------------------------------------------
 lookuppstn("+" ++ E164) ->
     case util:isnumeric(E164) of
@@ -323,18 +434,20 @@ lookuppstn(Number) ->
 		R ->
 		    R
 	    end
-    end.	    
+    end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupnumber/1
-%% Description: Check if there are any numerical matching rules that
-%%              apply (configured regexp 'number_to_pstn'). Called by
-%%              lookuppotn/1 and lookuppstn/1 when the input number is
-%%              not rewriteable to a E164 number.
-%% Returns: {proxy, URL}          |
-%%          {relay, URL}          |
-%%          none                  |
-%%          error
+%% Function: lookupnumber(Number)
+%%           Number = string()
+%% Descrip.: Check if there are any numerical matching rules that
+%%           apply (configured regexp 'number_to_pstn'). Called by
+%%           lookuppotn/1 and lookuppstn/1 when the input number is
+%%           not rewriteable to a E164 number.
+%% Returns : {proxy, URL}          |
+%%           {relay, URL}          |
+%%           none                  |
+%%           error
+%%           URL = sipurl record()
 %%--------------------------------------------------------------------
 lookupnumber(Number) ->
     %% Check if Number is all digits
@@ -346,10 +459,10 @@ lookupnumber(Number) ->
 		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn'",
 			      [Number]),
 		    error;
-		Res when list(Res) ->
+		Res when is_list(Res) ->
 		    %% Check to see if what we got is a parseable URL
 		    case sipurl:parse_url_with_default_protocol("sip", Res) of
-			URL when record(URL, sipurl) ->
+			URL when is_record(URL, sipurl) ->
 			    %% Check if it is a local URL or a remote
 			    case homedomain(URL#sipurl.host) of
 				true ->
@@ -375,13 +488,15 @@ lookupnumber(Number) ->
 	    %% Number was not numeric
 	    error
     end.
-    
+
 %%--------------------------------------------------------------------
-%% Function: rewrite_potn_to_e164/1
-%% Description: Rewrite a number to an E164 number using our local
-%%              numbering plan (configured regexp 'internal_to_e164').
-%% Returns: Number                | (Number is a list starting with +)
-%%          error
+%% Function: rewrite_potn_to_e164(Number)
+%%           Number = string()
+%% Descrip.: Rewrite a number to an E164 number using our local
+%%           numbering plan (configured regexp 'internal_to_e164').
+%% Returns : Result |
+%%           error
+%%           Result = string(), "+" followed by an E.164 number
 %%--------------------------------------------------------------------
 rewrite_potn_to_e164("+" ++ E164) ->
     case util:isnumeric(E164) of
@@ -390,7 +505,7 @@ rewrite_potn_to_e164("+" ++ E164) ->
 	_ ->
 	    error
     end;
-rewrite_potn_to_e164(Number) when list(Number) ->
+rewrite_potn_to_e164(Number) when is_list(Number) ->
     case util:isnumeric(Number) of
 	true ->
 	    case util:regexp_rewrite(Number, sipserver:get_env(internal_to_e164, [])) of
@@ -405,7 +520,13 @@ rewrite_potn_to_e164(Number) when list(Number) ->
 rewrite_potn_to_e164(_) ->
     error.
 
-isours(URL) when record(URL, sipurl) ->
+%%--------------------------------------------------------------------
+%% Function: isours(URL)
+%%           URL = sipurl record()
+%% Descrip.: Check if we have a user matching an URL.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+isours(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
 	[] ->
 	    logger:log(debug, "Lookup: isours ~s -> false", [sipurl:print(URL)]),
@@ -413,7 +534,7 @@ isours(URL) when record(URL, sipurl) ->
 	nomatch ->
 	    logger:log(debug, "Lookup: isours ~s -> false", [sipurl:print(URL)]),
 	    false;
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    logger:log(debug, "Lookup: isours ~s -> user(s) ~p", [sipurl:print(URL), Users]),
 	    true;
 	Unknown ->
@@ -428,7 +549,7 @@ isours(URL) when record(URL, sipurl) ->
 %%           domain handled by this proxy, but for this proxy itself.
 %% Returns : true | false
 %%--------------------------------------------------------------------
-is_request_to_this_proxy(Request) when record(Request, request) ->
+is_request_to_this_proxy(Request) when is_record(Request, request) ->
     {Method, URL, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     case local:homedomain(URL#sipurl.host) of
 	true ->
@@ -460,9 +581,15 @@ is_request_to_this_proxy2("OPTIONS", URL, Header) when is_record(URL, sipurl) ->
         true ->
             false
     end;
-is_request_to_this_proxy2(_, URL, _) when record(URL, sipurl) ->
+is_request_to_this_proxy2(_, URL, _) when is_record(URL, sipurl) ->
     false.
 
+%%--------------------------------------------------------------------
+%% Function: homedomain(Domain)
+%%           Domain = string()
+%% Descrip.: Check if Domain is one of our configured homedomains.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 homedomain(Domain) ->
     case util:casegrep(Domain, sipserver:get_env(homedomain, [])) of
 	true ->
