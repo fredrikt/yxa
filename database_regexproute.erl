@@ -79,7 +79,7 @@ list() ->
 %%--------------------------------------------------------------------
 convert_urls() ->
     F = fun() ->
-		%% !!! this may be costly if the table is large
+		%% XXX !!! this may be costly if the table is large
 		A = db_util:tab_to_list(regexproute),
 		Update = fun(O) ->
 				 mnesia:delete_object(O),
@@ -96,7 +96,9 @@ rewrite_url(R) when record(R, regexproute) ->
 	    R;
 	{User, Pass, Host, Port, Parameters} ->
 	    %% old format
-	    U = #sipurl{proto="sip", user=User, pass=Pass, host=Host, port=Port, param=Parameters},
+	    U = sipurl:new([{proto, "sip"}, {user, User}, {pass, Pass},
+			    {host, Host}, {port, Port}, {param, Parameters}]),
+
 	    io:format("database_regexproute: Rewrote regexp ~p URL ~p~n", [R#regexproute.regexp, sipurl:print(U)]),
 	    R#regexproute{address=U};
 	Unknown ->
