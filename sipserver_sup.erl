@@ -130,20 +130,12 @@ my_start_children(Supervisor, []) ->
 my_start_children(Supervisor, [H|T]) ->
     case supervisor:start_child(Supervisor, H) of
 	{error, E} ->
-	    Msg = lists:flatten(
-		    io_lib:format("Sipserver supervisor: Failed starting child '~p': ~p",
-				  [element(1, H), E])
-		    ),
-	    logger:log(error, Msg),
-	    %% We must sleep a few seconds here, so that the supervisor does not shut down
-	    %% the logger process while it is still logging (yes, that was what happened
-	    %% with the result being that the logger process crashed and produced a mis-
-	    %% guiding error 'ebadf' from io:format()).
-	    timer:sleep(3 * 1000),
-	    {error, Msg};
-	{ok, _} ->
+	    logger:log(error, "Sipserver supervisor: Failed starting child '~p': ~p",
+		       [element(1, H), E]),
+    	    throw('Failed starting subsystem, see logfiles for more details');
+	{ok, _Child} ->
 	    my_start_children(Supervisor, T);
-	{ok, _, _} ->
+	{ok, _Child, _Info} ->
 	    my_start_children(Supervisor, T)
     end.
 
