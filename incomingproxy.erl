@@ -32,17 +32,6 @@ lookupmail(User) ->
 	    end
     end.
 
-lookupimplicit(User) ->
-    none.
-
-isnumeric(Number) ->
-    case catch list_to_integer(Number) of
-	Num when integer(Num) ->
-	    true;
-	_ ->
-	    false
-    end.
-
 globalrewrite("0000" ++ Number) ->
     "+" ++ Number;
 globalrewrite("000" ++ Number) ->
@@ -55,7 +44,7 @@ globalrewrite(Number) ->
     "+468790" ++ Number.
 
 lookupdefault(User) ->
-    case isnumeric(User) of
+    case util:isnumeric(User) of
 	true ->
 	    case dnsutil:enumlookup(globalrewrite(User)) of
 		none ->
@@ -75,17 +64,11 @@ lookupphone(User) ->
 	       Loc1 ->
 		   Loc1
 	   end,
-    Loc3 = case Loc2 of
-	       none ->
-		   lookupimplicit(User);
-	       Loc2 ->
-		   Loc2
-	   end,
-    case Loc3 of
+    case Loc2 of
 	none ->
 	    lookupdefault(User);
-	Loc3 ->
-	    Loc3
+	Loc2 ->
+	    Loc2
     end.
 
 request("REGISTER", URL, Header, Body, Socket) ->
