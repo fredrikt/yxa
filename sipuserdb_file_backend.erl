@@ -342,9 +342,13 @@ get_mtime(Fn) ->
 %%           Reason   = string()
 %%--------------------------------------------------------------------
 parse_db([TermList]) ->
-    {ok, U, A} = parse_term(TermList, [], []),
-    verify_consistency(U, A),
-    {ok, U, A}.
+    case parse_term(TermList, [], []) of
+	{ok, U, A} ->
+	    verify_consistency(U, A),
+	    {ok, U, A};
+	{error, Reason} ->
+	    {error, Reason}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: parse_term(In, UserList, AddrList)
