@@ -1,5 +1,22 @@
+%%%-------------------------------------------------------------------
+%%% File    : lookup.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: Varios lookup functions. Mainly routing logic for our
+%%%           three applications incomingproxy, pstnproxy and
+%%%           appserver. Most of these functions are called through
+%%%           functions in local.erl with the same name, so if you
+%%%           want to make them return different values than the
+%%%           defaults in this file, make a local.erl specific for
+%%%           your domain.
+%%%
+%%% Created : 20 Mar 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 -module(lookup).
+%%-compile(export_all).
 
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
 -export([lookupregexproute/1,
 	 lookupuser/1,
 	 lookup_url_to_locations/1,
@@ -18,15 +35,26 @@
 	 rewrite_potn_to_e164/1,
 	 get_remote_party_number/2,
 	 format_number_for_remote_party_id/3,
-	 get_remote_party_name/2
+	 get_remote_party_name/2,
+	 remove_unsuitable_locations/2,
+
+	 test/0
 	]).
 
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("database_regexproute.hrl").
 -include("siprecords.hrl").
 
+
+%%====================================================================
+%% External functions
+%%====================================================================
+
 %%--------------------------------------------------------------------
 %% Function: lookupregexproute(User)
-%%           User = string(), ???
+%%           User = string(), username
 %% Descrip.: See if we have a regexp that matches User in the Mnesia
 %%           regexp route table. If we find one, we return a proxy
 %%           tuple with the resulting destination. The regexps in the
@@ -34,6 +62,7 @@
 %%           is better.
 %% Returns : {proxy, URL} |
 %%           none
+%%           URL = sipurl record()
 %%--------------------------------------------------------------------
 lookupregexproute(User) ->
     Routes = database_regexproute:list(),
@@ -52,7 +81,7 @@ lookupregexproute(User) ->
 				      end
 			      end, Routes),
     Rules = lists:map(fun(R) ->
-			      {R#regexproute.regexp, sipurl:print(R#regexproute.address)}
+			      {R#regexproute.regexp, R#regexproute.address}
 		      end, Sortedroutes),
     case util:regexp_rewrite(User, Rules) of
 	nomatch ->
@@ -88,6 +117,8 @@ lookupuser(URL) when is_record(URL, sipurl) ->
 			    logger:log(debug, "Lookup: User ~p has a CPL script, forwarding to appserver : ~p",
 				       [User, sipurl:print(AppS)]),
 			    {forward, AppS};
+			{response, Status, Reason} ->
+			    {response, Status, Reason};
 			_ ->
 			    logger:log(debug, "Lookup: User ~p has a CPL script, but I could not find an appserver",
 				       [User]),
@@ -98,22 +129,19 @@ lookupuser(URL) when is_record(URL, sipurl) ->
 		    lookupuser_locations([User], URL)
 	    end;
 	Users when is_list(Users) ->
-	    lookupuser_locations(Users, URL);
-	Unknown ->
-	    logger:log(error, "Lookup: Unknown result from local:lookup_url_to_locations() "
-		       "of URL ~p in lookupuser : ~n~p", [sipurl:print(URL), Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
+	    lookupuser_locations(Users, URL)
     end.
 
 %% part of lookupuser()
 lookupuser_locations(Users, URL) ->
     case local:get_locations_for_users(Users) of
 	Locations1 when is_list(Locations1) ->
-	    Locations = local:prioritize_locations([Users], Locations1),
-						% check if more than one location was found.
+	    Locations2 = local:prioritize_locations([Users], Locations1),
+	    Locations = local:remove_unsuitable_locations(URL, Locations2),
+	    %% check if more than one location was found.
 	    case Locations of
 	        [] ->
-						% User exists but has no currently known locations
+		    %% User exists but has no currently known locations
 		    case local:lookupregexproute(sipurl:print(URL)) of
 			none ->
 			    logger:log(debug, "Lookup: No locations found for URL ~p, and no matching regexp rules.",
@@ -131,6 +159,34 @@ lookupuser_locations(Users, URL) ->
 		    local:lookupappserver(URL)
 	    end
     end.
+
+%%--------------------------------------------------------------------
+%% Function: remove_unsuitable_locations(URL, Locations)
+%%           URL      = sipurl record(), Request-URI of request
+%%           Location = list() of sipurl record()
+%% Descrip.: Apply local policy for what locations are good to use for
+%%           a particular Request-URI. The default action we do here
+%%           is to remove non-SIPS locations if the Request-URI is
+%%           SIPS, unless we are configured not to.
+%% Returns : list() of sipurl()
+%%--------------------------------------------------------------------
+remove_unsuitable_locations(#sipurl{proto="sips"}, Locations) when is_list(Locations) ->
+    case sipserver:get_env(ssl_require_sips_registration, true) of
+	true ->
+	    remove_non_sips_locations(Locations, []);
+	false ->
+	    Locations
+    end;    
+remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
+    Locations.
+
+%% part of remove_unsuitable_locations/2. Returns : list() of sipurl()
+remove_non_sips_locations([#sipurl{proto="sips"}=H | T], Res) ->
+    remove_non_sips_locations(T, [H | Res]);
+remove_non_sips_locations([H | T], Res) when is_record(H, sipurl) ->
+    remove_non_sips_locations(T, Res);
+remove_non_sips_locations([], Res) ->
+    lists:reverse(Res).
 
 %%--------------------------------------------------------------------
 %% Function: lookup_url_to_locations(URL)
@@ -167,6 +223,12 @@ lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
 %%           more users for requests destined to an URL.
 %% Returns : list() of string()
 %%--------------------------------------------------------------------
+lookup_url_to_addresses(Src, #sipurl{proto="sips"}=URL) ->
+    %% When turning address into user, we make no difference on SIP and SIPS URI's
+    %% (as any SIP URI may be "upgraded" to SIPS).
+    %% RFC3261 #19.1 (SIP and SIPS Uniform Resource Indicators).
+    NewURL = sipurl:set([{proto, "sip"}], URL),
+    lookup_url_to_addresses(Src, NewURL);
 lookup_url_to_addresses(sipuserdb_mnesia, URL) when is_record(URL, sipurl) ->
     User = URL#sipurl.user,
     %% sipuserdb_mnesia is extra liberal with usernames
@@ -243,15 +305,18 @@ lookup_address_to_users(Address) ->
 lookupappserver(Key) when is_record(Key, sipurl) ->
     case sipserver:get_env(appserver, none) of
 	none ->
-	    logger:log(debug, "Lookup: Requested to provide appserver for ~p, but no appserver configured! "
-		       "Returning 480 Temporarily Unavailable.", [Key]),
-	    {response, 480, "Temporarily Unavailable"};
+	    logger:log(error, "Lookup: Requested to provide appserver for ~p, but no appserver configured! "
+		       "Responding '480 Temporarily Unavailable (no appserver configured)'.", [sipurl:print(Key)]),
+	    %% XXX perhaps the '(no appserver configured)' should either not be disclosed, or
+	    %% included in a Reason: header instead of the reason phrase
+	    {response, 480, "Temporarily Unavailable (no appserver configured)"};
 	AppServer ->
 	    case sipurl:parse_url_with_default_protocol("sip", AppServer) of
 		URL when is_record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
 		    {forward, URL};
 		_ ->
-		    logger:log(error, "Failed parsing configured appserver ~p", [AppServer]),
+		    logger:log(error, "Failed parsing configured appserver ~p, responding '500 Server Internal Error'",
+			       [AppServer]),
 		    {response, 500, "Server Internal Error"}
 	    end
     end.
@@ -554,36 +619,38 @@ isours(URL) when is_record(URL, sipurl) ->
 %% Returns : true | false
 %%--------------------------------------------------------------------
 is_request_to_this_proxy(Request) when is_record(Request, request) ->
-    {Method, URL, Header} = {Request#request.method, Request#request.uri, Request#request.header},
-    case local:homedomain(URL#sipurl.host) of
+    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
+    IsOptionsForMe = is_request_to_this_proxy2(Method, URI, Header),
+    IsHomedomain = local:homedomain(URI#sipurl.host),
+    NoUserpart = (URI#sipurl.user == none),
+    if
+	IsOptionsForMe == true ->
+	    true;
+	IsHomedomain == true, NoUserpart == true ->
+	    true;
 	true ->
-	    is_request_to_this_proxy2(Method, URL, Header);
-	false ->
 	    false
     end.
 
 %% is_request_to_this_proxy2/3 is a subfunction of is_request_to_this_proxy/1,
-%% called if the URI host matches one of our hostnames. Return true if there
-%% is no userpart in the URI, or if the method is OPTIONS and Max-Forwards is
-%% less than one. This procedure is from RFC3261 #11 Querying for Capabilities.
-is_request_to_this_proxy2(_Method, #sipurl{user=User}=URL, _Header) when is_record(URL, sipurl), User == none ->
-    true;
+%% called to check if this is an OPTIONS request with Max-Forwards =< 1.
+%% This procedure is from RFC3261 #11 Querying for Capabilities.
 is_request_to_this_proxy2("OPTIONS", URL, Header) when is_record(URL, sipurl) ->
     %% RFC3261 # 11 says a proxy that receives an OPTIONS request with a Max-Forwards less than one
     %% MAY treat it as a request to the proxy.
-    MaxForwards =
-        case keylist:fetch('max-forwards', Header) of
-            [M] ->
-                lists:min([255, list_to_integer(M) - 1]);
-            [] ->
-                70
-        end,
-    if
-        MaxForwards < 1 ->
-            logger:log(debug, "Routing: Request is OPTIONS and Max-Forwards < 1, treating it as a request to me."),
-            true;
-        true ->
-            false
+    case keylist:fetch('max-forwards', Header) of
+	[M] ->
+	    case list_to_integer(M) of
+		N when N =< 1 ->
+		    logger:log(debug, "Routing: Request is OPTIONS and Max-Forwards =< 1, "
+			       "treating it as a request to me."),
+		    true;
+		_ ->
+		    false
+	    end;
+	_ ->
+	    %% No Max-Forwards, or invalid (more than one list element)
+	    false
     end;
 is_request_to_this_proxy2(_, URL, _) when is_record(URL, sipurl) ->
     false.
@@ -594,14 +661,14 @@ is_request_to_this_proxy2(_, URL, _) when is_record(URL, sipurl) ->
 %% Descrip.: Check if Domain is one of our configured homedomains.
 %% Returns : true | false
 %%--------------------------------------------------------------------
-homedomain(Domain) ->
+homedomain(Domain) when is_list(Domain) ->
     case util:casegrep(Domain, sipserver:get_env(homedomain, [])) of
 	true ->
 	    true;
 	_ ->
 	    %% Domain did not match configured sets of homedomain, check against list
 	    %% of hostnames and also my IP address
-	    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip_list()]),
+	    HostnameList = sipserver:get_env(myhostnames, []) ++ siphost:myip_list(),
 	    util:casegrep(Domain, HostnameList)
     end.
 
@@ -704,7 +771,70 @@ get_remote_party_name(Key, URI) ->
     none.
 
 
-%%--------------------------------------------------------------------
+%%====================================================================
 %%% Internal functions
-%%--------------------------------------------------------------------
+%%====================================================================
 
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+    %% test homedomain/1
+    %% Note: We can't test this function very well because it relies heavily
+    %% on configuration that can't be assumed to have any special content
+    %% when testing
+    %%--------------------------------------------------------------------
+    MyHostname = siprequest:myhostname(),
+
+    io:format("test: homedomain/1 - 1~n"),
+    %% test with my IP address
+    true = homedomain(MyHostname),
+
+    io:format("test: homedomain/1 - 1~n"),
+    %% test with something that should definately NOT be our hostname
+    false = homedomain("1-2"),
+
+
+    %% test is_request_to_this_proxy(Request)
+    %%--------------------------------------------------------------------
+    io:format("test: is_request_to_this_proxy/1 - 1~n"),
+    %% test OPTIONS with Max-Forwards: 1
+    true = is_request_to_this_proxy(#request{method="OPTIONS", uri=sipurl:parse("sip:ft@example.org"),
+					     header=keylist:from_list([{"Max-Forwards", ["1"]}])}),
+
+    io:format("test: is_request_to_this_proxy/1 - 2~n"),
+    %% test OPTIONS with Max-Forwards: 10
+    false = is_request_to_this_proxy(#request{method="OPTIONS", uri=sipurl:parse("sip:ft@example.org"),
+					      header=keylist:from_list([{"Max-Forwards", ["10"]}])}),
+
+    io:format("test: is_request_to_this_proxy/1 - 3~n"),
+    %% test MESSAGE with Max-Forwards: 10, but with URI pointing at us
+    IRTTP_URI1 = sipurl:new([{proto, "sip"}, {host, MyHostname}]),
+    true = is_request_to_this_proxy(#request{method="MESSAGE", uri=IRTTP_URI1,
+					     header=keylist:from_list([{"Max-Forwards", ["10"]}])}),
+
+
+    %% test remove_unsuitable_locations(URL, Locations)
+    %%--------------------------------------------------------------------
+    Unsuitable_URL1 = sipurl:new([{proto, "sip"}, {host, "sip1.example.org"}]),
+    Unsuitable_URL2 = sipurl:new([{proto, "sips"}, {host, "sips1.example.org"}]),
+    Unsuitable_URL3 = sipurl:new([{proto, "sip"}, {host, "sip2.example.org"}]),
+
+    io:format("test: remove_unsuitable_locations/2 - 1~n"),
+    %% test with non-SIPS URI
+    [Unsuitable_URL1, Unsuitable_URL2, Unsuitable_URL3] =
+	remove_unsuitable_locations(Unsuitable_URL1, [Unsuitable_URL1, Unsuitable_URL2, Unsuitable_URL3]),
+
+    io:format("test: remove_unsuitable_locations/2 - 2~n"),
+    %% test with SIPS URI
+    [Unsuitable_URL2] =
+	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_URL1, Unsuitable_URL2, Unsuitable_URL3]),
+
+    ok.
