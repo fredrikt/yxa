@@ -227,8 +227,8 @@ safe_spawn_child(Module, Function, Arguments) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: internal_send_result(Request, Socket, Status, Reason,
-%%                                ExtraHeaders)
+%% Function: my_send_result(Request, Socket, Status, Reason,
+%%                          ExtraHeaders)
 %%           Request = request record()
 %%           Socket  = sipsocket record()
 %%           Status  = integer(), SIP response code
@@ -244,7 +244,7 @@ safe_spawn_child(Module, Function, Arguments) ->
 %%           Res
 %%           Res = term(), result of transportlayer:send_result()
 %%--------------------------------------------------------------------
-internal_send_result(Request, Socket, Status, Reason, ExtraHeaders) when record(Request, request) ->
+my_send_result(Request, Socket, Status, Reason, ExtraHeaders) when record(Request, request) ->
     case Request#request.method of
 	"ACK" ->
 	    %% Empirical evidence says that it is a really bad idea to send responses to ACK
