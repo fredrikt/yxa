@@ -64,7 +64,7 @@ request(Method, {User, Pass, "sip-pstn.kth.se", Port, Parameters}, Header, Body,
 	"BYE" ->
 	    request2(Method, User, Header, Body, Socket);
 	_ ->
-	    none
+	    siprequest:send_result(Header, Socket, "", 501, "Not Implemented")
     end;
 
 request(Method, URL, Header, Body, Socket) ->
