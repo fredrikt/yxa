@@ -435,7 +435,7 @@ process_signal({showtargets}, State) when is_record(State, state) ->
     {ok, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({'EXIT', Parent, Reason}, State)
+%% Function: process_signal({'EXIT', Parent, Reason}, State)
 %%           Parent = pid()
 %%           Reason = term()
 %% Descrip.: If Pid matches our parent (State#state.parent), this
@@ -443,7 +443,7 @@ process_signal({showtargets}, State) when is_record(State, state) ->
 %%           exit (hard) ourselves. This will cause the EXIT signal to
 %%           be propagated to our client branches, which will CANCEL
 %%           themselves if they are not already completed.
-%% Returns : {stop, normal, State} |
+%% Returns : {quit, State} |
 %%           does not return
 %%--------------------------------------------------------------------
 %%
@@ -453,7 +453,7 @@ process_signal({'EXIT', Pid, normal}, #state{parent=Parent, final_response_sent=
 					    mystate=MyState}=State)
   when Pid == Parent, FRS == true; MyState /= calling ->
     %% Parent exited when we are finishing up. This is considered normal, so we just exit too.
-    {stop, normal, State};
+    {quit, State};
 
 %%
 %% final_response_sent == 'false', or mystate is 'calling'
