@@ -43,6 +43,7 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
+-include("directory.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -162,9 +163,7 @@ handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
 %%           Res = list() of SearchRes |
 %%                 none                |
 %%                 error
-%%                 SearchRes = {dn, Dn, attributes, Attributes}
-%%           Dn         = string(), distinguished name
-%%           Attributes = list() of string()
+%%                 SearchRes = ldapres record()
 %%--------------------------------------------------------------------
 handle_call({search, Server, Type, In, Attributes}, _From, State) ->
     case State#state.server of
@@ -337,9 +336,7 @@ ldapsearch_wrapper(Mode, Args, State) when Mode == simple; Mode == full, is_reco
 %% Returns : Res = list() of SearchRes |
 %%           none                      |
 %%           error
-%%           SearchRes  = {dn, Dn, attributes, Attributes} | string()
-%%           Dn         = string(), distinguished name
-%%           Attributes = list() of string()
+%%           SearchRes  = ldapres record() | string()
 %% Note    : If you make a simple query with AttrIn being a
 %%           [string()], then the subsequent query will fail
 %%           mysteriously. Seems to be a bug in eldap module.
@@ -362,7 +359,7 @@ exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) when is_record(Handle, ldaphan
 	    none;
 	error ->
 	    error;
-	[{dn, _Dn, attributes, _EAttributes} | _] = SearchRes ->
+	[H | _] = SearchRes when is_record(H, ldapres) ->
 	    case Mode of
 		simple ->
 		    [FindAttr] = Attr,
@@ -419,12 +416,9 @@ get_valuelist2([H | T], Attribute, Res) ->
 %%           Attributes = list() of string()
 %% Descrip.: Perform an LDAP search in a catch context, since we might
 %%           crash.
-%% Returns : Res = list() of SearchRes |
-%%           none                      |
+%% Returns : list() of ldapres record() |
+%%           none                       |
 %%           error
-%%           SearchRes  = {dn, Dn, attributes, Attributes}
-%%           Dn         = string(), distinguished name
-%%           Attributes = list() of string()
 %%--------------------------------------------------------------------
 exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when is_record(LHandle, ldaphandle), is_list(Type),
 							   is_list(In), is_list(Attributes) ->
@@ -468,18 +462,17 @@ exec_ldapsearch_unsafe(Handle, Type, In, Arguments) ->
 %%           Dn          = string()
 %%           RAttributes = list() of string()
 %% Descrip.: Turn a list of eldap module query results into our own
-%%           result format.
-%% Returns : Res = list() of {dn, Dn, attributes, Attributes}
-%%           Dn         = string(), distinguished name
-%%           Attributes = list() of string()
+%%           result format (ldapres records).
+%% Returns : Res = list() of ldapres record()
 %%--------------------------------------------------------------------
 get_ldapres(In) ->
     get_ldapres(In, []).
 
 get_ldapres([], Res) ->
-    Res;
+    lists:reverse(Res);
 get_ldapres([{eldap_entry, Dn, RAttributes} | T], Res) ->
-    get_ldapres(T, lists:append(Res, [{dn, Dn, attributes, RAttributes}])).
+    This = #ldapres{dn=Dn, attributes=RAttributes},
+    get_ldapres(T, [This | Res]).
 
 %%--------------------------------------------------------------------
 %% Function: ldap_connect(Server)
@@ -572,7 +565,8 @@ query_ldapclient(Query) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: get_value({dn, _Dn, attributes, EAttributes}, Attribute)
+%% Function: get_value(LDAPres, Attribute)
+%%           LDAPres     = ldapres record()
 %%           EAttributes = term()
 %%           Attribute   = string()
 %% Descrip.: Find the Attribute we are looking for in the result list
@@ -581,7 +575,7 @@ query_ldapclient(Query) ->
 %%           were multiple matches.
 %% Returns : Value = string() | none
 %%--------------------------------------------------------------------
-get_value({dn, _Dn, attributes, EAttributes}, Attribute) when is_list(Attribute) ->
+get_value(#ldapres{attributes=EAttributes}, Attribute) when is_list(Attribute) ->
     get_value2(EAttributes, Attribute).
 
 %% get_value2/2 is not exported. EAttributes is a list() of {Key, Value}
@@ -624,9 +618,7 @@ ldapsearch_simple(Server, Type, In, Attribute) ->
 %% Returns : Result |
 %%           none   |
 %%           error
-%%           Result = list() {dn, Dn, attributes, Attributes} tuples
-%%           Dn = string(), distinguished name
-%%           Attributes = list() of {Attribute, Value} tuples
+%%           Result = list() of ldapres record()
 %%--------------------------------------------------------------------
 ldapsearch(Server, Type, In, Attributes) when list(Server), list(Type), list(In), list(Attributes) ->
     logger:log(debug, "Directory: Extra debug: ldapsearch() Server ~p, Type ~p, In ~p, Attributes ~p",
