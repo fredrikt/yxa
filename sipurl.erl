@@ -201,10 +201,12 @@
 %%           * headers = any number of "hname=hvalue" separated by "&"
 %%
 %%           Phone numbers can also be encoded as sip uris (see
-%%           chapter 19.1.6).A tel uri:
+%%           chapter 19.1.6). A tel uri:
 %%           "tel:+358-555-1234567;postd=pp22" becomes
 %%           "sip:+358-555-1234567;postd=pp22@foo.com;user=phone" i.e.
-%%           "user" is replaced by "phone-no;tel-paramters".
+%%           "user" is replaced by "phone-no;tel-paramters", and a
+%%           default domain for the entity doing the conversion is
+%%           appended.
 %%
 %% Returns : sipurl record() | {unparseable, URLStr}
 %% Note    : only the sip protocol is supported, although sips is
@@ -653,7 +655,7 @@ get_port(Sipurl) when is_record(Sipurl, sipurl) ->
 %%--------------------------------------------------------------------
 new(AttrList) ->
     URLtemplate = #sipurl{proto="sip", user=none, pass=none, port=none,
-			  param=[], param_pairs=url_param:to_norm([])
+			  param_pairs=url_param:to_norm([])
 			 },
     set(AttrList, URLtemplate).
 
@@ -715,17 +717,16 @@ set([{port, Val} | T], URL) when is_record(URL, sipurl), is_integer(Val); Val ==
 
 %% PARAM
 set([{param, Val} | T], URL) when is_record(URL, sipurl), is_record(Val, url_param); is_list(Val) ->
-    {SetParam, SetParamPairs} =
+    SetParamPairs =
 	if
 	    is_record(Val, url_param) ->
 		%% Param already in a normalized form
-		{url_param:to_string_list(Val), Val};
+		Val;
 	    is_list(Val) ->
 		%% store param and param_pairs in a normalized form
-		UrlParam = url_param:to_norm(Val),
-		{url_param:to_string_list(UrlParam), UrlParam}
+		url_param:to_norm(Val)
 	end,
-    set(T, URL#sipurl{param=SetParam, param_pairs=SetParamPairs});
+    set(T, URL#sipurl{param_pairs=SetParamPairs});
 
 %% Finished
 set([], URL) when is_record(URL, sipurl) ->
@@ -817,7 +818,6 @@ test() ->
     %% test new
     %%--------------------------------------------------------------------
     SipUrl = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = 42,
-		     param = ["foo=bar", "baz"],
 		     param_pairs = url_param:to_norm(["foo=bar", "baz"])
 		     %% header = []
 		    },
@@ -832,7 +832,6 @@ test() ->
 		  {port, 42}, {param, ["foO=bar", "bAz"]}]),
 
     SipUrl2 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = 42,
-		      param = [],
 		      param_pairs = url_param:to_norm([])
 		      %% header = []
 		     },
@@ -851,7 +850,6 @@ test() ->
     SipUrl2 = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 42}]),
 
     SipUrl3 = #sipurl{proto = "sip", user = "test", pass = none, host = "su.it", port = none,
-		      param = [],
 		      param_pairs = url_param:to_norm([])
 		      %% header = []
 		     },
@@ -867,7 +865,6 @@ test() ->
     %% test new sips
     %%--------------------------------------------------------------------
     SipUrl4 = #sipurl{proto = "sips", user = "hokan", pass = "foobar", host = "su.it", port = 42,
-		      param = ["foo=bar", "baz"],
 		      param_pairs = url_param:to_norm(["foo=bar", "baz"])
 		      %% header = []
 		     },
@@ -878,12 +875,10 @@ test() ->
     %% test set
     %%--------------------------------------------------------------------
     SipUrl5 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = 42,
-		      param = ["foo=bar", "baz"],
 		      param_pairs = url_param:to_norm(["foo=bar", "baz"])
 		      %% header = []
 		     },
     SipUrl6 = #sipurl{proto = "sips", user = "hoKan", pass = "fOObar", host = "foo.su.it", port = 43,
-		      param = ["foo=barbaz", "baz"],
 		      param_pairs = url_param:to_norm(["foo=barbaz", "baz"])
 		      %% header = []
 		     },
@@ -917,7 +912,6 @@ test() ->
     ParsedUrl = #sipurl{proto = "sip",
 			user = none, pass = none,
 			host = "atlanta.com", port = none,
-			param = [],
 			param_pairs = url_param:to_norm([])
 		       },
     io:format("test: parse/1 - 1~n"),
@@ -926,7 +920,6 @@ test() ->
     ParsedUrl2 = #sipurl{proto = "sip",
 			 user = none, pass = none,
 			 host = "atlanta.com", port = 42,
-			 param = [],
 			 param_pairs = url_param:to_norm([])
 			},
     io:format("test: parse/1 - 2~n"),
@@ -935,7 +928,6 @@ test() ->
     ParsedUrl3 = #sipurl{proto = "sip",
 			 user = "alice", pass = none,
 			 host = "atlanta.com", port = 42,
-			 param = [],
 			 param_pairs = url_param:to_norm([])
 			},
     io:format("test: parse/1 - 3~n"),
@@ -944,7 +936,6 @@ test() ->
     ParsedUrl4 = #sipurl{proto = "sip",
 			 user = "alice", pass = "foo",
 			 host = "atlanta.com", port = 42,
-			 param = [],
 			 param_pairs = url_param:to_norm([])
 			},
     io:format("test: parse/1 - 4~n"),
@@ -953,7 +944,6 @@ test() ->
     ParsedUrl5 = #sipurl{proto = "sip",
 			 user = "alice", pass = "foo",
 			 host = "atlanta.com", port = 42,
-			 param = ["foo=bar", "zop"],
 			 param_pairs = url_param:to_norm(["foo=bar", "zop"])
 			},
     io:format("test: parse/1 - 5~n"),
@@ -963,7 +953,6 @@ test() ->
     ParsedUrl6 = #sipurl{proto = "sip",
 			 user = "alice", pass = none,
 			 host = "atlanta.com", port = none,
-			 param = ["transport=tcp"],
 			 param_pairs = url_param:to_norm(["transport=tcp"])
 			},
     io:format("test: parse/1 - 6~n"),
@@ -973,7 +962,6 @@ test() ->
     ParsedUrl7 = #sipurl{proto = "sip",
 			 user = ":lice", pass = ":",
 			 host = "atlanta.com", port = none,
-			 param = ["transp%3B%3Bort=tcp"],
 			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
 			},
     io:format("test: parse/1 - 7~n"),
@@ -984,7 +972,6 @@ test() ->
     ParsedUrl8 = #sipurl{proto = "sip",
 			 user = ":lice", pass = ":",
 			 host = "2.2.2.2", port = none,
-			 param = ["transp%3B%3Bort=tcp"],
 			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
 			},
     io:format("test: parse/1 - 8~n"),
@@ -995,7 +982,6 @@ test() ->
     ParsedUrl9 = #sipurl{proto = "sip",
 			 user = ":lice", pass = ":",
 			 host = "[1:1:1:1:2:2:2:2]", port = none,
-			 param = ["transp%3B%3Bort=tcp"],
 			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
 			},
     io:format("test: parse/1 - 9~n"),

@@ -54,7 +54,7 @@
 %%   not to be included in a url that is to be sent.
 %%--------------------------------------------------------------------
 -record(sipurl, {
-	  proto,  % "sip" | "sips" (not yet supported) | "tel" | tls (experimental) | tls6 (experimental),
+	  proto,  % "sip" | "sips" (not yet supported) | "tel"
                   % the protocol used  
 	          % XXX current sipurl.erl code only handles string() (must be lower case) - "sip"
 	          % a consistent use of atom() would be preferable
@@ -67,13 +67,11 @@
 	  host,   % string(), in lower case, usualy a domain name ("." separated text e.g. "su.se"), 
 	          % but may also be a IPv4 address (e.g. "123.10.23.45") or a
 	          % IPv6 references (e.g. "[1:2:3:4:5:6:7:8]") 
-	  port,   % none | string() (a numeric string) | integer()
+	  port,   % none | integer()
 	          % destination port at host
 	          	  
 	  %% uri-parameters - must be case insensitive
-	  param,         % list() of "name=val" | "name" strings, in lower case          
-	                 % XXX this field is deprecated !
-	  param_pairs    % url_param record(), param_pairs is intended as a replacement for param
+	  param_pairs    % url_param record()
 
 	  %% headers
 	  %% XXX headers are currently no supported
