@@ -172,7 +172,6 @@ handle_cast({connect_to_remote, Proto, Host, Port, GenServerFrom}, State) when S
 		    logger:log(debug, "TCP conncetion: Extra debug: Connected to ~s:~p (~p), socket ~p", [Host, Port, Proto, SipSocket]),
 		    %% This is the answer to a 'gen_server:call(tcp_dispatcher, {get_socket ...)' that 
 		    %% someone (GenServerFrom) made, but where there were no cached connection available.
-		    logger:log(debug, "OK, ANSWERING GENSERVERFROM ~p - SOCKET ~p", [GenServerFrom, SipSocket]),
 		    gen_server:reply(GenServerFrom, {ok, SipSocket}),
 		    {noreply, NewState, Timeout};
 		Res ->
