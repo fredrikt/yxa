@@ -11,8 +11,8 @@
 -export([
 	 run/0,
 	 run/1,
-
-	 run_cover/1
+	 run_cover/1,
+	 fail/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -47,6 +47,14 @@
 		       servertransaction,
 		       clienttransaction,
 		       sipdst,
+		       xml_parse_util,
+		       xml_parse,
+		       interpret_backend,
+		       interpret_cpl,
+		       ts_date,
+		       ts_datetime,
+		       ts_duration,
+		       interpret_time,
 		       tcp_receiver,
 		       targetlist,
 		       util,
@@ -119,6 +127,9 @@ run([Mode]) ->
     lists:foreach(F, Results),
 
     Status = erase(autotest_result),
+
+    %% temp fix (?) to ensure that everything gets printed before halt/1 terminates erts
+    timer:sleep(1000), % 1s
 
     if
 	Status == error, Mode == shell -> erlang:halt(1);
@@ -194,6 +205,19 @@ run_cover([Mode]) ->
 	    Status
     end.
 
+%%--------------------------------------------------------------------
+%% Function: fail(Fun)
+%%           Fun = fun()
+%% Descrip.: test case support function, used to check if call Fun()
+%%           fails - as expected
+%% Returns : ok | throw() (if Fun did not generate a exception)
+%%--------------------------------------------------------------------
+fail(Fun) ->
+    try Fun() of 
+	_  -> throw({error, no_exception_thrown_by_test})
+    catch 
+	_ -> ok %% catch user throw()
+    end.
 
 %%====================================================================
 %% Behaviour functions
@@ -210,7 +234,7 @@ run_cover([Mode]) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: fake_logger_start()
+%% Function: fake_logger_loop()
 %% Descrip.: Main loop for a process that does nothing more than
 %%           registers itself as 'logger'. This is needed when this
 %%           module is executed from a unix-shell, instead of from an
@@ -241,6 +265,3 @@ aggregate_coverage2([H | T], CoveredLines, TotalLines) ->
     aggregate_coverage2(T, CoveredLines + Cov, TotalLines + Cov + NotCov);
 aggregate_coverage2([], CoveredLines, TotalLines) ->
     {ok, CoveredLines, TotalLines}.
-
-
-
