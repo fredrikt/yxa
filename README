@@ -184,6 +184,12 @@ httpd_config			(required) Path to httpd.conf
 
 appserver:
 ----------
+internal_to_e164		(default: []) Regexps for rewriting
+				internal numbers to E.164 numbers. The
+				appserver must have identical
+				internal_to_e164 with the incomingproxy
+				to be able to make the exact same routing
+				decisions.
 timerT1				(default: 500) See RFC 3261. You should
 				probably not touch this.
 timerT2				(default: 4000) See RFC 3261. You should
@@ -255,10 +261,15 @@ appserver.config:
 Bootstrapping
 =============
 
-In your build directory, you should have a file called bootstrap.sh. Edit
-the ADMINPW environment variable in this file and execute it from the build
-directory where you are going to run your incomingproxy from (and of course
-on the same host where you are going to run your incomingproxy).
+In your build directory, you should have a file called bootstrap.sh. 
+Execute this script with the environment variable ADMINPW set to whatever
+initial admin-user password you wish. This script will create a
+Mnesia schema and all the needed Mnesia tables for you. You will have to
+execute it on the host where you are going to run the incomingproxy.
+
+Example :
+
+   $ ADMINPW=foo /path/to/build/directory/bootstrap.sh
 
 You should now have the necessary Mnesia databases and a user called 'admin'
 with the password in bootstrap.sh which you can use to add SIP users to
