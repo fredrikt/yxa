@@ -209,7 +209,7 @@ list_to_parameters([]) ->
 list_to_parameters([{Key, Value}]) ->
     [Key ++ "=" ++ Value];
 list_to_parameters([{Key, Value} | Rest]) ->
-    [Key ++ "=" ++ Value, list_to_parameters(Rest)].
+    [Key ++ "=" ++ Value | list_to_parameters(Rest)].
     
 
 httparg(String) ->
