@@ -144,7 +144,7 @@ location_prio([Address | Rest]) ->
 	    Address;
 	{false, _} ->
 	    Address2;
-	{{priority,P1},{priority,P2}} when P1 >= P2 ->
+	{{value, {priority,P1}}, {value, {priority,P2}}} when P1 >= P2 ->
 	    Address;
 	_ ->
 	    Address2
