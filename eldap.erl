@@ -44,7 +44,8 @@
 		rootdn = "",  % Name of the entry to bind as
 		passwd,       % Password for (above) entry
 		id = 0,       % LDAP Request ID 
-		log           % User provided log function
+		log,          % User provided log function
+		socketmodule = gen_tcp   % what Erlang module to use for network communication (gen_tcp or ssl)
 	       }).
 
 %%% For debug purposes
@@ -330,6 +331,10 @@ init(Hosts, Opts, Cpid) ->
 
 parse_args([{port, Port}|T], Cpid, Data) when integer(Port) ->
     parse_args(T, Cpid, Data#eldap{port = Port});
+parse_args([{use_ssl, true}|T], Cpid, Data) ->
+    parse_args(T, Cpid, Data#eldap{port = 636, socketmodule = ssl});
+parse_args([{use_ssl, false}|T], Cpid, Data) ->
+    parse_args(T, Cpid, Data);
 parse_args([{log, F}|T], Cpid, Data) when function(F) ->
     parse_args(T, Cpid, Data#eldap{log = F});
 parse_args([{log, _}|T], Cpid, Data) ->
@@ -345,8 +350,9 @@ parse_args([], _, Data) ->
 %%% connection is made.
 
 try_connect([Host|Hosts], Data) ->
-    TcpOpts = [{packet, asn1}, {active,false}],
-    case gen_tcp:connect(Host, Data#eldap.port, TcpOpts) of
+    TcpOpts = [{packet, asn1}, {active,false}, {nodelay, true}],
+    SocketModule = Data#eldap.socketmodule,
+    case SocketModule:connect(Host, Data#eldap.port, TcpOpts) of
 	{ok,Fd} -> {ok,Data#eldap{host = Host, fd   = Fd}};
 	_       -> try_connect(Hosts, Data)
     end;
@@ -428,7 +434,7 @@ exec_simple_bind(Data) ->
 			 name           = Data#eldap.rootdn,  
 			 authentication = {simple, Data#eldap.passwd}},
     log2(Data, "bind request = ~p~n", [Req]),
-    Reply = request(Data#eldap.fd, Data#eldap.id, {bindRequest, Req}),
+    Reply = request(Data#eldap.socketmodule, Data#eldap.fd, Data#eldap.id, {bindRequest, Req}),
     log2(Data, "bind reply = ~p~n", [Reply]),    
     exec_simple_bind_reply(Data, Reply).
 
@@ -497,8 +503,8 @@ do_search_0(Data, A) ->
 collect_search_responses(Data, Req, ID) ->
     S = Data#eldap.fd,
     log2(Data, "search request = ~p~n", [Req]),
-    send_request(S, ID, {searchRequest, Req}),
-    Resp = recv_response(S),
+    send_request(Data#eldap.socketmodule, S, ID, {searchRequest, Req}),
+    Resp = recv_response(Data#eldap.socketmodule, S),
     log2(Data, "search reply = ~p~n", [Resp]),    
     collect_search_responses(Data, S, ID, Resp, [], []).
 
@@ -509,14 +515,14 @@ collect_search_responses(Data, S, ID, {ok,Msg}, Acc, Ref)
 	    log2(Data, "search reply = searchResDone ~n", []),    
 	    {ok,Acc,Ref,Data};
 	{'searchResEntry',R} when record(R,'SearchResultEntry') ->
-	    Resp = recv_response(S),
+	    Resp = recv_response(Data#eldap.socketmodule, S),
 	    log2(Data, "search reply = ~p~n", [Resp]),    
 	    collect_search_responses(Data, S, ID, Resp, [R|Acc], Ref);
 	{'searchResRef',R} ->
 	    %% At the moment we don't do anyting sensible here since
 	    %% I haven't been able to trigger the server to generate
 	    %% a response like this.
-	    Resp = recv_response(S),
+	    Resp = recv_response(Data#eldap.socketmodule, S),
 	    log2(Data, "search reply = ~p~n", [Resp]),    
 	    collect_search_responses(Data, S, ID, Resp, Acc, [R|Ref]);
 	Else ->
@@ -543,7 +549,7 @@ do_add_0(Data, Entry, Attrs) ->
     S = Data#eldap.fd,
     Id = bump_id(Data),
     log2(Data, "add request = ~p~n", [Req]),
-    Resp = request(S, Id, {addRequest, Req}),
+    Resp = request(Data#eldap.socketmodule, S, Id, {addRequest, Req}),
     log2(Data, "add reply = ~p~n", [Resp]),    
     check_reply(Data#eldap{id = Id}, Resp, addResponse).
 
@@ -564,7 +570,7 @@ do_delete_0(Data, Entry) ->
     S = Data#eldap.fd,
     Id = bump_id(Data),
     log2(Data, "del request = ~p~n", [Entry]),
-    Resp = request(S, Id, {delRequest, Entry}),
+    Resp = request(Data#eldap.socketmodule, S, Id, {delRequest, Entry}),
     log2(Data, "del reply = ~p~n", [Resp]),    
     check_reply(Data#eldap{id = Id}, Resp, delResponse).
 
@@ -588,7 +594,7 @@ do_modify_0(Data, Obj, Mod) ->
     S = Data#eldap.fd,
     Id = bump_id(Data),
     log2(Data, "modify request = ~p~n", [Req]),
-    Resp = request(S, Id, {modifyRequest, Req}),
+    Resp = request(Data#eldap.socketmodule, S, Id, {modifyRequest, Req}),
     log2(Data, "modify reply = ~p~n", [Resp]),    
     check_reply(Data#eldap{id = Id}, Resp, modifyResponse).
 
@@ -612,7 +618,7 @@ do_modify_dn_0(Data, Entry, NewRDN, DelOldRDN, NewSup) ->
     S = Data#eldap.fd,
     Id = bump_id(Data),
     log2(Data, "modify DN request = ~p~n", [Req]),
-    Resp = request(S, Id, {modDNRequest, Req}),
+    Resp = request(Data#eldap.socketmodule, S, Id, {modDNRequest, Req}),
     log2(Data, "modify DN reply = ~p~n", [Resp]),    
     check_reply(Data#eldap{id = Id}, Resp, modDNResponse).
 
@@ -620,18 +626,18 @@ do_modify_dn_0(Data, Entry, NewRDN, DelOldRDN, NewSup) ->
 %%% Send an LDAP request and receive the answer
 %%% --------------------------------------------------------------------
 
-request(S, ID, Request) ->
-    send_request(S, ID, Request),
-    recv_response(S).
+request(SocketModule, S, ID, Request) ->
+    send_request(SocketModule, S, ID, Request),
+    recv_response(SocketModule, S).
 
-send_request(S, ID, Request) ->
+send_request(SocketModule, S, ID, Request) ->
     Message = #'LDAPMessage'{messageID  = ID,
 			     protocolOp = Request},
     {ok,Bytes} = asn1rt:encode('LDAPv3', 'LDAPMessage', Message),
-    gen_tcp:send(S, Bytes).
+    SocketModule:send(S, Bytes).
 
-recv_response(S) ->
-    case gen_tcp:recv(S, 0) of
+recv_response(SocketModule, S) ->
+    case SocketModule:recv(S, 0) of
 	{ok, Data} ->
 	    check_tag(Data),
 	    case asn1rt:decode('LDAPv3', 'LDAPMessage', Data) of
