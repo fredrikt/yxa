@@ -121,7 +121,7 @@ debugfriendly_locations([Location | Rest]) ->
     % make sure we don't end up with a negative Expires
     NewExpire = lists:max([0, Expire - util:timestamp()]),
     [C] = sipheader:contact_print([{none, Contact}]),
-    Res = "priority " ++ Prio ++ ": " ++ C ++ ";expires=" ++ integer_to_list(NewExpire),
+    Res = lists:concat(["priority ", Prio, ": ", C, ";expires=", NewExpire]),
     lists:append([Res], debugfriendly_locations(Rest)).
     
 lookupdefault(URL) ->
