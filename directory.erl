@@ -599,14 +599,10 @@ get_value2(EAttributes, Attribute) when is_list(EAttributes), is_list(Attribute)
 %%           error
 %%           Value = string()
 %%--------------------------------------------------------------------
-ldapsearch_simple(Server, Type, In, Attribute) when list(Server), list(Type), list(In), list(Attribute) ->
+ldapsearch_simple(Server, Type, In, Attribute) when is_list(Server), is_list(Type), is_list(In), is_list(Attribute) ->
     logger:log(debug, "Directory: Extra debug: ldapsearch_simple() Server ~p, Type ~p, In ~p, Attribute ~p",
 	       [Server, Type, In, Attribute]),
-    query_ldapclient({simple_search, Server, Type, In, Attribute});
-ldapsearch_simple(Server, Type, In, Attribute) ->
-    logger:log(error, "Directory: ldapsearch_simple() called with illegal argument(s) :~nServer ~p, Type ~p, In ~p, Attribute ~p",
-	       [Server, Type, In, Attribute]),
-    error.
+    query_ldapclient({simple_search, Server, Type, In, Attribute}).
 
 %%--------------------------------------------------------------------
 %% Function: ldapsearch(Server, Type, In, Attributes)
@@ -620,14 +616,10 @@ ldapsearch_simple(Server, Type, In, Attribute) ->
 %%           error
 %%           Result = list() of ldapres record()
 %%--------------------------------------------------------------------
-ldapsearch(Server, Type, In, Attributes) when list(Server), list(Type), list(In), list(Attributes) ->
+ldapsearch(Server, Type, In, Attributes) when is_list(Server), is_list(Type), is_list(In), is_list(Attributes) ->
     logger:log(debug, "Directory: Extra debug: ldapsearch() Server ~p, Type ~p, In ~p, Attributes ~p",
 	       [Server, Type, In, Attributes]),
-    query_ldapclient({search, Server, Type, In, Attributes});
-ldapsearch(Server, Type, In, Attribute) ->
-    logger:log(error, "Directory: ldapsearch() called with illegal argument(s) :~nServer ~p, Type ~p, In ~p, Attribute ~p",
-	       [Server, Type, In, Attribute]),
-    error.
+    query_ldapclient({search, Server, Type, In, Attributes}).
 
 
 %% Specific querys
@@ -648,7 +640,7 @@ lookup_mail2tel(Mail) ->
 	    none;
 	Server ->
 	    Res = ldapsearch_simple(Server, "mail", Mail, "telephoneNumber"),
-	    logger:log(debug, "Directory: LDAP telephoneNumber lookup on ~p -> ~p", [Mail, Res]),
+	    logger:log(debug, "Directory: LDAP mail -> telephoneNumber lookup on ~p -> ~p", [Mail, Res]),
 	    Res
     end.
 
