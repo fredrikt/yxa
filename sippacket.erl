@@ -23,24 +23,47 @@ parse(Packet, SrcIP, SrcPort) ->
     {Request, Headerkeylist} = parseheader(Header),
     case parserequest(Request) of
 	{request, Parsed} ->
+	    % XXX move data from SIP URI:s such as
+	    %   sips:alice@atlanta.com?subject=project%20x&priority=urgent
+	    % into Headerkeylist and strip them from the URI. See
+	    % RFC 3261 19.1.5 Forming Requests from a URI
 	    request(Parsed, Headerkeylist, Body);
 	{response, Parsed} ->
 	    response(Parsed, Headerkeylist, Body)
     end.
 
 parseheader(Header) ->
+    % XXX handle compact form of headers. how?
     [Request | Lines] = string:tokens(Header, "\n"),
     Parseheader = fun(Line) ->
 			  Index = string:chr(Line, $:),
 			  Name = string:substr(Line, 1, Index - 1),
 			  Value = string:strip(string:substr(Line, Index + 1),
 					       left),
-			  {httpd_util:to_lower(Name), Value}
+			  {Name, split_header_value(httpd_util:to_lower(Name), Value)}
 		  end,
     Headerlist = lists:map(Parseheader, Lines),
     Headerkeylist = keylist:from_list(Headerlist),
     {Request, Headerkeylist}.
 
+split_header_value(_, []) ->
+    [];
+split_header_value(LCname, Value) ->
+    case util:casegrep(LCname, ["www-authenticate", "authorization",
+				"proxy-authenticate", "proxy-authorization",
+				"date"]) of
+	true ->
+	    % Except the headers listed in RFC3261 7.3.1 and some other that needs
+	    % to be excepted from standard header comma splitting
+	    [Value];
+	_ ->
+	    Res = sipheader:comma(Value),
+	    % Remove leading and trailing white space
+	    lists:map(fun(V) ->
+			string:strip(V)
+		      end, Res)
+    end.
+    
 parserequest(Request) ->
     Index1 = string:chr(Request, 32),
     F1 = string:substr(Request, 1, Index1 - 1),
