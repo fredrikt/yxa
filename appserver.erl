@@ -195,7 +195,32 @@ get_actions(URI) ->
 	    lists:append(Actions, [{wait, 40}])
     end.
 
+forward_call_actions({Forwards, Timeout, Localring}, Actions) ->
+    Func = fun(Forward) ->
+		   {call, 40, {Forward, none, "kth.se", none, []}}
+	   end,
+    ForwardActions = lists:map(Func, Forwards),
+    case Localring of
+	true ->
+	    lists:append(Actions, [{wait, Timeout} | ForwardActions]);
+	_ ->
+	    case Timeout of
+		0 ->
+		    ForwardActions;
+		_ ->
+		    lists:append(Actions, [{wait, Timeout} | ForwardActions])
+	    end
+    end.
+
 fetch_actions(Key) ->
+    case database_forward:fetch(Key) of
+	{atomic, [F]} ->
+	    forward_call_actions(F, fetch_phone_actions(Key));
+	_ ->
+	    fetch_phone_actions(Key)
+    end.
+
+fetch_phone_actions(Key) ->
     case phone:get_phone(Key) of
     	{atomic, []} ->
 	    none;
