@@ -73,12 +73,12 @@
 %%--------------------------------------------------------------------
 start(BranchBase, Parent, Request, Actions, Timeout) when is_record(Request, request) ->
     Res = case catch siprequest:check_proxy_request(Request) of
-	      {ok, _, ApproxMsgSize} ->
+	      {ok, NewHeader, ApproxMsgSize} ->
 		  %% sipproxy should never be invoked on a request that contains
 		  %% a Route header, but we check just in case someone screws up.
 		  case keylist:fetch('route', Request#request.header) of
 		      [] ->
-			  State = #state{parent=Parent, branchbase=BranchBase, request=Request, 
+			  State = #state{parent=Parent, branchbase=BranchBase, request=Request#request{header=NewHeader}, 
 					 actions=Actions, timeout=Timeout, targets=targetlist:empty(),
 					 mystate=calling, approx_msgsize=ApproxMsgSize,
 					 endtime=util:timestamp() + Timeout, final_response_sent=false},
