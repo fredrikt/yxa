@@ -1,9 +1,0 @@
-{application, outgoingproxy,
- [{description, "Outgoing SIP proxy"},
-  {vsn,"0.0"},
-  {modules, [outgoingproxy, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader]},
-  {registered, [logger]},
-  {mod, {outgoingproxy, []}},
-  {env, []},
-  {applications,
-        [kernel, stdlib]}]}.

@@ -1,4 +1,0 @@
-{release, {"KTH SIP outgoingproxy","0.0"}, {erts, "5.2"},
- [{kernel,"2.6.2"},
-  {stdlib,"1.9.4"},
-  {outgoingproxy, "0.0"}]}.

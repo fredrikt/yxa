@@ -1,6 +1,0 @@
-{release, {"KTH SIP pstnproxy","0.0"}, {erts, "5.2"},
- [{kernel,"2.9"},
-  {stdlib,"1.12"},
-  {ssl, "3.0.1"},
-  {asn1, "1.4.2"},
-  {pstnproxy, "0.0"}]}.
