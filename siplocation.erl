@@ -187,7 +187,8 @@ remove_phones([Phone | Rest]) ->
 % proxy requests to a URI without authorization.
 get_user_with_contact(URI) ->
     {User, _, Host, UPort, _} = URI,
-    Port = siprequest:default_port(UPort),
+    %% XXX use protocol from URI when we have that available!
+    Port = siprequest:default_port(udp, UPort),
     URIstr = sipurl:print({User, none, Host, Port, []}),
     case phone:get_phone_with_requristr(URIstr) of
 	{atomic, [SIPuser | _]} ->
