@@ -1,5 +1,5 @@
 -module(sippacket).
--compile(export_all).
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -351,7 +351,7 @@ make_keylist2(_Bin, [], Res) ->
 %%           Key       = atom() | string()
 %%           ValuePtrs = list() of ptr record()
 %%           Bin       = binary(), the complete SIP message
-%%           Comma     = true | false, wether there is a comma in
+%%           Comma     = true | false, whether there is a comma in
 %%                       the values or not
 %% Descrip.: Look at Key and decide whether Value is a header that
 %%           should be splitted on comma or not. Then look at Comma to
@@ -373,6 +373,8 @@ split_header_value('proxy-authenticate', ValuePtrs, Bin, _Comma) ->
 split_header_value('proxy-authorization', ValuePtrs, Bin, _Comma) ->
     extract_value_s(ValuePtrs, Bin);
 split_header_value('date', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('x-yxa-peer-auth', ValuePtrs, Bin, _Comma) ->
     extract_value_s(ValuePtrs, Bin);
 split_header_value(_Key, ValuePtrs, Bin, false) ->
     %% An ordinary header, but we haven't seen a comma in it so we don't
@@ -406,7 +408,7 @@ extract_value2([H | T], Bin, Res) ->
     extract_value2(T, Bin, [ValueBin | Res]);
 extract_value2([], _Bin, Res) ->
     %% No more input
-    All = concat_binary(lists:reverse(Res)),
+    All = list_to_binary(lists:reverse(Res)),
     binary_to_list(All).
 
 %%--------------------------------------------------------------------
@@ -662,7 +664,7 @@ test() ->
 	"  branch  =   z9hG4bK9ikj8  ,\r\n"
 	" SIP  /    2.0   / UDP  192.168.255.111   ; branch=\r\n"
 	" z9hG4bK30239\r\n"
-	"m:\"Quoted string \"\"\" <sip:jdrosen@example.com> ; newparam =\r\n"
+	"m:\"Quoted string \\\"\\\"\" <sip:jdrosen@example.com> ; newparam =\r\n"
 	"      newvalue ;\r\n"
 	"  secondparam ; q = 0.33\r\n"
 	"\r\n"
@@ -671,10 +673,91 @@ test() ->
 
     io:format("test: parse/1 request - 6.1~n"),
     %% parse tortuous INVITE
-    {request, "INVITE" , URL6, _Header6, <<"test">>} = parse(Message6, none),
+    {request, "INVITE" , URL6, Header6, <<"test">>} = parse(Message6, none),
 
-    io:format("test: parse/1 request - 6.2 (disabled)~n"),
     %% verify contents
+
+    io:format("test: parse/1 request - 6.2.1.1~n"),
+    %% To: raw data extraction test
+    ["sip:vivekg@chair-dnrc.example.com ;   tag    = 1918181833n"] = keylist:fetch('to', Header6),
+
+    io:format("test: parse/1 request - 6.2.1.2 (To: full parsing, disabled)~n"),
+    %% To: - parsing check disabled since we fail to parse the URI
+    %%{none, Test6_ToURL} = sipheader:to(Header6),
+    %%"sip:vivekg@chair-dnrc.example.com;tag=1918181833n" = sipurl:print(Test6_ToURL),
+
+    io:format("test: parse/1 request - 6.2.2.1~n"),
+    %% From: raw data extraction test
+    ["\"J Rosenberg \\\"\"       <sip:jdrosen@example.com> ; tag = 98asjd8"]
+	= keylist:fetch('from', Header6),
+
+    io:format("test: parse/1 request - 6.2.2.2 (From: full parsing, disabled)~n"),
+    %% From: - parsing check disabled since we fail to handle the escaped quote in the display name
+    %% {"J Rosenberg \\\"", Test6_FromURL} = sipheader:from(Header6),
+    %% "sip:jdrosen@example.com" = sipurl:print(Test6_FromURL),
+
+    io:format("test: parse/1 request - 6.2.3~n"),
+    %% Max-Forwards:
+    ["0068"] = keylist:fetch('max-forwards', Header6),
+
+    io:format("test: parse/1 request - 6.2.4~n"),
+    %% Call-Id:
+    "wsinv.ndaksdj@192.0.2.1" = sipheader:callid(Header6),
+
+    io:format("test: parse/1 request - 6.2.5~n"),
+    %% Content-Length:
+    ["4"] = keylist:fetch('content-length', Header6),
+
+    io:format("test: parse/1 request - 6.2.6~n"),
+    %% CSeq:
+    {"0009", "INVITE"} = sipheader:cseq(Header6),
+
+    io:format("test: parse/1 request - 6.2.7.1~n"),
+    ["SIP  /   2.0/UDP   192.0.2.2;branch=390skdjuw",
+     "SIP  / 2.0  / TCP     spindle.example.com   ; branch  =   z9hG4bK9ikj8",
+     "SIP  /    2.0   / UDP  192.168.255.111   ; branch=z9hG4bK30239"] = keylist:fetch('via', Header6),
+
+    io:format("test: parse/1 request - 6.2.7.2 (Via: full parsing, disabled)~n"),
+    %% Via: Disabled since we fail to parse the spaces in the "SIP/2.0/FOO" part.
+    %%["SIP/2.0/UDP 192.0.2.2;branch=390skdjuw",
+    %% "SIP/2.0/TCP spindle.example.com;branch=z9hG4bK9ikj8",
+    %% "SIP/2.0/UDP 192.168.255.111;branch=z9hG4bK30239"] =
+    %%	sipheader:via_print( sipheader:via(Header6) ),
+    
+    io:format("test: parse/1 request - 6.2.8~n"),
+    %% Subject:
+    [] = keylist:fetch('subject', Header6),
+
+    io:format("test: parse/1 request - 6.2.9~n"),
+    %% NewFangledHeader:
+    ["newfangled valuecontinued newfangled value"] = keylist:fetch("NewFangledHeader", Header6),
+
+    io:format("test: parse/1 request - 6.2.10~n"),
+    [";;", "", ";;", ";"] = keylist:fetch("UnknownHeaderWithUnusualValue", Header6),
+    
+    io:format("test: parse/1 request - 6.2.11~n"),
+    %% Content-Type:
+    ["application/sdp"] = keylist:fetch("Content-Type", Header6),
+
+    io:format("test: parse/1 request - 6.2.12~n"),
+    %% Route:
+    ["<sip:services.example.com;lr;unknownwith=value;unknown-no-value>"] = keylist:fetch('route', Header6),
+
+    io:format("test: parse/1 request - 6.2.13.1~n"),
+    %% Contact:
+    ["\"Quoted string \\\"\\\"\" <sip:jdrosen@example.com> ; newparam =     newvalue ; secondparam ; q = 0.33"]
+	= keylist:fetch('contact', Header6),
+
+    io:format("test: parse/1 request - 6.2.13.2 (Contact: full parse, disabled)~n"),
+    %% Contact: - disabled since we remove a quote too much from the Display name when we parse it in concat.
+%%    Parse13C = #contact{display_name = "Quoted string \\\"\\\"",
+%%			urlstr = "sip:jdrosen@example.com",
+%%			contact_param = contact_param:to_norm([{"newparam", "newvalue"},
+%%							       {"secondparam", none},
+%%							       {"q", "0.33"}])
+%%			},
+%%    [Parse13C] = contact:parse( keylist:fetch('contact', Header6) ),    
+
 
     Message7 =
         "REGISTER sip:example.org SIP/2.0\r\n"
