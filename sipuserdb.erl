@@ -4,6 +4,7 @@
 %%% Created : 30 Sep 2003 by Fredrik Thulin <ft@it.su.se>
 
 -module(sipuserdb).
+
 -export([yxa_init/0,
 	 get_user_with_address/1,
 	 get_users_for_address_of_record/1,
@@ -18,12 +19,39 @@
 	 get_forward_for_user/1
 	]).
 
-%% Function: yxa_init/0
-%% Description: Called by sipserver_sip when the application is
-%%              starting. Invokes the init/0 function of each
-%%              configured sipuserdb module. Returns a list of
-%%              OTP supervisor child specifications, or empty.
-%% Returns: Spec
+-export([behaviour_info/1]).
+
+%%--------------------------------------------------------------------
+%% Function: behaviour_info(callbacks)
+%% Descrip.: Describe all the API functions a module indicating it is
+%%           an sipuserdb behaviour module must export. List of tuples
+%%           of the function name and it's arity.
+%% Returns : list() of tuple()
+%%--------------------------------------------------------------------
+behaviour_info(callbacks) ->
+    [{yxa_init, 0},
+     {get_user_with_address, 1},
+     {get_users_for_address_of_record, 1},
+     {get_users_for_addresses_of_record, 1},
+     {get_users_for_url, 1},
+     {get_addresses_for_user, 1},
+     {get_addresses_for_users, 1},
+     {get_password_for_user, 1},
+     {get_classes_for_user, 1},
+     {get_telephonenumber_for_user, 1},
+     {get_forwards_for_users, 1},
+     {get_forward_for_user, 1}
+    ];
+behaviour_info(_Other) ->
+    undefined.
+
+%%--------------------------------------------------------------------
+%% Function: yxa_init()
+%% Descrip.: Called by sipserver_sip when the application is starting.
+%%           Invokes the init/0 function of each configured sipuserdb
+%%           module. Returns a list of OTP supervisor child
+%%           specifications, or empty list.
+%% Returns : Spec
 %%--------------------------------------------------------------------
 yxa_init() ->
     Modules = sipserver:get_env(userdb_modules, [sipuserdb_mnesia]),
