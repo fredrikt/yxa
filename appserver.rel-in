@@ -1,6 +1,6 @@
-% Erlang OTP R9C-0 library versions
+%% Erlang OTP R10B-1 library versions
 {release, {"Yxa application server","0.0"}, {erts, "5.2"},
- [{kernel,"2.9"},
-  {stdlib,"1.12"},
-  {ssl, "3.0.1"},
+ [{kernel,"2.10.2"},
+  {stdlib,"1.13.2"},
+  {ssl, "3.0.4"},
   {appserver, "0.0"}]}.
