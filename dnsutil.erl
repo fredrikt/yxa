@@ -116,26 +116,24 @@ naptrlookup(Name) ->
 	    []
     end.
 
-b2i(Binary) ->
-    [I] = binary_to_list(Binary),
-    I.
-
 parsenaptr(Record) ->
     Binary = list_to_binary(Record),
-    {Order, Rest1} = split_binary(Binary, 2),
-    {Preference, Rest2} = split_binary(Rest1, 2),
-    {Flagslength, Rest3} = split_binary(Rest2, 1),
-    {Flags, Rest4} = split_binary(Rest3, b2i(Flagslength)),
-    {Serviceslength, Rest5} = split_binary(Rest4, 1),
-    {Services, Rest6} = split_binary(Rest5, b2i(Serviceslength)),
-    {Regexplength, Rest7} = split_binary(Rest6, 1),
-    {Regexp, Rest8} = split_binary(Rest7, b2i(Regexplength)),
-    {Replacementlength, Rest9} = split_binary(Rest8, 1),
-    {Replacement, Rest10} = split_binary(Rest9, b2i(Replacementlength)),
-    [O1, O2] = binary_to_list(Order),
-    [P1, P2] = binary_to_list(Preference),
-    {O1 * 256 + O2,
-     P1 * 256 + P2,
+    <<Order:16,
+    Preference:16,
+    Flagslength:8,
+    Rest/binary>> = Binary,
+    <<Flags:Flagslength/binary-unit:8,
+    Serviceslength:8,
+    Rest2/binary>> = Rest,
+    <<Services:Serviceslength/binary-unit:8,
+    Regexplength:8,
+    Rest3/binary>> = Rest2,
+    <<Regexp:Regexplength/binary-unit:8,
+    Replacementlength:8,
+    Rest4/binary>> = Rest3,
+    <<Replacement:Replacementlength/binary-unit:8>> = Rest4,
+    {Order,
+     Preference,
      binary_to_list(Flags),
      httpd_util:to_upper(binary_to_list(Services)),
      binary_to_list(Regexp),
