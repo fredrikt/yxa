@@ -152,15 +152,16 @@ install: $(boot_FILES) $(beam_FILES) $(start_FILES)
 	done
 
 clean:
-	rm -f core *.core *~ config.status config.log
+	rm -f core *.core *~
 	rm -f bootstrap.sh local.erl
 	rm -f newversion.erl.new version.erl.in
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
-	rm -f *.o ktrace.out dtmfserver 
+	rm -f *.o ktrace.out dtmfserver erl_crash.dump
+	rm -f $(start_FILES)
 
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
-#$(start_FILES): $(boot_FILES)
+$(start_FILES): $(boot_FILES)
 
 SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES:
@@ -180,8 +181,6 @@ dtmfserver: dtmfserver.o
 
 local.erl: $(LOCAL_ERL)
 	cp $(srcdir)/$(LOCAL_ERL) local.erl
-
-#incomingproxy.start pstnproxy.start adminwww.start appserver.start
 
 incomingproxy.boot: incomingproxy.app incomingproxy.rel
 	$(systools_make_script)
