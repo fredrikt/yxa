@@ -115,37 +115,37 @@ unquote([$" | QString]) ->
 unquote(QString) ->
     QString.
 
-name_header([$" | String]) ->
-    NameEnd = string:chr(String, $"),
-    Displayname = string:substr(String, 1, NameEnd - 1),
-    Rest = string:substr(String, NameEnd + 2),
-    case Rest of
-	[$< | Rest2] ->
-	    Index3 = string:chr(Rest2, $>),
-	    URL = string:substr(Rest2, 1, Index3 - 1),
-	    URI = sipurl:parse(URL),
-	    {Displayname, URI}
-    end;
-
 name_header(String) ->
     %logger:log(debug, "n: ~p", [String]),
-    Index1 = string:chr(String, $<),
+    Index1 = string:rchr(String, $<),
     case Index1 of
 	0 ->
+	    % No "<", just an URI?
 	    URI = sipurl:parse(String),
 	    {none, URI};
 	_ ->
-	    Index2 = string:chr(String, $>),
+	    Index2 = string:rchr(String, $>),
 	    URL = string:substr(String, Index1 + 1, Index2 - Index1 - 1),
 	    URI = sipurl:parse(URL),
-	    Displayname = if
-			      Index1 > 2 ->
-				  string:substr(String, 1, Index1 - 2);
-			      true ->
-				  none
-			  end,
+	    Displayname = parse_displayname(string:substr(String, 1, Index1 - 1)),
 	    {Displayname, URI}
     end.
+
+parse_displayname(String) ->
+    LeftQuoteIndex = string:chr(String, $"),
+    case LeftQuoteIndex of
+	0 ->
+	    empty_displayname(string:strip(String));
+	_ ->
+	    TempString = string:substr(String, LeftQuoteIndex + 1),
+	    RightQuoteIndex = string:chr(TempString, $"),
+	    empty_displayname(string:substr(TempString, 1, RightQuoteIndex - 1))
+    end.
+
+empty_displayname([]) ->
+    none;
+empty_displayname(Name) ->
+    Name.
 
 auth_print(Auth) ->
     auth_print(Auth, false).
