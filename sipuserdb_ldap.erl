@@ -67,10 +67,14 @@ get_users_for_addresses_of_record(AddressList) ->
 	Server ->
 	    UserAttribute = sipserver:get_env(ldap_userattribute, "sipAuthenticationUser"),
 	    AddressAttribute = sipserver:get_env(ldap_addressattribute, "sipLocalAddress"),
-	    Res = get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, AddressList),
-	    SortedRes = lists:usort(Res),
-	    logger:log(debug, "userdb-ldap: Found user(s) ~p for address(es) ~p", [SortedRes, AddressList]),
-	    SortedRes
+	    case get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, AddressList) of
+		Res when list(Res) ->
+		    SortedRes = lists:usort(Res),
+		    logger:log(debug, "userdb-ldap: Found user(s) ~p for address(es) ~p", [SortedRes, AddressList]),
+		    SortedRes;
+		Res ->
+		    Res
+	    end
     end.
 
 get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, []) ->
@@ -100,10 +104,14 @@ get_addresses_for_users(UserList) ->
 	Server ->
 	    UserAttribute = sipserver:get_env(ldap_userattribute, "sipAuthenticationUser"),
 	    AddressAttribute = sipserver:get_env(ldap_addressattribute, "sipLocalAddress"),
-	    Res = get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, UserList),
-	    SortedRes = lists:usort(Res),
-	    logger:log(debug, "userdb-ldap: Found address(es) ~p for user(s) ~p", [SortedRes, UserList]),
-	    SortedRes
+	    case get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, UserList) of
+		Res when list(Res) ->
+		    SortedRes = lists:usort(Res),
+		    logger:log(debug, "userdb-ldap: Found address(es) ~p for user(s) ~p", [SortedRes, UserList]),
+		    SortedRes;
+		Res ->
+		    Res
+	    end
     end.
 
 get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, []) ->
@@ -147,34 +155,6 @@ get_password_for_user(User) ->
 	    end
     end.
 
-get_classes_for_user("ft.sip1") ->
-    [national,mobile,internal];
-get_classes_for_user("ft.sip2") ->
-    [national,mobile,internal];
-get_classes_for_user("lha@it.su.se") ->
-    [national,mobile,internal,international];
-get_classes_for_user("lha2@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("roland@it.su.se") ->
-    [national,mobile,internal,international];
-get_classes_for_user("wikm@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("swold@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("franb@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("rjons@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("leifj@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("max@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("ualps@it.su.se") ->
-    [national,mobile,internal];
-get_classes_for_user("tol@it.su.se") ->
-    [national,internal];
-get_classes_for_user("shadow@it.su.se") ->
-    [internal];
 get_classes_for_user(User) ->
     logger:log(debug, "userdb-ldap: Classes are not yet implemented in the LDAP userdb module"),
     [].
