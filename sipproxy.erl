@@ -63,7 +63,7 @@
 	  targets,			%% targetlist record(), list of all our targets (ongoing or finished).
 	  				%% Targets are client transactions.
 	  final_response_sent=false,	%% true | false, have we forwarded a final response yet?
-	  mystate=calling,		%% calling|cancelled|complete|stayalive
+	  mystate=calling,		%% calling | cancelled | completed | stayalive
 	  approx_msgsize,		%% integer(), approximate size of requests we send out. Expensive to calculate,
 					%% so we remember it.
 	  timeout			%% integer(), number of seconds to wait for final response after we reach
@@ -348,7 +348,7 @@ process_wait(false, EndTime, State) when is_record(State, state) ->
 %%--------------------------------------------------------------------
 process_signal({cancel_pending}, State) when is_record(State, state) ->
     Targets = State#state.targets,
-    logger:log(debug, "sipproxy: process_wait() received 'cancel_pending', calling cancel_pending_targets()"),
+    logger:log(debug, "sipproxy: Received 'cancel_pending', calling cancel_pending_targets()"),
     NewTargets = cancel_pending_targets(Targets),
     %% If mystate is 'calling', we need to set it to 'cancelled' to prevent us from
     %% starting new transactions for additional destinations if we were to receive
@@ -443,14 +443,27 @@ process_signal({showtargets}, State) when is_record(State, state) ->
 %%           exit (hard) ourselves. This will cause the EXIT signal to
 %%           be propagated to our client branches, which will CANCEL
 %%           themselves if they are not already completed.
-%% Returns : does not return
+%% Returns : {stop, normal, State} |
+%%           does not return
 %%--------------------------------------------------------------------
+%%
+%% final_response_sent == 'true' or mystate /= 'calling'
+%%
+process_signal({'EXIT', Pid, normal}, #state{parent=Parent, final_response_sent=FRS,
+					    mystate=MyState}=State)
+  when Pid == Parent, FRS == true; MyState /= calling ->
+    %% Parent exited when we are finishing up. This is considered normal, so we just exit too.
+    {stop, normal, State};
+
+%%
+%% final_response_sent == 'false', or mystate is 'calling'
+%%
 process_signal({'EXIT', Pid, Reason}, #state{parent=Parent}) when Pid == Parent ->
-    %% Our parent has exited on us, exit straight away. The client branches are linked
-    %% to this process, and will cancel themselves when we exit.
-    %% XXX handle it differently if Reason is 'normal'?
-    logger:log(error, "sipproxy: My parent (~p) just exited, so I will too. Parents reason : ~p",
-	       [Parent, Reason]),
+    %% Our parent has exited on us, either abnormally or before we sent a final response.
+    %% Exit straight away since there is no point in us staying alive. The client branches
+    %% are linked to this process, and will cancel themselves when we exit, if they need to.
+    logger:log(error, "sipproxy: My parent just exited, so I will too (with error 'sipproxy_parent_died')."),
+    logger:log(debug, "sipproxy: Parents (~p) exit-reason : ~p", [Parent, Reason]),
     erlang:exit(sipproxy_parent_died);
 
 %%--------------------------------------------------------------------
@@ -701,7 +714,7 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 	ThisTarget ->
 	    %% By matching on ClientPid here, we make sure we got the signal from
 	    %% the right process. XXX handle wrong pid more gracefully than crashing!
-	    [ClientPid, ResponseToRequest] = targetlist:extract([pid, request], ThisTarget),
+	    [ClientPid, ResponseToRequest, OldTState] = targetlist:extract([pid, request, state], ThisTarget),
 	    {RMethod, RURI} = {ResponseToRequest#request.method, ResponseToRequest#request.uri},
 	    NewTarget1 = targetlist:set_state(ThisTarget, NewTState),
 	    NewTarget2 = targetlist:set_endresult(NewTarget1, SPResponse),	% XXX only do this for final responses?
@@ -709,8 +722,14 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 	    NewTargets = try_next_destination(Status, ThisTarget, NewTargets1, State),
 	    logger:log(debug, "sipproxy: Received branch result '~p ~s' from ~p (request: ~s ~s). ",
 		       [Status, Reason, ClientPid, RMethod, sipurl:print(RURI)]),
-	    logger:log(debug, "sipproxy: Extra debug: My Targets-list (response context) now contain :~n~p",
-		       [targetlist:debugfriendly(NewTargets)]),
+	    case (OldTState == NewTState) of
+		true ->
+		    ok;	%% No change, don't have to log verbose things
+		false ->
+		    logger:log(debug, "sipproxy: Extra debug: Target state changed from '~p' to '~p'.~n"
+			       "My Targets-list (response context) now contain :~n~p",
+			       [OldTState, NewTState, targetlist:debugfriendly(NewTargets)])
+	    end,
 	    NewState2 = State#state{targets=NewTargets},
 	    NewState3 = check_forward_immediately(ResponseToRequest, SPResponse, Branch, NewState2),
 	    NewState4 = cancel_pending_if_invite_2xx_or_6xx(RMethod, Status, NewState3),
