@@ -7,6 +7,8 @@
 %%%-------------------------------------------------------------------
 -module(sipuserdb_ldap).
 
+-behaviour(sipuserdb).
+
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
@@ -30,6 +32,7 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("siprecords.hrl").
+-include("directory.hrl").
 
 %%====================================================================
 %% External functions
@@ -76,9 +79,10 @@ get_user_with_address(Address) ->
 		none ->
 		    logger:log(debug, "userdb-ldap: No user found for address ~p in LDAP (server ~p)", [Address, Server]),
 		    nomatch;
-		[{dn, Dn, attributes, EAttributes}] ->
-		    case directory:get_value({dn, Dn, attributes, EAttributes}, UserAttribute) of
+		[LDAPres] when is_record(LDAPres, ldapres) ->
+		    case directory:get_value(LDAPres, UserAttribute) of
 			QRes when is_list(QRes) ->
+			    Dn = LDAPres#ldapres.dn,
 			    logger:log(debug, "userdb-ldap: Found LDAP user for ~p, dn ~p: ~p", [Address, Dn, QRes]),
 			    QRes;
 			Foo ->
@@ -86,7 +90,7 @@ get_user_with_address(Address) ->
 				       [Address, Foo]),
 			    error
 		    end;
-		[{dn, _Dn, attributes, _EAttributes} | _Rest] ->
+		[LDAPres | _Rest] when is_record(LDAPres, ldapres)->
 		    logger:log(debug, "userdb-ldap: Query for exactly one user matching address ~p failed, multiple users found",
 			       [Address]),
 		    error;
