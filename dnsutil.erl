@@ -3,11 +3,11 @@
 
 -include("inet_dns.hrl").
 
-srvlookup(Name) ->
+srvlookup(Proto, Name) ->
     case inet_res:nslookup(Name, in, srv) of
 	{ok, Rec} ->
 	    ParseSRV = fun(Entry) ->
-			       Entry#dns_rr.data
+			       {Proto, Entry#dns_rr.data}
 			  end,
 	    lists:map(ParseSRV, Rec#dns_rec.anlist);
 	{error, What} ->
@@ -18,20 +18,59 @@ srvlookup(Name) ->
 siplookup([]) ->
     none;
 siplookup(Domain) ->
-    case regexp:first_match(Domain, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") of
-	{match, _, _} ->
-	    logger:log(debug, "dns resolver: ~p is an IP address, not performing SRV lookup", [Domain]),
-	    none;
-	_ ->
-	    case srvlookup("_sip._udp." ++ Domain) of
-		[] ->
-		    none;
-		{error, What} ->
-		    {error, What};
-		[{_, _, Port, Host} | _] ->
-		    {Host, Port}
-	    end
-    end.
+    TCP = srvlookup(sipsocket_tcp, "_sip._tcp." ++ Domain),
+    UDP = srvlookup(sipsocket_udp, "_sip._udp." ++ Domain),
+    combine_srvresults(lists:sort(fun sortsrv/2, lists:flatten([TCP, UDP]))).
+
+combine_srvresults(List) ->
+    combine_srvresults(List, [], []).
+
+combine_srvresults([], [], Errors) ->
+    Errors;
+combine_srvresults([], Res, _) ->
+    Res;
+combine_srvresults([{error, What} | T], Res, Errors) ->
+    combine_srvresults(T, Res, lists:append(Errors, [{error, What}]));
+combine_srvresults([{Proto, {_, _, Port, Host}} | T], Res, Errors) ->
+    combine_srvresults(T, lists:append(Res, [{Proto, Host, Port}]), Errors).
+
+sortsrv({_, {Order1, Preference1, Port1, Host1}}, {_, {Order2, Preference2, Port2, Host2}}) ->
+    if
+	Order1 < Order2 ->
+	    true;
+	Order1 == Order2 ->
+	    if
+		Preference1 < Preference2 ->
+		    true;
+		Preference1 == Preference2 ->
+		    % This string sorting is just to make the process deterministic
+		    % so that a stateless proxy always chooses the same destination
+		    Str1 = Host1 ++ ":" ++ integer_to_list(Port1),
+		    Str2 = Host2 ++ ":" ++ integer_to_list(Port2),
+		    case lists:min([Str1, Str2]) of
+			Str1 ->
+			    true;
+			_ ->
+			    false
+		    end;
+		true ->
+		    false
+	    end;
+	true ->
+	    false
+    end;
+% SRV record always beats error
+sortsrv({SipProto, {Order, Preference, Port, Host}}, {error, _}) ->
+    true;
+% SRV record always beats error
+sortsrv({error, _}, {SipProto, {Order, Preference, Port, Host}}) ->
+    false;
+% NXDOMAIN always beats other errors
+sortsrv({error, nxdomain}, {error, _}) ->
+    true;
+% make errors come last
+sortsrv({error, _}, {error, _}) ->
+    false.
 
 get_ip_port(Host, Port) ->
     Res = inet:getaddr(Host, inet),
@@ -39,8 +78,8 @@ get_ip_port(Host, Port) ->
 	{error, What} ->
 	    logger:log(debug, "dns resolver: Error ~p when resolving ~p inet", [What, Host]),
 	    {error, What};
-	{ok, IP} ->
-	    {IP, Port}
+	{ok, {A1,A2,A3,A4}} ->
+	    {siphost:makeip({A1,A2,A3,A4}), Port}
     end.
     
 number2enum([], Domain) ->
@@ -115,7 +154,8 @@ enumlookup("+" ++ Number) ->
 	DomainList ->
 	    logger:log(debug, "Resolver: ENUM query for ~p in ~p", ["+" ++ Number, DomainList]),
 	    L1 = enumalldomains(Number, DomainList),
-	    L2 = chooseenum(L1, "SIP+E2U"),
+	    % SIP+E2U is RFC2916 and E2U+SIP is 2916bis
+	    L2 = lists:append(chooseenum(L1, "SIP+E2U"), chooseenum(L1, "E2U+SIP")),
 	    L3 = lists:sort(fun sortenum/2, L2),
 	    L4 = enumregexp(L3),
 	    applyregexp("+" ++ Number, L4)
