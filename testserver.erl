@@ -61,8 +61,8 @@ response(Response, Origin, LogStr) when record(Response, response), record(Origi
 %% REGISTER
 %%
 process_request(Request, LogTag) when record(Request, request), Request#request.method == "REGISTER" ->
-    {User, Pass, Host, Port, Parameters} = Request#request.uri,
-    case localhostname(Host) of
+    URI = Request#request.uri,
+    case localhostname(URI#sipurl.host) of
 	true ->
 	    Contacts = sipheader:contact(keylist:fetch("Contact", Request#request.header)),
 	    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
@@ -71,7 +71,7 @@ process_request(Request, LogTag) when record(Request, request), Request#request.
 						    {"Contacts", sipheader:contact_print(Contacts)}]
 						  );
 	_ ->
-	    logger:log(normal, "~s: REGISTER for non-homedomain ~p", [LogTag, Host]),
+	    logger:log(normal, "~s: REGISTER for non-homedomain ~p", [LogTag, URI#sipurl.host]),
 	    transactionlayer:send_response_request(Request, 501, "Not Implemented")
     end;
 
