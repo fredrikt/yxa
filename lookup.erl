@@ -57,8 +57,8 @@ lookupaddress(Key) ->
 	    logger:log(debug, "Lookup: Address lookup of ~p -> ~p", [Key, Loc]),
 	    Loc;
 	{atomic, Locations} ->
-	    BestLocations = prioritize_locations(Locations),
-	    logger:log(debug, "Lookup: Best location(s) of ~p :~n~p", [Key, BestLocations]),
+	    BestLocations = local:prioritize_locations(Key, Locations),
+	    logger:log(debug, "Lookup: Best location(s) of ~p :~n~p", [Key, debugfriendly_locations(BestLocations)]),
 	    % check if more than one location was found.
 	    case BestLocations of
 	        [] ->
@@ -88,25 +88,19 @@ prioritize_locations([]) ->
     {none, [], none, never};
 prioritize_locations(Locations) ->
     BestPrio = lists:min(get_prioritys(Locations)),
-    get_locations_with_prio(BestPrio, Locations).
+    get_locations_with_prio(list_to_integer(BestPrio), Locations).
 
-get_locations_with_prio(Priority, Locations) ->
-    PrioInt = list_to_integer(Priority),
-    L = lists:map(fun ({Location, Flags, Class, Expire}) ->
-		      Prio = lists:keysearch(priority, 1, Flags),
-		      case Prio of
-		          {value, {priority, PrioInt}} ->
-				{Location, Flags, Class, Expire};
-			  _ ->
-				none
-		      end
-	      end, Locations),
-    lists:filter(fun(A) ->
-		case A of
-		    none -> false;
-		    _ -> true
-		end
-	     end, L).
+get_locations_with_prio(_, []) ->
+    [];
+get_locations_with_prio(Priority, [Location | Rest]) ->
+    {Contact, Flags, Class, Expire} = Location,
+    Prio = lists:keysearch(priority, 1, Flags),
+    case Prio of
+	{value, {priority, Priority}} ->
+	    lists:append([{Contact, Flags, Class, Expire}], get_locations_with_prio(Priority, Rest));
+	  _ ->
+	    get_locations_with_prio(Priority, Rest)
+    end.
 
 get_prioritys(Locations) ->
     lists:map(fun ({Location, Flags, Class, Expire}) ->
@@ -119,6 +113,17 @@ get_prioritys(Locations) ->
 		      end
 	      end, Locations).
 
+debugfriendly_locations([]) ->
+    [];
+debugfriendly_locations([Location | Rest]) ->
+    [Prio] = get_prioritys([Location]),
+    {Contact, _, _, Expire} = Location,
+    % make sure we don't end up with a negative Expires
+    NewExpire = lists:max([0, Expire - util:timestamp()]),
+    [C] = sipheader:contact_print([{none, Contact}]),
+    Res = "priority " ++ Prio ++ ": " ++ C ++ ";expires=" ++ integer_to_list(NewExpire),
+    lists:append([Res], debugfriendly_locations(Rest)).
+    
 lookupdefault(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     case homedomain(Host) of
@@ -171,7 +176,7 @@ lookupenum("+" ++ E164) ->
 	    none;
 	URL ->
 	    {E164User, _, E164Host, _, _} = sipurl:parse(URL),
-	    IsMe = is_me(E164Host),
+	    IsMe = homedomain(E164Host),
 	    NewE164 = rewrite_potn_to_e164(E164User),
 	    SameE164 = util:casecompare(NewE164, "+" ++ E164),
 	    if
@@ -274,17 +279,14 @@ in_userdb(Key) ->
 	    false
     end.
 
-is_me(Hostname) ->
-    case homedomain(Hostname) of
+homedomain(Domain) ->
+    case util:casegrep(Domain, sipserver:get_env(homedomain, [])) of
 	true ->
 	    true;
 	_ ->
 	    HostnameList = lists:append(sipserver:get_env(myhostnames, []), [siphost:myip()]),
-	    util:casegrep(Hostname, HostnameList)
+	    util:casegrep(Domain, HostnameList)
     end.
-
-homedomain(Domain) ->
-    util:casegrep(Domain, sipserver:get_env(homedomain, [])).
 
 get_remote_party_number(Key, URI, DstHost) ->
     {_, _, Host, _, _} = URI,
