@@ -1,8 +1,23 @@
 -module(admin_www).
--export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2,
-	 change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2,
-	 change_classes/2, list_numbers/2, add_regexp/2, del_regexp/2,
-	 show_user/2, set_forward/2]).
+-export([
+	 start/2, 
+	 start/1, 
+	 list_phones/2, 
+	 list_users/2, 
+	 add_user/2, 
+	 change_user_form/2,
+	 change_user/2, 
+	 add_route/2, 
+	 del_route/2, 
+	 wml/2, 
+	 add_user_with_cookie/2,
+	 change_classes/2, 
+	 list_numbers/2, 
+	 add_regexp/2, 
+	 del_regexp/2,
+	 show_user/2, 
+	 set_forward/2
+	]).
 
 -include("phone.hrl").
 -include("database_regexproute.hrl").
@@ -554,6 +569,7 @@ add_user(Env, Input) ->
 	    end
     end.
 
+%% XXX appears to be unused
 add_route(Env, Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
@@ -563,6 +579,9 @@ add_route(Env, Input) ->
 	    Numberfind = dict:find("number", Args),
 	    Priorityfind = dict:find("priority", Args),
 	    Addressfind = dict:find("address", Args),
+	    %% XXX These two lines are untested
+	    CallId = dict:find("call-id", Args),
+	    CSeq = list_to_integer(dict:find("cseq", Args)),
 	    case {Numberfind, Priorityfind, Addressfind} of
 		{error, _, _} ->
 		    [header(ok), "Du m&aring;ste ange ett nummer"];
@@ -576,7 +595,9 @@ add_route(Env, Input) ->
 					       list_to_integer(Priority)}],
 					     permanent,
 					     never,
-					     {error, list_to_integer(Errorcode)}),
+					     {error, list_to_integer(Errorcode)},
+					     CallId,
+					     CSeq),
 		    [header(redirect, phonesurl())];
 		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
 		    phone:insert_purge_phone(Number,
@@ -584,7 +605,9 @@ add_route(Env, Input) ->
 					       list_to_integer(Priority)}],
 					     permanent,
 					     never,
-					     sipurl:parse(Address)),
+					     sipurl:parse(Address),
+					     CallId,
+					     CSeq),
 		    [header(redirect, phonesurl())]
 	    end
     end.
