@@ -93,7 +93,6 @@ name_header([$" | String]) ->
     Index1 = string:chr(String, $"),
     QString = string:substr(String, Index1),
     Index2 = string:chr(QString, $"),
-    logger:log(debug, "index: ~p", [Index2]),
     Displayname = string:substr(QString, 1, Index2 - 1),
     Rest = string:strip(string:substr(QString, Index2 + 1), left),
     case Rest of
