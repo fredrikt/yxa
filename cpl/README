@@ -1,0 +1,347 @@
+
+
+			___YXA - CPL implementation___
+
+This directory (.../cpl/) contains the CPL (RFC 3880) implementation used by 
+YXA. There are some noteworthy features:
+
+* The code is very modular, making it easy to replace it or use it with other 
+  SIP servers. The interface consists of:
+
+- xml_parse:cpl_script_to_graph/1
+  creates a graph representation of a CPL script.
+
+- interpret_cpl:process_cpl_script/4 and process_cpl_script/7 
+  processes a SIP request, with a graph from cpl_script_to_graph/1.
+
+- the module cpl_db.erl can be used to load cpl scripts and store them in a 
+  mnesia database table. 
+
+- interpret_backend:test_proxy_destinations/7 and lookup/3 are the only 
+  functions that interact with outside processes (other SIP server processes).
+
+* The code consists of two main parts, a parser which transforms CPL scripts 
+  to a internal graph representation (from XML) and a interpreter part, 
+  which processes SIP requests according to a previously processed and 
+  stored[1] CPL script. This allows for several nice features:
+
+- The parser does extensive script validation, on the whole script - not just
+  the parts executed to process a certain SIP request.
+
+- "cpl_db.erl" rejects non-validating scripts with a error message, so the
+  risk of registering a non-working script is greatly reduced. This is a very 
+  useful feature, as it reduces the number of bugs, among regular (SIP) phone 
+  users - "my phone doesn't work sometimes". It also makes it safer to allow
+  normal users to create and register their own scripts.
+
+- parsing and executing a CPL script at the same time, adds a response delay to
+  SIP messages - as a lot of XML processing must be done to process the 
+  script. The use of preprocessed CPL scripts (stored as graphs) remove this
+  overhead as well as giving the added bonus of reducing the overall CPU load.
+
+- The cpl_db module acts as both CPL script registerer and script validator 
+  (done in a xml_parse:cpl_script_to_graph/1 call) and can for example, be 
+  used as a backend of a GUI based CPL editor or web based registering service.
+
+* The main drawback with preprocessed scripts is that CPL scripts may need to
+  be reregistered (this requires the original script files to be stored on disk 
+  somewhere) if the graph representation is modified - this may for example 
+  happen if the parser needs a major redesign, perhaps when adding new CPL 
+  extensions.
+
+* The CPL code consists of a third major part, handled by interpret_time.erl,
+  time_switch.erl and ts_xxx.erl, which implement the time-switch tag,
+  as well as all the iCalendar (RFC 2445) functionality required - this includes 
+  handling of iCalendar date, time and duration formats and reoccurrence rules.
+
+[1]: the graph representation is usually stored in a database using cpl_db.erl,
+     but it is easy to write a SIP server that instead always parses the 
+     script, before processing SIP request with it - but this would result in
+     the loss of many of the advantages with the current implementation. 
+
+
+			___Supported CPL tags___
+
+
+CPL tags		supported
+--------------------------------------------------------------------------------
+incoming		yes
+--------------------------------------------------------------------------------
+outgoing		yes
+
+status: * SIP server does currently not send any outgoing requests to CPL so
+          this tag will never be called.
+--------------------------------------------------------------------------------
+subaction		yes
+--------------------------------------------------------------------------------
+address-switch		yes
+
+status: * no support for "tel" or "alias-type" in "subfield". 
+        * subfield="display" - subtag "address" using "is" and "contains" tests
+          only supports unicode in the ASCII range. 
+        * subfield="host" - subtag "adddress" using "subdomain-of" test, has not
+          been verified to work for IP4 and IP6 values.
+--------------------------------------------------------------------------------
+language-switch		yes
+
+status: * the specification is vague because it's a mix of switch semantics and 
+          accept-language (RFC 2616 chapter 14.4) semantics:
+        - each "language" tag is check in order (as in all other switches)
+        - q-values are ignored, in regards to selection of "language" tag to 
+          execute. 
+        - q-value = 0, language-ranges in request are ignored as they 
+          (in RFC 2616) are identical to "language has no match in request".
+        - the use of "*" is inconsistent, in RFC 2616 it indicates that the 
+	  request supports any language equally, so any supplied switch 
+          condition may be executed - in RFC 3880 it instead results in a 
+          execution of "otherwise". 
+notes : * see the iptel mailing list archive postings, at 2005-01-14 and 17, at 
+          www.ietf.org for explanations about language-switch design: 
+          http://www.ietf.org/mail-archive/web/iptel/current/mail2.html
+--------------------------------------------------------------------------------
+priority-switch		yes
+--------------------------------------------------------------------------------
+string-switch		yes
+
+status: * the "string" subtag using "is" and "contains" tests, only support 
+          unicode in the ASCII range.
+--------------------------------------------------------------------------------
+time-switch		yes
+                              
+status: * tzid and tzurl parameters are currently unsupported 
+	* default limit of "count" (in "time" subtag) is =< 100. 
+          This is done to limit size of the registered scripts, as well as
+          reducing CPU load when running a script.
+        - Default can be changed by setting time_switch_count_max in local.erl 
+        - scripts using "count" based reoccurrence, pre-calculate and store 
+          the time ranges for later lookup - this is why there is a count 
+          limit. Pre-calculation is mainly done to ensure swift response times 
+          when processing SIP requests.
+        * if "count" is used in combination with "byxxx" parameters, it becomes
+          possible to define "count" start points that can never occur e.g. 
+          byday="3MO" bymonthday="1" - third monday that is the 1st day in the 
+          month, all count searches are therefore stopped, when 
+          CurrentSearchYear - dtstart year > time_switch_count_max_lookahead.
+          20 years is default, add/edit time_switch_count_max_lookahead value in
+          local.erl to change the value.
+        * See interpret_time.erl (look for "Handling bysetpos"), for a in-depth
+          explanation about how bysetpos is supposed to work and how this is
+          handled by yxa - there are some usage limitations, as bysetpos can 
+          impose sever cpu and memory load, when certain conditions are 
+          combined.
+        * "When used with a recurrence rule, the 'DTSTART' and 'DTEND' 
+           properties MUST be specified in local time ..."
+          - RFC 2445 chapter 4.8.5.4 page 117.
+          The current implementation only requires these constraints when byxxx 
+          parameters are used in a time tag, and only for the dtstart parameter.
+          The this constraint is mainly to make calcuations of reoccurring 
+          periods with dtstart as offset, unambigious, the byxxx parameters 
+          processes floating (local) wall clock time and use dtstart date-time 
+          components as default values when calculating interval start points 
+          e.g.:
+          <time dtstart="20050101T083500" duration="PT8H40M" 
+           day="MO,TU,WE,TH,FR" freq="daily">
+          The monday start point becomes 08:35:00 as supplied by dtstart
+        + note that RFC 3880 doesn't note any restrictions on the use of utc
+          in time-switch tags and that utc could possibly be supported with 
+          some extra work - converting utc time -> floating and fixing possible
+          problems that may occur when an utc time becomes a local time with a
+          different date.
+        * depending on the underlying time handling used by the OS, it is likely 
+          that cpl script registration or/and interpretation may fail when a 
+          certain date is reached. Unix systems are for example likely to fail 
+          after 2038-01-19 03:14:07 (UTC) - a common end of the unix epoch.
+          This is mainly a problem for "count" base scripts that have start 
+          points occurring after such a date. The current erlang/OTP version 
+          (R10B-3) will generate an exception when yxa tries to convert the 
+          "count" start point date-times to gregorian (UTC based) seconds - 
+          thereby rejecting the script when registration is attempted.
+        - no such rejection is currently guaranteed.
+        * bug/feature: a reoccurence that has both its start and endpoint in 
+          different "transition to DST" periods will be considred a non-valid 
+          reoccurrence even though the intervening year/s are valid.
+          
+notes : * "dtstart" (in "time" subtag) can't be set earlier than 
+          1970-01-03 00:00:00 this applies independent of selected timezone, or 
+          wether time is supplied in floating or utc format.
+        * if any attribute (dtstart, dtend or until) that can be set to a 
+          DATE-TIME value, is set to contain a leap second - this will result
+          in the script being rejected when trying to register it with 
+          cpl_db.erl.
+          See interpret_time.erl for additional details on leap second issues.
+        * xml_parse.erl will check that dtstart < dtend, this is done by 
+          converting all date-time values to UTC time and comparing them.
+          If no timezone data is supplies (timezone data is currently 
+          unsupported), and date-time is floating, it will be converted to UTC
+          based on the _local_ set at the registering server (where cpl_db.erl
+          is run). Registering (parsing) and interpretation MUST be done using 
+          the same _local_ - floating date-time values will otherwise be 
+          adjusted incorrectly, in regard to timezone adjustments and DST 
+          handling.      
+        * the length of a reoccurrence is given by either "duration" or 
+          "dtend" - "dtstart" + 1 second.
+        * "duration" specifies how long a reoccurrence period lasts, this means 
+          that the starting time second, of a period, is counted as a duration  
+          of 1 second i.e. start = 08:00:00 and duration = 60 seconds result in
+          the time range [08:00:00, 08:00:59] (= the time used by the seconds 
+          0...59). 
+        * "For a recurring interval, the 'duration' parameter MUST be small 
+           enough such that subsequent intervals do not overlap." - RFC 3880 
+          chapter 4.4. page 16 - the parser will call ts_duration.erl to verify 
+          that a cpl script conforms to this condition. ts_duration.erl resolves
+          the condition as follows (RFC 3880 doesn't specify how to do this):
+        - if only "freq" is supplied, duration must be =< freq * interval, e.g. 
+          freq = daily, interval = 3 -> max duration = 3 days. 
+        - As months differ in length they will be assumed to be 28 days long - 
+          so that overlap can never occur. 
+        - if byxxx parameters are supplied, use the smallest max duration of
+          the byxxx parameters and freq.
+        - bymonth, byhour, byminute and bysecond have max duration = shortest 
+          difference between two elements in a byxxx parameter list or the 
+          length of the parent time unit - if only one element is listed e.g. 
+          bysecond="26" -> duration =< 60 seconds (second 26 reoccurs every 60 
+          seconds).
+        - bymonthday, byyearday and byweekno are somewhat more complex, as they 
+          can be used with both positive and negative indexes on variable 
+          length time units, this is solved by checking the byxxx parameters 
+          against all the various months, weeks in year and days in year lengths 
+          and then resolving the meaning of the negative indexes for the various 
+          possible cases (dayyearno="-1" -> day = 365 and 366) - when all values
+          have been gathered the max duration can then be determined as before.
+        - byday is solved in the same way but requires not only checking of 
+          months of length 28,29,30 and 31, but also requires, checking of 
+          various possible week days (monday-sunday) that can occur during 
+          the month days (28-31).
+        - bymonthday = 29 | 30 | 31 will allow durations of the same length, as
+          the next occurrence will never occur before "duration" no. of days
+          have passed.  
+        + note that this implementation will reject duration values which are 
+          only valid in certain ranges like e.g. [dtstart, until]
+        + note that duration can never be longer than the reoccurrence 
+          periodicity of the lowest byxxx parameter e.g. bymonth="4" -> max 
+          duration = 12 months, even if freq would allow for longer durations, 
+          e.g. if freq ="yearly" and interval="2".
+        + Similar assumptions appear to be done in RFC 3880 Appendix A - "An 
+          Algorithm for Resolving Time Switches". It would otherwise be very
+          inefficient to resolve time switches using byxxx parameters (if long 
+          durations are allowed), example:
+	     <time dtstart="20000101T000000" freq="yearly" interval="2"
+              duration="365DP" bysecond="23">
+             current time = 2004-01-01 00:00:22
+             candidate starting time = 2002-01-01 00:00:23 
+          60 * 24 * 365 (= 525600) hops would be required to find the working 
+          candidate starting time.
+         * When changing to or from DST (Daylight Saving Time) - any DST 
+          transition overlapping interval may lose or gain up to an extra hour
+          of time:
+        - change to DST; time jumps from T -> T+1 hour, if a interval stop is in 
+          the [T,T+1] range, stop becomes = T, if stop occurs after T+1 it will 
+          still stop at the same wall clock time, thereby losing at most an 
+          hour.  
+        - change back from DST; hour H repeats twice, a stop in such an hour 
+          will always be the later of the two occurrences of H. 
+        * "byweekno" will always be interpreted as referring to a week in the
+          current year (date-time when SIP request arrives), this may seam 
+          obvious and simple, but often results in not being able to refer to 
+          all weeks that have days in the current year e.g.:
+        - 2005-01-01 and 02 belong to week 53 of year 2004 (rather than being 
+          week 1 in 2005), as most of the days are part of the previous year, 
+          "week belongs to year with most weekdays in it" - is the rule used to 
+          decide which year a week belongs to.
+        - at most three days at each end of a year can belong to another year.
+        * "until" using only the date part of a date-time value will be treated
+          as "DATE 23:59:59" - of local (floating) time.
+        * the occurrence of a reoccurrence range e.g. [yyyy-02-29, yyyy-03-03] 
+          is determined by the validity of the start _date_, i.e. in the example 
+          above the range would only be valid on leap years, rather than the 
+          range being [yyyy-03-01, yyyy-03-03] on non-leap years and 
+          [yyyy-02-29, yyyy-03-03] on leap years. 
+          Range validity based on start date-time, is used both to simplify 
+          coding and to be consistent with RFC 3880 Appendix A - "An Algorithm 
+          for Resolving Time Switches".
+
+tips  : * use time part of dtstart date-time, to indicate a starting time for a 
+          reoccurring time period, e.g.:
+          <time dtstart="20050101T080000" duration="PT8H40M" 
+           day="MO,TU,WE,TH,FR" freq="daily">
+          this specifies that 8:00:00 to 15:39:59 each work day since 
+          2005-01-01, is a reoccurring period.
+        * note that if freq="weekly" is used, that the weekday supplied by 
+          dtstart will determine which weekday the reoccurrence happens on.
+          <time dtstart="20050101T080000" duration="PT8H40M" freq="weekly">
+          would reoccur each saturday as 2005-01-01 is a saturday. 
+        * it is often useful to set dtstart to some simple date like the first 
+          day of the year, first day of a month or the first day of the week - 
+          depending on the "freq" used.
+--------------------------------------------------------------------------------
+location		yes
+--------------------------------------------------------------------------------
+lookup			yes
+
+status: * only source="registration" is currently supported.
+        * the "timeout" parameter is currently ignored as the current lookup 
+          is close to instantaneous - http based "source" values and other 
+          remote unreliable sources are currently unsupported, "timeout" is
+          therefore not used.
+--------------------------------------------------------------------------------
+remove-location		yes
+--------------------------------------------------------------------------------
+sub			yes
+--------------------------------------------------------------------------------
+log			yes - if local.erl supplies a custom logger
+
+notes : * if no local:cpl_log/4 is supplied, "log" will do nothing
+        * use local:cpl_log/4 to implement a logger 
+        * callback signature: 
+          cpl_log(LogName, Comment, User, Request)
+                   LogName  = default (no name parameter supplied by cpl) |
+                              string() - cpl parameter
+                   Comment  = string(), cpl parameter
+                   User     = string(), user id
+                   Request  = request record()
+          returns: -
+        * local:cpl_is_log_dest/1 should also be supplied, this function 
+          determines if the "name" parameter used in the "log" tag refers, to
+          a valid place to log to.
+        * callback signature: 
+          cpl_is_log_dest(LogName)
+                   LogName = default | string()
+          returns: LogName | 
+                   throw({error, log_tag_attribute_name_is_not_a_legal_log})          
+
+--------------------------------------------------------------------------------
+mail			yes - if local.erl supplies a custom mailer
+
+notes : * if no local:cpl_mail/2 is supplied, "log" will do nothing
+        * use local:cpl_mail/2 to implement a logger 
+        * callback signature:  
+          cpl_mail(Mail, User)
+                   Mail = string(), a mail url
+                   User = string(), user id
+          returns: - 
+--------------------------------------------------------------------------------
+proxy			yes
+--------------------------------------------------------------------------------
+redirect		yes
+--------------------------------------------------------------------------------
+reject			yes
+--------------------------------------------------------------------------------
+
+
+			___Final Notes___
+
+
+* xmerl_scan:string/1 is used to parse CPL scripts 
+- xmerl appears to handle utf8 (but not utf16)
+- unicode chars appear to be handled - unicode string = list of unicode values 
+  (similar to erlang latin-1 strings but char can be > 255)  
+
+* the current code assumes that strings are in latin-1 format, so only chars in
+  the ASCII range are certain to work. This means that ascii and utf8  
+  encoded files should be limited to the chars in the 7bit ASCII set 
+
+* proxy tags without locations fail with output = failure and response = 500.
+
+
+
+

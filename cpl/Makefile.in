@@ -28,12 +28,29 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 
 
 erl_FILES = \
-	cpl_db.erl
+	cpl_db.erl \
+	cpl_test_util.erl \
+	interpret_backend.erl \
+	interpret_cpl.erl \
+	interpret_cpl_test.erl \
+	interpret_time.erl \
+	interpret_time_test.erl \
+	test_backend.erl \
+	time_switch.erl \
+	ts_date.erl \
+	ts_datetime.erl \
+	ts_duration.erl \
+	xml_parse.erl \
+	xml_parse_graph.erl \
+	xml_parse_test.erl \
+	xml_parse_util.erl
 
 imported_hrl_FILES = ../siprecords.hrl \
 
 
-hrl_FILES =
+hrl_FILES = \
+	cpl.hrl \
+	xml_parse.hrl
 
 
 
