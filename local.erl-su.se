@@ -1,0 +1,101 @@
+-module(local).
+-export([sipuser/1, lookup_homedomain_url/1, lookup_remote_url/1,
+	 lookupregexproute/1, lookupuser/1, lookupaddress/1,
+	 lookupappserver/1, prioritize_locations/2, lookupdefault/1,
+	 lookuppotn/1, lookupenum/1, lookuppstn/1, isours/1,
+	 homedomain/1]).
+
+sipuser(URL) ->
+    {User, Pass, Host, Port, Parameters} = URL,
+    User ++ "@" ++ Host.
+
+% This function looks up the telephone number of the user in LDAP and
+% if a telephone number is found, looks it up using lookuppotn() which
+% first looks in ENUM and secondly looks for a PSTN gateway for the number
+lookup_homedomain_url(URL) ->
+    User = sipuser(URL),
+    Loc1 = mail2tel(User),
+    logger:log(debug, "Local routing: mail2tel ~p -> ~p", [User, Loc1]),
+    case Loc1 of
+	"+" ++ E164 ->
+	    Loc2 = lookuppotn("+" ++ E164),
+	    case Loc2 of
+	        {proxy, Dst1} ->
+	            NewUser = sipuser(Dst1),
+		    logger:log(debug, "Local routing: loop check ~p (~p) and ~p", [NewUser, Dst1, User]),
+		    case util:casecompare(User, NewUser) of
+			true ->
+			    logger:log(debug, "Routing: POTN lookup resulted in what I started with, going for PSTN instead"),
+			    lookuppstn("+" ++ E164);
+			_ ->
+			    {proxy, Dst1}
+		    end;
+		Loc2 ->
+		    Loc2
+	    end;
+	_ ->
+	    Loc1
+    end.
+
+% same as lookup_mail2tel but looks for the mail address in the mailLocalAddress attribute
+lookup_mailLocalAddress2tel(Mail) ->
+    case sipserver:get_env(ldap_server, none) of
+	none ->
+	    none;
+	LDAPserver ->
+	    Res = directory:ldapsearch(LDAPserver, "mailLocalAddress", Mail, "telephoneNumber"),
+	    logger:log(debug, "Local: LDAP telephoneNumber lookup on ~p -> ~p", [Mail, Res]),
+	    Res
+    end.
+
+mail2tel(Mail) ->
+    Loc1 = directory:lookup_mail2tel(Mail),
+    case Loc1 of
+	none ->
+	    lookup_mailLocalAddress2tel(Mail);
+	Loc1 ->
+	    Loc1
+    end.
+
+lookup_remote_url(URL) ->
+    none.
+
+% local.erl hooks
+
+lookupregexproute(User) ->
+    lookup:lookupregexproute(User).
+
+lookupuser(URL) ->
+    lookup:lookupuser(URL).
+
+lookupaddress(Key) ->
+    lookup:lookupaddress(Key).
+
+lookupappserver(Key) ->
+    case Key of
+	"ft@pappersk.org" ->
+	    {forward, "lab13.lab.it.su.se", "5060"};
+	_ ->
+	    lookup:lookupappserver(Key)
+    end.
+
+prioritize_locations(Key, Locations) ->
+    lookup:prioritize_locations(Locations).
+
+lookupdefault(URL) ->
+    lookup:lookupdefault(URL).
+
+lookuppotn(Number) ->
+    lookup:lookuppotn(Number).
+
+lookupenum(Number) ->
+    lookup:lookupenum(Number).
+
+lookuppstn(Number) ->
+    lookup:lookuppstn(Number).
+
+isours(URL) ->
+    lookup:isours(URL).
+
+homedomain(Domain) ->
+    lookup:homedomain(Domain).

@@ -1,5 +1,9 @@
 -module(local).
--export([sipuser/1, lookup_homedomain_url/1, lookup_remote_url/1]).
+-export([sipuser/1, lookup_homedomain_url/1, lookup_remote_url/1,
+	 lookupregexproute/1, lookupuser/1, lookupaddress/1,
+	 lookupappserver/1, prioritize_locations/2, lookupdefault/1,
+	 lookuppotn/1, lookupenum/1, lookuppstn/1, isours/1,
+	 homedomain/1]).
 
 sipuser(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
@@ -63,3 +67,38 @@ lookupkthid_address(Address) ->
 	{error, Error} ->
 	    none
     end.
+
+% local.erl hooks
+
+lookupregexproute(User) ->
+    lookup:lookupregexproute(User).
+
+lookupuser(URL) ->
+    lookup:lookupuser(URL).
+
+lookupaddress(Key) ->
+    lookup:lookupaddress(Key).
+
+lookupappserver(Key) ->
+    lookup:lookupappserver(Key).
+
+prioritize_locations(Key, Locations) ->
+    lookup:prioritize_locations(Locations).
+
+lookupdefault(URL) ->
+    lookup:lookupdefault(URL).
+
+lookuppotn(Number) ->
+    lookup:lookuppotn(Number).
+
+lookupenum(Number) ->
+    lookup:lookupenum(Number).
+
+lookuppstn(Number) ->
+    lookup:lookuppstn(Number).
+
+isours(URL) ->
+    lookup:isours(URL).
+
+homedomain(Domain) ->
+    lookup:homedomain(Domain).
