@@ -1,7 +1,7 @@
 {application, appserver,
  [{description, "SIP application server"},
   {vsn,"0.0"},
-  {modules, [appserver, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, sipanswer, phone, sdp, rtp, siphost, sipclient, sipserver, sipproxy, local, siptimer, transactionlist, targetlist, clientbranch, serverbranch]},
+  {modules, [appserver, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, sipanswer, phone, sdp, rtp, siphost, sipclient, sipserver, sipproxy, local, siptimer, transactionlist, targetlist, clientbranch, serverbranch, siplocation]},
   {registered, [logger]},
   {mod, {appserver, []}},
   {env, []},
