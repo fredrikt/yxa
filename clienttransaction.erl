@@ -934,10 +934,6 @@ initiate_request(State) when is_record(State, state) ->
     logger:log(normal, "~s: Sending ~s ~s (to ~s)", [LogTag, Method, sipurl:print(URI),
 						     SocketDstStr]),
     case transportlayer:send_proxy_request(State#state.socket_in, Request, Dst, ["branch=" ++ Branch]) of
-	{sendresponse, Status, Reason} ->
-	    logger:log(normal, "~s: Transport layer failed sending ~s ~s to ~s, asked us to respond ~p ~s",
-		       [LogTag, Method, sipurl:print(URI), SocketDstStr, Status, Reason]),
-	    init_fake_request_response(Status, Reason, State);
 	{ok, SendingSocket, TLBranch} ->
 	    T1 = sipserver:get_env(timerT1, 500),
 	    TimerA = get_initial_resend_timer(SendingSocket, T1),
@@ -1212,14 +1208,15 @@ update_invite_expire(Status, State) when is_record(State, state), Status == 100 
     State;
 update_invite_expire(Status, State) when is_record(State, state), Status >= 101, Status =< 199 ->
     LogTag = State#state.logtag,
-    case siptimer:get_timers_appsignal_matching({invite_expire}, State#state.timerlist) of
-	[] ->
+    InviteExpireTimerList = siptimer:get_timers_appsignal_matching({invite_expire}, State#state.timerlist),
+    case siptimer:get_length(InviteExpireTimerList) of
+	0 ->
 	    logger:log(error, "~s: Received provisional response ~p to INVITE request, but no "
 		       "'invite_expire' (Timer C) timer found", [LogTag, Status]),
 	    logger:log(debug, "~s: TimerList where I could not find an 'invite_expire' (Timer C) timer :~n~p",
 		       [LogTag, siptimer:debugfriendly(State#state.timerlist)]),
 	    State;
-	InviteExpireTimerList ->
+	_ ->
 	    logger:log(debug, "~s: Received 1xx response to INVITE, resetting 'invite_expire' (Timer C)",
 		       [LogTag]),
 	    NewTimerList = siptimer:reset_timers(InviteExpireTimerList, State#state.timerlist),
