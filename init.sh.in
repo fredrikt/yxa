@@ -23,9 +23,9 @@ else
 fi
 
 if [ -f ${SSLCERTFILE} ] ; then
-    ssloptions="-proto_dist inet_ssl " \
-	"-ssl_dist_opt client_certfile $SSLCERTFILE" \
-	" -ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2"
+    ssloptions="-proto_dist inet_ssl \
+	-ssl_dist_opt client_certfile $SSLCERTFILE \
+	-ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2"
 else
     echo "WARNING: starting without SSL - " \
 	"missing certificate file ${SSLCERTFILE}"
