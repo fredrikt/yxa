@@ -72,24 +72,36 @@ if [ "x$MYNAME" = "xbootstrap.sh" ]; then
 	exit 1
     fi
 
-    if [ "x$ADMINPW" = "x" ]; then
-	echo "You are not following the instructions in README!"
-	echo ""
-	echo "You need to set the environment variable ADMINPW"
-	echo "before executing $0. Like this :"
-	echo ""
-	echo "  $ ADMINPW=foo $0"
-	echo ""
-	exit 1
-    fi
+    if [ "x$REPLICAMASTER" != "x" ]; then
+        # yes, the name should be incomingproxy when bootstrapping
+	${erl} -boot start_ssl -pz ${beamdir} \
+	    $EXTRA_ERL_ARGUMENTS \
+	    -name incomingproxy \
+	    $ssloptions \
+	    $MNESIAPARAMETERS \
+	    -noshell \
+	    -run bootstrap replica "$REPLICAMASTER" \
+	    -run init stop
+    else
+	if [ "x$ADMINPW" = "x" ]; then
+	    echo "You are not following the instructions in README!"
+	    echo ""
+	    echo "You need to set the environment variable ADMINPW"
+	    echo "before executing $0. Like this :"
+	    echo ""
+	    echo "  $ ADMINPW=foo $0"
+	    echo ""
+	    exit 1
+	fi
 
-    # yes, the name should be incomingproxy when bootstrapping
-    ${erl} -pz ${beamdir} \
-	$EXTRA_ERL_ARGUMENTS \
-	-name incomingproxy \
-	-noshell $MNESIAPARAMETERS \
-	-run bootstrap start "$ADMINPW" \
-	-run init stop
+        # yes, the name should be incomingproxy when bootstrapping
+	${erl} -pz ${beamdir} \
+	    $EXTRA_ERL_ARGUMENTS \
+	    -name incomingproxy \
+	    -noshell $MNESIAPARAMETERS \
+	    -run bootstrap start "$ADMINPW" \
+	    -run init stop
+    fi
 else
     if [ ! -r "${CONFIGPATH}.config" ]; then
 	echo "$0: Configuration file ${CONFIGPATH}.config not found or not readable"
