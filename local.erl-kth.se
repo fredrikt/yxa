@@ -14,6 +14,7 @@
 	 lookupappserver/1,
 	 lookupdefault/1,
 	 lookuppotn/1,
+	 lookupnumber/1,
 	 lookupenum/1,
 	 lookuppstn/1,
 	 isours/1,
@@ -182,6 +183,9 @@ lookupdefault(URL) ->
 
 lookuppotn(Number) ->
     lookup:lookuppotn(Number).
+
+lookupnumber(Number) ->
+    lookup:lookupnumber(Number).
 
 lookupenum(Number) ->
     lookup:lookupenum(Number).
