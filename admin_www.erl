@@ -12,6 +12,7 @@ start(normal, Args) ->
 
 start(ConfigFile) ->
     mnesia:start(),
+    logger:start(),
     mnesia:change_config(extra_db_nodes, sipserver:get_env(databaseservers)),
     {Message, Args} = case mnesia:wait_for_tables([phone,user], infinity) of
 			  ok ->
