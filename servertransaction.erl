@@ -881,22 +881,22 @@ send_response_statemachine("INVITE", Status, proceeding) when Status >= 200, Sta
 
 
 send_response_statemachine("INVITE", Status, proceeding) when Status >= 300, Status =< 699 ->
-    logger:log(debug, "UAS decision: Requested to send 3xx, 4xx, 5xx or 6xx response ~p to INVITE when in " ++
+    logger:log(debug, "UAS decision: Requested to send 3/4/5/6xx response ~p to INVITE when in " ++
 	       "state 'proceeding' - doing so (reliably) and entering state 'completed'", [Status]),
     {send, true, completed};
 
 send_response_statemachine(Method, Status, trying) when Status >= 200, Status =< 699 ->
-    logger:log(debug, "UAS decision: Requested to send 2xx, 3xx, 4xx, 5xx or 6xx response ~p to ~s when in " ++
+    logger:log(debug, "UAS decision: Requested to send 2/3/4/5/6xx response ~p to ~s when in " ++
 	       "state 'trying' - doing so (unreliably) and entering state 'completed'", [Status, Method]),
     {send, false, completed};
 
 send_response_statemachine(Method, Status, proceeding) when Status >= 200, Status =< 699 ->
-    logger:log(debug, "UAS decision: Requested to send 2xx, 3xx, 4xx, 5xx or 6xx response ~p to ~s when in " ++
+    logger:log(debug, "UAS decision: Requested to send 2/3/4/5/6xx response ~p to ~s when in " ++
 	       "state 'proceeding' - doing so (unreliably) and entering state 'completed'", [Status, Method]),
     {send, false, completed};
 
 send_response_statemachine(Method, Status, completed) when Status >= 101, Status =< 699 ->
-    logger:log(debug, "UAS decision: Requested to send 2xx, 3xx, 4xx, 5xx or 6xx response ~p to ~s when already in " ++
+    logger:log(debug, "UAS decision: Requested to send 2/3/4/5/6xx response ~p to ~s when already in " ++
 	       "state 'completed' - ignoring", [Status, Method]),
     {ignore, false, completed};
 
