@@ -1,0 +1,3 @@
+#!/bin/sh
+. /mpkg/modules/current/init/sh
+module add erlang
