@@ -48,12 +48,27 @@ process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
 	    true
     end.
 
+internal_error(Header, Socket) ->
+    siprequest:send_result(Header, Socket, "", 500, "Server Internal Error").
+
+internal_error(Header, Socket, Code, Text) ->
+    siprequest:send_result(Header, Socket, "", Code, Text).
+
 do_process(Packet, Socket, IPlist, InPortNo, RequestFun, ResponseFun) ->
     IP = siphost:makeip(IPlist),
     case sippacket:parse(Packet, IP, InPortNo) of
 	{request, Method, URL, Header, Body} ->
 %	    logger:log(debug, "~s from ~s:~p", [Method, IP, InPortNo]),
-	    apply(RequestFun, [Method, URL, Header, Body, Socket, IP]);
+	    case catch apply(RequestFun, [Method, URL, Header, Body, Socket, IP]) of
+		{'EXIT', E} ->
+		    logger:log(error, "=ERROR REPORT====~n~p", [E]),
+		    internal_error(Header, Socket);
+		{siperror, Code, Text} ->
+		    logger:log(error, "SIP error: ~p ~s~n", [Code, Text]),
+		    internal_error(Header, Socket, Code, Text);
+		_ ->
+		    true
+	    end;
 	{response, Status, Reason, Header, Body} ->
 	    apply(ResponseFun, [Status, Reason, Header, Body, Socket, IP])
     end.
