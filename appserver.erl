@@ -27,7 +27,7 @@ request(Method, URI, Header, Body, Socket, FromIP) when Method == "ACK" ->
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 	    		[LogStr, SIPuser]),
-	    siprequest:send_proxy_request(none, {Method, URI, Header, Body}, URI, [])
+	    transportlayer:send_proxy_request(none, {Method, URI, Header, Body}, URI, [])
     end;
 
 request(Method, URI, OrigHeader, Body, Socket, FromIP) ->
@@ -54,7 +54,7 @@ create_session(Method, URI, Header, Body, Socket, FromIP) ->
 			    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
 			    		[LogStr, SIPuser]),
 			    THandler = transactionlayer:get_handler_for_request(Request),
-			    siprequest:send_proxy_request(THandler, {Method, URI, Header, Body}, URI, [])
+			    transportlayer:send_proxy_request(THandler, {Method, URI, Header, Body}, URI, [])
 		    end;
 		{Users, Actions} ->
 		    logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
@@ -84,7 +84,7 @@ create_session(Method, URI, Header, Body, Socket, FromIP) ->
 	    LogStr = sipserver:make_logstr({request, Method, URI, Header, Body}, FromIP),
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
 	    THandler = transactionlayer:get_handler_for_request(Request),
-	    siprequest:send_proxy_request(THandler, {Method, URI, Header, Body}, URI, [])
+	    transportlayer:send_proxy_request(THandler, {Method, URI, Header, Body}, URI, [])
     end.
 
 response(Status, Reason, Header, Body, Socket, FromIP) ->
@@ -97,10 +97,10 @@ response(Status, Reason, Header, Body, Socket, FromIP) ->
 	{error, E} ->
 	    logger:log(error, "Failed getting server transaction for stateless response: ~p", [E]),
 	    logger:log(normal, "Response to ~s: ~p ~s, failed fetching state - proxying", [LogStr, Status, Reason]),
-	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
+	    transportlayer:send_proxy_response(none, Response);
 	none ->
 	    logger:log(normal, "Response to ~s: ~p ~s, found no state - proxying", [LogStr, Status, Reason]),
-	    siprequest:send_proxy_response(none, Status, Reason, Header, Body);
+	    transportlayer:send_proxy_response(none, Response);
 	TH ->
 	    logger:log(debug, "Response to ~s: ~p ~s, server transaction ~p", [LogStr, Status, Reason, TH]),
 	    transactionlayer:send_proxy_response_handler(TH, Response)
@@ -323,13 +323,13 @@ process_messages(State) when record(State, state) ->
 
 handle_sipproxy_response(Response, State) when record(State, state), State#state.sipmethod == "INVITE", State#state.completed == true ->
     {Method, URI, _, _} = State#state.request,
-    {Status, Reason, RHeader, RBody} = Response,
+    {Status, Reason, _, _} = Response,
     if
 	Status >= 200, Status =< 299 ->
 	    % XXX change to debug level
 	    logger:log(normal, "Appserver glue: Forwarding 'late' 2xx response, ~p ~s to INVITE ~s statelessly",
 			[Status, Reason, sipurl:print(URI)]),
-	    siprequest:send_proxy_response(none, Status, Reason, RHeader, RBody);
+	    transportlayer:send_proxy_response(none, Response);
 	true ->
 	    logger:log(error, "Appserver glue: NOT forwarding non-2xx response ~p ~s to INVITE ~s - " ++
 			"a final response has already been forwarded (sipproxy should not do this!)",
