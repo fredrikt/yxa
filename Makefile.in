@@ -31,7 +31,7 @@ systools_make_script = \
 	$(ERL) -noshell -run systools make_script $* -run init stop
 
 create_start_script = \
-	sed -e 's!@PROGRAMNAME@!$*!' \
+	sed -e 's!@PROGRAMNAME@!$@!' \
 	    -e 's!@CONFIGDIR@!$(sysconfdir)!' \
 	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
 	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
