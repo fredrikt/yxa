@@ -19,6 +19,7 @@ sslkey:
 	echo prompt=no >> ssl/ssl.config
 	echo default_bits=1024 >> ssl/ssl.config
 	echo default_md=sha1 >> ssl/ssl.config
+	echo default_days=2002 >> ssl/ssl.config
 	echo default_keyfile=privkey.pem >> ssl/ssl.config
 	echo distinguished_name=req_distinguished_name >> ssl/ssl.config
 	echo "[ req_distinguished_name ]" >> ssl/ssl.config
@@ -27,9 +28,9 @@ sslkey:
 	echo "O=KTH" >> ssl/ssl.config
 	echo "OU=ITE" >> ssl/ssl.config
 	echo "CN=`hostname`" >> ssl/ssl.config
-	cd ssl && openssl req -new -text -out cert.req -config ./ssl.config
+	cd ssl && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
 	cd ssl && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
-	cd ssl && openssl req -x509 -in cert.req -text -key cert.pem -out cert.cert
+	cd ssl && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
 	cat ssl/cert.cert ssl/cert.pem > ssl/cert.comb
 
 %.start: %.boot %.config
