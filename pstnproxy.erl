@@ -199,15 +199,15 @@ add_caller_identity_for_pstn("INVITE", Headers, URI, Gateway) ->
     case sipserver:get_env(remote_party_id, false) of
 	true ->
 	    case local:get_remote_party_number(URI, Gateway) of
-		none ->
-		    Headers;
-		Number ->
+		Number when list(Number) ->
 		    {User, _, Host, Port, _} = URI,
 		    RemotePartyId = sipurl:print({Number, none, Host, Port, ["party=calling", "screen=yes", "privacy=off"]}),
 		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
 		    NewHeaders1 = keylist:set("Remote-Party-Id", [RemotePartyId], Headers),
 		    logger:log(debug, "P-Preferred-Identity: ~s", ["tel:" ++ Number]),
-		    keylist:set("P-Preferred-Identity", ["tel:" ++ Number], NewHeaders1)
+		    keylist:set("P-Preferred-Identity", ["tel:" ++ Number], NewHeaders1);
+		_ ->
+		    Headers
 	    end;
 	_ ->
 	    Headers
@@ -220,13 +220,13 @@ add_caller_identity_for_sip("INVITE", Headers, URI) ->
 	true ->
 	    {User, Pass, Host, Port, Parameters} = URI,
 	    case local:get_remote_party_name(User, URI) of
-		none ->
-		    Headers;
-		DisplayName ->
+		DisplayName when list(DisplayName) ->
 		    [RPI] = sipheader:contact_print([{DisplayName, URI}]),
 		    RemotePartyId = RPI ++ ";party=calling;screen=yes;privacy=off",
 		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
-		    keylist:set("Remote-Party-Id", [RemotePartyId], Headers)
+		    keylist:set("Remote-Party-Id", [RemotePartyId], Headers);
+		_ ->
+		    Headers
 	    end;
 	_ ->
 	    Headers
