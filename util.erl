@@ -58,6 +58,12 @@ regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
 	    []
     end.
 
+casecompare(none, none) ->
+    true;
+casecompare(none, String) ->
+    false;
+casecompare(String, none) ->
+    false;
 casecompare(String1, String2) ->
     S1 = httpd_util:to_lower(String1),
     case httpd_util:to_lower(String2) of
