@@ -1,6 +1,8 @@
 -module(sippacket).
 -export([parse/2, parse_packet/1, parse_packet/2, parseheader/1, parserequest/1]).
 
+-include("sipsocket.hrl").
+
 parse_packet(Packet) ->
     parse_packet(Packet, none).
 
@@ -15,7 +17,14 @@ parse_packet(Packet, Origin) ->
     case sipserver:origin2str(Origin, none) of
 	none -> true;
 	S ->
-	    logger:log(debug, "Packet from ~s :~n~s", [S, Packet])
+	    % Extract receiver pid if present
+	    RStr = case Origin of
+		{_, _, _, SipSocket} when record(SipSocket, sipsocket) ->
+		    "(receiver: " ++ pid_to_list(SipSocket#sipsocket.pid) ++ ") ";
+	    _ ->
+		""
+	    end,
+	    logger:log(debug, "Packet from ~s ~s:~n~s", [S, RStr, Packet])
     end,
     Packetfixed = siputil:linefix(Packet),
     case string:str(Packetfixed, "\n\n") of
