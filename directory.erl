@@ -263,11 +263,7 @@ send_to_ldap_client1(Function, Arguments) ->
     util:safe_signal("LDAP client: ", ldap_client, {Function, self(), opaque, Arguments}),
     receive     
 	{ldap_client, opaque, Reply} ->
-	    Reply;
-	Unknown ->
-	    logger:log(error, "Directory: Received unknown signal ~p when waiting for answer from ldap_client, aborting",
-			[Unknown]),
-	    error
+	    Reply
     after
 	1500 ->
 	    case util:safe_is_process_alive(ldap_client) of
