@@ -20,7 +20,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {branch, socket_in, logtag, socket, report_to, request, response, sipstate,
-	timerlist, dst, timeout, cancelled, do_cancel, tl_branch}).
+	timerlist, dst, timeout, cancelled, do_cancel, tl_branch, initialized=no}).
 
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
@@ -54,14 +54,17 @@ init([Request, SocketIn, Dst, Branch, Timeout, Parent]) when record(Dst, sipdst)
 		   "INVITE" -> calling;
 		   _ -> trying
 	       end,
-    NewState1 = #state{branch=Branch, logtag=LogTag, socket=SocketIn, request=Request,
-		       sipstate=SipState, timerlist=siptimer:empty(),
-		       dst=Dst, socket_in=SocketIn, timeout=Timeout,
-		       cancelled=false, report_to=Parent},
+    State = #state{branch=Branch, logtag=LogTag, socket=SocketIn, request=Request,
+		   sipstate=SipState, timerlist=siptimer:empty(),
+		   dst=Dst, socket_in=SocketIn, timeout=Timeout,
+		   cancelled=false, report_to=Parent},
     logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~s).",
 	       [LogTag, Method, sipurl:print(URI), sipdst:dst2str(Dst)]),
-    State = initiate_request(NewState1),
-    {ok, State};
+    %% Timeout 0 so that the spawned process immediately gets a timeout signal
+    %% which will cause it to send out our first request. We can't do that here since
+    %% that might risk to block the caller, and since that could cause the spawn_link
+    %% to fail in case the transport layer (for example) does a throw()
+    {ok, State, 0};
 init([Request, SocketIn, Dst, Branch, Timeout, Parent]) ->
     logger:log(error, "Client transaction: Will not start, invalid dst (~p) or request", [Dst]),
     {stop, "Invalid arguments for client transaction"}.
@@ -148,6 +151,11 @@ handle_info({siptimer, TRef, TDesc}, State) ->
 		       end
 	       end,
     check_quit({noreply, NewState});
+
+handle_info(timeout, State) when State#state.initialized == no ->
+    %% Continuation of init/1 but executing after init/1 has
+    %% returned, so the caller (the transaction_layer) is not blocked.
+    {noreply, initiate_request(State#state{initialized=yes})};
 
 handle_info(Info, State) ->
     logger:log(error, "Client transaction: Received unknown gen_server info :~n~p", [Info]),
