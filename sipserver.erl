@@ -68,7 +68,8 @@ start(normal, [AppModule]) ->
 		    {ok, Supervisor}
 	    end;
 	Unknown ->
-	    io:format("Failed starting supervisor :~n~p", [Unknown])
+	    E = lists:flatten(io_lib:format("Failed starting supervisor : ~p", [Unknown])),
+	    {error, E}
     end.
 
 find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor) ->
