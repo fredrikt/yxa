@@ -88,6 +88,8 @@ guarded_start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(R
 		error ->
 		    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
 		    error;
+		cancelled ->
+		    ok;
 		Branch ->
 		    guarded_start2(Branch, ServerHandler, ClientPid, Request, DstList, Timeout)
 	    end;
@@ -106,6 +108,8 @@ guarded_start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(R
 			error ->
 			    transactionlayer:send_response_handler(STHandler, 500, "Server Internal Error"),
 			    error;
+			cancelled ->
+			    ok;
 			Branch ->
 			    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout)
 		    end
@@ -328,11 +332,15 @@ start_next_client_transaction(State) when record(State, state) ->
 
 %% Function: adopt_st_and_get_branch/1
 %% Description: Adopt a server transaction, and get it's branch.
-%% Returns: error |
+%% Returns: error     |
+%%          cancelled |
 %%          Branch
 %%--------------------------------------------------------------------
 adopt_st_and_get_branch(TH) ->
     case transactionlayer:adopt_server_transaction_handler(TH) of
+	{error, cancelled} ->
+	    logger:log(normal, "sippipe: Request has allready been cancelled, aborting."),
+	    cancelled;
         {error, E} ->
             logger:log(error, "sippipe: Could not adopt server transaction handler ~p : ~p", [TH, E]),
 	    error;

@@ -159,6 +159,10 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 		{Users, Actions} ->
 		    logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
 		    case transactionlayer:adopt_server_transaction(Request) of
+			{error, cancelled} ->
+			    logger:log(normal, "Appserver: Request '~s ~s' has allready been cancelled, aborting.",
+				       [Request#request.method, sipurl:print(URI)]),
+			    ok;
 			{error, E} ->
 			    logger:log(error, "Appserver: Failed to adopt server transaction for request ~s ~s : ~p",
 				       [Request#request.method, sipurl:print(URI), E]),
