@@ -13,11 +13,7 @@ send_response(Socket, Code, Text, Header, Body) ->
 
 send_response_to(Socket, Code, Text, Dest, Header, Body) ->
     Line1 = "SIP/2.0 " ++ integer_to_list(Code) ++ " " ++ Text,
-    Printheader = fun({Name, Value}) ->
-			  Name ++ ": " ++ siputil:printvalue(Value)
-		  end,
-    HLines = lists:map(Printheader, Header),
-    Message = siputil:concat_strings([Line1 | HLines]) ++ "\r\n" ++ Body,
+    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
     logger:log(debug, "send response(~p):~p", [Dest, Message]),
     {Protocol, {Host, Port}, Parameters} = Dest,
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
@@ -44,15 +40,11 @@ rewrite_route(Header, Dest) ->
 
 send_proxy_request(Header, Socket, {Action, Dest, Body, Parameters}) ->
     Line1 = Action ++ " " ++ sipurl:print(Dest) ++ " SIP/2.0",
-    Printheader = fun({Name, Value}) ->
-			  Name ++ ": " ++ siputil:printvalue(Value)
-		  end,
     [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
 				     {siphost:myip(), "5060"}, Parameters}]),
     Keylist2 = keylist:prepend({"Via", Viaadd}, Header),
     {Keylist3, Newdest} = rewrite_route(Keylist2, Dest),
-    HLines = lists:map(Printheader, Keylist3),
-    Message = siputil:concat_strings([Line1 | HLines]) ++ "\r\n" ++ Body,
+    Message = Line1 ++ "\r\n" ++ sipheader:build_header(Keylist3) ++ "\r\n" ++ Body,
     {Host, Port} = url_to_hostport(Newdest),
     logger:log(debug, "send request(~p,~p:~p):~p", [Newdest, Host, Port, Message]),
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
