@@ -15,33 +15,41 @@
 % waits freely.
 
 start(BranchBase, Parent, Request, Actions, Timeout) when record(Request, request) ->
-    case catch siprequest:check_proxy_request(Request) of
-	{ok, _, ApproxMsgSize} ->
-	    case keylist:fetch("Route", Request#request.header) of
-		[] ->
-		    State = #state{parent=Parent, branchbase=BranchBase, request=Request, 
-				   actions=Actions, timeout=Timeout, targets=targetlist:empty(),
-				   mystate=calling, approx_msgsize=ApproxMsgSize,
-				   endtime=util:timestamp() + Timeout, final_response_sent=false},
-		    fork(State),
-		    util:safe_signal("sipproxy :", Parent, {callhandler_terminating, self()}),
-		    ok;
-		_ ->
-		    logger:log(debug, "sipproxy: Can't fork request with Route header"),
-		    {error, "Request with Route header could not be forked"}
-	    end;
-	{siperror, Status, Reason} ->
-	    %% siprequest:check_proxy_request() did a throw() - something it does if
-	    %% for example Max-Forwards is 1. Pass this on to Parent and then return.
-	    logger:log(debug, "sipproxy: caught siperror throw() from check_proxy_request : ~p ~s",
-		       [Status, Reason]),
-	    util:safe_signal("sipproxy :", Parent, {all_terminated, {Status, Reason}}),
-	    E = io_lib:format("Request could not be forked (~p ~s)", [Status, Reason]),
-	    {error, lists:flatten(E)};
-	Unknown ->
-	    logger:log(debug, "sipproxy: check_proxy_request returned unknown result :~n~p", [Unknown]),
-	    {error, "Request could not be forked"}
-    end.
+    Res = case catch siprequest:check_proxy_request(Request) of
+	      {ok, _, ApproxMsgSize} ->
+		  %% sipproxy should never be invoked on a request that contains
+		  %% a Route header, but we check just in case someone screws up.
+		  case keylist:fetch("Route", Request#request.header) of
+		      [] ->
+			  State = #state{parent=Parent, branchbase=BranchBase, request=Request, 
+					 actions=Actions, timeout=Timeout, targets=targetlist:empty(),
+					 mystate=calling, approx_msgsize=ApproxMsgSize,
+					 endtime=util:timestamp() + Timeout, final_response_sent=false},
+			  fork(State),
+			  ok;
+		      _ ->
+			  logger:log(error, "sipproxy: Can't fork request with Route header"),
+			  InternalError = {500, "Server Internal Error"},
+			  util:safe_signal("sipproxy :", Parent, {sipproxy_all_terminated, self(), InternalError}),
+			  {error, "Request with Route header could not be forked"}
+		  end;
+	      {siperror, Status, Reason} ->
+		  %% siprequest:check_proxy_request() did a throw() - something it does if
+		  %% for example Max-Forwards is 1. Pass this on to Parent and then return.
+		  logger:log(debug, "sipproxy: caught siperror throw() from check_proxy_request : ~p ~s",
+			     [Status, Reason]),
+		  util:safe_signal("sipproxy :", Parent, {sipproxy_all_terminated, self(), {Status, Reason}}),
+		  E = io_lib:format("Request could not be forked (~p ~s)", [Status, Reason]),
+		  {error, lists:flatten(E)};
+	      Unknown ->
+		  logger:log(debug, "sipproxy: check_proxy_request returned unknown result :~n~p", [Unknown]),
+		  InternalError = {500, "Server Internal Error"},
+		  util:safe_signal("sipproxy :", Parent, {sipproxy_all_terminated, self(), InternalError}),
+		  {error, "Request could not be forked"}
+	  end,
+    %% Always signal Parent that we are terminating
+    util:safe_signal("sipproxy :", Parent, {sipproxy_terminating, self()}),
+    Res.
 
 %%
 %% No actions left
@@ -60,7 +68,7 @@ fork(State) when record(State, state), State#state.actions == [] ->
 			 NewTargets1 = cancel_pending_targets(Targets),
 			 NewTargets1
     end,
-    util:safe_signal("sipproxy :", State#state.parent, {no_more_actions}),
+    util:safe_signal("sipproxy :", State#state.parent, {sipproxy_no_more_actions, self()}),
     logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [State#state.timeout]),
     process_wait(false, State#state{mystate=stayalive, targets=NewTargets, endtime=util:timestamp() + State#state.timeout}),
     ok;
@@ -326,7 +334,7 @@ report_upstreams_statemachine(State) when record(State, state), State#state.fina
 	    end,
 	    Parent = State#state.parent,
 	    logger:log(debug, "sipproxy: Sending the result to parent Pid ~p.", [Parent]),
-	    util:safe_signal("sipproxy :", Parent, {all_terminated, ForwardResponse}),
+	    util:safe_signal("sipproxy :", Parent, {sipproxy_all_terminated, self(), ForwardResponse}),
 	    State#state{mystate=completed, final_response_sent=true};
 	false ->
 	    State

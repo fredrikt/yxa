@@ -304,6 +304,19 @@ fork_actions(BranchBase, CallHandler, Request, Actions) when record(Request, req
     logger:log(normal, "Appserver glue: Finished with fork (~s ~s), exiting.", [Method, sipurl:print(URI)]),
     ok.
 
+%%--------------------------------------------------------------------
+%% Function: start_actions(BranchBase, GluePid, OrigRequest, Actions)
+%%           BranchBase = string(), the "base" part of the server
+%%                        transactions branch - so that we can get
+%%                        sipproxy to generate intuitive branches for
+%%                        it's corresponding client transactions
+%%           GluePid = pid(), the pid to which sipproxy should report
+%%           OrigRequest = request record()
+%%           Actions = list() of sipproxy_action record()
+%% Descrip.: This function is spawned by the appserver glue process
+%%           and executes sipproxy:start() in this new thread.
+%% Returns : void(), does not matter.
+%%--------------------------------------------------------------------
 start_actions(BranchBase, GluePid, OrigRequest, Actions) when record(OrigRequest, request) ->
     {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
     Timeout = 32,
@@ -311,28 +324,37 @@ start_actions(BranchBase, GluePid, OrigRequest, Actions) when record(OrigRequest
     %% when it is done.
     case sipproxy:start(BranchBase, GluePid, OrigRequest, Actions, Timeout) of
 	ok ->
-	    logger:log(debug, "Appserver forker : sipproxy fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
-	    true;
+	    logger:log(debug, "Appserver forker : sipproxy fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]);
 	{error, What} ->
-	    logger:log(error, "Appserver forker : sipproxy fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What]),
-	    transactionlayer:send_response_request(OrigRequest, 500, "Server Internal Error")
+	    logger:log(error, "Appserver forker : sipproxy fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What])
     end.
 
-%% Receive messages from branch pids and do whatever is necessary with them
+%%--------------------------------------------------------------------
+%% Function: process_messages(State)
+%%           State = state record()
+%% Descrip.: Main loop of the appserver glue process. Waits for
+%%           signals from the server transaction (CallHandler) and the
+%%           sipproxy process (ForkPid) and passes information on
+%%           between these two as appropriately. Does not return until
+%%           both the CallHandler and ForkPid processes are gone.
+%% Returns : void(), does not matter.
+%%--------------------------------------------------------------------
 process_messages(State) when record(State, state), State#state.callhandler == none, State#state.forkpid == none ->
     logger:log(debug, "Appserver glue: Both CallHandler and ForkPid are 'none' - terminating"),
     ok;
 process_messages(State) when record(State, state) ->
-    CallHandler = State#state.callhandler,
-    ForkPid = State#state.forkpid,
+    CallHandler = State#state.callhandler,	%% The transaction layer reference to our server transaction
+    ForkPid = State#state.forkpid,		%% The pid of our sipproxy process
+    %% Get the actual pid of our server transaction process. We must _never_
+    %% send signals directly to this pid (instead we must use the interface
+    %% functions in the transactionlayer module) but we need it to verify the
+    %% source of messages we receive from it.
     CallHandlerPid = transactionlayer:get_pid_from_handler(CallHandler),
 
     {Res, NewState} = receive
-
-			  {sipproxy_response, ForkPid, Branch, Response} when record(Response, response) ->
-			      NewState1 = handle_sipproxy_response(Response, State),
-			      {ok, NewState1};
-
+			  %%
+			  %% Signals from our server transaction (CallHandlerPid)
+			  %%
 			  {servertransaction_cancelled, CallHandlerPid} ->
 			      logger:log(debug, "Appserver glue: Original request has been cancelled, sending " ++
 					 "'cancel_pending' to ForkPid ~p and entering state 'cancelled'",
@@ -341,10 +363,23 @@ process_messages(State) when record(State, state) ->
 			      NewState1 = State#state{cancelled=true},
 			      {ok, NewState1};
 
-			  {all_terminated, FinalResponse} ->
+			  {servertransaction_terminating, CallHandlerPid} ->
+			      logger:log(debug, "Appserver glue: received servertransaction_terminating from my CallHandlerPid ~p (ForkPid is ~p) - " ++
+					 "setting CallHandler to 'none'", [CallHandlerPid, ForkPid]),
+			      NewState1 = State#state{callhandler=none},
+			      {ok, NewState1};
+
+			  %%
+			  %% Signals from our sipproxy process (ForkPid)
+			  %%
+			  {sipproxy_response, ForkPid, Branch, Response} when record(Response, response) ->
+			      NewState1 = handle_sipproxy_response(Response, State),
+			      {ok, NewState1};
+
+			  {sipproxy_all_terminated, ForkPid, FinalResponse} ->
 			      NewState1 = case State#state.cancelled of
 					      true ->
-						  logger:log(debug, "Appserver glue: received all_terminated - request was cancelled. " ++
+						  logger:log(debug, "Appserver glue: received sipproxy_all_terminated - request was cancelled. " ++
 							     "Ask CallHandler ~p to send 487 Request Terminated and entering state 'completed'",
 							     [CallHandler]),
 						  transactionlayer:send_response_handler(CallHandler, 487, "Request Cancelled"),
@@ -352,28 +387,28 @@ process_messages(State) when record(State, state) ->
 					      _ ->
 						  case FinalResponse of
 						      _ when record(FinalResponse, response) ->
-							  logger:log(debug, "Appserver glue: received all_terminated with a ~p ~s response (completed: ~p)",
+							  logger:log(debug, "Appserver glue: received sipproxy_all_terminated with a ~p ~s response (completed: ~p)",
 								     [FinalResponse#response.status, FinalResponse#response.reason, State#state.completed]),
 							  NewState2 = handle_sipproxy_response(FinalResponse, State),
 							  NewState2;
 						      {Status, Reason} ->
-							  logger:log(debug, "Appserver glue: received all_terminated - asking CallHandler ~p " ++
+							  logger:log(debug, "Appserver glue: received sipproxy_all_terminated - asking CallHandler ~p " ++
 								     "to answer ~p ~s", [CallHandler, Status, Reason]),
 							  transactionlayer:send_response_handler(CallHandler, Status, Reason),
 							  %% XXX check that this is really a final response?
 							  State#state{completed=true};
 						      none ->
-							  logger:log(debug, "Appserver glue: received all_terminated with no final answer"),
+							  logger:log(debug, "Appserver glue: received sipproxy_all_terminated with no final answer"),
 							  State
 						  end
 					  end,
 			      {ok, NewState1};
 
-			  {no_more_actions} ->
+			  {sipproxy_no_more_actions, ForkPid} ->
 			      NewState1 = case State#state.cancelled of
 					      true ->
-						  logger:log(debug, "Appserver glue: received no_more_actions when cancelled. Ask CallHandler ~p to send 487 Request Terminated",
-							     [CallHandler]),
+						  logger:log(debug, "Appserver glue: received sipproxy_no_more_actions when cancelled. " ++
+							     "Ask CallHandler ~p to send 487 Request Terminated", [CallHandler]),
 						  transactionlayer:send_response_handler(CallHandler, 487, "Request Terminated"),
 						  State#state{completed=true};
 					      _ ->
@@ -381,8 +416,8 @@ process_messages(State) when record(State, state) ->
 						      false ->
 							  Request = State#state.request,
 							  {Method, URI} = {Request#request.method, Request#request.uri},
-							  logger:log(debug, "Appserver glue: received no_more_actions when NOT cancelled (and not completed), " ++
-								     "responding 408 Request Timeout to original request ~s ~s",
+							  logger:log(debug, "Appserver glue: received no_more_actions when NOT cancelled " ++
+								     "(and not completed), responding 408 Request Timeout to original request ~s ~s",
 								     [Method, sipurl:print(URI)]),
 							  transactionlayer:send_response_handler(CallHandler, 408, "Request Timeout"),
 							  State#state{completed=true};
@@ -393,12 +428,14 @@ process_messages(State) when record(State, state) ->
 					  end,
 			      {ok, NewState1};
 
-			  {callhandler_terminating, ForkPid} ->
-			      logger:log(debug, "Appserver glue: received callhandler_terminating from my ForkPid ~p (CallHandlerPid is ~p) - setting ForkPid to 'none'",
-					 [ForkPid, CallHandlerPid]),
+			  {sipproxy_terminating, ForkPid} ->
+			      logger:log(debug, "Appserver glue: received sipproxy_terminating from my ForkPid ~p (CallHandlerPid is ~p) " ++
+					 "- setting ForkPid to 'none'", [ForkPid, CallHandlerPid]),
 			      NewState1 = State#state{forkpid=none},
 			      NewState2 = case util:safe_is_process_alive(CallHandlerPid) of
 					      {true, _} ->
+						  %% Server transaction is still alive, make it send 500 response
+						  %% if no final response has been sent already
 						  case NewState1#state.completed of
 						      false ->
 							  logger:log(error, "Appserver glue: No answer to original request, answer 500 Server Internal Error"),
@@ -412,12 +449,9 @@ process_messages(State) when record(State, state) ->
 					  end,
 			      {ok, NewState2};
 
-			  {servertransaction_terminating, CallHandlerPid} ->
-			      logger:log(debug, "Appserver glue: received serverbranch_terminating from my CallHandlerPid ~p (ForkPid is ~p) - " ++
-					 "setting CallHandler to 'none'", [CallHandlerPid, ForkPid]),
-			      NewState1 = State#state{callhandler=none},
-			      {ok, NewState1};
-
+			  %%
+			  %% Other signals
+			  %%
 			  {quit} ->
 			      {quit, State};
 
