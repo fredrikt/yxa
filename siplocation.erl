@@ -166,7 +166,13 @@ process_updates(LogTag, Header, SipUser, Contacts) ->
 		    logger:log(error,
 			       "Location database: REGISTER request failed to add/update/remove one or more contacts,"
 			       " failed due to: ~n~p", [Reason]),
-		    {siperror, 500, "Server Internal Error", []};
+		    %% Check if it was a siperror, otherwise return '500 Server Internal Error'
+		    case Reason of
+			{throw, {siperror, Status, Reason2}} ->
+			    {siperror, Status, Reason2};
+			_ ->
+			    {siperror, 500, "Server Internal Error", []}
+		    end;
 		{atomic, _ResultOfFun} ->
 		    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
 		    {ok, {200, "OK", [{"Contact", fetch_contacts(SipUser)}]}}
@@ -469,9 +475,12 @@ greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, 
 		    phone:delete_record(DBLocation);
 		false ->
 		    %% update the binding
-		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader,RequestCallId, RequestCSeq)
+		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader, RequestCallId, RequestCSeq)
 	    end;
 	false ->
+	    logger:log(debug, "Location: NOT updating binding for user ~p, entry ~p in db has CSeq ~p "
+		       "and request has ~p", [SipUser, DBLocation#phone.requristr, DBLocation#phone.cseq,
+					      RequestCSeq]),
 	    %% RFC 3261 doesn't appear to document the proper error code for this case
 	    throw({siperror, 403, "Request out of order, contained old CSeq number"})
     end.
