@@ -17,8 +17,9 @@
 %%--------------------------------------------------------------------
 -export([
 	 start_link/1,
-	 start_extras/2,
-	 start_transportlayer/1
+	 start_extras/3,
+	 start_transportlayer/1,
+	 get_pids/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -35,6 +36,7 @@
 %% Records
 %%--------------------------------------------------------------------
 
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -45,9 +47,40 @@
 start_link(AppCallbacks) ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, [AppCallbacks]).
 
+%%--------------------------------------------------------------------
+%% Function: get_pids()
+%% Descrip.: Try to make a complete list of all pids currently
+%%           involved in the running system (excluding ongoing worker
+%%           pids like client/server transcations and request
+%%           handlers) - for manual use. Intended for getting a list
+%%           of pids to tell eprof to profile.
+%% Returns : list() of pid()
+%%--------------------------------------------------------------------
+get_pids() ->
+    sup_get_pids(?MODULE).
+
+%% part of get_pids()
+sup_get_pids(M) when is_pid(M); is_atom(M) ->
+    List = supervisor:which_children(M),
+    extract_pids(List, []).
+
+%% part of sup_get_pids()
+extract_pids([{_Id, Child, supervisor, _Modules} | T], Res) ->
+    %% is a supervisor, ask for it's childrens
+    Childs = sup_get_pids(Child),
+    extract_pids(T, [[Child | Childs] | Res]);
+extract_pids([{_Id, Child, worker, _Modules} | T], Res) ->
+    %% is worker
+    extract_pids(T, [Child | Res]);
+extract_pids([], Res) ->
+    %% no more input
+    lists:flatten(Res).
+
+
 %%====================================================================
 %% Server functions
 %%====================================================================
+
 %%--------------------------------------------------------------------
 %% Function: init([AppModule])
 %%           AppModule = atom(), name of Yxa application module
@@ -66,9 +99,11 @@ init([AppModule]) ->
     MyList = [Logger, Directory, TransactionLayer],
     {ok, {{one_for_one, 20, 60}, MyList}}.
 
-start_extras(Supervisor, AppSupdata) ->
+start_extras(Supervisor, AppModule, AppSupdata) ->
     UserDb = sipuserdb:yxa_init(),
-    MyList = UserDb,
+    EventSup = {event_handler, {event_handler, start_link, [AppModule]},
+		permanent, 2000, worker, [event_handler]},
+    MyList = lists:append([EventSup], UserDb),
     SupList = case AppSupdata of
 		  {append, AppList} when is_list(AppList) ->
 		      lists:append(MyList, AppList);
@@ -84,9 +119,12 @@ start_transportlayer(Supervisor) ->
 		      permanent, 2000, supervisor, [transportlayer]},
     my_start_children(Supervisor, [TransportLayer]).
 
+
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+%% tell Supervisor to start a list of children, one by one.
 my_start_children(Supervisor, []) ->
     {ok, Supervisor};
 my_start_children(Supervisor, [H|T]) ->
