@@ -14,7 +14,10 @@
 
 %%--------------------------------------------------------------------
 %% External exports
--export([start/6]).
+-export([
+	 start/6,
+	 test/0
+	]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -529,7 +532,7 @@ process_timer2(Signal, Timer, State) when is_record(State, state) ->
 %%--------------------------------------------------------------------
 get_request_resend_timeout("INVITE", OldTimeout, _State) ->
     OldTimeout * 2;
-get_request_resend_timeout(_Method, OldTimeout, State) ->
+get_request_resend_timeout(_Method, OldTimeout, State) when State == trying; State == proceeding ->
     %% Use Timer T2 as maximum for non-INVITE requests when in 'trying' state.
     %% The meaning is that we should resend non-INVITE requests at 500ms, 1s, 2s, 4s, 4s, 4s ...
     %% or, if we receive a provisional response and go into proceeding state, every 4s.
@@ -792,17 +795,14 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 %%           State  = trying | calling | proceeding | completed |
 %%                    terminated
 %%--------------------------------------------------------------------
-received_response_state_machine(Method, Status, State) when Status =< 99 ->
-    logger:log(debug, "UAC decision: Received INVALID response ~p to ~p when in state '~p', ignoring",
-	       [Status, Method, State]),
-    {ignore, State};
-
-
-received_response_state_machine(Method, Status, calling) when Status == 100 ->
-    logger:log(debug, "UAC decision: Received 100 in response to ~s, going from 'calling' to 'proceeding'", [Method]),
+received_response_state_machine("INVITE", Status, calling) when Status == 100 ->
+    logger:log(debug, "UAC decision: Received 100 in response to INVITE, going from 'calling' to 'proceeding'"),
     {ignore, proceeding};
-received_response_state_machine(Method, Status, State) when Status == 100 ->
-    logger:log(debug, "UAC decision: Received 100 in response to ~s when in state '~p', ignoring", [Method, State]),
+received_response_state_machine(Method, Status, trying) when Status == 100 ->
+    logger:log(debug, "UAC decision: Received 100 in response to ~s, going from 'trying' to 'proceeding'", [Method]),
+    {ignore, proceeding};
+received_response_state_machine("INVITE", Status, State) when Status == 100 ->
+    logger:log(debug, "UAC decision: Received 100 in response to INVITE when in state '~p', ignoring", [State]),
     {ignore, State};
 
 
@@ -1176,7 +1176,7 @@ start_cancel_transaction(State) when is_record(State, state) ->
     CancelHeader5 = keylist:delete('content-type', CancelHeader4),
     CancelHeader6 = keylist:delete('content-length', CancelHeader5),
     CancelHeader = keylist:set("Content-Length", ["0"], CancelHeader6),
-    CancelRequest = #request{method="CANCEL", uri=URI, header=CancelHeader, body=""},
+    CancelRequest = siprequest:set_request_body(#request{method="CANCEL", uri=URI, header=CancelHeader}, <<>>),
     T1 = sipserver:get_env(timerT1, 500),
     NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
     Socket = State#state.socket,
@@ -1266,9 +1266,12 @@ ack_non_1xx_or_2xx_response_to_invite("INVITE", #response{status=Status}=Respons
 %%           State    = state record()
 %% Descrip.: Send an ACK.
 %% Returns : NewState = state record()
-%% Notes   : We do not set up any timers for retransmission since if
+%% Note    : We do not set up any timers for retransmission since if
 %%           this ACK is lost we will receive a retransmitted response
 %%           which will effectively cause us to end up here again.
+%% Note    : We will never get called to ACK a 2xx response to INVITE,
+%%           as per section 13.2.2.4 (2xx Responses) of RFC3261 that
+%%           is handled by the UAC core, NOT the transaction layer.
 %%--------------------------------------------------------------------
 %%
 %% Status >= 100, =< 199
@@ -1290,16 +1293,9 @@ generate_ack(#response{status=Status}=Response, State)
     {URI, Header} = {Request#request.uri, Request#request.header},
     RHeader = Response#response.header,
     LogTag = State#state.logtag,
-    if
-	Status =< 299 ->
-	    logger:log(debug, "~s: generate_ack() Sending ACK of 2xx response ~p -> ~s",
-		       [LogTag, Status, sipurl:print(URI)]),
-	    {CSeq, _} = sipheader:cseq(Header);
-	true ->
-	    logger:log(debug, "~s: generate_ack() Sending ACK of non-2xx response ~p -> ~s",
-		       [LogTag, Status, sipurl:print(URI)]),
-	    {CSeq, _} = sipheader:cseq(RHeader)
-    end,
+    logger:log(debug, "~s: Sending ACK of '~p ~s' in response to ~s ~s",
+	       [LogTag, Status, Response#response.reason, Request#request.method, sipurl:print(URI)]),
+    {CSeq, _} = sipheader:cseq(Header),
     %% Don't copy any Via headers. send_proxy_request() will add one for this proxy,
     %% and that is the only one that should be in an ACK. RFC 3261 17.1.1.3
     %% copy() To and then set() it to preserve order...
@@ -1320,6 +1316,177 @@ generate_ack(#response{status=Status}=Response, State)
     %% this ACK to the right transaction. tl_branch is not necessarily the same as branch
     %% since the transport layer can be configured to add a stateless loop cookie.
     Branch = State#state.tl_branch,
-    ACKRequest = #request{method="ACK", uri=URI, header=SendHeader, body=""},
+    ACKRequest = siprequest:set_request_body(#request{method="ACK", uri=URI, header=SendHeader}, <<>>),
     transportlayer:send_proxy_request(Socket, ACKRequest, Dst, ["branch=" ++ Branch]),
+    ok.
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%% Note    : Not much is tested in this module at the moment because
+%%           almost every function includes communication with the
+%%           outside world (receiving or sending signals/SIP-messages)
+%%           which the current test framework does not allow testing
+%%           of.
+%%--------------------------------------------------------------------
+test() ->
+    %% test received_response_state_machine/3
+    %%--------------------------------------------------------------------
+
+    %% 17.1.1 INVITE Client Transaction
+
+    io:format("test: received_response_state_machine/3 INVITE - 1~n"),
+    %% If the client transaction receives a provisional response while in
+    %% the "Calling" state, it transitions to the "Proceeding" state.
+    %% ... Furthermore, the provisional response MUST be passed to the TU.
+    %% Yxa comment: 100 Trying is just to make us stop resending, not forwarded to TU.
+    {ignore, proceeding} = received_response_state_machine("INVITE", 100, calling),
+    {tell_parent, proceeding} = received_response_state_machine("INVITE", 199, calling),
+
+    io:format("test: received_response_state_machine/3 INVITE - 2~n"),
+    %% Any further provisional responses MUST be passed up to the TU while
+    %% in the "Proceeding" state.
+    %% Yxa comment: 100 Trying is just to make us stop resending, not forwarded to TU.
+    {ignore, proceeding} = received_response_state_machine("INVITE", 100, proceeding),
+    {tell_parent, proceeding} = received_response_state_machine("INVITE", 199, proceeding),
+
+    io:format("test: received_response_state_machine/3 INVITE - 3~n"),
+    %% When in either the "Calling" or "Proceeding" states, reception of a
+    %% response with status code from 300-699 MUST cause the client
+    %% transaction to transition to "Completed".  The client transaction
+    %% MUST pass the received response up to the TU
+    {tell_parent, completed} = received_response_state_machine("INVITE", 300, calling),
+    {tell_parent, completed} = received_response_state_machine("INVITE", 400, calling),
+    {tell_parent, completed} = received_response_state_machine("INVITE", 500, calling),
+    {tell_parent, completed} = received_response_state_machine("INVITE", 600, calling),
+    io:format("test: received_response_state_machine/3 INVITE - 3~n"),
+    {tell_parent, completed} = received_response_state_machine("INVITE", 300, proceeding),
+    {tell_parent, completed} = received_response_state_machine("INVITE", 400, proceeding),
+    {tell_parent, completed} = received_response_state_machine("INVITE", 500, proceeding),
+    {tell_parent, completed} = received_response_state_machine("INVITE", 600, proceeding),
+
+    io:format("test: received_response_state_machine/3 INVITE - 4~n"),
+    %% Any retransmissions of the final response that are received while in
+    %% the "Completed" state MUST cause the ACK to be re-passed to the
+    %% transport layer for retransmission, but the newly received response
+    %% MUST NOT be passed up to the TU.
+    {ignore, completed} = received_response_state_machine("INVITE", 300, completed),
+    {ignore, completed} = received_response_state_machine("INVITE", 400, completed),
+    {ignore, completed} = received_response_state_machine("INVITE", 500, completed),
+    {ignore, completed} = received_response_state_machine("INVITE", 600, completed),
+    
+    io:format("test: received_response_state_machine/3 INVITE - 5~n"),
+    %% When in either the "Calling" or "Proceeding" states, reception of a
+    %% 2xx response MUST cause the client transaction to enter the
+    %% "Terminated" state, and the response MUST be passed up to the TU.
+    {tell_parent, terminated} = received_response_state_machine("INVITE", 200, calling),
+    {tell_parent, terminated} = received_response_state_machine("INVITE", 200, proceeding),
+
+    %% own conclusions
+
+    io:format("test: received_response_state_machine/3 INVITE - 6~n"),
+    {ignore, completed} = received_response_state_machine("INVITE", 100, completed),
+    {ignore, completed} = received_response_state_machine("INVITE", 199, completed),
+
+    io:format("test: received_response_state_machine/3 INVITE - 7~n"),
+    %% late 2xx response, received after a non-2xx response that made us reach 'completed'
+    %% XXX actually, this is really weird - someone sent us two different final responses.
+    %% should we really go from 'completed' to 'terminated' or 'ignore' and stay in 'completed'?
+    {tell_parent, terminated} = received_response_state_machine("INVITE", 200, completed),
+    %% we shouldn't be around to reveive late responses if we are terminated, but...
+    {tell_parent, terminated} = received_response_state_machine("INVITE", 200, terminated),
+
+    io:format("test: received_response_state_machine/3 INVITE - 8~n"),
+    %% when in 'completed' or 'terminated', ignore any 6xx responses. We can't undo
+    %% that someone has already picked up the phone even if another branch generates
+    %% a 6xx.
+    {ignore, completed} = received_response_state_machine("INVITE", 600, completed),
+    {ignore, terminated} = received_response_state_machine("INVITE", 600, terminated),
+
+
+    %% 17.1.2 Non-INVITE Client Transaction
+
+    io:format("test: received_response_state_machine/3 non-INVITE - 1~n"),
+    %% If a provisional response is received while in the "Trying" state, the
+    %% response MUST be passed to the TU, and then the client transaction
+    %% SHOULD move to the "Proceeding" state.
+    %% Yxa comment: 100 Trying is just to make us stop resending, not forwarded to TU.
+    {ignore, proceeding} = received_response_state_machine("OPTIONS", 100, trying),
+    {tell_parent, proceeding} = received_response_state_machine("OPTIONS", 199, trying),
+
+    io:format("test: received_response_state_machine/3 non-INVITE - 2~n"),
+    %% If a final response (status codes 200-699) is received while in the 
+    %% "Trying" state, the response MUST be passed to the TU, and the client
+    %% transaction MUST transition to the "Completed" state.
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 200, trying),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 300, trying),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 400, trying),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 500, trying),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 600, trying),
+
+    io:format("test: received_response_state_machine/3 non-INVITE - 3~n"),
+    %% If a final response (status codes 200-699) is received while in the
+    %% "Proceeding" state, the response MUST be passed to the TU, and the
+    %% client transaction MUST transition to the "Completed" state.
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 200, proceeding),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 300, proceeding),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 400, proceeding),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 500, proceeding),
+    {tell_parent, completed} = received_response_state_machine("OPTIONS", 600, proceeding),
+
+    %% own conclusions
+
+    io:format("test: received_response_state_machine/3 non-INVITE - 4~n"),
+    %% we are already in the completed state, the TU has already been given a final response
+    {ignore, completed} = received_response_state_machine("OPTIONS", 100, completed),
+    {ignore, completed} = received_response_state_machine("OPTIONS", 199, completed),
+    {ignore, completed} = received_response_state_machine("OPTIONS", 200, completed),
+    {ignore, completed} = received_response_state_machine("OPTIONS", 300, completed),
+    {ignore, completed} = received_response_state_machine("OPTIONS", 400, completed),
+    {ignore, completed} = received_response_state_machine("OPTIONS", 500, completed),
+    {ignore, completed} = received_response_state_machine("OPTIONS", 600, completed),
+
+    io:format("test: received_response_state_machine/3 non-INVITE - 5~n"),
+    %% this is not the first provisional response we receive, we are already in 'proceeding'
+    {ignore, proceeding} = received_response_state_machine("OPTIONS", 100, proceeding),
+    {ignore, proceeding} = received_response_state_machine("OPTIONS", 199, proceeding),
+
+    io:format("test: received_response_state_machine/3 - 1~n"),
+    %% test too low or too high response numbers, testing with differend method is not needed
+    {'EXIT', {function_clause, _}} = (catch received_response_state_machine("INVITE", 99, trying)),
+    {'EXIT', {function_clause, _}} = (catch received_response_state_machine("INVITE", -1, trying)),
+    {'EXIT', {function_clause, _}} = (catch received_response_state_machine("INVITE", 700, trying)),
+    {'EXIT', {function_clause, _}} = (catch received_response_state_machine("INVITE", 32984397, trying)),
+
+    %% get_request_resend_timeout/3
+    %%--------------------------------------------------------------------
+
+    io:format("test: get_request_resend_timeout/3 INVITE - 1~n"),
+    %% INVITE, always just double
+    1000 = get_request_resend_timeout("INVITE", 500, trying),
+    2000 = get_request_resend_timeout("INVITE", 1000, trying),
+    4000 = get_request_resend_timeout("INVITE", 2000, trying),
+    8000 = get_request_resend_timeout("INVITE", 4000, trying),
+    16000 = get_request_resend_timeout("INVITE", 8000, trying),
+    32000 = get_request_resend_timeout("INVITE", 16000, trying),
+
+    io:format("test: get_request_resend_timeout/3 non-INVITE - 1~n"),
+    %% non-INVITE, state 'trying'. Resend at 500ms, 1s, 2s, 4s, 4s, 4s ...
+    1000 = get_request_resend_timeout("OPTIONS", 500, trying),
+    2000 = get_request_resend_timeout("OPTIONS", 1000, trying),
+    4000 = get_request_resend_timeout("OPTIONS", 2000, trying),
+    4000 = get_request_resend_timeout("OPTIONS", 4000, trying),
+
+    io:format("test: get_request_resend_timeout/3 non-INVITE - 1~n"),
+    %% non-INVITE, state 'proceeding'. Resend every 4s.
+    4000 = get_request_resend_timeout("OPTIONS", 500, proceeding),
+    4000 = get_request_resend_timeout("OPTIONS", 1000, proceeding),
+    4000 = get_request_resend_timeout("OPTIONS", 2000, proceeding),
+    4000 = get_request_resend_timeout("OPTIONS", 4000, proceeding),
+    
     ok.
