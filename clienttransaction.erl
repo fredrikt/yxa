@@ -81,8 +81,6 @@
 	  cancel_pid	%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that transaction
 	 }).
 
--include("sipsocket.hrl").
--include("siprecords.hrl").
 
 %%====================================================================
 %% External functions
