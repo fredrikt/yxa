@@ -29,6 +29,13 @@ contacts, incomingproxy will send requests for that user on to
 appserver which is a statefull proxy and can fork the call to
 all the users registered user agents.
 
+testserver:
+
+Not useful for anything except regression testing. Answers 404 Not Found
+(or some other failure response) to everything, so that one can do
+regression tests of the incomingproxy for example by making sure it
+routes requests correctly to the testserver.
+
 ============
 Installation
 ============
@@ -92,6 +99,11 @@ ldap_server			(default: "" (ie. no LDAP)) LDAP server host name
 ldap_username			(default: "") LDAP user name
 ldap_password			(default: "") LDAP password
 ldap_searchbase			(default: "") LDAP search base
+ldap_use_ssl			(default: false) Connect to LDAP server using SSL
+				if true.
+ldap_connection_query_limit	(default: 500) When we have made this many querys
+				using an LDAP handle, open a new one (as soon as
+				we are idle).
 listenport			(default: 5060) Port that the server
 				should listen to
 myhostnames			(optional) List of IP addresses and/or
@@ -107,6 +119,28 @@ myhostnames			(optional) List of IP addresses and/or
 record_route			(default: false, except for pstnproxy where
 				 default is true) Enable or disable adding
 				Record-Route header to requests.
+default_max_forwards		(default: 70) The Max-Forwards value we put in
+				requests that does not have one. Only change for
+				debugging, RFC3261 says this should be 70.
+max_max_forwards		(default: 255) Upper limit for Max-Forwards in
+				requests we send out. If we receive a request with
+				a Max-Forwards greater than this, we will use this
+				value instead of the received minus one.
+detect_loops			(default: true) Detect looping requests. Leave
+				this on.
+request_rport			(default: false) Request rport in outgoing
+				requests. Useful if you are sending through
+				a NAT device.
+stateless_challenges		(default: false) Send challenges without state
+				if this is true. RFC3261 suggests you should do
+				this, but there are problems with doing it...
+				See comments in transactionlayer.erl,
+				function send_challenge2().
+tcp_connection_idle_timeout	(default: 300) Number of seconds of inactivity
+				before we close a TCP connection.
+userdb_modules			(default: [sipuserdb_mnesia]) User database
+				backend(s) to use. See "User database" section
+				below.
 
 pstnproxy:
 ----------
@@ -176,6 +210,10 @@ enum_domainlist			(default: []) List of domains in which to look
 max_register_time		(default: 43200) If registers have an 'expire'
 				of more than this many seconds, use this
 				value instead.
+always_verify_homedomain_user	(default: true) If From: matches our definition
+				of 'our' domains (matched by homedomain), then
+				challenge user and make sure it is not someone
+				impersonating the calling party.
 
 adminwww:
 ---------
@@ -196,6 +234,12 @@ timerT2				(default: 4000) See RFC 3261. You should
 				probably not touch this.
 timerT4				(default: 5000) See RFC 3261. You should
 				probably not touch this.
+appserver_call_timeout		(default: 40) The number of seconds to ring
+				a destination before concluding that noone
+				answers.
+appserver_forward_timeout	(default: 40) The same as appserver_call_timeout
+				but for forwarded calls.
+
 
 ========
 Examples
@@ -256,6 +300,28 @@ appserver.config:
 	      {listenport, 5070}
              ]}].
 
+=============
+User database
+=============
+
+Yxa has a modular interface for user database backends. The entry point is
+the sipuserdb module, which looks at your configuration to determine which
+database backends to query, and in what order. The default is to just look
+in the Mnesia database (tables user and numbers), but there is also an
+LDAP module available. The schema for storing SIP user information in LDAP
+is not yet finished, and is currently not even included in the Yxa source,
+but the sipuserdb_ldap module is used in production at Stockholm university.
+
+sipuserdb_ldap configuration parameters :
+
+ldap_userattribute		(deafult: sipAuthenticationUser) User
+				attribute.
+ldap_addressattribute		(default: sipLocalAddress) User SIP address
+				attribute.
+ldap_telephonenumberattribute	(default: telephoneNumber) User phone number
+				attribute.
+ldap_passwordattribute		(default: sipPassword) User authentication
+				password attribute.
 
 =============
 Bootstrapping
