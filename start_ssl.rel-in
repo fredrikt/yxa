@@ -1,0 +1,8 @@
+%% Erlang OTP R10B-3 library versions
+%% File to get Erlang distribution using SSL started
+{release, {"Yxa foo","0.0"}, {erts, "5.2"},
+ [{kernel,"2.10.4"},
+  {stdlib,"1.13.4"},
+  {ssl, "3.0.5"}
+ ]
+}.
