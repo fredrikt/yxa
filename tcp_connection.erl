@@ -50,7 +50,7 @@ init([SocketModule, Socket, Direction, Local, Remote]) ->
     SipSocket = #sipsocket{module=sipsocket_tcp, pid=self(), data={Local, Remote}},
     %% Register this connection with the TCP listener process before we proceed
     case catch gen_server:call(tcp_dispatcher, {register_sipsocket, Direction, SipSocket}, 1500) of
-	{registered_sipsocket} ->
+	ok ->
 	    {IP, Port} = Remote,
 	    %% Start a receiver
 	    Receiver = tcp_receiver:start(SocketModule, Socket, Local, Remote),
@@ -63,7 +63,7 @@ init([SocketModule, Socket, Direction, Local, Remote]) ->
 	    Now = util:timestamp(),
 	    State = #state{socketmodule=SocketModule, socket=Socket, receiver=Receiver, local=Local, remote=Remote, starttime=Now},
 	    {ok, State, Timeout};
-	{failed_registering_sipsocket, E} ->
+	{error, E} ->
 	    logger:log(error, "TCP connection: Failed registering with TCP dispatcher : ~p", [E]),
 	    {stop, "Failed registering with TCP dispatcher"};
 	{'EXIT', Reason} ->

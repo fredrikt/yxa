@@ -18,13 +18,13 @@ send(SipSocket, SendToHost, PortInt, Message) when record(SipSocket, sipsocket) 
 
 get_socket(Host, Port) when list(Host), integer(Port) ->
     case catch gen_server:call(tcp_dispatcher, {get_socket, Host, Port}, 1500) of
-	{failed_getting_socket, Host, Port, E} ->
-	    {error, E};
-	{got_socket, Host, Port, Socket} ->
+	{ok, Socket} ->
 	    Socket;
+	{error, E} ->
+	    {error, E};
 	{'EXIT', Reason} ->
             {error, Reason}
     end.
 
-is_reliable_transport(_) -> true.
-
+is_reliable_transport(_) ->
+    true.

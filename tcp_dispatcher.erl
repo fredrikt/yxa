@@ -70,12 +70,12 @@ handle_call({get_socket, Host, Port}, From, State) ->
 	    %% We must spawn a child process to take care of making a new connection
 	    %% since we can't risk this thread getting locked up.
 	    P = sipserver:safe_spawn(fun connect_to_remote/4, [gen_tcp, From, Host, Port]),
-	    {noreply, State};
+	    {noreply, State, ?TIMEOUT};
 	{error, E} ->
-	    {reply, {failed_getting_socket, Host, Port, E}, State, ?TIMEOUT};
+	    {reply, {error, E}, State, ?TIMEOUT};
 	GotSocket when record(GotSocket, sipsocket) ->
 	    logger:log(debug, "Sipsocket TCP: (Transport layer) Use existing connection to ~s:~p", [Host, Port]),
-	    {reply, {got_socket, Host, Port, GotSocket}, State, ?TIMEOUT}
+	    {reply, {ok, GotSocket}, State, ?TIMEOUT}
     end;
 
 
@@ -93,12 +93,12 @@ handle_call({register_sipsocket, Dir, SipSocket}, From, State) when record(SipSo
 	    case socketlist:add(Ident, CPid, Local, Remote, 0, State#state.socketlist) of
 		{error, E} ->
 		    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
-		    {reply, {failed_registering_sipsocket, E}, State, ?TIMEOUT};
+		    {reply, {error, E}, State, ?TIMEOUT};
 		NewSocketList1 ->
-		    {reply, {registered_sipsocket}, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
+		    {reply, ok, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
 	    end;
 	_ ->
-	    {reply, {failed_registering_sipsocket, "Could not link to pid"}, State, ?TIMEOUT}
+	    {reply, {error, "Could not link to pid"}, State, ?TIMEOUT}
     end;
 
 handle_call({quit}, From, State) ->
@@ -205,25 +205,25 @@ connect_to_remote(SocketModule, RequestorPid, Host, Port) ->
 	    case tcp_connection:start_link(SocketModule, NewSocket, out, Local, Remote) of
 		{ok, Pid} ->
 		    SipSocket = #sipsocket{module=sipsocket_tcp, pid=Pid, data={Local, Remote}},
-		    gen_server:reply(RequestorPid, {got_socket, Host, Port, SipSocket});
+		    gen_server:reply(RequestorPid, {ok, SipSocket});
 		{'EXIT', Reason} ->
 		    logger:log(error, "Sipsocket TCP: TCP dispatcher failed adding new socket ~p " ++
 			       "(connected to remote peer ~s:~p) : ~p", [NewSocket, Host, Port, Reason]),
 		    E = "TCP dispatcher failed",
-		    gen_server:reply(RequestorPid, {failed_getting_socket, Host, Port, E}),
+		    gen_server:reply(RequestorPid, {error, E}),
 		    SocketModule:close(NewSocket);
 		Unknown ->
 		    logger:log(error, "Sipsocket TCP: TCP dispatcher failed adding new socket ~p " ++
 			       "(connected to remote peer ~s:~p), tcp_connection start_link returned :~n~p",
 			       [NewSocket, Host, Port, Unknown]),
-		    gen_server:reply(RequestorPid, {failed_getting_socket, Host, Port, "failed starting tcp_conenction"}),
+		    gen_server:reply(RequestorPid, {error, "Failed starting tcp_connection"}),
 		    SocketModule:close(NewSocket)
 	    end;
 	{error, econnrefused} ->
-	    gen_server:reply(RequestorPid, {failed_getting_socket, Host, Port, "Connection refused"});
+	    gen_server:reply(RequestorPid, {error, "Connection refused"});
 	{error, E} ->
 	    logger:log(error, "Sipsocket TCP: Failed connecting to ~s:~p : ~s (~p)", [Host, Port, inet:format_error(E), E]),
-	    gen_server:reply(RequestorPid, {failed_getting_socket, Host, Port, inet:format_error(E)})
+	    gen_server:reply(RequestorPid, {error, inet:format_error(E)})
     end,
     %% process spawned to connect to remote host terminates now
     ok.
