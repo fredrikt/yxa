@@ -1,7 +1,7 @@
 -module(socketlist).
 -export([add/5, add/6, delete_using_pid/2, delete_expired/1,
-	 empty/0, get_using_id/2, get_using_remote/2,
-	 extract/2, debugfriendly/1]).
+	 empty/0, get_using_id/2, get_using_pid/2, get_using_remote/2,
+	 extract/2, get_length/1, debugfriendly/1]).
 
 -include("socketlist.hrl").
 
@@ -70,6 +70,24 @@ get_using_id1(Id, [H | T]) when record(H, socketlistelem) ->
 get_using_id1(Id, [H | _]) ->
     throw({'EXIT', {"SocketList element not wellformed", H}}).
 
+%% Return a list of all socketlistelem's with a matching Pid
+get_using_pid(Pid, SocketList) when record(SocketList, socketlist), pid(Pid) ->
+    case get_using_pid1(Pid, SocketList#socketlist.list, []) of
+	[] ->
+	    none;
+	L ->
+	    #socketlist{list=L}
+    end.
+
+get_using_pid1(Pid, [], Res) ->
+    Res;
+get_using_pid1(Pid, [H | T], Res) when record(H, socketlistelem), H#socketlistelem.pid == Pid ->
+    get_using_pid1(Pid, T, lists:append(Res, [H]));
+get_using_pid1(Pid, [H | T], Res) when record(H, socketlistelem) ->
+    get_using_pid1(Pid, T, Res);
+get_using_pid1(Pid, [H | _], Res) ->
+    throw({'EXIT', {"SocketList element not wellformed", H}}).
+
 get_using_remote(Remote, SocketList) when record(SocketList, socketlist) ->
     get_using_remote1(Remote, SocketList#socketlist.list).
 
@@ -100,10 +118,13 @@ del_pid(Pid, [H | T]) when record(H, socketlistelem) ->
 del_time(Time, []) ->
     [];
 del_time(Time, [H | T]) when record(H, socketlistelem), H#socketlistelem.expire < Time, H#socketlistelem.expire > 0 ->
-    logger:log(debug, "FREDRIK: RECORD EXPIRED : ~n~p", [debugfriendly([H])]),
+    logger:log(debug, "socketlist: Extra debug : Record expired :~n~p", [debugfriendly([H])]),
     del_time(Time, T);
 del_time(Time, [H | T]) when record(H, socketlistelem) ->
     [H | del_time(Time, T)].
+
+get_length(SList) when record(SList, socketlist) ->
+    length(SList#socketlist.list).
 
 debugfriendly(SList) when record(SList, socketlist) ->
     debugfriendly(SList#socketlist.list);
