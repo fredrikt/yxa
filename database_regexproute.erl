@@ -11,8 +11,7 @@
 	 create/1,
 	 insert/5,
 	 list/0,
-	 purge_class/2,
-	 convert_urls/0
+	 purge_class/2
 	]).
 
 %%--------------------------------------------------------------------
@@ -60,7 +59,8 @@ servers() ->
 %% Descrip.:
 %% Returns :
 %%--------------------------------------------------------------------
-insert(Regexp, Flags, Class, Expire, Address) ->
+insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flags), is_atom(Class),
+						   is_integer(Expire); Expire == never, is_list(Address) ->
     db_util:insert_record(#regexproute{regexp = Regexp, flags = Flags, class = Class,
 			       expire = Expire, address = Address}).
 
@@ -71,40 +71,6 @@ insert(Regexp, Flags, Class, Expire, Address) ->
 %%--------------------------------------------------------------------
 list() ->
     db_util:tab_to_list(regexproute).
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
-convert_urls() ->
-    F = fun() ->
-		%% XXX !!! this may be costly if the table is large
-		A = db_util:tab_to_list(regexproute),
-		Update = fun(O) ->
-				 mnesia:delete_object(O),
-				 mnesia:write(rewrite_url(O))
-			 end,
-		lists:foreach(Update, A)
-	end,
-    mnesia:transaction(F).
-
-rewrite_url(R) when record(R, regexproute) ->
-    case R#regexproute.address of
-	URL when record(URL, sipurl) ->
-	    %% all set
-	    R;
-	{User, Pass, Host, Port, Parameters} ->
-	    %% old format
-	    U = sipurl:new([{proto, "sip"}, {user, User}, {pass, Pass},
-			    {host, Host}, {port, Port}, {param, Parameters}]),
-
-	    io:format("database_regexproute: Rewrote regexp ~p URL ~p~n", [R#regexproute.regexp, sipurl:print(U)]),
-	    R#regexproute{address=U};
-	Unknown ->
-	    io:format("database_regexproute: Unknown URL format ~p in entry :~n~p~n",
-		      [Unknown, R])
-    end.
 
 %%--------------------------------------------------------------------
 %% Function:
