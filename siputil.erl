@@ -35,7 +35,7 @@ linefix([13, B | C]) ->
     [10 | linefix([B | C])];
 
 linefix([A, 10 | C]) ->
-    [A, 10 | linefix(C)];
+    [A | linefix([10 | C])];
 
 linefix([A, B | C]) ->
     [A | linefix([B | C])].
