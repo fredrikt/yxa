@@ -78,17 +78,19 @@
 %%           required to include a Content-Length.
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
-fix_content_length(Header, Body) ->
-    keylist:set("Content-Length", [integer_to_list(length(Body))], Header).
+fix_content_length(Header, Body) when is_record(Header, keylist), is_list(Body) ->
+    keylist:set("Content-Length", [integer_to_list(length(Body))], Header);
+fix_content_length(Header, Body) when is_record(Header, keylist), is_binary(Body) ->
+    keylist:set("Content-Length", [integer_to_list(size(Body))], Header).
 
 %%--------------------------------------------------------------------
 %% Function: default_port(Proto, Port)
 %%           Proto = atom(), udp | udp6 | tcp | tcp6 | tls | tcp6 |
 %%                   string(), "sip" | "sips"
 %%           Port  = integer() | none
-%% Descrip.: Yucky function returning a "default port number" as a
-%%           string, based on input Proto and Port.
-%% Returns : PortString = string()
+%% Descrip.: Yucky function returning a "default port number" as an
+%%           integer, based on input Proto and Port.
+%% Returns : Port = integer()
 %%--------------------------------------------------------------------
 default_port(Proto, none) when Proto == udp; Proto == udp6; Proto == tcp; Proto == tcp6; Proto == "sip" ->
     5060;
@@ -248,7 +250,7 @@ check_proxy_request(Request) when is_record(Request, request) ->
 %%--------------------------------------------------------------------
 get_approximate_msgsize(Request) when is_record(Request, request) ->
     BinLine1 = list_to_binary([Request#request.method, " ", sipurl:print(Request#request.uri), " SIP/2.0"]),
-    BinMsg = binary_make_message(BinLine1, Request#request.header, list_to_binary(Request#request.body)),
+    BinMsg = binary_make_message(BinLine1, Request#request.header, Request#request.body),
     ViaLen = 92 + length(siprequest:myhostname()),
     %% The size is _approximate_. The exact size cannot be calculated here
     %% since it is dependent on the right Request-URI and length of the final
@@ -468,20 +470,18 @@ generate_branch() ->
 
 %%--------------------------------------------------------------------
 %% Function: make_answerheader(Header)
-%% Descrip.: Turn Request-Route header from request, into Route header
-%%           to include in a response (answer).
+%% Descrip.: Turn Request-Route header from a response into Route-
+%%           header to include in another request in the same dialog.
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
 make_answerheader(Header) ->
-    RecordRoute = keylist:fetch('record-route', Header),
-    NewHeader1 = keylist:delete('Record-Route', Header),
-    NewHeader2 = case RecordRoute of
-		     [] ->
-			 NewHeader1;
-		     _ ->
-			 keylist:set("Route", RecordRoute, NewHeader1)
-		 end,
-    NewHeader2.
+    case keylist:fetch('record-route', Header) of
+	[] ->
+	    Header;
+	RecordRoute ->
+	    NewHeader = keylist:set("Route", RecordRoute, Header),
+	    keylist:delete('record-route', NewHeader)
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_loop_cookie(Header, OrigURI, Proto)
@@ -708,7 +708,7 @@ send_answer(Header, Socket, Body) ->
 %%                         ViaParameters, SipSocket, Request)
 %%           Status    = integer(), SIP status code
 %%           Reason    = string(), SIP reason phrase
-%%           Body      = string()
+%%           Body      = binary() | string()
 %%           ExtraHeaders = keylist record()
 %%           ViaParameters = list() of string()
 %%           SipSocket = sipsocket record() | atom(), protocol
@@ -720,8 +720,12 @@ send_answer(Header, Socket, Body) ->
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket, Request)
   when is_record(SipSocket, sipsocket) ->
     make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, SipSocket#sipsocket.proto, Request);
+make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request) when is_list(Body) ->
+    BinBody = list_to_binary(Body),
+    make_response(Status, Reason, BinBody, ExtraHeaders, ViaParameters, Proto, Request);
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
-  when is_record(Request, request) ->
+  when is_integer(Status), is_list(Reason), is_binary(Body), is_list(ExtraHeaders),
+       is_list(ViaParameters), is_atom(Proto), is_record(Request, request) ->
     ReqHeader = Request#request.header,
     AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, [via, from, to, 'call-id', cseq,
 								'record-route', "Timestamp", 'content-type']),
@@ -732,12 +736,15 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
     %% have to make a difference in how we send out responses.
     V = create_via(Proto, ViaParameters),
     PlaceHolderVia = sipheader:via_print([V]),
-    AnswerHeader2 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader1),
-    AnswerHeader3 = siprequest:make_answerheader(AnswerHeader2),
-    %% If there is a body, calculate Content-Length, otherwise remove the Content-Type we copied above
-    AnswerHeader4 = case Body of
-			"" -> keylist:delete('content-type', AnswerHeader3);
-			_ -> keylist:set("Content-Length", [integer_to_list(length(Body))], AnswerHeader3)
+    AnswerHeader3 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader1),
+    %% If there is no body, remove the Content-Type we copied above
+    BodyLen = if
+		  is_binary(Body) -> size(Body);
+		  is_list(Body) -> length(Body)
+	      end,
+    AnswerHeader4 = case BodyLen of
+			0 -> keylist:delete('content-type', AnswerHeader3);
+			_ -> AnswerHeader3
 		    end,
     %% If this is not a 100 Trying response, remove the Timestamp we copied above.
     %% The preservation of Timestamp headers into 100 Trying response is mandated by RFC 3261 8.2.6.1
@@ -747,6 +754,15 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
 		    end,
     set_response_body(#response{status=Status, reason=Reason, header=AnswerHeader5}, Body).
 
+%%--------------------------------------------------------------------
+%% Function: binary_make_message(BinLine1, Header, BinBody)
+%%           BinLine1 = binary(), the top line of the request/response
+%%           Header   = keylist record()
+%%           BinBody  = binary(), body of request/response
+%% Descrip.: Create a binary representing the request/response, ready
+%%           to be sent out on the wire.
+%% Returns : Msg = binary()
+%%--------------------------------------------------------------------
 binary_make_message(BinLine1, Header, BinBody) when is_binary(BinLine1), is_record(Header, keylist),
 						    is_binary(BinBody) ->
     BinHeaders = sipheader:build_header_binary(Header),
@@ -760,12 +776,12 @@ binary_make_message(BinLine1, Header, BinBody) when is_binary(BinLine1), is_reco
 %% Returns : NewRequest = request record()
 %%--------------------------------------------------------------------
 set_request_body(Request, Body) when is_record(Request, request), is_binary(Body) ->
-    set_request_body(Request, binary_to_list(Body));
-set_request_body(Request, Body) when is_record(Request, request), is_list(Body) ->
-    ILen = length(Body),
+    ILen = size(Body),
     Len = integer_to_list(ILen),
     NewHeader = keylist:set("Content-Length", [Len], Request#request.header),
-    Request#request{header=NewHeader, body=Body}.
+    Request#request{header=NewHeader, body=Body};
+set_request_body(Request, Body) when is_record(Request, request), is_list(Body) ->
+    set_request_body(Request, list_to_binary(Body)).
 
 %%--------------------------------------------------------------------
 %% Function: set_response_body(Request, Body)
@@ -776,12 +792,17 @@ set_request_body(Request, Body) when is_record(Request, request), is_list(Body) 
 %% Returns : NewRequest = request record()
 %%--------------------------------------------------------------------
 set_response_body(Response, Body) when is_record(Response, response), is_binary(Body) ->
-    set_response_body(Response, binary_to_list(Body));
-set_response_body(Response, Body) when is_record(Response, response), is_list(Body) ->
-    ILen = length(Body),
+    ILen = size(Body),
     Len = integer_to_list(ILen),
     NewHeader = keylist:set("Content-Length", [Len], Response#response.header),
-    Response#response{header=NewHeader, body=Body}.
+    Response#response{header=NewHeader, body=Body};
+set_response_body(Response, Body) when is_record(Response, response), is_list(Body) ->
+    set_response_body(Response, list_to_binary(Body)).
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
 
 %%--------------------------------------------------------------------
 %% Function: test()
@@ -970,6 +991,9 @@ test() ->
     AHeader1 = make_answerheader(ReqHeader),
     ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch('route', AHeader1),
 
+    io:format("test: make_answerheader/1 - 2~n"),
+    %% Check that the Record-Route was deleted
+    [] = keylist:fetch('record-route', AHeader1),
 
     %% get_loop_cookie(ReqHeader, URI, Proto
     %%--------------------------------------------------------------------
@@ -987,7 +1011,7 @@ test() ->
 
     %% basic response record check
     io:format("test: make_response/7 - 1.2~n"),
-    #response{status=100, reason="Trying", body="test"} = Response1,
+    #response{status=100, reason="Trying", body = <<"test">>} = Response1,
 
     %% Timestamp still present in 100 Trying check
     io:format("test: make_response/7 - 1.3~n"),
@@ -1003,12 +1027,12 @@ test() ->
 
     %% test make_response/7
     io:format("test: make_response/7 - 2.1~n"),
-    Response2 = make_response(486, "_BUSY_", "", [{"Extra-Header", ["test"]}], ["test=true"],
+    Response2 = make_response(486, "_BUSY_", <<>>, [{"Extra-Header", ["test"]}], ["test=true"],
 			      tls6, #request{header=ReqHeader}),
 
     %% basic response record check
     io:format("test: make_response/7 - 2.2~n"),
-    #response{status=486, reason="_BUSY_", body=""} = Response2,
+    #response{status=486, reason="_BUSY_", body = <<>>} = Response2,
 
     %% Timestamp NOT present in 486 Busy Here
     io:format("test: make_response/7 - 2.3~n"),
@@ -1022,16 +1046,20 @@ test() ->
     io:format("test: make_response/7 - 2.5~n"),
     ["test"] = keylist:fetch("Extra-Header", Response2#response.header),
 
-    %% Record-Route turned into Route
-    io:format("test: make_response/7 - 2.6~n"),
-    ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch('route', Response2#response.header),
+    %% Make sure Record-Route is NOT turned into Route (we used to do that, but it was wrong)
+    io:format("test: make_response/7 - 2.6.1~n"),
+    ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch('record-route', Response2#response.header),
+
+    %% (make sure Route is still empty)
+    io:format("test: make_response/7 - 2.6.2~n"),
+    [] = keylist:fetch('route', Response2#response.header),
 
     %% check_proxy_request(Request)
     %%--------------------------------------------------------------------
 
     io:format("test: check_proxy_request/1 - 1~n"),
     ReqHeader2 = keylist:set("Content-Length", ["900"], ReqHeader),
-    Req2 = #request{method="MESSAGE", uri=sipurl:parse("sip:test@example.org"), header=ReqHeader2, body="foo"},
+    Req2 = #request{method="MESSAGE", uri=sipurl:parse("sip:test@example.org"), header=ReqHeader2, body = <<"foo">>},
 
     io:format("test: check_proxy_request/1 - 2~n"),
     {ok, ReqHeader2_2, ApproxMsgSize2_2} = check_proxy_request(Req2),
@@ -1058,7 +1086,7 @@ test() ->
     %% check that we don't accept unknown Proxy-Require
     io:format("test: check_proxy_request/1 - 6~n"),
     ReqHeader3 = keylist:set("Proxy-Require", ["CantBeSupported"], ReqHeader2),
-    Req3 = Req2#request{method="INVITE", header=ReqHeader3, body=""},
+    Req3 = Req2#request{method="INVITE", header=ReqHeader3, body = <<>>},
     Unsupported = [{"Unsupported",["CantBeSupported"]}],
     {siperror, 420, _, Unsupported} = (catch check_proxy_request(Req3)),
 
