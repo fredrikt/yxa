@@ -19,6 +19,7 @@
 %%--------------------------------------------------------------------
 -export([lookupregexproute/1,
 	 lookupuser/1,
+	 lookupuser_locations/2,
 	 lookup_url_to_locations/1,
 	 lookup_url_to_addresses/2,
 	 lookup_addresses_to_users/1,
@@ -33,7 +34,7 @@
 	 homedomain/1,
 	 lookupappserver/1,
 	 rewrite_potn_to_e164/1,
-	 get_remote_party_number/2,
+	 get_remote_party_number/4,
 	 format_number_for_remote_party_id/3,
 	 get_remote_party_name/2,
 	 remove_unsuitable_locations/2,
@@ -106,7 +107,17 @@ lookupregexproute(Input) ->
 lookupuser(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
 	nomatch ->
-	    nomatch;
+	    NoParamURL = sipurl:set([{param, []}], URL),
+	    case local:lookupregexproute(sipurl:print(NoParamURL)) of
+		none ->
+		    logger:log(debug, "Lookup: No user matches URL ~p, and no regexp rules match either.",
+			       [sipurl:print(NoParamURL)]),
+		    nomatch;
+		{proxy, Loc} ->
+		    logger:log(debug, "Lookup: No matching user, but a matching regexp rule was found : ~p -> ~p",
+			       [sipurl:print(NoParamURL), sipurl:print(Loc)]),
+		    {proxy, Loc}
+	    end;
 	[User] when is_list(User) ->
 	    %% single user, look if the user has a CPL script
 	    case local:user_has_cpl_script(User, incoming) of
@@ -123,44 +134,58 @@ lookupuser(URL) when is_record(URL, sipurl) ->
 			    logger:log(debug, "Lookup: User ~p has a CPL script, but I could not find an appserver",
 				       [User]),
 			    %% Fallback to just looking in the location database
-			    lookupuser_locations([User], URL)
+			    lookupuser_get_locations([User], URL)
 		    end;
 		false ->
-		    lookupuser_locations([User], URL)
+		    lookupuser_get_locations([User], URL)
 	    end;
 	Users when is_list(Users) ->
-	    lookupuser_locations(Users, URL)
+	    %% multiple (or no) users
+	    lookupuser_get_locations(Users, URL)
     end.
 
 %% part of lookupuser()
-lookupuser_locations(Users, URL) ->
-    case local:get_locations_for_users(Users) of
-	Locations1 when is_list(Locations1) ->
-	    Locations2 = local:prioritize_locations([Users], Locations1),
-	    Locations = local:remove_unsuitable_locations(URL, Locations2),
-	    %% check if more than one location was found.
-	    case Locations of
-	        [] ->
-		    %% User exists but has no currently known locations
-		    case local:lookupregexproute(sipurl:print(URL)) of
-			none ->
-			    logger:log(debug, "Lookup: No locations found for URL ~p, and no matching regexp rules.",
-				       [sipurl:print(URL)]),
-			    none;
-			Loc ->
-			    logger:log(debug, "Lookup: Regexp-route lookup of ~p -> ~p", [sipurl:print(URL), Loc]),
-		            Loc
-		    end;
-		[#siplocationdb_e{address=BestLocation}] when is_record(BestLocation, sipurl) ->
-		    %% A single location was found in the location database (after removing any unsuitable ones)
-		    {proxy, BestLocation};
-		[Location | _] when is_record(Location, siplocationdb_e) ->
-		    %% More than one location registered for this address, check for appserver...
-		    %% (appserver is the program that handles forking of requests)
-		    local:lookupappserver(URL)
-	    end
+lookupuser_get_locations(Users, URL) ->
+    %% check if more than one location was found.
+    case local:lookupuser_locations(Users, URL) of
+	[] ->
+	    %% User exists but has no currently known locations
+	    NoParamURL = sipurl:set([{param, []}], URL),
+	    case local:lookupregexproute(sipurl:print(NoParamURL)) of
+		none ->
+		    logger:log(debug, "Lookup: No locations found for users ~p, and no regexp rules match URL ~p.",
+			       [Users, sipurl:print(NoParamURL)]),
+		    none;
+		{proxy, Loc} ->
+		    logger:log(debug, "Lookup: Regexp-route rewrite of ~p -> ~p",
+			       [sipurl:print(NoParamURL), sipurl:print(Loc)]),
+		    {proxy, Loc}
+	    end;
+	[#siplocationdb_e{address=BestLocation}] when is_record(BestLocation, sipurl) ->
+	    %% A single location was found in the location database (after removing any unsuitable ones)
+	    {proxy, BestLocation};
+	[Location | _] when is_record(Location, siplocationdb_e) ->
+	    %% More than one location registered for this address, check for appserver...
+	    %% (appserver is the program that handles forking of requests)
+	    local:lookupappserver(URL)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: lookupuser_locations(Users, URL)
+%%           Users = list() of string(), SIP users to fetch locations
+%%                                       of
+%%           URL   = sipurl record(), the Request-URI
+%% Descrip.: Return all locations for a list of users that is suitable
+%%           given a Request-URI. By suitable, we mean that we filter
+%%           out SIP locations if Request-URI was SIPS, unless this
+%%           proxy is configured not to.
+%% Returns : Locations = list() of siplocationdb_e record()
+%%--------------------------------------------------------------------
+lookupuser_locations(Users, URL) when is_list(Users), is_record(URL, sipurl) ->
+    Locations1 = local:get_locations_for_users(Users),
+    Locations = local:prioritize_locations(Users, Locations1),
+    local:remove_unsuitable_locations(URL, Locations).
+    
 %%--------------------------------------------------------------------
 %% Function: remove_unsuitable_locations(URL, Locations)
 %%           URL      = sipurl record(), Request-URI of request
@@ -185,8 +210,16 @@ remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list
 remove_non_sips_locations([#siplocationdb_e{address=URL}=H | T], Res)
   when is_record(URL, sipurl), URL#sipurl.proto == "sips" ->
     remove_non_sips_locations(T, [H | Res]);
-remove_non_sips_locations([H | T], Res) when is_record(H, siplocationdb_e) ->
-    remove_non_sips_locations(T, Res);
+remove_non_sips_locations([#siplocationdb_e{address=URL}=H | T], Res) ->
+    %% XXX do we need to lowercase what we get from url_param:find?
+    case url_param:find(URL#sipurl.param_pairs, "transport") of
+	["tls"] ->
+	    %% Keep this location
+	    remove_non_sips_locations(T, [H | Res]);
+	_ ->
+	    %% Not SIPS protocol or TLS transport parameter, remove this location from result
+	    remove_non_sips_locations(T, Res)
+    end;
 remove_non_sips_locations([], Res) ->
     lists:reverse(Res).
 
@@ -208,11 +241,7 @@ lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
 	    nomatch;
 	Users when is_list(Users) ->
 	    Locations = local:get_locations_for_users(Users),
-	    local:prioritize_locations([Users], Locations);
-	Unknown ->
-	    logger:log(error, "Lookup: Unknown result from local:get_users_for_url() in lookup_url_to_locations: ~p",
-		       [Unknown]),
-	    throw({siperror, 500, "Server Internal Error"})
+	    local:prioritize_locations(Users, Locations)
     end.
 
 %%--------------------------------------------------------------------
@@ -256,19 +285,12 @@ lookup_url_to_addresses(_Src, URL) when is_record(URL, sipurl) ->
 %%--------------------------------------------------------------------
 lookup_addresses_to_users(Addresses) when is_list(Addresses) ->
     case local:get_users_for_addresses_of_record(Addresses) of
-	[] ->
-	    [];
 	nomatch ->
 	    [];
 	Users when is_list(Users) ->
 	    Res = lists:sort(Users),
 	    logger:log(debug, "Lookup: Addresses ~p belongs to one or more users : ~p", [Addresses, Res]),
-	    Res;
-	Unknown ->
-	    logger:log(error, "Lookup: lookup_addresses_to_users: unknown result from"
-		       " local:get_users_for_addresses_of_record(~p) : ~p",
-		       [Addresses, Unknown]),
-	    []
+	    Res
     end.
 
 %%--------------------------------------------------------------------
@@ -279,18 +301,12 @@ lookup_addresses_to_users(Addresses) when is_list(Addresses) ->
 %%--------------------------------------------------------------------
 lookup_address_to_users(Address) ->
     case local:get_users_for_address_of_record(Address) of
-	[] ->
-	    [];
 	nomatch ->
 	    [];
 	Users when is_list(Users) ->
 	    Res = lists:sort(Users),
 	    logger:log(debug, "Lookup: Address ~p belongs to one or more users : ~p", [Address, Res]),
-	    Res;
-	Unknown ->
-	    logger:log(error, "Lookup: lookup_address_to_users: unknown result from "
-		       "local:get_users_for_address_of_record(~p) : ~p", [Address, Unknown]),
-	    []
+	    Res
     end.
 
 %%--------------------------------------------------------------------
@@ -303,6 +319,9 @@ lookup_address_to_users(Address) ->
 %%           URL    = sipurl record()
 %%           Status = integer(), SIP status code
 %%           Reason = string(), SIP reason phrase
+%% Note    : XXX We need to make sure we don't return a SIP URI if Key
+%%           was SIPS. For this we need a general function
+%%           ensure_is_tls_protected_uri(ReqURI, URI)' or similar.
 %%--------------------------------------------------------------------
 lookupappserver(Key) when is_record(Key, sipurl) ->
     case sipserver:get_env(appserver, none) of
@@ -317,8 +336,8 @@ lookupappserver(Key) when is_record(Key, sipurl) ->
 		URL when is_record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
 		    {forward, URL};
 		_ ->
-		    logger:log(error, "Failed parsing configured appserver ~p, responding '500 Server Internal Error'",
-			       [AppServer]),
+		    logger:log(error, "Lookup: Failed parsing configured appserver '~p', "
+			       "responding '500 Server Internal Error'", [AppServer]),
 		    {response, 500, "Server Internal Error"}
 	    end
     end.
@@ -548,12 +567,7 @@ lookupnumber(Number) ->
 		    end;
 		nomatch ->
 		    %% Regexp did not match
-		    none;
-		Unknown ->
-		    %% Regexp rewrite failed
-		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn', result : ~p",
-			       [Number, Unknown]),
-		    error
+		    none
 	    end;
 	_ ->
 	    %% Number was not numeric
@@ -599,18 +613,12 @@ rewrite_potn_to_e164(_) ->
 %%--------------------------------------------------------------------
 isours(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
-	[] ->
-	    logger:log(debug, "Lookup: isours ~s -> false", [sipurl:print(URL)]),
-	    false;
 	nomatch ->
 	    logger:log(debug, "Lookup: isours ~s -> false", [sipurl:print(URL)]),
 	    false;
 	Users when is_list(Users) ->
 	    logger:log(debug, "Lookup: isours ~s -> user(s) ~p", [sipurl:print(URL), Users]),
-	    true;
-	Unknown ->
-	    logger:log(debug, "Lookup: isours ~s -> Unknown result ~p", [sipurl:print(URL), Unknown]),
-	    false
+	    true
     end.
 
 %%--------------------------------------------------------------------
@@ -675,8 +683,10 @@ homedomain(Domain) when is_list(Domain) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_party_number(URL, DstHost)
-%%           URL     = sipurl record(), From:
+%% Function: get_remote_party_number(User, Header, DstHost)
+%%           User    = string(), SIP authentication username
+%%           Header  = keylist record()
+%%           URI     = sipurl record(), outgoing Request-URI
 %%           DstHost = term(), chosen destination for request
 %% Descrip.: This function is used by the pstnproxy to provide a PSTN
 %%           gateway with usefull caller-id information. PSTN networks
@@ -685,59 +695,43 @@ homedomain(Domain) when is_list(Domain) ->
 %%           formatted differently, thus the DstHost parameter (a TSP
 %%           gateway to PSTN might only handle E.164 numbers, while a
 %%           PBX might be expecting only a 4-digit extension number).
-%% Returns : {ok, Number} |
+%% Returns : {ok, RPI, Number} |
 %%           none
+%%           RPI    = contact record()
 %%           Number = string()
 %%--------------------------------------------------------------------
-get_remote_party_number(URL, DstHost) when is_record(URL, sipurl), is_list(DstHost) ->
-    case local:get_users_for_url(URL) of
-	[User] ->
-	    case local:get_telephonenumber_for_user(User) of
-		Number when is_list(Number) ->
-		    local:format_number_for_remote_party_id(Number, URL, DstHost);
-		nomatch ->
-		    logger:log(debug, "Lookup: No telephone number found for user ~p", [User]),
-		    none;
-		Unknown ->
-		    logger:log(error, "Lookup: Unexpected results from local:get_telephonenumber_for_user() "
-			       "for user ~p in get_remote_party_number: ~p", [User, Unknown]),
-		    none
-	    end;
+get_remote_party_number(User, _Header, URI, DstHost) when is_list(User), is_list(DstHost), is_record(URI, sipurl) ->
+    case local:get_telephonenumber_for_user(User) of
+	Number when is_list(Number) ->
+	    {ok, FormattedNumber} = local:format_number_for_remote_party_id(Number, URI, DstHost),
+	    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
+	    RPURI = sipurl:set([{user, FormattedNumber}, {pass, none}, {param, []}], URI),
+	    {ok, contact:new(none, RPURI, Parameters), FormattedNumber};
 	nomatch ->
-	    logger:log(debug, "Lookup: No user(s) match address ~p, can't get telephone number",
-		       [sipurl:print(URL)]),
-	    none;
-	[] ->
-	    logger:log(debug, "Lookup: No user(s) match address ~p, can't get telephone number",
-		       [sipurl:print(URL)]),
-	    none;
-	Users when is_list(Users) ->
-	    logger:log(debug, "Lookup: Multiple users match address ~p, can't get telephone number",
-		       [sipurl:print(URL)]),
-	    none;
-	Unknown ->
-	    logger:log(error, "Lookup: Unexpected results from local:get_users_for_url() for URL ~p in "
-		       "get_remote_party_number: ~p", [sipurl:print(URL), Unknown]),
+	    logger:log(debug, "Lookup: No telephone number found for user ~p", [User]),
 	    none
     end.
 
 %%--------------------------------------------------------------------
-%% Function: format_number_for_remote_party_id(Number, URL, DstHost)
+%% Function: format_number_for_remote_party_id(Number, Header,
+%%                                             DstHost)
 %%           Number  = string(), the number to format
-%%           URL     = sipurl record(), From:
+%%           Header  = keylist record()
 %%           DstHost = term(), destination for request
 %% Descrip.: Hook for the actual formatting once
 %%           get_remote_party_number/2 has found a number to be
-%%           formatted.
+%%           formatted. This default function simply tries to rewrite
+%%           the number to E.164. If one or more of your PSTN gateways
+%%           wants the Caller-ID information in any other format, then
+%%           override this function in local.erl.
 %% Returns : {ok, Number}
 %%           Number = string()
 %%--------------------------------------------------------------------
-format_number_for_remote_party_id(Number, ToURI, _DstHost) when is_list(Number),
-								is_record(ToURI, sipurl) ->
+format_number_for_remote_party_id(Number, _Header, _DstHost) when is_list(Number) ->
     case rewrite_potn_to_e164(Number) of
 	error ->
 	    none;
-	Res ->
+	Res when is_list(Res) ->
 	    {ok, Res}
     end.
 
@@ -759,18 +753,10 @@ get_remote_party_name(Key, URI) when is_list(Key), is_record(URI, sipurl) ->
 	[DisplayName] when is_list(DisplayName) ->
 	    {ok, DisplayName};
 	L when is_list(L) ->
-	    logger:log(debug, "Lookup: Got more than one name back for number ~p. Since I have no way " ++
+	    logger:log(debug, "Lookup: Got more than one name back for number ~p. Since I have no way "
 		       "of choosing a name from a list, I'm not going to try.", [Key]),
-	    none;
-	Unknown ->
-	    logger:log(error, "Lookup: Failed to get name for remote party ~p, unexpected result from "
-		       "lookup_tel2name : ~p", [Key, Unknown]),
 	    none
-    end;
-get_remote_party_name(Key, URI) ->
-    logger:log(error, "Lookup: Could not get remote party name for non-list argument ~p or non-URL argument ~p",
-	       [Key, URI]),
-    none.
+    end.
 
 
 %%====================================================================
@@ -828,10 +814,12 @@ test() ->
     Unsuitable_URL1 = sipurl:new([{proto, "sip"}, {host, "sip1.example.org"}]),
     Unsuitable_URL2 = sipurl:new([{proto, "sips"}, {host, "sips1.example.org"}]),
     Unsuitable_URL3 = sipurl:new([{proto, "sip"}, {host, "sip2.example.org"}]),
+    Unsuitable_URL4 = sipurl:new([{proto, "sip"}, {host, "sip2.example.org"}, {param, ["transport=tls"]}]),
 
     Unsuitable_LDBE1 = #siplocationdb_e{address=Unsuitable_URL1},
     Unsuitable_LDBE2 = #siplocationdb_e{address=Unsuitable_URL2},
     Unsuitable_LDBE3 = #siplocationdb_e{address=Unsuitable_URL3},
+    Unsuitable_LDBE4 = #siplocationdb_e{address=Unsuitable_URL4},
 
     io:format("test: remove_unsuitable_locations/2 - 1~n"),
     %% test with non-SIPS URI, no entrys should be removed
@@ -842,5 +830,10 @@ test() ->
     %% test with SIPS URI
     [Unsuitable_LDBE2] =
 	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_LDBE1, Unsuitable_LDBE2, Unsuitable_LDBE3]),
+
+    io:format("test: remove_unsuitable_locations/2 - 3~n"),
+    %% test with SIP URI but transport parameter indicating TLS
+    [Unsuitable_LDBE4] =
+	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_LDBE1, Unsuitable_LDBE4]),
 
     ok.
