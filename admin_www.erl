@@ -88,65 +88,44 @@ print_phones([{regexproute, Regexp, Flags, Class, Expire, Address} | List]) ->
      end | print_phones(List)];
 
 print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
-    [case Address of
+    ["<tr><td>",
+     Number,
+     "</td><td>",
+     print_flags(Flags),
+     "</td><td>",
+     atom_to_list(Class),
+     "</td><td>",
+     util:sec_to_date(Expire),
+     "</td><td>",
+     case Address of
 	 {_, _, _, _, _} when list(Number) ->
-	     ["<tr><td>",
-	      Number,
-	      "</td><td>",
-	      print_flags(Flags),
-	      "</td><td>",
-	      atom_to_list(Class),
-	      "</td><td>",
-	      util:sec_to_date(Expire),
-	      "</td><td>",
-	      sipurl:print(Address),
-	      "</td><td>",
-	      case Class of
-		  permanent ->
-		      [
-		       "<form action=\"admin_www%3Adel_route\" method=post>\n",
-		       "<input type=\"hidden\" name=\"number\" value=\"",
-		       Number, "\">\n",
-		       "<input type=\"submit\" value=\"Ta bort\">\n",
-		       "</form>\n"
-		      ];
-		  _ ->
-		      ""
-	      end,
-	      "</td></tr>\n"
+	     sipurl:print(Address);
+	 {mailbox, Status, Number2} ->
+	     ["mailbox ", Number2,
+	      " message ", Status
 	     ];
-	{mailbox, Status, Number2} ->
-	     ["<tr><td>",
-	      Number,
-	      "</td><td>",
-	      print_flags(Flags),
-	      "</td><td>",
-	      atom_to_list(Class),
-	      "</td><td>",
-	      util:sec_to_date(Expire),
-	      "</td><td>",
-	      "mailbox ", Number2,
-	      " message ", Status,
-	      "</td></tr>\n"
-	     ];
+	 {error, Errorcode} ->
+	     ["error ", integer_to_list(Errorcode)];
 	_ when atom(Address) ->
-	     ["<tr><td>",
-	      Number,
-	      "</td><td>",
-	      print_flags(Flags),
-	      "</td><td>",
-	      atom_to_list(Class),
-	      "</td><td>",
-	      util:sec_to_date(Expire),
-	      "</td><td>",
-	      atom_to_list(Address),
-	      "</td></tr>\n"
+	     atom_to_list(Address);
+	 _ ->
+	     Number
+     end,
+     "</td><td>",
+     case Class of
+	 permanent ->
+	     [
+	      "<form action=\"admin_www%3Adel_route\" method=post>\n",
+	      "<input type=\"hidden\" name=\"number\" value=\"",
+	      Number, "\">\n",
+	      "<input type=\"submit\" value=\"Ta bort\">\n",
+	      "</form>\n"
 	     ];
 	 _ ->
-	     ["<tr><td>",
-	      Number,
-	      "</td></tr>\n"]
-     end | print_phones(List)].
+	     ""
+     end,
+     "</td></tr>\n"
+     | print_phones(List)].
 
 print_classes([]) ->
     "&nbsp;";
@@ -465,6 +444,14 @@ add_route(Env, Input) ->
 		    [header(ok), "Du m&aring;ste ange prioritet"];
 		{_, _, error} ->
 		    [header(ok), "Du m&aring;ste ange en adress"];
+		{{ok, Number}, {ok, Priority}, {ok, ">" ++ Errorcode}} ->
+		    phone:insert_purge_phone(Number,
+					     [{priority,
+					       list_to_integer(Priority)}],
+					     permanent,
+					     never,
+					     {error, list_to_integer(Errorcode)}),
+		    [header(redirect, phonesurl())];
 		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
 		    phone:insert_purge_phone(Number,
 					     [{priority,
@@ -571,7 +558,7 @@ change_user_form(Env, Input) ->
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"password\" name=\"password\" size=\"20\">\n",
-		     "<input type=\"submit\" value=\"&AUML;ndra l&ouml;senord\">\n",
+		     "<input type=\"submit\" value=\"&Auml;ndra l&ouml;senord\">\n",
 		     "</form>\n",
 		     "<h2>Nummer</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
@@ -579,7 +566,7 @@ change_user_form(Env, Input) ->
 		     "<input type=\"text\" name=\"numbers\" size=\"40\" value=\"",
 		     print_numbers(Numberlist),
 		     "\">\n",
-		     "<input type=\"submit\" value=\"&AUML;ndra nummer\">\n",
+		     "<input type=\"submit\" value=\"&Auml;ndra nummer\">\n",
 		     "</form>\n",
 		     "<h2>Administrat&ouml;r</h2>\n",
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
@@ -596,7 +583,7 @@ change_user_form(Env, Input) ->
 		     "<form action=\"admin_www%3Achange_classes\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     print_class_checkboxes(Classes),
-		     "<input type=\"submit\" value=\"&AUML;ndra klasser\">\n",
+		     "<input type=\"submit\" value=\"&Auml;ndra klasser\">\n",
 		     "</form>\n",
 		     userurl_html()
 		    ]
