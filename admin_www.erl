@@ -1,7 +1,10 @@
 -module(admin_www).
--export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2, change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2, change_classes/2, list_numbers/2]).
+-export([start/2, start/1, list_phones/2, list_users/2, add_user/2, change_user_form/2,
+	 change_user/2, add_route/2, del_route/2, wml/2, add_user_with_cookie/2,
+	 change_classes/2, list_numbers/2, add_regexp/2, del_regexp/2]).
 
 -include("phone.hrl").
+-include("database_regexproute.hrl").
 
 server_node() -> 'incomingproxy@granit.e.kth.se'.
 
@@ -55,6 +58,36 @@ print_flags([Key | Rest]) ->
     [print_flag(Key) | print_flags(Rest)].
 
 print_phones([]) -> [];
+
+print_phones([{regexproute, Regexp, Flags, Class, Expire, Address} | List]) ->
+    [case Address of
+	 {_, _, _, _, _} when list(Regexp) ->
+	     ["<tr><td>",
+	      Regexp,
+	      "</td><td>",
+	      print_flags(Flags),
+	      "</td><td>",
+	      atom_to_list(Class),
+	      "</td><td>",
+	      util:sec_to_date(Expire),
+	      "</td><td>",
+	      sipurl:print(Address),
+	      "</td><td>",
+	      case Class of
+		  permanent ->
+		      [
+		       "<form action=\"admin_www%3Adel_regexp\" method=post>\n",
+		       "<input type=\"hidden\" name=\"number\" value=\"",
+		       Regexp, "\">\n",
+		       "<input type=\"submit\" value=\"Ta bort\">\n",
+		       "</form>\n"
+		      ];
+		  _ ->
+		      ""
+	      end,
+	      "</td></tr>\n"
+	     ]
+     end | print_phones(List)];
 
 print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
     [case Address of
@@ -340,7 +373,9 @@ list_phones(Env, Input) ->
 	    Message;
 	{ok} ->
 	    {atomic, List} = phone:list_phones(),
+	    {atomic, Regexps} = database_regexproute:list(),
 	    [header(ok),
+	     "<h1>Nummertabell</h1>\n",
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
 	     "<th>Går ut</th><th>Adress</th></tr>\n",
@@ -353,9 +388,29 @@ list_phones(Env, Input) ->
 					     end
 				     end, List)),
 	     "</table>\n",
-	     "<h1>Lägg till route</h1>\n",
+	     "<h1>Lägg till medflyttning</h1>\n",
 	     "<form action=\"admin_www%3Aadd_route\" method=post>\n",
 	     "Nummer: <input type=\"text\" name=\"number\">\n",
+	     "Prioritet: <input type=\"text\" name=\"priority\">\n",
+	     "Adress: <input type=\"text\" name=\"address\">\n",
+	     "<input type=\"submit\" value=\"Lägg till\">\n",
+	     "</form>\n",
+	     "<h1>Regler</h1>\n",
+	     "<table cellspacing=0 border=1 cellpadding=4>\n",
+	     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
+	     "<th>Går ut</th><th>Adress</th></tr>\n",
+	     print_phones(lists:sort(fun (Elem1, Elem2) -> 
+					     if
+						 Elem1#regexproute.regexp < Elem2#regexproute.regexp ->
+						     true;
+						 true ->
+						     false
+					     end
+				     end, Regexps)),
+	     "</table>\n",
+	     "<h1>Lägg till regel</h1>\n",
+	     "<form action=\"admin_www%3Aadd_regexp\" method=post>\n",
+	     "Regel: <input type=\"text\" name=\"number\">\n",
 	     "Prioritet: <input type=\"text\" name=\"priority\">\n",
 	     "Adress: <input type=\"text\" name=\"address\">\n",
 	     "<input type=\"submit\" value=\"Lägg till\">\n",
@@ -414,6 +469,33 @@ add_route(Env, Input) ->
 	    end
     end.
 
+add_regexp(Env, Input) ->
+    case check_auth(Env, true) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    Args = sipheader:httparg(Input),
+	    Numberfind = dict:find("number", Args),
+	    Priorityfind = dict:find("priority", Args),
+	    Addressfind = dict:find("address", Args),
+	    case {Numberfind, Priorityfind, Addressfind} of
+		{error, _, _} ->
+		    [header(ok), "Du måste ange en regexp"];
+		{_, error, _} ->
+		    [header(ok), "Du måste ange prioritet"];
+		{_, _, error} ->
+		    [header(ok), "Du måste ange en adress"];
+		{{ok, Number}, {ok, Priority}, {ok, Address}} ->
+		    database_regexproute:insert(Number,
+						[{priority,
+						  list_to_integer(Priority)}],
+						permanent,
+						never,
+						sipurl:parse(Address)),
+		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+	    end
+    end.
+
 del_route(Env, Input) ->
     case check_auth(Env, true) of
 	{error, Message} ->
@@ -426,6 +508,22 @@ del_route(Env, Input) ->
 		    [header(ok), "Du måste ange ett nummer"];
 		{{ok, Number}} ->
 		    phone:purge_class_phone(Number, permanent),
+		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
+	    end
+    end.
+
+del_regexp(Env, Input) ->
+    case check_auth(Env, true) of
+	{error, Message} ->
+	    Message;
+	{ok} ->
+	    Args = sipheader:httparg(Input),
+	    Numberfind = dict:find("number", Args),
+	    case {Numberfind} of
+		{error} ->
+		    [header(ok), "Du måste ange ett nummer"];
+		{{ok, Number}} ->
+		    database_regexproute:purge_class(Number, permanent),
 		    [header(redirect, "https://granit.e.kth.se:8080/erl/admin_www%3Alist_phones")]
 	    end
     end.
