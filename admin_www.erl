@@ -55,39 +55,37 @@ print_flags([Key]) ->
 print_flags([Key | Rest]) ->
     [print_flag(Key) | print_flags(Rest)].
 
-print_phones([]) -> [];
+print_one_regexp(Regexp, Flags, Class, Expire, Address) ->
+    case Address of
+	{_, _, _, _, _} when list(Regexp) ->
+	    ["<tr><td>",
+	     Regexp,
+	     "</td><td>",
+	     print_flags(Flags),
+	     "</td><td>",
+	     atom_to_list(Class),
+	     "</td><td>",
+	     util:sec_to_date(Expire),
+	     "</td><td>",
+	     sipurl:print(Address),
+	     "</td><td>",
+	     case Class of
+		 permanent ->
+		     [
+		      "<form action=\"admin_www%3Adel_regexp\" method=post>\n",
+		      "<input type=\"hidden\" name=\"number\" value=\"",
+		      Regexp, "\">\n",
+		      "<input type=\"submit\" value=\"Ta bort\">\n",
+		      "</form>\n"
+		     ];
+		 _ ->
+		     ""
+	     end,
+	     "</td></tr>\n"
+	    ]
+    end.
 
-print_phones([{regexproute, Regexp, Flags, Class, Expire, Address} | List]) ->
-    [case Address of
-	 {_, _, _, _, _} when list(Regexp) ->
-	     ["<tr><td>",
-	      Regexp,
-	      "</td><td>",
-	      print_flags(Flags),
-	      "</td><td>",
-	      atom_to_list(Class),
-	      "</td><td>",
-	      util:sec_to_date(Expire),
-	      "</td><td>",
-	      sipurl:print(Address),
-	      "</td><td>",
-	      case Class of
-		  permanent ->
-		      [
-		       "<form action=\"admin_www%3Adel_regexp\" method=post>\n",
-		       "<input type=\"hidden\" name=\"number\" value=\"",
-		       Regexp, "\">\n",
-		       "<input type=\"submit\" value=\"Ta bort\">\n",
-		       "</form>\n"
-		      ];
-		  _ ->
-		      ""
-	      end,
-	      "</td></tr>\n"
-	     ]
-     end | print_phones(List)];
-
-print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
+print_one_phone(Number, Flags, Class, Expire, Address) ->
     ["<tr><td>",
      Number,
      "</td><td>",
@@ -124,8 +122,20 @@ print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
 	 _ ->
 	     ""
      end,
-     "</td></tr>\n"
-     | print_phones(List)].
+     "</td></tr>\n"].
+
+print_phones([]) -> [];
+
+print_phones([{regexproute, Regexp, Flags, Class, Expire, Address} | List]) ->
+    [print_one_regexp(Regexp, Flags, Class, Expire, Address) | print_phones(List)];
+
+print_phones([{phone, Number, Flags, Class, Expire, Address} | List]) ->
+    print_one_phone(Number, Flags, Class, Expire, Address) ++ print_phones(List).
+
+print_phones_list([]) -> [];
+
+print_phones_list([{Number, {Address, Flags, Class, Expire}} | List]) ->
+    print_one_phone(Number, Flags, Class, Expire, Address) ++ print_phones_list(List).
 
 print_classes([]) ->
     "&nbsp;";
@@ -159,7 +169,7 @@ print_users([Elem | List]) ->
      "</td><td>",
      "<form action=\"admin_www%3Achange_user_form\" method=post>\n",
      "<input type=\"hidden\" name=\"user\" value=\"", Elem#user.user,"\" size=\"12\">\n",
-     "<input type=\"submit\" value=\"Change\">\n",
+     "<input type=\"submit\" value=\"&Auml;ndra\">\n",
      "</form>\n",
      "</td></tr>\n"
      | print_users(List)].
@@ -315,9 +325,9 @@ list_users(Env, Input) ->
 				    end, List)),
 	     "</table>\n",
 	     "<form action=\"admin_www%3Aadd_user\" method=post>\n",
-	     "<input type=\"text\" name=\"user\" size=\"12\">\n",
-	     "<input type=\"text\" name=\"phone\" size=\"4\">\n",
-	     "<input type=\"submit\" value=\"Add\">\n",
+	     "Anv&auml;ndarnamn: <input type=\"text\" name=\"user\" size=\"12\">\n",
+	     "Nummer: <input type=\"text\" name=\"phone\" size=\"4\">\n",
+	     "<input type=\"submit\" value=\"L&auml;gg till\">\n",
 	     "</form>\n",
 	     "<ul>\n",
 	     "<li>internal: samtal inom KTH\n",
@@ -553,14 +563,21 @@ change_user_form(Env, Input) ->
 		    Numberlist = get_numbers(User),
 		    Phonelist = lists:foldl(fun (A, AccIn) ->
 						    {atomic, List} = phone:get_phone(A),
-						    lists:append(AccIn, List)
+						    lists:append(AccIn, lists:map(fun (I) ->
+											  {A, I}
+										  end, List))
 					    end, [], Numberlist),
 		    [
 		     header(ok),
 		     "<h1>", username_to_cn(User), "(", User, ")", "</h1>\n",
 		     "<h2>KTH-ID</h2>", username_to_uid(User),
+		     "<h2>Registrerade telefoner</h2>\n",
+		     "<table cellspacing=0 border=1 cellpadding=4>\n",
+		     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
+		     "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
+		     print_phones_list(Phonelist),
+		     "</table>\n",
 		     "<h2>L&ouml;senord</h2>\n",
-		     
 		     "<form action=\"admin_www%3Achange_user\" method=post>\n",
 		     "<input type=\"hidden\" name=\"user\" value=\"", User, "\">\n",
 		     "<input type=\"password\" name=\"password\" size=\"20\">\n",
