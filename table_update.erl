@@ -91,7 +91,7 @@ phone() ->
 
     case erase(update) of
 	true -> 
-	    logger:log(normal, "phone: updated");
+	    logger:log(debug, "phone: updated");
 	false ->
 	    true
     end.
@@ -138,7 +138,7 @@ regexproute() ->
 
     case erase(update) of
 	true -> 
-	    logger:log(normal, "regexproute: updated");
+	    logger:log(debug, "regexproute: updated");
 	false ->
 	    true
     end.
@@ -156,9 +156,3 @@ regexproute() ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
-%%--------------------------------------------------------------------
