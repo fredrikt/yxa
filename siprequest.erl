@@ -16,7 +16,7 @@ send_response_to(Socket, Code, Text, Dest, Header, Body) ->
     Message = Line1 ++ "\r\n" ++ sipheader:build_header(Header) ++ "\r\n" ++ Body,
     logger:log(debug, "send response(~p):~n~s~n", [Dest, Message]),
     {Protocol, {Host, Port}, Parameters} = Dest,
-    ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
+    ok = gen_udp:send(Socket, Host, list_to_integer(default_port(Port)), Message).
 
 default_port(none) ->
     "5060";
