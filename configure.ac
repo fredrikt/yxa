@@ -4,7 +4,12 @@ AC_PREREQ(2.53)
 AC_INIT(yxa, 0.1, yxa-devel@lists.su.se)
 AC_CONFIG_SRCDIR([registrar.erl])
 
+AC_PROG_CC
+AC_PROG_INSTALL
+
 AC_CONFIG_FILES(Makefile)
+
+AC_SUBST(DESTDIR)
 
 AC_OUTPUT
 
