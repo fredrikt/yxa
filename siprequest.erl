@@ -30,6 +30,8 @@
 	 proxy_add_via/4,
 	 standardcopy/2,
 	 get_approximate_msgsize/1,
+	 set_request_body/2,
+	 set_response_body/2,
 
 	 test/0
 	]).
@@ -89,12 +91,10 @@ fix_content_length(Header, Body) ->
 %% Returns : PortString = string()
 %%--------------------------------------------------------------------
 default_port(Proto, none) when Proto == udp; Proto == udp6; Proto == tcp; Proto == tcp6; Proto == "sip" ->
-    "5060";
+    5060;
 default_port(Proto, none) when Proto == tls; Proto == tls6 ; Proto == "sips" ->
-    "5061";
+    5061;
 default_port(_, Port) when is_integer(Port) ->
-    integer_to_list(Port);
-default_port(_, Port) when is_list(Port) ->
     Port.
 
 %%--------------------------------------------------------------------
@@ -504,7 +504,7 @@ get_loop_cookie(Header, OrigURI, Proto) ->
     {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
 				   TopVia when is_record(TopVia, via) ->
 				       P = sipsocket:viaproto2proto(TopVia#via.proto),
-				       {TopVia#via.host, list_to_integer(default_port(P, TopVia#via.port))};
+				       {TopVia#via.host, default_port(P, TopVia#via.port)};
 				   _ ->
 				       {myhostname(), sipserver:get_listenport(Proto)}
 			       end,
@@ -658,42 +658,47 @@ standardcopy(Header, ExtraHeaders) ->
 send_auth_req(Header, Socket, Auth, Stale) ->
     ExtraHeaders = [{"WWW-Authenticate",
 		     sipheader:auth_print(Auth, Stale)}],
-    Response = #response{status=401, reason="Authentication Required",
-			 header=standardcopy(Header, ExtraHeaders), body=""},
+    Response1 = #response{status=401, reason="Authentication Required",
+			  header=standardcopy(Header, ExtraHeaders)},
+    Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
 send_proxyauth_req(Header, Socket, Auth, Stale) ->
     ExtraHeaders = [{"Proxy-Authenticate",
 		     sipheader:auth_print(Auth, Stale)}],
-    Response = #response{status=407, reason="Proxy Authentication Required",
-                         header=standardcopy(Header, ExtraHeaders), body=""},
+    Response1 = #response{status=407, reason="Proxy Authentication Required",
+			  header=standardcopy(Header, ExtraHeaders)},
+    Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
 send_redirect(Location, Header, Socket) when is_record(Location, sipurl) ->
     Contact = contact:new(none, Location, []),
     ExtraHeaders = [{"Contact",
 		     sipheader:contact_print([Contact])}],
-    Response = #response{status=302, reason="Moved Temporarily",
-			 header=standardcopy(Header, ExtraHeaders), body=""},
+    Response1 = #response{status=302, reason="Moved Temporarily",
+			  header=standardcopy(Header, ExtraHeaders)},
+    Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
 send_notfound(Header, Socket) ->
-    Response = #response{status=404, reason="Not found",
-			 header=standardcopy(Header, []), body=""},
+    Response1 = #response{status=404, reason="Not found",
+			  header=standardcopy(Header, [])},
+    Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
 send_notavail(Header, Socket) ->
     ExtraHeaders = [{"Retry-After", ["180"]}],
-    Response = #response{status=480, reason="Temporarily unavailable",
-                         header=standardcopy(Header, ExtraHeaders), body=""},
+    Response1 = #response{status=480, reason="Temporarily unavailable",
+			  header=standardcopy(Header, ExtraHeaders)},
+    Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
 send_answer(Header, Socket, Body) ->
-    %% Remember to add a linefeed (\n) to the end of Body
-    ExtraHeaders = [{"Content-Type", ["application/sdp"]},
-		    {"Content-Length", [integer_to_list(length(Body))]}],
-    Response = #response{status=200, reason="OK",
-			 header=standardcopy(Header, ExtraHeaders), body=Body},
+    %% Remember to add a linefeed (\n) to the end of Body that you pass to this function
+    ExtraHeaders = [{"Content-Type", ["application/sdp"]}],
+    Response1 = #response{status=200, reason="OK",
+			  header=standardcopy(Header, ExtraHeaders)},
+    Response = set_response_body(Response1, Body),
     transportlayer:send_response(Socket, Response).
 
 %%--------------------------------------------------------------------
@@ -738,13 +743,43 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
 			100 -> AnswerHeader4;
 			_ -> keylist:delete("Timestamp", AnswerHeader4)
 		    end,
-    #response{status=Status, reason=Reason, header=AnswerHeader5, body=Body}.
+    set_response_body(#response{status=Status, reason=Reason, header=AnswerHeader5}, Body).
 
 binary_make_message(BinLine1, Header, BinBody) when is_binary(BinLine1), is_record(Header, keylist),
 						    is_binary(BinBody) ->
     BinHeaders = sipheader:build_header_binary(Header),
     concat_binary([BinLine1, 13, 10, BinHeaders, 13, 10, BinBody]).
 
+%%--------------------------------------------------------------------
+%% Function: set_request_body(Request, Body)
+%%           Request = request record()
+%%           Body    = list() or binary()
+%% Descrip.: Set the body of a request record.
+%% Returns : NewRequest = request record()
+%%--------------------------------------------------------------------
+set_request_body(Request, Body) when is_record(Request, request), is_binary(Body) ->
+    set_request_body(Request, binary_to_list(Body));
+set_request_body(Request, Body) when is_record(Request, request), is_list(Body) ->
+    ILen = length(Body),
+    Len = integer_to_list(ILen),
+    NewHeader = keylist:set("Content-Length", [Len], Request#request.header),
+    Request#request{header=NewHeader, body=Body}.
+
+%%--------------------------------------------------------------------
+%% Function: set_response_body(Request, Body)
+%%           Request = request record()
+%%           Body    = list() or binary()
+%% Descrip.: Set the body of a request record, and calculate
+%%           Content-Length.
+%% Returns : NewRequest = request record()
+%%--------------------------------------------------------------------
+set_response_body(Response, Body) when is_record(Response, response), is_binary(Body) ->
+    set_response_body(Response, binary_to_list(Body));
+set_response_body(Response, Body) when is_record(Response, response), is_list(Body) ->
+    ILen = length(Body),
+    Len = integer_to_list(ILen),
+    NewHeader = keylist:set("Content-Length", [Len], Response#response.header),
+    Response#response{header=NewHeader, body=Body}.
 
 %%--------------------------------------------------------------------
 %% Function: test()
@@ -777,29 +812,27 @@ test() ->
 
     %% udp/udp6/tcp/tcp6/"sip"
     io:format("test: default_port/2 - 1~n"),
-    "5060" = default_port(udp, none),
+    5060 = default_port(udp, none),
     io:format("test: default_port/2 - 2~n"),
-    "5060" = default_port(udp6, none),
+    5060 = default_port(udp6, none),
     io:format("test: default_port/2 - 3~n"),
-    "5060" = default_port(tcp, none),
+    5060 = default_port(tcp, none),
     io:format("test: default_port/2 - 4~n"),
-    "5060" = default_port(tcp6, none),
+    5060 = default_port(tcp6, none),
     io:format("test: default_port/2 - 5~n"),
-    "5060" = default_port("sip", none),
+    5060 = default_port("sip", none),
 
     %% tls/tls6/"sips"
     io:format("test: default_port/2 - 6~n"),
-    "5061" = default_port(tls, none),
+    5061 = default_port(tls, none),
     io:format("test: default_port/2 - 7~n"),
-    "5061" = default_port(tls6, none),
+    5061 = default_port(tls6, none),
     io:format("test: default_port/2 - 8~n"),
-    "5061" = default_port("sips", none),
+    5061 = default_port("sips", none),
 
     %% none of the above, port specified
     io:format("test: default_port/2 - 9~n"),
-    "1234" = default_port(whatever, 1234),
-    io:format("test: default_port/2 - 10~n"),
-    "1234" = default_port(whatever, "1234"),
+    1234 = default_port(whatever, 1234),
 
     %% none of the above, port NOT specified - expect crash
     io:format("test: default_port/2 - 11~n"),
@@ -853,7 +886,6 @@ test() ->
 
     io:format("test: add_record_route/2 - 1~n"),
     EmptyHeader = keylist:from_list([]),
-    SipLPortList = integer_to_list(SipLPort),
     MyIP = siphost:myip(),
 
     RRHeader1 = add_record_route(EmptyHeader, #siporigin{proto=tcp}),
@@ -869,7 +901,7 @@ test() ->
 
     %% contact.urlstr
     io:format("test: add_record_route/2 - 4.1~n"),
-    #sipurl{proto="sip", host=MyHostname, port=SipLPortList, param_pairs=RRParam1} =
+    #sipurl{proto="sip", host=MyHostname, port=SipLPort, param_pairs=RRParam1} =
 	sipurl:parse(RRoute1#contact.urlstr),
 
     %% contact.urlstr sipurl parameters
@@ -893,7 +925,7 @@ test() ->
 
     %% contact.urlstr
     io:format("test: add_record_route/2 - 6.3~n"),
-    #sipurl{proto="sip", host=MyHostname, port=SipLPortList, param_pairs=RRParam2} =
+    #sipurl{proto="sip", host=MyHostname, port=SipLPort, param_pairs=RRParam2} =
 	sipurl:parse(RRoute2#contact.urlstr),
 
     %% contact.urlstr sipurl parameters
