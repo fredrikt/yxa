@@ -18,17 +18,19 @@ fork(BranchBase, Parent, OrigRequest, Actions, Timeout) ->
 
 fork(BranchBase, Parent, OrigRequest, [], Timeout, Targets) ->
     {Method, ReqURI, Header, Body} = OrigRequest,
-    case allterminated(Targets) of
-	true ->
-	    logger:log(debug, "sipproxy: All targets are terminated, staying alive to handle resends");
-	_ ->
-	    logger:log(normal, "sipproxy: Reached end of Actions-list for ~s ~s, cancelling pending targets.",
-	    		[Method, sipurl:print(ReqURI)]),
-	    cancel_pending_targets(Targets)
-    end,
+    NewTargets = case allterminated(Targets) of
+		     true ->
+			 logger:log(debug, "sipproxy: All targets are terminated, staying alive to handle resends"),
+		         Targets;
+		     _ ->
+			 logger:log(normal, "sipproxy: Reached end of Actions-list for ~s ~s, cancelling pending targets.",
+				    [Method, sipurl:print(ReqURI)]),
+			 NewTargets1 = cancel_pending_targets(Targets),
+			 NewTargets1
+		 end,
     util:safe_signal("sipproxy :", Parent, {no_more_actions}),
     logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [Timeout]),
-    InitState = #state{parent=Parent, request=OrigRequest, targets=Targets,
+    InitState = #state{parent=Parent, request=OrigRequest, targets=NewTargets,
 			endtime=util:timestamp() + Timeout, mystate=stayalive},
     process_wait(false, InitState),
     util:safe_signal("sipproxy :", Parent, {callhandler_terminating, self()}),
