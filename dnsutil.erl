@@ -27,7 +27,7 @@
 %%--------------------------------------------------------------------
 -include_lib("kernel/include/inet.hrl").
 -include_lib("kernel/src/inet_dns.hrl").
-
+-include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -67,7 +67,10 @@
 %%           {error, E} entrys. Proto is tcp, udp or tls. Never
 %%           tcp6, udp6 or tls6 since we do not resolve Host into
 %%           an address.
-%% Returns : ProtoHostPortList
+%% Returns : SRVList         |
+%%           {error, Reason}
+%%           SRVList = list() of sipdns_srv record()
+%%           Reason  = atom(), nxdomain | ...
 %%--------------------------------------------------------------------
 siplookup([]) ->
     none;
@@ -97,8 +100,9 @@ siplookup(Domain) ->
 %% Descrip.: Do ENUM (RFC2916 and 2916bis) lookup on a E.164 number
 %%           in the default configured list of ENUM domains. Uses
 %%           enumlookup/2 below.
-%% Returns : |
+%% Returns : Result |
 %%           none
+%%           Result = string(), result of ENUM NAPTR regexp rewrite
 %%--------------------------------------------------------------------
 enumlookup(none) ->
     none;
@@ -120,10 +124,12 @@ enumlookup(Foo) ->
 %%           Number     = string(), E.164 number (starting with "+")
 %%           DomainList = list() of string(), ENUM domains to look in
 %% Descrip.: Do ENUM (RFC2916 and 2916bis) lookup on a E.164 number
-%%           in a set of domains. Returns the result of ENUM regexp
-%%           rewrite as a string.
-%% Returns : Result  |
+%%           in a set of domains. Returns a single value which is the
+%%           result of ENUM regexp rewrite of the best NAPTR found
+%%           as a string.
+%% Returns : Result |
 %%           none
+%%           Result = string(), result of ENUM NAPTR regexp rewrite
 %%--------------------------------------------------------------------
 enumlookup("+" ++ Number, DomainList) ->
     %% XXX remove dashes and spaces etc. from Number
@@ -146,10 +152,7 @@ enumlookup("+" ++ Number, DomainList) ->
 %%           Port may also be 'none'.
 %% Returns : AddrList        |
 %%           {error, Reason}
-%%           AddrList = list() of {Family, Addr, Port}
-%%             Family = inet | inet6
-%%             Addr   = string(), IPv4 or IPv6 address
-%%             Port   = integer()
+%%           AddrList = list() of sipdns_hostport record()
 %%--------------------------------------------------------------------
 get_ip_port(Host, Port) when is_integer(Port) ; Port == none ->
     V6List = case sipserver:get_env(enable_v6, true) of
@@ -181,7 +184,7 @@ get_ip_port(Host, Port) when is_integer(Port) ; Port == none ->
 %% part of get_ip_port/2.
 %% Returns : AddrList        |
 %%           {error, Reason}
-%%           AddrList = list() of {Family, Addr, Port}
+%%           AddrList = list() of sipdns_hostport record()
 get_ip_port2(Family, Host, Port) when Family == inet ; Family == inet6 ->
     %% XXX inet:gethostbyname with proto inet6 is not documented, and not supported.
     case inet:gethostbyname(Host, Family) of
@@ -196,15 +199,17 @@ get_ip_port2(Family, Host, Port) when Family == inet ; Family == inet6 ->
 					    %% IPv4 mapped IPv6 address, ignore - we resolve
 					    %% IPv4 addresses separately
 					    [];
-					{_, Family} ->
-					    {Family, siphost:makeip(Addr), Port};
-					{_, _} ->
+					{_Addr, Family} ->
+					    #sipdns_hostport{family=Family, addr=siphost:makeip(Addr),
+							     port=Port};
+					{_Addr, _OtherFamily} ->
 					    %% HFam is not the same as Family, ignore (if we
 					    %% call gethostbyname() on an IPv4 address, but
 					    %% family 'inet6' it returns an IPv4 hostent)
 					    []
 				    end
 			    end, HostEnt#hostent.h_addr_list),
+	    %% remove empty lists (ignored addresses) from the result
 	    lists:flatten(Res)
     end.
 
@@ -226,6 +231,8 @@ siplookup_naptr(Domain) when is_list(Domain) ->
 	[] ->
 	    nomatch;
 	L1 ->
+	    %% RFC3263 #4.1 (Selecting a Transport Protocol) "... This specification
+	    %% defines D2U for UDP, D2T for TCP, and D2S for SCTP."
 	    L2 = lists:append([filter_naptr(L1, "s", "SIP+D2U"), filter_naptr(L1, "s", "SIP+D2T"),
 			       filter_naptr(L1, "s","SIPS+D2T")]),
 	    L3 = lists:sort(fun sortenum/2, L2),
@@ -251,9 +258,10 @@ siplookup_naptr(Domain) when is_list(Domain) ->
 naptr_to_srvlist(In) ->
     naptr_to_srvlist2(In, []).
 
-naptr_to_srvlist2([], Res) ->
-    Res;
-naptr_to_srvlist2([H | Rest], Res) when is_record(H, naptrrecord) ->
+%%
+%% Empty regexp
+%%
+naptr_to_srvlist2([#naptrrecord{regexp=""}=H | T], Res) ->
     Proto = case H#naptrrecord.services of
 		"SIP+D2U"  ++ _ -> udp;
 		"SIP+D2T"  ++ _ -> tcp;
@@ -263,7 +271,14 @@ naptr_to_srvlist2([H | Rest], Res) when is_record(H, naptrrecord) ->
     %% interesting thing is the replacement.
     This = srvlookup(Proto, H#naptrrecord.replacement),
     Sorted = lists:sort(fun sortsrv/2, This),
-    naptr_to_srvlist2(Rest, lists:flatten([Res, Sorted])).
+    naptr_to_srvlist2(T, lists:flatten([Res, Sorted]));
+%%
+%% Non-empty regexp, not a domain NAPTR
+%%
+naptr_to_srvlist2([H | T], Res) when is_record(H, naptrrecord) ->
+    naptr_to_srvlist2(T, Res);
+naptr_to_srvlist2([], Res) ->
+    Res.
 
 %%--------------------------------------------------------------------
 %% Function: debugfriendly_srventry(In)
@@ -289,24 +304,25 @@ debugfriendly_srventry2([H|T], Res) when is_record(H, srventry) ->
 %% Descrip.: Walk through a list of srventry records or {error, R}
 %%           tuples and turn the srventry records into
 %%           {Proto, Host, Port} tuples.
-%% Returns : ProtoHostPortList
-%%           ProtoHostPortList = list() of {Proto, Host, Port}
-%%           Proto = tcp | udp | tls
-%%           Host  = string()
-%%           Port  = integer()
+%% Returns : SRVList         |
+%%           {error, Reason}
+%%           SRVList = list() of sipdns_srv record()
+%%           Reason  = atom(), nxdomain | ...
 %%--------------------------------------------------------------------
 combine_srvresults(In) ->
     combine_srvresults(In, [], []).
 
 combine_srvresults([], [], Errors) ->
-    Errors;
+    [FirstError | _] = lists:reverse(Errors),
+    FirstError;
 combine_srvresults([], Res, _) ->
-    Res;
+    lists:reverse(Res);
 combine_srvresults([{error, What} | T], Res, Errors) ->
-    combine_srvresults(T, Res, lists:append(Errors, [{error, What}]));
+    combine_srvresults(T, Res, [{error, What} | Errors]);
 combine_srvresults([H | T], Res, Errors) when is_record(H, srventry) ->
     {_Order, _Weight, Port, Host} = H#srventry.dnsrrdata,
-    combine_srvresults(T, lists:append(Res, [{H#srventry.proto, Host, Port}]), Errors).
+    This = #sipdns_srv{proto=H#srventry.proto, host=Host, port=Port},
+    combine_srvresults(T, [This | Res], Errors).
 
 
 %%--------------------------------------------------------------------
@@ -444,8 +460,7 @@ enumalldomains2(RNumber, [Domain | Rest], Res) ->
 %%           NAPTRList = list() of naptrrecord record()
 %%           Type      = string(), "SIP+E2U" or "E2U+SIP" or ...
 %% Descrip.: Pick out all NAPTR records with a Enumservice matching
-%%           the specified Type from a list.
-%%           records from a list of naptrrecord records.
+%%           the specified Type from a list of naptrrecord records.
 %% Returns : ENUMNAPTRList = list() of naptrrecord record()
 %% Note    : RFC3761 2.4.2 (Services Parameters) defines services as
 %%               service-field = "E2U" 1*(servicespec)
@@ -524,7 +539,7 @@ naptr_regexp([H | T]) when is_record(H, naptrrecord) ->
 naptrlookup(Name) ->
     case inet_res:nslookup(Name, in, ?T_NAPTR) of
 	{ok, Rec} ->
-	    NAPTRs = parse_naptrs(Rec),
+	    NAPTRs = parse_naptr_answer(Rec#dns_rec.anlist),
 	    logger:log(debug, "Resolver: naptrlookup: ~p -> found ~p NAPTR record(s)",
 		       [Name, length(NAPTRs)]),
 	    NAPTRs;
@@ -535,23 +550,23 @@ naptrlookup(Name) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: parse_naptrs(DNSRRList)
+%% Function: parse_naptr_answer(DNSRRList)
 %%           DNSRRList = list() of dns_rr record()
 %% Descrip.: Look for NAPTR RRs in DNSRRList, and call parsenaptr on
 %%           those.
 %% Returns : NAPTRList = list() of naptrrecord record()
 %%--------------------------------------------------------------------
-parse_naptrs(DNSRRList) ->
-    parse_naptrs2(DNSRRList, []).
+parse_naptr_answer(DNSRRList) when is_list(DNSRRList) ->
+    parse_naptr_answer2(DNSRRList, []).
 
 %% NAPTR record
-parse_naptrs2([#dns_rr{type=?T_NAPTR, data=Data} | T], Res) ->
-    This = parsenaptr(Data),
-    parse_naptrs2(T, [This | Res]);
+parse_naptr_answer2([#dns_rr{type=?T_NAPTR, data=Data} | T], Res) when is_list(Data) ->
+    This = parsenaptr(list_to_binary(Data)),
+    parse_naptr_answer2(T, [This | Res]);
 %% non-NAPTR record
-parse_naptrs2([H | T], Res) when is_record(H, dns_rr) ->
-    parse_naptrs2(T, Res);
-parse_naptrs2([], Res) ->
+parse_naptr_answer2([H | T], Res) when is_record(H, dns_rr) ->
+    parse_naptr_answer2(T, Res);
+parse_naptr_answer2([], Res) ->
     Res.
 
 
@@ -698,12 +713,13 @@ test() ->
     
     io:format("test: combine_srvresults/1 - 1~n"),
     %% remove error when there are also valid results
-    [{tcp, "example.org", 5060}, {tls, "example.net", 5061}] =
+    [#sipdns_srv{proto=tcp, host="example.org", port=5060},
+     #sipdns_srv{proto=tls, host="example.net", port=5061}] =
 	combine_srvresults([CombineSRV_1, CombineSRV_2, CombineSRV_3]),
     
     io:format("test: combine_srvresults/1 - 2~n"),
     %% only error present
-    [{error, undefined}] = combine_srvresults([{error, undefined}]),
+    {error, undefined} = combine_srvresults([{error, undefined}]),
     
 
     %% test sortsrv(A, B)
@@ -858,16 +874,16 @@ test() ->
 			    replacement = []},
     NAPTR2_R = parsenaptr(NAPTR2),
 
-    %% test parse_naptrs(DNSRRList)
+    %% test parse_naptr_answer(DNSRRList)
     %%--------------------------------------------------------------------
-    io:format("test: parse_naptrs/1 - 1~n"),
+    io:format("test: parse_naptr_answer/1 - 1~n"),
     %% we should get only the NAPTR records back (in list() of naptrrecord record())
     NAPTRList1 = [#dns_rr{type=?T_NS, data=[]},
-		  #dns_rr{type=?T_NAPTR, data=NAPTR2},
+		  #dns_rr{type=?T_NAPTR, data=binary_to_list(NAPTR2)},
 		  #dns_rr{type=?T_A, data=[]},
-		  #dns_rr{type=?T_NAPTR, data=NAPTR1}],
+		  #dns_rr{type=?T_NAPTR, data=binary_to_list(NAPTR1)}],
 
-    [NAPTR1_R, NAPTR2_R] = parse_naptrs(NAPTRList1),
+    [NAPTR1_R, NAPTR2_R] = parse_naptr_answer(NAPTRList1),
 
 
     %% test sortenum(A, B)
