@@ -20,7 +20,7 @@ fi])
 
 AC_ARG_WITH(local,
 	AC_HELP_STRING([--with-local=file],
-		[use dir as database for mnesia database]),
+		[use file as local erlang configuration file]),
 [if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_$1" = "X"; then
     local_file="default"
 else
