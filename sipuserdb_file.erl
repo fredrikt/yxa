@@ -89,10 +89,6 @@ get_user_with_address(Address) ->
 	    User;
 	Users when is_list(Users) ->
 	    logger:log(debug, "userdb-file: More than one user with address ~p (~p)", [Address, Users]),
-	    error;
-	Unknown ->
-	    logger:log(error, "userdb-file: Unexpected result from get_users_using_address(), address ~p result : ~p",
-		       [Address, Unknown]),
 	    error
     end.
 
@@ -104,17 +100,10 @@ get_user_with_address(Address) ->
 %%           find out to which users we should send a request.
 %% Returns : Users |
 %%           error
-%%           Users = list() of string() 
+%%           Users = list() of string()
 %%--------------------------------------------------------------------
 get_users_for_address_of_record(Address) ->
-    case get_users_using_address(Address) of
-	L when is_list(L) ->
-	    L;
-	Unknown ->
-	    logger:log(error, "userdb-file: Unexpected result from get_users_using_address(), address ~p result : ~p",
-		       [Address, Unknown]),
-	    error
-    end.
+    get_users_using_address(Address).
 
 
 %%--------------------------------------------------------------------
@@ -178,11 +167,7 @@ get_addresses_for_user(Username) ->
 	    logger:log(debug, "userdb-file: No such user ~p", [Username]),
 	    [];
 	User when is_record(User, user) ->
-	    collect_addresses(get_addresses_using_user(User));
-	Unknown ->
-	    logger:log(error, "userdb-file: Unexpected result from get_user(), user ~p result : ~p",
-		       [Username, Unknown]),
-	    error
+	    collect_addresses(get_addresses_using_user(User))
     end.
 
 
@@ -223,11 +208,7 @@ get_password_for_user(Username) ->
 	    logger:log(debug, "userdb-file: No such user ~p when fetching password", [Username]),
 	    nomatch;
 	User when is_record(User, user) ->
-	    User#user.password;
-	Unknown ->
-	    logger:log(error, "userdb-file: Unexpected result from get_user(), user ~p result : ~p",
-		       [Username, Unknown]),
-	    error
+	    User#user.password
     end.
 
 
@@ -254,11 +235,7 @@ get_classes_for_user(Username) ->
 		    [];
 		_ ->
 		    User#user.classes
-	    end;
-	Unknown ->
-	    logger:log(error, "userdb-file: Unexpected result from get_user(), user ~p result : ~p",
-		       [Username, Unknown]),
-	    error
+	    end
     end.
 
 
@@ -299,18 +276,9 @@ get_telephonenumber_for_user(Username) ->
 				       [Username, collect_addresses(A)]),
 			    nomatch;
 			Address when is_record(Address, address) ->
-			    URL = sipurl:parse(Address#address.address),
-			    URL#sipurl.user
-		    end;
-		Unknown ->
-		    logger:log(error, "userdb-file: Unexpected result from get_addresses_for_user(), user ~p result : ~p",
-			       [Username, Unknown]),
-		    error
-	    end;
-	Unknown ->
-	    logger:log(error, "userdb-file: Unexpected result from get_user(), user ~p result : ~p",
-		       [Username, Unknown]),
-	    error
+			    (Address#address.url)#sipurl.user
+		    end
+	    end
     end.
 
 
@@ -319,18 +287,17 @@ get_telephonenumber_for_user(Username) ->
 %%           In = list() of string(), list of usernames
 %% Descrip.: Return a list of forward addresses for a list of users.
 %%           Uses the next function, get_forward_for_user/1.
-%% Returns : Forwards, list() of string()
+%% Returns : ForwardList = list() of sipproxy_forward record()
 %%--------------------------------------------------------------------
 get_forwards_for_users(In) ->
     get_forwards_for_users2(In, []).
 
 get_forwards_for_users2([], Res) ->
-    %% Make list sorted and remove duplicates
-    lists:usort(Res);
+    Res;
 get_forwards_for_users2([H | T], Res) ->
     case get_forward_for_user(H) of
 	Fwd when is_list(Fwd) ->
-	    get_forwards_for_users2(T, lists:append(Res, [Fwd]));
+	    get_forwards_for_users2(T, lists:append(Res, Fwd));
 	nomatch ->
 	    get_forwards_for_users2(T, Res);
 	error ->
@@ -341,11 +308,11 @@ get_forwards_for_users2([H | T], Res) ->
 %%--------------------------------------------------------------------
 %% Function: get_forward_for_user(Username)
 %%           Username = string()
-%% Descrip.: Return the forward address for a user.
-%% Returns : Forward |
-%%           nomatch |
+%% Descrip.: Return the forward address(es) for a user.
+%% Returns : ForwardList |
+%%           nomatch     |
 %%           error
-%%           Forward = string()
+%%           ForwardList = list() of sipproxy_forward record()
 %%--------------------------------------------------------------------
 get_forward_for_user(Username) ->
     case get_user(Username) of
@@ -357,11 +324,7 @@ get_forward_for_user(Username) ->
 		Foo when Foo == none; Foo == []; Foo == undefined ->
 		    nomatch;
 		L when is_list(L) ->
-		    L;
-		_ ->
-		    logger:log(error, "userdb-file: User ~p has invalid forward in database : ~p",
-			       [Username, User#user.forward]),
-		    error
+		    L
 	    end
     end.
 
@@ -387,10 +350,8 @@ get_user2(_User, []) ->
 get_user2(User, [H | _T]) when is_record(H, user), H#user.name == User ->
     H;
 get_user2(User, [H | T]) when is_record(H, user) ->
-    get_user2(User, T);
-get_user2(User, [H | T]) ->
-    logger:log(error, "userdb-file: Malformed user record : ~p", [H]),
     get_user2(User, T).
+
 
 %%--------------------------------------------------------------------
 %% Function: get_addresses_using_user(Username)
@@ -399,13 +360,7 @@ get_user2(User, [H | T]) ->
 %% Returns : Addresses, list() of address record()
 %%--------------------------------------------------------------------
 get_addresses_using_user(Username) when is_list(Username) ->
-    case get_user(Username) of
-	nomatch ->
-	    logger:log(error, "userdb-file: No user named ~p, can't look up addresses", [Username]),
-	    [];
-	User when is_record(User, user) ->
-	    get_addresses_using_user2(Username, fetch_addresses(), [])
-    end;
+    get_addresses_using_user2(Username, fetch_addresses(), []);
 get_addresses_using_user(User) when is_record(User, user) ->
     get_addresses_using_user2(User#user.name, fetch_addresses(), []).
 
@@ -414,7 +369,7 @@ get_addresses_using_user2(_Username, [], Res) ->
     lists:usort(Res);
 get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address), H#address.user == Username ->
     %% Username matches the username for the address record (H)
-    get_addresses_using_user2(Username, T, lists:append(Res, [H]));
+    get_addresses_using_user2(Username, T, [H | Res]);
 get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address) ->
     get_addresses_using_user2(Username, T, Res).
 
@@ -434,82 +389,43 @@ get_users_using_address(Address) when is_list(Address) ->
     %% or address of some form.
     case sipurl:parse(Address) of
 	URL when is_record(URL, sipurl) ->
-	    case get_user_records_for_url(URL, fetch_addresses(), []) of
+	    case get_usernames_for_url(URL, fetch_addresses(), []) of
 		error ->
 		    [];
 		R when is_list(R) ->
-		    collect_usernames(R)
+		    R
 	    end;
 	_ ->
 	    %% unparseable URL
 	    []
     end;
 get_users_using_address(URL) when is_record(URL, sipurl) ->
-    R = get_user_records_for_url(URL, fetch_addresses(), []),
-    collect_usernames(R).
+    get_usernames_for_url(URL, fetch_addresses(), []).
 
 
 %%--------------------------------------------------------------------
-%% Function: get_user_records_for_url(URL, Addresses, [])
+%% Function: get_usernames_for_url(URL, Addresses, [])
 %%           URL       = sipurl record()
-%%           Addresses = list() of address record() 
+%%           Addresses = list() of address record()
 %% Descrip.: Given an URL (sipurl record), locate and return all
-%%           address records in the userdb, fetched from the
-%%	     persistent sipuserdb_file process, that matches using URI
-%%           address matching rules, or the user records matching the
-%%           address.
+%%           usernames for the matching address records, fetched from
+%%	     the persistent sipuserdb_file process, that matches using
+%%           URI address matching rules.
 %% Returns : Users |
 %%           error
-%%           Users = list() of user record()
+%%           Users = list() of string()
 %%--------------------------------------------------------------------
-get_user_records_for_url(_URL, [], Res) ->
+get_usernames_for_url(_URL, [], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
-get_user_records_for_url(URL, [H | T], Res) when is_record(URL, sipurl), is_record(H, address) ->
-    case sipurl:url_is_equal(URL, sipurl:parse(H#address.address)) of
+get_usernames_for_url(URL, [H | T], Res) when is_record(URL, sipurl), is_record(H, address) ->
+    case sipurl:url_is_equal(URL, H#address.url) of
 	true ->
-	    %% Check that there is actually a user for this address record too
-	    case get_user(H#address.user) of
-		nomatch ->
-		    logger:log(error, "userdb-file: Found address record matching URL ~p " ++
-			       "but it does not have a matching user record : ~p",
-			       [sipurl:print(URL), H]),
-		    get_user_records_for_url(URL, T, Res);
-		U when is_record(U, user) ->
-		    %% Address record matching URL found, and we also have a user
-		    %% matching the address records user variable.
-		    get_user_records_for_url(URL, T, lists:append(Res, [U]))
-	    end;
+	    get_usernames_for_url(URL, T, [H#address.user | Res]);
 	_ ->
 	    %% URL does NOT match this address record, try next (T)
-	    get_user_records_for_url(URL, T, Res)
-    end;
-get_user_records_for_url(URL, [H | T], Res) when is_record(URL, sipurl) ->
-    logger:log(error, "userdb-file: Malformed address record : ~p", [H]),
-    get_user_records_for_url(URL, T, Res).
-
-
-%%--------------------------------------------------------------------
-%% Function: collect_usernames(In)
-%%           In = list() of user and/or address record()
-%% Descrip.: Collect and return a list of all usernames from a
-%%           set of user and/or address records.
-%% Returns : Usernames, list() of string()
-%%--------------------------------------------------------------------
-collect_usernames(In) ->
-    collect_usernames2(In, []).
-
-collect_usernames2([], Res) ->
-    %% Make list sorted and remove duplicates
-    lists:usort(Res);
-collect_usernames2([H | T], Res) when is_record(H, user) ->
-    collect_usernames2(T, lists:append(Res, [H#user.name]));
-collect_usernames2([H | T], Res) when is_record(H, address) ->
-    collect_usernames2(T, lists:append(Res, [H#address.user]));
-collect_usernames2([H | T], Res) ->
-    logger:log(error, "userdb-file: Input to collect_usernames2 is neither address nor user record : ~p",
-	       [H]),
-    collect_usernames2(T, Res).
+	    get_usernames_for_url(URL, T, Res)
+    end.
 
 
 %%--------------------------------------------------------------------
@@ -526,11 +442,7 @@ collect_addresses2([], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
 collect_addresses2([H | T], Res) when is_record(H, address) ->
-    collect_addresses2(T, lists:append(Res, [H#address.address]));
-collect_addresses2([H | T], Res) ->
-    logger:log(error, "userdb-file: Input to collect_addresses2 is not address record : ~p",
-	       [H]),
-    collect_addresses2(T, Res).
+    collect_addresses2(T, [H#address.address | Res]).
 
 
 %%--------------------------------------------------------------------
@@ -546,7 +458,7 @@ collect_addresses2([H | T], Res) ->
 find_first_telephonenumber([]) ->
     nomatch;
 find_first_telephonenumber([H | T]) when is_record(H, address) ->
-    URL = sipurl:parse(H#address.address),
+    URL = H#address.url,
     IsNumericUser = util:isnumeric(URL#sipurl.user),
     IsTelURL = (URL#sipurl.proto == "tel"),
     IsE164User = case URL#sipurl.user of
@@ -563,11 +475,7 @@ find_first_telephonenumber([H | T]) when is_record(H, address) ->
 	    %% The address records (H) address does not appear to
 	    %% be a phone number. Check next element (T).
 	    find_first_telephonenumber(T)
-    end;
-find_first_telephonenumber([H | T]) ->
-    logger:log(error, "userdb-file: Input to find_first_telephonenumber is not address record : ~p",
-	       [H]),
-    find_first_telephonenumber(T).
+    end.
 
 fetch_users() ->
     {ok, Res} = gen_server:call(sipuserdb_file_backend, {fetch_users}),
