@@ -264,7 +264,7 @@ determine_sip_location(URI) when is_record(URI, sipurl) ->
 	    case get_sipproxy() of
 		ProxyURL when is_record(ProxyURL, sipurl) ->
 		    %% Use configured sipproxy but exchange user with user from Request-URI
-		    ProxyURL#sipurl{user=User, pass=none};
+		    {proxy, ProxyURL#sipurl{user=User, pass=none}};
 		none ->
 		    %% No ENUM and no (valid) SIP-proxy configured, return failure so
 		    %% that the PBX on the other side of the gateway can fall back to
