@@ -1,0 +1,3 @@
+STARTSCRIPT = incomingproxy.start
+
+include /path/to/source/sip/erlang/kth.se/vxl.mk
