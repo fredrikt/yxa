@@ -146,7 +146,7 @@ guarded_start2(Branch, ServerHandler, _, Request, [DstIn | DstInT], Timeout) whe
     end.
 
 %% Do piping between a now existing server and client transaction handler.
-final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize) when record(Request, request) ->
+final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize) when record(Request, request), pid(ClientPid) ->
     StartTime = util:timestamp(),
     State=#state{branch=Branch, serverhandler=ServerHandler, clienthandler=ClientPid,
 		 request=Request, dstlist=DstList, approxmsgsize=ApproxMsgSize,
@@ -161,6 +161,7 @@ final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout, ApproxM
 %%--------------------------------------------------------------------
 loop(State) when record(State, state) ->
 
+    ClientPid = State#state.clienthandler,
     ServerHandlerPid = transactionlayer:get_pid_from_handler(State#state.serverhandler),
 
     {Res, NewState} = receive
@@ -173,7 +174,7 @@ loop(State) when record(State, state) ->
 			      NewState1 = process_client_transaction_response(Response, State),
 			      {ok, NewState1};
 
-			  {servertransaction_terminating, _} ->
+			  {servertransaction_terminating, ServerHandlerPid} ->
 			      NewState1 = State#state{serverhandler=none},
 			      {ok, NewState1};
 
@@ -181,6 +182,12 @@ loop(State) when record(State, state) ->
 			      NewState1 = State#state{clienthandler=none},
 			      {ok, NewState1};
 
+			  {clienttransaction_terminating, {Branch, _}} ->
+			      %% An (at this time) unknown client transaction signals us that it
+			      %% has terminated. This is probably one of our previously started
+			      %% client transactions that is now finishing - just ignore the signal.
+			      {ok, State};
+			      
 			  Msg ->
 			      logger:log(error, "sippipe: Received unknown message ~p, ignoring", [Msg]),
 			      {error, State}
@@ -250,6 +257,7 @@ process_client_transaction_response(Response, State) when record(Response, respo
 	{huntstop, SendStatus, SendReason} ->
 	    %% Don't continue searching, respond something
 	    transactionlayer:send_response_handler(State#state.serverhandler, SendStatus, SendReason),
+	    %% XXX cancel client handler?
 	    State#state{clienthandler=none, branch=none, dstlist=[]};
 	{next, NewDstList} ->
 	    %% Continue, possibly with an altered DstList
