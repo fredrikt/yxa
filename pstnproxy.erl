@@ -206,42 +206,15 @@ pstngateway(Hostname) ->
 %%--------------------------------------------------------------------
 request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_record(Origin, siporigin) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
-    NewLocation = case localhostname(URI#sipurl.host) of
-		      true ->
-			  %% Hostname matches me
-			  User = URI#sipurl.user,
-			  logger:log(debug, "pstnproxy: Performing ENUM lookup on ~p", [User]),
-			  case local:lookupenum(User) of
-			      {relay, Loc} ->
-				  Loc;
-			      _ ->
-				  %% Parse configured sipproxy but exchange user with user from Request-URI
-				  DefaultProxy = sipserver:get_env(sipproxy, none),
-				  case sipurl:parse_url_with_default_protocol("sip", DefaultProxy) of
-				      ProxyURL when is_record(ProxyURL, sipurl) ->
-					  ProxyURL#sipurl{user=User, pass=none};
-				      none ->
-					  %% No ENUM and no SIP-proxy configured, return failure so
-					  %% that the PBX on the other side of the gateway can try
-					  %% PSTN or something
-					  %%
-					  %% XXX choose something else than 503 since some clients
-					  %% probably mark this gateway as defunct for some time.
-					  %% RFC3261 #16.7 :
-					  %% In other words, forwarding a 503 means that the proxy knows it
-					  %% cannot service any requests, not just the one for the Request-
-					  %% URI in the request which generated the 503.
-					  transactionlayer:send_response_handler(THandler, 503, "Service Unavailable"),
-					  none
-				  end
-			  end;
-		      _ ->
-			  URI
-		  end,
-    case NewLocation of
-	none ->
-	    none;
-	_ when is_record(NewLocation, sipurl) ->
+    Dest = case localhostname(URI#sipurl.host) of
+	       true ->
+		   %% Hostname matches me
+		   determine_sip_location(URI);
+	       false ->
+		   {proxy, URI}
+	   end,
+    case Dest of
+	{proxy, NewURI} when is_record(NewURI, sipurl) ->
 	    NewHeader1 = case sipserver:get_env(record_route, true) of
 			     true -> siprequest:add_record_route(Request#request.header, Origin);
 			     false -> Request#request.header
@@ -249,9 +222,45 @@ request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_r
 	    {_, FromURI} = sipheader:from(NewHeader1),
 	    NewHeader = add_caller_identity_for_sip(Method, NewHeader1, FromURI),
 	    NewRequest = Request#request{header=NewHeader},
-	    proxy_request(THandler, NewRequest, NewLocation)
+	    proxy_request(THandler, NewRequest, NewURI);
+	{reply, Status, Reason} ->
+	    transactionlayer:send_response_handler(THandler, Status, Reason);
+	none ->
+	    none
     end.
 
+%%--------------------------------------------------------------------
+%% Function: determine_sip_location(URI)
+%%           URI = sipurl record()
+%% Descrip.: Find out how to act on a request from PSTN to SIP.
+%% Returns : {reply, Status, Reason}  |
+%%           {proxy, NewURI}          |
+%%           none
+%%           Status = integer(), SIP status code
+%%           Reason = string(), SIP reason phrase
+%%           NewURI = sipurl record()
+%%--------------------------------------------------------------------
+determine_sip_location(URI) when is_record(URI, sipurl) ->
+    User = URI#sipurl.user,
+    logger:log(debug, "pstnproxy: Performing ENUM lookup on ~p", [User]),
+    %% XXX handle {proxy, Loc} return from lookupenum? Should never happen in pstnproxy...
+    case local:lookupenum(User) of
+	{relay, Loc} ->
+	    {proxy, Loc};
+	none ->
+	    %% Parse configured sipproxy but exchange user with user from Request-URI
+	    DefaultProxy = sipserver:get_env(sipproxy, none),
+	    case sipurl:parse_url_with_default_protocol("sip", DefaultProxy) of
+		ProxyURL when is_record(ProxyURL, sipurl) ->
+		    ProxyURL#sipurl{user=User, pass=none};
+		error ->
+		    %% No ENUM and no (valid) SIP-proxy configured, return failure so
+		    %% that the PBX on the other side of the gateway can fall back to
+		    %% PSTN or something
+		    Status = sipserver:get_env(pstnproxy_no_sip_destination_code, 480),
+		    {reply, Status, "No destination found for number " ++ User}
+	    end
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: request_to_pstn(Request, Origin, THandler, LogTag)
@@ -466,8 +475,8 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
     case sipauth:pstn_call_check_auth(Method, Header, FromURI, DstNumber, Classdefs) of
 	{true, User, Class} ->
 	    logger:log(debug, "Auth: User ~p is allowed to call dst ~s (class ~s)", [User, DstNumber, Class]),
-	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (authenticated, class ~p) (~s)",
-		       [LogTag, Method, DstNumber, Class, sipurl:print(DstURI)]),
+	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (authenticated, user ~p, class ~p) (~s)",
+		       [LogTag, Method, DstNumber, User, Class, sipurl:print(DstURI)]),
 	    sippipe:start(THandler, none, Request, DstURI, 900);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)", [User, DstNumber, Class]),
