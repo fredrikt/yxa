@@ -98,7 +98,6 @@ erl_FILES = \
 	sipuserdb_file.erl \
 	sipuserdb_ldap.erl \
 	sipuserdb_mnesia.erl \
-	sipuserdb_static.erl \
 	siputil.erl \
 	socketlist.erl \
 	sound.erl \

@@ -39,7 +39,6 @@
 	     sipuserdb_file,
 	     sipuserdb_ldap,
 	     sipuserdb_mnesia,
-	     sipuserdb_static,
 	     siputil,
 	     socketlist,
 	     targetlist,
