@@ -53,9 +53,9 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: lookupregexproute(User)
-%%           User = string(), username
-%% Descrip.: See if we have a regexp that matches User in the Mnesia
+%% Function: lookupregexproute(Input)
+%%           Input = string(), what we will match against the regexps
+%% Descrip.: See if we have a regexp that matches Input in the Mnesia
 %%           regexp route table. If we find one, we return a proxy
 %%           tuple with the resulting destination. The regexps in the
 %%           database have a priority field, where higher priority
@@ -64,7 +64,7 @@
 %%           none
 %%           URL = sipurl record()
 %%--------------------------------------------------------------------
-lookupregexproute(User) ->
+lookupregexproute(Input) ->
     Routes = database_regexproute:list(),
     Sortedroutes = lists:sort(fun (Elem1, Elem2) ->
 				      Prio1 = lists:keysearch(priority, 1, Elem1#regexproute.flags),
@@ -83,7 +83,7 @@ lookupregexproute(User) ->
     Rules = lists:map(fun(R) ->
 			      {R#regexproute.regexp, R#regexproute.address}
 		      end, Sortedroutes),
-    case util:regexp_rewrite(User, Rules) of
+    case util:regexp_rewrite(Input, Rules) of
 	nomatch ->
 	    none;
 	Result ->
@@ -151,9 +151,10 @@ lookupuser_locations(Users, URL) ->
 			    logger:log(debug, "Lookup: Regexp-route lookup of ~p -> ~p", [sipurl:print(URL), Loc]),
 		            Loc
 		    end;
-		[{BestLocation, _, _, _}] ->
+		[#siplocationdb_e{address=BestLocation}] when is_record(BestLocation, sipurl) ->
+		    %% A single location was found in the location database (after removing any unsuitable ones)
 		    {proxy, BestLocation};
-		_ ->
+		[Location | _] when is_record(Location, siplocationdb_e) ->
 		    %% More than one location registered for this address, check for appserver...
 		    %% (appserver is the program that handles forking of requests)
 		    local:lookupappserver(URL)
@@ -163,12 +164,12 @@ lookupuser_locations(Users, URL) ->
 %%--------------------------------------------------------------------
 %% Function: remove_unsuitable_locations(URL, Locations)
 %%           URL      = sipurl record(), Request-URI of request
-%%           Location = list() of sipurl record()
+%%           Location = list() of siplocationdb_e record()
 %% Descrip.: Apply local policy for what locations are good to use for
 %%           a particular Request-URI. The default action we do here
 %%           is to remove non-SIPS locations if the Request-URI is
 %%           SIPS, unless we are configured not to.
-%% Returns : list() of sipurl()
+%% Returns : list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 remove_unsuitable_locations(#sipurl{proto="sips"}, Locations) when is_list(Locations) ->
     case sipserver:get_env(ssl_require_sips_registration, true) of
@@ -180,10 +181,11 @@ remove_unsuitable_locations(#sipurl{proto="sips"}, Locations) when is_list(Locat
 remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
     Locations.
 
-%% part of remove_unsuitable_locations/2. Returns : list() of sipurl()
-remove_non_sips_locations([#sipurl{proto="sips"}=H | T], Res) ->
+%% part of remove_unsuitable_locations/2. Returns : list() of siplocationdb_e record()
+remove_non_sips_locations([#siplocationdb_e{address=URL}=H | T], Res)
+  when is_record(URL, sipurl), URL#sipurl.proto == "sips" ->
     remove_non_sips_locations(T, [H | Res]);
-remove_non_sips_locations([H | T], Res) when is_record(H, sipurl) ->
+remove_non_sips_locations([H | T], Res) when is_record(H, siplocationdb_e) ->
     remove_non_sips_locations(T, Res);
 remove_non_sips_locations([], Res) ->
     lists:reverse(Res).
@@ -827,14 +829,18 @@ test() ->
     Unsuitable_URL2 = sipurl:new([{proto, "sips"}, {host, "sips1.example.org"}]),
     Unsuitable_URL3 = sipurl:new([{proto, "sip"}, {host, "sip2.example.org"}]),
 
+    Unsuitable_LDBE1 = #siplocationdb_e{address=Unsuitable_URL1},
+    Unsuitable_LDBE2 = #siplocationdb_e{address=Unsuitable_URL2},
+    Unsuitable_LDBE3 = #siplocationdb_e{address=Unsuitable_URL3},
+
     io:format("test: remove_unsuitable_locations/2 - 1~n"),
-    %% test with non-SIPS URI
-    [Unsuitable_URL1, Unsuitable_URL2, Unsuitable_URL3] =
-	remove_unsuitable_locations(Unsuitable_URL1, [Unsuitable_URL1, Unsuitable_URL2, Unsuitable_URL3]),
+    %% test with non-SIPS URI, no entrys should be removed
+    [Unsuitable_LDBE1, Unsuitable_LDBE2, Unsuitable_LDBE3] =
+	remove_unsuitable_locations(Unsuitable_URL1, [Unsuitable_LDBE1, Unsuitable_LDBE2, Unsuitable_LDBE3]),
 
     io:format("test: remove_unsuitable_locations/2 - 2~n"),
     %% test with SIPS URI
-    [Unsuitable_URL2] =
-	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_URL1, Unsuitable_URL2, Unsuitable_URL3]),
+    [Unsuitable_LDBE2] =
+	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_LDBE1, Unsuitable_LDBE2, Unsuitable_LDBE3]),
 
     ok.
