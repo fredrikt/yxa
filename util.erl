@@ -1,6 +1,6 @@
 -module(util).
 -export([timestamp/0, sec_to_date/1, isnumeric/1, regexp_rewrite/2, casecompare/2, casegrep/2, join/2, concat/2,
-	 safe_is_process_alive/1]).
+	 safe_is_process_alive/1, safe_signal/3]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -100,7 +100,30 @@ concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
 
 safe_is_process_alive(Pid) when pid(Pid) ->
-    is_process_alive(Pid);
+    {is_process_alive(Pid), Pid};
+safe_is_process_alive(Name) when atom(Name) ->
+    case erlang:whereis(Name) of
+	Pid when pid(Pid) ->
+	    case is_process_alive(Pid) of
+		true ->
+		    {true, Pid};
+		_ ->
+		    {false, Pid}
+	    end;
+	Pid ->
+	    {false, Pid}
+    end;	
 safe_is_process_alive(_) ->
     false.
 
+safe_signal(LogTag, PidIn, Message) ->
+    case util:safe_is_process_alive(PidIn) of
+	{true, Pid} ->
+	    Pid ! Message,
+	    ok;
+	{false, Pid} when list(LogTag) ->
+	    logger:log(error, LogTag ++ "Can't send signal ~p to pid ~p - not alive or not pid", [Message, Pid]),
+	    error;
+	{false, Pid} ->
+	    error
+    end.
