@@ -1,5 +1,12 @@
 -module(dnsutil).
--export([siplookup/1, enumlookup/1, enumlookup/2, get_ip_port/2]).
+-export([
+	 siplookup/1,
+	 enumlookup/1,
+	 enumlookup/2,
+	 get_ip_port/2,
+
+	 test/0
+	]).
 
 -include_lib("kernel/include/inet.hrl").
 -include_lib("kernel/src/inet_dns.hrl").
@@ -203,12 +210,9 @@ sortsrv({error, _}, {error, _}) ->
 %%              Port may also be 'none'.
 %% Returns: HostPortList
 %%--------------------------------------------------------------------
-get_ip_port(Host, Port) when list(Port) ->
-    get_ip_port(Host, list_to_integer(Port));
-get_ip_port(Host, Port) when integer(Port) ; Port == none ->
+get_ip_port(Host, Port) when is_integer(Port) ; Port == none ->
     V6List = case sipserver:get_env(enable_v6, true) of
 		 true ->
-		     %% XXX inet:gethostbyname with proto inet6 is not documented, and not supported.
 		     case get_ip_port2(inet6, Host, Port) of
 			 {error, _} ->
 			     %% Ignore v6 errors (they are logged in get_ip_port2 though)
@@ -230,7 +234,7 @@ get_ip_port(Host, Port) when integer(Port) ; Port == none ->
 		_ ->
 		    V6List
 	    end;
-	V4List when list(V4List) ->
+	V4List when is_list(V4List) ->
 	    lists:append(V6List, V4List)
     end.
 
@@ -240,15 +244,21 @@ get_ip_port2(Family, Host, Port) when Family == inet ; Family == inet6 ->
 	{error, What} ->
 	    logger:log(debug, "Resolver: Error ~p when resolving ~p ~p", [What, Host, Family]),
 	    {error, What};
-	{ok, HostEnt} when record(HostEnt, hostent) ->
+	{ok, HostEnt} when is_record(HostEnt, hostent) ->
+	    HFam = HostEnt#hostent.h_addrtype,
 	    Res = lists:map(fun(Addr) ->
-				    case Addr of
-					{0, 0, 0, 0, 0, 65535, _, _} ->
+				    case {Addr, HFam} of
+					{{0, 0, 0, 0, 0, 65535, _, _}, _} ->
 					    %% IPv4 mapped IPv6 address, ignore - we resolve
 					    %% IPv4 addresses separately
 					    [];
-					_ ->
-					    {Family, siphost:makeip(Addr), Port}
+					{_, Family} ->
+					    {Family, siphost:makeip(Addr), Port};
+					{_, _} ->
+					    %% HFam is not the same as Family, ignore (if we
+					    %% call gethostbyname() on an IPv4 address, but
+					    %% family 'inet6' it returns an IPv4 hostent)
+					    []
 				    end
 			    end, HostEnt#hostent.h_addr_list),
 	    lists:flatten(Res)
@@ -547,3 +557,17 @@ filter_naptr([H | Rest], Flag, Service) when record(H, naptrrecord), H#naptrreco
 filter_naptr([H | Rest], Flag, Service) when record(H, naptrrecord), H#naptrrecord.replacement /= "" ->
     logger:log(debug, "Resolver: Skipping domain NAPTR because replacement is not empty : ~p", [H]),
     filter_naptr(Rest, Flag, Service).
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+
+    ok.
