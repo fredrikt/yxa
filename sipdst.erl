@@ -42,39 +42,14 @@
 %% Returns : list() of sipdst record() | {error, Reason}
 %%--------------------------------------------------------------------
 url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize), is_record(ReqURI, sipurl) ->
-    {Host, Port, Parameters} = {URL#sipurl.host, sipurl:get_port(URL), URL#sipurl.param},
+    Host = URL#sipurl.host,
     %% Check if Host is either IPv4 or IPv6 address
-    %% XXX module (and function) not listed in erlang documentation but
-    %% included in Erlang/OTP source
+    %% Note: inet_parse:address/1 is not a supported Erlang/OTP function
     case inet_parse:address(Host) of
 	{ok, _} ->
+	    Port = sipurl:get_port(URL),
 	    logger:log(debug, "url_to_dstlist: ~p is an IP address, not performing domain NAPTR/SRV lookup", [Host]),
-	    ParamDict = sipheader:param_to_dict(Parameters),
-	    %% Find requested transport from Parameters and lowercase it
-	    TransportStr = case dict:find("transport", ParamDict) of
-			       {ok, V} ->
-				   httpd_util:to_lower(V);
-			       _ ->
-				   none
-			   end,
-	    Proto = case TransportStr of
-			none -> udp;
-			"tcp" -> tcp;
-			"udp" -> udp;
-			Unknown ->
-			    %% RFC3263 4.1 says we SHOULD use UDP for sip: and TCP for sips: when target is IP
-			    %% and no transport is indicated in the parameters
-			    case URL#sipurl.proto of
-				"sips" ->
-				    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized,"
-					       " defaulting to TCP for sips: URL", [Unknown]),
-				    tcp;
-				_ ->
-				    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized,"
-					       " defaulting to UDP for non-sips: URL", [Unknown]),
-				    udp
-			    end
-		    end,
+	    Proto = get_proto_from_parameters(URL),
 	    case address_to_address_and_proto(Host, Proto) of
 		{error, E} ->
 		    logger:log(debug, "Warning: Could not make a destination of ~p:~p (~p)",
@@ -86,6 +61,34 @@ url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integ
 	    end;
 	_ ->
 	    url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
+    end.
+
+%% part of url_to_dstlist/3 - determine protocol to use from sipurl records parameters
+%% Returns : tcp | udp | tls
+get_proto_from_parameters(URL) when is_record(URL, sipurl) ->
+    %% Find requested transport in URL parameters and lowercase it
+    case url_param:find(URL#sipurl.param_pairs, "transport") of
+	[V] ->
+	    LC = httpd_util:to_lower(V),
+	    case LC of
+		"tcp" -> tcp;
+		"udp" -> udp;
+		Unknown ->
+		    %% RFC3263 4.1 says we SHOULD use UDP for sip: and TCP for sips: when target is IP
+		    %% and no transport is indicated in the parameters
+		    case URL#sipurl.proto of
+			"sips" ->
+			    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized,"
+				       " defaulting to TCP for sips: URL", [Unknown]),
+			    tcp;
+			_ ->
+			    logger:log(debug, "url_to_dstlist: transport protocol ~p not recognized,"
+				       " defaulting to UDP for non-sips: URL", [Unknown]),
+			    udp
+		    end
+	    end;
+	_ ->
+	    udp
     end.
 
 %%--------------------------------------------------------------------
@@ -543,12 +546,12 @@ test() ->
     %% mixed
     [Dst1, Dst2] = make_sipdst_from_hostport(tcp, URL, [Tuple1, Tuple2]),
 
+
     %% test get_response_host_proto/1
     %% NOTE: We can currently only test with IPv4 addresses since IPv6 is
     %% off by default, so when the tests are run enable_v6 might not be
     %% 'true'.
     %%--------------------------------------------------------------------
-
     io:format("test: get_response_host_proto/1 - 1~n"),
     %% straight forward, no received= parameter
     TopVia1 = #via{proto="SIP/2.0/TCP", host="192.0.2.1", param=[]},
@@ -569,9 +572,9 @@ test() ->
     TopVia4 = #via{proto="SIP/2.0/TLS", host="192.0.2.1", param=["received=X"]},
     {"192.0.2.1", tls} = get_response_host_proto(TopVia4),
 
+
     %% test format_siplookup_result/3
     %%--------------------------------------------------------------------
-
     io:format("test: format_siplookup_result/3 - 1~n"),
     %% InPort 'none', use the one from DNS
     Tuple3 = {tcp, "192.0.2.1", 1234},
@@ -588,6 +591,7 @@ test() ->
     Dst5 = #sipdst{proto=tcp, addr="192.0.2.2", port=5065, uri=URL},
     %% more than one tuple in
     [Dst3, Dst5] = format_siplookup_result(none, URL, [Tuple3, Tuple5]),
+
 
     %% test combine_host_portres/1
     %%--------------------------------------------------------------------
@@ -612,5 +616,28 @@ test() ->
     %% test with three valid sipdst's only
     [#sipdst{proto=1}, #sipdst{proto=2}, #sipdst{proto=3}] =
 	combine_host_portres([#sipdst{proto=1}, #sipdst{proto=2}, #sipdst{proto=3}]),
+
+
+    %% test get_proto_from_parameters/1
+    %%--------------------------------------------------------------------
+    io:format("test: get_proto_from_parameters/1 - 1~n"),
+    %% test that we default to UDP
+    udp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org") ),
+
+    io:format("test: get_proto_from_parameters/1 - 2~n"),
+    %% test UDP protocol specified
+    udp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org;transport=UDP") ),
+
+    io:format("test: get_proto_from_parameters/1 - 3~n"),
+    %% test TCP protocol specified, and strange casing
+    tcp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org;transport=tCp") ),
+
+%    io:format("test: get_proto_from_parameters/1 - 4~n"),
+%    %% test unknown transport parameter and SIPS URL
+%    tls = get_proto_from_parameters( sipurl:parse("sips:ft@example.org;transport=foobar") ),
+
+    io:format("test: get_proto_from_parameters/1 - 5~n"),
+    %% test unknown transport parameter and non-SIPS URL
+    udp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org;transport=foobar") ),
 
     ok.
