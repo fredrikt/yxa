@@ -310,8 +310,7 @@ check_proxy_request(Request) when is_record(Request, request) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: send_proxy_request(SrvTHandler, Request, Dst,
-%%                              ViaParameters)
+%% Function: send_proxy_request(Socket, Request, Dst, ViaParameters)
 %%           SrvTHandler   = thandler record() | none
 %%           Request       = request record()
 %%           Dst           = list() of sipdst record() |
@@ -331,31 +330,33 @@ check_proxy_request(Request) when is_record(Request, request) ->
 %%
 %% Turn Dst into a list()
 %%
-send_proxy_request(SrvTHandler, Request, Dst, ViaParameters) when is_record(Dst, sipdst) ->
-    send_proxy_request(SrvTHandler, Request, [Dst], ViaParameters);
+send_proxy_request(Socket, Request, Dst, ViaParameters) when is_record(Dst, sipdst) ->
+    send_proxy_request(Socket, Request, [Dst], ViaParameters);
 
 %%
 %% Explicit destination(s) provided, just send
 %%
-send_proxy_request(SrvTHandler, Request, [Dst | DstT], ViaParameters)
-  when is_record(Request, request), is_record(Dst, sipdst) ->
+send_proxy_request(Socket, Request, [Dst | DstT], ViaParameters) 
+  when is_record(Socket, sipsocket); Socket == none, is_record(Request, request), is_record(Dst, sipdst) ->
     {ok, NewHeader1, _ApproxMsgSize} = check_proxy_request(Request),
     DstList = [Dst | DstT],
     logger:log(debug, "Siprequest (transport layer) : Destination list for request is (~p entrys) :~n~p",
 	       [length(DstList), sipdst:debugfriendly(DstList)]),
     NewRequest = Request#request{header=NewHeader1},
-    send_to_available_dst(DstList, NewRequest, ViaParameters, SrvTHandler);
+    send_to_available_dst(DstList, NewRequest, ViaParameters);
 
 %%
 %% Dst is URI - turn it into a list of sipdst records. First check Route header though.
-%%
-send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when is_record(URI, sipurl) ->
+%% XXX we should remove this now that we are only stateful. The TU or transaction layer
+%% should provide us with destinations.
+send_proxy_request(Socket, Request, URI, ViaParameters)
+  when is_record(Socket, sipsocket); Socket == none, is_record(URI, sipurl) ->
     {ok, _, ApproxMsgSize} = check_proxy_request(Request),
     case process_route_header(Request#request.header, URI) of
 	nomatch ->
 	    case sipdst:url_to_dstlist(URI, ApproxMsgSize, URI) of
 		DstList when is_list(DstList) ->
-		    send_proxy_request(SrvTHandler, Request, DstList, ViaParameters);
+		    send_proxy_request(Socket, Request, DstList, ViaParameters);
 		Unknown ->
 		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI ~s : ~p",
 			       [sipurl:print(URI), Unknown]),
@@ -369,7 +370,7 @@ send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when is_record(URI,
 		       [sipurl:print(DstURI), sipurl:print(ReqURI)]),
 	    case sipdst:url_to_dstlist(DstURI, ApproxMsgSize, ReqURI) of
 		DstList when is_list(DstList) ->
-		    send_proxy_request(SrvTHandler, Request, DstList, ViaParameters);
+		    send_proxy_request(Socket, Request, DstList, ViaParameters);
 		Unknown ->
 		    logger:log(error, "Siprequest (transport layer) : Failed resolving URI "
 			       "(from Route header) ~s : ~p", [sipurl:print(URI), Unknown]),
@@ -378,12 +379,10 @@ send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when is_record(URI,
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_to_available_dst(DstList, Request, ViaParam,
-%%                                 SrvTHandler)
+%% Function: send_to_available_dst(DstList, Request, ViaParam)
 %%           DstList       = list() of sipdst record()
 %%           Request       = request record()
 %%           ViaParam      = list() of {key, value} tuple()
-%%           SrvTHandler   = thandler record()
 %% Descrip.: Sequentially try to get sockets for, and send request
 %%           to, the destinations listed in DstList.
 %% Returns : {ok, Socket, Branch} |
@@ -391,8 +390,10 @@ send_proxy_request(SrvTHandler, Request, URI, ViaParameters) when is_record(URI,
 %%           Socket = sipsocket record(), the socket finally used
 %%           Branch = string(), the branch we put in the Via header
 %%           Reason = string()
+%% Note    : XXX This function should no longer accept a list - we are
+%%           always transaction stateful now!
 %%--------------------------------------------------------------------
-send_to_available_dst([], Request, _ViaParam, _SrvTHandler) when is_record(Request, request) ->
+send_to_available_dst([], Request, _ViaParam) when is_record(Request, request) ->
     {Method, URI, Header, Body} = {Request#request.method, Request#request.uri,
 				   Request#request.header, Request#request.body},
     BinLine1 = list_to_binary([Method, " ", sipurl:print(URI), " SIP/2.0"]),
@@ -401,7 +402,7 @@ send_to_available_dst([], Request, _ViaParam, _SrvTHandler) when is_record(Reque
     logger:log(debug, "Siprequest (transport layer) : Failed sending request"
 	       " (my Via not added, original URI shown) :~n~s", [Message]),
     {senderror, "failed"};
-send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler)
+send_to_available_dst([Dst | DstT], Request, ViaParam)
   when is_record(Dst, sipdst), is_record(Request, request) ->
     IP = Dst#sipdst.addr,
     Port = Dst#sipdst.port,
@@ -413,11 +414,11 @@ send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler)
 	    logger:log(debug, "Siprequest (transport layer) : Failed to get ~p socket for ~s : ~p",
 		       [Proto, DestStr, What]),
 	    %% try next
-	    send_to_available_dst(DstT, Request, ViaParam, SrvTHandler);
+	    send_to_available_dst(DstT, Request, ViaParam);
 	SipSocket when is_record(SipSocket, sipsocket) ->
 	    {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
 					       Request#request.header, Request#request.body},
-	    NewHeader1 = proxy_add_via(Header, Method, OrigURI, ViaParam, Proto, SrvTHandler),
+	    NewHeader1 = proxy_add_via(Header, OrigURI, ViaParam, Proto),
 	    BinLine1 = list_to_binary([Method, " ", sipurl:print(Dst#sipdst.uri), " SIP/2.0"]),
 	    BinMsg = binary_make_message(BinLine1, NewHeader1, list_to_binary(Body)),
 	    SendRes = sipsocket:send(SipSocket, Proto, IP, Port, BinMsg),
@@ -431,12 +432,12 @@ send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler)
 		{error, E} ->
 		    logger:log(debug, "Siprequest (transport layer) : Failed sending message to ~p:~s:~p, error ~p",
 			       [Proto, IP, Port, E]),
-		    send_to_available_dst(DstT, Request, ViaParam, SrvTHandler)
+		    send_to_available_dst(DstT, Request, ViaParam)
 	    end
     end;
-send_to_available_dst([Dst | DstT], Request, ViaParam, SrvTHandler) ->
+send_to_available_dst([Dst | DstT], Request, ViaParam) ->
     logger:log(error, "Siprequest (transport layer) : send_to_available_dst called with illegal dst ~p", [Dst]),
-    send_to_available_dst(DstT, Request, ViaParam, SrvTHandler).
+    send_to_available_dst(DstT, Request, ViaParam).
 
 
 %%--------------------------------------------------------------------
@@ -467,18 +468,15 @@ proxy_check_maxforwards(Header) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: proxy_add_via(Header, Method, OrigURI, Parameters, Proto,
-%%                         SrvTHandler)
+%% Function: proxy_add_via(Header, Method, OrigURI, Parameters, Proto)
 %%           Header      = keylist record()
-%%           Method      = string()
 %%           OrigURI     = sipurl record()
 %%           Parameters  = string()
 %%           Proto       = ???
-%%           SrvTHandler = term(), server transaction handler
 %% Descrip.: Generate a Via header for this proxy and add it to Header
 %% Returns : NewHeader, keylist record()
 %%--------------------------------------------------------------------
-proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
+proxy_add_via(Header, OrigURI, Parameters, Proto) ->
     LoopCookie = case sipserver:get_env(detect_loops, true) of
 		     true ->
 			 get_loop_cookie(Header, OrigURI, Proto);
@@ -488,8 +486,7 @@ proxy_add_via(Header, Method, OrigURI, Parameters, Proto, SrvTHandler) ->
     ParamDict = sipheader:param_to_dict(Parameters),
     ViaParameters1 = case dict:find("branch", ParamDict) of
 			 error ->
-			     add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters,
-							    SrvTHandler);
+			     add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters);
 			 {ok, Branch} ->
 			     add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict)
 		     end,
@@ -537,38 +534,25 @@ add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: add_stateless_generated_branch(Header, Method, OrigURI,
-%%                                          LoopCookie, Parameters,
-%%                                          SrvTHandler)
+%% Function: add_stateless_generated_branch(Header, OrigURI,
+%%                                          LoopCookie, Parameters)
 %%           Header      = keylist record()
-%%           Method      = string()
 %%           OrigURI     = sipurl record()
 %%           LoopCookie  = string() | none
 %%           Parameters  = list() of string()
-%%           SrvTHandler = term(), (thandler record())
 %% Descrip.: If LoopCookie is not 'none', add it to the Branch if
 %%           Branch does not already contain a loop cookie. Return
 %%           a new Parameters construct.
 %% Returns : NewParameters, list() of string()
 %%--------------------------------------------------------------------
-add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters, SrvTHandler)
-  when is_record(Header, keylist), is_list(Method), is_record(OrigURI, sipurl),
-       is_list(LoopCookie), is_list(Parameters) ->
+add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters)
+  when is_record(Header, keylist), is_record(OrigURI, sipurl), is_list(LoopCookie), is_list(Parameters) ->
     case stateless_generate_branch(OrigURI, Header) of
 	error ->
-	    Parameters;
-	Branch ->
-	    %% In order to find the correct "server transaction" (ie. TCP socket) to use
-	    %% when sending future responses to this request back upstreams, we need to
-	    %% associate the stateless branch we generated with the socket the request
-	    %% we are now proxying arrived on. If it is a TCP socket.
-	    %% We don't check for errors since sockets can vanish but we can route
-	    %% responses using the information in Via too.
-	    case Method of
-		"ACK" -> true;	%% ACK is part of INVITE transaction or does not get responded to
-		_ ->
-		    transactionlayer:store_stateless_response_branch(SrvTHandler, Branch, Method)
-	    end,
+	    logger:log(error, "Siprequest: Failed adding stateless branch to request, "
+		       "throwing a '500 Server Internal Error'"),
+	    throw({siperror, 500, "Server Internal Error"});
+	{ok, Branch} ->
 	    NewBranch =
 		case LoopCookie of
 		    none ->
@@ -594,7 +578,7 @@ add_stateless_generated_branch(Header, Method, OrigURI, LoopCookie, Parameters, 
 %%           request (meaning that we make sure that we generate the
 %%           very same branch for a retransmission of the very same
 %%           request). This is specified in RFC3261 #16.11.
-%% Returns : Branch |
+%% Returns : {ok, Branch} |
 %%           error
 %%           Branch = string()
 %%--------------------------------------------------------------------
@@ -603,8 +587,10 @@ stateless_generate_branch(OrigURI, Header) ->
 	TopVia when is_record(TopVia, via) ->
 	    case sipheader:get_via_branch(TopVia) of
 		"z9hG4bK" ++ RestOfBranch ->
+		    %% The previous hop has put a RFC3261 branch in it's Via. Use that,
+		    %% togehter with our nodename as branch.
 		    In = lists:flatten(lists:concat([node(), "-rbranch-", RestOfBranch])),
-		    "z9hG4bK-yxa-" ++ make_base64_md5_token(In);
+		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)};
 		_ ->
 		    %% No branch, or non-RFC3261 branch
 		    OrigURIstr = sipurl:print(OrigURI),
@@ -614,7 +600,7 @@ stateless_generate_branch(OrigURI, Header) ->
 		    {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
 		    In = lists:flatten(lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
 						     "-callid-", CallId, "-cseqnum-", CSeqNum])),
-		    "z9hG4bK-yxa-" ++ make_base64_md5_token(In)
+		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)}
 	    end;
 	_ ->
 	    logger:log(error, "Siprequest (transport layer) : Can't generate stateless branch for this request, it has no top Via!"),
@@ -644,7 +630,7 @@ make_3261_token([H | T]) when H >= $A, H =< $Z ->
 make_3261_token([H | T]) when H >= $0, H =< $9 ->
     [H|make_3261_token(T)];
 make_3261_token([H | T]) when H == $-; H == $.; H == $!; H == $%;
-H == $*; H == $_; H == $+; H == $`; H == $'; H == $~ ->
+H == $*; H == $_; H == $+; H == $`; H == $\'; H == $~ ->
     [H|make_3261_token(T)];
 make_3261_token([_H | T]) ->
     [$_|make_3261_token(T)].
@@ -1341,7 +1327,7 @@ test() ->
     #via{proto="SIP/2.0/TLS", host=MyHostname, port=SipsLPort} = TLSBasicVia,
 
 
-    %% proxy_add_via(Header, Method, URI, Parameters, Proto, SrvTHandler)
+    %% proxy_add_via(Header, URI, Parameters, Proto)
     %%--------------------------------------------------------------------
 
     io:format("test: proxy_add_via/1 - 1.1~n"),
@@ -1349,26 +1335,32 @@ test() ->
 
     %% test proxy_add_via/1 with no present Via header
     io:format("test: proxy_add_via/1 - 1.2~n"),
-    PAVheader1 = proxy_add_via(PAVheaderIn1, "INVITE", InURI,
-			       ["branch=z9hG4bK-test"], tcp6, none),
+    PAVheader1 = proxy_add_via(PAVheaderIn1, InURI,
+			       ["branch=z9hG4bK-test"], tcp6),
     TopVia1 = sipheader:topvia(PAVheader1),
 
-    %% basic check the top via that was added
+    %% get branch from added Via, branch computated depends on your hostname
+    %% so we can't check for a static one
     io:format("test: proxy_add_via/1 - 1.3~n"),
+    Branch1 = sipheader:get_via_branch_full(TopVia1),
+
+    %% basic check the top via that was added
+    io:format("test: proxy_add_via/1 - 1.4~n"),
     #via{proto="SIP/2.0/TCP", host=MyHostname, port=SipLPort,
-	 param=["branch=z9hG4bK-test-oGKI7ywvp4TOMuDv3tKFiYA"]} = TopVia1,
+	 param=["branch="  ++ Branch1]} = TopVia1,
 
     io:format("test: proxy_add_via/1 - 2.1~n"),
     PAVheaderIn2 = keylist:set("Via", sipheader:via_print([TLSBasicVia]), ReqHeader),
 
     %% test proxy_add_via/1 with an existing Via header
     io:format("test: proxy_add_via/1 - 2.2~n"),
-    PAVheader2 = proxy_add_via(PAVheaderIn2, "INVITE", InURI,
-			       ["branch=z9hG4bK-test"], tcp6, none),
+    PAVheader2 = proxy_add_via(PAVheaderIn2, InURI,
+			       ["branch=z9hG4bK-test"], tcp6),
 
     %% check the two via's that should be present in PAVheader2
     io:format("test: proxy_add_via/1 - 2.3~n"),
-    TopVia1_NewLoopCookie = TopVia1#via{param=["branch=z9hG4bK-test-oEnFz+MnuX194MYlcMV8NYg"]},
+    Branch2 = sipheader:get_via_branch_full(sipheader:topvia(PAVheader2)),
+    TopVia1_NewLoopCookie = TopVia1#via{param=["branch=" ++ Branch2]},
     [TopVia1_NewLoopCookie, TLSBasicVia] = sipheader:via(PAVheader2),
 
     ok.

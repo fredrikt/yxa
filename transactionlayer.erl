@@ -12,7 +12,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/2,
+	 start_link/1,
 	 send_response_request/3,
 	 send_response_request/4,
 	 send_response_request/5,
@@ -76,8 +76,7 @@
 %%--------------------------------------------------------------------
 %% My State
 -record(state, {
-	  appmodule,	% Which Yxa application this is
-	  mode		% stateful | stateless
+	  appmodule	% Which Yxa application this is
 	 }).
 
 %% A container record to make it clear that all communication with
@@ -99,16 +98,15 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(AppModule, Mode)
+%% Function: start_link(AppModule)
 %%           AppModule = atom(), name of Yxa application
-%%           Mode      = stateful | stateless
 %% Descrip.: start the transaction_layer gen_server.
 %%           The transaction_layer is only registered localy (on the
 %%           current node)
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
-start_link(AppModule, Mode) ->
-    gen_server:start_link({local, transaction_layer}, ?MODULE, [AppModule, Mode], []).
+start_link(AppModule) ->
+    gen_server:start_link({local, transaction_layer}, ?MODULE, [AppModule], []).
 
 %%====================================================================
 %% Server functions
@@ -124,11 +122,11 @@ start_link(AppModule, Mode) ->
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([AppModule, Mode]) ->
+init([AppModule]) ->
     process_flag(trap_exit, true),
     transactionstatelist:empty(), %% create ets tables
     logger:log(debug, "Transaction layer started"),
-    {ok, #state{appmodule=AppModule, mode=Mode}, ?TIMEOUT}.
+    {ok, #state{appmodule=AppModule}, ?TIMEOUT}.
 
 
 %%--------------------------------------------------------------------
@@ -332,7 +330,7 @@ handle_call({monitor_get_transactionlist}, _From, State) ->
     {reply, {ok, transactionstatelist:get_all_entries()}, State, ?TIMEOUT};
 
 handle_call({get_settings}, _From, State) ->
-    {reply, {ok, [{mode, State#state.mode}, {appmodule, State#state.appmodule}]}, State, ?TIMEOUT};
+    {reply, {ok, [{appmodule, State#state.appmodule}]}, State, ?TIMEOUT};
 
 handle_call(Request, From, State) ->
     logger:log(debug, "Transaction layer: Received unknown gen_server call (from ~p) : ~p", [From, Request]),
@@ -463,13 +461,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: received_new_request(Request, Socket, LogStr, Mode,
-%%                                AppModule)
+%% Function: received_new_request(Request, Socket, LogStr, AppModule)
 %%           Request = request record()
 %%           Socket  = sipsocket record(), the socket this request was
 %%                                         received on
 %%           LogStr  = string(), describes the request
-%%           Mode    = stateless | stateful
 %%           AppModule = atom(), Yxa application module
 %% Descrip.: Act on a new request that has just been delivered to the
 %%           transaction layer from the transport layer, where the
@@ -508,8 +504,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %% ACK
 %%
-received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, _Mode, _AppModule) ->
-    {ok, [{mode, _}, {appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, _AppModule) ->
+    {ok, [{appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 	       [sipurl:print(Request#request.uri)]),
     {pass_to_core, AppModule};
@@ -517,11 +513,11 @@ received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, _Mode, _A
 %%
 %% CANCEL, our mode == stateless
 %%
-received_new_request(#request{method="CANCEL"}=Request, Socket, LogStr, stateless, AppModule) ->
+received_new_request(#request{method="CANCEL"}=Request, Socket, LogStr, AppModule) ->
     URI = Request#request.uri,
     logger:log(debug, "Transaction layer: Stateless received CANCEL ~s. Starting transaction but passing to core.",
 	       [sipurl:print(URI)]),
-    case servertransaction:start(Request, Socket, LogStr, AppModule, stateless) of
+    case servertransaction:start(Request, Socket, LogStr, AppModule) of
 	{ok, STPid} when is_pid(STPid) ->
 	    {pass_to_core, AppModule};
 	{error, resend} ->
@@ -533,9 +529,9 @@ received_new_request(#request{method="CANCEL"}=Request, Socket, LogStr, stateles
 	    {continue}
     end;
 
-received_new_request(Request, Socket, LogStr, Mode, AppModule) when is_record(Request, request) ->
+received_new_request(Request, Socket, LogStr, AppModule) when is_record(Request, request) ->
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
-    case servertransaction:start(Request, Socket, LogStr, AppModule, Mode) of
+    case servertransaction:start(Request, Socket, LogStr, AppModule) of
 	{ok, STPid} when is_pid(STPid) ->
 	    Method = Request#request.method,
 	    PassToCore = case Method of
@@ -1169,8 +1165,8 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 						  is_list(LogStr) ->
     case get_server_transaction_pid(Request) of
 	none ->
-	    {ok, [{mode, Mode}, {appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
-	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, Mode, AppModule);
+	    {ok, [{appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule);
 	TPid when is_pid(TPid) ->
 	    case gen_server:call(TPid, {siprequest, Request, Origin}) of
 		{pass_to_core, AppModule1} ->
@@ -1193,7 +1189,7 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
 						   is_list(LogStr) ->
     case get_client_transaction_pid(Response) of
 	none ->
-	    {ok, [{mode, _}, {appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
+	    {ok, [{appmodule, AppModule}]} = gen_server:call(transaction_layer, {get_settings}),
 	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
 		       [Response#response.status, Response#response.reason, AppModule]),
 	    {pass_to_core, AppModule};

@@ -765,6 +765,9 @@ test() ->
     %% check that "name=val;;name=val" doesn't work
     io:format("test: is_parameters/1 - 8~n"),
     false = is_parameters("bar=Zo%3Dp%3dg;vaF=ghjT;;;BOF=tOp"),
+    %% check that quoted parameters work
+    io:format("test: is_parameters/1 - 9~n"),
+    true = is_parameters("foo=\"bar\""),
 
     %% test new
     %%--------------------------------------------------------------------

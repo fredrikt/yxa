@@ -16,8 +16,8 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/5, 
-	 start/5
+	 start_link/4,
+	 start/4
 	]).
 
 
@@ -54,7 +54,6 @@
 	  sipstate,
 	  cancelled=false,
 	  timerlist,
-	  mode,
 	  my_to_tag,
 	  appmodule,
 	  initialized=false
@@ -71,22 +70,21 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, Socket, LogStr, AppModule, Mode)
+%% Function: start_link(Request, Socket, LogStr, AppModule)
 %%           Request   = request record()
 %%           Socket    = sipsocket record(), the socket this request
 %%                                         was received on
 %%           LogStr    = string(), description of request
 %%           AppModule = atom(), the name of the Yxa application that
 %%                               we are part of
-%%           Mode      = atom(), stateless | stateful
 %% Descrip.: Starts the server
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
-start_link(Request, Socket, LogStr, AppModule, Mode) ->
-    gen_server:start_link(?MODULE, [Request, Socket, LogStr, AppModule, Mode, none], []).
+start_link(Request, Socket, LogStr, AppModule) ->
+    gen_server:start_link(?MODULE, [Request, Socket, LogStr, AppModule, none], []).
 
-start(Request, Socket, LogStr, AppModule, Mode) ->
-    gen_server:start(?MODULE, [no_link, Request, Socket, LogStr, AppModule, Mode], []).
+start(Request, Socket, LogStr, AppModule) ->
+    gen_server:start(?MODULE, [no_link, Request, Socket, LogStr, AppModule], []).
 
 %%====================================================================
 %% Server functions
@@ -100,14 +98,13 @@ start(Request, Socket, LogStr, AppModule, Mode) ->
 %%           LogStr    = string(), description of request
 %%           AppModule = atom(), the name of the Yxa application that
 %%                               we are part of
-%%           Mode      = atom(), stateless | stateful
 %% Descrip.: Initiates the server transaction gen_server
 %% Returns : {ok, State, Timeout} |
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
 
-init([no_link, Request, Socket, LogStr, AppModule, Mode]) ->
+init([no_link, Request, Socket, LogStr, AppModule]) ->
     %% Started with start() and not start_link() - link to transaction_layer
     %% immediately
     TPid = erlang:whereis(transaction_layer),
@@ -115,15 +112,10 @@ init([no_link, Request, Socket, LogStr, AppModule, Mode]) ->
     %% Register with transaction_layer first of all
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
-    Desc = case Mode of
-	       stateless ->
-		   io_lib:format("stateless ~s ~s", [Method, sipurl:print(URI)]);
-	       stateful ->
-		   lists:flatten(lists:concat([Branch, ": ", Method, " ", sipurl:print(URI)]))
-	   end,
+    Desc = lists:concat([Branch, ": ", Method, " ", sipurl:print(URI)]),
     case gen_server:call(transaction_layer, {add_server_transaction, Request, self(), Desc}) of
 	ok ->
-	    case init([Request, Socket, LogStr, AppModule, Mode, Branch]) of
+	    case init([Request, Socket, LogStr, AppModule, Branch]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
 		Reply ->
@@ -139,11 +131,11 @@ init([no_link, Request, Socket, LogStr, AppModule, Mode]) ->
 	_ ->
 	    {stop, "Failed registering with transaction_layer"}
     end;
-    
+
 %%
 %% ACK - no go
 %%
-init([#request{method="ACK"}=Request, _Socket, _LogStr, _AppModule, _Mode, _BranchIn]) ->
+init([#request{method="ACK"}=Request, _Socket, _LogStr, _AppModule, _BranchIn]) ->
     %% Although a bit vague, RFC3261 section 17 (Transactions) do say that
     %% it is not allowed to send responses to ACK requests, so we simply
     %% deny to start a server transaction here.
@@ -153,7 +145,7 @@ init([#request{method="ACK"}=Request, _Socket, _LogStr, _AppModule, _Mode, _Bran
 %%
 %% Anything but ACK
 %%
-init([Request, Socket, LogStr, AppModule, Mode, BranchIn]) when is_record(Request, request) ->
+init([Request, Socket, LogStr, AppModule, BranchIn]) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = case BranchIn of
 		 none ->
@@ -166,7 +158,7 @@ init([Request, Socket, LogStr, AppModule, Mode, BranchIn]) when is_record(Reques
     %% describes this request (METHOD URI [client=x, from=y, to=z])
     State = #state{branch=Branch, logtag=LogTag, socket=Socket, request=Request,
 		   sipmethod=Method, sipstate=trying, timerlist=siptimer:empty(),
-		   mode=Mode, my_to_tag=MyToTag, appmodule=AppModule},
+		   my_to_tag=MyToTag, appmodule=AppModule},
     logger:log(debug, "~s: Server transaction: Started new server transaction for request ~s ~s.",
 	       [LogTag, Method, sipurl:print(URI)]),
     logger:log(normal, "~s: ~s", [LogTag, LogStr]),
@@ -236,9 +228,8 @@ handle_call({set_report_to, Pid}, From, State) when is_pid(Pid) ->
 %%           {noreply ...}
 handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, request),
 							     is_record(Origin, siporigin) ->
-    LogTag = State#state.logtag,
-    {OrigRequest, AppModule} = {State#state.request, State#state.appmodule},
-    {OrigMethod, OrigURI, OrigHeader} = {OrigRequest#request.method, OrigRequest#request.uri, 
+    {LogTag, OrigRequest} = {State#state.logtag, State#state.request},
+    {OrigMethod, OrigURI, OrigHeader} = {OrigRequest#request.method, OrigRequest#request.uri,
 					 OrigRequest#request.header},
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
     logger:log(debug, "~s: Server transaction received a request (~s ~s), checking if it is an ACK or a resend",
@@ -251,17 +242,10 @@ handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, 
 		OrigMethod == "INVITE", Method == "ACK", URI == OrigURI ->
 		    %% Received an ACK with a Request-URI that matches our original one
 		    LogTag = State#state.logtag,
-		    case State#state.mode of
-			stateful ->
-			    %% gen_server:reply before processing
-			    gen_server:reply(From, {continue}),
-			    NewState1 = process_received_ack(State),
-			    {noreply, NewState1, ?TIMEOUT};
-			stateless ->
-			    logger:log(debug, "~s: Received ACK ~s when stateless, pass to core.",
-				       [LogTag, sipurl:print(OrigURI)]),
-			    {reply, {pass_to_core, AppModule}, State, ?TIMEOUT}
-		    end;
+		    %% gen_server:reply before processing
+		    gen_server:reply(From, {continue}),
+		    NewState1 = process_received_ack(State),
+		    {noreply, NewState1, ?TIMEOUT};
 		Method == OrigMethod, URI == OrigURI, CSeqNum == OrigCSeqNum ->
 		    %% This is a resent request, check if we have a response stored that we can resend
 		    case State#state.response of
@@ -273,26 +257,16 @@ handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, 
 			    gen_server:reply(From, {continue}),
 			    transportlayer:send_proxy_response(State#state.socket, Re);
 			_ ->
-			    %% No response stored, check if we are stateless or stateful
-			    case State#state.mode of
-				stateful ->
-				    logger:log(normal, "~s: Received a retransmission of request (~s ~s) but I "
-					       "have no response to resend!", [LogTag, Method, sipurl:print(URI)]),
-				    gen_server:reply(From, {continue});
-				stateless ->
-				    logger:log(debug, "~s: Received a resend of original request (~s ~s) - "
-					       "pass to core", [LogTag, Method, sipurl:print(URI)]),
-				    %% It looks like we are a stateless server transaction. Tell ServerPid
-				    %% to pass this retransmission on to the core.
-				    gen_server:reply(From, {pass_to_core, AppModule})
-			    end
+			    %% No response stored
+			    logger:log(normal, "~s: Received a retransmission of request (~s ~s) but I "
+				       "have no response to resend!", [LogTag, Method, sipurl:print(URI)]),
+			    gen_server:reply(From, {continue})
 		    end,
 		    {noreply, State, ?TIMEOUT};
 		true ->
 		    logger:log(normal, "~s: Server transaction: Received request is not particulary alike "
 			       "the first one (~p ~s ~s /= ~p ~s ~s). Dropping it on the floor.",
-			       [LogTag,
-				CSeqNum, Method, sipurl:print(URI),
+			       [LogTag, CSeqNum, Method, sipurl:print(URI),
 				OrigCSeqNum, OrigMethod, sipurl:print(OrigURI)]),
 		    {reply, {continue}, State, ?TIMEOUT}
 	    end,
@@ -441,7 +415,7 @@ handle_info(timeout, #state{initialized=false}=State) ->
     Method = Request#request.method,
     NewState =
 	if
-	    Method == "INVITE", State#state.mode == stateful ->
+	    Method == "INVITE" ->
 		Response = make_response(100, "Trying", "", [], [], State),
 		{ok, NewState1} = do_response(created, Response, State),
 		NewState1#state{initialized=true};
@@ -460,7 +434,7 @@ handle_info(timeout, #state{initialized=false}=State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%           Reason = string()
 %%--------------------------------------------------------------------
-handle_info(timeout, #state{mode=stateful}=State) ->
+handle_info(timeout, State) ->
     LogTag = State#state.logtag,
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
@@ -495,20 +469,6 @@ handle_info(timeout, #state{mode=stateful}=State) ->
 		{stop, "Stateful server transaction without owner idle for 5 minutes", State}
 	end,
     check_quit(Reply);
-
-%%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Timeout received, our mode is 'stateless'. Terminate.
-%% Returns : {stop, Reason, State}            (terminate/2 is called)
-%%           Reason = string()
-%%--------------------------------------------------------------------
-handle_info(timeout, #state{mode=stateless}=State) ->
-    LogTag = State#state.logtag,
-    Request = State#state.request,
-    {Method, URI} = {Request#request.method, Request#request.uri},
-    logger:log(debug, "~s: Stateless server transaction (~s ~s) terminating without "
-	       "having sent a response after 5 minutes", [LogTag, Method, sipurl:print(URI)]),
-    {stop, "Stateless server transaction handler idle for 5 minutes", State};
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({siptimer, TRef, TDesc}, State)
@@ -759,11 +719,10 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
     {ResponseToMethod, ResponseToURI} = {Request#request.method, Request#request.uri},
     OldSipState = State#state.sipstate,
     {Status, Reason} = {Response#response.status, Response#response.reason},
-    NewState1 = go_stateful(Created, ResponseToMethod, Status, LogTag, State),
     NewState =
 	case catch send_response_statemachine(ResponseToMethod, Status, OldSipState) of
 	    {ignore, _SendReliably, NewSipState} ->
-		enter_sip_state(NewSipState, NewState1);
+		enter_sip_state(NewSipState, State);
 	    {send, SendReliably, NewSipState} ->
 		LogLevel = if
 			       Status >= 200 -> normal;
@@ -776,38 +735,16 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 		logger:log(LogLevel, "~s: ~s '~p ~s'",
 			   [LogTag, What, Status, Reason]),
 		store_transaction_result(NewSipState, Request#request{body=""}, Status, Reason, LogTag),
-		{ok, NewState2} = send_response(Response, SendReliably, NewState1),
+		{ok, NewState2} = send_response(Response, SendReliably, State),
 		enter_sip_state(NewSipState, NewState2);
 	    E ->
 		logger:log(error, "~s: State machine does not allow us to send '~p ~s' in response to '~s ~s' "
 			   "when my SIP-state is '~p'", [LogTag, Status, Reason, ResponseToMethod,
 							 sipurl:print(ResponseToURI), OldSipState]),
 		logger:log(debug, "~s: State machine returned :~n~p", [LogTag, E]),
-		NewState1
+		State
 	end,
     {ok, NewState}.
-
-%%--------------------------------------------------------------------
-%% Function: go_stateful(Created, Method, Status, LogTag, State)
-%%           Created = atom(), created | forwarded
-%%           Method  = string(), SIP request method
-%%           Status  = integer(), SIP status code
-%%           LogTag  = string()
-%% Descrip.: If we start up stateless, and create a final response we
-%%           must transition to stateful operations.
-%% Returns : NewState = state record()
-%%--------------------------------------------------------------------
-go_stateful(created, Method, Status, LogTag, State) when is_record(State, state), Status >= 200, Status =< 699 ->
-    case State#state.mode of
-	stateless ->
-	    logger:log(debug, "~s: Going stateful when sending locally created final response ~p response to ~s",
-		       [LogTag, Status, Method]),
-	    State#state{mode=stateful};
-	stateful ->
-	    State
-    end;
-go_stateful(_Created, _Method, _Status, _LogTag, State) when is_record(State, state) ->
-    State.
 
 %%--------------------------------------------------------------------
 %% Function: store_transaction_result(SipState, Request, Status,
@@ -1116,7 +1053,7 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
 	      none ->
 		  {DisplayName, ToURI} = sipheader:to(To),
 		  NewTo = sipheader:contact_print(
-			    [ contact:new(DisplayName, ToURI, [{"tag", State#state.my_to_tag}]) ]), 
+			    [ contact:new(DisplayName, ToURI, [{"tag", State#state.my_to_tag}]) ]),
 		  NewHeader = keylist:set("To", [NewTo], Header),
 		  Request#request{header=NewHeader};
 	      _ ->
