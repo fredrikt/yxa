@@ -320,7 +320,7 @@ change_sipdst_protocol2(_Proto, _Proto6, [], Res) ->
 %%           Reason = term()
 %%--------------------------------------------------------------------
 combine_host_portres(In) when is_list(In) ->
-    combine_host_portres2(In, [], []).
+    combine_host_portres2(lists:flatten(In), [], []).
 
 combine_host_portres2([{error, _Reason}=H | T], Res, ERes) ->
     %% error, put in ERes
@@ -753,7 +753,7 @@ test() ->
     io:format("test: combine_host_portres/1 - 5~n"),
     %% test with three valid sipdst's only
     [#sipdst{proto=1}, #sipdst{proto=2}, #sipdst{proto=3}] =
-	combine_host_portres([#sipdst{proto=1}, #sipdst{proto=2}, #sipdst{proto=3}]),
+	combine_host_portres([[#sipdst{proto=1}, #sipdst{proto=2}], [#sipdst{proto=3}]]),
 
 
     %% test get_proto_from_parameters(URL)
