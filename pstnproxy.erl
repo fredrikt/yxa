@@ -67,6 +67,7 @@ request(Method, URI, Header, Body, Socket, FromIP) ->
 
 toSIPrequest(Method, URI, Header, Body, Socket) ->
     {User, Pass, Host, Port, Parameters} = URI,
+    {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     Newlocation = case localhostname(Host) of
 	true ->
 	    logger:log(debug, "Performing ENUM lookup on ~p", [User]),
@@ -97,12 +98,15 @@ toSIPrequest(Method, URI, Header, Body, Socket) ->
 		true -> siprequest:add_record_route(Header);
 	        false -> Header
 	    end,
-	    siprequest:send_proxy_request(Newheaders, Socket, {Method, Newlocation, Body, []})
+	    {_, _, DstHost, _, _} = Newlocation,
+	    Newheaders2 = add_caller_identity_for_sip(Newheaders, FromURI, DstHost),
+	    siprequest:send_proxy_request(Newheaders2, Socket, {Method, Newlocation, Body, []})
     end.
 
 toPSTNrequest(Method, URI, Header, Body, Socket) ->
     {Phone, _, _, _, _} = URI,
-    Newlocation = {Phone, none, lists:nth(1, sipserver:get_env(pstngatewaynames)), none, []},
+    PSTNgateway = lists:nth(1, sipserver:get_env(pstngatewaynames)),
+    Newlocation = {Phone, none, PSTNgateway, none, []},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     Fromphone = local:sipuser(FromURI),
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
@@ -110,7 +114,8 @@ toPSTNrequest(Method, URI, Header, Body, Socket) ->
 	true -> siprequest:add_record_route(Header);
         false -> Header
     end,
-    sipauth:check_and_send_auth(Header, Newheaders, Socket, Fromphone, Phone,
+    Newheaders2 = add_caller_identity_for_pstn(Newheaders, FromURI, PSTNgateway),
+    sipauth:check_and_send_auth(Header, Newheaders2, Socket, Fromphone, Phone,
 				{siprequest, send_proxy_request},
 				{Method, Newlocation, Body, []},
 				Method, Classdefs).
@@ -119,3 +124,36 @@ response(Status, Reason, Header, Body, Socket, FromIP) ->
     LogStr = sipserver:make_logstr({response, Status, Reason, Header, Body}, FromIP),
     logger:log(normal, "Response to ~s: ~p ~s", [LogStr, Status, Reason]),
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
+
+add_caller_identity_for_pstn(Headers, URI, Gateway) ->
+    NewHeaders1 = case sipserver:get_env(remote_party_id, false) of
+	true ->
+	    case local:get_remote_party_number(local:sipuser(URI), URI, Gateway) of
+		none ->
+		    Headers;
+		RPI ->
+		    RemotePartyId = RPI ++ ";party=calling",
+		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
+		    NewHeaders2 = keylist:delete("Remote-Party-Id", Headers),
+		    keylist:set("Remote-Party-Id", [RemotePartyId], NewHeaders2)
+	    end;
+	_ ->
+	    Headers
+    end.
+
+add_caller_identity_for_sip(Headers, URI, Gateway) ->
+    {User, _, _, _, _} = URI,
+    NewHeaders1 = case sipserver:get_env(remote_party_id, false) of
+	true ->
+	    case local:get_remote_party_name(User, URI, Gateway) of
+		none ->
+		    Headers;
+		RPI ->
+		    RemotePartyId = RPI ++ ";party=calling",
+		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
+		    NewHeaders2 = keylist:delete("Remote-Party-Id", Headers),
+		    keylist:set("Remote-Party-Id", [RemotePartyId], NewHeaders2)
+	    end;
+	_ ->
+	    Headers
+    end.
