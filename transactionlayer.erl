@@ -11,10 +11,12 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("transactionstatelist.hrl").
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
 %% External exports
--export([start_link/3]).
+-export([start_link/2]).
 
 -export([send_response_request/3, send_response_request/4,
 	 transaction_terminating/1, get_handler_for_request/1,
@@ -30,7 +32,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {tstatelist, requestfun, responsefun, mode}).
+-record(state, {tstatelist, appmodule, mode}).
 -record(thandler, {pid}).
 
 -define(TIMEOUT, 7 * 1000).
@@ -42,8 +44,8 @@
 %% Function: start_link/3
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(RequestFun, ResponseFun, Mode) ->
-    gen_server:start_link({local, transaction_layer}, ?MODULE, [RequestFun, ResponseFun, Mode], []).
+start_link(AppModule, Mode) ->
+    gen_server:start_link({local, transaction_layer}, ?MODULE, [AppModule, Mode], []).
 
 %%====================================================================
 %% Server functions
@@ -57,11 +59,11 @@ start_link(RequestFun, ResponseFun, Mode) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
-init([RequestFun, ResponseFun, Mode]) ->
+init([AppModule, Mode]) ->
     process_flag(trap_exit, true),
     TStateList = transactionstatelist:empty(),
     logger:log(debug, "Transaction layer started"),
-    {ok, #state{requestfun=RequestFun, responsefun=ResponseFun, mode=Mode, tstatelist=TStateList}}.
+    {ok, #state{appmodule=AppModule, mode=Mode, tstatelist=TStateList}}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_call/3
@@ -79,30 +81,32 @@ init([RequestFun, ResponseFun, Mode]) ->
 %% asking us of what to do with it. If we return {continue} the SIP message handler will
 %% terminate, but if we return {pass_to_core, Fun} the SIP message handler will pass the
 %% request on to that function.
-handle_call({sipmessage, request, Request, Socket, LogStr}, From, State) ->
-    RequestFun = State#state.requestfun,
-    case get_server_transaction_pid(request, Request, State#state.tstatelist) of
+handle_call({sipmessage, Request, Origin, LogStr}, From, State) when record(Request, request), record(Origin, siporigin) ->
+    AppModule = State#state.appmodule,
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    case get_server_transaction_pid(request, CompatRequest, State#state.tstatelist) of
 	none ->
-	    received_new_request(Request, Socket, LogStr, State);
+	    received_new_request(CompatRequest, Origin#siporigin.sipsocket, LogStr, State);
 	TPid when pid(TPid) ->
-	    gen_server:cast(TPid, {sipmessage, request, Request, Socket, LogStr, From, RequestFun}),
-	    %% We do noreply here and send RequestFun (and gen_server From) on to TPid and let TPid do gen_server:reply()
+	    gen_server:cast(TPid, {sipmessage, Request, Origin, LogStr, From, AppModule}),
+	    %% We do noreply here and send AppModule (and gen_server From) on to TPid and let TPid do gen_server:reply()
 	    {noreply, State, ?TIMEOUT}
     end;
 
 %% A response has been received by the transaction layer and a SIP message handler is
 %% asking us of what to do with it. See comment about requests above.
-handle_call({sipmessage, response, Response, Socket, LogStr}, From, State) ->
-    ResponseFun = State#state.responsefun,
-    case get_client_transaction_pid(response, Response, State#state.tstatelist) of
+handle_call({sipmessage, Response, Origin, LogStr}, From, State) when record(Response, response), record(Origin, siporigin) ->
+    AppModule = State#state.appmodule,
+    CompatResponse = {Response#response.status, Response#response.reason, Response#response.header, Response#response.body},
+    case get_client_transaction_pid(response, CompatResponse, State#state.tstatelist) of
 	none ->
-	    logger:log(debug, "Transaction layer: No state for received response, passing to ResponseFun."),
-	    {reply, {pass_to_core, ResponseFun}, State, ?TIMEOUT};
+	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response().",
+	    		[Response#response.status, Response#response.reason, AppModule]),
+	    {reply, {pass_to_core, AppModule}, State, ?TIMEOUT};
 	TPid when pid(TPid) ->
-	    {Status, Reason, _, _} = Response,
 	    logger:log(debug, "Transaction layer: Passing response ~p ~s to registered handler ~p",
-		       [Status, Reason, TPid]),
-	    gen_server:cast(TPid, {sipmessage, response, Response, Socket, LogStr}),
+		       [Response#response.status, Response#response.reason, TPid]),
+	    gen_server:cast(TPid, {sipmessage, Response, Origin, LogStr}),
 	    {reply, {continue}, State, ?TIMEOUT}
     end;
 
@@ -158,9 +162,14 @@ handle_call({start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, 
     {Method, _, _, _} = Request,
     case transactionstatelist:get_client_transaction(Method, Branch, State#state.tstatelist) of
 	none ->
-	    {ok, CPid} = clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, Parent),
-	    NewL = transactionstatelist:add_client_transaction(Method, Branch, CPid, State#state.tstatelist),
-	    {reply, {ok, CPid}, State#state{tstatelist=NewL}, ?TIMEOUT};
+	    case clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, Parent) of
+		{ok, CPid} ->
+		    RegBranch = sipheader:remove_loop_cookie(Branch),
+		    NewL = transactionstatelist:add_client_transaction(Method, RegBranch, CPid, State#state.tstatelist),
+		    {reply, {ok, CPid}, State#state{tstatelist=NewL}, ?TIMEOUT};
+		_ ->
+		    {reply, {error, "Failed starting client transaction"}, State, ?TIMEOUT}
+	    end;
 	_ ->
 	    logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
 	    {reply, {error, "Transaction already exists"}, State, ?TIMEOUT}
@@ -250,7 +259,12 @@ handle_info(Msg, State) ->
 %% Description: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
+terminate(normal, State) ->
+    logger:log(debug, "Transaction layer: Terminating normally"),
+    ok;
 terminate(Reason, State) ->
+    logger:log(error, "Transaction layer: =ERROR REPORT==== from transaction_layer :~n~p",
+	       [Reason]),
     ok.
 
 %%--------------------------------------------------------------------
@@ -266,29 +280,29 @@ code_change(OldVsn, State, Extra) ->
 %%--------------------------------------------------------------------
 
 received_new_request({"ACK", URI, _, _}, Socket, LogStr, State) when record(State, state) ->
-    RequestFun = State#state.requestfun,
+    AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 		[sipurl:print(URI)]),
-    {reply, {pass_to_core, RequestFun}, State, ?TIMEOUT};
+    {reply, {pass_to_core, AppModule}, State, ?TIMEOUT};
 
 received_new_request({"CANCEL", URI, Header, Body}, Socket, LogStr, State) when record(State, state), State#state.mode == stateless ->
-    RequestFun = State#state.requestfun,
+    AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: Stateless received CANCEL ~s. Starting transaction but passing to core.",
 		[sipurl:print(URI)]),
     Request = {"CANCEL", URI, Header, Body},
-    case servertransaction:start_link(Request, Socket, LogStr, RequestFun, stateless) of
+    case servertransaction:start_link(Request, Socket, LogStr, AppModule, stateless) of
 	{ok, STPid} when pid(STPid) ->
 	    NewL = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
-	    {reply, {pass_to_core, RequestFun}, State#state{tstatelist=NewL}, ?TIMEOUT};
+	    {reply, {pass_to_core, AppModule}, State#state{tstatelist=NewL}, ?TIMEOUT};
 	E ->
 	    logger:log(error, "Transaction layer: Failed starting server transaction (~p) - ignoring request", [E]),
 	    {reply, {continue}, State, ?TIMEOUT}
     end;
 
 received_new_request(Request, Socket, LogStr, State) when record(State, state) ->
-    RequestFun = State#state.requestfun,
+    AppModule = State#state.appmodule,
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
-    case servertransaction:start_link(Request, Socket, LogStr, RequestFun, State#state.mode) of
+    case servertransaction:start_link(Request, Socket, LogStr, AppModule, State#state.mode) of
 	{ok, STPid} when pid(STPid) ->
 	    NewTStateList2 = transactionstatelist:add_server_transaction(Request, STPid, State#state.tstatelist),
 	    PassToCore = case Request of
@@ -330,7 +344,7 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state) -
 	    case PassToCore of
 		true ->
 		    logger:log(debug, "Transaction layer: Telling sipserver to apply this applications request function."),
-		    {reply, {pass_to_core, RequestFun}, State#state{tstatelist=NewTStateList2}, ?TIMEOUT};
+		    {reply, {pass_to_core, AppModule}, State#state{tstatelist=NewTStateList2}, ?TIMEOUT};
 		_ ->
 		    {reply, {continue}, State#state{tstatelist=NewTStateList2}, ?TIMEOUT}
 	    end;
@@ -354,7 +368,13 @@ get_server_transaction_pid(Type, RequestOrResponse, TStateList) ->
 		    TPid;
 		_ ->
 		    none
-	    end
+	    end;
+	Unknown ->
+	    logger:log(error, "Transaction layer: Could not get server transaction for '~p' - get_server_transaction returned unknown result : ~p",
+		       [Type, Unknown]),
+	    logger:log(debug, "Transaction layer: Request or response (~p) passed to get_server_transaction was :~n~p~n~n",
+		       [Type, RequestOrResponse]),
+	    none
     end.
 
 get_client_transaction(response, Response, TStateList) ->
@@ -388,6 +408,10 @@ get_client_transaction_pid(Type, RequestOrResponse, TStateList) ->
 
 send_response_request(Request, Status, Reason) ->
     send_response_request(Request, Status, Reason, []).
+
+send_response_request(Request, Status, Reason, ExtraHeaders) when record(Request, request) ->
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    send_response_request(CompatRequest, Status, Reason, ExtraHeaders);
 
 send_response_request(Request, Status, Reason, ExtraHeaders) ->
     {Method, URI, _, _} = Request,
@@ -423,6 +447,10 @@ send_proxy_response_handler(TH, Response) when record(TH, thandler) ->
 	_ ->
 	    {error, "Transaction handler failure"}
     end.
+
+get_handler_for_request(Request) when record(Request, request) ->
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    get_handler_for_request(CompatRequest);
 
 get_handler_for_request(Request) ->
     case catch gen_server:call(transaction_layer, {get_server_transaction_handler, Request}, 2500) of
@@ -487,12 +515,14 @@ transaction_terminating(TransactionPid) ->
     ok.
 
 start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, Parent) ->
-    case catch gen_server:call(transaction_layer, {start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, 2500) of
+    case catch gen_server:call(transaction_layer, {start_client_transaction, Request, SocketIn, Dst, Branch, Timeout, Parent}, 10000) of
 	{error, E} ->
 	    {error, E};
 	{ok, Pid} ->
 	    Pid;
-	_ ->
+	Unknown ->
+	    logger:log(debug, "Transaction layer: Failed starting client transaction, gen_server call result :~n~p",
+		       [Unknown]),
 	    {error, "Transaction layer failure"}
     end.
 
@@ -502,7 +532,9 @@ store_to_tag(Request, ToTag) ->
 	    {error, E};
 	{ok} ->
 	    ok;
-	_ ->
+	Unknown ->
+	    logger:log(debug, "Transaction layer: Failed storing To: tag, gen_server call result :~n~p",
+		       [Unknown]),
 	    {error, "Transaction layer failure"}
     end.
 
@@ -515,7 +547,9 @@ store_stateless_response_branch(TH, Branch, Method) when record(TH, thandler) ->
 	    ok;
 	{error, E} ->
 	    {error, E};
-	_ ->
+	Unknown ->
+	    logger:log(debug, "Transaction layer: Failed storing stateless response branch, gen_server call result :~n~p",
+		       [Unknown]),
 	    {error, "Transaction layer failure"}
     end.
 
@@ -533,6 +567,10 @@ get_pid_from_handler(TH) when record(TH, thandler) ->
     TH#thandler.pid;
 get_pid_from_handler(_) ->
     none.
+
+send_challenge_request(Request, Type, Stale, RetryAfter) when record(Request, request) ->
+    CompatRequest = {Request#request.method, Request#request.uri, Request#request.header, Request#request.body},
+    send_challenge_request(CompatRequest, Type, Stale, RetryAfter);
 
 send_challenge_request(Request, Type, Stale, RetryAfter) ->
     TH = transactionlayer:get_handler_for_request(Request),
