@@ -10,47 +10,60 @@ init() ->
     timer:apply_interval(10000, ?MODULE, list_calls_in_database, []),
     database_call:create_call().
 
-%localhostname(Hostname) ->
-%    util:casegrep(Hostname, sipserver:get_env(myhostnames)).
+localhostname(Hostname) ->
+    util:casegrep(Hostname, sipserver:get_env(myhostnames)).
 
 request(Method, URL, Header, Body, Socket, FromIP) ->
+    LogStr = sipserver:make_logstr({request, Method, URL, Header, Body}, FromIP),
     case Method of
+        "REGISTER" ->
+            process_request(Method, URL, Header, Body, Socket, LogStr);
 	"INVITE" ->
-	    case packet_check_ok(Header) of
-		true ->
-		    process_request(Method, URL, Header, Body, Socket);
-		{response, Returncode, Text, ExtraHeaders} ->
-		    logger:log(debug, "FREDRIK REJECTING EXTRA HEADERS: ~p ~p ~p", [Returncode, Text, ExtraHeaders]),
-		    siprequest:send_result(Header, Socket, "", Returncode, Text, ExtraHeaders),
-		    logger:log(debug, "SENT RESPONSE")
-	    end;
+	    packet_check_ok(Header),
+	    process_request(Method, URL, Header, Body, Socket, LogStr);
 	"ACK" ->
-	    process_request(Method, URL, Header, Body, Socket);
+	    process_request(Method, URL, Header, Body, Socket, LogStr);
 	"CANCEL" ->
-	    process_request(Method, URL, Header, Body, Socket);
+	    process_request(Method, URL, Header, Body, Socket, LogStr);
 	"BYE" ->
-	    process_request(Method, URL, Header, Body, Socket);
+	    process_request(Method, URL, Header, Body, Socket, LogStr);
 	_ ->
-	    logger:log(normal, "~p ~p (from ~p) -- NOT IMPLEMENTED", [Method, sipurl:print(URL), FromIP]),
+	    logger:log(normal, "~s -- NOT IMPLEMENTED", [LogStr]),
 	    siprequest:send_result(Header, Socket, "", 501, "Not Implemented")
     end.
 
-process_request("INVITE", URI, Header, Body, Socket) ->
+process_request("REGISTER", URI, Header, Body, Socket, LogStr) ->
+    {User, Pass, Host, Port, Parameters} = URI,
+    case localhostname(Host) of
+	true ->
+	    % delete any present Record-Route header (RFC3261, #10.3)
+	    NewHeader = keylist:delete("Record-Route", Header),
+	    Contacts = sipheader:contact(keylist:fetch("Contact", NewHeader)),
+	    logger:log(debug, "Register: Contact(s) ~p", [sipheader:contact_print(Contacts)]),
+	    siprequest:send_result(NewHeader, Socket, "", 200, "OK",
+	    			   [{"Expires", ["0"]},
+				    {"Contacts", sipheader:contact_print(Contacts)}
+				   ]
+				  );
+	_ ->
+	    logger:log(debug, "REGISTER for non-homedomain ~p", [Host]),
+	    siprequest:send_result(Header, Socket, "", 501, "Not Implemented")
+    end;
+
+process_request("INVITE", URI, Header, Body, Socket, LogStr) ->
     siprequest:send_result(Header, Socket, "", 100, "Trying"),
     [CallID] = keylist:fetch("Call-ID", Header),
     case database_call:insert_call_unique(CallID, track, Header, self()) of
 	{atomic, ok} ->
 	    logger:log(debug, "State: Created call ~p", [CallID]),
-	    {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
-	    {_, ToURI} = sipheader:to(keylist:fetch("To", Header)),
 	    case get_user(URI) of
 		{404, Text} ->
-		    logger:log(normal, "INVITE (~s) ~s -> ~s -- NO SUCH USER -- 404 ~p",
-		    	       [sipurl:print(URI), sipurl:print(FromURI), sipurl:print(ToURI), Text]),
+		    logger:log(normal, "~s -> -- NO SUCH USER -- 404 ~p",
+		    	       [LogStr, Text]),
 		    siprequest:send_result(Header, Socket, "", 404, Text);
 		{Code, Text} ->
-		    logger:log(normal, "INVITE (~s) ~s -> ~s -- ~p ~s",
-		    	       [sipurl:print(URI), sipurl:print(FromURI), sipurl:print(ToURI), Code, Text]),
+		    logger:log(normal, "~s -> ~p ~s",
+		    	       [LogStr, Code, Text]),
 		    siprequest:send_result(Header, Socket, "", Code, Text)
 	    end;
 	{aborted, key_exists} ->
@@ -58,7 +71,7 @@ process_request("INVITE", URI, Header, Body, Socket) ->
 	    true
     end;
 
-process_request("ACK", URI, Header, Body, Socket) ->
+process_request("ACK", URI, Header, Body, Socket, LogStr) ->
     [CallID] = keylist:fetch("Call-ID", Header),
     case database_call:get_call(CallID) of
 	{atomic, [{track, Origheaders, Pid}]} ->
@@ -75,7 +88,7 @@ process_request("ACK", URI, Header, Body, Socket) ->
 	    siprequest:send_result(Header, Socket, "", 481, "Call/Transaction Does Not Exist")
     end;
 
-process_request(Method, URI, Header, Body, Socket) ->
+process_request(Method, URI, Header, Body, Socket, LogStr) ->
     [CallID] = keylist:fetch("Call-ID", Header),
     case database_call:get_call(CallID) of
 	{atomic, [{track, Origheaders, Pid}]} ->
@@ -158,7 +171,6 @@ check_no_unsupported_extension(Header) ->
 	[] ->
 	    true;
 	_ ->
-	   logger:log(normal, "Request check: The client requires extension ~p and I don't support any extensions", [Require]),
-	   {response, 420, "Bad Extension", {"Unsupported", Require}}
+	    logger:log(normal, "UAS Request check: The client requires unsupported extension(s) ~p", [Require]),
+	    throw({siperror, 420, "Bad Extension", [{"Unsupported", Require}]})
     end.
-
