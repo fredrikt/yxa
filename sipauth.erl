@@ -1,8 +1,14 @@
 -module(sipauth).
--export([check_and_send_auth/9, get_response/5,
-	 get_nonce/1, get_user_verified/2, check_and_send_relay/5,
-	 get_challenge/0,
-	 can_register/2]).
+-export([get_response/5,
+	 get_nonce/1,
+	 get_user_verified/2,
+	 get_user_verified_proxy/2,
+	 get_challenge/0, 
+	 can_register/2,
+	 pstn_call_check_auth/5,
+	 is_allowed_pstn_dst/4,
+	 can_use_address/2,
+	 realm/0]).
 
 % A1 = username ":" realm ":" password
 % A2 = Method ":" digest-uri
@@ -20,7 +26,7 @@ get_challenge() ->
     {realm(), get_nonce(Timestamp), Timestamp}.
 
 
-get_response(Nonce, Method, URI, User, none) ->
+get_response(Nonce, Method, URI, User, nomatch) ->
     none;
 
 get_response(Nonce, Method, URI, User, Password) ->
@@ -28,77 +34,51 @@ get_response(Nonce, Method, URI, User, Password) ->
     A2 = hex:to(erlang:md5(Method ++ ":" ++ URI)),
     hex:to(erlang:md5(A1 ++ ":" ++ Nonce ++ ":" ++ A2)).
 
-get_passnumber(Usertext) when list(Usertext) ->
-    {User, Host} = canon_user(Usertext),
-    case {get_passnumber_try(User ++ "@" ++ Host), realm()} of
-	{{ok, Res}, _} ->
-	    Res;
-	{{error}, Host} ->
-	    case get_passnumber_try(User) of
-		{ok, Res} ->
-		    Res;
-		{error} ->
-		    {none, [], [], []}
-	    end;
-	_ ->
-	    {none, [], [], []}
-    end;
-
-get_passnumber(_) ->
-    {none, [], [], []}.    
-
-get_passnumber_try(User) ->
-    case phone:get_user(User) of
-	{atomic, []} ->
-	    {error};
-	{atomic, [A]} ->
-	    {Password, Flags, Classes} = A,
-	    {atomic, Numbers} = phone:get_numbers_for_user(User),
-	    {ok, {Password, Numbers, Flags, Classes}};
-	{aborted, _} ->
-	    {error}
-    end.
-
-get_class(Number, []) ->
+classify_number(none, _) ->
+    unknown;
+    
+classify_number(Number, []) ->
     unknown;
 
-get_class(Number, [{"^+" ++ Regexp, Class} | Rest]) ->
-    logger:log(error, "sipauth:get_class() Skipping invalid regexp ~p (you probably forgot to escape the plus char)", ["^+" ++ Regexp]),
-    get_class(Number, Rest);
+classify_number(Number, [{"^+" ++ Regexp, Class} | Rest]) ->
+    logger:log(error, "sipauth:classify_number() Skipping invalid regexp ~p (you probably forgot to escape the plus char)", ["^+" ++ Regexp]),
+    classify_number(Number, Rest);
 
-get_class(Number, [{Regexp, Class} | Rest]) ->
+classify_number(Number, [{Regexp, Class} | Rest]) ->
     case regexp:first_match(Number, Regexp) of
 	{match, _, _} ->
 	    Class;
 	nomatch ->
-	    get_class(Number, Rest);
+	    classify_number(Number, Rest);
 	{error, Error} ->
 	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error])
     end.
 
 get_user_verified(Header, Method) ->
-    Authheader = keylist:fetch("Authorization", Header),
-    if Authheader == [] ->
+    case keylist:fetch("Authorization", Header) of
+	[] ->
+	    logger:log(debug, "Auth: get_user_verified: No Authorization header, returning false"),
 	    false;
-       true ->
-	    get_user_verified(Header, Method, Authheader)
+	Authheader ->
+	    get_user_verified2(Method, Authheader)
     end.
 
 get_user_verified_proxy(Header, Method) ->
-    Authheader = keylist:fetch("Proxy-Authorization", Header),
-    if Authheader == [] ->
+    case keylist:fetch("Proxy-Authorization", Header) of
+	[] ->
+	    logger:log(debug, "Auth: get_user_verified_proxy: No Proxy-Authorization header, returning false"),
 	    false;
-       true ->
-	    get_user_verified(Header, Method, Authheader)
+	Authheader ->
+	    get_user_verified2(Method, Authheader)
     end.
 
-get_user_verified(Header, Method, ["GSSAPI" ++ Authheader]) ->
+get_user_verified2(Method, ["GSSAPI" ++ Authheader]) ->
     Authorization = sipheader:auth(["GSSAPI" ++ Authheader]),
     Info = dict:fetch("info", Authorization),
     {Response, Username} = gssapi:request(Info),
     Username;
 
-get_user_verified(Header, Method, Authheader) ->
+get_user_verified2(Method, Authheader) ->
     Authorization = sipheader:auth(Authheader),
     Response = dict:fetch("response", Authorization),
     Nonce = dict:fetch("nonce", Authorization),
@@ -112,13 +92,21 @@ get_user_verified(Header, Method, Authheader) ->
     Now = util:timestamp(),
     logger:log(debug, "Auth: timestamp: ~p now: ~p", [Timestamp, Now]),
     User = dict:fetch("username", Authorization),
-    {Password, _, _, _} = get_passnumber(User),
+    Password = case local:get_password_for_user(User) of
+	nomatch ->
+	    nomatch;
+	PRes when list(PRes) ->
+	    PRes;
+	E ->
+	    logger:log(error, "Auth: Failed to fetch password for user ~p, result of get_password_for_user was : ~p", [User, E]),
+	    throw({siperror, 500, "Server Internal Error"})
+    end,
     Nonce2 = get_nonce(Opaque),
     Response2 = get_response(Nonce2, Method,
 			     dict:fetch("uri", Authorization),
 			     User, Password),
     if
-	Password == none ->
+	Password == nomatch ->
 	    logger:log(normal, "Auth: Authentication failed for non-existing user ~p", [User]),
 	    false;
 	Response /= Response2 ->
@@ -136,114 +124,112 @@ get_user_verified(Header, Method, Authheader) ->
 	    false;
 	true ->
 	    logger:log(debug, "Auth: User ~p authenticated", [User]),
-	    User
+	    {authenticated, User}
     end.
 
-check_auth(Header, Method, Number, Tophone, Classdefs) ->
-    User = get_user_verified_proxy(Header, Method),
-    {Numberallowed, _} = can_use_name(User, Number),
-    {_, _, _, Classes} = get_passnumber(User),
-    Class = get_class(Tophone, Classdefs),
-    Classallowed = lists:member(Class, Classes),
-    if
-	User == false ->
-	    false;
-	User == stale ->
-	    stale;
-	Numberallowed /= true ->
-	    logger:log(normal, "Number ~p not allowed caller id for user ~p", [Number, User]),
-	    false;
-	Classallowed /= true ->
-	    logger:log(normal, "Number ~p not allowed to call ~p in class ~p",
-		       [Number, Tophone, Class]),
-	    false;
+pstn_call_check_auth(Method, Header, Address, ToNumberIn, Classdefs) ->
+    ToNumber = case local:rewrite_potn_to_e164(ToNumberIn) of
+	none -> ToNumberIn;
+	N -> N
+    end,
+    Class = classify_number(ToNumber, Classdefs),
+    case lists:member(Class, sipserver:get_env(sipauth_unauth_classlist, [])) of
 	true ->
+	    % This is a class that anyone should be allowed to call,
+	    % just check that if this is one of our SIP users, they
+	    % are permitted to use the From: address
+	    logger:log(debug, "Auth: ~p is of class ~p which does not require authorization", [ToNumber, Class]),
+	    case local:get_user_with_address(Address) of
+		nomatch ->
+		    logger:log(debug, "Auth: Address ~p does not match any of my users, no need to verify.", [Address]),
+		    {true, unknown, Class};
+		User when list(User) ->
+		    Allowed = local:can_use_address(User, Address),
+		    {Allowed, User, Class};
+		Unknown ->
+		    logger:log(error, "Auth: Unknown result returned from get_user_for_address(~p) : ~p",
+				[Address, Unknown]),
+		    {false, unknown, Class}
+	    end;		    
+	_ ->
+	    case get_user_verified_proxy(Header, Method) of
+		false ->
+		    {false, none, Class};
+		stale ->
+		    {stale, none, Class};
+		{authenticated, User} ->
+		    UserAllowedToUseAddress = local:can_use_address(User, Address),
+		    AllowedCallToNumber = local:is_allowed_pstn_dst(User, ToNumber, Header, Class),
+		    if
+			UserAllowedToUseAddress /= true ->
+			    logger:log(normal, "Auth: User ~p is not allowed to use address ~p (when placing PSTN call to ~s (class ~p))",
+			    		[User, Address, ToNumber, Class]),
+			    {false, User, Class};
+			AllowedCallToNumber /= true ->
+			    logger:log(normal, "Auth: User ~p not allowed to call ~p in class ~p",
+				       [User, ToNumber, Class]),
+			    {false, User, Class};
+			true ->
+			    {true, User, Class}
+		    end;
+		Unknown ->
+		    logger:log(error, "Auth: Unknown result from get_user_verified_proxy: ~p", [Unknown]),
+		    {false, none, Class}
+	    end
+    end.
+
+is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
+    case keylist:fetch("Route", Header) of
+	[] ->
+	    case local:get_classes_for_user(User) of
+		nomatch ->
+		    false;
+		UserAllowedClasses when list(UserAllowedClasses) ->
+		    lists:member(Class, UserAllowedClasses);
+		Unknown ->
+		    logger:log(error, "Auth: Unknown result from local:get_classes_for_user() user ~p :~n~p",
+				[User, Unknown]),
+		    false
+	    end;
+	R when list(R) ->
+	    logger:log(debug, "Auth: Authenticated user ~p sends request with Route-header. Allow.", [User]),
 	    true
     end.
 
-canon_user(Fulluser) ->
-    case string:tokens(Fulluser, "@") of
-	[User, Host] ->
-	    {User, Host};
+can_use_address(User, Address) when list(User), list(Address) ->
+    URL = sipurl:parse(Address),
+    case local:get_users_for_url(URL) of
 	[User] ->
-	    {User, realm()};
+	    logger:log(debug, "Auth: User ~p is allowed to use address ~p",
+	    		[User, sipurl:print(URL)]),
+	    true;
+	[OtherUser] ->
+	    logger:log(debug, "Auth: User ~p may NOT use use address ~p (belongs to user ~p)",
+	    		[User, sipurl:print(URL), OtherUser]),
+	    false;
 	[] ->
-	    {"", realm()}
-    end.
+	    logger:log(debug, "Auth: No users found for address ~p, use by user ~p NOT permitted",
+	    		[sipurl:print(URL), User]),
+	    false;
+ 	Users when list(Users) ->
+	    logger:log(debug, "Auth: Use of address ~p NOT permitted. Address maps to more than one user : ~p",
+	    		[sipurl:print(URL), Users]),
+	    false;
+	Unknown ->
+	    logger:log(debug, "Auth: Use of address ~p NOT permitted. Unknown result from get_users_for_url : ~p",
+	    		[sipurl:print(URL), Unknown]),
+	    false
+    end;
+can_use_address(User, Address) ->
+    logger:log(debug, "Auth: can_use_address() called with incorrect arguments, User ~p Address ~p",
+		[User, Address]),
+    false.
 
-canon_list(List) ->
-    lists:map(fun canon_user/1, List).
-
-can_use_name(User, Number) ->
-    case User of
-	false ->
-	    {false, []};
-	stale ->
-	    {stale, []};
-	User ->
-	    {_, Numberlist, _, _} = get_passnumber(User),
-	    CanonUser = canon_user(User),
-	    case canon_user(Number) of
-		CanonUser ->
-		    {true, Numberlist};
-		CanonNumber ->
-		    Res = {lists:member(CanonNumber, canon_list(Numberlist)), []},
-		    case Res of
-			true ->
-			    true;
-			_ ->
-			    logger:log(debug, "Auth: User ~p may NOT user number ~p (allowed number(s): ~p)",
-					[User, Number, Numberlist])
-		    end,
-		    Res
-	    end
-    end.
-
-can_register(Header, Number) ->
-    can_use_name(get_user_verified(Header, "REGISTER"), Number).
-
-check_and_send_auth(OrigHeader, Header, Socket, Phone, Tophone, Func, Arg, "ACK", Classdefs) ->
-    logger:log(debug, "Auth: Always accepting ACK"),
-    apply(Func, [Header, Socket, Arg]);
-check_and_send_auth(OrigHeader, Header, Socket, Phone, Tophone, Func, Arg, "CANCEL", Classdefs) ->
-    logger:log(debug, "Auth: Always accepting CANCEL"),
-    apply(Func, [Header, Socket, Arg]);
-check_and_send_auth(OrigHeader, Header, Socket, Phone, Tophone, Func, Arg, Method, Classdefs) ->
-    Class = get_class(Tophone, Classdefs),
-    Classlist = sipserver:get_env(sipauth_unauth_classlist, []),
-    Classallowed = lists:member(Class, Classlist),
-    if
-	Classallowed == true ->
-	    logger:log(debug, "Auth: ~s is allowed to call ~s (class ~s) without challenge", [Phone, Tophone, Class]),
-	    apply(Func, [Header, Socket, Arg]);
-	true ->
-	    case check_auth(Header, Method, Phone, Tophone, Classdefs) of
-		true -> 
-		    logger:log(debug, "Auth: Authenticated user ~s is allowed dst ~s (class ~s)", [Phone, Tophone, Class]),
-		    apply(Func, [Header, Socket, Arg]);
-		stale ->
-		    logger:log(debug, "Auth: User ~s must authenticate for dst ~s (class ~s)", [Phone, Tophone, Class]),
-		    siprequest:send_proxyauth_req(OrigHeader, Socket,
-						  get_challenge(), true);
-		false ->
-		    logger:log(debug, "Auth: User ~s must authenticate for dst ~s (class ~s)", [Phone, Tophone, Class]),
-		    siprequest:send_proxyauth_req(OrigHeader, Socket,
-						  get_challenge(), false)
-	    end
-    end.
-
-check_and_send_relay(Header, Socket, Func, Arg, "ACK") ->
-    logger:log(debug, "Auth: Always accepting ACK"),
-    apply(Func, [Header, Socket, Arg]);
-check_and_send_relay(Header, Socket, Func, Arg, "CANCEL") ->
-    logger:log(debug, "Auth: Always accepting CANCEL"),
-    apply(Func, [Header, Socket, Arg]);
-check_and_send_relay(Header, Socket, Func, Arg, Method) ->
-    case get_user_verified_proxy(Header, Method) of
-	false ->
-	    siprequest:send_proxyauth_req(Header, Socket, sipauth:get_challenge(), false);
-	stale ->
-	    siprequest:send_proxyauth_req(Header, Socket, sipauth:get_challenge(), true);
-	User ->
-	    apply(Func, [Header, Socket, Arg])
+can_register(Header, Address) ->
+    case local:get_user_verified(Header, "REGISTER") of
+	{authenticated, User} ->
+	    {local:can_use_address(User, Address), User};
+	_ ->
+	    logger:log(debug, "Auth: Registration of address ~p NOT permitted", [Address]),
+	    {false, none}
     end.
