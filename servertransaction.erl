@@ -473,7 +473,7 @@ send_response_statemachine(Method, Status, trying) when Status == 100 ->
 send_response_statemachine(Method, Status, State) when Status == 100 ->
     logger:log(debug, "UAS decision: Requested to send 100 Trying to ~s when in state '~p' - " ++
 	       "ignoring", [Method, State]),
-    {ignore, false, proceeding};
+    {ignore, false, State};
 
 send_response_statemachine(Method, Status, trying) when Status =< 199 ->
     logger:log(debug, "UAS decision: Requested to send 1xx response ~p to ~s when in state 'trying' - " ++
