@@ -17,8 +17,8 @@ recvloop(IoDevice) ->
 		    io:format(IoDevice, Format, Arguments),
 		    io:format(IoDevice, "~n", []);
 		normal ->
-		    io:format("~s ",
-                    [util:sec_to_date(util:timestamp())]),
+		    io:format("~s ~p ",
+                    [util:sec_to_date(util:timestamp()), Pid]),
 		    io:format(Format, Arguments),
 		    io:format("~n", []),
 		    io:format(IoDevice, "~s ",
