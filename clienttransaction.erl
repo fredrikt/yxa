@@ -79,7 +79,7 @@ init([Request, SocketIn, Dst, Branch, Timeout, Parent]) ->
 %%--------------------------------------------------------------------
 handle_call(Request, From, State) ->
     LogTag = State#state.logtag,
-    logger:log(error, "~s: Client transcation received unknown gen_server call :~n~p",
+    logger:log(error, "~s: Client transaction received unknown gen_server call :~n~p",
 	       [LogTag, Request]),
     check_quit({reply, {error, "unknown gen_server call", State}}, From).
 
@@ -230,7 +230,7 @@ check_quit2(Res, From, State) when record(State, state)  ->
 	    Request = State#state.request,
 	    {Method, URI} = {Request#request.method, Request#request.uri},
 	    LogTag = State#state.logtag,
-	    logger:log(debug, "~s: Server transaction (~s ~s) terminating in state '~p', ~s",
+	    logger:log(debug, "~s: Client transaction (~s ~s) terminating in state '~p', ~s",
 		       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
 	    %% If there was a reply to be sent, we must send that before changing Res into
 	    %% a stop.
@@ -354,7 +354,7 @@ process_received_response(Response, State) when record(State, state), record(Res
     NewState1 = stop_resendrequest_timer(State),
     NewState2 = case Method of
 		    "INVITE" ->
-			%% ACK any 3xx, 4xx, 5xx and 6xx responses if they are responses to an INVITE 
+			%% ACK any 3xx, 4xx, 5xx and 6xx responses if they are responses to an INVITE
 			%% and we are in either 'calling' or 'proceeding' state
 			NewState2_1 = ack_non_1xx_or_2xx_response_to_invite(Method, Response, NewState1),
 
@@ -605,12 +605,13 @@ initiate_request(State) when record(State, state) ->
     Branch = State#state.branch,
     Dst = State#state.dst,
     Timeout = State#state.timeout,
-    logger:log(normal, "~s: Sending ~s ~s (~p:~s:~p)", [LogTag, Method, sipurl:print(URI),
-							Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
+    SocketDstStr = lists:concat([Dst#sipdst.proto, ":", Dst#sipdst.addr, ":", Dst#sipdst.port]),
+    logger:log(normal, "~s: Sending ~s ~s (to ~s)", [LogTag, Method, sipurl:print(URI),
+						     SocketDstStr]),
     case transportlayer:send_proxy_request(State#state.socket_in, Request, Dst, ["branch=" ++ Branch]) of
 	{sendresponse, Status, Reason} ->
-	    logger:log(error, "~s: Transport layer failed sending ~s ~s to ~p, asked us to respond ~p ~s",
-		       [LogTag, Method, sipurl:print(URI), Status, Reason]),
+	    logger:log(error, "~s: Transport layer failed sending ~s ~s to ~s, asked us to respond ~p ~s",
+		       [LogTag, Method, sipurl:print(URI), SocketDstStr, Status, Reason]),
 	    init_fake_request_response(Status, Reason, State);
 	{ok, SendingSocket, TLBranch} ->
 	    T1 = sipserver:get_env(timerT1, 500),
@@ -708,11 +709,11 @@ end_invite(State) when record(State, state) ->
 	calling ->
 	    fake_request_timeout(State);
 	proceeding ->
-	    logger:log(debug, "~s: Sending of original request (INVITE ~s) timed out in state 'proceeding' - cancel original request",
-		       [LogTag, sipurl:print(URI)]),
+	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state 'proceeding' - cancel request" ++
+		       "(by starting a separate CANCEL transaction)", [LogTag, sipurl:print(URI)]),
 	    cancel_request(State);
 	_ ->
-	    logger:log(debug, "~s: Sending of original request (INVITE ~s) timed out in state '~s' - ignoring.",
+	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state '~s' - ignoring.",
 		       [LogTag, sipurl:print(URI), SipState]),
 	    State
     end.
@@ -745,14 +746,14 @@ cancel_request(State) when record(State, state) ->
 		    NewState3 = start_cancel_transaction(NewState2),
 		    NewState3;
 		SipState ->
-		    logger:log(debug, "~s: NOT starting CANCEL of previous request (INVITE ~p) since we are in state '~p'",
+		    logger:log(debug, "~s: NOT starting CANCEL transaction for request (INVITE ~p) since we are in state '~p'",
 			       [LogTag, sipurl:print(URI), SipState]),
 		    NewState1
 	    end;
 	_ ->
 	    %% RFC 3261 9.1 says a stateful proxy SHOULD NOT send CANCEL of non-INVITE requests.
 	    %% We enter 'completed' state to collect any final responses that might arrive.
-	    logger:log(debug, "~s: Original request was non-INVITE (~s) - not sending CANCEL. Going into 'completed' state.",
+	    logger:log(debug, "~s: Request was non-INVITE (~s) - not starting CANCEL transaction. Going into 'completed' state.",
 		       [LogTag, Method]),
 	    %% Terminate any resend request timers, and set up TimerK to fire in default 5 seconds,
 	    %% ending the transaction. RFC3261 does not really describe non-INVITE transactions being
@@ -775,7 +776,7 @@ start_cancel_transaction(State) when record(State, state) ->
     logger:log(debug, "~s: initiate_cancel() Sending CANCEL ~s", [LogTag, sipurl:print(URI)]),
     {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
     CancelId = {CSeqNum, "CANCEL"},
-    %% Delete all Via headers. initiate_request() uses send_proxy_request() which 
+    %% Delete all Via headers. initiate_request() uses send_proxy_request() which
     %% will add one for this proxy, and that is the only one that should be in a
     %% CANCEL. Set CSeq method to CANCEL and delete all Require and Proxy-Require
     %% headers. All this according to RFC 3261 9.1 Client Behaviour.
@@ -861,7 +862,7 @@ ack_non_1xx_or_2xx_response_to_invite("INVITE", Response, State) when record(Sta
 generate_ack(Response, State) when record(State, state), record(Response, response), Response#response.status =< 199 ->
     LogTag = State#state.logtag,
     logger:log(debug, "~s: Not ACK-ing response ~p ~s. XXX shouldn't this be a PRACK?",
-	       [LogTag, Response#response.status, Response#response.reason]); 
+	       [LogTag, Response#response.status, Response#response.reason]);
 
 %%
 %% Status =< 699
