@@ -1,5 +1,5 @@
 -module(database_call).
--export([create_call/0, insert_call/4, get_call/1, list_calls/0,
+-export([create/0, create/1, insert_call/4, get_call/1, list_calls/0,
 	 insert_call_unique/4, set_data_type/3, delete_call_type/2, get_call_type/2,
 	 fetch_call/2, fetch_dialogue/2, delete_all_calls/0]).
 
@@ -13,10 +13,16 @@ insert_record(Record) ->
 	  end,
     mnesia:transaction(Fun).
 
-create_call() ->
+create() ->
+    create(servers()).
+
+create(Servers) ->
     mnesia:create_table(call, [{attributes, record_info(fields, call)},
-    			       {ram_copies, [node()]}
+    			       {ram_copies, Servers}
     			      ]).
+
+servers() ->
+    sipserver:get_env(databaseservers).
 
 insert_call(Callid, Type, Headers, Data) ->
     insert_record(#call{callid = Callid, type = Type, headers = Headers,

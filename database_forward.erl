@@ -1,5 +1,5 @@
 -module(database_forward).
--export([create/0, insert/4, fetch/1, list/0, delete/1
+-export([create/0, create/1, insert/4, fetch/1, list/0, delete/1
 	]).
 
 -include("database_forward.hrl").
@@ -15,8 +15,11 @@ insert_record(Record) ->
     mnesia:transaction(Fun).
 
 create() ->
+    create([node()]).
+    
+create(Servers) ->
     mnesia:create_table(forward, [{attributes, record_info(fields, forward)},
-				  {disc_copies, [node()]}
+				  {disc_copies, Servers}
 				 ]).
 
 insert(Number, Forwards, Timeout, Localring) ->
