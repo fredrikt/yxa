@@ -42,7 +42,8 @@ insert_purge_phone(Number, Flags, Class, Expire, Address) ->
 		  Q = query
 			  [E || E <- table(phone),
 				E.number = Number,
-				E.class = Class]
+				E.class = Class,
+				E.address = Address]
 		      end,
 		  A = mnemosyne:eval(Q),
 		  Delete = fun(O) ->
@@ -139,10 +140,13 @@ list_numbers() ->
     mnesia:transaction(F).
     
 get_phone(Number) ->
+    {Meg, Sec, _} = now(),
+    Now = Meg * 1000000 + Sec,
 	F = fun() ->
 		    Q = query
 			    [{E.address, E.flags, E.class, E.expire} ||
-				E <- table(phone), E.number = Number]
+				E <- table(phone), E.number = Number,
+				E.expire > Now]
 			end,
 		    mnemosyne:eval(Q)
 	    end,
