@@ -28,7 +28,7 @@ get_response(Nonce, Method, URI, User, Password) ->
     A2 = hex:to(erlang:md5(Method ++ ":" ++ URI)),
     hex:to(erlang:md5(A1 ++ ":" ++ Nonce ++ ":" ++ A2)).
 
-get_passnumber(Usertext) ->
+get_passnumber(Usertext) when list(Usertext) ->
     {User, Host} = canon_user(Usertext),
     case {get_passnumber_try(User ++ "@" ++ Host), realm()} of
 	{{ok, Res}, _} ->
@@ -42,7 +42,10 @@ get_passnumber(Usertext) ->
 	    end;
 	_ ->
 	    {none, [], [], []}
-    end.
+    end;
+
+get_passnumber(_) ->
+    {none, [], [], []}.    
 
 get_passnumber_try(User) ->
     case phone:get_user(User) of
