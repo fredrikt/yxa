@@ -83,8 +83,7 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 		    end;
 		{stale, _} ->
 		    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
-		    ExtraHeaders = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
-		    transactionlayer:send_response_handler(THandler, 401, "Authentication Required", ExtraHeaders);
+		    transactionlayer:send_challenge(THandler, www, true, none);
 		{{false, eperm}, SipUser} when SipUser /= none ->
 		    logger:log(normal, "~s: incomingproxy: SipUser ~p NOT ALLOWED to REGISTER address ~s",
 				[LogTag, SipUser, sipurl:print(ToURL)]),
@@ -100,9 +99,7 @@ request("REGISTER", URL, Header, Body, Socket, FromIP) ->
 		    end,
 		    % XXX send new challenge (current behavior) or send 403 Forbidden when authentication fails?
 		    logger:log(Prio, "~s -> Authentication FAILED, sending challenge", [LogStr]),
-		    ExtraHeaders = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)},
-		    		    {"Retry-After", ["3"]}],
-		    transactionlayer:send_response_handler(THandler, 401, "Authentication Required", ExtraHeaders);
+		    transactionlayer:send_challenge(THandler, www, false, 3);
 		Unknown ->
 		    logger:log(error, "Register: Unknown result from local:can_register() URL ~p :~n~p",
 		    		[sipurl:print(URL), Unknown]),
@@ -169,8 +166,7 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 		    end;
 		stale ->
 		    logger:log(debug, "Request from homedomain user: STALE authentication, sending challenge"),
-		    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
-		    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
+		    transactionlayer:send_challenge_request(Request, proxy, true, none);
 		false ->
 		    Prio = case keylist:fetch("Proxy-Authenticate", Header) of
 			[] -> debug;
@@ -178,8 +174,7 @@ verify_homedomain_user(Socket, Request, LogStr) ->
 		    end,
 		    logger:log(Prio, "~s -> Request from unauthorized homedomain user, sending challenge",
 		    		[LogStr]),
-		    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
-		    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
+		    transactionlayer:send_challenge_request(Request, proxy, false, none);
 		Unknown ->
 		    logger:log(error, "request: Unknown result from local:get_user_verified_proxy() :~n~p", [Unknown]),
 		    transactionlayer:send_response_request(Request, 500, "Server Internal Error")
@@ -254,13 +249,11 @@ relay_request(THandler, Request, DstURI, LogTag) ->
 	    logger:log(debug, "Relay: STALE authentication, sending challenge"),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication -> 407 Proxy Authentication Required",
 			[LogTag, sipurl:print(DstURI)]),
-	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
-	    transactionlayer:send_response_handler(THandler, 407, "Proxy Authentication Required", ExtraHeaders);
+	    transactionlayer:send_challenge(THandler, proxy, true, none);
 	false ->
 	    logger:log(debug, "Relay: Failed authentication, sending challenge"),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required", [LogTag, sipurl:print(DstURI)]),
-	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
-	    transactionlayer:send_response_handler(THandler, 407, "Proxy Authentication Required", ExtraHeaders);
+	    transactionlayer:send_challenge(THandler, proxy, false, none);
 	Unknown ->
 	    logger:log(error, "relay_request: Unknown result from sipauth:get_user_verified_proxy() :~n~p", [Unknown]),
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
