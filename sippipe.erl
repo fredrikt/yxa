@@ -105,14 +105,21 @@ start2(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout) when recor
 %% No client transaction handler is specified, start a client transaction on the first
 %% element from the destination list, after making sure it is complete.
 start2(Branch, ServerHandler, _, Request, [Dst | DstT], Timeout) when record(Request, request), record(Dst, sipdst) ->
-    DstList = resolve_if_necessary([Dst | DstT]),
-    [FirstDst|_] = DstList,
-    case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, Timeout, self()) of
-    	BranchPid when pid(BranchPid) ->
-	    start3(Branch, ServerHandler, BranchPid, Request, DstList, Timeout);
-	{error, E} ->
-	    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
-	    error
+    case resolve_if_necessary([Dst | DstT]) of
+	[] ->
+	    logger:log(error, "sippipe: Failed starting sippipe, no valid destination(s) found"),
+	    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
+	    error;
+	[FirstDst | DstT] ->
+	    DstList = [FirstDst | DstT],
+	    case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, Timeout, self()) of
+		BranchPid when pid(BranchPid) ->
+		    start3(Branch, ServerHandler, BranchPid, Request, DstList, Timeout);
+		{error, E} ->
+		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
+		    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
+		    error
+	    end
     end.
 
 %% Do piping between a now existing server and client transaction handler.
@@ -338,6 +345,8 @@ get_next_target_branch(In) ->
 %%              record(s) to the input DstList and return the new list
 %% Returns: NewDstList
 %%--------------------------------------------------------------------
+resolve_if_necessary([]) ->
+    [];
 resolve_if_necessary([Dst | T]) when record(Dst, sipdst), Dst#sipdst.proto == undefined; Dst#sipdst.addr == undefined; Dst#sipdst.port == undefined ->
     URI = Dst#sipdst.uri,
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
