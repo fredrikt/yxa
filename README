@@ -16,7 +16,18 @@ and LDAP searches.
 pstnproxy:
 
 Designed as an authentication frontend to an insecure PSTN gateway.
-Can handle rewriting of From: addresses in either direction.
+Supports the expired-draft-only header Remote-Party-Id to signal
+what PSTN phone number to use when sending requests to the PSTN
+gateway, and, if an LDAP server is configured, looks for a Display
+Name to use for calls from the PSTN gateway. Can route calls from
+the PSTN either via ENUM or to a preconfigured SIP gateway.
+
+appserver:
+
+Provides basic forking for now. If a user has multiple active
+contacts, incomingproxy will send requests for that user on to
+appserver which is a statefull proxy and can fork the call to
+all the users registered user agents.
 
 ============
 Installation
@@ -74,6 +85,19 @@ ldap_password			(default: "") LDAP password
 ldap_searchbase			(default: "") LDAP search base
 listenport			(default: 5060) Port that the server
 				should listen to
+myhostnames			(optional) List of IP addresses and/or
+				hostnames of the host you run pstnproxy on.
+				The first entry in the list will be used
+				to symbolize this host in SIP packets
+				(for example in Record-Route and Via headers).
+				If this is not set, the servers IP address
+				will be used instead. Because of this, the
+				first entry will need to be a real hostname for
+				this host, and not a SRV record name even
+				if that SRV record points at this host.
+record_route			(default: false, except for pstnproxy where
+				 default is true) Enable or disable adding
+				Record-Route header to requests.
 
 pstnproxy:
 ----------
@@ -84,28 +108,16 @@ pstngatewaynames		(required) List of IP addresses and/or
 				Incoming requests will be matched against
 				this list when checking if they are from the
 				PSTN gateway or not.
-myhostnames			(required) List of IP addresses and/or
-				hostnames of the host you run pstnproxy on.
-				The first entry in the list will be used
-				to symbolize this host in SIP packets
-				(for example in Record-Route headers)
 classdefs			(default: [{"", unknown}]) Regexps for
 				classifying outgoing phone numbers
 sipproxy			The name of the SIP proxy to route calls
-				from the PSTN gateway to
-rewrite_from			(default: []) Regexps for rewriting
-				SIP From: headers. Usefull to translate
-				SIP URIs to E.164 numbers for correct
-				caller-id in PSTN and vice versa. Be careful
-				to always rewrite things back in the other
-				direction if you use this (meaning: if
-				you rewrite <sip:a@b.c> to <sip:1234@foo.bar>
-				make sure you rewrite <sip:1234@foo.bar>
-				back to <sip:a@b.c>). Note that the current
-				implementation may fail if more than one
-				address results in <sip:1234@foo.bar> since
-				there is no way to know which one to use
-				when rewriting back.
+                                from the PSTN gateway to. This is something
+                                like a default SIP route. If you enable
+                                ENUM in the pstnproxy, ENUM is considered
+                                before sipproxy. If you do not enter a
+				sipproxy, and the number being called is
+				not found using ENUM, 503 Service Unavailable
+				will be returned.
 enum_domainlist			(default: []) List of domains in which to look
 				for NAPTR-records for requests _from_ the
 				PSTN gateway. If you use this, you probably
@@ -120,6 +132,16 @@ internal_to_e164		(default: []) Regexps for rewriting
 				this is only used to query ENUM - NOT for
 				rewriting stuff to E.164 before passing them
 				to the PSTN gateway.
+remote_party_id			(default: false) If you set this to true, then
+				the pstnproxy will try to add information
+				about the caller in a header called
+				Remote-Party-Id. This is not a standard, but
+				current versions of Cisco IOS (12.2.15T)
+				supports it so it is nice to have. If you
+				also configure LDAP for the pstnproxy, this
+				function will try to look up a name to use
+				in calls from the PSTN gateway, but I haven't
+				seen a phone that displays this yet.
 
 incomingproxy:
 --------------
@@ -172,6 +194,8 @@ incomingproxy.config:
                                  ]},
 		  {enum_domainlist, ["e164.arpa"]},
                   {homedomain, ["example.com", "example.net", "example.org"]},
+		  {myhostnames, ["sipserver.example.com", "sip.example.net", "sip.example.org"]},
+		  {appserver, "appserver.example.com:5070"},
                   {ldap_server, "ldap.example.com"}
                  ]}].
 
@@ -194,9 +218,17 @@ pstnproxy.config:
                                   {"^(.+)$", "+468\\1"}
                                  ]},
 	      {enum_domainlist, ["e164.arpa"]},
-	      {rewrite_from, [{"^.*<sip:([1-9].....+)@10.10.1.1>$", "\"PSTN luser\" <sip:0\\1@pstn-gw.example.com>"},
-			      {"^.*<sip:0([1-9].....+)@pstn-gw.example.com>$", "<sip:\\1@10.10.1.1>"}
-                             ]}
+             ]}].
+
+appserver.config:
+-----------------
+[{appserver, [{sipauth_realm, "example.com"},
+	      {sipauth_password, "xubique"},
+	      {logger_logbasename, "/var/log/appserver"},
+	      {databaseservers, ['incomingproxy@sip-incoming.example.com']},
+	      {myhostnames, ["appserver.example.com", "10.10.1.1"]},
+	      {record_route, true},
+	      {listenport, 5070}
              ]}].
 
 To insert an admin user (for bootstrap reasons) type this at an erlang prompt:
