@@ -14,6 +14,7 @@
 	 lookupappserver/1,
 	 lookupdefault/1,
 	 lookuppotn/1,
+	 lookupnumber/1,
 	 lookupenum/1,
 	 lookuppstn/1,
 	 isours/1,
@@ -177,6 +178,9 @@ lookupdefault(URL) ->
 lookuppotn(Number) ->
     lookup:lookuppotn(Number).
 
+lookupnumber(Number) ->
+    lookup:lookupnumber(Number).
+
 lookupenum(Number) ->
     lookup:lookupenum(Number).
 
@@ -192,12 +196,21 @@ homedomain(Domain) ->
 get_remote_party_number(URL, DstHost) ->
     lookup:get_remote_party_number(URL, DstHost).
 
+-define(E164toInternal, [{"^\\+46816([0-9][0-9][0-9][0-9])\$",    "\\1"},
+			 {"^\\+468674(7[0-9][0-9][0-9])\$",       "\\1"},
+			 {"^\\+4685537(8[0-9][0-9][0-9]+)\$",   "\\1"}]).
+
 format_number_for_remote_party_id(Number, ToURI, "sip1.telia.com") ->
     rewrite_potn_to_e164(Number);
 format_number_for_remote_party_id(Number, ToURI, "sip2.telia.com") ->
     rewrite_potn_to_e164(Number);
 format_number_for_remote_party_id(Number, ToURI, DstHost) ->
-    Number.
+    case util:regexp_rewrite(Number, ?E164toInternal) of
+	nomatch ->
+	    Number;
+	Match ->
+	    Match
+    end.
 
 get_remote_party_name(Key, DstHost) ->
     case rewrite_potn_to_e164(Key) of
@@ -247,6 +260,8 @@ get_classes_for_user("ft.sip1") ->
     [national,mobile,internal];
 get_classes_for_user("ft.sip2") ->
     [national,mobile,internal];
+get_classes_for_user("wisin.sip1") ->
+    [national,mobile,internal,international];
 get_classes_for_user("lha@it.su.se") ->
     [national,mobile,internal,international];
 get_classes_for_user("lha2@it.su.se") ->
@@ -254,6 +269,8 @@ get_classes_for_user("lha2@it.su.se") ->
 get_classes_for_user("roland@it.su.se") ->
     [national,mobile,internal,international];
 get_classes_for_user("wikm@it.su.se") ->
+    [national,mobile,internal];
+get_classes_for_user("jelun@it.su.se") ->
     [national,mobile,internal];
 get_classes_for_user("swold@it.su.se") ->
     [national,mobile,internal];
