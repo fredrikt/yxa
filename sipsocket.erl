@@ -1,7 +1,8 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : Transport layer processes supervisor.
+%%% Descrip.: Transport layer processes supervisor, and transport
+%%%           layer interface functions.
 %%%
 %%% Created : 21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -80,11 +81,11 @@ init([]) ->
 
 %%--------------------------------------------------------------------
 %% Function: send(Socket, Proto, Host, Port, Message)
-%%           Socket = sipsocket record()
-%%           Proto  = atom(), (at least tcp | tcp6 | udp | udp6 | tls)
-%%           Host   = string()
-%%           Port   = integer() (or list(), through compability code)
-%%           Message = string()
+%%           Socket  = sipsocket record()
+%%           Proto   = atom(), (at least tcp|tcp6|udp|udp6|tls)
+%%           Host    = string()
+%%           Port    = integer()
+%%           Message = term()
 %% Descrip.: Locate a sipsocket module through the Socket record(),
 %%           and then ask that sipsocket module to send Message to
 %%           Host, port Port using protocol Proto. Currently, none of
@@ -94,17 +95,17 @@ init([]) ->
 %%           Res = term(), result of apply() but typically
 %%                         ok | {error, E}
 %%--------------------------------------------------------------------
-send(Socket, Proto, Host, Port, Message) when list(Port) ->
-    send(Socket, Proto, Host, list_to_integer(Port), Message);
-send(Socket, Proto, Host, Port, Message) when record(Socket, sipsocket), integer(Port) ->
-    apply(Socket#sipsocket.module, send, [Socket, Proto, Host, Port, Message]).
+send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_atom(Proto),
+					      is_list(Host), is_integer(Port) ->
+    SipSocketM = Socket#sipsocket.module,
+    SipSocketM:send(Socket, Proto, Host, Port, Message).
 
 %%--------------------------------------------------------------------
 %% Function: get_socket(Module, Proto, Host, Port)
 %%           Module = atom()
 %%           Proto  = atom(), (at least tcp | tcp6 | udp | udp6 | tls)
 %%           Host   = string()
-%%           Port   = integer() (or list(), through compability code)
+%%           Port   = integer()
 %% Descrip.: Get a socket, cached or new, useable to send messages to
 %%           Host on port Port using protocol Proto from sipsocket
 %%           module Module.
@@ -112,10 +113,8 @@ send(Socket, Proto, Host, Port, Message) when record(Socket, sipsocket), integer
 %%           Res = term(), result of apply() but typically a
 %%                         sipsocket record()
 %%--------------------------------------------------------------------
-get_socket(Module, Proto, Host, Port) when atom(Module), atom(Proto), list(Port) ->
-    get_socket(Module, Proto, Host, list_to_integer(Port));
-get_socket(Module, Proto, Host, Port) when atom(Module), atom(Proto) ->
-    apply(Module, get_socket, [Proto, Host, Port]).
+get_socket(Module, Proto, Host, Port) when is_atom(Module), is_atom(Proto), is_integer(Port) ->
+    Module:get_socket(Proto, Host, Port).
 
 %%--------------------------------------------------------------------
 %% Function: is_reliable_transport(Socket)
@@ -125,7 +124,7 @@ get_socket(Module, Proto, Host, Port) when atom(Module), atom(Proto) ->
 %%           Res = term(), result of apply() but typically
 %%                         true | false
 %%--------------------------------------------------------------------
-is_reliable_transport(Socket) when record(Socket, sipsocket) ->
+is_reliable_transport(Socket) when is_record(Socket, sipsocket) ->
     apply(Socket#sipsocket.module, is_reliable_transport, [Socket]).
 
 proto2module(tcp)  -> sipsocket_tcp;
@@ -135,7 +134,7 @@ proto2module(tls6) -> spisocket_tcp;
 proto2module(udp)  -> sipsocket_udp;
 proto2module(udp6) -> sipsocket_udp.
     
-proto2viastr(Socket) when record(Socket, sipsocket) ->
+proto2viastr(Socket) when is_record(Socket, sipsocket) ->
     proto2viastr(Socket#sipsocket.proto);
 proto2viastr(tcp)  -> "SIP/2.0/TCP";
 proto2viastr(tcp6) -> "SIP/2.0/TCP";
@@ -148,7 +147,7 @@ viaproto2proto("SIP/2.0/TCP") -> tcp;
 viaproto2proto("SIP/2.0/TLS") -> tls;
 viaproto2proto("SIP/2.0/UDP") -> udp.
 
-is_good_socket(Socket) when record(Socket, sipsocket) ->
+is_good_socket(Socket) when is_record(Socket, sipsocket) ->
     case util:safe_is_process_alive(Socket#sipsocket.pid) of
 	{true, _} ->
 	    true;
