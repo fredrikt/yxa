@@ -17,7 +17,8 @@ exec_prefix='${prefix}'
 builddir = @builddir@
 local_file = @local_file@
 
-ERLC = erlc
+ERLC = @ERLC@
+ERL = @ERL@
 
 INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
@@ -27,14 +28,15 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 
 
 systools_make_script = \
-	erl -noshell -run systools make_script $* -run init stop
+	$(ERL) -noshell -run systools make_script $* -run init stop
 
 create_start_script = \
 	sed -e 's!@PROGRAMNAME@!$*!' \
 	    -e 's!@CONFIGDIR@!$(configdir)!' \
 	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
 	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
-	    -e 's!@BUILDDIR@!$(builddir)!' < $(srcdir)/init.sh.in > $@.new && \
+	    -e 's!@erl@!$(ERL)!' \
+	    -e 's!@beamdir@!$(beamdir)!' < $(srcdir)/init.sh.in > $@.new && \
 	chmod +x $@.new && \
 	mv $@.new $@
 
