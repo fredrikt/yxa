@@ -342,7 +342,8 @@ query_ldapclient(Query) ->
 		    logger:log(error, "Directory: LDAP client ~p returned error : ~p", [Pid, E]),
 		    error;
 		{'EXIT', {timeout, _}} ->
-		    logger:log(error, "Directory: LDAP client ~p timed out", [Pid]),
+		    logger:log(error, "Directory: LDAP client ~p timed out, killing it", [Pid]),
+		    exit(Pid, "You failed to answer a query"),
 		    error;
 		Unknown ->
 		    logger:log(error, "Directory: LDAP client ~p returned unknown result : ~p", [Pid, Unknown]),
