@@ -4,7 +4,7 @@
 	 insert_purge_phone/5, insert_purge_class_phone/5,
 	 purge_class_phone/2, expired_phones/0, delete_record/1,
 	 delete_user/1, set_user_password/2, set_user_flags/2,
-	 set_user_numbers/2, set_user_classes/2]).
+	 set_user_numbers/2, set_user_classes/2, insert_user_or_password/2]).
 
 -include("phone.hrl").
 
@@ -85,6 +85,25 @@ purge_class_phone(Number, Class) ->
 insert_user(User, Password, Number, Flags, Classes) ->
     insert_record(#user{user = User, password = Password, number = Number,
 			flags = Flags, classes = Classes}).
+
+insert_user_or_password(User, Password) ->
+    Fun = fun() ->
+		  Q = query
+			  [E || E <- table(user),
+				E.user = User]
+		      end,
+		  case mnemosyne:eval(Q) of
+		      [] ->
+			  mnesia:write(#user{user = User, password = Password,
+					     number = [], flags = [], classes = []});
+		      [Entry] ->
+			  mnesia:write(Entry#user{password = Password});
+		      _ ->
+			  mnesia:abort(illegal)
+		  end
+	  end,
+    mnesia:transaction(Fun).
+
 
 list_phones() ->
     F = fun() ->
