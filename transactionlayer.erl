@@ -296,7 +296,14 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state) -
 				 %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
 				 %% transaction that is being handled by 'assuming the method is anything but
 				 %% CANCEL or ACK'.
-				 Invite = {"INVITE", URI, Header, ""},
+				 {CSeqNum, _} = sipheader:cseq(keylist:fetch("CSeq", Header)),
+				 %% When looking for the corresponding INVITE transaction, we have to change the
+				 %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
+				 %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
+				 %% probably an error in RFC3261 #9.2 that refers to #17.2.3 which does not say that
+				 %% CANCEL matches a transaction even though the CSeq method differs)
+				 IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
+				 Invite = {"INVITE", URI, IHeader, ""},
 				 case get_server_transaction_pid(request, Invite, State#state.tstatelist) of
 				     InvitePid when pid(InvitePid) ->
 					 logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
@@ -341,7 +348,7 @@ get_server_transaction_pid(Type, RequestOrResponse, TStateList) ->
     case get_server_transaction(Type, RequestOrResponse, TStateList) of
 	none ->
 	    none;
-	TState ->
+	TState when record(TState, transactionstate) ->
 	    case transactionstatelist:extract([pid], TState) of
 		[TPid] when pid(TPid) ->
 		    TPid;
