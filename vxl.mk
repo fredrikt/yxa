@@ -1,4 +1,4 @@
-VPATH=/afs/e.kth.se/home/2002/map/sip/erlang/kth.se
+VPATH = $(srcdir)
 
 BEAM = incomingproxy.beam pstnproxy.beam logger.beam util.beam siputil.beam sippacket.beam keylist.beam sipurl.beam siprequest.beam sipheader.beam phone.beam sipauth.beam siphost.beam dnsutil.beam admin_www.beam hex.beam directory.beam eldap.beam LDAPv3.beam appserver.beam sipanswer.beam rtp.beam sdp.beam dtmf.beam sound.beam group_regexp.beam sipclient.beam database_call.beam sipserver.beam database_regexproute.beam
 
@@ -14,20 +14,7 @@ clean:
 sslkey:
 	mkdir ssl || true
 	chmod 700 ssl
-	echo "[ req ]" > ssl/ssl.config
-	echo output_password=foobar >> ssl/ssl.config
-	echo prompt=no >> ssl/ssl.config
-	echo default_bits=1024 >> ssl/ssl.config
-	echo default_md=sha1 >> ssl/ssl.config
-	echo default_days=2002 >> ssl/ssl.config
-	echo default_keyfile=privkey.pem >> ssl/ssl.config
-	echo distinguished_name=req_distinguished_name >> ssl/ssl.config
-	echo "[ req_distinguished_name ]" >> ssl/ssl.config
-	echo "C=SE" >> ssl/ssl.config
-	echo "L=Stockholm" >> ssl/ssl.config
-	echo "O=KTH" >> ssl/ssl.config
-	echo "OU=ITE" >> ssl/ssl.config
-	echo "CN=`hostname`" >> ssl/ssl.config
+	cp $(SRCDIR)/ssl.config ssl/ssl.config
 	cd ssl && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
 	cd ssl && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
 	cd ssl && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
