@@ -31,7 +31,7 @@ erl_FILES = \
 	event_handler.erl \
 	event_handler_csyslog.erl
 
-imported_hrl_FILES = \
+imported_hrl_FILES = ../siprecords.hrl \
 
 
 hrl_FILES = \

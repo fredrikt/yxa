@@ -30,7 +30,7 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 erl_FILES = \
 	cpl_db.erl
 
-imported_hrl_FILES = \
+imported_hrl_FILES = ../siprecords.hrl \
 
 
 hrl_FILES =
