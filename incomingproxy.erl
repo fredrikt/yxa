@@ -99,7 +99,7 @@ do_request(Method, URL, OrigHeader, Body, Socket, FromIP) ->
 	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method);
 	{forward, Host, Port} ->
 	    logger:log(normal, "~s -> Forward to ~p", [LogStr, sipurl:print_hostport(Host, Port)]),
-	    [AddRoute] = sipheader:contact_print([{none, {none, none, Host, Port, ["lr=true"]}}]),
+	    AddRoute = sipheader:contact_print([{none, {none, none, Host, Port, ["lr=true"]}}]),
 	    NewHeader = keylist:prepend({"Route", AddRoute}, Header),
 	    siprequest:send_proxy_request(NewHeader, Socket, {Method, URL, Body, []});
 	_ ->

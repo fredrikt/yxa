@@ -154,7 +154,7 @@ send_proxy_request(Header, Socket, {Method, ReqURI, Body, Parameters}) ->
     end,
     check_valid_proxy_request(Method, Header),
     ViaHostname = myhostname(),
-    [Viaadd] = sipheader:via_print([{"SIP/2.0/UDP",
+    Viaadd = sipheader:via_print([{"SIP/2.0/UDP",
 				     {ViaHostname,
 				      default_port(sipserver:get_env(listenport, none))},
 				     Parameters}]),
@@ -222,7 +222,7 @@ add_record_route(Hostname, Port, Header) ->
 	[CRoute | _] ->
 	    Header;
 	_ ->
-	    keylist:prepend({"Record-Route", Route}, Header)
+	    keylist:prepend({"Record-Route", [Route]}, Header)
     end.
 add_record_route(Header) ->
     add_record_route(myhostname(), sipserver:get_env(listenport, none), Header).

@@ -397,7 +397,7 @@ make_response(Status, Reason, OrigRequest) ->
     % we sent it with send_response() instead of send_proxy_response() but it is easier
     % to just add an extra Via that will be stripped by send_proxy_response() and don't
     % have to make a difference in how we send out responses.
-    [PlaceHolderVia] = sipheader:via_print([{"SIP/2.0/UDP",
+    PlaceHolderVia = sipheader:via_print([{"SIP/2.0/UDP",
 				     {siprequest:myhostname(),
 				      siprequest:default_port(sipserver:get_env(listenport, none))},
 				     []}]),
