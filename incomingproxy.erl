@@ -87,7 +87,7 @@ lookupdefault(User) ->
 	    case enumlookup(User) of
 		none ->
 		    logger:log(debug, "Routing: Proxying to ~p @ ~p (my defaultroute)~n", [User, sipserver:get_env(defaultroute, "")]),
-		    {proxy, {User, none, sipserver:get_env(defaultroute), "5060", []}};
+		    {proxy, {User, none, sipserver:get_env(defaultroute), none, []}};
 		URL ->
 		    logger:log(debug, "Routing: ENUM lookup resulted in ~p~n", [URL]),
 		    {relay, sipurl:parse(URL)}

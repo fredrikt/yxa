@@ -18,16 +18,21 @@ send_response_to(Socket, Code, Text, Dest, Header, Body) ->
     {Protocol, {Host, Port}, Parameters} = Dest,
     ok = gen_udp:send(Socket, Host, list_to_integer(Port), Message).
 
+default_port(none) ->
+    "5060";
+default_port(Port) ->
+    Port.
+
 url_to_hostport({User, Pass, InHost, InPort, Parameters}) ->
     case dnsutil:siplookup(InHost) of
 	{error, nxdomain} ->
-	    dnsutil:get_ip_port(InHost, InPort);
+	    dnsutil:get_ip_port(InHost, default_port(InPort));
 	{error, What} ->
 	    {error, What};
 	{Host, Port} ->
 	    dnsutil:get_ip_port(Host, integer_to_list(Port));
 	none ->
-	    dnsutil:get_ip_port(InHost, InPort)
+	    dnsutil:get_ip_port(InHost, default_port(InPort))
     end.
 
 rewrite_route(Header, Dest) ->

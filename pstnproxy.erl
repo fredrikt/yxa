@@ -56,18 +56,18 @@ request(Method, URL, Header, Body, Socket, FromIP) ->
 
 toSIPrequest(Method, URL, Header, Body, Socket) ->
     {User, Pass, Host, Port, Parameters} = URL,
-    Newlocation = {User, none, sipserver:get_env(sipproxy), "5060", []},
+    Newlocation = {User, none, sipserver:get_env(sipproxy), none, []},
     Route = "<" ++ sipurl:print({User, Pass, Host, Port,
 				 ["maddr=" ++ siphost:myip()]}) ++ ">",
     Newheaders = keylist:append({"Record-route", Route}, Header),
     siprequest:send_proxy_request(Newheaders, Socket, {Method, Newlocation, Body, []}).
 
 toPSTNrequest(Method, Phone, Header, Body, Socket) ->
-    Newlocation = {Phone, none, lists:nth(1, sipserver:get_env(pstngatewaynames)), "5060", []},
+    Newlocation = {Phone, none, lists:nth(1, sipserver:get_env(pstngatewaynames)), none, []},
     {_, FromURI} = sipheader:to(keylist:fetch("From", Header)),
     {Fromphone, _, _, _, _} = FromURI,
     Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
-    Route = "<" ++ sipurl:print({Phone, none, lists:nth(1, sipserver:get_env(myhostnames)), "5060",
+    Route = "<" ++ sipurl:print({Phone, none, lists:nth(1, sipserver:get_env(myhostnames)), none,
 				 ["maddr=" ++ siphost:myip()]}) ++ ">",
     Newheaders = keylist:append({"Record-route", Route}, Header),
     sipauth:check_and_send_auth(Header, Newheaders, Socket, Fromphone, Phone,

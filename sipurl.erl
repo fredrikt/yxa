@@ -56,5 +56,5 @@ parse_hostport(Hostport) ->
 	[Host, Port] ->
 	    {Host, Port};
 	[Host] ->
-	    {Host, "5060"}
+	    {Host, none}
     end.
