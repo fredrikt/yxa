@@ -68,7 +68,8 @@ send_proxy_response(Socket, Response)
 
 %%--------------------------------------------------------------------
 %% Function: send_proxy_request(Socket, Request, Dst, ViaParameters)
-%%           SrvTHandler   = thandler record() | none
+%%           Socket        = sipsocket record() | none, socket to use
+%%                           for sending this request 
 %%           Request       = request record()
 %%           Dst           = sipdst record()
 %%           ViaParameters = list() of {key, value} tuple()
