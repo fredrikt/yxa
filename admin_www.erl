@@ -8,13 +8,13 @@
 -include("database_regexproute.hrl").
 
 start(normal, Args) ->
-    Pid = spawn(admin_www, start, [sipserver:get_env(httpd_config)]),
+    Pid = sipserver:safe_spawn(admin_www, start, [sipserver:get_env(httpd_config)]),
     {ok, Pid}.
 
 start(ConfigFile) ->
     mnesia:start(),
-    logger:start(),
-    directory:start(),
+    logger:start_link(),
+    directory:start_link(),
     mnesia:change_config(extra_db_nodes, sipserver:get_env(databaseservers)),
     {Message, Args} = case mnesia:wait_for_tables([phone,user], infinity) of
 			  ok ->
@@ -30,6 +30,8 @@ sleep() ->
     timer:sleep(1000000),
     sleep().
 
+username_to_uid("*") ->
+    "&nbsp;";
 username_to_uid(Username) ->
     case local:get_users_for_address_of_record(Username) of
 	none ->
@@ -40,6 +42,8 @@ username_to_uid(Username) ->
 	    "error"
     end.
 
+username_to_cn("*") ->
+    "&nbsp;";
 username_to_cn(Username) ->
     Res = directory:lookup_mail2cn(Username),
     case Res of
