@@ -152,7 +152,8 @@ handle_cast({connect_to_remote, Proto, Host, Port, GenServerFrom}, State) when S
 					      tls6 ->
 						  {ssl, ssl, lists:append(?SOCKETOPTS, [inet6])}
 			      end,
-    {TimeSpent, ConnectRes} = timer:tc(SocketModule, connect, [Host, Port, Options, ConnectTimeout]),
+    Host2 = util:remove_v6_brackets(Host),
+    {TimeSpent, ConnectRes} = timer:tc(SocketModule, connect, [Host2, Port, Options, ConnectTimeout]),
     logger:log(debug, "TCP connection: Extra debug: Time spent connecting to ~s:~p (~p) : ~p ms",
 	       [Host, Port, Proto, ConnectTimeout div 1000]),
     case ConnectRes of
