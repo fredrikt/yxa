@@ -102,7 +102,7 @@ to_list(Norm) ->
 to_string_list(Norm) when is_record(Norm, url_param) ->
     F = fun(E) ->
 		case E of
-		    %% XXX compability hack - this is not correct according to the specification
+		    %% XXX compatibility hack - this is not correct according to the specification
 		    {"lr", none} ->
 			"lr=true";
 		    {Name, none} ->
