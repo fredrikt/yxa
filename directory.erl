@@ -2,6 +2,15 @@
 -export([ldapsearch/4, lookup_mail2tel/1, lookup_mail2uid/1, lookup_mail2cn/1]).
 
 ldapsearch(Server, Type, In, Attribute) ->
+    case catch ldapsearch_unsafe(Server, Type, In, Attribute) of
+	{'EXIT', E} ->
+	    logger:log(error, "=ERROR REPORT==== from ldapsearch :~n~p", [E]),
+	    none;
+	Result ->
+	    Result
+    end.
+
+ldapsearch_unsafe(Server, Type, In, Attribute) ->
     {ok, Handle} = eldap:open([Server], []),
     ok = eldap:simple_bind(Handle,
 			   sipserver:get_env(ldap_username, ""),
