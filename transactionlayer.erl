@@ -506,7 +506,12 @@ store_stateless_response_branch(TH, Branch, Method) when record(TH, thandler) ->
     end.
 
 is_good_transaction(TH) when record(TH, thandler) ->
-    util:safe_is_process_alive(TH#thandler.pid);
+    case util:safe_is_process_alive(TH#thandler.pid) of
+	{true, _} ->
+	    true;
+	_ ->
+	    false
+    end;
 is_good_transaction(_) ->
     false.
 
