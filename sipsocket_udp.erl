@@ -91,7 +91,7 @@ start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, 
 	{ok, Socket} ->
 	    Local = get_localaddr(Socket, "0.0.0.0"),
 	    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp, pid=self(), data={Local, none}},
-	    NewSocketList = socketlist:add({listener, udp}, self(), Local, none, SipSocket, 
+	    NewSocketList = socketlist:add({listener, udp, Port}, self(), udp, Local, none, SipSocket, 
 					   0, State#state.socketlist),
 	    start_listening(T, Port, State#state{socket=Socket, socketlist=NewSocketList});
 	{error, Reason} ->
@@ -106,7 +106,7 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 		{ok, Socket} ->
 		    Local = get_localaddr(Socket, "[::]"),
 		    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp6, pid=self(), data={Local, none}},
-		    NewSocketList = socketlist:add({listener, udp6}, self(), Local, none, SipSocket, 
+		    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket, 
 						   0, State#state.socketlist),
 		    start_listening(T, Port, State#state{socket6=Socket, socketlist=NewSocketList});
 		{error, Reason} ->
@@ -148,7 +148,7 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 handle_call({get_socket, Proto, _Host, _Port}, _From, State) when is_atom(Proto) ->
     %% sipsocket_udp is currently not multi-socket, we just have a singe UDP socket and that is 'listener'
     %% for each Proto.
-    Id = {listener, Proto},
+    Id = {listener, Proto, sipserver:get_listenport(Proto)},
     case socketlist:get_using_id(Id, State#state.socketlist) of
 	[] ->
 	    logger:log(error, "Sipsocket UDP: Failed fetching socket with id '~p' from list :~n~p",
