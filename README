@@ -423,7 +423,7 @@ sipuserdb_file configuration parameters :
 sipuserdb_file_filename		(required) Filename (including path) of
 				your user database. See above (section
 				Examples) for format of this file.
-sipuserdb_file_refresh_interval	(default: 60) Interval (in seconds) between
+sipuserdb_file_refresh_interval	(default: 15) Interval (in seconds) between
 				checks for updated user database file.
 
 
@@ -478,3 +478,12 @@ If you are using Linux, then you will need to
 since Yxa wants to use separate sockets for v6 and v4. IPv6 support has only
 been tested on Linux 2.4.x where x >= 20.
 
+Note on Erlang OTP R10B-0 and R10B-1 :
+The resolver order was changed in R10B, so now Erlang primarily tries to use
+the 'native' resolver (meaning a C port driver) for DNS resolution. 
+Unfortunately, this C port driver only handles getipnodebyname() and not
+getaddrinfo(). The latter is a POSIX standard, and the one that should be used.
+This means that you might not get IPv6 addresses back from
+dnsutil:get_ip_port(), which in turn means Yxa won't make outgoing connectios
+to IPv6 addresses. This is a problem with some versions of Linux (for example,
+RH7.3 to RH9 based systems).
