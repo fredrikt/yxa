@@ -199,7 +199,7 @@ fetch_dialogue(DialogueID, Type) ->
 %% Returns :
 %%--------------------------------------------------------------------
 fetch_call(Header, Type) ->
-    DialogueID = sipheader:dialogueid(Header),
+    DialogueID = sipheader:dialogid(Header),
     case fetch_dialogue(DialogueID, Type) of
 	{_, Call} ->
 	    Call;
