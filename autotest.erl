@@ -40,7 +40,8 @@
 		       contact,
 		       sipheader,
 		       siprequest,
-		       sippacket
+		       sippacket,
+		       sipserver
 		      ]).
 
 %%====================================================================
