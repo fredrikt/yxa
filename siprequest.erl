@@ -405,7 +405,7 @@ stateless_generate_branch(OrigURI, Header) ->
 		"z9hG4bK" ++ RestOfBranch ->
 		    %% The previous hop has put a RFC3261 branch in it's Via. Use that,
 		    %% togehter with our nodename as branch.
-		    In = lists:flatten(lists:concat([node(), "-rbranch-", RestOfBranch])),
+		    In = lists:concat([node(), "-rbranch-", RestOfBranch]),
 		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)};
 		_ ->
 		    %% No branch, or non-RFC3261 branch
@@ -414,8 +414,8 @@ stateless_generate_branch(OrigURI, Header) ->
 		    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
 		    CallId = keylist:fetch('call-id', Header),
 		    {CSeqNum, _} = sipheader:cseq(keylist:fetch('cseq', Header)),
-		    In = lists:flatten(lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
-						     "-callid-", CallId, "-cseqnum-", CSeqNum])),
+		    In = lists:concat([node(), "-uri-", OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
+				       "-callid-", CallId, "-cseqnum-", CSeqNum]),
 		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)}
 	    end;
 	_ ->
@@ -431,7 +431,9 @@ stateless_generate_branch(OrigURI, Header) ->
 %% Returns : Result of make_3261_token()
 %%--------------------------------------------------------------------
 make_base64_md5_token(In) ->
-    Out = string:strip(httpd_util:encode_base64(binary_to_list(erlang:md5(In))), right, $=),
+    MD5 = binary_to_list(erlang:md5(In)),
+    %% remove the trailing == from the result of encode_base64()
+    Out = string:strip(httpd_util:encode_base64(MD5), right, $=),
     make_3261_token(Out).
 
 %% RFC 3261 chapter 25 BNF notation of token :
@@ -509,12 +511,12 @@ get_loop_cookie(Header, OrigURI, Proto) ->
 				       {myhostname(), sipserver:get_listenport(Proto)}
 			       end,
     TopViaSentBy = sipurl:print_hostport(TopViaHost, TopViaPort),
-    In = lists:flatten(lists:concat([OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
-				     "-callid-", CallId, "-cseqnum-", CSeqNum,
-				     "-preq-", ProxyReq, "-pauth-", ProxyAuth,
-				     "-route-", Route, "-topvia-", TopViaSentBy])),
+    In = lists:concat([OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
+		       "-callid-", CallId, "-cseqnum-", CSeqNum,
+		       "-preq-", ProxyReq, "-pauth-", ProxyAuth,
+		       "-route-", Route, "-topvia-", TopViaSentBy]),
     Out = make_base64_md5_token(In),
-    logger:log(debug, "Siprequest: Created loop cookie ~p from input :~n~p", [Out, In]),
+    logger:log(debug, "Siprequest: Created loop cookie ~p from input :~n'~s'", [Out, In]),
     Out.
 
 %%--------------------------------------------------------------------
@@ -748,7 +750,7 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
 binary_make_message(BinLine1, Header, BinBody) when is_binary(BinLine1), is_record(Header, keylist),
 						    is_binary(BinBody) ->
     BinHeaders = sipheader:build_header_binary(Header),
-    concat_binary([BinLine1, 13, 10, BinHeaders, 13, 10, BinBody]).
+    list_to_binary([BinLine1, 13, 10, BinHeaders, 13, 10, BinBody]).
 
 %%--------------------------------------------------------------------
 %% Function: set_request_body(Request, Body)
