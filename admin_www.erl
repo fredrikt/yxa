@@ -29,7 +29,7 @@ sleep() ->
     sleep().
 
 username_to_uid(Username) ->
-    case directory:ldapmailsearch(Username ++ "@kth.se", "uid") of
+    case directory:lookup_mail2uid(Username ++ "@kth.se") of
 	 none ->
 	    "&nbsp;";
 	String ->
@@ -37,7 +37,7 @@ username_to_uid(Username) ->
     end.
 
 username_to_cn(Username) ->
-    case directory:ldapmailsearch(Username ++ "@kth.se", "cn") of
+    case directory:lookup_mail2cn(Username ++ "@kth.se") of
 	 none ->
 	    "&nbsp;";
 	String ->

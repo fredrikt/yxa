@@ -8,7 +8,7 @@ sipuser(URL) ->
 lookup_homedomain_url(URL) ->
     {User, Pass, Host, Port, Parameters} = URL,
     Mail = User ++ "@" ++ Host,
-    case directory:ldapmailsearch(Mail, "uid") of
+    case directory:lookup_mail2uid(Mail) of
         none ->
             lookupkthid_address(Mail);
         KTHid ->
