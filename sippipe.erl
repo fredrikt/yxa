@@ -3,13 +3,13 @@
 %%% Description : Try a given set of destinations sequentially
 %%%               until we get a final response from one or them,
 %%%               or have no destinations left to try.
-%%%               
+%%%
 %%% Created :  20 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 
 -module(sippipe).
 -export([start/5]).
 
--record(state, {branch, serverhandler, clienthandler, request, dstlist, timeout, starttime, endtime, warntime}).
+-record(state, {branch, serverhandler, clienthandler, request, dstlist, timeout, starttime, endtime, warntime, approxmsgsize}).
 
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
@@ -109,7 +109,7 @@ guarded_start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(R
 			Branch ->
 			    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout)
 		    end
-	    end	
+	    end
     end.
 
 %%
@@ -117,7 +117,8 @@ guarded_start(ServerHandler, ClientPid, Request, DstList, Timeout) when record(R
 %%
 guarded_start2(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout) when record(Request, request), ClientPid /= none ->
     %% A client pid was supplied to us, go to work
-    final_start(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout);
+    {ok, _, ApproxMsgSize} = siprequest:check_proxy_request(Request),
+    final_start(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout, ApproxMsgSize);
 
 %%
 %% ClientPid == none
@@ -126,7 +127,8 @@ guarded_start2(Branch, ServerHandler, _, Request, [DstIn | DstInT], Timeout) whe
     %% No client transaction handler is specified, start a client transaction on the first
     %% element from the destination list, after making sure it is complete.
     DstListIn = [DstIn | DstInT],
-    case resolve_if_necessary(DstListIn) of
+    {ok, _, ApproxMsgSize} = siprequest:check_proxy_request(Request),
+    case resolve_if_necessary(DstListIn, ApproxMsgSize) of
 	[] ->
 	    logger:log(error, "sippipe: Failed starting sippipe, no valid destination(s) found"),
 	    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
@@ -135,7 +137,7 @@ guarded_start2(Branch, ServerHandler, _, Request, [DstIn | DstInT], Timeout) whe
 	    DstList = [FirstDst | DstT],
 	    case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch, Timeout, self()) of
 		BranchPid when pid(BranchPid) ->
-		    final_start(Branch, ServerHandler, BranchPid, Request, DstList, Timeout);
+		    final_start(Branch, ServerHandler, BranchPid, Request, DstList, Timeout, ApproxMsgSize);
 		{error, E} ->
 		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
 		    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
@@ -144,10 +146,10 @@ guarded_start2(Branch, ServerHandler, _, Request, [DstIn | DstInT], Timeout) whe
     end.
 
 %% Do piping between a now existing server and client transaction handler.
-final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout) when record(Request, request) ->
+final_start(Branch, ServerHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize) when record(Request, request) ->
     StartTime = util:timestamp(),
     State=#state{branch=Branch, serverhandler=ServerHandler, clienthandler=ClientPid,
-		 request=Request, dstlist=DstList,
+		 request=Request, dstlist=DstList, approxmsgsize=ApproxMsgSize,
 		 timeout=Timeout, endtime = StartTime + Timeout, warntime = StartTime + 300},
     logger:log(debug, "sippipe: All preparations finished, entering pipe loop"),
     loop(State).
@@ -295,7 +297,8 @@ start_next_client_transaction(State) when record(State, state) ->
 		       [NewBranch]),
 	    Request = State#state.request,
 	    Timeout = State#state.timeout,
-	    NewDstList = resolve_if_necessary(DstList),
+	    ApproxMsgSize = State#state.approxmsgsize,
+	    NewDstList = resolve_if_necessary(DstList, ApproxMsgSize),
 	    [FirstDst | _] = NewDstList,
 	    %% XXX ideally we should not try to contact the same host over UDP, when
 	    %% we receive a transport layer error for TCP, if there were any other
@@ -320,7 +323,7 @@ start_next_client_transaction(State) when record(State, state) ->
 %%--------------------------------------------------------------------
 adopt_st_and_get_branch(TH) ->
     case transactionlayer:adopt_server_transaction_handler(TH) of
-        {error, E} ->    
+        {error, E} ->
             logger:log(error, "sippipe: Could not adopt server transaction handler ~p : ~p", [TH, E]),
 	    error;
 	_ ->
@@ -360,37 +363,37 @@ get_next_target_branch(In) ->
 	    end
     end.
 
-%% Function: resolve_if_necessary/1
+%% Function: resolve_if_necessary/2
 %% Description: Look at the first element of the input DstList. If it
 %%              is a URI instead of a sipdst record, then resolve the
 %%              URI into sipdst record(s) and prepend the new
 %%              record(s) to the input DstList and return the new list
 %% Returns: NewDstList
 %%--------------------------------------------------------------------
-resolve_if_necessary([]) ->
+resolve_if_necessary([], _) ->
     [];
-resolve_if_necessary([Dst | T]) when record(Dst, sipdst), Dst#sipdst.proto == undefined; Dst#sipdst.addr == undefined; Dst#sipdst.port == undefined ->
+resolve_if_necessary([Dst | T], ApproxMsgSize) when record(Dst, sipdst), Dst#sipdst.proto == undefined; Dst#sipdst.addr == undefined; Dst#sipdst.port == undefined ->
     URI = Dst#sipdst.uri,
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
     case URI of
 	_ when record(URI, sipurl) ->
-	    case sipdst:url_to_dstlist(URI, 500, URI) of    % XXX do better size estimation
+	    case sipdst:url_to_dstlist(URI, ApproxMsgSize, URI) of
 		DstList when list(DstList) ->
 		    DstList;
 		Unknown ->
-		    logger:log(error, "sippipe: Failed resolving URI ~s : ~p", [sipurl:print(Dst#sipdst.uri), Unknown]),
-		    resolve_if_necessary(T)
+		    logger:log(error, "sippipe: Failed resolving URI ~s : ~p", [sipurl:print(URI), Unknown]),
+		    resolve_if_necessary(T, ApproxMsgSize)
 	    end;
 	InvalidURI ->
 	    logger:log(error, "sippipe: Skipping destination with invalid URI : ~p", [InvalidURI]),
-	    resolve_if_necessary(T)
+	    resolve_if_necessary(T, ApproxMsgSize)
     end;
-resolve_if_necessary([Dst | T]) when record(Dst, sipdst) ->
+resolve_if_necessary([Dst | T], _) when record(Dst, sipdst) ->
     [Dst | T];
-resolve_if_necessary([Dst | T]) ->
+resolve_if_necessary([Dst | T], AMS) ->
     logger:log(error, "sippipe: Skipping invalid destination : ~p", [Dst]),
-    resolve_if_necessary(T);
-resolve_if_necessary(Unknown) ->
+    resolve_if_necessary(T, AMS);
+resolve_if_necessary(Unknown, _) ->
     logger:log(error, "sippipe: Unrecognized destination input data : ~p", [Unknown]),
     [].
 
