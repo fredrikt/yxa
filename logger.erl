@@ -11,25 +11,44 @@
 %%-compile(export_all).
 
 -behaviour(gen_server).
+
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([start_link/0, start_link/1, log/2, log/3, quit/1]).
+
+%%--------------------------------------------------------------------
+%% Internal exports - gen_server callbacks
+%%--------------------------------------------------------------------
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
 
-%%--------------------------------------------------------------------
-%% External exports
--export([start_link/0, start_link/1, log/2, log/3, quit/1]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-
--record(state, {debug_iodev, debug_fn, normal_iodev, normal_fn, error_iodev, error_fn}).
-
 %% needed for file:read_file_info
 -include_lib("kernel/include/file.hrl").
+
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+
+%% used to keep track of the files, used by the log functions, one
+%% file type of file is keept for each type of log (debug, normal,
+%% error)
+-record(state, {
+          debug_iodev,  % file descriptor
+          debug_fn,     % file name
+          normal_iodev, % file descriptor
+          normal_fn,    % file name
+          error_iodev,  % file descriptor
+          error_fn      % file name
+         }).
 
 %%====================================================================
 %% External functions
 %%====================================================================
+
 %%--------------------------------------------------------------------
 %% Function: start_link/0
 %% Description: Starts the server
@@ -61,8 +80,11 @@ start_link(AppName) ->
 init([Basename]) ->
     %% Check if we should rotate log files when they reach a upper
     %% limit in size (bytes). Defaults to 250 MB.
-    case sipserver:get_env(max_logfile_size, 250 * 1024 * 1024) of
-	none -> ok;
+    DefaultSize = 250 * 1024 * 1024,
+    case sipserver:get_env(max_logfile_size, DefaultSize) of
+	none ->
+	    %% man_logfile_size = none, don't rotate logs
+	    ok;
 	Size ->
 	    %% Set up a timer to do the size checking every 60 seconds
 	    {ok, T} = timer:send_interval(60 * 1000, logger, {check_logfile_size, Size})
@@ -78,15 +100,27 @@ init([Basename]) ->
 		normal_iodev=NormalIoDevice, normal_fn=NormalFn,
 		error_iodev=ErrorIoDevice, error_fn=ErrorFn}}.
 
+
 %%--------------------------------------------------------------------
-%% Function: handle_call/3
-%% Description: Handling call messages
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% Function: handle_call(Msg, From, State)
+%%           Msg = {rotate_logs} |
+%%                 {rotate_logs, Suffix} |
+%%                 {rotate_logs, Suffix, Logs} |
+%%                 {quit}                           quite logger
+%%           Suffix = string(), log date suffix to use,
+%%           default = current time
+%%           Logs = atom(), logs to update, default = all logs
+%% Descrip.: Handling call messages
+%% Returns : {reply, Reply, State}          |
+%%           {reply, Reply, State, Timeout} |
+%%           {noreply, State}               |
+%%           {noreply, State, Timeout}      |
+%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%           {stop, Reason, State}            (terminate/2 is called)
+%% Note    : This code is not invoked from anywhere. Intended for
+%%           future use when rotate_log may be triggered from other
+%%           sources than the timer, but can of course be used
+%%           manually (from the erl shell) on a running system.
 %%--------------------------------------------------------------------
 handle_call({rotate_logs}, From, State) ->
     %% Create rotation filename suffix from current time
@@ -121,31 +155,18 @@ handle_call(Unknown, From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_cast({log, Level, TimeStamp, Format, Arguments, Pid}, State) ->
-    DebugLevel = debug_level(debug),
-    NormalLevel = debug_level(normal),
-    ErrorLevel = debug_level(error),
-    NumLevel = debug_level(Level),
-    if
-	NumLevel >= ErrorLevel ->
-	    log_to_stdout(Level, TimeStamp, Format, Arguments, Pid),
-	    log_to_device(State#state.error_iodev, Level, TimeStamp, Format, Arguments, Pid);
-	true -> none
-    end,
-    if
-	NumLevel >= NormalLevel ->
+    case Level of
+	error ->
+	    log_to_device(State#state.error_iodev, Level, TimeStamp, Format, Arguments, Pid),
 	    log_to_device(State#state.normal_iodev, Level, TimeStamp, Format, Arguments, Pid),
-	    %% Make sure we don't log errors twice to stdout
-	    if
-		NumLevel =< NormalLevel ->
-		    log_to_stdout(Level, TimeStamp, Format, Arguments, Pid);
-		true -> none
-	    end;
-	true -> none
-    end,
-    if
-	NumLevel >= DebugLevel ->
-	    log_to_device(State#state.debug_iodev, Level, TimeStamp, Format, Arguments, Pid);
-	true -> none
+	    log_to_device(State#state.debug_iodev, Level, TimeStamp, Format, Arguments, Pid), 
+	    log_to_stdout(Level, TimeStamp, Format, Arguments, Pid);
+	normal ->
+	    log_to_device(State#state.normal_iodev, Level, TimeStamp, Format, Arguments, Pid),
+	    log_to_device(State#state.debug_iodev, Level, TimeStamp, Format, Arguments, Pid),
+	    log_to_stdout(Level, TimeStamp, Format, Arguments, Pid);
+	debug ->
+	    log_to_device(State#state.debug_iodev, Level, TimeStamp, Format, Arguments, Pid)
     end,
     {noreply, State};
 
@@ -213,10 +234,6 @@ safe_open(Filename, Args) ->
 	{error, E} ->
 	    erlang:fault("Error opening logfile", [Filename, Args])
     end.
-
-debug_level(debug) -> 10;
-debug_level(normal) -> 20;
-debug_level(error) -> 30.
 
 log_to_device(IoDevice, Level, TimeStamp, Format, Arguments, Pid) ->
     io:format(IoDevice, "~s ~p~p:", [TimeStamp, Level, Pid]),
@@ -343,12 +360,17 @@ rotate_file(Filename, Suffix) ->
 %% persistent logger process.
 do_log(Level, Format, Arguments) when atom(Level), list(Format), list(Arguments) ->
     {Megasec, Sec, USec} = now(),
-    USecStr = string:substr(integer_to_list(USec), 1, 3),
+    USecStr = format_usec(USec, 3),
     DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
     LogTS = lists:concat([DateTime, ".", USecStr]),
     gen_server:cast(logger, {log, Level, LogTS, Format, Arguments, self()}),
     ok.
 
+%% Precision = integer(),range = 1 - 6
+format_usec(Usec, Precision) ->
+    Str = integer_to_list(Usec),
+    FullStr = string:right(Str, 6, $0), % pad left side with 0, to full 6 char length
+    string:substr(FullStr, 1 , Precision).
 
 %%--------------------------------------------------------------------
 %%% Interface functions
@@ -376,7 +398,7 @@ quit(Msg) ->
 	_ ->
 	    log(normal, Msg)
     end,
-    case catch gen_server:cast(logger, {quit}, 1000) of
+    case catch gen_server:call(logger, {quit}, 1000) of
 	{ok} ->
 	    ok;
         _ ->
