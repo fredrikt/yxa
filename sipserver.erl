@@ -1,11 +1,56 @@
--module(sipserver).
--export([start/2, process/3, get_env/1, get_env/2, make_logstr/2, safe_spawn/2,
-	 safe_spawn/3, safe_spawn_child/2, safe_spawn_child/3, origin2str/2,
-	 get_listenport/1, get_all_listenports/0]).
+%%
+%%--------------------------------------------------------------------
 
+-module(sipserver).
+
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([
+	 start/2, 
+	 process/3, 
+	 get_env/1, 
+	 get_env/2, 
+	 make_logstr/2, 
+	 safe_spawn/2,
+	 safe_spawn/3, 
+	 origin2str/2,
+	 get_listenport/1, 
+	 get_all_listenports/0
+	]).
+
+%%--------------------------------------------------------------------
+%% Internal exports
+%%--------------------------------------------------------------------
+
+-export([
+	 safe_spawn_child/2, 
+	 safe_spawn_child/3
+	]).
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
 
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+
+%====================================================================
+%% External functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 start(normal, [AppModule]) ->
     catch ssl:start(),
     %% XXX uhm, is this sufficient? better than ssl:s internal seeding at least
@@ -40,7 +85,8 @@ start(normal, [AppModule]) ->
 		    case mnesia:change_config(extra_db_nodes,
 					      sipserver:get_env(databaseservers)) of
 			{error, Reason} ->
-			    logger:log(error, "Startup: Could not add configured databaseservers: ~p", [mnesia:error_description(Reason)]),
+			    logger:log(error, "Startup: Could not add configured databaseservers: ~p", 
+				       [mnesia:error_description(Reason)]),
 			    logger:quit(none),
 			    erlang:fault("Could not add configured databaseservers");
 			_ ->
@@ -72,6 +118,16 @@ start(normal, [AppModule]) ->
 	    {error, E}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%% 
+%% ??? are the problems asociated with the somewhat random startup order of the nodes/applications ?
+%% mnesia:start() is asyncronos
+%% or is it the usage of ctrl-c to terminate node ? which makes mnesia precieve it as a network
+%% error ?
+%%--------------------------------------------------------------------
 find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor) ->
     logger:log(debug, "Initializing remote Mnesia tables ~p", [RemoteMnesiaTables]),
     find_remote_mnesia_tables1(Supervisor, RemoteMnesiaTables, RemoteMnesiaTables, 0).
@@ -81,29 +137,44 @@ find_remote_mnesia_tables1(Supervisor, OrigTableList, RemoteMnesiaTables, Count)
 	ok ->
 	    {"proxy started, all tables found, supervisor is ~p", [Supervisor]};
 	{timeout, BadTabList} ->
-	    if
-		Count == 3 ->
-		    logger:log(normal, "Attempting a Mnesia restart because I'm still waiting for tables ~p", [BadTabList]),
+	    case Count of
+		3 ->
+		    logger:log(normal, "Attempting a Mnesia restart because I'm still waiting for tables ~p", 
+			       [BadTabList]),
 		    StopRes = mnesia:stop(),
 		    StartRes = mnesia:start(),
 		    logger:log(debug, "Mnesia stop() -> ~p, start() -> ~p", [StopRes, StartRes]),
 		    find_remote_mnesia_tables1(Supervisor, OrigTableList, OrigTableList, Count + 1);
-		Count == 6 ->
+		6 ->
 		    logger:log(error, "Could not initiate remote Mnesia tables ~p, exiting.", [BadTabList]),
 		    logger:quit(none),
 		    erlang:fault("Mnesia table init error", RemoteMnesiaTables);
-		true ->
+		_ ->
 		    logger:log(debug, "Still waiting for tables ~p", [BadTabList]),
 		    find_remote_mnesia_tables1(Supervisor, OrigTableList, BadTabList, Count + 1)
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: safe_spawn(Module, Fun)
+%%           safe_spawn(Module, Function, Arguments)
+%%           Fun = fun() | {Module, Function}
+%%           Module, Function = atom() - names of module and function
+%%           Arguments = list(), arguments for Function and 
+%%           Module:Function
+%% Descrip.: run Function or Module:Function with Argumnets as 
+%%           arguments, in a separate thread. Return true if no 
+%%           exception occured.
+%% Returns : true | error
+%%--------------------------------------------------------------------
 safe_spawn(Function, Arguments) ->
     spawn(?MODULE, safe_spawn_child, [Function, Arguments]).
 
 safe_spawn(Module, Function, Arguments) ->
     spawn(?MODULE, safe_spawn_child, [Module, Function, Arguments]).
 
+
+%% 
 safe_spawn_child(Function, Arguments) ->
     case catch apply(Function, Arguments) of
 	{'EXIT', E} ->
@@ -121,6 +192,7 @@ safe_spawn_child(Function, Arguments) ->
 	    true
     end.
 
+%%
 safe_spawn_child(Module, Function, Arguments) ->
     case catch apply(Module, Function, Arguments) of
 	{'EXIT', E} ->
@@ -138,6 +210,11 @@ safe_spawn_child(Module, Function, Arguments) ->
 	    true
     end.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: ???
+%% Returns : 
+%%--------------------------------------------------------------------
 send_result(Request, Socket, Status, Reason, ExtraHeaders) when record(Request, request) ->
     case Request#request.method of
 	"ACK" ->
@@ -154,15 +231,26 @@ send_result(Request, Socket, Status, Reason, ExtraHeaders) when record(Request, 
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 internal_error(Request, Socket) when record(Request, request), record(Socket, sipsocket) ->
     send_result(Request, Socket, 500, "Server Internal Error", []).
 
 internal_error(Request, Socket, Status, Reason) when record(Request, request), record(Socket, sipsocket) ->
     send_result(Request, Socket, Status, Reason, []).
 
-internal_error(Request, Socket, Status, Reason, ExtraHeaders) when record(Request, request), record(Socket, sipsocket) ->
+internal_error(Request, Socket, Status, Reason, ExtraHeaders) when record(Request, request), 
+								   record(Socket, sipsocket) ->
     send_result(Request, Socket, Status, Reason, ExtraHeaders).
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 %% Dst is either 'transaction_layer' or the name of a module which exports
 %% a request and response function
 process(Packet, Origin, Dst) when record(Origin, siporigin) ->
@@ -188,7 +276,13 @@ process(Packet, Origin, Dst) when record(Origin, siporigin) ->
 	    true
     end.
 
-my_apply(transaction_layer, R, Origin, LogStr) when record(R, request); record(R, response), record(Origin, siporigin) ->
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
+my_apply(transaction_layer, R, Origin, LogStr) when record(R, request); 
+						    record(R, response), record(Origin, siporigin) ->
     %% Dst is the transaction layer.
     case gen_server:call(transaction_layer, {sipmessage, R, Origin, LogStr}, 2000) of
 	{continue} ->
@@ -209,11 +303,18 @@ my_apply(transaction_layer, R, Origin, LogStr) when record(R, request); record(R
 		       [Type, LogStr]),
 	    {siperror, 500, "Server Internal Error"}
     end;
-my_apply(AppModule, Request, Origin, LogStr) when atom(AppModule), record(Request, request), record(Origin, siporigin) ->
+my_apply(AppModule, Request, Origin, LogStr) when atom(AppModule), record(Request, request), 
+						  record(Origin, siporigin) ->
     apply(AppModule, request, [Request, Origin, LogStr]);
-my_apply(AppModule, Response, Origin, LogStr) when atom(AppModule), record(Response, response), record(Origin, siporigin) ->
+my_apply(AppModule, Response, Origin, LogStr) when atom(AppModule), record(Response, response), 
+						   record(Origin, siporigin) ->
     apply(AppModule, response, [Response, Origin, LogStr]).
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 parse_packet(Packet, Origin) when record(Origin, siporigin) ->
     Socket = Origin#siporigin.sipsocket,
     case catch sippacket:parse(Packet, Origin) of
@@ -266,6 +367,11 @@ parse_packet(Packet, Origin) when record(Origin, siporigin) ->
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
     %% Handle errors returned during initial parsing of a request. These errors
     %% occur before the transaction layer is notified of the requests, so there
@@ -280,6 +386,11 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
     end,
     ok.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 %%
 %% Process parsed Request
 %%
@@ -287,17 +398,21 @@ process_parsed_packet(Socket, Request, Origin) when record(Request, request), re
     NewHeader1 = fix_topvia_received(Request#request.header, Origin),
     NewHeader2 = fix_topvia_rport(NewHeader1, Origin),
     check_packet(Request#request{header=NewHeader2}, Origin),
-    {{_, NewURI}, NewHeader3} = case received_from_strict_router(Request#request.uri, NewHeader2) of
-				    true ->
-					logger:log(debug, "Sipserver: Received request with a Request-URI I (probably) put in a Record-Route. " ++
-						   "Pop real Request-URI from Route-header."),
-					ReverseRoute = lists:reverse(sipheader:contact(keylist:fetch("Route", NewHeader2))),
-					[NewReqURI | NewReverseRoute] = ReverseRoute,
-					case NewReverseRoute of
-					    [] ->
-						{NewReqURI, keylist:delete("Route", NewHeader2)};
-					    _ ->
-						{NewReqURI, keylist:set("Route", sipheader:contact_print(lists:reverse(NewReverseRoute)), NewHeader2)}
+    {{_, NewURI}, NewHeader3} = 
+	case received_from_strict_router(Request#request.uri, NewHeader2) of
+	    true ->
+		logger:log(debug, "Sipserver: Received request with a"
+			   " Request-URI I (probably) put in a Record-Route. "
+			   "Pop real Request-URI from Route-header."),
+		ReverseRoute = lists:reverse(sipheader:contact(
+					       keylist:fetch("Route", NewHeader2))),
+		[NewReqURI | NewReverseRoute] = ReverseRoute,
+		case NewReverseRoute of
+		    [] ->
+			{NewReqURI, keylist:delete("Route", NewHeader2)};
+		    _ ->
+			{NewReqURI, keylist:set("Route", sipheader:contact_print(
+						  lists:reverse(NewReverseRoute)), NewHeader2)}
 					end;
 				    _ ->
 					{{none, Request#request.uri}, NewHeader2}
@@ -307,6 +422,11 @@ process_parsed_packet(Socket, Request, Origin) when record(Request, request), re
     LogStr = make_logstr(NewRequest, Origin),
     {NewRequest, LogStr};
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 %%
 %% Process parsed Response
 %%
@@ -333,17 +453,26 @@ process_parsed_packet(Socket, Response, Origin) when record(Response, response),
 		true ->
 		    %% This can happen if we for example send a request out on a TCP socket, but the
 		    %% other end responds over UDP.
-		    logger:log(debug, "Sipserver: Warning: received response [client=~s] matching me, but different protocol ~p (received on: ~p)",
-			       [origin2str(Origin, "unknown"), TopVia#via.proto, sipsocket:proto2viastr(Origin#siporigin.proto)]),
+		    logger:log(debug, "Sipserver: Warning: received response [client=~s]"
+			       " matching me, but different protocol ~p (received on: ~p)",
+			       [origin2str(Origin, "unknown"), 
+				TopVia#via.proto, sipsocket:proto2viastr(Origin#siporigin.proto)]),
 		    LogStr = make_logstr(Response, Origin),
 		    {Response, LogStr};
 		_ ->
-		    logger:log(error, "INVALID top-Via in response [client=~s]. Top-Via (without parameters) (~s) does not match mine (~s). Discarding.",
-			       [origin2str(Origin, "unknown"), sipheader:via_print([TopVia#via{param=[]}]), sipheader:via_print([MyViaNoParam])]),
+		    logger:log(error, "INVALID top-Via in response [client=~s]."
+			       " Top-Via (without parameters) (~s) does not match mine (~s). Discarding.",
+			       [origin2str(Origin, "unknown"), sipheader:via_print([TopVia#via{param=[]}]), 
+				sipheader:via_print([MyViaNoParam])]),
 		    {invalid}
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 fix_topvia_received(Header, Origin) when record(Origin, siporigin) ->
     IP = Origin#siporigin.addr,
     InPortNo = Origin#siporigin.port,
@@ -362,6 +491,11 @@ fix_topvia_received(Header, Origin) when record(Origin, siporigin) ->
 	    replace_top_via(NewVia, Header)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 %% XXX this RFC3581 implementation is not 100% finished. RFC3581 Section 4 says we MUST
 %% send the responses to this request back from the same IP and port we received the
 %% request to. We should be able to solve this when sending responses if we keep a list
@@ -385,11 +519,13 @@ fix_topvia_rport(Header, Origin) when record(Origin, siporigin) ->
 	    NewVia = TopVia#via{param=sipheader:dict_to_param(NewDict)},
 	    replace_top_via(NewVia, Header);
 	{ok, PortStr} ->
-	    logger:log(debug, "Sipserver: Top Via has rport already set to ~p, remote party isn't very RFC3581 compliant.",
+	    logger:log(debug, "Sipserver: Top Via has rport already set to ~p,"
+		       " remote party isn't very RFC3581 compliant.",
 		       [Port]),
 	    Header;
 	{ok, RPort} ->
-	    logger:log(error, "Sipserver: Received request with rport already containing a value (~p)! Overriding with port ~p.",
+	    logger:log(error, "Sipserver: Received request with rport already"
+		       " containing a value (~p)! Overriding with port ~p.",
 		       [RPort, Port]),
 	    NewDict = dict:store("rport", PortStr, ParamDict),
 	    NewVia = TopVia#via{param=sipheader:dict_to_param(NewDict)},
@@ -400,6 +536,11 @@ replace_top_via(NewVia, Header) when record(NewVia, via) ->
     [FirstVia | Via] = sipheader:via(keylist:fetch("Via", Header)),
     keylist:set("Via", sipheader:via_print(lists:append([NewVia], Via)), Header).
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 %% Function: received_from_strict_router/2
 %% Description: Look at the URI of a request we just received to see
 %%              if it is something we (possibly) put in a Record-Route
@@ -439,11 +580,17 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
 	%% Some SIP-stacks evidently strip parameters
 	%%MAddrMatch /= true -> false;
 	HeaderHasRoute /= true ->
-	    logger:log(debug, "Sipserver: Warning: Request-URI looks like something I put in a Record-Route header, but request has no Route!"),
+	    logger:log(debug, "Sipserver: Warning: Request-URI looks like something"
+		       " I put in a Record-Route header, but request has no Route!"),
 	    false;
 	true -> true
     end.
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 remove_route_matching_me(Header) ->
     Route = sipheader:contact(keylist:fetch("Route", Header)),
     case Route of
@@ -482,6 +629,11 @@ route_matches_me(Route) when record(Route, sipurl) ->
 	true ->	true
     end.	   
 
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
 check_packet(Request, Origin) when record(Request, request), record(Origin, siporigin) ->
     {Method, Header} = {Request#request.method, Request#request.header},
     check_supported_uri_scheme(Request#request.uri, Header),
@@ -494,12 +646,14 @@ check_packet(Request, Origin) when record(Request, request), record(Origin, sipo
 	{CSeqNum, CSeqMethod} ->
 	    case util:isnumeric(CSeqNum) of
 		false ->
-		    throw({sipparseerror, request, Header, 400, "CSeq number " ++ CSeqNum ++ " is not an integer"});	
+		    throw({sipparseerror, request, Header, 400, "CSeq number " ++ 
+			   CSeqNum ++ " is not an integer"});	
 		_ -> true
 	    end,
 	    if
 		CSeqMethod /= Method ->
-		    throw({sipparseerror, request, Header, 400, "CSeq Method " ++ CSeqMethod ++ " does not match request Method " ++ Method});
+		    throw({sipparseerror, request, Header, 400, "CSeq Method " ++ CSeqMethod ++ 
+			   " does not match request Method " ++ Method});
 		true -> true
 	    end;
 	_ ->
@@ -541,8 +695,10 @@ via_indicates_loop(LoopCookie, CmpVia, [TopVia | Rest]) when record(TopVia, via)
 	    case dict:find("branch", ParamDict) of
 		error ->
 		    %% XXX should broken Via perhaps be considered fatal?
-		    logger:log(error, "Sipserver: Request has Via that matches me, but no branch parameter. Loop checking broken!"),
-		    logger:log(debug, "Sipserver: Via ~p matches me, but has no branch parameter. Loop checking broken!",
+		    logger:log(error, "Sipserver: Request has Via that matches me,"
+			       " but no branch parameter. Loop checking broken!"),
+		    logger:log(debug, "Sipserver: Via ~p matches me, but has no branch parameter."
+			       " Loop checking broken!",
 			       sipheader:via_print([TopVia])),
 		    via_indicates_loop(LoopCookie, CmpVia, Rest);
 		{ok, Branch} ->
@@ -658,3 +814,18 @@ get_all_listenports() ->
     %% XXX implement the rest of this. Have to fetch a list of the ports we listen on
     %% from the transport layer.
     [get_listenport(udp)].
+
+%%====================================================================
+%% Behaviour functions
+%%====================================================================
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
+
