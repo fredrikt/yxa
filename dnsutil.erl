@@ -5,7 +5,7 @@
 -include_lib("kernel/src/inet_dns.hrl").
 
 %% For debugging
--compile(export_all).
+%%-compile(export_all).
 
 %% These records is entirely internal to this module
 -record(srventry, {proto, dnsrrdata}).
@@ -55,7 +55,11 @@ siplookup(Domain) ->
 		       "compatible lookup for SIP SRV records under that domain name", [Domain]),
 	    TCP = srvlookup(tcp, "_sip._tcp." ++ Domain),
 	    UDP = srvlookup(udp, "_sip._udp." ++ Domain),
-	    combine_srvresults(lists:sort(fun sortsrv/2, lists:flatten([TCP, UDP])));
+	    TLS = srvlookup(tls, "_sips._tcp." ++ Domain),
+	    R = combine_srvresults(lists:sort(fun sortsrv/2, lists:flatten([TCP, UDP, TLS]))),
+	    logger:log(debug, "Resolver: Result of RFC2543 compatible SIP SRV query for domain ~p :~n~p",
+		       [Domain, R]),
+	    R;
 	Res ->
 	    %% siplookup_naptr does it's own sorting
 	    combine_srvresults(Res)
@@ -85,16 +89,17 @@ siplookup_naptr(Domain) when list(Domain) ->
 
 %%--------------------------------------------------------------------
 %% Function: siplookup_naptr/1
-%% Description: Take a list of sorted NAPTR records and try to turn
-%%              them into SRV records.
-%% Returns: SRVList |
-%%          nomatch
+%% Descrip.: Take a list of sorted NAPTR records and try to turn
+%%           them into SRV records.
+%% Returns : SRVList |
+%%           nomatch
 %%--------------------------------------------------------------------
 naptr_to_srvlist(Domain, In) ->
     naptr_to_srvlist2(Domain, In, []).
 
 naptr_to_srvlist2(Domain, [], Res) ->
-    logger:log(debug, "dns resolver: Domain ~s NAPTR lookup result : ~p", [Domain, Res]),
+    logger:log(debug, "dns resolver: Domain ~p NAPTR (+SRV) lookup result :~n~p",
+	       [Domain, debugfriendly_srventry(Res)]),
     Res;
 naptr_to_srvlist2(Domain, [H | Rest], Res) when record(H, naptrrecord) ->
     Proto = case H#naptrrecord.services of
@@ -108,16 +113,31 @@ naptr_to_srvlist2(Domain, [H | Rest], Res) when record(H, naptrrecord) ->
     Sorted = lists:sort(fun sortsrv/2, This),
     naptr_to_srvlist2(Domain, Rest, lists:flatten([Res, Sorted])).
 
+debugfriendly_srventry(In) when is_list(In) ->
+    debugfriendly_srventry2(In, []).
+
+debugfriendly_srventry2([], Res) ->
+    lists:reverse(Res);
+debugfriendly_srventry2([H|T], Res) when is_record(H, srventry) ->
+    {P, W, Port, Host} = H#srventry.dnsrrdata,
+    This = lists:flatten(lists:concat([H#srventry.proto, ", priority=", P, ", weight=", W,
+				       " ", Host, ":", Port])),
+    debugfriendly_srventry2(T, [This | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: combine_srvresults/1
-%% Description: Walk through a list of srventry records or {error, R}
-%%              tuples and turn the srventry records into
-%%              {Proto, Host, Port} tuples.
-%% Returns: ProtoHostPortList
+%% Function: combine_srvresults(In)
+%%           In = list() of srventry record() | {error, R} tuples
+%% Descrip.: Walk through a list of srventry records or {error, R}
+%%           tuples and turn the srventry records into
+%%           {Proto, Host, Port} tuples.
+%% Returns : ProtoHostPortList
+%%           ProtoHostPortList = list() of {Proto, Host, Port}
+%%           Proto = tcp | udp | tls
+%%           Host  = string()
+%%           Port  = integer()
 %%--------------------------------------------------------------------
-combine_srvresults(List) ->
-    combine_srvresults(List, [], []).
+combine_srvresults(In) ->
+    combine_srvresults(In, [], []).
 
 combine_srvresults([], [], Errors) ->
     Errors;
@@ -131,24 +151,27 @@ combine_srvresults([H | T], Res, Errors) when record(H, srventry) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: sortsrv/2
-%% Description: Walk through a list of srventry records or {error, R}
-%%              tuples and sort them according to order and secondly
-%%              preference. Sort errors last, but put nxdomain errors
-%%              first of the errors.
-%% Returns: SRVList
+%% Function: sortsrv(A, B)
+%%           A = srventry record()
+%%           B = srventry record()
+%% Descrip.: Walk through a list of srventry records or {error, R}
+%%           tuples and sort them according to order and secondly by
+%%           weight. Sort errors last, but put nxdomain errors first
+%%           of the errors.
+%% Returns : list() of srventry record()
 %%--------------------------------------------------------------------
 sortsrv(A, B) when record(A, srventry), record(B, srventry) ->
-    {Order1, Preference1, Port1, Host1} = A#srventry.dnsrrdata,
-    {Order2, Preference2, Port2, Host2} = B#srventry.dnsrrdata,
+    {Order1, Weight1, Port1, Host1} = A#srventry.dnsrrdata,
+    {Order2, Weight2, Port2, Host2} = B#srventry.dnsrrdata,
     if
 	Order1 < Order2 ->
 	    true;
 	Order1 == Order2 ->
 	    if
-		Preference1 < Preference2 ->
+		Weight1 > Weight2 ->
+		    %% XXX Verify this sort order!
 		    true;
-		Preference1 == Preference2 ->
+		Weight1 == Weight2 ->
 		    %% This string sorting is just to make the process deterministic
 		    %% so that a stateless proxy always chooses the same destination
 		    Str1 = Host1 ++ ":" ++ integer_to_list(Port1),
