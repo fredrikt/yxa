@@ -124,8 +124,7 @@ init_mnesia(RemoteTables) when is_list(RemoteTables) ->
 		      Res
 	      end,
     logger:log(debug, "Mnesia extra db nodes : ~p", [DbNodes]),
-    case mnesia:change_config(extra_db_nodes,
-			      sipserver:get_env(databaseservers)) of
+    case mnesia:change_config(extra_db_nodes, DbNodes) of
 	{error, Reason} ->
 	    logger:log(error, "Startup problem: Could not add configured databaseservers: ~p",
 		       [mnesia:error_description(Reason)]),
@@ -358,7 +357,9 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 		    throw({error, application_failed_processing_request})
 	    end;
 	{Response, LogStr} when is_record(Response, response) ->
-	    my_apply(Dst, Response, Origin, LogStr)
+	    my_apply(Dst, Response, Origin, LogStr);
+	Unspecified ->
+	    Unspecified
     end.
 
 %%--------------------------------------------------------------------
@@ -1546,45 +1547,45 @@ test() ->
     {sipparseerror, response, _, 400, "Response code out of bounds"} =
 	(catch check_packet(CPacketRR1#response{status=-1}, Origin2Str1)),
 
-%    io:format("test: check_packet/2 response - 2.3~n"),
-%    %% test invalid status code #3
-%    {sipparseerror, response, _, 400, "Response code out of bounds"} =
-%	(catch check_packet(CPacketRR1#response{status=700}, Origin2Str1)),
+    io:format("test: check_packet/2 response - 2.3~n"),
+    %% test invalid status code #3
+    {sipparseerror, response, _, 400, "Response code out of bounds"} =
+	(catch check_packet(CPacketRR1#response{status=700}, Origin2Str1)),
 
     io:format("test: check_packet/2 response - 2.4~n"),
     %% test invalid status code #4
-%    {sipparseerror, response, _, 400, "Response code out of bounds"} =
-%	(catch check_packet(CPacketRR1#response{status=4294967301}, Origin2Str1)),
+    {sipparseerror, response, _, 400, "Response code out of bounds"} =
+	(catch check_packet(CPacketRR1#response{status=4294967301}, Origin2Str1)),
 
-%    WWWURL = "http:/www.stacken.kth.se/projekt/yxa/",
+    WWWURL = "http:/www.stacken.kth.se/projekt/yxa/",
 
-%    io:format("test: check_packet/2 response - 3~n"),
-%    %% Test strange From:. draft-ietf-sipping-torture-tests-04 argues that a
-%    %% proxy should not break on this, unless it is really required to be able
-%    %% to understand the From:. That is a good point, but our current behavior
-%    %% is to break on To: and From: that we don't understand - so we test this.
-%    CPacketRH3 = keylist:set("From", [WWWURL], CPacketRH1),
-%    {sipparseerror, response, CPacketRH3, 400, "Invalid From: header"} =
-%	(catch check_packet(CPacketRR1#response{header=CPacketRH3}, Origin2Str1)),
+    io:format("test: check_packet/2 response - 3~n"),
+    %% Test strange From:. draft-ietf-sipping-torture-tests-04 argues that a
+    %% proxy should not break on this, unless it is really required to be able
+    %% to understand the From:. That is a good point, but our current behavior
+    %% is to break on To: and From: that we don't understand - so we test this.
+    CPacketRH3 = keylist:set("From", [WWWURL], CPacketRH1),
+    {sipparseerror, response, CPacketRH3, 400, "Invalid From: header"} =
+	(catch check_packet(CPacketRR1#response{header=CPacketRH3}, Origin2Str1)),
 
-%    io:format("test: check_packet/2 response - 4~n"),
-%    %% Test response with more than one From: header
-%    CPacketRH4 = keylist:set("From", ["sip:first@example.com", "sip:second@example.com"], CPacketRH1),
-%    {sipparseerror, response, CPacketRH4, 400, "Missing or invalid From: header"} =
-%	(catch check_packet(CPacketRR1#response{header=CPacketRH4}, Origin2Str1)),
+    io:format("test: check_packet/2 response - 4~n"),
+    %% Test response with more than one From: header
+    CPacketRH4 = keylist:set("From", ["sip:first@example.com", "sip:second@example.com"], CPacketRH1),
+    {sipparseerror, response, CPacketRH4, 400, "Missing or invalid From: header"} =
+	(catch check_packet(CPacketRR1#response{header=CPacketRH4}, Origin2Str1)),
 
-%    io:format("test: check_packet/2 response - 5~n"),
-%    %% Test response with no From: header
-%    CPacketRH5 = keylist:delete("From", CPacketRH1),
-%    {sipparseerror, response, CPacketRH4, 400, "Missing or invalid From: header"} =
-%	(catch check_packet(CPacketRR1#response{header=CPacketRH5}, Origin2Str1)),
+    io:format("test: check_packet/2 response - 5~n"),
+    %% Test response with no From: header
+    CPacketRH5 = keylist:delete("From", CPacketRH1),
+    {sipparseerror, response, CPacketRH5, 400, "Missing or invalid From: header"} =
+	(catch check_packet(CPacketRR1#response{header=CPacketRH5}, Origin2Str1)),
 
-%    io:format("test: check_packet/2 response - 6~n"),
-%    %% Test strange To:. I think it is enough to test just one To: - that should suffice
-%    %% to tell that To: is checked the same way as From: (see tests above).
-%    CPacketRH6 = keylist:set("To", [WWWURL], CPacketRH1),
-%    {sipparseerror, response, CPacketRH6, 400, "Invalid From: header"} =
-%	(catch check_packet(CPacketRR1#response{header=CPacketRH6}, Origin2Str1)),
+    io:format("test: check_packet/2 response - 6~n"),
+    %% Test strange To:. I think it is enough to test just one To: - that should suffice
+    %% to tell that To: is checked the same way as From: (see tests above).
+    CPacketRH6 = keylist:set("To", [WWWURL], CPacketRH1),
+    {sipparseerror, response, CPacketRH6, 400, "Invalid To: header"} =
+	(catch check_packet(CPacketRR1#response{header=CPacketRH6}, Origin2Str1)),
 
 
     %% test process_parsed_packet(Request, Origin)
