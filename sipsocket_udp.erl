@@ -53,7 +53,7 @@ init([]) ->
 
 -define(SOCKETOPTS, [{reuseaddr, true}]).
 %% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
--define(SOCKETOPTSv6, [{reuseaddr, true}, inet6, {recbuf, 8 * 1024}]).
+-define(SOCKETOPTSv6, [{reuseaddr, true}, inet6, {buffer, 8 * 1024}]).
 
 start_listening([], Port, State) ->
     {ok, State};
