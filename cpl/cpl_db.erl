@@ -94,7 +94,7 @@ store_graph(User, Graph) ->
 
 %%--------------------------------------------------------------------
 %% Function: rm_cpl_for_user(User)
-%% Descrip.: remove the cpl script assciated with user User
+%% Descrip.: remove the cpl script associated with user User
 %% Returns : -
 %%--------------------------------------------------------------------
 rm_cpl_for_user(User) ->
