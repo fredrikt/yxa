@@ -16,13 +16,19 @@ srvlookup(Name) ->
     end.
 
 siplookup(Domain) ->
-    case srvlookup("_sip._udp." ++ Domain) of
-	[] ->
+    case regexp:first_match(Domain, "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") of
+	{match, _, _} ->
+	    logger:log(debug, "dns resolver: ~p is an IP address, not performing SRV lookup", [Domain]),
 	    none;
-	{error, What} ->
-	    {error, What};
-	[{_, _, Port, Host} | _] ->
-	    {Host, Port}
+	_ ->
+	    case srvlookup("_sip._udp." ++ Domain) of
+		[] ->
+		    none;
+		{error, What} ->
+		    {error, What};
+		[{_, _, Port, Host} | _] ->
+		    {Host, Port}
+	    end
     end.
 
 get_ip_port(Host, Port) ->
