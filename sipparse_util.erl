@@ -131,8 +131,9 @@ parse_hostport(HostPort) ->
     H = hd(HostPort),
     case H of
 	91 ->	%% 91 is $[
-	    %% can only be a ipv6 reference
-	    parse_ipv6hostport(HostPort);
+	    %% can only be an ipv6 reference
+	    {ok, Host, Port} = parse_ipv6hostport(HostPort),
+	    {Host, Port};
 	_ ->
 	    %% IPv4 and domain names require a complete parse attempt to be distinguished
 	    %% properly from each other, as they may both start with numbers in H
@@ -140,18 +141,30 @@ parse_hostport(HostPort) ->
 		true ->
 		    %% probably a ipv4 address
 		    case catch parse_ipv4hostport(HostPort) of
-			{error,_} ->
-			    parse_domain_hostport(HostPort);
-			R ->
-			    R
+			{ok, Host, Port} when is_list(Host), is_list(Port); Port == none ->
+			    {Host, Port};
+			_ ->
+			    %% was not IPv4 address, try to parse as IPv6 address without
+			    %% brackets, and then as hostname
+			    {ok, Host, Port} = parse_hostport_v6_or_hostname(HostPort),
+			    {Host, Port}
 		    end;
 		false ->
-		    %% must be a domain name
-		    parse_domain_hostport(HostPort)
+		    %% must be a hostname, or an IPv6 address without brackets
+		    {ok, Host, Port} = parse_hostport_v6_or_hostname(HostPort),
+		    {Host, Port}
 	    end
     end.
 
-parse_ipv6hostport([$[ | IPv6Hostport]) ->
+parse_hostport_v6_or_hostname(In) ->
+    case catch parse_ipv6hostport(In) of
+	{ok, Host, Port} ->
+	    {ok, Host, Port};
+	_ ->
+	    parse_domain_hostport(In)
+    end.
+
+parse_ipv6hostport([91 | IPv6Hostport]) ->	%% 91 is $[
     {IPv6Ref, Port} = get_ipv6ref_and_port(IPv6Hostport),
     case Port of
 	none -> ok;
@@ -161,7 +174,12 @@ parse_ipv6hostport([$[ | IPv6Hostport]) ->
     end,
     %% throw if not ip6 ref
     is_IPv6reference(IPv6Ref),
-    {"[" ++ IPv6Ref ++ "]", Port}.
+    {ok, "[" ++ IPv6Ref ++ "]", Port};
+parse_ipv6hostport(In) ->
+    %% throw if not ip6 ref
+    is_IPv6reference(In),
+    %% XXX return without brackets?
+    {ok, "[" ++ In ++ "]", none}.
 
 get_ipv6ref_and_port(IPv6Hostport) ->
     case catch sipparse_util:split_fields(IPv6Hostport, 93) of	%% 93 is $]
@@ -189,10 +207,10 @@ parse_ipv4hostport(HostPort) ->
 	    %% throw if not a numeric string
 	    list_to_integer(Port),
 	    %% throw if not a IPv4 address string
-	    {is_IPv4address(Host), Port};
+	    {ok, is_IPv4address(Host), Port};
 	{Host} ->
 	    %% throw if not a IPv4 address string
-	    {is_IPv4address(Host), none}
+	    {ok, is_IPv4address(Host), none}
     end.
 
 
@@ -203,11 +221,11 @@ parse_domain_hostport(HostPort) ->
 	    list_to_integer(Port),
 	    %% throw if not a hostname
 	    is_hostname(Host),
-	    {rm_trailing_dot_from_hostname(Host), Port};
+	    {ok, rm_trailing_dot_from_hostname(Host), Port};
 	{Host} ->
 	    %% throw if not a hostname
 	    is_hostname(Host),
-	    {rm_trailing_dot_from_hostname(Host), none}
+	    {ok, rm_trailing_dot_from_hostname(Host), none}
     end.
 
 rm_trailing_dot_from_hostname(H) ->
@@ -406,8 +424,26 @@ test() ->
     %% IPv6 host and no port
     io:format("test: parse_hostport/1 - 7~n"),
     {"[1:2:3:4:5:6:7:8]", none} = sipparse_util:parse_hostport("[1:2:3:4:5:6:7:8]"),
-    %% test bad port value
+    %% IPv6 address not starting with digit
     io:format("test: parse_hostport/1 - 8~n"),
+    {"[ab:CD:3::5:6:7:8]", none} = sipparse_util:parse_hostport("[ab:CD:3::5:6:7:8]"),
+    %% IPv6 host and no port, no brackets
+    io:format("test: parse_hostport/1 - 9~n"),
+    {"[1:2:3:4:5:6:7:8]", none} = sipparse_util:parse_hostport("1:2:3:4:5:6:7:8"),
+    %% IPv6 host and no port, no brackets
+    io:format("test: parse_hostport/1 - 10~n"),
+    {"[abcd:2:3:4:5:6:7:8]", none} = sipparse_util:parse_hostport("abcd:2:3:4:5:6:7:8"),
+    %% IPv6 host and no port, no brackets
+    io:format("test: parse_hostport/1 - 11~n"),
+    {"[1:2::8]", none} = sipparse_util:parse_hostport("1:2::8"),
+    %% IPv6 host and no port, no brackets
+    io:format("test: parse_hostport/1 - 12~n"),
+    {"[abcd:2::6:7:8]", none} = sipparse_util:parse_hostport("abcd:2::6:7:8"),
+    %% IPv6 host and no port, no brackets
+    io:format("test: parse_hostport/1 - 13~n"),
+    {"[abcd:2::6:BCDE:8]", none} = sipparse_util:parse_hostport("abcd:2::6:BCDE:8"),
+    %% test bad port value
+    io:format("test: parse_hostport/1 - 14~n"),
     case catch sipparse_util:parse_hostport("1.1.1.1:1A1") of
 	{'EXIT', _} -> ok;
 	{error, _} -> ok;
