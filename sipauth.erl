@@ -130,7 +130,7 @@ get_user_verified2(Method, Authheader) ->
 
 pstn_call_check_auth(Method, Header, Address, ToNumberIn, Classdefs) ->
     ToNumber = case local:rewrite_potn_to_e164(ToNumberIn) of
-	none -> ToNumberIn;
+	error -> ToNumberIn;
 	N -> N
     end,
     Class = classify_number(ToNumber, Classdefs),
