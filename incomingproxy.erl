@@ -79,7 +79,7 @@ lookupdefault(User) ->
 	true ->
 	    case enumlookup(User) of
 		none ->
-		    {proxy, {User, none, sipserver:get_env(defaultroute), none, []}};
+		    {proxy, {User, none, sipserver:get_env(defaultroute), "5060", []}};
 		URL ->
 		    {relay, sipurl:parse(URL)}
 	    end;
