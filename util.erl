@@ -1,5 +1,5 @@
 -module(util).
--export([timestamp/0, sec_to_date/1]).
+-export([timestamp/0, sec_to_date/1, isnumeric/1]).
 
 timestamp() ->
     {Megasec, Sec, _} = now(),
@@ -14,3 +14,11 @@ sec_to_date(Seconds) when integer(Seconds) ->
 localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
     io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w",
 		  [Year, Month, Day, Hour, Minute, Second]).
+
+isnumeric(Number) ->
+    case regexp:first_match(Number, "^[0-9]+$") of
+	{match, _, _} ->
+	    true;
+	_ ->
+	    false
+    end.
