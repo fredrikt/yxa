@@ -52,6 +52,8 @@ init([]) ->
     start_listening([udp, udp6], Port, #state{socketlist=socketlist:empty()}).
 
 -define(SOCKETOPTS, [{reuseaddr, true}]).
+%% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
+-define(SOCKETOPTSv6, [{reuseaddr, true}, inet6, {recbuf, 8 * 1024}]).
 
 start_listening([], Port, State) ->
     {ok, State};
@@ -63,22 +65,22 @@ start_listening([udp | T], Port, State) when integer(Port), record(State, state)
 	    NewSocketList = socketlist:add({listener, udp}, self(), Local, none, SipSocket, 0, State#state.socketlist),
 	    start_listening(T, Port, State#state{socket=Socket, socketlist=NewSocketList});
 	{error, Reason} ->
-	    logger:log(error, "Could not open UDP socket, port ~p : ~s",
-		       [Port, inet:format_error(Reason)]),
+	    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",
+		       [?SOCKETOPTS, Port, inet:format_error(Reason)]),
 	    {stop, "Could not open UDP socket"}
     end;
 start_listening([udp6 | T], Port, State) when integer(Port), record(State, state) ->
     case sipserver:get_env(enable_v6, false) of
 	true ->
-	    case gen_udp:open(Port, lists:append(?SOCKETOPTS, [inet6])) of
+	    case gen_udp:open(Port, ?SOCKETOPTSv6) of
 		{ok, Socket} ->
 		    Local = get_localaddr(Socket, "[::]"),
 		    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp6, pid=self(), data={Local, none}},
 		    NewSocketList = socketlist:add({listener, udp6}, self(), Local, none, SipSocket, 0, State#state.socketlist),
 		    start_listening(T, Port, State#state{socket6=Socket, socketlist=NewSocketList});
 		{error, Reason} ->
-		    logger:log(error, "Could not open UDP socket, port ~p : ~s",
-			       [Port, inet:format_error(Reason)]),
+		    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",
+			       [?SOCKETOPTSv6, Port, inet:format_error(Reason)]),
 		    {stop, "Could not open UDP socket"}
 	    end;
 	_ ->
