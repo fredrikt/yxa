@@ -64,7 +64,7 @@ dnl This is the release version name-number[beta]
 dnl
 
 cat > newversion.erl.in <<EOF
--module(${PACKAGE_NAME}_version).
+-module(version).
 -export([[get_long_version/0, get_version/0]]).
 
 get_long_version() ->
