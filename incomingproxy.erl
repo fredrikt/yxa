@@ -35,7 +35,7 @@ lookuproute(User) ->
 	    none;
 	{atomic, Locations} ->
 	    {Location, _, _, _} = siprequest:location_prio(Locations),
-	    Location
+	    {proxy, Location}
     end.
 
 lookupmail(User) ->
@@ -62,10 +62,26 @@ isnumeric(Number) ->
 	    false
     end.
 
+globalrewrite("0000" ++ Number) ->
+    "+" ++ Number;
+globalrewrite("000" ++ Number) ->
+    "+46" ++ Number;
+globalrewrite("00" ++ Number) ->
+    "+468" ++ Number;
+globalrewrite("0" ++ Number) ->
+    none;
+globalrewrite(Number) ->
+    "+468790" ++ Number.
+
 lookupdefault(User) ->
     case isnumeric(User) of
 	true ->
-	    {User, none, "sip-pstn.kth.se", none, []};
+	    case dnsutil:enumlookup(globalrewrite(User)) of
+		none ->
+		    {proxy, {User, none, "sip-pstn.kth.se", none, []}};
+		URL ->
+		    {redirect, sipurl:parse(URL)}
+	    end;
 	false ->
 	    none
     end.
@@ -87,7 +103,7 @@ lookupphone(User) ->
     case Loc3 of
 	none ->
 	    lookupdefault(User);
-	       Loc3 ->
+	Loc3 ->
 	    Loc3
     end.
 
@@ -107,20 +123,28 @@ request("REGISTER", URL, Header, Body, Socket) ->
     end;
 
 request(Method, {User, Pass, "kth.se", Port, Parameters}, Header, Body, Socket) ->
-    logger:log(normal, Method),
+    logger:log(normal, "~s ~s~n",
+	       [Method, sipurl:print({User, Pass, "kth.se", Port, Parameters})]),
     Location = lookupphone(User),
     logger:log(debug, "Location: ~p", [Location]),
     case Location of
 	none ->
+	    logger:log(normal, "Not found"),
 	    siprequest:send_notfound(Header, Socket);
-	_ ->
-	    siprequest:send_proxy_request(Header, Socket, {Method, Location, Body})
+	{proxy, Loc} ->
+	    logger:log(normal, "Proxy ~s", [sipurl:print(Loc)]),
+	    siprequest:send_proxy_request(Header, Socket, {Method, Loc, Body});
+	{redirect, Loc} ->
+	    logger:log(normal, "Redirect ~s", [sipurl:print(Loc)]),
+	    siprequest:send_redirect(Loc, Header, Socket)
     end;
 
 request(Method, URL, Header, Body, Socket) ->
-    siprequest:send_notfound(Header, Socket).
+%    logger:log(normal, "Redirect ~s", [sipurl:print(URL)]),
+    siprequest:send_redirect(URL, Header, Socket).
 
 response(Status, Reason, Header, Body, Socket) ->
+    logger:log(normal, "Response ~p ~s", [Status, Reason]),
     siprequest:send_proxy_response(Socket, Status, Reason, Header, Body).
 
 remove_expired_phones() ->
