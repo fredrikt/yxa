@@ -18,11 +18,11 @@
 %% External exports
 -export([start_link/2]).
 
--export([send_response_request/3, send_response_request/4,
+-export([send_response_request/3, send_response_request/4, send_response_request/5,
 	 transaction_terminating/1, get_handler_for_request/1,
 	 get_branch_from_handler/1, start_client_transaction/6,
 	 store_to_tag/2, adopt_server_transaction/1, adopt_server_transaction_handler/1,
-	 send_response_handler/3, send_response_handler/4,
+	 send_response_handler/3, send_response_handler/4, send_response_handler/5,
 	 send_proxy_response_handler/2, get_server_handler_for_stateless_response/1,
 	 store_stateless_response_branch/3, is_good_transaction/1,
 	 get_pid_from_handler/1, send_challenge_request/4, send_challenge/4,
@@ -336,7 +336,7 @@ received_new_request(Request, Socket, LogStr, State) when record(State, state), 
 									       "pid '~p', responding 481 Call/Transaction Does Not Exist", [InvitePid]),
 								    {481, "Call/Transaction Does Not Exist"}
 							    end,	
-					 gen_server:cast(STPid, {create_response, Status, Reason, []}),
+					 gen_server:cast(STPid, {create_response, Status, Reason, [], ""}),
 					 false;
 				     _ ->
 					 logger:log(debug, "Transaction layer: Could not find transaction for CANCEL, pass it on to application core."),
@@ -410,6 +410,9 @@ send_response_request(Request, Status, Reason) when record(Request, request) ->
     send_response_request(Request, Status, Reason, []).
 
 send_response_request(Request, Status, Reason, ExtraHeaders) when record(Request, request) ->
+    send_response_request(Request, Status, Reason, ExtraHeaders, "").
+
+send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when record(Request, request) ->
     {Method, URI} = {Request#request.header, Request#request.uri},
     case get_handler_for_request(Request) of
 	{error, E} ->
@@ -422,14 +425,17 @@ send_response_request(Request, Status, Reason, ExtraHeaders) when record(Request
 	    none;
 	TH when record(TH, thandler) ->
 	    logger:log(debug, "Transaction layer: Located server transaction handler ~p", [TH#thandler.pid]),
-	    send_response_handler(TH, Status, Reason, ExtraHeaders)
+	    send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
     end.
 
 send_response_handler(TH, Status, Reason) when record(TH, thandler) ->
     send_response_handler(TH, Status, Reason, []).
 
 send_response_handler(TH, Status, Reason, ExtraHeaders) when record(TH, thandler) ->
-    case catch gen_server:cast(TH#thandler.pid, {create_response, Status, Reason, ExtraHeaders}) of
+    send_response_handler(TH, Status, Reason, ExtraHeaders, "").
+
+send_response_handler(TH, Status, Reason, ExtraHeaders, RBody) when record(TH, thandler) ->
+    case catch gen_server:cast(TH#thandler.pid, {create_response, Status, Reason, ExtraHeaders, RBody}) of
 	ok ->
 	    ok;
 	_ ->

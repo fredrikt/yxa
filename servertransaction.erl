@@ -181,8 +181,8 @@ handle_cast({sipmessage, Request, Origin, LogStr, GenSrvFrom, AppModule}, State)
 	    end,
     check_quit(Reply);
 
-handle_cast({create_response, Status, Reason, ExtraHeaders}, State) ->
-    Response = make_response(Status, Reason, "", ExtraHeaders, [], State),
+handle_cast({create_response, Status, Reason, ExtraHeaders, RBody}, State) ->
+    Response = make_response(Status, Reason, RBody, ExtraHeaders, [], State),
     {ok, NewState1} = do_response(created, Response, State),
     check_quit({noreply, NewState1, ?TIMEOUT});
 
