@@ -494,7 +494,7 @@ process_parsed_packet(Request, Origin) when record(Request, request), record(Ori
 		ReverseRoute = lists:reverse(sipheader:route(NewHeader2)),
 		[FirstRoute | NewReverseRoute] = ReverseRoute,
 		NewReqURI = sipurl:parse(FirstRoute#contact.urlstr),
-		NewH = 
+		NewH =
 		    case NewReverseRoute of
 			[] ->
 			    keylist:delete("Route", NewHeader2);
@@ -524,10 +524,10 @@ process_parsed_packet(Request, Origin) when record(Request, request), record(Ori
 %% Returns : {NewResponse, LogStr} |
 %%           {invalid}
 %%--------------------------------------------------------------------
-process_parsed_packet(Response, Origin) when record(Response, response), record(Origin, siporigin) ->
+process_parsed_packet(Response, Origin) when is_record(Response, response), is_record(Origin, siporigin) ->
     check_packet(Response, Origin),
     TopVia = sipheader:topvia(Response#response.header),
-    case check_response_via(Response, Origin, TopVia) of
+    case check_response_via(Origin, TopVia) of
 	ok ->
 	    LogStr = make_logstr(Response, Origin),
 	    {Response, LogStr};
@@ -537,8 +537,7 @@ process_parsed_packet(Response, Origin) when record(Response, response), record(
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_response_via(Response, Origin, TopVia)
-%%           Response = response record()
+%% Function: check_response_via(Origin, TopVia)
 %%           Origin   = siporigin record(), information about where
 %%                      this Packet was received from
 %%           TopVia   = via record() | none
@@ -547,11 +546,11 @@ process_parsed_packet(Response, Origin) when record(Response, response), record(
 %% Returns : ok    |
 %%           error
 %%--------------------------------------------------------------------
-check_response_via(_Response, Origin, none) ->
+check_response_via(Origin, none) ->
     logger:log(error, "INVALID top-Via in response [client=~s] (no Via found).",
 	       [origin2str(Origin, "unknown")]),
     error;
-check_response_via(Response, Origin, TopVia) when is_record(TopVia, via) ->
+check_response_via(Origin, TopVia) when is_record(TopVia, via) ->
     %% Check that top-Via is ours (RFC 3261 18.1.2),
     %% silently drop message if it is not.
 
@@ -690,7 +689,13 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
     PortMatches = lists:member(Port, MyPorts),
     MAddrMatch = case dict:find("maddr", sipheader:param_to_dict(URI#sipurl.param)) of
 		     {ok, MyIP} -> true;
-		     _ -> false
+		     {ok, _OtherIP} ->
+			 false;
+		     _ ->
+			 %% this should really return 'false', but some SIP-stacks
+			 %% evidently strip parameters so we treat the absence of maddr
+			 %% parameter as if it matches
+			 true
 		 end,
     HeaderHasRoute = case keylist:fetch('route', Header) of
 			 [] -> false;
@@ -700,8 +705,7 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
 	UsernamePresent /= false -> false;
 	HostnameIsMyHostname /= true -> false;
 	PortMatches /= true -> false;
-	%% Some SIP-stacks evidently strip parameters
-	%%MAddrMatch /= true -> false;
+	MAddrMatch /= true -> false;
 	HeaderHasRoute /= true ->
 	    logger:log(debug, "Sipserver: Warning: Request-URI looks like something"
 		       " I put in a Record-Route header, but request has no Route!"),
@@ -746,7 +750,7 @@ remove_route_matching_me(Header) ->
 %% Function: route_matches_me(Route)
 %%           Route = sipurl record()
 %% Descrip.: Helper function for remove_route_matching_me/1. Check if
-%%           an URL matches this proxys name and port.
+%%           an URL matches this proxys name (or address) and port.
 %% Returns : true  |
 %%           false
 %%--------------------------------------------------------------------
@@ -999,33 +1003,6 @@ get_all_listenports() ->
     %% from the transport layer.
     [get_listenport(udp)].
 
-%%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
-%%--------------------------------------------------------------------
-test() ->
-    %% test process_parsed_packet(Request, Origin)
-    %% test process_parsed_packet(Response, Origin)
-    %% test check_response_via(Response, Origin, TopVia)
-    %% test fix_topvia_received(Header, Origin)
-    %% test fix_topvia_rport(Header, Origin)
-    %% test received_from_strict_router(URI, Header)
-    %% test remove_route_matching_me(Header)
-    %% test route_matches_me(Route)
-    %% test check_packet(Request, Origin)
-    %% test check_for_loop(Header, URI, Origin)
-    %% test via_indicates_loop(LoopCookie, CmpVia, ViaList)
-    %% test make_logstr(Request, Origin)
-    %% test sanity_check_contact(Type, Name, Header)
-    %% test check_supported_uri_scheme(URI, Header)
-    %% test get_env(Name)
-    %% test get_env(Name, Default)
-    %% test origin2str(Origin, Default)
-    %% test get_listenport(Proto)
-    %% test get_all_listenports()
-    ok.
-
 %%====================================================================
 %% Behaviour functions
 %%====================================================================
@@ -1040,3 +1017,319 @@ test() ->
 %% Returns :
 %%--------------------------------------------------------------------
 
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+    %% build request header
+    %%--------------------------------------------------------------------
+    io:format("test: init variables - 1~n"),
+
+    MyHostname = siprequest:myhostname(),
+    SipLPort  = sipserver:get_listenport(tcp),
+    _SipsLPort = sipserver:get_listenport(tls),
+
+    ViaMe = siprequest:create_via(tcp, []),
+    ViaOrigin1 = #siporigin{proto=tcp},
+
+
+    %% test check_response_via(Origin, TopVia)
+    %%--------------------------------------------------------------------
+    io:format("test: check_response_via/2 - 1~n"),
+    %% straight forward, via is what this proxy would use (ViaMe)
+    ok = check_response_via(ViaOrigin1, ViaMe),
+
+    io:format("test: check_response_via/2 - 2~n"),
+    %% received response over unexpected protocol, still ok since this can
+    %% happen if we for example send a request out over TCP but the other end
+    %% fails to send the response back to us using the same connection so the
+    %% response is received over UDP
+    ok = check_response_via(ViaOrigin1#siporigin{proto=udp}, ViaMe),
+
+    io:format("test: check_response_via/2 - 3~n"),
+    %% no top via, invalid
+    error = check_response_via(ViaOrigin1#siporigin{proto=udp}, none),
+
+    %% test process_parsed_packet(Response, Origin)
+    %% tests sanity_check_contact(Type, Name, Header) indirectly
+    %%--------------------------------------------------------------------
+
+    io:format("test: build response - 1~n"),
+    CRHeader1 = keylist:from_list([
+				    {"Via",	sipheader:via_print([ViaMe])},
+				    {"Via",	["SIP/2.0/FOO 192.0.2.78"]},
+				    {"From",	["<sip:user1@example.org>"]},
+				    {"To",	["\"Joe\" <sip:user2@example.org>"]},
+				    {"CSeq",	["10 MESSAGE"]}
+				   ]),
+    CheckResponse1 = #response{status=200, reason="Ok", header=CRHeader1, body=""},
+
+    io:format("test: process_parsed_packet/2 response - 1~n"),
+    %% straight forward
+    {#response{}=_Response, _LogStr} = process_parsed_packet(CheckResponse1, #siporigin{proto=tcp}),
+    
+    io:format("test: process_parsed_packet/2 response - 2~n"),
+    CRHeader2 = keylist:delete("Via", CRHeader1),
+    CheckResponse2 = #response{status=200, reason="Ok", header=CRHeader2, body=""},
+    %% without Via-headers
+    {invalid} = process_parsed_packet(CheckResponse2, #siporigin{proto=tcp}),
+
+    io:format("test: process_parsed_packet/2 response - 3 (disabled)~n"),
+    CRHeader3 = keylist:set("From", ["http://www.example.org/"], CRHeader1),
+    CheckResponse3 = #response{status=200, reason="Ok", header=CRHeader3, body=""},
+    %% http From: URL, draft-ietf-sipping-torture-tests-04 argues that a proxy
+    %% should be able to process a request/response with this unless the
+    %% proxy really has to understand the From:. We currently don't.
+    _ = (catch process_parsed_packet(CheckResponse3, #siporigin{proto=tcp})),
+
+
+    %% test fix_topvia_received(Header, Origin)
+    %%--------------------------------------------------------------------
+    io:format("test: build request header - 1~n"),
+    ReqHeader1 = keylist:from_list([{"Via", ["SIP/2.0/TLS 192.0.2.78"]}]),
+    Origin1 = #siporigin{proto=tcp, addr="192.0.2.78", port=1234},
+    Origin2 = #siporigin{proto=tcp, addr="192.0.2.200", port=2345},
+
+
+    io:format("test: fix_topvia_received/2 - 1.1~n"),
+    %% check Via that is IP-address (the right one), and no rport parameter
+    ReqHeader1_1 = fix_topvia_received(ReqHeader1, Origin1),
+
+    io:format("test: fix_topvia_received/2 - 1.2~n"),
+    %% check result
+    ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch(via, ReqHeader1_1),
+
+
+    io:format("test: fix_topvia_received/2 - 2.1~n"),
+    %% check Via that is IP-address (but not the same as in Origin2), and no rport parameter
+    ReqHeader1_2 = fix_topvia_received(ReqHeader1, Origin2),
+
+    io:format("test: fix_topvia_received/2 - 2.2~n"),
+    %% check result
+    ["SIP/2.0/TLS 192.0.2.78;received=192.0.2.200"] = keylist:fetch(via, ReqHeader1_2),
+
+
+    io:format("test: fix_topvia_received/2 - 3.1~n"),
+    ReqHeader2 = keylist:from_list([{"Via", ["SIP/2.0/TLS phone.example.org"]}]),
+    io:format("test: fix_topvia_received/2 - 3.2~n"),
+    %% check Via that is hostname, and no rport parameter
+    ReqHeader2_1 = fix_topvia_received(ReqHeader2, Origin1),
+
+    io:format("test: fix_topvia_received/2 - 3.3~n"),
+    %% check result
+    ["SIP/2.0/TLS phone.example.org;received=192.0.2.78"] = keylist:fetch(via, ReqHeader2_1),
+
+    %% test fix_topvia_rport(Header, Origin)
+    %%--------------------------------------------------------------------
+
+    
+    io:format("test: fix_topvia_rport/2 - 1.1~n"),
+    ReqHeader3 = keylist:from_list([{"Via", ["SIP/2.0/TLS 192.0.2.78;rport"]}]),
+    io:format("test: fix_topvia_rport/2 - 1.2~n"),
+    %% check Via that is IP address, with rport. When rport exists, we MUST add a
+    %% received= even if the host-part equals the address we received the request from
+    ReqHeader3_1 = fix_topvia_rport(ReqHeader3, Origin1),
+
+    io:format("test: fix_topvia_rport/2 - 1.3~n"),
+    %% check result
+    ["SIP/2.0/TLS 192.0.2.78;received=192.0.2.78;rport=1234"] = keylist:fetch(via, ReqHeader3_1),
+
+
+    io:format("test: fix_topvia_rport/2 - 2.1~n"),
+    %% check Via that is IP address (wrong address), with rport.
+    ReqHeader3_2 = fix_topvia_rport(ReqHeader3, Origin2),
+
+    io:format("test: fix_topvia_rport/2 - 2.2~n"),
+    %% check result
+    ["SIP/2.0/TLS 192.0.2.78;received=192.0.2.200;rport=2345"] = keylist:fetch(via, ReqHeader3_2),
+
+
+    io:format("test: fix_topvia_rport/2 - 3.1~n"),
+    ReqHeader4 = keylist:from_list([{"Via", ["SIP/2.0/TCP phone.example.org;rport"]}]),
+    io:format("test: fix_topvia_rport/2 - 3.2~n"),
+    %% check Via that is hostname, with rport.
+    ReqHeader4_1 = fix_topvia_rport(ReqHeader4, Origin2),
+
+    io:format("test: fix_topvia_rport/2 - 3.3~n"),
+    %% check result
+    ["SIP/2.0/TCP phone.example.org;received=192.0.2.200;rport=2345"] = keylist:fetch(via, ReqHeader4_1),
+
+
+    %% build request header
+    %%--------------------------------------------------------------------
+    io:format("test: build request header - 1~n"),
+    ReqHeader10 = keylist:from_list([
+				     {"Via",	["SIP/2.0/TLS 130.237.90.1:111",
+						 "SIP/2.0/TCP 2001:6b0:5:987::1"]},
+				     {"From",	["<sip:test@it.su.se>;tag=f-123"]},
+				     {"To",	["<sip:test@it.su.se>;tag=t-123"]},
+				     {"CSeq",	["4711 INVITE"]},
+				     {"Call-ID",	["abc123@test"]},
+				     {"Route",	["<sip:p1:1111>", "<sip:p2:2222>"]}
+				    ]),
+    MyRoute = contact:parse(["<sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort) ++ ">"]),
+    MyRouteStr = contact:print(MyRoute),
+
+    MyRoute2 = contact:parse(["<sip:" ++ siphost:myip() ++ ":" ++ integer_to_list(SipLPort) ++ ">"]),
+    MyRouteStr2 = contact:print(MyRoute2),
+
+    %% port should not match me
+    MyRoute3 = contact:parse(["<sip:" ++ MyHostname ++ ":4711>"]),
+    MyRouteStr3 = contact:print(MyRoute3),
+
+    %% test remove_route_matching_me(Header)
+    %% indirectly tests route_matches_me(Route)
+    %%--------------------------------------------------------------------
+
+    io:format("test: remove_route_matching_me/1 - 1~n"),
+    %% These two Route headers doesn't match me
+    ["<sip:p1:1111>", "<sip:p2:2222>"] =
+	keylist:fetch(route, remove_route_matching_me(ReqHeader10)),
+
+    io:format("test: remove_route_matching_me/1 - 2~n"),
+    %% Test a single matching Route, should result in empty route set
+    [] = keylist:fetch(route, remove_route_matching_me(
+				keylist:set("Route", [MyRouteStr], ReqHeader10)
+				)),
+    
+    io:format("test: remove_route_matching_me/1 - 3~n"),
+    %% Test a matching Route, and some non-matching
+    ["<sip:example.org>"] = keylist:fetch(route,
+					  remove_route_matching_me(
+					    keylist:set("Route", [MyRouteStr, "<sip:example.org>"], ReqHeader10)
+					   )),
+    
+
+    io:format("test: remove_route_matching_me/1 - 4~n"),
+    %% Test a double matching Route, should result in the second one still there
+    [MyRouteStr] = keylist:fetch(route, remove_route_matching_me(
+					  keylist:set("Route", [MyRouteStr, MyRouteStr], ReqHeader10)
+					 )),
+    
+    io:format("test: remove_route_matching_me/1 - 5~n"),
+    %% Test Route matching on my IP address, plus one more Route
+    ["<sip:example.org>"] = keylist:fetch(route,
+					  remove_route_matching_me(
+					    keylist:set("Route", [MyRouteStr2, "<sip:example.org>"], ReqHeader10)
+					   )),
+
+    io:format("test: remove_route_matching_me/1 - 6~n"),
+    %% Test Route matching on my IP address, plus one more Route
+    ["<sip:example.org>"] = keylist:fetch(route,
+					  remove_route_matching_me(
+					    keylist:set("Route", [MyRouteStr2, "<sip:example.org>"], ReqHeader10)
+					   )),
+
+    io:format("test: remove_route_matching_me/1 - 7~n"),
+    %% Test Route with my hostname, but wrong port
+    [MyRouteStr3] = keylist:fetch(route,
+				  remove_route_matching_me(
+				    keylist:set("Route", [MyRouteStr3], ReqHeader10)
+				   )),
+
+
+    %% test received_from_strict_router(URI, Header)
+    %%--------------------------------------------------------------------
+    io:format("test: received_from_strict_router/2 - 0~n"),
+    StrictHeader1 = keylist:from_list([{"Route", ["sip:user@example.org"]}]),
+
+    io:format("test: received_from_strict_router/2 - 1~n"),
+    %% test with username part of URI, should always return false
+    false = received_from_strict_router(sipurl:parse("sip:ft@example.org"), StrictHeader1),
+
+    io:format("test: received_from_strict_router/2 - 2~n"),
+    %% This is an URL that we could actually have put in a Record-Route header
+    RRURL1 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort) ++ ";maddr=" ++ siphost:myip(),
+    true = received_from_strict_router(sipurl:parse(RRURL1), StrictHeader1),
+
+    io:format("test: received_from_strict_router/2 - 3~n"),
+    %% This is the same URL, but without the maddr parameter. Some stacks strip RR parameters
+    %% so unfortunately we must allow this one too.
+    RRURL2 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort),
+    false = received_from_strict_router(sipurl:parse(RRURL1), keylist:from_list([])),
+
+    io:format("test: received_from_strict_router/2 - 4~n"),
+    %% RRURL2 is a matching URL but without the maddr parameter. As some stacks strip the
+    %% parameters, this one should also work even though it wouldn't by the RFC.
+    true = received_from_strict_router(sipurl:parse(RRURL2), StrictHeader1),
+
+    io:format("test: received_from_strict_router/2 - 5~n"),
+    %% This is an URL that we could actually have put in a Record-Route header, but with the WRONG maddr
+    RRURL3 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort) ++ ";maddr=192.0.2.123",
+    false = received_from_strict_router(sipurl:parse(RRURL3), StrictHeader1),
+
+    io:format("test: received_from_strict_router/2 - 6~n"),
+    %% This is an URL that we could actually have put in a Record-Route header, but without the port
+    %% which we would have put in there. Unfortunately, some stacks strip the port if it is the default
+    %% port for a protocol (which SipLPort should be), so we must allow this too
+    RRURL4 = "sip:" ++ MyHostname ++ ";maddr=" ++ siphost:myip(),
+    true = received_from_strict_router(sipurl:parse(RRURL4), StrictHeader1),
+
+
+    %% test check_for_loop(Header, URI, Origin)
+    %% indirectly test via_indicates_loop(LoopCookie, CmpVia, ViaList)
+    %%--------------------------------------------------------------------
+    Me = lists:concat([MyHostname, ":", SipLPort]),
+
+    io:format("test: check_for_loop/2 - 1~n"),
+    LoopHeader1 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
+				      "SIP/2.0/TCP example.org:2222"
+				     ], ReqHeader10),
+    LoopURI1 = sipurl:parse("sip:user@example.org"),
+    LoopOrigin1 = #siporigin{proto=tcp, addr="192.0.2.123", port=4321},
+    %% No loop. No Via matches me at all.
+    true = (catch check_for_loop(LoopHeader1, LoopURI1, LoopOrigin1)),
+
+    io:format("test: check_for_loop/2 - 2~n"),
+    LoopHeader2 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
+				      "SIP/2.0/TCP " ++ Me
+				     ], ReqHeader10),
+    %% No loop. One of the Vias match me but has no branch parameter. Maybe this should
+    %% be considered cause to reject the request, but we currently don't.
+    true = (catch check_for_loop(LoopHeader2, LoopURI1, LoopOrigin1)),
+
+    io:format("test: check_for_loop/2 - 3~n"),
+    LoopHeader3 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
+				      "SIP/2.0/TCP " ++ Me ++ ";branch=noloop"
+				     ], ReqHeader10),
+    %% No loop. The Via that matches me clearly does not have a matching loop cookie.
+    true = (catch check_for_loop(LoopHeader3, LoopURI1, LoopOrigin1)),
+
+    io:format("test: check_for_loop/2 - 4~n"),
+    LoopHeader4 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
+				      "SIP/2.0/TCP " ++ Me ++ ";branch=z9hG4bK-yxa-foo-oZo99DPyZILaWA73FVsm7Dw"
+				     ], ReqHeader10),
+    %% Loop.
+    {sipparseerror, request, _Keylst, 482, _Reason} = (catch check_for_loop(LoopHeader4, LoopURI1, LoopOrigin1)),
+
+    io:format("test: check_for_loop/2 - 5~n"),
+    LoopHeader5 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
+				      "SIP/2.0/UDP " ++ Me ++ ";branch=z9hG4bK-yxa-foo-o4711foo",
+				      "SIP/2.0/TLS example.com:5090",
+				      "SIP/2.0/TLS " ++ Me ++ ";received=192.0.2.1;branch="
+				      "z9hG4bK-yxa-foo-oZo99DPyZILaWA73FVsm7Dw",
+				      "SIP/2.0/UDP phone.example.net;received=192.0.2.254"
+				     ], ReqHeader10),
+    %% Loop, although a wee bit harder to spot since there is one Via matching us (UDP) that does NOT
+    %% indicate a loop, and the one that does (TLS) has some unknown-to-us IP address in a received parameter.
+    {sipparseerror, request, _Keylist, 482, _Reason} = 
+	(catch check_for_loop(LoopHeader5, LoopURI1, LoopOrigin1)),
+
+    %% test process_parsed_packet(Request, Origin)
+    %% test check_packet(Request, Origin)
+
+    %% test make_logstr(Request, Origin)
+    %% test check_supported_uri_scheme(URI, Header)
+    %% test get_env(Name)
+    %% test get_env(Name, Default)
+    %% test origin2str(Origin, Default)
+    %% test get_listenport(Proto)
+    %% test get_all_listenports()
+    ok.
