@@ -1,5 +1,5 @@
 -module(sipproxy).
--export([fork/8, generate_branch/0, get_branch/1]).
+-export([fork/7, get_branch/1]).
 
 % This is the start() function of sipproxy. sipproxy can presently
 % accomplish 'stateless forking'. It can follow an Actions list and
@@ -9,7 +9,7 @@
 % supported actions are a list of 'call' and 'wait'. You can mix calls and
 % waits freely.
 
-fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Actions, Timeout, Targets) ->
+fork(BranchBase, Parent, OrigRequest, FromIP, Actions, Timeout, Targets) ->
     % XXX detect Max-Forwards: 1 here instead of when sending the requests
     % out since siprequest:send_proxy_request() would send the errors
     % right back to the caller
@@ -20,18 +20,18 @@ fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Actions, Timeout, Targets)
 		      [sipurl:print(CallURI), CallTimeout]),
 	    Branch = BranchBase ++ "-UAC" ++ integer_to_list(length(Targets) + 1),
 	    Request = {Method, CallURI, Header, Body},
-	    BranchPid = clientbranch:start(Branch, Socket, FromIP, self(), OrigRequest, Request, CallTimeout),
+	    BranchPid = clientbranch:start(Branch, none, FromIP, self(), OrigRequest, Request, CallTimeout),
 	    NewTargets = targetlist:add_target(Branch, Request, BranchPid, calling, none, Targets),
-	    fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Rest, Timeout, NewTargets);
+	    fork(BranchBase, Parent, OrigRequest, FromIP, Rest, Timeout, NewTargets);
 	[{wait, Time} | Rest] ->
 	    logger:log(debug, "sipproxy: waiting ~p seconds", [Time]),
-	    case process_wait(Parent, OrigRequest, Socket, Targets,
+	    case process_wait(Parent, OrigRequest, Targets,
 			      false, util:timestamp() + Time, calling) of
 		{discontinue, NewTargets} ->
 		    logger:log(debug, "sipproxy: discontinue processing"),
-		    fork(BranchBase, Parent, OrigRequest, FromIP, Socket, [], Timeout, NewTargets);
+		    fork(BranchBase, Parent, OrigRequest, FromIP, [], Timeout, NewTargets);
 		NewTargets ->
-		    fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Rest, Timeout, NewTargets)
+		    fork(BranchBase, Parent, OrigRequest, FromIP, Rest, Timeout, NewTargets)
 	    end;
 	[] ->
 	    case allterminated(Targets) of
@@ -44,25 +44,39 @@ fork(BranchBase, Parent, OrigRequest, FromIP, Socket, Actions, Timeout, Targets)
 	    end,
 	    Parent ! {no_more_actions},
 	    logger:log(debug, "sipproxy: waiting ~p seconds for final responses", [Timeout]),
-	    process_wait(Parent, OrigRequest, Socket, Targets,
+	    process_wait(Parent, OrigRequest, Targets,
 			 false, util:timestamp() + Timeout, stayalive),
 	    Parent ! {callhandler_terminating, self()}
     end.
 
-generate_branch() ->
-    {Megasec, Sec, Microsec} = now(),
-    "z9hG4bK-yxa-" ++ hex:to(Sec, 8) ++ hex:to(Microsec, 8).
-
 get_branch(Header) ->
+    ViaHostname = siprequest:myhostname(),
+    ViaPort = siprequest:default_port(sipserver:get_env(listenport, none)),
     case sipheader:via(keylist:fetch("Via", Header)) of
-	[Via | _] ->
-	    % XXX check that this is my Via
-	    case dict:find("branch", sipheader:via_params(Via)) of
+	[{_, {ViaHostname, ViaPort}, Parameters} | _] ->
+	    case dict:find("branch", sipheader:param_to_dict(Parameters)) of
 		error ->
 		    none;
 		{ok, Branch} ->
-		    Branch
+		    case sipserver:get_env(detect_loops, true) of
+			true ->
+			    case string:rstr(Branch, "-o") of
+				0 ->
+				    logger:log(error, "sipproxy: Loop detection is on, but top Via matching me does not contain a loop cookie : ~p",
+						[Branch]),
+				    Branch;
+				Index when integer(Index) ->
+				    % Return branch without loop cookie
+				    string:substr(Branch, 1, Index - 1)
+			    end;
+			_ ->
+			    Branch
+		    end
 	    end;
+	[Via | _] when list(Via) ->
+	    logger:log(error, "sipproxy: First Via is not mine (~p) in get_branch",
+			[sipheader:via_print(Via)]),
+	    error;
 	_ ->
 	    none
     end.
@@ -94,11 +108,11 @@ cancel_targets_state(Targets, State) ->
 			end
 	      end, Targets).
 
-process_wait(Parent, OrigRequest, Socket, Targets, true, AbsTime, State) ->
+process_wait(Parent, OrigRequest, Targets, true, AbsTime, State) ->
     logger:log(debug, "sipproxy: All Targets terminated or completed. Ending process_wait(), returning discontinue. debugfriendly(TargetList) :~n~p",
     		[targetlist:debugfriendly(Targets)]),
     {discontinue, Targets};
-process_wait(Parent, OrigRequest, Socket, Targets, false, AbsTime, State) ->
+process_wait(Parent, OrigRequest, Targets, false, AbsTime, State) ->
     Time = lists:max([AbsTime - util:timestamp(), 0]),
     ProcessNewTargets = receive
 	{cancel_all} ->
@@ -216,8 +230,7 @@ process_wait(Parent, OrigRequest, Socket, Targets, false, AbsTime, State) ->
 	    EndProcessing = end_processing(AbsTime, ProcessNewTargets, NewState),
 	    logger:log(debug, "sipproxy: State changer, State=~p, NewState=~p, TimeLeft=~p, AllTerminated=~p. EndProcessing = ~p",
 	    		[State, NewState, TimeLeft, AllTerminated, EndProcessing]),
-	    process_wait(Parent, OrigRequest, Socket, 
-	    		 ProcessNewTargets, EndProcessing, AbsTime, NewState)
+	    process_wait(Parent, OrigRequest, ProcessNewTargets, EndProcessing, AbsTime, NewState)
     end.
 
 allterminated(TargetList) ->
