@@ -245,8 +245,7 @@ get_password_for_user(User) ->
 	{atomic, []} ->
 	    logger:log(debug, "userdb-mnesia: No such user ~p when fetching password", [User]),
 	    nomatch;
-	{atomic, [A]} ->
-	    {Password, _Flags, _Classes} = A,
+	{atomic, [{Password, _Flags, _Classes}]} ->
 	    Password;
 	Unknown ->
 	    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_user(), user ~p result : ~p",
@@ -262,15 +261,17 @@ get_password_for_user(User) ->
 %%           is allowed to call to, through a pstnproxy. What class a
 %%           PSTN number is in is determined through pstnproxy
 %%           configuration.
-%% Returns : Classes, list() of atom()
+%% Returns : Classes |
+%%           nomatch |
+%%           error
+%%           Classes = list() of atom()
 %%--------------------------------------------------------------------
 get_classes_for_user(User) ->
     case phone:get_user(User) of
 	{atomic, []} ->
-	    logger:log(debug, "userdb-mnesia: No such user ~p when fetching password", [User]),
+	    logger:log(debug, "userdb-mnesia: No such user ~p when fetching classes", [User]),
 	    nomatch;
-	{atomic, [A]} ->
-	    {_Password, _Flags, Classes} = A,
+	{atomic, [{_Password, _Flags, Classes}]} ->
 	    Classes;
 	Unknown ->
 	    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_user(), user ~p result : ~p",
@@ -281,21 +282,23 @@ get_classes_for_user(User) ->
 %%--------------------------------------------------------------------
 %% Function: get_telephonenumber_for_user(User)
 %%           User = string()
-%% Descrip.: Return the telephone number for a user. We do this by
-%%           fetching all addresses for the user and then examining
-%%           them to see if any of them is a tel: URL, or has a
-%%           user part which is all numeric or is an E.164 number.
-%%           The numbering plan in the number return is not specified.
+%% Descrip.: Return the telephone number for a user.
 %% Returns : Number  |
 %%           nomatch
 %%           Number = string()
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(User) ->
     case phone:get_numbers_for_user(User) of
-	{atomic, [FirstNumber | _]} ->
+	{atomic, []} ->
+	    logger:log(debug, "userdb-mnesia: No numbers for user ~p", [User]),
+	    nomatch;
+	{atomic, [FirstNumber | _]} when is_list(FirstNumber) ->
+	    %% XXX what says that the first entry was a telephone number and not some other address?
 	    FirstNumber;
-	_ ->
-	    nomatch
+	Unknown ->
+	    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_numbers_for_user(), user ~p result : ~p",
+		       [User, Unknown]),
+	    error
     end.
 
 %%--------------------------------------------------------------------
@@ -304,8 +307,9 @@ get_telephonenumber_for_user(User) ->
 %% Descrip.: Return a list of forwards for this user. Forwards are
 %%           currently not in the main Yxa CVS repository - Magnus has
 %%           some CVS merging to do.
-%% Returns : list() of Unknown |
+%% Returns : ForwardList |
 %%           nomatch
+%%           ForwardList = list() of sipproxy_forward record()
 %%--------------------------------------------------------------------
 get_forwards_for_users(In) ->
     get_forwards_for_users2(In, []).
@@ -314,8 +318,6 @@ get_forwards_for_users2([], Res) ->
     lists:usort(Res);
 get_forwards_for_users2([H | T], Res) ->
     case get_forward_for_user(H) of
-	error ->
-	    error;
 	nomatch ->
 	    get_forwards_for_users2(T, Res);
 	Fwd ->
@@ -328,16 +330,17 @@ get_forwards_for_users2([H | T], Res) ->
 %% Descrip.: Return the forward entry for a user. Forwards are
 %%           currently not in the main Yxa CVS repository - Magnus has
 %%           some CVS merging to do.
-%% Returns : list() of Unknown |
+%% Returns : ForwardList |
 %%           nomatch
+%%           ForwardList = list() of sipproxy_forward record()
 %%--------------------------------------------------------------------
 get_forward_for_user(User) ->
     case database_forward:fetch(User) of
-	{atomic, []} ->
+	{ok, []} ->
 	    logger:log(debug, "userdb-mnesia: No forwards found for user ~p", [User]),
 	    nomatch;
-	{atomic, [F]} ->
-	    F;
+	{ok, Fwds} when is_list(Fwds) ->
+	    Fwds;
 	Unknown ->
 	    logger:log(error, "userdb-mnesia: Unexpected result from database_forward:fetch(), user ~p result : ~p",
 		       [User, Unknown]),
