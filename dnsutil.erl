@@ -22,32 +22,61 @@ siplookup(Domain) ->
 	    {Host, Port}
     end.
 
-number2enum([]) ->
-    "e164.sunet.se";
+number2enum([], Domain) ->
+    Domain;
 
-number2enum([C | Rest]) ->
-    [C, $. | number2enum(Rest)].
+number2enum([C | Rest], Domain) ->
+    [C, $. | number2enum(Rest, Domain)].
 
-applyregexp(Number, Regexp) ->
+applyregexp(Number, []) ->
+    none;
+applyregexp(Number, [Regexp | Rest]) ->
     logger:log(debug, "applyregexp: ~p ~p~n", [Number, Regexp]),
     case string:tokens(Regexp, "!") of
 	["^.*$", To] ->
 	    To;
 	_ ->
-	    none
+	    applyregexp(Number, Rest)
     end.
+
+enumalldomains(Number, []) ->
+    [];
+
+enumalldomains(Number, [Domain | Rest]) ->
+    naptrlookup(number2enum(lists:reverse(Number), Domain)) ++
+	enumalldomains(Number, Rest).
+
+chooseenum([], Type) ->
+    [];
+chooseenum([Elem | Rest], Type) ->
+    case Elem of
+	{Order, Preference, "u", Type, Regexp, ""} ->
+	    [{Order, Preference, Regexp} | chooseenum(Rest, Type)];
+	_ ->
+	    chooseenum(Rest, Type)
+    end.
+
+sortenum({Order1, Preference1, Regexp1}, {Order2, Preference2, Regexp2}) ->
+    if
+	Order1 < Order2 ->
+	    true;
+	true ->
+	    false
+    end.
+
+enumregexp([]) ->
+    [];
+enumregexp([{Order1, Preference1, Regexp1} | Rest]) ->
+    [Regexp1 | enumregexp(Rest)].
 
 enumlookup(none) ->
     none;
 enumlookup("+" ++ Number) ->
-    case naptrlookup(number2enum(lists:reverse(Number))) of
-	[] ->
-	    none;
-	[{Order, Preference, "u", "SIP+E2U", Regexp, ""} | _] ->
-	    applyregexp("+" ++ Number, Regexp);
-	[{Order, Preference, Flags, Services, Regexp, Replacement} | _] ->
-	    none
-    end;
+    L1 = enumalldomains(Number, ["e164.sunet.se", "e164.arpa"]),
+    L2 = chooseenum(L1, "SIP+E2U"),
+    L3 = lists:sort(fun sortenum/2, L2),
+    L4 = enumregexp(L3),
+    applyregexp("+" ++ Number, L4);
 enumlookup(Number) ->
     none.
 
@@ -84,6 +113,6 @@ parsenaptr(Record) ->
     {O1 * 256 + O2,
      P1 * 256 + P2,
      binary_to_list(Flags),
-     binary_to_list(Services),
+     httpd_util:to_upper(binary_to_list(Services)),
      binary_to_list(Regexp),
      binary_to_list(Replacement)}.
