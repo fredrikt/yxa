@@ -68,8 +68,9 @@ start(normal, [AppModule]) ->
     ssl:seed([sipserver:get_env(sipauth_password, ""), util:timestamp()]),
     mnesia:start(),
     [RemoteMnesiaTables, stateful, AppSupdata] = apply(AppModule, init, []),
-    case sipserver_sup:start_link(AppModule, AppSupdata) of
+    case sipserver_sup:start_link(AppModule) of
 	{ok, Supervisor} ->
+	    logger:log(debug, "starting, supervisor is ~p", [Supervisor]),
 	    case siphost:myip() of
 		"127.0.0.1" ->
 		    logger:log(normal, "NOTICE: siphost:myip() returns 127.0.0.1, it is either "
@@ -77,85 +78,77 @@ start(normal, [AppModule]) ->
 		_ ->
 		    true
 	    end,
-	    case RemoteMnesiaTables of
-		none ->
-		    %% update old database versions
-		    table_update:update(),
-		    logger:log(normal, "proxy started, supervisor is ~p", [Supervisor]);
-		_ ->
-		    DbNodes = case sipserver:get_env(databaseservers, none) of
-				  none ->
-				      logger:log(error, "Startup: This application needs remote tables ~p but you " ++
-						 "haven't configured any databaseservers, exiting.",
-						 [RemoteMnesiaTables]),
-				      logger:quit(none),
-				      erlang:fault("No databaseservers configured");
-				  Res ->
-				      Res
-			      end,
-		    logger:log(debug, "Mnesia extra db nodes : ~p", [DbNodes]),
-		    case mnesia:change_config(extra_db_nodes,
-					      sipserver:get_env(databaseservers)) of
-			{error, Reason} ->
-			    logger:log(error, "Startup: Could not add configured databaseservers: ~p",
-				       [mnesia:error_description(Reason)]),
-			    logger:quit(none),
-			    erlang:fault("Could not add configured databaseservers");
-			_ ->
-			    true
-		    end,
-		    {Message, Args} = find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor),
-		    logger:log(normal, Message, Args)
-	    end,
-	    %% Start the transport layer now that we have initialized everything
-	    TransportLayer = {transportlayer,
-			      {transportlayer, start, []},
-			      permanent, 2000, supervisor, [transportlayer]},
-	    case supervisor:start_child(Supervisor, TransportLayer) of
-		{error, E} ->
-		    logger:log(error, "Sipserver: Failed starting the transport layer : ~p", [E]),
-		    %% We must sleep a few seconds here, so that the supervisor does not shut down
-		    %% the logger process while it is still logging (yes, that was what happened
-		    %% with the result being that the logger process crashed and produced a mis-
-		    %% guiding error 'ebadf' from io:format()).
-		    timer:sleep(3),
-		    {error, E};
-		{ok, _} ->
-		    {ok, Supervisor};
-		{ok, _, _} ->
-		    {ok, Supervisor}
-	    end;
+	    ok = init_mnesia(RemoteMnesiaTables),
+	    {ok, Supervisor} = sipserver_sup:start_extras(Supervisor, AppSupdata),
+	    {ok, Supervisor} = sipserver_sup:start_transportlayer(Supervisor),
+	    logger:log(normal, "proxy started"),
+	    {ok, Supervisor};
 	Unknown ->
 	    E = lists:flatten(io_lib:format("Failed starting supervisor : ~p", [Unknown])),
 	    {error, E}
     end.
 
 %%--------------------------------------------------------------------
-%% Function: find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor)
-%%           RemoteMnesiaTables = list() of atom(), names of remote
-%%           mnesia tables needed by this Yxa application.
-%% Descrip.: Do mnesia:wait_for_tables() for RemoteMnesiaTables, with
-%%           a timeout since we (Stockholm university) have had
+%% Function: init_mnesia(RemoteTables)
+%%           RemoteTables = list() of atom(), names of remote Mnesia
+%%                          tables needed by this Yxa application.
+%% Descrip.: Initiate Mnesia on this node. If there are no remote
+%%           mnesia-tables, we conclude that we are a mnesia master
+%%           and check if any of the tables needs to be updated.
+%% Returns : ok | does not return at all
+%%--------------------------------------------------------------------
+init_mnesia(none) ->
+    %% update old database versions
+    ok = table_update:update(),
+    ok;
+init_mnesia(RemoteTables) when is_list(RemoteTables) ->
+    DbNodes = case sipserver:get_env(databaseservers, none) of
+		  none ->
+		      logger:log(error, "Startup: This application needs remote tables ~p but you " ++
+				 "haven't configured any databaseservers, exiting.",
+				 [RemoteTables]),
+		      logger:quit(none),
+		      erlang:fault("No databaseservers configured");
+		  Res ->
+		      Res
+	      end,
+    logger:log(debug, "Mnesia extra db nodes : ~p", [DbNodes]),
+    case mnesia:change_config(extra_db_nodes,
+			      sipserver:get_env(databaseservers)) of
+	{error, Reason} ->
+	    logger:log(error, "Startup: Could not add configured databaseservers: ~p",
+		       [mnesia:error_description(Reason)]),
+	    logger:quit(none),
+	    erlang:fault("Could not add configured databaseservers");
+	_ ->
+	    true
+    end,
+    find_remote_mnesia_tables(RemoteTables).
+
+%%--------------------------------------------------------------------
+%% Function: find_remote_mnesia_tables(RemoteTables)
+%%           RemoteTables = list() of atom(), names of remote Mnesia
+%%                          tables needed by this Yxa application.
+%% Descrip.: Do mnesia:wait_for_tables() for RemoteTables, with a
+%%           timeout since we (Stockholm university) have had
 %%           intermittent problems with mnesia startups. Try a mnesia
 %%           stop/start after 30 seconds, and stop trying by using
 %%           erlang:fault() after another 30 seconds.
-%% Returns : {LogFormat, LogArgs} | does not return at all
-%%           LogFormat = string()
-%%           LogArgs = list() of term()
+%% Returns : ok | does not return at all
 %%
 %% XXX are the problems asociated with the somewhat random startup
 %% order of the nodes/applications? mnesia:start() is asynchronous
 %% or is it the usage of ctrl-c to terminate node when debugging
 %% which mnesia might perceive as a network error? - hsten
 %%--------------------------------------------------------------------
-find_remote_mnesia_tables(RemoteMnesiaTables, Supervisor) ->
-    logger:log(debug, "Initializing remote Mnesia tables ~p", [RemoteMnesiaTables]),
-    find_remote_mnesia_tables1(Supervisor, RemoteMnesiaTables, RemoteMnesiaTables, 0).
+find_remote_mnesia_tables(RemoteTables) ->
+    logger:log(debug, "Initializing remote Mnesia tables ~p", [RemoteTables]),
+    find_remote_mnesia_tables1(RemoteTables, RemoteTables, 0).
 
-find_remote_mnesia_tables1(Supervisor, OrigTableList, RemoteMnesiaTables, Count) ->
-    case mnesia:wait_for_tables(RemoteMnesiaTables, 10000) of
+find_remote_mnesia_tables1(OrigTableList, RemoteTables, Count) ->
+    case mnesia:wait_for_tables(RemoteTables, 10000) of
 	ok ->
-	    {"proxy started, all tables found, supervisor is ~p", [Supervisor]};
+	    ok;
 	{timeout, BadTabList} ->
 	    case Count of
 		3 ->
@@ -164,14 +157,14 @@ find_remote_mnesia_tables1(Supervisor, OrigTableList, RemoteMnesiaTables, Count)
 		    StopRes = mnesia:stop(),
 		    StartRes = mnesia:start(),
 		    logger:log(debug, "Mnesia stop() -> ~p, start() -> ~p", [StopRes, StartRes]),
-		    find_remote_mnesia_tables1(Supervisor, OrigTableList, OrigTableList, Count + 1);
+		    find_remote_mnesia_tables1(OrigTableList, OrigTableList, Count + 1);
 		6 ->
 		    logger:log(error, "Could not initiate remote Mnesia tables ~p, exiting.", [BadTabList]),
 		    logger:quit(none),
-		    erlang:fault("Mnesia table init error", RemoteMnesiaTables);
+		    erlang:fault("Mnesia table init error", RemoteTables);
 		_ ->
 		    logger:log(debug, "Still waiting for tables ~p", [BadTabList]),
-		    find_remote_mnesia_tables1(Supervisor, OrigTableList, BadTabList, Count + 1)
+		    find_remote_mnesia_tables1(OrigTableList, BadTabList, Count + 1)
 	    end
     end.
 
@@ -685,7 +678,7 @@ received_from_strict_router(URI, Header) when record(URI, sipurl) ->
     %% if the default port number was specified in there, but in practice that is
     %% what we have to do since some UAs can remove the port we put into the
     %% Record-Route
-    Port = list_to_integer(siprequest:default_port(URI#sipurl.proto, URI#sipurl.port)),
+    Port = siprequest:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
     PortMatches = lists:member(Port, MyPorts),
     MAddrMatch = case dict:find("maddr", sipheader:param_to_dict(URI#sipurl.param)) of
 		     {ok, MyIP} -> true;
@@ -756,12 +749,7 @@ remove_route_matching_me(Header) ->
 %%--------------------------------------------------------------------
 route_matches_me(Route) when is_record(Route, sipurl) ->
     MyPorts = sipserver:get_all_listenports(),
-    Port = case siprequest:default_port(Route#sipurl.proto, Route#sipurl.port) of
-	       I when is_integer(I) ->
-		   I;
-	       L when is_list(L) ->
-		   list_to_integer(L)
-	   end,
+    Port = siprequest:default_port(Route#sipurl.proto, sipurl:get_port(Route)),
     PortMatches = lists:member(Port, MyPorts),
     HostnameList = lists:append(get_env(myhostnames, []), siphost:myip_list()),
     HostnameMatches = util:casegrep(Route#sipurl.host, HostnameList),
@@ -985,16 +973,14 @@ get_listenport(Proto) when Proto == tls; Proto == tls6 ->
 	P when integer(P) ->
 	    P;
 	none ->
-	    L = siprequest:default_port(Proto, none),
-	    list_to_integer(L)
+	    siprequest:default_port(Proto, none)
     end;
 get_listenport(Proto) ->
     case sipserver:get_env(listenport, none) of
 	P when integer(P) ->
 	    P;
 	none ->
-	    L = siprequest:default_port(Proto, none),
-	    list_to_integer(L)
+	    siprequest:default_port(Proto, none)
     end.
 
 %% In some places, we need to get a list of all ports which are valid for this proxy.
@@ -1033,8 +1019,8 @@ test() ->
     io:format("test: init variables - 1~n"),
 
     MyHostname = siprequest:myhostname(),
-    SipLPort  = sipserver:get_listenport(tcp),
-    _SipsLPort = sipserver:get_listenport(tls),
+    SipPort  = sipserver:get_listenport(tcp),
+    _SipsPort = sipserver:get_listenport(tls),
 
     ViaMe = siprequest:create_via(tcp, []),
     ViaOrigin1 = #siporigin{proto=tcp},
@@ -1174,10 +1160,10 @@ test() ->
 				     {"Call-ID",	["abc123@test"]},
 				     {"Route",	["<sip:p1:1111>", "<sip:p2:2222>"]}
 				    ]),
-    MyRoute = contact:parse(["<sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort) ++ ">"]),
+    MyRoute = contact:parse(["<sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort) ++ ">"]),
     MyRouteStr = contact:print(MyRoute),
 
-    MyRoute2 = contact:parse(["<sip:" ++ siphost:myip() ++ ":" ++ integer_to_list(SipLPort) ++ ">"]),
+    MyRoute2 = contact:parse(["<sip:" ++ siphost:myip() ++ ":" ++ integer_to_list(SipPort) ++ ">"]),
     MyRouteStr2 = contact:print(MyRoute2),
 
     %% port should not match me
@@ -1246,13 +1232,13 @@ test() ->
 
     io:format("test: received_from_strict_router/2 - 2~n"),
     %% This is an URL that we could actually have put in a Record-Route header
-    RRURL1 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort) ++ ";maddr=" ++ siphost:myip(),
+    RRURL1 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort) ++ ";maddr=" ++ siphost:myip(),
     true = received_from_strict_router(sipurl:parse(RRURL1), StrictHeader1),
 
     io:format("test: received_from_strict_router/2 - 3~n"),
     %% This is the same URL, but without the maddr parameter. Some stacks strip RR parameters
     %% so unfortunately we must allow this one too.
-    RRURL2 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort),
+    RRURL2 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort),
     false = received_from_strict_router(sipurl:parse(RRURL1), keylist:from_list([])),
 
     io:format("test: received_from_strict_router/2 - 4~n"),
@@ -1262,13 +1248,13 @@ test() ->
 
     io:format("test: received_from_strict_router/2 - 5~n"),
     %% This is an URL that we could actually have put in a Record-Route header, but with the WRONG maddr
-    RRURL3 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipLPort) ++ ";maddr=192.0.2.123",
+    RRURL3 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort) ++ ";maddr=192.0.2.123",
     false = received_from_strict_router(sipurl:parse(RRURL3), StrictHeader1),
 
     io:format("test: received_from_strict_router/2 - 6~n"),
     %% This is an URL that we could actually have put in a Record-Route header, but without the port
     %% which we would have put in there. Unfortunately, some stacks strip the port if it is the default
-    %% port for a protocol (which SipLPort should be), so we must allow this too
+    %% port for a protocol (which SipPort should be), so we must allow this too
     RRURL4 = "sip:" ++ MyHostname ++ ";maddr=" ++ siphost:myip(),
     true = received_from_strict_router(sipurl:parse(RRURL4), StrictHeader1),
 
@@ -1276,7 +1262,7 @@ test() ->
     %% test check_for_loop(Header, URI, Origin)
     %% indirectly test via_indicates_loop(LoopCookie, CmpVia, ViaList)
     %%--------------------------------------------------------------------
-    Me = lists:concat([MyHostname, ":", SipLPort]),
+    Me = lists:concat([MyHostname, ":", SipPort]),
 
     io:format("test: check_for_loop/2 - 1~n"),
     LoopHeader1 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
