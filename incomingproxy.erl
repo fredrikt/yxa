@@ -89,6 +89,9 @@ do_request(Method, URL, Header, Body, Socket, FromIP) ->
 	{relay, Loc} ->
 	    logger:log(normal, "~s -> Relay ~s", [LogStr, sipurl:print(Loc)]),
 	    sipauth:check_and_send_relay(Header, Socket, {siprequest, send_proxy_request}, {Method, Loc, Body, []}, Method);
+	{forward, Host, Port} ->
+	    logger:log(normal, "~s -> Forward to ~p", [LogStr, sipurl:print_hostport(Host, Port)]),
+	    siprequest:send_proxy_request(Header, Socket, {Method, URL, Body, []}, {none, none, Host, Port, []});
 	_ ->
 	    logger:log(error, "~s -> Invalid Location ~p", [LogStr, Location]),
 	    siprequest:send_result(Header, Socket, "", 500, "Internal Server Error")
