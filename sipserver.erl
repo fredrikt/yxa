@@ -3,6 +3,8 @@
 
 -module(sipserver).
 
+%%-compile(export_all).
+
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
@@ -228,7 +230,7 @@ safe_spawn_child(Module, Function, Arguments) ->
 
 %%--------------------------------------------------------------------
 %% Function: my_send_result(Request, Socket, Status, Reason,
-%%                          ExtraHeaders)
+%%                                ExtraHeaders)
 %%           Request = request record()
 %%           Socket  = sipsocket record()
 %%           Status  = integer(), SIP response code
@@ -378,7 +380,7 @@ my_apply(AppModule, Response, Origin, LogStr) when atom(AppModule), record(Respo
 %%           Origin = siporigin record()
 %% Descrip.: Check if something we received from a socket (Packet) is
 %%           a valid SIP request/response
-%% Returns : {Msg, LogStr}       |
+%% Returns : {Msg, LogStr}          |
 %%           void(), unspecified
 %%           Msg = request record() |
 %%                 response record()
@@ -468,8 +470,8 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: process_parsed_packet(Packet, Origin)
-%%           Packet  = request record() | response record()
+%% Function: process_parsed_packet(Request, Origin)
+%%           Request = request record()
 %%           Origin  = siporigin record(), information about where
 %%                     this Packet was received from
 %% Descrip.: Do alot of transport/transaction layer checking/work on
@@ -477,13 +479,8 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
 %%           concluded was parseable. For example, do RFC3581 handling
 %%           of rport parameter on top via, check for loops, check if
 %%           we received a request from a strict router etc.
-%% Returns : {NewRequest, LogStr} in case of request input |
-%%           {NewResponse, LogStr} | {invalid} in case of response
-%%              input
+%% Returns : {NewRequest, LogStr}
 %%--------------------------------------------------------------------
-%%
-%% Process parsed Request
-%%
 process_parsed_packet(Request, Origin) when record(Request, request), record(Origin, siporigin) ->
     NewHeader1 = fix_topvia_received(Request#request.header, Origin),
     NewHeader2 = fix_topvia_rport(NewHeader1, Origin),
@@ -512,14 +509,50 @@ process_parsed_packet(Request, Origin) when record(Request, request), record(Ori
     LogStr = make_logstr(NewRequest, Origin),
     {NewRequest, LogStr};
 
-%%
-%% Process parsed Response
-%%
+%%--------------------------------------------------------------------
+%% Function: process_parsed_packet(Response, Origin)
+%%           Response = response record()
+%%           Origin   = siporigin record(), information about where
+%%                      this Packet was received from
+%% Descrip.: Do alot of transport/transaction layer checking/work on
+%%           a request or response we have received and previously
+%%           concluded was parseable. For example, do RFC3581 handling
+%%           of rport parameter on top via, check for loops, check if
+%%           we received a request from a strict router etc.
+%% Returns : {NewResponse, LogStr} |
+%%           {invalid}
+%%--------------------------------------------------------------------
 process_parsed_packet(Response, Origin) when record(Response, response), record(Origin, siporigin) ->
     check_packet(Response, Origin),
+    TopVia = sipheader:topvia(Response#response.header),
+    case check_response_via(Response, Origin, TopVia) of
+	ok ->
+	    LogStr = make_logstr(Response, Origin),
+	    {Response, LogStr};
+	error ->
+	    %% Silently drop packet
+	    {invalid}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: check_response_via(Response, Origin, TopVia)
+%%           Response = response record()
+%%           Origin   = siporigin record(), information about where
+%%                      this Packet was received from
+%%           TopVia   = via record() | none
+%% Descrip.: Check that there actually was a Via header in this
+%%           response, and check if it matches us.
+%% Returns : ok    |
+%%           error
+%%--------------------------------------------------------------------
+check_response_via(Response, Origin, none) ->
+    logger:log(error, "INVALID top-Via in response [client=~s] (no Via found).",
+	       [origin2str(Origin, "unknown")]),
+    error;
+check_response_via(Response, Origin, TopVia) when is_record(TopVia, via) ->
     %% Check that top-Via is ours (RFC 3261 18.1.2),
     %% silently drop message if it is not.
-    TopVia = sipheader:topvia(Response#response.header),
+
     %% Create a Via that looks like the one we would have produced if we sent the request
     %% this is an answer to, but don't include parameters since they might have changed
     Proto = Origin#siporigin.proto,
@@ -531,8 +564,7 @@ process_parsed_packet(Response, Origin) when record(Response, response), record(
     TopViaProto = sipsocket:viaproto2proto(TopVia#via.proto),
     case sipheader:via_is_equal(TopVia, MyViaNoParam, [proto, host, port]) of
         true ->
-	    LogStr = make_logstr(Response, Origin),
-	    {Response, LogStr};
+	    ok;
 	_ ->
 	    case sipheader:via_is_equal(TopVia, SentByMeNoParam, [proto, host, port]) of
 		true ->
@@ -549,7 +581,7 @@ process_parsed_packet(Response, Origin) when record(Response, response), record(
 			       " Top-Via (without parameters) (~s) does not match mine (~s). Discarding.",
 			       [origin2str(Origin, "unknown"), sipheader:via_print([TopVia#via{param=[]}]),
 				sipheader:via_print([MyViaNoParam])]),
-		    {invalid}
+		    error
 	    end
     end.
 
