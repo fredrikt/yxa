@@ -159,29 +159,22 @@ combine_srvresults([H | T], Res, Errors) when record(H, srventry) ->
 %%           weight. Sort errors last, but put nxdomain errors first
 %%           of the errors.
 %% Returns : list() of srventry record()
+%% Note    : XXX weight should be proportional somehow, not just
+%%           sorted
 %%--------------------------------------------------------------------
 sortsrv(A, B) when record(A, srventry), record(B, srventry) ->
-    {Order1, Weight1, Port1, Host1} = A#srventry.dnsrrdata,
-    {Order2, Weight2, Port2, Host2} = B#srventry.dnsrrdata,
+    {Order1, Weight1, _Port1, _Host1} = A#srventry.dnsrrdata,
+    {Order2, Weight2, _Port2, _Host2} = B#srventry.dnsrrdata,
     if
 	Order1 < Order2 ->
 	    true;
 	Order1 == Order2 ->
+	    %% XXX weight should be proportional somehow, not just sorted
 	    if
 		Weight1 > Weight2 ->
-		    %% XXX Verify this sort order!
 		    true;
 		Weight1 == Weight2 ->
-		    %% This string sorting is just to make the process deterministic
-		    %% so that a stateless proxy always chooses the same destination
-		    Str1 = Host1 ++ ":" ++ integer_to_list(Port1),
-		    Str2 = Host2 ++ ":" ++ integer_to_list(Port2),
-		    case lists:min([Str1, Str2]) of
-			Str1 ->
-			    true;
-			_ ->
-			    false
-		    end;
+		    true;
 		true ->
 		    false
 	    end;
