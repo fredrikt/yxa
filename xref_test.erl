@@ -58,7 +58,12 @@ run() ->
     Xref = foobar,  
 
     %% stop any old xref process
-    xref:stop(Xref),
+    try xref:stop(Xref)
+    catch
+	throw: _ -> ok;
+	  error: _ -> ok;
+	  exit: _ -> ok
+    end,
     %% start new "empty" xref process
     xref:start(Xref, {xref_mode, functions}),
 
@@ -75,7 +80,7 @@ run() ->
 		 ],
 
     %% tell xref where to look for modules to check    
-    Res = xref:add_directory(Xref, ".", []), 
+    Res = xref:add_directory(Xref, ".", [{recurse, true}]), 
     io:format("add_directory: ~n~p~n", [Res]),
     
 
