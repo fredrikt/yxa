@@ -1,6 +1,6 @@
 -module(sipheader).
 -export([to/1, from/1, contact/1, via/1, via_print/1, to_print/1,
-	 contact_print/1, auth_print/1, auth/1, comma/1, httparg/1]).
+	 contact_print/1, auth_print/1, auth_print/2, auth/1, comma/1, httparg/1]).
 
 comma(String) ->
     comma([], String, false).
@@ -107,8 +107,18 @@ name_header(String) ->
     end.
 
 auth_print(Auth) ->
+    auth_print(Auth, false).
+
+auth_print(Auth, Stale) ->
     {Realm, Nonce, Opaque} = Auth,
-    ["Digest realm=" ++ Realm ++ ", nonce=" ++ Nonce ++ ", opaque=" ++ Opaque].
+    ["Digest realm=\"" ++ Realm ++ "\", nonce=\"" ++ Nonce ++ "\", opaque=\"" ++ Opaque ++ "\"" ++
+     case Stale of
+	 true ->
+	     ", stale=true";
+	 _ ->
+	     ""
+     end
+    ].
 
 auth(["Digest " ++ String]) ->
     Headers = comma(String),
