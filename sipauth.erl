@@ -32,7 +32,9 @@ get_passnumber(User) ->
 	{atomic, []} ->
 	    {none, [], [], []};
 	{atomic, [A]} ->
-	    A;
+	    {Password, Flags, Classes} = A,
+	    {atomic, Numbers} = phone:get_numbers_for_user(User),
+	    {Password, Numbers, Flags, Classes};
 	{aborted, _} ->
 	    {none, [], [], []}
     end.

@@ -1,10 +1,12 @@
 -module(phone).
 -export([init/0, create/0, insert_phone/5, get_phone/1, list_phones/0,
-	 get_user/1, insert_user/5, list_users/0,
+	 get_user/1, insert_user/4, list_users/0,
 	 insert_purge_phone/5, insert_purge_class_phone/5,
 	 purge_class_phone/2, expired_phones/0, delete_record/1,
 	 delete_user/1, set_user_password/2, set_user_flags/2,
-	 set_user_numbers/2, set_user_classes/2, insert_user_or_password/2]).
+	 set_user_numbers/2, set_user_classes/2, insert_user_or_password/2,
+	 get_numbers_for_user/1, get_users_for_number/1, list_numbers/0
+	]).
 
 -include("phone.hrl").
 
@@ -21,8 +23,9 @@ create() ->
     mnesia:create_table(user, [{attributes, record_info(fields, user)},
 			       {disc_copies, [node()]}]),
     mnesia:create_table(numbers, [{attributes, record_info(fields, numbers)},
-				  {disc_copies, [node()]}]),
-    mnesia:add_table_index(numbers, number).
+				  {disc_copies, [node()]},
+				  {index, [number]},
+				  {type, bag}]).
 
 insert_record(Record) ->
     Fun = fun() ->
@@ -85,8 +88,8 @@ purge_class_phone(Number, Class) ->
 	  end,
     mnesia:transaction(Fun).    
 
-insert_user(User, Password, Number, Flags, Classes) ->
-    insert_record(#user{user = User, password = Password, number = Number,
+insert_user(User, Password, Flags, Classes) ->
+    insert_record(#user{user = User, password = Password,
 			flags = Flags, classes = Classes}).
 
 insert_user_or_password(User, Password) ->
@@ -98,7 +101,7 @@ insert_user_or_password(User, Password) ->
 		  case mnemosyne:eval(Q) of
 		      [] ->
 			  mnesia:write(#user{user = User, password = Password,
-					     number = [], flags = [], classes = []});
+					     flags = [], classes = []});
 		      [Entry] ->
 			  mnesia:write(Entry#user{password = Password});
 		      _ ->
@@ -125,6 +128,15 @@ list_users() ->
 		mnemosyne:eval(Q)
 	end,
     mnesia:transaction(F).
+
+list_numbers() ->
+    F = fun() ->
+		Q = query
+			[E || E <- table(numbers)]
+		    end,
+		mnemosyne:eval(Q)
+	end,
+    mnesia:transaction(F).
     
 get_phone(Number) ->
 	F = fun() ->
@@ -137,14 +149,50 @@ get_phone(Number) ->
     mnesia:transaction(F).
 
 get_user(User) ->
-	F = fun() ->
-		    Q = query
-			    [{E.password, E.number, E.flags, E.classes} || E <- table(user),
-						       E.user = User]
+    F = fun() ->
+		Q = query
+			[{E.password, E.flags, E.classes} || E <- table(user),
+							     E.user = User]
 			end,
-		    mnemosyne:eval(Q)
-	    end,
+		mnemosyne:eval(Q)
+	end,
     mnesia:transaction(F).
+
+get_numbers_for_user(User) ->
+    F = fun() ->
+		Q = query
+			[{E.number} || E <- table(numbers),
+				       E.user = User]
+		    end,
+		mnemosyne:eval(Q)
+	end,
+    Rewrite = fun({Number}) ->
+		      Number
+	      end,
+    case mnesia:transaction(F) of
+	{atomic, List} ->
+	    {atomic, lists:map(Rewrite, List)};
+	Other ->
+	    Other
+    end.
+
+get_users_for_number(Number) ->
+    F = fun() ->
+		Q = query
+			[{E.user} || E <- table(numbers),
+				     E.number = Number]
+		    end,
+		mnemosyne:eval(Q)
+	end,
+    Rewrite = fun({User}) ->
+		      User
+	      end,
+    case mnesia:transaction(F) of
+	{atomic, List} ->
+	    {atomic, lists:map(Rewrite, List)};
+	Other ->
+	    Other
+    end.
 
 set_user_password(User, Password) ->
     F = fun() ->
@@ -177,14 +225,19 @@ set_user_flags(User, Flags) ->
 set_user_numbers(User, Numbers) ->
     F = fun() ->
 		Q = query
-			[E || E <- table(user),
+			[E || E <- table(numbers),
 			      E.user = User]
 		    end,
 		A = mnemosyne:eval(Q),
-		Update = fun(O) ->
-				 mnesia:write(O#user{number = Numbers})
+		Delete = fun(O) ->
+				 mnesia:delete_object(O)
+			   end,
+		lists:foreach(Delete, A),
+		Update = fun(Number) ->
+				 mnesia:write(#numbers{number = Number,
+						       user = User})
 			 end,
-		lists:foreach(Update, A)
+		lists:foreach(Update, Numbers)
 	end,
     mnesia:transaction(F).
 
