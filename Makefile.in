@@ -31,8 +31,7 @@ systools_make_script = \
 	$(ERL) -noshell -run systools make_script $* -run init stop && test -f $*.boot
 
 create_start_script = \
-	PROGNAME=$${progname:-$@}; \
-	sed -e "s!@PROGRAMNAME@!$${PROGNAME}!" \
+	sed -e "s!@PROGRAMNAME@!$@!" \
 	    -e 's!@CONFIGDIR@!$(confdir)!' \
 	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
 	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
@@ -239,9 +238,7 @@ appserver.boot: appserver.app appserver.rel
 	$(systools_make_script)
 
 bootstrap.sh: init.sh.in config.status
-	# progname needs to be set to 'incomingproxy' for bootstrap.sh
-	# to get MNESIADIR set right.
-	progname=incomingproxy $(create_start_script)
+	$(create_start_script)
 
 incomingproxy: incomingproxy.boot init.sh.in config.status
 	$(create_start_script)
@@ -256,4 +253,7 @@ appserver: appserver.boot init.sh.in config.status
 	$(create_start_script)
 
 test: autotest.beam
-	$(ERL) -s autotest run shell -pz $(SUBDIRS)
+	$(ERL) -noshell -s autotest run shell -pz $(SUBDIRS)
+
+covertest: autotest.beam
+	$(ERL) -noshell -s autotest run_cover shell -pz $(SUBDIRS)
