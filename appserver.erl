@@ -72,7 +72,12 @@ request(Request, Origin, LogStr) when record(Request, request), record(Origin, s
 		 false -> Request#request.header
 	     end,
     NewRequest = Request#request{header=Header},
-    create_session(Request, Origin, LogStr).
+    case local:is_request_to_this_proxy(Request) of
+	true ->
+	    request_to_me(Request, LogStr);
+	false ->
+	    create_session(NewRequest, Origin, LogStr)
+    end.
 
 
 %% Function: response/3
@@ -102,6 +107,37 @@ response(Response, Origin, LogStr) when record(Response, response), record(Origi
 %%--------------------------------------------------------------------
 
 
+%%--------------------------------------------------------------------
+%% Function: request_to_me(Request, LogTag) 
+%%           Request = request record()
+%%           LogTag  = string()
+%% Descrip.: Request is meant for this proxy, if it is OPTIONS we
+%%           respond 200 Ok, otherwise we respond 481 Call/
+%%           transaction does not exist.
+%% Returns : Does not matter.
+%%--------------------------------------------------------------------
+request_to_me(Request, LogTag) when is_record(Request, request), Request#request.method == "OPTIONS" ->
+    logger:log(normal, "~s: appserver: OPTIONS to me -> 200 OK", [LogTag]),
+    logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
+	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
+    transactionlayer:send_response_request(Request, 200, "OK");
+
+request_to_me(Request, LogTag) when is_record(Request, request) ->
+    logger:log(normal, "~s: appserver: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist", 
+	       [LogTag]),
+    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist").
+
+
+%%--------------------------------------------------------------------
+%% Function: create_session(Request, Origin, LogStr)
+%%           Request = request record()
+%%           Origin  = siporigin record()
+%%           LogStr  = string()
+%% Descrip.: Request was not meant for this proxy itself - find out if
+%%           this request is for one of our users, and if so find out
+%%           what actions to perform for the request.
+%% Returns : void() | throw({siperror, ...})
+%%--------------------------------------------------------------------
 create_session(Request, Origin, LogStr) when record(Request, request), record(Origin, siporigin) ->
     %% create header suitable for answering the incoming request
     URI = Request#request.uri,
@@ -135,7 +171,7 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 				    throw({siperror, 500, "Server Internal Error"});
 				Index when integer(Index) ->
 				    BranchBase = string:substr(CallBranch, 1, Index - 1),
-				    fork_actions(BranchBase, CallBranch, CallHandler, Request, Actions)
+				    fork_actions(BranchBase, CallHandler, Request, Actions)
 			    end
 		    end
 	    end;
@@ -147,6 +183,17 @@ create_session(Request, Origin, LogStr) when record(Request, request), record(Or
 	    transportlayer:send_proxy_request(THandler, Request, URI, [])
     end.
 
+
+%%--------------------------------------------------------------------
+%% Function: get_actions(URI)
+%%           URI = sipuri record()
+%% Descrip.: Find the SIP user(s) for a URI and make a list() of
+%%           sipproxy_action to take for a request destined for that
+%%           user(s).
+%% Returns : {UserList, ActionsList} | throw()
+%%           UserList    = list() of SIP usernames (strings)
+%%           ActionsList = list() of sipproxy_action record()
+%%--------------------------------------------------------------------
 get_actions(URI) when record(URI, sipurl) ->
     LookupURL = URI#sipurl{pass=none, port=none, param=[]},
     case local:get_users_for_url(LookupURL) of
@@ -166,6 +213,9 @@ get_actions(URI) when record(URI, sipurl) ->
 	    throw({siperror, 500, "Server Internal Error"})
     end.
 
+%% forward_call_actions/2 helps fetch_actions_for_users/1 make a list of
+%% sipproxy_action out of a list of forwards, a timeout value and
+%% "concurrent ringing or not" information
 forward_call_actions([{Forwards, Timeout, Localring}], Actions) ->
     FwdTimeout = sipserver:get_env(appserver_forward_timeout, 40),
     Func = fun(Forward) ->
@@ -194,6 +244,7 @@ fetch_actions_for_users(Users) ->
 	[] ->
 	    Actions;
 	{aborted, {no_exists, forward}} ->
+	    %% ehh? better let the Unknown thing below handle this?
 	    Actions;
 	Forwards when list(Forwards) ->
 	    forward_call_actions(Forwards, Actions);
@@ -228,34 +279,47 @@ locations_to_actions2([H | T], Res) ->
     logger:log(error, "appserver: Illegal location in locations_to_actions2: ~p", [H]),
     locations_to_actions2(T, Res).
 
-fork_actions(BranchBase, CallBranch, CallHandler, Request, Actions) when record(Request, request) ->
+%%--------------------------------------------------------------------
+%% Function: fork_actions(BranchBase, CallHandler, Request, Actions)
+%%           BranchBase = string()
+%%           CallHandler = term(), reference to server transaction
+%%           Request = request record()
+%%           Actions = list() of sipproxy_action record()
+%% Descrip.: Start start_actions/4 in a new thread, then enter the
+%%           process_messages() loop. Do not return until fork is
+%%           done (meaning both server transaction and all client
+%%           transactions are finished or dead). Execution process is
+%%           the one we refer to as appserver glue process.
+%% Returns : ok
+%%--------------------------------------------------------------------
+fork_actions(BranchBase, CallHandler, Request, Actions) when record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     ForkPid = sipserver:safe_spawn(fun start_actions/4, [BranchBase, self(), Request, Actions]),
     logger:log(normal, "~s: Appserver: Forking request, ~p actions",
 	       [BranchBase, length(Actions)]),
-    logger:log(debug, "Appserver: Starting up call, glue process ~p, CallHandler ~p, ForkPid ~p",
+    logger:log(debug, "Appserver: Forking request, glue process ~p, CallHandler ~p, ForkPid ~p",
 	       [self(), CallHandler, ForkPid]),
     InitState = #state{request=Request, sipmethod=Method, callhandler=CallHandler, forkpid=ForkPid, cancelled=false, completed=false},
     process_messages(InitState),
-    logger:log(normal, "Appserver glue: Finished with call (~s ~s), exiting.", [Method, sipurl:print(URI)]),
+    logger:log(normal, "Appserver glue: Finished with fork (~s ~s), exiting.", [Method, sipurl:print(URI)]),
     ok.
 
 start_actions(BranchBase, GluePid, OrigRequest, Actions) when record(OrigRequest, request) ->
     {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
     Timeout = 32,
-    %% We don't return from fork() until all Actions are done, and fork() signals GluePid
+    %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals GluePid
     %% when it is done.
     case sipproxy:start(BranchBase, GluePid, OrigRequest, Actions, Timeout) of
 	ok ->
 	    logger:log(debug, "Appserver forker : sipproxy fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
 	    true;
 	{error, What} ->
-	    logger:log(error, "Appserver forker : sipproxy fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What]), 
+	    logger:log(error, "Appserver forker : sipproxy fork of request ~s ~s failed : ~p", [Method, sipurl:print(URI), What]),
 	    transactionlayer:send_response_request(OrigRequest, 500, "Server Internal Error")
     end.
 
 %% Receive messages from branch pids and do whatever is necessary with them
-process_messages(State) when record(State, state), State#state.callhandler == none, State#state.forkpid == none -> 
+process_messages(State) when record(State, state), State#state.callhandler == none, State#state.forkpid == none ->
     logger:log(debug, "Appserver glue: Both CallHandler and ForkPid are 'none' - terminating"),
     ok;
 process_messages(State) when record(State, state) ->
@@ -376,7 +440,7 @@ process_messages(State) when record(State, state) ->
 	    ok;
 	_ ->
 	    process_messages(NewState)
-    end.    
+    end.
 
 %%
 %% Method is INVITE and we are already completed
@@ -447,7 +511,3 @@ garbage_collect_transaction(Descr, TH) ->
 		       [Descr]),
 	    none
     end.
-
-%% TODO :
-%%
-%% Reject requests with too low Max-Forwards before forking
