@@ -9,7 +9,7 @@
 	     sipsocket, sipsocket_tcp, sipsocket_udp, socketlist,
 	     transportlayer, transactionlayer]},
   {registered, [logger]},
-  {mod, {appserver, []}},
+  {mod, {sipserver, [appserver]}},
   {env, []},
   {applications,
         [kernel, stdlib]}]}.

@@ -1,13 +1,11 @@
 -module(incomingproxy).
--export([start/2]).
 
-start(normal, Args) ->
-    Pid = spawn(sipserver, start, [fun init/0, fun request/6,
-				   fun response/6, none, stateful]),
-    {ok, Pid}.
+-export([init/0, request/6, response/6]).
 
 init() ->
-    timer:apply_interval(60000, siplocation, remove_expired_phones, []).
+    Registrar = {registrar, {registrar, start_link, []}, permanent, 2000, worker, [registrar]},
+    [[fun request/6, fun response/6], none, stateful, {append, [Registrar]}].
+
 
 route_request(Request) ->
     {Method, URL, Header, Body} = Request,

@@ -1,14 +1,10 @@
 -module(pstnproxy).
--export([start/2]).
 
-start(normal, Args) ->
-    Pid = spawn(sipserver, start, [fun init/0, fun request/6,
-				   fun response/6, [user, numbers],
-				   stateful]),
-    {ok, Pid}.
+-export([init/0, request/6, response/6]).
 
 init() ->
-    true.
+    [[fun request/6, fun response/6], [user, numbers], stateful, none].
+
 
 localhostname(Hostname) ->
     util:casegrep(Hostname, sipserver:get_env(myhostnames)).
@@ -175,12 +171,10 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) ->
 	    sipserver:safe_spawn(sippipe, start, [THandler, none, Request, DstURI, none, [], 900]);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)", [User, DstNumber, Class]),
-	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), true)}],
-	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
+	    transactionlayer:send_challenge(THandler, proxy, true, none);
 	{false, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate for dst ~s (class ~s)", [User, DstNumber, Class]),
-	    ExtraHeaders = [{"Proxy-Authenticate", sipheader:auth_print(sipauth:get_challenge(), false)}],
-	    transactionlayer:send_response_request(Request, 407, "Proxy Authentication Required", ExtraHeaders);
+	    transactionlayer:send_challenge(THandler, proxy, false, none);
 	Unknown ->
 	    logger:log(error, "Auth: Unknown result from sipauth:pstn_is_allowed_call() :~n~p", [Unknown]),
 	    transactionlayer:send_response_request(Request, 500, "Server Internal Error")

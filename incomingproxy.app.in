@@ -7,7 +7,7 @@
 	     gssapi, local, lookup, siplocation, sipuserdb, sipuserdb_mnesia,
 	     sipuserdb_ldap, servertransaction, sippipe, transportlayer]},
   {registered, []},
-  {mod, {incomingproxy, []}},
+  {mod, {sipserver, [incomingproxy]}},
   {env, []},
   {applications,
         [kernel, stdlib]}]}.

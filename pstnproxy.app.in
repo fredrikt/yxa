@@ -7,7 +7,7 @@
 	     sipuserdb_ldap, transactionlayer, servertransaction,
 	     sippipe, transportlayer]},
   {registered, []},
-  {mod, {pstnproxy, []}},
+  {mod, {sipserver, [pstnproxy]}},
   {env, []},
   {applications,
         [kernel, stdlib]}]}.

@@ -3,7 +3,7 @@
   {vsn,"0.0"},
   {modules, [testserver, logger, util, siputil, sippacket, keylist, sipurl, siprequest, sipheader, sipauth, siphost, hex, phone, sipserver]},
   {registered, []},
-  {mod, {testserver, []}},
+  {mod, {sipserver, [testserver]}},
   {env, []},
   {applications,
         [kernel, stdlib]}]}.
