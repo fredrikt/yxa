@@ -148,8 +148,13 @@ can_register(Header, Number) ->
 	stale ->
 	    stale;
 	User ->
-	    {_, Numberlist, _, _} = get_passnumber(User),
-	    lists:member(Number, Numberlist)
+	    case Number of
+		User ->
+		    true;
+		_ ->
+		    {_, Numberlist, _, _} = get_passnumber(User),
+		    lists:member(Number, Numberlist)
+	    end
     end.
 
 check_and_send_auth(Header, Socket, Phone, Tophone, Func, Arg, Method) ->
