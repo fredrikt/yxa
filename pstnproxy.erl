@@ -295,7 +295,7 @@ get_sipproxy() ->
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
 request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin) ->
-    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
+    {URI, Header} = {Request#request.uri, Request#request.header},
     {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
     %% XXX check port to, not just hostname? Maybe not since pstnproxy by definition
     %% should be running alone on a host.
@@ -324,14 +324,11 @@ request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, reque
 	    _ ->
 		{URI, Header}
 	end,
-    PSTNgateway = NewURI#sipurl.host,
     NewHeaders2 = case sipserver:get_env(record_route, true) of
 		      true -> siprequest:add_record_route(NewHeaders1, Origin);
 		      false -> NewHeaders1
 		  end,
-    {_, FromURI} = sipheader:from(Header),
-    NewHeaders3 = add_caller_identity_for_pstn(Method, NewHeaders2, FromURI, PSTNgateway),
-    NewRequest = Request#request{header=NewHeaders3},
+    NewRequest = Request#request{header=NewHeaders2},
     THandler = transactionlayer:get_handler_for_request(Request),
     relay_request_to_pstn(THandler, NewRequest, NewURI, DstNumber, LogTag).
 
@@ -362,35 +359,42 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
 %%                                        Gateway)
 %%           Method  = string()
 %%           Headers = keylist record()
-%%           URI     = sipurl record()
+%%           URI     = sipurl record(), Request URI of outgoing req.
+%%           User    = string(), SIP authentication username
 %%           Gateway = string()
 %% Descrip.: If configured to, add Remote-Party-Id information
 %%           about caller to this request before it is sent to a
 %%           PSTN gateway. Useful to get proper caller-id.
 %% Returns : NewHeader, keylist record()
 %%--------------------------------------------------------------------
-add_caller_identity_for_pstn("INVITE", Headers, URI, Gateway) when is_record(URI, sipurl) ->
+add_caller_identity_for_pstn("INVITE", Header, URI, User, Gateway) when is_record(Header, keylist),
+									is_record(URI, sipurl),
+									is_list(User) ->
     case sipserver:get_env(remote_party_id, false) of
 	true ->
-	    case local:get_remote_party_number(URI, Gateway) of
-		{ok, Number} when is_list(Number) ->
-		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
-		    RPURI = sipurl:set([{user, Number}, {pass, none}, {param, []}], URI),
-		    RPI = contact:new(none, RPURI, Parameters),
+	    case local:get_remote_party_number(User, Header, URI, Gateway) of
+		{ok, RPI, Number} when is_record(RPI, contact), is_list(Number) ->
 		    RemotePartyId = contact:print(RPI),
 		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
-		    NewHeaders1 = keylist:set("Remote-Party-Id", [RemotePartyId], Headers),
+		    NewHeader1 = keylist:set("Remote-Party-Id", [RemotePartyId], Header),
 		    logger:log(debug, "P-Preferred-Identity: ~s", ["tel:" ++ Number]),
-		    keylist:set("P-Preferred-Identity", ["tel:" ++ Number], NewHeaders1);
+		    keylist:set("P-Preferred-Identity", ["tel:" ++ Number], NewHeader1);
 		none ->
-		    Headers
+		    %% Add RPI information saying to not show any caller id, in case the From:
+		    %% contains something the gateway interprets as a phone number when it shouldn't
+		    logger:log(debug, "Remote-Party-Id: Blocking Caller-Id for third party user "
+			       "or user without number to avoid incorrect/spoofed A-number in PSTN"),
+		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "on"}],
+		    RPURI = sipurl:new([{host, siprequest:myhostname()}, {param, []}]),
+		    RPI = contact:print( contact:new("Anonymous", RPURI, Parameters) ),
+		    keylist:set("Remote-Party-Id", [RPI], Header)
 	    end;
-	_ ->
-	    Headers
+	false ->
+	    Header
     end;
-add_caller_identity_for_pstn(_Method, Headers, _URI, _Gateway) when is_record(Headers, keylist) ->
+add_caller_identity_for_pstn(_Method, Header, _URI, _User, _Gateway) when is_record(Header, keylist) ->
     %% non-INVITE request, don't add Remote-Party-Id
-    Headers.
+    Header.
 
 
 %%--------------------------------------------------------------------
@@ -450,8 +454,9 @@ get_branch_from_handler(TH) ->
 %%           THandler = term(), server transcation handle
 %%           Request  = request record()
 %%           DstURI   = sipurl record()
-%% Descrip.: Proxy a request somewhere without authentication.
-%% Returns : Does not matter
+%% Descrip.: Proxy a request somewhere without authentication. This is
+%%           typically a request _from_ one of our PSTN gateways.
+%% Returns : void(), Does not matter
 %%--------------------------------------------------------------------
 proxy_request(THandler, Request, DstURI) when is_record(Request, request),
 					      is_record(DstURI, sipurl) ->
@@ -473,7 +478,7 @@ proxy_request(THandler, Request, DstURI) when is_record(Request, request),
 %%           does not require authentication. Never challenge
 %%           CANCEL or BYE since they can't be resubmitted and
 %%           therefor cannot be challenged.
-%% Returns : Does not matter
+%% Returns : void(), Does not matter
 %%--------------------------------------------------------------------
 
 %%
@@ -498,7 +503,10 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
 	    logger:log(debug, "Auth: User ~p is allowed to call dst ~s (class ~s)", [User, DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (authenticated, user ~p, class ~p) (~s)",
 		       [LogTag, Method, DstNumber, User, Class, sipurl:print(DstURI)]),
-	    sippipe:start(THandler, none, Request, DstURI, 900);
+	    %% Now that we know which user this request is authorized as, add Caller-ID information to it
+	    PSTNgateway = DstURI#sipurl.host,
+	    NewHeader = add_caller_identity_for_pstn(Method, Header, DstURI, User, PSTNgateway),
+	    sippipe:start(THandler, none, Request#request{header=NewHeader}, DstURI, 900);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)", [User, DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> STALE authentication, sending challenge",
