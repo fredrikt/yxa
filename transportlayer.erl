@@ -1,6 +1,9 @@
 -module(transportlayer).
--export([send_proxy_request/4, send_proxy_response/2, send_result/5,
+-export([start/1, send_proxy_request/4, send_proxy_response/2, send_result/5,
 	 send_result/6]).
+
+start(Port) when integer(Port) ->
+    sipsocket:start_link(Port).    
 
 send_proxy_response(Socket, Response) ->
     {Status, Reason, Header, Body} = Response,
