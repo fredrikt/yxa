@@ -573,7 +573,7 @@ delete_with_key(Db, Key) ->
 %% Returns : string()
 %%--------------------------------------------------------------------
 url_to_requristr(URL) when is_record(URL, sipurl) ->
-    Port = list_to_integer(siprequest:default_port(URL#sipurl.proto, URL#sipurl.port)),
+    Port = siprequest:default_port(URL#sipurl.proto, sipurl:get_port(URL)),
     Host = URL#sipurl.host,
     User = URL#sipurl.user,
     %% sipurl:print/1 is used to create a consistent and therefore

@@ -30,7 +30,7 @@
 %% Returns : list() of sipdst record() | {error, Reason}
 %%--------------------------------------------------------------------
 url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize) ->
-    {Host, Port, Parameters} = {URL#sipurl.host, URL#sipurl.port, URL#sipurl.param},
+    {Host, Port, Parameters} = {URL#sipurl.host, sipurl:get_port(URL), URL#sipurl.param},
     %% Check if Host is either IPv4 or IPv6 address
     %% XXX module (and function) not listed in erlang documentation but
     %% included in Erlang/OTP source
@@ -69,7 +69,7 @@ url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integ
 			       [Host, Port, E]),
 		    {error, "Coult not make destination out of URL"};
 		{UseAddr, UseProto} ->
-		    UsePort = list_to_integer(siprequest:default_port(UseProto, Port)),
+		    UsePort = siprequest:default_port(UseProto, Port),
 		    [#sipdst{proto=UseProto, addr=UseAddr, port=UsePort, uri=ReqURI}]
 	    end;
 	_ ->
@@ -93,11 +93,11 @@ get_response_destination(TopVia) when record(TopVia, via) ->
 	    Port = case dict:find("rport", ParamDict) of
                        {ok, []} ->
                            %% This must be an error response generated before the rport fix-up. Ignore rport.
-                           list_to_integer(siprequest:default_port(Proto, ViaPort));
+                           siprequest:default_port(Proto, ViaPort);
 		       {ok, Rport} ->
                            list_to_integer(Rport);
                        _ ->
-                           list_to_integer(siprequest:default_port(Proto, ViaPort))
+                           siprequest:default_port(Proto, ViaPort)
                    end,
 	    #sipdst{proto=Proto, addr=Host, port=Port};
 	_ ->
@@ -163,12 +163,12 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
   when is_record(URL, sipurl), is_integer(ApproxMsgSize), URL#sipurl.port /= none ->
     case (URL#sipurl.proto == tls) or (URL#sipurl.proto == tls6) of
 	true ->
-	    TLS = host_port_to_dstlist(tcp, URL#sipurl.host, URL#sipurl.port, ReqURI),
+	    TLS = host_port_to_dstlist(tcp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
 	    logger:log(debug, "Resolver: Port was explicitly supplied and URL protocol is TLS - only try TCP"),
 	    TLS;
 	false ->
-	    TCP = host_port_to_dstlist(tcp, URL#sipurl.host, URL#sipurl.port, ReqURI),
-	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, URL#sipurl.port, ReqURI),
+	    TCP = host_port_to_dstlist(tcp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
+	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
 	    case ApproxMsgSize > 1200 of
 		true ->
 		    logger:log(debug, "Resolver: Port was explicitly supplied, and size of message is > 1200."
@@ -193,13 +193,13 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), i
 	    %% A SRV-lookup of the Host part of the URL returned NXDOMAIN, this is
 	    %% not an error and we will now try to resolve the Host-part directly
 	    %% (look for A or AAAA record)
-	    host_port_to_dstlist(udp, URL#sipurl.host, URL#sipurl.port, ReqURI);
+	    host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI);
 	[{error, What} | _] ->
 	    %% If first element returned from siplookup is an error then they all are.
 	    {error, What};
 	none ->
-	    TCP = host_port_to_dstlist(tcp, URL#sipurl.host, URL#sipurl.port, ReqURI),
-	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, URL#sipurl.port, ReqURI),
+	    TCP = host_port_to_dstlist(tcp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
+	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
 	    logger:log(debug, "Warning: ~p has no SRV records in DNS, defaulting to TCP and then UDP",
 		       [URL#sipurl.host]),
 	    case ApproxMsgSize > 1200 of
@@ -220,7 +220,7 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), i
 			   true ->
 			       DstList
 		       end,
-	    format_siplookup_result(URL#sipurl.port, ReqURI, ApproxMsgSize, DstList2)
+	    format_siplookup_result(sipurl:get_port(URL), ReqURI, ApproxMsgSize, DstList2)
     end.
 
 %%--------------------------------------------------------------------
@@ -241,7 +241,12 @@ remove_tls_destinations([{Proto, Host, Port} | T], Res) ->
     remove_tls_destinations(T, Res).
 
 %%--------------------------------------------------------------------
-%% Function: host_port_to_dstlist/4
+%% Function: host_port_to_dstlist(Proto, InHost, InPort, URI)
+%%           Proto  = atom(), tcp | udp | tls
+%%           InHost = string()
+%%           InPort = integer()
+%%          URI    = sipurl record() to put in the created sipdst
+%%                    records
 %% Descrip.: Resolves a hostname and returns a list of sipdst
 %%           records of the protocol requested.
 %%           Inport should either be an integer, or the atom 'none'
@@ -250,9 +255,7 @@ remove_tls_destinations([{Proto, Host, Port} | T], Res) ->
 %%           {error, Reason}
 %%           DstList = list() of sipdst record()
 %%--------------------------------------------------------------------
-host_port_to_dstlist(Proto, InHost, PortStr, URI) when list(PortStr) ->
-    host_port_to_dstlist(Proto, InHost, list_to_integer(PortStr), URI);
-host_port_to_dstlist(Proto, InHost, InPort, URI) when integer(InPort) ; InPort == none ->
+host_port_to_dstlist(Proto, InHost, InPort, URI) when is_integer(InPort) ; InPort == none ->
     case dnsutil:get_ip_port(InHost, InPort) of
 	{error, What} ->
 	    {error, What};
@@ -286,7 +289,7 @@ make_sipdst_from_hostport(Proto, URI, L) ->
 make_sipdst_from_hostport2(_Proto, _URI, [], Res) ->
     Res;
 make_sipdst_from_hostport2(Proto, URI, [{inet, Addr, Port} | T], Res) ->
-    UsePort = list_to_integer(siprequest:default_port(Proto, Port)),
+    UsePort = siprequest:default_port(Proto, Port),
     Dst = #sipdst{proto=Proto, addr=Addr, port=UsePort, uri=URI},
     make_sipdst_from_hostport2(Proto, URI, T, lists:append(Res, [Dst]));
 make_sipdst_from_hostport2(Proto, URI, [{inet6, Addr, Port} | T], Res) ->
@@ -295,7 +298,7 @@ make_sipdst_from_hostport2(Proto, URI, [{inet6, Addr, Port} | T], Res) ->
 		   udp -> udp6;
 		   tls -> tls6
 	       end,
-    UsePort = list_to_integer(siprequest:default_port(NewProto, Port)),
+    UsePort = siprequest:default_port(NewProto, Port),
     Dst = #sipdst{proto=NewProto, addr=Addr, port=UsePort, uri=URI},
     make_sipdst_from_hostport2(Proto, URI, T, lists:append(Res, [Dst])).
 
@@ -303,7 +306,7 @@ make_sipdst_from_hostport2(Proto, URI, [{inet6, Addr, Port} | T], Res) ->
 %%--------------------------------------------------------------------
 %% Function: format_siplookup_result(InPort, ReqURI, ApproxMsgSize,
 %%                                   DstList)
-%%           InPort        = list() | integer() | none
+%%           InPort        = integer() | none
 %%           ReqURI        = sipurl record()
 %%           ApproxMsgSize = integer()
 %%           DstList       = list() of sipdst record()
@@ -311,8 +314,6 @@ make_sipdst_from_hostport2(Proto, URI, [{inet6, Addr, Port} | T], Res) ->
 %%           of sipdst records.
 %% Returns : DstList, list() of sipdst record()
 %%--------------------------------------------------------------------
-format_siplookup_result(PortStr, ReqURI, ApproxMsgSize, DstList) when list(PortStr) ->
-    format_siplookup_result(list_to_integer(PortStr), ReqURI, ApproxMsgSize, DstList);
 format_siplookup_result(InPort, ReqURI, ApproxMsgSize, DstList) when integer(InPort) ; InPort == none ->
     format_siplookup_result2(InPort, ReqURI, ApproxMsgSize, DstList, []).
 

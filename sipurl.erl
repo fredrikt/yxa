@@ -42,9 +42,6 @@
 %% would most likely be slower than the current solution with
 %% split_fields/2 - altough the use of catch for matching "]:" is kind
 %% of ugly and cryptic.
-%% XXX no type is  enfored on port field in the sipurl record(), it
-%% can be integer() or string() ! this is confusing but safe as long
-%% as get_port/1 is used for access
 %%--------------------------------------------------------------------
 
 -module(sipurl).
@@ -342,8 +339,8 @@ print_userinfo(User, Pass) ->
 %%--------------------------------------------------------------------
 print_hostport(Host, none) ->
     Host;
-print_hostport(Host, Port) ->
-    lists:flatten(Host ++ ":" ++ integer_to_list(Port)).
+print_hostport(Host, Port) when is_integer(Port) ->
+    lists:concat([Host, ":", Port]).
 
 
 print_parameters(URLParams) when record(URLParams, url_param) ->
@@ -633,15 +630,15 @@ parse_url_with_default_protocol(Proto, URLstr) ->
 %% Descrip.: return the port value in a consistent manner
 %% Returns : none | integer()
 %%--------------------------------------------------------------------
-get_port(Sipurl) ->
-    port_to_integer(Sipurl#sipurl.port).
-
-port_to_integer(none) ->
-    none;
-port_to_integer(Port) when list(Port) ->
-    list_to_integer(Port);
-port_to_integer(Port) when integer(Port) ->
-    Port.
+get_port(Sipurl) when is_record(Sipurl, sipurl) ->
+    case Sipurl#sipurl.port of
+	I when is_integer(I) ->
+	    I;
+	none ->
+	    none;
+	_ ->
+	    erlang:fault("port in URL was not list or 'none'", [Sipurl])
+    end.
 
 
 %%--------------------------------------------------------------------
@@ -675,7 +672,7 @@ new(AttrList) ->
 %%           pass   = string(), case sensitive password
 %%           host   = string(), usually a domain name, will be stored
 %%                    in a case insensitive manner
-%%           port   = string() (numerical chars) | integer()
+%%           port   = integer()
 %%           param  = list() of "name=value" string() |
 %%                    url_param record()
 %% Descrip.: Update one or more attributes of a sipurl record().
@@ -713,11 +710,7 @@ set([{host, Val} | T], URL) when is_record(URL, sipurl), is_list(Val) ->
     set(T, URL#sipurl{host=Hostname});
 
 %% PORT
-set([{port, Val} | T], URL) when is_record(URL, sipurl), is_integer(Val) ->
-    set(T, URL#sipurl{port=integer_to_list(Val)});
-set([{port, Val} | T], URL) when is_record(URL, sipurl), Val == none ->
-    set(T, URL#sipurl{port=none});
-set([{port, Val} | T], URL) when is_record(URL, sipurl), is_list(Val) ->
+set([{port, Val} | T], URL) when is_record(URL, sipurl), is_integer(Val); Val == none ->
     set(T, URL#sipurl{port=Val});
 
 %% PARAM
@@ -823,7 +816,7 @@ test() ->
 
     %% test new
     %%--------------------------------------------------------------------
-    SipUrl = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+    SipUrl = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = 42,
 		     param = ["foo=bar", "baz"],
 		     param_pairs = url_param:to_norm(["foo=bar", "baz"])
 		     %% header = []
@@ -831,14 +824,14 @@ test() ->
     %% test new/1
     io:format("test: new/1 - 1~n"),
     SipUrl = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"},
-		  {host, "Su.iT"}, {port, "42"}, {param, ["foO=bar", "bAz"]}]),
+		  {host, "Su.iT"}, {port, 42}, {param, ["foO=bar", "bAz"]}]),
 
     %% test new/1 - no protocol, should default to sip
     io:format("test: new/1 - 2~n"),
     SipUrl = new([{user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"},
-		  {port, "42"}, {param, ["foO=bar", "bAz"]}]),
+		  {port, 42}, {param, ["foO=bar", "bAz"]}]),
 
-    SipUrl2 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+    SipUrl2 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = 42,
 		      param = [],
 		      param_pairs = url_param:to_norm([])
 		      %% header = []
@@ -846,11 +839,11 @@ test() ->
 
     %% test new/1
     io:format("test: new/1 - 3~n"),
-    SipUrl2 = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, "42"}]),
+    SipUrl2 = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 42}]),
 
     %% test url_param record() as argument
     io:format("test: new/1 - 4~n"),
-    SipUrl = new([{proto,  "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, "42"},
+    SipUrl = new([{proto,  "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 42},
 		  {param, url_param:to_norm(["foo=bar", "baz"])}]),
 
     %% test integer port
@@ -873,23 +866,23 @@ test() ->
 
     %% test new sips
     %%--------------------------------------------------------------------
-    SipUrl4 = #sipurl{proto = "sips", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+    SipUrl4 = #sipurl{proto = "sips", user = "hokan", pass = "foobar", host = "su.it", port = 42,
 		      param = ["foo=bar", "baz"],
 		      param_pairs = url_param:to_norm(["foo=bar", "baz"])
 		      %% header = []
 		     },
     io:format("test: new/1 sips - 1~n"),
     SipUrl4 = new([{proto, "sips"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"},
-		   {port, "42"}, {param, ["foO=bar", "bAz"]}]),
+		   {port, 42}, {param, ["foO=bar", "bAz"]}]),
 
     %% test set
     %%--------------------------------------------------------------------
-    SipUrl5 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = "42",
+    SipUrl5 = #sipurl{proto = "sip", user = "hokan", pass = "foobar", host = "su.it", port = 42,
 		      param = ["foo=bar", "baz"],
 		      param_pairs = url_param:to_norm(["foo=bar", "baz"])
 		      %% header = []
 		     },
-    SipUrl6 = #sipurl{proto = "sips", user = "hoKan", pass = "fOObar", host = "foo.su.it", port = "43",
+    SipUrl6 = #sipurl{proto = "sips", user = "hoKan", pass = "fOObar", host = "foo.su.it", port = 43,
 		      param = ["foo=barbaz", "baz"],
 		      param_pairs = url_param:to_norm(["foo=barbaz", "baz"])
 		      %% header = []
@@ -897,7 +890,7 @@ test() ->
     %% test set
     io:format("test: set/8 - 1~n"),
     SipUrl6 = set([{proto, "SIPS"}, {user, "hoKan"}, {pass, "fOObar"}, {host, "foo.su.it"},
-		   {port, "43"}, {param, ["foo=BarBaz", "baz"]}], SipUrl5),
+		   {port, 43}, {param, ["foo=BarBaz", "baz"]}], SipUrl5),
 
     %% test do_not_set part
     io:format("test: set/8 - 2~n"),
@@ -906,7 +899,7 @@ test() ->
     %% test url_param record() as argument
     io:format("test: set/8 - 3~n"),
     SipUrl6 = set([{proto, "SIPS"}, {user, "hoKan"}, {pass, "fOObar"}, {host, "foo.su.it"},
-		   {port, "43"}, {param, url_param:to_norm(["foo=barbaz", "baz"])}], SipUrl5),
+		   {port, 43}, {param, url_param:to_norm(["foo=barbaz", "baz"])}], SipUrl5),
 
     %% test setting of hostname with trailing dots
     io:format("test: set/8 - 4~n"),
@@ -914,11 +907,8 @@ test() ->
 
     %% get_port
     %%--------------------------------------------------------------------
-    %% string() in sipurl record
-    io:format("test: get_port/1 - 1~n"),
-    43 = get_port(SipUrl6),
     %% integer() in sipurl record
-    io:format("test: get_port/1 - 2~n"),
+    io:format("test: get_port/1 - 1~n"),
     43 = get_port(new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 43}])),
 
     %% parse
@@ -935,7 +925,7 @@ test() ->
     %% parse url with host and port
     ParsedUrl2 = #sipurl{proto = "sip",
 			 user = none, pass = none,
-			 host = "atlanta.com", port = "42",
+			 host = "atlanta.com", port = 42,
 			 param = [],
 			 param_pairs = url_param:to_norm([])
 			},
@@ -944,7 +934,7 @@ test() ->
     %% parse url with user, host and port
     ParsedUrl3 = #sipurl{proto = "sip",
 			 user = "alice", pass = none,
-			 host = "atlanta.com", port = "42",
+			 host = "atlanta.com", port = 42,
 			 param = [],
 			 param_pairs = url_param:to_norm([])
 			},
@@ -953,7 +943,7 @@ test() ->
     %% parse url with user, password, host and port
     ParsedUrl4 = #sipurl{proto = "sip",
 			 user = "alice", pass = "foo",
-			 host = "atlanta.com", port = "42",
+			 host = "atlanta.com", port = 42,
 			 param = [],
 			 param_pairs = url_param:to_norm([])
 			},
@@ -962,7 +952,7 @@ test() ->
     %% parse url with user, password, host, port and parameters
     ParsedUrl5 = #sipurl{proto = "sip",
 			 user = "alice", pass = "foo",
-			 host = "atlanta.com", port = "42",
+			 host = "atlanta.com", port = 42,
 			 param = ["foo=bar", "zop"],
 			 param_pairs = url_param:to_norm(["foo=bar", "zop"])
 			},
