@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : servertransaction.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : A server transaction gen_server.
+%%% Descrip.: A server transaction gen_server.
 %%%
 %%% Created : 05 Feb 2004 by Fredrik Thulin <ft@lab08.lab.it.su.se>
 %%%
@@ -17,7 +17,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 start_link/4,
-	 start/4
+	 start/4,
+	 test/0
 	]).
 
 
@@ -223,9 +224,18 @@ handle_call({set_report_to, Pid}, From, State) when is_pid(Pid) ->
     check_quit(Reply, From);
 
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({siprequest, Request, Origin}, From, State)
+%%           Request = request record()
+%%           Origin  = siporigin record()
+%% Descrip.: The transaction layer has received a request that matches
+%%           this server transaction. It should be either a resend of
+%%           the previous request, or an ACK that matches a non-2xx
+%%           response to INVITE that we are sending reliably.
 %% Returns : {continue} |
 %%           {pass_to_core, AppModule} |
 %%           {noreply ...}
+%%--------------------------------------------------------------------
 handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, request),
 							     is_record(Origin, siporigin) ->
     {LogTag, OrigRequest} = {State#state.logtag, State#state.request},
@@ -236,10 +246,12 @@ handle_call({siprequest, Request, Origin}, From, State) when is_record(Request, 
 	       [LogTag, Method, sipurl:print(URI)]),
     {CSeqNum, _} = sipheader:cseq(Header),
     {OrigCSeqNum, _} = sipheader:cseq(OrigHeader),
-    %% XXX use sipurl:url_is_equal/2 here! or maybe not... if it is a resend
-    %% then the URI is byte-by-byte comparable.
+    %% For ACK, use sipurl:url_is_equal() to determine if the Request-URI is equal to
+    %% the original one. A resent request's URI should be byte-by-byte comparable to
+    %% the original one, so in that case we don't use sipurl:url_is_equal().
+    URIisEqual = sipurl:url_is_equal(OrigURI, URI),
     Reply = if
-		OrigMethod == "INVITE", Method == "ACK", URI == OrigURI ->
+		OrigMethod == "INVITE", Method == "ACK", URIisEqual == true ->
 		    %% Received an ACK with a Request-URI that matches our original one
 		    LogTag = State#state.logtag,
 		    %% gen_server:reply before processing
@@ -734,7 +746,7 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 		       end,
 		logger:log(LogLevel, "~s: ~s '~p ~s'",
 			   [LogTag, What, Status, Reason]),
-		store_transaction_result(NewSipState, Request#request{body=""}, Status, Reason, LogTag),
+		store_transaction_result(NewSipState, Request, Status, Reason, LogTag),
 		{ok, NewState2} = send_response(Response, SendReliably, State),
 		enter_sip_state(NewSipState, NewState2);
 	    E ->
@@ -824,7 +836,7 @@ send_response_statemachine(Method, Status, proceeding) when Status >= 200, Statu
 	       "state 'proceeding' - doing so (unreliably) and entering state 'completed'", [Status, Method]),
     {send, false, completed};
 
-send_response_statemachine(Method, Status, completed) when Status >= 200, Status =< 699 ->
+send_response_statemachine(Method, Status, completed) when Status >= 101, Status =< 699 ->
     logger:log(debug, "UAS decision: Requested to send 2xx, 3xx, 4xx, 5xx or 6xx response ~p to ~s when already in " ++
 	       "state 'completed' - ignoring", [Status, Method]),
     {ignore, false, completed};
@@ -1035,12 +1047,11 @@ process_received_ack(State) when is_record(State, state) ->
 %%           response from our requests headers.
 %% Returns : Response = response record()
 %%--------------------------------------------------------------------
-make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
-  when is_record(State, state), is_integer(Status), is_list(Reason), is_list(RBody),
-       is_list(ExtraHeaders), Status == 100 ->
+make_response(100, Reason, RBody, ExtraHeaders, ViaParameters, State)
+  when is_record(State, state), is_list(Reason), is_list(RBody), is_list(ExtraHeaders) ->
     %% We don't need to set To-tag for 100 Trying. 100 Trying are not supposed
     %% to have a To-Tag.
-    siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters,
+    siprequest:make_response(100, Reason, RBody, ExtraHeaders, ViaParameters,
 			     State#state.socket, State#state.request);
 
 make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
@@ -1077,3 +1088,142 @@ generate_tag() ->
     Out = siprequest:make_base64_md5_token(In),
     %% don't make the tag longer than it has to be.
     "yxa-" ++ string:substr(Out, 1, 9).
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%% Note    : Not much is tested in this module at the moment because
+%%           almost every function includes communication with the
+%%           outside world (receiving or sending signals/SIP-messages)
+%%           which the current test framework does not allow testing
+%%           of.
+%%--------------------------------------------------------------------
+test() ->
+    %% test send_response_statemachine/3
+    %%--------------------------------------------------------------------
+
+    %% 17.2.1 INVITE Server Transaction
+
+    io:format("test: send_response_state_machine/3 INVITE - 1~n"),
+    %% When a server transaction is constructed for a request, it enters the
+    %% "Proceeding" state.
+    %% Send 100 Trying only in 'trying'. 'trying' for INVITE is not in the RFC3261
+    %% spec, it is our internal way of saying "we haven't sent a 100 Trying yet".
+    {send, false, proceeding} = send_response_statemachine("INVITE", 100, trying),
+
+    io:format("test: send_response_state_machine/3 INVITE - 2~n"),
+    %% The TU passes any number of provisional responses to the server
+    %% transaction.  So long as the server transaction is in the
+    %% "Proceeding" state, each of these MUST be passed to the transport
+    %% layer for transmission.  They are not sent reliably by the
+    %% transaction layer (they are not retransmitted by it) and do not cause
+    %% a change in the state of the server transaction.
+    {send, false, proceeding} = send_response_statemachine("INVITE", 101, proceeding),
+    {send, false, proceeding} = send_response_statemachine("INVITE", 183, proceeding),
+    {send, false, proceeding} = send_response_statemachine("INVITE", 199, proceeding),
+
+    io:format("test: send_response_state_machine/3 INVITE - 3~n"),
+    %% If, while in the "Proceeding" state, the TU passes a 2xx response to
+    %% the server transaction, the server transaction MUST pass this
+    %% response to the transport layer for transmission.  It is not
+    %% retransmitted by the server transaction; retransmissions of 2xx
+    %% responses are handled by the TU.  The server transaction MUST then
+    %% transition to the "Terminated" state.
+    {send, false, terminated} = send_response_statemachine("INVITE", 200, proceeding),
+
+    io:format("test: send_response_state_machine/3 INVITE - 4~n"),
+    %% While in the "Proceeding" state, if the TU passes a response with
+    %% status code from 300 to 699 to the server transaction, the response
+    %% MUST be passed to the transport layer for transmission, and the state
+    %% machine MUST enter the "Completed" state.  For unreliable transports,
+    %% timer G is set to fire in T1 seconds, and is not set to fire for
+    %% reliable transports.
+    {send, true, completed} = send_response_statemachine("INVITE", 300, proceeding),
+    {send, true, completed} = send_response_statemachine("INVITE", 400, proceeding),
+    {send, true, completed} = send_response_statemachine("INVITE", 500, proceeding),
+    {send, true, completed} = send_response_statemachine("INVITE", 600, proceeding),
+    {send, true, completed} = send_response_statemachine("INVITE", 699, proceeding),
+
+    %% own conclusions
+
+    io:format("test: send_response_state_machine/3 INVITE - 5~n"),
+    %% Don't send 100 Trying in any other state than 'trying'. This means that the TU
+    %% will be ignored if it asks us to send out a 100 Trying, since we did that ourselves
+    %% when in our internal mode (for INVITE) 'trying'.
+    {ignore, false, proceeding} = send_response_statemachine("INVITE", 100, proceeding),
+    {ignore, false, completed} = send_response_statemachine("INVITE", 100, completed),
+    {ignore, false, terminated} = send_response_statemachine("INVITE", 100, terminated),
+
+    io:format("test: send_response_state_machine/3 INVITE - 6~n"),
+    %% don't send any more responses once we have sent a final response
+    {ignore, false, completed} = send_response_statemachine("INVITE", 100, completed),
+    {ignore, false, completed} = send_response_statemachine("INVITE", 200, completed),
+    {ignore, false, completed} = send_response_statemachine("INVITE", 300, completed),
+    {ignore, false, completed} = send_response_statemachine("INVITE", 400, completed),
+    {ignore, false, completed} = send_response_statemachine("INVITE", 500, completed),
+    {ignore, false, completed} = send_response_statemachine("INVITE", 600, completed),
+
+    io:format("test: send_response_state_machine/3 INVITE - 7~n"),
+    %% don't send any more responses if we should happen to end up here even if we are
+    %% really supposed to have terminated (like if we are emptying our mailbox before
+    %% _really_ terminating)
+    {ignore, false, terminated} = send_response_statemachine("INVITE", 100, terminated),
+    {ignore, false, terminated} = send_response_statemachine("INVITE", 200, terminated),
+    {ignore, false, terminated} = send_response_statemachine("INVITE", 300, terminated),
+    {ignore, false, terminated} = send_response_statemachine("INVITE", 400, terminated),
+    {ignore, false, terminated} = send_response_statemachine("INVITE", 500, terminated),
+    {ignore, false, terminated} = send_response_statemachine("INVITE", 600, terminated),
+
+    %% 17.2.2 Non-INVITE Server Transaction
+
+    %% The state machine is initialized in the "Trying" state ...
+
+    io:format("test: send_response_state_machine/3 non-INVITE - 1~n"),
+    %% While in the "Trying" state, if the TU passes a provisional response
+    %% to the server transaction, the server transaction MUST enter the
+    %% "Proceeding" state.  The response MUST be passed to the transport
+    %% layer for transmission.
+    {send, false, proceeding} = send_response_statemachine("OPTIONS", 100, trying),
+    {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, trying),
+    
+    io:format("test: send_response_state_machine/3 non-INVITE - 2~n"),
+    %% Any further provisional responses that are received from the TU while in the
+    %% "Proceeding" state MUST be passed to the transport layer for transmission.
+    %% Yxa note: we filter out 100 Trying
+    {ignore, false, proceeding} = send_response_statemachine("OPTIONS", 100, proceeding),
+    {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, proceeding),
+
+    io:format("test: send_response_state_machine/3 non-INVITE - 3~n"),
+    %% If the TU passes a final response (status codes 200-699) to the server while
+    %% in the "Proceeding" state, the transaction MUST enter the "Completed" state,
+    %% and the response MUST be passed to the transport layer for transmission.
+    {send, false, completed} = send_response_statemachine("OPTIONS", 200, proceeding),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 300, proceeding),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 400, proceeding),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 500, proceeding),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 600, proceeding),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 699, proceeding),
+
+    io:format("test: send_response_state_machine/3 non-INVITE - 4~n"),
+    %% Any other final responses passed by the TU to the server transaction MUST
+    %% be discarded while in the "Completed" state.
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 200, completed),
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 300, completed),
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 400, completed),
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 500, completed),
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 600, completed),
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 699, completed),
+
+    %% own conclusions
+
+    io:format("test: send_response_state_machine/3 non-INVITE - 5~n"),
+    %% provisional responses received from the TU when already completed is ignored
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 100, completed),
+    {ignore, false, completed} = send_response_statemachine("OPTIONS", 199, completed),
+
+    ok.
