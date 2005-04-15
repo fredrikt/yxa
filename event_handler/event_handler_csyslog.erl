@@ -89,13 +89,13 @@ init([AppName]) when is_atom(AppName) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_event({event, Prio, Class, Desc, Ctx, Data},
+%% Function: handle_event({event, Pid, Prio, Class, Id, L},
 %%                        State)
+%%           Pid   = pid(), process generating the event
 %%           Prio  = atom(), debug | normal | error
 %%           Class = atom(), class of message (call | proxy | ...)
-%%           Desc  = atom() | tuple(), message type
-%%           Ctx   = term(), context
-%%           Data  = term(), the data to be logged
+%%           Id    = string()
+%%           L     = list() of term(), the data to be logged
 %% Descrip.: Log event using our syslog port driver.
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
@@ -105,14 +105,15 @@ handle_event({event, Pid, Prio, Class, Id, L}, State) when is_pid(Pid), is_atom(
 		   debug -> $d;
 		   normal -> $i;
 		   error -> $e;
-		   _ -> $.
+		   _ -> 46	%% 46 is $.
 	       end,
     Msg = io_lib:format("~c" "c=~p; id=~p; ~800p", [PrioChar, Class, Id, L]),
     Port = State#state.port,
     true = port_command(Port, Msg),
     {ok, State};
 
-handle_event(_Event, State) ->
+handle_event(Event, State) ->
+    logger:log(error, "Event handler csyslog: Received unknown event : ~p", [Event]),
     {ok, State}.
 
 
@@ -124,7 +125,8 @@ handle_event(_Event, State) ->
 %%           {swap_handler, Reply, Args1, State1, Mod2, Args2} |
 %%           {remove_handler, Reply}
 %%--------------------------------------------------------------------
-handle_call(_Request, State) ->
+handle_call(Request, State) ->
+    logger:log(error, "Event handler csyslog: Received unknown call : ~p", [Request]),
     Reply = ok,
     {ok, Reply, State}.
 
