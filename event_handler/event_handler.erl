@@ -21,7 +21,7 @@
 	 new_request/4,
 	 request_info/3,
 	 uas_result/5,
-	 uac_result/6
+	 uac_result/4
 	]).
 
 %%--------------------------------------------------------------------
@@ -81,24 +81,27 @@ generic_event(Prio, Class, Id, Format, Args) when is_atom(Prio), is_atom(Class),
 %% New request has arrived, log a bunch of parameters about it
 new_request(Method, URI, Branch, DialogId) when is_list(Method), is_record(URI, sipurl),
 						is_list(Branch), is_tuple(DialogId) ->
-    gen_event:notify(?SERVER, {event, self(), debug, new_request, Branch,
-			       [{request_method, Method}, {request_uri, sipurl:print(URI)},
+    gen_event:notify(?SERVER, {event, self(), normal, new_request, Branch,
+			       [{method, Method}, {uri, sipurl:print(URI)},
 				{dialogid, DialogId}]}).
 
 %% More information gathered about request
-request_info(Prio, Branch, L) when is_atom(Prio), is_list(L) ->
+request_info(Prio, Branch, L) when is_atom(Prio), is_list(Branch), is_list(L) ->
     gen_event:notify(?SERVER, {event, self(), Prio, request_info, Branch, L}).
 
 %% UAS has sent a result, URI = string()
-uas_result(Branch, Created, Status, Reason, L) ->
-    gen_server:cast(event_handler, {event, self(), debug, uas_result, Branch,
-				    [Created, Status, Reason, L]}).
+uas_result(Branch, Created, Status, Reason, L) when is_list(Branch), is_atom(Created), is_integer(Status),
+						    is_list(Reason), is_list(L) ->
+    L2 = [{origin, Created},
+	  {response, lists:concat([Status, " ", Reason])}
+	  | L],
+    gen_event:notify(?SERVER, {event, self(), normal, uas_result, Branch, L2}).
 
 %% UAC has received a reply
-uac_result(Branch, Method, URI, Status, Reason, L) ->
-    L2 = [{request_method, Method}, {request_uri, URI} | L],
-    gen_server:cast(event_handler, {event, self(), debug, uac_result, Branch,
-				    [Status, Reason, L2]}).
+uac_result(Branch, Status, Reason, L) when is_list(Branch), is_integer(Status), is_list(Reason), is_list(L) ->
+    L2 = [{response, lists:concat([Status, " ", Reason])}
+	  | L],
+    gen_event:notify(?SERVER, {event, self(), debug, uac_result, Branch, L2}).
 
 %%====================================================================
 %% Internal functions
