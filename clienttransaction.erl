@@ -864,7 +864,6 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 			   {Status1, Reason1} when is_integer(Status1), is_list(Reason1) ->
 			       Response
 		       end,
-    Request = State#state.request,
     ReportTo = State#state.report_to,
     case util:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} when is_pid(ReportTo) ->
@@ -884,9 +883,8 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 		    if
 			IsFinalResponse ->
 			    %% Make event out of final response
-			    {Method, URI} = {Request#request.method, Request#request.uri},
 			    L = [{dst, sipdst:dst2str(State#state.dst)}],
-			    event_handler:uac_result(Branch, Method, URI, Status, Reason, L),
+			    event_handler:uac_result(Branch, Status, Reason, L),
 			    State#state{final_r_sent = true};
 			true -> State
 		    end
