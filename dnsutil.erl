@@ -312,6 +312,9 @@ debugfriendly_srventry2([H|T], Res) when is_record(H, srventry) ->
 combine_srvresults(In) ->
     combine_srvresults(In, [], []).
 
+combine_srvresults([], [], []) ->
+    %% No more input, no result and no errors - return nxdomain
+    {error, nxdomain};
 combine_srvresults([], [], Errors) ->
     [FirstError | _] = lists:reverse(Errors),
     FirstError;
@@ -721,6 +724,10 @@ test() ->
     %% only error present
     {error, undefined} = combine_srvresults([{error, undefined}]),
     
+    io:format("test: combine_srvresults/1 - 3~n"),
+    %% neither valid entrys or errors
+    {error, nxdomain} = combine_srvresults([]),
+
 
     %% test sortsrv(A, B)
     %%--------------------------------------------------------------------
