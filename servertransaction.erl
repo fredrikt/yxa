@@ -795,8 +795,7 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 		{ok, NewState2} = send_response(Response, SendReliably, State),
 		%% Make event out of the fact that we are sending a response
 		ToTagUsed = sipheader:get_tag(keylist:fetch('to', Response#response.header)),
-		L = [{request_method, ResponseToMethod}, {request_uri, sipurl:print(ResponseToURI)},
-		     {to_tag, ToTagUsed}],
+		L = [{to_tag, ToTagUsed}],
 		event_final_response(State#state.branch, Created, Status, Reason, L),
 		enter_sip_state(NewSipState, NewState2);
 	    E ->
@@ -810,10 +809,13 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 
 %% generate a uas_result event with information about the original request
 %% and the response we are now sending. part of do_response().
-event_final_response(Created, Branch, Status, Reason, L) when Status >= 200 ->
-    event_handler:uas_result(Branch, Created, Status, Reason, L),
-    ok;
-event_final_response(_Created, _Method, _Reason, _Branch, _L) ->
+event_final_response(Branch, Created, Status, Reason, L) when is_list(Branch), is_atom(Created), is_list(Reason),
+							      is_list(L), Status >= 200,
+							      Created == created; Created == forwarded ->
+    event_handler:uas_result(Branch, Created, Status, Reason, L);
+event_final_response(Branch, Created, Status, Reason, L) when is_list(Branch), is_atom(Created), is_integer(Status),
+							      is_list(Reason), is_list(L), is_integer(Status),
+							      Created == created; Created == forwarded ->
     %% Don't make events out of every non-final response we send
     ok.
 
@@ -1035,7 +1037,7 @@ enter_sip_state(confirmed, State) when is_record(State, state) ->
 		       "Timer I with a timeout of ~s seconds.",  [LogTag, siptimer:timeout2str(TimerI)]),
 	    %% Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we
 	    %% absorb any additional ACK requests that might arrive.
-	    IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++ 
+	    IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++
 		" (Timer I)",
 	    add_timer(TimerI, IDesc, {terminate_transaction}, NewState1);
 	_ ->
