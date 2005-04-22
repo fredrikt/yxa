@@ -253,13 +253,13 @@ is_subdomain(ReqHostVal, ScriptVal) ->
 
 %% return: domain_name | ip4addr | ip6addr | throw() (if DomainStr isn't some kind of domain name)
 checktype(DomainStr) ->
-    case is_success(fun() -> sipparse_util:is_hostname(DomainStr) end) of
+    case is_true(fun() -> sipparse_util:is_hostname(DomainStr) end) of
 	true -> domain_name;
 	false -> 
-	    case is_success(fun() -> sipparse_util:is_IPv4address(DomainStr) end) of
+	    case is_true(fun() -> sipparse_util:is_IPv4address(DomainStr) end) of
 		true -> ip4addr;
 		false ->
-		    case is_success(fun() -> sipparse_util:is_IPv6reference(DomainStr) end) of
+		    case is_true(fun() -> sipparse_util:is_IPv6reference(DomainStr) end) of
 			true -> ip6addr;
 			false ->
 			     throw({error, not_domain_name_or_ip4addr_or_ip6addr})
@@ -267,15 +267,16 @@ checktype(DomainStr) ->
 	    end
     end.
 	
-%% return: true (if F() succeeds) | false (if F() throws a exception)   
-is_success(F) ->
-    try begin	    
-	    F(),
-	    true
+%% return: true (if F() returns true) | false (if F() returns anything but true or throws a exception)   
+is_true(F) ->
+    try begin
+	    case F() of
+		true -> true;
+		_ -> false
+	    end
 	end
-    catch throw: _ -> false;
-	error: _ -> false;
-	exit: _ -> false
+    catch
+	_ : _ -> false
     end.
 	
 
@@ -888,13 +889,16 @@ test() ->
     io:format("test: is_subdomain2/2  - 6~n"),
     false = is_subdomain2("foo.bar.com", ".com"),
 
-    %% is_success/1
+    %% is_true/1
     %%--------------------------------------------------------------------
     io:format("test: is_success/1  - 1~n"),
-    true = is_success(fun() -> ok end),
+    true = is_true(fun() -> true end),
 
     io:format("test: is_success/1  - 2~n"),
-    false = is_success(fun() -> throw({error, foobar}) end),
+    false = is_true(fun() -> throw({error, foobar}) end),
+
+    io:format("test: is_success/1  - 3~n"),
+    false = is_true(fun() -> "foo" end),
 
 
     %% checktype/1
