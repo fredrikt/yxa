@@ -13,6 +13,7 @@
 %%--------------------------------------------------------------------
 -export([
 	 split_fields/2,
+	 split_quoted_string/1,
 	 parse_host/1,
 	 parse_hostport/1,
 	 is_alpha/1,
@@ -91,6 +92,31 @@ split_fields([Sep | FieldStrRest], Sep, FirstSegmentAcc) ->
 %% still looking for separator
 split_fields([Char | FieldStrRest], Sep, FirstSegmentAcc) ->
     split_fields(FieldStrRest, Sep, [Char | FirstSegmentAcc]).
+
+%%--------------------------------------------------------------------
+%% Function: split_quoted_string(In)
+%%           In = string()
+%% Descrip.: Parse out a quoted string from In and return the quoted
+%%           part as First and the rest as Second.
+%% Returns : {ok, First, Second} | throw()
+%%           First = Second = string()
+%%--------------------------------------------------------------------
+split_quoted_string([34 | Rest]) ->	%% 34 is '"'
+    split_quoted_string2(Rest, false, []);
+split_quoted_string(In) ->
+    erlang:error(does_not_start_with_quote, [In]).
+
+split_quoted_string2([92 | T], _Escape=false, Res) ->	%% 92 is '\'
+    %% escape-char, and Escape was false
+    split_quoted_string2(T, true, [92 | Res]);	%% 92 is '\'
+split_quoted_string2([34 | T], _Escape=false, Res) ->	%% 34 is '"'
+    %% found non-escaped quote, we are finished
+    {ok, lists:reverse(Res), T};
+split_quoted_string2([H | T], _Escape, Res) ->
+    %% not escape-char, and not end-quote
+    split_quoted_string2(T, false, [H | Res]);
+split_quoted_string2([], Escape, Res) ->
+    erlang:error(no_end_quote, [Escape, Res]).
 
 %%--------------------------------------------------------------------
 %% Function: parse_host(Host)
@@ -501,6 +527,41 @@ test() ->
     case catch sipparse_util:split_fields("@", $@) of
 	{error, _} -> ok;
 	_ -> throw({error, test_case_failed})
+    end,
+
+    %% split_quoted_string/1
+    %%--------------------------------------------------------------------
+    %% regular test case
+    io:format("test: split_quoted_string/1 - 1~n"),
+    {ok, "Foo Bar", " baz"} = split_quoted_string("\"Foo Bar\" baz"),
+
+    %% nothing more except the quoted string
+    io:format("test: split_quoted_string/1 - 2~n"),
+    {ok, "Foo Bar", ""} = split_quoted_string("\"Foo Bar\""),
+
+    %% nested quotes
+    io:format("test: split_quoted_string/1 - 3~n"),
+    {ok, "Foo Bar \\\"Baz\\\"", " x"} = split_quoted_string("\"Foo Bar \\\"Baz\\\"\" x"),
+
+    %% nothing in between quotes
+    io:format("test: split_quoted_string/1 - 4~n"),
+    {ok, "", " X"} = split_quoted_string("\"\" X"),
+
+    %% does not start with quote
+    io:format("test: split_quoted_string/1 - 5~n"),
+    try split_quoted_string("foo \"bar\"") of
+	SQS_Res5 -> throw({error, test_case_failed, SQS_Res5})
+    catch
+	error: does_not_start_with_quote -> ok
+    end,
+
+    %% no ending quote
+    %% do this second one as a 'case catch' instead of try/catch to avoid
+    %% triggering a compiler bug in R10B-4
+    io:format("test: split_quoted_string/1 - 6~n"),
+    case catch split_quoted_string("\"foo ") of
+	{'EXIT', {no_end_quote, _}} -> ok;
+	SQS_Res6 -> throw({error, test_case_failed, SQS_Res6})
     end,
 
     %% parse_hostport/1
