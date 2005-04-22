@@ -17,9 +17,9 @@
 %% although it will acept some route and record-route entries that
 %% aren't legal as if they where.
 %%
-%% Note: string:tokens/2 is used in some places where where sequences
-%%       of separator char() are not allowed, but tokens/2 will only
-%%       "see" one separator char().
+%% Note: string:tokens/2 is used in some places where sequences of
+%%       separator char() are not allowed, but tokens/2 will only "see"
+%%       one separator char().
 %% Note: contents of quoted-string are not checked
 %%       - there is no need to, it should just be passed along
 %%         according to RFC 3261
@@ -44,7 +44,7 @@
 %% - yes, this is default according to the BNF chapter, as I could
 %%   find no statement to the contrary this presumably applies to
 %%   contact-params as well.
-%% * should char() ranges used by contact-params be check for
+%% * should char() ranges used by contact-params be checked for
 %%   correctness, before insertion ?
 %% - XXX probably not needed, but a parser of a value part in a
 %%   name-value pair may need to.
@@ -62,7 +62,7 @@
 %% *(R)   = 0*inifinity(R) i.e. rule R may be applied any number of
 %%          times
 %% [R]    = *1(R), i.e. apply this rule 0-1 times
-%% "string" = quoted strings are case insensetive
+%% "string" = quoted strings are case insensitive
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 %% RFC 2234 and RFC 3261 - - - - - - - - - - - - - - - - - - - - - - -
@@ -112,7 +112,7 @@
 %%                  ( STAR / (contact-param *(COMMA contact-param)))
 %% contact-param =  (name-addr / addr-spec) *(SEMI contact-params)
 %%
-%% --- The rule above is rather ambigouse, in the
+%% --- The rule above is rather ambiguous, in the
 %% "addr-spec *(SEMI contact-params)" case.
 %% "Contact: sip:foo@bar;foo=42;bar=52" could be interpreted as:
 %%
@@ -230,7 +230,7 @@
 parse(Contacts) when is_list(Contacts) ->
     %% throw({unparseable, Str}) if parsing failed
     case catch [parse_star(Contact) || Contact <- Contacts] of
-	%% parse error - detected by yxa code or OTP match operations
+	%% parse error - detected by yxa code or Erlang match operations
 	{error, Reason} ->
 	    {unparseable, Reason};
 	{'EXIT', Reason} ->
@@ -261,38 +261,109 @@ parse_star(Contact) ->
 %% (Note that display_name is optional)
 %% Code assumes that ";" isn't used as anything but a parameter separator inside the contact-param rule
 parse_contact(Str) ->
-    %% find first ">" or SP | HTAB - the begining of param section
-    LStrippedStr = sipparse_util:strip(Str, both, [?SP,?HTAB]),
-    {{DisplayName, UrlStr}, Params} =
-	%% name-addr end with ">" before their parameters
-	case catch sipparse_util:split_fields(LStrippedStr, $>) of
-	    %% ">" is last char, so it's a name-addr without contact-params
-	    {error, no_second_part} ->
-		{parse_name_addr(LStrippedStr), ""};
-	    %% ">" separates name-addr from contact-params
-	    {AddrR, ParamsR} ->
-		{parse_name_addr(AddrR ++ ">"), ParamsR};
+    StrippedStr = sipparse_util:strip(Str, both, [?SP, ?HTAB]),
 
-	    %% no ">" LStrippedStr is a addr-spec
-	    _ ->
-		case sipparse_util:split_fields(LStrippedStr, $;) of
-		    {AddrSpec, Params2} ->
-			{parse_addr_spec(AddrSpec), Params2};
-		    {AddrSpec} ->
-			{parse_addr_spec(AddrSpec), ""}
-		end
+    {Set_DisplayName, Set_UrlStr, Set_Params} =
+	%% look for quoted display-name
+	try sipparse_util:split_quoted_string(StrippedStr) of
+	    {ok, DisplayNameStr, Rest} ->
+		DisplayName = case DisplayNameStr of
+				  "" -> none;
+				  _ -> DisplayNameStr
+			      end,
+		%% Ok, display-name part finished, now look if there are any parameters
+
+		{URLstr1, Params} = parse_addr_and_param(Rest),
+		{DisplayName, URLstr1, Params}
+	catch
+	    error: does_not_start_with_quote ->
+		parse_contact_no_quoted_displayname(StrippedStr)
 	end,
 
     %% process the Params and build the final contact record
     #contact{
-	  display_name = DisplayName,
-	  urlstr = UrlStr,
-	  contact_param = parse_params(Params)
+	  display_name = Set_DisplayName,
+	  urlstr = Set_UrlStr,
+	  contact_param = parse_params(Set_Params)
 	 }.
+
+%% Returns : {DisplayName, URLstr, Params}
+%%           DisplayName = string() | none
+%%           URLstr      = string(), URL as string, without enclosing <>
+%%           Params      = string(), contact parameters
+parse_contact_no_quoted_displayname(StrippedStr) ->
+    %% If there is a display-name there, it isn't quoted
+    case catch sipparse_util:split_fields(StrippedStr, $<) of
+	{DisplayNameStr, Rest} when is_list(DisplayNameStr), is_list(Rest) ->
+	    DisplayName = sipparse_util:strip(DisplayNameStr, right, [?SP, ?HTAB]),
+	    %% Verify that un-quoted DisplayName is a valid token. We are extra lenient
+	    %% here, and allow spaces too (since it is a common error to put
+	    %% Firstname Lastname in contacts without quotes). What is really important
+	    %% is to not be fooled by contacts such as
+	    %%   "Foo <sip:bar@example.org> <sip:other@example.org">
+	    DisplayNameNoSpaces = lists:append(string:tokens(DisplayName, " ")),
+	    case sipparse_util:is_token(DisplayNameNoSpaces) of
+		true -> ok;
+		false -> throw({error, {unquoted_displayname_is_not_a_valid_token, DisplayName}})
+	    end,
+	    {URLstr1, Params} = parse_addr_and_param("<" ++ Rest),
+	    {DisplayName, URLstr1, Params};
+	{_Foo} ->
+	    %% No "<" in StrippedStr, look for parameters (everything after ";")
+	    {AddrSpec, Params} =
+		case sipparse_util:split_fields(StrippedStr, $;) of
+		    {AddrSpec2, Params2} ->
+			{sipparse_util:strip(AddrSpec2, right, [?SP, ?HTAB]),
+			 Params2};
+		    {AddrSpec2} ->
+			{sipparse_util:strip(AddrSpec2, right, [?SP, ?HTAB]),
+			 ""}
+		end,
+	    %% Since we did not have even a "<" to tell us where the addr-spec
+	    %% started, we verify that what we found is a parseable SIP URI
+	    case sipurl:parse(AddrSpec) of
+		URI when is_record(URI, sipurl) -> ok;
+		_ -> throw({error, {unparseable_uri_without_brackets, AddrSpec}})
+	    end,
+	    {none, AddrSpec, Params};
+	{error, no_first_part} ->
+	    %% Nothing found before the "<"
+	    {URLstr1, Params} = parse_addr_and_param(StrippedStr),
+	    {none, URLstr1, Params}
+    end.
+
+%% Returns : {URLstr, Params}
+%%           URLstr = string()
+%%           Params = string()
+parse_addr_and_param(In) ->
+    Stripped = sipparse_util:strip(In, both, [?SP, ?HTAB]),
+    case Stripped of
+	"<" ++ Rest ->
+	    %% There is a "<" after the display-name, split at the ">" that we
+	    %% can expect to be there (or crash on if it isn't)
+	    case string:tokens(Rest, ">") of
+		[AddrSpec, Params] ->
+		    {sipparse_util:strip(AddrSpec, both, [?SP, ?HTAB]),
+		     sipparse_util:strip(Params, both, [?SP, ?HTAB])};
+		[AddrSpec] ->
+		    {sipparse_util:strip(AddrSpec, both, [?SP, ?HTAB]),
+		     ""}
+	    end;
+	_ ->
+	    %% No "<", Stripped is an addr-spec
+	    case sipparse_util:split_fields(Stripped, $;) of
+		{AddrSpec, Params2} ->
+		    {sipparse_util:strip(AddrSpec, right, [?SP, ?HTAB]),
+		     Params2};
+		{AddrSpec} ->
+		    {sipparse_util:strip(AddrSpec, right, [?SP, ?HTAB]),
+		     ""}
+	    end
+    end.
 
 
 %% input = data after first ";"
-%% return: contact_param record() ?
+%% return: contact_param record()
 %%
 parse_params([]) ->
     contact_param:to_norm([]);
@@ -315,37 +386,62 @@ parse_param(ParamStr) ->
 
     ParamName = httpd_util:to_lower(NameStripped),
 
-    Wellformed = case ParamName of
-		     "expires" ->
-			 %% check that delta-seconds is an integer
-			 list_to_integer(ValueStripped),
-			 true;
-		     "q" ->
-			 %% "qvalue" rule is checked later
-			 %% when q_value(ValueStripped) is called
-			 true;
-		     _OtherParam ->
-			 sipparse_util:is_token(NameStripped)
-			     andalso
-			       (sipparse_util:is_token(ValueStripped)
-				orelse is_quoted(ValueStripped)
-				orelse case catch sipparse_util:is_hostname(ValueStripped) of
-					   {error, _} -> false;
-					   _ -> true
-				       end)
-		 end,
+    case ParamName of
+	"expires" ->
+	    %% check that delta-seconds is an integer
+	    try list_to_integer(ValueStripped) of
+		_ -> {NameStripped, ValueStripped}
+	    catch
+		_: _ ->
+		    throw({error, {malformed_expires, ValueStripped}})
+	    end;
+	"q" ->
+	    %% this conversion is done to ensure that the q value
+	    %% can be converted with list_to_float/1 ("0", "1",
+	    %% "0." and "1." will result in exceptions)
+	    QVal = q_value(ValueStripped),
+	    {NameStripped, QVal};
+	_OtherParam ->
+	    case sipparse_util:is_token(NameStripped)
+		andalso
+		(sipparse_util:is_token(ValueStripped)
+		 orelse is_quoted(ValueStripped)
+		 %% addr-spec is a valid contact-param according to the BNF
+		 orelse is_addr_spec(ValueStripped)
+		) of
+		true ->
+		    {NameStripped, ValueStripped};
+		false ->
+		    throw({error, {invalid_contact_param, ParamStr}})
+	    end
+    end.
 
-    case Wellformed of
-	true ->
-	    {NameStripped, case ParamName of
-			       %% this conversion is done to ensure that the q value
-			       %% can be converted with list_to_float/1 ("0", "1",
-			       %% "0." and "1." will result in exceptions)
-			       "q" -> q_value(ValueStripped);
-			       _ -> ValueStripped
-			   end};
-	false ->
-	    throw({error, param_name_or_value_malformed})
+%% Descrip.: Check if In is either a hostname, an IPv4 or an IPv6 address
+%% Returns : true | false
+is_addr_spec(In) ->
+    try begin
+	    sipparse_util:is_hostname(In) orelse
+		sipparse_util:is_IPv4address(In) orelse
+		sipparse_util:is_IPv6reference(In) orelse
+		is_addr_spec2(In)
+	end
+    catch
+	_ : _ ->
+	    false
+    end.
+
+%% part of is_addr_spec/1 - check if In is "[v6-reference]"
+is_addr_spec2(In) ->
+    case In of
+	[91 | Rest] ->	%% 91 is "["
+	    case catch string:tokens(Rest, "]") of
+		[Check] ->
+		    sipparse_util:is_IPv6reference(Check);
+		_ ->
+		    false
+	    end;
+	_ ->
+	    false
     end.
 
 %% return: string() (of "x.xxx" format, that can be turned into a float() with list_to_float/1) |
@@ -354,78 +450,23 @@ q_value(Str) ->
     %% qvalue = 0 - 1 | 0.000 - 1.000 | 0. - 1.
     QVal = string:strip(Str, right, $.),
     case sipparse_util:is_qval(QVal) of
-	true -> 
+	true ->
 	    Float = sipparse_util:str_to_qval(QVal),
 	    lists:flatten(io_lib:format("~.3f",[Float]));
-	false -> 
-	    throw({error, malformed_qvalue})
+	false ->
+	    throw({error, {malformed_qvalue, Str}})
     end.
 
 %% return: true if first and last char is a $" - strings of length < 2 -> false as well
 %% Note: does not check data inside quotes
-is_quoted([$\" | R]) ->
+is_quoted([34 | R]) ->	%% 34 is '"'
     case lists:reverse(R) of
-	[$\" | _] -> true;
+	[34 | _] -> true;	%% 34 is '"'
 	_ -> false
-	end;
-	 is_quoted(_Str) ->
-		false.
+    end;
+is_quoted(_Str) ->
+    false.
 
-%% may contain a display name
-parse_name_addr(Str) ->
-    %% remove any spaces around Str data in "Contact : ... ,Str, ...."
-    Stripped = sipparse_util:strip(Str, both, [?SP,?HTAB]),
-    %% Check for optional display name
-    %% XXX what if there is a '<' in a quoted display name? Is that valid or invalid?
-    %% The string:tokens() will fail on it.
-    {DisplayName, Rest} =
-	case string:tokens(Stripped, "<") of
-	    [DispName, R] ->
-		%% unquote
-		%% strict conformance to BNF requires DispName to end on a LWS
-		%% - we don't check for this
-		DispNameNoWhiteSpaces = sipparse_util:strip(DispName, both, [?SP,?HTAB]),
-		StrippedName =
-		    case DispNameNoWhiteSpaces of
-			[34 | _] ->	%% 34 is "
-			    %% quoted display name
-			    %% XXX remove the quotes but leave any escaped quotes untouched!
-			    string:strip(DispNameNoWhiteSpaces, both, 34);	%% 34 is "
-			_ ->
-			    %% not quoted - check if it is a token
-			    true = sipparse_util:is_token(DispNameNoWhiteSpaces),
-			    DispNameNoWhiteSpaces
-		    end,
-		{StrippedName, R};
-	    [R] ->
-		{none, R}
-	end,
-    %% get the xxx contents of "<xxx>"
-    [AddrSpec] = string:tokens(Rest, ">"),
-    SipUrl = AddrSpec, %% sipurl:parse(AddrSpec),
-    {DisplayName, SipUrl}.
-
-
-parse_addr_spec(Str) ->
-    %% remove any spaces around xxxx data in "Contact : ... , xxxx , ...."
-    Stripped = sipparse_util:strip(Str, both, [?SP,?HTAB]),
-
-    %% XXX does not handle absoluteURI
-    SipUrl = Stripped, %% sipurl:parse(Stripped),
-    {none, SipUrl}.
-
-
-%% strip_preceding(Str, CharList)
-%%
-strip_preceding("", _CharList) ->
-    "";
-strip_preceding([C | R] = Str, CharList) ->
-    case lists:member(C, CharList) of
-	true ->
-	    strip_preceding(R, CharList);
-	false ->
-	    Str
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: print(Contact)
@@ -544,9 +585,9 @@ set_urlstr(Contact, URLstr) when is_list(URLstr) ->
 
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: test()
 %% Descrip.: autotest callback
-%% Returns :
+%% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
 
@@ -615,7 +656,7 @@ test() ->
 		 "expires=123456    ;host =1.2.3.4   ;   domain=www.com;"
 		 "    ipv6=[1:2:3:4:5:6:7:8]"]),
 
-    %% test multi line Contact and DisplayName using token rule
+    %% test strange Contact and DisplayName using token rule
     io:format("test: parse/1 - 11~n"),
     P11 = [#contact{display_name = "Watson-.!%*_+`'~",
 		    urlstr = "sip:watson@worcester.bell-telephone.com",
@@ -667,33 +708,78 @@ test() ->
 
     %% test contact-parameters without a value
     io:format("test: parse/1 - 16~n"),
-    P15 = [#contact{display_name = none,
+    P16 = [#contact{display_name = none,
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([{"foo", none}, {"lr", "true"}, {"bar", none},
 							   {"baz", none}])
 		   }],
-    P15 = parse(["sip:example.org;foo;lr=true;bar;baz"]),
+    P16 = parse(["sip:example.org;foo;lr=true;bar;baz"]),
 
-    %% test display name with escaped quotes in it
-    io:format("test: parse/1 - 17 (disabled)~n"),
-%%    [#contact{display_name = "Fredrik \\\"",
-%%	      urlstr = "sip:example.org",
-%%	      contact_param = []}] =
-%%	parse(["\"Fredrik \\\" sip:example.org"]),
+    %% test display name with an unbalanced escaped quote in it
+    io:format("test: parse/1 - 17~n"),
+    P17 = [#contact{display_name = "Fredrik \\\"",
+		    urlstr = "sip:example.org",
+		    contact_param = contact_param:to_norm([])
+		   }],
+    P17 = parse(["\"Fredrik \\\"\" sip:example.org"]),
 
-    %% test display name with <> in it.
-    %% XXX not sure if such display names are valid or not. We should probably parse them
-    %% anyways to be liberal in what we accept.
-    io:format("test: parse/1 - 18 (disabled)~n"),
-%%    [#contact{display_name = "Fredrik <X> Y",
-%%	      urlstr = "sip:example.org",
-%%	      contact_param = []}] =
-%%	parse(["\"Fredrik <X> Y\" sip:example.org"]),
-    
+    %% test display name with <> and a fake parameter delimeter in it.
+    io:format("test: parse/1 - 18~n"),
+    P18 = [#contact{display_name = "Fredrik <X>;notparam=foo Y",
+		    urlstr = "sip:example.org",
+		    contact_param = contact_param:to_norm([])
+		   }],
+    P18 = parse(["\"Fredrik <X>;notparam=foo Y\" sip:example.org"]),
+
+    %% test display name without quotes, that really should have quotes
+    io:format("test: parse/1 - 19~n"),
+    P19 = [#contact{display_name = "Foo Bar",
+		    urlstr = "sip:example.org",
+		    contact_param = contact_param:to_norm([{"test", "foo"}])
+		   }],
+    P19 = parse(["Foo Bar <sip:example.org>;test=foo"]),
+
+    %% test display name without quotes, that really should have quotes
+    io:format("test: parse/1 - 20~n"),
+    case catch parse(["Foo Bar sip:example.org"]) of
+	{unparseable, {unparseable_uri_without_brackets, _}} -> ok;
+	P20 -> throw({error, {test_failed, P20}})
+    end,
+
+    %% test display name without quotes, that really should have quotes
+    io:format("test: parse/1 - 21~n"),
+    case catch parse(["Foo|Bar <sip:example.org>"]) of
+	{unparseable, {unquoted_displayname_is_not_a_valid_token, _}} -> ok;
+	P21 -> throw({error, {test_failed, P21}})
+    end,
+
+    %% test with empty quoted display name
+    io:format("test: parse/1 - 22~n"),
+    P22 = [#contact{display_name = none,
+		    urlstr = "sip:example.org",
+		    contact_param = contact_param:to_norm([{"test", "foo"}])
+		   }],
+    P22 = parse(["\t\"\" sip:example.org;test=foo \t"]),
+
+    %% test no display name and contact parameters
+    io:format("test: parse/1 - 23~n"),
+    P23 = [#contact{display_name = none,
+		    urlstr = "sip:example.org",
+		    contact_param = contact_param:to_norm([{"test", "foo"}])
+		   }],
+    P23 = parse(["sip:example.org;test=foo"]),
+
+    %% test invalid hostname that is not quoted and not a token
+    io:format("test: parse/1 - 24~n"),
+    case catch parse(["<sip:example.org>;foo=|.example.org"]) of
+	{unparseable, {invalid_contact_param, _}} -> ok;
+	P24 -> throw({error, {test_failed, P24}})
+    end,
 
 
     %% print/1
     %%--------------------------------------------------------------------
+
     %% test "Contact: *"
     io:format("test: print/1 - 1~n"),
     "*" = print(hd(parse(["*"]))),
@@ -733,7 +819,7 @@ test() ->
     "\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>;q=0.000;"
 	"expires=123456;host=1.2.3.4;domain=www.com;ipv6=[1:2:3:4:5:6:7:8]" = print(PH7),
 
-    %% test multi line Contact and DisplayName
+    %% test strange Contact and DisplayName
     io:format("test: print/1 - 8~n"),
     PH8 = hd(parse(["Watson-.!%*_+`'~" ++ [?HTAB] ++
 		    "<sip:watson@worcester.bell-telephone.com>; q = 0.95; " ++
