@@ -131,25 +131,32 @@ process_cpl_script(Request, User, Graph, Direction) ->
     end.
 
 %% part of process_cpl_script/4, process the results of the CPL script interpretation
-process_cpl_script_res({redirect, Permanent, Locations}, STHandler) ->
+process_cpl_script_res({redirect, Permanent, Locations}, STHandler) when Permanent == yes; Permanent == no,
+									 is_list(Locations) ->
     {Status, Reason} = case Permanent of
-			   true -> {301, "Moved Permanently"};
-			   false -> {302, "Moved Temporarily"}
+			   yes -> {301, "Moved Permanently"};
+			   no -> {302, "Moved Temporarily"}
 		       end,
+    %% Turn sipurl records in Locations into contact records
+    RContacts = lists:foldl(fun(URL, Acc) when is_record(URL, sipurl) ->
+				   This = contact:new(URL),
+				   [This | Acc]
+			   end, [], Locations),
+    Contacts = lists:reverse(RContacts),
     ExtraHeaders = [{"Contact",
-		     sipheader:contact_print([Locations])}],
+		     sipheader:contact_print(Contacts)}],
     transactionlayer:send_response_handler(STHandler, Status, Reason, ExtraHeaders);
 
-process_cpl_script_res({reject, Status}, STHandler) ->
+process_cpl_script_res({reject, Status}, STHandler) when is_integer(Status) ->
     process_cpl_script_res({reject, Status, "CPL reject"}, STHandler);
 
-process_cpl_script_res({reject, Status, Reason}, STHandler) ->
+process_cpl_script_res({reject, Status, Reason}, STHandler) when is_integer(Status), is_list(Reason) ->
     transactionlayer:send_response_handler(STHandler, Status, Reason);
 
 process_cpl_script_res({proxy, Response}, STHandler) when is_record(Response, response) ->
     transactionlayer:send_proxy_response_handler(STHandler, Response);
 
-process_cpl_script_res({proxy, {Status, Reason}}, STHandler) ->
+process_cpl_script_res({proxy, {Status, Reason}}, STHandler) when is_integer(Status), is_list(Reason) ->
     transactionlayer:send_response_handler(STHandler, Status, Reason);
 
 process_cpl_script_res({use_last_proxy_result, Response}, STHandler) ->
