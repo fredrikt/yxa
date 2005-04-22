@@ -26,6 +26,7 @@
 	 str_to_float/1,
 	 str_to_qval/1,
 	 is_qval/1,
+	 strip/3,
 
 	 test/0
 	]).
@@ -399,6 +400,37 @@ is_qval(Str) ->
 	throw: _ -> false
     end.
 
+%%--------------------------------------------------------------------
+%% Function: strip(Str, Direction, StripChars)
+%% Descrip.: works like string:strip/3 but can strip several types of
+%%           char() at once
+%% Returns : NewString = string()
+%%--------------------------------------------------------------------
+strip(Str, left, StripChars) ->
+    strip_preceding(Str, StripChars);
+
+strip(Str, right, StripChars) ->
+    RStr = lists:reverse(Str),
+    StrippedStr = strip_preceding(RStr, StripChars),
+    lists:reverse(StrippedStr);
+
+strip(Str, both, StripChars) ->
+    LeftStrippedStr = strip(Str, left, StripChars),
+    strip(LeftStrippedStr, right, StripChars).
+
+
+%% strip_preceding(Str, CharList)
+%%
+strip_preceding("", _CharList) ->
+    "";
+strip_preceding([C | R] = Str, CharList) ->
+    case lists:member(C, CharList) of
+	true ->
+	    strip_preceding(R, CharList);
+	false ->
+	    Str
+    end.
+
 %%====================================================================
 %% Behaviour functions
 %%====================================================================
@@ -650,12 +682,82 @@ test() ->
     false = is_qval("00.0"),
 
     %% parse "0."
-    io:format("test: str_to_qval/1  - 11~n"),
+    io:format("test: is_qval/1  - 11~n"),
     true = is_qval("0."),
     
     %% parse "1."
-    io:format("test: str_to_qval/1  - 12~n"),
+    io:format("test: is_qval/1  - 12~n"),
     true = is_qval("1."),
+
+    %% strip
+    %%--------------------------------------------------------------------
+    %% test left strip
+    io:format("test: strip/3 - 1~n"),
+    "abc" = strip("+-+-+-+-abc", left, "-+"),
+
+    %% test left strip without strip char
+    io:format("test: strip/3 - 2~n"),
+    "abc" = strip("abc", left, "-+"),
+
+    %% test left strip on empty string
+    io:format("test: strip/3 - 3~n"),
+    "" = strip("", left, "-+"),
+
+    %% test left strip with no strip chars
+    io:format("test: strip/3 - 4~n"),
+    "abc" = strip("abc", left, ""),
+
+    %% test left strip with strip char matching chars inside string to strip
+    io:format("test: strip/3 - 5~n"),
+    "a+-+-+-+-abc" = strip("a+-+-+-+-abc", left, "-+"),
+
+    %% test left strip with strip char matching chars on right end
+    io:format("test: strip/3 - 6~n"),
+    "abc++++" = strip("abc++++", left, "-+"),
+
+    %% --------------------
+    %% test right strip
+    io:format("test: strip/3 - 7~n"),
+    "abc" = strip("abc+-+-+-+-", right, "-+"),
+
+    %% test right strip without strip char
+    io:format("test: strip/3 - 8~n"),
+    "abc" = strip("abc", right, "-+"),
+
+    %% test right strip on empty string
+    io:format("test: strip/3 - 9~n"),
+    "" = strip("", right, "-+"),
+
+    %% test right strip with no strip chars
+    io:format("test: strip/3 - 10~n"),
+    "abc" = strip("abc", right, ""),
+
+    %% test right strip with strip char matching chars inside string to strip
+    io:format("test: strip/3 - 11~n"),
+    "a+-+-+-+-abc" = strip("a+-+-+-+-abc", right, "-+"),
+
+    %% test right strip with strip char matching chars on left end
+    io:format("test: strip/3 - 12~n"),
+    "++++abc" = strip("++++abc", right, "-+"),
+
+    %% --------------------
+    %% test both strip
+
+    %% test strip from left and right
+    io:format("test: strip/3 - 13~n"),
+    "abc" = strip("+-+++abc-+---++", both, "-+"),
+
+    %% test when strip chars are inside string
+    io:format("test: strip/3 - 14~n"),
+    "abc++++abc" = strip("abc++++abc", both, "-+"),
+
+    %% test with empty string
+    io:format("test: strip/3 - 15~n"),
+    "" = strip("", both, "-+"),
+
+    %% test with no strip chars
+    io:format("test: strip/3 - 16~n"),
+    "+abc-" = strip("+abc-", both, ""),
 
     ok.
 

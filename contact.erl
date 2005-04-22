@@ -190,7 +190,6 @@
 	 set_display_name/2,
 	 set_urlstr/2,
 
-	 %% strip/3, XXX should this be put in sipparse_util ?
 	 test/0
 	]).
 
@@ -212,8 +211,6 @@
 %% Macros
 %%--------------------------------------------------------------------
 
--define(CR, 16#0D).
--define(LF, 16#0A).
 -define(SP, 16#20).
 -define(HTAB, 16#09).
 
@@ -249,7 +246,6 @@ parse(Contacts) when is_list(Contacts) ->
 %% return: list() of contact record()
 parse_star(Contact) ->
     %% check for "*" otherwise parse as regular contacts
-    %% case strip(Contcat,both,[?CR,?LF,?SP,?HTAB]) of
     case Contact of
 	[$*] ->
 	    [#contact{display_name = none, urlstr = "*", contact_param = contact_param:to_norm([])}];
@@ -265,8 +261,8 @@ parse_star(Contact) ->
 %% (Note that display_name is optional)
 %% Code assumes that ";" isn't used as anything but a parameter separator inside the contact-param rule
 parse_contact(Str) ->
-    %% find first ">" or SP | HTAB | CRLF - the begining of param section
-    LStrippedStr = strip(Str, both, [?CR,?LF,?SP,?HTAB]),
+    %% find first ">" or SP | HTAB - the begining of param section
+    LStrippedStr = sipparse_util:strip(Str, both, [?SP,?HTAB]),
     {{DisplayName, UrlStr}, Params} =
 	%% name-addr end with ">" before their parameters
 	case catch sipparse_util:split_fields(LStrippedStr, $>) of
@@ -310,12 +306,12 @@ parse_param(ParamStr) ->
     {Name, ValueStripped} =
 	case sipparse_util:split_fields(ParamStr, $=) of
 	    {Name2, Value} ->
-		VS = strip(Value, both, [?CR,?LF,?SP,?HTAB]),
+		VS = sipparse_util:strip(Value, both, [?SP,?HTAB]),
 		{Name2, VS};
 	    {Name2} ->
 		{Name2, ""}
 	end,
-    NameStripped = strip(Name, both, [?CR,?LF,?SP,?HTAB]),
+    NameStripped = sipparse_util:strip(Name, both, [?SP,?HTAB]),
 
     ParamName = httpd_util:to_lower(NameStripped),
 
@@ -378,7 +374,7 @@ is_quoted([$\" | R]) ->
 %% may contain a display name
 parse_name_addr(Str) ->
     %% remove any spaces around Str data in "Contact : ... ,Str, ...."
-    Stripped = strip(Str, both, [?CR,?LF,?SP,?HTAB]),
+    Stripped = sipparse_util:strip(Str, both, [?SP,?HTAB]),
     %% Check for optional display name
     %% XXX what if there is a '<' in a quoted display name? Is that valid or invalid?
     %% The string:tokens() will fail on it.
@@ -388,7 +384,7 @@ parse_name_addr(Str) ->
 		%% unquote
 		%% strict conformance to BNF requires DispName to end on a LWS
 		%% - we don't check for this
-		DispNameNoWhiteSpaces = strip(DispName, both, [?CR,?LF,?SP,?HTAB]),
+		DispNameNoWhiteSpaces = sipparse_util:strip(DispName, both, [?SP,?HTAB]),
 		StrippedName =
 		    case DispNameNoWhiteSpaces of
 			[34 | _] ->	%% 34 is "
@@ -412,27 +408,11 @@ parse_name_addr(Str) ->
 
 parse_addr_spec(Str) ->
     %% remove any spaces around xxxx data in "Contact : ... , xxxx , ...."
-    Stripped = strip(Str, both, [?CR,?LF,?SP,?HTAB]),
+    Stripped = sipparse_util:strip(Str, both, [?SP,?HTAB]),
 
     %% XXX does not handle absoluteURI
     SipUrl = Stripped, %% sipurl:parse(Stripped),
     {none, SipUrl}.
-
-
-%% strip(Str, Direction, StripChars)
-%% description: works like string:strip/3 but can strip several types of char() at once
-%%
-strip(Str, left, StripChars) ->
-    strip_preceding(Str, StripChars);
-
-strip(Str, right, StripChars) ->
-    RStr = lists:reverse(Str),
-    StrippedStr = strip_preceding(RStr, StripChars),
-    lists:reverse(StrippedStr);
-
-strip(Str, both, StripChars) ->
-    LeftStrippedStr = strip(Str, left, StripChars),
-    strip(LeftStrippedStr, right, StripChars).
 
 
 %% strip_preceding(Str, CharList)
@@ -570,77 +550,6 @@ set_urlstr(Contact, URLstr) when is_list(URLstr) ->
 %%--------------------------------------------------------------------
 test() ->
 
-    %% strip
-    %%--------------------------------------------------------------------
-    %% test left strip
-    io:format("test: strip/3 - 1~n"),
-    "abc" = strip("+-+-+-+-abc", left, "-+"),
-
-    %% test left strip without strip char
-    io:format("test: strip/3 - 2~n"),
-    "abc" = strip("abc", left, "-+"),
-
-    %% test left strip on empty string
-    io:format("test: strip/3 - 3~n"),
-    "" = strip("", left, "-+"),
-
-    %% test left strip with no strip chars
-    io:format("test: strip/3 - 4~n"),
-    "abc" = strip("abc", left, ""),
-
-    %% test left strip with strip char matching chars inside string to strip
-    io:format("test: strip/3 - 5~n"),
-    "a+-+-+-+-abc" = strip("a+-+-+-+-abc", left, "-+"),
-
-    %% test left strip with strip char matching chars on right end
-    io:format("test: strip/3 - 6~n"),
-    "abc++++" = strip("abc++++", left, "-+"),
-
-    %% --------------------
-    %% test right strip
-    io:format("test: strip/3 - 7~n"),
-    "abc" = strip("abc+-+-+-+-", right, "-+"),
-
-    %% test right strip without strip char
-    io:format("test: strip/3 - 8~n"),
-    "abc" = strip("abc", right, "-+"),
-
-    %% test right strip on empty string
-    io:format("test: strip/3 - 9~n"),
-    "" = strip("", right, "-+"),
-
-    %% test right strip with no strip chars
-    io:format("test: strip/3 - 10~n"),
-    "abc" = strip("abc", right, ""),
-
-    %% test right strip with strip char matching chars inside string to strip
-    io:format("test: strip/3 - 11~n"),
-    "a+-+-+-+-abc" = strip("a+-+-+-+-abc", right, "-+"),
-
-    %% test right strip with strip char matching chars on left end
-    io:format("test: strip/3 - 12~n"),
-    "++++abc" = strip("++++abc", right, "-+"),
-
-    %% --------------------
-    %% test both strip
-
-    %% test strip from left and right
-    io:format("test: strip/3 - 13~n"),
-    "abc" = strip("+-+++abc-+---++", both, "-+"),
-
-    %% test when strip chars are inside string
-    io:format("test: strip/3 - 14~n"),
-    "abc++++abc" = strip("abc++++abc", both, "-+"),
-
-    %% test with empty string
-    io:format("test: strip/3 - 15~n"),
-    "" = strip("", both, "-+"),
-
-    %% test with no strip chars
-    io:format("test: strip/3 - 16~n"),
-    "+abc-" = strip("+abc-", both, ""),
-
-
     %% parse
     %%--------------------------------------------------------------------
     %% test "Contact: *"
@@ -654,7 +563,6 @@ test() ->
     %% test single name-addr contact entry
     io:format("test: parse/1 - 2~n"),
     P2 = [#contact{display_name = none,
-		   %% sipurl = sipurl:parse("sip:alice@pc33.atlanta.com"),
 		   urlstr = "sip:alice@pc33.atlanta.com",
 		   contact_param = contact_param:to_norm([])
 		  }],
@@ -679,7 +587,6 @@ test() ->
     %% test addr_spec with contact-params, test generic-param rule
     io:format("test: parse/1 - 8~n"),
     P8 = [#contact{display_name = none,
-		   %% sipurl = sipurl:parse("sip:watson@worcester.bell-telephone.com"),
 		   urlstr = "sip:watson@worcester.bell-telephone.com",
 		   contact_param = contact_param:to_norm([{"foo","bar"},{"zoo","123"}])
 		  }],
@@ -689,7 +596,6 @@ test() ->
     %% as well as IPv4address, hostname and IPv6reference rules
     io:format("test: parse/1 - 9~n"),
     P9 = [#contact{display_name = none,
-		   %% urlstr = sipurl:parse("sip:watson@worcester.bell-telephone.com"),
 		   urlstr = "sip:watson@worcester.bell-telephone.com",
 		   contact_param = contact_param:to_norm([{"q","1.000"}, {"expires","123456"}, {"host","1.2.3.4"},
 							  {"domain","www.com"}, {"ipv6","[1:2:3:4:5:6:7:8]"}])
@@ -701,7 +607,6 @@ test() ->
     %% test name_addr with contact-params
     io:format("test: parse/1 - 10~n"),
     P10 = [#contact{display_name = "Mr. Watson",
-		    %% urlstr = sipurl:parse("sip:watson@worcester.bell-telephone.com"),
 		    urlstr = "sip:watson@worcester.bell-telephone.com",
 		    contact_param = contact_param:to_norm([{"q","0.000"}, {"expires","123456"}, {"host","1.2.3.4"},
 							   {"domain","www.com"}, {"ipv6","[1:2:3:4:5:6:7:8]"}])
@@ -713,21 +618,19 @@ test() ->
     %% test multi line Contact and DisplayName using token rule
     io:format("test: parse/1 - 11~n"),
     P11 = [#contact{display_name = "Watson-.!%*_+`'~",
-		    %% urlstr = sipurl:parse("sip:watson@worcester.bell-telephone.com"),
 		    urlstr = "sip:watson@worcester.bell-telephone.com",
 		    contact_param = contact_param:to_norm([{"q","0.950"}, {"expires","123456"}, {"host","1.2.3.4"},
 							   {"domain","www.com"}, {"ipv6","[1:2:3:4:5:6:7:8]"}])
 		   }],
-    P11 = parse(["Watson-.!%*_+`'~" ++ [?HTAB, ?CR, ?LF] ++
+    P11 = parse(["Watson-.!%*_+`'~" ++ [?HTAB] ++
 		 "<sip:watson@worcester.bell-telephone.com>; q = 0.95; " ++
-		 [?CR, ?LF] ++ "expires=123456    ;host =1.2.3.4   ;   domain=www.com;" ++
+		 "expires=123456    ;host =1.2.3.4   ;   domain=www.com;" ++
 		 [?HTAB] ++ "    ipv6=[1:2:3:4:5:6:7:8]"]),
 
 
     %% validate correct handling of encounterd bug in old version: we LOOSE parameters outside the URI
     io:format("test: parse/1 - 12~n"),
     P12 = [#contact{display_name = none,
-		    %% urlstr = sipurl:parse("sip:hotsip1@130.237.252.103:5060;transport=TCP"),
 		    urlstr = "sip:hotsip1@130.237.252.103:5060;transport=TCP",
 		    contact_param = contact_param:to_norm([{"q","1.000"},
 							   {"agentid","\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\""},
@@ -739,7 +642,6 @@ test() ->
     %% test uri-parameters inside a SIP-URI (name-addr)
     io:format("test: parse/1 - 13~n"),
     P13 = [#contact{display_name = "Hokan",
-		    %% urlstr = sipurl:parse("sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42"),
 		    urlstr = "sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42",
 		    contact_param = contact_param:to_norm([{"q","1.000"}, {"expires","0"}])
 		   }],
@@ -749,7 +651,6 @@ test() ->
     %% test uri-parameters inside a SIP-URI (addr-spec)
     io:format("test: parse/1 - 14~n"),
     P14 = [#contact{display_name = none,
-		    %% urlstr = sipurl:parse("sip:hotsip1@130.237.252.103:5060"),
 		    urlstr = "sip:hotsip1@130.237.252.103:5060",
 		    contact_param = contact_param:to_norm([{"transport","TCP"}, {"bar","42"}, {"q","1.000"},
 							   {"expires","0"}])
@@ -834,9 +735,9 @@ test() ->
 
     %% test multi line Contact and DisplayName
     io:format("test: print/1 - 8~n"),
-    PH8 = hd(parse(["Watson-.!%*_+`'~" ++ [?HTAB, ?CR, ?LF] ++
+    PH8 = hd(parse(["Watson-.!%*_+`'~" ++ [?HTAB] ++
 		    "<sip:watson@worcester.bell-telephone.com>; q = 0.95; " ++
-		    [?CR, ?LF] ++ "expires=123456    ;host =1.2.3.4   ;   domain=www.com;" ++
+		    "expires=123456    ;host =1.2.3.4   ;   domain=www.com;" ++
 		    [?HTAB] ++ "    ipv6=[1:2:3:4:5:6:7:8]"])),
     "\"Watson-.!%*_+`'~\" <sip:watson@worcester.bell-telephone.com>;q=0.950;"
 	"expires=123456;host=1.2.3.4;domain=www.com;ipv6=[1:2:3:4:5:6:7:8]" = print(PH8),
