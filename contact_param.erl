@@ -3,7 +3,7 @@
 %%
 %% Note: keys and values are currently stored as strings but pattern
 %% matching and list:keysearch will be faster if standard values are
-%% represented as atoms (but dont turn them all into atoms - as atoms
+%% represented as atoms (but don't turn them all into atoms - as atoms
 %% aren't GCed)
 %%--------------------------------------------------------------------
 
@@ -15,7 +15,7 @@
 -export([
 	 %% create contact_param
 	 to_norm/1,
-	 %% form url_param to other format
+	 %% form contact_param to other format
 	 to_list/1,
 	 to_string/1,
 	 %% modify
@@ -62,7 +62,7 @@
 %%           component is already present in Params
 %%--------------------------------------------------------------------
 to_norm(Params) when is_list(Params) ->
-    F = fun({Name, ValIn}) ->
+    F = fun({Name, ValIn}) when is_list(Name), is_list(ValIn); ValIn == none ->
 		Val =
 		    case ValIn of
 			none ->
@@ -88,7 +88,7 @@ to_norm(Params) when is_list(Params) ->
 %%           Key = string()
 %%           Val = string()
 %%--------------------------------------------------------------------
-to_list(Norm) ->
+to_list(Norm) when is_record(Norm, contact_param) ->
     key_val_db:to_key_val(Norm#contact_param.pairs).
 
 
@@ -103,8 +103,10 @@ to_string(Norm) when is_record(Norm, contact_param) ->
     ParamStrList = [format_param(Param) || Param <- L],
     lists:append(ParamStrList).
 
-format_param({Name, Val}) ->
-    lists:flatten(io_lib:format(";~s=~s",[Name, Val])).
+format_param({Name, Val}) when is_list(Name), is_list(Val) ->
+    lists:flatten(io_lib:format(";~s=~s", [Name, Val]));
+format_param({Name, none}) when is_list(Name) ->
+    lists:flatten(io_lib:format(";~s", [Name])).
 
 
 %%--------------------------------------------------------------------
@@ -117,7 +119,7 @@ format_param({Name, Val}) ->
 %%           and Value are stored in a case insensitive manner
 %% Returns : contact_param record()
 %%--------------------------------------------------------------------
-add(ContactParam, Key, Value) ->
+add(ContactParam, Key, Value) when is_record(ContactParam, contact_param), is_list(Key), is_list(Value) ->
     NKey = httpd_util:to_lower(Key),
     NValue = httpd_util:to_lower(Value),
     add2(ContactParam, {NKey, NValue}).
@@ -136,7 +138,7 @@ add2(ContactParam, {Key, Value}) ->
 %%           ContactParam
 %% Returns : [string()] | []
 %%--------------------------------------------------------------------
-find(ContactParam, Key) ->
+find(ContactParam, Key) when is_record(ContactParam, contact_param), is_list(Key) ->
     Data = ContactParam#contact_param.pairs,
     CKey = httpd_util:to_lower(Key),
     key_val_db:find(Data, CKey).
@@ -160,7 +162,7 @@ remove(ContactParam, Key) ->
 %% Returns :
 %%--------------------------------------------------------------------
 test() ->
-    %% test to_norm
+    %% test to_norm(Params)
     %%---------------------------------------------------------------
     %% test regular case, with case insensitivity
     io:format("test: to_norm/1 - 1~n"),
@@ -186,16 +188,31 @@ test() ->
  	_ -> throw({error, test_failed})
     end,
 
-    %% test to_string
+    %% test that quoted value isn't lowercased
+    io:format("test: to_norm/1 - 5~n"),
+    #contact_param{pairs = [{"key","\"Value\""}]} = to_norm([{"Key", "\"Value\""}]),
+
+
+    %% test to_string(Norm)
     %%---------------------------------------------------------------
     %% test that case and missing value part are handled properly
     io:format("test: to_string/1 - 1~n"),
     ";foo=bar;lr=true;a=43" = to_string(to_norm([{"foo","bar"}, {"lr","true"}, {"a","43"}])),
+
     %% test empty param
     io:format("test: to_string/1 - 2~n"),
     "" = to_string(to_norm([])),
 
-    %% test to_list
+    %% test empty value
+    io:format("test: to_string/1 - 3~n"),
+    ";lr" = to_string( to_norm([{"lr", none}]) ),
+
+    %% test empty value #2
+    io:format("test: to_string/1 - 4~n"),
+    ";lr" = to_string( to_norm([{"lr", []}]) ),
+
+
+    %% test to_list(Norm)
     %%---------------------------------------------------------------
     %% regular case
     io:format("test: to_list/1 - 1~n"),
@@ -209,7 +226,8 @@ test() ->
     io:format("test: to_list/1 - 3~n"),
     [{"foo","bar"}, {"bar","42"}, {"a", "43"}] = to_list(to_norm([{"foo","bAr"}, {"BAr","42"}, {"A","43"}])),
 
-    %% test add
+
+    %% test add(ContactParam, Key, Value)
     %%---------------------------------------------------------------
     %% add Key-Val to empty url_param
     io:format("test: add/3 - 1~n"),
@@ -227,7 +245,7 @@ test() ->
 	add(ContactParam2, "gazong", "zog"),
 
 
-    %% test find
+    %% test find(ContactParam, Key)
     %%---------------------------------------------------------------
     %% test find with existing value
     ContactParam4 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
@@ -244,7 +262,8 @@ test() ->
     io:format("test: find/2 - 3~n"),
     ["42"] = find(ContactParam4_2, "bAr"),
 
-    %% test remove
+
+    %% test remove(ContactParam, Key)
     %%---------------------------------------------------------------
     %% test remove with existing value
     ContactParam6 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
