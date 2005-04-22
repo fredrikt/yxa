@@ -166,7 +166,7 @@ process_updates(LogTag, Header, SipUser, Contacts) ->
 		end,
 	    case mnesia:transaction(F) of
 		{aborted, Reason} ->
-		    logger:log(error, "Location database: REGISTER request failed to add/update/remove one ",
+		    logger:log(error, "Location database: REGISTER request failed to add/update/remove one "
 			       "or more contacts for user ~p, failed due to: ~n~p", [SipUser, Reason]),
 		    %% Check if it was a siperror, otherwise return '500 Server Internal Error'
 		    case Reason of
