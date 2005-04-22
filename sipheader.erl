@@ -73,6 +73,8 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
+-define(SP, 16#20).
+-define(HTAB, 16#09).
 
 %%====================================================================
 %% External functions
@@ -226,30 +228,80 @@ contact(Header, Name) when is_record(Header, keylist), is_atom(Name); is_list(Na
 %%           ViaList = list() of string(), string() = the contents of
 %%                     Via: header. Usually the result of
 %%                     keylist:fetch('via', Header)
-%%           Header = keylist record()
+%%           Header  = keylist record()
 %% Descrip.: parse header data
 %% Returns : list() of via record() | throw()
 %%--------------------------------------------------------------------
 via(Header) when is_record(Header, keylist) ->
-    via(keylist:fetch('via', Header));
+    via2(keylist:fetch('via', Header), []);
 
-via([]) ->
-    [];
-via([String | Rest]) ->
-    Headers = comma(String),
-    lists:append(lists:map(fun(H) ->
-				   [Protocol, Sentby] = string:tokens(H, " "),
-				   [Hostport | Parameters ] = string:tokens(Sentby, ";"),
-				   case sipparse_util:parse_hostport(Hostport) of
-				       {Host, Port} when is_list(Host),
-							 is_integer(Port); Port == none ->
-					   #via{proto=Protocol, host=Host, port=Port, param=Parameters};
-				       _ ->
-					   throw({error, unparseable_via})
-				   end
-			   end, Headers),
-		 via(Rest)).
+via(Vias) when is_list(Vias) ->
+    via2(Vias, []).
 
+via2([H | T], Res) when is_list(H) ->
+    %% Parse SIP version and protocol ("SIP/2.0/FOO" part)
+    {SIP1, Rest1} = sipparse_util:split_fields(H, $/),
+    SIP = sipparse_util:strip(SIP1, both, [?SP, ?HTAB]),
+    {Ver1, Rest2} = sipparse_util:split_fields(Rest1, $/),
+    Ver = sipparse_util:strip(Ver1, both, [?SP, ?HTAB]),
+    {ProtoHostport1, Parameters} = case catch sipparse_util:split_fields(Rest2, $;) of
+				       {error, no_second_part} ->
+					   [Rest2_1] = string:tokens(Rest2, ";"),
+					   {Rest2_1, ""};
+				       {Rest2_1, Rest2_2} ->
+					   %% XXX strip the tokenized values?
+					   {Rest2_1, string:tokens(Rest2_2, ";")};
+				       {Rest2_1} ->
+					   {Rest2_1, ""}
+				   end,
+    %% Strip horizontal whitespace from ProtoHostport
+    ProtoHostport = sipparse_util:strip(ProtoHostport1, both, [?SP, ?HTAB]),
+
+    {ok, Proto, Hostport} = via_proto_hostport(ProtoHostport),
+
+    %% Handle sent-by (Hostport)
+    case sipparse_util:parse_hostport(Hostport) of
+	{Host, Port} when is_list(Host),
+			  is_integer(Port); Port == none ->
+	    Protocol = lists:concat([SIP, "/", Ver, "/", Proto]),
+	    This = #via{proto=Protocol, host=Host, port=Port, param=Parameters},
+	    via2(T, [This | Res]);
+	_ ->
+	    throw({error, unparseable_via})
+    end;
+via2([], Res) ->
+    lists:reverse(Res).
+
+%% via_proto_hostport/1 - part of via/1. Returns : {ok, Proto, Hostport} | throw()
+via_proto_hostport(ProtoHostport) ->
+    %% Split ProtoHostport - can result in either two, three or four elements
+    case string:tokens(ProtoHostport, [?SP, ?HTAB]) of
+	[Proto1, Hostport1] ->
+	    {ok, Proto1, Hostport1};
+	[Proto1, Host1, Port1] ->
+	    %% Check if last character in Host1 is a colon
+	    case lists:reverse(Host1) of
+		":" ++ RHost2 ->
+		    %% Vias can have whitespace between host and colon and
+		    %% colon and port - crazy
+		    Host2 = lists:reverse(
+			      sipparse_util:strip(RHost2, left, [?SP, ?HTAB])
+			     ),
+		    {ok, Proto1, Host2 ++ ":" ++ Port1};
+		_ ->
+		    %% check if first character in port is a colon
+		    case hd(Port1) == $: of
+			true ->
+			    {ok, Proto1, Host1 ++ Port1};
+			false ->
+			    throw({error, {invalid_proto_host_port_in_via, ProtoHostport}})
+		    end
+	    end;
+	[Proto, Host, ":", Port] ->
+	    %% Vias can have whitespace both between host and colon, and colon and port - crazy
+	    {ok, Proto, Host ++ ":" ++ Port}
+    end.
+    
 %%--------------------------------------------------------------------
 %% Function: topvia(Header)
 %%           Header = keylist record()
@@ -283,12 +335,16 @@ print_parameters([A | B]) ->
 %%           ViaStr = string()
 %%--------------------------------------------------------------------
 via_print(Via) when is_record(Via, via) ->
-    via_print([Via]);
-via_print(Via) when is_list(Via) ->
-    lists:map(fun(H) ->
-		      {Protocol, Host, Port, Parameters} = {H#via.proto, H#via.host, H#via.port, H#via.param},
-		      Protocol ++ " " ++ sipurl:print_hostport(Host, Port) ++ print_parameters(Parameters)
-	      end, Via).
+    via_print2([Via], []);
+via_print(Vias) when is_list(Vias) ->
+    via_print2(Vias, []).
+
+via_print2([H | T], Res) when is_record(H, via) ->
+    {Protocol, Host, Port, Parameters} = {H#via.proto, H#via.host, H#via.port, H#via.param},
+    This = Protocol ++ " " ++ sipurl:print_hostport(Host, Port) ++ print_parameters(Parameters),
+    via_print2(T, [This | Res]);
+via_print2([], Res) ->
+    lists:reverse(Res).
 
 %%--------------------------------------------------------------------
 %% Function: via_params(Via)
@@ -397,11 +453,11 @@ unquote(QString) ->
 
 %%--------------------------------------------------------------------
 %% Function: param_to_dict(Param)
-%%           Param = list() of string(), each string is a "para=value"
+%%           Param = list() of string(), each string is a "key=value"
 %%           pair, that may have preceding or trailing spaces as well
 %%           as hex encoded values (e.g. chars of the format %hh,
 %%           h = hex number)
-%% Descrip.: convert sip paramter strings into dictionary
+%% Descrip.: convert sip parameter strings into dictionary
 %% Returns : dict()
 %%--------------------------------------------------------------------
 param_to_dict(Param) ->
@@ -590,16 +646,16 @@ print_one_header_binary3(false, _BinName, []) ->
 %% Function: get_tag([String])
 %% Descrip.: Get From- or To-tag from from- or to-header value.
 %% Returns : Tag = string() | none
+%% Note    : This function really ought to parse String using
+%%           contact:new() in order to not be fooled by $> appearing
+%%           more than once, tag= not written in lowercase etc.
 %%--------------------------------------------------------------------
 get_tag([String]) ->
-    Index = string:chr(String, $>),
-    ParamStr = string:substr(String, Index + 1),
-    ParamList = string:tokens(ParamStr, ";"),
-    ParamDict = param_to_dict(ParamList),
-    case dict:find("tag", ParamDict) of
-	error ->
+    [Contact] = contact:parse([String]),
+    case contact_param:find(Contact#contact.contact_param, "tag") of
+	[] ->
 	    none;
-	{ok, Tag} ->
+	[Tag] ->
 	    Tag
     end.
 
@@ -1050,7 +1106,7 @@ test() ->
     io:format("test: comma/1 - 10~n"),
     ["fo","ob","ar",""] = comma("fo,ob,ar,"),
 
-    %% preceeding comma
+    %% preceding comma
     io:format("test: comma/1 - 11~n"),
     ["","fo","ob","ar"] = comma(",fo,ob,ar"),
 
@@ -1098,6 +1154,60 @@ test() ->
     io:format("test: via/1 - 9~n"),
     %% test unparsable via - fail inside sipparse_util:parse_hostport() since there is a 500 in the address
     {'EXIT', _} = (catch via(["SIP/2.0/TLS 192.0.2.500:5060"])),
+
+    io:format("test: via/1 - 10~n"),
+    %% test with Via containing stupid spaces #1, from the '3.1.1.1  A short tortuous INVITE'
+    %% from draft-ietf-sipping-torture-tests-04.txt.
+    [#via{proto="SIP/2.0/UDP", host="192.0.2.2", port=none, param=["branch=390skdjuw"]}] =
+	via(["SIP  /   2.0/UDP   192.0.2.2;branch=390skdjuw"]),
+
+    io:format("test: via/1 - 11~n"),
+    %% test with Via containing stupid spaces #2, from the '3.1.1.1  A short tortuous INVITE'
+    %% from draft-ietf-sipping-torture-tests-04.txt.
+    [#via{proto="SIP/2.0/TCP", host="spindle.example.com", port=none, param=[" branch =  z9hG4bK9ikj8"]}] =
+	via(["SIP  / 2.0  / TCP     spindle.example.com   ; branch =  z9hG4bK9ikj8"]),
+
+    io:format("test: via/1 - 12~n"),
+    %% test with Via containing stupid spaces #3, from the '3.1.1.1  A short tortuous INVITE'
+    %% from draft-ietf-sipping-torture-tests-04.txt.
+    [#via{proto="SIP/2.0/UDP", host="192.168.255.111", port=none, param=[" branch=z9hG4bK30239"]}] =
+	via(["SIP  /    2.0   / UDP  192.168.255.111   ; branch=z9hG4bK30239"]),
+
+    io:format("test: via/1 - 13~n"),
+    %% test via with multiple parameters and some ill-placed tabs
+    %% XXX are Via-param values case sensitive or not?
+    [#via{proto="SIP/2.0/UDP", host="192.0.2.1", port=none, param=["foo=BaR", "bar=\"BaZ\""]}] =
+	  via(["SIP \t/\t 2.0 \t /\tUDP\t192.0.2.1\t;foo=BaR;bar=\"BaZ\""]),
+
+    io:format("test: via/1 - 14~n"),
+    %% test via with whitespace after-colon-before-port - valid according to RFC3261 #20.42
+    [#via{proto="SIP/2.0/UDP", host="first.example.com", port=4000,
+	  param=["ttl=16", "maddr=224.2.0.1 ", "branch=z9hG4bK-foo"]}] =
+	via(["SIP / 2.0 / UDP first.example.com: 4000;ttl=16;maddr=224.2.0.1 ;branch=z9hG4bK-foo"]),
+
+    io:format("test: via/1 - 15~n"),
+    %% test via with whitespace before colon-port - valid according to my understanding of the BNF
+    %% COLON   =  SWS ":" SWS ; colon
+    [#via{proto="SIP/2.0/UDP", host="first.example.com", port=4000,
+	  param=["ttl=16", "maddr=224.2.0.1 ", "branch=z9hG4bK-foo"]}] =
+	via(["SIP / 2.0 / UDP first.example.com :4000;ttl=16;maddr=224.2.0.1 ;branch=z9hG4bK-foo"]),
+
+    io:format("test: via/1 - 16~n"),
+    %% test via with whitespace before and after colon in host-colon-port -
+    %% valid according to my understanding of the BNF
+    %% COLON   =  SWS ":" SWS ; colon
+    [#via{proto="SIP/2.0/UDP", host="first.example.com", port=4000, param=[]}] =
+	via(["SIP / 2.0 / UDP first.example.com : 4000"]),
+
+    io:format("test: via/1 - 17~n"),
+    %% test that we don't accept Vias with space between host and port, but no colon
+    {error, {invalid_proto_host_port_in_via, _}} =
+     (catch via(["SIP/2.0/UDP first.example.com 4000"])),
+
+    io:format("test: via/1 - 18~n"),
+    %% test with semi-colon but no parameters
+    [#via{proto="SIP/2.0/UDP", host="example.com", port=none, param=[]}] =
+	via(["SIP/2.0/UDP example.com;"]),
 
 
     %% test topvia(Header)
@@ -1171,7 +1281,7 @@ test() ->
     io:format("test: name_header/1 - 6 (disabled)~n"),
     %% test with quoted quotes in the display name
     %%{"Quoted \\\" here", NameHeaderURI1} = name_header("\"Quoted \\\" here\" <sip:ft@example.org>"),
-        
+
 
     %% test via_is_equal(A, B)
     %%--------------------------------------------------------------------
@@ -1422,7 +1532,7 @@ test() ->
 			 param_to_dict(["foo=bar"])
 			),
 
-    io:format("test: param_to_dict/1 - 1~n"),
+    io:format("test: param_to_dict/1 - 2~n"),
     %% test more complicated case - uppercase in key, escaped characters in value and multiple entrys
     ["foo=bAr", "user=ft"] = dict_to_param( param_to_dict(["Foo=b%41r", "user=ft"]) ),
 
@@ -1490,6 +1600,14 @@ test() ->
     io:format("test: get_tag/1 - 3~n"),
     none = get_tag(["\"Fredrik\" <sip:ft@example.org>;test=auto"]),
 
+    io:format("test: get_tag/1 - 4~n"),
+    %% >;tag= appearing more than once
+    "foo" = get_tag(["\"Evil <evil>;tag=bar displayname\" <sip:ft@example.org>;tag=foo"]),
+
+    io:format("test: get_tag/1 - 5~n"),
+    %% token names (tag=) should be case-insensitive
+    "foo" = get_tag(["<sip:ft@example.org>;Tag=foo"]),
+
 
     %% test dialogid(Header)
     %%--------------------------------------------------------------------
@@ -1502,10 +1620,10 @@ test() ->
     {"call-id-test", "fromtag", "totag"} = dialogid(DialogHeader1),
 
     io:format("test: dialogid/1 - 2~n"),
-    {"call-id-test", "fromtag", none} = dialogid(keylist:set("To", ["foo"], DialogHeader1)),
+    {"call-id-test", "fromtag", none} = dialogid(keylist:set("To", ["sip:foo@example.org"], DialogHeader1)),
 
     io:format("test: dialogid/1 - 3~n"),
-    {"call-id-test", none, "totag"} = dialogid(keylist:set("From", ["foo"], DialogHeader1)),
+    {"call-id-test", none, "totag"} = dialogid(keylist:set("From", ["sip:foo@example.org"], DialogHeader1)),
 
 
     %% test expires(Header)
