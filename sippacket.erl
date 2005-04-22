@@ -717,13 +717,6 @@ test() ->
      "SIP  / 2.0  / TCP     spindle.example.com   ; branch  =   z9hG4bK9ikj8",
      "SIP  /    2.0   / UDP  192.168.255.111   ; branch=z9hG4bK30239"] = keylist:fetch('via', Header6),
 
-    io:format("test: parse/1 request - 6.2.7.2 (Via: full parsing, disabled)~n"),
-    %% Via: Disabled since we fail to parse the spaces in the "SIP/2.0/FOO" part.
-    %%["SIP/2.0/UDP 192.0.2.2;branch=390skdjuw",
-    %% "SIP/2.0/TCP spindle.example.com;branch=z9hG4bK9ikj8",
-    %% "SIP/2.0/UDP 192.168.255.111;branch=z9hG4bK30239"] =
-    %%	sipheader:via_print( sipheader:via(Header6) ),
-    
     io:format("test: parse/1 request - 6.2.8~n"),
     %% Subject:
     [] = keylist:fetch('subject', Header6),
