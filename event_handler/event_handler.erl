@@ -18,7 +18,7 @@
 
 	 generic_event/4,
 	 generic_event/5,
-	 new_request/4,
+	 new_request/6,
 	 request_info/3,
 	 uas_result/5,
 	 uac_result/4
@@ -79,11 +79,16 @@ generic_event(Prio, Class, Id, Format, Args) when is_atom(Prio), is_atom(Class),
     generic_event(Prio, Class, Id, [Str]).
 
 %% New request has arrived, log a bunch of parameters about it
-new_request(Method, URI, Branch, DialogId) when is_list(Method), is_record(URI, sipurl),
-						is_list(Branch), is_tuple(DialogId) ->
-    gen_event:notify(?SERVER, {event, self(), normal, new_request, Branch,
-			       [{method, Method}, {uri, sipurl:print(URI)},
-				{dialogid, DialogId}]}).
+new_request(Method, URI, Branch, DialogId, From, To) when is_list(Method), is_record(URI, sipurl),
+							  is_list(Branch), is_list(DialogId),
+							  is_list(From), is_list(To) ->
+    L = [{method, Method},
+	 {uri, sipurl:print(URI)},
+	 {dialogid, DialogId}, 
+	 {from, From},
+	 {to, To}
+	],
+    gen_event:notify(?SERVER, {event, self(), normal, new_request, Branch, L}).
 
 %% More information gathered about request
 request_info(Prio, Branch, L) when is_atom(Prio), is_list(Branch), is_list(L) ->

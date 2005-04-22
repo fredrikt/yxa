@@ -166,8 +166,11 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
     logger:log(normal, "~s: ~s", [LogTag, LogStr]),
 
     %% Create event about new request received
-    DId = sipheader:dialogid(Request#request.header),
-    event_handler:new_request(Method, URI, Branch, DId),
+    {CallId, FromTag, ToTag} = sipheader:dialogid(Request#request.header),
+    DId = lists:concat(["c=", CallId, "; ft=", FromTag, "; tt=", ToTag]),
+    [From] = keylist:fetch('from', Request#request.header),
+    [To] = keylist:fetch('to', Request#request.header),
+    event_handler:new_request(Method, URI, Branch, DId, From, To),
 
     %% RFC3261 17.2.1 says the _transaction layer_ MUST generate a 100 Trying in response
     %% to an INVITE unless it _knows_ the TU will generate a response within 200 ms. We
