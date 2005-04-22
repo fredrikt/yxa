@@ -1,5 +1,9 @@
 -module(siputil).
--export([linefix/1, printvalue/1, concat_strings/1]).
+-export([linefix/1,
+	 printvalue/1,
+	 concat_strings/1,
+	 generate_tag/0
+	]).
 
 linefix(In) ->
     linefix2(In, []).
@@ -68,3 +72,19 @@ concat_strings([[] | B]) ->
 
 concat_strings([A | B]) ->
     A ++ "\r\n" ++ concat_strings(B).
+
+%%--------------------------------------------------------------------
+%% Function: generate_tag()
+%% Descrip.: Generate a string that might be used as To: tag in
+%%           responses we create. This means it includes at least 32
+%%           bits of randomness (specified by RFC3261 #19.3).
+%% Returns : Tag = string()
+%%--------------------------------------------------------------------
+generate_tag() ->
+    %% Erlang guarantees that subsequent calls to now() generate increasing values (on the same node).
+    {Megasec, Sec, Microsec} = now(),
+    In = lists:concat([node(), Megasec * 1000000 + Sec, 8, $., Microsec]),
+    Out1 = siprequest:make_base64_md5_token(In),
+    Out = http_util:to_lower(Out1),	%% tags are case-insensitive
+    %% don't make the tag longer than it has to be.
+    "yxa-" ++ string:substr(Out, 1, 9).

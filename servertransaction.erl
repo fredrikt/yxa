@@ -154,7 +154,7 @@ init([Request, Socket, LogStr, Parent]) ->
 init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = Branch ++ " " ++ Method,
-    MyToTag = generate_tag(),
+    MyToTag = siputil:generate_tag(),
 
     %% LogTag is essentially Branch + Method, LogStr is a string that
     %% describes this request (METHOD URI [client=x, from=y, to=z])
@@ -1136,23 +1136,6 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
 		  Request
 	  end,
     siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State#state.socket, Req).
-
-%%--------------------------------------------------------------------
-%% Function: generate_tag()
-%% Descrip.: Generate a string that might be used as To: tag in
-%%           responses we create. This means it includes at least 32
-%%           bits of randomness (specified by RFC3261 #19.3).
-%%           there. Then use siprequest:make_response/7 to create a
-%%           response from our requests headers.
-%% Returns : Tag = string()
-%%--------------------------------------------------------------------
-generate_tag() ->
-    %% Erlang guarantees that subsequent calls to now() generate increasing values (on the same node).
-    {Megasec, Sec, Microsec} = now(),
-    In = lists:concat([node(), Megasec * 1000000 + Sec, 8, $., Microsec]),
-    Out = siprequest:make_base64_md5_token(In),
-    %% don't make the tag longer than it has to be.
-    "yxa-" ++ string:substr(Out, 1, 9).
 
 
 %%====================================================================
