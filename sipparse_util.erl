@@ -118,6 +118,7 @@ split_quoted_string2([H | T], _Escape, Res) ->
 split_quoted_string2([], Escape, Res) ->
     erlang:error(no_end_quote, [Escape, Res]).
 
+
 %%--------------------------------------------------------------------
 %% Function: parse_host(Host)
 %%           Host = string()
@@ -198,12 +199,12 @@ parse_hostport_v6_or_hostname(In) ->
 parse_ipv6hostport([91 | IPv6Hostport]) ->	%% 91 is $[
     {IPv6Ref, Port} = get_ipv6ref_and_port(IPv6Hostport),
     %% throw if not ip6 ref
-    is_IPv6reference(IPv6Ref),
+    is_IPv6reference_throw(IPv6Ref),
     %% XXX return without brackets?
     {ok, "[" ++ IPv6Ref ++ "]", Port};
 parse_ipv6hostport(In) ->
     %% throw if not ip6 ref
-    is_IPv6reference(In),
+    is_IPv6reference_throw(In),
     %% XXX return without brackets?
     {ok, "[" ++ In ++ "]", none}.
 
@@ -231,10 +232,10 @@ parse_ipv4hostport(HostPort) ->
     case sipparse_util:split_fields(HostPort, $:) of
 	{Host, Port} ->
 	    %% throw if not a IPv4 address string, or not a numeric port
-	    {ok, is_IPv4address(Host), list_to_integer(Port)};
+	    {ok, is_IPv4address_throw(Host), list_to_integer(Port)};
 	{Host} ->
 	    %% throw if not a IPv4 address string
-	    {ok, is_IPv4address(Host), none}
+	    {ok, is_IPv4address_throw(Host), none}
     end.
 
 
@@ -242,11 +243,11 @@ parse_domain_hostport(HostPort) ->
     case sipparse_util:split_fields(HostPort, $:) of
 	{Host, Port} ->
 	    %% throw if not a hostname
-	    is_hostname(Host),
+	    is_hostname_throw(Host),
 	    {ok, rm_trailing_dot_from_hostname(Host), list_to_integer(Port)};
 	{Host} ->
 	    %% throw if not a hostname
-	    is_hostname(Host),
+	    is_hostname_throw(Host),
 	    {ok, rm_trailing_dot_from_hostname(Host), none}
     end.
 
@@ -303,10 +304,10 @@ is_token(Str) ->
 %%--------------------------------------------------------------------
 %% Function: is_hostname(Str)
 %%           Str = string(), the host string
-%% Descrip.: parse host string, throw a exception if it doesn't
+%% Descrip.: parse host string, throw an exception if it doesn't
 %%           conform to the format specified in RFC3261 chapter 25.1
 %%           p218
-%% Returns : Str | throw()
+%% Returns : true | throw()
 %% Note    : this function only matches symbolic hostnames
 %%
 %% These rules are the same:
@@ -319,14 +320,31 @@ is_hostname(Host) ->
     HostL = length(Host),
     %% pattern based on the BNF grammer for the <hostname> rule
     Pattern =
-	"((([A-Za-z0-9])|([A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9]))\\.)*"
-	"(([A-Za-z])|([A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9]))\\.?",
+	"(("
+	  "([A-Za-z0-9])|"
+	    "([A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])"
+	")\\."
+	")*"
+	"("
+	"([A-Za-z])|"
+	  "([A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9])"
+	")"
+	"\\.?",
 
     R = regexp:first_match(Host, Pattern),
     %% throw exception if whole string doesn't match
-    {match, 1, HostL} = R,
-    Host.
+    case R of
+	{match, 1, HostL} -> true;
+	_ -> false
+    end.
 
+is_hostname_throw(Host) ->
+    case is_hostname(Host) of
+	true ->
+	    true;
+	false ->
+	    erlang:error(invalid_hostname, [Host])
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: is_IPv4address(Str)
@@ -339,32 +357,48 @@ is_hostname(Host) ->
 %%--------------------------------------------------------------------
 is_IPv4address(Host) ->
     case inet_parse:ipv4_address(Host) of
-	{ok, _IPv4AsTuple} -> Host;
-	{error, _Reason} -> throw({error, not_a_IPv4_address})
+	{ok, _IPv4AsTuple} -> true;
+	{error, _Reason} -> false
     end.
 
+is_IPv4address_throw(Host) ->
+    case is_IPv4address(Host) of
+	true -> Host;
+	false -> erlang:error(not_an_IPv4_address, [Host])
+    end.
+
+
+
 %%--------------------------------------------------------------------
-%% Function: is_IPv6refernce(Str)
-%%           Str = string(), the host string
+%% Function: is_IPv6reference(IPv6Str)
+%%           IPv6Str = string(), the host string
 %% Descrip.: parse host string, throw an exception if it doesn't
 %%           conform to the format specified in RFC3261 chapter 25.1
 %%           page 218
-%% Returns : Str | throw()
+%% Returns : true | false
 %% Note    : this function only matches IPv6 hostnames
 %%--------------------------------------------------------------------
 is_IPv6reference(IPv6Str) ->
     case inet_parse:ipv6_address(IPv6Str) of
-	{ok, _IPv6AsTuple} -> IPv6Str;
-	{error, _Reason} -> throw({error, not_an_IPv6_reference})
+	{ok, _IPv6AsTuple} -> true;
+	{error, _Reason} -> false
     end.
+
+%% Returns : Str | throw()
+is_IPv6reference_throw(IPv6Str) ->
+    case is_IPv6reference(IPv6Str) of
+	true -> IPv6Str;
+	false -> erlang:error(not_an_IPv6_reference, [IPv6Str])
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Function: str_to_float(Str)
-%% Descrip.: convert Str containing float() or integer() value, to a 
+%% Descrip.: convert Str containing float() or integer() value, to a
 %%           float().
-%% Returns : float() | 
+%% Returns : float() |
 %%           throw() (if Str can't be interpreted as a float)
-%% Note    : user need to strip any preceding or trailing spaces (or 
+%% Note    : user need to strip any preceding or trailing spaces (or
 %%           other chars themselves)            XXX q_value(...) in contact.erl uses similar code
 %%                                              XXX this should be in a utility module
 %%--------------------------------------------------------------------
@@ -372,9 +406,9 @@ str_to_float(Str) ->
     case catch list_to_float(Str) of
 	{'EXIT', _} ->
 	    case catch list_to_integer(Str) of
-		{'EXIT', _} -> 
+		{'EXIT', _} ->
 		    throw({error, string_not_float_or_integer});
-		Int -> 
+		Int ->
 		    float(Int)
 	    end;
         Float ->
@@ -386,7 +420,7 @@ str_to_float(Str) ->
 %% Descrip.: parse a qvalue string
 %%           qvalue  = ( "0" [ "." 0*3DIGIT ] )
 %%                   / ( "1" [ "." 0*3("0") ] )    - RFC 3261
-%% Returns : float()               
+%% Returns : float()
 %%--------------------------------------------------------------------
 %% extra clauses to ensure proper qvalue formating
 str_to_qval("0") -> 0.0;
@@ -415,10 +449,10 @@ str_to_qval2(Str) ->
 %% Descrip.: parse a qvalue string
 %%           qvalue  = ( "0" [ "." 0*3DIGIT ] )
 %%                   / ( "1" [ "." 0*3("0") ] )    - RFC 3261
-%% Returns : true | false                 
+%% Returns : true | false
 %%--------------------------------------------------------------------
 is_qval(Str) ->
-    try begin 
+    try begin
 	    str_to_qval(Str),
 	    true
 	end
@@ -484,9 +518,9 @@ strip_preceding([C | R] = Str, CharList) ->
 
 %% only looks for exceptions from throw()
 fail(Fun) ->
-    try Fun() of 
+    try Fun() of
 	_  -> throw({error, no_exception_thrown_by_test})
-    catch 
+    catch
 	_ -> ok %% catch user throw()
     end.
 
@@ -529,6 +563,7 @@ test() ->
 	_ -> throw({error, test_case_failed})
     end,
 
+
     %% split_quoted_string/1
     %%--------------------------------------------------------------------
     %% regular test case
@@ -563,6 +598,7 @@ test() ->
 	{'EXIT', {no_end_quote, _}} -> ok;
 	SQS_Res6 -> throw({error, test_case_failed, SQS_Res6})
     end,
+
 
     %% parse_hostport/1
     %%--------------------------------------------------------------------
@@ -639,7 +675,7 @@ test() ->
 
     %% str_to_float/1
     %%--------------------------------------------------------------------
-    %% 
+    %%
     io:format("test: str_to_float/1  - 1~n"),
     1.0 = str_to_float("1.0"),
     io:format("test: str_to_float/1  - 2~n"),
@@ -647,7 +683,7 @@ test() ->
     io:format("test: str_to_float/1  - 3~n"),
     1.0 = str_to_float("0001.0000"),
     io:format("test: str_to_float/1  - 4~n"),
-    fail(fun() -> str_to_float("foo") end), 
+    fail(fun() -> str_to_float("foo") end),
 
     %% str_to_qval/1
     %%--------------------------------------------------------------------
@@ -666,7 +702,7 @@ test() ->
     %% min float value
     io:format("test: str_to_qval/1  - 4~n"),
     0.0 = str_to_qval("0.000"),
-    
+
     %% value in 0-1 range
     io:format("test: str_to_qval/1  - 5~n"),
     0.567 = str_to_qval("0.567"),
@@ -678,7 +714,7 @@ test() ->
     %% to many chars
     io:format("test: str_to_qval/1  - 7~n"),
     fail(fun() -> str_to_qval("0.1234") end),
-    
+
     %% float out of range
     io:format("test: str_to_qval/1  - 8~n"),
     fail(fun() -> str_to_qval("1.001") end),
@@ -694,14 +730,14 @@ test() ->
     %% parse "0."
     io:format("test: str_to_qval/1  - 11~n"),
     0.0 = str_to_qval("0."),
-    
+
     %% parse "1."
     io:format("test: str_to_qval/1  - 12~n"),
     1.0 = str_to_qval("1."),
 
     %% is_qval/1
     %%--------------------------------------------------------------------
-    %% 
+    %%
     %% int = 1
     io:format("test: is_qval/1  - 1~n"),
     true = is_qval("1"),
@@ -717,7 +753,7 @@ test() ->
     %% min float value
     io:format("test: is_qval/1  - 4~n"),
     true = is_qval("0.000"),
-    
+
     %% value in 0-1 range
     io:format("test: is_qval/1  - 5~n"),
     true = is_qval("0.567"),
@@ -729,7 +765,7 @@ test() ->
     %% to many chars
     io:format("test: is_qval/1  - 7~n"),
     false = is_qval("0.1234"),
-    
+
     %% float out of range
     io:format("test: is_qval/1  - 8~n"),
     false = is_qval("1.001"),
@@ -743,11 +779,11 @@ test() ->
     false = is_qval("00.0"),
 
     %% parse "0."
-    io:format("test: is_qval/1  - 11~n"),
+    io:format("test: str_to_qval/1  - 11~n"),
     true = is_qval("0."),
-    
+
     %% parse "1."
-    io:format("test: is_qval/1  - 12~n"),
+    io:format("test: str_to_qval/1  - 12~n"),
     true = is_qval("1."),
 
     %% strip
@@ -819,6 +855,7 @@ test() ->
     %% test with no strip chars
     io:format("test: strip/3 - 16~n"),
     "+abc-" = strip("+abc-", both, ""),
+
 
     ok.
 
