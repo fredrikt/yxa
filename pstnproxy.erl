@@ -461,7 +461,22 @@ get_branch_from_handler(TH) ->
 %%--------------------------------------------------------------------
 proxy_request(THandler, Request, DstURI) when is_record(Request, request),
 					      is_record(DstURI, sipurl) ->
-    sippipe:start(THandler, none, Request, DstURI, 900).
+    case keylist:fetch('route', Request#request.header) of
+	[] ->
+	    sippipe:start(THandler, none, Request, DstURI, 900);
+	Route ->
+	    %% XXX this is a configurable option only because in SU's setup it
+	    %% might break calls through the gateway when PRACKs it sends gets
+	    %% challenged elsewhere. Don't set this to true!
+	    case sipserver:get_env(pstnproxy_ignore_route_header_bad_idea, false) of
+		true ->
+		    logger:log(debug, "Warning: Routing of request according to "
+			       "Route header disabled  : ~p - BAD IDEA", [Route]),
+		    sippipe:start(THandler, none, Request, DstURI, 900);
+		false ->
+		    sippipe:start(THandler, none, Request, route, 900)
+	    end
+    end.
 
 
 %%--------------------------------------------------------------------
