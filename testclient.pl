@@ -157,7 +157,7 @@ my %standard_tests = (
 				Method	=> "REGISTER",
 		     		From	=> $default_from,
 		     		To	=> $testuser_address,
-		     		Contact	=> "*;foo=bar;baz=kaka",
+		     		Contact	=> "*",
 				Header  => "Expires: 0\n",
 		     		sendto	=> $incomingproxy,
 				expect	=> 200,
