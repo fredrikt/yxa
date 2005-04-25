@@ -124,6 +124,132 @@
 %%====================================================================
 
 
+%%--------------------------------------------------------------------
+%% Function: register_request(Request, Origin, LogStr)
+%%           Request = response record()
+%%           Origin  = siporigin record()
+%%           LogStr  = string(), description of request
+%% Descrip.: Process a received REGISTER. First check if it is for
+%%           one of our domains (homedomain), then check that it
+%%           contains proper authentication and that the authenticated
+%%           user is allowed to register using this address-of-record.
+%%           Finally, let siplocation:process_register_isauth()
+%%           process all the Contact headers and update the location
+%%           database.
+%% Returns : Does not matter.
+%%--------------------------------------------------------------------
+register_request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
+    URL = Request#request.uri,
+    logger:log(debug, "incomingproxy: REGISTER ~p", [sipurl:print(URL)]),
+    THandler = transactionlayer:get_handler_for_request(Request),
+    LogTag = get_branch_from_handler(THandler),
+    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 1
+    %% check if this registrar handles the domain the request wants to register for
+    case local:homedomain(URL#sipurl.host) of
+	true ->
+	    register_require_supported(Request, Origin, LogStr, THandler, LogTag);
+	_ ->
+	    %% act as proxy and forward message to other domain
+	    logger:log(debug, "incomingproxy: REGISTER for non-homedomain ~p", [URL#sipurl.host]),
+	    do_request(Request, Origin)
+    end.
+
+%% part of register_request/3
+register_require_supported(Request, Origin, LogStr, THandler, LogTag) ->
+    Header = Request#request.header,
+    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 2
+    case is_valid_register_request(Header) of
+	true ->
+	    register_authenticate(Request, Origin, LogStr, THandler, LogTag);
+	{siperror, Status, Reason, ExtraHeaders} ->
+	    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders)
+    end.
+
+%% part of register_request/3
+register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
+    {URL, Header} =
+	{Request#request.uri, Request#request.header},
+    logger:log(debug, "incomingproxy: ~s -> processing", [LogStr]),
+    %% delete any present Record-Route header (RFC3261, #10.3)
+    NewHeader = keylist:delete("Record-Route", Header),
+    {_, ToURL} = sipheader:to(Header),
+    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 3, step 4 and step 5
+    %% authenticate UAC
+    case local:can_register(NewHeader, ToURL) of
+	{{true, _}, SIPuser} ->
+	    Contacts = sipheader:contact(Header),
+	    logger:log(debug, "~s: user ~p, registering contact(s) : ~p",
+		       [LogTag, SIPuser, sipheader:contact_print(Contacts)]),
+	    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6, step 7 and step 8
+	    case catch siplocation:process_register_isauth(LogTag ++ ": incomingproxy",
+							   NewHeader, SIPuser, Contacts) of
+		{ok, {Status, Reason, ExtraHeaders}} ->
+		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders),
+		    %% Make event about user sucessfully registered
+		    L = [{register, ok}, {user, SIPuser},
+			 {contacts, sipheader:contact_print(Contacts)}],
+		    event_handler:generic_event(normal, location, LogTag, L),
+		    ok;
+		{siperror, Status, Reason} ->
+		    transactionlayer:send_response_handler(THandler, Status, Reason);
+		{siperror, Status, Reason, ExtraHeaders} ->
+		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
+		{'EXIT', Reason} ->
+		    logger:log(error, "=ERROR REPORT==== siplocation:process_register_isauth() failed :~n~p~n",
+			       [Reason]),
+		    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error");
+		_ ->
+		    true
+	    end;
+	{stale, _} ->
+	    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
+	    transactionlayer:send_challenge(THandler, www, true, none);
+	{{false, eperm}, SipUser} when SipUser /= none ->
+	    logger:log(normal, "~s: incomingproxy: SipUser ~p NOT ALLOWED to REGISTER address ~s",
+		       [LogTag, SipUser, sipurl:print(ToURL)]),
+	    transactionlayer:send_response_handler(THandler, 403, "Forbidden"),
+	    %% Make event about users failure to register
+	    L = [{register, forbidden}, {user, SipUser}, {address, sipurl:print(ToURL)}],
+	    event_handler:generic_event(normal, location, LogTag, L);
+	{{false, nomatch}, SipUser} when SipUser /= none ->
+	    logger:log(normal, "~s: incomingproxy: SipUser ~p tried to REGISTER invalid address ~s",
+		       [LogTag, SipUser, sipurl:print(ToURL)]),
+	    transactionlayer:send_response_handler(THandler, 404, "Not Found"),
+	    %% Make event about users failure to register
+	    L = [{register, invalid_address}, {user, SipUser}, {address, sipurl:print(ToURL)}],
+	    event_handler:generic_event(normal, location, LogTag, L);
+	{false, none} ->
+	    Prio = case keylist:fetch('authorization', Header) of
+		       [] -> debug;
+		       _ -> normal
+		   end,
+	    %% XXX send new challenge (current behavior) or send 403 Forbidden when authentication fails?
+	    logger:log(Prio, "~s -> Authentication FAILED, sending challenge", [LogStr]),
+	    transactionlayer:send_challenge(THandler, www, false, 3);
+	Unknown ->
+	    logger:log(error, "Register: Unknown result from local:can_register() URL ~p :~n~p",
+		       [sipurl:print(URL), Unknown]),
+	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: is_valid_register_request(Header)
+%%           Header = keylist record()
+%% Descrip.: looks for unsupported extensions.
+%% Returns : true | SipError
+%%--------------------------------------------------------------------
+is_valid_register_request(Header) ->
+    Require = keylist:fetch('require', Header),
+    case Require of
+	[] ->
+	    true;
+	_ ->
+	    %% we support no extensions, so all are unsupported
+	    logger:log(normal, "Request check: The client requires unsupported extension(s) ~p", [Require]),
+	    {siperror, 420, "Bad Extension", [{"Unsupported", Require}]}
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Function: process_register_isauth(LogTag, Header, SipUser,
