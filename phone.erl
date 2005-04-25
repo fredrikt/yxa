@@ -283,38 +283,11 @@ get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record
 %%           SipUser = string()
 %% Descrip.: Fetches all locations for a given number (SIP user)
 %%           from the location database.
-%% Returns : {atomic, Entries} |
-%%           the result of the mnesia:transaction()
-%%           Entries = phone record()
-%%--------------------------------------------------------------------
-get_sipuser_locations(SipUser) when is_list(SipUser) ->
-    Now = util:timestamp(),
-
-    F = fun() ->
-		mnesia:select(phone, [{#phone{number = SipUser, _ = '_'},
-				       [{'>', {element, #phone.expire, '$_'}, Now}],
-				       ['$_']
-				      }])
-	end,
-    case mnesia:transaction(F) of
-	{atomic, L} ->
-	    {atomic, L};
-	Unknown ->
-	    logger:log(error, "Location: get_sipuser_locations got unknown result from Mnesia : ~p", [Unknown]),
-	    Unknown
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: get_phone(SipUser)
-%%           SipUser = string()
-%% Descrip.: Fetches all locations for a given number (SIP user)
-%%           from the location database.
 %% Returns : {ok, Entries} |
 %%           the result of the mnesia:transaction()
 %%           Entries = list() of siplocationdb_e record()
-%% XXX deprecated - should be replaced by get_sipuser_locations/1
 %%--------------------------------------------------------------------
-get_phone(SipUser) when is_list(SipUser) ->
+get_sipuser_locations(SipUser) when is_list(SipUser) ->
     Now = util:timestamp(),
 
     F = fun() ->
@@ -337,6 +310,26 @@ get_phone(SipUser) when is_list(SipUser) ->
 				       class=Class, expire=Expire}
 	      end,
     {ok, lists:map(Rewrite, L)}.
+
+%%--------------------------------------------------------------------
+%% Function: get_phone(SipUser)
+%%           SipUser = string()
+%% Descrip.: Fetches all locations for a given number (SIP user)
+%%           from the location database. Return raw phone record()s.
+%% Returns : the result of the mnesia:transaction()
+%% Note    : Only use this for testing, use get_sipuser_locations/1
+%%           in your applications!
+%%--------------------------------------------------------------------
+get_phone(SipUser) when is_list(SipUser) ->
+    Now = util:timestamp(),
+
+    F = fun() ->
+		mnesia:select(phone, [{#phone{number = SipUser, _ = '_'},
+				       [{'>', {element, #phone.expire, '$_'}, Now}],
+				       ['$_']
+				      }])
+	end,
+    mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
 %% Function:
