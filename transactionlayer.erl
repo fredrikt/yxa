@@ -31,6 +31,7 @@
 	 send_challenge_request/4,
 	 send_challenge/4,
 	 store_appdata/2,
+	 get_my_to_tag/1,
 	 debug_show_transactions/0
 	]).
 
@@ -807,7 +808,7 @@ store_appdata(Request, Value) when is_record(Request, request) ->
 
 %%--------------------------------------------------------------------
 %% Function: is_good_transaction(TH)
-%%           TH      = thandler record() | term()
+%%           TH = thandler record() | term()
 %% Descrip.: Check if a given argument is a thandler record() that
 %%           refers to a transaction handler that is still alive.
 %% Returns : true  |
@@ -919,6 +920,9 @@ debug_show_transactions() ->
 
 %%--------------------------------------------------------------------
 %% Function: from_transportlayer(Request, Origin, LogStr)
+%%           Request = request record()
+%%           Origin  = siporigin record()
+%%           LogStr  = string()
 %% Descrip.: The transport layer passes us a request it has just
 %%           received.
 %% Returns : {pass_to_core, AppModule} |
@@ -939,6 +943,9 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 
 %%--------------------------------------------------------------------
 %% Function: from_transportlayer(Response, Origin, LogStr)
+%%           Response = response record()
+%%           Origin   = siporigin record()
+%%           LogStr   = string()
 %% Descrip.: The transport layer passes us a response it has just
 %%           received.
 %% Returns : {pass_to_core, AppModule} |
@@ -960,3 +967,13 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
 	    gen_server:cast(CTPid, {sipmessage, Response, Origin, LogStr}),
 	    continue
     end.
+
+%%--------------------------------------------------------------------
+%% Function: get_my_to_tag(TH)
+%%           TH = thandler record(), server transaction handle
+%% Descrip.: Get to tag that will we used in server transaction response
+%% Returns : {ok, ToTag}
+%%           ToTag = string()
+%%--------------------------------------------------------------------
+get_my_to_tag(TH) when is_record(TH, thandler) ->
+    gen_server:call(TH#thandler.pid, get_my_to_tag, ?STORE_TIMEOUT).
