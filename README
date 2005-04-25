@@ -13,6 +13,14 @@ incomingproxy:
 Handles registrations and proxies requests. Implements partial ENUM
 and LDAP searches.
 
+outgoingproxy:
+
+Special proxy for clients behind NAT. Makes it possible for clients to
+receive all requests to them through a persistent TCP connection the client
+has set up with the outgoingproxy. You still need an incomingproxy, and you
+need to point your outgoingproxy at it through the 'sipproxy' configuration
+parameter.
+
 pstnproxy:
 
 Designed as an authentication frontend to an insecure PSTN gateway.
@@ -362,6 +370,13 @@ always_verify_homedomain_user	(default: true) If From: matches our definition
 				challenge user and make sure it is not someone
 				impersonating the calling party.
 
+outgoingproxy:
+--------------
+
+sipproxy			(required) The location of your incomingproxy.
+				Example: "incomingproxy.example.com" or
+					 "sip:incomingproxy.example.com:5090".
+
 adminwww:
 ---------
 www_baseurl			(required) Base URL for web server
@@ -427,6 +442,18 @@ incomingproxy.config:
 		  {myhostnames, ["sipserver.example.com", "sip.example.net", "sip.example.org"]},
 		  {appserver, "appserver.example.com:5070"},
                   {ldap_server, "ldap.example.com"}
+                 ]}].
+
+
+outgoingproxy.config:
+---------------------
+
+[{outgoingproxy, [{sipauth_realm, "example.com"},
+                  {sipauth_password, "secret"},
+                  {databaseservers, ['incomingproxy@sip-incoming.example.com']},
+		  {myhostnames, ["outgoingproxy1.example.com", "out.example.com"]},
+                  {homedomain, ["example.com", "example.net", "example.org"]},
+		  {tcp_connection_idle_timeout, 1000000}
                  ]}].
 
 pstnproxy.config:
