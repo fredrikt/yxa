@@ -98,6 +98,7 @@
 	 prioritize_locations/1,
 	 get_locations_for_users/1,
 	 get_user_with_contact/1,
+	 to_url/1,
 
 	 test/0
 	]).
@@ -337,7 +338,7 @@ create_process_updates_response(SipUser) ->
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 fetch_contacts(SipUser) ->
     case phone:get_sipuser_locations(SipUser) of
-	{atomic, Locations} ->
+	{ok, Locations} ->
 	    locations_to_contacts(Locations);
 	_ ->
 	    none
@@ -349,12 +350,12 @@ locations_to_contacts(Locations) ->
 
 locations_to_contacts2([], _Now, Res) ->
     Res;
-locations_to_contacts2([H | T], Now, Res) when is_record(H, phone), H#phone.expire == never ->
+locations_to_contacts2([#siplocationdb_e{expire = never} | T], Now, Res) ->
     %% Don't include static contacts which never expire
     locations_to_contacts2(T, Now, Res);
-locations_to_contacts2([H | T], Now, Res) when is_record(H, phone), is_integer(H#phone.expire) ->
-    Location = H#phone.address,
-    Expire = H#phone.expire,
+locations_to_contacts2([H | T], Now, Res) when is_record(H, siplocationdb_e), is_integer(H#siplocationdb_e.expire) ->
+    Location = H#siplocationdb_e.address,
+    Expire = H#siplocationdb_e.expire,
 
     %% Expires can't be less than 0 so make sure we don't end up with a negative Expires
     NewExpire = lists:max([0, Expire - Now]),
@@ -372,7 +373,7 @@ process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) ->
 	true ->
 	    logger:log(debug, "Location: Processing valid wildcard un-register"),
 	    case phone:get_sipuser_locations(SipUser) of
-		{atomic, SipUserLocations} ->
+		{ok, SipUserLocations} ->
 		    unregister(LogTag, Header, SipUserLocations);
 		_ ->
 		    none
@@ -475,16 +476,14 @@ get_user_with_contact(URI) when is_record(URI, sipurl) ->
 %%           to find out where a set of users are to see where
 %%           we should route a request.
 %% Returns : list() of siplocationdb_e record()
-%% XXX usage of phone:get_sipuser_locations/1 rather than get_phone/1
-%% would be preferable
 %%--------------------------------------------------------------------
-get_locations_for_users(In) ->
+get_locations_for_users(In) when is_list(In) ->
     get_locations_for_users2(In, []).
 
 get_locations_for_users2([], Res) ->
     Res;
-get_locations_for_users2([H | T], Res) ->
-    {ok, Locations} = phone:get_phone(H),
+get_locations_for_users2([H | T], Res) when is_list(H) ->
+    {ok, Locations} = phone:get_sipuser_locations(H),
     get_locations_for_users2(T, Res ++ Locations).
 
 %%--------------------------------------------------------------------
@@ -522,9 +521,9 @@ get_priorities2([#siplocationdb_e{flags=Flags} | T], Res) ->
 get_priorities2([], Res) ->
     lists:sort(Res).
 
-%% Descrip. = find the Location/s that has the "best" priority in the Flags part of the tuple.
+%% Descrip.: find the Location/s that has the "best" priority in the Flags part of the tuple.
 %%            Note that some may lack a {priority, PrioVal} entry
-%% Returns  = list() of siplocationdb_e record() (all with same "best" priority - Priority)
+%% Returns : list() of siplocationdb_e record() (all with same "best" priority - Priority)
 get_locations_with_prio(Priority, Locations) ->
     get_locations_with_prio2(Priority, Locations, []).
 
@@ -627,6 +626,25 @@ check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, CallId, C
 	    throw({siperror, 403, "Request out of order, contained old CSeq number"})
     end.
 
+%%--------------------------------------------------------------------
+%% Function: to_url(LDBE)
+%%           LDBE = siplocationdb_e record()
+%% Descrip.: Create a SIP URL from a SIP location db entry.
+%% Returns : sipurl record()
+%%--------------------------------------------------------------------
+to_url(LDBE) when is_record(LDBE, siplocationdb_e) ->
+    case lists:keysearch(outgoingproxy, 1, LDBE#siplocationdb_e.flags) of
+	{value, {outgoingproxy, URLstr}} ->
+	    %% siplocationdb_e has outgoingproxy specified, create suitable URL
+	    OPURL = sipurl:parse(URLstr),
+	    %% XXX we should make sure to use a SIPS URI if the registered location was SIPS
+	    AddrStr = sipurl:print(LDBE#siplocationdb_e.address),
+	    NewParams = url_param:add(OPURL#sipurl.param_pairs, "addr", AddrStr),
+	    sipurl:set([{param, NewParams}], OPURL);
+	_ when is_record(LDBE#siplocationdb_e.address, sipurl) ->
+	    %% No outgoingproxy, just return URL from LDBE
+	    LDBE#siplocationdb_e.address
+    end.
 
 %%====================================================================
 %% Internal functions
@@ -894,9 +912,9 @@ test() ->
     %%--------------------------------------------------------------------
     io:format("test: locations_to_contacts2/3 - 0~n"),
     LTCNow = util:timestamp(),
-    LTC_L1 = #phone{expire = LTCNow + 1, address = sipurl:parse("sip:ft@one.example.org")},
-    LTC_L2 = #phone{expire = LTCNow + 2, address = sipurl:parse("sip:ft@two.example.org")},
-    LTC_L3 = #phone{expire = never, address = sipurl:parse("sip:ft@static.example.org")},
+    LTC_L1 = #siplocationdb_e{expire = LTCNow + 1, address = sipurl:parse("sip:ft@one.example.org")},
+    LTC_L2 = #siplocationdb_e{expire = LTCNow + 2, address = sipurl:parse("sip:ft@two.example.org")},
+    LTC_L3 = #siplocationdb_e{expire = never, address = sipurl:parse("sip:ft@static.example.org")},
 
     io:format("test: locations_to_contacts2/3 - 1~n"),
     %% test basic case
@@ -911,5 +929,41 @@ test() ->
     %% test that we ignore entrys that never expire together with other entrys
     ["<sip:ft@one.example.org>;expires=1", "<sip:ft@two.example.org>;expires=2"] =
 	locations_to_contacts2([LTC_L2, LTC_L3, LTC_L1], LTCNow, []),
+
+
+    %% to_url(LDBE)
+    %%--------------------------------------------------------------------
+    io:format("test: to_url/1 - 0~n"),
+    ToURL_URL1 = sipurl:parse("sip:ft@192.0.2.111;line=foo"),
+    ToURL_URL2 = sipurl:parse("sips:ft@192.0.2.111;line=foo"),
+    ToURL_URL3 = sipurl:parse("sip:ft@192.0.2.111;line=foo;transport=TLS"),
+
+    io:format("test: to_url/1 - 1~n"),
+    %% test without outgoingproxy flag
+    ToURL_URL1 = to_url(#siplocationdb_e{flags = [], address = ToURL_URL1}),
+
+    io:format("test: to_url/1 - 2~n"),
+    %% test with outgoingproxy flag
+    "sip:out.example.org;addr=sip:ft%40192.0.2.111%3Bline%3Dfoo" =
+	sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sip:out.example.org"}],
+					      address = ToURL_URL1}) ),
+
+    io:format("test: to_url/1 - 3~n"),
+    %% test that parameters in outgoingproxy URL are preserved
+    "sips:out.example.org;a=b;addr=sip:ft%40192.0.2.111%3Bline%3Dfoo" =
+	sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sips:out.example.org;a=b"}],
+					      address = ToURL_URL1}) ),
+
+    io:format("test: to_url/1 - 4 (disabled)~n"),
+    %% test that outgoingproxy URL is upgraded to SIPS if address is SIPS
+    %%    "sips:out.example.org;a=b;addr=sips:ft%40192.0.2.111%3Bline%3Dfoo" =
+    sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sip:out.example.org;a=b"}],
+					  address = ToURL_URL2}) ),
+
+    io:format("test: to_url/1 - 5 (disabled)~n"),
+    %% test that outgoingproxy URL is upgraded to SIPS if address has transport=TLS
+    %%    "sips:out.example.org;a=b;addr=sips:ft%40192.0.2.111%3Bline%3Dfoo%3Btransport%3Dtls" =
+    sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sip:out.example.org"}],
+					  address = ToURL_URL3}) ),
 
     ok.
