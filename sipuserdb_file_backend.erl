@@ -477,7 +477,7 @@ parse_address([H | _T], A) when is_record(A, address) ->
 %%           Users    = list() of user record()
 %%           Adresses = list() of address record()
 %% Descrip.: Log warnings if there are any users that has no addresses
-%%           or any addresses that have no users.
+%%           or any addresses that has no users.
 %% Returns : ok
 %%--------------------------------------------------------------------
 verify_consistency(Users, Addresses) ->
@@ -485,13 +485,13 @@ verify_consistency(Users, Addresses) ->
     case NoAddressUsers of
 	[] -> ok;
 	_ ->
-	    logger:log(normal, "sipuserdb_file: Warning: The following user(s) have no address(es) : ~p",
+	    logger:log(normal, "sipuserdb_file: Warning: The following user(s) has no address(es) : ~p",
 		       [NoAddressUsers])
     end,
     case NoUserAddresses of
 	[] -> ok;
 	_ ->
-	    logger:log(normal, "sipuserdb_file: Warning: The following address(es) have no user(s) : ~p",
+	    logger:log(normal, "sipuserdb_file: Warning: The following address(es) has no user(s) : ~p",
 		       [NoUserAddresses])
     end,
     ok.
