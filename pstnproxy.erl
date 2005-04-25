@@ -111,7 +111,8 @@ request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Or
 %%--------------------------------------------------------------------
 response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
-    logger:log(normal, "pstnproxy: Response to ~s: ~p ~s, no matching transaction - proxying statelessly", [LogStr, Status, Reason]),
+    logger:log(normal, "pstnproxy: Response to ~s: ~p ~s, no matching transaction - proxying statelessly",
+	       [LogStr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
     ok.
 
@@ -144,13 +145,13 @@ route_request(Request, Origin, THandler, LogTag) when is_record(Request, request
     end.
 
 route_request2(FromIP, ToHost, THandler, LogTag) ->
-    case pstngateway(FromIP) of
+    case is_pstngateway(FromIP) of
 	true ->
 	    logger:log(debug, "Routing: Source IP ~s is PSTN gateway, route to SIP proxy", [FromIP]),
 	    sip;
-	_ ->
-	    IsLocalHostname = localhostname(ToHost),
-	    IsPstnGatewayHostname = pstngateway(ToHost),
+	false ->
+	    IsLocalHostname = is_localhostname(ToHost),
+	    IsPstnGatewayHostname = is_pstngateway(ToHost),
 	    if
 		IsLocalHostname == true ->
 		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway",
@@ -161,7 +162,8 @@ route_request2(FromIP, ToHost, THandler, LogTag) ->
 			       [FromIP, ToHost]),
 		    pstn;
 		true ->
-		    logger:log(normal, "~s: pstnproxy: Denied request from ~s to ~s - not my problem", [LogTag, FromIP, ToHost]),
+		    logger:log(normal, "~s: pstnproxy: Denied request from ~s to ~s - not my problem",
+			       [LogTag, FromIP, ToHost]),
 		    transactionlayer:send_response_handler(THandler, 403, "Forbidden"),
 		    drop
 	    end
@@ -169,25 +171,25 @@ route_request2(FromIP, ToHost, THandler, LogTag) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: localhostname(Hostname)
+%% Function: is_localhostname(Hostname)
 %%           Hostname = string()
 %% Descrip.: Check if given hostname matches one of ours.
 %% Returns : true  |
 %%           false
 %%--------------------------------------------------------------------
-localhostname(Hostname) ->
+is_localhostname(Hostname) ->
     util:casegrep(Hostname, sipserver:get_env(myhostnames)).
 
 
 %%--------------------------------------------------------------------
-%% Function: pstngateway(Hostname)
+%% Function: is_pstngateway(Hostname)
 %%           Hostname = string()
 %% Descrip.: Check if given hostname matches one of our PSTN
 %%           gateways hostnames.
 %% Returns : true  |
 %%           false
 %%--------------------------------------------------------------------
-pstngateway(Hostname) ->
+is_pstngateway(Hostname) ->
     util:casegrep(Hostname, sipserver:get_env(pstngatewaynames)).
 
 
@@ -206,7 +208,7 @@ pstngateway(Hostname) ->
 %%--------------------------------------------------------------------
 request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_record(Origin, siporigin) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
-    Dest = case localhostname(URI#sipurl.host) of
+    Dest = case is_localhostname(URI#sipurl.host) of
 	       true ->
 		   %% Hostname matches me
 		   determine_sip_location(URI);
@@ -219,8 +221,7 @@ request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_r
 			     true -> siprequest:add_record_route(Request#request.header, Origin);
 			     false -> Request#request.header
 			 end,
-	    {_, FromURI} = sipheader:from(NewHeader1),
-	    NewHeader = add_caller_identity_for_sip(Method, NewHeader1, FromURI),
+	    NewHeader = add_caller_identity_for_sip(Method, NewHeader1),
 	    NewRequest = Request#request{header=NewHeader},
 	    proxy_request(THandler, NewRequest, NewURI);
 	{reply, Status, Reason} ->
@@ -297,10 +298,10 @@ get_sipproxy() ->
 request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
     {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
-    %% XXX check port to, not just hostname? Maybe not since pstnproxy by definition
+    %% XXX check port too, not just hostname? Maybe not since pstnproxy by definition
     %% should be running alone on a host.
     {NewURI, NewHeaders1} =
-	case localhostname(ToHost) of
+	case is_localhostname(ToHost) of
 	    true ->
 		case local:lookuppstn(DstNumber) of
 		    {proxy, Dst} ->
@@ -315,13 +316,13 @@ request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, reque
 			    GwURL when is_record(GwURL, sipurl) ->
 				NewURI2 = GwURL#sipurl{user=DstNumber, pass=none},
 				{NewURI2, Header};
-			    _ ->
+			    Unknown ->
 				logger:log(error, "pstnproxy: Failed parsing configuration value "
-					   "'pstngatewaynames' (~p)", [PSTNgateway1]),
-				{URI, Header}
+					   "'pstngatewaynames' (~p) : ~p", [PSTNgateway1, Unknown]),
+				erlang:fault("invalid first element of pstngatewaynames", [Unknown])
 			end
 		end;
-	    _ ->
+	    false ->
 		{URI, Header}
 	end,
     NewHeaders2 = case sipserver:get_env(record_route, true) of
@@ -398,10 +399,9 @@ add_caller_identity_for_pstn(_Method, Header, _URI, _User, _Gateway) when is_rec
 
 
 %%--------------------------------------------------------------------
-%% Function: add_caller_identity_for_sip(Method, Headers, URI)
+%% Function: add_caller_identity_for_sip(Method, Header)
 %%           Method  = string()
-%%           Headers = keylist record()
-%%           URI     = sipurl record()
+%%           Header = keylist record()
 %% Descrip.: If configured to, add Remote-Party-Id information
 %%           about caller to this request received from one of our
 %%           PSTN gateways. Useful to get the name of the person
@@ -409,25 +409,26 @@ add_caller_identity_for_pstn(_Method, Header, _URI, _User, _Gateway) when is_rec
 %%           available in some database.
 %% Returns : NewHeader, keylist record()
 %%--------------------------------------------------------------------
-add_caller_identity_for_sip("INVITE", Headers, URI) when is_record(URI, sipurl) ->
+add_caller_identity_for_sip("INVITE", Header) ->
     case sipserver:get_env(remote_party_id, false) of
 	true ->
-	    case local:get_remote_party_name(URI#sipurl.user, URI) of
+	    {_, FromURL} = sipheader:from(Header),
+	    case local:get_remote_party_name(FromURL#sipurl.user, FromURL) of
 		{ok, DisplayName} when is_list(DisplayName) ->
 		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
-		    RPI = contact:new(DisplayName, URI, Parameters),
+		    RPI = contact:new(DisplayName, FromURL, Parameters),
 		    RemotePartyId = contact:print(RPI),
 		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
-		    keylist:set("Remote-Party-Id", [RemotePartyId], Headers);
+		    keylist:set("Remote-Party-Id", [RemotePartyId], Header);
 		none ->
-		    Headers
+		    Header
 	    end;
-	_ ->
-	    Headers
+	false ->
+	    Header
     end;
-add_caller_identity_for_sip(_, Headers, _) ->
+add_caller_identity_for_sip(_Method, Header) ->
     %% non-INVITE request, don't add Remote-Party-Id
-    Headers.
+    Header.
 
 
 %%--------------------------------------------------------------------
@@ -508,7 +509,8 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
 	    NewHeader = add_caller_identity_for_pstn(Method, Header, DstURI, User, PSTNgateway),
 	    sippipe:start(THandler, none, Request#request{header=NewHeader}, DstURI, 900);
 	{stale, User, Class} ->
-	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)", [User, DstNumber, Class]),
+	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)",
+		       [User, DstNumber, Class]),
 	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> STALE authentication, sending challenge",
 		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
 	    transactionlayer:send_challenge(THandler, proxy, true, none);
@@ -518,11 +520,9 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
 		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
 	    transactionlayer:send_challenge(THandler, proxy, false, none);
 	{false, User, Class} ->
-	    logger:log(debug, "Auth: User ~p not allowed dst ~s in class unknown - answer 403 Forbidden", [User, DstNumber]),
+	    logger:log(debug, "Auth: User ~p not allowed dst ~s in class unknown - answer 403 Forbidden",
+		       [User, DstNumber]),
 	    logger:log(normal, "~s: pstnproxy: User ~p not allowed relay ~s to PSTN ~s class ~p -> 403 Forbidden",
 		       [LogTag, User, Method, DstNumber, Class]),
-	    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
-	Unknown ->
-	    logger:log(error, "Auth: Unknown result from sipauth:pstn_is_allowed_call() :~n~p", [Unknown]),
-	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
+	    transactionlayer:send_response_handler(THandler, 403, "Forbidden")
     end.
