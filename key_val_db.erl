@@ -126,7 +126,7 @@ find(DB, Key) ->
 %%--------------------------------------------------------------------
 %% Function: remove(DB, Key)
 %%           ContactParam = contact_param record()
-%%           Key          = term(), is treated as case insensetive
+%%           Key          = term(), is treated as case insensitive
 %% Descrip.: find the Key-Val pair to remove from DB
 %% Returns :
 %%--------------------------------------------------------------------
