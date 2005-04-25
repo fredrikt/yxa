@@ -1,9 +1,9 @@
-%% This module handles parameters supplied in sip urls. They  must 
+%% This module handles parameters supplied in sip urls. They  must
 %% be unique - i.e. the same key can only occure once.
 %%
 %% Note: keys and values are currently stored as strings but pattern
 %% matching and list:keysearch will be faster if standard values are
-%% represented as atoms (but dont turn them all into atoms - as atoms 
+%% represented as atoms (but don't turn them all into atoms - as atoms
 %% aren't GCed)
 %%--------------------------------------------------------------------
 
@@ -22,7 +22,7 @@
 	 %% modify
 	 add/2,
 	 add/3,
-	 %% lookup 
+	 %% lookup
 	 find/2,
 	 %% remove
 	 remove/2,
@@ -54,21 +54,24 @@
 
 %%--------------------------------------------------------------------
 %% Function: to_norm(Params)
-%%           Params = list() of string(), each string is a "name=val" 
+%%           Params = list() of string(), each string is a "name=val"
 %%                    pair or a single "name" value and may contain
 %%                    %HH hex escape codes - they are treated as case
 %%                    insensitive
-%% Descrip.: convert a uri-parameter list to a normalized (a non case 
+%% Descrip.: convert a uri-parameter list to a normalized (a non case
 %%           sensitive form) form
-%% Returns : url_param record() | 
-%%           throw({error, duplicate_key}) if a "name" 
-%%           component in Params is duplicated 
+%% Returns : url_param record() |
+%%           throw({error, duplicate_key}) if a "name"
+%%           component in Params is duplicated
+%% Note    : URL parameters may not contain quotes, and the = is
+%%           literal in the RFC3261 BNF, not EQUAL (which may be
+%%           surrounded with linear whitespace)
 %%--------------------------------------------------------------------
-to_norm(Params) when is_list(Params) -> 
+to_norm(Params) when is_list(Params) ->
     F = fun(E) ->
 		case string:tokens(E, "=") of
-		    [Name, Val] -> 
-			{ sipurl:unescape_str(httpd_util:to_lower(Name)), 
+		    [Name, Val] ->
+			{ sipurl:unescape_str(httpd_util:to_lower(Name)),
 			  sipurl:unescape_str(httpd_util:to_lower(Val))
 			 };
 		    [Name] ->
@@ -81,23 +84,23 @@ to_norm(Params) when is_list(Params) ->
 %%--------------------------------------------------------------------
 %% Function: to_list(Norm)
 %%           Norm = url_param record()
-%% Descrip.: returns a normalized form of the parameters 
+%% Descrip.: returns a normalized form of the parameters
 %% Returns : list() of {Key,Val}
-%%           Key = string() 
-%%           Val = string() | none (if a "name" paramter rather than 
+%%           Key = string()
+%%           Val = string() | none (if a "name" paramter rather than
 %%           "name=val")
 %%--------------------------------------------------------------------
-to_list(Norm) ->
+to_list(Norm) when is_record(Norm, url_param) ->
         key_val_db:to_key_val(Norm#url_param.pairs).
 
 
 %%--------------------------------------------------------------------
 %% Function: to_string_list(Norm)
 %%           Norm = url_param record()
-%% Descrip.: return parameter data in the same format as input to 
-%%           to_norm/1 
+%% Descrip.: return parameter data in the same format as input to
+%%           to_norm/1
 %% Returns : list() of string(), the strings are either "name=val" or
-%%           "name"  
+%%           "name"
 %%--------------------------------------------------------------------
 to_string_list(Norm) when is_record(Norm, url_param) ->
     F = fun(E) ->
@@ -142,16 +145,16 @@ add(UrlParam, Key) ->
     NKey = httpd_util:to_lower(Key),
     add2(UrlParam, {NKey, none}).
 
-add(UrlParam, Key, Value) ->
+add(UrlParam, Key, Value) when is_record(UrlParam, url_param), is_list(Key) ->
     NKey = httpd_util:to_lower(Key),
     NValue = httpd_util:to_lower(Value),
     add2(UrlParam, {NKey, NValue}).
 
 
-add2(UrlParam, {Key, Value}) ->
+add2(UrlParam, {Key, Value}) when is_record(UrlParam, url_param), is_list(Key) ->
     DB = UrlParam#url_param.pairs,
     NewDB = key_val_db:add(DB, Key, Value),
-    #url_param{ pairs = NewDB }. 
+    #url_param{ pairs = NewDB }.
 
 %--------------------------------------------------------------------
 %% Function: find(Param, Key)
@@ -160,7 +163,7 @@ add2(UrlParam, {Key, Value}) ->
 %% Descrip.: retrive the value of Key if it is contained in Param
 %% Returns : [string()] | []
 %%--------------------------------------------------------------------
-find(Param, Key) ->
+find(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     Data = Param#url_param.pairs,
     CKey = httpd_util:to_lower(Key),
     key_val_db:find(Data, CKey).
@@ -172,17 +175,21 @@ find(Param, Key) ->
 %% Descrip.: find the Key-Val pair to remove from Param
 %% Returns : url_param record
 %%--------------------------------------------------------------------
-remove(Param, Key) ->
+remove(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     Data = Param#url_param.pairs,
     CKey = httpd_util:to_lower(Key),
     Res = key_val_db:rm(Data, CKey),
     Param#url_param{pairs = Res}.
 
 
+%%====================================================================
+%% Test functions
+%%====================================================================
+
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function: test/0
 %% Descrip.: autotest callback
-%% Returns : 
+%% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
     %% test to_norm
@@ -196,7 +203,7 @@ test() ->
     io:format("test: to_norm/1 - 2~n"),
     NDB2 = key_val_db:new([]),
     #url_param{pairs = NDB2} = to_norm([]),
-    
+
     %% test that duplicate names are detected
     io:format("test: to_norm/1 - 3~n"),
     case catch to_norm(["foo=bar", "bar=42", "foo=43"]) of
@@ -216,7 +223,7 @@ test() ->
 
     %% test handling of hex encoding (with both upper and lower case hex values)
     io:format("test: to_norm/1 - 6~n"),
-    NDB4 = key_val_db:new([{"foo=","bar"}, {"=bar", none}, {"a", "43"}]), 
+    NDB4 = key_val_db:new([{"foo=","bar"}, {"=bar", none}, {"a", "43"}]),
     #url_param{pairs = NDB4 } = to_norm(["foo%3d=bar", "%3Dbar", "a=43"]),
 
     %% test to_string_list
@@ -225,7 +232,7 @@ test() ->
     io:format("test: to_string_list/1 - 1~n"),
     Urlparam1 = to_norm(["foo=bAr", "BaR", "lr", "a=43"]),
     ["foo=bar", "bar", "lr=true", "a=43"] = to_string_list(Urlparam1),
-    %% test empty param 
+    %% test empty param
     io:format("test: to_string_list/1 - 2~n"),
     Urlparam2 = to_norm([]),
     [] = to_string_list(Urlparam2),
@@ -233,14 +240,14 @@ test() ->
     io:format("test: to_string_list/1 - 3~n"),
     Urlparam3 = to_norm(["foo%3d=bAr", "Ba%3DR", "lr", "a=43"]),
     ["foo%3D=bar", "ba%3Dr", "lr=true", "a=43"] = to_string_list(Urlparam3),
-    
+
 
     %% test to_string
     %%---------------------------------------------------------------
     %% test that case and missing value part are handled properly
     io:format("test: to_string/1 - 1~n"),
     ";foo=bar;bar;lr=true;a=43" = to_string(Urlparam1),
-    %% test empty param 
+    %% test empty param
     io:format("test: to_string/1 - 2~n"),
     "" = to_string(Urlparam2),
 
@@ -262,15 +269,15 @@ test() ->
     %% add Key-Val to empty url_param
     io:format("test: add/2 - 1~n"),
     UrlParam1 = to_norm([]),
-    ADB1 = key_val_db:new([{"foo","bar"}]), 
+    ADB1 = key_val_db:new([{"foo","bar"}]),
     #url_param{pairs = ADB1 } = add(UrlParam1, "foo", "bar"),
 
     %% add Key _only_ to empty url_param
     io:format("test: add/2 - 2~n"),
-    ADB2 = key_val_db:new([{"foo", none}]), 
+    ADB2 = key_val_db:new([{"foo", none}]),
     #url_param{pairs = ADB2 } = add(UrlParam1, "foo"),
 
-    
+
     UrlParam2 = to_norm(["foo=bar", "bar=42", "a=43"]),
 
     %% add a new key-val
@@ -284,19 +291,3 @@ test() ->
     #url_param{pairs = ADB6} = add(UrlParam2, "gazong"),
 
     ok.
-
-
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-
-
-
-
-
-
