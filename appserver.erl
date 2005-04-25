@@ -351,7 +351,7 @@ get_actions_users2(Users, Proto) when is_list(Users), is_list(Proto) ->
 %% Returns : Actions = list() of sipproxy_action record()
 %%--------------------------------------------------------------------
 fetch_actions_for_users(Users, Proto) ->
-    Actions = fetch_users_locations_as_actions(Users),
+    Actions = fetch_users_locations_as_actions(Users, Proto),
     case local:get_forwards_for_users(Users) of
 	nomatch ->
 	    Actions;
@@ -363,8 +363,9 @@ fetch_actions_for_users(Users, Proto) ->
     end.
 
 %% part of fetch_actions_for_users/1
-fetch_users_locations_as_actions(Users) ->
-    Locations = local:get_locations_for_users(Users),
+fetch_users_locations_as_actions(Users, Proto) ->
+    URL = sipurl:new([{proto, Proto}]),
+    Locations = local:lookupuser_locations(Users, URL),
     locations_to_actions(Locations).
 
 %%--------------------------------------------------------------------
@@ -385,8 +386,9 @@ locations_to_actions(L) when is_list(L) ->
 locations_to_actions2([], Res) ->
     lists:reverse(Res);
 
-locations_to_actions2([#siplocationdb_e{address=URL} | T], Res) when is_record(URL, sipurl) ->
+locations_to_actions2([H | T], Res) when is_record(H, siplocationdb_e) ->
     Timeout = sipserver:get_env(appserver_call_timeout, 40),
+    URL = siplocation:to_url(H),
     CallAction = #sipproxy_action{action=call,
 				  requri=URL,
 				  timeout=Timeout},
