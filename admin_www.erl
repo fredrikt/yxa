@@ -713,8 +713,9 @@ change_user_form(Env, Input) ->
 		{ok, User} ->
 		    {_Password, _Flags, Classes} = get_pass(User),
 		    Numberlist = get_numbers(User),
+		    %% create a list of {Number, LocationDbEntrys} tuples
 		    Phonelist = lists:foldl(fun (A, AccIn) ->
-						    {ok, List} = phone:get_phone(A),
+						    {ok, List} = phone:get_sipuser_locations(A),
 						    lists:append(AccIn, lists:map(fun (I) ->
 											  {A, I}
 										  end, List))
