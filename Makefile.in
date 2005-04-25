@@ -71,6 +71,7 @@ erl_FILES = \
 	lookup.erl \
 	phone.erl \
 	pstnproxy.erl \
+	outgoingproxy.erl \
 	registrar.erl \
 	rtp.erl \
 	sdp.erl \
@@ -140,7 +141,8 @@ boot_FILES = \
 	incomingproxy.boot \
 	pstnproxy.boot \
 	adminwww.boot \
-	appserver.boot
+	appserver.boot \
+	outgoingproxy.boot
 
 start_FILES = $(boot_FILES:.boot=)
 app_FILES = $(boot_FILES:.boot=.app)
@@ -237,6 +239,9 @@ adminwww.boot: adminwww.app adminwww.rel
 appserver.boot: appserver.app appserver.rel
 	$(systools_make_script)
 
+outgoingproxy.boot: outgoingproxy.app outgoingproxy.rel
+	$(systools_make_script)
+
 start_ssl.boot: start_ssl.rel
 	$(systools_make_script)
 
@@ -253,6 +258,9 @@ adminwww: adminwww.boot init.sh.in config.status
 	$(create_start_script)
 
 appserver: appserver.boot init.sh.in config.status
+	$(create_start_script)
+
+outgoingproxy: outgoingproxy.boot init.sh.in config.status
 	$(create_start_script)
 
 test: autotest.beam
