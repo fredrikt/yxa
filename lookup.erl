@@ -97,12 +97,14 @@ lookupregexproute(Input) ->
 %% Descrip.: The main 'give me a set of locations for one of our
 %%           users' function that incomingproxy uses, when it
 %%           determines that a request is for one of it's homedomains.
-%% Returns : {proxy, URL}               |
-%%           {relay, URL}               |
-%%           {forward, URL}             |
-%%           {response, Status, Reason} |
-%%           none    |   The user was found but has no locations registered
-%%           nomatch     No such user
+%% Returns : {ok, Users, Res} |
+%%           none             |   The user was found but has no locations registered
+%%           nomatch              No such user
+%%           Users = list() of string(), usernames that matched this URL
+%%           Res   = {proxy, URL}               |
+%%                   {relay, URL}               |
+%%                   {forward, URL}             |
+%%                   {response, Status, Reason} |
 %%--------------------------------------------------------------------
 lookupuser(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
@@ -116,32 +118,34 @@ lookupuser(URL) when is_record(URL, sipurl) ->
 		{proxy, Loc} ->
 		    logger:log(debug, "Lookup: No matching user, but a matching regexp rule was found : ~p -> ~p",
 			       [sipurl:print(NoParamURL), sipurl:print(Loc)]),
-		    {proxy, Loc}
+		    {ok, [], {proxy, Loc}}
 	    end;
 	[User] when is_list(User) ->
 	    %% single user, look if the user has a CPL script
-	    case local:user_has_cpl_script(User, incoming) of
-		true ->
-		    %% let appserver handle requests for users with CPL scripts
-		    case local:lookupappserver(URL) of
-			{forward, AppS} ->
-			    logger:log(debug, "Lookup: User ~p has a CPL script, forwarding to appserver : ~p",
-				       [User, sipurl:print(AppS)]),
-			    {forward, AppS};
-			{response, Status, Reason} ->
-			    {response, Status, Reason};
-			_ ->
-			    logger:log(debug, "Lookup: User ~p has a CPL script, but I could not find an appserver",
-				       [User]),
-			    %% Fallback to just looking in the location database
-			    lookupuser_get_locations([User], URL)
-		    end;
-		false ->
-		    lookupuser_get_locations([User], URL)
-	    end;
+	    Res = case local:user_has_cpl_script(User, incoming) of
+		      true ->
+			  %% let appserver handle requests for users with CPL scripts
+			  case local:lookupappserver(URL) of
+			      {forward, AppS} ->
+				  logger:log(debug, "Lookup: User ~p has a CPL script, forwarding to appserver : ~p",
+					     [User, sipurl:print(AppS)]),
+				  {forward, AppS};
+			      {response, Status, Reason} ->
+				  {response, Status, Reason};
+			      _ ->
+				  logger:log(debug, "Lookup: User ~p has a CPL script, but I could not find an appserver",
+					     [User]),
+				  %% Fallback to just looking in the location database
+				  lookupuser_get_locations([User], URL)
+			  end;
+		      false ->
+			  lookupuser_get_locations([User], URL)
+		  end,
+	    {ok, [User], Res};
 	Users when is_list(Users) ->
 	    %% multiple (or no) users
-	    lookupuser_get_locations(Users, URL)
+	    Res = lookupuser_get_locations(Users, URL),
+	    {ok, Users, Res}
     end.
 
 %% part of lookupuser()
@@ -161,8 +165,9 @@ lookupuser_get_locations(Users, URL) ->
 			       [sipurl:print(NoParamURL), sipurl:print(Loc)]),
 		    {proxy, Loc}
 	    end;
-	[#siplocationdb_e{address=BestLocation}] when is_record(BestLocation, sipurl) ->
+	[Location] when is_record(Location, siplocationdb_e) ->
 	    %% A single location was found in the location database (after removing any unsuitable ones)
+	    BestLocation = siplocation:to_url(Location),
 	    {proxy, BestLocation};
 	[Location | _] when is_record(Location, siplocationdb_e) ->
 	    %% More than one location registered for this address, check for appserver...
