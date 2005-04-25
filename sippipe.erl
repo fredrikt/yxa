@@ -230,11 +230,11 @@ process_received_response({Status, Reason}=Response, State) when is_integer(Stat
 final_response_event(Status, Reason, Origin, State) ->
     %% Make event out of final response
     [CurDst | _] = State#state.dstlist,
-    L = [{request_method, (State#state.request)#request.method},
-	 {request_uri, sipurl:print((State#state.request)#request.uri)},
-	 {recv_response, {Status, Reason}},
+    L = [{method, (State#state.request)#request.method},
+	 {uri, sipurl:print((State#state.request)#request.uri)},
+	 {response, lists:concat([Status, " ", Reason])},
 	 {origin, Origin},
-	 {recv_from, sipdst:dst2str(CurDst)}],
+	 {peer, sipdst:dst2str(CurDst)}],
     event_handler:request_info(normal, State#state.branch, L).
 
 process_received_response2(Status, Reason, Response, State) when Status >= 200, is_record(State, state) ->
