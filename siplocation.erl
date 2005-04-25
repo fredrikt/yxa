@@ -94,9 +94,8 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 process_register_isauth/4,
+	 process_register_request/5,
 	 prioritize_locations/1,
-	 debugfriendly_locations/1,
 	 get_locations_for_users/1,
 	 get_user_with_contact/1,
 
@@ -125,51 +124,66 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: register_request(Request, Origin, LogStr)
-%%           Request = response record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string(), description of request
+%% Function: process_register_request(Request, THandler, LogTag,
+%%                                    LogStr, AppName)
+%%           Request  = response record()
+%%           THandler = term(), server transaction handler
+%%           LogTag   = string(), tag for log messages
+%%           LogStr   = string(), description of request
+%%           AppName  = atom(), application name
 %% Descrip.: Process a received REGISTER. First check if it is for
 %%           one of our domains (homedomain), then check that it
 %%           contains proper authentication and that the authenticated
 %%           user is allowed to register using this address-of-record.
-%%           Finally, let siplocation:process_register_isauth()
-%%           process all the Contact headers and update the location
-%%           database.
-%% Returns : Does not matter.
+%%           Finally, let process_updates() process all the
+%%           Contact headers and update the location database.
+%% Returns : not_homedomain | void()
 %%--------------------------------------------------------------------
-register_request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
+process_register_request(Request, THandler, LogTag, LogStr, AppName) when is_record(Request, request),
+									  is_list(LogStr), is_list(LogTag),
+									  is_atom(AppName) ->
     URL = Request#request.uri,
-    logger:log(debug, "incomingproxy: REGISTER ~p", [sipurl:print(URL)]),
-    THandler = transactionlayer:get_handler_for_request(Request),
-    LogTag = get_branch_from_handler(THandler),
+    logger:log(debug, "~p: REGISTER ~p", [AppName, sipurl:print(URL)]),
     %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 1
     %% check if this registrar handles the domain the request wants to register for
     case local:homedomain(URL#sipurl.host) of
 	true ->
-	    register_require_supported(Request, Origin, LogStr, THandler, LogTag);
-	_ ->
+	    register_require_supported(Request, LogStr, THandler, LogTag, AppName);
+	false ->
 	    %% act as proxy and forward message to other domain
-	    logger:log(debug, "incomingproxy: REGISTER for non-homedomain ~p", [URL#sipurl.host]),
-	    do_request(Request, Origin)
+	    logger:log(debug, "~p: REGISTER for non-homedomain ~p", [AppName, URL#sipurl.host]),
+	    not_homedomain
     end.
 
-%% part of register_request/3
-register_require_supported(Request, Origin, LogStr, THandler, LogTag) ->
+%%--------------------------------------------------------------------
+%% Function: register_require_supported(Request, LogStr, THandler,
+%%                                      LogTag, AppName)
+%%           Request  = request record()
+%%           LogStr   = string(), describes REGISTER request
+%%           THandler = thandler record(), server transaction handler
+%%           LogTag   = string(), prefix for logging
+%%           AppName  = atom(), incomingproxy | outgoingproxy
+%% Descrip.: After we have checked that the REGISTER request is for
+%%           one of our homedomains, we start checking the validity of
+%%           the request. First, we do some checks in this function
+%%           before going on to making sure the request is
+%%           authenticated in register_authenticate(...).
+%% Returns :
+%%--------------------------------------------------------------------
+register_require_supported(Request, LogStr, THandler, LogTag, AppName) ->
     Header = Request#request.header,
     %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 2
     case is_valid_register_request(Header) of
 	true ->
-	    register_authenticate(Request, Origin, LogStr, THandler, LogTag);
+	    register_authenticate(Request, LogStr, THandler, LogTag, AppName);
 	{siperror, Status, Reason, ExtraHeaders} ->
 	    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders)
     end.
 
-%% part of register_request/3
-register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
-    {URL, Header} =
-	{Request#request.uri, Request#request.header},
-    logger:log(debug, "incomingproxy: ~s -> processing", [LogStr]),
+%% part of process_register/6
+register_authenticate(Request, LogStr, THandler, LogTag, AppName) ->
+    Header = Request#request.header,
+    logger:log(debug, "~p: ~s -> processing", [AppName, LogStr]),
     %% delete any present Record-Route header (RFC3261, #10.3)
     NewHeader = keylist:delete("Record-Route", Header),
     {_, ToURL} = sipheader:to(Header),
@@ -181,8 +195,8 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
 	    logger:log(debug, "~s: user ~p, registering contact(s) : ~p",
 		       [LogTag, SIPuser, sipheader:contact_print(Contacts)]),
 	    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6, step 7 and step 8
-	    case catch siplocation:process_register_isauth(LogTag ++ ": incomingproxy",
-							   NewHeader, SIPuser, Contacts) of
+	    case catch process_updates(lists:concat([LogTag, ": ", AppName]),
+				       NewHeader, SIPuser, Contacts, AppName) of
 		{ok, {Status, Reason, ExtraHeaders}} ->
 		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders),
 		    %% Make event about user sucessfully registered
@@ -195,25 +209,23 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
 		{siperror, Status, Reason, ExtraHeaders} ->
 		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
 		{'EXIT', Reason} ->
-		    logger:log(error, "=ERROR REPORT==== siplocation:process_register_isauth() failed :~n~p~n",
+		    logger:log(error, "=ERROR REPORT==== siplocation:process_updates() failed :~n~p~n",
 			       [Reason]),
-		    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error");
-		_ ->
-		    true
+		    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
 	    end;
 	{stale, _} ->
 	    logger:log(normal, "~s -> Authentication is STALE, sending new challenge", [LogStr]),
 	    transactionlayer:send_challenge(THandler, www, true, none);
 	{{false, eperm}, SipUser} when SipUser /= none ->
-	    logger:log(normal, "~s: incomingproxy: SipUser ~p NOT ALLOWED to REGISTER address ~s",
-		       [LogTag, SipUser, sipurl:print(ToURL)]),
+	    logger:log(normal, "~s: ~p: SipUser ~p NOT ALLOWED to REGISTER address ~s",
+		       [LogTag, AppName, SipUser, sipurl:print(ToURL)]),
 	    transactionlayer:send_response_handler(THandler, 403, "Forbidden"),
 	    %% Make event about users failure to register
 	    L = [{register, forbidden}, {user, SipUser}, {address, sipurl:print(ToURL)}],
 	    event_handler:generic_event(normal, location, LogTag, L);
 	{{false, nomatch}, SipUser} when SipUser /= none ->
-	    logger:log(normal, "~s: incomingproxy: SipUser ~p tried to REGISTER invalid address ~s",
-		       [LogTag, SipUser, sipurl:print(ToURL)]),
+	    logger:log(normal, "~s: ~p: SipUser ~p tried to REGISTER invalid address ~s",
+		       [LogTag, AppName, SipUser, sipurl:print(ToURL)]),
 	    transactionlayer:send_response_handler(THandler, 404, "Not Found"),
 	    %% Make event about users failure to register
 	    L = [{register, invalid_address}, {user, SipUser}, {address, sipurl:print(ToURL)}],
@@ -225,13 +237,8 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
 		   end,
 	    %% XXX send new challenge (current behavior) or send 403 Forbidden when authentication fails?
 	    logger:log(Prio, "~s -> Authentication FAILED, sending challenge", [LogStr]),
-	    transactionlayer:send_challenge(THandler, www, false, 3);
-	Unknown ->
-	    logger:log(error, "Register: Unknown result from local:can_register() URL ~p :~n~p",
-		       [sipurl:print(URL), Unknown]),
-	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
+	    transactionlayer:send_challenge(THandler, www, false, 3)
     end.
-
 
 %%--------------------------------------------------------------------
 %% Function: is_valid_register_request(Header)
@@ -240,26 +247,26 @@ register_authenticate(Request, _Origin, LogStr, THandler, LogTag) ->
 %% Returns : true | SipError
 %%--------------------------------------------------------------------
 is_valid_register_request(Header) ->
-    Require = keylist:fetch('require', Header),
-    case Require of
+    case keylist:fetch('require', Header) of
 	[] ->
 	    true;
-	_ ->
+	Require ->
 	    %% we support no extensions, so all are unsupported
 	    logger:log(normal, "Request check: The client requires unsupported extension(s) ~p", [Require]),
 	    {siperror, 420, "Bad Extension", [{"Unsupported", Require}]}
     end.
 
-
 %%--------------------------------------------------------------------
-%% Function: process_register_isauth(LogTag, Header, SipUser,
-%%           Contacts)
-%%           LogTag      = string(),
-%%           Header      = keylist record()
-%%           SipUser     = SIP authentication username (#phone.number
-%%                         field entry, when using mnesia userdb)
-%%           Contacts    = list() of contact record()
-%% Descrip.:
+%% Function: process_updates(LogTag, Header, SipUser, Contacts,
+%%                           AppName)
+%%           LogTag   = string(), logging prefix
+%%           Header   = keylist record(), REGISTER request header
+%%           SipUser  = SIP authentication username (#phone.number
+%%                      field entry, when using mnesia userdb)
+%%           Contacts = list() of contact record()
+%%           AppName  = atom(), incomingproxy | outgoingproxy
+%% Descrip.: Update the location database, based on a REGISTER request
+%%           we are processing. Either add or remove entrys.
 %% Returns : {ok, {Status, Reason, ExtraHeaders}}
 %%           {siperror, Status, Reason}
 %%           {siperror, Status, Reason, ExtraHeaders}
@@ -268,18 +275,15 @@ is_valid_register_request(Header) ->
 %%           ExtraHeaders = list() of {Key, NewValueList} see
 %%           keylist:appendlist/2
 %%--------------------------------------------------------------------
-process_register_isauth(LogTag, Header, SipUser, Contacts) ->
-    process_updates(LogTag, Header, SipUser, Contacts).
-
 %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6 and 7
 %% remove, add or update contact info in location (phone) database
 
 %% REGISTER request had no contact header
-process_updates(_LogTag, _Header, SipUser, []) ->
+process_updates(_LogTag, _Header, SipUser, [], _AppName) ->
     %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
     {ok, create_process_updates_response(SipUser)};
 
-process_updates(LogTag, Header, SipUser, Contacts) ->
+process_updates(LogTag, Header, SipUser, Contacts, AppName) ->
     %% Processing REGISTER Request - step 6
     %% check for and process wildcard (request contact = *)
     case process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) of
@@ -288,7 +292,7 @@ process_updates(LogTag, Header, SipUser, Contacts) ->
 	    %% No wildcard found, register/update/remove entries in Contacts.
 	    %% Process registration atomicly - change all or nothing in database.
 	    F = fun() ->
-			process_non_wildcard_contacts(LogTag, SipUser, Contacts, Header)
+			process_non_wildcard_contacts(LogTag, SipUser, Contacts, Header, AppName)
 		end,
 	    case mnesia:transaction(F) of
 		{aborted, Reason} ->
@@ -537,56 +541,56 @@ get_locations_with_prio2(Priority, [#siplocationdb_e{flags=Flags}=H | T], Res) -
 
 %%--------------------------------------------------------------------
 %% Function: process_non_wildcard_contacts(LogTag, SipUser, Location,
-%%           Header)
+%%                                         Header, AppName)
 %%           LogTag    = string(),
 %%           SipUser   =
 %%           Locations = list() of contact record(), binding to add for
 %%                       SipUser
-%%           RequestHeader = keylist record()
+%%           Header    = keylist record(), REGISTER request header
+%%           AppName   = atom(), incomingproxy | outgoingproxy
 %% Descrip.: process a SIP Contact entry (thats not a wildcard)
 %%           and do the appropriate db add/rm/update, see:
 %%           RFC 3261 chapter 10.3 - Processing REGISTER Request -
 %%           step 7 for more details
-%% Returns : -
+%% Returns : void() | throw(...) (throw is either a siperror or a
+%%                                Mnesia error)
 %%--------------------------------------------------------------------
-process_non_wildcard_contacts(LogTag, SipUser, Locations, RequestHeader) ->
-    RequestCallId = sipheader:callid(RequestHeader),
-    {CSeq, _CSeqMethod}  = sipheader:cseq(RequestHeader),
-    RequestCSeq = list_to_integer(CSeq),
+process_non_wildcard_contacts(LogTag, SipUser, Locations, Header, AppName) ->
+    CallId = sipheader:callid(Header),
+    {CSeqStr, _CSeqMethod} = sipheader:cseq(Header),
+    CSeq = list_to_integer(CSeqStr),
 
     %% get expire value from request header only once, this will speed up the calls to
     %% parse_register_contact_expire/2 that are done for each Locations entry
-    ExpireHeader = sipheader:expires(RequestHeader),
-    F = fun(Location) ->
-		process_non_wildcard_contact(LogTag, SipUser, Location,
-					     RequestCallId, RequestCSeq, ExpireHeader)
-	end,
-    lists:foreach(F, Locations).
+    ExpireHeader = sipheader:expires(Header),
+    process_non_wildcard_contacts2(LogTag, SipUser, CallId, CSeq, ExpireHeader, AppName, Locations).
 
-
-
-process_non_wildcard_contact(LogTag, SipUser, Location, RequestCallId, RequestCSeq, ExpireHeader) ->
+%% process_non_wildcard_contacts2 - part of process_non_wildcard_contacts()
+process_non_wildcard_contacts2(LogTag, SipUser, CallId, CSeq, ExpireHeader, AppName, [Location | T]) ->
     {atomic, R} = phone:get_sipuser_location_binding(SipUser, sipurl:parse(Location#contact.urlstr)),
     Priority = 100,
     %% check if SipUser-Location binding exists in database
     case R of
 	[] ->
 	    %% User has no bindings in the location database, register this one
-	    register_contact(LogTag, SipUser, Location, Priority, ExpireHeader,RequestCallId, RequestCSeq);
+	    register_contact(LogTag, SipUser, Location, Priority, ExpireHeader, CallId, CSeq, AppName);
 	[SipUserLocation] ->
 	    %% User has exactly one binding in the location database matching this one, do some checking
 	    check_same_call_id(LogTag, SipUser, Location, SipUserLocation, Priority,
-			       RequestCallId, RequestCSeq, ExpireHeader)
-    end.
+			       CallId, CSeq, ExpireHeader, AppName)
+    end,
+    process_non_wildcard_contacts2(LogTag, SipUser, CallId, CSeq, ExpireHeader, AppName, T);
+process_non_wildcard_contacts2(_LogTag, _SipUser, _CallId, _CSeq, _ExpireHeader, _AppName, []) ->
+    ok.
 
 %% DBLocation = phone record(), currently stored sipuser-location info
 %% ReqLocation = contact record(), sipuser-location binding data in REGISTER request
-check_same_call_id(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
-    case RequestCallId == DBLocation#phone.callid of
+check_same_call_id(LogTag, SipUser, ReqLocation, DBLocation, Priority, CallId, CSeq, ExpireHeader, AppName) ->
+    case CallId == DBLocation#phone.callid of
 	true ->
 	    %% request has same call-id so a binding already exists
 	    check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation,
-			       Priority, RequestCallId, RequestCSeq, ExpireHeader);
+			       Priority, CallId, CSeq, ExpireHeader, AppName);
 	false ->
 	    %% call-id differs, so the UAC has probably been restarted.
 	    case parse_register_contact_expire(ExpireHeader, ReqLocation) == 0 of
@@ -597,14 +601,14 @@ check_same_call_id(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCa
 		    phone:delete_record(DBLocation);
 		false ->
 		    %% non-zero expire-time, update the binding
-		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader, RequestCallId, RequestCSeq)
+		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader, CallId, CSeq, AppName)
 	    end
     end.
 
-check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCallId, RequestCSeq, ExpireHeader) ->
+check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, CallId, CSeq, ExpireHeader, AppName) ->
     %% only process reqest if cseq is > than the last one processed i.e. ignore
     %% old, out of order requests
-    case RequestCSeq > DBLocation#phone.cseq of
+    case CSeq > DBLocation#phone.cseq of
 	true ->
 	    case parse_register_contact_expire(ExpireHeader, ReqLocation) == 0 of
 		true ->
@@ -614,35 +618,14 @@ check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, RequestCa
 		    phone:delete_record(DBLocation);
 		false ->
 		    %% update the binding
-		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader, RequestCallId, RequestCSeq)
+		    register_contact(LogTag, SipUser, ReqLocation, Priority, ExpireHeader, CallId, CSeq, AppName)
 	    end;
 	false ->
 	    logger:log(debug, "Location: NOT updating binding for user ~p, entry ~p in db has CSeq ~p "
-		       "and request has ~p", [SipUser, DBLocation#phone.requristr, DBLocation#phone.cseq,
-					      RequestCSeq]),
+		       "and request has ~p", [SipUser, DBLocation#phone.requristr, DBLocation#phone.cseq, CSeq]),
 	    %% RFC 3261 doesn't appear to document the proper error code for this case
 	    throw({siperror, 403, "Request out of order, contained old CSeq number"})
     end.
-
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.: function intended for debugging purpouses
-%% Returns :
-%%--------------------------------------------------------------------
-debugfriendly_locations([]) ->
-    [];
-debugfriendly_locations([Location | Rest]) ->
-    Prio = case get_priorities([Location]) of
-	       [] -> none;
-	       [P] -> P
-	   end,
-    {Contact, _, _, Expire} = Location,
-    %% make sure we don't end up with a negative Expires
-    NewExpire = lists:max([0, Expire - util:timestamp()]),
-    C = contact:print(contact:new(Contact)),
-    Res = lists:concat(["priority ", Prio, ": ", C, ";expires=", NewExpire]),
-    lists:append([Res], debugfriendly_locations(Rest)).
 
 
 %%====================================================================
@@ -651,28 +634,40 @@ debugfriendly_locations([Location | Rest]) ->
 
 %%--------------------------------------------------------------------
 %% Function: register_contact(LogTag, SipUser, Location, Priority,
-%%                            ExpireHeader)
-%%           LogTag        = string()
-%%           SipUser       = string()
-%%           Location      = contact record()
-%%           Priority      = integer()
-%%           ExpireHeader  =
-%%           RequestCallId = string()
-%%           RequestCSeq   = integer()
+%%                            ExpireHeader, CallId, CSeq, AppName)
+%%           LogTag       = string()
+%%           SipUser      = string()
+%%           Location     = contact record()
+%%           Priority     = integer()
+%%           ExpireHeader = list() of string(), Expire header from
+%%                          REGISTER request, or [] if not present
+%%           CallId       = string(), Call-Id header from REGISTER
+%%                          request
+%%           CSeq         = integer(), CSeq number from REGISTER
+%%                          request
 %% Descrip.: add or update a Location entry
 %% Returns : -
 %%--------------------------------------------------------------------
-register_contact(LogTag, SipUser, Location, Priority, ExpireHeader,RequestCallId, RequestCSeq)
-  when is_record(Location, contact) ->
+register_contact(LogTag, SipUser, Location, Priority, ExpireHeader, CallId, CSeq, AppName)
+  when is_list(SipUser), is_record(Location, contact), is_integer(Priority), is_list(CallId), is_integer(CSeq) ->
     Expire = parse_register_expire(ExpireHeader, Location),
     logger:log(normal, "~s: REGISTER ~s at ~s (priority ~p, expire in ~p)",
 	       [LogTag, SipUser, Location#contact.urlstr, Priority, Expire]),
-    phone:insert_purge_phone(SipUser, [{priority, Priority}],
-			     dynamic,
+    Flags = register_contact_flags(Priority, Location, AppName),
+    phone:insert_purge_phone(SipUser, Flags, dynamic,
 			     Expire + util:timestamp(),
 			     sipurl:parse(Location#contact.urlstr),
-			     RequestCallId,
-			     RequestCSeq).
+			     CallId, CSeq).
+
+register_contact_flags(Priority, _Contact, incomingproxy) ->
+    [{priority, Priority}];
+register_contact_flags(Priority, Contact, outgoingproxy) ->
+    ContactURL = sipurl:parse(Contact#contact.urlstr),
+    Proto = sipurl:get_port(ContactURL),
+    MyURL = sipurl:new([{host, siprequest:myhostname()},
+			{port, sipserver:get_listenport(Proto)}
+		       ]),
+    [{priority, Priority}, {outgoingproxy, sipurl:print(MyURL)}].
 
 %% determine expiration time for a specific contact. Use default
 %% value if contact/header supplies no expiration period.
@@ -788,7 +783,7 @@ parse_register_contact_expire(Header, Contact) when is_record(Header, keylist),
     ExpireHeader = sipheader:expires(Header),
     parse_register_contact_expire(ExpireHeader, Contact).
 
-    
+
 %%====================================================================
 %% Test functions
 %%====================================================================
@@ -806,7 +801,7 @@ test() ->
     Loc1 = #siplocationdb_e{flags=[{priority, 1}], expire=1},
     Loc2 = #siplocationdb_e{flags=[{priority, 2}], expire=2},
     Loc3 = #siplocationdb_e{flags=[{priority, 2}], expire=3},
-    
+
     io:format("test: get_priorities/1 - 1~n"),
     %% normal case
     [1, 2, 2] = get_priorities([Loc0, Loc1, Loc2, Loc3]),
@@ -819,7 +814,7 @@ test() ->
     %% test prioritize_locations(Locations)
     %%--------------------------------------------------------------------
     Loc4 = #siplocationdb_e{flags=[{priority, 4}], expire=4},
-    
+
     io:format("test: prioritize_locations/1 - 1~n"),
     [Loc1] = prioritize_locations([Loc0, Loc1, Loc2, Loc3, Loc4]),
 
@@ -868,13 +863,13 @@ test() ->
     io:format("test: is_valid_wildcard_request/2 - 8~n"),
     %% multiple non-wildcard contact
     false = is_valid_wildcard_request(keylist:from_list([]), [contact:new("sip:ft@example.org"),
-							     contact:new("sip:ft@example.net")]),
+							      contact:new("sip:ft@example.net")]),
 
     io:format("test: is_valid_wildcard_request/2 - 9~n"),
     %% multiple contacts, one is a wildcard
     {siperror, 400, _} =
 	(catch is_valid_wildcard_request(keylist:from_list([]), [contact:new("*"),
-								contact:new("sip:ft@example.org")])),
+								 contact:new("sip:ft@example.org")])),
 
     %% parse_register_expire(ExpireHeader, Contact)
     %%--------------------------------------------------------------------
