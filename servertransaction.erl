@@ -202,8 +202,8 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
 %%--------------------------------------------------------------------
 %% Function: handle_call({get_branch}, From, State)
 %% Descrip.: This is a request to get our generated branch.
-%% Returns : {reply, Reply, State, Timeout} |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
+%% Returns : {reply, Reply, State, ?TIMEOUT} |
+%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
 %%           Reply  = {ok, Branch}
 %%           Branch = string()
 %%--------------------------------------------------------------------
@@ -219,8 +219,8 @@ handle_call({get_branch}, From, State) ->
 %%           We can only report to one process, so this function will
 %%           fail if our report_to is already set. It will also fail
 %%           if we have already been cancelled.
-%% Returns : {reply, Reply, State, Timeout} |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
+%% Returns : {reply, Reply, State, ?TIMEOUT} |
+%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
 %%           Reply  = ok               |
 %%                    {error, Error}   |
 %%                    {ignore, Reason} |
@@ -253,6 +253,21 @@ handle_call({set_report_to, Pid}, From, #state{report_to=undefined}=State) when 
 		end
 	end,
     check_quit(Reply, From);
+
+%%--------------------------------------------------------------------
+%% Function: handle_call(get_my_to_tag, From, State)
+%% Descrip.: Return our To-tag. Functionality required for making
+%%           UAC/UAS applications, which must be able to send other
+%%           requests with the same to-tag (requests inside the same
+%%           dialog).
+%% Returns : {reply, Reply, State, ?TIMEOUT} |
+%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
+%%           Reply  = {ok, ToTag}
+%%           ToTag = string()
+%%--------------------------------------------------------------------
+handle_call(get_my_to_tag, _From, State) ->
+    Reply = {reply, {ok, State#state.my_to_tag}, State, ?TIMEOUT},
+    check_quit(Reply);
 
 handle_call(Request, From, State) ->
     LogTag = State#state.logtag,
