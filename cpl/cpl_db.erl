@@ -10,6 +10,7 @@
 	 create/0,
 	 create/1,
 	 load_cpl_for_user/2,
+	 set_cpl_for_user/2,
 	 get_cpl_for_user/1,
 	 user_has_cpl_script/1,
 	 user_has_cpl_script/2,
@@ -84,6 +85,17 @@ get_cpl_for_user(User) ->
 load_cpl_for_user(User, FilePath) ->
     Str = load_file(FilePath),
     Graph = xml_parse:cpl_script_to_graph(Str),
+    store_graph(User, Graph).
+
+%%--------------------------------------------------------------------
+%% Function: set_cpl_for_user(User, CPLXML) 
+%%           User   = string()
+%%           CPLXML = string(), CPL XML
+%% Descrip.: store the cpl script CPLXML in mnesia
+%% Returns : -
+%%--------------------------------------------------------------------
+set_cpl_for_user(User, CPLXML) when is_list(User), is_list(CPLXML) ->
+    Graph = xml_parse:cpl_script_to_graph(CPLXML),
     store_graph(User, Graph).
 
 store_graph(User, Graph) ->
