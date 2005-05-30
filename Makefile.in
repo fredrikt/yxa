@@ -157,7 +157,7 @@ SUBDIRS = \
 	event_handler
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
-all: $(beam_FILES) bootstrap.sh dtmfserver all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)
+all: $(beam_FILES) yxa-bootstrap.sh dtmfserver all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)
 
 $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
@@ -166,7 +166,7 @@ $(RECURSIVE_TARGETS):
 	(cd $$subdir && $(MAKE) $$target) || exit 1; \
 	done
 
-install: $(boot_FILES) $(beam_FILES) $(start_FILES) install-recursive
+install: $(boot_FILES) $(beam_FILES) $(start_FILES) yxa-bootstrap.sh install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(confdir)
 	$(mkinstalldirs) $(DESTDIR)$(sslcertdir)
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
@@ -175,13 +175,13 @@ install: $(boot_FILES) $(beam_FILES) $(start_FILES) install-recursive
 	done
 	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)
 	$(mkinstalldirs) $(DESTDIR)$(sbindir)
-	for p in $(start_FILES) ; do \
+	for p in $(start_FILES) yxa-bootstrap.sh ; do \
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
 clean: clean-recursive
 	rm -f core *.core *~
-	rm -f bootstrap.sh local.erl
+	rm -f yxa-bootstrap.sh local.erl
 	rm -f newversion.erl.new version.erl.in
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out dtmfserver erl_crash.dump
@@ -245,7 +245,7 @@ outgoingproxy.boot: outgoingproxy.app outgoingproxy.rel
 start_ssl.boot: start_ssl.rel
 	$(systools_make_script)
 
-bootstrap.sh: init.sh.in config.status
+yxa-bootstrap.sh: init.sh.in config.status
 	$(create_start_script)
 
 incomingproxy: incomingproxy.boot init.sh.in config.status

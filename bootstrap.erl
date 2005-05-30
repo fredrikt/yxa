@@ -23,7 +23,7 @@
 %% Function: start([AdminPassword])
 %%           AdminPassword = string()
 %% Descrip.: Create a first Mnesia database server at the node where
-%%           this is run (through the execution of "bootstrap.sh").
+%%           this is run (through the execution of "yxa-bootstrap.sh").
 %% Returns : ok | does not return
 %%--------------------------------------------------------------------
 start([AdminPassword]) ->
@@ -69,7 +69,7 @@ init_db_module([], _Node) ->
 %% Function: replica([Master])
 %%           Master = string()
 %% Descrip.: Create a second Mnesia database server at the node where
-%%           this is run (through the execution of "bootstrap.sh").
+%%           this is run (through the execution of "yxa-bootstrap.sh").
 %% Returns : ok | does not return
 %%--------------------------------------------------------------------
 replica([Master]) ->

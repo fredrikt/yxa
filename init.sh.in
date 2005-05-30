@@ -14,7 +14,7 @@ DETACH="-detached"
 
 MYNAME=`basename $0`
 
-if [ "x$MYNAME" = "xbootstrap.sh" ]; then
+if [ "x$MYNAME" = "xyxa-bootstrap.sh" ]; then
     # Adjust Mnesia dir path when bootstrapping so that it is the same as when
     # we run the real system (incomingproxy is database server node)
     MNESIADIR="$MNESIABASE/incomingproxy"
@@ -60,7 +60,7 @@ if [ "x$1" = "x-d" ]; then
     DETACH=""
 fi
 
-if [ "x$MYNAME" = "xbootstrap.sh" ]; then
+if [ "x$MYNAME" = "xyxa-bootstrap.sh" ]; then
     if [ ! -d "$MNESIADIR" ]; then
 	echo "Creating Mnesia directory '$MNESIADIR'"
 	mkdir "$MNESIADIR"

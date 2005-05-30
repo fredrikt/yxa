@@ -597,7 +597,7 @@ sipuserdb_file_refresh_interval	(default: 15) Interval (in seconds) between
 Bootstrapping
 =============
 
-In your build directory, you should have a file called bootstrap.sh.
+In your build directory, you should have a file called yxa-bootstrap.sh.
 Execute this script with the environment variable ADMINPW set to whatever
 initial admin-user password you wish. This script will create a
 Mnesia schema and all the needed Mnesia tables for you. You will have to
@@ -605,10 +605,10 @@ execute it on the host where you are going to run the incomingproxy.
 
 Example :
 
-   $ ADMINPW=foo /path/to/build/directory/bootstrap.sh
+   $ ADMINPW=foo /path/to/build/directory/yxa-bootstrap.sh
 
 You should now have the necessary Mnesia databases and a user called 'admin'
-with the password in bootstrap.sh which you can use to add SIP users to
+with the password in yxa-bootstrap.sh which you can use to add SIP users to
 your system through the web interface. In order to use the web interface,
 you must start it by executing ./adminwww once you have compiled everything.
 
