@@ -47,9 +47,8 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(AppName, Handlers)
+%% Function: start_link(AppName)
 %%           AppName  = string(), name of Yxa application
-%%           Handlers = list() of atom(), configured handlers
 %% Descrip.: start the server.
 %% Returns : Result of gen_server:start_link/4
 %%--------------------------------------------------------------------
