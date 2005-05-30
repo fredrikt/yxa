@@ -65,8 +65,11 @@
 %%           none
 %%           URL = sipurl record()
 %%--------------------------------------------------------------------
-lookupregexproute(Input) ->
+lookupregexproute(Input) when is_list(Input) ->
     Routes = database_regexproute:list(),
+    lookupregexproute2(Input, Routes).
+
+lookupregexproute2(Input, Routes) ->
     Sortedroutes = lists:sort(fun (Elem1, Elem2) ->
 				      Prio1 = lists:keysearch(priority, 1, Elem1#regexproute.flags),
 				      Prio2 = lists:keysearch(priority, 1, Elem2#regexproute.flags),
@@ -548,37 +551,38 @@ lookupnumber(Number) ->
     %% Check if Number is all digits
     case util:isnumeric(Number) of
 	true ->
-	    %% Try to rewrite Number using configured regexp 'number_to_pstn'
-	    case util:regexp_rewrite(Number, sipserver:get_env(number_to_pstn, [])) of
-		[] ->
-		    logger:log(error, "Lookup: Failed rewriting number ~p using regexp 'number_to_pstn'",
-			       [Number]),
-		    error;
-		Res when is_list(Res) ->
-		    %% Check to see if what we got is a parseable URL
-		    case sipurl:parse_url_with_default_protocol("sip", Res) of
-			URL when is_record(URL, sipurl) ->
-			    %% Check if it is a local URL or a remote
-			    case homedomain(URL#sipurl.host) of
-				true ->
-				    {proxy, URL};
-				_ ->
-				    {relay, URL}
-			    end;
-			_ ->
-			    logger:log(error, "Lookup: Rewrite of number ~p did not result in a parseable URL : ~p",
-				       [Number, Res]),
-			    error
-		    end;
-		nomatch ->
-		    %% Regexp did not match
-		    none
-	    end;
-	_ ->
+	    Regexps = sipserver:get_env(number_to_pstn, []),
+	    lookupnumber2(Number, Regexps);
+	false ->
 	    %% Number was not numeric
 	    error
     end.
 
+%% part of lookupnumber/1
+lookupnumber2(Number, Regexps) when is_list(Number), is_list(Regexps) ->
+    %% Try to rewrite Number using configured regexp 'number_to_pstn'
+    case util:regexp_rewrite(Number, Regexps) of
+	Res when is_list(Res) ->
+	    %% Check to see if what we got is a parseable URL
+	    case sipurl:parse_url_with_default_protocol("sip", Res) of
+		URL when is_record(URL, sipurl) ->
+		    %% Check if it is a local URL or a remote
+		    case homedomain(URL#sipurl.host) of
+			true ->
+			    {proxy, URL};
+			false ->
+			    {relay, URL}
+		    end;
+		_ ->
+		    logger:log(error, "Lookup: Rewrite of number ~p using 'number_to_pstn' did not "
+			       "result in a parseable URL : ~p", [Number, Res]),
+		    error
+	    end;
+	nomatch ->
+	    %% Regexp did not match
+	    none
+    end.
+    
 %%--------------------------------------------------------------------
 %% Function: rewrite_potn_to_e164(Number)
 %%           Number = string()
@@ -607,7 +611,7 @@ rewrite_potn_to_e164(Number) when is_list(Number) ->
 	_ ->
 	    error
     end;
-rewrite_potn_to_e164(_) ->
+rewrite_potn_to_e164(_Unknown) ->
     error.
 
 %%--------------------------------------------------------------------
@@ -680,7 +684,7 @@ homedomain(Domain) when is_list(Domain) ->
     case util:casegrep(Domain, sipserver:get_env(homedomain, [])) of
 	true ->
 	    true;
-	_ ->
+	false ->
 	    %% Domain did not match configured sets of homedomain, check against list
 	    %% of hostnames and also my IP address
 	    HostnameList = sipserver:get_env(myhostnames, []) ++ siphost:myip_list(),
@@ -840,5 +844,76 @@ test() ->
     %% test with SIP URI but transport parameter indicating TLS
     [Unsuitable_LDBE4] =
 	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_LDBE1, Unsuitable_LDBE4]),
+
+
+    %% test lookupnumber(Number)
+    %%--------------------------------------------------------------------
+    io:format("test: lookupnumber/1 - 1~n"),
+
+    %% only thing we can test here is non-numeric input
+    error = lookupnumber("foo"),
+
+
+    %% test lookupnumber2(Number, RegExps)
+    %%--------------------------------------------------------------------
+
+    io:format("test: lookupnumber2/2 - 1~n"),
+    %% test empty result
+    error = lookupnumber2("123", [{"123", ""}]),
+
+    io:format("test: lookupnumber2/2 - 2~n"),
+    %% test no matching regexp
+    none = lookupnumber2("123", [{"12x", "foo"}]),
+
+    io:format("test: lookupnumber2/2 - 3~n"),
+    %% test valid rewrite
+    LNURL3 = sipurl:parse("sips:ft@example.org"),
+    {relay, LNURL3} = lookupnumber2("123", [{"123", "sips:ft@example.org"}]),
+
+    io:format("test: lookupnumber2/2 - 4~n"),
+    %% test valid rewrite, with default protocol
+    LNURL4 = sipurl:parse("sip:ft@example.org"),
+    {relay, LNURL4} = lookupnumber2("123", [{"123", "ft@example.org"}]),
+
+    io:format("test: lookupnumber2/2 - 5~n"),
+    %% test valid rewrite, with invalid result
+    error = lookupnumber2("123", [{"123", "unknown::ft@example.org"}]),
+
+    io:format("test: lookupnumber2/2 - 6~n"),
+    %% test valid rewrite with homedomain result
+    LNURL6 = sipurl:parse("sips:ft@" ++ MyHostname),
+    {proxy, LNURL6} = lookupnumber2("123", [{"123", "sips:ft@" ++ MyHostname}]),
+
+    io:format("test: lookupnumber2/2 - 7~n"),
+    %% test valid rewrite, with default protocol and homedomain result
+    LNURL7 = sipurl:parse("sip:ft@" ++ MyHostname),
+    {proxy, LNURL7} = lookupnumber2("123", [{"123", "ft@" ++ MyHostname}]),
+
+
+    %% test lookupregexproute2(Input, Routes)
+    %%--------------------------------------------------------------------
+
+    io:format("test: lookupregexproute2/2 - 0~n"),
+
+    LRR_SortRoutes = [{regexproute, "^sip:4000@.*",
+		       [{priority, 200}],
+		       permanent,
+		       never,
+		       "sip:prio200@example.org"},
+		      {regexproute, "^sip:4000@.*",
+		       [{priority, 100}],
+		       permanent,
+		       never,
+		       "sip:prio100@example.org"}
+		      ],
+
+    io:format("test: lookupregexproute2/2 - 1~n"),
+    %% test that we use the route with highest priority if we have two matching
+    LRR_URL2 = sipurl:parse("sip:prio200@example.org"),
+    {proxy, LRR_URL2} = lookupregexproute2("sip:4000@example.org", LRR_SortRoutes),
+    
+    io:format("test: lookupregexproute2/2 - 2~n"),
+    %% test non-matching input
+    none = lookupregexproute2("foo", LRR_SortRoutes),
 
     ok.
