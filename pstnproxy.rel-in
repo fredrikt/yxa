@@ -1,8 +1,8 @@
-%% Erlang OTP R10B-4 library versions
+%% Erlang OTP R10B-5 library versions
 {release, {"Yxa pstnproxy","0.0"}, {erts, "5.2"},
- [{kernel,"2.10.6"},
-  {stdlib,"1.13.5"},
+ [{kernel,"2.10.7"},
+  {stdlib,"1.13.7"},
   {ssl, "3.0.5"},
-  {asn1, "1.4.4.5"},
-  {mnesia, "4.2.1"},
+  {asn1, "1.4.4.6"},
+  {mnesia, "4.2.2"},
   {pstnproxy, "0.0"}]}.
