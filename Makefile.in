@@ -12,6 +12,7 @@ confdir = @sysconfdir@
 sslcertdir = @sslcertdir@
 mnesiadir = @mnesiadir@
 beamdir = @libdir@/yxa/ebin
+includedir = @libdir@/yxa/include
 sbindir = @sbindir@
 exec_prefix=${prefix}
 builddir = @builddir@
@@ -166,12 +167,16 @@ $(RECURSIVE_TARGETS):
 	(cd $$subdir && $(MAKE) $$target) || exit 1; \
 	done
 
-install: $(boot_FILES) $(beam_FILES) $(start_FILES) yxa-bootstrap.sh install-recursive
+install: $(boot_FILES) $(beam_FILES) $(start_FILES) $(hrl_FILES) yxa-bootstrap.sh start_ssl.boot install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(confdir)
 	$(mkinstalldirs) $(DESTDIR)$(sslcertdir)
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
-	for p in $(beam_FILES) $(boot_FILES) $(app_FILES); do \
+	$(mkinstalldirs) $(DESTDIR)$(includedir)
+	for p in $(beam_FILES) $(boot_FILES) $(app_FILES) start_ssl.boot; do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(hrl_FILES); do \
+	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
 	done
 	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)
 	$(mkinstalldirs) $(DESTDIR)$(sbindir)
