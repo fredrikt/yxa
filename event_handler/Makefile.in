@@ -12,6 +12,7 @@ confdir = @sysconfdir@
 sslcertdir = @sslcertdir@
 mnesiadir = @mnesiadir@
 beamdir = @libdir@/yxa/ebin
+privdir = @libdir@/yxa/priv
 sbindir = @sbindir@
 exec_prefix=${prefix}
 builddir = @builddir@
@@ -48,17 +49,16 @@ all: $(beam_FILES) syslog_c-port
 
 install: $(beam_FILES) syslog_c-port
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	$(mkinstalldirs) $(DESTDIR)$(privdir)
 	for p in $(beam_FILES); do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
 	done
 	for p in syslog_c-port; do \
-	  $(install_PROGRAM) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	  $(install_PROGRAM) $$p $(DESTDIR)$(privdir)/$$f ; \
 	done
 
 clean:
 	rm -f core *.core *~
-	rm -f bootstrap.sh local.erl
-	rm -f newversion.erl.new version.erl.in
 	rm -f syslog_c-port *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out erl_crash.dump
 

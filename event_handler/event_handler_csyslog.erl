@@ -70,14 +70,20 @@
 %%--------------------------------------------------------------------
 init([AppName]) when is_atom(AppName) ->
     %% Look for the syslog_c-port in the directory where this modules BEAM-file resides
-    Dir = filename:dirname(code:which(?MODULE)),
-    Cmd = filename:join(Dir, "syslog_c-port"),
-    Port = open_port({spawn, Cmd}, [{packet, 2}]),
-    %% syslog_port will openlog() with the first data we send it as identifier
-    Msg = atom_to_list(AppName),
-    true = port_command(Port, Msg),
-    {ok, #state{port=Port}}.
-
+    Directorys = [filename:dirname(code:which(?MODULE))] ++
+	[code:priv_dir(yxa)],
+    case locate_file(Directorys, "syslog_c-port") of
+	{ok, Cmd} ->
+	    Port = open_port({spawn, Cmd}, [{packet, 2}]),
+	    %% syslog_port will openlog() with the first data we send it as identifier
+	    Msg = atom_to_list(AppName),
+	    true = port_command(Port, Msg),
+	    {ok, #state{port=Port}};
+	not_found ->
+	    logger:log(error, "Event handler csyslog: Could not locate C port binary 'syslog_c-port' "
+		       "(searched in directorys : ~p)", [Directorys]),
+	    {error, "C port binary not found"}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: handle_event(Event, State)
@@ -172,7 +178,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: locate_file(Path, File)
+%% Descrip.: Locate a file fiven a set of directorys.
+%% Returns : {ok, Filename} | not_found
 %%--------------------------------------------------------------------
+locate_file([H | T], File) ->
+    Filename = filename:join(H, File),
+    case file:read_file_info(Filename) of
+	{ok, _FileInfo} ->
+	    {ok, Filename};
+	_ ->
+	    locate_file(T, File)
+    end;
+locate_file([], _File) ->
+    not_found.
+
