@@ -117,7 +117,8 @@ erl_FILES = \
 	url_param.erl \
 	util.erl \
 	version.erl \
-	xref_test.erl
+	xref_test.erl \
+	yxa_ctl.erl
 
 imported_hrl_FILES = \
 	LDAPv3.hrl \
