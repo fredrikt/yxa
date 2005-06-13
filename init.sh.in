@@ -7,80 +7,216 @@ PROGRAMNAME="@PROGRAMNAME@"
 CONFIGDIR="@CONFIGDIR@"
 SSLCERTDIR="@SSLCERTDIR@"
 MNESIABASE="@MNESIADIR@"
-MNESIADIR="$MNESIABASE/$PROGRAMNAME"
 beamdir="@beamdir@"
 erl="@erl@"
-DETACH="-detached"
 
-MYNAME=`basename $0`
+myname=`basename $0`
+if [ "x$myname" = "xyxa-bootstrap.sh" ]; then
+    is_bootstrap=1
 
-if [ "x$MYNAME" = "xyxa-bootstrap.sh" ]; then
     # Adjust Mnesia dir path when bootstrapping so that it is the same as when
     # we run the real system (incomingproxy is database server node)
-    MNESIADIR="$MNESIABASE/incomingproxy"
+    mnesiadir="$MNESIABASE/incomingproxy"
+else
+    is_bootstrap=0
 fi
+
+usage()
+{
+    common_options="\
+	-config File	use 'File.config' as config file
+	-c_ssl File	use 'File' as Erlang distribution client certificate file
+	-s_ssl File	use 'File' as Erlang distribution server certificate file
+	-mnesiadir Dir	use 'Dir' as Mnesia directory
+	-name Name	use 'Name' as Erlang node name
+	-hostname Name	use 'Name' as hostname part of node-name
+	-h		show usage
+"
+
+    case $is_bootstrap in
+	1)
+	    echo "Syntax: $0 [options]"
+	    echo ""
+	    echo "  Options :"
+	    echo "	-replica M	bootstrap a replica with node M as master"
+	    echo "$common_options"
+	    echo ""
+	    ;;
+	0)
+	    echo "Syntax: $0 [options] command"
+	    echo ""
+	    echo "  Options :"
+	    echo "	-d		debug-mode, don't detach - implies 'start' command"
+	    echo "$common_options"
+	    echo ""
+	    echo "  Commands :"
+	    echo "	start		start server"
+	    echo "	stop		stop running server"
+	    echo "	status		get brief status of running server"
+	    # these are not implemented yet
+	    #echo "	info		get info about running server"
+	    #echo "	reload		reload configuration of running server, if possible"
+	    #echo "	restart		restart running server"
+	    echo ""
+	    ;;
+    esac
+
+    exit 1
+}
 
 # Calculate Erlang arguments
-CONFIGPATH="$CONFIGDIR/$PROGRAMNAME"
+configpath="$CONFIGDIR/$PROGRAMNAME"
 
 if [ "x$SSLCERTDIR" = "x" ]; then
-    SSLCERTFILE="$CONFIGDIR/yxa/cert.comb"
+    client_sslcertfile="$CONFIGDIR/yxa/cert.comb"
+    server_sslcertfile="$client_sslcertfile"
 else
-    SSLCERTFILE="$SSLCERTDIR/cert.comb"
+    client_sslcertfile="$SSLCERTDIR/cert.comb"
+    server_sslcertfile="$client_sslcertfile"
 fi
 
-if [ -f ${SSLCERTFILE} ] ; then
+command=""
+detach="-detached"
+mnesiadir="$MNESIABASE/$PROGRAMNAME"
+replica=""
+explicit_name=0
+hostname=$(hostname)
+
+if [ $is_bootstrap -eq 1 ]; then
+    # yes, the name should be incomingproxy when bootstrapping
+    name="incomingproxy"
+else
+    name="$PROGRAMNAME"
+fi
+
+# parse command line options
+while [ $# -gt 0 ]
+do
+      arg=$1
+      shift
+      case $arg in
+	  -h)
+	      usage
+	      ;;
+	  -c_ssl)
+	      client_sslcertfile="$1"
+	      shift
+	      ;;
+	  -s_ssl)
+	      server_sslcertfile="$1"
+	      shift
+	      ;;
+	  -mnesiadir)
+	      mnesiadir="$1"
+	      shift
+	      ;;
+	  -d)
+	      if [ "x$myname" = "xyxa-bootstrap.sh" ]; then
+		  usage
+	      fi
+
+	      detach=""
+	      command="start"
+	      ;;
+	  -replica)
+	      # $arg only applicable to bootstrapping
+	      if [ $is_bootstrap -ne 1 ]; then
+		  usage
+	      fi
+	      replica="$1"
+	      shift
+	      ;;
+	  -name)
+	      name="$1"
+	      explicit_name=1
+	      shift
+	      ;;
+	  -hostname)
+	      hostname="$1"
+	      shift
+	      ;;
+	  start|stop|status|info|reload|restart)
+	      # $arg not applicable to bootstrapping
+	      if [ $is_bootstrap -eq 1 ]; then
+		  usage
+	      fi
+
+	      # check that this was the last arg
+	      if [ $# -ne 0 ]; then
+		  echo "$0: command ('$arg') should come after any options"
+		  exit 1
+	      fi
+	      if [ "x$command" != "x" -a "$command" != "$1" ]; then
+		  echo "$0: command already set ('$command' != supplied '$1')"
+		  exit 1
+	      fi
+
+	      command="$arg"
+	      shift
+	      ;;
+	  *)
+	      usage
+      esac
+done
+
+if [ "x$command" = "x" ]; then
+    usage
+fi
+
+if [ "x`echo $hostname | grep '\.'`" = "x" ]; then
+    echo "WARNING: Your hostname ($hostname) is not fully qualified" 1>&2
+fi
+
+if [ -f ${client_sslcertfile} ] ; then
     ssloptions="-proto_dist inet_ssl \
-	-ssl_dist_opt client_certfile $SSLCERTFILE \
-	-ssl_dist_opt server_certfile $SSLCERTFILE -ssl_dist_opt verify 2"
+	-ssl_dist_opt client_certfile $client_sslcertfile \
+	-ssl_dist_opt server_certfile $server_sslcertfile -ssl_dist_opt verify 2"
+    boot_start_ssl="-boot start_ssl"
 else
     echo "WARNING: starting without SSL - " \
-	"missing certificate file ${SSLCERTFILE}"
+	"missing certificate file ${sslcertfile}"
+    ssloptions=""
+    boot_start_ssl=""
 fi
 
-if [ "x$MNESIADIR" = "x" ]; then
-    MNESIAPARAMETERS=""
+if [ "x$mnesiadir" = "x" ]; then
+    mnesiaparameters=""
 else
-    if [ ! -d "$MNESIADIR" ]; then
-	echo "$0: Mnesia directory '$MNESIADIR' does not exist!"
+    if [ ! -d "$mnesiadir" ]; then
+	echo "$0: Mnesia directory '$mnesiadir' does not exist!"
 	exit 1
     fi
-    MNESIAPARAMETERS="-mnesia dir '"$MNESIADIR"'"
+    mnesiaparameters="-mnesia dir '"$mnesiadir"'"
 fi
 
 for EXTRA_DIR in "${PWD}/event_handler" "${PWD}/cpl"; do
-    # Add event_handler to search path if such a directory exists
+    # Add event_handler and cpl to search path if such a directory exists
     # (meaning we are probably in the build directory)
     if [ -d "$EXTRA_DIR" ]; then
-	EXTRA_ERL_ARGUMENTS="${EXTRA_ERL_ARGUMENTS} -pz $EXTRA_DIR"
+	EXTRA_ERL_ARGUMENTS="${EXTRA_ERL_ARGUMENTS} -pa $EXTRA_DIR"
     fi
 done
-    
-if [ "x$1" = "x-d" ]; then
-    DETACH=""
-fi
 
-if [ "x$MYNAME" = "xyxa-bootstrap.sh" ]; then
-    if [ ! -d "$MNESIADIR" ]; then
-	echo "Creating Mnesia directory '$MNESIADIR'"
-	mkdir "$MNESIADIR"
+if [ $is_bootstrap -eq 1 ]; then
+    if [ ! -d "$mnesiadir" ]; then
+	echo "Creating Mnesia directory '$mnesiadir'"
+	mkdir "$mnesiadir"
     fi
 
-    if [ ! -d "$MNESIADIR" ]; then
+    if [ ! -d "$mnesiadir" ]; then
 	echo "Failed creating Mnesia directory!"
 	echo ""
 	exit 1
     fi
 
-    if [ "x$REPLICAMASTER" != "x" ]; then
-        # yes, the name should be incomingproxy when bootstrapping
-	${erl} -boot start_ssl -pz ${beamdir} \
+    if [ "x$replica" != "x" ]; then
+	${erl} $boot_start_ssl -pz ${beamdir} \
 	    $EXTRA_ERL_ARGUMENTS \
-	    -name incomingproxy \
+	    -name $name \
 	    $ssloptions \
-	    $MNESIAPARAMETERS \
+	    $mnesiaparameters \
 	    -noshell \
-	    -run bootstrap replica "$REPLICAMASTER" \
+	    -run bootstrap replica "$replica" \
 	    -run init stop
     else
 	if [ "x$ADMINPW" = "x" ]; then
@@ -94,23 +230,44 @@ if [ "x$MYNAME" = "xyxa-bootstrap.sh" ]; then
 	    exit 1
 	fi
 
-        # yes, the name should be incomingproxy when bootstrapping
 	${erl} -pz ${beamdir} \
 	    $EXTRA_ERL_ARGUMENTS \
-	    -name incomingproxy \
-	    -noshell $MNESIAPARAMETERS \
+	    -name $name \
+	    -noshell $mnesiaparameters \
 	    -run bootstrap start "$ADMINPW" \
 	    -run init stop
     fi
 else
-    if [ ! -r "${CONFIGPATH}.config" ]; then
-	echo "$0: Configuration file ${CONFIGPATH}.config not found or not readable"
+    if [ ! -r "${configpath}.config" ]; then
+	echo "$0: Configuration file ${configpath}.config not found or not readable"
 	exit 1
     fi
 
-    ${erl} -boot $PROGRAMNAME -pz ${beamdir} \
-	$EXTRA_ERL_ARGUMENTS \
-	-name $PROGRAMNAME -config $CONFIGPATH \
-	$ssloptions \
-	$MNESIAPARAMETERS $DETACH
+    case $command in
+	start)
+	    ${erl} -boot $PROGRAMNAME -pz ${beamdir} \
+		$EXTRA_ERL_ARGUMENTS \
+		-name $name \
+		-config $configpath \
+		$ssloptions \
+		$mnesiaparameters $detach
+	    ;;
+	stop|status|info|reload|restart)
+	    node="$name@$hostname"
+	    if [ $explicit_name == 0 ]; then
+		name="${name}_ctl"
+	    fi
+
+	    ${erl} $boot_start_ssl -pz ${beamdir} \
+		$EXTRA_ERL_ARGUMENTS \
+		-name "$name" \
+		$ssloptions \
+		-noshell \
+		-s yxa_ctl -extra $node $command
+	    ;;
+	*)
+	    echo "$0: command '$command' not implemented yet"
+	    exit 1
+	    ;;
+    esac
 fi
