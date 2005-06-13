@@ -341,11 +341,17 @@ parse_addr_and_param(In) ->
 	"<" ++ Rest ->
 	    %% There is a "<" after the display-name, split at the ">" that we
 	    %% can expect to be there (or crash on if it isn't)
-	    case string:tokens(Rest, ">") of
-		[AddrSpec, Params] ->
+	    try sipparse_util:split_fields(Rest, 62) of	%% 62 is ">"
+		{AddrSpec, Params} ->
 		    {sipparse_util:strip(AddrSpec, both, [?SP, ?HTAB]),
 		     sipparse_util:strip(Params, both, [?SP, ?HTAB])};
-		[AddrSpec] ->
+		{AddrSpec} ->
+		    {sipparse_util:strip(AddrSpec, both, [?SP, ?HTAB]),
+		     ""}
+	    catch
+		throw: {error, no_second_part} ->
+		    %% ">" was the last character of Rest, not an error
+		    AddrSpec = string:strip(Rest, right, $>),
 		    {sipparse_util:strip(AddrSpec, both, [?SP, ?HTAB]),
 		     ""}
 	    end;
@@ -775,6 +781,15 @@ test() ->
 	{unparseable, {invalid_contact_param, _}} -> ok;
 	P24 -> throw({error, {test_failed, P24}})
     end,
+
+    %% test parameters with delimeter-alike characters, interop problem (our fault) encountered
+    %% with Cisco 79xx phones firmware > 7.4
+    io:format("test: parse/1 - 25~n"),
+    P25 = [#contact{display_name = none,
+		    urlstr = "sip:ft@192.0.2.12:5060;user=ip",
+		    contact_param = contact_param:to_norm([{"+sip.instance", "\"<urn:uuid:foo>\""}])
+		   }],
+    P25 = parse(["<sip:ft@192.0.2.12:5060;user=ip>;+sip.instance=\"<urn:uuid:foo>\""]),
 
 
     %% print/1
