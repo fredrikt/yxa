@@ -11,7 +11,8 @@
 	 create/1,
 	 insert/5,
 	 list/0,
-	 purge_class/2
+	 purge_class/2,
+	 delete/5
 	]).
 
 %%--------------------------------------------------------------------
@@ -55,9 +56,14 @@ servers() ->
     sipserver:get_env(databaseservers).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: insert(Regexp, Flags, Class, Expire, Address)
+%%           Regexp  = string()
+%%           Flags   = list() of {Key, Value}
+%%           Class   = atom()
+%%           Expire  = integer() | never
+%%           Address = string(), must be parseable with sipurl:parse/1
+%% Descrip.: Insert a new regexproute entry into the database.
+%% Returns : result of the Mnesia transaction()
 %%--------------------------------------------------------------------
 insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flags), is_atom(Class),
 						   is_integer(Expire); Expire == never, is_list(Address) ->
@@ -65,17 +71,47 @@ insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flag
 			       expire = Expire, address = Address}).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: insert(Regexp, Flags, Class, Expire, Address)
+%%           Regexp  = string()
+%%           Flags   = list() of {Key, Value}
+%%           Class   = atom()
+%%           Expire  = integer() | never
+%%           Address = string(), must be parseable with sipurl:parse/1
+%% Descrip.: Insert a new regexproute entry into the database.
+%% Returns : result of the Mnesia transaction()
+%%--------------------------------------------------------------------
+delete(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flags), is_atom(Class),
+                                                   is_integer(Expire); Expire == never, is_list(Address) ->
+    Fun = fun() ->
+		  A = mnesia:match_object(#regexproute{regexp = Regexp,
+						       flags = Flags,
+						       class = Class,
+						       expire = Expire,
+						       address = Address,
+						       _ = '_'}),
+		  Delete = fun(O) ->
+				   mnesia:delete_object(O)
+			   end,
+		  lists:foreach(Delete, A)
+	  end,
+    mnesia:transaction(Fun).
+
+
+%%--------------------------------------------------------------------
+%% Function: list()
+%% Descrip.: Lists all regexproutes in the database
+%% Returns : list() of regexproute record()
 %%--------------------------------------------------------------------
 list() ->
     db_util:tab_to_list(regexproute).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: purge_class(Regexp, Class)
+%%           Regexp = string()
+%%           Class  = atom()
+%% Descrip.: Delete all regexproutes in database that matches the
+%%           regexp and class.
+%% Returns : Result of the Mnesia transaction
 %%--------------------------------------------------------------------
 purge_class(Regexp, Class) ->
     Fun = fun() ->
@@ -89,22 +125,3 @@ purge_class(Regexp, Class) ->
 	  end,
     mnesia:transaction(Fun).
 
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
