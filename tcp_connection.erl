@@ -64,13 +64,34 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link/6
-%% Descrip.: Starts the server
-%% Returns : void()
+%% Function: start_link(in, SocketModule, Proto, Socket, Local,
+%%                      Remote)
+%%           SocketModule = atom(), socket module (gen_tcp | ssl)
+%%           Proto        = atom(), tcp | tcp6 | tls | tls6
+%%           Socket       = term()
+%%           Local        = term() ({Host, Port} tuple())
+%%           Remote       = term() ({Host, Port} tuple())
+%% Descrip.: Starts a tcp_connection gen_server to handle this socket.
+%% Returns : {ok, Pid} | ignore
+%% Note    : 'ignore' is returned if the socket is not acceptable for
+%%           some reason (e.g. SSL certificate validation failed)
 %%--------------------------------------------------------------------
 start_link(in, SocketModule, Proto, Socket, Local, Remote) ->
-    gen_server:start_link(?MODULE, [in, SocketModule, Proto, Socket, Local, Remote, undefined], []).
+    {SSLHost, _RPort} = Remote,
+    gen_server:start_link(?MODULE, [in, SocketModule, Proto, Socket, Local, Remote, SSLHost], []).
 
+%%--------------------------------------------------------------------
+%% Function: start_link(connect, Dst, GenServerFrom)
+%%           Dst           = sipdst record()
+%%           GenServerFrom = term(), send result of connection attempt
+%%                           to this caller using gen_server:reply().
+%% Descrip.: Starts a tcp_connection gen_server and try to connect to
+%%           a remote destination. Will eventually send result of
+%%           connection attempt to GenServerFrom using
+%%           gen_server:reply().
+%% Returns : {ok, Pid} | Error
+%%           Error = term(), result of gen_server:start()
+%%--------------------------------------------------------------------
 start_link(connect, Dst, GenServerFrom) when is_record(Dst, sipdst) ->
     gen_server:start(?MODULE, [connect, Dst, GenServerFrom], []).
 
@@ -112,8 +133,10 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
 %%           Socket       = term()
 %%           Local        = term() ({Host, Port} tuple())
 %%           Remote       = term() ({Host, Port} tuple())
-%%           SSLHost      = string() | undefined, hostname to verify
-%%                          a SSL certificate against
+%%           SSLHost      = string(), hostname to verify a SSL
+%%                          certificate against (or IP address of
+%%                          remote host if this is an inbound
+%%                          connection).
 %% Descrip.: Initialize this tcp_connection process to handle Socket.
 %% Returns : {ok, State, Timeout} |
 %%           {stop, Reason}
@@ -290,14 +313,27 @@ handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
 %% Descrip.: A request to close this connection.
 %% Returns : {stop, normal, NewState}
 %%--------------------------------------------------------------------
-handle_cast({close, _From}, State) ->
-    %% XXX check that From is someone sensible?
+handle_cast({close, FromPid}, State) ->
+    %% XXX check that FromPid is someone sensible?
     Duration = util:timestamp() - State#state.starttime,
     {IP, Port} = State#state.remote,
     logger:log(debug, "TCP connection: Closing connection with ~p:~s:~p (duration: ~p seconds)",
 	       [State#state.proto, IP, Port, Duration]),
     SocketModule = State#state.socketmodule,
-    SocketModule:close(State#state.socket),
+    Receiver = State#state.receiver,
+    %% If the receiver tells us to close a SSL socket, the receiver will actually
+    %% already have closed the connection (since it is 'controlling process').
+    case {SocketModule, Receiver} of
+	{ssl, FromPid} ->
+	    ok;
+	_ ->
+	    case catch SocketModule:close(State#state.socket) of
+		ok -> ok;
+		E ->
+		    logger:log(error, "TCP connection: Closing socket ~p (using socketmodule ~p) "
+			       "failed : ~p", [SocketModule, E])
+	    end
+    end,
     {stop, normal, State#state{socket=undefined}};
 
 %%--------------------------------------------------------------------
@@ -522,8 +558,8 @@ get_ssl_peercert(Socket, Dir, Host, Port) ->
 			       "considering SSL connection from ~s:~p invalid : ~p", [Host, Port, Reason]),
 		    false;
 		{in, false} ->
-		    logger:log(debug, "TCP connection: Could not get SSL subject information for connection from ~s:~p",
-			       [Host, Port]),
+		    logger:log(debug, "TCP connection: Could not get SSL subject information for connection "
+			       "from ~s:~p : ~p", [Host, Port, Reason]),
 		    true;
 		{out, _RequireClientCert} ->
 		    logger:log(debug, "TCP connection: Could not get SSL subject information, "
