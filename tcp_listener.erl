@@ -257,6 +257,8 @@ get_settings(tcp) ->
 get_settings(tcp6) ->
     {ok, inet, gen_tcp, [inet6 | ?SOCKETOPTS]};
 get_settings(tls) ->
-    {ok, ssl, ssl, ?SSL_SOCKETOPTS};
+    L = sipserver:get_env(ssl_server_ssloptions, []),
+    {ok, ssl, ssl, ?SSL_SOCKETOPTS ++ L};
 get_settings(tls6) ->
-    {ok, ssl, ssl, [inet6 | ?SSL_SOCKETOPTS]}.
+    L = sipserver:get_env(ssl_server_ssloptions, []),
+    {ok, ssl, ssl, [inet6 | ?SSL_SOCKETOPTS ++ L]}.
