@@ -23,6 +23,7 @@
 	 list_users/0,
 	 insert_purge_phone/7,
 	 purge_class_phone/2,
+	 delete_location/3,
 	 expired_phones/0,
 	 delete_record/1,
 	 delete_user/1,
@@ -56,6 +57,7 @@
 %% Macros
 %%--------------------------------------------------------------------
 
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -72,6 +74,7 @@ init() ->
 %%--------------------------------------------------------------------
 %% Function: create()
 %%           create(Servers)
+%%           Servers = list() of atom(), list of nodes
 %% Descrip.: Put phone, user and numbers tables as disc_copies on
 %%           Servers
 %% Returns :
@@ -137,12 +140,12 @@ remove_phones(ExpiredPhones) ->
 %%--------------------------------------------------------------------
 %% Function: insert_purge_phone(SipUser, Flags, Class, Expire,
 %%                              Address, CallId, CSeq)
-%%           SipUser =
-%%           Flags   = list of {Name,Value}
-%%           Name    = string() ?
-%%           Value   = string() ?
-%%           Class   = dynamic | ... ?
-%%           Expire  = integer()
+%%           SipUser = string(), username
+%%           Flags   = list of {Name, Value}
+%%             Name  = atom()
+%%             Value = term(), but typically integer() or string()
+%%           Class   = static | dynamic
+%%           Expire  = integer() | never
 %%           Address = sipurl record()
 %%           CallId  = string()
 %%           CSeq    = integer()
@@ -150,7 +153,11 @@ remove_phones(ExpiredPhones) ->
 %%           a new entry with a new Expire value
 %% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is_record(Address, sipurl) ->
+insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is_list(SipUser), is_list(Flags),
+									      Class == static; Class == dynamic,
+									      is_integer(Expire); Expire == never,
+									      is_record(Address, sipurl),
+									      is_list(CallId), is_integer(CSeq) ->
     %% We store locations as strings in the location database, since any
     %% datastructure could have to be changed in the future
     LocationStr = sipurl:print(Address),
@@ -180,11 +187,12 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is
     mnesia:transaction(Fun).
 
 %%--------------------------------------------------------------------
-%% Function: purge_class_phone/2
+%% Function: purge_class_phone(Number, Class)
+%%           Number = string()
+%%           Class  = atom()
 %% Descrip.: Removes all entrys matching a number (SIP user),
 %%           and class from the location database.
 %% Returns : The result of the mnesia:transaction()
-%% XXX only used in admin_www.erl
 %%--------------------------------------------------------------------
 purge_class_phone(Number, Class) ->
     Fun = fun() ->
@@ -198,12 +206,40 @@ purge_class_phone(Number, Class) ->
 	  end,
     mnesia:transaction(Fun).
 
+
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: delete_location(User, Class, Address)
+%%           User    = string(), username (phone record 'number'
+%%                     element)
+%%           Class   = atom(), class of location (static | dynamic)
+%%           Address = string(), address to remove
+%% Descrip.: Delete a specific location from the location database. 
+%% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-insert_user(User, Password, Flags, Classes) ->
+delete_location(User, Class, Address) when is_list(User), Class == static; Class == dynamic,
+					   is_list(Address) ->
+    Fun = fun() ->
+		  A = mnesia:match_object(#phone{number = User,
+						 class = Class,
+						 address = Address,
+						 _ = '_'}),
+		  Delete = fun(O) ->
+				   mnesia:delete_object(O)
+			   end,
+		  lists:foreach(Delete, A)
+	  end,
+    mnesia:transaction(Fun).
+
+%%--------------------------------------------------------------------
+%% Function: insert_user(User, Password, Flags, Classes)
+%%           User     = string()
+%%           Password = term()
+%%           Flags    = list() of atom()
+%%           Classes  = list() of atom()
+%% Descrip.: Create a new user.
+%% Returns : term(), result of Mnesia transaction
+%%--------------------------------------------------------------------
+insert_user(User, Password, Flags, Classes) when is_list(User), is_list(Flags), is_list(Classes) ->
     db_util:insert_record(#user{user = User,
 				password = Password,
 				flags = Flags,
@@ -211,12 +247,13 @@ insert_user(User, Password, Flags, Classes) ->
 			       }).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%% XXX only used in admin_www.erl
+%% Function: insert_user_or_password(User, Password)
+%%           User     = string()
+%%           Password = term()
+%% Descrip.: Create a user, or set existing user's password.
+%% Returns : term(), result of Mnesia transaction
 %%--------------------------------------------------------------------
-insert_user_or_password(User, Password) ->
+insert_user_or_password(User, Password) when is_list(User) ->
     Fun = fun() ->
 		  A = mnesia:read({user, User}),
  		  %% A = mnesia:match_object(#user{user = User,  _ = '_'}),
@@ -269,13 +306,7 @@ get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record
 				['$_']
 			       }])
 	end,
-    case mnesia:transaction(F) of
-	{atomic, L} ->
-	    {atomic, L};
-	Unknown ->
-	    logger:log(error, "Location: get_sipuser_location_binding got unknown result from Mnesia : ~p", [Unknown]),
-	    Unknown
-    end.
+    mnesia:transaction(F).
 
 
 %%--------------------------------------------------------------------
@@ -332,12 +363,17 @@ get_phone(SipUser) when is_list(SipUser) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
+%% Function: get_user(User)
+%%           User = string()
+%% Descrip.: Get password, flags and classes for User.
 %% Returns : list() of {Password, Flags, Classes}
-%%           with fields are taken from user record()
+%%           Password = term(), password element of user record()
+%%           Flags    = list() of atom(), flags element of user
+%%                      record()
+%%           Classes  = list() of atom(), classes element of user
+%%                      record()
 %%--------------------------------------------------------------------
-get_user(User) ->
+get_user(User) when is_list(User) ->
     F = fun() ->
 		[ {E#user.password, E#user.flags, E#user.classes} ||
 		    E <- mnesia:read({user, User}) ]
@@ -346,11 +382,12 @@ get_user(User) ->
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns : list() of #numbers.number field values XXX
+%% Function: get_numbers_for_user(User)
+%%           User = string()
+%% Descrip.: Get numbers for User.
+%% Returns : list() of string()
 %%--------------------------------------------------------------------
-get_numbers_for_user(User) ->
+get_numbers_for_user(User) when is_list(User) ->
     F = fun() ->
 		[ E#numbers.number || E <- mnesia:read({numbers, User}) ]
 	end,
@@ -385,44 +422,59 @@ get_phone_with_requri(URI) when is_record(URI, sipurl) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%% XXX only used in admin_www.erl
+%% Function: set_user_password(User, Password)
+%%           User     = string()
+%%           Password = term()
+%% Descrip.: Set password for User.
+%% Returns : term(), result of Mnesia transaction
 %%--------------------------------------------------------------------
 set_user_password(User, Password) ->
     F = fun() ->
-		L = mnesia:read({user, User}),
-		Update = fun(Obj) ->
-				 mnesia:write(Obj#user{password = Password})
-			 end,
-		lists:foreach(Update, L)
+		case mnesia:read({user, User}) of
+		    [] ->
+			mnesia:abort(no_such_user);
+		    L when is_list(L) ->
+			Update = fun(Obj) ->
+					 mnesia:write(Obj#user{password = Password})
+				 end,
+			lists:foreach(Update, L);
+		    _ ->
+			mnesia:abort(illegal)
+		end
 	end,
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%% XXX only used in admin_www.erl
+%% Function: set_user_flags(User, Flags)
+%%           User  = string()
+%%           Flags = list() of atom()
+%% Descrip.: Set flags for User.
+%% Returns : term(), result of Mnesia transaction
 %%--------------------------------------------------------------------
-set_user_flags(User, Flags) ->
+set_user_flags(User, Flags) when is_list(User), is_list(Flags) ->
     F = fun() ->
-		A = mnesia:read({user, User}),
-		Update = fun(Obj) ->
-				 mnesia:write(Obj#user{flags = Flags})
-			 end,
-		lists:foreach(Update, A)
+		case mnesia:read({user, User}) of
+		    [] ->
+			mnesia:abort(no_such_user);
+		    A when is_list(A) ->
+			Update = fun(Obj) ->
+					 mnesia:write(Obj#user{flags = Flags})
+				 end,
+			lists:foreach(Update, A);
+		    _ ->
+			mnesia:abort(illegal)
+		end
 	end,
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%% XXX only used in admin_www.erl
+%% Function: set_user_numbers(User, Numbers)
+%%           User    = string()
+%%           Numbers = list() of string()
+%% Descrip.: Set numbers for User.
+%% Returns : term(), result of Mnesia transaction
 %%--------------------------------------------------------------------
-set_user_numbers(User, Numbers) ->
+set_user_numbers(User, Numbers) when is_list(User), is_list(Numbers) ->
     F = fun() ->
 		A = mnesia:read({numbers, User}),
 		Delete = fun(Obj) ->
@@ -438,18 +490,25 @@ set_user_numbers(User, Numbers) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%% XXX only used in admin_www.erl
+%% Function: set_user_classes(User, Classes)
+%%           User    = string()
+%%           Classes = list() of atom()
+%% Descrip.: Set classes for User.
+%% Returns : term(), result of Mnesia transaction
 %%--------------------------------------------------------------------
-set_user_classes(User, Classes) ->
+set_user_classes(User, Classes) when is_list(User), is_list(Classes) ->
     F = fun() ->
-		A = mnesia:read({user, User}),
-		Update = fun(Obj) ->
-				 mnesia:write(Obj#user{classes = Classes})
-			 end,
-		lists:foreach(Update, A)
+		case mnesia:read({user, User}) of
+		    [] ->
+			mnesia:abort(no_such_user);
+		    A when is_list(A) ->
+			Update = fun(Obj) ->
+					 mnesia:write(Obj#user{classes = Classes})
+				 end,
+			lists:foreach(Update, A);
+		    _ ->
+			mnesia:abort(illegal)
+		end
 	end,
     mnesia:transaction(F).
 
@@ -492,7 +551,7 @@ expired_phones() ->
 %%           able to understand Address to remove old records from the
 %%           database.
 %% Returns : The result of the Mnesia transaction
-%% Note    :  used by remove_phones (and remove_expired_phones)
+%% Note    : used by remove_phones (and remove_expired_phones)
 %%--------------------------------------------------------------------
 delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
     Fun = fun() ->
@@ -517,13 +576,18 @@ delete_record(Obj) ->
     db_util:delete_record(Obj).
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%% XXX unused - possibly intended for manual usage
+%% Function: delete_user(User)
+%% Descrip.: Delete user User and all numbers for that user from the
+%%           database.
+%% Returns : term(), result of Mnesia transaction
 %%--------------------------------------------------------------------
-delete_user(User) ->
-    delete_with_key(user, User).
+delete_user(User) when is_list(User) ->
+    F = fun() ->
+		{atomic, ok} = set_user_numbers(User, []),
+		{atomic, ok} = delete_with_key(user, User),
+		ok
+	end,
+    mnesia:transaction(F).
 
 delete_with_key(Db, Key) ->
     F = fun() ->
@@ -532,9 +596,6 @@ delete_with_key(Db, Key) ->
     Rec = mnesia:transaction(F),
     Rec.
 
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
 
 %%====================================================================
 %% Internal functions
