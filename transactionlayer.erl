@@ -99,13 +99,13 @@
 %%--------------------------------------------------------------------
 %% Function: start_link(AppModule)
 %%           AppModule = atom(), name of Yxa application
-%% Descrip.: start the transaction_layer gen_server.
-%%           The transaction_layer is only registered localy (on the
+%% Descrip.: start the transactionlayer gen_server.
+%%           The transactionlayer is only registered localy (on the
 %%           current node)
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
 start_link(AppModule) ->
-    gen_server:start_link({local, transaction_layer}, ?MODULE, [AppModule], []).
+    gen_server:start_link({local, transactionlayer}, ?MODULE, [AppModule], []).
 
 %%====================================================================
 %% Server functions
@@ -125,7 +125,7 @@ init([AppModule]) ->
     transactionstatelist:empty(), %% create ets tables
     %% Create a tiny ets table to remember some state. Don't use server
     %% process for this since it is bad for parallelism
-    Settings = ets:new(transaction_layer_settings, [protected, set, named_table]),
+    Settings = ets:new(transactionlayer_settings, [protected, set, named_table]),
     true = ets:insert_new(Settings, {appmodule, AppModule}),
     logger:log(debug, "Transaction layer started"),
     {ok, #state{}, ?TIMEOUT}.
@@ -195,7 +195,7 @@ handle_cast({debug_show_transactions, FromPid}, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({quit}, State)
-%% Descrip.: Terminate the transaction_layer process. Should normally
+%% Descrip.: Terminate the transactionlayer process. Should normally
 %%           never be used.
 %% Returns : {stop, normal, State}
 %%--------------------------------------------------------------------
@@ -270,7 +270,7 @@ terminate(shutdown, _State) ->
     logger:log(debug, "Transaction layer: Shutting down."),
     shutdown;
 terminate(Reason, _State) ->
-    logger:log(error, "Transaction layer: =ERROR REPORT==== from transaction_layer :~n~p",
+    logger:log(error, "Transaction layer: =ERROR REPORT==== from transactionlayer :~n~p",
 	       [Reason]),
     ok.
 
@@ -297,9 +297,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%           transaction layer from the transport layer, where the
 %%           transaction layer did not have any prior transaction.
 %%           This code executes in the request handler process - NOT
-%%           in the transaction_layer. This is to achieve better
+%%           in the transactionlayer. This is to achieve better
 %%           concurrency by not doing alot of work in the
-%%           transaction_layer process.
+%%           transactionlayer process.
 %% Returns : {pass_to_core, AppModule} |
 %%           continue
 %%
@@ -711,7 +711,7 @@ get_branch_from_handler(TH) when is_record(TH, thandler) ->
 
 %% unused
 transaction_terminating(TransactionPid) ->
-    gen_server:cast(transaction_layer, {unregister_pid, TransactionPid}),
+    gen_server:cast(transactionlayer, {unregister_pid, TransactionPid}),
     ok.
 
 %%--------------------------------------------------------------------
@@ -915,7 +915,7 @@ send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when is_record(TH, t
 %% Returns : ok
 %%--------------------------------------------------------------------
 debug_show_transactions() ->
-    gen_server:cast(transaction_layer, {debug_show_transactions, self()}),
+    gen_server:cast(transactionlayer, {debug_show_transactions, self()}),
     ok.
 
 %%--------------------------------------------------------------------
@@ -934,7 +934,7 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 						  is_list(LogStr) ->
     case get_server_transaction_pid(Request) of
 	none ->
-	    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
+	    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
 	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule);
 	STPid when is_pid(STPid) ->
 	    gen_server:cast(STPid, {siprequest, Request, Origin}),
@@ -957,7 +957,7 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
 						   is_list(LogStr) ->
     case get_client_transaction_pid(Response) of
 	none ->
-	    [{appmodule, AppModule}] = ets:lookup(transaction_layer_settings, appmodule),
+	    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
 	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response(...).",
 		       [Response#response.status, Response#response.reason, AppModule]),
 	    {pass_to_core, AppModule};

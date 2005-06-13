@@ -386,7 +386,7 @@ received_packet(Packet, IP, Port, Proto) when is_binary(Packet), is_list(IP), is
     SipSocket = #sipsocket{module=sipsocket_udp, proto=Proto, pid=self(), data=none},
     Origin = #siporigin{proto=Proto, addr=IP, port=Port,
 			receiver=self(), sipsocket=SipSocket},
-    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transaction_layer]),
+    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transactionlayer]),
     ok.
 
 %%--------------------------------------------------------------------

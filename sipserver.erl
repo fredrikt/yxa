@@ -372,13 +372,13 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 
 %%--------------------------------------------------------------------
 %% Function: my_apply(Dst, Request, Origin, LogStr)
-%%           Dst = transaction_layer | Module, Module is the name of a
+%%           Dst = transactionlayer | Module, Module is the name of a
 %%                 module that exports a request/3 and a response/3
 %%                 function
 %%           Request = request record()
 %%           Origin  = siporigin record()
 %%           LogStr  = string(), textual description of request
-%% Descrip.: If Dst is transaction_layer, gen_server call the
+%% Descrip.: If Dst is transactionlayer, gen_server call the
 %%           transaction layer and let it decide our next action. If
 %%           Dst is the name of a module, apply() that modules
 %%           request/3 function.
@@ -391,7 +391,7 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 %%           ApplyResult = result of applications request/3 or
 %%                         response/3 function.
 %%--------------------------------------------------------------------
-my_apply(transaction_layer, R, Origin, LogStr) when is_record(R, request); is_record(R, response),
+my_apply(transactionlayer, R, Origin, LogStr) when is_record(R, request); is_record(R, response),
 						    is_record(Origin, siporigin) ->
     %% Dst is the transaction layer.
     case transactionlayer:from_transportlayer(R, Origin, LogStr) of

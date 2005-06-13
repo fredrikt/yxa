@@ -282,7 +282,7 @@ handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
 			   data={State#state.local, State#state.remote}},
     Origin = #siporigin{proto=State#state.proto, addr=IP, port=Port, receiver=self(),
 			sipsocket=SipSocket},
-    sipserver:safe_spawn(sipserver, process, [Msg, Origin, transaction_layer]),
+    sipserver:safe_spawn(sipserver, process, [Msg, Origin, transactionlayer]),
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------

@@ -128,9 +128,9 @@ init([Request, Socket, LogStr, Parent]) ->
     %% Get ourselves into the transaction state list first of all
     case transactionstatelist:add_server_transaction(Request, self(), Desc) of
 	ok ->
-	    %% Link to transaction_layer immediately (so that it removes this
+	    %% Link to transactionlayer immediately (so that it removes this
 	    %% transaction from the transactionstatelist when we exit/crash).
-	    TPid = erlang:whereis(transaction_layer),
+	    TPid = erlang:whereis(transactionlayer),
 	    true = link(TPid),
 	    %% Link to parent from init/1 instead of using gen_server:start_link to
 	    %% be able to trap EXIT signals from parent process. See comment in start_link

@@ -293,9 +293,9 @@ refresh_transactionslist(State) when is_record(State, state), State#state.curren
     Node = State#state.current_node,
     Lb = State#state.transactions_lb,
     {Text9, NewState9} =
-	case catch gen_server:call({transaction_layer, Node}, {monitor_get_transactionlist}) of
+	case catch gen_server:call({transactionlayer, Node}, {monitor_get_transactionlist}) of
 	    {ok, Transactions} when is_record(Transactions, transactionstatelist) ->
-		C = io_lib:format("~p entrys in transaction_layer's list :", 
+		C = io_lib:format("~p entrys in transactionlayer's list :", 
 				  [transactionstatelist:get_length(Transactions)]),
 		TF = transactionstatelist:monitor_format(Transactions),
 		Text = [C, ""] ++ TF,
@@ -303,7 +303,7 @@ refresh_transactionslist(State) when is_record(State, state), State#state.curren
 	    U ->
 		Ulist = format_unknown_for_listbox(U),
 		Text = 
-		    [io_lib:format("Unknown response from transaction_layer at node ~p :", [Node]),
+		    [io_lib:format("Unknown response from transactionlayer at node ~p :", [Node]),
 		     ""] ++ Ulist,
 		%% Clear node since we got an error - no point in hammering a node
 		%% that can't handle our requests

@@ -143,9 +143,9 @@ init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
 	    logger:log(error, "Transaction layer: Can't start duplicate client transaction"),
 	    {stop, "Client transaction already exists"};
 	ok ->
-	    %% Link to transaction_layer immediately (so that it removes this transaction
+	    %% Link to transactionlayer immediately (so that it removes this transaction
 	    %% from the transactionstatelist when we exit).
-	    TPid = erlang:whereis(transaction_layer),
+	    TPid = erlang:whereis(transactionlayer),
 	    true = link(TPid),
 	    %% Link to parent from init/1 instead of using gen_server:start_link to
 	    %% be able to trap EXIT signals from parent process. See comment in start_link
@@ -330,7 +330,7 @@ handle_info({siptimer, TRef, TDesc}, State) ->
 %%--------------------------------------------------------------------
 %% Function: handle_info(timeout, State)
 %% Descrip.: Continuation of init/1 but executing after init/1 has
-%%           returned, so the caller (the transaction_layer) is not
+%%           returned, so the caller (the transactionlayer) is not
 %%           blocked. Invoke initiate_request/1 to start trying to
 %%           send our request to it's destination.
 %% Returns : {noreply, State}

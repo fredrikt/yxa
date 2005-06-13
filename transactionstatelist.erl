@@ -219,7 +219,7 @@ get_server_transaction_using_response(Response) when is_record(Response, respons
 %%           Entry = transactionstate record()
 %% Notes   : This code is only used in transcationlayer before adding
 %%           a new client transaction. Since we have only a single
-%%           transaction_layer process per node, this is not a race,
+%%           transactionlayer process per node, this is not a race,
 %%           but it would be better to just look for duplicates in
 %%           add_client_transaction().
 %%--------------------------------------------------------------------
