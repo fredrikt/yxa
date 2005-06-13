@@ -78,15 +78,25 @@ lookupregexproute2(Input, Routes) ->
 					      true;
 					  {false, _} ->
 					      false;
-					  {{value, {priority,P1}}, {value, {priority,P2}}} when P1 >= P2 ->
+					  {{value, {priority, P1}}, {value, {priority, P2}}} when P1 >= P2 ->
 					      true;
 					  _ ->
 					      false
 				      end
 			      end, Routes),
-    Rules = lists:map(fun(R) ->
-			      {R#regexproute.regexp, R#regexproute.address}
-		      end, Sortedroutes),
+
+    %% Build {Regexp, Address} tuples of all non-expired regexproutes in Sortedroutes
+    Now = util:timestamp(),
+    ReversedRules = 
+	lists:foldl(fun(R, Acc) when R#regexproute.expire == never; R#regexproute.expire > Now ->
+			    This = {R#regexproute.regexp, R#regexproute.address},
+			    [This | Acc];
+		       (_R, Acc) ->
+			    %% expired regexproute
+			    Acc
+		    end, [], Sortedroutes),
+    Rules = lists:reverse(ReversedRules),
+
     case util:regexp_rewrite(Input, Rules) of
 	nomatch ->
 	    none;
@@ -893,27 +903,46 @@ test() ->
     %% test lookupregexproute2(Input, Routes)
     %%--------------------------------------------------------------------
 
-    io:format("test: lookupregexproute2/2 - 0~n"),
+    io:format("test: lookupregexproute2/2 - 1.0~n"),
 
-    LRR_SortRoutes = [{regexproute, "^sip:4000@.*",
-		       [{priority, 200}],
-		       permanent,
-		       never,
-		       "sip:prio200@example.org"},
-		      {regexproute, "^sip:4000@.*",
-		       [{priority, 100}],
-		       permanent,
-		       never,
-		       "sip:prio100@example.org"}
+    LRR_SortRoutes = [#regexproute{regexp = "^sip:4000@.*",
+				   flags = [{priority, 200}],
+				   class = permanent,
+				   expire = never,
+				   address = "sip:prio200@example.org"},
+		      #regexproute{regexp = "^sip:4000@.*",
+				   flags = [{priority, 100}],
+				   class = permanent,
+				   expire = never,
+				   address = "sip:prio100@example.org"}
 		      ],
 
-    io:format("test: lookupregexproute2/2 - 1~n"),
+    io:format("test: lookupregexproute2/2 - 1.1~n"),
     %% test that we use the route with highest priority if we have two matching
-    LRR_URL2 = sipurl:parse("sip:prio200@example.org"),
-    {proxy, LRR_URL2} = lookupregexproute2("sip:4000@example.org", LRR_SortRoutes),
+    LRR_URL11 = sipurl:parse("sip:prio200@example.org"),
+    {proxy, LRR_URL11} = lookupregexproute2("sip:4000@example.org", LRR_SortRoutes),
     
-    io:format("test: lookupregexproute2/2 - 2~n"),
+    io:format("test: lookupregexproute2/2 - 1.2~n"),
     %% test non-matching input
     none = lookupregexproute2("foo", LRR_SortRoutes),
+
+    LRR_Now = util:timestamp(),
+    io:format("test: lookupregexproute2/2 - 2.0~n"),
+    LRR_Expire = [#regexproute{regexp = "^sip:testexpire@.*",
+			       flags = [{priority, 200}],
+			       class = permanent,
+			       expire = 0,
+			       address = "sip:matches-but-expired@example.org"},
+		  #regexproute{regexp = "^sip:testexpire@.*",
+			       flags = [{priority, 100}],
+			       class = permanent,
+			       expire = LRR_Now + 20,
+			       address = "sip:matches-not-expired@example.org"}
+		 ],
+
+    io:format("test: lookupregexproute2/2 - 2.1~n"),
+    %% test that we don't pick the one with priority 200 because it is expired
+    LRR_URL21 = sipurl:parse("sip:matches-not-expired@example.org"),
+    {proxy, LRR_URL21} = lookupregexproute2("sip:testexpire@example.org", LRR_Expire),
 
     ok.
