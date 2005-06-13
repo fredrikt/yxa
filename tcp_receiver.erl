@@ -175,7 +175,13 @@ recv_loop(#state{socketmodule=ssl}=State, Recv) when is_record(Recv, recv) ->
 	connection_closed ->
 	    gen_server:cast(Parent, {connection_closed, self()});
 	close ->
-	    ssl:close(State#state.socket),	%% Maybe not needed, but better safe than sorry
+	    case catch ssl:close(State#state.socket) of
+		ok ->
+		    ok;
+		E ->
+		    logger:log(error, "TCP receiver: Closing SSL socket ~p failed : ~p",
+			       [State#state.socket, E])
+	    end,
 	    gen_server:cast(Parent, {close, self()});
 	quit ->
 	    ssl:close(State#state.socket),
@@ -254,11 +260,10 @@ handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, re
 			   ssl -> "tls";
 			   gen_tcp -> "tcp"
 		       end,
-	    logger:log(error, "TCP receiver: Failed parsing data received from ~s:~s:~p, ",
+	    logger:log(error, "TCP receiver: Failed parsing data received from ~s:~s:~p, "
 		       "discarding and closing socket.", [ProtoStr, IP, Port]),
 	    logger:log(debug, "TCP receiver: Data : ~n~p~nError : ~p", [Msg, E]),
 	    close
-
     end.
 
 %%--------------------------------------------------------------------
@@ -476,7 +481,7 @@ get_content_length(Type, Header) ->
 %% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
-    %% handle_received_data2/2
+    %% handle_received_data2(Data, Recv)
     %%--------------------------------------------------------------------
     EmptyRecv = #recv{},
 
@@ -667,5 +672,15 @@ test() ->
 		   >>,
     {error, parse_failed, _} =
 	(catch handle_received_data2(HRD_16_Data, EmptyRecv)),
+
+    %% handle_received_data(Data, Recv, State)
+    %% we can't test much of this function since it is not side-effect free
+    %%--------------------------------------------------------------------
+    %% minimal state
+    HRD_State1 = #state{remote = {"192.0.2.1", 5060},
+			socketmodule = ssl
+		       },
+    HDR_Data1 = list_to_binary("broken\n\n"),
+    close = handle_received_data(HDR_Data1, EmptyRecv, HRD_State1),
 
     ok.
