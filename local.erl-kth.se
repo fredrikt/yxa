@@ -70,6 +70,11 @@
 	 incomingproxy_challenge_before_relay/3
 	]).
 
+%% pstnproxy
+-export([
+	 pstnproxy_route_pstn_not_e164/4
+	]).
+
 %% outgoinproxy
 -export([
 	 outgoingproxy_challenge_before_relay/3
@@ -395,6 +400,13 @@ canonify_authusername(Username, Header) when is_list(Username), is_record(Header
 incomingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
 								is_record(Request, request) ->
     true.
+
+%% pstnproxy hooks
+%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Returns : undefined | nomatch | ignore | {relay, DstURI, NewRequest}
+pstnproxy_route_pstn_not_e164(_DstNumber, _Request, _Origin, _THandler) ->
+    undefined.
 
 % outgoingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%

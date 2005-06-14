@@ -70,6 +70,10 @@
 	 incomingproxy_challenge_before_relay/3
 	]).
 
+%% pstnproxy
+-export([
+	 pstnproxy_route_pstn_not_e164/4
+	]).
 %% outgoingproxy
 -export([
 	 outgoingproxy_challenge_before_relay/3
@@ -434,6 +438,38 @@ incomingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origi
 								 is_record(Request, request) ->
     true.
 
+%% pstnproxy hooks
+%%%%%%%%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin,
+%%                                         THandler)
+%%           DstNumber = string(), typically user-part of Request-URI
+%%           Request   = request record()
+%%           Origin    = siporigin record()
+%%           THandler  = term(), server transaction handler
+%% Descrip.: When a request destined for PSTN is received by the
+%%           pstnproxy, and no destination is found using
+%%           local:lookuppstn(), this function is called. The return
+%%           values have the following meaning :
+%%
+%%             undefined - proceed with default behavior (currently
+%%                         to try and use a destination indicated by
+%%                         the configuration parameter 
+%%                         default_pstngateway)
+%%             nomatch   - there is no destination for DstNumber,
+%%                         reject request with a '404 Not Found'
+%%             ignore    - pstnproxy should do nothing further (this
+%%                         function should have told THandler to send
+%%                         a final response)
+%%             Relay     - send NewRequest to DstURI
+%%
+%% Returns : undefined | nomatch | ignore | Relay
+%%           Relay = {relay, DstURI, NewRequest}
+%%--------------------------------------------------------------------
+pstnproxy_route_pstn_not_e164(_DstNumber, _Request, _Origin, _THandler) ->
+    undefined.
+
 % outgoingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
@@ -548,7 +584,7 @@ is_tls_equivalent(_Proto, _Host, _Port) ->
 %%--------------------------------------------------------------------
 cpl_log(_LogName, _Comment, _User, _Request) ->
     undefined.
-    
+
 cpl_is_log_dest(_LogName) ->
     undefined.
 

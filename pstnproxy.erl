@@ -298,40 +298,82 @@ get_sipproxy() ->
 request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
     {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
-    %% XXX check port too, not just hostname? Maybe not since pstnproxy by definition
-    %% should be running alone on a host.
-    {NewURI, NewHeaders1} =
+
+    %% Add Record-Route header, unless explicitly configured not to. pstnproxy needs to
+    %% be in the signalling path since the calling party is typically not permitted
+    %% to send SIP messages directly to the PSTN gateway(s).
+    NewHeader1 = case sipserver:get_env(record_route, true) of
+		     true -> siprequest:add_record_route(Header, Origin);
+		     false -> Header
+		 end,
+    Request1 = Request#request{header = NewHeader1},
+
+    Decision = 
 	case is_localhostname(ToHost) of
 	    true ->
+		%% XXX check port too, not just hostname? Maybe not since pstnproxy by definition
+		%% should be running alone on a host.
 		case local:lookuppstn(DstNumber) of
-		    {proxy, Dst} ->
-			{Dst, Header};
-		    {relay, Dst} ->
-			{Dst, Header};
-		    _ ->
-			%% Route to default PSTN gateway
-			PSTNgateway1 = lists:nth(1, sipserver:get_env(pstngatewaynames)),
-			logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
-			case sipurl:parse_url_with_default_protocol("sip", PSTNgateway1) of
-			    GwURL when is_record(GwURL, sipurl) ->
-				NewURI2 = GwURL#sipurl{user=DstNumber, pass=none},
-				{NewURI2, Header};
-			    Unknown ->
-				logger:log(error, "pstnproxy: Failed parsing configuration value "
-					   "'pstngatewaynames' (~p) : ~p", [PSTNgateway1, Unknown]),
-				erlang:fault("invalid first element of pstngatewaynames", [Unknown])
-			end
+		    {proxy, Dst} when is_record(Dst, sipurl) ->
+			{relay, Dst, Request1};
+		    {relay, Dst} when is_record(Dst, sipurl) ->
+			{relay, Dst, Request1};
+		    none ->
+			request_to_pstn_non_e164(DstNumber, Request1, Origin, THandler)
 		end;
 	    false ->
-		{URI, Header}
+		{relay, URI, Request1}
 	end,
-    NewHeaders2 = case sipserver:get_env(record_route, true) of
-		      true -> siprequest:add_record_route(NewHeaders1, Origin);
-		      false -> NewHeaders1
-		  end,
-    NewRequest = Request#request{header=NewHeaders2},
-    THandler = transactionlayer:get_handler_for_request(Request),
-    relay_request_to_pstn(THandler, NewRequest, NewURI, DstNumber, LogTag).
+
+    case Decision of
+	{relay, DstURI, NewRequest} when is_record(DstURI, sipurl), is_record(NewRequest, request) ->
+	    relay_request_to_pstn(THandler, NewRequest, DstURI, DstNumber, LogTag);
+	ignore ->
+	    ok
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: request_to_pstn_non_e164(DstNumber, Request, Origin,
+%%                                    THandler)
+%%           DstNumber = string(), PSTN phone number
+%%           Request   = request record()
+%%           Origin    = siporigin record()
+%%           THandler  = term(), server transaction handle
+%% Descrip.: Part of request_to_pstn/4. Determine what to do with a
+%%           request which was not recognized by local:lookuppstn/1.
+%% Returns : Relay | ignore
+%%           Relay = {relay, DstURI, NewRequest}
+%%--------------------------------------------------------------------
+request_to_pstn_non_e164(DstNumber, Request, Origin, THandler) ->
+    case local:pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin, THandler) of
+	undefined ->
+	    %% Route to default PSTN gateway
+	    case sipserver:get_env(default_pstngateway, none) of
+		PSTNgateway1 when is_list(PSTNgateway1) ->
+		    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
+		    case sipurl:parse_url_with_default_protocol("sip", PSTNgateway1) of
+			GwURL when is_record(GwURL, sipurl) ->
+			    NewURI2 = GwURL#sipurl{user=DstNumber, pass=none},
+			    {relay, NewURI2, Request};
+			Unknown ->
+			    logger:log(error, "pstnproxy: Failed parsing configuration value "
+				       "'pstngatewaynames' (~p) : ~p", [PSTNgateway1, Unknown]),
+			    erlang:fault("invalid first element of pstngatewaynames", [Unknown])
+		    end;
+		none ->
+		    logger:log(debug, "pstnproxy: Found no destination for request to PSTN, number ~p. "
+			       "Answering '404 Not Found'.", [DstNumber]),
+		    transactionlayer:send_response_handler(THandler, 404, "Not Found"),
+		    ignore
+	    end;
+	nomatch ->
+	    logger:log(debug, "pstnproxy: local:pstnproxy_route_pstn_not_e164(...) says there is no "
+		       "destination for request to PSTN, number ~p. Answering '404 Not Found'.", [DstNumber]),
+	    transactionlayer:send_response_handler(THandler, 404, "Not Found"),
+	    ignore;
+	Res ->
+	    Res
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: request_to_me(THandler, Request, LogTag)
