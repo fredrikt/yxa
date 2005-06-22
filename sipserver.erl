@@ -66,6 +66,7 @@ start(normal, [AppModule]) ->
     ssl:seed([sipserver:get_env(sipauth_password, ""), util:timestamp()]),
     mnesia:start(),
     [RemoteMnesiaTables, stateful, AppSupdata] = apply(AppModule, init, []),
+    ok = init_statistics(),
     case sipserver_sup:start_link(AppModule) of
 	{ok, Supervisor} ->
 	    logger:log(debug, "starting, supervisor is ~p", [Supervisor]),
@@ -198,6 +199,16 @@ find_remote_mnesia_tables1(OrigTableList, RemoteTables, Count) ->
 		    find_remote_mnesia_tables1(OrigTableList, BadTabList, Count + 1)
 	    end
     end.
+
+%%--------------------------------------------------------------------
+%% Function: init_statistics()
+%% Descrip.: Create ETS tables used by Yxa.
+%% Returns : ok
+%%--------------------------------------------------------------------
+init_statistics() ->
+    ets:new(yxa_statistics, [public, set, named_table]),
+    true = ets:insert(yxa_statistics, {starttime, util:timestamp()}),
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: safe_spawn_fun(Module, Fun)
@@ -902,9 +913,9 @@ check_packet(Response, Origin) when is_record(Response, response), is_record(Ori
 %%--------------------------------------------------------------------
 check_for_loop(Header, URI, Origin) when is_record(Origin, siporigin) ->
     LoopCookie = siprequest:get_loop_cookie(Header, URI, Origin#siporigin.proto),
-    ViaHostname = siprequest:myhostname(),
-    ViaPort = sipserver:get_listenport(Origin#siporigin.proto),
-    CmpVia = #via{host=ViaHostname, port=ViaPort},
+    MyHostname = siprequest:myhostname(),
+    MyPort = sipserver:get_listenport(Origin#siporigin.proto),
+    CmpVia = #via{host=MyHostname, port=MyPort},
 
     case via_indicates_loop(LoopCookie, CmpVia, sipheader:via(Header)) of
 	true ->
