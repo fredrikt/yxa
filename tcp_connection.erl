@@ -599,6 +599,8 @@ is_valid_ssl_altname(Host, Subject, Reject) when Reject == true; Reject == false
     end.
 
 get_ssl_socket_altname({rndSequence, AttrList}) ->
+    %% XXX commonName is not always set to the FQDN. Find a better (more correct) 
+    %% way to get the subjectAltName
     {ok, {printableString, CN}} = ssl_subject_get(commonName, AttrList),
     {ok, CN}.
 
@@ -608,6 +610,8 @@ get_ssl_identification({rndSequence, AttrList}) ->
     {ok, {printableString, CN}} = ssl_subject_get(commonName, AttrList),
     {ok, lists:append(["C=", C, ", O=", O, ", CN=", CN])}.
 
+%% XXX 'AttributeTypeAndValue' is really a record defined in ssl_pkix.hrl, but I
+%% haven't found a way to include that file.
 ssl_subject_get(Key, [[{'AttributeTypeAndValue', Key, Value}] | _T]) ->
     {ok, Value};
 ssl_subject_get(Key, [_H | T]) ->
