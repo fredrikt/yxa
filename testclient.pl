@@ -961,12 +961,14 @@ sub read_local_config
 {
     my @f_locs = ("$ENV{HOME}/testclient.conf", "/etc/testclient.conf", "/usr/local/etc/testclient.conf", "./testclient.conf");
     my $cfg_loaded = 0;
+
     foreach my $fn (@f_locs) {
 	if (-r $fn) {
 	    warn ("$0: Loading local configuration from '$fn'\n") unless ($quiet);
 
-	    { package Settings; do $fn; }
-
+	    open (CF, "< $fn") or die ("$0: Could not open file '$0' for reading : $!\n");
+	    my @cf = <CF>;
+	    eval ("@cf");
 	    die ("$0: Error in configuration file '$fn': $@\n") if ($@ ne '');
 
 	    $cfg_loaded = 1;
