@@ -1,0 +1,270 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : locationdb_add.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for adding locations to location database.
+%%%
+%%% Created : 11 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("phone.hrl").
+-include("siprecords.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+%% these are classes and flags that a particular user can either have, or don't have
+-define(LOCATION_CLASSES, ["static",
+			   "dynamic"
+			   ]).
+
+%% form default values
+-define(DEFAULT_CLASS, "static").
+-define(DEFAULT_EXPIRE, 3600).
+
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A, ?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Check if this is a GET or a POST and act accordingly.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    case (Req = A#arg.req)#http_request.method of
+	'POST' ->
+	    case write_location(A, Node) of
+		ok ->
+		    Link = "locationdb.yaws"
+			"?node=" ++ yaws_api:url_encode(NodeStr),
+		    {redirect, Link};
+		E ->
+		    E
+	    end;
+	'GET' ->
+	    print_form(A, NodeStr)
+    end;
+out2(_A, _) ->
+    throw({error, "Invalid node specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: write_location(A, Node)
+%%           A       = term(), Yaws request data
+%%           Node    = atom(), node we are to talk with
+%% Descrip.: Update (add) a location based on data POSTed.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+write_location(A, Node) when is_atom(Node) ->
+    %%
+    %% Get values from POST
+    %%
+
+    User = case ?GET_VAR("user") of
+	       {ok, UserVal} when is_list(UserVal) ->
+		   UserVal;
+	       _ ->
+		   throw({error, "Can't write location without username"})
+	   end,
+
+    Address = case ?GET_VAR("address") of
+		  {ok, AddressValue} when is_list(AddressValue) ->
+		      case sipurl:parse(AddressValue) of
+			  URL when is_record(URL, sipurl) ->
+			      URL;
+			  ParseE ->
+			      Msg = io_lib:format("Supplied address (~p) could not be parsed : ~p",
+						  [AddressValue, ParseE]),
+			      throw({error, Msg})
+		      end;
+		  _ ->
+		      throw({error, "Can't write location without address"})
+	      end,
+    
+    Class = case ?GET_VAR("class") of
+		{ok, ClassV} when is_list(ClassV) ->
+		    case lists:member(ClassV, ?LOCATION_CLASSES) of
+			true ->
+			    list_to_atom(ClassV);
+			false ->
+			    throw({error, "Unrecognized class value"})
+		    end;
+		_ ->
+		    throw({error, "Invalid class value"})
+	    end,
+
+    Prio = case yxa_yaws_util:get_var_int(A, "priority") of
+	       {ok, PriorityInt} ->
+		   {priority, PriorityInt};
+	       _ ->
+		   throw({error, "Invalid priority value"})
+	   end,
+    Flags = [Prio],
+
+    Expire = case ?GET_VAR("expire") of
+		 {ok, "never"} ->
+		     never;
+		 _ ->
+		     case yxa_yaws_util:get_var_int(A, "expire") of
+			 {ok, ExpireInt} when is_integer(ExpireInt), ExpireInt > 0 ->
+			     util:timestamp() + ExpireInt;
+			 _ ->
+			     throw({error, "Invalid expire value"})
+		     end
+	     end,
+
+    %% default values for these for now
+    CallId = "",
+    CSeq = 0,
+
+    ok = write_location2(Node, User, Flags, Class, Expire, Address, CallId, CSeq),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: write_location2(Node, User, Flags, Class, Expire,
+%%                           Address, CallId, CSeq)
+%%           Node    = atom(), node we are to talk with
+%%           User    = string(), username
+%%           Flags   = list() of {Key, Value}
+%%           Class   = atom()
+%%           Expire  = integer(), number of seconds into the future
+%%                     until this location expires
+%%           Address = sipurl record(), the location
+%%           CallId  = string(), Call-Id header value of REGISTER
+%%                     emulated
+%%           CSeq    = integer(), CSeq header value of REGISTER
+%%                     emulated
+%% Descrip.: Add a location to the location database.
+%% Returns : ok | throw({error, ...})
+%%--------------------------------------------------------------------
+write_location2(Node, User, Flags, Class, Expire, Address, CallId, CSeq) when is_atom(Node), is_list(User),
+									      is_list(Flags), is_atom(Class),
+									      is_integer(Expire); Expire == never,
+									      is_record(Address, sipurl),
+									      is_list(CallId), is_integer(CSeq) ->
+    case rpc:call(Node, phone, insert_purge_phone, [User, Flags, Class, Expire, Address, CallId, CSeq]) of
+	{atomic, ok} ->
+	    ok;
+	E ->
+	    Msg = io_lib:format("Failed adding location : ~p", [E]),
+	    throw({error, Msg})
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: print_form(A, Node, NodeStr)
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), the node as a string
+%% Descrip.: Print our form, filled out with default values, or HTML
+%%           variable values if they exist.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+print_form(A, NodeStr) when is_list(NodeStr) ->
+    UserInput = get_input(A, "user", none),
+    PrioInput = get_input(A, "priority", none),
+    {ok, ClassInput} = yxa_yaws_util:make_radio_input(A, "class",
+						      ?DEFAULT_CLASS,
+						      ?LOCATION_CLASSES),
+    ExpireInput = get_input(A, "expire", ?DEFAULT_EXPIRE),
+    AddressInput = get_input(A, "address", none),
+
+    Inputs = [{tr, [], [
+			{td, [], "User"},
+			{td, [], UserInput}
+		       ]},
+	      {tr, [], [
+			{td, [], "Priority"},
+			{td, [], PrioInput}
+		       ]},
+	      {tr, [], [
+			{td, [], "Class"},
+			{td, [], ClassInput}
+		       ]},
+	      {tr, [], [
+			{td, [], "Expire"},
+			{td, [], ExpireInput}
+		       ]},
+	      {tr, [], [
+			{td, [], "Address"},
+			{td, [], AddressInput}
+		       ]}
+	     ],
+
+    Subject = {h3, [], ["New location :"]},
+    
+    Form = {form, [{method, post},
+		   {action, "locationdb_add.yaws"}],
+	    [
+	     {table, [{border, 0},
+		      {width, "50%"}],
+	      [Inputs,
+	       {tr, [], [{td, [{colspan, 2}], "&nbsp;"}]}
+	      ]},
+
+	     yxa_yaws_util:hidden_inputs([
+					  {"node", NodeStr}
+					 ]),
+
+	     {input, [{type, submit},
+		      {value, "Submit"}
+		     ]}
+	    ]},
+
+    {p, [], [
+	     Subject,
+	     {p, [], []},
+	     Form
+	    ]}.
+
+%% get_input/2, part of print_form/3
+get_input(A, Name, Default) ->
+    case ?GET_VAR(Name) of
+	{ok, Value} when is_list(Value) ->
+	    [{input, [{name, Name},
+		      {value, Value}]
+	     }];
+	_ ->
+	    case Default of
+		none ->
+		    [{input, [{name, Name}]
+		     }];
+		_ ->
+		    [{input, [{name, Name},
+			      {value, Default}]
+		     }]
+	    end
+    end.
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

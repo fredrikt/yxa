@@ -1,0 +1,152 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : locationdb_delete.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for deleting locations from the location db.
+%%%
+%%% Created : 12 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("phone.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A,
+	     ?GET_VAR("node"),
+	     ?GET_VAR("user"),
+	     ?GET_VAR("class"),
+	     ?GET_VAR("location")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr}, {ok, Username}, {ok, Class},
+%%                {ok, Location})
+%%           A        = term(), Yaws request data
+%%           NodeStr  = string(), name of node we are to talk with
+%%           Username = string()
+%%           Class    = string()
+%%           Location = string()
+%% Descrip.: Top level output function. Output header and catch
+%%           errors, if any.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}, {ok, Username}, {ok, Class}, {ok, Location}) when is_list(NodeStr), is_list(Username),
+									 is_list(Class), is_list(Location) ->
+    Node = list_to_atom(NodeStr),
+    Confirmed = case ?GET_VAR("confirm_locationdb_delete") of
+		    {ok, "Confirm"} ->
+			delete_location(Node, Username, Class, Location, NodeStr);
+		    _ ->
+			needs_confirmation(Username, Class, Location, NodeStr)
+		end;
+out2(_, _, _, _, _) ->
+    throw({error, "Invalid node, user, class or address specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: needs_confirmation(User, Class, Location, NodeStr)
+%%           User     = string(), username
+%%           Class    =
+%%           Location = string(), address in question
+%%           NodeStr  = string(), name of node we are to talk with
+%% Descrip.: Output a small form asking for confirmation to delete
+%%           Location from User.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+needs_confirmation(User, Class, Location, NodeStr) when is_list(User), is_list(Class), is_list(Location),
+							is_list(NodeStr) ->
+    Text = {p, [], [
+		    {strong, [], {font, [{color, red}], ["Delete"]}},
+		    " location ",
+		    {strong, [], [Location]},
+		    " of class ", Class,
+		    " from user ",
+		    {strong, [], [User]},
+		    "?"
+		   ]},
+    Form = {form, [], [
+		       yxa_yaws_util:hidden_inputs([
+						    {"node", NodeStr},
+						    {"user", User},
+						    {"class", Class},
+						    {"location", Location}
+						   ]),
+
+		       {input, [{type, submit},
+				{name, "confirm_locationdb_delete"},
+				{value, "Confirm"}
+			       ]}
+		      ]},
+    [{p, [], []}, Text, {p, [], Form}].
+
+
+%%--------------------------------------------------------------------
+%% Function: delete_location(Node, User, ClassStr, Location, NodeStr)
+%%           Node     = atom(), node we are to talk with
+%%           User     = string(), username
+%%           ClassStr = string(), class of location
+%%           Location = string(), location in question
+%%           NodeStr  = string(), name of node we are to talk with
+%% Descrip.: Delete Location location binding to User, then redirect
+%%           browser to locationdb page (because that _is_ where the
+%%           client came from, right?)
+%% Returns : {redirect, URL} | HTML = term(), Yaws html data
+%%           URL = string()
+%%--------------------------------------------------------------------
+delete_location(Node, User, ClassStr, Location, NodeStr) when is_atom(Node), is_list(User), is_list(ClassStr),
+							      is_list(Location), is_list(NodeStr) ->
+    Class = case ClassStr of
+		"static" ->
+		    static;
+		"dynamic" ->
+		    dynamic;
+		_ ->
+		    throw({error, "Invalid class"})
+	    end,
+    case rpc:call(Node, phone, get_sipuser_location_binding, [User, sipurl:parse(Location)]) of
+	{atomic, [#phone{class = Class}]} ->
+	    %% Ok, we found the location and the class matched too
+	    {atomic, ok} = rpc:call(Node, phone, delete_location, [User, Class, Location]),
+	    URL = "locationdb.yaws?" ++
+		"node=" ++ yaws_api:url_encode(NodeStr),
+	    {redirect, URL};
+	_ ->
+	    Msg = io_lib:format("Could not find location binding, user ~p class ~p address ~p",
+				[User, Class, Location]),
+	    throw({error, Msg})
+    end.
+
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

@@ -1,0 +1,234 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : locationdb.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for listing currently registered locations.
+%%%
+%%% Created : 03 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("phone.hrl").
+-include("siprecords.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: HTML format information about all users in the Mnesia
+%%           userdb.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2({ok, NodeStr}) when is_list(NodeStr) ->
+    {ok, LocationsTmp} = get_locations_info(NodeStr),
+    LocationsInfo = {table, [{border, 1}, {width, "100%"}], LocationsTmp},
+    AddLink = "locationdb_add.yaws?node=" ++ yaws_api:url_encode(NodeStr),
+    {p, [], [
+	     {h3, [], ["Current locations : "]},
+	     {p, [], []},
+	     LocationsInfo,
+	     {p, [], []},
+	     {p, [], [
+		      {a, [{href, AddLink}], "Add location"}
+		      ]},
+	     {p, [], []}
+	    ]};
+out2(_) ->
+    throw({error, "Invalid node specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: get_locations_info(NodeStr)
+%%           get_locations_info(Node, NodeStr)
+%%           Node    = atom(), the node we are to talk with
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: HTML format information about all users in the Mnesia
+%%           userdb.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_locations_info(NodeStr) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    get_locations_info(Node, NodeStr).
+
+get_locations_info(Node, NodeStr) when is_atom(Node), is_list(NodeStr) ->
+    LocationsInfo =
+	case rpc:call(Node, phone, list_phones, []) of
+	    Locations when is_list(Locations) ->
+		fmt_locations(Locations, Node, NodeStr)
+	end,
+    {ok,
+     [{tr, [], [
+		{th, [], "Username"},
+		{th, [], "Class"},
+		{th, [], "Location"},
+		{th, [], "Expires"},
+		{th, [], "Actions"}
+	       ]
+      },
+      LocationsInfo
+     ]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: fmt_locations(Locations, Node, NodeStr)
+%%           fmt_locations(Locations, Node, NodeStr, [])
+%%           Locations = list() of siplocationdb_e record()
+%%           Node      = atom(), the node we are to talk with
+%%           NodeStr   = string(), name of node we are to talk with
+%% Descrip.: HTML format information about each element of Locations.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+fmt_locations(Locations, Node, NodeStr) ->
+    Sorted = lists:sort(fun output_sort_locations/2, Locations),
+    fmt_locations(Sorted, Node, NodeStr, [], []).
+
+fmt_locations([H | T], Node, NodeStr, LastUser, Res) ->
+    ShowUser = case H#phone.number of
+		   LastUser ->
+		       "&nbsp;";
+		   _ ->
+		       case yxa_yaws_util:user_exists(H#phone.number, Node) of
+			   true ->
+			       %% user exists in Mnesia, make link to user page
+			       UserLink = "userdb_modify.yaws"
+				   "?node=" ++ yaws_api:url_encode(NodeStr) ++
+				   "&user=" ++ yaws_api:url_encode(H#phone.number),
+			       [{a, [{href, UserLink}], H#phone.number}];
+			   false ->
+			       H#phone.number
+		       end
+	       end,
+    Expires = yxa_yaws_util:fmt_expires(H#phone.expire),
+    Address = H#phone.address,
+    Class = atom_to_list(H#phone.class),
+    Actions = ["[", {a, [{href, "locationdb_delete.yaws"
+			  "?node=" ++ yaws_api:url_encode(NodeStr) ++
+			  "&user=" ++ yaws_api:url_encode(H#phone.number) ++
+			  "&class=" ++ yaws_api:url_encode(Class) ++
+			  "&location=" ++ yaws_api:url_encode(Address)}],
+		    "delete"},
+	       "]"],
+    This = {tr, [], [
+                     {td, [], ShowUser},
+		     {td, [], Class},
+		     {td, [], Address},
+		     {td, [], Expires},
+		     {td, [], Actions}
+		     ]},
+    fmt_locations(T, Node, NodeStr, H#phone.number, [This | Res]);
+fmt_locations([], _Node, _Nodestr, LastUser, Res) ->
+    lists:reverse(Res).
+
+output_sort_locations(#phone{number=UserA}, #phone{number=UserB}) when UserA /= UserB ->
+    %% not same user
+    %% XXX terribly unefficient I'm sure. just can't think of a better way right now.
+    case lists:sort([UserA, UserB]) of
+	[UserA, UserB] ->
+	    true;
+	[UserB, UserA] ->
+	    false
+    end;
+output_sort_locations(#phone{number=User, class=static}, #phone{number=User, class=dynamic}) ->
+    %% same user, but not same class
+    true;
+output_sort_locations(#phone{number=User, class=dynamic}, #phone{number=User, class=static}) ->
+    %% same user, but not same class
+    false;
+output_sort_locations(#phone{number=User, class=Known}, #phone{number=User}) when Known == static; Known == dynamic ->
+    %% same user, but not same class (A class is known, B class is not)
+    true;
+output_sort_locations(#phone{number=User}, #phone{number=User, class=Known}) when Known == static; Known == dynamic ->
+    %% same user, but not same class (B class is known, A class is not)
+    false;
+output_sort_locations(#phone{number=User, class=ClassA}, #phone{number=User, class=ClassB}) when ClassA /= ClassB ->
+    %% same user, but not same class
+    %% XXX terribly unefficient I'm sure. Just can't think of a better way right now.
+    AList = atom_to_list(ClassA),
+    BList = atom_to_list(ClassB),
+    case lists:sort([AList, BList]) of
+	[AList, BList] ->
+	    true;
+	[BList, AList] ->
+	    false
+    end;
+output_sort_locations(#phone{number=User, class=Class, expire=ExpireA},
+		      #phone{number=User, class=Class, expire=ExpireB}) when is_integer(ExpireA),
+									     is_integer(ExpireB),
+									     ExpireA >= ExpireB ->
+    %% same user and same class, sort on expires
+    true;
+output_sort_locations(#phone{number=User, class=Class, expire=ExpireA},
+		      #phone{number=User, class=Class, expire=ExpireB}) when is_integer(ExpireA),
+									     is_integer(ExpireB),
+									     ExpireA < ExpireB ->
+    %% same user and same class, sort on expires
+    false;
+output_sort_locations(#phone{number=User, class=Class, expire=Expire, address=AddrA},
+		      #phone{number=User, class=Class, expire=Expire, address=AddrB}) ->
+    %% same user, class AND expire. sort on address as a last resort.
+    %% we should never have two identical addresses with the same class in our location database.
+    %% XXX terribly unefficient I'm sure. just can't think of a better way right now.
+    case lists:sort([AddrA, AddrB]) of
+	[AddrA, AddrB] ->
+	    true;
+	[AddrB, AddrA] ->
+	    false
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: pretty_join(In)
+%%           In = list() of {Count, Descr}
+%%             Count = integer()
+%%             Descr = string()
+%% Descrip.: Create a list of strings ("Count Descr") for every entry
+%%           in In having Count greater than zero.
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
+pretty_join(In) ->
+    lists:foldl(fun({0, _S}, Acc) ->
+			Acc;
+		   ({_N, S}, []) ->
+			[S];
+		   ({_N, S}, Acc) ->
+			[S | Acc]
+		end, [], In).
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

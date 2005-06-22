@@ -1,0 +1,335 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : node_info.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for showing information about a node.
+%%%
+%%% Created : 27 May 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("transactionstatelist.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+%% "show-or-not" variables for this page. See toggle_link/3 documentation.
+-define(TOGGLE_LINKS, ["transaction",
+		       "transport"
+		      ]).
+
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A, ?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Top level output function. Output header and catch
+%%           errors, if any.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
+    {ok, NodeTmp} = get_node_info(A, NodeStr),
+    NodeInfo = {table, [], NodeTmp},
+
+    {p, [], [
+	     {h3, [], ["Information about node ",
+		       {u, [], NodeStr},
+		       " :"
+		      ]},
+	     NodeInfo
+	    ]};
+out2(_, _) ->
+    throw({error, "Invalid node specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: get_node_info(A, NodeStr)
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Get information from node and EHTML format it.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_node_info(A, NodeStr) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    Statistics = get_statistics(Node),
+
+    Uptime = node_uptime(Statistics),
+    TransactionLayer = transactionlayer(A, Node, Statistics),
+
+    {ok, [
+	  {p, [], []},
+
+	  {h3, [], ["General", Uptime]},
+
+	  TransactionLayer
+
+	 ]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: get_statistics(Node)
+%%           Node = atom(), node we are to talk with
+%% Descrip.: Fetch the complete yxa_statistics ETS table.
+%% Returns : Statistics = list() of {Key, Value}
+%%--------------------------------------------------------------------
+get_statistics(Node)  when is_atom(Node) ->
+    Statistics = rpc:call(Node, ets, tab2list, [yxa_statistics]),
+    Statistics.
+
+
+%%--------------------------------------------------------------------
+%% Function: node_uptime(Statistics)
+%%           Statistics = list() of {Key, Value}
+%% Descrip.: Get uptime from Node and EHTML format it.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+node_uptime(Statistics) when is_list(Statistics) ->
+    %% get starttime of node as UNIX timestamp
+   %% [{starttime, Starttime}] = rpc:call(Node, ets, lookup, [yxa_statistics, starttime]),
+    {value, {starttime, Starttime}} = lists:keysearch(starttime, 1, Statistics),
+
+    %% get running time in days, hours, minutes, seconds
+    Daystime = calendar:seconds_to_daystime(util:timestamp() - Starttime),
+
+    [
+     {tr, [],
+      [{td, [{nowrap, "true"}], "Started"},
+       {td, [{nowrap, "true"}], util:sec_to_date(Starttime)}
+      ]},
+     {tr, [],
+      [{td, [{nowrap, "true"}], "Uptime"},
+       {td, [{nowrap, "true"}], fmt_daystime(Daystime)}
+      ]}
+    ].
+
+
+%%--------------------------------------------------------------------
+%% Function: fmt_daystime({D, {H, M, S}})
+%%           D = integer(), days
+%%           H = integer(), hours
+%%           M = integer(), minutes
+%%           S = integer(), seconds
+%% Descrip.: Make a string out of a calendar modules "daystime".
+%% Returns : string()
+%%--------------------------------------------------------------------
+fmt_daystime({0, {H, M, S}}) ->
+    io_lib:format("~p hour(s), ~p minute(s), ~p second(s)", [H, M, S]);
+fmt_daystime({D, {H, M, S}}) ->
+    io_lib:format("~p day(s), ~s", [D, fmt_daystime({0, {H, M, S}})]).
+
+
+%%--------------------------------------------------------------------
+%% Function: transactionlayer(A, Node, Statistics)
+%%           A          = term(), Yaws request data
+%%           Node       = atom(), node we are to talk with
+%%           Statistics = list() of {Key, Value}
+%% Descrip.: Format transaction layer information.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+transactionlayer(A, Node, Statistics) when is_list(Statistics) ->
+    {ShowHideLink, Transactions} = 
+	case ?GET_VAR("transaction") of
+	    {ok, "show"} ->
+		{toggle_link(A, "hide transactions", "transaction"),
+		 {tr, [], [
+			   {td, [{colspan, 2}], [
+						 get_transactionlist(Node)
+						]}
+			  ]}
+		};
+	    _ ->
+		{toggle_link(A, "show transactions", "transaction"),
+		 []}
+	end,
+    
+    Stats = print_statistics([
+			      {{transactionlayer, transactions}, "Currently ongoing transactions"}
+			      ], Statistics),
+
+    [{tr, [], [
+	       {td, [], {h3, [], ["Transaction layer"]}}
+	      ]},
+     {tr, [], [{td, [{colspan, 2}], ShowHideLink}]},
+
+     Stats,
+     Transactions
+     
+    ].
+
+
+%%--------------------------------------------------------------------
+%% Function: get_transactionlist(Node)
+%%           Node       = atom(), node we are to talk with
+%% Descrip.: Create list of all currently ongoing transactions.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_transactionlist(Node) ->
+    {ok, TL} = rpc:call(Node, gen_server, call, [transactionlayer, {monitor_get_transactionlist}]),
+    Content = case print_transactionlist(TL, []) of
+		  [] ->
+		      {tr, [], [
+				{td, [{colspan, 2}], ["None right now"]}
+			       ]};
+		  Res ->
+		      Res
+	      end,
+
+    {table, [{border, 1}], [
+			    {tr, [], [
+				      {th, [], "Description"},
+				      {th, [], "Result"}
+				     ]},
+			    Content
+			   ]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: print_transactionlist(TL, [])
+%%           TL = list() of transactionstate record()
+%% Descrip.: Format list of transactions.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+print_transactionlist(none, []) ->
+    [];
+print_transactionlist([H | T], Res) when is_record(H, transactionstate) ->
+    This = {tr, [], [
+		     {td, [], case H#transactionstate.description of
+				 [] -> "empty";
+				 Descr -> Descr
+			      end},
+		     {td, [], case H#transactionstate.result of
+				 none -> "none yet";
+				 Result -> Result
+			      end}
+		    ]},
+    print_transactionlist(T, [This | Res]);
+print_transactionlist([], Res) ->
+    lists:reverse(Res).
+
+
+%%--------------------------------------------------------------------
+%% Function: print_statistics(Wanted, Statistics)
+%%           Wanted     = list() of {Id, Display}
+%%             Id       = term(), key used in yxa_statistics ETS table
+%%             Display  = string(), text to display for entry
+%%           Statistics = list() of {Key, Value} 
+%% Descrip.: Look for all entrys in Statistics that are listed in
+%%           Wanted. Format them nicely, preserving order in Wanted.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+print_statistics(Wanted, Statistics) when is_list(Wanted), is_list(Statistics) ->
+    print_statistics2(Wanted, Statistics, []).
+
+%% print_statistics2/3 - part of print_statistics/2
+print_statistics2([{Id, Display} | T], Statistics, Res) ->
+    This = get_stat(Id, Display, Statistics, []),
+    print_statistics2(T, Statistics, [This | Res]);
+print_statistics2([], _Statistics, Res) ->
+    lists:reverse(Res).
+
+
+%%--------------------------------------------------------------------
+%% Function: get_stat(Id, Display, Statistics)
+%%           Id         = term(), key used in yxa_statistics ETS table
+%%           Display    = string(), text to display for entry
+%%           Statistics = list() of {Key, Value} 
+%% Descrip.: Look for a specific entry in Statistics with Key matching
+%%           Id. When found, format it for output using Display and
+%%           Value. If not found, return entry with "unknown" as
+%%           value.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_stat(Id, Display, [{Id, Value} | T], Res) ->
+    %% Match
+    {tr, [], [
+	      {td, [], Display},
+	      {td, [],
+	       case is_list(Value) of
+		   true ->
+		       Value;
+		   false ->
+		       io_lib:format("~p", [Value])
+	       end
+	      }
+	     ]};
+get_stat(Id, Display, [H | T], Res) ->
+    %% no match
+    get_stat(Id, Display, T, Res);
+get_stat(_Id, Display, [], Res) ->
+    %% not found
+    {tr, [], [
+	      {td, [], Display},
+	      {td, [], "unknown"}
+	     ]}.
+
+    
+%%--------------------------------------------------------------------
+%% Function: toggle_link(A, Text, This)
+%%           A    = term(), Yaws request data
+%%           Text = string(), href text
+%%           This = string(), the variable to toggle
+%% Descrip.: Produce a link to this page, but with the "show-or-hide"
+%%           variable This toggled to the opposite of what it is set
+%%           to now. All "show-or-not" variables must be listed in the
+%%           define TOGGLE_LINKS.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+toggle_link(A, Text, This) ->
+    {ok, Node} = ?GET_VAR("node"),
+    BaseLink = "node_info.yaws?node=" ++ yaws_api:url_encode(Node),
+    F = fun(V, Acc) ->
+		Res =
+		    case {(V == This), ?GET_VAR(V)} of
+			{true, {ok, "show"}} ->
+			    %% match, output inverse of current setting
+			    [];
+			{true, _} ->
+			    %% match, output inverse of current setting
+			    "&" ++ V ++ "=show";
+			{false, {ok, "show"}} ->
+			    %% no match, output current setting
+			    "&" ++ V ++ "=show";
+			{false, _} ->
+			    []
+		    end,
+		Acc ++ Res
+	end,
+    Variables = lists:foldl(F, [], ?TOGGLE_LINKS),
+
+    ["[",
+     {a, [{href, BaseLink ++ Variables}], Text},
+     "]"].
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

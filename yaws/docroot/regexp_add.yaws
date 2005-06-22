@@ -1,0 +1,245 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : regexp_add.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for adding regexp-routes to database.
+%%%
+%%% Created : 12 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("database_regexproute.hrl").
+-include("siprecords.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+%% form default values
+-define(DEFAULT_CLASS, permanent).
+-define(DEFAULT_EXPIRE, "never").
+-define(DEFAULT_PRIORITY, "200").
+
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A, ?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Check if this is a GET or a POST and act accordingly.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    case (Req = A#arg.req)#http_request.method of
+	'POST' ->
+	    case write_regexp(A, Node) of
+		ok ->
+		    Link = "regexp.yaws"
+			"?node=" ++ yaws_api:url_encode(NodeStr),
+		    {redirect, Link};
+		E ->
+		    E
+	    end;
+	'GET' ->
+	    print_form(A, Node, NodeStr)
+    end;
+out2(_A, _) ->
+    throw({error, "Invalid node specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: write_regexp(A, Node)
+%%           A       = term(), Yaws request data
+%%           Node    = atom(), node we are to talk with
+%% Descrip.: Update (add) a regexp-route based on data POSTed.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+write_regexp(A, Node) when is_atom(Node) ->
+    %%
+    %% Get values from POST
+    %%
+
+    Regexp = case ?GET_VAR("regexp") of
+	       {ok, RegexpVal} when is_list(RegexpVal) ->
+		   RegexpVal;
+	       _ ->
+		   throw({error, "Can't write regexproute without regexp"})
+	   end,
+
+    Address = case ?GET_VAR("address") of
+		  {ok, AddressValue} when is_list(AddressValue) ->
+		      case sipurl:parse(AddressValue) of
+			  URL when is_record(URL, sipurl) ->
+			      AddressValue;
+			  ParseE ->
+			      Msg = io_lib:format("Supplied address (~p) could not be parsed : ~p",
+						  [AddressValue, ParseE]),
+			      throw({error, Msg})
+		      end;
+		  _ ->
+		      throw({error, "Can't write regexproute without address"})
+	      end,
+    
+    Prio = case yxa_yaws_util:get_var_int(A, "priority") of
+	       {ok, PriorityInt} ->
+		   {priority, PriorityInt};
+	       _ ->
+		   throw({error, "Invalid 'priority' value"})
+	   end,
+    Flags = [Prio],
+
+    Expire = case ?GET_VAR("expire") of
+		 {ok, "never"} ->
+		     never;
+		 _ ->
+		     case yxa_yaws_util:get_var_int(A, "expire") of
+			 {ok, ExpireInt} when is_integer(ExpireInt), ExpireInt > 0 ->
+			     util:timestamp() + ExpireInt;
+			 _ ->
+			     throw({error, "Invalid 'expire' value"})
+		     end
+	     end,
+
+    ok = write_regexp2(Node, Regexp, Flags, ?DEFAULT_CLASS, Expire, Address),
+    ok.
+
+
+%%--------------------------------------------------------------------
+%% Function: write_regexp2(Node, Regexp, Flags, Class, Expire,
+%%                           Address)
+%%           Node    = atom(), node we are to talk with
+%%           Regexp  = string(), regular expression
+%%           Flags   = list() of {Key, Value}
+%%           Class   = atom()
+%%           Expire  = integer(), number of seconds into the future
+%%                     until this location expires
+%%           Address = sipurl record(), the destination to use when
+%%                     Regexp matches
+%% Descrip.: Add a location to the location database.
+%% Returns : ok | throw({error, ...})
+%%--------------------------------------------------------------------
+write_regexp2(Node, Regexp, Flags, Class, Expire, Address) when is_atom(Node), is_list(Regexp),
+								is_list(Flags), is_atom(Class),
+								is_integer(Expire); Expire == never,
+								is_list(Address) ->
+    case rpc:call(Node, database_regexproute, insert, [Regexp, Flags, Class, Expire, Address]) of
+	{atomic, ok} ->
+	    ok;
+	E ->
+	    Msg = io_lib:format("Failed adding regexp-route : ~p", [E]),
+	    throw({error, Msg})
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: print_form(A, Node, NodeStr)
+%%           A       = term(), Yaws request data
+%%           Node    = atom(), the node we are to talk with
+%%           NodeStr = string(), the node as a string
+%% Descrip.: Print our form, filled out with default values, or HTML
+%%           variable values if they exist.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+print_form(A, Node, NodeStr) when is_atom(Node), is_list(NodeStr) ->
+    RegexpInput = get_input(A, "regexp", none),
+    PrioInput = get_input(A, "priority", ?DEFAULT_PRIORITY),
+    ExpireInput = get_input(A, "expire", ?DEFAULT_EXPIRE),
+    AddressInput = get_input(A, "address", none),
+
+    Inputs = [{tr, [], [
+			{td, [], "Regexp"},
+			{td, [], RegexpInput}
+		       ]},
+	      {tr, [], [
+			{td, [], "Priority"},
+			{td, [], PrioInput}
+		       ]},
+	      {tr, [], [
+			{td, [], "Class"},
+			{td, [], "permanent"}
+		       ]},
+	      {tr, [], [
+			{td, [], "Expire"},
+			{td, [], ExpireInput}
+		       ]},
+	      {tr, [], [
+			{td, [], "Address"},
+			{td, [], AddressInput}
+		       ]}
+	     ],
+
+    Subject = {h3, [], ["New regexp-route :"]},
+    
+    Form = {form, [{method, post},
+		   {action, "regexp_add.yaws"}],
+	    [
+	     {table, [{border, 0},
+		      {width, "50%"}],
+	      [Inputs,
+	       {tr, [], [{td, [{colspan, 2}], "&nbsp;"}]}
+	      ]},
+
+	     yxa_yaws_util:hidden_inputs([
+					  {"node", NodeStr}
+					 ]),
+
+	     {input, [{type, submit},
+		      {value, "Submit"}
+		     ]}
+	    ]},
+
+    {p, [], [
+	     Subject,
+	     {p, [], []},
+	     Form
+	    ]}.
+
+%% get_input/2, part of print_form/3
+get_input(A, Name, Default) ->
+    case ?GET_VAR(Name) of
+	{ok, Value} when is_list(Value) ->
+	    [{input, [{name, Name},
+		      {value, Value}]
+	     }];
+	_ ->
+	    case Default of
+		none ->
+		    [{input, [{name, Name}]
+		     }];
+		_ ->
+		    [{input, [{name, Name},
+			      {value, Default}]
+		     }]
+	    end
+    end.
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

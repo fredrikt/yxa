@@ -156,7 +156,9 @@ beam_FILES = $(erl_FILES:.erl=.beam)
 
 SUBDIRS = \
 	cpl \
-	event_handler
+	event_handler \
+	yaws/src
+
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
 all: $(beam_FILES) yxa-bootstrap.sh dtmfserver all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)

@@ -10,7 +10,8 @@ AC_PROG_INSTALL
 AC_CONFIG_FILES(
 		Makefile \
 		cpl/Makefile \
-		event_handler/Makefile
+		event_handler/Makefile \
+		yaws/src/Makefile
 	       )
 
 AC_ARG_WITH(erlang,

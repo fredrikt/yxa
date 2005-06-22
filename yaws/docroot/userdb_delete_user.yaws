@@ -1,0 +1,124 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : userdb_delete_user.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for deleting an address from a user.
+%%%
+%%% Created : 02 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A, ?GET_VAR("node"), ?GET_VAR("user")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr}, {ok, User}, {ok, Address})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%%           User    = string(), username
+%%           Address = string(), address to delete
+%% Descrip.: Top level output function. Output header and catch
+%%           errors, if any.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}, {ok, Username}) when is_list(NodeStr), is_list(Username) ->
+    Node = list_to_atom(NodeStr),
+    Confirmed = case ?GET_VAR("confirm_userdb_delete_user") of
+		    {ok, "Confirm"} ->
+			delete_user(Node, Username, NodeStr);
+		    _ ->
+			needs_confirmation(Username, NodeStr)
+		end;
+out2(_, _, _) ->
+    throw({error, "Invalid node, user or address specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: needs_confirmation(User, NodeStr)
+%%           User    = string(), username
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Output a small form asking for confirmation to delete
+%%           User.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+needs_confirmation(User, NodeStr) when is_list(User), is_list(NodeStr) ->
+    Text = {p, [], [
+		    {strong, [], {font, [{color, red}], ["Delete"]}},
+		    " user ",
+		    {strong, [], [User]},
+		    "?"
+		   ]},
+    Form = {form, [], [
+		       yxa_yaws_util:hidden_inputs([
+						    {"node", NodeStr},
+						    {"user", User}
+						   ]),
+		       
+		       {input, [{type, submit},
+				{name, "confirm_userdb_delete_user"},
+				{value, "Confirm"}
+			       ]}
+		      ]},
+    [{p, [], []}, Text, {p, [], Form}].
+
+
+%%--------------------------------------------------------------------
+%% Function: delete_user(Node, User, NodeStr)
+%%           Node    = atom(), node we are to talk with
+%%           User    = string(), username
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Delete User, then redirect browser to userdb main page
+%%           (because that _is_ where the client came from, right?)
+%% Returns : {redirect, URL} | HTML = term(), Yaws html data
+%%           URL = string()
+%%--------------------------------------------------------------------
+delete_user(Node, User, NodeStr) when is_atom(Node), is_list(User), is_list(NodeStr) ->
+    case yxa_yaws_util:user_exists(User, Node) of
+	true ->
+	    case rpc:call(Node, phone, delete_user, [User]) of
+		{atomic, ok} ->
+		    URL = "userdb.yaws?" ++
+			"node=" ++ yaws_api:url_encode(NodeStr),
+		    {redirect, URL};
+		E ->
+		    Msg = io_lib:format("Failed deleting user ~p (node ~p) : ~p",
+					[User, Node, E]),
+		    throw({error, Msg})
+	    end;
+	false ->
+	    Msg = io_lib:format("No such user : ~p", [User]),
+	    throw({error, Msg})
+    end.
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

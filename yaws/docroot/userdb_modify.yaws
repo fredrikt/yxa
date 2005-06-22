@@ -1,0 +1,420 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : userdb_modify.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for managing users in the Mnesia userdb
+%%%           backend.
+%%%
+%%% Created : 27 May 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("phone.hrl").
+-include("siprecords.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+%% these are classes and flags that a particular user can either have, or don't have
+-define(USER_CLASSES, {"class", [
+				 internal,
+				 national,
+				 international,
+				 mobile,
+				 pay
+				]}).
+-define(USER_FLAGS, {"flag", [
+			      admin
+			     ]}).
+
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A, ?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Check if this is a GET or a POST and act accordingly.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    case (Req = A#arg.req)#http_request.method of
+	'POST' ->
+	    case write_user(A, Node) of
+		ok ->
+		    print_form(A, Node, NodeStr);
+		E ->
+		    E
+	    end;
+	'GET' ->
+	    print_form(A, Node, NodeStr)
+    end;
+out2(_A, _) ->
+    throw({error, "Invalid node specified"}).
+	    
+
+%%--------------------------------------------------------------------
+%% Function: write_user(A, Node)
+%%           A       = term(), Yaws request data
+%%           Node    = atom(), node we are to talk with
+%% Descrip.: Update a users settings/numbers based on data POSTed,
+%%           then print our main form.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+write_user(A, Node) when is_atom(Node) ->
+    User = case ?GET_VAR("user") of
+	       {ok, UserVal} when is_list(UserVal) ->
+		   UserVal;
+	       _ ->
+		   throw({error, "Can't write user without username"})
+	   end,
+
+    %%
+    %% Get values from POST
+    %%
+    Password = case ?GET_VAR("password") of
+		   {ok, PasswordValue} when is_list(PasswordValue) ->
+		       PasswordValue;
+		   _ ->
+		       %% no password in form, use the one from the database, don't set password
+		       undefined
+	       end,
+    Flags = yxa_yaws_util:get_checkbox_input(A, ?USER_FLAGS),
+    Classes = yxa_yaws_util:get_checkbox_input(A, ?USER_CLASSES),
+
+    ok = write_user_settings(Node, User, Password, Flags, Classes),
+    ok = write_user_address(A, Node, User),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: write_user_settings(Node, User, Password, Flags, Classes)
+%%           Node     = atom(), node we are to talk with
+%%           User     = string(), username
+%%           Password = string() | undefined
+%%           Flags    = list() of atom()
+%%           Classes  = list() of atom()
+%% Descrip.: Set values on existing user, or create new user if one
+%%           does not exist.
+%% Returns : ok | throw({error, ...})
+%%--------------------------------------------------------------------
+write_user_settings(Node, User, Password, Flags, Classes) when is_atom(Node), is_list(User),
+							       is_list(Password); Password == undefined,
+							       is_list(Flags), is_list(Classes) ->
+    case yxa_yaws_util:user_exists(User, Node) of
+	true ->
+	    %% ok, user exists, set password if one was entered
+	    case is_list(Password) of
+		true ->
+		    {atomic, ok} = rpc:call(Node, phone, set_user_password, [User, Password]);
+		false ->
+		    ok
+	    end,
+	    %% set flags
+	    {atomic, ok} = rpc:call(Node, phone, set_user_flags, [User, Flags]),
+	    %% set classes
+	    {atomic, ok} = rpc:call(Node, phone, set_user_classes, [User, Classes]),
+	    ok;
+	false ->
+	    %% no user exists, create one
+	    case is_list(Password) of
+		true ->
+		    {atomic, ok} = rpc:call(Node, phone, insert_user, [User, Password, Flags, Classes]),
+		    ok;
+		false ->
+		    throw({error, "Refusing to create new user with empty password"})
+	    end
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: write_user_address(A, Node, User)
+%%           A    = term(), Yaws request data
+%%           Node = atom(), node we are to talk with
+%%           User = string(), username
+%% Descrip.: Check if we are to add a new address to User.
+%% Returns : ok | throw({error, ....})
+%%--------------------------------------------------------------------
+write_user_address(A, Node, User) when is_atom(Node), is_list(User) ->
+    case ?GET_VAR("add_address") of
+	{ok, AddrStr} when is_list(AddrStr) ->
+	    case sipurl:parse(AddrStr) of
+		URL when is_record(URL, sipurl) ->
+		    {atomic, ok} = add_address(User, AddrStr, Node);
+		E ->
+		    Msg = io_lib:format("Invalid address ~p : ~p",
+					[AddrStr, E]),
+		    throw({error, Msg})
+	    end;
+	_ ->
+	    ok
+    end,
+    ok.
+
+
+%%--------------------------------------------------------------------
+%% Function: add_address(User, AddrStr, Node) 
+%%           User    = string(), username
+%%           AddrStr = string(), address to add
+%%           Node    = atom(), node we are to talk with
+%% Descrip.: Add an address to User after checking that User does not
+%%           already have that number associated with it. For legacy
+%%           reasons, addresses are called numbers in the Mnesia
+%%           userdb backend.
+%% Returns : {atomic, ok} | term(), result of RPC call
+%%--------------------------------------------------------------------
+add_address(User, AddrStr, Node) when is_list(User), is_list(AddrStr), is_atom(Node) ->
+    Addresses = yxa_yaws_util:get_user_addresses(User, Node),
+    case lists:member(Addresses, AddrStr) of
+	true ->
+	    %% do nothing
+	    {atomic, ok};
+	false ->
+	    rpc:call(Node, phone, set_user_numbers, [User, Addresses ++ [AddrStr]])
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: print_form(A, Node, NodeStr)
+%%           A       = term(), Yaws request data
+%%           Node    = atom(), the node we are to talk with
+%%           NodeStr = string(), the node as a string
+%% Descrip.: Print our form, filled out with values from Mnesia if
+%%           the user exists, or HTML variable values if it is a new
+%%           user.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+print_form(A, Node, NodeStr) when is_atom(Node), is_list(NodeStr) ->
+    case ?GET_VAR("user") of
+	{ok, User} when is_list(User) ->
+	    case rpc:call(Node, phone, get_user, [User]) of
+		{atomic, [{_Password, Flags, Classes}]} ->
+		    %%
+		    %% User found in Mnesia database, read-back data from Mnesia
+		    %%
+		    IsNew = false,
+		    Addresses = yxa_yaws_util:get_user_addresses(User, Node),
+		    U = #user{user = User,
+			      flags = Flags,
+			      classes = Classes},
+		    modify_form(A, IsNew, U, Addresses, NodeStr);
+		{atomic, []} ->
+		    Msg = io_lib:format("User ~p does not exist", [User]),
+		    throw({error, Msg})
+	    end;
+	_ ->
+	    %%
+	    %% New user, use values from the browser to fill out the form
+	    %%
+	    IsNew = true,
+	    Addresses = case ?GET_VAR("set_address") of
+			    {ok, AddrStr} ->
+				[AddrStr];
+			    undefined ->
+				[]
+			end,
+	    Flags = yxa_yaws_util:get_checkbox_input(A, ?USER_FLAGS),
+	    Classes = yxa_yaws_util:get_checkbox_input(A, ?USER_CLASSES),
+	    NewUser = case ?GET_VAR("new_username") of
+			  {ok, V} when is_list(V) ->
+			      V;
+			  _ ->
+			      undefined
+		      end,
+	    U = #user{user = NewUser,
+		      flags = Flags,
+		      classes = Classes
+		     },
+	    modify_form(A, IsNew, U, Addresses, NodeStr)
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: modify_form(A, IsNew, User, Addresses, NodeStr)
+%%           A         = term(), Yaws request data
+%%           IsNew     = true | false, new user or not?
+%%           User      = user record()
+%%           Addresses = list() of string()
+%%           NodeStr   = string(), the node as a string
+%% Descrip.: Format our main HTML form.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+modify_form(A, IsNew, User, Addresses, NodeStr) when is_record(User, user), is_list(Addresses) ->
+    Subject = case IsNew of
+		  true ->
+		      {h3, [], ["New user settings :"]};
+		  false ->
+		      {h3, [], ["Modify user settings :"]}
+	      end,
+	      
+    HiddenUser = case IsNew of
+		     true ->
+			 [];
+		     false ->
+			 {input, [{name, "user"},
+				  {type, hidden},
+				  {value, User#user.user}
+				 ]}
+		 end,
+
+    {ok, SettingsInputs} = get_user_settings_inputs(A, User),
+    {ok, AddressesInputs} = get_user_addresses_inputs(User, Addresses, NodeStr),
+    
+    AddressSeparator = {tr, [], [
+				 {th, [], [{h3, [], "Addresses (AoR's) :"}]},
+				 {td, [], "&nbsp;"}
+				]},
+
+    Form = {form, [{method, post},
+		   {action, "userdb_modify.yaws"}],
+	    [
+	     {table, [{border, 0},
+		      {width, "50%"}],
+	      [SettingsInputs,
+	       AddressSeparator,
+	       AddressesInputs,
+	       {tr, [], [{td, [{colspan, 2}], "&nbsp;"}]}
+	      ]},
+	     
+	     yxa_yaws_util:hidden_inputs([
+					  {"node", NodeStr}
+					 ]),
+	     HiddenUser,
+	     
+	     {input, [{type, submit},
+		      {value, "Submit"}
+		     ]}
+	    ]},
+    {p, [], [
+	     Subject,
+	     {p, [], []},
+	     Form
+	    ]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: get_user_settings_inputs(A, UserIn)
+%%           A      = term(), Yaws request data
+%%           UserIn = user record() | none
+%% Descrip.: Format classes, flags and password input fields.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_user_settings_inputs(A, UserIn) when is_record(UserIn, user); UserIn == none ->
+    {User, Username, PasswordLabel} =
+	case UserIn of
+	    none -> {#user{}, ?GET_VAR("new_username"), "Password"};
+	    _ -> {UserIn, UserIn#user.user, "New password"}
+	end,
+
+    UserHTML = case is_list(Username) of
+		   true ->
+		       {tr, [], [
+				 {td, [], "Username"},
+				 {td, [], [{strong, [], Username}]}
+				]};
+		   false ->
+		       {tr, [], [
+				 {td, [], "Username"},
+				 {td, [], [{input, [{name, user}]}]}
+				]}
+	       end,
+
+    FormPassword = "", %% don't reveal old password in form
+    FormClasses = yxa_yaws_util:form_checkboxes(A, User#user.classes, ?USER_CLASSES),
+    FormFlags = yxa_yaws_util:form_checkboxes(A, User#user.flags, ?USER_FLAGS),
+
+    {ok, [
+	  UserHTML,
+
+	  {tr, [], [
+		    {td, [], PasswordLabel},
+		    {td, [], [{input, [{name, password},
+				       {value, FormPassword}]}
+			     ]}
+		   ]},
+
+	  {tr, [], [
+		    {td, [{nowrap, true}], "PSTN classes"},
+		    {td, [], FormClasses}
+		   ]},
+
+	  {tr, [], [
+		    {td, [], "Flags"},
+		    {td, [], FormFlags}
+		   ]}
+	  ]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: get_user_addresses_inputs(User, Addresses, NodeStr)
+%%           User      = user record() | none
+%%           Addresses = list() of string()
+%%           NodeStr   = string(), name of node we are talking with
+%% Descrip.: Format addresses input fields.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_user_addresses_inputs(User, Addresses, NodeStr) when is_record(User, user); User == none,
+							 is_list(Addresses), is_list(NodeStr) ->
+    NumberInputs = format_addresses_inputs(User#user.user, Addresses, NodeStr, []),
+    AddAddress = {tr, [], [
+			  {td, [], "Add address to user"},
+			  {td, [], [{input, [{name, "add_address"}]}]}
+			 ]},
+
+    {ok, [NumberInputs, AddAddress]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: format_addresses_inputs(User, Addresses, NodeStr, [])
+%%           User      = user record() | none
+%%           Addresses = list() of string()
+%%           NodeStr   = string(), name of node we are talking with
+%% Descrip.: Part of get_user_addresses_inputs/3.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+format_addresses_inputs(Username, [H | T], NodeStr, Res) when is_list(H) ->
+    DeleteLink = "userdb_delete_address.yaws" ++
+	"?node=" ++ yaws_api:url_encode(NodeStr) ++
+	"&user=" ++ yaws_api:url_encode(Username) ++
+	"&address=" ++ yaws_api:url_encode(H),
+    This = {tr, [], [
+		     {td, [], {li, [], H}},
+		     {td, [], ["[",
+			       {a, [{href, DeleteLink}], "delete"},
+			       "]"]}
+		    ]},
+    format_addresses_inputs(Username, T, NodeStr, [This | Res]);
+format_addresses_inputs(_Username, [], _NodeStr, Res) ->
+    lists:reverse(Res).
+		   
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

@@ -1,0 +1,166 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : regexp.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for listing database_regexproute db contents.
+%%%
+%%% Created : 12 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("database_regexproute.hrl").
+-include("siprecords.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: HTML format information about all users in the Mnesia
+%%           userdb.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2({ok, NodeStr}) when is_list(NodeStr) ->
+    {ok, RegexpsTmp} = get_regexps_info(NodeStr),
+    RegexpsInfo = {table, [{border, 1}, {width, "100%"}], RegexpsTmp},
+    AddLink = "regexp_add.yaws?node=" ++ yaws_api:url_encode(NodeStr),
+    {p, [], [
+	     {h3, [], ["Current regexp-routes : "]},
+	     {p, [], []},
+	     RegexpsInfo,
+	     {p, [], []},
+	     {p, [], [
+		      {a, [{href, AddLink}], "Add regexp-route"}
+		      ]},
+	     {p, [], []},
+	     {p, [], [
+		      {strong, [], "Note: "},
+		      "Regexp-routes are only looked at by 'incomingproxy', and only if a received "
+		      "request matches one of our homedomains and ",
+		      {li, [], ["No user has an address matching the received requests Request-URI",
+				{strong, [], " or "}
+				]},
+		      {li, [], ["The user(s) having an address matching the received requests Request-URI "
+				"does not have any currently registered phones or CPL scripts."]}
+		     ]},
+	     {p, [], [
+		      {strong, [], "Note: "},
+		      "Higher priority has precedence"
+		      ]}
+	    ]};
+out2(_) ->
+    throw({error, "Invalid node specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: get_regexps_info(NodeStr)
+%%           get_regexps_info(Node, NodeStr)
+%%           Node    = atom(), the node we are to talk with
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: HTML format information about all users in the Mnesia
+%%           userdb.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_regexps_info(NodeStr) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    get_regexps_info(Node, NodeStr).
+
+get_regexps_info(Node, NodeStr) when is_atom(Node), is_list(NodeStr) ->
+    RegexpsInfo =
+	case rpc:call(Node, database_regexproute, list, []) of
+	    RegexpRoutes when is_list(RegexpRoutes) ->
+		fmt_regexproutes(RegexpRoutes, NodeStr)
+	end,
+    {ok, 
+     [{tr, [], [
+		{th, [], "Regexp"},
+		{th, [], "Priority"},
+		{th, [], "Expires"},
+		{th, [], "Address"},
+		{th, [], "Actions"}
+	       ]
+      },
+      RegexpsInfo
+     ]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: fmt_regexproutes(Regexps, NodeStr)
+%%           fmt_regexproutes(Regexps, NodeStr, [])
+%%           Regexps = list() of regexproute record()
+%%           Node      = atom(), the node we are to talk with
+%%           NodeStr   = string(), name of node we are to talk with
+%% Descrip.: HTML format information about each element of Regexps.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+fmt_regexproutes(Regexps, NodeStr) ->
+    Sorted = lists:keysort(2, Regexps),
+    fmt_regexproutes(Sorted, NodeStr, []).
+
+fmt_regexproutes([H | T], NodeStr, Res) ->
+    Regexp = H#regexproute.regexp,
+    Expires = yxa_yaws_util:fmt_expires(H#regexproute.expire),
+    Address = H#regexproute.address,
+    Class = atom_to_list(H#regexproute.class),
+    Priority = case lists:keysearch(priority, 1, H#regexproute.flags) of
+		   {value, {priority, PrioInt}} ->
+		       integer_to_list(PrioInt);
+		   _ ->
+		       "&nbsp;"
+	       end,
+		       
+    Actions = ["[", {a, [{href, "regexp_delete.yaws"
+			  "?node=" ++ yaws_api:url_encode(NodeStr) ++
+			  "&regexp=" ++ yaws_api:url_encode(Regexp) ++
+			  "&class=" ++ yaws_api:url_encode(Class) ++
+			  "&address=" ++ yaws_api:url_encode(Address)}],
+		    "delete"},
+	       "]"],
+    This = {tr, [], [
+                     {td, [], Regexp},
+		     {td, [], Priority},
+		     {td, [], Expires},
+		     {td, [], Address},
+		     {td, [], Actions}
+		     ]},
+    fmt_regexproutes(T, NodeStr, [This | Res]);
+fmt_regexproutes([], _Nodestr, Res) ->
+    lists:reverse(Res).
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

@@ -1,0 +1,257 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : userdb.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for listing users in the Mnesia userdb backend.
+%%%
+%%% Created : 27 May 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("phone.hrl").
+-include("siprecords.hrl").
+
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: HTML format information about all users in the Mnesia
+%%           userdb.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2({ok, NodeStr}) when is_list(NodeStr) ->
+    {ok, UserInfoTmp} = get_user_info(NodeStr),
+    UserInfo = {table, [{border, 1}, {width, "100%"}], UserInfoTmp},
+    ModifyLink = "userdb_modify.yaws?node=" ++ yaws_api:url_encode(NodeStr),
+    {p, [], [
+	     {h3, [], ["Users in Mnesia user database : "]},
+	     {p, [], []},
+	     UserInfo,
+	     {p, [], []},
+	     {p, [], [
+		      {a, [{href, ModifyLink}], "Add user"}
+		      ]},
+	     {p, [], []},
+	     {p, [], [
+		      {strong, [], "Note: "},
+		      "It is possible that not all users are shown above. There are other "
+		      "userdb backends than Mnesia available, and only users located in the "
+		      "Mnesia userdb are shown above."
+		     ]}
+	    ]};
+out2(_) ->
+    throw({error, "Invalid node specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: get_user_info(NodeStr)
+%%           get_user_info(Node, NodeStr)
+%%           Node    = atom(), the node we are to talk with
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: HTML format information about all users in the Mnesia
+%%           userdb.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_user_info(NodeStr) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    get_user_info(Node, NodeStr).
+
+get_user_info(Node, NodeStr) when is_atom(Node), is_list(NodeStr) ->
+    UserInfo =
+	case rpc:call(Node, phone, list_users, []) of
+	    Users when is_list(Users) ->
+		fmt_users(Users, Node, NodeStr, [])
+	end,
+    {ok, 
+     [{tr, [], [
+		{th, [], "Username"},
+		{th, [], "Address (AoR)"},
+		{th, [], "Locations"},
+		{th, [], "Classes"},
+		{th, [], "Flags"},
+		{th, [], "CPL"},
+		{th, [], "Actions"}
+	       ]
+      },
+      UserInfo
+     ]}.
+
+
+%%--------------------------------------------------------------------
+%% Function: fmt_users(Users, Node, NodeStr, [])
+%%           Users   = list() of user record()
+%%           Node    = atom(), the node we are to talk with
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: HTML format information about each element of Users.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+fmt_users([H | T], Node, NodeStr, Res) when is_record(H, user) ->
+    Address = case yxa_yaws_util:get_user_addresses(H, Node) of
+		  [Addr] when is_list(Addr) ->
+		      Addr;
+		  [Addr | Rest] ->
+		      io_lib:format("~s (~p more)", [Addr, length(Rest)]);
+		  [] ->
+		      "none"
+	      end,
+    Modify = "userdb_modify.yaws?node=" ++ yaws_api:url_encode(NodeStr) ++
+	"&user=" ++ yaws_api:url_encode(H#user.user),
+    Delete = "userdb_delete_user.yaws?node=" ++ yaws_api:url_encode(NodeStr) ++
+	"&user=" ++ yaws_api:url_encode(H#user.user),
+    This = {tr, [], [
+		     {td, [], H#user.user},
+		     {td, [], Address},
+		     {td, [], get_user_locations(H#user.user, Node)},
+		     {td, [], format_attrlist(H#user.classes)},
+		     {td, [], format_attrlist(H#user.flags)},
+		     {td, [], cpl_status(H#user.user, Node)},
+		     {td, [], ["[",
+			       {a, [{href, Modify}], "Modify"},
+			       "&nbsp;|&nbsp;",
+			       {a, [{href, Delete}], "Delete"},
+			       "]"
+			      ]}
+		     ]},
+    fmt_users(T, Node, NodeStr, [This | Res]);
+fmt_users([], _Node, _Nodestr, Res) ->
+    lists:reverse(Res).
+
+%% format_attrlist/1 - part of fmt_users/4.
+%% Returns : string()
+format_attrlist([]) ->
+    "&nbsp;";
+format_attrlist(L) when is_list(L) ->
+    MakeLists = fun(H) when is_atom(H) ->
+			atom_to_list(H)
+		end,
+    util:join(lists:map(MakeLists, L), ", ").
+
+    
+%%--------------------------------------------------------------------
+%% Function: fmt_user_locations(Locations)
+%%           Locations = list() of siplocationdb_e record()
+%% Descrip.: Count how many static and dynamic locations there are in
+%%           Locations. Return as humanly understandable string.
+%% Returns : string()
+%%--------------------------------------------------------------------
+fmt_user_locations(Locations) ->
+    Static = count_locations(static, Locations),
+    Dynamic = count_locations(dynamic, Locations),
+    Unknown = length(Locations) - Static - Dynamic,
+
+    StaticStr = io_lib:format("~p static", [Static]),
+    DynamicStr = io_lib:format("~p dynamic", [Dynamic]),
+    UnknownStr = io_lib:format("~p unknown", [Unknown]),
+
+    pretty_join([{Unknown, UnknownStr},
+		 {Dynamic, DynamicStr},
+		 {Static,  StaticStr}]).
+
+
+%%--------------------------------------------------------------------
+%% Function: count_locations(Type, Locations)
+%%           Type      = atom(), static | dynamic
+%%           Locations = list() of siplocationdb_e record()
+%% Descrip.: Count the number of Locations which have class = Type.
+%% Returns : Num = integer()
+%%--------------------------------------------------------------------
+count_locations(Type, Locations) ->
+    count_locations2(Type, Locations, 0).
+
+count_locations2(Type, [#siplocationdb_e{class = Type} | T], N) ->
+    count_locations2(Type, T, N + 1);
+count_locations2(Type, [_H | T], N) ->
+    count_locations2(Type, T, N);
+count_locations2(_Type, [], N) ->
+    N.
+
+%%--------------------------------------------------------------------
+%% Function: pretty_join(In)
+%%           In = list() of {Count, Descr}
+%%             Count = integer()
+%%             Descr = string()
+%% Descrip.: Create a list of strings ("Count Descr") for every entry
+%%           in In having Count greater than zero.
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
+pretty_join(In) ->
+    lists:foldl(fun({0, _S}, Acc) ->
+			Acc;
+		   ({_N, S}, []) ->
+			[S];
+		   ({_N, S}, Acc) ->
+			[S | Acc]
+		end, [], In).
+
+%%--------------------------------------------------------------------
+%% Function: cpl_status(User, Node)
+%%           User = user record()
+%%           Node = atom(), the node we are to talk with
+%% Descrip.: Check if User has a CPL script, return info as either
+%%           "yes" or a no-breaking-space.
+%% Returns : Status = string()
+%%--------------------------------------------------------------------
+cpl_status(User, Node) when is_list(User) ->
+    case rpc:call(Node, cpl_db, get_cpl_for_user, [User]) of
+	{ok, _CPL} ->
+	    "yes";
+	nomatch ->
+	    "&nbsp;"
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_user_locations(User, Node)
+%%           User = user record()
+%%           Node = atom(), the node we are to talk with
+%% Descrip.: Fetch information about all currently registered
+%%           locations for a user, return a string telling how many
+%%           static and dynamic locations the user has.
+%% Returns : string()
+%%--------------------------------------------------------------------
+get_user_locations(User, Node) when is_list(User) ->
+    case rpc:call(Node, phone, get_sipuser_locations, [User]) of
+	{ok, []} ->
+	    "&nbsp;";
+	{ok, Locations} when is_list(Locations) ->
+	    fmt_user_locations(Locations)
+    end.
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>

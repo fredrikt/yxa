@@ -1,0 +1,151 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : index.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI index page.
+%%%
+%%% Created : 27 May 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2() of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2()
+%% Descrip.: Produce a list of currently running nodes, and links to
+%%           some other scripts.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2() ->
+    Incomingproxy = get_incomingproxy_nodename(),
+
+    case get_nodes(Incomingproxy) of
+	error ->
+	    throw({error, "Could not contact node " ++ Incomingproxy});
+	Nodes when is_list(Nodes) ->
+	    %% for each node that Incomingproxy knew about, get the current uptime
+
+	    NodeLinks = format_nodes(Nodes),
+	    NodeURL = yaws_api:url_encode(Incomingproxy),
+	    {ul, [], [
+		      {p, [], [
+			       {h3, [], "Servers currently running :"},
+			       NodeLinks
+			      ]},
+		      {p, [], []},
+		      {p, [], []},
+		      {p, [], [
+			       {a, [{href, "userdb.yaws?node=" ++ NodeURL}],
+				"Mnesia user database management"}
+			      ]},
+		      {p, [], [
+			       {a, [{href, "locationdb.yaws?node=" ++ NodeURL}],
+				"Location database management"}
+			      ]},
+		      {p, [], [
+			       {a, [{href, "regexp.yaws?node=" ++ NodeURL}],
+				"Regexp-route management"}
+			      ]}
+		     ]}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_incomingproxy_nodename()
+%% Descrip.: Get name of incomingproxy node. Per default we do this by
+%%           figuring out our local hostname, and prepending it with
+%%           "incomingproxy@". Patch this function if you want to run
+%%           your web interface on another host than your
+%%           incomingproxy (NOTE: you MUST make sure the nodes can
+%%           talk to each other through distributed Erlang).
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+get_incomingproxy_nodename() ->
+    {ok, MyHostname} = my_hostname(),
+    Incomingproxy = "incomingproxy@" ++ MyHostname.
+
+%% part of get_incomingproxy_nodename/0, inet:gethostname/0 without the
+%% domain-name removing part.
+%% Returns : {ok, Hostname}, Hostname = string()
+my_hostname() ->
+    case inet_udp:open(0, []) of
+        {ok, Socket} ->
+            {ok, Res} = inet:gethostname(Socket),
+            inet_udp:close(Socket),
+            {ok, Res};
+        _ ->
+            {ok, "nohost.nodomain"}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_nodes(Incomingproxy)
+%%           Incomingproxy = string()
+%% Descrip.: Query the Incomingproxy node and get a list of other
+%%           nodes in the system. Return a list of those nodes, minus
+%%           ourselves.
+%% Returns : Nodes = list() of atom()
+%%--------------------------------------------------------------------
+get_nodes(Incomingproxy) when is_list(Incomingproxy) ->
+    A = list_to_atom(Incomingproxy),
+    case rpc:call(A, erlang, nodes, []) of
+	{badrpc, nodedown} ->
+	    error;
+	RemoteNodes when is_list(RemoteNodes) ->
+	    Nodes = lists:usort([A | RemoteNodes]),
+	    WithoutMe = Nodes -- [node()],
+	    WithoutMe
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: format_nodes(Nodes)
+%%           Nodes = list() of string()
+%% Descrip.: EHTML format a list of running nodes, with links to node-
+%%           specific pages for each one.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+format_nodes(Nodes) when is_list(Nodes) ->
+    TrFun = fun(N) ->
+		    NodeStr = atom_to_list(N),
+		    InfoLink = "node_info.yaws?node=" ++ yaws_api:url_encode(NodeStr),
+		    %%CfgLink = "node_cfg.yaws?node=" ++ yaws_api:url_encode(NodeStr),
+		    {tr, [], [
+			      {td, [], [{li, [], NodeStr}]},
+			      {td, [], ["[",
+					{a, [{href, InfoLink}], "info"},
+					%%"&nbsp;|&nbsp;",
+					%%{a, [{href, CfgLink}], "configure"},
+					"]"
+				       ]}
+			      ]}
+	    end,
+
+    {table, [{border, 0}], [
+			    lists:map(TrFun, Nodes)
+			   ]}.
+	     
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>
