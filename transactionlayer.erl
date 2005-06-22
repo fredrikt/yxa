@@ -87,7 +87,8 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
-%% Wake up every seven seconds to remove expired transactions
+%% Wake up every seven seconds to tell expired transactions that it is
+%% time to exit
 -define(TIMEOUT, 7 * 1000).
 -define(STORE_TIMEOUT, 2500).
 -define(STATELESS_STORE_TIMEOUT, 1000).
@@ -122,11 +123,19 @@ start_link(AppModule) ->
 %%--------------------------------------------------------------------
 init([AppModule]) ->
     process_flag(trap_exit, true),
+
     transactionstatelist:empty(), %% create ets tables
     %% Create a tiny ets table to remember some state. Don't use server
     %% process for this since it is bad for parallelism
     Settings = ets:new(transactionlayer_settings, [protected, set, named_table]),
     true = ets:insert_new(Settings, {appmodule, AppModule}),
+
+    %% create statistics ets-entrys
+    lists:map(fun(Key) ->
+		      true = ets:insert_new(yxa_statistics, {Key, 0})
+	      end, [{transactionlayer, transactions}
+		   ]),
+
     logger:log(debug, "Transaction layer started"),
     {ok, #state{}, ?TIMEOUT}.
 
@@ -178,7 +187,11 @@ handle_call(Request, From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({unregister_pid, Pid}, State) ->
     L = transactionstatelist:get_entrylist_using_pid(Pid),
-    {ok, _NumDeleted} = transactionstatelist:delete_using_entrylist(L),
+    {ok, Deleted} = transactionstatelist:delete_using_entrylist(L),
+    logger:log(debug, "Transaction layer: Deleted ~p entry(s) from transactionlist upon "
+	       "receiving an {unregister_pid, ~p} :~n~p~n(new list is ~p entry(s))",
+	       [Deleted, Pid, transactionstatelist:debugfriendly(L),
+		transactionstatelist:get_length()]),
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
@@ -224,7 +237,17 @@ handle_cast(Msg, State) ->
 %% Returns : {noreply, State, ?TIMEOUT}
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
-    ok = transactionstatelist:delete_expired(),
+    case transactionstatelist:get_expired() of
+	none ->
+	    ok;
+	{ok, Expired} when is_list(Expired) ->
+	    %% Signal all Expired entrys that they are expired
+	    lists:map(fun(#transactionstate{pid = Pid}) when is_pid(Pid) ->
+			      logger:log(debug, "Transaction layer: Telling transaction with pid ~p that "
+					 "it is expired", [Pid]),
+			      gen_server:cast(Pid, {expired})
+		      end, Expired)
+    end,
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
@@ -247,7 +270,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	    true;
 	L when is_list(L) ->
 	    {ok, Deleted} = transactionstatelist:delete_using_entrylist(L),
-	    logger:log(debug, "Transaction layer: Deleting ~p entry(s) from transactionlist :~n~p~n"
+	    logger:log(debug, "Transaction layer: Deleted ~p entry(s) from transactionlist :~n~p~n"
 		       "(new list is ~p entry(s))", [Deleted, transactionstatelist:debugfriendly(L),
 						     transactionstatelist:get_length()]),
 	    true
@@ -275,7 +298,7 @@ terminate(Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change/3
+%% Function: code_change(OldVsn, State, Extra)
 %% Purpose : Convert process state when code is changed
 %% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
@@ -401,7 +424,7 @@ cancel_corresponding_transaction(#request{method="CANCEL"}=Request, STPid) when 
 	    gen_server:cast(STPid, {create_response, Status, Reason, [], <<>>}),
 	    %% Don't pass to core
 	    false;
-	_ ->
+	none ->
 	    logger:log(debug, "Transaction layer: Could not find transaction to cancel, "
 		       "pass it on to application core."),
 	    %% Pass to core
@@ -445,13 +468,7 @@ get_server_transaction_pid(Re) when is_record(Re, request); is_record(Re, respon
 		    TPid;
 		_ ->
 		    none
-	    end;
-	Unknown ->
-	    logger:log(error, "Transaction layer: Could not get server transaction - get_server_transaction returned unknown result : ~p",
-		       [Unknown]),
-	    logger:log(debug, "Transaction layer: Request or response passed to get_server_transaction was :~n~p~n~n",
-		       [Re]),
-	    none
+	    end
     end.
 
 %%--------------------------------------------------------------------
@@ -738,7 +755,8 @@ start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, ReportTo)
     case clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, ReportTo) of
 	{ok, CPid} ->
 	    CPid;
-	_ ->
+	E ->
+	    logger:log(error, "Transaction layer: Failed starting client transaction : ~p", [E]),
 	    {error, "Failed starting client transaction"}
     end.
 
@@ -903,7 +921,7 @@ send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when is_record(TH, t
 	    %% badly. The client would wait until it times out, instead of resubmitting the request.
 	    gen_server:cast(TH#thandler.pid, {quit}),
 	    ok;
-	_ ->
+	false ->
 	    true
     end,
     ok.

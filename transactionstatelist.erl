@@ -19,7 +19,6 @@
 	 add_client_transaction/4,
 	 add_server_transaction/3,
 	 delete_using_entrylist/1,
-	 delete_expired/0,
 	 empty/0,
 	 extract/2,
 	 debugfriendly/0,
@@ -30,6 +29,7 @@
 	 get_server_transaction_using_response/1,
 	 get_elem_using_pid/2,
 	 get_entrylist_using_pid/1,
+	 get_expired/0,
 	 set_pid/2,
 	 set_appdata/2,
 	 set_response_to_tag/2,
@@ -53,6 +53,9 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
+%% Transaction expire is just a safety-net thing. All transactions should
+%% terminate by themselves long before this.
+-define(TRANSACTION_EXPIRE, 900).
 
 %%====================================================================
 %% External functions
@@ -337,6 +340,30 @@ filter_server_totag_matches(ToTag, [H|T]) when is_record(H, transactionstate) ->
     filter_server_totag_matches(ToTag, T).
 
 %%--------------------------------------------------------------------
+%% Function: get_expired()
+%% Descrip.: Get all transactionstatelist entrys that have expired.
+%% Returns : none | Expired
+%%           Expired = list() of transactionstate record()
+%%--------------------------------------------------------------------
+get_expired() ->
+    Now = util:timestamp(),
+    L = get_all_entries(),
+    case get_expired2(L, Now, []) of
+	[] -> none;
+	Res -> {ok, Res}
+    end.
+
+%% part of get_expired/0 - filter out all transactionstate entrys with expire =< now
+get_expired2([#transactionstate{expire=Expire}=H | T], Now, Res) when Expire =< Now ->
+    %% match
+    get_expired2(T, Now, [H | Res]);
+get_expired2([H | T], Now, Res) when is_record(H, transactionstate) ->
+    %% no match
+    get_expired2(T, Now, Res);
+get_expired2([], _Now, Res) ->
+    Res.
+
+%%--------------------------------------------------------------------
 %% Function: extract(Fields, TState)
 %%           Fields = list() of atom(), pid|appdata|response_to_tag
 %%           TState = transactionstate record()
@@ -396,21 +423,6 @@ set_result(TState, Value) when is_record(TState, transactionstate), is_list(Valu
     TState#transactionstate{result = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: delete_expired()
-%% Descrip.: Delete entrys from a transactionstatelist record() that
-%%           has a timestamp older than now. del_time() signals
-%%           the transaction handlers for transactions it removes.
-%% Returns : NewTStateList = transactionstatelist record()
-%%--------------------------------------------------------------------
-delete_expired() ->
-%%    Now = util:timestamp(),
-%%    L = TStateList#transactionstatelist.list,
-%%    NewL = del_time(Now, L),
-%%    TStateList#transactionstatelist{list=NewL}.
-    %% XXX Not implemented
-    ok.
-
-%%--------------------------------------------------------------------
 %% Function: delete_using_entrylist(Pid, TStateList)
 %%           EntryList  = list() of transactionstate record()
 %%           TStateList = transactionstatelist record()
@@ -421,7 +433,9 @@ delete_expired() ->
 %%--------------------------------------------------------------------
 delete_using_entrylist(EntryList) when is_list(EntryList) ->
     ok = del_entrys(EntryList),
-    {ok, length(EntryList)}.
+    NumEntrys = length(EntryList),
+    ets:update_counter(yxa_statistics, {transactionlayer, transactions}, 0 - NumEntrys),
+    {ok, NumEntrys}.
 
 %%--------------------------------------------------------------------
 %% Function: update_transactionstate(TState)
@@ -550,8 +564,13 @@ add(Type, Id, AckId, Pid, Desc) when is_pid(Pid); Pid == none, is_atom(Type),
     TId = {Type, Id},
     case ets:insert_new(transactionstate_typeid_to_ref, {TId, Ref}) of
 	true ->
-	    NewT = #transactionstate{ref=Ref, type=Type, id=Id, ack_id=AckId, pid=Pid,
-	    			     description=Desc},
+	    NewT = #transactionstate{ref = Ref,
+				     type = Type,
+				     id	= Id,
+				     ack_id = AckId,
+				     pid = Pid,
+				     expire = util:timestamp() + ?TRANSACTION_EXPIRE,
+	    			     description = Desc},
 	    true = ets_insert_new(transactionstate_ref_to_t, {Ref, NewT}),
 	    case Pid of
 		none -> true;
@@ -562,6 +581,8 @@ add(Type, Id, AckId, Pid, Desc) when is_pid(Pid); Pid == none, is_atom(Type),
 		none -> true;
 		_ -> true = ets_insert_new(transactionstate_ack_to_ref, {AckId, Ref})
 	    end,
+	    %% Statistics
+	    ets:update_counter(yxa_statistics, {transactionlayer, transactions}, 1),
 	    ok;
 	false ->
 	    case get_elem(Type, Id) of
