@@ -546,11 +546,23 @@ process_timer2({resendrequest_timeout}, Timer, State) when is_record(State, stat
     [Timeout] = siptimer:extract([timeout], Timer),
     {LogTag, Request} = {State#state.logtag, State#state.request},
     {Method, URI} = {Request#request.method, Request#request.uri},
-    logger:log(normal, "~s: Sending of ~s ~s timed out after ~s seconds",
-	       [LogTag, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
+    WasCancelled = case State#state.do_cancel of
+		       {true, _EH} ->
+			   logger:log(normal, "~s: Cancelled request '~s ~s' timed out after ~s seconds",
+				      [LogTag, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
+			   true;
+		       false ->
+			   logger:log(normal, "~s: Sending of 's ~s' timed out after ~s seconds",
+				      [LogTag, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
+			   false
+		   end,
     case State#state.sipstate of
 	trying ->
 	    fake_request_timeout(State);
+	calling when WasCancelled == true ->
+	    %% This INVITE has been cancelled, but we never received a provisional
+	    %% response so we give up now and pretend we received a '487 Request Terminated'
+	    fake_request_response(487, "Request Terminated", State);
 	calling ->
 	    fake_request_timeout(State);
 	proceeding when Method == "INVITE" ->
@@ -753,14 +765,13 @@ act_on_new_sipstate2(proceeding, BranchAction, State) when is_record(State, stat
     {Method, URI} = {Request#request.method, Request#request.uri},
     case Method of
 	"INVITE" ->
-	    LogTag = State#state.logtag,
-	    Response = State#state.response,
-	    {Status, Reason} = {Response#response.status, Response#response.reason},
 	    case State#state.do_cancel of
 		{true, ExtraHeaders} ->
+		    Response = State#state.response,
+		    {Status, Reason} = {Response#response.status, Response#response.reason},
 		    logger:log(debug, "~s: A previously cancelled transaction (INVITE ~s) "
 			       "entered state 'proceeding' upon receiving a '~p ~s' response. "
-			       "CANCEL ourselves!", [LogTag, sipurl:print(URI), Status, Reason]),
+			       "CANCEL ourselves!", [State#state.logtag, sipurl:print(URI), Status, Reason]),
 		    NewState1 = State#state{do_cancel=false},
 		    NewState2 = cancel_request(NewState1, ExtraHeaders),
 		    {NewState2, ignore};
@@ -1012,22 +1023,29 @@ received_response_state_machine(Method, Status, State) when Status >= 600, Statu
 %%--------------------------------------------------------------------
 %% Function: stop_resendrequest_timer(State)
 %%           State = state record()
-%% Descrip.: Locate and stop any {resendrequest_timeout} siptimers.
+%% Descrip.: Locate and stop any {resendrequest} (and possibly
+%%           {resendrequest_timeout}) siptimers.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 stop_resendrequest_timer(State) when is_record(State, state) ->
     Request = State#state.request,
     Method = Request#request.method,
     NTList1 = siptimer:cancel_timers_with_appsignal({resendrequest}, State#state.timerlist),
-    %% If it is an INVITE, we stop the resendrequest_timeout as well
-    %% since an invite have {invite_expire} (Timer C) that takes
-    %% care of ending it if nothing more is received.
-    NTList2 = case Method of
-		  "INVITE" ->
+
+    %% If it is an INVITE and we are not waiting to send out a CANCEL, we stop
+    %% the resendrequest_timeout as well since an INVITE has {invite_expire} (Timer C)
+    %% that takes care of ending it if nothing more is received.
+    Cancelling = case State#state.do_cancel of
+		     {true, _EH} -> true;
+		     false -> false
+		 end,
+    NTList2 = case {Method, Cancelling} of
+		  {"INVITE", false} ->
 		      siptimer:cancel_timers_with_appsignal({resendrequest_timeout}, NTList1);
 		  _ ->
 		      NTList1
 	      end,
+
     NewState = State#state{timerlist=NTList2},
     NewState.
 
@@ -1150,16 +1168,15 @@ end_invite(#state{cancelled=true}=State) ->
 end_invite(State) when is_record(State, state) ->
     Request = State#state.request,
     URI = Request#request.uri,
-    SipState = State#state.sipstate,
     LogTag = State#state.logtag,
-    case SipState of
+    case State#state.sipstate of
 	calling ->
 	    fake_request_timeout(State);
 	proceeding ->
 	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state 'proceeding' - cancel request "
 		       "(by starting a separate CANCEL transaction)", [LogTag, sipurl:print(URI)]),
 	    cancel_request(State);
-	_ ->
+	SipState ->
 	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state '~s' - ignoring.",
 		       [LogTag, sipurl:print(URI), SipState]),
 	    State
@@ -1208,13 +1225,12 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
     logger:log(debug, "~s: Marked transaction as cancelled", [LogTag]),
     case Method of
 	"INVITE" ->
-	    SipState = NewState1#state.sipstate,
-	    case SipState of
+	    case NewState1#state.sipstate of
 		calling ->
-		    logger:log(debug, "~s: Stopping resend of INVITE ~s, but NOT starting CANCEL client transaction " ++
+		    logger:log(debug, "~s: Stopping resend of INVITE ~s, but NOT starting CANCEL client transaction "
 			       "right now since we are in state 'calling'", [LogTag, sipurl:print(URI)]),
-		    NewState2 = stop_resendrequest_timer(NewState1),
-		    NewState3 = NewState2#state{do_cancel={true, ExtraHeaders}},
+		    NewState2 = NewState1#state{do_cancel={true, ExtraHeaders}},
+		    NewState3 = stop_resendrequest_timer(NewState2),
 		    NewState3;
 		proceeding ->
 		    logger:log(debug, "~s: Stopping resends of INVITE ~s and starting a CANCEL client transaction",
