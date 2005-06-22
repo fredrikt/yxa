@@ -150,6 +150,7 @@ get_user_verified(Header, Method) ->
 	    logger:log(debug, "Auth: get_user_verified: No Authorization header, returning false"),
 	    false;
 	Authheader ->
+	    %% XXX how do we handle multiple Authorization headers (for different realms)?
 	    get_user_verified2(Method, Authheader, Header)
     end.
 
@@ -175,6 +176,7 @@ get_user_verified_proxy(Header, Method) ->
 	    logger:log(debug, "Auth: get_user_verified_proxy: No Proxy-Authorization header, returning false"),
 	    false;
 	Authheader ->
+	    %% XXX how do we handle multiple Proxy-Authorization headers (for different realms)?
 	    get_user_verified2(Method, Authheader, Header)
     end.
 
@@ -199,6 +201,7 @@ get_user_verified_yxa_peer(Header, Method) ->
 	    logger:log(debug, "Auth: get_user_verified_yxa_peer: No X-Yxa-Peer-Auth header, returning false"),
 	    false;
 	Authheader ->
+	    %% XXX how do we handle multiple X-Yxa-Peer-Auth headers (for different realms)?
 	    Authorization = sipheader:auth(Authheader),
 	    OrigUser = User = dict:fetch("username", Authorization),
 	    case sipserver:get_env(x_yxa_peer_auth_secret, none) of
