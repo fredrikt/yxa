@@ -1,7 +1,7 @@
-%% Erlang OTP R10B-5 library versions
+%% Erlang OTP R10B-6 library versions
 {release, {"Yxa adminwww","0.0"}, {erts, "5.2"},
- [{kernel,"2.10.7"},
-  {stdlib,"1.13.7"},
-  {ssl, "3.0.5"},
+ [{kernel,"2.10.9"},
+  {stdlib,"1.13.8"},
+  {ssl, "3.0.7"},
   {mnesia, "4.2.2"},
   {adminwww, "0.0"}]}.
