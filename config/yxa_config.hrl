@@ -341,7 +341,6 @@
 		      type	= bool
 		     },
 	   #cfg_entry{key	= x_yxa_peer_auth_secret,
-		      default	= "",
 		      type	= string,
 		      normalize	= false
 		     },
@@ -409,6 +408,10 @@
 		     },
 	   #cfg_entry{key	= max_register_time,
 		      default	= 43200,
+		      type	= integer
+		     },
+	   #cfg_entry{key	= tcp_connection_idle_timeout,
+		      default	= 10000000,
 		      type	= integer
 		     },
 	   #cfg_entry{key	= record_route,
