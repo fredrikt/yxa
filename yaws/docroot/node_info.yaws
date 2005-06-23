@@ -17,7 +17,9 @@
 %%--------------------------------------------------------------------
 %% "show-or-not" variables for this page. See toggle_link/3 documentation.
 -define(TOGGLE_LINKS, ["transaction",
-		       "transport"
+		       "transport",
+		       "config",
+		       "config_defaults"
 		      ]).
 
 -define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
@@ -82,14 +84,17 @@ get_node_info(A, NodeStr) when is_list(NodeStr) ->
     Statistics = get_statistics(Node),
 
     Uptime = node_uptime(Statistics),
+    Config = config(A, Node),
     TransactionLayer = transactionlayer(A, Node, Statistics),
+    TransportLayer = transportlayer(A, Node),
 
     {ok, [
 	  {p, [], []},
 
 	  {h3, [], ["General", Uptime]},
-
-	  TransactionLayer
+	  Config,
+	  TransactionLayer,
+	  TransportLayer
 
 	 ]}.
 
@@ -122,7 +127,8 @@ node_uptime(Statistics) when is_list(Statistics) ->
     [
      {tr, [],
       [{td, [{nowrap, "true"}], "Started"},
-       {td, [{nowrap, "true"}], util:sec_to_date(Starttime)}
+       {td, [{nowrap, "true"},
+	     {align, "left"}], util:sec_to_date(Starttime)}
       ]},
      {tr, [],
       [{td, [{nowrap, "true"}], "Uptime"},
@@ -175,7 +181,7 @@ transactionlayer(A, Node, Statistics) when is_list(Statistics) ->
 			      ], Statistics),
 
     [{tr, [], [
-	       {td, [], {h3, [], ["Transaction layer"]}}
+	       {td, [{colspan, 2}], {h3, [], ["Transaction layer"]}}
 	      ]},
      {tr, [], [{td, [{colspan, 2}], ShowHideLink}]},
 
@@ -290,7 +296,222 @@ get_stat(_Id, Display, [], Res) ->
 	      {td, [], "unknown"}
 	     ]}.
 
+%%--------------------------------------------------------------------
+%% Function: config(A, Node)
+%%           A          = term(), Yaws request data
+%%           Node       = atom(), node we are to talk with%
+%% Descrip.: Display sipserver configuration.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+config(A, Node) ->
+    Config = rpc:call(Node, yxa_config, list, []),
+    {ok, Cfg, Defaults} = separate_config_defaults(Config),
+
+    {ShowHideCfgLink, ConfigHTML} =
+	case ?GET_VAR("config") of
+	    {ok, "show"} ->
+		{toggle_link(A, "hide configuration", "config"),
+		 {tr, [], [
+			   {td, [{colspan, 2}], [
+						 format_config(Cfg)
+						]}
+			  ]}
+		};
+	    _ ->
+		{toggle_link(A, "show configuration", "config"),
+		 []}
+	end,
+
+    {ShowHideDefaultLink, DefaultHHTML} =
+	case ?GET_VAR("config_defaults") of
+	    {ok, "show"} ->
+		{toggle_link(A, "hide configuration defaults", "config_defaults"),
+		 {tr, [], [
+			   {td, [{colspan, 2}], [
+						 format_config(Defaults)
+						]}
+			  ]}
+		};
+	    _ ->
+		{toggle_link(A, "show configuration defaults", "config_defaults"),
+		 []}
+	end,
+    [
+     {tr, [], [
+               {td, [{colspan, 2}], {h3, [], ["Configuration"]}}
+              ]},
+
+     {tr, [], [
+	       {td, [{colspan, 2}], ShowHideCfgLink}
+	      ]},
+     ConfigHTML,
+     {tr, [], [
+	       {td, [{colspan, 2}], ShowHideDefaultLink}
+	      ]},
+     DefaultHHTML].
+
+%% part of config/2 - split configuration fetched into defaults and non-defaults parts
+separate_config_defaults(In) ->
+    separate_config_defaults2(In, [], []).
+
+separate_config_defaults2([{_Key, _Value, yxa_config_default} = H | T], Cfg, Defaults) ->
+    separate_config_defaults2(T, Cfg, [H | Defaults]);
+separate_config_defaults2([{_Key, _Value, _Src} = H | T], Cfg, Defaults) ->
+    separate_config_defaults2(T, [H | Cfg], Defaults);
+separate_config_defaults2([], Cfg, Defaults) ->
+    {ok, lists:reverse(Cfg), lists:reverse(Defaults)}.
+
+%% part of config/2 - make HTML table out of config
+format_config(In) ->
+    TRs = format_config2(In, []),
+    {table, [{border, 0}], [
+		 {tr, [], [
+			   {th, [], "Parameter"},
+			   {th, [], "&nbsp;"},
+			   {th, [], "&nbsp;"},
+			   {th, [], "Value"}
+			  ]},
+		 TRs
+		]}.
+
+%% part of format_config/1
+format_config2([{Key, Value, _Src} | T], Res) ->
+    {ok, ListText, ValuePart} = format_config2_value(Key, Value),
+    This = {tr, [], [
+		     {td, [], atom_to_list(Key)},
+		     {td, [], ListText},
+		     {td, [{halign, "center"}], "="},
+		     {td, [], ValuePart}
+		    ]},
+    format_config2(T, [This | Res]);
+format_config2([], Res) ->
+    lists:reverse(Res).
+
+%% part of format_config2/2
+%%
+%% {Key, Value} tuples
+format_config2_value(Key, [{_Key2, _Value2} | T] = Values) ->
+    %% list of {Key2, Value2} tuples
+    TRs = lists:map(fun({ThisKey, ThisValue}) ->
+			    KeyHTML = {pre, [], io_lib:format("~p", [ThisKey])},
+			    ValueHTML = format_single_value(Key, ThisValue),
+			    {tr, [], [
+				      {td, [], KeyHTML},
+				      {td, [], "="},
+				      {td, [], ValueHTML}
+				     ]}
+		    end, Values),
+    {ok, "(list)", format_list(Key, TRs)};
+%%
+%% lists
+%%
+format_config2_value(Key, [H | _] = Value) when is_integer(H) ->
+    %% string, not a list at all
+    {ok, "&nbsp;", format_single_value(Key, Value)};
+format_config2_value(Key, [H | _] = Values) when is_list(H), length(H) >= 1 ->
+    %% list of strings
+    TRs = lists:map(fun(V) ->
+			    {tr, [], [
+				      {td, [], format_single_value(Key, V)}
+				     ]}
+		    end, Values),
+    {ok, "(list)", format_list(Key, TRs)};
+format_config2_value(Key, [FH | _] = Values) when is_list(Values) ->
+    %% list of non-strings
+    TRs = lists:map(fun(V) ->
+			    {tr, [], [
+				      {td, [], format_single_value(Key, V)}
+				     ]}
+		    end, Values),
+    {ok, "(list)", format_list(Key, TRs)};
+%%
+%% single value
+%%
+format_config2_value(Key, Value) ->
+    %% single value, just pass on to format_single_value
+    {ok, "&nbsp", format_single_value(Key, Value)}.
+
+%% part of format_config2_value/2
+format_list(Key, []) ->
+    "(empty list)";
+format_list(Key, [{tr, _, _} | _] = TRs) ->
+    {table, [{border, 0}], [
+			    TRs
+			   ]}.
+
+%% part of format_config2_value/2
+format_single_value(ldap_password, _V) ->
+    "&lt;password not shown&gt;";
+format_single_value(sipauth_password, _V) ->
+    "&lt;password not shown&gt;";
+format_single_value(x_yxa_peer_auth_secret, _V) ->
+    "&lt;secret not shown&gt;";
+format_single_value(x_yxa_peer_auth, _Pw) ->
+    "&lt;secret not shown&gt;";
+format_single_value(_Key, Value) ->
+    {pre, [], io_lib:format("~p", [Value])}.
+
+
+%%--------------------------------------------------------------------
+%% Function: transportlayer(A, Node)
+%%           A          = term(), Yaws request data
+%%           Node       = atom(), node we are to talk with
+%% Descrip.: Display transport layer connection information.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+transportlayer(A, Node) ->
+    {ok, SocketList} = rpc:call(Node, tcp_dispatcher, get_socketlist, []),
+
+    {ShowHideLink, TransportHTML} =
+	case ?GET_VAR("transport") of
+	    {ok, "show"} ->
+		{toggle_link(A, "hide transport layer information", "transport"),
+		 {tr, [], [
+			   {td, [{colspan, 2}], [
+						 format_socketlist(SocketList)
+						]}
+			  ]}
+		};
+	    _ ->
+		{toggle_link(A, "show transport layer information", "transport"),
+		 []}
+	end,
+
+    [
+     {tr, [], [
+               {td, [{colspan, 2}], {h3, [], ["TCP connections"]}}
+              ]},
+
+     {tr, [], [
+	       {td, [{colspan, 2}], ShowHideLink}
+	      ]},
+     TransportHTML
+    ].
+
+%% part of transport/2
+format_socketlist(SocketList) ->
+    Content = case socketlist:debugfriendly(SocketList) of
+		  [] ->
+		      {tr, [], [
+				{td, [{colspan, 2}], ["None right now"]}
+			       ]};
+		  Res when is_list(Res) ->
+		      lists:map(fun(H) ->
+					{tr, [], [
+						  {td, [], H}
+						 ]}
+				end, Res)
+	      end,
+
+    {table, [{border, 1}], [
+			    {tr, [], [
+				      {th, [], "Description and result"}
+				     ]},
+			    Content
+			   ]}.
     
+
+
 %%--------------------------------------------------------------------
 %% Function: toggle_link(A, Text, This)
 %%           A    = term(), Yaws request data
