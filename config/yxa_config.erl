@@ -103,13 +103,19 @@ init([AppModule, ExtraCfg]) when is_atom(AppModule) ->
 		{ok, Normalized} when is_record(Normalized, yxa_cfg) ->
 		    ok = load(Normalized, hard);
 		{error, Msg} when is_list(Msg) ->
+		    %% output error message to console first, since logger is probably not running
+		    io:format("ERROR: Config validation failed : ~p~n", [Msg]),
+
 		    %% Since this is a failure on init, we fail hard
 		    logger:log(error, "Config server: Failed validating configuration : ~p",
 			       [Msg]),
-		    %throw('Configuration validation error')
-		    erlang:error(Msg)
+
+		    throw('Config validation failed')
 	    end;
 	{error, E} when is_list(E) ->
+	    %% output error message to console first, since logger is probably not running
+	    io:format("ERROR: Config validation failed : ~p~n", [E]),
+
 	    logger:log(error, "Config server: Failed parsing configuration : ~p", [E]),
 	    throw('Configuration parsing error')
     end,
@@ -336,7 +342,6 @@ validate(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModule),
     yxa_config_check:check_config(Cfg, AppModule, Mode).
 
 load(Cfg, Mode) when is_record(Cfg, yxa_cfg), Mode == soft; Mode == hard ->
-%%    logger:log(debug, "FREDRIK: LOAD ~p CFG :~n~p", [Mode, Cfg]),
     ok = load_set(Cfg#yxa_cfg.entrys, Mode),
     ok = delete_not_present(Cfg, Mode),
     ok.
