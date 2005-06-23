@@ -56,7 +56,7 @@ usage()
 	    # these are not implemented yet
 	    #echo "	info		get info about running server"
 	    #echo "	reload		reload configuration of running server, if possible"
-	    #echo "	restart		restart running server"
+	    echo "	restart		restart running server"
 	    echo ""
 	    ;;
     esac

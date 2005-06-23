@@ -91,9 +91,17 @@ process(Node, ["status"]) ->
 	    Res
     end;
 process(Node, ["stop"]) ->
-    case rpc:call(Node, init, stop, []) of
+    case rpc:call(Node, sipserver, stop, []) of
 	ok ->
 	    io:format("Node ~p stopped~n", [Node]),
+	    ok;
+	Res ->
+	    Res
+    end;
+process(Node, ["restart"]) ->
+    case rpc:call(Node, sipserver, restart, []) of
+	ok ->
+	    io:format("Node ~p restarted~n", [Node]),
 	    ok;
 	Res ->
 	    Res

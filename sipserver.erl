@@ -9,6 +9,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 start/2,
+	 stop/0,
+	 restart/0,
 	 process/3,
 	 get_env/1,
 	 get_env/2,
@@ -86,6 +88,24 @@ start(normal, [AppModule]) ->
 	    E = lists:flatten(io_lib:format("Failed starting supervisor : ~p", [Unknown])),
 	    {error, E}
     end.
+
+%%--------------------------------------------------------------------
+%% Function: stop()
+%% Descrip.: Log and then shut down application.
+%% Returns : does not return
+%%--------------------------------------------------------------------
+stop() ->
+    logger:log(normal, "Sipserver: shutting down"),
+    init:stop().
+
+%%--------------------------------------------------------------------
+%% Function: restart()
+%% Descrip.: Log and then restart application.
+%% Returns : does not return
+%%--------------------------------------------------------------------
+restart() ->
+    logger:log(normal, "Sipserver: restarting"),
+    init:restart().
 
 %%--------------------------------------------------------------------
 %% Function: init_mnesia(RemoteTables)
