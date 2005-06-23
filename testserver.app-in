@@ -50,7 +50,16 @@
 	     transportlayer,
 	     util
 	    ]},
-  {registered, []},
+  {registered, [
+		sipserver_sup,
+		yxa_config,
+		logger,
+		ldap_client,
+		tranasctionlayer,
+		tcp_dispatcher,
+		sipsocket_udp,
+		transactionlayer
+	       ]},
   {mod, {sipserver, [testserver]}},
   {env, []},
   {applications,
