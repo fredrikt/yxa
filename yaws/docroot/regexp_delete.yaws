@@ -1,0 +1,159 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : regexp_delete.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for deleting regexp-routes form the db.
+%%%
+%%% Created : 12 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("database_regexproute.hrl").
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A,
+	     ?GET_VAR("node"),
+	     ?GET_VAR("regexp"),
+	     ?GET_VAR("class"),
+	     ?GET_VAR("address")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr}, {ok, Regexp}, {ok, Class},
+%%                {ok, Address})
+%%           A        = term(), Yaws request data
+%%           NodeStr  = string(), name of node we are to talk with
+%%           Regexp   = string()
+%%           Class    = string()
+%%           Address  = string()
+%% Descrip.: Top level output function. Output header and catch
+%%           errors, if any.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}, {ok, Regexp}, {ok, Class}, {ok, Address}) when is_list(NodeStr), is_list(Regexp),
+								      is_list(Class), is_list(Address) ->
+    Node = list_to_atom(NodeStr),
+    Confirmed = case ?GET_VAR("confirm_regexp_delete") of
+		    {ok, "Confirm"} ->
+			delete_regexp(Node, Regexp, Class, Address, NodeStr);
+		    _ ->
+			needs_confirmation(Regexp, Class, Address, NodeStr)
+		end;
+out2(_, _, _, _, _) ->
+    throw({error, "Invalid node, user, class or address specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: needs_confirmation(Regexp, Class, Address, NodeStr)
+%%           Regexp  = string(), regexp
+%%           Class   = string() class of regexproute
+%%           Address = string(), address of regexproute
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Output a small form asking for confirmation to delete
+%%           Location from User.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+needs_confirmation(Regexp, Class, Address, NodeStr) when is_list(Regexp), is_list(Class), is_list(Address),
+							 is_list(NodeStr) ->
+    Text = {p, [], [
+		    {strong, [], {font, [{color, red}], ["Delete"]}},
+		    " regexp ",
+		    {strong, [], [Regexp]},
+		    " to address ",
+		    {strong, [], [Address]},
+		    "?"
+		   ]},
+    Form = {form, [], [
+		       yxa_yaws_util:hidden_inputs([
+						    {"node", NodeStr},
+						    {"regexp", Regexp},
+						    {"class", Class},
+						    {"address", Address}
+						   ]),
+
+		       {input, [{type, submit},
+				{name, "confirm_regexp_delete"},
+				{value, "Confirm"}
+			       ]}
+		      ]},
+    [{p, [], []}, Text, {p, [], Form}].
+
+
+%%--------------------------------------------------------------------
+%% Function: delete_regexp(Node, Regexp, ClassStr, Address, NodeStr)
+%%           Node     = atom(), node we are to talk with
+%%           Regexp   = string(), regexp
+%%           ClassStr = string(), class of regexproute
+%%           Address  = string(), address of regexproute
+%%           NodeStr  = string(), name of node we are to talk with
+%% Descrip.: Delete regexproute, then redirect browser to regexp page
+%%           (because that _is_ where the client came from, right?)
+%% Returns : {redirect, URL} | HTML = term(), Yaws html data
+%%           URL = string()
+%%--------------------------------------------------------------------
+delete_regexp(Node, Regexp, ClassStr, Address, NodeStr) when is_atom(Node), is_list(Regexp), is_list(ClassStr),
+							     is_list(Address), is_list(NodeStr) ->
+    Class = case ClassStr of
+		"permanent" ->
+		    permanent;
+		_ ->
+		    throw({error, "Invalid class"})
+	    end,
+    case locate_regexproute(Regexp, Class, Address, Node) of
+	{ok, Flags, Expire} ->
+	    {atomic, ok} = rpc:call(Node, database_regexproute, delete, [Regexp, Flags, Class, Expire, Address]),
+	    URL = "regexp.yaws?" ++
+		"node=" ++ yaws_api:url_encode(NodeStr),
+	    {redirect, URL};
+        nomatch ->
+	    Msg = io_lib:format("Could not find regexproute, regexp ~p class ~p address ~p",
+				[Regexp, Class, Address]),
+	    throw({error, Msg})
+    end.
+
+%% locate_regexproute/4, part of delete_location/5
+locate_regexproute(Regexp, Class, Address, Node) ->
+    RRs = rpc:call(Node, database_regexproute, list, []),
+    locate_regexproute2(RRs, Regexp, Class, Address).
+
+locate_regexproute2([#regexproute{regexp=Regexp, class=Class, address=Address} = H | _T], Regexp, Class, Address) ->
+    %% match
+    {ok, H#regexproute.flags, H#regexproute.expire};
+locate_regexproute2([H | T], Regexp, Class, Address) when is_record(H, regexproute) ->
+    locate_regexproute2(T, Regexp, Class, Address);
+locate_regexproute2([], _Regexp, _Class, _Address) ->
+    nomatch.
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+</erl>
