@@ -677,15 +677,36 @@ register_contact(LogTag, SipUser, Location, Priority, ExpireHeader, CallId, CSeq
 			     sipurl:parse(Location#contact.urlstr),
 			     CallId, CSeq).
 
-register_contact_flags(Priority, _Contact, incomingproxy) ->
-    [{priority, Priority}];
+%%--------------------------------------------------------------------
+%% Function: register_contact_flags(Priority, Contact, App)
+%%           App = outgoingproxy | other Yxa application
+%% Descrip.: Create flags to store in the location database for this
+%%           registration. For outgoingproxy, this includes an 'addr'
+%%           that is the address of the proxy to which the UAC
+%%           (presumably) has a persistent TCP connection that must
+%%           be used in order to reach this client with SIP messages.
+%% Returns : L = list() of {Key, Value}
+%%           Key   = atom()
+%%           Value = term()
+%%--------------------------------------------------------------------
 register_contact_flags(Priority, Contact, outgoingproxy) ->
     ContactURL = sipurl:parse(Contact#contact.urlstr),
-    Proto = sipurl:get_port(ContactURL),
-    MyURL = sipurl:new([{host, siprequest:myhostname()},
-			{port, sipserver:get_listenport(Proto)}
+    %% Make other proxys in our system forward requests to this user to this proxy,
+    %% and make them use SIPS if the client did.
+    {Proto, Port} = case ContactURL#sipurl.proto of
+			"sips" ->
+			    {"sips", sipserver:get_listenport(tls)};
+			_ ->
+			    %% default to plain old sip for anything except sips
+			    {"sip", sipserver:get_listenport(tcp)}
+		    end,
+    MyURL = sipurl:new([{proto, Proto},
+			{host, siprequest:myhostname()},
+			{port, Port}
 		       ]),
-    [{priority, Priority}, {outgoingproxy, sipurl:print(MyURL)}].
+    [{priority, Priority}, {outgoingproxy, sipurl:print(MyURL)}];
+register_contact_flags(Priority, _Contact, _App) ->
+    [{priority, Priority}].
 
 %% determine expiration time for a specific contact. Use default
 %% value if contact/header supplies no expiration period.
