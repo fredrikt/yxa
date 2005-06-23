@@ -102,9 +102,9 @@ do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Orig
 
     %% outgoingproxys need to add Record-Route header to make sure in-dialog requests go
     %% through the proxy.
-    NewHeader1 = case sipserver:get_env(record_route, true) of
-		     true -> siprequest:add_record_route(RequestIn#request.header, Origin);
-		     false -> RequestIn#request.header
+    NewHeader1 = case yxa_config:get_env(record_route) of
+		     {ok, true} -> siprequest:add_record_route(RequestIn#request.header, Origin);
+		     {ok, false} -> RequestIn#request.header
 		 end,
     Request = RequestIn#request{header = NewHeader1},
 
@@ -176,13 +176,13 @@ route_request(Request) when is_record(Request, request) ->
 		false ->
 		    case local:get_user_with_contact(URI) of
 			none ->
-			    case sipserver:get_env(sipproxy, none) of
+			    case yxa_config:get_env(sipproxy) of
+				{ok, DefaultProxy} when is_record(DefaultProxy, sipurl) ->
+				    {forward, DefaultProxy};
 				none ->
-				    none;
-				DefaultProxy ->
-				    {forward, sipurl:parse_url_with_default_protocol("sip", DefaultProxy)}
+				    none
 			    end;
-			SIPuser ->
+			SIPuser when is_list(SIPuser) ->
 			    logger:log(debug, "outgoingproxy: Request destination ~p is a registered "
 				       "contact of user ~p - proxying", [URI, SIPuser]),
 			    {proxy, URI}

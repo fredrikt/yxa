@@ -66,12 +66,10 @@ yxa_init() ->
 %%           Username = string()
 %%--------------------------------------------------------------------
 get_user_with_address(Address) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    nomatch;
-	Server ->
-	    UserAttribute = sipserver:get_env(ldap_userattribute, "sipAuthenticationUser"),
-	    AddressAttribute = sipserver:get_env(ldap_addressattribute, "sipLocalAddress"),
+    case yxa_config:get_env(ldap_server) of
+	{ok, Server} ->
+	    {ok, UserAttribute} = yxa_config:get_env(ldap_userattribute),
+	    {ok, AddressAttribute} = yxa_config:get_env(ldap_addressattribute),
 	    Res = directory:ldapsearch(Server, AddressAttribute, Address, [UserAttribute]),
 	    case Res of
 		error ->
@@ -98,7 +96,9 @@ get_user_with_address(Address) ->
 		    logger:log(debug, "userdb-ldap: Query for exactly one user matching address ~p failed, ldapsearch returned : ~p",
 			       [Address, Unknown]),
 		    error
-	    end
+	    end;
+	none ->
+	    nomatch
     end.
 
 %%--------------------------------------------------------------------
@@ -127,12 +127,10 @@ get_users_for_address_of_record(Address) when is_list(Address) ->
 %%           Users = list() of string() 
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(AddressList) when is_list(AddressList) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    nomatch;
-	Server ->
-	    UserAttribute = sipserver:get_env(ldap_userattribute, "sipAuthenticationUser"),
-	    AddressAttribute = sipserver:get_env(ldap_addressattribute, "sipLocalAddress"),
+    case yxa_config:get_env(ldap_server) of
+	{ok, Server} ->
+	    {ok, UserAttribute} = yxa_config:get_env(ldap_userattribute),
+	    {ok, AddressAttribute} = yxa_config:get_env(ldap_addressattribute),
 	    case get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, AddressList) of
 		Res when is_list(Res) ->
 		    SortedRes = lists:usort(Res),
@@ -140,7 +138,9 @@ get_users_for_addresses_of_record(AddressList) when is_list(AddressList) ->
 		    SortedRes;
 		Res ->
 		    Res
-	    end
+	    end;
+	none ->
+	    nomatch
     end.
 
 %% Internal function - part of get_users_for_addresses_of_record/1.
@@ -181,12 +181,10 @@ get_addresses_for_user(User) when is_list(User) ->
 %%           Addresses = list() of string()
 %%--------------------------------------------------------------------
 get_addresses_for_users(UserList) when is_list(UserList) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    nomatch;
-	Server ->
-	    UserAttribute = sipserver:get_env(ldap_userattribute, "sipAuthenticationUser"),
-	    AddressAttribute = sipserver:get_env(ldap_addressattribute, "sipLocalAddress"),
+    case yxa_config:get_env(ldap_server) of
+        {ok, Server} ->
+	    {ok, UserAttribute} = yxa_config:get_env(ldap_userattribute),
+	    {ok, AddressAttribute} = yxa_config:get_env(ldap_addressattribute),
 	    case get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, UserList) of
 		Res when is_list(Res) ->
 		    SortedRes = lists:usort(Res),
@@ -194,7 +192,9 @@ get_addresses_for_users(UserList) when is_list(UserList) ->
 		    SortedRes;
 		error ->
 		    error
-	    end
+	    end;
+	none ->
+	    nomatch
     end.
 
 %% internal function - part of get_addresses_for_users/1
@@ -242,12 +242,10 @@ get_users_for_url(URL) when is_record(URL, sipurl) ->
 %%           Password = string()
 %%--------------------------------------------------------------------
 get_password_for_user(User) when is_list(User) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    nomatch;
-	Server ->
-	    UserAttribute = sipserver:get_env(ldap_userattribute, "sipAuthenticationUser"),
-	    PasswordAttribute = sipserver:get_env(ldap_passwordattribute, "sipPassword"),
+    case yxa_config:get_env(ldap_server) of
+        {ok, Server} ->
+	    {ok, UserAttribute} = yxa_config:get_env(ldap_userattribute),
+	    {ok, PasswordAttribute} = yxa_config:get_env(ldap_passwordattribute),
 	    case directory:ldapsearch_simple(Server, UserAttribute, User, PasswordAttribute) of
 		error ->
 		    error;
@@ -256,7 +254,9 @@ get_password_for_user(User) when is_list(User) ->
 		    nomatch;
 		[Password] when is_list(Password) ->
 		    Password
-	    end
+	    end;
+	none ->
+	    nomatch
     end.
 
 %%--------------------------------------------------------------------
@@ -286,12 +286,10 @@ get_classes_for_user(_User) ->
 %%           Number = string()
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(User) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    nomatch;
-	Server ->
-	    UserAttribute = sipserver:get_env(ldap_userattribute, "sipAuthenticationUser"),
-	    TelephoneNumberAttribute = sipserver:get_env(ldap_telephonenumberattribute, "telephoneNumber"),
+    case yxa_config:get_env(ldap_server) of
+        {ok, Server} ->
+	    {ok, UserAttribute} = yxa_config:get_env(ldap_userattribute),
+	    {ok, TelephoneNumberAttribute} = yxa_config:get_env(ldap_telephonenumberattribute, "telephoneNumber"),
 	    case directory:ldapsearch_simple(Server, UserAttribute, User, TelephoneNumberAttribute) of
 		error ->
 		    error;
@@ -300,7 +298,9 @@ get_telephonenumber_for_user(User) ->
 		    nomatch;
 		[Number] when is_list(Number) ->
 		    Number
-	    end
+	    end;
+	none ->
+	    nomatch
     end.
 
 %%--------------------------------------------------------------------

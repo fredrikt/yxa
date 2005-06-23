@@ -104,6 +104,12 @@
 	 cpl_is_log_dest/1
 	]).
 
+%% configuration
+-export([
+	 check_config_type/3,
+	 config_is_soft_reloadable/3
+	]).
+
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
@@ -455,7 +461,7 @@ incomingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origi
 %%
 %%             undefined - proceed with default behavior (currently
 %%                         to try and use a destination indicated by
-%%                         the configuration parameter 
+%%                         the configuration parameter
 %%                         default_pstngateway)
 %%             nomatch   - there is no destination for DstNumber,
 %%                         reject request with a '404 Not Found'
@@ -590,3 +596,37 @@ cpl_is_log_dest(_LogName) ->
 
 cpl_mail(_Mail, _User) ->
     undefined.
+
+
+%% configuration hooks
+%%%%%%%%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: check_config_type(Key, Value, Src)
+%%           Key     = atom()
+%%           Value   = term()
+%%           Src     = atom(), config backend module that found this
+%%                             configuration parameter
+%% Descrip.: Check a local configuration parameter. Local parameters
+%%           are local_*.
+%% Returns : {ok, NewValue} |
+%%           {error, Msg}
+%%           NewValue = term()
+%%           Msg      = string()
+%%--------------------------------------------------------------------
+check_config_type(_Key, Value, _Src) ->
+    {ok, Value}.
+
+%%--------------------------------------------------------------------
+%% Function: config_is_soft_reloadable(Key, Value, Src)
+%%           Key     = atom()
+%%           Value   = term()
+%%           Src     = atom(), config backend module that found this
+%%                             configuration parameter
+%% Descrip.: Check if it is possible to change a local configuration
+%%           parameter with a soft reconfiguration (true), or if a
+%%           complete restart of the application is necessary (false).
+%% Returns : true | false
+%%--------------------------------------------------------------------
+config_is_soft_reloadable(_Key, _Value, _Src) ->
+    true.

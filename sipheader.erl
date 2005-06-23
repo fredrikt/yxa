@@ -834,8 +834,8 @@ get_via_branch(TopVia) when is_record(TopVia, via) ->
 remove_loop_cookie(Branch) ->
     case Branch of
 	"z9hG4bK-yxa-" ++ RestOfBranch ->
-	    case sipserver:get_env(detect_loops, true) of
-		true ->
+	    case yxa_config:get_env(detect_loops) of
+		{ok, true} ->
 		    case string:rstr(RestOfBranch, "-o") of
 			0 ->
 			    Branch;
@@ -843,7 +843,7 @@ remove_loop_cookie(Branch) ->
 			    %% Return branch without Yxa loop cookie
 			    "z9hG4bK-yxa-" ++ string:substr(RestOfBranch, 1, Index - 1)
 		    end;
-		_ ->
+		{ok, false} ->
 		    Branch
 	    end;
         _ when is_list(Branch) ->

@@ -1463,7 +1463,8 @@ bound_dtstart(Start) when is_record(Start, date_time)->
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 bound_count(CountVal) ->
-    case CountVal > sipserver:get_env(time_switch_count_max, 100) of 
+    {ok, ConfiguredMax} = yxa_config:get_env(cpl_time_switch_count_max),
+    case CountVal > ConfiguredMax of 
 	true -> 
 	    throw({error, count_in_time_sub_tag_in_time_switch_tag_set_to_high});
 	false -> 

@@ -89,18 +89,14 @@ start_link() ->
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
 init([]) ->
-    case sipserver:get_env(sipuserdb_file_filename, none) of
-	none ->
-	    E = "sipuserdb_file module activated, but sipuserdb_file_filename not set - module disabled",
-	    logger:log(error, E),
-	    ignore;
-	Fn when is_list(Fn) ->
+    case yxa_config:get_env(sipuserdb_file_filename) of
+	{ok, Fn} when is_list(Fn) ->
 	    %% Set up periodic checking for changes in the userdb file, default every 15 seconds
-	    case sipserver:get_env(sipuserdb_file_refresh_interval, 15) of
-		X when X == 0; X == none ->
+	    case yxa_config:get_env(sipuserdb_file_refresh_interval) of
+		{ok, 0} ->
 		    %% periodic checking for new data disabled through configuration
 		    ok;
-		Interval when is_integer(Interval) ->
+		{ok, Interval} when is_integer(Interval) ->
 		    {ok, _T} = timer:send_interval(Interval * 1000, ?SERVER, {check_file})
 	    end,
 
@@ -116,7 +112,11 @@ init([]) ->
 		Unknown ->
 		    logger:log(error, "sipuserdb_file: could not get mtime for file ~p : ~p", [Fn, Unknown]),
 		    {stop, "sipuserdb_file: get_mtime of userdb failed"}
-	    end
+	    end;
+	none ->
+	    E = "sipuserdb_file module activated, but sipuserdb_file_filename not set - module disabled",
+	    logger:log(error, E),
+	    ignore
     end.
 
 

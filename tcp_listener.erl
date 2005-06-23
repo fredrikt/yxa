@@ -70,15 +70,14 @@ start_link(Proto, Port) when is_atom(Proto), is_integer(Port) ->
     {ok, InetModule, SocketModule, Options} = get_settings(Proto),
     case (Proto == tls) or (Proto == tls6) of
 	true ->
-	    case sipserver:get_env(ssl_server_certfile, none) of
-		none ->
+	    case lists:keysearch(certfile, 1, Options) of
+		{value, _} ->
+		    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
+		    {ok, Pid};
+		false ->
 		    logger:log(normal, "NOT starting ~p listener on port ~p, no SSL server certificate specified "
 			       "(see README)", [Proto, Port]),
-		    ignore;
-		CertFile ->
-		    NewOptions = lists:append(Options, [{certfile, CertFile}]),
-		    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, NewOptions]),
-		    {ok, Pid}
+		    ignore
 	    end;
 	false ->
 	    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
@@ -257,8 +256,17 @@ get_settings(tcp) ->
 get_settings(tcp6) ->
     {ok, inet, gen_tcp, [inet6 | ?SOCKETOPTS]};
 get_settings(tls) ->
-    L = sipserver:get_env(ssl_server_ssloptions, []),
+    L = get_settings_tls(),
     {ok, ssl, ssl, ?SSL_SOCKETOPTS ++ L};
 get_settings(tls6) ->
-    L = sipserver:get_env(ssl_server_ssloptions, []),
+    L = get_settings_tls(),
     {ok, ssl, ssl, [inet6 | ?SSL_SOCKETOPTS ++ L]}.
+
+get_settings_tls() ->
+    {ok, L1} = yxa_config:get_env(ssl_server_ssloptions),
+    case yxa_config:get_env(ssl_server_certfile) of
+	{ok, File} ->
+	    [{certfile, File} | L1];
+	none ->
+	    L1
+    end.

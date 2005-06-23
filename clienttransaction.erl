@@ -649,7 +649,7 @@ get_request_resend_timeout(_Method, OldTimeout, State) when State == trying; Sta
     %% Use Timer T2 as maximum for non-INVITE requests when in 'trying' state.
     %% The meaning is that we should resend non-INVITE requests at 500ms, 1s, 2s, 4s, 4s, 4s ...
     %% or, if we receive a provisional response and go into proceeding state, every 4s.
-    T2 = sipserver:get_env(timerT2, 4000),
+    {ok, T2} = yxa_config:get_env(timerT2),
     case State of
 	trying ->
 	    lists:min([OldTimeout * 2, T2]);
@@ -819,7 +819,7 @@ act_on_new_sipstate2(completed, BranchAction, State) when is_record(State, state
 			DDesc = "terminate client transaction INVITE " ++ sipurl:print(URI) ++ " (Timer D)",
 			add_timer(TimerD, DDesc, {terminate_transaction}, NewState1);
 		    _ ->
-			TimerK = sipserver:get_env(timerT4, 5000),
+			{ok, TimerK} = yxa_config:get_env(timerT4),
 			KDesc = "terminate client transaction " ++ Method ++ " " ++ sipurl:print(URI) ++ " (Timer K)",
 			add_timer(TimerK, KDesc, {terminate_transaction}, NewState1)
 		end
@@ -1072,7 +1072,7 @@ initiate_request(State) when is_record(State, state) ->
 						     SocketDstStr]),
     case transportlayer:send_proxy_request(State#state.socket_in, Request, Dst, ["branch=" ++ Branch]) of
 	{ok, SendingSocket, TLBranch} ->
-	    T1 = sipserver:get_env(timerT1, 500),
+	    {ok, T1} = yxa_config:get_env(timerT1),
 	    TimerA = get_initial_resend_timer(SendingSocket, T1),
 	    TimerB = 64 * T1,
 	    ADesc = "resendrequest " ++ Method ++ " to " ++ sipurl:print(URI) ++ " (TimerA)",
@@ -1257,7 +1257,7 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 	    %% we don't check if it was reliable transport or not when deciding the timeout for Timer K
 	    %% here, since the purpose is to collect any late responses.
 	    NewState2 = stop_resendrequest_timer(NewState1),
-	    TimerK = sipserver:get_env(timerT4, 5000),
+	    {ok, TimerK} = yxa_config:get_env(timerT4),
 	    KDesc = "terminate client transaction " ++ Method ++ " " ++ sipurl:print(URI) ++ " (Timer K)",
 	    NewState3 = add_timer(TimerK, KDesc, {terminate_transaction}, NewState2),
 	    NewState3#state{sipstate=completed}
@@ -1291,7 +1291,7 @@ start_cancel_transaction(State) when is_record(State, state) ->
     CancelHeader4 = keylist:delete('proxy-require', CancelHeader3),
     CancelHeader5 = keylist:delete('content-type', CancelHeader4),
     CancelRequest = siprequest:set_request_body(#request{method="CANCEL", uri=URI, header=CancelHeader5}, <<>>),
-    T1 = sipserver:get_env(timerT1, 500),
+    {ok, T1} = yxa_config:get_env(timerT1),
     NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
     Socket = State#state.socket,
     Dst = State#state.dst,

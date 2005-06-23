@@ -774,7 +774,7 @@ generate_counts(yearly = Level, LowestLevel, TimeSwitchCond, ByParams, Year, Max
     %% [Level, LowestLevel, TimeSwitchCond, ByParams, Year, MaxCount]), %DDD
 
     {StartYear,_,_} = (time_switch:get_dtstart(TimeSwitchCond))#date_time.date,
-    LookAHead = sipserver:get_env(time_switch_count_max_lookahead, 20),
+    {ok, LookAHead} = yxa_config:get_env(cpl_time_switch_count_max_lookahead),
     %% 
     case ((Year - StartYear) > LookAHead) and (is_integer(MaxCount)) of 
 	true ->

@@ -114,8 +114,8 @@ start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, 
 	    {stop, "Could not open UDP socket"}
     end;
 start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State, state) ->
-    case sipserver:get_env(enable_v6, false) of
-	true ->
+    case yxa_config:get_env(enable_v6) of
+	{ok, true} ->
 	    case gen_udp:open(Port, ?SOCKETOPTSv6) of
 		{ok, Socket} ->
 		    Local = get_localaddr(Socket, "[::]"),
@@ -128,7 +128,7 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 			       [?SOCKETOPTSv6, Port, inet:format_error(Reason)]),
 		    {stop, "Could not open IPv6 UDP socket"}
 	    end;
-	_ ->
+	{ok, false} ->
 	    start_listening(T, Port, State)
     end.
 

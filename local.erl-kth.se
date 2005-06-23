@@ -105,6 +105,12 @@
 	 cpl_is_log_dest/1
 	]).
 
+%% configuration
+-export([
+	 check_config_type/3,
+	 config_is_soft_reloadable/3
+	]).
+
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
@@ -198,10 +204,10 @@ parse_packet(Packet) ->
 
 lookupkthid(KTHid) ->
     Server = "yorick.admin.kth.se",
-    {ok, Sock} = gen_tcp:connect(Server, 80, 
+    {ok, Sock} = gen_tcp:connect(Server, 80,
 				 [list, {packet, 0}]),
     ok = gen_tcp:send(Sock, "GET /service/personsokning/kthid2tele.asp?kthid=" ++ KTHid ++ " HTTP/1.0\r\n\r\n"),
-    
+
     Text = do_recv(Sock, ""),
     {Header, Body} = parse_packet(Text),
     ok = gen_tcp:close(Sock),
@@ -245,13 +251,13 @@ remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list
 
 lookup_url_to_locations(URL) ->
     lookup:lookup_url_to_locations(URL).
-    
+
 lookup_url_to_addresses(Src, URL) ->
     lookup:lookup_url_to_addresses(Src, URL).
-    
+
 lookup_addresses_to_users(Addresses) ->
     lookup:lookup_addresses_to_users(Addresses).
-    
+
 lookup_address_to_users(Address) ->
     lookup:lookup_address_to_users(Address).
 
@@ -326,7 +332,7 @@ get_addresses_for_users(Users) ->
 
 get_users_for_url(URL) ->
     sipuserdb:get_users_for_url(URL).
-    
+
 get_password_for_user(User) ->
     sipuserdb:get_password_for_user(User).
 
@@ -452,9 +458,43 @@ is_tls_equivalent(_Proto, _Host, _Port) ->
 %%--------------------------------------------------------------------
 cpl_log(_LogName, _Comment, _User, _Request) ->
     undefined.
-    
+
 cpl_is_log_dest(_LogName) ->
     undefined.
 
 cpl_mail(_Mail, _User) ->
     undefined.
+
+
+%% configuration hooks
+%%%%%%%%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: check_config_type(Key, Value, Src)
+%%           Key     = atom()
+%%           Value   = term()
+%%           Src     = atom(), config backend module that found this
+%%                             configuration parameter
+%% Descrip.: Check a local configuration parameter. Local parameters
+%%           are local_*.
+%% Returns : {ok, NewValue} |
+%%           {error, Msg}
+%%           NewValue = term()
+%%           Msg      = string()
+%%--------------------------------------------------------------------
+check_config_type(_Key, Value, _Src) ->
+    {ok, Value}.
+
+%%--------------------------------------------------------------------
+%% Function: config_is_soft_reloadable(Key, Value, Src)
+%%           Key     = atom()
+%%           Value   = term()
+%%           Src     = atom(), config backend module that found this
+%%                             configuration parameter
+%% Descrip.: Check if it is possible to change a local configuration
+%%           parameter with a soft reconfiguration (true), or if a
+%%           complete restart of the application is necessary (false).
+%% Returns : true | false
+%%--------------------------------------------------------------------
+config_is_soft_reloadable(_Key, _Value, _Src) ->
+    true.

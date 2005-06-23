@@ -907,8 +907,8 @@ send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when is_record(TH, t
 		  end,
     ExtraHeaders = lists:append(AuthHeader, RetryHeader),
     send_response_handler(TH, Status, Reason, ExtraHeaders),
-    case sipserver:get_env(stateless_challenges, false) of
-	true ->
+    case yxa_config:get_env(stateless_challenges) of
+	{ok, true} ->
 	    %% Adhere to advice in RFC3261 #26.3.2.4 (DoS Protection) saying we SHOULD terminate
 	    %% the server transaction immediately after sending a challenge, to preserve server
 	    %% resources but also to not resend these and thus be more usefull to someone using
@@ -921,7 +921,7 @@ send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when is_record(TH, t
 	    %% badly. The client would wait until it times out, instead of resubmitting the request.
 	    gen_server:cast(TH#thandler.pid, {quit}),
 	    ok;
-	false ->
+	{ok, false} ->
 	    true
     end,
     ok.

@@ -53,7 +53,8 @@ create(Servers) ->
 				      {type, bag}]).
 
 servers() ->
-    sipserver:get_env(databaseservers).
+    {ok, S} = yxa_config:get_env(databaseservers),
+    S.
 
 %%--------------------------------------------------------------------
 %% Function: insert(Regexp, Flags, Class, Expire, Address)

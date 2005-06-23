@@ -55,7 +55,7 @@ usage()
 	    echo "	status		get brief status of running server"
 	    # these are not implemented yet
 	    #echo "	info		get info about running server"
-	    #echo "	reload		reload configuration of running server, if possible"
+	    echo "	reload		reload configuration of running server, if possible"
 	    echo "	restart		restart running server"
 	    echo ""
 	    ;;
@@ -65,7 +65,7 @@ usage()
 }
 
 # Calculate Erlang arguments
-configpath="$CONFIGDIR/$PROGRAMNAME"
+configpath="${CONFIGDIR}/${PROGRAMNAME}.config"
 
 if [ "x$SSLCERTDIR" = "x" ]; then
     client_sslcertfile="$CONFIGDIR/yxa/cert.comb"
@@ -97,6 +97,10 @@ do
       case $arg in
 	  -h)
 	      usage
+	      ;;
+	  -config)
+	      configpath="$1"
+	      shift
 	      ;;
 	  -c_ssl)
 	      client_sslcertfile="$1"
@@ -189,7 +193,7 @@ else
     mnesiaparameters="-mnesia dir '"$mnesiadir"'"
 fi
 
-for EXTRA_DIR in "${PWD}/event_handler" "${PWD}/cpl"; do
+for EXTRA_DIR in "${PWD}/event_handler" "${PWD}/cpl" "${PWD}/config"; do
     # Add event_handler and cpl to search path if such a directory exists
     # (meaning we are probably in the build directory)
     if [ -d "$EXTRA_DIR" ]; then
@@ -238,8 +242,8 @@ if [ $is_bootstrap -eq 1 ]; then
 	    -run init stop
     fi
 else
-    if [ ! -r "${configpath}.config" ]; then
-	echo "$0: Configuration file ${configpath}.config not found or not readable"
+    if [ ! -r "${configpath}" ]; then
+	echo "$0: Configuration file '${configpath}' not found or not readable"
 	exit 1
     fi
 
@@ -248,14 +252,16 @@ else
 	    ${erl} -boot $PROGRAMNAME -pz ${beamdir} \
 		$EXTRA_ERL_ARGUMENTS \
 		-name $name \
-		-config $configpath \
+		-yxa_config $configpath \
 		$ssloptions \
 		$mnesiaparameters $detach
 	    ;;
 	stop|status|info|reload|restart)
-	    node="$name@$hostname"
+	    node="${name}@${hostname}"
 	    if [ $explicit_name == 0 ]; then
-		name="${name}_ctl"
+	        # include pid ($$) in node name used here since contact with the running
+	        # node could otherwise fail for consecutive commands executed rapidly
+		name="${name}_ctl_$$"
 	    fi
 
 	    ${erl} $boot_start_ssl -pz ${beamdir} \

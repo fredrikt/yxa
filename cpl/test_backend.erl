@@ -231,20 +231,22 @@ in_time_range(Timezone, TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function: get_min_ring()
+%% Descrip.: the shortest time a "phone" may ring
+%% Returns : integer(), the number of seconds
 %%--------------------------------------------------------------------
 get_min_ring() ->
-    sipserver:get_env(cpl_minimum_ringtime, 10).
+    {ok, M} = yxa_config:get_env(cpl_minimum_ringtime, 10),
+    M.
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function: get_server_max()
+%% Descrip.: the maximum ring-time for this application
+%% Returns : integer(), the number of seconds
 %%--------------------------------------------------------------------
 get_server_max() ->
-    sipserver:get_env(cpl_call_max_timeout, 120).
+    {ok, M} = yxa_config:get_env(cpl_call_max_timeout),
+    M.
 
 %%--------------------------------------------------------------------
 %% Function:

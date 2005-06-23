@@ -107,12 +107,12 @@ siplookup(Domain) ->
 enumlookup(none) ->
     none;
 enumlookup("+" ++ Number) ->
-    case sipserver:get_env(enum_domainlist, none) of
-	none ->
+    case yxa_config:get_env(enum_domainlist) of
+	{ok, []} ->
 	    logger:log(debug, "Resolver: Not performing ENUM lookup on ~p since enum_domainlist is empty",
 		       ["+" ++ Number]),
 	    none;
-	DomainList ->
+	{ok, DomainList} ->
 	    enumlookup("+" ++ Number, DomainList)
     end;
 enumlookup(Foo) ->
@@ -155,8 +155,8 @@ enumlookup("+" ++ Number, DomainList) ->
 %%           AddrList = list() of sipdns_hostport record()
 %%--------------------------------------------------------------------
 get_ip_port(Host, Port) when is_integer(Port) ; Port == none ->
-    V6List = case sipserver:get_env(enable_v6, true) of
-		 true ->
+    V6List = case yxa_config:get_env(enable_v6) of
+		 {ok, true} ->
 		     case get_ip_port2(inet6, Host, Port) of
 			 {error, _} ->
 			     %% Ignore v6 errors (they are logged in get_ip_port2 though)
@@ -164,7 +164,7 @@ get_ip_port(Host, Port) when is_integer(Port) ; Port == none ->
 			 Res when is_list(Res) ->
 			     Res
 		     end;
-		 _ ->
+		 {ok, false} ->
 		     %% IPv6 is disabled
 		     []
 	     end,

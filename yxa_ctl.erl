@@ -52,6 +52,8 @@ start() ->
 	    try process(Node, Args) of
 		ok ->
 		    erlang:halt(?EXIT_OK);
+		error ->
+		    erlang:halt(?EXIT_ERROR);
 		{badrpc, nodedown} ->
 		    io:format("Error: Node ~p not responding~n", [Node]),
 		    erlang:halt(?EXIT_NODEDOWN);
@@ -95,6 +97,21 @@ process(Node, ["stop"]) ->
 	ok ->
 	    io:format("Node ~p stopped~n", [Node]),
 	    ok;
+	Res ->
+	    Res
+    end;
+%%process(Node, ["info"]) ->
+process(Node, ["reload"]) ->
+    case rpc:call(Node, yxa_config, reload, []) of
+	ok ->
+	    io:format("Node ~p configuration reloaded~n", [Node]),
+	    ok;
+	{error, Where, E} when is_atom(Where), is_list(E) ->
+	    io:format("Failed reloading configuration on node ~p.~n"
+		      "Phase : ~p~n"
+		      "Error : ~s~n"
+		      "~n", [Node, Where, E]),
+	    error;
 	Res ->
 	    Res
     end;

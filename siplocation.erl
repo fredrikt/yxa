@@ -722,7 +722,7 @@ parse_register_expire(ExpireHeader, Contact) when is_record(Contact, contact) ->
 	    %% change (shorten/increase expire period) or reject too short expire
 	    %% times with a 423 (Interval Too Brief) error.
 	    %% Currently implementation only limits the max expire period
-	    MaxRegisterTime = sipserver:get_env(max_register_time, 43200),
+	    {ok, MaxRegisterTime} = yxa_config:get_env(max_register_time),
 
 	    lists:min([MaxRegisterTime, ContactExpire])
     end.

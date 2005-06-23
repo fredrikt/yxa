@@ -682,7 +682,8 @@ in_time_range(Timezone, TimeSwitchCond) ->
 %% Returns : integer(), the number of seconds
 %%--------------------------------------------------------------------
 get_min_ring() ->
-    sipserver:get_env(cpl_minimum_ringtime, 10).
+    {ok, M} = yxa_config:get_env(cpl_minimum_ringtime, 10),
+    M.
 
 %%--------------------------------------------------------------------
 %% Function: get_server_max()
@@ -690,7 +691,8 @@ get_min_ring() ->
 %% Returns : integer(), the number of seconds
 %%--------------------------------------------------------------------
 get_server_max() ->
-    sipserver:get_env(cpl_call_max_timeout, 120).
+    {ok, M} = yxa_config:get_env(cpl_call_max_timeout),
+    M.
 
 %%--------------------------------------------------------------------
 %% Function:

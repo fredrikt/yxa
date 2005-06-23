@@ -21,7 +21,12 @@ myip() ->
 %% XXX make this return all addresses, currently IPv6 addresses
 %% are not returned!
 myip_list() ->
-    get_iplist().
+    case get_iplist() of
+	[] ->
+	    ["127.0.0.1"];
+	L ->
+	    L
+    end.
 
 get_if(L) ->
     get_if(L, []).

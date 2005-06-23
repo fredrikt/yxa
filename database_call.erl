@@ -58,7 +58,8 @@ create(Servers) ->
     			      ]).
 
 servers() ->
-    sipserver:get_env(databaseservers).
+    {ok, S} = yxa_config:get_env(databaseservers),
+    S.
 
 %%--------------------------------------------------------------------
 %% Function:

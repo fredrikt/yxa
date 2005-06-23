@@ -25,14 +25,16 @@
 -include("sipproxy.hrl").
 
 start(normal, _Args) ->
-    Pid = sipserver:safe_spawn(admin_www, start, [sipserver:get_env(httpd_config)]),
+    {ok, HTTPDconfig} = yxa_config:get_env(httpd_config),
+    Pid = sipserver:safe_spawn(admin_www, start, [HTTPDconfig]),
     {ok, Pid}.
 
 start(ConfigFile) ->
     mnesia:start(),
     logger:start_link(),
     directory:start_link(),
-    mnesia:change_config(extra_db_nodes, sipserver:get_env(databaseservers)),
+    {ok, DBsrv} = yxa_config:get_env(databaseservers),
+    mnesia:change_config(extra_db_nodes, DBsrv),
     {Message, Args} = case mnesia:wait_for_tables([phone,user], infinity) of
 			  ok ->
 			      {"web server started, all tables found~n", []};
@@ -422,16 +424,20 @@ header(redirect, URL) ->
     ["Location: " ++ URL ++ "\r\n\r\n"].
 
 indexurl() ->
-    sipserver:get_env(www_baseurl) ++ "index.html".
+    {ok, BaseURL} = yxa_config:get_env(www_baseurl),
+    BaseURL ++ "index.html".
 
 userurl() ->
-    sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Alist_users".
+    {ok, BaseURL} = yxa_config:get_env(www_baseurl),
+    BaseURL ++ "erl/admin_www%3Alist_users".
 
 phonesurl() ->
-    sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Alist_phones".
+    {ok, BaseURL} = yxa_config:get_env(www_baseurl),
+    BaseURL ++ "erl/admin_www%3Alist_phones".
 
 showuserurl() ->
-    sipserver:get_env(www_baseurl) ++ "erl/admin_www%3Ashow_user".
+    {ok, BaseURL} = yxa_config:get_env(www_baseurl),
+    BaseURL ++ "erl/admin_www%3Ashow_user".
 
 indexurl_html() ->
     "<a href=\"" ++ indexurl() ++ "\">Tillbaka till f&ouml;rstasidan</a>".

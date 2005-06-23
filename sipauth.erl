@@ -41,7 +41,10 @@
 %% Returns : string()
 %%--------------------------------------------------------------------
 realm() ->
-    sipserver:get_env(sipauth_realm, "").
+    case yxa_config:get_env(sipauth_realm) of
+	{ok, Realm} -> Realm;
+	none -> ""
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_nonce(Timestamp)
@@ -54,7 +57,8 @@ realm() ->
 %% Returns : string()
 %%--------------------------------------------------------------------
 get_nonce(Timestamp) when is_list(Timestamp) ->
-    hex:to(erlang:md5([Timestamp, ":", sipserver:get_env(sipauth_password, "")])).
+    {ok, Password} = yxa_config:get_env(sipauth_password, ""),
+    hex:to(erlang:md5([Timestamp, ":", Password])).
 
 %%--------------------------------------------------------------------
 %% Function: get_challenge()
@@ -204,14 +208,14 @@ get_user_verified_yxa_peer(Header, Method) ->
 	    %% XXX how do we handle multiple X-Yxa-Peer-Auth headers (for different realms)?
 	    Authorization = sipheader:auth(Authheader),
 	    OrigUser = User = dict:fetch("username", Authorization),
-	    case sipserver:get_env(x_yxa_peer_auth_secret, none) of
-		none ->
-		    logger:log(debug, "Auth: Request has X-Yxa-Peer-Auth header, but I have no configured secret"),
-		    false;
-		Password when is_list(Password) ->
+	    case yxa_config:get_env(x_yxa_peer_auth_secret) of
+		{ok, Password} when is_list(Password) ->
 		    Realm = dict:fetch("realm", Authorization),
 		    Now = util:timestamp(),
-		    do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization)
+		    do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization);
+		none ->
+		    logger:log(debug, "Auth: Request has X-Yxa-Peer-Auth header, but I have no configured secret"),
+		    false
 	    end
     end.
 
@@ -331,7 +335,8 @@ pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
 		   N -> N
 	       end,
     {ok, Class} = classify_number(ToNumber, Classdefs),
-    case lists:member(Class, sipserver:get_env(sipauth_unauth_classlist, [])) of
+    {ok, UnauthClasses} = yxa_config:get_env(sipauth_unauth_classlist, []),
+    case lists:member(Class, UnauthClasses) of
 	true ->
 	    %% This is a class that anyone should be allowed to call,
 	    %% just check that if this is one of our SIP users, they

@@ -111,9 +111,9 @@ request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin
 %%
 %% Anything but REGISTER, ACK and CANCEL
 request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
-    Header = case sipserver:get_env(record_route, false) of
-		 true -> siprequest:add_record_route(Request#request.header, Origin);
-		 false -> Request#request.header
+    Header = case yxa_config:get_env(record_route) of
+		 {ok, true} -> siprequest:add_record_route(Request#request.header, Origin);
+		 {ok, false} -> Request#request.header
 	     end,
     NewRequest = Request#request{header=Header},
     case local:is_request_to_this_proxy(Request) of
@@ -335,8 +335,9 @@ get_actions_users2(Users, Proto) when is_list(Users), is_list(Proto) ->
     case fetch_actions_for_users(Users, Proto) of
 	[] -> nomatch;
 	Actions when is_list(Actions) ->
-	    WaitAction = #sipproxy_action{action=wait,
-					  timeout=sipserver:get_env(appserver_call_timeout, 40)},
+	    {ok, Timeout} = yxa_config:get_env(appserver_call_timeout),
+	    WaitAction = #sipproxy_action{action  = wait,
+					  timeout = Timeout},
 	    {Users, lists:append(Actions, [WaitAction])}
     end.
 
@@ -387,7 +388,7 @@ locations_to_actions2([], Res) ->
     lists:reverse(Res);
 
 locations_to_actions2([H | T], Res) when is_record(H, siplocationdb_e) ->
-    Timeout = sipserver:get_env(appserver_call_timeout, 40),
+    {ok, Timeout} = yxa_config:get_env(appserver_call_timeout),
     URL = siplocation:to_url(H),
     CallAction = #sipproxy_action{action=call,
 				  requri=URL,
@@ -443,7 +444,7 @@ forward_call_actions([Fwd], Actions, Proto) when is_record(Fwd, sipproxy_forward
 forward_call_actions_create_calls(Forwards, Localring, User, Proto) when is_list(Forwards),
 									 Localring == true ; Localring == false,
 									 is_list(Proto), is_list(User) ->
-    FwdTimeout = sipserver:get_env(appserver_forward_timeout, 40),
+    {ok, FwdTimeout} = yxa_config:get_env(appserver_forward_timeout),
     forward_call_actions_create_calls2(Forwards, FwdTimeout, Localring, User, Proto, []).
 
 forward_call_actions_create_calls2([H | T], Timeout, Localring, User, Proto, Res) when is_record(H, sipurl) ->

@@ -9,6 +9,7 @@ AC_PROG_INSTALL
 
 AC_CONFIG_FILES(
 		Makefile \
+		config/Makefile \
 		cpl/Makefile \
 		event_handler/Makefile \
 		yaws/src/Makefile

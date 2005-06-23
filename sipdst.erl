@@ -254,10 +254,10 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
 			   false ->
 			       DstList
 		       end,
-	    DstList3 = case sipserver:get_env(tls_disable_client, false) of
-			   true ->
+	    DstList3 = case yxa_config:get_env(tls_disable_client) of
+			   {ok, true} ->
 			       remove_tls_destinations(DstList2);
-			   false ->
+			   {ok, false} ->
 			       DstList2
 		       end,
 	    format_siplookup_result(sipurl:get_port(URL), ReqURI, URL#sipurl.host, DstList3)
@@ -589,8 +589,8 @@ address_to_address_and_proto(Addr, DefaultProto) when DefaultProto == tcp; Defau
 	{ok, _IPtuple} ->
 	    {ok, Addr, DefaultProto};
 	_ ->
-	    case sipserver:get_env(enable_v6, false) of
-		true ->
+	    case yxa_config:get_env(enable_v6) of
+		{ok, true} ->
 		    %% Check if it matches IPv6 address syntax
 		    case inet_parse:ipv6_address(util:remove_v6_brackets(Addr)) of
 			{ok, _IPtuple} ->
@@ -603,7 +603,7 @@ address_to_address_and_proto(Addr, DefaultProto) when DefaultProto == tcp; Defau
 			_ ->
 			    {error, "not an IPv4 or IPv6 address"}
 		    end;
-		false ->
+		{ok, false} ->
 		    {error, "not an IPv4 address"}
 	    end
     end.

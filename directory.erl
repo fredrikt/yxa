@@ -71,12 +71,12 @@
 %% Returns : gen_server:start_link() result
 %%--------------------------------------------------------------------
 start_link() ->
-    case sipserver:get_env(ldap_server, none) of
+    case yxa_config:get_env(ldap_server) of
+	{ok, Server} ->
+	    start_link(Server);
 	none ->
 	    logger:log(debug, "Directory: No LDAP server configured"),
-	    start_link(none);
-	Server ->
-	    start_link(Server)
+	    start_link(none)
     end.    
 
 start_link(Server) ->
@@ -270,7 +270,7 @@ should_reopen_connection(State) when is_record(State, state) ->
 		    true;
 		{true, _} ->
 		    QueryCount = State#state.querycount,
-		    QueryLimit = sipserver:get_env(ldap_connection_query_limit, 500),
+		    {ok, QueryLimit} = yxa_config:get_env(ldap_connection_query_limit),
 		    if
 			QueryCount >= QueryLimit ->
 			    logger:log(debug, "LDAP client: This connections query limit (~p) is exceeded (~p).",
@@ -424,8 +424,11 @@ exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when is_record(LHandle, ld
 							   is_list(In), is_list(Attributes) ->
     Handle = LHandle#ldaphandle.ref,
     Filter = eldap:equalityMatch(Type, In),
-    SearchResult = eldap:search(Handle, [{base,
-					  sipserver:get_env(ldap_searchbase, "")},
+    SearchBase = case yxa_config:get_env(ldap_searchbase) of
+		     {ok, SearchBase1} -> SearchBase1;
+		     none -> ""
+		 end,
+    SearchResult = eldap:search(Handle, [{base, SearchBase},
 					 {filter, Filter},
 					 {attributes, Attributes}]),
     case SearchResult of
@@ -483,12 +486,18 @@ get_ldapres([{eldap_entry, Dn, RAttributes} | T], Res) ->
 %%           Handle = ldaphandle record()
 %%--------------------------------------------------------------------
 ldap_connect(Server) when is_list(Server) ->
-    UseSSL = sipserver:get_env(ldap_use_ssl, false),
+    {ok, UseSSL} = yxa_config:get_env(ldap_use_ssl),
     case eldap:open([Server], [{use_ssl, UseSSL}]) of
 	{ok, Handle} ->
-	    case eldap:simple_bind(Handle,
-				   sipserver:get_env(ldap_username, ""),
-				   sipserver:get_env(ldap_password, "")) of
+	    Username = case yxa_config:get_env(ldap_username) of
+			   {ok, Username1} -> Username1;
+			   none -> ""
+		       end,
+	    Password = case yxa_config:get_env(ldap_password) of
+			   {ok, Password1} -> Password1;
+			   none -> ""
+		       end,
+	    case eldap:simple_bind(Handle, Username, Password) of
 		ok ->
 		    logger:log(debug, "LDAP client: Opened LDAP handle ~p (server ~s)", [Handle, Server]),
 		    #ldaphandle{ref=Handle};
@@ -635,13 +644,13 @@ ldapsearch(Server, Type, In, Attributes) when is_list(Server), is_list(Type), is
 %%           Value = string()
 %%--------------------------------------------------------------------
 lookup_mail2tel(Mail) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    none;
-	Server ->
+    case yxa_config:get_env(ldap_server) of
+	{ok, Server} ->
 	    Res = ldapsearch_simple(Server, "mail", Mail, "telephoneNumber"),
 	    logger:log(debug, "Directory: LDAP mail -> telephoneNumber lookup on ~p -> ~p", [Mail, Res]),
-	    Res
+	    Res;
+	none ->
+	    none
     end.
 
 %%--------------------------------------------------------------------
@@ -655,13 +664,13 @@ lookup_mail2tel(Mail) ->
 %%           Value = string()
 %%--------------------------------------------------------------------
 lookup_mail2uid(Mail) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    none;
-	Server ->
+    case yxa_config:get_env(ldap_server) of
+	{ok, Server} ->
 	    Res = ldapsearch_simple(Server, "mail", Mail, "uid"),
 	    logger:log(debug, "Directory: LDAP uid lookup on ~p -> ~p", [Mail, Res]),
-	    Res
+	    Res;
+	none ->
+	    none
     end.
 
 %%--------------------------------------------------------------------
@@ -675,13 +684,13 @@ lookup_mail2uid(Mail) ->
 %%           Value = string()
 %%--------------------------------------------------------------------
 lookup_mail2cn(Mail) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    none;
-	Server ->
+    case yxa_config:get_env(ldap_server) of
+	{ok, Server} ->
 	    Res = ldapsearch_simple(Server, "mail", Mail, "cn"),
 	    logger:log(debug, "Directory: LDAP server ~s cn lookup on ~p -> ~p", [Server, Mail, Res]),
-	    Res
+	    Res;
+	none ->
+	    none
     end.
 
 %%--------------------------------------------------------------------
@@ -695,12 +704,12 @@ lookup_mail2cn(Mail) ->
 %%           Value = string()
 %%--------------------------------------------------------------------
 lookup_tel2name(Number) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    none;
-	Server ->
+    case yxa_config:get_env(ldap_server) of
+	{ok, Server} ->
 	    Res = ldapsearch_simple(Server, "telephoneNumber", Number, "displayName"),
 	    logger:log(debug, "Directory: LDAP server ~s displayName lookup on ~p -> ~p", [Server, Number, Res]),
-	    Res
+	    Res;
+	none ->
+	    none
     end.
 

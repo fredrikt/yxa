@@ -96,13 +96,13 @@ get_listenerspecs() ->
     Port = sipserver:get_listenport(tcp),
     TLSport = sipserver:get_listenport(tls),
     TCPlisteners = [{tcp, Port}, {tcp6, Port}],
-    Listeners = case sipserver:get_env(tls_disable_server, false) of
-		    false ->
+    Listeners = case yxa_config:get_env(tls_disable_server) of
+		    {ok, false} ->
 			%% XXX add tls6 to this list when there is an Erlang version released
 			%% than has a ssl.erl that handles inet6. Current version (R9C-0) treats
 			%% inet6 as an invalid gen_tcp option.
 			lists:append(TCPlisteners, [{tls, TLSport}]);
-		    true ->
+		    {ok, true} ->
 			TCPlisteners
 		end,
     format_listener_specs(Listeners).
@@ -126,13 +126,13 @@ format_listener_specs([], Res) ->
     lists:reverse(Res);
 format_listener_specs([{Proto, Port} | T], Res)
   when is_atom(Proto), is_integer(Port), Proto == tcp6; Proto == tls6 ->
-    case sipserver:get_env(enable_v6, false) of
-	true ->
+    case yxa_config:get_env(enable_v6) of
+	{ok, true} ->
 	    Id = {listener, Proto, Port},
 	    MFA = {tcp_listener, start_link, [Proto, Port]},
 	    Spec = {Id, MFA, permanent, brutal_kill, worker, [tcp_listener]},
 	    format_listener_specs(T, [Spec | Res]);
-	false ->
+	{ok, false} ->
 	    format_listener_specs(T, Res)
     end;
 format_listener_specs([{Proto, Port} | T], Res)

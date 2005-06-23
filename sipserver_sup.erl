@@ -89,6 +89,8 @@ extract_pids([], Res) ->
 %%           {error, Reason}   
 %%--------------------------------------------------------------------
 init([AppModule]) ->
+    CfgServer = {yxa_config, {yxa_config, start_link, [AppModule]},
+		 permanent, 2000, worker, [yxa_config]},
     Logger = {logger, {logger, start_link, []},
                  permanent, 2000, worker, [logger]},
     Directory = {directory, {directory, start_link, []},
@@ -96,7 +98,7 @@ init([AppModule]) ->
     TransactionLayer = {transactionlayer,
 			{transactionlayer, start_link, [AppModule]},
 			permanent, 2000, worker, [transactionlayer]},
-    MyList = [Logger, Directory, TransactionLayer],
+    MyList = [CfgServer, Logger, Directory, TransactionLayer],
     {ok, {{one_for_one, 20, 60}, MyList}}.
 
 start_extras(Supervisor, AppModule, AppSupdata) ->

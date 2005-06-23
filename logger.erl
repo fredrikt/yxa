@@ -90,16 +90,20 @@
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
 start_link() ->
-    ApplicationName = case application:get_application() of
+    LogBase = case yxa_config:get_env(logger_logbasename) of
+		  {ok, LogBase1} -> LogBase1;
+		  none ->
+		      case application:get_application() of
 			  {ok, Name} ->
 			      Name;
 			  _ ->
 			      erlang:fault("Application name undefined")
-		      end,
-    start_link(sipserver:get_env(logger_logbasename, ApplicationName)).
+		      end
+	      end,
+    start_link(LogBase).
 
-start_link(AppName) ->
-    gen_server:start_link({local, logger}, ?MODULE, [AppName], []).
+start_link(LogBase) when is_list(LogBase) ->
+    gen_server:start_link({local, logger}, ?MODULE, [LogBase], []).
 
 
 %%--------------------------------------------------------------------
@@ -167,13 +171,12 @@ quit(Msg) ->
 %%--------------------------------------------------------------------
 init([Basename]) ->
     %% Check if we should rotate log files when they reach a upper
-    %% limit in size (bytes). Defaults to 250 MB.
-    DefaultSize = 250 * 1024 * 1024,
-    case sipserver:get_env(max_logfile_size, DefaultSize) of
-	none ->
-	    %% max_logfile_size = none, don't rotate logs
+    %% limit in size (bytes).
+    case yxa_config:get_env(max_logfile_size) of
+	{ok, 0} ->
+	    %% max_logfile_size = 0, don't rotate logs
 	    ok;
-	Size ->
+	{ok, Size} when Size > 0 ->
 	    %% Set up a timer to do the size checking every 60 seconds
 	    {ok, _T} = timer:send_interval(60 * 1000, logger, {check_logfile_size, Size})
     end,
@@ -326,9 +329,9 @@ terminate(Reason, State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Func: code_change/3
-%% Purpose: Convert process state when code is changed
-%% Returns: {ok, NewState}
+%% Function: code_change(_OldVsn, State, _Extra)
+%% Descrip.: Convert process state when code is changed
+%% Returns : {ok, NewState}
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

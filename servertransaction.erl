@@ -718,7 +718,7 @@ process_timer2({resendresponse}, Timer, State) when is_record(State, state) ->
 		    NewTimeout = case Method of
 				     "INVITE" ->
 					 %% Use Timer Value T2 for INVITE responses
-					 T2 = sipserver:get_env(timerT2, 4000),
+					 {ok, T2} = yxa_config:get_env(timerT2),
 					 lists:min([Timeout * 2, T2]);
 				     _ ->
 					 Timeout * 2
@@ -967,7 +967,7 @@ send_response(Response, SendReliably, State) when is_record(Response, response),
     transportlayer:send_proxy_response(Socket, Response),
     NewState1 = case SendReliably of
 		    true ->
-			T1 = sipserver:get_env(timerT1, 500),
+			{ok, T1} = yxa_config:get_env(timerT1),
 			case Method of
 			    "INVITE" ->
 				TimerG = T1,
@@ -1022,7 +1022,7 @@ enter_sip_state(completed, State) when is_record(State, state) ->
 	"INVITE" ->
 	    NewState1;
 	_ ->
-	    T1 = sipserver:get_env(timerT1, 500),
+	    {ok, T1} = yxa_config:get_env(timerT1),
 	    TimerJ = 64 * T1,
 	    logger:log(debug, "~s: Server transaction: Entered state 'completed'. Original request was non-INVITE, " ++
 		       "starting Timer J with a timeout of ~s seconds.",
@@ -1050,7 +1050,7 @@ enter_sip_state(confirmed, State) when is_record(State, state) ->
     {ResponseToMethod, ResponseToURI} = {Request#request.method, Request#request.uri},
     case ResponseToMethod of
 	"INVITE" ->
-	    TimerI = sipserver:get_env(timerT4, 5000),
+	    {ok, TimerI} = yxa_config:get_env(timerT4),
 	    logger:log(debug, "~s: Entered state 'confirmed'. Original request was an INVITE, starting " ++
 		       "Timer I with a timeout of ~s seconds.",  [LogTag, siptimer:timeout2str(TimerI)]),
 	    %% Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we

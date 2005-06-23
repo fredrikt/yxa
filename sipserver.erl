@@ -12,8 +12,6 @@
 	 stop/0,
 	 restart/0,
 	 process/3,
-	 get_env/1,
-	 get_env/2,
 	 safe_spawn_fun/2,
 	 safe_spawn/3,
 	 origin2str/1,
@@ -65,7 +63,9 @@ start(normal, [AppModule]) ->
     catch ssl:start(),
     %% XXX uhm, is this sufficient? better than ssl:s internal seeding at least
     %% (since it uses a constant number)
-    ssl:seed([sipserver:get_env(sipauth_password, ""), util:timestamp()]),
+    ssl:seed([
+	      io_lib:format("~p", [now()])
+	     ]),
     mnesia:start(),
     [RemoteMnesiaTables, stateful, AppSupdata] = apply(AppModule, init, []),
     ok = init_statistics(),
@@ -82,6 +82,13 @@ start(normal, [AppModule]) ->
 	    ok = init_mnesia(RemoteMnesiaTables),
 	    {ok, Supervisor} = sipserver_sup:start_extras(Supervisor, AppModule, AppSupdata),
 	    {ok, Supervisor} = sipserver_sup:start_transportlayer(Supervisor),
+	    %% now that everything is started, seed ssl with more stuff
+	    ssl:seed([
+		      io_lib:format("~p ~p", 
+				    [now(),
+				     yxa_config:list()
+				    ])
+		     ]),
 	    logger:log(normal, "proxy started"),
 	    {ok, Supervisor};
 	Unknown ->
@@ -135,14 +142,13 @@ init_mnesia(none) ->
     end,
     ok;
 init_mnesia(RemoteTables) when is_list(RemoteTables) ->
-    DbNodes = case sipserver:get_env(databaseservers, none) of
+    DbNodes = case yxa_config:get_env(databaseservers) of
+		  {ok, Res} -> Res;
 		  none ->
 		      logger:log(error, "Startup: This application needs remote tables ~p but you " ++
 				 "haven't configured any databaseservers, exiting.",
 				 [RemoteTables]),
-		      throw('No databaseservers configured');
-		  Res ->
-		      Res
+		      throw('No databaseservers configured')
 	      end,
     logger:log(debug, "Mnesia extra db nodes : ~p", [DbNodes]),
     case mnesia:change_config(extra_db_nodes, DbNodes) of
@@ -765,7 +771,8 @@ replace_top_via(NewVia, Header) when is_record(NewVia, via) ->
 received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     MyPorts = sipserver:get_all_listenports(),
     MyIP = siphost:myip(),
-    HostnameList = lists:append(sipserver:get_env(myhostnames, []), siphost:myip_list()),
+    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
+    HostnameList = MyHostnames ++ siphost:myip_list(),
     %% If the URI has a username in it, it is not something we've put in a Record-Route
     UsernamePresent = case URI#sipurl.user of
 			  none -> false;
@@ -847,8 +854,10 @@ route_matches_me(Route) when is_record(Route, contact) ->
     MyPorts = sipserver:get_all_listenports(),
     Port = siprequest:default_port(URL#sipurl.proto, sipurl:get_port(URL)),
     PortMatches = lists:member(Port, MyPorts),
-    HostnameList = lists:append(get_env(myhostnames, []), siphost:myip_list()),
-    HostnameMatches = util:casegrep(URL#sipurl.host, HostnameList),
+    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
+    HostnameList = MyHostnames ++ siphost:myip_list(),
+    LChost = http_util:to_lower(URL#sipurl.host),
+    HostnameMatches = lists:member(LChost, HostnameList),
     if
 	HostnameMatches /= true -> false;
 	PortMatches /= true -> false;
@@ -897,10 +906,10 @@ check_packet(Request, Origin) when is_record(Request, request), is_record(Origin
 	    logger:log(error, "INVALID CSeq in packet from ~s", [origin2str(Origin)]),
 	    throw({sipparseerror, request, Header, 400, "Invalid CSeq"})
     end,
-    case sipserver:get_env(detect_loops, true) of
-	true ->
+    case yxa_config:get_env(detect_loops) of
+	{ok, true} ->
 	    check_for_loop(Header, Request#request.uri, Origin);
-	_ ->
+	{ok, false} ->
 	    true
     end;
 %%
@@ -1082,31 +1091,6 @@ check_supported_uri_scheme({unparseable, URIstr}, Header) when is_record(Header,
     end;
 check_supported_uri_scheme(URI, Header) when is_record(URI, sipurl), is_record(Header, keylist) ->
     true.
-
-%%--------------------------------------------------------------------
-%% Function: get_env(Name)
-%%           get_env(Name, Default)
-%%           Name    = atom()
-%%           Default = term()
-%% Descrip.: Our generic configuration fetching functions. If Default
-%%           is given, it will be returned if there is no value found
-%%           in the applications environment. If no Default is given
-%%           and no value was found, this function will generate an
-%%           exception.
-%% Returns : Value | does not return (generates badmatch exception)
-%%           Value = term()
-%%--------------------------------------------------------------------
-get_env(Name) ->
-    {ok, Value} = application:get_env(Name),
-    Value.
-
-get_env(Name, Default) ->
-    case application:get_env(Name) of
-	{ok, Value} ->
-	    Value;
-	undefined ->
-	    Default
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: origin2str(Origin, Default)
@@ -1716,22 +1700,6 @@ test() ->
     %% URL was unparseable
     {sipparseerror, request, URISchemeHeader, 416, "Unsupported URI Scheme (bogus:)"} =
 	(catch check_supported_uri_scheme(URISchemeURL2, URISchemeHeader)),
-
-
-    %% test get_env(Name)
-    %%--------------------------------------------------------------------
-    io:format("test: get_env/1 - 1~n"),
-    %% we crash when we query for a non-existing key. Unfortunately we
-    %% can't test anything else since tests aren't necessarily executed in
-    %% the context of an application, and there is no application:set_application()
-    {'EXIT', {{badmatch, undefined}, _}} = (catch get_env(none)),
-
-
-    %% test get_env(Name, Default)
-    %%--------------------------------------------------------------------
-    io:format("test: get_env/2 - 1~n"),
-    %% test with default
-    {{"strange default"}} = get_env(none, {{"strange default"}}),
 
 
     %% test get_listenport(Proto)

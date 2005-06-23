@@ -22,7 +22,7 @@
 %%% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 %%%
 %%% --------------------------------------------------------------------
--vc('$Id$ ').
+-vc('\$Id$ ').
 -export([open/1,open/2,simple_bind/3,controlling_process/2,
 	 baseObject/0,singleLevel/0,wholeSubtree/0,close/1,
 	 equalityMatch/2,greaterOrEqual/2,lessOrEqual/2,

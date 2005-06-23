@@ -31,23 +31,6 @@
 
 -export([behaviour_info/1]).
 
-%%--------------------------------------------------------------------
-%% Internal exports
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
-%% Include files
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
-%% Records
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
-%% Macros
-%%--------------------------------------------------------------------
--define(DEFAULT_MODULES, [sipuserdb_mnesia]).
-
 
 %%====================================================================
 %% External functions
@@ -86,7 +69,7 @@ behaviour_info(_Other) ->
 %% Returns : Spec
 %%--------------------------------------------------------------------
 yxa_init() ->
-    Modules = sipserver:get_env(userdb_modules, ?DEFAULT_MODULES),
+    {ok, Modules} = yxa_config:get_env(userdb_modules),
     Res = lists:foldl(fun(M, Acc) ->
 			      Acc ++ apply(M, yxa_init, [])
 		      end, [], Modules),
@@ -289,7 +272,7 @@ get_forward_for_user(User) ->
 %%====================================================================
 
 module_apply(Function, Args) ->
-    Modules = sipserver:get_env(userdb_modules, ?DEFAULT_MODULES),
+    {ok, Modules} = yxa_config:get_env(userdb_modules),
     module_apply(Modules, Function, Args).
 
 module_apply([], _Function, _Args) ->

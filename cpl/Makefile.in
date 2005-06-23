@@ -47,6 +47,7 @@ erl_FILES = \
 	xml_parse_util.erl
 
 imported_hrl_FILES = ../siprecords.hrl \
+	../config/yxa_config.hrl
 
 
 hrl_FILES = \

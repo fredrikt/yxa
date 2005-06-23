@@ -215,10 +215,10 @@ lookupuser_locations(Users, URL) when is_list(Users), is_record(URL, sipurl) ->
 %% Returns : list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 remove_unsuitable_locations(#sipurl{proto="sips"}, Locations) when is_list(Locations) ->
-    case sipserver:get_env(ssl_require_sips_registration, true) of
-	true ->
+    case yxa_config:get_env(ssl_require_sips_registration) of
+	{ok, true} ->
 	    remove_non_sips_locations(Locations, []);
-	false ->
+	{ok, false} ->
 	    Locations
     end;    
 remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
@@ -342,22 +342,15 @@ lookup_address_to_users(Address) ->
 %%           ensure_is_tls_protected_uri(ReqURI, URI)' or similar.
 %%--------------------------------------------------------------------
 lookupappserver(Key) when is_record(Key, sipurl) ->
-    case sipserver:get_env(appserver, none) of
+    case yxa_config:get_env(appserver) of
+	{ok, URL} when is_record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
+	    {forward, URL};
 	none ->
 	    logger:log(error, "Lookup: Requested to provide appserver for ~p, but no appserver configured! "
 		       "Responding '480 Temporarily Unavailable (no appserver configured)'.", [sipurl:print(Key)]),
 	    %% XXX perhaps the '(no appserver configured)' should either not be disclosed, or
 	    %% included in a Reason: header instead of the reason phrase
-	    {response, 480, "Temporarily Unavailable (no appserver configured)"};
-	AppServer ->
-	    case sipurl:parse_url_with_default_protocol("sip", AppServer) of
-		URL when is_record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
-		    {forward, URL};
-		_ ->
-		    logger:log(error, "Lookup: Failed parsing configured appserver '~p', "
-			       "responding '500 Server Internal Error'", [AppServer]),
-		    {response, 500, "Server Internal Error"}
-	    end
+	    {response, 480, "Temporarily Unavailable (no appserver configured)"}
     end.
 
 %%--------------------------------------------------------------------
@@ -377,19 +370,17 @@ lookupdefault(URL) when is_record(URL, sipurl) ->
 		       [URL#sipurl.host]),
 	    none;
         false ->
-	    DefaultRoute = sipserver:get_env(defaultroute, none),
-	    case DefaultRoute of
-		none ->
-		    logger:log(debug, "Lookup: No default route - dropping request"),
-		    {response, 500, "Can't route request"};	%% XXX is 500 the correct error-code?
-		Hostname when is_list(Hostname) ->
-		    {Host, Port} = sipparse_util:parse_hostport(Hostname),
-		    NewURI = sipurl:new([{user, URL#sipurl.user}, {pass, none}, {host, Host}, {port, Port}]),
+	    case yxa_config:get_env(defaultroute) of
+		{ok, DefaultURL} when is_record(DefaultURL, sipurl) ->
+		    NewURI = sipurl:set([{user, URL#sipurl.user}, {pass, none}], DefaultURL),
 		    logger:log(debug, "Lookup: Default-routing to ~s", [sipurl:print(NewURI)]),
 		    %% XXX we should preserve the Request-URI by proxying this as a loose router.
 		    %% It is almost useless to only preserve the User-info IMO. We can do this
 		    %% by returning {forward, Proto, Host, Port} instead.
-		    {proxy, NewURI}
+		    {proxy, NewURI};
+		none ->
+		    logger:log(debug, "Lookup: No default route - dropping request"),
+		    {response, 500, "Can't route request"}	%% XXX is 500 the correct error-code?
 	    end
     end.
 
@@ -512,21 +503,22 @@ lookupenum(Number) ->
 lookuppstn("+" ++ E164) ->
     case util:isnumeric(E164) of
 	true ->
-	    case util:regexp_rewrite("+" ++ E164, sipserver:get_env(e164_to_pstn, [])) of
+	    {ok, Regexps} = yxa_config:get_env(e164_to_pstn, []),
+	    case util:regexp_rewrite("+" ++ E164, Regexps) of
 		nomatch ->
 		    none;
-		PSTN ->
+		PSTN when is_list(PSTN) ->
 		    logger:log(debug, "Rewrite: ~s to PSTN URL ~p", ["+" ++ E164, PSTN]),
 		    case sipurl:parse_url_with_default_protocol("sip", PSTN) of
 			error ->
 			    logger:log(error, "Lookup: Failed parsing result of rewrite ~p using 'e164_to_pstn'",
 				       ["+" ++ E164]),
 			    none;
-			URL ->
+			URL when is_record(URL, sipurl) ->
 			    {proxy, URL}
 		    end
 	    end;
-	_ ->
+	false ->
 	    error
     end;
 lookuppstn(Number) ->
@@ -561,7 +553,7 @@ lookupnumber(Number) ->
     %% Check if Number is all digits
     case util:isnumeric(Number) of
 	true ->
-	    Regexps = sipserver:get_env(number_to_pstn, []),
+	    {ok, Regexps} = yxa_config:get_env(number_to_pstn, []),
 	    lookupnumber2(Number, Regexps);
 	false ->
 	    %% Number was not numeric
@@ -612,7 +604,8 @@ rewrite_potn_to_e164("+" ++ E164) ->
 rewrite_potn_to_e164(Number) when is_list(Number) ->
     case util:isnumeric(Number) of
 	true ->
-	    case util:regexp_rewrite(Number, sipserver:get_env(internal_to_e164, [])) of
+	    {ok, Regexps} = yxa_config:get_env(internal_to_e164, []),
+	    case util:regexp_rewrite(Number, Regexps) of
 		"+" ++ E164 ->
 		    rewrite_potn_to_e164("+" ++ E164);
 		_ ->
@@ -691,14 +684,16 @@ is_request_to_this_proxy2(_, URL, _) when is_record(URL, sipurl) ->
 %% Returns : true | false
 %%--------------------------------------------------------------------
 homedomain(Domain) when is_list(Domain) ->
-    case util:casegrep(Domain, sipserver:get_env(homedomain, [])) of
+    {ok, HomedomainL} = yxa_config:get_env(homedomain, []),
+    LCdomain = http_util:to_lower(Domain),
+    case lists:member(LCdomain, HomedomainL) of
 	true ->
 	    true;
 	false ->
 	    %% Domain did not match configured sets of homedomain, check against list
 	    %% of hostnames and also my IP address
-	    HostnameList = sipserver:get_env(myhostnames, []) ++ siphost:myip_list(),
-	    util:casegrep(Domain, HostnameList)
+	    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
+	    lists:member(LCdomain, MyHostnames ++ siphost:myip_list())
     end.
 
 %%--------------------------------------------------------------------
@@ -802,6 +797,7 @@ test() ->
 
     io:format("test: homedomain/1 - 1~n"),
     %% test with my IP address
+    %% XXX test fails if we have no interfaces up!
     true = homedomain(MyHostname),
 
     io:format("test: homedomain/1 - 1~n"),

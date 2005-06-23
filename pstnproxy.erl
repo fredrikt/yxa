@@ -178,7 +178,9 @@ route_request2(FromIP, ToHost, THandler, LogTag) ->
 %%           false
 %%--------------------------------------------------------------------
 is_localhostname(Hostname) ->
-    util:casegrep(Hostname, sipserver:get_env(myhostnames)).
+    LChost = http_util:to_lower(Hostname),
+    {ok, MyHostnames} = yxa_config:get_env(myhostnames),
+    lists:member(LChost, MyHostnames).
 
 
 %%--------------------------------------------------------------------
@@ -190,7 +192,9 @@ is_localhostname(Hostname) ->
 %%           false
 %%--------------------------------------------------------------------
 is_pstngateway(Hostname) ->
-    util:casegrep(Hostname, sipserver:get_env(pstngatewaynames)).
+    LChost = http_util:to_lower(Hostname),
+    {ok, MyHostnames} = yxa_config:get_env(pstngatewaynames),
+    lists:member(LChost, MyHostnames).
 
 
 %%--------------------------------------------------------------------
@@ -217,9 +221,9 @@ request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_r
 	   end,
     case Dest of
 	{proxy, NewURI} when is_record(NewURI, sipurl) ->
-	    NewHeader1 = case sipserver:get_env(record_route, true) of
-			     true -> siprequest:add_record_route(Request#request.header, Origin);
-			     false -> Request#request.header
+	    NewHeader1 = case yxa_config:get_env(record_route) of
+			     {ok, true} -> siprequest:add_record_route(Request#request.header, Origin);
+			     {ok, false} -> Request#request.header
 			 end,
 	    NewHeader = add_caller_identity_for_sip(Method, NewHeader1),
 	    NewRequest = Request#request{header=NewHeader},
@@ -251,37 +255,28 @@ determine_sip_location(URI) when is_record(URI, sipurl) ->
     %% XXX handle {proxy, Loc} return from lookupenum? Should never happen in pstnproxy...
     case local:lookupenum(User) of
 	{relay, Loc} when is_record(Loc, sipurl) ->
-	    case sipserver:get_env(pstnproxy_redirect_on_enum, false) of
-		true ->
+	    case yxa_config:get_env(pstnproxy_redirect_on_enum) of
+		{ok, true} ->
 		    %% Redirect caller to the destination we found in ENUM instead of
 		    %% proxying the request.
 		    Contact = contact:new(none, Loc, []),
 		    ExtraHeaders = [{"Contact", sipheader:contact_print([Contact])}],
 		    {reply, 302, "Moved Temporarily", ExtraHeaders};
-		false ->
+		{ok, false} ->
 		    {proxy, Loc}
 	    end;
 	none ->
-	    case get_sipproxy() of
-		ProxyURL when is_record(ProxyURL, sipurl) ->
+	    case yxa_config:get_env(sipproxy) of
+		{ok, ProxyURL} when is_record(ProxyURL, sipurl) ->
 		    %% Use configured sipproxy but exchange user with user from Request-URI
 		    {proxy, ProxyURL#sipurl{user=User, pass=none}};
 		none ->
 		    %% No ENUM and no (valid) SIP-proxy configured, return failure so
 		    %% that the PBX on the other side of the gateway can fall back to
 		    %% PSTN or something
-		    Status = sipserver:get_env(pstnproxy_no_sip_dst_code, 480),
+		    {ok, Status} = yxa_config:get_env(pstnproxy_no_sip_dst_code),
 		    {reply, Status, "No destination found for number " ++ User}
 	    end
-    end.
-
-%% part of determine_sip_location/1
-get_sipproxy() ->
-    case sipserver:get_env(sipproxy, none) of
-	none ->
-	    none;
-	DefaultProxy ->
-	    sipurl:parse_url_with_default_protocol("sip", DefaultProxy)
     end.
 
 %%--------------------------------------------------------------------
@@ -302,9 +297,9 @@ request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, reque
     %% Add Record-Route header, unless explicitly configured not to. pstnproxy needs to
     %% be in the signalling path since the calling party is typically not permitted
     %% to send SIP messages directly to the PSTN gateway(s).
-    NewHeader1 = case sipserver:get_env(record_route, true) of
-		     true -> siprequest:add_record_route(Header, Origin);
-		     false -> Header
+    NewHeader1 = case yxa_config:get_env(record_route) of
+		     {ok, true} -> siprequest:add_record_route(Header, Origin);
+		     {ok, false} -> Header
 		 end,
     Request1 = Request#request{header = NewHeader1},
 
@@ -348,8 +343,8 @@ request_to_pstn_non_e164(DstNumber, Request, Origin, THandler) ->
     case local:pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin, THandler) of
 	undefined ->
 	    %% Route to default PSTN gateway
-	    case sipserver:get_env(default_pstngateway, none) of
-		PSTNgateway1 when is_list(PSTNgateway1) ->
+	    case yxa_config:get_env(default_pstngateway) of
+		{ok, PSTNgateway1} when is_list(PSTNgateway1) ->
 		    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
 		    case sipurl:parse_url_with_default_protocol("sip", PSTNgateway1) of
 			GwURL when is_record(GwURL, sipurl) ->
@@ -413,8 +408,8 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
 add_caller_identity_for_pstn("INVITE", Header, URI, User, Gateway) when is_record(Header, keylist),
 									is_record(URI, sipurl),
 									is_list(User) ->
-    case sipserver:get_env(remote_party_id, false) of
-	true ->
+    case yxa_config:get_env(remote_party_id) of
+	{ok, true} ->
 	    case local:get_remote_party_number(User, Header, URI, Gateway) of
 		{ok, RPI, Number} when is_record(RPI, contact), is_list(Number) ->
 		    RemotePartyId = contact:print(RPI),
@@ -432,7 +427,7 @@ add_caller_identity_for_pstn("INVITE", Header, URI, User, Gateway) when is_recor
 		    RPI = contact:print( contact:new("Anonymous", RPURI, Parameters) ),
 		    keylist:set("Remote-Party-Id", [RPI], Header)
 	    end;
-	false ->
+	{ok, false} ->
 	    Header
     end;
 add_caller_identity_for_pstn(_Method, Header, _URI, _User, _Gateway) when is_record(Header, keylist) ->
@@ -452,8 +447,8 @@ add_caller_identity_for_pstn(_Method, Header, _URI, _User, _Gateway) when is_rec
 %% Returns : NewHeader, keylist record()
 %%--------------------------------------------------------------------
 add_caller_identity_for_sip("INVITE", Header) ->
-    case sipserver:get_env(remote_party_id, false) of
-	true ->
+    case yxa_config:get_env(remote_party_id) of
+	{ok, true} ->
 	    {_, FromURL} = sipheader:from(Header),
 	    case local:get_remote_party_name(FromURL#sipurl.user, FromURL) of
 		{ok, DisplayName} when is_list(DisplayName) ->
@@ -465,7 +460,7 @@ add_caller_identity_for_sip("INVITE", Header) ->
 		none ->
 		    Header
 	    end;
-	false ->
+	{ok, false} ->
 	    Header
     end;
 add_caller_identity_for_sip(_Method, Header) ->
@@ -510,12 +505,12 @@ proxy_request(THandler, Request, DstURI) when is_record(Request, request),
 	    %% XXX this is a configurable option only because in SU's setup it
 	    %% might break calls through the gateway when PRACKs it sends gets
 	    %% challenged elsewhere. Don't set this to true!
-	    case sipserver:get_env(pstnproxy_ignore_route_header_bad_idea, false) of
-		true ->
+	    case yxa_config:get_env(pstnproxy_ignore_route_header_bad_idea) of
+		{ok, true} ->
 		    logger:log(debug, "Warning: Routing of request according to "
 			       "Route header disabled  : ~p - BAD IDEA", [Route]),
 		    sippipe:start(THandler, none, Request, DstURI, 900);
-		false ->
+		{ok, false} ->
 		    sippipe:start(THandler, none, Request, route, 900)
 	    end
     end.
@@ -554,7 +549,7 @@ relay_request_to_pstn(THandler, #request{method=Method}=Request, DstURI, DstNumb
 relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_record(Request, request) ->
     {Method, Header} = {Request#request.method, Request#request.header},
     {_, FromURI} = sipheader:from(Header),
-    Classdefs = sipserver:get_env(classdefs, [{"", unknown}]),
+    {ok, Classdefs} = yxa_config:get_env(classdefs),
     logger:log(debug, "~s: pstnproxy: Relay ~s to PSTN ~s (~s)", [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
     case sipauth:pstn_call_check_auth(Method, Header, FromURI, DstNumber, Classdefs) of
 	{true, User, Class} ->

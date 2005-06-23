@@ -157,7 +157,7 @@ listenport			(default: 5060) Port that the server
 				should listen to
 
 myhostnames			(optional) List of IP addresses and/or
-				hostnames of the host you run pstnproxy on.
+				hostnames of the host you run your server on.
 				The first entry in the list will be used
 				to symbolize this host in SIP packets
 				(for example in Record-Route and Via headers).
@@ -168,7 +168,7 @@ myhostnames			(optional) List of IP addresses and/or
 				if that SRV record points at this host.
 
 record_route			(default: false, except for pstnproxy where
-				 default is true) Enable or disable adding
+				default is true) Enable or disable adding
 				Record-Route header to requests.
 
 default_max_forwards		(default: 70) The Max-Forwards value we put in
@@ -213,9 +213,10 @@ max_logfile_size		(default: 262144000 (250 MB)) Max filesize (in
 				controlling mechanism so that things like
 				logfile size can be checked outside of Yxa
 				instead, but this is needed for now since Erlang
-				crashes when the logfles reach 2 GB. We only
+				crashes when the logfiles reach 2 GB. We only
 				check if the file size exceeds this limit every
-				60 seconds, not after every write.
+				60 seconds, not after every write. Set to 0 to
+				disable rotation (at your own risk).
 
 ssl_require_client_has_cert	(default: false) Reject connections from TLS
                                 clients that don't use a client certificate.
@@ -264,12 +265,13 @@ tls_disable_server		(default: false) Set this to 'true' to not listen
 
 pstnproxy:
 ----------
-e164_to_pstn			(default: []) Regexps for choosing PSTN gateway
+e164_to_pstn			(no default) Regexps for choosing PSTN gateway
 				to use for E.164 numbers.
 
-number_to_pstn			(default: []) The same as e164_to_pstn, but
-				consulted if a number could not be rewritten to
-				a E.164 number (like an internal-only number).
+number_to_pstn			(no default) The same as e164_to_pstn, but
+				consulted if a number could not be rewritten
+				to an E.164 number (like an internal-only
+				number).
 
 pstngatewaynames		(required) List of IP addresses and/or
 				hostnames of your PSTN gateway.
@@ -277,7 +279,7 @@ pstngatewaynames		(required) List of IP addresses and/or
 				this list when checking if they are from the
 				PSTN gateway or not.
 
-default_pstngateway		(default: []) Name of gateway to which we should
+default_pstngateway		(no default) Name of gateway to which we should
 				route requests to PSTN if a lookup of the number
                                 in e164_to_pstn does not result in an address.
 
@@ -286,14 +288,13 @@ classdefs			(default: [{"", unknown}]) Regexps for
 				a call from a user (or unknown party) should be
 				permitted or not.
 
-sipproxy			The name of the SIP proxy to route calls
-                                from the PSTN gateway to. This is something
-                                like a default SIP route. If you enable
-                                ENUM in the pstnproxy, ENUM is considered
-                                before sipproxy. If you do not enter a
-				sipproxy, and the number being called is
-				not found using ENUM, 503 Service Unavailable
-				will be returned.
+sipproxy			(default: "") The name of the SIP proxy to route
+                                calls from the PSTN gateway to. This is something
+                                like a default SIP route. If you enable ENUM in
+                                the pstnproxy, ENUM is considered before
+                                sipproxy. If you do not enter a sipproxy, and
+				the number being called is not found using ENUM,
+				503 Service Unavailable will be returned.
 
 enum_domainlist			(default: []) List of domains in which to look
 				for NAPTR-records for requests _from_ the
@@ -336,9 +337,10 @@ pstnproxy_redirect_on_enum	(default: false) If you set this to true, we will
 				instead of proxying to the destination (only
 				applys to calls from PSTN to SIP).
 
-x_yxa_peer_auth_secret		(default: "") Shared secret for this pstnproxy
-				to use for allowing requests forwarded to PSTN
-				on behalf of a particular user using appserver.
+x_yxa_peer_auth_secret		(no default, not required) Shared secret for this
+				pstnproxy to use for allowing requests forwarded
+				to PSTN on behalf of a particular user using
+				appserver.
 
 incomingproxy:
 --------------
@@ -379,12 +381,24 @@ always_verify_homedomain_user	(default: true) If From: matches our definition
 				challenge user and make sure it is not someone
 				impersonating the calling party.
 
+appserver			(default: "") URL to where to send requests
+				when there are more than a single location
+				for a request found in the location database,
+				or when the request is destined for a user who
+				has a CPL script.
+				Example: "appserver.example.com" or
+					 "sip:sipserver.example.com:5090".
+
 outgoingproxy:
 --------------
 
 sipproxy			(required) The location of your incomingproxy.
 				Example: "incomingproxy.example.com" or
 					 "sip:incomingproxy.example.com:5090".
+
+max_register_time		(default: 43200) If registers have an 'expire'
+				of more than this many seconds, use this
+				value instead.
 
 adminwww:
 ---------

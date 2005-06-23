@@ -105,6 +105,12 @@
 	 cpl_is_log_dest/1
 	]).
 
+%% configuration
+-export([
+	 check_config_type/3,
+	 config_is_soft_reloadable/3
+	]).
+
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 -include("directory.hrl").
@@ -183,13 +189,13 @@ lookup_homedomain_url(URL) when is_record(URL, sipurl) ->
 
 %% same as directory:lookup_mail2tel() but looks for the mail address in the mailLocalAddress attribute
 lookup_mailLocalAddress2tel(Mail) ->
-    case sipserver:get_env(ldap_server, none) of
-	none ->
-	    none;
-	LDAPserver ->
+    case yxa_config:get_env(ldap_server) of
+	{ok, LDAPserver} ->
 	    Res = directory:ldapsearch_simple(LDAPserver, "mailLocalAddress", Mail, "telephoneNumber"),
 	    logger:log(debug, "Local: LDAP mailLocalAddress -> telephoneNumber lookup on ~p -> ~p", [Mail, Res]),
-	    Res
+	    Res;
+	none ->
+	    none
     end.
 
 mail2tel(Mail) ->
@@ -336,16 +342,20 @@ get_classes_for_user(User) ->
     Res = sipuserdb:get_classes_for_user(User),
     case Res of
 	nomatch ->
-	    Server = sipserver:get_env(ldap_server, none),
-	    case get_classes_for_user_is_itsuse(Server, User) of
-		true ->
-		    %% Override with default classes for it.su.se user since sipuserdb returned 'nomatch'
-		    NewRes = [internal, national, mobile],
-		    logger:log(debug, "Local: User ~p is an it.su.se user, granting default classes : ~p",
-			      [User, NewRes]),
-		    NewRes;
-		false ->
-		    Res
+	    case yxa_config:get_env(ldap_server) of
+		{ok, Server} ->
+		    case get_classes_for_user_is_itsuse(Server, User) of
+			true ->
+			    %% Override with default classes for it.su.se user since sipuserdb returned 'nomatch'
+			    NewRes = [internal, national, mobile],
+			    logger:log(debug, "Local: User ~p is an it.su.se user, granting default classes : ~p",
+				       [User, NewRes]),
+			    NewRes;
+			false ->
+			    Res
+		    end;
+		none ->
+		    none
 	    end;
 	_ ->
 	    Res
@@ -353,8 +363,6 @@ get_classes_for_user(User) ->
 
 %% get_classes_for_user_is_itsuse/2, part of get_classes_for_user/2.
 %% Determine if User belongs to "it.su.se" or not. Returns true | false
-get_classes_for_user_is_itsuse(none, _User) ->
-    false;
 get_classes_for_user_is_itsuse(Server, User) when is_list(Server), is_list(User) ->
     %% look if User belongs to it.su.se
     case directory:ldapsearch(Server, "sipAuthenticationUser", User, ["sipAuthenticationUser"]) of
@@ -514,10 +522,43 @@ is_tls_equivalent(_Proto, _Host, _Port) ->
 %%--------------------------------------------------------------------
 cpl_log(_LogName, _Comment, _User, _Request) ->
     undefined.
-    
+
 cpl_is_log_dest(_LogName) ->
     undefined.
 
 cpl_mail(_Mail, _User) ->
     undefined.
 
+
+%% configuration hooks
+%%%%%%%%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: check_config_type(Key, Value, Src)
+%%           Key     = atom()
+%%           Value   = term()
+%%           Src     = atom(), config backend module that found this
+%%                             configuration parameter
+%% Descrip.: Check a local configuration parameter. Local parameters
+%%           are local_*.
+%% Returns : {ok, NewValue} |
+%%           {error, Msg}
+%%           NewValue = term()
+%%           Msg      = string()
+%%--------------------------------------------------------------------
+check_config_type(_Key, Value, _Src) ->
+    {ok, Value}.
+
+%%--------------------------------------------------------------------
+%% Function: config_is_soft_reloadable(Key, Value, Src)
+%%           Key     = atom()
+%%           Value   = term()
+%%           Src     = atom(), config backend module that found this
+%%                             configuration parameter
+%% Descrip.: Check if it is possible to change a local configuration
+%%           parameter with a soft reconfiguration (true), or if a
+%%           complete restart of the application is necessary (false).
+%% Returns : true | false
+%%--------------------------------------------------------------------
+config_is_soft_reloadable(_Key, _Value, _Src) ->
+    true.

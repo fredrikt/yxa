@@ -151,8 +151,8 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
 %%--------------------------------------------------------------------
 verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, request), is_list(LogTag),
 							     is_record(Origin, siporigin), is_list(LogStr) ->
-    case sipserver:get_env(always_verify_homedomain_user, true) of
-	true ->
+    case yxa_config:get_env(always_verify_homedomain_user) of
+	{ok, true} ->
 	    {Method, Header} = {Request#request.method, Request#request.header},
 	    {_, FromURI} = sipheader:from(Header),
 	    %% Request has a From: address matching one of my domains.
@@ -188,13 +188,9 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 			    Msg = io_lib:format("Request from ~s failed authentication : ~s", [OStr, LogStr]),
 			    event_handler:event(normal, auth, failure, LogTag, Msg),
 			    false
-		    end;
-		Unknown ->
-		    logger:log(error, "request: Unknown result from local:get_user_verified_proxy() :~n~p", [Unknown]),
-		    transactionlayer:send_response_request(Request, 500, "Server Internal Error"),
-		    drop
+		    end
 	    end;
-	false ->
+	{ok, false} ->
 	    true
     end.
 
@@ -210,9 +206,9 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Origin, siporigin) ->
     {Method, URI} = {RequestIn#request.method, RequestIn#request.uri},
     logger:log(debug, "incomingproxy: Processing request ~s ~s~n", [Method, sipurl:print(URI)]),
-    Header = case sipserver:get_env(record_route, false) of
-		 true -> siprequest:add_record_route(RequestIn#request.header, Origin);
-		 false -> RequestIn#request.header
+    Header = case yxa_config:get_env(record_route) of
+		 {ok, true} -> siprequest:add_record_route(RequestIn#request.header, Origin);
+		 {ok, false} -> RequestIn#request.header
 	     end,
     Request = RequestIn#request{header = Header},
     THandler = transactionlayer:get_handler_for_request(Request),

@@ -274,11 +274,12 @@ proxy_check_maxforwards(Header) ->
 	case keylist:fetch('max-forwards', Header) of
 	    [M] ->
 		Mnum = list_to_integer(M),
-		Max = sipserver:get_env(max_max_forwards, 255),
+		{ok, Max} = yxa_config:get_env(max_max_forwards),
 		%% decrease the old value by one, but assure it is not greater than Max
 		lists:min([Max, Mnum - 1]);
 	    [] ->
-		sipserver:get_env(default_max_forwards, 70)
+		{ok, MF} = yxa_config:get_env(default_max_forwards),
+		MF
 	end,
     if
 	MaxForwards < 1 ->
@@ -326,10 +327,10 @@ proxy_add_via(Header, OrigURI, Parameters, Proto) when is_record(Header, keylist
 
     %% Add 'rport' parameter to Via headers of outgoing request, if configured to
     ViaParameters =
-	case sipserver:get_env(request_rport, false) of
-	    true ->
+	case yxa_config:get_env(request_rport) of
+	    {ok, true} ->
 		lists:append(ViaParameters1, ["rport"]);
-	    false ->
+	    {ok, false} ->
 		ViaParameters1
 	end,
 
@@ -339,10 +340,10 @@ proxy_add_via(Header, OrigURI, Parameters, Proto) when is_record(Header, keylist
 
 %% part of proxy_add_via/4. Returns : LoopCookie = string() | none
 proxy_add_via_get_loopcookie(Header, OrigURI, Proto) ->
-    case sipserver:get_env(detect_loops, true) of
-	true ->
+    case yxa_config:get_env(detect_loops) of
+	{ok, true} ->
 	    get_loop_cookie(Header, OrigURI, Proto);
-	false ->
+	{ok, false} ->
 	    none
     end.
 
@@ -612,11 +613,11 @@ check_valid_proxy_request(_Method, Header) ->
 %% Returns : Hostname = string()
 %%--------------------------------------------------------------------
 myhostname() ->
-    case sipserver:get_env(myhostnames, []) of
-	[] ->
-	    siphost:myip();
-	[FirstHostname | _] when is_list(FirstHostname) ->
-	    FirstHostname
+    case yxa_config:get_env(myhostnames) of
+	{ok, [FirstHostname | _]} when is_list(FirstHostname) ->
+	    FirstHostname;
+	none ->
+	    siphost:myip()
     end.
 
 %%--------------------------------------------------------------------

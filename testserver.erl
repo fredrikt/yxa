@@ -105,7 +105,8 @@ process_request(Request, LogTag) when record(Request, request) ->
 
 get_user(URI) ->
     Key = sipurl:print(URI),
-    Res = regexp_locate_user(Key, sipserver:get_env(user_db, [])),
+    UserDb = yxa_config:get_env(testserver_userdb),
+    Res = regexp_locate_user(Key, UserDb),
     logger:log(debug, "Locate user: ~s -> ~p", [Key, Res]),
     Res.
 
@@ -152,4 +153,6 @@ get_branch_from_handler(TH) ->
 
 
 localhostname(Hostname) ->
-    util:casegrep(Hostname, sipserver:get_env(myhostnames)).
+    LC = http_util:to_lower(Hostname),
+    {ok, MyHostnames} = yxa_config:get_env(myhostnames),
+    lists:member(LC, MyHostnames).

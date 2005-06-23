@@ -317,7 +317,8 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
     end.
 
 make_new_target_request(Request, URI, User) when is_record(Request, request), is_record(URI, sipurl), is_list(User) ->
-    case lists:keysearch(URI#sipurl.host, 1, sipserver:get_env(x_yxa_peer_auth, [])) of
+    {ok, PeerAuthL} = yxa_config:get_env(x_yxa_peer_auth, []),
+    case lists:keysearch(URI#sipurl.host, 1, PeerAuthL) of
 	{value, {_Host, Secret}} ->
 	    NewHeader = sipauth:add_x_yxa_peer_auth(Request#request.method, URI, Request#request.header, User, Secret),
 	    Request#request{uri=URI,

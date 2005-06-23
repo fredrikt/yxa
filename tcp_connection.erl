@@ -163,7 +163,8 @@ init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
     case gen_server:call(tcp_dispatcher, {register_sipsocket, Direction, SipSocket}) of
 	ok ->
 	    {ok, Receiver} = start_tcp_receiver(SocketModule, Socket, SipSocket, Direction),
-	    Timeout = sipserver:get_env(tcp_connection_idle_timeout, 300) * 1000,
+	    {ok, TimeoutSec} = yxa_config:get_env(tcp_connection_idle_timeout),
+	    Timeout = TimeoutSec * 1000,
 	    Now = util:timestamp(),
 	    State = #state{socketmodule=SocketModule, proto=Proto, socket=Socket, receiver=Receiver,
 			   local=Local, remote=Remote, starttime=Now, sipsocket=SipSocket, timeout=Timeout,
@@ -248,7 +249,8 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
   when Proto == tcp; Proto == tcp6; Proto == tls; Proto == tls6, is_list(Host), is_integer(Port) ->
 
     DstStr = sipdst:dst2str(Dst),
-    ConnectTimeout = sipserver:get_env(tcp_connect_timeout, 20) * 1000,
+    {ok, ConnectTimeoutSec} = yxa_config:get_env(tcp_connect_timeout),
+    ConnectTimeout = ConnectTimeoutSec * 1000,
     {ok, InetModule, SocketModule, Options} = get_settings(Proto),
     Host2 = util:remove_v6_brackets(Host),
 
@@ -506,7 +508,7 @@ is_acceptable_socket(Socket, Dir, Proto, Host, Port) when Proto == tls; Proto ==
 		    case Dir of
 			in -> true;
 			out ->
-			    Reject = sipserver:get_env(ssl_check_subject_altname, true),
+			    {ok, Reject} = yxa_config:get_env(ssl_check_subject_altname),
 			    is_valid_ssl_altname(Host, Subject, Reject)
 		    end
 	    end;
@@ -551,7 +553,7 @@ get_ssl_peercert(Socket, Dir, Host, Port) ->
 	{ok, Subject} ->
 	    {ok, Subject};
 	{error, Reason} ->
-	    RequireClientCert = sipserver:get_env(ssl_require_client_has_cert, false),
+	    {ok, RequireClientCert} = yxa_config:get_env(ssl_require_client_has_cert),
 	    case {Dir, RequireClientCert} of
 		{in, true} ->
 		    logger:log(debug, "TCP connection: Could not get SSL subject information, "
@@ -629,20 +631,23 @@ ssl_subject_get(_Key, []) ->
 %%           Options      = list(), socket options
 %%--------------------------------------------------------------------
 get_settings(tcp) ->
-    {ok, inet, gen_tcp, get_socketopts(tcp)};
+    {ok, inet, gen_tcp, ?SOCKETOPTS};
 get_settings(tcp6) ->
-    {ok, inet, gen_tcp, [inet6 | get_socketopts(tcp)]};
+    {ok, inet, gen_tcp, [inet6 | ?SOCKETOPTS]};
 get_settings(tls) ->
-    {ok, ssl, ssl, get_socketopts(tls)};
+    {ok, ssl, ssl, ?SOCKETOPTS ++ get_settings_tls()};
 get_settings(tls6) ->
-    {ok, ssl, ssl, [inet6 | get_socketopts(tls)]}.
+    {ok, ssl, ssl, ?SOCKETOPTS ++ [inet6 | get_settings_tls()]}.
 
-%% part of get_settings/1. Get default socket options plus any configured ones for SSL.
-get_socketopts(tcp) ->
-    ?SOCKETOPTS;
-get_socketopts(tls) ->
-    L = sipserver:get_env(ssl_client_ssloptions, []),
-    ?SOCKETOPTS ++ L.
+%% part of get_settings/1, get SSL settings
+get_settings_tls() ->
+    {ok, L1} = yxa_config:get_env(ssl_client_ssloptions),
+    case yxa_config:get_env(ssl_client_certfile) of
+	{ok, File} ->
+	    [{certfile, File} | L1];
+	none ->
+	    L1
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_local_ip_port(Socket, InetModule, Proto)

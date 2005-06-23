@@ -87,8 +87,8 @@ send(SipSocket, _Proto, Host, Port, Message) when is_record(SipSocket, sipsocket
 %% Protocol is 'tls' or 'tls6'
 %% 
 get_socket(#sipdst{proto=Proto}=Dst) when Proto == tls; Proto == tls6 ->
-    case sipserver:get_env(tls_disable_client, false) of
-	false ->
+    case yxa_config:get_env(tls_disable_client) of
+	{ok, false} ->
 	    Timeout = get_timeout(Proto),
 	    case catch gen_server:call(tcp_dispatcher, {get_socket, Dst}, Timeout) of
 		{error, E} ->
@@ -98,7 +98,7 @@ get_socket(#sipdst{proto=Proto}=Dst) when Proto == tls; Proto == tls6 ->
 		{'EXIT', Reason} ->
 		    {error, Reason}
 		end;
-	true ->
+	{ok, true} ->
 	    {error, "TLS client disabled"}
     end;
 %%
