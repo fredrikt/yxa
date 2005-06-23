@@ -266,7 +266,7 @@ refresh_connectionslist(State) when is_record(State, state), State#state.current
     Node = State#state.current_node,
     Lb = State#state.connections_lb,
     {Text9, NewState9} =
-	case catch gen_server:call({tcp_dispatcher, Node}, {monitor_get_socketlist}) of
+	case catch gen_server:call({tcp_dispatcher, Node}, {get_socketlist}) of
 	    {ok, Connections} when is_record(Connections, socketlist) ->
 		C = io_lib:format("~p entrys in tcp_dispatcher socketlist :", 
 				  [socketlist:get_length(Connections)]),

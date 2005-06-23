@@ -13,7 +13,9 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start_link/0]).
+-export([start_link/0,
+	 get_socketlist/0
+	]).
 
 %%--------------------------------------------------------------------
 %% Transport layer internal exports
@@ -65,6 +67,15 @@
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, tcp_dispatcher}, ?MODULE, [], []).
+
+%%--------------------------------------------------------------------
+%% Function: get_socketlist()
+%% Descrip.: Get the complete list of sockets from the tcp_dispatcher.
+%% Returns : {ok, SocketList}
+%%           SocketList = socketlist record()
+%%--------------------------------------------------------------------
+get_socketlist() ->
+    gen_server:call(tcp_dispatcher, {get_socketlist}).
 
 %%====================================================================
 %% Behaviour functions
@@ -243,12 +254,12 @@ handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Ty
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({monitor_get_socketlist}, From, State)
+%% Function: handle_call({get_socketlist}, From, State)
 %% Descrip.: The stack monitor is requesting our list of connections.
 %% Returns : {reply, {ok, List} State, ?TIMEOUT}
 %%           List = socketlist record()
 %%--------------------------------------------------------------------
-handle_call({monitor_get_socketlist}, _From, State) ->
+handle_call({get_socketlist}, _From, State) ->
     {reply, {ok, State#state.socketlist}, State, ?TIMEOUT};
 
 handle_call({quit}, _From, State) ->
