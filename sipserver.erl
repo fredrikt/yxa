@@ -1111,15 +1111,15 @@ origin2str(Origin) when is_record(Origin, siporigin) ->
 %% Returns : Port = integer()
 %%--------------------------------------------------------------------
 get_listenport(Proto) when Proto == tls; Proto == tls6 ->
-    case sipserver:get_env(tls_listenport, none) of
-	P when is_integer(P) ->
+    case yxa_config:get_env(tls_listenport) of
+	{ok, P} when is_integer(P) ->
 	    P;
 	none ->
 	    siprequest:default_port(Proto, none)
     end;
-get_listenport(Proto) ->
-    case sipserver:get_env(listenport, none) of
-	P when is_integer(P) ->
+get_listenport(Proto) when Proto == tcp; Proto == tcp6; Proto == udp; Proto == udp6 ->
+    case yxa_config:get_env(listenport) of
+	{ok, P} when is_integer(P) ->
 	    P;
 	none ->
 	    siprequest:default_port(Proto, none)
@@ -1721,22 +1721,14 @@ test() ->
     5060 = get_listenport(udp),
 
     io:format("test: get_listenport/1 - 2~n"),
-    %% test with "sip"
-    5060 = get_listenport("sip"),
-
-    io:format("test: get_listenport/1 - 3~n"),
     %% test with 'tls6'
     5061 = get_listenport(tls6),
 
-    io:format("test: get_listenport/1 - 4~n"),
-    %% test with "sip"
-    5061 = get_listenport("sips"),
-
-    io:format("test: get_listenport/1 - 5~n"),
+    io:format("test: get_listenport/1 - 3~n"),
     %% test with invalid value (string)
     {'EXIT', {function_clause, _}} = (catch get_listenport("invalid")),
 
-    io:format("test: get_listenport/1 - 6~n"),
+    io:format("test: get_listenport/1 - 4~n"),
     %% test with invalid value (atom)
     {'EXIT', {function_clause, _}} = (catch get_listenport(none)),
 
