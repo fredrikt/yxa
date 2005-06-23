@@ -4,10 +4,6 @@ Applications
 
 Applications included are:
 
-adminwww:
-
-Web server that provides an https administration interface
-
 incomingproxy:
 
 Handles registrations and proxies requests. Implements partial ENUM
@@ -32,10 +28,11 @@ the PSTN either via ENUM or to a preconfigured SIP gateway.
 
 appserver:
 
-Provides basic forking for now. If a user has multiple active
-contacts, incomingproxy will send requests for that user on to
-appserver which is a statefull proxy and can fork the call to
-all the users registered user agents.
+Provides basic forking and CPL script interpretation. If a user has
+multiple active contacts, or a CPL script associated with it, incomingproxy
+will send requests for that user on to appserver which is a statefull proxy
+and can fork the call to all the users registered user agents or according
+to the users CPL script.
 
 testserver:
 
@@ -439,9 +436,26 @@ x_yxa_peer_auth			(default: []) List of {host, secret} shared
 				at pstnproxy.example.com accept the requests.
 
 
-========
-Examples
-========
+At the moment, configuration files must be in Erlang syntax. This involves lots
+of brackets and curly brackets, and might be seen as an disadvantage for Yxa.
+Please bear with this though, as steps have been taken to make it easy to add
+other configuration parsing backends. An ini-file format is likely to be written
+shortly, and it would be fairly easy to write for example an XML-format parser
+although you can't count on me doing it for you.
+
+Brief introduction to the Erlang syntax :
+
+{}  - Curly brackets define a tuple. A tuple is like a list of fixed lenght, for
+      example {Key, Value} or {Key, Value1, Value2}.
+[]  - Brackets enclose lists. If a parameter can have any number of values
+      (like 'myhostnames' for example), the values will be in a list. Example :
+        {homedomain, ["example.com", "example.net", "example.org"]}
+      or, if you have just one domain
+        {homedomain, ["example.com"]}.
+
+==================================
+Application configuration examples
+==================================
 
 incomingproxy.config:
 ---------------------
@@ -455,7 +469,7 @@ incomingproxy.config:
                                       {"^(.+)$", "+468\\1"}
                                      ]},
 		  {e164_to_pstn, [{"^\\+468([1-9][0-9]+)$", "00\\1@pstnproxy.example.com"},
-				  {"^\\+46([1-9][0-9]+)$", "000\\1@pstnproxy..example.com"},
+				  {"^\\+46([1-9][0-9]+)$", "000\\1@pstnproxy.example.com"},
 				  {"^\\+44([1-9][0-9]+)$", "000\\1@pstnproxy-uk.example.com"},
 				  {"^\\+([0-9]+)$", "0000\\1@pstnproxy.example.com"}
                                  ]},
@@ -517,38 +531,11 @@ appserver.config:
 	      {listenport, 5070}
              ]}].
 
-adminwww.config :
------------------
-(NOTE: the adminwww isn't currently maintained, so maybe you should not use it)
 
-[{adminwww, [{httpd_config, "/path/to/yxa/httpd.conf"},
-             {sipauth_realm, "example.com"},
-             {sipauth_password, "secret"},
-             {logger_logbasename, "/var/log/adminwww"},
-             {www_baseurl, "https://sipserver.example.com:8080/"},
-             {databaseservers, ['incomingproxy@sip-incoming.example.com']}
-            ]}].
+======================================
+User database (sipuserdb_file) example
+======================================
 
-/path/to/yxa/httpd.conf :
--------------------------
-(NOTE: the adminwww isn't currently maintained, so maybe you should not use it)
-
-DocumentRoot /path/to/yxa/src/httpd/docs
-ServerRoot /path/to/yxa/src/httpd
-Port 8080
-ServerName sipserver.example.com
-Modules mod_esi mod_log mod_get mod_alias
-ErrorLog /var/log/yxa-httpd-error.log
-TransferLog /var/log/yxa-httpd-access.log
-DirectoryIndex index.html
-ErlScriptAlias /erl admin_www
-SocketType ssl
-SSLCertificateFile /path/to/ssl/cert.comb
-SSLVerifyClient 0
-
-
-sipuserdb_file user database :
-------------------------------
 [
  {user, [
 	 {name, "ft.sip1"},
@@ -580,7 +567,8 @@ username 'foo@example.org' (NOTE: no "sip:"), calls to sip:ft@example.org
 will cause phone #1 to ring and calls to sip:info@example.org will cause
 phone #2 to ring. Calls to sip:all@example.org will cause both phones to
 ring, provided that I have an incomingproxy and an appserver set up and
-configured.
+configured. Note that addresses can either be supplied as part of the
+'user' declaration (user 'foo@example.org'), or separately (user 'ft.sip1').
 
 
 =============
@@ -631,11 +619,40 @@ Example :
    $ ADMINPW=foo /path/to/build/directory/yxa-bootstrap.sh
 
 You should now have the necessary Mnesia databases and a user called 'admin'
-with the password in yxa-bootstrap.sh which you can use to add SIP users to
-your system through the web interface. In order to use the web interface,
-you must start it by executing ./adminwww once you have compiled everything.
+in the Mnesia user database. The 'admin' user is currently not used for
+anything (it was used by the old web interface, adminwww), but it might be
+used for the new web interface in the future, so it is still a part of the
+bootstrap process.
 
 All of the Yxa application can run just fine without root permissions.
+
+
+=============
+Web interface
+=============
+
+To use the web interface, you first need to install the Erlang web-server
+Yaws (available from http://yaws.hyber.org/). When you have configured a
+working Yaws web-server, you need to point your docroot at the
+yxa/yaws/docroot directory, and configure Yaws with module and include 
+search paths to the Yxa include and ebin-directorys. Example parts of
+yaws.conf configuration file :
+
+  ebin_dir = /path/to/lib/yxa/ebin
+  include_dir = /path/to/lib/yxa/include
+
+  <server example.org>
+        docroot = /path/to/yxa-source/yaws/docroot
+  </server>
+
+NOTE: All access control must be performed using Yaws methods of access
+control. Currently, the Yxa Yaws SSIs will not perform any kind of
+authentication or authorization, so you must restrict access to the web
+interface using Yaws.
+
+NOTE 2: The files inside yaws/docroot will probably be installed somewhere
+under /path/to/lib/yxa in the future, I just need to figure out where they
+belong.
 
 
 ============
@@ -665,12 +682,12 @@ If you are using Linux, then you will need to
 since Yxa wants to use separate sockets for v6 and v4. IPv6 support has only
 been tested on Linux 2.4.x where x >= 20.
 
-Note on Erlang OTP R10B-0 and R10B-1 :
+Note on Erlang OTP R10B-0 through R10B-6 :
 The resolver order was changed in R10B, so now Erlang primarily tries to use
 the 'native' resolver (meaning a C port driver) for DNS resolution.
 Unfortunately, this C port driver only handles getipnodebyname() and not
 getaddrinfo(). The latter is a POSIX standard, and the one that should be used.
 This means that you might not get IPv6 addresses back from
-dnsutil:get_ip_port(), which in turn means Yxa won't make outgoing connectios
+dnsutil:get_ip_port(), which in turn means Yxa won't make outgoing connections
 to IPv6 addresses. This is a problem with some versions of Linux (for example,
 RH7.3 to RH9 based systems).
