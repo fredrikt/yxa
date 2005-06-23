@@ -143,7 +143,6 @@ yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
 boot_FILES = \
 	incomingproxy.boot \
 	pstnproxy.boot \
-	adminwww.boot \
 	appserver.boot \
 	outgoingproxy.boot
 
@@ -243,9 +242,6 @@ incomingproxy.boot: incomingproxy.app incomingproxy.rel
 pstnproxy.boot: pstnproxy.app pstnproxy.rel
 	$(systools_make_script)
 
-adminwww.boot: adminwww.app adminwww.rel
-	$(systools_make_script)
-
 appserver.boot: appserver.app appserver.rel
 	$(systools_make_script)
 
@@ -262,9 +258,6 @@ incomingproxy: incomingproxy.boot init.sh.in config.status
 	$(create_start_script)
 
 pstnproxy: pstnproxy.boot init.sh.in config.status
-	$(create_start_script)
-
-adminwww: adminwww.boot init.sh.in config.status
 	$(create_start_script)
 
 appserver: appserver.boot init.sh.in config.status
