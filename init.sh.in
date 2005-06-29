@@ -258,7 +258,7 @@ else
 	    ;;
 	stop|status|info|reload|restart)
 	    node="${name}@${hostname}"
-	    if [ $explicit_name == 0 ]; then
+	    if [ $explicit_name -eq 0 ]; then
 	        # include pid ($$) in node name used here since contact with the running
 	        # node could otherwise fail for consecutive commands executed rapidly
 		name="${name}_ctl_$$"
