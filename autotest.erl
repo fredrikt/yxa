@@ -185,22 +185,45 @@ test_module(Module) ->
 %% Returns : -
 %%--------------------------------------------------------------------
 run_cover([Mode]) ->
-    io:format("Cover-compiling ~p modules...~n", [length(?TEST_MODULES)]),
+    io:format("Cover-compiling ~p modules : ", [length(?TEST_MODULES)]),
 
     %% cover-compile all our test modules
-    lists:map(fun(Module) ->
-		      cover:compile_beam(Module)
-	      end, ?TEST_MODULES),
+    lists:foldl(fun(Module, Num) ->
+			cover:compile_beam(Module),
+			case Num rem 5 of
+			    0 ->
+				io:format("~p", [Num]);
+			    _ ->
+				io:format(".")
+			end,
+			Num + 1
+		end, 0, ?TEST_MODULES),
+    io:format("~p~n", [length(?TEST_MODULES)]),
 
     %% Run the tests
     Status = run([erl]),
 
     %% Calculate coverage
-    {ok, CoveredLines, TotalLines} = aggregate_coverage(?TEST_MODULES),
-    Percent = (CoveredLines / TotalLines * 100),
+    {ok, CoveredLines, TotalLines, ModuleStats} = aggregate_coverage(?TEST_MODULES),
+
+    io:format("~n"),
+    io:format("======================================================================~n"),
+    io:format("=                        COVER RESULTS                               =~n"),
+    io:format("======================================================================~n"),
+
+    put(autotest_result, ok),
+
+    F = fun({Module, Percent}) ->
+		io:format("~25w: ~.1f%~n", [Module, Percent])
+	end,
+    lists:foreach(F, lists:reverse(
+		       lists:keysort(2, ModuleStats)
+		      )),
+
+    TotalPercent = (CoveredLines / TotalLines * 100),
 
     io:format("~nTests covered ~p out of ~p lines of code in ~p modules (~p%)~n~n",
-	      [CoveredLines, TotalLines, length(?TEST_MODULES), Percent]),
+	      [CoveredLines, TotalLines, length(?TEST_MODULES), TotalPercent]),
 
     if
 	Status == error, Mode == shell -> erlang:halt(1);
@@ -223,15 +246,6 @@ fail(Fun) ->
 	_ -> ok %% catch user throw()
     end.
 
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
 
 %%====================================================================
 %% Internal functions
@@ -257,15 +271,23 @@ fake_logger_loop() ->
 %% Function: aggregate_coverage(Modules)
 %%           Modules = list() of atom(), list of module names
 %% Descrip.: Aggregate cover analysis data for Modules.
-%% Returns : {ok, CoveredLines, TotalLines}
+%% Returns : {ok, CoveredLines, TotalLines, ModuleStats}
 %%           CoveredLines = integer(), code lines covered in Modules
 %%           TotalLines   = integer(), total lines of code in Modules
+%%           ModuleStats  = list() of {Module, Percent} tuple()
 %%--------------------------------------------------------------------
 aggregate_coverage(Modules) ->
-    aggregate_coverage2(Modules, 0, 0).
+    aggregate_coverage2(Modules, 0, 0, []).
 
-aggregate_coverage2([H | T], CoveredLines, TotalLines) ->
+aggregate_coverage2([H | T], CoveredLines, TotalLines, ModuleStats) ->
     {ok, {_Module, {Cov, NotCov}}} = cover:analyse(H, coverage, module),
-    aggregate_coverage2(T, CoveredLines + Cov, TotalLines + Cov + NotCov);
-aggregate_coverage2([], CoveredLines, TotalLines) ->
-    {ok, CoveredLines, TotalLines}.
+    ModLines = Cov + NotCov,
+    ModPercent = (Cov / ModLines * 100),
+    NewModuleStats = [{H, ModPercent} | ModuleStats],
+    aggregate_coverage2(T,
+			CoveredLines + Cov,
+			TotalLines + ModLines,
+			NewModuleStats
+		       );
+aggregate_coverage2([], CoveredLines, TotalLines, ModuleStats) ->
+    {ok, CoveredLines, TotalLines, ModuleStats}.
