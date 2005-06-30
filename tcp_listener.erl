@@ -176,6 +176,12 @@ accept_loop(State) when is_record(State, state) ->
 	    logger:log(error, "TCP listener: accept() says the listensocket ~p was closed, "
 		       "no point in me staying alive.", [ListenSocket]),
 	    erlang:error("Listening socket closed", [State]);
+	{error, esslaccept} when SocketModule == ssl ->
+	    %% Don't log SSL error esslaccept with priority 'error' since it is
+	    %% what we get on portscans and similar
+	    logger:log(debug, "TCP listener: SSL handshake with unidentified peer failed "
+		       "(just ignore, usually a portscan or similar)"),
+	    accept_loop(State);
 	{error, E} ->
 	    logger:log(error, "TCP listener: accept() returned error : ~s (~p)", [inet:format_error(E), E]),
 	    erlang:error({"Accept failed", {error, E}}, [State]);
