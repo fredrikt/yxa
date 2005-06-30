@@ -13,10 +13,6 @@ erl="@erl@"
 myname=`basename $0`
 if [ "x$myname" = "xyxa-bootstrap.sh" ]; then
     is_bootstrap=1
-
-    # Adjust Mnesia dir path when bootstrapping so that it is the same as when
-    # we run the real system (incomingproxy is database server node)
-    mnesiadir="$MNESIABASE/incomingproxy"
 else
     is_bootstrap=0
 fi
@@ -77,7 +73,6 @@ fi
 
 command=""
 detach="-detached"
-mnesiadir="$MNESIABASE/$PROGRAMNAME"
 replica=""
 explicit_name=0
 hostname=$(hostname)
@@ -85,8 +80,14 @@ hostname=$(hostname)
 if [ $is_bootstrap -eq 1 ]; then
     # yes, the name should be incomingproxy when bootstrapping
     name="incomingproxy"
+    command="bootstrap"
+
+    # Adjust Mnesia dir path when bootstrapping so that it is the same as when
+    # we run the real system (incomingproxy is database server node)
+    mnesiadir="$MNESIABASE/incomingproxy"
 else
     name="$PROGRAMNAME"
+    mnesiadir="$MNESIABASE/$PROGRAMNAME"
 fi
 
 # parse command line options
