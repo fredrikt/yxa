@@ -34,7 +34,7 @@ AC_ARG_WITH(mnesiadir,
     mnesiadir="/var/yxa/db"
 else
     mnesiadir="$with_mnesiadir"
-fi])
+fi],[mnesiadir="/var/yxa/db"])
 
 AC_ARG_WITH(sslcertdir,
 	AC_HELP_STRING([--with-sslcertdir=dir],
