@@ -632,11 +632,11 @@ Web interface
 =============
 
 To use the web interface, you first need to install the Erlang web-server
-Yaws (available from http://yaws.hyber.org/). When you have configured a
-working Yaws web-server, you need to point your docroot at the
-yxa/yaws/docroot directory, and configure Yaws with module and include 
-search paths to the Yxa include and ebin-directorys. Example parts of
-yaws.conf configuration file :
+Yaws version 1.56 or higher (available from http://yaws.hyber.org/).
+When you have configured a working Yaws web-server, you need to point your
+docroot at the yxa/yaws/docroot directory, and configure Yaws with module
+and include search paths to the Yxa include and ebin-directorys. Example 
+parts of yaws.conf configuration file :
 
   ebin_dir = /path/to/lib/yxa/ebin
   include_dir = /path/to/lib/yxa/include
@@ -654,6 +654,26 @@ NOTE 2: The files inside yaws/docroot will probably be installed somewhere
 under /path/to/lib/yxa in the future, I just need to figure out where they
 belong.
 
+Then you need to start Yaws with "-name yaws" (or some other node name) in
+order to enable communication between the Yaws node and your Yxa node(s).
+You also need to start the Yaws node as the same user as you start your Yxa
+nodes as, or by other means make sure the Yaws node has the same shared
+secret in it's ~/.erlang.cookie file as the Yxa nodes has, or they will be
+unable to communicate. See the section "Distributed operation" above for
+more information about Erlang distribution.
+
+If you use SSL for Erlang distribution (see sections "SSL" and "Distributed
+operation" above for more information), you must get Yaws to use SSL for
+Erlang distribution too, or the nodes won't be able to talk to each other.
+This is a sample Yaws startup command for doing this (only works with Yaws
+1.56 or later) :
+
+  yaws -i -name yaws \
+    -erlarg "-boot /path/to/lib/yxa/ebin/start_ssl" \
+    -erlarg "-proto_dist inet_ssl" \
+    -erlarg "-ssl_dist_opt client_certfile /path/to/cert.comb" \
+    -erlarg "-ssl_dist_opt server_certfile /path/to/cert.comb" \
+    -erlarg "-ssl_dist_opt verify 2"
 
 ============
 IPv6 support
