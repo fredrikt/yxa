@@ -483,10 +483,10 @@ check_quit2(Res, _From, _State) ->
     %% sipstate was not 'terminated'
     Res.
 
-send_reply(none, Reply, State) when is_record(State, state) ->
+send_reply(Reply, none, State) when is_record(State, state) ->
     logger:log(error, "~s: Can't send gen_server reply ~p to 'none'", [State#state.logtag, Reply]),
     error;
-send_reply(To, Reply, State) when is_record(State, state) ->
+send_reply(Reply, To, State) when is_record(State, state) ->
     gen_server:reply(To, Reply).
 
 %%--------------------------------------------------------------------
@@ -552,7 +552,7 @@ process_timer2({resendrequest_timeout}, Timer, State) when is_record(State, stat
 				      [LogTag, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
 			   true;
 		       false ->
-			   logger:log(normal, "~s: Sending of 's ~s' timed out after ~s seconds",
+			   logger:log(normal, "~s: Sending of '~s ~s' timed out after ~s seconds",
 				      [LogTag, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
 			   false
 		   end,
