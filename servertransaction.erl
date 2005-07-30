@@ -675,10 +675,10 @@ check_quit2(Res, _From, State) when is_record(State, state) ->
     %% State#state.sipstate was NOT 'terminated'
     Res.
 
-send_reply(none, Reply, State) when is_record(State, state) ->
+send_reply(Reply, none, State) when is_record(State, state) ->
     logger:log(error, "~s: Can't send gen_server reply ~p to 'none'", [State#state.logtag, Reply]),
     error;
-send_reply(To, Reply, State) when is_record(State, state)   ->
+send_reply(Reply, To, State) when is_record(State, state)   ->
     gen_server:reply(To, Reply).
 
 %%--------------------------------------------------------------------
