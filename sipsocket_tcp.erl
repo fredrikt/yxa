@@ -15,7 +15,7 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start/1,
+-export([start_link/0,
 	 send/5,
 	 is_reliable_transport/1,
 	 get_socket/1
@@ -40,8 +40,8 @@
 %% External functions
 %%====================================================================
 
-start(Port) when is_integer(Port) ->
-    tcp_dispatcher:start_link(Port).
+start_link() ->
+    tcp_dispatcher:start_link().
 
 %%--------------------------------------------------------------------
 %% Function: send(SipSocket, Proto, Host, Port, Message)
@@ -70,7 +70,9 @@ send(SipSocket, _Proto, Host, Port, Message) when is_record(SipSocket, sipsocket
 	{send_result, Res} ->
 	    Res;
 	{'EXIT', Reason} ->
-	    {error, Reason}
+	    Msg = io_lib:format("sipsocket_tcp failed sending through pid ~p : ~p",
+				[SPid, Reason]),
+	    {error, Msg}
     end.
 
 %%--------------------------------------------------------------------
