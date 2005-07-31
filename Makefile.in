@@ -93,6 +93,7 @@ erl_FILES = \
 	sipserver_sup.erl \
 	sipsocket.erl \
 	sipsocket_tcp.erl \
+	sipsocket_test.erl \
 	sipsocket_udp.erl \
 	siptimer.erl \
 	sipurl.erl \
