@@ -17,7 +17,6 @@
 	 add_record_route/4,
 	 myhostname/0,
 	 create_via/2,
-	 default_port/2,
 	 get_loop_cookie/3,
 	 generate_branch/0,
 	 make_response/7,
@@ -82,22 +81,6 @@ fix_content_length(Header, Body) when is_record(Header, keylist), is_list(Body) 
     keylist:set("Content-Length", [integer_to_list(length(Body))], Header);
 fix_content_length(Header, Body) when is_record(Header, keylist), is_binary(Body) ->
     keylist:set("Content-Length", [integer_to_list(size(Body))], Header).
-
-%%--------------------------------------------------------------------
-%% Function: default_port(Proto, Port)
-%%           Proto = atom(), udp | udp6 | tcp | tcp6 | tls | tcp6 |
-%%                   string(), "sip" | "sips"
-%%           Port  = integer() | none
-%% Descrip.: Yucky function returning a "default port number" as an
-%%           integer, based on input Proto and Port.
-%% Returns : Port = integer()
-%%--------------------------------------------------------------------
-default_port(Proto, none) when Proto == udp; Proto == udp6; Proto == tcp; Proto == tcp6; Proto == "sip" ->
-    5060;
-default_port(Proto, none) when Proto == tls; Proto == tls6 ; Proto == "sips" ->
-    5061;
-default_port(_, Port) when is_integer(Port) ->
-    Port.
 
 %%--------------------------------------------------------------------
 %% Function: process_route_header(Header, URI)
@@ -550,9 +533,9 @@ get_loop_cookie(Header, OrigURI, Proto) ->
     {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
 				   TopVia when is_record(TopVia, via) ->
 				       P = sipsocket:viaproto2proto(TopVia#via.proto),
-				       {TopVia#via.host, default_port(P, TopVia#via.port)};
+				       {TopVia#via.host, sipsocket:default_port(P, TopVia#via.port)};
 				   _ ->
-				       {myhostname(), sipserver:get_listenport(Proto)}
+				       {myhostname(), sipsocket:get_listenport(Proto)}
 			       end,
     TopViaSentBy = sipurl:print_hostport(TopViaHost, TopViaPort),
     In = lists:concat([OrigURIstr, "-ftag-", FromTag, "-totag-", ToTag,
@@ -629,7 +612,7 @@ myhostname() ->
 %%--------------------------------------------------------------------
 create_via(Proto, Parameters) ->
     Hostname = myhostname(),
-    Port = sipserver:get_listenport(Proto),
+    Port = sipsocket:get_listenport(Proto),
     ViaProto = sipsocket:proto2viastr(Proto),
     #via{proto=ViaProto, host=Hostname, port=Port, param=Parameters}.
 
@@ -685,7 +668,7 @@ add_record_route(Proto, Hostname, Port, Header) ->
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
 add_record_route(Header, Origin) when is_record(Origin, siporigin) ->
-    Port = sipserver:get_listenport(Origin#siporigin.proto),
+    Port = sipsocket:get_listenport(Origin#siporigin.proto),
     add_record_route(Origin#siporigin.proto, myhostname(), Port, Header).
 
 %%--------------------------------------------------------------------
@@ -880,41 +863,10 @@ test() ->
     "Wd_CG1j2CfuAv0NWdJLxTQ" = make_base64_md5_token("abcdeXYZ123-.!%*_+`'~123@"),
 
 
-    %% default_port(Proto, PortIn)
-    %%--------------------------------------------------------------------
-    %% udp/udp6/tcp/tcp6/"sip"
-    io:format("test: default_port/2 - 1~n"),
-    5060 = default_port(udp, none),
-    io:format("test: default_port/2 - 2~n"),
-    5060 = default_port(udp6, none),
-    io:format("test: default_port/2 - 3~n"),
-    5060 = default_port(tcp, none),
-    io:format("test: default_port/2 - 4~n"),
-    5060 = default_port(tcp6, none),
-    io:format("test: default_port/2 - 5~n"),
-    5060 = default_port("sip", none),
-
-    %% tls/tls6/"sips"
-    io:format("test: default_port/2 - 6~n"),
-    5061 = default_port(tls, none),
-    io:format("test: default_port/2 - 7~n"),
-    5061 = default_port(tls6, none),
-    io:format("test: default_port/2 - 8~n"),
-    5061 = default_port("sips", none),
-
-    %% none of the above, port specified
-    io:format("test: default_port/2 - 9~n"),
-    1234 = default_port(whatever, 1234),
-
-    %% none of the above, port NOT specified - expect crash
-    io:format("test: default_port/2 - 11~n"),
-    {'EXIT', {function_clause, _}} = (catch default_port("foo", none)),
-
-
     %% create_via(Proto, Parameters)
     %%--------------------------------------------------------------------
-    SipLPort  = sipserver:get_listenport(tcp),
-    SipsLPort = sipserver:get_listenport(tls),
+    SipLPort  = sipsocket:get_listenport(tcp),
+    SipsLPort = sipsocket:get_listenport(tls),
 
     %% tcp
     io:format("test: create_via/2 - 1~n"),

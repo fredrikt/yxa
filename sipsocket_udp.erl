@@ -86,7 +86,7 @@ start_link() ->
 %%           Reason = string()
 %%--------------------------------------------------------------------
 init([]) ->
-    Port = sipserver:get_listenport(udp),  %% same for UDP and UDPv6
+    Port = sipsocket:get_listenport(udp),  %% same for UDP and UDPv6
     start_listening([udp, udp6], Port, #state{socketlist=socketlist:empty()}).
 
 %%--------------------------------------------------------------------
@@ -158,7 +158,7 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 %%           Reason    = string()
 %%--------------------------------------------------------------------
 handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
-    Id = {listener, Proto, sipserver:get_listenport(Proto)},
+    Id = {listener, Proto, sipsocket:get_listenport(Proto)},
     case socketlist:get_using_id(Id, State#state.socketlist) of
 	[] ->
 	    logger:log(error, "Sipsocket UDP: Failed fetching socket with id '~p' from list :~n~p",

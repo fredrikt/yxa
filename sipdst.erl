@@ -60,7 +60,7 @@ url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integ
 			       [Host, Port, E]),
 		    {error, "Coult not make destination out of URL"};
 		{ok, UseAddr, UseProto} ->
-		    UsePort = siprequest:default_port(UseProto, Port),
+		    UsePort = sipsocket:default_port(UseProto, Port),
 		    %% We don't fill in sipdst.ssl_hostname here since we are extremely unlikely
 		    %% to encounter a SSL certificate for an IP address anyways.
 		    [#sipdst{proto=UseProto, addr=UseAddr, port=UsePort, uri=ReqURI}]
@@ -120,11 +120,11 @@ get_response_destination(TopVia) when is_record(TopVia, via) ->
 	    Port = case dict:find("rport", ParamDict) of
                        {ok, []} ->
                            %% This must be an error response generated before the rport fix-up. Ignore rport.
-                           siprequest:default_port(Proto, ViaPort);
+                           sipsocket:default_port(Proto, ViaPort);
 		       {ok, Rport} ->
                            list_to_integer(Rport);
                        _ ->
-                           siprequest:default_port(Proto, ViaPort)
+                           sipsocket:default_port(Proto, ViaPort)
                    end,
 	    #sipdst{proto=Proto, addr=Host, port=Port};
 	_ ->
@@ -440,7 +440,7 @@ make_sipdst_from_hostport(Proto, URI, SSLHost, In) when Proto == tcp; Proto == u
 %% sipdns_hostport.family == inet
 %%
 make_sipdst_from_hostport2(Proto, URI, SSLHost, [#sipdns_hostport{family=inet}=H | T], Res) ->
-    UsePort = siprequest:default_port(Proto, H#sipdns_hostport.port),
+    UsePort = sipsocket:default_port(Proto, H#sipdns_hostport.port),
     This = #sipdst{proto=Proto,
 		   addr=H#sipdns_hostport.addr,
 		   port=UsePort,
@@ -457,7 +457,7 @@ make_sipdst_from_hostport2(Proto, URI, SSLHost, [#sipdns_hostport{family=inet6}=
 		   udp -> udp6;
 		   tls -> tls6
 	       end,
-    UsePort = siprequest:default_port(UseProto, H#sipdns_hostport.port),
+    UsePort = sipsocket:default_port(UseProto, H#sipdns_hostport.port),
     This = #sipdst{proto=UseProto,
 		   addr=H#sipdns_hostport.addr,
 		   port=UsePort,

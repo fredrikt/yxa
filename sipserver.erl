@@ -15,8 +15,6 @@
 	 safe_spawn_fun/2,
 	 safe_spawn/3,
 	 origin2str/1,
-	 get_listenport/1,
-	 get_all_listenports/0,
 	 test/0
 	]).
 
@@ -769,7 +767,7 @@ replace_top_via(NewVia, Header) when is_record(NewVia, via) ->
 %%          false
 %%--------------------------------------------------------------------
 received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
-    MyPorts = sipserver:get_all_listenports(),
+    MyPorts = sipsocket:get_all_listenports(),
     MyIP = siphost:myip(),
     {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
     HostnameList = MyHostnames ++ siphost:myip_list(),
@@ -783,7 +781,7 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     %% if the default port number was specified in there, but in practice that is
     %% what we have to do since some UAs can remove the port we put into the
     %% Record-Route
-    Port = siprequest:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
+    Port = sipsocket:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
     PortMatches = lists:member(Port, MyPorts),
     MAddrMatch = case url_param:find(URI#sipurl.param_pairs, "maddr") of
 		     [MyIP] -> true;
@@ -851,8 +849,8 @@ remove_route_matching_me(Header) ->
 %%--------------------------------------------------------------------
 route_matches_me(Route) when is_record(Route, contact) ->
     URL = sipurl:parse(Route#contact.urlstr),
-    MyPorts = sipserver:get_all_listenports(),
-    Port = siprequest:default_port(URL#sipurl.proto, sipurl:get_port(URL)),
+    MyPorts = sipsocket:get_all_listenports(),
+    Port = sipsocket:default_port(URL#sipurl.proto, sipurl:get_port(URL)),
     PortMatches = lists:member(Port, MyPorts),
     {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
     HostnameList = MyHostnames ++ siphost:myip_list(),
@@ -943,7 +941,7 @@ check_packet(Response, Origin) when is_record(Response, response), is_record(Ori
 check_for_loop(Header, URI, Origin) when is_record(Origin, siporigin) ->
     LoopCookie = siprequest:get_loop_cookie(Header, URI, Origin#siporigin.proto),
     MyHostname = siprequest:myhostname(),
-    MyPort = sipserver:get_listenport(Origin#siporigin.proto),
+    MyPort = sipsocket:get_listenport(Origin#siporigin.proto),
     CmpVia = #via{host=MyHostname, port=MyPort},
 
     case via_indicates_loop(LoopCookie, CmpVia, sipheader:via(Header)) of
@@ -1106,45 +1104,6 @@ check_supported_uri_scheme(URI, Header) when is_record(URI, sipurl), is_record(H
 origin2str(Origin) when is_record(Origin, siporigin) ->
     lists:concat([Origin#siporigin.proto, ":", Origin#siporigin.addr, ":", Origin#siporigin.port]).
 
-%%--------------------------------------------------------------------
-%% Function: get_listenport(Proto)
-%%           Proto = atom(), tcp | tcp6 | tls | tls6 | udp | udp6
-%% Descrip.: Return the port we would listen on for a Proto,
-%%           regardless of if we in fact are listening on the port or
-%%           not.
-%% Returns : Port = integer()
-%%--------------------------------------------------------------------
-get_listenport(Proto) when Proto == tls; Proto == tls6 ->
-    case yxa_config:get_env(tls_listenport) of
-	{ok, P} when is_integer(P) ->
-	    P;
-	none ->
-	    siprequest:default_port(Proto, none)
-    end;
-get_listenport(Proto) when Proto == tcp; Proto == tcp6; Proto == udp; Proto == udp6 ->
-    case yxa_config:get_env(listenport) of
-	{ok, P} when is_integer(P) ->
-	    P;
-	none ->
-	    siprequest:default_port(Proto, none)
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: get_all_listenports()
-%% Descrip.: Returns a list of all ports we listen on. In some places,
-%%           we need to get a list of all ports which are valid for
-%%           this proxy.
-%% Returns : PortList = list() of integer()
-%% Notes   : Perhaps this problem can't be solved this easilly - what
-%%           if we have multiple interfaces and listen on different
-%%           ports on them?
-%%
-%% XXX finish this function! Have to fetch a list of the ports we
-%% listen on from the transport layer.
-%%--------------------------------------------------------------------
-get_all_listenports() ->
-    [get_listenport(udp)].
-
 
 %%====================================================================
 %% Internal functions
@@ -1174,8 +1133,8 @@ test() ->
     io:format("test: init variables - 1~n"),
 
     MyHostname = siprequest:myhostname(),
-    SipPort  = sipserver:get_listenport(tcp),
-    _SipsPort = sipserver:get_listenport(tls),
+    SipPort  = sipsocket:get_listenport(tcp),
+    _SipsPort = sipsocket:get_listenport(tls),
 
     ViaMe = siprequest:create_via(tcp, []),
     ViaOrigin1 = #siporigin{proto=tcp},
@@ -1700,41 +1659,5 @@ test() ->
     %% URL was unparseable
     {sipparseerror, request, URISchemeHeader, 416, "Unsupported URI Scheme (bogus:)"} =
 	(catch check_supported_uri_scheme(URISchemeURL2, URISchemeHeader)),
-
-
-    %% test get_listenport(Proto)
-    %%--------------------------------------------------------------------
-    io:format("test: get_listenport/1 - 1~n"),
-    %% test with 'udp'
-    5060 = get_listenport(udp),
-
-    io:format("test: get_listenport/1 - 2~n"),
-    %% test with 'tls6'
-    5061 = get_listenport(tls6),
-
-    io:format("test: get_listenport/1 - 3~n"),
-    %% test with invalid value (string)
-    {'EXIT', {function_clause, _}} = (catch get_listenport("invalid")),
-
-    io:format("test: get_listenport/1 - 4~n"),
-    %% test with invalid value (atom)
-    {'EXIT', {function_clause, _}} = (catch get_listenport(none)),
-
-
-    %% test get_all_listenports()
-    %%--------------------------------------------------------------------
-    io:format("test: get_all_listenports/0 - 1~n"),
-    %% simply call function
-    ListenPorts1 = get_all_listenports(),
-
-    io:format("test: get_all_listenports/0 - 2~n"),
-    %% check that all entrys returned are integers
-    true = lists:all(fun(H) ->
-			     is_integer(H)
-		     end, ListenPorts1),
-
-    io:format("test: get_all_listenports/0 - 3~n"),
-    %% check that we didn't get an empty list
-    [_ | _] = ListenPorts1,
 
     ok.

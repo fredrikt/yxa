@@ -104,8 +104,8 @@ init([]) ->
 %%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 get_listenerspecs() ->
-    Port = sipserver:get_listenport(tcp),
-    TLSport = sipserver:get_listenport(tls),
+    Port = sipsocket:get_listenport(tcp),
+    TLSport = sipsocket:get_listenport(tls),
     TCPlisteners = [{tcp, Port}, {tcp6, Port}],
     Listeners = case yxa_config:get_env(tls_disable_server) of
 		    {ok, false} ->
