@@ -4,6 +4,7 @@
 %%--------------------------------------------------------------------
 
 -module(autotest).
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% External exports
@@ -64,6 +65,7 @@
 		       sipauth,
 		       sipproxy,
 		       sipuserdb_file_backend,
+		       sipuserdb_file,
 		       siptimer,
 		       yxa_config_erlang,
 		       yxa_config_check
@@ -222,7 +224,7 @@ run_cover([Mode]) ->
 
     TotalPercent = (CoveredLines / TotalLines * 100),
 
-    io:format("~nTests covered ~p out of ~p lines of code in ~p modules (~p%)~n~n",
+    io:format("~nTests covered ~p out of ~p lines of code in ~p modules (~.1f%)~n~n",
 	      [CoveredLines, TotalLines, length(?TEST_MODULES), TotalPercent]),
 
     if
@@ -280,7 +282,7 @@ aggregate_coverage(Modules) ->
     aggregate_coverage2(Modules, 0, 0, []).
 
 aggregate_coverage2([H | T], CoveredLines, TotalLines, ModuleStats) ->
-    {ok, {_Module, {Cov, NotCov}}} = cover:analyse(H, coverage, module),
+    {ok, Cov, NotCov} = get_module_coverage(H),
     ModLines = Cov + NotCov,
     ModPercent = (Cov / ModLines * 100),
     NewModuleStats = [{H, ModPercent} | ModuleStats],
@@ -291,3 +293,41 @@ aggregate_coverage2([H | T], CoveredLines, TotalLines, ModuleStats) ->
 		       );
 aggregate_coverage2([], CoveredLines, TotalLines, ModuleStats) ->
     {ok, CoveredLines, TotalLines, ModuleStats}.
+
+%%--------------------------------------------------------------------
+%% Function: get_module_coverage(Module)
+%%           Module = atom(), module name
+%% Descrip.: Get number of covered/not covered lines of real code in
+%%           a module. Excludes all functions named test* from the
+%%           bottom of the coverage data for Module.
+%% Returns : {ok, Cov, NotCov}
+%%           Cov    = integer(), code lines covered in Module
+%%           NotCov = integer(), lines not covered
+%%--------------------------------------------------------------------
+get_module_coverage(Module) when is_atom(Module) ->
+    {ok, Data} = cover:analyse(Module, coverage, function),
+    {ok, Data2} = remove_test_functions_data(Data),
+    get_module_coverage2(Data2, 0, 0).
+
+get_module_coverage2([{_MFA, {Cov, NotCov}} | T], TotCov, TotNotCov) ->
+    get_module_coverage2(T, TotCov + Cov, TotNotCov + NotCov);
+get_module_coverage2([], TotCov, TotNotCov) ->
+    {ok, TotCov, TotNotCov}.
+
+remove_test_functions_data(Data) when is_list(Data) ->
+    In = lists:reverse(Data),
+    Out = remove_test_functions_data2(In),
+    {ok, lists:reverse(Out)}.
+
+%% Remove all entrys for functions named test* until we find
+%% one that does not match. Should be fed a modules coverage data
+%% in reverse order since the test* functions are at the bottom.
+remove_test_functions_data2([{{_M, F, _A}, {_Cov, _NotCov}} = H | T]) ->
+    case atom_to_list(F) of
+	"test" ++ _ ->
+	    remove_test_functions_data2(T);
+	_ ->
+	    [H | T]
+    end;
+remove_test_functions_data2([]) ->
+    [].
