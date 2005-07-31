@@ -1,8 +1,8 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transport layer processes supervisor, and transport
-%%%           layer interface functions.
+%%% Descrip.: Transport layer processes supervisor, and sipsocket
+%%%           interface functions.
 %%%
 %%% Created : 21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -15,7 +15,7 @@
 %%--------------------------------------------------------------------
 -export([send/5,
 	 is_reliable_transport/1,
-	 get_socket/2,
+	 get_socket/1,
 	 viastr2proto/1,
 	 proto2viastr/1,
 	 is_good_socket/1,
@@ -70,7 +70,7 @@ start_link() ->
 %% Returns : list() of tuple()
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
-    [{start, 1},
+    [{start_link, 0},
      {send, 5},
      {is_reliable_transport, 1},
      {get_socket, 1}
@@ -95,7 +95,7 @@ init([]) ->
     logger:log(debug, "Transport layer supervisor started"),
     UDP = {sipsocket_udp, {sipsocket_udp, start_link, []},
 	   permanent, 2000, worker, [sipsocket_udp]},
-    TCP = {tcp_dispatcher, {tcp_dispatcher, start_link, []},
+    TCP = {tcp_dispatcher, {sipsocket_tcp, start_link, []},
 	   permanent, 2000, worker, [tcp_dispatcher]},
     TCPlisteners = tcp_dispatcher:get_listenerspecs(),
     MyList = [UDP, TCP] ++ TCPlisteners,
@@ -133,35 +133,36 @@ send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_a
     SipSocketM:send(Socket, Proto, Host, Port, Message).
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Module, Dst)
-%%           Module = atom()
-%%           Dst    = sipdst record()
+%% Function: get_socket(Proto, Dst)
+%%           Dst   = sipdst record()
 %% Descrip.: Get a socket, cached or new, useable to send messages to
-%%           Dst from sipsocket module Module.
-%% Returns : Res
-%%           Res = term(), result of apply() but typically a
-%%                         sipsocket record()
+%%           Dst using protocol Proto.
+%% Returns : SipSocket       |
+%%           {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
 %%--------------------------------------------------------------------
-get_socket(Module, Dst) when is_atom(Module), is_record(Dst, sipdst) ->
+get_socket(Dst) when is_record(Dst, sipdst) ->
+    Module = proto2module(Dst#sipdst.proto),
     Module:get_socket(Dst).
 
 %%--------------------------------------------------------------------
 %% Function: is_reliable_transport(Socket)
 %% Descrip.: Call the sipsocket module in specified in Socket and let
 %%           it tell the caller if it is a reliable transport or not.
-%% Returns : Res
-%%           Res = term(), result of apply() but typically
-%%                         true | false
+%% Returns : true | false
 %%--------------------------------------------------------------------
-is_reliable_transport(Socket) when is_record(Socket, sipsocket) ->
-    apply(Socket#sipsocket.module, is_reliable_transport, [Socket]).
+is_reliable_transport(#sipsocket{module=Module} = Socket) ->
+    Module:is_reliable_transport(Socket).
 
 proto2module(tcp)  -> sipsocket_tcp;
 proto2module(tcp6) -> sipsocket_tcp;
 proto2module(tls)  -> sipsocket_tcp;
 proto2module(tls6) -> spisocket_tcp;
 proto2module(udp)  -> sipsocket_udp;
-proto2module(udp6) -> sipsocket_udp.
+proto2module(udp6) -> sipsocket_udp;
+proto2module(yxa_test)  -> sipsocket_test;
+proto2module(yxa_test6)  -> sipsocket_test.
 
 proto2viastr(Socket) when is_record(Socket, sipsocket) ->
     proto2viastr(Socket#sipsocket.proto);
@@ -170,11 +171,14 @@ proto2viastr(tcp6) -> "SIP/2.0/TCP";
 proto2viastr(tls)  -> "SIP/2.0/TLS";
 proto2viastr(tls6) -> "SIP/2.0/TLS";
 proto2viastr(udp)  -> "SIP/2.0/UDP";
-proto2viastr(udp6) -> "SIP/2.0/UDP".
+proto2viastr(udp6) -> "SIP/2.0/UDP";
+proto2viastr(yxa_test) -> "SIP/2.0/YXA-TEST";
+proto2viastr(yxa_test6) -> "SIP/2.0/YXA-TEST".
 
 viastr2proto("SIP/2.0/TCP") -> tcp;
 viastr2proto("SIP/2.0/TLS") -> tls;
-viastr2proto("SIP/2.0/UDP") -> udp.
+viastr2proto("SIP/2.0/UDP") -> udp;
+viastr2proto("SIP/2.0/YXA-TEST") -> yxa_test.
 
 is_good_socket(Socket) when is_record(Socket, sipsocket) ->
     case util:safe_is_process_alive(Socket#sipsocket.pid) of
