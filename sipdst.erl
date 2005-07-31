@@ -554,7 +554,7 @@ get_response_host_proto(TopVia) when is_record(TopVia, via) ->
 		{ok, Address1, Proto1} ->
 		    {ok, Address1, Proto1}
 	    end;
-	_ ->
+	error ->
 	    %% There was no received= parameter. Do the same checks but on the Via
 	    %% hostname (which is then almost certainly an IP-address).
 	    case address_to_address_and_proto(Host, Proto) of
@@ -573,7 +573,7 @@ get_response_host_proto(TopVia) when is_record(TopVia, via) ->
 %%           Addr = term(), something (probably a string()) that is
 %%                  parseable by inet_parse:ipv{4,6}_address() (should
 %%                  be an IPv4 or IPv6 address, not a hostname!)
-%%           DefaultProto = atom(), tcp | udp | tls
+%%           DefaultProto = atom(), tcp | udp | tls | yxa_test
 %% Descrip.: When looking at Via headers, we often have a protocol
 %%           from the SIP/2.0/FOO but we need to look at the
 %%           address to determine if our sipdst proto should be
@@ -581,10 +581,13 @@ get_response_host_proto(TopVia) when is_record(TopVia, via) ->
 %% Returns : {ok, Address, Proto} |
 %%           {error, Reason}
 %%           Address = term(), parsed version of Addr
-%%           Proto   = atom(), tcp | udp | tcp6 | udp6 | tls | tls6
+%%           Proto   = atom(), tcp | udp | tcp6 | udp6 | tls | tls6 |
+%%                             yxa_test | yxa_test6
 %%           Reason  = string()
+%% Note    : yxa_test and yxa_test6 are just for Yxa unit tests.
 %%--------------------------------------------------------------------
-address_to_address_and_proto(Addr, DefaultProto) when DefaultProto == tcp; DefaultProto == udp; DefaultProto == tls ->
+address_to_address_and_proto(Addr, DefaultProto) when DefaultProto == tcp; DefaultProto == udp; DefaultProto == tls;
+						      DefaultProto == yxa_test ->
     case inet_parse:ipv4_address(Addr) of
 	{ok, _IPtuple} ->
 	    {ok, Addr, DefaultProto};
@@ -597,7 +600,8 @@ address_to_address_and_proto(Addr, DefaultProto) when DefaultProto == tcp; Defau
 			    Proto6 = case DefaultProto of
 					 tcp -> tcp6;
 					 udp -> udp6;
-					 tls -> tls6
+					 tls -> tls6;
+					 yxa_test -> yxa_test6
 				     end,
 			    {ok, Addr, Proto6};
 			_ ->
