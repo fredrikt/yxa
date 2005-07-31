@@ -532,7 +532,7 @@ get_loop_cookie(Header, OrigURI, Proto) ->
     Route = keylist:fetch('route', Header),
     {TopViaHost, TopViaPort} = case sipheader:topvia(Header) of
 				   TopVia when is_record(TopVia, via) ->
-				       P = sipsocket:viaproto2proto(TopVia#via.proto),
+				       P = sipsocket:viastr2proto(TopVia#via.proto),
 				       {TopVia#via.host, sipsocket:default_port(P, TopVia#via.port)};
 				   _ ->
 				       {myhostname(), sipsocket:get_listenport(Proto)}

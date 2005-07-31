@@ -16,7 +16,7 @@
 -export([send/5,
 	 is_reliable_transport/1,
 	 get_socket/2,
-	 viaproto2proto/1,
+	 viastr2proto/1,
 	 proto2viastr/1,
 	 is_good_socket/1,
 	 proto2module/1,
@@ -172,9 +172,9 @@ proto2viastr(tls6) -> "SIP/2.0/TLS";
 proto2viastr(udp)  -> "SIP/2.0/UDP";
 proto2viastr(udp6) -> "SIP/2.0/UDP".
 
-viaproto2proto("SIP/2.0/TCP") -> tcp;
-viaproto2proto("SIP/2.0/TLS") -> tls;
-viaproto2proto("SIP/2.0/UDP") -> udp.
+viastr2proto("SIP/2.0/TCP") -> tcp;
+viastr2proto("SIP/2.0/TLS") -> tls;
+viastr2proto("SIP/2.0/UDP") -> udp.
 
 is_good_socket(Socket) when is_record(Socket, sipsocket) ->
     case util:safe_is_process_alive(Socket#sipsocket.pid) of

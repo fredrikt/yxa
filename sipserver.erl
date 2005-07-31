@@ -662,7 +662,7 @@ check_response_via(Origin, TopVia) when is_record(Origin, siporigin), is_record(
     MyViaNoParam = siprequest:create_via(Proto, []),
     %% But we also accept this, which is the same but with the protocol from this response - in
     %% case we sent the request out using TCP but received the response over UDP for example
-    SentByMeNoParam = siprequest:create_via(sipsocket:viaproto2proto(TopVia#via.proto), []),
+    SentByMeNoParam = siprequest:create_via(sipsocket:viastr2proto(TopVia#via.proto), []),
     case sipheader:via_is_equal(TopVia, MyViaNoParam, [proto, host, port]) of
         true ->
 	    ok;

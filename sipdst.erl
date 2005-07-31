@@ -535,7 +535,7 @@ format_siplookup_result2(InPort, ReqURI, SSLHost, [H | T], Res) when is_record(H
 get_response_host_proto(TopVia) when is_record(TopVia, via) ->
     {Protocol, Host, Parameters} = {TopVia#via.proto, TopVia#via.host, TopVia#via.param},
     ParamDict = sipheader:param_to_dict(Parameters),
-    Proto = sipsocket:viaproto2proto(Protocol),
+    Proto = sipsocket:viastr2proto(Protocol),
     case dict:find("received", ParamDict) of
 	{ok, Received} ->
 	    case address_to_address_and_proto(Received, Proto) of
