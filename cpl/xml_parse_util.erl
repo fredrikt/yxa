@@ -299,8 +299,12 @@ duration3(R, D) ->
 		  [] -> D#duration{weeks = Num};
 		  _ -> throw({error, duration_has_trailing_chars_after_week_entry})
 	      end;
-	$d -> D2 = D#duration{days = Num},
-	      duration_t(Rest, D2);
+	$d ->
+	    case Rest of
+		[] -> D#duration{days = Num};
+		_ -> D2 = D#duration{days = Num},
+		     duration_t(Rest, D2)
+	    end;
 	_ -> throw({error, duration_expected_PxxxDTyyy_or_PxxxW_format})
     end.
 
@@ -674,13 +678,17 @@ test() ->
     io:format("test: duration/1  - 7~n"),
     autotest:fail(fun() -> duration("P15DT5H20S") end),
 
-    %% test case insensetivitiy
+    %% test case insensitivity
     io:format("test: duration/1  - 8~n"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 20} = duration("p15dt5h2m20s"),
     #duration{weeks = 7, days = 0, hours = 0, minutes = 0, seconds = 0}  = duration("p7w"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 20} = duration("p15Dt5H2m20S"),
     #duration{weeks = 7, days = 0, hours = 0, minutes = 0, seconds = 0} = duration("p7W"),
 
+    %% test only day
+    io:format("test: duration/1  - 9~n"),
+    #duration{weeks = 0, days = 19, hours = 0, minutes = 0, seconds = 0}  = duration("P19D"),
+						
 
 
     %% iolist_to_str/1
@@ -733,7 +741,7 @@ test() ->
     io:format("test: is_language_tag  - 3~n"),
     is_language_tag("de-En-Bar"),
 
-    %% to long sub part
+    %% too long sub part
     io:format("test: is_language_tag  - 4~n"),
     autotest:fail(fun() -> is_language_tag("abcdabcda") end),
 
@@ -761,7 +769,7 @@ test() ->
     io:format("test: is_language_range  - 3~n"),
     is_language_range("de-En-Bar"),
 
-    %% to long sub part
+    %% too long sub part
     io:format("test: is_language_range  - 4~n"),
     autotest:fail(fun() -> is_language_range("abcdabcda") end),
 
