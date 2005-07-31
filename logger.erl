@@ -97,7 +97,7 @@ start_link() ->
 			  {ok, Name} ->
 			      Name;
 			  _ ->
-			      erlang:fault("Application name undefined")
+			      erlang:error("Application name undefined")
 		      end
 	      end,
     start_link(LogBase).
@@ -494,7 +494,7 @@ do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format); is_binary
     ok.
 
 %% get timestamp
-get_ts({Megasec, Sec, USec}) -> 
+get_ts({Megasec, Sec, USec}) ->
     USecStr = format_usec(USec, 3),
     DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
     list_to_binary([DateTime, $., USecStr]).
