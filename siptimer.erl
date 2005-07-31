@@ -26,7 +26,8 @@
 	 empty/0,
 	 get_length/1,
 
-	 test/0
+	 test/0,
+	 test_get_appsignals/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -97,7 +98,7 @@ reset_timers([H | T], TimerList) when is_record(H, siptimer), is_record(TimerLis
 	    Description = H#siptimer.description,
 	    logger:log(error, "Siptimer: Can't reset timer ~p:~p not found in list",
 		       [Ref, Description]),
-	    logger:log(debug, "Siptimer: Timerlist where timer ~p:~p was not found : ~p",
+	    logger:log(debug, "Siptimer: Timerlist where timer ~p:~p was not found :~n~p",
 		       [Ref, Description, debugfriendly(TimerList)]),
 	    reset_timers(T, TimerList);
         ThisTimer ->
@@ -293,7 +294,7 @@ debugfriendly2([H | T], Res) when is_record(H, siptimer) ->
     RefStr = io_lib:format("~p", [H#siptimer.ref]),
     Descr = H#siptimer.description,
     SignalStr = io_lib:format("~p", [H#siptimer.appsignal]),
-    Str = lists:concat([RefStr, ":", Descr, " -> ", SignalStr]),
+    Str = lists:flatten( lists:concat([RefStr, ":", Descr, " -> ", SignalStr]) ),
     debugfriendly2(T, [Str | Res]);
 debugfriendly2([], Res) ->
     lists:reverse(Res).
@@ -362,18 +363,37 @@ del_ref(Ref, [H | T]) when is_record(H, siptimer) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
+%% Function: test_get_appsignals(TimerList)
+%% Descrip.: Exported function for use in unit testings of modules
+%%           using siptimer timers. Returns just the appsignals from
+%%           the timers in TimerList, in fixed order of which timers
+%%           would fire first.
+%% Returns : AppSignals = list() of term()
+%%--------------------------------------------------------------------
+test_get_appsignals(TimerList) when is_record(TimerList, siptimerlist) ->
+    Sorted = lists:sort(fun test_get_appsignals_sort/2, TimerList#siptimerlist.list),
+    lists:map(fun(Timer) ->
+		      Timer#siptimer.appsignal
+	      end, Sorted).
+
+test_get_appsignals_sort(A, B) when is_record(A, siptimer), is_record(B, siptimer) ->
+    At = A#siptimer.starttime + (A#siptimer.timeout / 1000),
+    Bt = B#siptimer.starttime + (B#siptimer.timeout / 1000),
+    (Bt >= At).
+
+%%--------------------------------------------------------------------
 %% Function: test()
 %% Descrip.: autotest callback
 %% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
-    %% test empty/0
+    %% empty()
     %%--------------------------------------------------------------------
     io:format("test: emtpy/0 - 1~n"),
     #siptimerlist{list=[]} = EmptyList = empty(),
 
 
-    %% test add_timer/4
+    %% add_timer(Timeout, Description, AppSignal, TimerList)
     %%--------------------------------------------------------------------
     io:format("test: add_timer/4 - 1~n"),
     %% Test with zero timeout, no timer will be created
@@ -388,7 +408,7 @@ test() ->
     AddTimerL2 = add_timer(200 * 1000, "test: add_timer/4 timer 2", {test_siptimer, 2}, AddTimerL1),
 
 
-    %% test get_length/1
+    %% get_length(TimerList)
     %%--------------------------------------------------------------------
     io:format("test: get_length/1 - 1~n"),
     0 = get_length(EmptyList),
@@ -400,7 +420,7 @@ test() ->
     2 = get_length(AddTimerL2),
 
 
-    %% test get_timers_appsignal_matching/2
+    %% get_timers_appsignal_matching(AppSignal, TimerList)
     %%--------------------------------------------------------------------
     io:format("test: get_timers_appsignal_matching/2 - 1~n"),
     %% Look for timer that does not exist
@@ -419,7 +439,7 @@ test() ->
     #siptimer{appsignal = {test_siptimer, 2}} = GTAM_T2,
 
 
-    %% test get_timer/2
+    %% get_timer(Ref, TimerList)
     %%--------------------------------------------------------------------
     io:format("test: get_timer/2 - 1~n"),
     none = get_timer(make_ref(), AddTimerL2),
@@ -429,7 +449,7 @@ test() ->
     GTAM_T2 = get_timer(GTAM_T2_Ref, AddTimerL2),
 
 
-    %% test extract/2
+    %% extract(Values, SipTimer)
     %%--------------------------------------------------------------------
     io:format("test: extract/2 - 1~n"),
     {GTAM_T2_Timeout, GTAM_T2_Desc, GTAM_T2_Start, GTAM_T2_AppS} =
@@ -440,7 +460,7 @@ test() ->
 	extract([ref, timeout, description, starttime, appsignal], GTAM_T2),
 
 
-    %% test cancel_timers/2
+    %% cancel_timers(Timers, TimerList)
     %%--------------------------------------------------------------------
     io:format("test: cancel_timers/2 - 1~n"),
     %% Cancel second timer
@@ -455,7 +475,7 @@ test() ->
     #siptimerlist{list = [GTAM_T2]} = cancel_timers([GTAM_T1], AddTimerL2),
 
 
-    %% test cancel_timers_with_appsignal/2
+    %% cancel_timers_with_appsignal(AppSignal, TimerList)
     %%--------------------------------------------------------------------
     io:format("test: cancel_timers_with_appsignal/2 - 1~n"),
     AddTimerL2 = cancel_timers_with_appsignal("no match", AddTimerL2),
@@ -467,7 +487,7 @@ test() ->
     #siptimerlist{list = [GTAM_T2]} = cancel_timers_with_appsignal({test_siptimer, 1}, AddTimerL2),
 
 
-    %% test cancel_all_timers/1
+    %% cancel_all_timers(TimerList)
     %%--------------------------------------------------------------------
     io:format("test: cancel_all_timers/1 - 1~n"),
     EmptyList = cancel_all_timers(EmptyList),
@@ -476,7 +496,7 @@ test() ->
     EmptyList = cancel_all_timers(AddTimerL2),
 
 
-    %% test revive_timer/3
+    %% revive_timer(SipTimer, NewTimeout, TimerList)
     %%--------------------------------------------------------------------
     io:format("test: revive_timer/3 - 1~n"),
     %% Revive timer that does not exist in list
@@ -521,7 +541,7 @@ test() ->
     EmptyList = cancel_all_timers(ReviveTimerL4),
 
 
-    %% test reset_timers/2
+    %% reset_timers(Timers, TimerList)
     %%--------------------------------------------------------------------
     io:format("test: reset_timers/2 - 0~n"),
     %% Set up two new timers
@@ -579,7 +599,7 @@ test() ->
     EmptyList = cancel_all_timers(ResetTimersL5),
 
 
-    %% test timeout2str/1
+    %% timeout2str(Timeout)
     %%--------------------------------------------------------------------
     io:format("test: timeout2str/1 - 1~n"),
     "0.5" = timeout2str(500),
@@ -591,13 +611,47 @@ test() ->
     "2" = timeout2str(2222),
 
 
-    %% test debugfriendly/1
+    %% debugfriendly(TimerList)
     %%--------------------------------------------------------------------
     io:format("test: debugfriendly/1 - 1~n"),
     [] = debugfriendly(EmptyList),
 
     io:format("test: debugfriendly/1 - 2~n"),
     2 = length( debugfriendly(AddTimerL2) ),
+
+
+    %% test_get_appsignals(TimerList)
+    %%--------------------------------------------------------------------
+    io:format("test: test_get_appsignals/1 - 1~n"),
+    TestGetAppsignals_TL1 = #siptimerlist{list = [
+						  #siptimer{appsignal = second,
+							    starttime = 101,
+							    timeout   = 10
+							   },
+						  #siptimer{appsignal = first,
+							    starttime = 100,
+							    timeout   = 500
+							   },
+						  #siptimer{appsignal = third,
+							    starttime = 100,
+							    timeout   = 1500
+							   }
+						 ]},
+    [first, second, third] = test_get_appsignals(TestGetAppsignals_TL1),
+
+    io:format("test: test_get_appsignals/1 - 1~n"),
+    %% test with same timeout
+    TestGetAppsignals_TL2 = #siptimerlist{list = [
+						  #siptimer{appsignal = first,
+							    starttime = 100,
+							    timeout   = 1000
+							   },
+						  #siptimer{appsignal = second,
+							    starttime = 100,
+							    timeout   = 1000
+							   }
+						 ]},
+    [first, second] = test_get_appsignals(TestGetAppsignals_TL2),
 
 
     %% test siptimer operations
