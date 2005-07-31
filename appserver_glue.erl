@@ -165,21 +165,23 @@ handle_cast(Msg, State) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({servertransaction_cancelled, FromPid}, ...
+%% Function: handle_info({servertransaction_cancelled, FromPid, EH}
 %%           FromPid = pid() (callhandler_pid)
+%%           EH      = list() of {Key, ValueList} tuples, extra
+%%                     headers to include in the CANCEL requests
 %% Descrip.: Our server transaction (CallHandlerPid) signals that it
-%%           has been cancelled. Send {cancel_pending} to our
+%%           has been cancelled. Send {cancel_pending, EH} to our
 %%           sipproxy process (ForkPid).
 %% Returns : {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({servertransaction_cancelled, FromPid}, #state{callhandler_pid=FromPid}=State) when is_pid(FromPid) ->
+handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid=FromPid} = State) when is_pid(FromPid) ->
     ForkPid = State#state.forkpid,
     logger:log(debug, "Appserver glue: Original request has been cancelled, sending " ++
 	       "'cancel_pending' to ForkPid ~p and entering state 'cancelled' (answering '487 Request Cancelled')",
 	       [ForkPid]),
     %% By not doing util:safe_signal(...), we crash (and return 500) instead of returning 487 if this fails
-    ForkPid ! {cancel_pending},
+    ForkPid ! {cancel_pending, EH},
     transactionlayer:send_response_handler(State#state.callhandler, 487, "Request Cancelled"),
     NewState1 = State#state{cancelled=true},
     check_quit({noreply, NewState1, ?TIMEOUT}, none);
