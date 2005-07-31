@@ -6,8 +6,6 @@
 %%--------------------------------------------------------------------
 -export([
 	 parse/2,
-	 parse_packet/1,
-	 parse_packet/2,
 
 	 test/0
 	]).
@@ -49,18 +47,20 @@
 
 %%--------------------------------------------------------------------
 %% Function: parse(Packet, Origin)
+%%           Packet = binary() | string()
+%%           Origin = siporigin record() | none
 %% Descrip.: Parse a packet received from the network into either a
 %%           request or a response record()
-%% Returns : {request, Request}         |
-%%           {response, Response}       |
-%%           keepalive                  |
+%% Returns : Request   |
+%%           Response  |
+%%           keepalive |
 %%           throw()
 %%           Request  = request record()
 %%           Response = response record()
 %%           Status   = integer(), SIP status code
 %%           Reason   = string(), SIP reason phrase
 %%--------------------------------------------------------------------
-parse(Packet, Origin) when is_binary(Packet) ->
+parse(Packet, Origin) when is_binary(Packet), Origin == none; is_record(Origin, siporigin) ->
     case parse_packet(Packet, Origin) of
 	keepalive ->
 	    keepalive;
@@ -123,7 +123,6 @@ extract_body(_Bin, _BodyOffset, CL) ->
 
 %%--------------------------------------------------------------------
 %% Function: parse_packet(Packet, Origin) ->
-%%           parse_packet(Packet)
 %%           Packet = binary()
 %%           Origin = siporigin record() | none
 %% Descrip.: Parse a request/response. Extract the first line
@@ -136,9 +135,6 @@ extract_body(_Bin, _BodyOffset, CL) ->
 %%           Header     = keylist record()
 %%           BodyOffset = integer()
 %%--------------------------------------------------------------------
-parse_packet(Packet) ->
-    parse_packet(Packet, none).
-
 parse_packet(<<?CR, ?LF>>, Origin) ->
     if
 	is_record(Origin, siporigin) ->
@@ -153,10 +149,10 @@ parse_packet(Packet, Origin) when is_binary(Packet) ->
 	is_record(Origin, siporigin) ->
 	    OriginStr = sipserver:origin2str(Origin),
 	    %% Extract receiver pid if present
-	    RStr = case Origin of
-		       _ when is_record(Origin, siporigin) ->
+	    RStr = if
+		       is_record(Origin, siporigin) ->
 			   "(connection handler: " ++ pid_to_list(Origin#siporigin.receiver) ++ ") ";
-		       _ ->
+		       true ->
 			   ""
 		   end,
 	    logger:log_iolist(debug, [<<"Packet from ">>, OriginStr, 32, RStr, $:, 10, Packet, 10]);
@@ -580,7 +576,10 @@ test() ->
 
     %% basic parse
     io:format("test: parse/2 request - 1.1~n"),
-    {request, "INVITE", URL1, Header1, <<"body">>} = parse(Message1, none),
+    #request{method = "INVITE",
+	     uri    = URL1,
+	     header = Header1,
+	     body   = <<"body">>} = parse(Message1, none),
 
     %% verify single Via
     io:format("test: parse/2 request - 1.2~n"),
@@ -598,7 +597,10 @@ test() ->
     %% More complex header, one faulty \r\n (end of To: line) and
     %% two Vias not located together. Also some extra spaces after To: value
     %% and extra \r\n at the end of body.
-    {request, "INVITE" , _, Header2, <<"body\r\n">>} = parse(Message2, none),
+    #request{method = "INVITE", 
+	     header = Header2,
+	     body   = <<"body\r\n">>
+	    } = parse(Message2, none),
 
     io:format("test: parse/2 request - 2.2~n"),
     %% Verify To:
@@ -623,7 +625,10 @@ test() ->
 
     %% Extra spaces and missing spaces
     io:format("test: parse/2 request - 4.1~n"),
-    {request, "INVITE" , _, Header4, <<>>} = parse(Message4, none),
+    #request{method = "INVITE",
+	     header = Header4,
+	     body   = <<>>
+	    } = parse(Message4, none),
 
     %% verify the Via's
     io:format("test: parse/2 request - 4.2~n"),
@@ -638,7 +643,9 @@ test() ->
 	"\r\n",
     io:format("test: parse/2 request - 5.1~n"),
     %% multiline Via
-    {request, "INVITE" , _, Header5, <<>>} = parse(Message5, none),
+    #request{method = "INVITE",
+	     header = Header5,
+	     body   = <<>>} = parse(Message5, none),
 
     io:format("test: parse/2 request - 5.2~n"),
     %% verify the three Via's
