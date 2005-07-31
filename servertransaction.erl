@@ -797,8 +797,8 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
     {Status, Reason} = {Response#response.status, Response#response.reason},
     NewState =
 	case catch send_response_statemachine(ResponseToMethod, Status, OldSipState) of
-	    {ignore, _SendReliably, NewSipState} ->
-		enter_sip_state(NewSipState, State);
+	    ignore ->
+		State;
 	    {send, SendReliably, NewSipState} ->
 		LogLevel = if
 			       Status >= 200 -> normal;
@@ -868,8 +868,7 @@ store_transaction_result(_SipState, _Request, _Status, _Reason, _LogTag) ->
 %%           going to send. Might choose not to send the response, and
 %%           tells whether or not we should set up retransmission
 %%           timers. Also says what we should set our SIP state to.
-%% Returns : {Action, Reliably, State}
-%%           Action   = atom(), ignore | tell_parent
+%% Returns : {send, Reliably, State} | ignore
 %%           Reliably = atom(), true | false (send response reliably
 %%                                            or not)
 %%           State    = trying | proceeding | completed | terminated
@@ -882,7 +881,7 @@ send_response_statemachine(Method, Status, trying) when Status == 100 ->
 send_response_statemachine(Method, Status, State) when Status == 100 ->
     logger:log(debug, "UAS decision: Requested to send 100 Trying to ~s when in state '~p' - " ++
 	       "ignoring", [Method, State]),
-    {ignore, false, State};
+    ignore;
 
 send_response_statemachine(Method, Status, trying) when Status >= 100, Status =< 199 ->
     logger:log(debug, "UAS decision: Requested to send 1xx response ~p to ~s when in state 'trying' - " ++
@@ -919,12 +918,12 @@ send_response_statemachine(Method, Status, proceeding) when Status >= 200, Statu
 send_response_statemachine(Method, Status, completed) when Status >= 101, Status =< 699 ->
     logger:log(debug, "UAS decision: Requested to send 2/3/4/5/6xx response ~p to ~s when already in " ++
 	       "state 'completed' - ignoring", [Status, Method]),
-    {ignore, false, completed};
+    ignore;
 
 send_response_statemachine(Method, Status, terminated) when Status >= 100, Status =< 699 ->
     logger:log(debug, "UAS decision: Requested to send response ~p to ~s when in state 'terminated' - " ++
 	       "ignoring", [Status, Method]),
-    {ignore, false, terminated}.
+    ignore.
 
 
 %%--------------------------------------------------------------------
@@ -1220,29 +1219,29 @@ test() ->
     %% Don't send 100 Trying in any other state than 'trying'. This means that the TU
     %% will be ignored if it asks us to send out a 100 Trying, since we did that ourselves
     %% when in our internal mode (for INVITE) 'trying'.
-    {ignore, false, proceeding} = send_response_statemachine("INVITE", 100, proceeding),
-    {ignore, false, completed} = send_response_statemachine("INVITE", 100, completed),
-    {ignore, false, terminated} = send_response_statemachine("INVITE", 100, terminated),
+    ignore = send_response_statemachine("INVITE", 100, proceeding),
+    ignore = send_response_statemachine("INVITE", 100, completed),
+    ignore = send_response_statemachine("INVITE", 100, terminated),
 
     io:format("test: send_response_statemachine/3 INVITE - 6~n"),
     %% don't send any more responses once we have sent a final response
-    {ignore, false, completed} = send_response_statemachine("INVITE", 100, completed),
-    {ignore, false, completed} = send_response_statemachine("INVITE", 200, completed),
-    {ignore, false, completed} = send_response_statemachine("INVITE", 300, completed),
-    {ignore, false, completed} = send_response_statemachine("INVITE", 400, completed),
-    {ignore, false, completed} = send_response_statemachine("INVITE", 500, completed),
-    {ignore, false, completed} = send_response_statemachine("INVITE", 600, completed),
+    ignore = send_response_statemachine("INVITE", 100, completed),
+    ignore = send_response_statemachine("INVITE", 200, completed),
+    ignore = send_response_statemachine("INVITE", 300, completed),
+    ignore = send_response_statemachine("INVITE", 400, completed),
+    ignore = send_response_statemachine("INVITE", 500, completed),
+    ignore = send_response_statemachine("INVITE", 600, completed),
 
     io:format("test: send_response_statemachine/3 INVITE - 7~n"),
     %% don't send any more responses if we should happen to end up here even if we are
     %% really supposed to have terminated (like if we are emptying our mailbox before
     %% _really_ terminating)
-    {ignore, false, terminated} = send_response_statemachine("INVITE", 100, terminated),
-    {ignore, false, terminated} = send_response_statemachine("INVITE", 200, terminated),
-    {ignore, false, terminated} = send_response_statemachine("INVITE", 300, terminated),
-    {ignore, false, terminated} = send_response_statemachine("INVITE", 400, terminated),
-    {ignore, false, terminated} = send_response_statemachine("INVITE", 500, terminated),
-    {ignore, false, terminated} = send_response_statemachine("INVITE", 600, terminated),
+    ignore = send_response_statemachine("INVITE", 100, terminated),
+    ignore = send_response_statemachine("INVITE", 200, terminated),
+    ignore = send_response_statemachine("INVITE", 300, terminated),
+    ignore = send_response_statemachine("INVITE", 400, terminated),
+    ignore = send_response_statemachine("INVITE", 500, terminated),
+    ignore = send_response_statemachine("INVITE", 600, terminated),
 
     %% 17.2.2 Non-INVITE Server Transaction
 
@@ -1260,7 +1259,7 @@ test() ->
     %% Any further provisional responses that are received from the TU while in the
     %% "Proceeding" state MUST be passed to the transport layer for transmission.
     %% Yxa note: we filter out 100 Trying
-    {ignore, false, proceeding} = send_response_statemachine("OPTIONS", 100, proceeding),
+    ignore = send_response_statemachine("OPTIONS", 100, proceeding),
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, proceeding),
 
     io:format("test: send_response_statemachine/3 non-INVITE - 3~n"),
@@ -1277,18 +1276,18 @@ test() ->
     io:format("test: send_response_statemachine/3 non-INVITE - 4~n"),
     %% Any other final responses passed by the TU to the server transaction MUST
     %% be discarded while in the "Completed" state.
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 200, completed),
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 300, completed),
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 400, completed),
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 500, completed),
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 600, completed),
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 699, completed),
+    ignore = send_response_statemachine("OPTIONS", 200, completed),
+    ignore = send_response_statemachine("OPTIONS", 300, completed),
+    ignore = send_response_statemachine("OPTIONS", 400, completed),
+    ignore = send_response_statemachine("OPTIONS", 500, completed),
+    ignore = send_response_statemachine("OPTIONS", 600, completed),
+    ignore = send_response_statemachine("OPTIONS", 699, completed),
 
     %% own conclusions
 
     io:format("test: send_response_statemachine/3 non-INVITE - 5~n"),
     %% provisional responses received from the TU when already completed is ignored
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 100, completed),
-    {ignore, false, completed} = send_response_statemachine("OPTIONS", 199, completed),
+    ignore = send_response_statemachine("OPTIONS", 100, completed),
+    ignore = send_response_statemachine("OPTIONS", 199, completed),
 
     ok.
