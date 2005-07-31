@@ -647,7 +647,9 @@ add_record_route(Proto, Hostname, Port, Header) ->
     Param1 = ["maddr=" ++ siphost:myip(), "lr=true"],
     Param2 = if
 		 Proto == tcp; Proto == tcp6 ->
-		     lists:append(Param1, ["transport=TCP"]);
+		     lists:append(Param1, ["transport=tcp"]);
+		 Proto == tls; Proto == tls6 ->
+		     lists:append(Param1, ["transport=tls"]);
 		 true ->
 		     Param1
 	     end,
