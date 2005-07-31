@@ -735,8 +735,8 @@ test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive) ->
 	%%
 	%% Messages from the server transaction handler
 	%%
-	{servertransaction_cancelled, STHandlerPid} ->
-	    AppGluePid ! {servertransaction_cancelled, STHandlerPid},
+	{servertransaction_cancelled, STHandlerPid, ExtraHeaders} ->
+	    AppGluePid ! {servertransaction_cancelled, STHandlerPid, ExtraHeaders},
 	    make_proxy_destinations_response(487, {487, "Request Cancelled while interpreting CPL"});
 	    
 
