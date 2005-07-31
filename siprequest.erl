@@ -1011,6 +1011,14 @@ test() ->
     io:format("test: add_record_route/2 - 8~n"),
     [RRoute2, RRoute1] = sipheader:record_route(RRHeader3),
 
+    io:format("test: add_record_route/2 - 9.1~n"),
+    RRHeader9 = add_record_route(EmptyHeader, #siporigin{proto=tls}),
+
+    io:format("test: add_record_route/2 - 9.2~n"),
+    [RRoute9] = sipheader:record_route(RRHeader9),
+    RRoute9_URL = sipurl:parse(RRoute9#contact.urlstr),
+    ["tls"] = url_param:find(RRoute9_URL#sipurl.param_pairs, "transport"),
+
 
     %% build request header
     %%--------------------------------------------------------------------
@@ -1531,7 +1539,7 @@ test() ->
 					      keylist:from_list([{"Content-Length", ["600"]}]),
 					      "test")
 			 ),
-    
+
     io:format("test: fix_content_length/2 - 3~n"),
     %% delete body, incorrect Content-Length header
     ["0"] = keylist:fetch('content-length', fix_content_length(
