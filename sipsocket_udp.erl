@@ -179,23 +179,27 @@ handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
 %% Returns : {reply, Reply, State}
 %%           Reply = {send_result, Res}
 %%           Res = term()
+%% Note    : Unfortunately there seems to be no way to receive ICMP
+%%           port unreachables when sending with gen_udp...
 %%--------------------------------------------------------------------
+%%
+%% Host = IPv6 address (e.g. [2001:6b0:5:987::1])
+%%
+handle_call({send, {"[" ++ HostT, Port, Message}}, _From, State) when is_list(HostT), is_integer(Port) ->
+    SendRes =
+	case string:rchr(HostT, 93) of	%% 93 is ]
+	    0 ->
+		{error, "Unknown format of destination"};
+	    Index when is_integer(Index) ->
+		Addr = string:substr(HostT, 1, Index - 1),
+		gen_udp:send(State#state.socket6, Addr, Port, Message)
+	end,
+    {reply, {send_result, SendRes}, State};
+%%
+%% Host is not IPv6 reference (inside brackets)
+%%
 handle_call({send, {Host, Port, Message}}, _From, State) when is_list(Host), is_integer(Port) ->
-    %% Unfortunately there seems to be no way to receive ICMP port unreachables when sending with gen_udp...
-    SendRes = case Host of
-		  "[" ++ Rest ->
-		      %% XXX use inet_parse:ipv6_address() ?
-		      %% IPv6 address (e.g. [2001:6b0:5:987::1])
-		      case string:rchr(Rest, $]) of
-			  0 ->
-			      {error, "Uknown format of destination"};
-			  Index when is_integer(Index) ->
-			      H = string:substr(Rest, 1, Index - 1),
-			      gen_udp:send(State#state.socket6, H, Port, Message)
-		      end;
-		  _ ->
-		      gen_udp:send(State#state.socket, Host, Port, Message)
-	      end,
+    SendRes = gen_udp:send(State#state.socket, Host, Port, Message),
     {reply, {send_result, SendRes}, State}.
 
 
@@ -267,33 +271,10 @@ terminate(Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%--------------------------------------------------------------------
-%%% Internal functions
-%%--------------------------------------------------------------------
 
-%%--------------------------------------------------------------------
-%% Function: get_localaddr(Socket, DefaultAddr)
-%% Descrip.: Return the listening IP and port for a socket.
-%% Returns : {IP, Port}
-%%           IP   = string()
-%%           Port = integer()
-%%--------------------------------------------------------------------
-get_localaddr(Socket, DefaultAddr) ->
-    case inet:sockname(Socket) of
-	{ok, {IPlist, LocalPort}} ->
-	    IP = siphost:makeip(IPlist),
-	    logger:log(debug, "Listening on UDP ~s:~p (socket ~p)", [IP, LocalPort, Socket]),
-	    {IP, LocalPort};
-	{error, E} ->
-	    %% XXX maybe we don't have a good socket after all?
-	    logger:log(error, "UDP listener: sockname() on socket ~p returned error ~p", [Socket, E]),
-	    {DefaultAddr, 0}
-    end.
-
-
-%%--------------------------------------------------------------------
-%%% Interface functions
-%%--------------------------------------------------------------------
+%%====================================================================
+%% Interface functions
+%%====================================================================
 
 %%--------------------------------------------------------------------
 %% Function: send(SipSocket, Proto, Host, Port, Message)
@@ -361,7 +342,32 @@ is_reliable_transport(_) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
+%% Function: get_localaddr(Socket, DefaultAddr)
+%%           Socket      = term(), gen_udp socket
+%%           DefaultAddr = list(), default if we fail
+%% Descrip.: Return the listening IP and port for a socket.
+%% Returns : {IP, Port}
+%%           IP   = string()
+%%           Port = integer()
+%%--------------------------------------------------------------------
+get_localaddr(Socket, DefaultAddr) ->
+    case inet:sockname(Socket) of
+	{ok, {IPlist, LocalPort}} ->
+	    IP = siphost:makeip(IPlist),
+	    logger:log(debug, "Listening on UDP ~s:~p (socket ~p)", [IP, LocalPort, Socket]),
+	    {IP, LocalPort};
+	{error, E} ->
+	    %% XXX maybe we don't have a good socket after all?
+	    logger:log(error, "UDP listener: sockname() on socket ~p returned error ~p", [Socket, E]),
+	    {DefaultAddr, 0}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: received_packet(Packet, IP, Port, Proto)
+%%           Packet = binary(), packet received from network
+%%           IP     = string(), source IP address
+%%           Port   = integer(), source port
+%%           Proto  = atom(), source protocol
 %% Descrip.: Check if a received packet is a keepalive or possibly a
 %%           SIP message. For the latter case, we spawn
 %%           sipserver:process(...) on the packet, after creating the
