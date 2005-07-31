@@ -965,30 +965,23 @@ send_response(Response, SendReliably, State) when is_record(Response, response),
     logger:log(debug, "~s: Sending response to ~s ~s : ~p ~s",
 	       [LogTag, Method, sipurl:print(URI), Status, Reason]),
     transportlayer:send_proxy_response(Socket, Response),
-    NewState1 = case SendReliably of
-		    true ->
-			{ok, T1} = yxa_config:get_env(timerT1),
-			case Method of
-			    "INVITE" ->
-				TimerG = T1,
-				TimerH = 64 * T1,
-				GDesc = "resendresponse " ++ integer_to_list(Status) ++ " " ++ Reason ++ " to " ++
-				    sipurl:print(URI) ++ " (Timer G)",
-				HDesc = "stopresend of " ++ integer_to_list(Status) ++ " " ++ Reason ++ " to " ++
-				    sipurl:print(URI) ++ " (Timer H)",
-				NewState2 = add_timer(TimerG, GDesc, {resendresponse}, State),
-				NewState3 = add_timer(TimerH, HDesc, {resendresponse_timeout}, NewState2),
-				NewState3;
-			    _ ->
-				TimerJ = 64 * T1,
-				JDesc = "terminate server transaction after response " ++ integer_to_list(Status) ++
-				    " " ++ Reason ++ " has been sent to " ++ sipurl:print(URI) ++ " (Timer J)",
-				NewState2 = add_timer(TimerJ, JDesc, {terminate_transaction}, State),
-				NewState2
-			end;
-		    false ->
-			State
-		end,
+    NewState1 =
+	case {SendReliably, Method} of
+	    {true, "INVITE"} ->
+		%% Checking of Method here is just a safety net
+		{ok, T1} = yxa_config:get_env(timerT1),
+		TimerG = T1,
+		TimerH = 64 * T1,
+		GDesc = "resendresponse " ++ integer_to_list(Status) ++ " " ++ Reason ++ " to " ++
+		    sipurl:print(URI) ++ " (Timer G)",
+		HDesc = "stopresend of " ++ integer_to_list(Status) ++ " " ++ Reason ++ " to " ++
+		    sipurl:print(URI) ++ " (Timer H)",
+		NewState2 = add_timer(TimerG, GDesc, {resendresponse}, State),
+		NewState3 = add_timer(TimerH, HDesc, {resendresponse_timeout}, NewState2),
+		NewState3;
+	    {false, _} ->
+		State
+	end,
     NewState = NewState1#state{response=Response},
     {ok, NewState}.
 
@@ -1048,21 +1041,14 @@ enter_sip_state(confirmed, State) when is_record(State, state) ->
     NewState1 = State#state{sipstate=confirmed},
     Request = State#state.request,
     {ResponseToMethod, ResponseToURI} = {Request#request.method, Request#request.uri},
-    case ResponseToMethod of
-	"INVITE" ->
-	    {ok, TimerI} = yxa_config:get_env(timerT4),
-	    logger:log(debug, "~s: Entered state 'confirmed'. Original request was an INVITE, starting " ++
-		       "Timer I with a timeout of ~s seconds.",  [LogTag, siptimer:timeout2str(TimerI)]),
-	    %% Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we
-	    %% absorb any additional ACK requests that might arrive.
-	    IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++
-		" (Timer I)",
-	    add_timer(TimerI, IDesc, {terminate_transaction}, NewState1);
-	_ ->
-	    logger:log(error, "~s: Entered state 'confirmed'. Original request was NOT an INVITE (it was ~s ~s). " ++
-		       "How could this be?", [LogTag, ResponseToMethod, sipurl:print(ResponseToURI)]),
-	    NewState1
-    end;
+    {ok, TimerI} = yxa_config:get_env(timerT4),
+    logger:log(debug, "~s: Entered state 'confirmed'. Original request was an INVITE, starting " ++
+	       "Timer I with a timeout of ~s seconds.",  [LogTag, siptimer:timeout2str(TimerI)]),
+    %% Install TimerI (T4, default 5 seconds) RFC 3261 17.2.1. Until TimerI fires we
+    %% absorb any additional ACK requests that might arrive.
+    IDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++
+	" (Timer I)",
+    add_timer(TimerI, IDesc, {terminate_transaction}, NewState1);
 enter_sip_state(NewSipState, State) when is_record(State, state), NewSipState == trying;
 					 NewSipState == proceeding; NewSipState == terminated ->
     LogTag = State#state.logtag,
