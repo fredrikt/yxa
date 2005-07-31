@@ -13,7 +13,7 @@
 %%%           - maybe we should.
 %%%-------------------------------------------------------------------
 -module(sipuserdb_file).
-%%-compile(export_all).
+-compile(export_all).
 
 -behaviour(sipuserdb).
 
@@ -31,7 +31,9 @@
 	 get_classes_for_user/1,
 	 get_telephonenumber_for_user/1,
 	 get_forwards_for_users/1,
-	 get_forward_for_user/1
+	 get_forward_for_user/1,
+
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -258,7 +260,8 @@ get_telephonenumber_for_user(Username) ->
 	    logger:log(debug, "userdb-file: No such user ~p when fetching telephone number", [Username]),
 	    nomatch;
 	User when is_record(User, user) ->
-	    case get_addresses_using_user(User) of
+	    %% use get_addresses_using_user2/3 to get addresses with order preserved
+	    case get_addresses_using_user2(Username, fetch_addresses(), []) of
 		nomatch ->
 		    nomatch;
 		error ->
@@ -357,16 +360,20 @@ get_user2(User, [H | T]) when is_record(H, user) ->
 %% Function: get_addresses_using_user(Username)
 %%           User = string() or user record()
 %% Descrip.: Return all addresses for a username or a user record.
-%% Returns : Addresses, list() of address record()
+%% Returns : Addresses, sorted list() of address record()
 %%--------------------------------------------------------------------
 get_addresses_using_user(Username) when is_list(Username) ->
-    get_addresses_using_user2(Username, fetch_addresses(), []);
-get_addresses_using_user(User) when is_record(User, user) ->
-    get_addresses_using_user2(User#user.name, fetch_addresses(), []).
-
-get_addresses_using_user2(_Username, [], Res) ->
+    Addresses = get_addresses_using_user2(Username, fetch_addresses(), []),
     %% Make list sorted and remove duplicates
-    lists:usort(Res);
+    lists:usort(Addresses);
+    
+get_addresses_using_user(User) when is_record(User, user) ->
+    get_addresses_using_user(User#user.name).
+
+%% get_addresses_using_user2/3, part of get_addresses_using_user/1
+get_addresses_using_user2(_Username, [], Res) ->
+    %% it is important that we preserve order here, for get_telephonenumber_for_user/1
+    lists:reverse(Res);
 get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address), H#address.user == Username ->
     %% Username matches the username for the address record (H)
     get_addresses_using_user2(Username, T, [H | Res]);
@@ -389,12 +396,7 @@ get_users_using_address(Address) when is_list(Address) ->
     %% or address of some form.
     case sipurl:parse(Address) of
 	URL when is_record(URL, sipurl) ->
-	    case get_usernames_for_url(URL, fetch_addresses(), []) of
-		error ->
-		    [];
-		R when is_list(R) ->
-		    R
-	    end;
+	    get_usernames_for_url(URL, fetch_addresses(), []);
 	_ ->
 	    %% unparseable URL
 	    []
@@ -411,9 +413,7 @@ get_users_using_address(URL) when is_record(URL, sipurl) ->
 %%           usernames for the matching address records, fetched from
 %%	     the persistent sipuserdb_file process, that matches using
 %%           URI address matching rules.
-%% Returns : Users |
-%%           error
-%%           Users = list() of string()
+%% Returns : Users = list() of string()
 %%--------------------------------------------------------------------
 get_usernames_for_url(_URL, [], Res) ->
     %% Make list sorted and remove duplicates
@@ -422,7 +422,7 @@ get_usernames_for_url(URL, [H | T], Res) when is_record(URL, sipurl), is_record(
     case sipurl:url_is_equal(URL, H#address.url) of
 	true ->
 	    get_usernames_for_url(URL, T, [H#address.user | Res]);
-	_ ->
+	false ->
 	    %% URL does NOT match this address record, try next (T)
 	    get_usernames_for_url(URL, T, Res)
     end.
@@ -448,10 +448,10 @@ collect_addresses2([H | T], Res) when is_record(H, address) ->
 %%--------------------------------------------------------------------
 %% Function: find_first_telephonenumber(In)
 %%           In = list() of address record()
-%% Description: Look through a list of address records and return the
-%%              first one that has a URL userpart that is all numeric.
-%%              Called from get_telephonenumber_for_user.
-%% Returns: Address |
+%% Descrip.: Look through a list of address records and return the
+%%           first one that has a URL userpart that is all numeric.
+%%           Called from get_telephonenumber_for_user.
+%% Returns : Address |
 %%          nomatch
 %%          Address = address record()
 %%--------------------------------------------------------------------
@@ -487,3 +487,87 @@ fetch_addresses() ->
 
 reload_userdb() ->
     gen_server:cast(sipuserdb_file_backend, {reload_userdb}).
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+    io:format("test: init variables~n"),
+
+    Test_User1_Addresses = [test_make_address("test", "sip:a@example.org"),
+			    test_make_address("test", "sip:b@example.org"),
+			    test_make_address("test", "sip:1@example.org"),
+			    test_make_address("test", "sip:11@example.org"),
+			    test_make_address("test", "sip:both@example.org")
+			   ],
+
+    Test_User2_Addresses = [test_make_address("test2", "sip:a2@example.org"),
+			    test_make_address("test2", "sip:b2@example.org"),
+			    test_make_address("test2", "sip:2@example.org"),
+			    test_make_address("test2", "sip:22@example.org"),
+			    test_make_address("test2", "sip:both@example.org")
+			   ],
+
+    %% mix the two users addresses into a single list
+    Test_Addresses_Zipped = lists:zip(Test_User1_Addresses, Test_User2_Addresses),
+    Test_Addresses = lists:foldl(fun(T, Acc) when is_tuple(T) ->
+					 L = tuple_to_list(T),
+					 Acc ++ L
+				 end, [], Test_Addresses_Zipped),
+					 
+
+    %% get_addresses_using_user2(Username, Addresses, Res)
+    %%--------------------------------------------------------------------
+    io:format("test: get_addresses_using_user2/3 - 1~n"),
+    %% test normal case, make sure order is preserved
+    Test_User1_Addresses = get_addresses_using_user2("test", Test_Addresses, []),
+
+
+    %% find_first_telephonenumber(In)
+    %%--------------------------------------------------------------------
+    io:format("test: find_first_telephonenumber/1 - 1~n"),
+    %% test normal case
+    #address{user = "test2", address = "sip:2@example.org"} =
+	find_first_telephonenumber(Test_User2_Addresses),
+
+    io:format("test: find_first_telephonenumber/1 - 2~n"),
+    nomatch = find_first_telephonenumber([]),
+
+    io:format("test: find_first_telephonenumber/1 - 3~n"),
+    FFT_Addressses3 = [test_make_address("foo", "sip:alpha@example.org")],
+    nomatch = find_first_telephonenumber(FFT_Addressses3),
+
+
+    %% get_usernames_for_url(URL, Addresses, [])
+    %%--------------------------------------------------------------------
+    io:format("test: get_usernames_for_url/3 - 1~n"),
+    ["test"] = get_usernames_for_url(sipurl:parse("sip:a@example.org"), Test_Addresses, []),
+
+    io:format("test: get_usernames_for_url/3 - 2~n"),
+    ["test", "test2"] = get_usernames_for_url(sipurl:parse("sip:both@example.org"), Test_Addresses, []),
+
+
+    %% collect_addresses(In)
+    %%--------------------------------------------------------------------
+    io:format("test: collect_addresses/1 - 1~n"),
+    CollectAddresses_L1 = [test_make_address("foo", "sip:first@example.org"),
+			   test_make_address("foo", "sip:second@example.org")],
+    ["sip:first@example.org", "sip:second@example.org"] = collect_addresses(CollectAddresses_L1),
+    
+	
+
+    ok.
+
+test_make_address(U, A) ->
+    #address{user    = U,
+	     address = A,
+	     url     = sipurl:parse(A)
+	    }.
+    
