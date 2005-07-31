@@ -735,7 +735,7 @@ validate_duration(Conds) ->
 	true ->
 	    ok;
 	false ->
-	    throw({error, duration_to_long})
+	    throw({error, duration_too_long})
     end.
 
 %%--------------------------------------------------------------------
