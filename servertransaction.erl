@@ -343,7 +343,7 @@ handle_cast({siprequest, Request, Origin}, State) when is_record(Request, reques
 %%                         ExtraHeaders, RBody}, State)
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, ValueList} typles
+%%           ExtraHeaders = list() of {Key, ValueList} tuples
 %%           RBody        = binary(), body to use in response
 %% Descrip.: The TU (transaction user) instructs us to create a
 %%           response to our request (and send it).
@@ -380,7 +380,8 @@ handle_cast({expired}, State) ->
     check_quit({stop, "Server transaction expired", State});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({cancelled}, State)
+%% Function: handle_cast({cancelled, ExtraHeaders}, State)
+%%           ExtraHeaders = list() of {Key, ValueList} tuples
 %% Descrip.: The transaction layer tells us that it has received a
 %%           CANCEL matching our request. If our report_to is set, we
 %%           inform the TU and let it do whatever it wants before
@@ -390,7 +391,7 @@ handle_cast({expired}, State) ->
 %%           when it tries to adopt us.
 %% Returns : {noreply, NewState, ?TIMEOUT}
 %%--------------------------------------------------------------------
-handle_cast({cancelled}, State) ->
+handle_cast({cancelled, ExtraHeaders}, State) ->
     LogTag = State#state.logtag,
     SipState = State#state.sipstate,
     Reply =
@@ -405,7 +406,7 @@ handle_cast({cancelled}, State) ->
 			%% stuff first and then tell us to send that response.
 			%% XXX set up some kind of timer so that we can terminate eventually
 			%% even if the TU doesn't get back to us with a final response?
-			ReportTo ! {servertransaction_cancelled, self()},
+			ReportTo ! {servertransaction_cancelled, self(), ExtraHeaders},
 			{noreply, State#state{cancelled=true}, ?TIMEOUT};
 		    {false, _} ->
 			%% Noone has adopted this server transaction yet (called set_report_to) -
@@ -1120,7 +1121,7 @@ process_received_ack(State) when is_record(State, state) ->
 %%           Status        = integer(), SIP status code
 %%           Reason        = string(), SIP reason phrase
 %%           RBody         = integer(), body of response
-%%           ExtraHeaders  = list() of {Key, ValueList} typles
+%%           ExtraHeaders  = list() of {Key, ValueList} tuples
 %%           ViaParameters = term()
 %%           State         = state record()
 %% Descrip.: If there is no To-tag in our requests header, put ours

@@ -132,8 +132,8 @@ loop(State) when is_record(State, state) ->
 
     {Res, NewState} = receive
 
-			  {servertransaction_cancelled, ServerHandlerPid} ->
-			      NewState1 = cancel_transaction(State, "server transaction cancelled"),
+			  {servertransaction_cancelled, ServerHandlerPid, ExtraHeaders} ->
+			      NewState1 = cancel_transaction(State, "server transaction cancelled", ExtraHeaders),
 			      {ok, NewState1};
 
 			  {branch_result, _ClientPid, _Branch, _BranchSipState, Response} ->
@@ -373,22 +373,23 @@ resolve_if_necessary([Dst | T], _ApproxMsgSize) when is_record(Dst, sipdst) ->
     [Dst | T].
 
 %%--------------------------------------------------------------------
-%% Function: cancel_transaction(State, Reason)
-%%           State  = state record()
-%%           Reason = string()
+%% Function: cancel_transaction(State, Reason, ExtraHeaders)
+%%           State        = state record()
+%%           Reason       = string()
+%%           ExtraHeaders = list() of {Key, ValueList} tuples
 %% Descrip.: Our server transaction has been cancelled. Signal the
 %%           client transaction. 
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-cancel_transaction(#state{cancelled=false}=State, Reason) when is_list(Reason) ->
+cancel_transaction(#state{cancelled=false}=State, Reason, ExtraHeaders) when is_list(Reason) ->
     logger:log(debug, "sippipe: Original request has been cancelled, asking current "
 	       "client transaction handler (~p) to cancel, and answering "
 	       "'487 Request Cancelled' to original request",
 	       [State#state.clienttransaction_pid]),
-    gen_server:cast(State#state.clienttransaction_pid, {cancel, Reason, []}),
+    gen_server:cast(State#state.clienttransaction_pid, {cancel, Reason, ExtraHeaders}),
     transactionlayer:send_response_handler(State#state.serverhandler, 487, "Request Cancelled"),
     State#state{cancelled=true};
-cancel_transaction(#state{cancelled=true}=State, Reason) when is_list(Reason) ->
+cancel_transaction(#state{cancelled=true}=State, Reason, _ExtraHeaders) when is_list(Reason) ->
     %% already cancelled
     State.
 

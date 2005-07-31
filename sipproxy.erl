@@ -30,7 +30,7 @@
 %%%
 %%%           If you want to terminate a running sipproxy (for example
 %%%           if the server transaction has been cancelled), send it
-%%%           an {cancel_pending} signal.
+%%%           an {cancel_pending, ExtraHeaders} signal.
 %%%
 %%% Created : 13 Feb 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%-------------------------------------------------------------------
@@ -236,7 +236,7 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state), State#st
 		%% these 2xx responses to our parent.
 		logger:log(normal, "sipproxy: Reached end of Actions-list for '~s ~s', cancelling pending targets.",
 			   [Method, sipurl:print(ReqURI)]),
-		NewTargets = cancel_pending_targets(Targets),
+		NewTargets = cancel_pending_targets(Targets, []),
 
 		State#state.parent ! {sipproxy_no_more_actions, self()},
 
@@ -331,29 +331,31 @@ make_new_target_request(Request, URI, _User) when is_record(Request, request), i
     Request#request{uri=URI}.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_pending_targets(Targets)
-%%           Targets = targetlist record()
+%% Function: cancel_pending_targets(Targets, ExtraHeaders)
+%%           Targets      = targetlist record()
+%%           ExtraHeaders = list() of {Key, ValueList} tuples
 %% Descrip.: Cancel all targets in state 'proceeding'.
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
-cancel_pending_targets(Targets) ->
+cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
     %% send {cancel} to all PIDs in states other than completed and terminated
-    NewTargets1 = cancel_targets_state(Targets, calling),
-    cancel_targets_state(NewTargets1, proceeding).
+    NewTargets1 = cancel_targets_state(Targets, calling, ExtraHeaders),
+    cancel_targets_state(NewTargets1, proceeding, ExtraHeaders).
 
 %%--------------------------------------------------------------------
-%% Function: cancel_targets_state(Targets, TargetState)
-%%           Targets     = targetlist record()
-%%           TargetState = atom()
+%% Function: cancel_targets_state(Targets, TargetState, ExtraHeaders)
+%%           Targets      = targetlist record()
+%%           TargetState  = atom()
+%%           ExtraHeaders = list() of {Key, ValueList} tuples
 %% Descrip.: Cancel all targets in state TargetState.
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
-cancel_targets_state(Targets, TargetState) when is_atom(TargetState) ->
-    %% send {cancel} to all PIDs in a specific State, return updated TargetList
+cancel_targets_state(Targets, TargetState, ExtraHeaders) when is_atom(TargetState), is_list(ExtraHeaders) ->
+    %% send {cancel, Reason, ExtraHeaders} to all PIDs in a specific state, return updated TargetList
     TargetsInState = targetlist:get_targets_in_state(TargetState, Targets),
     lists:map(fun(ThisTarget) ->
 		      [Pid] = targetlist:extract([pid], ThisTarget),
-		      gen_server:cast(Pid, {cancel, "cancel_targets_state", []})
+		      gen_server:cast(Pid, {cancel, "cancel_targets_state", ExtraHeaders})
 	      end, TargetsInState),
     NewTargets = mark_cancelled(TargetsInState, Targets),
     NewTargets.
@@ -422,10 +424,10 @@ process_wait(false, EndTime, State) when is_record(State, state) ->
 % Returns : {ok, NewState}
 %%           NewState = state record()
 %%--------------------------------------------------------------------
-process_signal({cancel_pending}, State) when is_record(State, state) ->
+process_signal({cancel_pending, ExtraHeaders}, State) when is_record(State, state) ->
     Targets = State#state.targets,
     logger:log(debug, "sipproxy: Received 'cancel_pending', calling cancel_pending_targets()"),
-    NewTargets = cancel_pending_targets(Targets),
+    NewTargets = cancel_pending_targets(Targets, ExtraHeaders),
     %% If mystate is 'calling', we need to set it to 'cancelled' to prevent us from
     %% starting new transactions for additional destinations if we were to receive
     %% a 503 response.
@@ -808,7 +810,7 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 	    end,
 	    NewState2 = State#state{targets=NewTargets},
 	    NewState3 = check_forward_immediately(ResponseToRequest, SPResponse, Branch, NewState2),
-	    NewState4 = cancel_pending_if_invite_2xx_or_6xx(RMethod, Status, NewState3),
+	    NewState4 = cancel_pending_if_invite_2xx_or_6xx(RMethod, Status, Reason, NewState3),
 	    NewState4
     end.
 
@@ -903,26 +905,32 @@ forward_immediately(_Method, Status, State) when is_record(State, state), Status
 
 %%--------------------------------------------------------------------
 %% Function: cancel_pending_if_invite_2xx_or_6xx(Method, Status,
-%%                                               State)
+%%                                               Reason, State)
 %%           Method = string()
 %%           Status = integer(), SIP status code
+%%           Reason = string(), SIP reason phrase
 %%           State  = state record()
 %% Descrip.: If we receive a 2xx response to INVITE, or a 6xx response
 %%           to any request we should terminate all pending targets.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, State) when is_record(State, state), Status =< 199 ->
+cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, _Reason, State) when is_record(State, state), Status =< 199 ->
     State;
-cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, State) when is_record(State, state), Status =< 299 ->
-    logger:log(debug, "sipproxy: Cancelling pending targets since one INVITE transaction resulted in a 2xx response ~p", [Status]),
-    NewTargets = cancel_pending_targets(State#state.targets),
+cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, _Reason, State) when is_record(State, state), Status =< 299 ->
+    logger:log(debug, "sipproxy: Cancelling pending targets since one INVITE transaction "
+	       "resulted in a 2xx response ~p", [Status]),
+    ReasonStr = "SIP; cause=200; text=\"Call completed elsewhere\"",
+    ExtraHeaders = [{"Reason", [ReasonStr]}],
+    NewTargets = cancel_pending_targets(State#state.targets, ExtraHeaders),
     State#state{targets=NewTargets};
-cancel_pending_if_invite_2xx_or_6xx(_Method, Status, State) when is_record(State, state), Status =< 599 ->
+cancel_pending_if_invite_2xx_or_6xx(_Method, Status, _Reason, State) when is_record(State, state), Status =< 599 ->
     %% non-INVITE and not 6xx
     State;
-cancel_pending_if_invite_2xx_or_6xx(_Method, Status, State) when is_record(State, state), Status =< 699 ->
+cancel_pending_if_invite_2xx_or_6xx(_Method, Status, Reason, State) when is_record(State, state), Status =< 699 ->
     logger:log(debug, "sipproxy: Cancelling pending targets since one branch resulted in a 6xx response ~p", [Status]),
-    NewTargets = cancel_pending_targets(State#state.targets),
+    ReasonStr = lists:flatten( io_lib:format("SIP; cause=~p; text=~p", [Status, Reason]) ),
+    ExtraHeaders = [{"Reason", [ReasonStr]}],
+    NewTargets = cancel_pending_targets(State#state.targets, ExtraHeaders),
     State#state{targets=NewTargets}.
 
 %%--------------------------------------------------------------------
@@ -1458,13 +1466,13 @@ test() ->
     %% Spawn pids that collects signals and relays them to us in a way that allows
     %% us to differentiate to which pid the signal was sent
 
-    %% test cancel_pending_if_invite_2xx_or_6xx(Method, Status, State)
+    %% test cancel_pending_if_invite_2xx_or_6xx(Method, Status, Reason, State)
     %%--------------------------------------------------------------------
     CancelPendingRef = make_ref(),
     CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
     CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 0~n"),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 0~n"),
 
     %% one pending and one already completed target
     CancelPendingReq1 = #request{method="INVITE", uri=sipurl:parse("sip:ft@it.su.se")},
@@ -1477,21 +1485,24 @@ test() ->
     %%
     %% Test provisional response
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 1~n"),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 1~n"),
     %% test provisional response to INVITE, no change expected
-    CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("INVITE", 180, CancelPendingState1),
+    CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("INVITE", 180, "Foo", CancelPendingState1),
 
     %%
     %% Test 2xx response to INVITE
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 2.1~n"),
-    #state{} = cancel_pending_if_invite_2xx_or_6xx("INVITE", 200, CancelPendingState1),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 2.1~n"),
+    #state{} = cancel_pending_if_invite_2xx_or_6xx("INVITE", 200, "Ok", CancelPendingState1),
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 2.2~n"),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 2.2~n"),
     %% check results
     receive
 	{CancelPendingRef, CancelPendingPid1,
-	 {'$gen_cast', {cancel, "cancel_targets_state", _}}} ->
+	 {'$gen_cast',
+	  {cancel, "cancel_targets_state", [{"Reason",
+					     ["SIP; cause=200; text=\"Call completed elsewhere\""]}]}
+	 }} ->
 	    ok;
 	{CancelPendingRef, CancelPendingPid2_2, CancelPendingMsg2_2} ->
 	    E2_2 = io_lib:format("received unknown signal (from ~p) : ~p",
@@ -1502,7 +1513,7 @@ test() ->
 	    throw({error, "did not receive the expected cancel signal from the pending target"})
     end,
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 2.3~n"),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 2.3~n"),
     %% check that we did NOT cancel the second target, which was already in state 'completed'
     receive
 	{CancelPendingRef, CancelPendingPid2,
@@ -1520,21 +1531,24 @@ test() ->
     %%
     %% Test non-6xx response to non-INVITE
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 3~n"),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 3~n"),
     %% test non-6xx response to non-INVITE, no change expected
-    CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 599, CancelPendingState1),
+    CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 599, "Foo", CancelPendingState1),
 
     %%
     %% Test 6xx reponse
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 4.1~n"),
-    #state{} = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 603, CancelPendingState1),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 4.1~n"),
+    #state{} = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 603, "Decline", CancelPendingState1),
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 4.2~n"),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 4.2~n"),
     %% check results
     receive
 	{CancelPendingRef, CancelPendingPid1,
-	 {'$gen_cast', {cancel, "cancel_targets_state", _}}} ->
+	 {'$gen_cast',
+	  {cancel, "cancel_targets_state", [{"Reason",
+					     ["SIP; cause=603; text=\"Decline\""]}]}
+	 }} ->
 	    ok;
 	{CancelPendingRef, CancelPendingPid4_2, CancelPendingMsg4_2} ->
 	    E4_2 = io_lib:format("received unknown signal (from ~p) : ~p",
@@ -1545,7 +1559,7 @@ test() ->
 	    throw({error, "did not receive the expected cancel signal from the pending target"})
     end,
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/3 - 4.3~n"),
+    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 4.3~n"),
     %% check that we did NOT cancel the second target, which was already in state 'completed'
     receive
 	{CancelPendingRef, CancelPendingPid2,

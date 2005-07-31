@@ -412,12 +412,17 @@ cancel_corresponding_transaction(#request{method="CANCEL"}=Request, STPid) when 
 	    {Status, Reason} =
 		case util:safe_is_process_alive(InvitePid) of
 		    {true, _} ->
-			logger:log(debug, "Transaction layer: Cancelling original request handled by ~p " ++
+			logger:log(debug, "Transaction layer: Cancelling original request handled by ~p "
 				   "and responding 200 Ok", [InvitePid]),
-			gen_server:cast(InvitePid, {cancelled}),
+			%% RFC3326 #2 says we SHOULD include any present Reason header in a CANCEL we
+			%% receive in the CANCELs we generate based on it
+			ExtraHeaders = [{"Reason",
+					 keylist:fetch('reason', Header)
+					}],
+			gen_server:cast(InvitePid, {cancelled, ExtraHeaders}),
 			{200, "Ok"};
-		    _ ->
-			logger:log(debug, "Transaction layer: Transaction to be cancelled handled by dead " ++
+		    {false, _} ->
+			logger:log(debug, "Transaction layer: Transaction to be cancelled handled by dead "
 				   "pid '~p', responding 481 Call/Transaction Does Not Exist", [InvitePid]),
 			{481, "Call/Transaction Does Not Exist"}
 		end,
@@ -426,7 +431,7 @@ cancel_corresponding_transaction(#request{method="CANCEL"}=Request, STPid) when 
 	    false;
 	none ->
 	    logger:log(debug, "Transaction layer: Could not find transaction to cancel, "
-		       "pass it on to application core."),
+		       "pass it on to TU/proxy core."),
 	    %% Pass to core
 	    true
     end;
