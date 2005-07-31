@@ -372,23 +372,25 @@ process_register_wildcard_isauth(LogTag, Header, SipUser, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
 	true ->
 	    logger:log(debug, "Location: Processing valid wildcard un-register"),
-	    case phone:get_sipuser_locations(SipUser) of
-		{ok, SipUserLocations} ->
-		    unregister(LogTag, Header, SipUserLocations);
-		_ ->
-		    none
+	    case phone:get_phone(SipUser) of
+		{atomic, PhoneEntrys} ->
+		    unregister(LogTag, Header, PhoneEntrys);
+		E ->
+		    logger:log(error, "Location: Failed fetching registered contacts for user ~p : ~p",
+			       [SipUser, E]),
+		    {siperror, 500, "Server Internal Error"}
 	    end;
-	_ ->
+	false ->
 	    none
     end.
 
 %% return = ok       | wildcard processed
 %%          SipError   db error
 %% unregister all location entries for a sipuser
-unregister(LogTag, Header, Locations) ->
+unregister(LogTag, Header, PhoneEntrys) ->
     %% unregister all Locations entries
     F = fun() ->
-		unregister_contacts(LogTag, Header, Locations)
+		unregister_contacts(LogTag, Header, PhoneEntrys)
 	end,
     %% process unregistration atomically - change all or nothing in database
     case mnesia:transaction(F) of
@@ -594,7 +596,7 @@ check_same_call_id(LogTag, SipUser, ReqLocation, DBLocation, Priority, CallId, C
 	    %% call-id differs, so the UAC has probably been restarted.
 	    case parse_register_contact_expire(ExpireHeader, ReqLocation) == 0 of
 		true ->
-		    %% zero expire-time, unregister bindning
+		    %% zero expire-time, unregisterbinding
 		    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
 			       [LogTag, SipUser, DBLocation#phone.requristr, Priority]),
 		    phone:delete_record(DBLocation);
@@ -611,7 +613,7 @@ check_greater_cseq(LogTag, SipUser, ReqLocation, DBLocation, Priority, CallId, C
 	true ->
 	    case parse_register_contact_expire(ExpireHeader, ReqLocation) == 0 of
 		true ->
-		    %% unregister bindning
+		    %% unregister binding
 		    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
 			       [LogTag, SipUser, DBLocation#phone.requristr, Priority]),
 		    phone:delete_record(DBLocation);
@@ -695,10 +697,10 @@ register_contact_flags(Priority, Contact, outgoingproxy) ->
     %% and make them use SIPS if the client did.
     {Proto, Port} = case ContactURL#sipurl.proto of
 			"sips" ->
-			    {"sips", sipserver:get_listenport(tls)};
+			    {"sips", sipsocket:get_listenport(tls)};
 			_ ->
 			    %% default to plain old sip for anything except sips
-			    {"sip", sipserver:get_listenport(tcp)}
+			    {"sip", sipsocket:get_listenport(tcp)}
 		    end,
     MyURL = sipurl:new([{proto, Proto},
 			{host, siprequest:myhostname()},
@@ -729,29 +731,32 @@ parse_register_expire(ExpireHeader, Contact) when is_record(Contact, contact) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: unregister_contacts(LogTag, RequestHeader, Location)
-%%           LogTag = string(),
+%% Function: unregister_contacts(LogTag, RequestHeader, PhoneEntrys)
+%%           LogTag        = string(),
 %%           RequestHeader = keylist record(),
-%%           Locations = list of phone record(),
+%%           PhoneEntrys   = list of phone record(),
 %% Descrip.: handles wildcard based removal (RFC 3261 chapter 10
-%%           page 64 - step 6), this function handles a single
-%%           Location (sipuser-location bindning)
+%%           page 64 - step 6), this function handles a list of
+%%           Locations (sipuser-location binding)
 %% Returns : ok |
 %%           throw(SipError)
 %%--------------------------------------------------------------------
-unregister_contacts(LogTag, RequestHeader, Locations) when is_record(RequestHeader, keylist),
-							   is_list(Locations) ->
+unregister_contacts(LogTag, RequestHeader, PhoneEntrys) when is_record(RequestHeader, keylist),
+							     is_list(PhoneEntrys) ->
     RequestCallId = sipheader:callid(RequestHeader),
     {CSeq, _}  = sipheader:cseq(RequestHeader),
     RequestCSeq = list_to_integer(CSeq),
 
-    F = fun(Location) ->
-		unregister_contact(LogTag, Location, RequestCallId, RequestCSeq)
+    F = fun(Phone) when is_record(Phone, phone) ->
+		unregister_phone(LogTag, Phone, RequestCallId, RequestCSeq)
 	end,
-    lists:foreach(F, Locations).
+    lists:foreach(F, PhoneEntrys).
 
 
-unregister_contact(LogTag, #phone{class = dynamic}=Location, RequestCallId, RequestCSeq) ->
+%% Descrip.: handles wildcard based removal (RFC 3261 chapter 10
+%%           page 64 - step 6), this function handles a single
+%%           Phone (phone record/sipuser-location binding)
+unregister_phone(LogTag, #phone{class = dynamic}=Location, RequestCallId, RequestCSeq) ->
     SameCallId = (RequestCallId == Location#phone.callid),
     HigherCSeq = (RequestCSeq > Location#phone.cseq),
 
@@ -782,9 +787,9 @@ unregister_contact(LogTag, #phone{class = dynamic}=Location, RequestCallId, Requ
 	    %% RFC 3261 doesn't appear to document the proper error code for this case
 	    throw({siperror, 403, "Request out of order, contained old CSeq number"})
     end;
-unregister_contact(LogTag, Location, _RequestCallId, _RequestCSeq) when is_record(Location, phone) ->
+unregister_phone(LogTag, Phone, _RequestCallId, _RequestCSeq) when is_record(Phone, phone) ->
     logger:log(debug, "~s: Not un-registering location with class not 'dynamic' : ~p",
-	       [LogTag, Location#phone.requristr]),
+	       [LogTag, Phone#phone.requristr]),
     ok.
 
 %%--------------------------------------------------------------------
