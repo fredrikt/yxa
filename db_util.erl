@@ -13,7 +13,8 @@
 	 insert_record/1,
 	 delete_record/1,
 	 delete_with_key/2,
-	 match_object/1
+	 match_object/1,
+	 generic_table_info/2
 	]).
 
 %%--------------------------------------------------------------------
@@ -131,22 +132,16 @@ match_object(Pattern) ->
 		    ['$_']
 		   }]).
 
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
-
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: generic_table_info(Tab, Item)
+%%           Tab  = atom(), table name
+%%           Item = atom(), item we are interested in
+%% Descrip.: Get mnesia table information, regardless of where table
+%%           resides.
+%% Returns : term()
 %%--------------------------------------------------------------------
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
+generic_table_info(Tab, Item) ->
+    Info = fun(T, I) ->
+	      mnesia:table_info(T, I)
+	   end,
+    mnesia:activity(async_dirty, Info, [Tab, Item], mnesia_frag).
