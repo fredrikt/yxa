@@ -14,7 +14,7 @@
 %%%           - maybe we should.
 %%%-------------------------------------------------------------------
 -module(sipuserdb_file_backend).
-%%-compile(export_all).
+-compile(export_all).
 
 -behaviour(gen_server).
 
@@ -52,7 +52,7 @@
 -record(state, {
 	  fn,		%% string(), filename
 	  file_mtime,	%% integer(), mtime of fn
-	  last_fail,	%% integer(), timestamp when we last warned about failure to interpret fn
+	  last_fail,	%% integer() | undefined, timestamp when we last warned about failure to interpret fn
 	  userlist,	%% list() of user record()
 	  addresslist	%% list() of address record()
 	 }).
@@ -261,7 +261,6 @@ read_userdb(State, MTime, Caller) when is_record(State, state) ->
 		{ok, Users, Addresses} ->
 		    logger:log(debug, "sipuserdb_file: Read ~p users with ~p addresses from file ~p",
 			       [length(Users), length(Addresses), State#state.fn]),
-		    %%logger:log(debug, "sipuserdb_file: Extra debug:~nUsers : ~p~nAddresses : ~p", [Users, Addresses]),
 		    %% on every successfull read, we unset last_fail since it is
 		    %% nothing more than a throttle for how often we will log
 		    %% failures
@@ -270,8 +269,8 @@ read_userdb(State, MTime, Caller) when is_record(State, state) ->
 		    read_userdb_error(Reason, State, Caller)
 	    end;
 	{error, {Line, Mod, Term}} ->
-	    E = io_lib:format("sipuserdb_file: Parsing of userdb file ~p failed : ~p",
-			      [State#state.fn, file:format_error({Line, Mod, Term})]),
+	    E = io_lib:format("sipuserdb_file: Parsing of userdb file ~p failed, line ~p : ~p",
+			      [State#state.fn, Line, file:format_error({Line, Mod, Term})]),
 	    read_userdb_error(E, State, Caller);
 	{error, Reason} ->
 	    E = io_lib:format("sipuserdb_file: Could not read userdb file ~p : ~p", [State#state.fn, Reason]),
@@ -295,21 +294,21 @@ read_userdb(State, MTime, Caller) when is_record(State, state) ->
 %%           Reason = string()
 %%           NewState = state record()
 %%--------------------------------------------------------------------
-read_userdb_error(E, State, init) when is_record(State, state) ->
+read_userdb_error(E, State, init) when is_list(E), is_record(State, state) ->
     %% On init, always return error tuple
     {error, lists:flatten(E)};
-read_userdb_error(E, State, cast) when is_record(State, state) ->
+read_userdb_error(E, State, cast) when is_list(E), is_record(State, state) ->
     %% On cast, always log errors
     logger:log(error, E, []),
     State;
-read_userdb_error(E, State, info) when is_record(State, state) ->
+read_userdb_error(E, State, info) when is_list(E), is_record(State, state) ->
     %% On info (i.e. interval timer), only log errors every LOG_THROTTLE_SECONDS seconds
     Now = util:timestamp(),
     case State#state.last_fail of
 	L when is_integer(L), L >= Now - ?LOG_THROTTLE_SECONDS ->
 	    %% We have logged an error recently, skip
 	    State;
-	L when is_integer(L) ->
+	L when is_integer(L); L == undefined ->
 	    logger:log(error, E, []),
 	    State#state{last_fail=Now}
     end.
@@ -559,7 +558,7 @@ get_no_user_addresses2(_Username, []) ->
 %%--------------------------------------------------------------------
 test() ->
 
-    %% test parse_address/1
+    %% test parse_address(Params, A)
     %%--------------------------------------------------------------------
     ParseAddress_URL1 = sipurl:parse("sip:ft@example.org"),
 
@@ -598,7 +597,7 @@ test() ->
     {error, "bad data in address record " ++ _} = parse_address([{true, "x"}], #address{}),
 
 
-    %% test parse_user/3
+    %% test parse_user(Params, U, Addrs)
     %%--------------------------------------------------------------------
     io:format("test: parse_user/3 - 1~n"),
     %% minimalistic case
@@ -626,7 +625,7 @@ test() ->
     {error, "user record incomplete (no user, " ++ _} = parse_user([{password, "secret"}], #user{}, []),
 
 
-    %% test parse_term/3
+    %% parse_term(In, UserList, AddrList)
     %%--------------------------------------------------------------------
     ParseTermUserL1 = [#user{name = "t1"},
 		       #user{name = "t2"}],
@@ -682,7 +681,7 @@ test() ->
 			      ]}], [], []),
 
 
-    %% test verify_consistency2(Users, Addresses)
+    %% verify_consistency2(Users, Addresses)
     %%--------------------------------------------------------------------
     io:format("test: verify_consistency2/2 - 1~n"),
     %% no warnings
@@ -718,5 +717,57 @@ test() ->
     {ok, ["test1"], []} = verify_consistency2(VC_U3, VC_A3),
 
 
+    %% read_userdb_error(E, State, Caller)
+    %%--------------------------------------------------------------------
+    RUE_Now = util:timestamp(),
+
+    io:format("test: read_userdb_error/3 - 1~n"),
+    %% Caller = init
+    {error, "test"} = read_userdb_error(["te", "st"], #state{}, init),
+
+    io:format("test: read_userdb_error/3 - 2~n"),
+    %% Caller = cast
+    #state{} = read_userdb_error("test", #state{}, cast),
+    
+    io:format("test: read_userdb_error/3 - 3.1~n"),
+    %% Caller = info, first error (last_fail = undefined)
+    RUE_State_out3 = read_userdb_error("test", #state{last_fail = undefined}, info),
+    
+    io:format("test: read_userdb_error/3 - 3.2~n"),
+    %% verify new state
+    if
+	is_integer(RUE_State_out3#state.last_fail), RUE_State_out3#state.last_fail >= RUE_Now ->
+	    ok;
+	is_integer(RUE_State_out3#state.last_fail), RUE_State_out3#state.last_fail < RUE_Now + 5 ->
+	    ok;
+	true ->
+	    RUE_Msg3 = io_lib:format("test failed, last_failed set to something strange (~p, now is ~p)",
+				     [RUE_State_out3#state.last_fail, RUE_Now]),
+	    throw(RUE_Msg3)
+    end,
+    
+    io:format("test: read_userdb_error/3 - 4~n"),
+    %% Caller = info, error that should not be logged
+    RUE_State4 = #state{last_fail = RUE_Now - ?LOG_THROTTLE_SECONDS + 5},
+    
+    RUE_State4 = read_userdb_error("test", RUE_State4, info),
+    
+    io:format("test: read_userdb_error/3 - 5.1~n"),
+    %% Caller = info, error that should be logged
+    RUE_State5 = #state{last_fail = RUE_Now - ?LOG_THROTTLE_SECONDS - 5},
+    RUE_State_out5 = read_userdb_error("test", RUE_State5, info),
+    
+    io:format("test: read_userdb_error/3 - 5.2~n"),
+    %% verify new state
+    if
+	is_integer(RUE_State_out5#state.last_fail), RUE_State_out5#state.last_fail >= RUE_Now ->
+	    ok;
+	is_integer(RUE_State_out5#state.last_fail), RUE_State_out5#state.last_fail < RUE_Now + 5 ->
+	    ok;
+	true ->
+	    RUE_Msg5 = io_lib:format("test failed, last_failed set to something strange (~p, now is ~p)",
+				     [RUE_State_out5#state.last_fail, RUE_Now]),
+	    throw(RUE_Msg5)
+    end,
     
     ok.
