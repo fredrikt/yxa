@@ -360,6 +360,7 @@ normalize2("max-forwards") ->		'max-forwards';
 normalize2("proxy-authenticate") ->	'proxy-authenticate';
 normalize2("proxy-authorization") ->	'proxy-authorization';
 normalize2("proxy-require") ->		'proxy-require';
+normalize2("reason") ->			'reason';
 normalize2("record-route") ->		'record-route';
 normalize2("require") ->		'require';
 normalize2("route") ->			'route';
