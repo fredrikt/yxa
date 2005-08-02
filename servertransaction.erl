@@ -186,7 +186,7 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
 
     MyToTag =
 	case sipheader:get_tag(keylist:fetch('to', Request#request.header)) of
-	    [] ->
+	    none ->
 		siputil:generate_tag();
 	    Tag when is_list(Tag) ->
 		Tag
