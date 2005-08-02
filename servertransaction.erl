@@ -184,7 +184,13 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
     {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = Branch ++ " " ++ Method,
 
-    MyToTag = siputil:generate_tag(),
+    MyToTag =
+	case sipheader:get_tag(keylist:fetch('to', Request#request.header)) of
+	    [] ->
+		siputil:generate_tag();
+	    Tag when is_list(Tag) ->
+		Tag
+	end,
 
     %% LogTag is essentially Branch + Method, LogStr is a string that
     %% describes this request (METHOD URI [client=x, from=y, to=z])
