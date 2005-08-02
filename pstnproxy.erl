@@ -140,11 +140,11 @@ route_request(Request, Origin, THandler, LogTag) when is_record(Request, request
 	true ->
 	    me;
 	false ->
-	    URI = Request#request.uri,
-	    route_request2(Origin#siporigin.addr, URI#sipurl.host, THandler, LogTag)
+	    route_request2(Origin#siporigin.addr, Request, THandler, LogTag)
     end.
 
-route_request2(FromIP, ToHost, THandler, LogTag) ->
+route_request2(FromIP, Request, THandler, LogTag) ->
+    ToHost = (Request#request.uri)#sipurl.host,
     case is_pstngateway(FromIP) of
 	true ->
 	    logger:log(debug, "Routing: Source IP ~s is PSTN gateway, route to SIP proxy", [FromIP]),
@@ -152,14 +152,18 @@ route_request2(FromIP, ToHost, THandler, LogTag) ->
 	false ->
 	    IsLocalHostname = is_localhostname(ToHost),
 	    IsPstnGatewayHostname = is_pstngateway(ToHost),
+	    FirstRouteIsPstnGateway = first_route_is_pstngateway(Request#request.header),
 	    if
-		IsLocalHostname == true ->
+		IsLocalHostname ->
 		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway",
 			       [FromIP, ToHost]),
 		    pstn;
-		IsPstnGatewayHostname == true ->
+		IsPstnGatewayHostname  ->
 		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway",
 			       [FromIP, ToHost]),
+		    pstn;
+		FirstRouteIsPstnGateway ->
+		    logger:log(debug, "Routing: First Route-header is PSTN gateway, route to PSTN gateway"),
 		    pstn;
 		true ->
 		    logger:log(normal, "~s: pstnproxy: Denied request from ~s to ~s - not my problem",
@@ -196,6 +200,25 @@ is_pstngateway(Hostname) ->
     {ok, MyHostnames} = yxa_config:get_env(pstngatewaynames),
     lists:member(LChost, MyHostnames).
 
+
+%%--------------------------------------------------------------------
+%% Function: first_route_is_pstngateway(Header)
+%%           Header = keylist record()
+%% Descrip.: Check if there is a Route-header in Header, and if it is
+%%           then check if the first Route matches one of our PSTN
+%%           gateways hostnames.
+%% Returns : true  |
+%%           false
+%%--------------------------------------------------------------------
+first_route_is_pstngateway(Header) ->
+    case keylist:fetch('route', Header) of
+	[FirstRoute | _] ->
+	    [FirstRouteParsed] = contact:parse([FirstRoute]),
+	    RouteURL = sipurl:parse(FirstRouteParsed#contact.urlstr),
+	    is_pstngateway(RouteURL#sipurl.host);
+	_ ->
+	    false
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: request_to_sip(Request, Origin, THandler)
@@ -271,9 +294,8 @@ determine_sip_location(URI) when is_record(URI, sipurl) ->
 		    %% Use configured sipproxy but exchange user with user from Request-URI
 		    {proxy, ProxyURL#sipurl{user=User, pass=none}};
 		none ->
-		    %% No ENUM and no (valid) SIP-proxy configured, return failure so
-		    %% that the PBX on the other side of the gateway can fall back to
-		    %% PSTN or something
+		    %% No ENUM and no SIP-proxy configured, return failure so that the PBX
+		    %% on the other side of the gateway can fall back to PSTN or something
 		    {ok, Status} = yxa_config:get_env(pstnproxy_no_sip_dst_code),
 		    {reply, Status, "No destination found for number " ++ User}
 	    end
@@ -352,8 +374,8 @@ request_to_pstn_non_e164(DstNumber, Request, Origin, THandler) ->
 			    {relay, NewURI2, Request};
 			Unknown ->
 			    logger:log(error, "pstnproxy: Failed parsing configuration value "
-				       "'pstngatewaynames' (~p) : ~p", [PSTNgateway1, Unknown]),
-			    erlang:fault("invalid first element of pstngatewaynames", [Unknown])
+				       "'default_pstngateway' (~p) : ~p", [PSTNgateway1, Unknown]),
+			    erlang:fault("invalid default_pstngateway", [Unknown])
 		    end;
 		none ->
 		    logger:log(debug, "pstnproxy: Found no destination for request to PSTN, number ~p. "
