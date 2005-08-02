@@ -563,7 +563,7 @@ relay_request_to_pstn(THandler, #request{method=Method}=Request, DstURI, DstNumb
 												 Method == "BYE" ->
     logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) (unauthenticated)",
 	       [LogTag, Request#request.method, DstNumber, sipurl:print(DstURI)]),
-    sippipe:start(THandler, none, Request, DstURI, 900);
+    relay_request_to_pstn_isauth(THandler, Request, DstURI);
 
 %%
 %% Anything except CANCEL or BYE
@@ -581,7 +581,8 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
 	    %% Now that we know which user this request is authorized as, add Caller-ID information to it
 	    PSTNgateway = DstURI#sipurl.host,
 	    NewHeader = add_caller_identity_for_pstn(Method, Header, DstURI, User, PSTNgateway),
-	    sippipe:start(THandler, none, Request#request{header=NewHeader}, DstURI, 900);
+    
+	    relay_request_to_pstn_isauth(THandler, Request#request{header = NewHeader}, DstURI);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)",
 		       [User, DstNumber, Class]),
@@ -600,3 +601,12 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
 		       [LogTag, User, Method, DstNumber, Class]),
 	    transactionlayer:send_response_handler(THandler, 403, "Forbidden")
     end.
+
+relay_request_to_pstn_isauth(THandler, Request, DstURI) ->
+    case keylist:fetch('route', Request#request.header) of
+	[] ->
+	    sippipe:start(THandler, none, Request, DstURI, 900);
+	_Route ->
+	    sippipe:start(THandler, none, Request, route, 900)
+    end.
+	
