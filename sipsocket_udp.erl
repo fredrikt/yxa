@@ -30,7 +30,8 @@
 	 start_link/0,
 	 send/5,
 	 is_reliable_transport/1,
-	 get_socket/1
+	 get_socket/1,
+	 get_raw_socket/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -168,6 +169,22 @@ handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
 	    [CPid, Local, Remote] = socketlist:extract([pid, local, remote], SElem),
 	    SipSocket = #sipsocket{module=sipsocket_udp, proto=Proto, pid=CPid, data={Local, Remote}},
 	    {reply, {ok, SipSocket}, State}
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({get_raw_socket, Proto}, From, State)
+%%           Proto = atom(), udp | udp6
+%% Descrip.: Get the raw socket.
+%% Returns : {reply, Reply, State}
+%%           Reply     = {ok, RawSocket}
+%%           RawSocket = term()
+%%--------------------------------------------------------------------
+handle_call({get_raw_socket, Proto}, _From, State) when is_atom(Proto) ->
+    case Proto of
+	udp ->
+	    {reply, {ok, State#state.socket}, State};
+	udp6 ->
+	    {reply, {ok, State#state.socket6}, State}
     end;
 
 %%--------------------------------------------------------------------
@@ -321,11 +338,29 @@ get_socket(#sipdst{proto=Proto}) when Proto == udp; Proto == udp6 ->
 	    SipSocket;
 	{error, E} ->
 	    logger:log(error, "Sipsocket UDP: Failed fetching socket for protocol ~p : ~p", [Proto, E]),
-	    {error, E};
-	Unknown ->
-	    logger:log(error, "Sipsocket UDP: Unknown get_socket response from sipsocket_udp (protocol ~p) : ~p",
-		       [Proto, Unknown]),
-	    {error, "sipsocked_udp failed"}
+	    {error, E}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_raw_socket(Socket)
+%%           Socket  = sipsocket record()
+%% Descrip.: Get the raw TCP/UDP/TLS socket from the socket handler.
+%%           Be careful with what you do with the raw socket - don't
+%%           use it for sending/receiving for example. Intended for
+%%           use in extractin certificate information of an SSL socket
+%%           or similar.
+%% Returns : {ok, RawSocket} |
+%%           {error, Reason}
+%%           RawSocket = term()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+get_raw_socket(#sipsocket{proto=Proto}) when Proto == udp; Proto == udp6 ->
+    case catch gen_server:call(sipsocket_udp, {get_raw_socket, Proto}) of
+	{ok, RawSocket} ->
+	    {ok, RawSocket};
+	{error, E} ->
+	    logger:log(error, "Sipsocket UDP: Failed fetching socket for protocol ~p : ~p", [Proto, E]),
+	    {error, E}
     end.
 
 %%--------------------------------------------------------------------

@@ -18,7 +18,8 @@
 	 start_link/0,
 	 send/5,
 	 is_reliable_transport/1,
-	 get_socket/1
+	 get_socket/1,
+	 get_raw_socket/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -82,6 +83,20 @@ get_socket(#sipdst{proto = yxa_test}) ->
 		       proto  = yxa_test,
 		       pid    = self()
 		      };
+	Res ->
+	    Res
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_raw_socket(SipSocket)
+%%           Dst = sipdst record()
+%% Descrip.: Return a fake raw socket or a term based on process dict.
+%% Returns : sipsocket record() | term()
+%%--------------------------------------------------------------------
+get_raw_socket(#sipsocket{proto = yxa_test}) ->
+    case get({sipsocket_test, get_raw_socket}) of
+	undefined ->
+	    {sipsocket_test, fake_raw_socket};
 	Res ->
 	    Res
     end.

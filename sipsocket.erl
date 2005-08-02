@@ -16,6 +16,7 @@
 -export([send/5,
 	 is_reliable_transport/1,
 	 get_socket/1,
+	 get_raw_socket/1,
 	 viastr2proto/1,
 	 proto2viastr/1,
 	 is_good_socket/1,
@@ -23,7 +24,7 @@
 	 get_listenport/1,
 	 get_all_listenports/0,
 	 default_port/2,
-	 
+
 	 behaviour_info/1,
 
 	 test/0
@@ -73,7 +74,8 @@ behaviour_info(callbacks) ->
     [{start_link, 0},
      {send, 5},
      {is_reliable_transport, 1},
-     {get_socket, 1}
+     {get_socket, 1},
+     {get_raw_socket, 1}
     ];
 behaviour_info(_Other) ->
     undefined.
@@ -145,6 +147,23 @@ send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_a
 get_socket(Dst) when is_record(Dst, sipdst) ->
     Module = proto2module(Dst#sipdst.proto),
     Module:get_socket(Dst).
+
+%%--------------------------------------------------------------------
+%% Function: get_raw_socket(Socket)
+%%           Socket  = sipsocket record()
+%% Descrip.: Get the raw TCP/UDP/TLS socket from the socket handler.
+%%           Be careful with what you do with the raw socket - don't
+%%           use it for sending/receiving for example. Intended for
+%%           use in extractin certificate information of an SSL socket
+%%           or similar.
+%% Returns : {ok, RawSocket} |
+%%           {error, Reason}
+%%           RawSocket = term()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+get_raw_socket(Socket) when is_record(Socket, sipsocket) ->
+    SipSocketM = Socket#sipsocket.module,
+    SipSocketM:get_raw_socket(Socket).
 
 %%--------------------------------------------------------------------
 %% Function: is_reliable_transport(Socket)

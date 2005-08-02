@@ -220,8 +220,18 @@ handle_call({send, {_Host, _Port, Message}}, _From, State) when State#state.on =
 handle_call({get_receiver}, _From, State) when State#state.on == true ->
     {reply, {ok, State#state.receiver}, State, State#state.timeout};
 handle_call({get_receiver}, _From, State) ->
-    {reply, {error, "Not started"}, State, State#state.timeout}.
+    {reply, {error, "Not started"}, State, State#state.timeout};
 
+%%--------------------------------------------------------------------
+%% Function: handle_call(get_raw_socket, From, State)
+%% Descrip.: Get the raw socket we are using.
+%% Returns : {reply, Reply, State, Timeout}
+%%           Reply = {ok, RawSocket} |
+%%                   {error, Reason}
+%%           RawSocket = term()
+%%--------------------------------------------------------------------
+handle_call(get_raw_socket, _From, State) when State#state.on == true ->
+    {reply, {ok, State#state.socket}, State, State#state.timeout}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State)
@@ -601,7 +611,7 @@ is_valid_ssl_altname(Host, Subject, Reject) when Reject == true; Reject == false
     end.
 
 get_ssl_socket_altname({rndSequence, AttrList}) ->
-    %% XXX commonName is not always set to the FQDN. Find a better (more correct) 
+    %% XXX commonName is not always set to the FQDN. Find a better (more correct)
     %% way to get the subjectAltName
     {ok, {printableString, CN}} = ssl_subject_get(commonName, AttrList),
     {ok, CN}.

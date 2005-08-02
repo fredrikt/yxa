@@ -18,7 +18,8 @@
 -export([start_link/0,
 	 send/5,
 	 is_reliable_transport/1,
-	 get_socket/1
+	 get_socket/1,
+	 get_raw_socket/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -87,7 +88,7 @@ send(SipSocket, _Proto, Host, Port, Message) when is_record(SipSocket, sipsocket
 %%--------------------------------------------------------------------
 %%
 %% Protocol is 'tls' or 'tls6'
-%% 
+%%
 get_socket(#sipdst{proto=Proto}=Dst) when Proto == tls; Proto == tls6 ->
     case yxa_config:get_env(tls_disable_client) of
 	{ok, false} ->
@@ -105,7 +106,7 @@ get_socket(#sipdst{proto=Proto}=Dst) when Proto == tls; Proto == tls6 ->
     end;
 %%
 %% Protocol is 'tcp' or 'tcp6'
-%% 
+%%
 get_socket(#sipdst{proto=Proto}=Dst) when Proto == tcp; Proto == tcp6 ->
     Timeout = get_timeout(Dst#sipdst.proto),
     case catch gen_server:call(tcp_dispatcher, {get_socket, Dst}, Timeout) of
@@ -115,6 +116,31 @@ get_socket(#sipdst{proto=Proto}=Dst) when Proto == tcp; Proto == tcp6 ->
 	    Socket;
 	{'EXIT', Reason} ->
             {error, Reason}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_raw_socket(Socket)
+%%           Socket  = sipsocket record()
+%% Descrip.: Get the raw TCP/UDP/TLS socket from the socket handler.
+%%           Be careful with what you do with the raw socket - don't
+%%           use it for sending/receiving for example. Intended for
+%%           use in extractin certificate information of an SSL socket
+%%           or similar.
+%% Returns : {ok, RawSocket} |
+%%           {error, Reason}
+%%           RawSocket = term()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+get_raw_socket(SipSocket) when is_record(SipSocket, sipsocket) ->
+    SPid = SipSocket#sipsocket.pid,
+    Timeout = get_timeout(SipSocket#sipsocket.proto),
+    case catch gen_server:call(SPid, get_raw_socket, Timeout) of
+	{ok, RawSocket} ->
+	    {ok, RawSocket};
+	{'EXIT', Reason} ->
+	    Msg = io_lib:format("sipsocket_tcp failed getting raw socket from pid ~p : ~p",
+				[SPid, Reason]),
+	    {error, Msg}
     end.
 
 %%--------------------------------------------------------------------
