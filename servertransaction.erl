@@ -7,8 +7,36 @@
 %%%
 %%% Note    : Perhaps we should generate a 500 if we don't get adopted
 %%%           in a few seconds from when we start?
+%%%
+%%% Server transaction processes are spawned automatically by the
+%%% transaction layer when new requests arrive.
+%%%
+%%% At the same time, the transaction layer also starts the request/3
+%%% function of the Yxa application running (for example
+%%% incomingproxy:request/3). The application is what RFC3261 calls a
+%%% 'Transaction User' or 'proxy core'.
+%%%
+%%% The application should 'adopt' the server transaction process, and
+%%% then tell it what response(s) to send.
+%%%
+%%% After adopting a server transaction, the application can get the
+%%% following signals from the server transaction :
+%%%
+%%%    {servertransaction_cancelled, Pid, ExtraHeaders} - the
+%%%       transaction layer has received a CANCEL matching this server
+%%%       transaction.
+%%%         Pid          = pid() of server transaction
+%%%         ExtraHeaders = list() of {Key, ValueList} tuples - headers
+%%%                        from the CANCEL request that should be
+%%%                        passed on to any downstream entitys
+%%%
+%%%    {servertransaction_terminating, Pid} - the server transaction
+%%%       is terminating.
+%%%         Pid = pid() of server transaction
+%%%
 %%%-------------------------------------------------------------------
 -module(servertransaction).
+%%-compile(export_all).
 
 -behaviour(gen_server).
 
@@ -53,10 +81,11 @@
 	  request,		%% request record(), the request we are handling
 	  response,		%% undefined | response record(), the last response we sent
 	  sipstate,		%% atom(), trying|proceeding|completed|confirmed|terminated
-	  cancelled=false,	%% bool(), have we been cancelled?
+	  cancelled = false,	%% bool(), have we been cancelled?
 	  timerlist,		%% siptimerlist record(), our current set of timers
-	  my_to_tag		%% string(), To-tag to use if we generate a response (as opposed to
+	  my_to_tag,		%% string(), To-tag to use if we generate a response (as opposed to
 	  			%% if we forward a response)
+	  testing = false	%% true | false, are we just testing this modules functions?
 	 }).
 
 %%--------------------------------------------------------------------
@@ -154,6 +183,7 @@ init([Request, Socket, LogStr, Parent]) ->
 init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     LogTag = Branch ++ " " ++ Method,
+
     MyToTag = siputil:generate_tag(),
 
     %% LogTag is essentially Branch + Method, LogStr is a string that
@@ -713,7 +743,7 @@ process_timer2({resendresponse}, Timer, State) when is_record(State, state) ->
 	    {Status, Reason} = {Response#response.status, Response#response.reason},
 	    case State#state.sipstate of
 		completed ->
-		    logger:log(debug, "~s: Resend after ~p (response to ~s ~s): ~p ~s",
+		    logger:log(debug, "~s: Resend after ~s seconds (response to ~s ~s): ~p ~s",
 			       [LogTag, siptimer:timeout2str(Timeout), Method, sipurl:print(URI), Status, Reason]),
 		    transportlayer:send_proxy_response(State#state.socket, State#state.response),
 		    NewTimeout = case Method of
@@ -732,8 +762,9 @@ process_timer2({resendresponse}, Timer, State) when is_record(State, state) ->
 		    State
 	    end;
 	_ ->
-	    logger:log(error, "~s: Resend after ~p (response to ~s ~s, state '~p'): no response sent!",
-		       [LogTag, Timeout, Method, sipurl:print(URI), State]),
+	    logger:log(error, "~s: Resend after ~s seconds (response to ~s ~s): no response sent!",
+		       [LogTag, siptimer:timeout2str(Timeout), Method, sipurl:print(URI)]),
+	    logger:log(debug, "~s: Full internal state dump :~n~p", [LogTag, State]),
 	    State
     end;
 
@@ -754,7 +785,8 @@ process_timer2({resendresponse_timeout}, Timer, State) when is_record(State, sta
     {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(normal, "~s: Sending of '~p ~s' (response to ~s ~s) timed out after ~s seconds, terminating "
 	       "transaction.", [LogTag, Status, Reason, Method, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
-    %% XXX report to TU?
+    %% XXX report to TU in some special way? The TU will get a general
+    %% 'servertransaction_terminated' from enter_sip_state/2.
     enter_sip_state(terminated, State);
 
 %%--------------------------------------------------------------------
@@ -777,8 +809,9 @@ process_timer2(Signal, Timer, State) when is_record(State, state) ->
 
 %%--------------------------------------------------------------------
 %% Function: do_response(Created, Response, State)
-%%           Timer = siptimer record()
-%%           State = state record()
+%%           Created = created | forwarded
+%%           Timer   = siptimer record()
+%%           State   = state record()
 %% Descrip.: We have a response to send. It is either created by our
 %%           TU (Transaction User (Yxa application)) or it is a
 %%           response we have received and should proxy. Regardless of
@@ -808,14 +841,15 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 			   created -> "Responding";
 			   forwarded -> "Forwarding response"
 		       end,
-		logger:log(LogLevel, "~s: ~s '~p ~s'",
-			   [LogTag, What, Status, Reason]),
-		store_transaction_result(NewSipState, Request, Status, Reason, LogTag),
+		logger:log(LogLevel, "~s: ~s '~p ~s'", [LogTag, What, Status, Reason]),
+		case State#state.testing of
+		    true -> ok;
+		    false ->
+			store_transaction_result(NewSipState, Request, Status, Reason, LogTag)
+		end,
 		{ok, NewState2} = send_response(Response, SendReliably, State),
 		%% Make event out of the fact that we are sending a response
-		ToTagUsed = sipheader:get_tag(keylist:fetch('to', Response#response.header)),
-		L = [{to_tag, ToTagUsed}],
-		event_final_response(State#state.branch, Created, Status, Reason, L),
+		event_final_response(Created, NewState2, Status),
 		enter_sip_state(NewSipState, NewState2);
 	    E ->
 		logger:log(error, "~s: State machine does not allow us to send '~p ~s' in response to '~s ~s' "
@@ -828,13 +862,18 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 
 %% generate a uas_result event with information about the original request
 %% and the response we are now sending. part of do_response().
-event_final_response(Branch, Created, Status, Reason, L) when is_list(Branch), is_atom(Created), is_list(Reason),
-							      is_list(L), Status >= 200,
-							      Created == created; Created == forwarded ->
-    event_handler:uas_result(Branch, Created, Status, Reason, L);
-event_final_response(Branch, Created, Status, Reason, L) when is_list(Branch), is_atom(Created), is_integer(Status),
-							      is_list(Reason), is_list(L), is_integer(Status),
-							      Created == created; Created == forwarded ->
+event_final_response(Created, State, Status) when Status >= 200 ->
+    Branch = State#state.branch,
+    Response = State#state.response,
+    {Status, Reason} = {Response#response.status, Response#response.reason},
+    ToTagUsed = sipheader:get_tag(keylist:fetch('to', Response#response.header)),
+    L = [{to_tag, ToTagUsed}],
+    case State#state.testing of
+	true -> ok;
+	false ->
+	    event_handler:uas_result(Branch, Created, Status, Reason, L)
+    end;
+event_final_response(_Created, _State, _Status) ->
     %% Don't make events out of every non-final response we send
     ok.
 
@@ -847,7 +886,7 @@ event_final_response(Branch, Created, Status, Reason, L) when is_list(Branch), i
 %% Returns : ok | error
 %%--------------------------------------------------------------------
 store_transaction_result(completed, Request, Status, Reason, LogTag) ->
-    RStr = lists:flatten(lists:concat([Status, " ", Reason])),
+    RStr = lists:concat([Status, " ", Reason]),
     case transactionlayer:set_result(Request, RStr) of
 	ok -> ok;
 	E ->
@@ -949,15 +988,21 @@ send_response(Response, SendReliably, State) when is_record(Response, response),
 	    %% response back to this server transaction.
 	    case sipheader:get_tag(keylist:fetch('to', RHeader)) of
 		none ->
-		    logger:log(debug, "~s: Warning: No To-tag in response received (~p ~s) - transaction"
+		    %% XXX abort sending?
+		    logger:log(debug, "~s: Warning: No To-tag in response received (~p ~s) - transaction "
 			       "layer might not be able to route the ACK to us!", [LogTag, Status, Reason]),
 		    true;
 		ToTag when is_list(ToTag) ->
-		    case transactionlayer:store_to_tag(Request, ToTag) of
-			ok -> true;
-			R ->
-			    %% XXX abort sending?
-			    logger:log(error, "~s: Failed storing To-tag with transactionlayer : ~p", [LogTag, R])
+		    case State#state.testing of
+			true -> ok;
+			false ->
+			    case transactionlayer:store_to_tag(Request, ToTag) of
+				ok -> true;
+				R ->
+				    %% XXX abort sending?
+				    logger:log(error, "~s: Failed storing To-tag with transactionlayer : ~p",
+					       [LogTag, R])
+			    end
 		    end
 	    end;
 	true -> true
@@ -1017,7 +1062,7 @@ enter_sip_state(completed, State) when is_record(State, state) ->
 	_ ->
 	    {ok, T1} = yxa_config:get_env(timerT1),
 	    TimerJ = 64 * T1,
-	    logger:log(debug, "~s: Server transaction: Entered state 'completed'. Original request was non-INVITE, " ++
+	    logger:log(debug, "~s: Server transaction: Entered state 'completed'. Original request was non-INVITE, "
 		       "starting Timer J with a timeout of ~s seconds.",
 		       [LogTag, siptimer:timeout2str(TimerJ)]),
 	    %% Install TimerJ (default 32 seconds) RFC 3261 17.2.2. Until TimerJ fires we
@@ -1116,27 +1161,29 @@ process_received_ack(State) when is_record(State, state) ->
 %%--------------------------------------------------------------------
 make_response(100, Reason, RBody, ExtraHeaders, ViaParameters, State)
   when is_record(State, state), is_list(Reason), is_binary(RBody), is_list(ExtraHeaders) ->
-    %% We don't need to set To-tag for 100 Trying. 100 Trying are not supposed
-    %% to have a To-Tag.
+    %% For 100 Trying, we use the To-header verbatim from the Request. If it has a To-tag
+    %% we leave it there, if it has no To-tag we don't add one.
+    %% RFC3261 #8.2.6.2 (Headers and Tags) says a 100 Trying response MAY contain a To-tag.
     siprequest:make_response(100, Reason, RBody, ExtraHeaders, ViaParameters,
 			     State#state.socket, State#state.request);
 
 make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
   when is_record(State, state), is_integer(Status), is_list(Reason), is_binary(RBody), is_list(ExtraHeaders) ->
-    Request = State#state.request,
-    Header = Request#request.header,
+    Header = (State#state.request)#request.header,
     To = keylist:fetch('to', Header),
-    Req = case sipheader:get_tag(To) of
-	      none ->
-		  {DisplayName, ToURI} = sipheader:to(To),
-		  [NewTo] = sipheader:contact_print(
-			      [ contact:new(DisplayName, ToURI, [{"tag", State#state.my_to_tag}]) ]),
-		  NewHeader = keylist:set("To", [NewTo], Header),
-		  Request#request{header=NewHeader};
-	      _ ->
-		  Request
+    Request =
+	case sipheader:get_tag(To) of
+	    none ->
+		{DisplayName, ToURI} = sipheader:to(To),
+		[NewTo] = sipheader:contact_print(
+			    [ contact:new(DisplayName, ToURI, [{"tag", State#state.my_to_tag}]) ]),
+		NewHeader = keylist:set("To", [NewTo], Header),
+		(State#state.request)#request{header=NewHeader};
+	    _ ->
+		%% If the request is part of an existing dialog, it will have a To-tag
+		State#state.request
 	  end,
-    siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State#state.socket, Req).
+    siprequest:make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State#state.socket, Request).
 
 
 %%====================================================================
@@ -1154,7 +1201,34 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
 %%           of.
 %%--------------------------------------------------------------------
 test() ->
-    %% test send_response_statemachine/3
+    Test_OrigRequest =
+	#request{method = "INVITE",
+		 uri    = sipurl:parse("sip:user@example.org"),
+		 header = keylist:from_list([{"Via",     ["SIP/2.0/YXA-TEST 192.0.2.27"]},
+					     {"From",    ["Test <sip:test@example.org>;tag=f-tag"]},
+					     {"To",      ["Receiver <sip:recv@example.org>"]},
+					     {"CSeq",    ["1 INVITE"]},
+					     {"Call-Id", ["truly-random"]}
+					    ]),
+		 body   = <<"sdp">>
+		},
+
+    Test_Me = lists:concat([siprequest:myhostname(), ":", sipsocket:default_port(yxa_test, none)]),
+    Test_Response =
+	#response{status = 100,
+		  reason = "Testing",
+		  header = keylist:from_list([{"Via",     ["SIP/2.0/YXA-TEST " ++ Test_Me,
+							   "SIP/2.0/YXA-TEST 192.0.2.27"]},
+					      {"From",    ["Test <sip:test@example.org>;tag=f-tag"]},
+					      {"To",      ["Receiver <sip:recv@example.org>;tag=t-tag"]},
+					      {"CSeq",    ["1 INVITE"]},
+					      {"Call-Id", ["truly-random"]}
+					     ]),
+		  body   = <<>>
+		 },
+
+
+    %% test send_response_statemachine(Method, Status, SipState)
     %%--------------------------------------------------------------------
 
     %% 17.2.1 INVITE Server Transaction
@@ -1276,4 +1350,761 @@ test() ->
     ignore = send_response_statemachine("OPTIONS", 100, completed),
     ignore = send_response_statemachine("OPTIONS", 199, completed),
 
+    io:format("test: send_response_statemachine/3 non-INVITE - 6~n"),
+    %% handle 2/3/4/5/6xx responses when in state 'trying' as we would in state 'proceeding'
+    {send, false, completed} = send_response_statemachine("OPTIONS", 200, trying),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 300, trying),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 400, trying),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 500, trying),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 600, trying),
+    {send, false, completed} = send_response_statemachine("OPTIONS", 699, trying),
+
+
+    %% handle_call({get_branch}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:call() {get_branch} - 1~n"),
+    %% is just normal case
+    GetBranchState = #state{branch = "Branch"},
+    {reply, {ok, "Branch"}, GetBranchState, ?TIMEOUT} =
+	handle_call({get_branch}, undefined, GetBranchState),
+
+
+    %% handle_call({set_report_to, Pid}, ...)
+    %%--------------------------------------------------------------------
+
+    io:format("test: gen_server:call() {set_report_to, Pid} - 0~n"),
+    SetReportTo_DeadPid = spawn(fun() -> ok end),
+    erlang:yield(),	%% make sure SetReportTo_DeadPid finishes
+    SetReportTo_S = #state{logtag = "test",
+			   sipstate = trying,
+			   cancelled = false
+			  },
+
+    io:format("test: gen_server:call() {set_report_to, Pid} - 1~n"),
+    %% test already set
+    SetReportTo_S1 = SetReportTo_S#state{report_to = SetReportTo_DeadPid},
+    {reply, {error, "Server transaction already adopted"}, SetReportTo_S1, ?TIMEOUT} =
+	handle_call({set_report_to, self()}, undefined, SetReportTo_S1),
+
+    io:format("test: gen_server:call() {set_report_to, Pid} - 2~n"),
+    %% test cancelled
+    SetReportTo_S2 = SetReportTo_S#state{cancelled = true},
+    {reply, {ignore, cancelled}, SetReportTo_S2, ?TIMEOUT} =
+	handle_call({set_report_to, self()}, undefined, SetReportTo_S2),
+
+    io:format("test: gen_server:call() {set_report_to, Pid} - 3~n"),
+    %% test normal case (sipstate: trying)
+    SetReportTo_S3_1 = SetReportTo_S#state{sipstate = trying},
+    SetReportTo_S3_2 = SetReportTo_S3_1#state{report_to = self()},
+    {reply, ok, SetReportTo_S3_2, ?TIMEOUT} =
+	handle_call({set_report_to, self()}, undefined, SetReportTo_S3_1),
+
+    io:format("test: gen_server:call() {set_report_to, Pid} - 4~n"),
+    %% test normal case (sipstate: proceeding)
+    SetReportTo_S4_1 = SetReportTo_S#state{sipstate = proceeding},
+    SetReportTo_S4_2 = SetReportTo_S4_1#state{report_to = self()},
+    {reply, ok, SetReportTo_S4_2, ?TIMEOUT} =
+	handle_call({set_report_to, self()}, undefined, SetReportTo_S4_1),
+
+    io:format("test: gen_server:call() {set_report_to, Pid} - 5~n"),
+    %% test already completed (sipstate: completed)
+    SetReportTo_S5 = SetReportTo_S#state{sipstate = completed},
+    {reply, {ignore, completed}, SetReportTo_S5, ?TIMEOUT} =
+	handle_call({set_report_to, self()}, undefined, SetReportTo_S5),
+
+
+    %% handle_call(get_my_to_tag, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:call() get_my_to_tag - 1~n"),
+    %% is just normal case
+    GetMyToTagState = #state{my_to_tag = "to-tag"},
+    {reply, {ok, "to-tag"}, GetMyToTagState, ?TIMEOUT} =
+	handle_call(get_my_to_tag, undefined, GetMyToTagState),
+
+
+    %% handle_cast({siprequest, Request, Origin}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:call() {siprequest, ...} - 0~n"),
+    SipRequest_State =
+	#state{logtag    = "testing",
+	       request   = Test_OrigRequest,
+	       sipstate  = proceeding,
+	       socket    = #sipsocket{proto = yxa_test}
+	      },
+
+    io:format("test: gen_server:call() {siprequest, ...} - 1.1~n"),
+    %% test resend scenario
+    SipRequest_State1 =
+	SipRequest_State#state{response  = Test_Response,
+			       my_to_tag = "t-tag"
+			      },
+    {noreply, SipRequest_State1, ?TIMEOUT} =
+	handle_cast({siprequest, Test_OrigRequest, #siporigin{}}, SipRequest_State1),
+
+    test_verify_response_was_sent(100, "Testing", <<>>,
+				  "gen_server:call() {siprequest, ...}", 1, 2),
+
+    io:format("test: gen_server:call() {siprequest, ...} - 2~n"),
+    %% test resend scenario without a response to resend
+    SipRequest_State2 =
+	SipRequest_State#state{response  = undefined},
+    {noreply, SipRequest_State2, ?TIMEOUT} =
+	handle_cast({siprequest, Test_OrigRequest, #siporigin{}}, SipRequest_State2),
+
+
+    io:format("test: gen_server:call() {siprequest, ...} - 3.1~n"),
+    %% test received ACK
+    SipRequest_State3_in = SipRequest_State#state{timerlist = siptimer:empty(),
+						  response  = Test_Response,
+						  sipstate  = completed
+						 },
+    SipRequest_Request3 = Test_OrigRequest#request{method = "ACK"},
+    {noreply, SipRequest_State3_out, ?TIMEOUT} =
+	handle_cast({siprequest, SipRequest_Request3, #siporigin{}}, SipRequest_State3_in),
+    io:format("test: gen_server:call() {siprequest, ...} - 3.2~n"),
+    %% check that a timer was set up
+    [{terminate_transaction}] = siptimer:test_get_appsignals(SipRequest_State3_out#state.timerlist),
+    io:format("test: gen_server:call() {siprequest, ...} - 3.3~n"),
+    %% cancel timer
+    SipRequest_3_NewTL = siptimer:cancel_all_timers(SipRequest_State3_out#state.timerlist),
+    SipRequest_State3_out1 = SipRequest_State3_out#state{timerlist = SipRequest_3_NewTL},
+    io:format("test: gen_server:call() {siprequest, ...} - 3.4~n"),
+    %% and finally verify that SipRequest_State3_out1 is the same as SipRequest_State3_in
+    %% with sipstate changed from 'completed' to 'confirmed'
+    confirmed = SipRequest_State3_out1#state.sipstate,
+    SipRequest_State3_out2 = SipRequest_State3_out1#state{sipstate = completed},
+    SipRequest_State3_out2 = SipRequest_State3_in,
+
+    io:format("test: gen_server:call() {siprequest, ...} - 4~n"),
+    %% test resend scenario with bad new request (different Request-URI)
+    SipRequest_State4 = SipRequest_State,
+    SipRequest_Request4 = Test_OrigRequest#request{uri = sipurl:parse("sip:changed@example.org")},
+    {noreply, SipRequest_State4, ?TIMEOUT} =
+	handle_cast({siprequest, SipRequest_Request4, #siporigin{}}, SipRequest_State2),
+
+
+    %% unknown handle_call
+    %%--------------------------------------------------------------------
+    io:format("test: unknown gen_server:call() - 1~n"),
+    UnknownCallState = #state{},
+    {reply, error, UnknownCallState, ?TIMEOUT} = handle_call(undefined, none, UnknownCallState),
+
+
+    %% process_received_ack(State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_received_ack/1 - 0~n"),
+    ReceivedAckRequest1 = #request{method = "INVITE",
+				   uri    = sipurl:parse("sip:user@example.org")
+				  },
+    ReceivedAckResponse = #response{status = 400,
+				    reason = "Testing"
+				   },
+    ReceivedAckState = #state{logtag    = "testing",
+			      request   = ReceivedAckRequest1,
+			      response  = ReceivedAckResponse,
+			      timerlist = siptimer:empty()
+			     },
+
+    io:format("test: process_received_ack/1 - 1~n"),
+    %% test ACK when 'trying', no change expected
+    ReceivedAckState_1 = ReceivedAckState#state{sipstate = trying},
+    ReceivedAckState_1 = process_received_ack(ReceivedAckState_1),
+
+    io:format("test: process_received_ack/1 - 2~n"),
+    %% test ACK when 'proceeding', no change expected
+    ReceivedAckState_2 = ReceivedAckState#state{sipstate = proceeding},
+    ReceivedAckState_2 = process_received_ack(ReceivedAckState_2),
+
+    io:format("test: process_received_ack/1 - 3.1~n"),
+    %% test normal case
+    ReceivedAckState_3 = process_received_ack(ReceivedAckState#state{sipstate = completed}),
+
+    io:format("test: process_received_ack/1 - 3.2~n"),
+    %% check that the expected changes were made
+    confirmed = ReceivedAckState_3#state.sipstate,
+    [{terminate_transaction}] = siptimer:test_get_appsignals(ReceivedAckState_3#state.timerlist),
+    ReceivedAckState_3_1 = ReceivedAckState_3#state{timerlist = undefined, sipstate = undefined},
+    ReceivedAckState_3_1 = ReceivedAckState#state{timerlist = undefined},
+
+    io:format("test: process_received_ack/1 - 3.3~n"),
+    %% cancel timer started
+    siptimer:cancel_all_timers(ReceivedAckState_3#state.timerlist),
+
+    io:format("test: process_received_ack/1 - 4~n"),
+    %% test ACK to non-INVITE, no change expected
+    ReceivedAckRequest_4 = ReceivedAckRequest1#request{method = "OPTIONS"},
+    ReceivedAckState_4 = ReceivedAckState#state{request = ReceivedAckRequest_4},
+    ReceivedAckState_4 = process_received_ack(ReceivedAckState_4),
+
+    io:format("test: process_received_ack/1 - 5~n"),
+    %% test ACK when no response sent, no change expected
+    ReceivedAckState_5 = ReceivedAckState#state{response = undefined},
+    ReceivedAckState_5 = process_received_ack(ReceivedAckState_5),
+
+
+    %% handle_cast({create_response, Status, Reason, ExtraHeaders, RBody}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {create_response, ...} - 0~n"),
+    CreateResponse_State =
+	#state{logtag    = "testing",
+	       request   = Test_OrigRequest,
+	       sipstate  = trying,
+	       socket    = #sipsocket{proto = yxa_test},
+	       branch    = "test-branch"
+	      },
+
+    io:format("test: gen_server:cast() {create_response, ...} - 1.1~n"),
+    %% test normal case: 100 Trying
+    {noreply, CreateResponse_State1, ?TIMEOUT} =
+	handle_cast({create_response, 100, "Testing", [], <<>>}, CreateResponse_State),
+
+    io:format("test: gen_server:cast() {create_response, ...} - 1.2~n"),
+    proceeding = CreateResponse_State1#state.sipstate,
+    100 = (CreateResponse_State1#state.response)#response.status,
+    "Testing" = (CreateResponse_State1#state.response)#response.reason,
+
+    test_verify_response_was_sent(100, "Testing", <<>>,
+				  "gen_server:cast() {create_response, ...}", 1, 3),
+
+    io:format("test: gen_server:cast() {create_response, ...} - 2~n"),
+    %% test '101 Testing' with invalid SIP-state, should not work (no change expected)
+    CreateResponse_State2 = CreateResponse_State#state{sipstate = false,
+						       my_to_tag = "to123"
+						      },
+    {noreply, CreateResponse_State2, ?TIMEOUT} =
+	handle_cast({create_response, 101, "Testing", [], <<>>}, CreateResponse_State2),
+
+
+    io:format("test: gen_server:cast() {create_response, ...} - 3~n"),
+    %% test '100 Testing' when alreday 'proceeding', no change expected
+    CreateResponse_State3 = CreateResponse_State#state{sipstate = proceeding},
+    {noreply, CreateResponse_State3, ?TIMEOUT} =
+	handle_cast({create_response, 100, "Testing", [], <<>>}, CreateResponse_State3),
+
+
+    %% handle_cast({forwardresponse, Status, Reason, ExtraHeaders, RBody}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {forwardresponse, ...} - 0~n"),
+    ForwardResponse_State =
+	#state{logtag    = "testing",
+	       request   = Test_OrigRequest,
+	       sipstate  = trying,
+	       socket    = #sipsocket{proto = yxa_test},
+	       branch    = "test-branch",
+	       my_to_tag = "to321",
+	       testing   = true
+	      },
+    ForwardResponse_Response = Test_Response#response{status = 404},
+
+    io:format("test: gen_server:cast() {forwardresponse, ...} - 1.1~n"),
+    %% test normal case: 404 Testing
+    {noreply, ForwardResponse_State1, ?TIMEOUT} =
+	handle_cast({forwardresponse, ForwardResponse_Response}, ForwardResponse_State),
+
+    io:format("test: gen_server:cast() {forwardresponse, ...} - 1.2~n"),
+    %% verify new state
+    completed = ForwardResponse_State1#state.sipstate,
+    404 = (ForwardResponse_State1#state.response)#response.status,
+    "Testing" = (ForwardResponse_State1#state.response)#response.reason,
+
+    io:format("test: gen_server:cast() {forwardresponse, ...} - 1.3~n"),
+    %% verify that we 'sent' the 404 response
+    test_verify_response_was_sent(404, "Testing", <<>>,
+				  "gen_server:cast() {forwardresponse, ...}", 1, 3),
+
+    io:format("test: gen_server:cast() {forwardresponse, ...} - 2.1~n"),
+    %% test forwarding response without To-tag
+    ForwardResponse_Header2_1 = Test_Response#response.header,
+    ForwardResponse_Header2 = keylist:set("To", ["sip:no-to-tag@example.org"], ForwardResponse_Header2_1),
+    ForwardResponse_Response2 = ForwardResponse_Response#response{header = ForwardResponse_Header2},
+
+    {noreply, ForwardResponse_State2, ?TIMEOUT} =
+	handle_cast({forwardresponse, ForwardResponse_Response2}, ForwardResponse_State),
+
+    io:format("test: gen_server:cast() {forwardresponse, ...} - 2.2~n"),
+    %% verify new state
+    completed = ForwardResponse_State2#state.sipstate,
+    404 = (ForwardResponse_State2#state.response)#response.status,
+    "Testing" = (ForwardResponse_State2#state.response)#response.reason,
+
+    %% verify that we 'sent' the 404 response
+    test_verify_response_was_sent(404, "Testing", <<>>,
+				  "gen_server:cast() {forwardresponse, ...}", 2, 3),
+
+
+    %% handle_cast({expired}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {expired} - 1~n"),
+    ExpiredState = #state{logtag = "testing"},
+    {stop, _, ExpiredState} = handle_cast({expired}, ExpiredState),
+
+
+    %% handle_cast({cancelled, ExtraHeaders}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {cancelled, ...} - 1.1~n"),
+    %% test normal case
+    CancelledState1 = #state{sipstate  = trying,
+			     report_to = self(),
+			     cancelled = false
+			   },
+    {noreply, CancelledState1_out, ?TIMEOUT} = handle_cast({cancelled, []}, CancelledState1),
+
+    io:format("test: gen_server:cast() {cancelled, ...} - 1.2~n"),
+    %% verify new state
+    true = CancelledState1_out#state.cancelled,
+    CancelledState1_out1 = CancelledState1#state{cancelled = true},
+    CancelledState1_out1 = CancelledState1_out,
+
+    io:format("test: gen_server:cast() {cancelled, ...} - 1.3~n"),
+    %% check that we got a servertransaction_cancelled message (since parent = self())
+    CancelledMyself = self(),
+    receive
+	{servertransaction_cancelled, CancelledMyself, []} ->
+	    ok
+    after 0 ->
+	    throw("test failed, no {servertransaction_cancelled, ...} signal in process mailbox")
+    end,
+
+    io:format("test: gen_server:cast() {cancelled, ...} - 2.1~n"),
+    %% test without report_to, in which case we should generate a 487 response
+    CancelledState2 = #state{logtag    = "testing",
+			     sipstate  = trying,
+			     report_to = undefined,
+			     cancelled = false,
+			     my_to_tag = "to-tag111",
+			     socket    = #sipsocket{proto = yxa_test},
+			     request   = Test_OrigRequest,
+			     testing   = true
+			   },
+    {noreply, CancelledState2_out, ?TIMEOUT} = handle_cast({cancelled, []}, CancelledState2),
+
+    io:format("test: gen_server:cast() {cancelled, ...} - 2.2~n"),
+    %% verify new state
+    true = CancelledState2_out#state.cancelled,
+    CancelledState2 = CancelledState2_out#state{cancelled = false,
+						response  = undefined,
+						sipstate  = trying
+					       },
+
+    test_verify_response_was_sent(487, "Request Cancelled", <<>>,
+				  "gen_server:cast() {cancelled, ...}", 2, 3),
+
+    io:format("test: gen_server:cast() {cancelled, ...} - 3~n"),
+    %% test states that should return in no action
+    lists:map(fun(S) ->
+		      CS3 = #state{logtag   = "testing",
+				   request  = Test_OrigRequest,
+				   sipstate = S
+					      },
+		      {noreply, CS3, ?TIMEOUT} = handle_cast({cancelled, []}, CS3)
+	      end, [completed, confirmed, testing]),	%% can't check terminated with this fun
+
+
+
+    %% handle_cast({quit}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {quit} - 1~n"),
+    QuitState = #state{logtag = "testing"},
+    {stop, _, QuitState} = handle_cast({quit}, QuitState),
+
+
+    %% unknown handle_cast
+    %%--------------------------------------------------------------------
+    io:format("test: unknown gen_server:cast() - 1~n"),
+    UnknownCastState = #state{},
+    {noreply, UnknownCastState, ?TIMEOUT} = handle_cast(undefined, UnknownCastState),
+
+
+    %% handle_info(timeout, State)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server signal 'timeout' - 0~n"),
+    WaitFun = fun() ->
+		      receive
+			  _ -> ok
+		      end
+	      end,
+    TimeoutReportTo = spawn(WaitFun),
+    TimeoutMonitorRef = erlang:monitor(process, TimeoutReportTo),
+    TimeoutState = #state{logtag    = "testing",
+			  request   = Test_OrigRequest,
+			  sipstate  = proceeding,
+			  my_to_tag = "totag",
+			  socket    = #sipsocket{proto = yxa_test},
+			  timerlist = siptimer:empty(),
+			  response  = Test_Response,
+			  report_to = TimeoutReportTo,
+			  parent    = TimeoutReportTo,
+			  testing   = true
+			 },
+
+    io:format("test: gen_server signal 'timeout' - 1.1~n"),
+    {noreply, TimeoutState_out, ?TIMEOUT} = handle_info(timeout, TimeoutState),
+
+    io:format("test: gen_server signal 'timeout' - 1.2~n"),
+    %% verify new state
+    completed = TimeoutState_out#state.sipstate,
+    [{resendresponse},{resendresponse_timeout}] =
+	siptimer:test_get_appsignals(TimeoutState_out#state.timerlist),
+    %% cancel timers
+    siptimer:cancel_all_timers(TimeoutState_out#state.timerlist),
+
+    test_verify_response_was_sent(500, "Server Internal Error", <<>>,
+				  "gen_server signal 'timeout'", 1, 3),
+
+    io:format("test: gen_server signal 'timeout' - 1.6~n"),
+    %% verify that report_to/parent was killed
+    receive
+	{'DOWN', TimeoutMonitorRef, process, TimeoutReportTo, servertransaction_timed_out} ->
+	    ok
+    after 0 ->
+	    throw("test failed, no 'DOWN' message received from report_to/parent pid")
+    end,
+
+    %% handle_info({siptimer, TRef, TDesc}, State)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server signal '{siptimer, ...}' - 0~n"),
+    %% set up a timer and let it fire
+    SipTimerTest_Timerlist1 = siptimer:add_timer(1, "Testing testing",
+						 {terminate_transaction},
+						 siptimer:empty()
+						),
+    TimerTest_State = #state{timerlist = SipTimerTest_Timerlist1,
+			     request   = Test_OrigRequest
+			    },
+
+    TimerTest_Signal =
+	receive
+	    {siptimer, TimerTest_Ref1, "Testing testing"} ->
+		{siptimer, TimerTest_Ref1, "Testing testing"}
+	after 100 ->
+		throw("test failed, the timer we set up never fired")
+	end,
+
+    io:format("test: gen_server signal '{siptimer, ...}' - 1~n"),
+    %% test normal case, the transaction should terminate
+    {stop, normal, #state{sipstate = terminated}} = handle_info(TimerTest_Signal, TimerTest_State),
+
+    io:format("test: gen_server signal '{siptimer, ...}' - 1~n"),
+    %% test with unknown timer
+    {noreply, TimerTest_State, ?TIMEOUT} =
+	handle_info({siptimer, make_ref(), "Testing unknown timer"}, TimerTest_State),
+
+
+    %% handle_info({'EXIT', ...}, State)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server signal '{'EXIT', ...}' - 0~n"),
+    ExitSignal_State = #state{logtag    = "testing",
+			      parent    = self(),
+			      request   = Test_OrigRequest,
+			      socket    = #sipsocket{proto = yxa_test},
+			      my_to_tag = "ttt",
+			      timerlist = siptimer:empty(),
+			      testing   = true
+			     },
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 1~n"),
+    %% test parent exit normal when completed, no change expected
+    ExitSignal_State1 = ExitSignal_State#state{sipstate = completed},
+    {noreply, ExitSignal_State1, ?TIMEOUT} = handle_info({'EXIT', self(), normal}, ExitSignal_State1),
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 2~n"),
+    %% test parent exit abnormally when completed, no change expected
+    ExitSignal_State2 = ExitSignal_State#state{sipstate = completed},
+    {noreply, ExitSignal_State2, ?TIMEOUT} = handle_info({'EXIT', self(), false}, ExitSignal_State2),
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 3.1~n"),
+    %% test parent exit normally when NOT completed, generates a 500
+    ExitSignal_State3 = ExitSignal_State#state{sipstate = proceeding},
+    {noreply, ExitSignal_State3_out, ?TIMEOUT} =
+	handle_info({'EXIT', self(), normal}, ExitSignal_State3),
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 3.2~n"),
+    %% verify new state
+    completed = ExitSignal_State3_out#state.sipstate,
+    [{resendresponse},{resendresponse_timeout}] =
+	siptimer:test_get_appsignals(ExitSignal_State3_out#state.timerlist),
+    %% cancel timers
+    siptimer:cancel_all_timers(ExitSignal_State3_out#state.timerlist),
+
+    test_verify_response_was_sent(500, "Server Internal Error", <<>>,
+				  "gen_server signal '{'EXIT', ...}'", 3, 3),
+
+
+    %% unknown handle_info
+    %%--------------------------------------------------------------------
+    io:format("test: unknown gen_server signal - 1~n"),
+    UnknownInfoState = #state{},
+    {noreply, UnknownInfoState, ?TIMEOUT} = handle_info(undefined, UnknownInfoState),
+
+
+    %% terminate(Reason, State)
+    %%--------------------------------------------------------------------
+    io:format("test: terminate/2 - 1.1~n"),
+    %% test normal case
+    TerminateState1 = #state{report_to = self()},
+    normal = terminate(normal, TerminateState1),
+
+    io:format("test: terminate/2 - 1.2~n"),
+    %% verify that report_to (we) got a 'servertransaction_terminating' signal
+    TerminateSelf = self(),
+    receive
+	{servertransaction_terminating, TerminateSelf} ->
+	    ok
+    after 0 ->
+	    throw("test failed, we never got a servertransaction_terminating signal")
+    end,
+
+    io:format("test: terminate/2 - 2~n"),
+    %% test non-normal exit
+    "testing" = terminate("testing", #state{}),
+
+    io:format("test: terminate/2 - 3~n"),
+    %% test with dead report_to
+    TerminateDeadPid = spawn(fun() -> ok end),
+    erlang:yield(),	%% make sure TerminateDeadPid finishes
+    TerminateState3 = #state{report_to = TerminateDeadPid},
+    normal = terminate(normal, TerminateState3),
+
+
+    %% check_quit2(Res, From, State)
+    %%--------------------------------------------------------------------
+    io:format("test: check_quit2/3 - 1~n"),
+    %% test Res = {reply, ...} (but From = none)
+    CheckQuit_State1 = #state{logtag   = "testing",
+			      request  = Test_OrigRequest,
+			      sipstate = terminated
+			     },
+    {stop, normal, CheckQuit_State1} = check_quit2({reply, 1, 2, 3}, none, CheckQuit_State1),
+
+    io:format("test: check_quit2/3 - 2~n"),
+    %% test Res = {stop, ...}
+    CheckQuit_State2 = #state{logtag   = "testing",
+			      request  = Test_OrigRequest,
+			      response = Test_Response,
+			      sipstate = terminated
+			     },
+    {stop, true, CheckQuit_State2} = check_quit2({stop, true, CheckQuit_State2}, none, CheckQuit_State2),
+
+    io:format("test: check_quit2/3 - 2~n"),
+    %% test Res = {noreply, ...}
+    CheckQuit_State3 = #state{logtag  = "testing",
+			      request = Test_OrigRequest,
+			      sipstate = terminated
+			     },
+    {stop, normal, CheckQuit_State3} = check_quit2({noreply, 1, 2}, none, CheckQuit_State3),
+
+
+    %% process_timer2({resendresponse}, Timer, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_timer2/3 {resendresponse} - 0~n"),
+    %% set up a timer and let it fire
+    ResendResponseTimer_Timerlist1 =
+	siptimer:add_timer(1, "Testing testing",
+			   {resendresponse},
+			   siptimer:empty()
+			  ),
+    ResendResponseTimer_State =
+	#state{logtag    = "testing",
+	       socket    = #sipsocket{proto = yxa_test},
+	       timerlist = ResendResponseTimer_Timerlist1,
+	       request   = Test_OrigRequest,
+	       response  = Test_Response,
+	       sipstate  = completed
+	      },
+
+    ResendResponseTimer_Signal =
+	receive
+	    {siptimer, ResendResponseTimer_Ref1, "Testing testing"} ->
+		{siptimer, ResendResponseTimer_Ref1, "Testing testing"}
+	after 100 ->
+		throw("test failed, the timer we set up never fired")
+	end,
+
+    io:format("test: process_timer2/3 {resendresponse} - 1.1~n"),
+    %% test normal case, the transaction should terminate
+    {noreply, ResendResponseTimer_State_out, ?TIMEOUT} =
+	handle_info(ResendResponseTimer_Signal, ResendResponseTimer_State),
+
+    io:format("test: process_timer2/3 {resendresponse} - 1.2~n"),
+    %% cancel the revived timer
+    siptimer:cancel_all_timers(ResendResponseTimer_State_out#state.timerlist),
+    %% verify new state
+    ResendResponseTimer_State = ResendResponseTimer_State_out#state{timerlist = ResendResponseTimer_Timerlist1},
+    [{resendresponse}] = siptimer:test_get_appsignals(ResendResponseTimer_State_out#state.timerlist),
+
+    test_verify_response_was_sent(100, "Testing", <<>>,
+				  "process_timer2/3 {resendresponse}", 1, 3),
+
+    io:format("test: process_timer2/3 {resendresponse} - 2~n"),
+    %% test not in sipstate 'completed', no change expected
+    %% not really an error but we should not normally end up there either
+    ResendResponseTimer_State2 = ResendResponseTimer_State#state{sipstate = proceeding},
+    {noreply, ResendResponseTimer_State2, ?TIMEOUT} =
+	handle_info(ResendResponseTimer_Signal, ResendResponseTimer_State2),
+
+    io:format("test: process_timer2/3 {resendresponse} - 3~n"),
+    %% test with no response sent
+    ResendResponseTimer_State3 = ResendResponseTimer_State#state{response = undefined},
+    {noreply, ResendResponseTimer_State3, ?TIMEOUT} =
+	handle_info(ResendResponseTimer_Signal, ResendResponseTimer_State3),
+
+
+    %% process_timer2({resendresponse_timeout}, Timer, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_timer2/3 {resendresponse_timeout} - 0~n"),
+    %% set up a timer and let it fire
+    ResendResponseTimeout_Timerlist1 =
+	siptimer:add_timer(1, "Testing testing",
+			   {resendresponse_timeout},
+			   siptimer:empty()
+			  ),
+    ResendResponseTimeout_State =
+	#state{logtag    = "testing",
+	       socket    = #sipsocket{proto = yxa_test},
+	       timerlist = ResendResponseTimeout_Timerlist1,
+	       request   = Test_OrigRequest,
+	       response  = Test_Response,
+	       sipstate  = completed
+	      },
+
+    ResendResponseTimeout_Signal =
+	receive
+	    {siptimer, ResendResponseTimeout_Ref1, "Testing testing"} ->
+		{siptimer, ResendResponseTimeout_Ref1, "Testing testing"}
+	after 100 ->
+		throw("test failed, the timer we set up never fired")
+	end,
+
+    io:format("test: process_timer2/3 {resendresponse_timeout} - 1.1~n"),
+    %% test normal case, the transaction should terminate
+    {stop, normal, ResendResponseTimeout_State_out} =
+	handle_info(ResendResponseTimeout_Signal, ResendResponseTimeout_State),
+
+    io:format("test: process_timer2/3 {resendresponse_timeout} - 1.2~n"),
+    %% verify new state
+    terminated = ResendResponseTimeout_State_out#state.sipstate,
+    ResendResponseTimeout_State =
+	ResendResponseTimeout_State_out#state{
+	  sipstate  = completed
+	 },
+
+
+    %% enter_sip_state(SipState, State)
+    %%--------------------------------------------------------------------
+    io:format("test: enter_sip_state/2 - 1~n"),
+    %% enter same state, no change expected
+    EnterSipState_State1 = #state{sipstate = trying},
+    EnterSipState_State1 = enter_sip_state(trying, EnterSipState_State1),
+
+    io:format("test: enter_sip_state/2 - 2.1~n"),
+    %% enter state 'completed' with non-INVITE transaction, should start Timer I
+    EnterSipState_State2 = #state{sipstate = proceeding,
+				  logtag = "testing",
+				  request = Test_OrigRequest#request{method = "OPTIONS"},
+				  timerlist = siptimer:empty()
+				 },
+    EnterSipState_State2_out = enter_sip_state(completed, EnterSipState_State2),
+
+    io:format("test: enter_sip_state/2 - 2.2~n"),
+    %% verify new state
+    completed = EnterSipState_State2_out#state.sipstate,
+    EnterSipState_State2 = EnterSipState_State2_out#state{timerlist = siptimer:empty(),
+							  sipstate = proceeding
+							 },
+    [{terminate_transaction}] = siptimer:test_get_appsignals(EnterSipState_State2_out#state.timerlist),
+
+
+    %% make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
+    %%--------------------------------------------------------------------
+    io:format("test: make_response/6 - 0~n"),
+    MakeResponse_Header1 = Test_OrigRequest#request.header,
+    MakeResponse_Header1_1 = keylist:set("To", ["sip:with-to-tag@example.org;tag=foo"], MakeResponse_Header1),
+    MakeResponse_Request1 = Test_OrigRequest#request{header = MakeResponse_Header1_1},
+
+    io:format("test: make_response/6 - 1.1~n"),
+    %% test that we use the To-tag from the request, if it has one
+    MakeResponse_State1 = #state{request = MakeResponse_Request1,
+				 socket  = #sipsocket{proto = yxa_test}
+				},
+    MakeResponse_Response1 = make_response(400, "Testing", <<>>, [], [], MakeResponse_State1),
+
+    io:format("test: make_response/6 - 1.2~n"),
+    %% verify response created
+    #response{status = 400,
+	      reason = "Testing",
+	      body   = <<>>
+	     } = MakeResponse_Response1,
+    ["sip:with-to-tag@example.org;tag=foo"] = keylist:fetch('to', MakeResponse_Response1#response.header),
+
+    io:format("test: make_response/6 - 2.1~n"),
+    %% test that we don't add my_to_tag to a 100 Trying if it does not contain a To-tag
+    MakeResponse_Header2 = Test_OrigRequest#request.header,
+    MakeResponse_Header2_1 = keylist:set("To", ["sip:without-to-tag@example.org"], MakeResponse_Header2),
+    MakeResponse_Request2 = Test_OrigRequest#request{header = MakeResponse_Header2_1},
+    MakeResponse_State2 = #state{my_to_tag = "my_to_tag",
+				 socket    = #sipsocket{proto = yxa_test},
+				 request   = MakeResponse_Request2
+				},
+    MakeResponse_Response2 = make_response(100, "Testing", <<>>, [], [], MakeResponse_State2),
+    io:format("test: make_response/6 - 2.2~n"),
+    %% verify response created
+    #response{status = 100,
+	      reason = "Testing",
+	      body   = <<>>
+	     } = MakeResponse_Response2,
+    ["sip:without-to-tag@example.org"] = keylist:fetch('to', MakeResponse_Response2#response.header),
+
+    io:format("test: make_response/6 - 3.1~n"),
+    %% test that we leave the To-tag in a 100 Trying if the request had a To-tag
+    MakeResponse_State3 = MakeResponse_State1#state{my_to_tag = "my_to_tag"},
+    MakeResponse_Response3 = make_response(100, "Testing", <<>>, [], [], MakeResponse_State3),
+    io:format("test: make_response/6 - 3.2~n"),
+    %% verify response created
+    #response{status = 100,
+	      reason = "Testing",
+	      body   = <<>>
+	     } = MakeResponse_Response3,
+    ["sip:with-to-tag@example.org;tag=foo"] = keylist:fetch('to', MakeResponse_Response3#response.header),
+
+    io:format("test: make_response/6 - 4.1~n"),
+    %% test that we use my_to_tag from State if request does not have one
+    MakeResponse_Header4 = Test_OrigRequest#request.header,
+    MakeResponse_Header4_1 = keylist:set("To", ["sip:without-to-tag@example.org"], MakeResponse_Header4),
+    MakeResponse_Request4 = Test_OrigRequest#request{header = MakeResponse_Header4_1},
+    MakeResponse_State4 = #state{request   = MakeResponse_Request4,
+				 my_to_tag = "my_to_tag",
+				 socket    = #sipsocket{proto = yxa_test}
+				},
+    MakeResponse_Response4 = make_response(400, "Testing", <<>>, [], [], MakeResponse_State4),
+
+    io:format("test: make_response/6 - 4.2~n"),
+    %% verify response created
+    #response{status = 400,
+	      reason = "Testing",
+	      body   = <<>>
+	     } = MakeResponse_Response4,
+    ["<sip:without-to-tag@example.org>;tag=my_to_tag"] = keylist:fetch('to', MakeResponse_Response4#response.header),
+
     ok.
+
+
+test_verify_response_was_sent(Status, Reason, Body, TestLabel, Major, Minor) ->
+    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor]),
+    %% check that a xxx response was generated
+    receive
+	{sipsocket_test, send, {yxa_test, "192.0.2.27", 6050}, SipMsg} ->
+	    %% parse message that was 'sent'
+	    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor + 1]),
+	    Response = sippacket:parse(SipMsg, none),
+	    true = is_record(Response, response),
+
+	    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor + 2]),
+	    %% check that it was the expected response that was resent
+	    #response{status = Status,
+		      reason = Reason,
+		      body   = Body
+		     } = Response,
+	    ok
+    after 0 ->
+	    throw("test failed, SIP message 'sent' not found in process mailbox")
+    end.
