@@ -14,7 +14,7 @@
 %%%           - maybe we should.
 %%%-------------------------------------------------------------------
 -module(sipuserdb_file_backend).
--compile(export_all).
+%%-compile(export_all).
 
 -behaviour(gen_server).
 
@@ -497,7 +497,7 @@ verify_consistency(Users, Addresses) ->
 
 %% verify_consistency2/2 - part of verify_consistency/2
 %% Returns : {ok, NoAddressUsers, NoUserAddresses}
-verify_consistency2(Users, Addresses) ->	     
+verify_consistency2(Users, Addresses) ->
     NoAddressUsers = get_no_address_users(Users, Addresses, []),
     NoUserAddresses = get_no_user_addresses(Addresses, Users, []),
     {ok, NoAddressUsers, NoUserAddresses}.
@@ -642,7 +642,7 @@ test() ->
     {ok, ParseTermUserL1, ParseTermAddrL1} = parse_term([{user, [{name, "t1"}]},
 							 {address, [{user, "t1"},
 								    {address, "sip:1@example.net"}]},
-							 
+
 							 {user, [{name, "t2"}]},
 							 {address, [{user, "t2"},
 								    {address, "sip:2@example.net"}]}
@@ -650,7 +650,7 @@ test() ->
 
     io:format("test: parse_term/3 - 2~n"),
     %% addresses grouped with user
-    {ok, ParseTermUserL1, ParseTermAddrL2} = parse_term([{user, [{name, "t1"}, 
+    {ok, ParseTermUserL1, ParseTermAddrL2} = parse_term([{user, [{name, "t1"},
 								 {addresses, ["sip:1.1@example.net",
 									      "sip:1.2@example.net"]}]},
 							 {user, [{name, "t2"},
@@ -728,11 +728,11 @@ test() ->
     io:format("test: read_userdb_error/3 - 2~n"),
     %% Caller = cast
     #state{} = read_userdb_error("test", #state{}, cast),
-    
+
     io:format("test: read_userdb_error/3 - 3.1~n"),
     %% Caller = info, first error (last_fail = undefined)
     RUE_State_out3 = read_userdb_error("test", #state{last_fail = undefined}, info),
-    
+
     io:format("test: read_userdb_error/3 - 3.2~n"),
     %% verify new state
     if
@@ -745,18 +745,18 @@ test() ->
 				     [RUE_State_out3#state.last_fail, RUE_Now]),
 	    throw(RUE_Msg3)
     end,
-    
+
     io:format("test: read_userdb_error/3 - 4~n"),
     %% Caller = info, error that should not be logged
     RUE_State4 = #state{last_fail = RUE_Now - ?LOG_THROTTLE_SECONDS + 5},
-    
+
     RUE_State4 = read_userdb_error("test", RUE_State4, info),
-    
+
     io:format("test: read_userdb_error/3 - 5.1~n"),
     %% Caller = info, error that should be logged
     RUE_State5 = #state{last_fail = RUE_Now - ?LOG_THROTTLE_SECONDS - 5},
     RUE_State_out5 = read_userdb_error("test", RUE_State5, info),
-    
+
     io:format("test: read_userdb_error/3 - 5.2~n"),
     %% verify new state
     if
@@ -769,5 +769,5 @@ test() ->
 				     [RUE_State_out5#state.last_fail, RUE_Now]),
 	    throw(RUE_Msg5)
     end,
-    
+
     ok.

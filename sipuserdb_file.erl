@@ -13,7 +13,7 @@
 %%%           - maybe we should.
 %%%-------------------------------------------------------------------
 -module(sipuserdb_file).
--compile(export_all).
+%%-compile(export_all).
 
 -behaviour(sipuserdb).
 
@@ -366,7 +366,7 @@ get_addresses_using_user(Username) when is_list(Username) ->
     Addresses = get_addresses_using_user2(Username, fetch_addresses(), []),
     %% Make list sorted and remove duplicates
     lists:usort(Addresses);
-    
+
 get_addresses_using_user(User) when is_record(User, user) ->
     get_addresses_using_user(User#user.name).
 
@@ -521,7 +521,7 @@ test() ->
 					 L = tuple_to_list(T),
 					 Acc ++ L
 				 end, [], Test_Addresses_Zipped),
-					 
+
 
     %% get_addresses_using_user2(Username, Addresses, Res)
     %%--------------------------------------------------------------------
@@ -560,8 +560,8 @@ test() ->
     CollectAddresses_L1 = [test_make_address("foo", "sip:first@example.org"),
 			   test_make_address("foo", "sip:second@example.org")],
     ["sip:first@example.org", "sip:second@example.org"] = collect_addresses(CollectAddresses_L1),
-    
-	
+
+
 
     ok.
 
@@ -570,4 +570,4 @@ test_make_address(U, A) ->
 	     address = A,
 	     url     = sipurl:parse(A)
 	    }.
-    
+
