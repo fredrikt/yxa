@@ -68,7 +68,9 @@
 		       sipuserdb_file,
 		       siptimer,
 		       yxa_config_erlang,
-		       yxa_config_check
+		       yxa_config_check,
+		       transportlayer,
+		       sipsocket
 		      ]).
 
 %%====================================================================
