@@ -117,7 +117,7 @@ parse(State) when is_record(State, yxa_config_erlang_state) ->
 	    Cfg = #yxa_cfg{entrys = L2},
 	    {ok, Cfg};
 	{error, {Line, Mod, Term}} ->
-	    Msg = io_lib:format("Failed parsing file ~p, line ~p module ~p - term ~p",
+	    Msg = io_lib:format("Failed parsing file ~p, line ~p. Module ~p - term ~p",
 				[File, Line, Mod, Term]),
 	    {error, lists:flatten(Msg)};
 	{error, E} ->
@@ -135,7 +135,7 @@ parse(State) when is_record(State, yxa_config_erlang_state) ->
 extract_config(TermL, AppModule) when is_list(TermL), is_atom(AppModule) ->
     {common, CommonConfig} = get_section(common, TermL),
     {AppModule, AppConfig} = get_section(AppModule, TermL),
-    
+
     merge_config(CommonConfig, AppConfig).
 
 get_section(Key, TermL) when is_atom(Key), is_list(TermL) ->
@@ -171,10 +171,10 @@ merge_config(Config, []) ->
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
-    
+
     %% get_section(Key, TermL)
     %%--------------------------------------------------------------------
-    
+
     io:format("test: get_section/2 - 0~n"),
     GS_Term_Test = {test, [{1, 2},
 			   {2, 3}
@@ -183,11 +183,11 @@ test() ->
     GS_Term_Common = {common, [{5, 6},
 			       {6, 5}
 			      ]},
-    
+
     GS_Term_Foo = {foo, [{0, 10},
 			 {1, 11}
 			]},
-    
+
     io:format("test: get_section/2 - 1~n"),
     GS_Term_Test = get_section(test, [GS_Term_Test]),
 
@@ -200,7 +200,7 @@ test() ->
 
     %% merge_config(Config1, Config2)
     %%--------------------------------------------------------------------
-    
+
     io:format("test: merge_config/2 - 0~n"),
     MConfig_1 = [{userdb_modules,		[sipuserdb_file]},
 		 {sipuserdb_file_filename,	"/etc/yxa-userdb"},
@@ -223,7 +223,7 @@ test() ->
      {sipuserdb_file_filename,      "/etc/yxa-userdb"},
      {userdb_modules,               [sipuserdb_file]}
     ] = merge_config(MConfig_1, MConfig_2),
-    
+
     io:format("test: merge_config/2 - 2~n"),
     %% #1 should be totally overwritten by list #2
     MConfig_1_S = merge_config(MConfig_2, MConfig_1),
@@ -236,7 +236,7 @@ test() ->
      {sipuserdb_file_filename, "/etc/yxa-userdb"},
      {userdb_modules,          [sipuserdb_file]}
     ] = merge_config(MConfig_3, MConfig_1),
-    
+
     io:format("test: merge_config/2 - 4~n"),
     %% no conflicts at all
     [{record_route,true},
