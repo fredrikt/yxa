@@ -56,7 +56,7 @@
 		   yxa_config_default,
 		   yxa_config_erlang
 		  ]).
-	
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -70,7 +70,7 @@
 %%--------------------------------------------------------------------
 start_link({autotest, Pretend}) ->
     %% build some extra config for autotest
-    Cfg = 
+    Cfg =
 	#yxa_cfg{entrys = [
 			   {homedomain, ["example.org"], test}
 			  ]},
@@ -96,7 +96,7 @@ init([AppModule, ExtraCfg]) when is_atom(AppModule) ->
     State = #state{backends = Backends,
 		   appmodule = AppModule
 		  },
-		  
+
     case parse(ExtraCfg, State) of
 	{ok, Cfg} when is_record(Cfg, yxa_cfg) ->
 	    case validate(Cfg, AppModule, hard) of
@@ -112,11 +112,12 @@ init([AppModule, ExtraCfg]) when is_atom(AppModule) ->
 
 		    throw('Config validation failed')
 	    end;
-	{error, E} when is_list(E) ->
+	{error, Module, E} when is_list(E) ->
 	    %% output error message to console first, since logger is probably not running
-	    io:format("ERROR: Config validation failed : ~p~n", [E]),
+	    io:format("ERROR: Config parsing failed (parsing module ~p) : ~p~n", [Module, E]),
 
-	    logger:log(error, "Config server: Failed parsing configuration : ~p", [E]),
+	    logger:log(error, "Config server: Failed parsing configuration (parsing module ~p) : ~p",
+		       [Module, E]),
 	    throw('Configuration parsing error')
     end,
 
@@ -124,7 +125,7 @@ init([AppModule, ExtraCfg]) when is_atom(AppModule) ->
 
 %% part of init/1
 init_get_backends(In, AppModule) when is_list(In), is_atom(AppModule) ->
-    R = 
+    R =
 	lists:foldl(fun(M, Acc) ->
 			    case M:init(AppModule) of
 				{ok, Opaque} ->
@@ -197,7 +198,7 @@ get_env(Key, Default) when is_atom(Key) ->
     end.
 
 list() ->
-    lists:keysort(1, ets:tab2list(yxa_config_t)).   
+    lists:keysort(1, ets:tab2list(yxa_config_t)).
 
 %%====================================================================
 %% Behaviour functions
@@ -226,7 +227,7 @@ list() ->
 %%--------------------------------------------------------------------
 handle_call(reload, _From, State) ->
     logger:log(normal, "Config server: Reloading configuration"),
-    Reply = 
+    Reply =
 	case parse(#yxa_cfg{}, State) of
 	    {ok, Cfg} when is_record(Cfg, yxa_cfg) ->
 		case validate(Cfg, State#state.appmodule, soft) of
@@ -307,8 +308,12 @@ code_change(_OldVsn, State, _Extra) ->
 
 parse(CfgL, State) when is_record(CfgL, yxa_cfg), is_record(State, state) ->
     Backends = State#state.backends,
-    NewEntrys = parse2(Backends, CfgL#yxa_cfg.entrys),
-    {ok, CfgL#yxa_cfg{entrys = NewEntrys}}.
+    case parse2(Backends, CfgL#yxa_cfg.entrys) of
+	{ok, NewEntrys} ->
+	    {ok, CfgL#yxa_cfg{entrys = NewEntrys}};
+	{error, Module, Msg} ->
+	    {error, Module, Msg}
+    end.
 
 parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
     case apply(Module, parse, [Opaque]) of
@@ -321,7 +326,7 @@ parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
 	    parse2(T, NewEntrys)
     end;
 parse2([], Entrys) ->
-    lists:keysort(1, Entrys).
+    {ok, lists:keysort(1, Entrys)}.
 
 merge_entrys(Entrys, [{Key, Value, Src} | T]) ->
     NewL =
@@ -408,12 +413,12 @@ update(Key, Value, Src, OldValue, Mode) ->
 	    ok
     end,
     ok.
-    
+
 %% part of load/2, delete keys from ets table not present in Cfg. Happens if a code change/other
 %% makes our config definitions change.
 delete_not_present(Cfg, _Mode) ->
     L = list(),
-    CheckPurge = 
+    CheckPurge =
 	fun({Key, OldValue, _Src}) ->
 		case lists:keysearch(Key, 1, Cfg#yxa_cfg.entrys) of
 		    {value, {Key, _NewValue, _NewSrc}} ->
