@@ -278,16 +278,21 @@ module_apply(Function, Args) ->
 module_apply([], _Function, _Args) ->
     {"*", nomatch};
 module_apply([Module | T], Function, Args) ->
-    case apply(Module, Function, Args) of
-	error ->
-	    logger:log(error, "Userdb: Error was returned from ~p:~p (arguments ~p), "
-		       "throwing '500 Server Internal Error'",
-		       [Module, Function, Args]),
-	    throw({siperror, 500, "Server Internal Error"});
-	nomatch ->
-	    module_apply(T, Function, Args);
-	[] ->
-	    module_apply(T, Function, Args);
-	Res ->
-	    {Module, Res}
+    case local:sipuserdb_backend_override(Module, Function, Args) of
+	{ok, Res} ->
+	    Res;
+	undefined ->
+	    case apply(Module, Function, Args) of
+		error ->
+		    logger:log(error, "Userdb: Error was returned from ~p:~p (arguments ~p), "
+			       "throwing '500 Server Internal Error'",
+			       [Module, Function, Args]),
+		    throw({siperror, 500, "Server Internal Error"});
+		nomatch ->
+		    module_apply(T, Function, Args);
+		[] ->
+		    module_apply(T, Function, Args);
+		Res ->
+		    {Module, Res}
+	    end
     end.
