@@ -42,7 +42,7 @@
 -define(COMMON_DEFAULTS,
 	[
 	 %% General
-	 #cfg_entry{key	= databaseservers,
+	 #cfg_entry{key		= databaseservers,
 		    list_of	= true,
 		    type	= atom
 		   },
@@ -93,6 +93,53 @@
 		    type	= integer,
 		    default	= 15
 		   },
+	 #cfg_entry{key		= sipuserdb_mysql_host,
+		    type	= string
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_port,
+		    type	= integer
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_user,
+		    type	= string
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_password,
+		    type	= string
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_database,
+		    type	= string
+		   },
+	 %% sipuserdb_mysql
+	 #cfg_entry{key		= sipuserdb_mysql_get_user,
+		    type	= string,
+		    default	= "select sipuser from users where sipuser = ?",
+		    required	= true
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_get_user_for_address,
+		    type	= string,
+		    default	= "select sipuser from addresses where address = ?",
+		    required	= true
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_get_addresses_for_user,
+		    type	= string,
+		    default	= "select address from addresses where sipuser = ?",
+		    required	= true
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_get_classes_for_user,
+		    type	= string,
+		    default	= "select class from classes where sipuser = ?",
+		    required	= true
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_get_password_for_user,
+		    type	= string,
+		    default	= "select password from users where sipuser = ?",
+		    required	= true
+		   },
+	 #cfg_entry{key		= sipuserdb_mysql_get_telephonenumber_for_user,
+		    type	= string,
+		    default	= "select address from addresses where sipuser = ? and is_telnr = 'Y'",
+		    required	= true
+		   },
+
 
 	 %% SIP stack settings
 	 #cfg_entry{key		= default_max_forwards,

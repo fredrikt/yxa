@@ -52,16 +52,23 @@ check_config(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModu
 	{ok, NewCfg} when is_record(NewCfg, yxa_cfg) ->
 	    case check_required(NewCfg, Definitions) of
 		ok ->
+		    %% XXX check dependant configuration parameters too!
+		    %%
+		    %% sipuserdb_file_filename is required if userdb_modules contains sipuserdb_file
+		    %%
+		    %% ssl_server_ssloptions should not contain {certfile, File} if ssl_server_certfile is set
+		    %%
+		    %% ssl_client_ssloptions should not contain {certfile, File} if ssl_client_certfile is set
+		    %%
+		    %% check that sipuserdb_mysql_{host, user, password, database} is set if userdb_modules
+		    %% contains sipuserdb_mysql
+		    %%
 		    case check_loadable(NewCfg, Definitions, Mode) of
 			ok ->
 			    {ok, NewCfg};
 			{error, Msg} when is_list(Msg) ->
 			    {error, Msg}
 		    end;
-		%% XXX check dependant configuration parameters too!
-		%% sipuserdb_file_filename is required if userdb_modules contains sipuserdb_file
-		%% ssl_server_ssloptions should not contain {certfile, File} if ssl_server_certfile is set
-		%% ssl_client_ssloptions should not contain {certfile, File} if ssl_client_certfile is set
 		{error, Msg} when is_list(Msg) ->
 		    {error, Msg}
 	    end;
