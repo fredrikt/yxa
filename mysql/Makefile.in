@@ -1,0 +1,74 @@
+# $Id$
+#
+
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+VPATH = @srcdir@
+prefix = @prefix@
+DESTDIR = @DESTDIR@
+SHELL = @SHELL@
+
+confdir = @sysconfdir@
+sslcertdir = @sslcertdir@
+mnesiadir = @mnesiadir@
+beamdir = @libdir@/yxa/ebin
+includedir = @libdir@/yxa/include
+sbindir = @sbindir@
+exec_prefix=${prefix}
+builddir = @builddir@
+local_file = @local_file@
+
+ERLC = @ERLC@
+ERL = @ERL@
+
+INSTALL = @INSTALL@
+install_DATA = @INSTALL_DATA@
+install_PROGRAM = @INSTALL_PROGRAM@
+
+mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+
+
+erl_FILES = \
+	mysql.erl \
+	mysql_conn.erl \
+	mysql_recv.erl \
+	mysql_auth.erl
+
+imported_hrl_FILES =
+
+
+hrl_FILES = \
+
+
+yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
+
+CC = gcc
+CFLAGS = -Wall
+
+beam_FILES = $(erl_FILES:.erl=.beam)
+
+all: $(beam_FILES)
+
+install: $(beam_FILES) $(hrl_FILES)
+	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	$(mkinstalldirs) $(DESTDIR)$(includedir)
+	for p in $(beam_FILES); do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(hrl_FILES); do \
+	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
+	done
+
+clean:
+	rm -f core *.core *~
+	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
+	rm -f *.o ktrace.out erl_crash.dump
+
+$(beam_FILES): $(yxa_hrl_FILES)
+
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+.SUFFIXES:
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+
+.erl.beam:
+	$(ERLC) -I$(srcdir) -I$(srcdir)/../ -W +debug_info $<
