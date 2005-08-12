@@ -12,7 +12,8 @@ AC_CONFIG_FILES(
 		config/Makefile \
 		cpl/Makefile \
 		event_handler/Makefile \
-		yaws/src/Makefile
+		yaws/src/Makefile \
+		mysql/Makefile
 	       )
 
 AC_ARG_WITH(erlang,

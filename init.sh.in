@@ -194,7 +194,7 @@ else
     mnesiaparameters="-mnesia dir '"$mnesiadir"'"
 fi
 
-for EXTRA_DIR in "${PWD}/event_handler" "${PWD}/cpl" "${PWD}/config"; do
+for EXTRA_DIR in "${PWD}/event_handler" "${PWD}/cpl" "${PWD}/config" "${PWD}/mysql"; do
     # Add event_handler and cpl to search path if such a directory exists
     # (meaning we are probably in the build directory)
     if [ -d "$EXTRA_DIR" ]; then

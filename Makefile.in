@@ -102,6 +102,7 @@ erl_FILES = \
 	sipuserdb_file_backend.erl \
 	sipuserdb_ldap.erl \
 	sipuserdb_mnesia.erl \
+	sipuserdb_mysql.erl \
 	siputil.erl \
 	socketlist.erl \
 	sound.erl \
@@ -159,7 +160,8 @@ SUBDIRS = \
 	config \
 	cpl \
 	event_handler \
-	yaws/src
+	yaws/src \
+	mysql
 
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
