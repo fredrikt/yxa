@@ -7,7 +7,8 @@ Applications included are:
 incomingproxy:
 
 Handles registrations and proxies requests. Implements partial ENUM
-and LDAP searches.
+and LDAP searches. Handles most everything you need to set up SIP for your
+domain.
 
 outgoingproxy:
 
@@ -579,12 +580,13 @@ Yxa has a modular interface for user database backends. The entry point is
 the sipuserdb module, which looks at your configuration to determine which
 database backends to query, and in what order. The default is to just look
 in the Mnesia database (tables user and numbers), but there is also an
-LDAP module, and a plain text file, backend available. The schema for
-storing SIP user information in LDAP is not yet finished, and is currently
-not even included in the Yxa source, but the sipuserdb_ldap module is used
-in production at Stockholm university.
+LDAP module, MySQL module and a plain text file backend available. The
+schema for storing SIP user information in LDAP is not yet finished, and
+is currently not even included in the Yxa source, but the sipuserdb_ldap
+module is used in production at Stockholm university.
 
 sipuserdb_ldap configuration parameters :
+-----------------------------------------
 
 ldap_userattribute		(deafult: sipAuthenticationUser) User
 				attribute.
@@ -596,12 +598,90 @@ ldap_passwordattribute		(default: sipPassword) User authentication
 				password attribute.
 
 sipuserdb_file configuration parameters :
+-----------------------------------------
 
 sipuserdb_file_filename		(required) Filename (including path) of
 				your user database. See above (section
 				Examples) for format of this file.
 sipuserdb_file_refresh_interval	(default: 15) Interval (in seconds) between
 				checks for updated user database file.
+
+
+sipuserdb_mysql configuration parameters :
+------------------------------------------
+
+sipuserdb_mysql_host		(required) Server name. Example :
+				"mysql-srv.example.org"
+
+sipuserdb_mysql_port		(default: 3306) Server port. Example :
+				33060
+
+sipuserdb_mysql_user		(required) MySQL username to log in with.
+				Example : "yxa"
+
+sipuserdb_mysql_password	(required) MySQL password to log in with.
+				Example : "secret"
+
+sipuserdb_mysql_database	(required) MySQL database to use.
+				Example : "yxadb"
+
+MySQL query configuration parameters :
+--------------------------------------
+The default Yxa MySQL userdb querys are simple. They can be somewhat
+'personalized' by changing the templates. All querys are made for a single
+key (or list of keys, when for example looking for all users matching a
+number of addresses), and the query is constructed by inserting the quoted
+key value everywhere in the templates where there is a '?'.
+
+If you want to construct more advanced querys than can be done using these
+templates, look at creating a custom sipuserdb_mysql_make_sql_statement/2
+function in your local.erl.
+
+If you have to do special processing of some return values (for example
+decrypting passwords after reading them from the database), override the
+get-function you are interested in altering using for example the
+sipuserdb_backend_override/3 function in your local.erl.
+
+sipuserdb_mysql_get_user
+	(default: "select sipuser from users where sipuser = ?")
+	Query to use when trying to validate a users existence. Can also
+	be used to map multiple usernames to a single 'primary' username,
+	which will be the key used when looking for a users location(s)
+	in the location database for example.
+
+sipuserdb_mysql_get_user_for_address
+	(default: "select sipuser from addresses where address = ?")
+
+sipuserdb_mysql_get_addresses_for_user
+	(default: "select address from addresses where sipuser = ?")
+
+sipuserdb_mysql_get_classes_for_user
+	(default: "select class from classes where sipuser = ?")
+
+sipuserdb_mysql_get_password_for_user
+	(default: "select password from users where sipuser = ?")
+
+sipuserdb_mysql_get_telephonenumber_for_user
+	(default: "select address from addresses where sipuser = ? and
+		   is_telnr = 'Y'")
+
+Table definitions matching the default querys :
+
+	CREATE TABLE users (
+	       sipuser     VARCHAR(255) NOT NULL,
+	       password    VARCHAR(255) NOT NULL
+	       );
+
+	CREATE TABLE addresses (
+	       address     VARCHAR(255) NOT NULL,
+	       sipuser     VARCHAR(255) NOT NULL,
+	       is_telnr    ENUM('Y', 'N') DEFAULT 'N'
+	       );
+
+	CREATE TABLE classes (
+	       sipuser     VARCHAR(255) NOT NULL,
+	       class       VARCHAR(255) NOT NULL
+	       );
 
 
 =============
@@ -626,6 +706,22 @@ bootstrap process.
 
 All of the Yxa application can run just fine without root permissions.
 
+If you want to have more than one incomingproxy node (and thus more than
+one database master node), do the following on incomingproxy server #1 :
+
+   $ ADMINPW=foo /path/to/build/directory/yxa-bootstrap.sh
+
+and then, on incomingproxy server #2 :
+
+   $ /path/to/build/directory/yxa-bootstrap.sh \
+	-replica incomingproxy1@server1.example.org
+
+You should then set the configuration parameter databaseservers like this
+on all your non-incomingproxy nodes :
+
+   {databaseservers, ['incomingproxy1@server1.example.org',
+		      'incomingproxy2@server2.example.org']}
+
 
 =============
 Web interface
@@ -635,7 +731,7 @@ To use the web interface, you first need to install the Erlang web-server
 Yaws version 1.56 or higher (available from http://yaws.hyber.org/).
 When you have configured a working Yaws web-server, you need to point your
 docroot at the yxa/yaws/docroot directory, and configure Yaws with module
-and include search paths to the Yxa include and ebin-directorys. Example 
+and include search paths to the Yxa include and ebin-directorys. Example
 parts of yaws.conf configuration file :
 
   ebin_dir = /path/to/lib/yxa/ebin
