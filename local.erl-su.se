@@ -62,7 +62,9 @@
 	 get_classes_for_user/1,
 	 get_password_for_user/1,
 	 get_telephonenumber_for_user/1,
-	 get_forwards_for_users/1
+	 get_forwards_for_users/1,
+	 sipuserdb_backend_override/3,
+	 sipuserdb_mysql_make_sql_statement/2
 	]).
 
 %% incomginproxy
@@ -147,13 +149,16 @@ canonify_numberlist(["+" ++ E164 | Rest]) ->
     case util:isnumeric(E164) of
 	true ->
 	    lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
-	_ ->
+	false ->
+	    %% non-numerical, skip
 	    canonify_numberlist(Rest)
     end;
 canonify_numberlist([Number | Rest]) ->
     case rewrite_potn_to_e164(Number) of
-	"+" ++ E164 -> lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
-	_ -> canonify_numberlist(Rest)
+	"+" ++ E164 ->
+	    lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
+	_ ->
+	    canonify_numberlist(Rest)
     end.
 
 
@@ -398,6 +403,17 @@ get_telephonenumber_for_user(User) ->
 get_forwards_for_users(Users) ->
     sipuserdb:get_forwards_for_users(Users).
 
+%% Module   = atom(), sipuserdb module
+%% Function = atom(), function in Module
+%% Args     = term(), arguments to function
+%% Returns : {ok, Res} | undefined
+%%           If 'undefined' is returned, the real backend function will be called
+sipuserdb_backend_override(_Module, _Function, _Args) ->
+    undefined.
+
+%% Returns : {ok, Res} | undefined
+sipuserdb_mysql_make_sql_statement(_CfgKey, _Args) ->
+    undefined.
 
 %% Location lookup hooks
 %%%%%%%%%%%%%%%%%%%%%%%%%

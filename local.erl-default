@@ -62,7 +62,9 @@
 	 get_classes_for_user/1,
 	 get_password_for_user/1,
 	 get_telephonenumber_for_user/1,
-	 get_forwards_for_users/1
+	 get_forwards_for_users/1,
+	 sipuserdb_backend_override/3,
+	 sipuserdb_mysql_make_sql_statement/2
 	]).
 
 %% incomginproxy
@@ -352,6 +354,39 @@ get_telephonenumber_for_user(User) ->
 get_forwards_for_users(Users) ->
     sipuserdb:get_forwards_for_users(Users).
 
+%%--------------------------------------------------------------------
+%% Function: sipuserdb_backend_override(Module, Function, Args)
+%%           Module   = atom(), sipuserdb module
+%%           Function = atom(), function in Module
+%%           Args     = term(), arguments to function
+%% Descrip.: Hook to override a specific sipuserdb backend function.
+%%           If 'undefined' is returned, the real backend function
+%%           will be called
+%% Returns : {ok, Res} | undefined
+%%--------------------------------------------------------------------
+sipuserdb_backend_override(_Module, _Function, _Args) ->
+    undefined.
+
+%%--------------------------------------------------------------------
+%% Function: sipuserdb_backend_override(CfgKey, Args)
+%%           CfgKey = atom(), sipuserdb_mysql_get_sipuser            |
+%%                            sipuserdb_mysql_get_user_for_address   |
+%%                            sipuserdb_mysql_get_addresses_for_user |
+%%                            sipuserdb_mysql_get_classes_for_user   |
+%%	                      sipuserdb_mysql_get_password_for_user  |
+%%                            sipuserdb_mysql_get_telephonenumber_for_user
+%%           Args   = term(), key(s) to use in SQL query
+%% Descrip.: If you need to make SQL statements other than what is
+%%           possible using the template-based configuration parameter
+%%           possibilitys, do it here. Return 'undefined' to let
+%%           sipuserdb_mysql do it's default query construction.
+%% Returns : {ok, Res} | undefined
+%%           Res = string(), SQL query
+%%
+%% Note    : You have to mysql:quote() everything you use from Args!
+%%--------------------------------------------------------------------
+sipuserdb_mysql_make_sql_statement(_CfgKey, _Args) ->
+    undefined.
 
 % Location lookup hooks
 %%%%%%%%%%%%%%%%%%%%%%%%
