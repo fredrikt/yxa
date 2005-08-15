@@ -21,10 +21,16 @@
 %%%                 Status = integer(), SIP status code
 %%%                 Reason = string(), SIP reason phrase
 %%%
+%%%           Note : You can't assume that you will get a branch_result
+%%%                  signal with a final Response and SipState =
+%%%                  'terminated'.
+%%%
 %%%           You can tell the client transaction to terminate
 %%%           gracefully by using gen_server:cast() to send it a
 %%%
-%%%           {cancel, Msg, ExtraHeaders}
+%%%           {cancel, Msg, ExtraHeaders} - Msg is only for logging,
+%%%               ExtraHeaders is a list of {Key, ValueList} tuples
+%%%               to add to the CANCEL request generated.
 %%%
 %%% Created : 06 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -76,10 +82,11 @@
 	  timeout,	%% integer(), our definite timeout before ending an INVITE - NB: only applies to INVITE
 	  cancelled=false,	%% atom(), true | false - have we cancelled ourselves? that is, sent out a CANCEL
 	  do_cancel=false,	%% atom(), {true, EH} | false - have we been instructed to cancel?
-	  tl_branch,	%% string(), the branch the transaction layer actually used when sending our request
+	  tl_branch,		%% string(), the branch the transaction layer actually used when sending our request
 	  initialized=no,	%% atom(), yes | no - have we finished our initialization process
-	  cancel_pid,	%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that transaction
-	  final_r_sent=no	%% atom(), yes | no - have we sent a final response to our parent yet?
+	  cancel_pid,		%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that transaction
+	  final_r_sent=false,	%% atom(), true | false - have we sent a final response to our parent yet?
+	  testing = false	%% true | false, are we testing the module?
 	 }).
 
 
@@ -308,11 +315,8 @@ handle_info({siptimer, TRef, TDesc}, State) ->
     NewState =
 	case siptimer:get_timer(TRef, State#state.timerlist) of
 	    none ->
-		%% This is not really a serious situation. It is actually a race condition that
-		%% shows up from time to time under heavy load - the timer might have fired just
-		%% before we deleted it from our siptimer list.
-		%%logger:log(error, "~s: Unknown timer (~p:~p) fired! Ignoring.", [LogTag, TRef, TDesc]),
-		logger:log(error, "~s: Unknown timer (~p:~p) fired! Ignoring. SIP state '~p', Timerlist :~n~p",
+		logger:log(error, "~s: Unknown timer (~p:~p) fired! Ignoring.", [LogTag, TRef, TDesc]),
+		logger:log(debug, "~s: Unknown timer (~p:~p) fired! Ignoring. SIP state '~p', Timerlist :~n~p",
 			   [LogTag, TRef, TDesc, State#state.sipstate, State#state.timerlist]),
 		State;
 	    Timer ->
@@ -606,11 +610,20 @@ process_timer2({invite_timeout}, Timer, State) when is_record(State, state) ->
     LogTag = State#state.logtag,
     Request = State#state.request,
     URI = Request#request.uri,
-    logger:log(debug, "~s: Request INVITE ~s timeout after ~s seconds",
+    logger:log(debug, "~s: Request 'INVITE ~s' timeout after ~s seconds",
 	       [LogTag, sipurl:print(URI), siptimer:timeout2str(Timeout)]),
-    NewState1 = State#state{response = {408, "Request Timeout"}},
-    NewState2 = perform_branchaction(tell_parent, NewState1),
-    end_invite(NewState2);
+    NewState1 =
+	case State#state.final_r_sent of
+	    true ->
+		%% belts and straps, don't overwrite the response in State if
+		%% we have sent a response already, and don't generate an extra
+		%% {branch_result, ...} message for our parent
+		State;
+	    false ->
+		NewState2 = State#state{response = {408, "Request Timeout"}},
+		perform_branchaction(tell_parent, NewState2)
+	end,
+    end_invite(NewState1);
 
 %%--------------------------------------------------------------------
 %% Function: process_timer2({invite_expire}, Timer, State)
@@ -623,8 +636,9 @@ process_timer2({invite_timeout}, Timer, State) when is_record(State, state) ->
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 process_timer2({invite_expire}, _Timer, State) when is_record(State, state) ->
-    %% XXX generate a '408 Request Timeout' for our parent (transaction user) in the same
-    %% way as we do when we receive a 'invite_timeout'?
+    %% end_invite/1 will fake receiving an 408 Request Timeout if we are in sipstate 'calling',
+    %% start a CANCEL transaction if we are in state 'proceeding' or don't do anything if we
+    %% are in state 'completed' or 'terminated'
     end_invite(State);
 
 process_timer2(Signal, Timer, State) when is_record(State, state) ->
@@ -812,7 +826,7 @@ act_on_new_sipstate2(completed, BranchAction, State) when is_record(State, state
 		TimerDK = 1,
 		DKDesc = "terminate client transaction " ++ sipurl:print(URI) ++ " (Timer D or Timer K)",
 		add_timer(TimerDK, DKDesc, {terminate_transaction}, NewState1);
-	    _ ->
+	    false ->
 		case Method of
 		    "INVITE" ->
 			TimerD = 32 * 1000,
@@ -892,12 +906,15 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 		    SipState = State#state.sipstate,
 		    ReportTo ! {branch_result, self(), Branch, SipState, Response},
 		    if
-			IsFinalResponse ->
+			IsFinalResponse, State#state.testing == false ->
 			    %% Make event out of final response
 			    L = [{dst, sipdst:dst2str(State#state.dst)}],
 			    event_handler:uac_result(Branch, Status, Reason, L),
 			    State#state{final_r_sent = true};
-			true -> State
+			IsFinalResponse, State#state.testing == true ->
+			    State#state{final_r_sent = true};
+			true ->
+			    State
 		    end
 	    end;
 	{false, undefined} ->
@@ -1134,7 +1151,7 @@ fake_request_response(Status, Reason, State) when is_record(State, state) ->
     perform_branchaction(tell_parent, NewState2).
 
 %%--------------------------------------------------------------------
-%% Function: fake_request_response(Status, Reason, State)
+%% Function: fake_request_timeout(Status, Reason, State)
 %%           Status = integer(), SIP status code
 %%           Reason = string(), SIP reason phrase
 %%           State  = state record()
@@ -1176,7 +1193,7 @@ end_invite(State) when is_record(State, state) ->
 	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state 'proceeding' - cancel request "
 		       "(by starting a separate CANCEL transaction)", [LogTag, sipurl:print(URI)]),
 	    cancel_request(State);
-	SipState ->
+	SipState when SipState == completed; SipState == terminated ->
 	    logger:log(debug, "~s: Sending of request (INVITE ~s) timed out in state '~s' - ignoring.",
 		       [LogTag, sipurl:print(URI), SipState]),
 	    State
@@ -1238,7 +1255,7 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 		    NewState2 = stop_resendrequest_timer(NewState1),
 		    NewState3 = start_cancel_transaction(NewState2),
 		    NewState3;
-		SipState ->
+		SipState when SipState == completed; SipState == terminated ->
 		    logger:log(debug, "~s: NOT starting CANCEL transaction for request (INVITE ~s) "
 			       "since we are in state '~p'", [LogTag, sipurl:print(URI), SipState]),
 		    NewState1
@@ -1271,13 +1288,44 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 %%           client transaction process. We will know when _that_
 %%           transaction has finished because _this_ transaction will
 %%           then receive a '487 Request Cancelled' response.
-%% Returns : NewState = state record()
+%% Returns : NewState = state record() |
+%%           {ok, testing, ...}          this is for unit testing only
 %%--------------------------------------------------------------------
 start_cancel_transaction(State) when is_record(State, state) ->
     LogTag = State#state.logtag,
     Request = State#state.request,
+    logger:log(debug, "~s: Starting new client transaction: CANCEL ~s",
+	       [LogTag, sipurl:print(Request#request.uri)]),
+    CancelRequest = create_cancel_request(Request),
+
+    {ok, T1} = yxa_config:get_env(timerT1),
+    NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
+    Socket = State#state.socket,
+    Dst = State#state.dst,
+    %% Must use branch from original request sent out, so that next hop can match this
+    %% CANCEL to the right transaction. tl_branch is not necessarily the same as branch
+    %% since the transport layer can be configured to add a stateless loop cookie.
+    Branch = State#state.tl_branch,
+    %% XXX is the 32 * T1 correct for CANCEL?
+    case State#state.testing of
+	true ->
+	    {ok, testing, NewState#state{cancel_pid = testing},
+	     [CancelRequest, Socket, Dst, Branch, 32 * T1, none]};
+	false ->
+	    case transactionlayer:start_client_transaction(CancelRequest, Socket, Dst, Branch, 32 * T1, none) of
+		P when is_pid(P) ->
+		    logger:log(debug, "~s: Started CANCEL client transaction with pid ~p", [LogTag, P]),
+		    NewState#state{cancel_pid=P};
+		{error, E} ->
+		    %% XXX what to do here?
+		    logger:log(error, "~s: Failed starting CANCEL client transaction : ~p", [LogTag, E]),
+		    NewState
+	    end
+    end.
+
+%% part of start_cancel_transaction/1
+create_cancel_request(Request) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
-    logger:log(debug, "~s: Starting new client transaction: CANCEL ~s", [LogTag, sipurl:print(URI)]),
     {CSeqNum, _} = sipheader:cseq(Header),
     CancelId = {CSeqNum, "CANCEL"},
     %% Delete all Via headers. The new client transaction will use send_proxy_request() which
@@ -1290,25 +1338,7 @@ start_cancel_transaction(State) when is_record(State, state) ->
     CancelHeader3 = keylist:delete('require', CancelHeader2),
     CancelHeader4 = keylist:delete('proxy-require', CancelHeader3),
     CancelHeader5 = keylist:delete('content-type', CancelHeader4),
-    CancelRequest = siprequest:set_request_body(#request{method="CANCEL", uri=URI, header=CancelHeader5}, <<>>),
-    {ok, T1} = yxa_config:get_env(timerT1),
-    NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
-    Socket = State#state.socket,
-    Dst = State#state.dst,
-    %% Must use branch from original request sent out, so that next hop can match this
-    %% CANCEL to the right transaction. tl_branch is not necessarily the same as branch
-    %% since the transport layer can be configured to add a stateless loop cookie.
-    Branch = State#state.tl_branch,
-    %% XXX is the 32 * T1 correct for CANCEL?
-    case transactionlayer:start_client_transaction(CancelRequest, Socket, Dst, Branch, 32 * T1, none) of
-	P when is_pid(P) ->
-	    logger:log(debug, "~s: Started CANCEL client transaction with pid ~p", [LogTag, P]),
-	    NewState#state{cancel_pid=P};
-	{error, E} ->
-	    %% XXX what to do here?
-	    logger:log(error, "~s: Failed starting CANCEL client transaction : ~p", [LogTag, E]),
-	    NewState
-    end.
+    siprequest:set_request_body(#request{method="CANCEL", uri=URI, header=CancelHeader5}, <<>>).
 
 %%--------------------------------------------------------------------
 %% Function: update_invite_expire(Status, State)
@@ -1325,7 +1355,7 @@ update_invite_expire(Status, State) when is_record(State, state), Status >= 101,
     LogTag = State#state.logtag,
     case siptimer:get_timers_appsignal_matching({invite_expire}, State#state.timerlist) of
 	[] ->
-	    logger:log(error, "~s: Received provisional response ~p to INVITE request, but no "
+	    logger:log(error, "~s: Received 1xx response ~p to INVITE request, but no "
 		       "'invite_expire' (Timer C) timer found", [LogTag, Status]),
 	    logger:log(debug, "~s: TimerList where I could not find an 'invite_expire' (Timer C) timer :~n~p",
 		       [LogTag, siptimer:debugfriendly(State#state.timerlist)]),
@@ -1436,7 +1466,737 @@ should_cancel_on_parent_exit(_Method, State) when is_record(State, state) ->
 %%           of.
 %%--------------------------------------------------------------------
 test() ->
-    %% test received_response_state_machine/3
+    Test_Request =
+	#request{method = "INVITE",
+		 uri    = sipurl:parse("sip:user@192.0.2.27"),
+		 header = keylist:from_list([{"From",    ["Test <sip:test@example.org>;tag=f-tag"]},
+					     {"To",      ["Receiver <sip:recv@example.org>"]},
+					     {"CSeq",    ["1 INVITE"]},
+					     {"Call-Id", ["truly-random"]}
+					    ]),
+		 body   = <<"sdp">>
+		},
+
+    Test_Me = lists:concat([siprequest:myhostname(), ":", sipsocket:default_port(yxa_test, none)]),
+    Test_Response =
+	#response{status = 100,
+		  reason = "Testing",
+		  header = keylist:from_list([{"Via",     ["SIP/2.0/YXA-TEST " ++ Test_Me,
+							   "SIP/2.0/YXA-TEST 192.0.2.27"]},
+					      {"From",    ["Test <sip:test@example.org>;tag=f-tag"]},
+					      {"To",      ["Receiver <sip:recv@example.org>;tag=t-tag"]},
+					      {"CSeq",    ["1 INVITE"]},
+					      {"Call-Id", ["truly-random"]}
+					     ]),
+		  body   = <<>>
+		 },
+    Test_Dst = #sipdst{proto = yxa_test,
+		       addr  = "192.0.2.27",
+		       port  = 6050,
+		       uri   = Test_Request#request.uri
+		      },
+
+    %% unknown handle_call
+    %%--------------------------------------------------------------------
+    io:format("test: unknown gen_server:call() - 1~n"),
+    UnknownCallState = #state{},
+    {reply, {error, "unknown gen_server call"}, UnknownCallState} =
+	handle_call(undefined, none, UnknownCallState),
+
+
+    %% handle_cast({sipmessage, Response, Origin, LogStr}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {sipmessage, ...} - 1.1~n"),
+    SipMessage_State1 = #state{request   = Test_Request,
+			       sipstate  = calling,
+			       timerlist = siptimer:empty()
+			      },
+    {noreply, SipMessage_State1_out} =
+	handle_cast({sipmessage, Test_Response, #siporigin{}, "testing"}, SipMessage_State1),
+
+    io:format("test: gen_server:cast() {sipmessage, ...} - 1.2~n"),
+    %% verify new state
+    proceeding = SipMessage_State1_out#state.sipstate,
+    100 = (SipMessage_State1_out#state.response)#response.status,
+    "Testing" = (SipMessage_State1_out#state.response)#response.reason,
+    SipMessage_State1 = SipMessage_State1_out#state{sipstate = calling,
+						    response = undefined
+						   },
+
+
+    %% handle_cast({cancel, Msg, ExtraHeaders}
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {cancel, ...} - 1~n"),
+    %% test already cancelled, no change expected
+    Cancel_State1 = #state{cancelled = true},
+    {noreply, Cancel_State1} = handle_cast({cancel, "testing", []}, Cancel_State1),
+
+    io:format("test: gen_server:cast() {cancel, ...} - 2.1~n"),
+    %% test normal case, expect that a cancel transaction won't get started since
+    %% we are in SIP-state 'completed'
+    Cancel_State2 = #state{cancelled = false,
+			   sipstate  = completed,
+			   request   = Test_Request
+			  },
+    {noreply, Cancel_State2_out} = handle_cast({cancel, "testing", []}, Cancel_State2),
+
+    io:format("test: gen_server:cast() {cancel, ...} - 2.2~n"),
+    %% verify new state
+    true = Cancel_State2_out#state.cancelled,
+    Cancel_State2 = Cancel_State2_out#state{cancelled = false},
+
+
+    %% handle_cast({expired}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {expired} - 1~n"),
+    ExpiredState = #state{logtag = "testing"},
+    {stop, "Client transaction expired", ExpiredState} = handle_cast({expired}, ExpiredState),
+
+
+    %% handle_cast({quit}, ...)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server:cast() {quit} - 1~n"),
+    QuitState = #state{logtag = "testing"},
+    {stop, normal, QuitState} = handle_cast({quit}, QuitState),
+
+
+    %% unknown handle_cast
+    %%--------------------------------------------------------------------
+    io:format("test: unknown gen_server:cast() - 1~n"),
+    UnknownCastState = #state{},
+    {noreply, UnknownCastState} = handle_cast(undefined, UnknownCastState),
+
+
+    %% handle_info({siptimer, TRef, TDesc}, State)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server signal '{siptimer, ...}' - 0~n"),
+    {ok, TimerTest_Signal, SipTimerTest_Timerlist1} = test_get_timer({terminate_transaction}),
+
+    TimerTest_State = #state{timerlist = SipTimerTest_Timerlist1,
+			     request   = Test_Request
+			    },
+
+    io:format("test: gen_server signal '{siptimer, ...}' - 1~n"),
+    %% test normal case, the transaction should terminate
+    {stop, normal, #state{sipstate = terminated}} = handle_info(TimerTest_Signal, TimerTest_State),
+
+    io:format("test: gen_server signal '{siptimer, ...}' - 1~n"),
+    %% test with unknown timer
+    {noreply, TimerTest_State} =
+	handle_info({siptimer, make_ref(), "Testing unknown timer"}, TimerTest_State),
+
+
+    %% handle_info({'EXIT', Pid, Reason}, State)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server signal '{'EXIT', ...}' - 0~n"),
+    ExitSignal_State = #state{logtag    = "testing",
+			      parent    = self(),
+			      report_to = self(),
+			      request   = Test_Request,
+			      timerlist = siptimer:empty(),
+			      sipstate  = completed
+			     },
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 1.1~n"),
+    %% test normal case
+    {noreply, ExitSignal_State1_out} = handle_info({'EXIT', self(), normal}, ExitSignal_State),
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 1.2~n"),
+    %% verify new state
+    none = ExitSignal_State1_out#state.report_to,
+    ExitSignal_State = ExitSignal_State1_out#state{report_to = self()},
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 2~n"),
+    %% test normal case with non-normal reason
+    ExitSignal_State2 = ExitSignal_State#state{report_to = none},
+    {noreply, ExitSignal_State2} = handle_info({'EXIT', self(), false}, ExitSignal_State2),
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 3.1~n"),
+    %% test normal case which will result in this transaction 'cancelling'
+    ExitSignal_State3 = ExitSignal_State#state{sipstate = calling},
+    {noreply, ExitSignal_State3_out} = handle_info({'EXIT', self(), normal}, ExitSignal_State3),
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 3.2~n"),
+    %% verify new state
+    none = ExitSignal_State3_out#state.report_to,
+    true = ExitSignal_State3_out#state.cancelled,
+    {true, _} = ExitSignal_State3_out#state.do_cancel,
+    ExitSignal_State3 = ExitSignal_State3_out#state{report_to = self(),
+						    cancelled = false,
+						    do_cancel = false
+						   },
+
+    io:format("test: gen_server signal '{'EXIT', ...}' - 4~n"),
+    %% test EXIT from cancel_pid, will be ignored
+    ExitSignal_State4 = #state{parent = none,
+			       cancel_pid = self()
+			      },
+    {noreply, ExitSignal_State4} = handle_info({'EXIT', self(), normal}, ExitSignal_State4),
+
+
+    %% unknown handle_info
+    %%--------------------------------------------------------------------
+    io:format("test: unknown gen_server signal - 1~n"),
+    UnknownInfoState = #state{},
+    {noreply, UnknownInfoState} = handle_info(undefined, UnknownInfoState),
+
+
+    %% terminate(Reason, State)
+    %%--------------------------------------------------------------------
+    io:format("test: terminate/2 - 1.1~n"),
+    %% test normal case
+    TerminateState1 = #state{report_to = self(),
+			     branch = "branch"
+			    },
+    normal = terminate(normal, TerminateState1),
+
+    io:format("test: terminate/2 - 1.2~n"),
+    %% verify that report_to (we) got a 'clienttransaction_terminating' signal
+    TerminateSelf = self(),
+    receive
+	{clienttransaction_terminating, TerminateSelf, "branch"} ->
+	    ok
+    after 0 ->
+	    throw("test failed, we never got a clienttransaction_terminating signal")
+    end,
+
+    io:format("test: terminate/2 - 2~n"),
+    %% test with dead report_to
+    TerminateDeadPid = spawn(fun() -> ok end),
+    erlang:yield(),	%% make sure TerminateDeadPid finishes
+    TerminateState2 = #state{report_to = TerminateDeadPid},
+    normal = terminate(normal, TerminateState2),
+
+
+    %% check_quit2(Res, From, State)
+    %%--------------------------------------------------------------------
+    io:format("test: check_quit2/3 - 1~n"),
+    %% test Res = {reply, ...} (but From = none)
+    CheckQuit_State = #state{logtag   = "testing",
+			     request  = Test_Request,
+			     response = Test_Response,
+			     sipstate = terminated
+			    },
+    {stop, normal, CheckQuit_State} =
+	check_quit2({reply, ok, CheckQuit_State}, none, CheckQuit_State),
+
+    io:format("test: check_quit2/3 - 2~n"),
+    %% test {Status, Reason} response
+    CheckQuit_State2 = CheckQuit_State#state{ response = {400, "Testing"} },
+    {stop, normal, CheckQuit_State2} =
+	check_quit2({reply, ok, CheckQuit_State2}, none, CheckQuit_State2),
+
+
+    io:format("test: check_quit2/3 - 3~n"),
+    %% test Res = {stop, ...}
+    {stop, true, CheckQuit_State} = check_quit2({stop, true, CheckQuit_State}, none, CheckQuit_State),
+
+
+    %% process_timer2({resendrequest}, Timer, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_timer2/3 {resendrequest} - 0~n"),
+    {ok, ResendRequestTimer_Signal, ResendRequestTimer_Timerlist1} =
+	test_get_timer({resendrequest}),
+
+    ResendRequestTimer_State =
+	#state{logtag    = "testing",
+	       socket    = #sipsocket{proto = yxa_test},
+	       timerlist = ResendRequestTimer_Timerlist1,
+	       request   = Test_Request,
+	       sipstate  = calling,
+	       dst       = Test_Dst,
+	       branch    = "test-branch"
+	      },
+
+    io:format("test: process_timer2/3 {resendrequest} - 1.1~n"),
+    %% test normal case, the transaction should terminate
+    {noreply, ResendRequestTimer_State_out} =
+	handle_info(ResendRequestTimer_Signal, ResendRequestTimer_State),
+
+    io:format("test: process_timer2/3 {resendrequest} - 1.2~n"),
+    %% cancel the revived timer
+    siptimer:cancel_all_timers(ResendRequestTimer_State_out#state.timerlist),
+    %% verify new state
+    ResendRequestTimer_State = ResendRequestTimer_State_out#state{timerlist = ResendRequestTimer_Timerlist1},
+    [{resendrequest}] = siptimer:test_get_appsignals(ResendRequestTimer_State_out#state.timerlist),
+
+    test_verify_request_was_sent(Test_Request, "process_timer2/3 {resendrequest}", 1, 3),
+
+    io:format("test: process_timer2/3 {resendrequest} - 2~n"),
+    %% test not in sipstate 'completed', no change expected
+    %% not really an error but we should not normally end up there either
+    ResendRequestTimer_State2 = ResendRequestTimer_State#state{sipstate = completed},
+    {noreply, ResendRequestTimer_State2} =
+	handle_info(ResendRequestTimer_Signal, ResendRequestTimer_State2),
+
+
+    %% process_timer2({resendrequest_timeout}, Timer, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_timer2/3 {resendrequest_timeout} - 0~n"),
+    {ok, ResendRequestTimeout_Signal, ResendRequestTimeout_Timerlist1} =
+	test_get_timer({resendrequest_timeout}),
+
+    ResendRequestTimeout_State =
+	#state{logtag    = "testing",
+	       socket    = #sipsocket{proto = yxa_test},
+	       timerlist = ResendRequestTimeout_Timerlist1,
+	       request   = Test_Request,
+	       sipstate  = calling,
+	       report_to = self(),
+	       testing   = true,
+	       branch    = "branch"
+	      },
+
+    io:format("test: process_timer2/3 {resendrequest_timeout} - 1.1~n"),
+    %% test normal case
+    {stop, normal, ResendRequestTimeout_State_out} =
+	handle_info(ResendRequestTimeout_Signal, ResendRequestTimeout_State),
+
+    test_verify_resendrequest_timeout_result(ResendRequestTimeout_State, ResendRequestTimeout_State_out,
+					     terminated,
+					     {408, "Request Timeout"},
+					     1, 2
+					    ),
+
+    io:format("test: process_timer2/3 {resendrequest_timeout} - 2.1~n"),
+    %% test normal case with cancelled request
+    ResendRequestTimeout_State2 =
+	ResendRequestTimeout_State#state{do_cancel = {true, []},
+					 sipstate  = calling
+					},
+    {stop, normal, ResendRequestTimeout_State_out2} =
+	handle_info(ResendRequestTimeout_Signal, ResendRequestTimeout_State2),
+
+    test_verify_resendrequest_timeout_result(ResendRequestTimeout_State2, ResendRequestTimeout_State_out2,
+					     terminated,
+					     {487, "Request Terminated"},
+					     2, 2
+					    ),
+
+    io:format("test: process_timer2/3 {resendrequest_timeout} - 3.1~n"),
+    %% test normal case in state 'calling' with cancelled request
+    ResendRequestTimeout_State3 =
+	ResendRequestTimeout_State#state{do_cancel = false,
+					 sipstate  = calling
+					},
+    {stop, normal, ResendRequestTimeout_State_out3} =
+	handle_info(ResendRequestTimeout_Signal, ResendRequestTimeout_State3),
+
+    test_verify_resendrequest_timeout_result(ResendRequestTimeout_State3, ResendRequestTimeout_State_out3,
+					     terminated,
+					     {408, "Request Timeout"},
+					     3, 2
+					    ),
+
+    io:format("test: process_timer2/3 {resendrequest_timeout} - 4~n"),
+    %% test normal case in state 'proceeding', cancelled = true to not actually start a CANCEL transaction
+    ResendRequestTimeout_State4 =
+	ResendRequestTimeout_State#state{do_cancel = false,
+					 sipstate  = proceeding,
+					 cancelled = true
+					},
+    {noreply, ResendRequestTimeout_State4} =
+	handle_info(ResendRequestTimeout_Signal, ResendRequestTimeout_State4),
+
+    io:format("test: process_timer2/3 {resendrequest_timeout} - 5.1~n"),
+    %% test normal case in case 'proceeding' with non-INVITE request
+    ResendRequestTimeout_Request5 = (ResendRequestTimeout_State#state.request)#request{method = "OPTIONS"},
+    ResendRequestTimeout_State5 =
+	ResendRequestTimeout_State#state{sipstate = proceeding,
+					 request = ResendRequestTimeout_Request5
+					},
+    {stop, normal, ResendRequestTimeout_State_out5} =
+	handle_info(ResendRequestTimeout_Signal, ResendRequestTimeout_State5),
+
+    test_verify_resendrequest_timeout_result(ResendRequestTimeout_State5, ResendRequestTimeout_State_out5,
+					     terminated,
+					     {408, "Request Timeout"},
+					     5, 2
+					    ),
+
+    io:format("test: process_timer2/3 {resendrequest_timeout} - 6~n"),
+    %% test normal case in state 'proceeding', cancelled = true to not actually start a CANCEL transaction
+    ResendRequestTimeout_State6 =
+	ResendRequestTimeout_State#state{do_cancel = false,
+					 sipstate  = completed
+					},
+    {noreply, ResendRequestTimeout_State6} =
+	handle_info(ResendRequestTimeout_Signal, ResendRequestTimeout_State6),
+
+
+    %% process_timer2({invite_timeout}, Timer, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_timer2/3 {invite_timeout} - 0~n"),
+    {ok, InviteTimeout_Signal, InviteTimeout_Timerlist1} =
+	test_get_timer({invite_timeout}),
+
+    InviteTimeout_State =
+	#state{logtag    = "testing",
+	       socket    = #sipsocket{proto = yxa_test},
+	       timerlist = InviteTimeout_Timerlist1,
+	       request   = Test_Request,
+	       sipstate  = calling,
+	       report_to = self(),
+	       testing   = true,
+	       branch    = "branch",
+	       cancelled = true
+	      },
+
+    io:format("test: process_timer2/3 {invite_timeout} - 1.1~n"),
+    %% test normal case, a 408 Request Timeout response should be generated
+    {noreply, InviteTimeout_State_out} =
+	handle_info(InviteTimeout_Signal, InviteTimeout_State),
+
+    io:format("test: process_timer2/3 {invite_timeout} - 1.2~n"),
+    %% verify new state
+    {408, "Request Timeout"} = InviteTimeout_State_out#state.response,
+    InviteTimeout_State = InviteTimeout_State_out#state{response     = undefined,
+							final_r_sent = false
+						       },
+
+    io:format("test: process_timer2/3 {invite_timeout} - 1.3~n"),
+    %% verify that report_to was notified
+    Self = self(),
+    receive
+	{branch_result, Self, "branch", calling, {408, "Request Timeout"}} ->
+	    ok
+    after 0 ->
+	    throw("test failed, report_to was not notified about branch result")
+    end,
+
+
+    %% process_timer2({invite_expire}, Timer, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_timer2/3 {invite_expire} - 0~n"),
+    {ok, InviteExpire_Signal, InviteExpire_Timerlist1} =
+	test_get_timer({invite_expire}),
+
+    InviteExpire_State =
+	#state{logtag    = "testing",
+	       socket    = #sipsocket{proto = yxa_test},
+	       timerlist = InviteExpire_Timerlist1,
+	       request   = Test_Request,
+	       sipstate  = calling,
+	       report_to = self(),
+	       testing   = true,
+	       branch    = "branch",
+	       cancelled = false
+	      },
+
+    io:format("test: process_timer2/3 {invite_expire} - 1.1~n"),
+    %% test normal case, a 408 Request Timeout response should be generated
+    {stop, normal, InviteExpire_State_out} =
+	handle_info(InviteExpire_Signal, InviteExpire_State),
+
+    io:format("test: process_timer2/3 {invite_expire} - 1.2~n"),
+    %% verify new state
+    {408, "Request Timeout"} = InviteExpire_State_out#state.response,
+    InviteExpire_State = InviteExpire_State_out#state{response     = undefined,
+						      final_r_sent = false,
+						      sipstate     = calling,
+						      timerlist    = InviteExpire_State#state.timerlist
+						     },
+
+    io:format("test: process_timer2/3 {invite_expire} - 1.2~n"),
+    %% verify that report_to was notified
+    Self = self(),
+    receive
+	{branch_result, Self, "branch", terminated, {408, "Request Timeout"}} ->
+	    ok
+    after 0 ->
+	    throw("test failed, report_to was not notified about branch result")
+    end,
+
+
+    %% process_timer2(Signal, Timer, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_timer2/3 Unknown - 0~n"),
+    {ok, UnknownTimer_Signal, UnknownTimer_Timerlist1} =
+	test_get_timer(testing),
+    UnknownTimer_State =
+ 	#state{logtag    = "testing",
+	       timerlist = UnknownTimer_Timerlist1
+	      },
+
+    io:format("test: process_timer2/3 Unknown - 1~n"),
+    {noreply, UnknownTimer_State} = handle_info(UnknownTimer_Signal, UnknownTimer_State),
+
+
+    %% process_received_response(Response, State)
+    %%--------------------------------------------------------------------
+    io:format("test: process_received_response/2 - 1.0~n"),
+    put({sipsocket_test, is_reliable_transport}, false),
+    PRRes_State1 = #state{logtag    = "testing",
+			  socket    = #sipsocket{proto = yxa_test,
+						 module = sipsocket_test
+						},
+			  branch    = "branch",
+			  tl_branch = "tl_branch",
+			  dst       = Test_Dst,
+			  request   = Test_Request,
+			  sipstate  = calling,
+			  report_to = self(),
+			  timerlist = siptimer:empty(),
+			  testing   = true
+			 },
+    PPRes_Response1 = Test_Response#response{status = 400,
+					     reason = "Testing"
+					    },
+
+    io:format("test: process_received_response/2 - 1.1~n"),
+    PRRes_State1_out = process_received_response(PPRes_Response1, PRRes_State1),
+
+    io:format("test: process_received_response/2 - 1.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(PRRes_State1_out#state.timerlist),
+    400 = (PRRes_State1_out#state.response)#response.status,
+    "Testing" = (PRRes_State1_out#state.response)#response.reason,
+    [{terminate_transaction}] = siptimer:test_get_appsignals(PRRes_State1_out#state.timerlist),
+    completed = PRRes_State1_out#state.sipstate,
+
+    %% verify the ACK sent
+    {ok, PPRes_Request1_out} = test_verify_request_was_sent(Test_Request#request{method = "ACK", body = <<>>},
+							    "process_received_response/2", 1, 3),
+
+    io:format("test: process_received_response/2 - 1.6~n"),
+    %% verify that From, To and Call-Id was copied verbatim
+    lists:map(fun(H) ->
+		      OrigVal = keylist:fetch(H, Test_Response#response.header),
+		      AckVal = keylist:fetch(H, PPRes_Request1_out#request.header),
+		      OrigVal = AckVal
+	      end, ['from', 'to', 'call-id']),
+    ["1 ACK"] = keylist:fetch('cseq', PPRes_Request1_out#request.header),
+
+    io:format("test: process_received_response/2 - 1.7~n"),
+    %% verify that report_to was notified
+    Self = self(),
+    receive
+	{branch_result, Self, "branch", completed, #response{status = 400, reason = "Testing"}} ->
+	    ok
+    after 0 ->
+	    throw("test failed, report_to was not notified about branch result")
+    end,
+
+    io:format("test: process_received_response/2 - 1.8~n"),
+    %% verify that the ACK sent had a single Via (ours)
+    [PPRes_MyVia] = keylist:fetch('via', PPRes_Request1_out#request.header),
+
+    io:format("test: process_received_response/2 - 1.9~n"),
+    %% verify that it was our tl_branch (and not branch) that was put in the ACK's Via
+    true = (string:str(PPRes_MyVia, PRRes_State1#state.tl_branch) /= 0),
+
+    io:format("test: process_received_response/2 - 2.0~n"),
+    %% test same thing as previous test, but with Route header and alread in SIP-state 'completed'
+    %% (simulating a resent 4xx response after we sent our ACK)
+    PPRes_Route2 = ["<sip:route-a.example.com>", "<sip:route-b.example.com>"],
+    PPRes_Header2 = keylist:set("Route", PPRes_Route2, Test_Request#request.header),
+    PRRes_State2 = #state{logtag    = "testing",
+			  socket    = #sipsocket{proto = yxa_test,
+						 module = sipsocket_test
+						},
+			  branch    = "branch",
+			  tl_branch = "tl_branch",
+			  dst       = Test_Dst,
+			  request   = Test_Request#request{header = PPRes_Header2},
+			  sipstate  = confirmed,
+			  report_to = self(),
+			  timerlist = siptimer:empty(),
+			  testing   = true
+			 },
+    PPRes_Response2 = Test_Response#response{status = 401,
+					     reason = "Testing"
+					    },
+
+    io:format("test: process_received_response/2 - 2.1~n"),
+    PRRes_State2_out = process_received_response(PPRes_Response2, PRRes_State2),
+
+    io:format("test: process_received_response/2 - 2.2~n"),
+    %% verify new state
+    401 = (PRRes_State2_out#state.response)#response.status,
+    "Testing" = (PRRes_State2_out#state.response)#response.reason,
+    [] = siptimer:test_get_appsignals(PRRes_State2_out#state.timerlist),
+    confirmed = PRRes_State2_out#state.sipstate,
+
+    %% verify the ACK sent
+    {ok, PPRes_Request2_out} = test_verify_request_was_sent(Test_Request#request{method = "ACK", body = <<>>},
+							    "process_received_response/2", 2, 3),
+
+    io:format("test: process_received_response/2 - 2.6~n"),
+    %% verify that From, To and Call-Id was copied verbatim
+    lists:map(fun(H) ->
+		      OrigVal = keylist:fetch(H, Test_Response#response.header),
+		      AckVal = keylist:fetch(H, PPRes_Request2_out#request.header),
+		      OrigVal = AckVal
+	      end, ['from', 'to', 'call-id']),
+    ["1 ACK"] = keylist:fetch('cseq', PPRes_Request2_out#request.header),
+    PPRes_Route2 = keylist:fetch('route', PPRes_Request2_out#request.header),
+
+    io:format("test: process_received_response/2 - 2.7~n"),
+    %% verify that report_to was NOT notified (since we were already in SIP-state 'completed')
+    receive
+	{branch_result, Self, "branch", completed, #response{status = 401, reason = "Testing"}} ->
+	    throw("test failed, report_to was notified when it shouldn't have")
+    after 0 ->
+	    ok
+    end,
+
+    io:format("test: process_received_response/2 - 2.8~n"),
+    %% verify that the ACK sent had a single Via (ours)
+    [_PPRes_MyVia2] = keylist:fetch('via', PPRes_Request2_out#request.header),
+
+
+    io:format("test: process_received_response/2 - 3.0~n"),
+    PPRes_Response3 = Test_Response#response{status = 101,
+					     reason = "Testing"
+					    },
+
+    PRRes_State3 = PRRes_State1#state{sipstate = proceeding,
+				      response = PPRes_Response3#response{status = 100},
+				      request  = Test_Request#request{method = "TESTING"}
+				     },
+
+    io:format("test: process_received_response/2 - 3.1~n"),
+    %% test receiving a non-INVITE response, and at the same time test
+    %% update_transaction_state/4 without state change
+    PRRes_State3_out = process_received_response(PPRes_Response3, PRRes_State3),
+
+    io:format("test: process_received_response/2 - 3.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(PRRes_State3_out#state.timerlist),
+    101 = (PRRes_State3_out#state.response)#response.status,
+    "Testing" = (PRRes_State3_out#state.response)#response.reason,
+    [] = siptimer:test_get_appsignals(PRRes_State3_out#state.timerlist),
+    proceeding = PRRes_State3_out#state.sipstate,
+
+    erase({sipsocket_test, is_reliable_transport}),
+
+    %% act_on_new_sipstate2(SipState, BranchAction, State)
+    %%--------------------------------------------------------------------
+
+    io:format("test: act_on_new_sipstate2/3 proceeding - 1.1~n"),
+    %% test do_cancel set to {true, []}
+    ActOnNewSS_State1 = #state{logtag    = "testing",
+			       do_cancel = {true, []},
+			       cancelled = true,	%% to not actually start a CANCEL
+			       socket    = #sipsocket{proto = yxa_test,
+						      module = sipsocket_test
+						     },
+			       branch    = "branch",
+			       tl_branch = "tl_branch",
+			       dst       = Test_Dst,
+			       request   = Test_Request,
+			       response  = Test_Response,
+			       sipstate  = confirmed,
+			       report_to = self(),
+			       timerlist = siptimer:empty(),
+			       testing   = true
+			      },
+
+    {ActOnNewSS_State1_out, ignore} = act_on_new_sipstate2(proceeding, tell_parent, ActOnNewSS_State1),
+
+    io:format("test: act_on_new_sipstate2/3 proceeding - 1.2~n"),
+    %% verify new state
+    false = ActOnNewSS_State1_out#state.do_cancel,
+
+    io:format("test: act_on_new_sipstate2/3 proceeding - 2~n"),
+    %% test do_cancel set to false
+    ActOnNewSS_State2 = ActOnNewSS_State1#state{do_cancel = false},
+    {ActOnNewSS_State2, tell_parent} = act_on_new_sipstate2(proceeding, tell_parent, ActOnNewSS_State2),
+
+    io:format("test: act_on_new_sipstate2/3 proceeding - 3~n"),
+    %% test non-INVITE
+    ActOnNewSS_State3 = ActOnNewSS_State1#state{do_cancel = false,
+						request = Test_Request#request{method = "OPTIONS"}
+					       },
+    {ActOnNewSS_State3, tell_parent} = act_on_new_sipstate2(proceeding, tell_parent, ActOnNewSS_State3),
+
+
+    io:format("test: act_on_new_sipstate2/3 completed - 4.0~n"),
+    put({sipsocket_test, is_reliable_transport}, true),
+    ActOnNewSS_State4 = #state{logtag    = "testing",
+			       request   = Test_Request,
+			       sipstate  = confirmed,
+			       socket    = #sipsocket{proto = yxa_test, module = sipsocket_test},
+			       timerlist = siptimer:empty()
+			      },
+
+    io:format("test: act_on_new_sipstate2/3 completed - 4.1~n"),
+    %% test normal case with INVITE and reliable transport
+    {ActOnNewSS_State4_out, ignore} = act_on_new_sipstate2(completed, ignore, ActOnNewSS_State4),
+
+    io:format("test: act_on_new_sipstate2/3 completed - 4.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(ActOnNewSS_State4_out#state.timerlist),
+    [{terminate_transaction}] = siptimer:test_get_appsignals(ActOnNewSS_State4_out#state.timerlist),
+    erase({sipsocket_test, is_reliable_transport}),
+
+    io:format("test: act_on_new_sipstate2/3 completed - 5.1~n"),
+    %% test non-INVITE with unreliable transport
+    put({sipsocket_test, is_reliable_transport}, false),
+    ActOnNewSS_State5 = ActOnNewSS_State4#state{request = Test_Request#request{method = "OPTIONS"}},
+    {ActOnNewSS_State5_out, ignore} = act_on_new_sipstate2(completed, ignore, ActOnNewSS_State5),
+
+    io:format("test: act_on_new_sipstate2/3 completed - 5.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(ActOnNewSS_State5_out#state.timerlist),
+    [{terminate_transaction}] = siptimer:test_get_appsignals(ActOnNewSS_State5_out#state.timerlist),
+
+    io:format("test: act_on_new_sipstate2/3 terminated - 6~n"),
+    ActOnNewSS_State6 = #state{timerlist = siptimer:empty()},
+    {ActOnNewSS_State6, ignore} = act_on_new_sipstate2(terminated, ignore, ActOnNewSS_State6),
+
+    io:format("test: act_on_new_sipstate2/3 trying - 7~n"),
+    {#state{}, ignore} = act_on_new_sipstate2(calling, ignore, #state{}),
+
+    io:format("test: act_on_new_sipstate2/3 calling - 8~n"),
+    {#state{}, ignore} = act_on_new_sipstate2(calling, ignore, #state{}),
+
+
+    %% perform_branchaction(BranchAction, State)
+    %%--------------------------------------------------------------------
+    io:format("test: perform_branchaction/2 - 1~n"),
+    %% test final response when parent has already received a final response
+    PerformBAction_State1 = #state{logtag       = "testing",
+				   request      = Test_Request,
+				   response     = {400, "Testing"},
+				   final_r_sent = true,
+				   report_to    = self(),
+				   testing      = true
+				  },
+    PerformBAction_State1 = perform_branchaction(tell_parent, PerformBAction_State1),
+
+    io:format("test: perform_branchaction/2 - 2~n"),
+    %% test with undefined report_to
+    PerformBAction_State2 = PerformBAction_State1#state{report_to = undefined},
+    PerformBAction_State2 = perform_branchaction(tell_parent, PerformBAction_State2),
+
+    io:format("test: perform_branchaction/2 - 3~n"),
+    %% test with dead report_to
+    DeadPid = spawn(fun() -> ok end),
+    erlang:yield(),
+    PerformBAction_State3 = PerformBAction_State1#state{report_to = DeadPid},
+    PerformBAction_State3 = perform_branchaction(tell_parent, PerformBAction_State3),
+
+    io:format("test: perform_branchaction/2 - 4.1~n"),
+    %% test non-final response
+    PerformBAction_State4 = PerformBAction_State1#state{final_r_sent = false,
+							branch       = "branch",
+							sipstate     = proceeding,
+						        response     = {101, "Testing"}
+						       },
+    PerformBAction_State4 = perform_branchaction(tell_parent, PerformBAction_State4),
+
+    io:format("test: perform_branchaction/2 - 4.2~n"),
+    %% verify that report_to was notified
+    receive
+	{branch_result, Self, "branch", proceeding, {101, "Testing"}} ->
+	    ok
+    after 0 ->
+	    throw("test failed, report_to was not notified about branch result")
+    end,
+
+
+    %% received_response_state_machine(Method, Status, State)
     %%--------------------------------------------------------------------
 
     %% 17.1.1 INVITE Client Transaction
@@ -1564,6 +2324,7 @@ test() ->
     {'EXIT', {function_clause, _}} = (catch received_response_state_machine("INVITE", 700, trying)),
     {'EXIT', {function_clause, _}} = (catch received_response_state_machine("INVITE", 32984397, trying)),
 
+
     %% get_request_resend_timeout/3
     %%--------------------------------------------------------------------
 
@@ -1590,4 +2351,295 @@ test() ->
     4000 = get_request_resend_timeout("OPTIONS", 2000, proceeding),
     4000 = get_request_resend_timeout("OPTIONS", 4000, proceeding),
 
+
+    %% initiate_request(State)
+    %%--------------------------------------------------------------------
+
+    io:format("test: initiate_request/1 INVITE - 1.0~n"),
+    %% test normal case with INVITE transaction
+    InitiateReq_State1 = #state{logtag       = "testing",
+				branch       = "branch",
+				request      = Test_Request,
+				dst	     = Test_Dst,
+				socket_in    = #sipsocket{proto = yxa_test,
+							  module = sipsocket_test
+							 },
+				timerlist    = siptimer:empty(),
+				report_to    = self(),
+				timeout      = 40
+			       },
+
+    io:format("test: initiate_request/1 INVITE - 1.1~n"),
+    InitiateReq_State1_out = initiate_request(InitiateReq_State1),
+
+    io:format("test: initiate_request/1 INVITE - 1.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(InitiateReq_State1_out#state.timerlist),
+    [{resendrequest}, {resendrequest_timeout},
+     {invite_timeout}, {invite_expire}] = siptimer:test_get_appsignals(InitiateReq_State1_out#state.timerlist),
+    InitiateReq_State1 = InitiateReq_State1_out#state{
+			   timerlist = InitiateReq_State1#state.timerlist,
+			   tl_branch = undefined,
+			   socket    = undefined
+			  },
+
+    test_verify_request_was_sent(InitiateReq_State1#state.request, "initiate_request/1 INVITE", 1, 3),
+
+    io:format("test: initiate_request/1 non-INVITE - 2.0~n"),
+    %% test normal case with non-INVITE transaction
+    InitiateReq_State2 = #state{logtag       = "testing",
+				branch       = "branch",
+				request      = Test_Request#request{method = "TESTING"},
+				dst	     = Test_Dst,
+				socket_in    = #sipsocket{proto = yxa_test,
+							  module = sipsocket_test
+							 },
+				timerlist    = siptimer:empty(),
+				report_to    = self(),
+				timeout      = 40
+			       },
+
+    put({sipsocket_test, is_reliable_transport}, true),
+    io:format("test: initiate_request/1 non-INVITE - 2.1~n"),
+    InitiateReq_State2_out = initiate_request(InitiateReq_State2),
+    erase({sipsocket_test, is_reliable_transport}),
+
+    io:format("test: initiate_request/1 non-INVITE - 2.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(InitiateReq_State2_out#state.timerlist),
+    [{resendrequest_timeout}] = siptimer:test_get_appsignals(InitiateReq_State2_out#state.timerlist),
+    InitiateReq_State2 = InitiateReq_State2_out#state{
+			   timerlist = InitiateReq_State2#state.timerlist,
+			   tl_branch = undefined,
+			   socket    = undefined
+			  },
+
+    test_verify_request_was_sent(InitiateReq_State2#state.request, "initiate_request/1 non-INVITE", 2, 3),
+
+
+    io:format("test: initiate_request/1 - 3.0~n"),
+    %% test transport layer send error
+    InitiateReq_State3 = #state{logtag       = "testing",
+				branch       = "branch",
+				request      = Test_Request,
+				dst	     = Test_Dst,
+				socket_in    = #sipsocket{proto = yxa_test,
+							  module = sipsocket_test
+							 },
+				timerlist    = siptimer:empty(),
+				report_to    = self(),
+				sipstate     = calling,
+				timeout      = 40,
+				testing      = true
+			       },
+
+    put({sipsocket_test, send_result}, {error, "testing"}),
+    io:format("test: initiate_request/1 - 3.1~n"),
+    InitiateReq_State3_out = initiate_request(InitiateReq_State3),
+    erase({sipsocket_test, send_result}),
+
+    io:format("test: initiate_request/1 - 3.2~n"),
+    %% verify new state
+    [] = siptimer:test_get_appsignals(InitiateReq_State3_out#state.timerlist),
+    InitiateReq_State3 = InitiateReq_State3_out#state{
+			   response     = undefined,
+			   sipstate     = calling,
+			   final_r_sent = false
+			  },
+    {503, "Service Unavailable"} = InitiateReq_State3_out#state.response,
+    true = InitiateReq_State3_out#state.final_r_sent,
+    terminated = InitiateReq_State3_out#state.sipstate,
+
+    test_verify_request_was_sent(InitiateReq_State3#state.request, "initiate_request/1", 3, 3),
+
+    io:format("test: initiate_request/1 - 3.6~n"),
+    %% verify that report_to was notified
+    Self = self(),
+    receive
+	{branch_result, Self, "branch", terminated, {503, "Service Unavailable"}} ->
+	    ok
+    after 0 ->
+	    throw("test failed, report_to was not notified about branch result")
+    end,
+
+    %% end_invite(State)
+    %%--------------------------------------------------------------------
+
+    io:format("test: end_invite/1 - 1.0~n"),
+    %% test normal case with INVITE in state 'proceeding', CANCEL transaction will be started
+    EndInvite_State1 = #state{logtag    = "testing",
+			      tl_branch = "tl_branch",
+			      request   = Test_Request,
+			      dst	= Test_Dst,
+			      socket    = #sipsocket{proto = yxa_test,
+						     module = sipsocket_test
+						    },
+			      timerlist = siptimer:empty(),
+			      report_to = self(),
+			      sipstate  = proceeding,
+			      timeout   = 40,
+			      testing   = true
+			     },
+
+    io:format("test: end_invite/1 - 1.1~n"),
+    {ok, testing, EndInvite_State1_out, CancelStartArgs} = end_invite(EndInvite_State1),
+
+    io:format("test: end_invite/1 - 1.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(EndInvite_State1_out#state.timerlist),
+    [{terminate_transaction}] = siptimer:test_get_appsignals(EndInvite_State1_out#state.timerlist),
+    testing = EndInvite_State1_out#state.cancel_pid,
+
+    io:format("test: end_invite/1 - 1.3~n"),
+    %% verify arguments that would have been used to start the CANCEL transaction
+    EndInviteSocket1 = EndInvite_State1#state.socket,
+    EndInviteDst1 = EndInvite_State1#state.dst,
+    [#request{method = "CANCEL"},
+     EndInviteSocket1,
+     EndInviteDst1,
+     "tl_branch",
+     _EndInviteTimeout1,
+     none] = CancelStartArgs,
+
+    io:format("test: end_invite/1 - 2~n"),
+    %% test sipstate 'completed', should be ignored
+    EndInvite_State2 = #state{request  = Test_Request,
+			      logtag   = "testing",
+			      sipstate = completed
+			     },
+    EndInvite_State2 = end_invite(EndInvite_State2),
+
+    io:format("test: end_invite/1 - 2~n"),
+    %% test sipstate 'terminated', should be ignored
+    EndInvite_State3 = #state{request  = Test_Request,
+			      logtag   = "testing",
+			      sipstate = terminated
+			     },
+    EndInvite_State3 = end_invite(EndInvite_State3),
+
+
+    %% cancel_request(State, ExtraHeaders)
+    %%--------------------------------------------------------------------
+
+    io:format("test: cancel_request/2 - 1.0~n"),
+    CancelRequest_State1_1 = #state{request = Test_Request#request{method = "TESTING"},
+				    logtag  = "testing",
+				    timerlist = siptimer:empty()
+				   },
+    CancelRequest_State1 = add_timer(10000, "testing timer", {resendrequest}, CancelRequest_State1_1),
+
+    io:format("test: cancel_request/2 - 1.1~n"),
+    CancelRequest_State1_out = cancel_request(CancelRequest_State1, []),
+
+    io:format("test: cancel_request/2 - 1.1~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(CancelRequest_State1_out#state.timerlist),
+    [{terminate_transaction}] = siptimer:test_get_appsignals(CancelRequest_State1_out#state.timerlist),
+    completed = CancelRequest_State1_out#state.sipstate,
+    true = CancelRequest_State1_out#state.cancelled,
+    CancelRequest_State1 = CancelRequest_State1_out#state{timerlist = CancelRequest_State1#state.timerlist,
+							  sipstate  = undefined,
+							  cancelled = false
+							 },
+
+    %% update_invite_expire(Status, State)
+    %%--------------------------------------------------------------------
+
+    io:format("test: update_invite_expire/2 - 1.0~n"),
+    UpdInvExp_State1_1 = #state{logtag    = "testing",
+				timerlist = siptimer:empty()
+			       },
+    UpdInvExp_State1 = add_timer(10000, "test timer", {invite_expire}, UpdInvExp_State1_1),
+
+    io:format("test: update_invite_expire/2 - 1.1~n"),
+    %% test normal case
+    UpdInvExp_State1_out = update_invite_expire(101, UpdInvExp_State1),
+
+    io:format("test: update_invite_expire/2 - 1.2~n"),
+    %% verify new state
+    siptimer:cancel_all_timers(UpdInvExp_State1_out#state.timerlist),
+    [{invite_expire}] = siptimer:test_get_appsignals(UpdInvExp_State1_out#state.timerlist),
+    UpdInvExp_State1 = UpdInvExp_State1_out#state{timerlist = UpdInvExp_State1#state.timerlist},
+
+    io:format("test: update_invite_expire/2 - 2.0~n"),
+    UpdInvExp_State2 = #state{logtag    = "testing",
+			      timerlist = siptimer:empty()
+			     },
+
+    io:format("test: update_invite_expire/2 - 2.1~n"),
+    %% test with no timer found in list
+    UpdInvExp_State2 = update_invite_expire(101, UpdInvExp_State2),
+
+
     ok.
+
+
+test_verify_request_was_sent(Request, TestLabel, Major, Minor) ->
+    test_verify_request_was_sent(Request, TestLabel, Major, Minor, 0).
+
+test_verify_request_was_sent(Request, TestLabel, Major, Minor, Timeout) when is_record(Request, request),
+									     is_list(TestLabel),
+									     is_integer(Major), is_integer(Minor),
+									     is_integer(Timeout) ->
+    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor]),
+    %% check that a request was generated
+    receive
+	{sipsocket_test, send, {yxa_test, "192.0.2.27", 6050}, SipMsg} ->
+	    %% parse message that was 'sent'
+	    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor + 1]),
+	    ParsedRequest = sippacket:parse(SipMsg, none),
+	    true = is_record(ParsedRequest, request),
+
+	    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor + 2]),
+	    %% check that it was the expected response that was resent
+	    {Method, URI, Body} = {Request#request.method, Request#request.uri, Request#request.body},
+
+	    #request{method = Method,
+		     uri    = URI,
+		     body   = Body
+		    } = ParsedRequest,
+	    {ok, ParsedRequest}
+    after Timeout ->
+	    throw("test failed, SIP message 'sent' not found in process mailbox")
+    end.
+
+
+test_verify_resendrequest_timeout_result(State, State_out, SipState, Response, Major, Minor) ->
+    io:format("test: process_timer2/3 {resendrequest_timeout} - ~p.~p~n", [Major, Minor]),
+    %% verify new state
+    SipState = State_out#state.sipstate,
+    Response = State_out#state.response,
+    State = State_out#state{
+	      sipstate     = State#state.sipstate,
+	      response     = State#state.response,
+	      timerlist    = State#state.timerlist,
+	      final_r_sent = State#state.final_r_sent
+	     },
+
+    io:format("test: process_timer2/3 {resendrequest_timeout} - ~p.~p~n", [Major, Minor + 1]),
+    %% verify that report_to was notified
+    Self = self(),
+    receive
+	{branch_result, Self, "branch", SipState, Response} ->
+	    ok
+    after 0 ->
+	    throw("test failed, report_to was not notified about branch result")
+    end.
+
+%% set up a timer and let it fire, and then return the signal plus a timerlist
+test_get_timer(AppSignal) ->
+    Timerlist =
+	siptimer:add_timer(1, "Testing testing",
+			   AppSignal,
+			   siptimer:empty()
+			  ),
+
+    Signal =
+	receive
+	    {siptimer, Ref, "Testing testing"} ->
+		{siptimer, Ref, "Testing testing"}
+	after 100 ->
+		throw("test failed, the timer we set up never fired")
+	end,
+
+    {ok, Signal, Timerlist}.
