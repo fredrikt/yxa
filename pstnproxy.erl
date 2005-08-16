@@ -92,7 +92,7 @@ request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Or
 	    end;
 	sip ->
 	    logger:log(normal, "~s: pstnproxy: Route request to SIP server", [LogTag]),
-	    request_to_sip(Request, Origin, THandler);
+	    request_to_sip(Request, THandler);
 	me ->
 	    request_to_me(THandler, Request, LogTag);
 	drop ->
@@ -221,9 +221,8 @@ first_route_is_pstngateway(Header) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: request_to_sip(Request, Origin, THandler)
+%% Function: request_to_sip(Request, THandler)
 %%           Request  = request record()
-%%           Origin   = siporigin record()
 %%           THandler = term(), server transaction handle
 %% Descrip.: It has been determined that we should send this
 %%           request to a VoIP destination (i.e. anything else than
@@ -233,7 +232,7 @@ first_route_is_pstngateway(Header) ->
 %%           a phone number.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_record(Origin, siporigin) ->
+request_to_sip(Request, THandler) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     Dest = case is_localhostname(URI#sipurl.host) of
 	       true ->
@@ -244,11 +243,7 @@ request_to_sip(Request, Origin, THandler) when is_record(Request, request), is_r
 	   end,
     case Dest of
 	{proxy, NewURI} when is_record(NewURI, sipurl) ->
-	    NewHeader1 = case yxa_config:get_env(record_route) of
-			     {ok, true} -> siprequest:add_record_route(Request#request.header, Origin);
-			     {ok, false} -> Request#request.header
-			 end,
-	    NewHeader = add_caller_identity_for_sip(Method, NewHeader1),
+	    NewHeader = add_caller_identity_for_sip(Method, Request#request.header),
 	    NewRequest = Request#request{header=NewHeader},
 	    proxy_request(THandler, NewRequest, NewURI);
 	{reply, Status, Reason} ->
@@ -316,15 +311,6 @@ request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, reque
     {URI, Header} = {Request#request.uri, Request#request.header},
     {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
 
-    %% Add Record-Route header, unless explicitly configured not to. pstnproxy needs to
-    %% be in the signalling path since the calling party is typically not permitted
-    %% to send SIP messages directly to the PSTN gateway(s).
-    NewHeader1 = case yxa_config:get_env(record_route) of
-		     {ok, true} -> siprequest:add_record_route(Header, Origin);
-		     {ok, false} -> Header
-		 end,
-    Request1 = Request#request{header = NewHeader1},
-
     Decision = 
 	case is_localhostname(ToHost) of
 	    true ->
@@ -332,14 +318,14 @@ request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, reque
 		%% should be running alone on a host.
 		case local:lookuppstn(DstNumber) of
 		    {proxy, Dst} when is_record(Dst, sipurl) ->
-			{relay, Dst, Request1};
+			{relay, Dst, Request};
 		    {relay, Dst} when is_record(Dst, sipurl) ->
-			{relay, Dst, Request1};
+			{relay, Dst, Request};
 		    none ->
-			request_to_pstn_non_e164(DstNumber, Request1, Origin, THandler)
+			request_to_pstn_non_e164(DstNumber, Request, Origin, THandler)
 		end;
 	    false ->
-		{relay, URI, Request1}
+		{relay, URI, Request}
 	end,
 
     case Decision of

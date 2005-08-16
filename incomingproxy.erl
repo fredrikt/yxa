@@ -203,14 +203,9 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 %%           supposed to.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Origin, siporigin) ->
-    {Method, URI} = {RequestIn#request.method, RequestIn#request.uri},
+do_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
     logger:log(debug, "incomingproxy: Processing request ~s ~s~n", [Method, sipurl:print(URI)]),
-    Header = case yxa_config:get_env(record_route) of
-		 {ok, true} -> siprequest:add_record_route(RequestIn#request.header, Origin);
-		 {ok, false} -> RequestIn#request.header
-	     end,
-    Request = RequestIn#request{header = Header},
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
     Location = route_request(Request, LogTag),

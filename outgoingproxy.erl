@@ -97,16 +97,11 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
 %% Internal functions
 %%====================================================================
 
-do_request(RequestIn, Origin) when is_record(RequestIn, request), is_record(Origin, siporigin) ->
-    {Method, URI} = {RequestIn#request.method, RequestIn#request.uri},
+do_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
+    {Method, URI} = {Request#request.method, Request#request.uri},
 
     %% outgoingproxys need to add Record-Route header to make sure in-dialog requests go
     %% through the proxy.
-    NewHeader1 = case yxa_config:get_env(record_route) of
-		     {ok, true} -> siprequest:add_record_route(RequestIn#request.header, Origin);
-		     {ok, false} -> RequestIn#request.header
-		 end,
-    Request = RequestIn#request{header = NewHeader1},
 
     Location = route_request(Request),
     logger:log(debug, "outgoingproxy: Location: ~p", [Location]),

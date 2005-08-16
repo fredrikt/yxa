@@ -221,8 +221,9 @@ check_proxy_request(Request) when is_record(Request, request) ->
     NewHeader1 = proxy_check_maxforwards(Request#request.header),
     check_valid_proxy_request(Request#request.method, NewHeader1),
     NewHeader2 = fix_content_length(NewHeader1, Request#request.body),
-    ApproxMsgSize = get_approximate_msgsize(Request#request{header=NewHeader2}),
-    {ok, NewHeader2, ApproxMsgSize}.
+    NewHeader3 = add_record_route(Request#request.uri, NewHeader2),
+    ApproxMsgSize = get_approximate_msgsize(Request#request{header=NewHeader3}),
+    {ok, NewHeader3, ApproxMsgSize}.
 
 %%--------------------------------------------------------------------
 %% Function: get_approximate_msgsize(Request)
@@ -618,26 +619,32 @@ create_via(Proto, Parameters) ->
 
 %%--------------------------------------------------------------------
 %% Function: add_record_route(Proto, Hostname, Port, Header)
-%%           Proto      = term()
+%%           Proto      = "sips" | "sip" | string()
 %%           Hostname   = string()
-%%           Port       = integer() | none ???
+%%           Port       = integer() | none
 %%           Header     = keylist record()
 %% Descrip.: Prepend a Record-Route header for Proto:Host:Port to the
 %%           Header keylist.
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
-add_record_route(Proto, Hostname, Port, Header) ->
+add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hostname), is_integer(Port);
+						     Port == none ->
     Param1 = ["maddr=" ++ siphost:myip(), "lr=true"],
-    Param2 = if
-		 Proto == tcp; Proto == tcp6 ->
-		     lists:append(Param1, ["transport=tcp"]);
-		 Proto == tls; Proto == tls6 ->
-		     lists:append(Param1, ["transport=tls"]);
-		 true ->
-		     Param1
-	     end,
-    RouteStr = sipurl:print(sipurl:new([{host, Hostname}, {port, Port}, {param, Param2}])),
-    %% Check if our Record-Route (CRoute) is already present as the first entry of
+    RR_Elems =
+	case Port of
+	    Port when is_integer(Port) ->
+		%% Set port unless explicitly told not to. This is to minimize the chances
+		%% of problems with wrong port number in NAPTR/SRV records for MyHostname
+		%% etc. (ACK of 200 Ok response to INVITE is particularly vulnerable to this
+		%% kind of problem since it is always forwarded completely without state).
+		[{proto, Proto}, {host, Hostname}, {port, Port}, {param, Param1}];
+	    none ->
+		%% It was requested that we don't include a port number.
+		[{proto, Proto}, {host, Hostname}, {param, Param1}]
+	end,
+    RouteStr = sipurl:print( sipurl:new(RR_Elems) ),
+
+    %% Check if our Record-Route (RouteStr) is already present as the first entry of
     %% the Record-Route set in Header.
     AlreadyPresent =
 	case sipheader:record_route(Header) of
@@ -660,16 +667,23 @@ add_record_route(Proto, Hostname, Port, Header) ->
 	    keylist:prepend({"Record-Route", [Route]}, Header)
     end.
 %%--------------------------------------------------------------------
-%% Function: add_record_route(Header, Origin)
+%% Function: add_record_route(URL, Header)
+%%           URL    = sipurl record(), original Request-URI
 %%           Header = keylist record()
-%%           Origin = siporigin record()
 %% Descrip.: Prepend a Record-Route header for this proxy, based on
-%%           the Origin record, to Header.
+%%           the original Request-URI, to Header.
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
-add_record_route(Header, Origin) when is_record(Origin, siporigin) ->
-    Port = sipsocket:get_listenport(Origin#siporigin.proto),
-    add_record_route(Origin#siporigin.proto, myhostname(), Port, Header).
+add_record_route(URL, Header) when is_record(URL, sipurl) ->
+    {Port, Proto} =
+	case URL#sipurl.proto of
+	    "sips" ->
+		{sipsocket:get_listenport(tls), "sips"};
+	    _ ->
+		%% Create sip: Record-Route for everything except SIPS-URIs
+		{sipsocket:get_listenport(udp), "sip"}
+	end,
+    add_record_route(Proto, myhostname(), Port, Header).
 
 %%--------------------------------------------------------------------
 %% Function: standardcopy(Header, ExtraHeaders)
@@ -903,14 +917,14 @@ test() ->
     {'EXIT', {function_clause, _}} = (catch create_via(foo, [])),
 
 
-    %% add_record_route(Header, SipOrigin)
+    %% add_record_route(URL, Header)
     %% and implicitly add_record_route/4
     %%--------------------------------------------------------------------
     io:format("test: add_record_route/2 - 1~n"),
     EmptyHeader = keylist:from_list([]),
     MyIP = siphost:myip(),
 
-    RRHeader1 = add_record_route(EmptyHeader, #siporigin{proto=tcp}),
+    RRHeader1 = add_record_route(sipurl:parse("sip:ft@one.example.org;transport=tcp"), EmptyHeader),
 
     %% check that there is now a single Record-Route in RRHeader1
     io:format("test: add_record_route/2 - 2~n"),
@@ -930,46 +944,49 @@ test() ->
     io:format("test: add_record_route/2 - 4.2~n"),
     [MyIP] = url_param:find(RRParam1, "maddr"),
     ["true"] = url_param:find(RRParam1, "lr"),
-    ["tcp"] = url_param:find(RRParam1, "transport"),
+    %% we should never set transport
+    [] = url_param:find(RRParam1, "transport"),
 
     %% contact.contact_param
     io:format("test: add_record_route/2 - 5~n"),
     EmptyContactParam = contact_param:to_norm([]),
     EmptyContactParam = RRoute1#contact.contact_param,
 
-    %% udp protocol
+    %% Already existing RR, and test SIPS protocol as well
     io:format("test: add_record_route/2 - 6.1~n"),
-    RRHeader2 = add_record_route(RRHeader1, #siporigin{proto=udp}),
-
+    RRHeader2 = add_record_route(sipurl:parse("sips:ft@two.example.org;transport=tls"), RRHeader1),
     %% get our RRoute2 and also check that RRoute1 is still there
     io:format("test: add_record_route/2 - 6.2~n"),
     [RRoute2, RRoute1] = sipheader:record_route(RRHeader2),
 
     %% contact.urlstr
     io:format("test: add_record_route/2 - 6.3~n"),
-    #sipurl{proto="sip", host=MyHostname, port=SipLPort, param_pairs=RRParam2} =
+    #sipurl{proto="sips", host=MyHostname, port=SipsLPort, param_pairs=RRParam2} =
 	sipurl:parse(RRoute2#contact.urlstr),
 
     %% contact.urlstr sipurl parameters
     io:format("test: add_record_route/2 - 6.4~n"),
     [MyIP] = url_param:find(RRParam2, "maddr"),
     ["true"] = url_param:find(RRParam2, "lr"),
+    %% transport=tls is deprecated
     [] = url_param:find(RRParam2, "transport"),
 
     %% check that add_record_route/2 does not add duplicate Record-Route
     io:format("test: add_record_route/2 - 7~n"),
-    RRHeader3 = add_record_route(RRHeader2, #siporigin{proto=udp}),
+    RRHeader3 = add_record_route(sipurl:parse("sips:ft@two.example.org;transport=tls"), RRHeader2),
 
     io:format("test: add_record_route/2 - 8~n"),
     [RRoute2, RRoute1] = sipheader:record_route(RRHeader3),
 
     io:format("test: add_record_route/2 - 9.1~n"),
-    RRHeader9 = add_record_route(EmptyHeader, #siporigin{proto=tls}),
+    %% check that we don't care about unknown transport=
+    RRHeader9 = add_record_route(sipurl:parse("sip:ft@foo.example.org;transport=foo"), EmptyHeader),
 
     io:format("test: add_record_route/2 - 9.2~n"),
     [RRoute9] = sipheader:record_route(RRHeader9),
     RRoute9_URL = sipurl:parse(RRoute9#contact.urlstr),
-    ["tls"] = url_param:find(RRoute9_URL#sipurl.param_pairs, "transport"),
+    %% we should never set transport
+    [] = url_param:find(RRoute9_URL#sipurl.param_pairs, "transport"),
 
 
     %% build request header
@@ -1103,7 +1120,8 @@ test() ->
     io:format("test: check_proxy_request/1 - 5~n"),
     %% can't do exact match here since size depends on variables like hostname
     %% or IP address as string which is not the same for everyone
-    case (ApproxMsgSize2_2 >= 500) and (ApproxMsgSize2_2 =< 600) of
+    RecordRouteLen = length(lists:flatten( keylist:fetch('record-route', ReqHeader2_2) )),
+    case (ApproxMsgSize2_2 >= 500 + RecordRouteLen) and (ApproxMsgSize2_2 =< 600 + RecordRouteLen) of
 	true ->
 	    ok;
 	false ->

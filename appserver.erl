@@ -111,11 +111,6 @@ request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin
 %%
 %% Anything but REGISTER, ACK and CANCEL
 request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
-    Header = case yxa_config:get_env(record_route) of
-		 {ok, true} -> siprequest:add_record_route(Request#request.header, Origin);
-		 {ok, false} -> Request#request.header
-	     end,
-    NewRequest = Request#request{header=Header},
     case local:is_request_to_this_proxy(Request) of
 	true ->
 	    request_to_me(Request, LogStr);
@@ -125,9 +120,13 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 	    %% fork, and this request should just be proxyed - not forked.
 	    case keylist:fetch('route', Request#request.header) of
 		[] ->
-		    create_session(NewRequest, Origin, LogStr, true);
+		    create_session(Request, Origin, LogStr, true);
 		_ ->
 		    %% XXX check credentials here - our appserver is currently an open relay!
+		    %% Also, should we act as stateless proxy just because we are not going to
+		    %% fork? What about starting a sippipe? What if we received the request over
+		    %% a reliable transport, but send it out using non-reliable transport? We
+		    %% can't do that without making sure we will do retransmissions.
 		    logger:log(debug, "Appserver: Request '~s ~s' has Route header. Forwarding statelessly.",
 			       [Request#request.method, sipurl:print(Request#request.uri)]),
 		    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
