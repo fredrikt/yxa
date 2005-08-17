@@ -97,6 +97,7 @@ start_link() ->
 			  {ok, Name} ->
 			      Name;
 			  _ ->
+			      io:format("ERROR: Can't start logger: Application name undefined~n"),
 			      erlang:error("Application name undefined")
 		      end
 	      end,
@@ -166,8 +167,8 @@ quit(Msg) ->
 %%--------------------------------------------------------------------
 %% Function: init([Basename])
 %%           Basename = string(), log filename base
-%% Description: Initiates the server
-%% Returns: {ok, State}
+%% Descrip.: Initiates the server
+%% Returns : {ok, State}
 %%--------------------------------------------------------------------
 init([Basename]) ->
     %% Check if we should rotate log files when they reach a upper
@@ -184,9 +185,18 @@ init([Basename]) ->
     DebugFn = lists:concat([Basename, ".debug"]),
     NormalFn = lists:concat([Basename, ".log"]),
     ErrorFn = lists:concat([Basename, ".error"]),
-    {ok, DebugIoDevice} = safe_open(DebugFn, ?FILE_OPTS),
-    {ok, NormalIoDevice} = safe_open(NormalFn, ?FILE_OPTS),
-    {ok, ErrorIoDevice} = safe_open(ErrorFn, ?FILE_OPTS),
+    {DebugIoDevice, NormalIoDevice, ErrorIoDevice} =
+	try
+	    begin
+		{ok, D_Dev} = safe_open(DebugFn, ?FILE_OPTS),
+		{ok, N_Dev} = safe_open(NormalFn, ?FILE_OPTS),
+		{ok, E_Dev} = safe_open(ErrorFn, ?FILE_OPTS),
+		{D_Dev, N_Dev, E_Dev}
+	    end
+	catch
+	    X:Y ->
+		io:format("ERROR: Failed opening logfiles : ~p ~p~n", [X, Y])
+	end,
     {ok, #state{debug_iodev=DebugIoDevice, debug_fn=DebugFn,
 		normal_iodev=NormalIoDevice, normal_fn=NormalFn,
 		error_iodev=ErrorIoDevice, error_fn=ErrorFn}}.
@@ -341,12 +351,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %% XXX is it ok, to call erlang:fault/2 if file can't be opened ?
-safe_open(Filename, Args) ->
+safe_open(Filename, Args) when is_list(Filename) ->
     case file:open(Filename, Args) of
 	{ok, FD} ->
 	    {ok, FD};
-	{error, _E} ->
-	    erlang:fault("Error opening logfile", [Filename, Args])
+	{error, E} ->
+	    EStr = file:format_error(E),
+	    Msg = io_lib:format("Error opening logfile '~s' : ~s (~p)", [Filename, EStr, E]),
+	    erlang:fault(lists:flatten(Msg), [Filename, Args])
     end.
 
 %%--------------------------------------------------------------------
