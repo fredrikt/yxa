@@ -15,6 +15,7 @@
 	 safe_spawn_fun/2,
 	 safe_spawn/3,
 	 origin2str/1,
+
 	 test/0
 	]).
 
@@ -82,7 +83,7 @@ start(normal, [AppModule]) ->
 	    {ok, Supervisor} = sipserver_sup:start_transportlayer(Supervisor),
 	    %% now that everything is started, seed ssl with more stuff
 	    ssl:seed([
-		      io_lib:format("~p ~p", 
+		      io_lib:format("~p ~p",
 				    [now(),
 				     yxa_config:list()
 				    ])
@@ -586,9 +587,10 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
 process_parsed_packet(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     NewHeader2 = fix_topvia_received_rport(Request#request.header, Origin),
     check_packet(Request#request{header=NewHeader2}, Origin),
-    {NewURI, NewHeader3} =
+    {NewURI1, NewHeader3} =
 	case received_from_strict_router(Request#request.uri, NewHeader2) of
 	    true ->
+		%% RFC3261 #16.4 (Route Information Preprocessing)
 		logger:log(debug, "Sipserver: Received request with a"
 			   " Request-URI I (probably) put in a Record-Route. "
 			   "Pop real Request-URI from Route-header."),
@@ -607,6 +609,7 @@ process_parsed_packet(Request, Origin) when is_record(Request, request), is_reco
 	    false ->
 		{Request#request.uri, NewHeader2}
 	end,
+    NewURI = remove_maddr_matching_me(NewURI1, Origin),
     NewHeader4 = remove_route_matching_me(NewHeader3),
     NewRequest = Request#request{uri=NewURI, header=NewHeader4},
     LogStr = make_logstr(NewRequest, Origin),
@@ -763,8 +766,8 @@ replace_top_via(NewVia, Header) when is_record(NewVia, via) ->
 %%           if it is something we (possibly) put in a Record-Route
 %%           and this is a request sent from a strict router
 %%           (RFC2543 compliant UA).
-%% Returns: true |
-%%          false
+%% Returns : true |
+%%           false
 %%--------------------------------------------------------------------
 received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     MyPorts = sipsocket:get_all_listenports(),
@@ -772,41 +775,129 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
     HostnameList = MyHostnames ++ siphost:myip_list(),
     %% If the URI has a username in it, it is not something we've put in a Record-Route
-    UsernamePresent = case URI#sipurl.user of
-			  none -> false;
-			  T when is_list(T) -> true
-		      end,
-    HostnameIsMyHostname = util:casegrep(URI#sipurl.host, HostnameList),
-    %% In theory, we should not treat an absent port number in this Request-URI as
-    %% if the default port number was specified in there, but in practice that is
-    %% what we have to do since some UAs can remove the port we put into the
-    %% Record-Route
-    Port = sipsocket:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
-    PortMatches = lists:member(Port, MyPorts),
-    MAddrMatch = case url_param:find(URI#sipurl.param_pairs, "maddr") of
-		     [MyIP] -> true;
-		     [_OtherIP] ->
-			 false;
-		     [] ->
-			 %% this should really return 'false', but some SIP-stacks
-			 %% evidently strip parameters so we treat the absence of maddr
-			 %% parameter as if it matches
-			 true
-		 end,
-    HeaderHasRoute = case keylist:fetch('route', Header) of
-			 [] -> false;
-			 _ -> true
-		     end,
-    if
-	UsernamePresent /= false -> false;
-	HostnameIsMyHostname /= true -> false;
-	PortMatches /= true -> false;
-	MAddrMatch /= true -> false;
-	HeaderHasRoute /= true ->
-	    logger:log(debug, "Sipserver: Warning: Request-URI looks like something"
-		       " I put in a Record-Route header, but request has no Route!"),
+    case URI#sipurl.user of
+	T when is_list(T) ->
+	    %% short-circuit the rest of the checks for efficiency (most normal Request-URI's
+	    %% have the username part set).
 	    false;
-	true -> true
+	none ->
+	    LCHost = http_util:to_lower(URI#sipurl.host),
+	    HostnameIsMyHostname = lists:member(LCHost, HostnameList),
+	    %% In theory, we should not treat an absent port number in this Request-URI as
+	    %% if the default port number was specified in there, but in practice that is
+	    %% what we have to do since some UAs can remove the port we put into the
+	    %% Record-Route
+	    Port = sipsocket:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
+	    PortMatches = lists:member(Port, MyPorts),
+	    MAddrMatch = case url_param:find(URI#sipurl.param_pairs, "maddr") of
+			     [MyIP] -> true;
+			     [_OtherIP] ->
+				 false;
+			     [] ->
+				 %% this should really return 'false', but some SIP-stacks
+				 %% evidently strip parameters so we treat the absence of maddr
+				 %% parameter as if it matches
+				 true
+			 end,
+	    HeaderHasRoute = case keylist:fetch('route', Header) of
+				 [] -> false;
+				 _ -> true
+			     end,
+	    if
+		HostnameIsMyHostname /= true -> false;
+		PortMatches /= true -> false;
+		MAddrMatch /= true -> false;
+		HeaderHasRoute /= true ->
+		    logger:log(debug, "Sipserver: Warning: Request-URI looks like something"
+			       " I put in a Record-Route header, but request has no Route!"),
+		    false;
+		true -> true
+	    end
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: remove_maddr_matching_me(URI, Origin)
+%%           URI    = sipurl record()
+%%           Origin = siporigin record()
+%% Descrip.: Perform some rather complex processing of a Request-URI
+%%           if it has an maddr parameter. RFC3261 #16.4 (Route
+%%           Information Preprocessing) requires this as some kind of
+%%           backwards compatibility thing for clients that are
+%%           trying to do loose routing while being strict routers.
+%%           The world would be a better place without this need.
+%% Returns : NewURI = sipurl record()
+%%--------------------------------------------------------------------
+remove_maddr_matching_me(URI, Origin) when is_record(URI, sipurl), is_record(Origin, siporigin) ->
+    case url_param:find(URI#sipurl.param_pairs, "maddr") of
+        [MAddr] ->
+	    LCMaddr = http_util:to_lower(MAddr),
+	    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
+	    {ok, Homedomains} = yxa_config:get_env(homedomain, []),
+	    case lists:member(LCMaddr, siphost:myip_list())
+		orelse lists:member(LCMaddr, MyHostnames)
+		orelse lists:member(LCMaddr, Homedomains) of
+		true ->
+		    %% Ok, maddr matches me or something 'the proxy is configured
+		    %% to be responsible for'. Now check if port and transport in URI
+		    %% matches what we received the request using, either explicitly
+		    %% or by default. Sigh.
+		    Port = sipsocket:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
+		    MyPort = case URI#sipurl.proto of
+				 "sips" -> sipsocket:get_listenport(tls);
+				 _ -> sipsocket:get_listenport(udp)
+			     end,
+		    case (Port == MyPort) of
+			true ->
+			    IsDefaultPort = (Port == sipsocket:default_port(URI#sipurl.proto, none)),
+			    %% lastly check transport parameter too
+			    case url_param:find(URI#sipurl.param_pairs, "transport") of
+				[] ->
+				    NewParam = url_param:remove(URI#sipurl.param_pairs, "maddr"),
+				    %% implicit match since transport was not specified,
+				    %% now 'strip the maddr and any non-default port'
+				    case IsDefaultPort of
+					true ->
+					    sipurl:set([{param, NewParam}], URI);
+					false ->
+					    sipurl:set([{param, NewParam}, {port, none}], URI)
+				    end;
+				[Transport] ->
+				    LCTransport = http_util:to_lower(Transport),
+				    Matches =
+					case {LCTransport, Origin#siporigin.proto} of
+					    {"tcp", TCP} when TCP == tcp; TCP == tcp6 -> true;
+					    {"udp", UDP} when UDP == udp; UDP == udp6 -> true;
+					    {"tls", TLS} when TLS == tls; TLS == tls6 -> true;
+					    _ -> false
+					end,
+				    case Matches of
+					true ->
+					    %% explicit match on transport, 'strip the maddr and any
+					    %% non-default port or transport parameter'
+					    NewParam1 = url_param:remove(URI#sipurl.param_pairs, "maddr"),
+					    NewParam = url_param:remove(NewParam1, "transport"),
+					    case IsDefaultPort of
+						true ->
+						    sipurl:set([{param, NewParam}], URI);
+						false ->
+						    sipurl:set([{param, NewParam}, {port, none}], URI)
+					    end;
+					false ->
+					    %% transport parameter did not match
+					    URI
+				    end
+			    end;
+			false ->
+			    %% port did not match
+			    URI
+		    end;
+		false ->
+		    %% maddr does not match me
+		    URI
+	    end;
+	_ ->
+	    %% no maddr
+	    URI
     end.
 
 %%--------------------------------------------------------------------
@@ -1105,6 +1196,7 @@ origin2str(Origin) when is_record(Origin, siporigin) ->
     lists:concat([Origin#siporigin.proto, ":", Origin#siporigin.addr, ":", Origin#siporigin.port]).
 
 
+
 %%====================================================================
 %% Internal functions
 %%====================================================================
@@ -1134,7 +1226,7 @@ test() ->
 
     MyHostname = siprequest:myhostname(),
     SipPort  = sipsocket:get_listenport(tcp),
-    _SipsPort = sipsocket:get_listenport(tls),
+    SipsPort = sipsocket:get_listenport(tls),
 
     ViaMe = siprequest:create_via(tcp, []),
     ViaOrigin1 = #siporigin{proto=tcp},
@@ -1350,6 +1442,58 @@ test() ->
 				  remove_route_matching_me(
 				    keylist:set("Route", [MyRouteStr3], ReqHeader10)
 				   )),
+
+    %% test remove_maddr_matching_me(URI, Origin)
+    %%--------------------------------------------------------------------
+    io:format("test: remove_maddr_matching_me/2 - 1~n"),
+    MaddrURL1 = sipurl:parse("sip:ft@example.org:5060;transport=tcp"),
+    %% test no maddr
+    MaddrURL1 = remove_maddr_matching_me(MaddrURL1, #siporigin{}),
+
+    io:format("test: remove_maddr_matching_me/2 - 2~n"),
+    MaddrURL2 = sipurl:parse("sip:ft@example.org;maddr=testing"),
+    %% test with maddr not matching me
+    MaddrURL2 = remove_maddr_matching_me(MaddrURL2, #siporigin{}),
+
+    io:format("test: remove_maddr_matching_me/2 - 3~n"),
+    MaddrURL3 = sipurl:parse("sip:ft@example.org:1234;maddr=" ++ MyHostname),
+    %% test with maddr matching me, but not port
+    MaddrURL3 = remove_maddr_matching_me(MaddrURL3, #siporigin{}),
+
+    io:format("test: remove_maddr_matching_me/2 - 4~n"),
+    MaddrURL4 = sipurl:parse("sip:ft@example.org;transport=udp;maddr=" ++ MyHostname),
+    %% test with maddr matching me, port matching me (by default) but not transport
+    MaddrURL4 = remove_maddr_matching_me(MaddrURL4, #siporigin{proto = tcp}),
+
+    io:format("test: remove_maddr_matching_me/2 - 5~n"),
+    MaddrURL5 = sipurl:parse("sip:ft@example.org;maddr=" ++ MyHostname),
+    MaddrURL5_expected = sipurl:parse("sip:ft@example.org"),
+    %% test with maddr matching me, port matching me (by default) and no transport
+    MaddrURL5_expected = remove_maddr_matching_me(MaddrURL5, #siporigin{proto = udp}),
+
+    io:format("test: remove_maddr_matching_me/2 - 6~n"),
+    MaddrURL6 = sipurl:parse("sips:ft@example.org:" ++ integer_to_list(SipsPort) ++ ";maddr=" ++ MyHostname),
+    MaddrURL6_expected = sipurl:parse("sips:ft@example.org:" ++ integer_to_list(SipsPort)),
+    %% test with maddr matching me, port matching me (explicitly) and no transport
+    MaddrURL6_expected = remove_maddr_matching_me(MaddrURL6, #siporigin{proto = udp}),
+
+    io:format("test: remove_maddr_matching_me/2 - 7~n"),
+    MaddrURL7 = sipurl:parse("sip:ft@example.org;transport=tcp;maddr=" ++ MyHostname),
+    MaddrURL7_expected = sipurl:parse("sip:ft@example.org"),
+    %% test with maddr matching me, port matching me (by default) and matching transport
+    MaddrURL7_expected = remove_maddr_matching_me(MaddrURL7, #siporigin{proto = tcp}),
+
+    io:format("test: remove_maddr_matching_me/2 - 8~n"),
+    MaddrURL8 = sipurl:parse("sip:ft@example.org;transport=udp;maddr=" ++ MyHostname),
+    MaddrURL8_expected = sipurl:parse("sip:ft@example.org"),
+    %% test with maddr matching me, port matching me (by default) and matching transport
+    MaddrURL8_expected = remove_maddr_matching_me(MaddrURL8, #siporigin{proto = udp6}),
+
+    io:format("test: remove_maddr_matching_me/2 - 9~n"),
+    MaddrURL9 = sipurl:parse("sip:ft@example.org;transport=tls;maddr=" ++ MyHostname),
+    MaddrURL9_expected = sipurl:parse("sip:ft@example.org"),
+    %% test with maddr matching me, port matching me (by default) and matching transport
+    MaddrURL9_expected = remove_maddr_matching_me(MaddrURL9, #siporigin{proto = tls6}),
 
 
     %% test received_from_strict_router(URI, Header)
