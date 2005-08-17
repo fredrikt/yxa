@@ -26,6 +26,7 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
+-include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -100,7 +101,24 @@ run([Mode]) ->
 	    Logger = spawn(?MODULE, fake_logger_loop, []),
 	    register(logger, Logger),
 	    
-	    {ok, _CfgPid} = yxa_config:start_link({autotest, incomingproxy});
+	    {ok, _CfgPid} = yxa_config:start_link({autotest, incomingproxy}),
+
+	    ets:new(yxa_sipsocket_info, [public, bag, named_table]),
+	    ets:insert(yxa_sipsocket_info, {self(), #yxa_sipsocket_info_e{proto = tcp,
+									  addr  = "0.0.0.0",
+									  port  = 5060
+									 }}
+		      ),
+	    ets:insert(yxa_sipsocket_info, {self(), #yxa_sipsocket_info_e{proto = udp,
+									  addr  = "0.0.0.0",
+									  port  = 5060
+									 }}
+		       ),
+	    ets:insert(yxa_sipsocket_info, {self(), #yxa_sipsocket_info_e{proto = tls,
+									  addr  = "0.0.0.0",
+									  port  = 5061
+									 }}
+		      );
 	_ -> ok
     end,
     
@@ -284,6 +302,7 @@ aggregate_coverage(Modules) ->
     aggregate_coverage2(Modules, 0, 0, []).
 
 aggregate_coverage2([H | T], CoveredLines, TotalLines, ModuleStats) ->
+   %% {ok, {_Module, {Cov, NotCov}}} = cover:analyse(H, coverage, module),
     {ok, Cov, NotCov} = get_module_coverage(H),
     ModLines = Cov + NotCov,
     ModPercent = (Cov / ModLines * 100),
