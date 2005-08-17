@@ -31,8 +31,9 @@
 %% External functions
 %%====================================================================
 
+
 %%--------------------------------------------------------------------
-%% Function: url_to_dstlist(URL, ApproxMsgSize, ReqURI)
+%% Function: url_to_dstlist_not_maddr(URL, ApproxMsgSize, ReqURI)
 %%           URL           = sipurl record(), the destination we
 %%                           should resolve
 %%           ApproxMsgSize = integer()
@@ -46,6 +47,40 @@
 %%--------------------------------------------------------------------
 url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize),
 						is_record(ReqURI, sipurl) ->
+    case url_param:find(URL#sipurl.param_pairs, "maddr") of
+	[MAddr] ->
+	    %% RFC3261 #16.5 (Determining Request Targets) says that we MUST use maddr if
+	    %% it is set. We do that carefully by checking that it is usable and falling
+	    %% back to non-maddr routing if it is not.
+	    logger:log(debug, "url_to_dstlist: URL has maddr parameter, trying to make use of it"),
+	    NewURL = sipurl:set([{host, MAddr}], URL),
+	    case url_to_dstlist_not_maddr(NewURL, ApproxMsgSize, ReqURI) of
+		{error, _Reason} ->
+		    logger:log(normal, "Warning: Unusable 'maddr' parameter in URI ~p, ignoring",
+			       [sipurl:print(URL)]),
+		    url_to_dstlist_not_maddr(URL, ApproxMsgSize, ReqURI);
+		L when is_list(L) ->
+		    L
+	    end;
+	_ ->
+	    url_to_dstlist_not_maddr(URL, ApproxMsgSize, ReqURI)
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: url_to_dstlist_not_maddr(URL, ApproxMsgSize, ReqURI)
+%%           URL           = sipurl record(), the destination we
+%%                           should resolve
+%%           ApproxMsgSize = integer()
+%%           ReqURI        = sipurl record(), the Request-URI to use
+%%                           when sending a request to this transport-
+%%                           layer destination
+%% Descrip.: Make a list of sipdst records from an URL. We need the
+%%           approximate message size to determine if we can use
+%%           UDP or have to do TCP only.
+%% Returns : list() of sipdst record() | {error, Reason}
+%%--------------------------------------------------------------------
+url_to_dstlist_not_maddr(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize),
+							  is_record(ReqURI, sipurl) ->
     Host = URL#sipurl.host,
     %% Check if URL host is either IPv4 or IPv6 address. For IPv6, host must not have surrounding brackets!
     %% Note: inet_parse:address/1 is not a supported Erlang/OTP function
@@ -189,11 +224,28 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
     %% RFC3263 #4.1 (Selecting a Transport Protocol) "Similarly, if no transport protocol is specified,
     %% and the TARGET is not numeric, but an explicit port is provided, the client SHOULD use UDP for a
     %% SIP URI, and TCP for a SIPS URI"
-    case (URL#sipurl.proto == "sips") of
-	true ->
+    IsSIPS = (URL#sipurl.proto == "sips"),
+    IsTransportTLS =
+	case url_param:find(URL#sipurl.param_pairs, "transport") of
+	    [Transport] ->
+		case httpd_util:to_lower(Transport) of
+		    "tls" -> true;
+		    _ -> false
+		end;
+	    _ -> false
+	end,
+    if
+	IsSIPS ->
 	    logger:log(debug, "Resolver: Port was explicitly supplied and URL protocol is SIPS - only try TLS"),
 	    host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host);
-	false ->
+	IsTransportTLS ->
+	    %% RFC3261 #26.2.2 (SIPS URI Scheme) does say that transport=tls is deprecated, but
+	    %% since our URI could be from a Record-Route header where it might not have been
+	    %% appropriate to use SIPS, even though a request might have used TLS for that hop,
+	    %% it seems as if we have to use the deprecated algorithm anyways...
+	    logger:log(debug, "Resolver: Port was explicitly supplied and transport parameter says TLS - only try TLS"),
+	    host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host);
+	true ->
 	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host),
 	    case ApproxMsgSize > 1200 of
 		true ->
