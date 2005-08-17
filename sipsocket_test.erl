@@ -107,7 +107,12 @@ get_raw_socket(#sipsocket{proto = yxa_test}) ->
 %% Returns : true | false
 %%--------------------------------------------------------------------
 is_reliable_transport(_) ->
-    get({sipsocket_test, is_reliable_transport}).
+    case get({sipsocket_test, is_reliable_transport}) of
+	undefined ->
+	    false;
+	X ->
+	    X
+    end.	
 
 
 %%====================================================================
