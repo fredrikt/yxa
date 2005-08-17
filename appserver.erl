@@ -88,7 +88,7 @@ request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, s
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:stateless_proxy_request(Request)
+	    transportlayer:stateless_proxy_request("appserver", Request)
     end,
     ok;
 
@@ -104,7 +104,7 @@ request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:stateless_proxy_request(Request)
+	    transportlayer:stateless_proxy_request("appserver", Request)
     end,
     ok;
 
@@ -130,7 +130,7 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 		    logger:log(debug, "Appserver: Request '~s ~s' has Route header. Forwarding statelessly.",
 			       [Request#request.method, sipurl:print(Request#request.uri)]),
 		    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
-		    transportlayer:stateless_proxy_request(Request)
+		    transportlayer:stateless_proxy_request("appserver", Request)
 	    end
     end,
     ok.
@@ -260,7 +260,7 @@ create_session_nomatch(Request, LogStr) when is_record(Request, request), is_lis
 	SIPuser when is_list(SIPuser) ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:stateless_proxy_request(Request)
+	    transportlayer:stateless_proxy_request("appserver", Request)
     end.
 
 %%--------------------------------------------------------------------
