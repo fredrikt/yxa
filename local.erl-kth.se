@@ -116,8 +116,7 @@
 %% local.erl-kth.se specifics
 -export([
 	 shellget/1,
-	 mysql_set_password_for_user/2,
-	 msyql_get_kthid_for_user/1
+	 mysql_set_password_for_user/2
 	]).
 
 -include("siprecords.hrl").
@@ -375,6 +374,7 @@ sipuserdb_backend_override(_Module, _Function, _Args) ->
 
 %% Returns : {ok, Res} | undefined
 sipuserdb_mysql_make_sql_statement(sipuserdb_mysql_get_user_for_address, Args) ->
+    [AddressList] = Args,
     %% rewrite args slightly before calling original version
     AddressListMod =
 	lists:foldl(
@@ -493,18 +493,6 @@ shellgetloop(Port, Acc) ->
 	    shellgetloop(Port, <<Data/binary, Acc/binary>>);
 	{Port, eof} ->
 	    Acc
-    end.
-
-get_kthid_for_user(User) ->
-    case mysql:fetch(yxa, "select kthid from usernames where username = " ++ mysql:quote(User)) of
-	{ok, _, []} ->
-	    logger:log(debug, "userdb-mysql: No such user ~p", [User]),
-	    nomatch;
-	{ok, _, [[Kthid]]} ->
-	    Kthid;
-	{error, Reason} ->
-	    logger:log(error, "userdb-mysql: Error for username ~p: ~p", [User, Reason]),
-	    error
     end.
 
 
