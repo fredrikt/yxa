@@ -714,7 +714,6 @@ test_proxy_destinations(Count, BranchBase, Request, Actions, _Timeout, _Recurse,
     Res = test_proxy_destinations_loop(STHandlerPid, AppGluePid, true),
     erlang:demonitor(STMonitor),
     erlang:demonitor(AGMonitor),
-    logger:log(debug, "FREDRIK: test_proxy_destinations_loop RETURNED : ~p", [Res]),
     Res.
 
 %%--------------------------------------------------------------------
