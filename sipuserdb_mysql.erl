@@ -6,7 +6,7 @@
 %%% Created :  4 Aug 2005 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%-------------------------------------------------------------------
 -module(sipuserdb_mysql).
--compile(export_all).
+%%-compile(export_all).
 
 -behaviour(sipuserdb).
 
