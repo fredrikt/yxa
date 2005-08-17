@@ -221,7 +221,11 @@ check_proxy_request(Request) when is_record(Request, request) ->
     NewHeader1 = proxy_check_maxforwards(Request#request.header),
     check_valid_proxy_request(Request#request.method, NewHeader1),
     NewHeader2 = fix_content_length(NewHeader1, Request#request.body),
-    NewHeader3 = add_record_route(Request#request.uri, NewHeader2),
+    NewHeader3 =
+	case yxa_config:get_env(record_route) of
+	    {ok, true} -> add_record_route(Request#request.uri, NewHeader2);
+	    {ok, false} -> NewHeader2
+	end,
     ApproxMsgSize = get_approximate_msgsize(Request#request{header=NewHeader3}),
     {ok, NewHeader3, ApproxMsgSize}.
 
