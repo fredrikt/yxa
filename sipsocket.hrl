@@ -27,3 +27,9 @@
 	  sipsocket % sipsocket record()
 	 }).
 
+%% information about a listener
+-record(yxa_sipsocket_info_e, {
+	  proto,	% tcp | tcp6 | udp | udp6 | tls | tls6
+	  addr,		% string(), local address we have bound to
+	  port		% integer(), port number we are listening on
+	 }).

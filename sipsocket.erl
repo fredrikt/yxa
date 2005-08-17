@@ -95,6 +95,7 @@ behaviour_info(_Other) ->
 %%--------------------------------------------------------------------
 init([]) ->
     logger:log(debug, "Transport layer supervisor started"),
+    ets:new(yxa_sipsocket_info, [public, bag, named_table]),
     UDP = {sipsocket_udp, {sipsocket_udp, start_link, []},
 	   permanent, 2000, worker, [sipsocket_udp]},
     TCP = {tcp_dispatcher, {sipsocket_tcp, start_link, []},
@@ -253,8 +254,12 @@ get_listenport(yxa_test) ->
 %% listen on from the transport layer.
 %%--------------------------------------------------------------------
 get_all_listenports() ->
-    [get_listenport(udp)].
+    get_all_listenports2(ets:tab2list(yxa_sipsocket_info), []).
 
+get_all_listenports2([{_Pid, #yxa_sipsocket_info_e{port = Port}} | T], Res) ->
+    get_all_listenports2(T, [Port | Res]);
+get_all_listenports2([], Res) ->
+    lists:usort(Res).
 
 %%--------------------------------------------------------------------
 %% Function: default_port(Proto, Port)

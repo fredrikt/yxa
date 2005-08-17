@@ -114,12 +114,23 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
 		    logger:log(error, "TCP listener: ~p:sockname() returned error ~p", [InetModule, E2]),
 		    {get_defaultaddr(Proto), Port}
 	    end,
-    State = #state{socketmodule=SocketModule, inetmodule=InetModule, proto=Proto, port=Port, socket=TCPsocket,
-		   local=Local},
+    State = #state{socketmodule = SocketModule,
+		   inetmodule   = InetModule,
+		   proto        = Proto,
+		   port         = Port,
+		   socket       = TCPsocket,
+		   local        = Local
+		  },
     %% Now register with the tcp_dispatcher
     Remote = none,
     SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=self(), data={Local, Remote}},
     ok = gen_server:call(tcp_dispatcher, {register_sipsocket, listener, SipSocket}),
+    {LocalIP, _} = Local,
+    InfoRecord = #yxa_sipsocket_info_e{proto = Proto,
+				       addr  = LocalIP,
+				       port  = Port
+				      },
+    ets:insert(yxa_sipsocket_info, {self(), InfoRecord}),
     accept_loop_start(State).
 
 
@@ -151,8 +162,8 @@ accept_loop_start(State) when is_record(State, state) ->
 %%           are listening on. When someone does, spawn a
 %%           tcp_connection process that handles this connection and
 %%           then loop back to ourselves and do accept() again.
-%% Returns : Should never return, but if the listening socket gets
-%%           closed for some reason we return the atom() ok.
+%% Returns : Should never return, if the listening socket gets closed
+%%           for some reason we terminate with erlang:error/2.
 %%--------------------------------------------------------------------
 accept_loop(State) when is_record(State, state) ->
     SocketModule = State#state.socketmodule,

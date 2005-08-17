@@ -105,9 +105,19 @@ start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, 
     case gen_udp:open(Port, ?SOCKETOPTS) of
 	{ok, Socket} ->
 	    Local = get_localaddr(Socket, "0.0.0.0"),
-	    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp, pid=self(), data={Local, none}},
+	    SipSocket = #sipsocket{module = sipsocket_udp,
+				   proto  = udp,
+				   pid    = self(),
+				   data   = {Local, none}
+				  },
 	    NewSocketList = socketlist:add({listener, udp, Port}, self(), udp, Local, none, SipSocket,
 					   0, State#state.socketlist),
+	    {LocalIP, _} = Local,
+	    InfoRecord = #yxa_sipsocket_info_e{proto = udp,
+					       addr  = LocalIP,
+					       port  = Port
+					      },
+	    ets:insert(yxa_sipsocket_info, {self(), InfoRecord}),
 	    start_listening(T, Port, State#state{socket=Socket, socketlist=NewSocketList});
 	{error, Reason} ->
 	    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",
@@ -123,6 +133,12 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 		    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp6, pid=self(), data={Local, none}},
 		    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket,
 						   0, State#state.socketlist),
+		    {LocalIP, _} = Local,
+		    InfoRecord = #yxa_sipsocket_info_e{proto = udp6,
+						       addr  = LocalIP,
+						       port  = Port
+						      },
+		    ets:insert(yxa_sipsocket_info, {self(), InfoRecord}),
 		    start_listening(T, Port, State#state{socket6=Socket, socketlist=NewSocketList});
 		{error, Reason} ->
 		    logger:log(error, "Could not open IPv6 UDP socket (options ~p), port ~p : ~s",
