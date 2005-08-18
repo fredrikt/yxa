@@ -63,17 +63,25 @@
 %%--------------------------------------------------------------------
 start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_record(RequestIn, request) ->
     %% call check_proxy_request to get sanity of proxying this request verified (Max-Forwards checked etc)
-    {ok, NewHeader1, ApproxMsgSize} = siprequest:check_proxy_request(RequestIn),
-    Request1 = RequestIn#request{header=NewHeader1},
-    %% now make sure we know some destinations of this request
-    {ok, DstList, Request} = start_get_dstlist(ServerHandler, Request1, ApproxMsgSize, DstIn),
-    %% Adopt server transaction and get it's branch. If ServerHandler is not a valid
-    %% transaction handle, then try to figure the server transaction handler out using Request.
-    case start_get_servertransaction(ServerHandler, Request) of
-	{ok, STHandler, Branch} ->
-	    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize);
-	ok ->
-	    ok
+    try siprequest:check_proxy_request(RequestIn) of
+	{ok, NewHeader1, ApproxMsgSize} ->
+	    Request1 = RequestIn#request{header=NewHeader1},
+	    %% now make sure we know some destinations of this request
+	    {ok, DstList, Request} = start_get_dstlist(ServerHandler, Request1, ApproxMsgSize, DstIn),
+	    %% Adopt server transaction and get it's branch. If ServerHandler is not a valid
+	    %% transaction handle, then try to figure the server transaction handler out using Request.
+	    case start_get_servertransaction(ServerHandler, Request) of
+		{ok, STHandler, Branch} ->
+		    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize);
+		ok ->
+		    ok
+	    end
+    catch
+	throw:
+	  {siperror, Status, Reason} ->
+	    transactionlayer:send_response_handler(ServerHandler, Status, Reason);
+	  {siperror, Status, Reason, ExtraHeaders} ->
+	    transactionlayer:send_response_handler(ServerHandler, Status, Reason, ExtraHeaders)
     end.
 
 %%
