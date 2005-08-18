@@ -88,7 +88,7 @@ start(normal, [AppModule]) ->
 				     yxa_config:list()
 				    ])
 		     ]),
-	    logger:log(normal, "proxy started"),
+	    logger:log(normal, "proxy started (Yxa version ~s)", [version:get_version()]),
 	    {ok, Supervisor};
 	Unknown ->
 	    E = lists:flatten(io_lib:format("Failed starting supervisor : ~p", [Unknown])),
