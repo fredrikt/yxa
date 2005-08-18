@@ -50,7 +50,7 @@ usage()
 	    echo "	stop		stop running server"
 	    echo "	status		get brief status of running server"
 	    # these are not implemented yet
-	    #echo "	info		get info about running server"
+	    echo "	info [all]	get info about running server, add 'all' to get more info"
 	    echo "	reload		reload configuration of running server, if possible"
 	    echo "	restart		restart running server"
 	    echo ""
@@ -72,6 +72,7 @@ else
 fi
 
 command=""
+command_arguments=""
 detach="-detached"
 replica=""
 explicit_name=0
@@ -90,30 +91,37 @@ else
     mnesiadir="$MNESIABASE/$PROGRAMNAME"
 fi
 
+exit_now=0
 # parse command line options
-while [ $# -gt 0 ]
+while [ $# -gt 0 -a $exit_now -eq 0 ]
 do
       arg=$1
-      shift
+      # complicated shift to not make picky sh's whine
+      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
+
       case $arg in
 	  -h)
 	      usage
 	      ;;
 	  -config)
 	      configpath="$1"
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  -c_ssl)
 	      client_sslcertfile="$1"
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  -s_ssl)
 	      server_sslcertfile="$1"
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  -mnesiadir)
 	      mnesiadir="$1"
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  -d)
 	      if [ "x$myname" = "xyxa-bootstrap.sh" ]; then
@@ -129,21 +137,33 @@ do
 		  usage
 	      fi
 	      replica="$1"
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  -name)
 	      name="$1"
 	      explicit_name=1
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  -hostname)
 	      hostname="$1"
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  start|stop|status|info|reload|restart)
 	      # $arg not applicable to bootstrapping
 	      if [ $is_bootstrap -eq 1 ]; then
 		  usage
+	      fi
+
+	      if [ "$arg" = "info" ]; then
+		  # the 'info' command can take an optional argument
+		  if [ "x$1" = "xall" ]; then
+		      command_arguments="$1"
+		      # complicated shift to not make picky sh's whine
+		      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
+		  fi
 	      fi
 
 	      # check that this was the last arg
@@ -270,7 +290,7 @@ else
 		-name "$name" \
 		$ssloptions \
 		-noshell \
-		-s yxa_ctl -extra $node $command
+		-s yxa_ctl -extra $node $command $command_arguments
 	    ;;
 	*)
 	    echo "$0: command '$command' not implemented yet"

@@ -16,12 +16,14 @@
 %% Internal exports
 %%--------------------------------------------------------------------
 -export([
-	 status/0
+	 status/0,
+	 info/1
 	]).
 
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
+-include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -100,7 +102,16 @@ process(Node, ["stop"]) ->
 	Res ->
 	    Res
     end;
-%%process(Node, ["info"]) ->
+process(Node, ["info" | Args]) ->
+    case rpc:call(Node, yxa_ctl, info, [Args]) of
+	{ok, Info} ->
+	    io:format("Node ~p info :~n~n", [Node]),
+	    {ok, Output} = format_info(Info),
+	    io:put_chars(Output),
+	    ok;
+	Res ->
+	    Res
+    end;
 process(Node, ["reload"]) ->
     case rpc:call(Node, yxa_config, reload, []) of
 	ok ->
@@ -144,6 +155,90 @@ status() ->
     {ok, Starttime}.
 
 
+%%--------------------------------------------------------------------
+%% Function: info([])
+%%           info(["all"])
+%% Descrip.: Check status of running SIP server
+%% Returns : {ok, Output}
+%%           Output = list() of {Topic, Indent, Width, [{Key, Value}]}
+%%--------------------------------------------------------------------
+info([]) ->
+    [{starttime, Starttime1}] = ets:lookup(yxa_statistics, starttime),
+    Starttime = util:sec_to_date(Starttime1),
+    GeneralInfo =
+	[{"General information :", 2, 15,
+	  [{"Version",		version:get_version()},
+	   {"Long version",	version:get_long_version()},
+	   {"Starttime",	Starttime}
+	  ]}
+	 ],
+    {ok, GeneralInfo};
+
+info(["all"]) ->
+    {ok, GeneralInfo} = info([]),
+
+    {ok,
+     GeneralInfo ++ [blank] ++
+     info_transport() ++
+     info_tcp_connections() ++
+     info_transactions()
+    }.
+    
+info_transport() ->
+    %% Transport layer information
+    YxaSipsocketInfo = lists:sort(ets:tab2list(yxa_sipsocket_info)),
+    ListenInfo = lists:map(fun({_Pid, H}) when is_record(H, yxa_sipsocket_info_e) ->
+				   Val = lists:concat([H#yxa_sipsocket_info_e.proto, ":",
+						       H#yxa_sipsocket_info_e.addr, ":",
+						       H#yxa_sipsocket_info_e.port]),
+				   {"Listening on", Val}
+			   end, YxaSipsocketInfo),
+
+    [{"Transportlayer information :", 2, 15,
+      ListenInfo},
+     blank
+    ].
+
+info_tcp_connections() ->
+    {ok, Connections} = tcp_dispatcher:get_socketlist(),
+    MonitorFmtd1 = socketlist:monitor_format(Connections),
+    %% remove listening-on lines
+    MonitorFmtd2 = 
+	lists:foldl(fun("Listening" ++ _, Acc) ->
+			    Acc;
+		       (H, Acc) ->
+			    [H | Acc]
+		    end, [], MonitorFmtd1),
+    MonitorFmtd = lists:reverse(MonitorFmtd2),
+    [{"Cached TCP connections :", 2, 15,
+      case length(MonitorFmtd) of
+	   0 -> [{"Connections", "none at the moment"}];
+	   N -> [{"Connections", integer_to_list(N)}] ++
+		    lists:map(fun(H) ->
+				      {"    " ++ H}
+			      end, MonitorFmtd)
+		end
+     },
+     blank
+    ].
+
+info_transactions() ->
+    Transactions = transactionstatelist:get_all_entries(),
+    T_Info = transactionstatelist:monitor_format(Transactions),
+
+    [{"Transcationlayer information :", 2, 15,
+      case length(T_Info) of
+	  0 -> [{"Transactions", "none at the moment"}];
+	  N -> [{"Transcations", integer_to_list(N)}] ++
+		   lists:map(fun(H) ->
+				     {"    " ++ H}
+			     end, T_Info)
+      end
+     },
+     blank
+    ].
+    
+
 %%====================================================================
 %% Internal functions
 %%====================================================================
@@ -156,7 +251,7 @@ status() ->
 %% Returns : {ok, Output}
 %%           Output = string()
 %%--------------------------------------------------------------------
-format_status(Starttime) ->    
+format_status(Starttime) ->
     %% get running time in days, hours, minutes, seconds
     Daystime = calendar:seconds_to_daystime(util:timestamp() - Starttime),
 
@@ -170,3 +265,25 @@ fmt_daystime({0, {H, M, S}}) ->
 fmt_daystime({D, {H, M, S}}) ->
     io_lib:format("~p day(s), ~s", [D, fmt_daystime({0, {H, M, S}})]).
 
+
+format_info(Args) ->
+    format_info(Args, []).
+
+format_info([{Subject, Indent, Width, Elems} | T], Res) when is_list(Subject), is_integer(Indent),
+							     is_integer(Width), is_list(Elems) ->
+    Fmt = lists:concat(["~", Indent + Width, ".",
+			"", Width, "s"
+			" : "
+			"~s~n"
+		       ]),
+    Body = lists:map(fun({LHS, RHS}) ->
+			     io_lib:format(Fmt, [LHS, RHS]);
+			({Single}) when is_list(Single) ->
+			     Single ++ "\n"
+		     end, Elems),
+    This = lists:concat([Subject, "\n", Body]),
+    format_info(T, [This | Res]);
+format_info([blank | T], Res) ->
+    format_info(T, ["\n" | Res]);
+format_info([], Res) ->
+    {ok, lists:reverse(Res)}.
