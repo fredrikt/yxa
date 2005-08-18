@@ -33,7 +33,7 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: url_to_dstlist_not_maddr(URL, ApproxMsgSize, ReqURI)
+%% Function: url_to_dstlist(URL, ApproxMsgSize, ReqURI)
 %%           URL           = sipurl record(), the destination we
 %%                           should resolve
 %%           ApproxMsgSize = integer()

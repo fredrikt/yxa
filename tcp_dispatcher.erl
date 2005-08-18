@@ -46,7 +46,9 @@
 %%--------------------------------------------------------------------
 
 -record(state, {
-	  socketlist	%% Our list of existing TCP connections
+	  socketlist	%% socketlist record(), our list of ongoing
+	                %% TCP (or TLS) connections, plus our listener
+                        %% sockets
 	 }).
 
 %%--------------------------------------------------------------------
@@ -54,7 +56,7 @@
 %%--------------------------------------------------------------------
 
 %% Our standard wakeup interval - how often we should look for expired
-%% entrys in our socketlist.
+%% connections in our socketlist.
 -define(TIMEOUT, 10 * 1000).
 
 %%====================================================================

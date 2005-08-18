@@ -31,15 +31,14 @@
 	 get_classes_for_user/1,
 	 get_telephonenumber_for_user/1,
 	 get_forwards_for_users/1,
-	 get_forward_for_user/1,
-
-	 test/0
+	 get_forward_for_user/1
 	]).
 
 %%--------------------------------------------------------------------
 %% Extra exports - module specific manual-use functions
 %%--------------------------------------------------------------------
--export([reload_userdb/0
+-export([reload_userdb/0,
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------

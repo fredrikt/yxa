@@ -350,7 +350,9 @@ get_sipuser_locations(SipUser) when is_list(SipUser) ->
 %%           from the location database. Return raw phone record()s.
 %% Returns : the result of the mnesia:transaction()
 %% Note    : Only use this for testing, use get_sipuser_locations/1
-%%           in your applications!
+%%           in your applications! (The exception to this rule is
+%%           siplocation:process_register_wildcard_isauth/4 which
+%%           needs the Call-Id and CSeq information).
 %%--------------------------------------------------------------------
 get_phone(SipUser) when is_list(SipUser) ->
     Now = util:timestamp(),

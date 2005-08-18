@@ -693,7 +693,8 @@ homedomain(Domain) when is_list(Domain) ->
 	    %% Domain did not match configured sets of homedomain, check against list
 	    %% of hostnames and also my IP address
 	    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
-	    lists:member(LCdomain, MyHostnames ++ siphost:myip_list())
+	    lists:member(LCdomain, MyHostnames)
+		orelse lists:member(LCdomain, siphost:myip_list())
     end.
 
 %%--------------------------------------------------------------------

@@ -366,7 +366,7 @@ handle_cast({siprequest, Request, Origin}, State) when is_record(Request, reques
 		end,
 		State;
 	    true ->
-		logger:log(normal, "~s: Server transaction: Received request is not particulary alike "
+		logger:log(normal, "~s: Server transaction: Received request is not particularly alike "
 			   "the first one (~p ~s ~s /= ~p ~s ~s). Dropping it on the floor.",
 			   [LogTag, CSeqNum, Method, sipurl:print(URI),
 			    OrigCSeqNum, OrigMethod, sipurl:print(OrigURI)]),

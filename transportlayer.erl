@@ -55,8 +55,8 @@ send_proxy_response(Socket, Response)
   when is_record(Socket, sipsocket); Socket == none, is_record(Response, response) ->
     case sipheader:via(Response#response.header) of
 	[_Self] ->
-	    logger:log(error, "Can't proxy response ~p ~s because it contains just one or less Via and that "
-		       "should be mine!", [Response#response.status, Response#response.reason]),
+	    logger:log(error, "Transport layer: Can't proxy response ~p ~s because it contains just one or less Via "
+		       "and that should be mine!", [Response#response.status, Response#response.reason]),
 	    {error, invalid_Via};
 	[_Self | Via] ->
 	    %% Remove Via matching me (XXX should check that it does match me)
@@ -78,7 +78,7 @@ send_proxy_response(Socket, Response)
 %% Returns : throw()                     |
 %%           {error, Reason}             |
 %%           {ok, SipSocket, UsedBranch} |
-%%           Reason     = string()
+%%           Reason     = timeout | string() | term()
 %%           SipSocket  = sipsocket record(), the socket used
 %%           UsedBranch = string(), the complete branch finally used
 %% Note    : To use this function, you should already have called
@@ -91,8 +91,12 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
     Proto = Dst#sipdst.proto,
     DestStr = sipdst:dst2str(Dst),
     case get_good_socket(Socket, Dst) of
+	{error, {timeout, _}} ->
+	    logger:log(debug, "Transport layer: Failed to get ~p socket for ~s : gen_server timeout",
+		       [Proto, DestStr]),
+	    {error, timeout};
 	{error, What} ->
-	    logger:log(debug, "Siprequest (transport layer) : Failed to get ~p socket for ~s : ~p",
+	    logger:log(debug, "Transport layer: Failed to get ~p socket for ~s : ~p",
 		       [Proto, DestStr, What]),
 	    {error, What};
 	SipSocket when is_record(SipSocket, sipsocket) ->
@@ -109,7 +113,7 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
 		    %% and list operations on big lists are quite expensive, we avoid making it a
 		    %% list that would then be made a binary again by the logger, by using the
 		    %% special logger:log_iolist() here.
-		    LogPrefix1 = <<"Siprequest (transport layer) : sent request(">>,
+		    LogPrefix1 = <<"Transport layer: sent request(">>,
 		    LogPrefix2 = io_lib:format("~p bytes, dst=~s) :", [size(BinMsg), DestStr]),
 		    logger:log_iolist(debug, [LogPrefix1, LogPrefix2, 10, BinMsg, 10]),
 		    TopVia = sipheader:topvia(NewHeader2),
@@ -119,7 +123,7 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
 		    %% Don't log the actual request when we fail, since that would fill up our logs
 		    %% with requests failed for one destination (TCP for example) and then succeeding
 		    %% for another (UDP for example).
-		    logger:log(debug, "Siprequest (transport layer) : Failed sending request (~p bytes) to ~p:~s:~p, error ~p",
+		    logger:log(debug, "Transport layer: Failed sending request (~p bytes) to ~p:~s:~p, error ~p",
 			       [size(BinMsg), Proto, IP, Port, E]),
 		    {error, E}
 	    end
@@ -209,23 +213,23 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
 		    %% in binary format already, and list operations on big lists are quite expensive, we avoid
 		    %% making it a list that would then be made a binary again by the logger, by using the special
 		    %% logger:log_iolist() here.
-		    LogPrefix = io_lib:format("send response(~p bytes, sent to=~s (using ~p)) :",
+		    LogPrefix = io_lib:format("(~p bytes, sent to=~s (using ~p)) :",
 					      [size(BinMsg), sipdst:dst2str(Dst), CPid]),
-		    LogPrefixBin = list_to_binary([LogPrefix]),
+		    LogPrefixBin = list_to_binary(["Transport layer: send response", LogPrefix]),
 		    logger:log_iolist(debug, [LogPrefixBin, 10, BinMsg, 10]),
 		    case SendRes of
 			ok ->
 			    ok;
 			{error, E} ->
-			    logger:log(error, "Failed sending response to ~s using socket ~p, error ~p",
-				       [sipdst:dst2str(Dst), SendSocket, E]),
+			    logger:log(error, "Transport layer: Failed sending response to ~s using socket ~p, "
+				       "error ~p", [sipdst:dst2str(Dst), SendSocket, E]),
 			    {senderror, E}
 		    end;
 		{error, E} ->
-		    logger:log(error, "Failed to get socket to send response to ~s, error ~p",
+		    logger:log(error, "Transport layer: Failed to get socket to send response to ~s, error ~p",
 			       [sipdst:dst2str(Dst), E]),
-		    logger:log(debug, "Failed to get socket to send response to ~s, error ~p, response :~n~s~n",
-			       [sipdst:dst2str(Dst), E, binary_to_list(BinMsg)]),
+		    logger:log(debug, "Transport layer: Failed to get socket to send response to ~s, error ~p, "
+			       "response :~n~s~n", [sipdst:dst2str(Dst), E, binary_to_list(BinMsg)]),
 		    {senderror, "Could not get socket"}
 	    end;
 	error ->
@@ -257,10 +261,10 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
 get_good_socket(#sipsocket{proto=Proto}=DefaultSocket, #sipdst{proto=Proto}=Dst) ->
     case sipsocket:is_good_socket(DefaultSocket) of
 	true ->
-	    logger:log(debug, "Siprequest: Using default socket ~p", [DefaultSocket]),
+	    logger:log(debug, "Transport layer: Using default socket ~p", [DefaultSocket]),
 	    DefaultSocket;
 	false ->
-	    logger:log(debug, "Siprequest: No good socket (~p) provided - asking transport layer for a ~p socket",
+	    logger:log(debug, "Transport layer: No good socket (~p) provided - asking transport layer for a ~p socket",
 		       [DefaultSocket, Proto]),
 	    get_good_socket(none, Dst)
     end;
@@ -271,7 +275,7 @@ get_good_socket(none, Dst) when is_record(Dst, sipdst) ->
     case sipsocket:get_socket(Dst) of
 	S when is_record(S, sipsocket) ->
 	    {Proto, Host, Port} = {Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port},
-	    logger:log(debug, "Siprequest: Extra debug: Get socket ~p:~p:~p returned socket ~p",
+	    logger:log(debug, "Transport layer: Extra debug: Get socket ~p:~p:~p returned socket ~p",
 		       [Proto, Host, Port, S]),
 	    S;
 	{error, Reason} ->
