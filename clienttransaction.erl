@@ -340,7 +340,7 @@ handle_info({siptimer, TRef, TDesc}, State) ->
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
 handle_info(timeout, #state{initialized=no}=State) ->
-    {noreply, initiate_request(State#state{initialized=yes})};
+    check_quit({noreply, initiate_request(State#state{initialized=yes})});
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({'EXIT', Pid, Reason}, State)
@@ -1580,10 +1580,38 @@ test() ->
     %% test normal case, the transaction should terminate
     {stop, normal, #state{sipstate = terminated}} = handle_info(TimerTest_Signal, TimerTest_State),
 
-    io:format("test: gen_server signal '{siptimer, ...}' - 1~n"),
+    io:format("test: gen_server signal '{siptimer, ...}' - 2~n"),
     %% test with unknown timer
     {noreply, TimerTest_State} =
 	handle_info({siptimer, make_ref(), "Testing unknown timer"}, TimerTest_State),
+
+
+    %% handle_info(timeout, State)
+    %%--------------------------------------------------------------------
+    io:format("test: gen_server signal 'timeout' - 0~n"),
+    TimeoutSignal_State = #state{logtag       = "testing",
+				 branch       = "branch",
+				 request      = Test_Request,
+				 dst          = Test_Dst,
+				 socket_in    = #sipsocket{proto = yxa_test,
+							   module = sipsocket_test
+							  },
+				 timerlist    = siptimer:empty(),
+				 report_to    = self(),
+				 timeout      = 40,
+				 sipstate     = calling,
+				 initialized  = no
+				},
+
+    io:format("test: gen_server signal 'timeout' - 1.0~n"),
+    %% test that we terminate immediately if this attempt to send the request fails
+    put({sipsocket_test, send_result}, {error, "testing"}),
+    {stop, normal, _TimeoutSignal_State_out} = handle_info(timeout, TimeoutSignal_State), 
+    erase({sipsocket_test, send_result}),
+
+    %% clear fake-sent-request message from process mailbox
+    test_verify_request_was_sent(Test_Request, "gen_server signal 'timeout'", 1, 1),
+    
 
 
     %% handle_info({'EXIT', Pid, Reason}, State)
