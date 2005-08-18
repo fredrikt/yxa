@@ -46,8 +46,8 @@
 %%--------------------------------------------------------------------
 %% Function: add(Id, Pid, Proto, Local, Remote, SipSocket, SocketList)
 %%           Id         = {listener, Proto, Port} |
-%%                        {in, Proto, Remote}     |
-%%                        {out, Proto, Remote}
+%%                        {from, Proto, Remote}   |
+%%                        {to, Proto, Remote}
 %%                        Proto = atom(), tcp|tcp6|udp|udp6|tls|tls6
 %%                        Remote = {IP, Port}
 %%                        IP   = string()
@@ -282,10 +282,10 @@ debugfriendly2(Output, [H | Rest]) when is_record(H, socketlistelem) ->
 		case Id of
 		    {listener, LProto, LPort} ->
 			lists:concat(["Listening on: ", LProto, " port ", LPort]);
-		    {in, _, _} ->
+		    {from, _Host, _Port} ->
 			lists:concat(["From: ", RemoteStr, " to ", LocalStr,
 				      " (", Proto, ") (expires: ", ExpireIn, ")"]);
-		    {out, _, _} ->
+		    {to, _Host, _Port} ->
 			lists:concat(["To: ", RemoteStr, " from ", LocalStr,
 				      " (", Proto, ") (expires: ", ExpireIn, ")"])
 		end
