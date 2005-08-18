@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 AC_REVISION($Revision$)
 AC_PREREQ(2.53)
-AC_INIT(yxa, 0.1, yxa-devel@lists.su.se)
+AC_INIT(Yxa, 0.1, yxa-devel@lists.su.se)
 AC_CONFIG_SRCDIR([registrar.erl])
 
 AC_PROG_CC
@@ -71,12 +71,25 @@ dnl
 
 cat > newversion.erl.in <<EOF
 -module(version).
--export([[get_long_version/0, get_version/0]]).
+-export([[get_version/0,
+	 get_long_version/0
+	]]).
+
+get_package_name() -> "AC_PACKAGE_NAME".
+get_package_version() -> "AC_PACKAGE_VERSION".
+
+get_compile_user() -> "@USER@".
+get_compile_host() -> "@HOST@".
+get_compile_date() -> "@DATE@".
 
 get_long_version() ->
-    "Version: $PACKAGE_STRING by @USER@ on @HOST@ @DATE@".
+    get_package_name() ++ " " ++
+    get_package_version() ++ ", compiled by " ++
+    get_compile_user() ++ " on " ++
+    get_compile_host() ++ " at " ++
+    get_compile_date().
 get_version() ->
-    "AC_PACKAGE_STRING".
+    get_package_version().
 EOF
 
 if test -f version.erl && cmp -s newversion.erl.in version.erl.in; then
