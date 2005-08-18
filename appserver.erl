@@ -103,9 +103,19 @@ request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin
 		       "answer 481 Call/Transaction Does Not Exist", [LogStr]),
 	    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist");
 	SIPuser ->
-	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (SIP user ~p)",
+	    logger:log(normal, "Appserver: ~s -> Forwarding CANCEL not matchin any known transaction (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:stateless_proxy_request("appserver", Request)
+	    DstList =
+		case keylist:fetch('route', Request#request.header) of
+		    true ->
+			route;
+		    false ->
+			ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
+			URI = Request#request.uri,
+			sipdst:url_to_dstlist(URI, ApproxMsgSize, URI)
+		end,
+	    THandler = transactionlayer:get_handler_for_request(Request),
+	    sippipe:start(THandler, none, Request, DstList, 900)
     end,
     ok;
 
@@ -116,22 +126,39 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 	true ->
 	    request_to_me(Request, LogStr);
 	false ->
-	    %% Ok, request was not for this proxy itself - now just make sure it has no Route-header before
-	    %% we fork it. If it has a Route header, this proxy probably added a Record-Route in a previous
-	    %% fork, and this request should just be proxyed - not forked.
-	    case keylist:fetch('route', Request#request.header) of
-		[] ->
+	    %% Ok, request was not for this proxy itself - now just make sure we are supposed to fork it.
+	    {ShouldFork, NoForkReason, PipeDst} =
+		case keylist:fetch('route', Request#request.header) of
+		    [] ->
+			URI = Request#request.uri,
+			case url_param:find(URI#sipurl.param_pairs, "maddr") of
+			    [] ->
+				{true, "", none};
+			    _ ->
+				%% RFC3261 #16.5 (Determining Request Targets) says a proxy MUST
+				%% use ONLY the maddr in the Request-URI as target, if set.
+				ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
+				D = sipdst:url_to_dstlist(URI, ApproxMsgSize, URI),
+				D2 = lists:map(fun(H) ->
+						       sipdst:dst2str(H)
+					       end, D),
+				logger:log(debug, "Appserver: Turned Request-URI with maddr set (~s) "
+					   "into dst-list : ~p", [sipurl:print(URI), D2]),
+				{false, "maddr Request-URI parameter present", D}
+			end;
+		    _ ->
+			%% Request has a Route header, this proxy probably added a Record-Route in a previous
+			%% fork, and this request should just be proxyed - not forked.	
+			{false, "Route-header present", route}
+		end,
+	    case ShouldFork of
+		true ->
 		    create_session(Request, Origin, LogStr, true);
-		_ ->
+		false ->
 		    %% XXX check credentials here - our appserver is currently an open relay!
-		    %% Also, should we act as stateless proxy just because we are not going to
-		    %% fork? What about starting a sippipe? What if we received the request over
-		    %% a reliable transport, but send it out using non-reliable transport? We
-		    %% can't do that without making sure we will do retransmissions.
-		    logger:log(debug, "Appserver: Request '~s ~s' has Route header. Forwarding statelessly.",
-			       [Request#request.method, sipurl:print(Request#request.uri)]),
-		    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (Route-header present)", [LogStr]),
-		    transportlayer:stateless_proxy_request("appserver", Request)
+		    logger:log(normal, "Appserver: ~s -> Not forking, just forwarding (~s)", [LogStr, NoForkReason]),
+		    THandler = transactionlayer:get_handler_for_request(Request),
+		    sippipe:start(THandler, none, Request, PipeDst, 900)
 	    end
     end,
     ok.
