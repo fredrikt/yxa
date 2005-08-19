@@ -635,7 +635,7 @@ add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hos
 						     Port == none ->
     %% we use 'lr=true' instead of just 'lr' since some SIP stacks are known
     %% to require that parameters are of the format 'key=value'.
-    Param1 = ["maddr=" ++ siphost:myip(), "lr=true"],
+    Param1 = ["lr=true"],
     RR_Elems =
 	case Port of
 	    none ->
