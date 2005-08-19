@@ -308,7 +308,7 @@ determine_sip_location(URI) when is_record(URI, sipurl) ->
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
 request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin) ->
-    {URI, Header} = {Request#request.uri, Request#request.header},
+    URI = Request#request.uri,
     {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
 
     Decision = 
