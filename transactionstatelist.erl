@@ -522,10 +522,10 @@ debugfriendly_non_empty([branches | T], R, Res)
 debugfriendly_non_empty([_ | T], R, Res) ->
     debugfriendly_non_empty(T, R, Res).
 
-monitor_format([]) ->
-    [];
 monitor_format(TStateList) when is_record(TStateList, transactionstatelist) ->
-    monitor_format2(TStateList#transactionstatelist.list, []).
+    monitor_format2(TStateList#transactionstatelist.list, []);
+monitor_format(TList) when is_list(TList) ->
+    monitor_format2(TList, []).
 
 monitor_format2([], Res) ->
     lists:reverse(Res);
