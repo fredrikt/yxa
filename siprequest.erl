@@ -633,18 +633,16 @@ create_via(Proto, Parameters) ->
 %%--------------------------------------------------------------------
 add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hostname), is_integer(Port);
 						     Port == none ->
+    %% we use 'lr=true' instead of just 'lr' since some SIP stacks are known
+    %% to require that parameters are of the format 'key=value'.
     Param1 = ["maddr=" ++ siphost:myip(), "lr=true"],
     RR_Elems =
 	case Port of
-	    Port when is_integer(Port) ->
-		%% Set port unless explicitly told not to. This is to minimize the chances
-		%% of problems with wrong port number in NAPTR/SRV records for MyHostname
-		%% etc. (ACK of 200 Ok response to INVITE is particularly vulnerable to this
-		%% kind of problem since it is always forwarded completely without state).
-		[{proto, Proto}, {host, Hostname}, {port, Port}, {param, Param1}];
 	    none ->
 		%% It was requested that we don't include a port number.
-		[{proto, Proto}, {host, Hostname}, {param, Param1}]
+		[{proto, Proto}, {host, Hostname}, {param, Param1}];
+	    _ when is_integer(Port) ->
+		[{proto, Proto}, {host, Hostname}, {port, Port}, {param, Param1}]
 	end,
     RouteStr = sipurl:print( sipurl:new(RR_Elems) ),
 
@@ -679,15 +677,15 @@ add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hos
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
 add_record_route(URL, Header) when is_record(URL, sipurl) ->
-    {Port, Proto} =
+    Proto =
 	case URL#sipurl.proto of
 	    "sips" ->
-		{sipsocket:get_listenport(tls), "sips"};
+		"sips";
 	    _ ->
 		%% Create sip: Record-Route for everything except SIPS-URIs
-		{sipsocket:get_listenport(udp), "sip"}
+		"sip"
 	end,
-    add_record_route(Proto, myhostname(), Port, Header).
+    add_record_route(Proto, myhostname(), none, Header).
 
 %%--------------------------------------------------------------------
 %% Function: standardcopy(Header, ExtraHeaders)
