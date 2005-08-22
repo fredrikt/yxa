@@ -107,7 +107,7 @@ process_route_header(Header, URI) when is_record(Header, keylist), is_record(URI
 	    {NewHeader, NewURI} =
 		case is_loose_router(FirstRoute) of
 		    true ->
-			{set_route(T, Header), URI};
+			{Header, URI};
 		    false ->
 			logger:log(debug,
 				   "Routing: First Route ~p is a strict (RFC2543) router, appending original " ++
