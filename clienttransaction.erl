@@ -1600,7 +1600,8 @@ test() ->
 				 report_to    = self(),
 				 timeout      = 40,
 				 sipstate     = calling,
-				 initialized  = no
+				 initialized  = no,
+				 testing      = true
 				},
 
     io:format("test: gen_server signal 'timeout' - 1.0~n"),
