@@ -227,7 +227,8 @@ handle_info({sipproxy_response, FromPid, _Branch, Response}, #state{forkpid=From
 %% Function: handle_info({sipproxy_all_terminated, FromPid,
 %%                        FinalResponse}, State)
 %%           FromPid  = pid() (forkpid)
-%%           FinalResponse = response record() | {Status, Reason}
+%%           FinalResponse = response record() | {Status, Reason} |
+%%                           {Status, Reason, ExtraHeaders}
 %%           Status = integer(), SIP status code
 %%           Reason = string(), SIP reason phrase
 %% Descrip.: Our sipproxy says that now, all it's client transactions
@@ -258,7 +259,11 @@ handle_info({sipproxy_all_terminated, FromPid, FinalResponse}, #state{forkpid=Fr
 		    {Status, Reason} when is_integer(Status), Status >= 200, is_list(Reason) ->
 			logger:log(debug, "Appserver glue: received sipproxy_all_terminated - asking CallHandler "
 				   "~p to answer '~p ~s'", [CallHandler, Status, Reason]),
-			send_final_response(State, Status, Reason)
+			send_final_response(State, Status, Reason);
+		    {Status, Reason, ExtraHeaders} when is_integer(Status), Status >= 200, is_list(Reason) ->
+			logger:log(debug, "Appserver glue: received sipproxy_all_terminated - asking CallHandler "
+				   "~p to answer '~p ~s'", [CallHandler, Status, Reason]),
+			send_final_response(State, Status, Reason, ExtraHeaders)
 		end
 	end,
     check_quit({noreply, NewState1, ?TIMEOUT});
@@ -417,10 +422,11 @@ check_quit2_terminate(Res, _From, State) ->
     NewReply.
 
 %%--------------------------------------------------------------------
-%% Function: send_final_response(State, Status, Reason)
-%%           State = state record()
+%% Function: send_final_response(State, Status, Reason, EH)
+%%           State  = state record()
 %%           Status = integer(), SIP status code
 %%           Reason = string(), SIP reason phrase
+%%           EH     = list() of {Key, Value} tuples, extra headers
 %% Descrip.: We have a final response to deliver.
 %%           * Non-CPL : Send a final response to our server
 %%             transaction (aka. callhandler).
@@ -430,16 +436,18 @@ check_quit2_terminate(Res, _From, State) ->
 %%             tell the CPL pid about it.
 %% Returns : State = state record()
 %%--------------------------------------------------------------------
-send_final_response(#state{cpl_pid=none}=State, Status, Reason) when is_integer(Status), is_list(Reason) ->
+send_final_response(State, Status, Reason) ->
+    send_final_response(State, Status, Reason, []).
+send_final_response(#state{cpl_pid=none}=State, Status, Reason, EH) when is_integer(Status), is_list(Reason) ->
     TH = State#state.callhandler,
-    transactionlayer:send_response_handler(TH, Status, Reason),
+    transactionlayer:send_response_handler(TH, Status, Reason, EH),
     State#state{completed=true};
-send_final_response(State, Status, Reason) when is_record(State, state), is_integer(Status), is_list(Reason) ->
+send_final_response(State, Status, Reason, EH) when is_record(State, state), is_integer(Status), is_list(Reason) ->
     Response = {Status, Reason},
     if
 	Status >= 200, Status =< 299 ->
 	    %% We send 2xx responses to the server transaction directly, and just tell CPL about it afterwards
-	    transactionlayer:send_response_handler(State#state.callhandler, Status, Reason);
+	    transactionlayer:send_response_handler(State#state.callhandler, Status, Reason, EH);
 	true -> true
     end,
     State#state.cpl_pid ! {appserver_glue_final_response, self(), Response},

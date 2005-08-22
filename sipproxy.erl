@@ -20,7 +20,8 @@
 %%%           {sipproxy_terminating, Pid}
 %%%
 %%%              Response = response record()
-%%%              FinalResponse = Response | {Status, Reason}
+%%%              FinalResponse = Response | {Status, Reason} |
+%%%                              {Status, Reason, ExtraHeaders}
 %%%              Pid      = pid() of sipproxy process
 %%%              Branch   = string(), the branch used by the client
 %%%                         transaction that received/generated a
@@ -170,12 +171,14 @@ start(BranchBase, Parent, Request, Actions, Timeout)
 		  Parent ! {sipproxy_all_terminated, self(), {Status, Reason}},
 		  E = io_lib:format("Request could not be forked (~p ~s)", [Status, Reason]),
 		  {error, lists:flatten(E)};
-	      Unknown ->
-		  logger:log(error, "sipproxy: siprequest:check_proxy_request/1 failed"),
-		  logger:log(debug, "sipproxy: check_proxy_request returned unknown result :~n~p", [Unknown]),
-		  InternalError = {500, "Server Internal Error"},
-		  Parent ! {sipproxy_all_terminated, self(), InternalError},
-		  {error, "Request could not be forked"}
+	      {siperror, Status, Reason, ExtraHeaders} ->
+		  %% siprequest:check_proxy_request() did a throw() - something it does if
+		  %% for example Max-Forwards is 1. Pass this on to Parent and then return.
+		  logger:log(debug, "sipproxy: caught siperror throw() from check_proxy_request : ~p ~s, "
+			     "extra headers : ~p", [Status, Reason, ExtraHeaders]),
+		  Parent ! {sipproxy_all_terminated, self(), {Status, Reason, ExtraHeaders}},
+		  E = io_lib:format("Request could not be forked (~p ~s)", [Status, Reason]),
+		  {error, lists:flatten(E)}
 	  end,
     %% Always signal Parent that we are terminating
     Parent ! {sipproxy_terminating, self()},
