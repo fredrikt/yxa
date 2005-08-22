@@ -771,7 +771,6 @@ replace_top_via(NewVia, Header) when is_record(NewVia, via) ->
 %%--------------------------------------------------------------------
 received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     MyPorts = sipsocket:get_all_listenports(),
-    MyIP = siphost:myip(),
     {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
     HostnameList = MyHostnames ++ siphost:myip_list(),
     %% If the URI has a username in it, it is not something we've put in a Record-Route
@@ -789,16 +788,6 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
 	    %% Record-Route
 	    Port = sipsocket:default_port(URI#sipurl.proto, sipurl:get_port(URI)),
 	    PortMatches = lists:member(Port, MyPorts),
-	    MAddrMatch = case url_param:find(URI#sipurl.param_pairs, "maddr") of
-			     [MyIP] -> true;
-			     [_OtherIP] ->
-				 false;
-			     [] ->
-				 %% this should really return 'false', but some SIP-stacks
-				 %% evidently strip parameters so we treat the absence of maddr
-				 %% parameter as if it matches
-				 true
-			 end,
 	    HeaderHasRoute = case keylist:fetch('route', Header) of
 				 [] -> false;
 				 _ -> true
@@ -806,7 +795,6 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
 	    if
 		HostnameIsMyHostname /= true -> false;
 		PortMatches /= true -> false;
-		MAddrMatch /= true -> false;
 		HeaderHasRoute /= true ->
 		    logger:log(debug, "Sipserver: Warning: Request-URI looks like something"
 			       " I put in a Record-Route header, but request has no Route!"),
