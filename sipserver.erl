@@ -1510,9 +1510,10 @@ test() ->
     true = received_from_strict_router(sipurl:parse(RRURL2), StrictHeader1),
 
     io:format("test: received_from_strict_router/2 - 5~n"),
-    %% This is an URL that we could actually have put in a Record-Route header, but with the WRONG maddr
+    %% This is an URL that we could actually have put in a Record-Route header, but with the WRONG maddr.
+    %% It still matches us though, since we only check on hostname and port.
     RRURL3 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort) ++ ";maddr=192.0.2.123",
-    false = received_from_strict_router(sipurl:parse(RRURL3), StrictHeader1),
+    true = received_from_strict_router(sipurl:parse(RRURL3), StrictHeader1),
 
     io:format("test: received_from_strict_router/2 - 6~n"),
     %% This is an URL that we could actually have put in a Record-Route header, but without the port

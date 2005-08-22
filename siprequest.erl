@@ -942,7 +942,6 @@ test() ->
     %%--------------------------------------------------------------------
     io:format("test: add_record_route/2 - 1~n"),
     EmptyHeader = keylist:from_list([]),
-    MyIP = siphost:myip(),
 
     RRHeader1 = add_record_route(sipurl:parse("sip:ft@one.example.org;transport=tcp"), EmptyHeader),
 
@@ -957,12 +956,11 @@ test() ->
 
     %% contact.urlstr
     io:format("test: add_record_route/2 - 4.1~n"),
-    #sipurl{proto="sip", host=MyHostname, port=SipLPort, param_pairs=RRParam1} =
+    #sipurl{proto="sip", host=MyHostname, port=none, param_pairs=RRParam1} =
 	sipurl:parse(RRoute1#contact.urlstr),
 
     %% contact.urlstr sipurl parameters
     io:format("test: add_record_route/2 - 4.2~n"),
-    [MyIP] = url_param:find(RRParam1, "maddr"),
     ["true"] = url_param:find(RRParam1, "lr"),
     %% we should never set transport
     [] = url_param:find(RRParam1, "transport"),
@@ -981,12 +979,11 @@ test() ->
 
     %% contact.urlstr
     io:format("test: add_record_route/2 - 6.3~n"),
-    #sipurl{proto="sips", host=MyHostname, port=SipsLPort, param_pairs=RRParam2} =
+    #sipurl{proto="sips", host=MyHostname, port=none, param_pairs=RRParam2} =
 	sipurl:parse(RRoute2#contact.urlstr),
 
     %% contact.urlstr sipurl parameters
     io:format("test: add_record_route/2 - 6.4~n"),
-    [MyIP] = url_param:find(RRParam2, "maddr"),
     ["true"] = url_param:find(RRParam2, "lr"),
     %% transport=tls is deprecated
     [] = url_param:find(RRParam2, "transport"),
@@ -1208,7 +1205,7 @@ test() ->
 
     io:format("test: process_route_header/2 - 4.2~n"),
     %% check the Route headers in the new headers returned
-    [StrictRouterContact] = sipheader:route(PRHeader3_out),
+    [LooseRouterContact, StrictRouterContact] = sipheader:route(PRHeader3_out),
 
     %% Test loose router alone
     io:format("test: process_route_header/2 - 5.1~n"),
@@ -1216,7 +1213,7 @@ test() ->
     {ok, PRHeader4_out, LooseRouterURL, InURI} =
 	process_route_header(PRHeader4, InURI),
 
-    [] = sipheader:route(PRHeader4_out),
+    [LooseRouterContact] = sipheader:route(PRHeader4_out),
 
     %% check empty header, no Route present
     io:format("test: process_route_header/2 - 6~n"),
