@@ -63,6 +63,9 @@ check_config(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModu
 		    %% check that sipuserdb_mysql_{host, user, password, database} is set if userdb_modules
 		    %% contains sipuserdb_mysql
 		    %%
+		    %% check that record_route_url is a SIP/SIPS URL and (at least) warn if it does not have
+		    %% 'lr' parameter
+		    %%
 		    case check_loadable(NewCfg, Definitions, Mode) of
 			ok ->
 			    {ok, NewCfg};

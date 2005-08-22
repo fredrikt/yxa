@@ -176,6 +176,9 @@
 		    default	= false,
 		    type	= bool
 		   },
+	 #cfg_entry{key		= record_route_url,
+		    type	= sipurl
+		   },
 	 #cfg_entry{key	= timerT1,
 		    default	= 500,
 		    type	= integer

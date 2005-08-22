@@ -158,15 +158,29 @@ myhostnames			(required) List of IP addresses and/or
 				hostnames of the host you run your server on.
 				The first entry in the list will be used
 				to symbolize this host in SIP packets
-				(for example in Record-Route and Via headers).
-				Because of this, the first entry will need to be
+				(Via headers and Record-Route headers (unless you
+				set record_route_url)).
+				Because of this, the first entry should really be
 				a real hostname for this host, and not a NAPTR/SRV
 				service name even if those NAPTR/SRV record points
-				at the real host.
+				at the real host. It doesn't hurt if there is also
+				NAPTR/SRV records for the real hostname though.
 
-record_route			(default: false, except for pstnproxy where
-				default is true) Enable or disable adding
-				Record-Route header to requests.
+record_route			(default: false, except for pstnproxy and outgoing-
+				proxy where default is true) Enable or disable
+				adding of Record-Route header to requests.
+
+record_route_url		(optional) A SIP (or SIPS) URI to use as Record-
+				Route, if we are configured to add Record-Route
+				headers. This makes it possible to for example
+				specifying the name of a cluster of machines in
+				the Record-Route headers, or to include port
+				number or other parameters if you find that you
+				have clients that require it.
+				Specifying a port number and a maddr=my-ip-address
+				is a way to get as much backwards compatibility as
+				possible, but also makes sure noone will try to
+				use anything besides UDP when following the Route.
 
 default_max_forwards		(default: 70) The Max-Forwards value we put in
 				requests that does not have one. Only change for

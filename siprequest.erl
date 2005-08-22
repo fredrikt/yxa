@@ -633,25 +633,43 @@ create_via(Proto, Parameters) ->
 %%--------------------------------------------------------------------
 add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hostname), is_integer(Port);
 						     Port == none ->
-    %% we use 'lr=true' instead of just 'lr' since some SIP stacks are known
-    %% to require that parameters are of the format 'key=value'.
-    Param1 = ["lr=true"],
-    RR_Elems =
-	case Port of
+    RouteStr =
+	case yxa_config:get_env(record_route_url) of
+	    {ok, RRURL} ->
+		%% Upgrade to SIPS if RRURL's protocol is SIP
+		case {Proto, RRURL#sipurl.proto} of
+		    {"sips", "sip"} ->
+			%% Proto is SIPS, but RRURL's Proto is SIP. Upgrade SIP to SIPS.
+			sipurl:print( sipurl:set([{proto, Proto}], RRURL) );
+		    {"sip", "sips"} ->
+			%% Proto is SIP, but we are configured to add SIPS Record-Route. Upgrade SIP to SIPS.
+			sipurl:print(RRURL);
+		    _ ->
+			sipurl:print(RRURL)
+		end;
 	    none ->
-		%% It was requested that we don't include a port number.
-		[{proto, Proto}, {host, Hostname}, {param, Param1}];
-	    _ when is_integer(Port) ->
-		[{proto, Proto}, {host, Hostname}, {port, Port}, {param, Param1}]
+		%% we use 'lr=true' instead of just 'lr' since some SIP stacks are known
+		%% to require that parameters are of the format 'key=value'.
+		Param1 = ["lr=true"],
+		RR_Elems =
+		    case Port of
+			none ->
+			    %% It was requested that we don't include a port number.
+			    [{proto, Proto}, {host, Hostname}, {param, Param1}];
+			_ when is_integer(Port) ->
+			    [{proto, Proto}, {host, Hostname}, {port, Port}, {param, Param1}]
+		    end,
+		sipurl:print(sipurl:new(RR_Elems))
 	end,
-    RouteStr = sipurl:print( sipurl:new(RR_Elems) ),
 
     %% Check if our Record-Route (RouteStr) is already present as the first entry of
     %% the Record-Route set in Header.
     AlreadyPresent =
 	case sipheader:record_route(Header) of
 	    [FirstRoute | _] when is_record(FirstRoute, contact) ->
-		%% XXX use sipurl:url_is_equal/2?
+		%% We only do byte-by-byte matching since the purpose of this check is to
+		%% make sure that this function isn't used twice on a message - not to make sure
+		%% that there is no Record-Route that would resolve to this proxy/UA in there.
 		case FirstRoute#contact.urlstr of
 		    RouteStr -> true;
 		    _ -> false
