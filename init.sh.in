@@ -177,7 +177,8 @@ do
 	      fi
 
 	      command="$arg"
-	      shift
+	      # complicated shift to not make picky sh's whine
+	      if [ "x$1" != "x" ]; then shift; else $0=""; $exit_now=1; fi
 	      ;;
 	  *)
 	      usage
