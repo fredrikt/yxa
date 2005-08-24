@@ -159,7 +159,18 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
 stateless_proxy_request(LogTag, Request) when is_list(LogTag), is_record(Request, request) ->
     case siprequest:stateless_route_proxy_request(Request) of
 	{ok, Dst, NewRequest} ->
-	    transportlayer:send_proxy_request(none, NewRequest, Dst, []);
+	    case send_proxy_request(none, NewRequest, Dst, []) of
+		{ok, _SendSocket, _BranchUsed} ->
+		    logger:log(normal, "~s: Proxied stateless request '~s ~s' to ~p:~s:~p",
+			       [LogTag, NewRequest#request.method, sipurl:print(NewRequest#request.uri),
+				Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
+		    ok;
+		{error, Reason} ->
+		    logger:log(normal, "~s: FAILED proxying stateless request '~s ~s' to ~p:~s:~p : ~p",
+			       [LogTag, NewRequest#request.method, sipurl:print(NewRequest#request.uri),
+				Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, Reason]),
+		    {error, Reason}
+	    end;
 	{error, Reason} ->
 	    logger:log(error, "~s: Could not get destination for stateless request : ~p", [LogTag, Reason]),
 	    {error, Reason}
