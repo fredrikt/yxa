@@ -16,7 +16,8 @@ AC_CONFIG_FILES(
 		src/mysql/Makefile \
 		src/eldap/Makefile \
 		src/database/Makefile \
-		src/transportlayer/Makefile
+		src/transportlayer/Makefile \
+		src/sipuserdb/Makefile
 	       )
 
 AC_ARG_WITH(erlang,

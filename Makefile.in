@@ -79,12 +79,6 @@ erl_FILES = \
 	sipserver_sup.erl \
 	siptimer.erl \
 	sipurl.erl \
-	sipuserdb.erl \
-	sipuserdb_file.erl \
-	sipuserdb_file_backend.erl \
-	sipuserdb_ldap.erl \
-	sipuserdb_mnesia.erl \
-	sipuserdb_mysql.erl \
 	siputil.erl \
 	targetlist.erl \
 	testserver.erl \
@@ -103,7 +97,6 @@ hrl_FILES = \
 	directory.hrl \
 	sipproxy.hrl \
 	siprecords.hrl \
-	sipuserdb_file.hrl \
 	transactionstatelist.hrl
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
@@ -126,8 +119,12 @@ SUBDIRS = \
 	src/config \
 	src/cpl \
 	src/event_handler \
-	yaws/src \
-	src/mysql
+	src/mysql \
+	src/eldap \
+	src/database \
+	src/transportlayer \
+	src/sipuserdb \
+	yaws/src
 
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
