@@ -51,10 +51,6 @@ erl_FILES = \
 	clienttransaction.erl \
 	contact.erl \
 	contact_param.erl \
-	database_call.erl \
-	database_forward.erl \
-	database_regexproute.erl \
-	db_util.erl \
 	directory.erl \
 	dnsutil.erl \
 	group_regexp.erl \
@@ -65,7 +61,6 @@ erl_FILES = \
 	local.erl \
 	logger.erl \
 	lookup.erl \
-	phone.erl \
 	pstnproxy.erl \
 	outgoingproxy.erl \
 	registrar.erl \
@@ -96,7 +91,6 @@ erl_FILES = \
 	sipuserdb_mysql.erl \
 	siputil.erl \
 	socketlist.erl \
-	table_update.erl \
 	targetlist.erl \
 	tcp_connection.erl \
 	tcp_dispatcher.erl \
@@ -116,11 +110,7 @@ imported_hrl_FILES = \
 	src/config/yxa_config.hrl
 
 hrl_FILES = \
-	database_call.hrl \
-	database_forward.hrl \
-	database_regexproute.hrl \
 	directory.hrl \
-	phone.hrl \
 	sipproxy.hrl \
 	siprecords.hrl \
 	sipuserdb_file.hrl \

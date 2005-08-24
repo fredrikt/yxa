@@ -14,7 +14,8 @@ AC_CONFIG_FILES(
 		src/event_handler/Makefile \
 		yaws/src/Makefile \
 		src/mysql/Makefile \
-		src/eldap/Makefile
+		src/eldap/Makefile \
+		src/database/Makefile
 	       )
 
 AC_ARG_WITH(erlang,
