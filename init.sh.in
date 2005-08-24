@@ -215,13 +215,15 @@ else
     mnesiaparameters="-mnesia dir '"$mnesiadir"'"
 fi
 
-for EXTRA_DIR in "${PWD}/event_handler" "${PWD}/cpl" "${PWD}/config" "${PWD}/mysql"; do
-    # Add event_handler and cpl to search path if such a directory exists
-    # (meaning we are probably in the build directory)
-    if [ -d "$EXTRA_DIR" ]; then
-	EXTRA_ERL_ARGUMENTS="${EXTRA_ERL_ARGUMENTS} -pa $EXTRA_DIR"
-    fi
-done
+if [ -d "${PWD}/src/event_handler" -a -d "${PWD}/src/cpl" ]; then
+    # we must be running from the build directory, add all subdirectorys
+    # to src/ to the code search path
+    ls ${PWD}/src/ | while read entry; do
+	if [ -d "$entry" ]; then
+	    EXTRA_ERL_ARGUMENTS="${EXTRA_ERL_ARGUMENTS} -pa $EXTRA_DIR"
+	fi
+    done
+fi
 
 if [ $is_bootstrap -eq 1 ]; then
     if [ ! -d "$mnesiadir" ]; then

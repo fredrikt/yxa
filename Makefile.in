@@ -44,7 +44,6 @@ create_start_script = \
 LOCAL_ERL = local.erl-$(local_file)
 
 erl_FILES = \
-	LDAPv3.erl \
 	appserver.erl \
 	appserver_glue.erl \
 	autotest.erl \
@@ -58,7 +57,6 @@ erl_FILES = \
 	db_util.erl \
 	directory.erl \
 	dnsutil.erl \
-	eldap.erl \
 	group_regexp.erl \
 	hex.erl \
 	incomingproxy.erl \
@@ -115,9 +113,7 @@ erl_FILES = \
 	yxa_ctl.erl
 
 imported_hrl_FILES = \
-	LDAPv3.hrl \
-	eldap.hrl \
-	config/yxa_config.hrl
+	src/config/yxa_config.hrl
 
 hrl_FILES = \
 	database_call.hrl \
