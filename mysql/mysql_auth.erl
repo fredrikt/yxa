@@ -75,14 +75,14 @@ do_new_auth(Sock, RecvPid, SeqNum, User, Password, Salt1, Salt2, LogFun) ->
     Packet2 = make_new_auth(User, Auth, none),
     do_send(Sock, Packet2, SeqNum, LogFun),
     case mysql_conn:do_recv(LogFun, RecvPid, SeqNum) of
-	{ok, Packet3, SeqNum} ->
+	{ok, Packet3, SeqNum2} ->
 	    case Packet3 of
 		<<254:8>> ->
 		    AuthOld = password_old(Password, Salt1),
-		    do_send(Sock, <<AuthOld/binary, 0:8>>, SeqNum + 1, LogFun),
-		    mysql_conn:do_recv(LogFun, RecvPid, SeqNum + 1);
+		    do_send(Sock, <<AuthOld/binary, 0:8>>, SeqNum2 + 1, LogFun),
+		    mysql_conn:do_recv(LogFun, RecvPid, SeqNum2 + 1);
 		_ ->
-		    {ok, Packet3, SeqNum}
+		    {ok, Packet3, SeqNum2}
 	    end;
 	{error, Reason} ->
 	    {error, Reason}
