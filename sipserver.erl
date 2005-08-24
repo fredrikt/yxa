@@ -928,17 +928,26 @@ remove_route_matching_me(Header) ->
 %%--------------------------------------------------------------------
 route_matches_me(Route) when is_record(Route, contact) ->
     URL = sipurl:parse(Route#contact.urlstr),
+
     MyPorts = sipsocket:get_all_listenports(),
     Port = sipsocket:default_port(URL#sipurl.proto, sipurl:get_port(URL)),
     PortMatches = lists:member(Port, MyPorts),
-    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
-    HostnameList = MyHostnames ++ siphost:myip_list(),
+
     LChost = http_util:to_lower(URL#sipurl.host),
-    HostnameMatches = lists:member(LChost, HostnameList),
-    if
-	HostnameMatches /= true -> false;
-	PortMatches /= true -> false;
-	true ->	true
+    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
+    HostnameMatches = (lists:member(LChost, MyHostnames) orelse
+		       lists:member(LChost, siphost:myip_list())
+		      ),
+
+    case {HostnameMatches, PortMatches} of
+	{true, true} ->
+	    true;
+	{true, false} ->
+	    logger:log(debug, "Sipserver: Hostname ~p matches me, but port ~p derived from Route-header does not. "
+		       "Concluding that first Route does not match me.", [LChost, Port]),
+	    false;
+	_ ->
+	    false
     end.
 
 %%--------------------------------------------------------------------
