@@ -9,11 +9,11 @@ AC_PROG_INSTALL
 
 AC_CONFIG_FILES(
 		Makefile \
-		config/Makefile \
-		cpl/Makefile \
-		event_handler/Makefile \
+		src/config/Makefile \
+		src/cpl/Makefile \
+		src/event_handler/Makefile \
 		yaws/src/Makefile \
-		mysql/Makefile
+		src/mysql/Makefile
 	       )
 
 AC_ARG_WITH(erlang,

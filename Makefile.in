@@ -149,11 +149,11 @@ CFLAGS = -Wall
 beam_FILES = $(erl_FILES:.erl=.beam)
 
 SUBDIRS = \
-	config \
-	cpl \
-	event_handler \
+	src/config \
+	src/cpl \
+	src/event_handler \
 	yaws/src \
-	mysql
+	src/mysql
 
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
