@@ -13,10 +13,10 @@
 %%%
 %%% Call one of the start-functions before any call to fetch/2
 %%%
-%%%   start(Id, Host, User, Password, Database)
-%%%   start(Id, Host, Port, User, Password, Database)
-%%%   start(Id, Host, User, Password, Database, LogFun)
-%%%   start(Id, Host, Port, User, Password, Database, LogFun)
+%%%   start_link(Id, Host, User, Password, Database)
+%%%   start_link(Id, Host, Port, User, Password, Database)
+%%%   start_link(Id, Host, User, Password, Database, LogFun)
+%%%   start_link(Id, Host, Port, User, Password, Database, LogFun)
 %%%
 %%% Id is a connection group identifier. If you want to have more
 %%% than one connection to a server (or a set of MySQL replicas),
@@ -144,6 +144,7 @@ start_link(Id, Host, User, Password, Database, LogFun) when is_list(Host), is_li
 
 start_link(Id, Host, Port, User, Password, Database, LogFun) when is_list(Host), is_integer(Port), is_list(User),
 								  is_list(Password), is_list(Database) ->
+    crypto:start(),
     gen_server:start_link({local, ?SERVER}, ?MODULE, [Id, Host, Port, User, Password, Database, LogFun], []).
 
 %%--------------------------------------------------------------------
