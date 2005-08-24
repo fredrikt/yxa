@@ -636,14 +636,10 @@ add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hos
     RouteStr =
 	case yxa_config:get_env(record_route_url) of
 	    {ok, RRURL} ->
-		%% Upgrade to SIPS if RRURL's protocol is SIP
 		case {Proto, RRURL#sipurl.proto} of
 		    {"sips", "sip"} ->
 			%% Proto is SIPS, but RRURL's Proto is SIP. Upgrade SIP to SIPS.
 			sipurl:print( sipurl:set([{proto, Proto}], RRURL) );
-		    {"sip", "sips"} ->
-			%% Proto is SIP, but we are configured to add SIPS Record-Route. Upgrade SIP to SIPS.
-			sipurl:print(RRURL);
 		    _ ->
 			sipurl:print(RRURL)
 		end;
@@ -703,7 +699,22 @@ add_record_route(URL, Header) when is_record(URL, sipurl) ->
 		%% Create sip: Record-Route for everything except SIPS-URIs
 		"sip"
 	end,
-    add_record_route(Proto, myhostname(), none, Header).
+    URLport = sipsocket:default_port(URL#sipurl.proto, none),
+    MyPort = case URL#sipurl.proto of
+		 "sips" -> sipsocket:get_listenport(tls);
+		 _ -> sipsocket:get_listenport(udp)
+	     end,
+    %% If we are listening on the default port for the protocol in URL, we don't
+    %% need to set a port in the Record-Route. If not however, we need to set the
+    %% port because otherwise Cisco 79xx phones (version 7.5) will put port 5060
+    %% in the Route headers!
+    Port = case (URLport == MyPort) of
+	       true ->
+		   none;
+	       false ->
+		   MyPort
+	   end,
+    add_record_route(Proto, myhostname(), Port, Header).
 
 %%--------------------------------------------------------------------
 %% Function: standardcopy(Header, ExtraHeaders)
