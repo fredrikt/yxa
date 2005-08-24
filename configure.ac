@@ -17,7 +17,8 @@ AC_CONFIG_FILES(
 		src/eldap/Makefile \
 		src/database/Makefile \
 		src/transportlayer/Makefile \
-		src/sipuserdb/Makefile
+		src/sipuserdb/Makefile \
+		src/transactionlayer/Makefile
 	       )
 
 AC_ARG_WITH(erlang,

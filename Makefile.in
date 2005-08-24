@@ -48,7 +48,6 @@ erl_FILES = \
 	appserver_glue.erl \
 	autotest.erl \
 	bootstrap.erl \
-	clienttransaction.erl \
 	contact.erl \
 	contact_param.erl \
 	directory.erl \
@@ -64,7 +63,6 @@ erl_FILES = \
 	pstnproxy.erl \
 	outgoingproxy.erl \
 	registrar.erl \
-	servertransaction.erl \
 	sipauth.erl \
 	sipdst.erl \
 	sipheader.erl \
@@ -82,8 +80,6 @@ erl_FILES = \
 	siputil.erl \
 	targetlist.erl \
 	testserver.erl \
-	transactionlayer.erl \
-	transactionstatelist.erl \
 	url_param.erl \
 	util.erl \
 	version.erl \
@@ -96,8 +92,7 @@ imported_hrl_FILES = \
 hrl_FILES = \
 	directory.hrl \
 	sipproxy.hrl \
-	siprecords.hrl \
-	transactionstatelist.hrl
+	siprecords.hrl
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
 
@@ -122,8 +117,9 @@ SUBDIRS = \
 	src/mysql \
 	src/eldap \
 	src/database \
-	src/transportlayer \
 	src/sipuserdb \
+	src/transportlayer \
+	src/transactionlayer \
 	yaws/src
 
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
