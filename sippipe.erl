@@ -67,14 +67,20 @@ start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_record(Reques
 	{ok, NewHeader1, ApproxMsgSize} ->
 	    Request1 = RequestIn#request{header=NewHeader1},
 	    %% now make sure we know some destinations of this request
-	    {ok, DstList, Request} = start_get_dstlist(ServerHandler, Request1, ApproxMsgSize, DstIn),
-	    %% Adopt server transaction and get it's branch. If ServerHandler is not a valid
-	    %% transaction handle, then try to figure the server transaction handler out using Request.
-	    case start_get_servertransaction(ServerHandler, Request) of
-		{ok, STHandler, Branch} ->
-		    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize);
-		ok ->
-		    ok
+	    case start_get_dstlist(ServerHandler, Request1, ApproxMsgSize, DstIn) of
+		{ok, DstList, Request} ->
+		    %% Adopt server transaction and get it's branch. If ServerHandler is not a valid
+		    %% transaction handle, then try to figure the server transaction handler out using Request.
+		    case start_get_servertransaction(ServerHandler, Request) of
+			{ok, STHandler, Branch} ->
+			    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize);
+			ok ->
+			    ok
+		    end;
+		error ->
+		    %% just end on error, start_get_dstlist will have instructed the STHandler to send an
+		    %% SIP error message already.
+		    error
 	    end
     catch
 	throw:
