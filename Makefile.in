@@ -45,7 +45,6 @@ LOCAL_ERL = local.erl-$(local_file)
 
 erl_FILES = \
 	LDAPv3.erl \
-	admin_www.erl \
 	appserver.erl \
 	appserver_glue.erl \
 	autotest.erl \
@@ -59,10 +58,8 @@ erl_FILES = \
 	db_util.erl \
 	directory.erl \
 	dnsutil.erl \
-	dtmf.erl \
 	eldap.erl \
 	group_regexp.erl \
-	gssapi.erl \
 	hex.erl \
 	incomingproxy.erl \
 	key_val_db.erl \
@@ -74,12 +71,8 @@ erl_FILES = \
 	pstnproxy.erl \
 	outgoingproxy.erl \
 	registrar.erl \
-	rtp.erl \
-	sdp.erl \
 	servertransaction.erl \
-	sipanswer.erl \
 	sipauth.erl \
-	sipclient.erl \
 	sipdst.erl \
 	sipheader.erl \
 	siphost.erl \
@@ -105,7 +98,6 @@ erl_FILES = \
 	sipuserdb_mysql.erl \
 	siputil.erl \
 	socketlist.erl \
-	sound.erl \
 	table_update.erl \
 	targetlist.erl \
 	tcp_connection.erl \
@@ -165,7 +157,7 @@ SUBDIRS = \
 
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
-all: $(beam_FILES) yxa-bootstrap.sh dtmfserver all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)
+all: $(beam_FILES) yxa-bootstrap.sh all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)
 
 $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
@@ -196,7 +188,7 @@ clean: clean-recursive
 	rm -f yxa-bootstrap.sh local.erl
 	rm -f newversion.erl.new version.erl.in
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
-	rm -f *.o ktrace.out dtmfserver erl_crash.dump
+	rm -f *.o ktrace.out erl_crash.dump
 	rm -f $(start_FILES)
 
 sslkey:
@@ -226,9 +218,6 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 .erl.beam:
 	$(ERLC) -I$(srcdir) -W +debug_info $<
-
-dtmfserver: dtmfserver.o
-	$(CC) $(LDFLAGS) $(CFLAGS) -o dtmfserver dtmfserver.o
 
 .app-in.app:
 	cp $(srcdir)/$*.app-in $*.app
