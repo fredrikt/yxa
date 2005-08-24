@@ -77,10 +77,6 @@ erl_FILES = \
 	siprequest.erl \
 	sipserver.erl \
 	sipserver_sup.erl \
-	sipsocket.erl \
-	sipsocket_tcp.erl \
-	sipsocket_test.erl \
-	sipsocket_udp.erl \
 	siptimer.erl \
 	sipurl.erl \
 	sipuserdb.erl \
@@ -90,16 +86,10 @@ erl_FILES = \
 	sipuserdb_mnesia.erl \
 	sipuserdb_mysql.erl \
 	siputil.erl \
-	socketlist.erl \
 	targetlist.erl \
-	tcp_connection.erl \
-	tcp_dispatcher.erl \
-	tcp_listener.erl \
-	tcp_receiver.erl \
 	testserver.erl \
 	transactionlayer.erl \
 	transactionstatelist.erl \
-	transportlayer.erl \
 	url_param.erl \
 	util.erl \
 	version.erl \
@@ -114,8 +104,6 @@ hrl_FILES = \
 	sipproxy.hrl \
 	siprecords.hrl \
 	sipuserdb_file.hrl \
-	sipsocket.hrl \
-	socketlist.hrl \
 	transactionstatelist.hrl
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)

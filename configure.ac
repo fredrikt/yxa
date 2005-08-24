@@ -15,7 +15,8 @@ AC_CONFIG_FILES(
 		yaws/src/Makefile \
 		src/mysql/Makefile \
 		src/eldap/Makefile \
-		src/database/Makefile
+		src/database/Makefile \
+		src/transportlayer/Makefile
 	       )
 
 AC_ARG_WITH(erlang,
