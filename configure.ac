@@ -2,23 +2,25 @@ dnl Process this file with autoconf to produce a configure script.
 AC_REVISION($Revision$)
 AC_PREREQ(2.53)
 AC_INIT(Yxa, 0.1, yxa-devel@lists.su.se)
-AC_CONFIG_SRCDIR([registrar.erl])
+AC_CONFIG_SRCDIR([src/incomingproxy.erl])
+AC_CONFIG_AUX_DIR([scripts])
 
 AC_PROG_CC
 AC_PROG_INSTALL
 
 AC_CONFIG_FILES(
 		Makefile \
+		src/Makefile \
 		src/config/Makefile \
 		src/cpl/Makefile \
 		src/event_handler/Makefile \
-		yaws/src/Makefile \
 		src/mysql/Makefile \
 		src/eldap/Makefile \
 		src/database/Makefile \
 		src/transportlayer/Makefile \
 		src/sipuserdb/Makefile \
-		src/transactionlayer/Makefile
+		src/transactionlayer/Makefile \
+		yaws/src/Makefile
 	       )
 
 AC_ARG_WITH(erlang,

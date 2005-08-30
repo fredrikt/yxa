@@ -25,16 +25,16 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 
 erl_FILES = \
 	yxa_yaws_util.erl
 
 imported_hrl_FILES = \
-	../../sipsocket.hrl \
-	../../phone.hrl \
-	../../config/yxa_config.hrl
+	$(top_srcdir)/src/include/sipsocket.hrl \
+	$(top_srcdir)/src/include/phone.hrl \
+	$(top_srcdir)/src/config/yxa_config.hrl
 
 
 hrl_FILES =
@@ -70,4 +70,4 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 .erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/../../ -W +debug_info $<
+	$(ERLC) -I$(srcdir) -I$(top_srcdir)/src/include/ -W +debug_info $<

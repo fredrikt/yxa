@@ -25,7 +25,7 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
-mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 
 erl_FILES = \
@@ -73,4 +73,4 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 .erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/../ -W +debug_info $<
+	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -W +debug_info $<
