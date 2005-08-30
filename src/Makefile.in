@@ -1,0 +1,232 @@
+# $Id$
+#
+
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+VPATH = @srcdir@
+prefix = @prefix@
+DESTDIR = @DESTDIR@
+SHELL = @SHELL@
+
+confdir = @sysconfdir@
+sslcertdir = @sslcertdir@
+mnesiadir = @mnesiadir@
+beamdir = @libdir@/yxa/ebin
+includedir = @libdir@/yxa/include
+sbindir = @sbindir@
+exec_prefix=${prefix}
+builddir = @builddir@
+local_file = @local_file@
+
+ERLC = @ERLC@
+ERL = @ERL@
+
+INSTALL = @INSTALL@
+install_DATA = @INSTALL_DATA@
+install_PROGRAM = @INSTALL_PROGRAM@
+
+mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+
+
+systools_make_script = \
+	$(ERL) -noshell -run systools make_script $* -run init stop && test -f $*.boot
+
+create_start_script = \
+	sed -e "s!@PROGRAMNAME@!$@!" \
+	    -e 's!@CONFIGDIR@!$(confdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@erl@!$(ERL)!' \
+	    -e 's!@beamdir@!$(beamdir)!' < $(srcdir)/init.sh.in > $@.new && \
+	chmod +x $@.new && \
+	mv $@.new $@
+
+LOCAL_ERL = local.erl-$(local_file)
+
+erl_FILES = \
+	appserver.erl \
+	appserver_glue.erl \
+	autotest.erl \
+	bootstrap.erl \
+	contact.erl \
+	contact_param.erl \
+	directory.erl \
+	dnsutil.erl \
+	group_regexp.erl \
+	hex.erl \
+	incomingproxy.erl \
+	key_val_db.erl \
+	keylist.erl \
+	local.erl \
+	logger.erl \
+	lookup.erl \
+	pstnproxy.erl \
+	outgoingproxy.erl \
+	registrar.erl \
+	sipauth.erl \
+	sipdst.erl \
+	sipheader.erl \
+	siphost.erl \
+	siplocation.erl \
+	sippacket.erl \
+	sipparse_util.erl \
+	sippipe.erl \
+	sipproxy.erl \
+	siprequest.erl \
+	sipserver.erl \
+	sipserver_sup.erl \
+	siptimer.erl \
+	sipurl.erl \
+	siputil.erl \
+	targetlist.erl \
+	testserver.erl \
+	url_param.erl \
+	util.erl \
+	version.erl \
+	xref_test.erl \
+	yxa_ctl.erl
+
+imported_hrl_FILES = \
+	src/config/yxa_config.hrl
+
+hrl_FILES = \
+	directory.hrl \
+	sipproxy.hrl \
+	siprecords.hrl
+
+yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
+
+boot_FILES = \
+	incomingproxy.boot \
+	pstnproxy.boot \
+	appserver.boot \
+	outgoingproxy.boot
+
+start_FILES = $(boot_FILES:.boot=)
+app_FILES = $(boot_FILES:.boot=.app)
+
+CC = gcc
+CFLAGS = -Wall
+
+beam_FILES = $(erl_FILES:.erl=.beam)
+
+SUBDIRS = \
+	src/config \
+	src/cpl \
+	src/event_handler \
+	src/mysql \
+	src/eldap \
+	src/database \
+	src/sipuserdb \
+	src/transportlayer \
+	src/transactionlayer \
+	yaws/src
+
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
+
+all: $(beam_FILES) yxa-bootstrap.sh all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)
+
+$(RECURSIVE_TARGETS):
+	@target=`echo $@ | sed s/-recursive//`; \
+	list='$(SUBDIRS)'; for subdir in $$list; do \
+	echo "Making $$target in $$subdir"; \
+	(cd $$subdir && $(MAKE) $$target) || exit 1; \
+	done
+
+install: $(boot_FILES) $(beam_FILES) $(start_FILES) $(hrl_FILES) yxa-bootstrap.sh start_ssl.boot install-recursive
+	$(mkinstalldirs) $(DESTDIR)$(confdir)
+	$(mkinstalldirs) $(DESTDIR)$(sslcertdir)
+	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	$(mkinstalldirs) $(DESTDIR)$(includedir)
+	for p in $(beam_FILES) $(boot_FILES) $(app_FILES) start_ssl.boot; do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(hrl_FILES); do \
+	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
+	done
+	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)
+	$(mkinstalldirs) $(DESTDIR)$(sbindir)
+	for p in $(start_FILES) yxa-bootstrap.sh ; do \
+	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
+	done
+
+clean: clean-recursive
+	rm -f core *.core *~
+	rm -f yxa-bootstrap.sh local.erl
+	rm -f newversion.erl.new version.erl.in
+	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
+	rm -f *.o ktrace.out erl_crash.dump
+	rm -f $(start_FILES)
+
+sslkey:
+	@if [ -f $(DESTDIR)$(sslcertdir)/ssl.config ]; then \
+		echo ""; \
+		echo "You already have a $(DESTDIR)$(sslcertdir)/ssl.config file - "; \
+		echo "aborting to not accidentally overwrite existing ssl keys"; \
+		echo ""; \
+		false; \
+	    else \
+		true; \
+	fi
+	$(mkinstalldirs) -m 700 $(DESTDIR)$(sslcertdir)
+	cp $(srcdir)/ssl.config $(DESTDIR)$(sslcertdir)/ssl.config
+	cd $(DESTDIR)$(sslcertdir) && openssl req -days 2002 -new -text -out cert.req -config ./ssl.config
+	cd $(DESTDIR)$(sslcertdir) && openssl rsa -in privkey.pem -out cert.pem -passin pass:foobar
+	cd $(DESTDIR)$(sslcertdir) && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
+	cat $(DESTDIR)$(sslcertdir)/cert.cert $(DESTDIR)$(sslcertdir)/cert.pem > $(DESTDIR)$(sslcertdir)/cert.comb
+
+$(beam_FILES): $(yxa_hrl_FILES)
+$(boot_FILES): $(beam_FILES)
+$(start_FILES): $(boot_FILES)
+
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+.SUFFIXES:
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+
+.erl.beam:
+	$(ERLC) -I$(srcdir) -W +debug_info $<
+
+.app-in.app:
+	cp $(srcdir)/$*.app-in $*.app
+
+.rel-in.rel:
+	cp $(srcdir)/$*.rel-in $*.rel
+
+local.erl: $(LOCAL_ERL)
+	cp $(srcdir)/$(LOCAL_ERL) local.erl
+
+incomingproxy.boot: incomingproxy.app incomingproxy.rel
+	$(systools_make_script)
+
+pstnproxy.boot: pstnproxy.app pstnproxy.rel
+	$(systools_make_script)
+
+appserver.boot: appserver.app appserver.rel
+	$(systools_make_script)
+
+outgoingproxy.boot: outgoingproxy.app outgoingproxy.rel
+	$(systools_make_script)
+
+start_ssl.boot: start_ssl.rel
+	$(systools_make_script)
+
+yxa-bootstrap.sh: init.sh.in config.status
+	$(create_start_script)
+
+incomingproxy: incomingproxy.boot init.sh.in config.status
+	$(create_start_script)
+
+pstnproxy: pstnproxy.boot init.sh.in config.status
+	$(create_start_script)
+
+appserver: appserver.boot init.sh.in config.status
+	$(create_start_script)
+
+outgoingproxy: outgoingproxy.boot init.sh.in config.status
+	$(create_start_script)
+
+test: autotest.beam
+	$(ERL) -noshell -s autotest run shell -pz $(SUBDIRS)
+
+covertest: autotest.beam
+	$(ERL) -noshell -s autotest run_cover shell -pz $(SUBDIRS)
