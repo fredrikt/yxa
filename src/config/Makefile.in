@@ -34,12 +34,10 @@ erl_FILES = \
 	yxa_config_default.erl \
 	yxa_config_erlang.erl
 
-imported_hrl_FILES =
+imported_hrl_FILES = \
+	../include/yxa_config.hrl
 
-
-hrl_FILES = \
-	yxa_config.hrl
-
+hrl_FILES =
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
 

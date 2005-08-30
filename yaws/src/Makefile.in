@@ -34,7 +34,7 @@ erl_FILES = \
 imported_hrl_FILES = \
 	$(top_srcdir)/src/include/sipsocket.hrl \
 	$(top_srcdir)/src/include/phone.hrl \
-	$(top_srcdir)/src/config/yxa_config.hrl
+	$(top_srcdir)/src/include/yxa_config.hrl
 
 
 hrl_FILES =

@@ -34,7 +34,7 @@ erl_FILES = \
 
 imported_hrl_FILES = \
 	../include/siprecords.hrl \
-	../config/yxa_config.hrl
+	../include/yxa_config.hrl
 
 
 hrl_FILES = \

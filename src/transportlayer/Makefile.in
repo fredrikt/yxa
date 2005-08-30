@@ -41,7 +41,7 @@ erl_FILES = \
 	transportlayer.erl
 
 imported_hrl_FILES = \
-	../config/yxa_config.hrl \
+	../include/yxa_config.hrl \
 	../include/sipsocket.hrl
 
 

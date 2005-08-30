@@ -14,6 +14,7 @@ AC_CONFIG_FILES(
 		src/config/Makefile \
 		src/cpl/Makefile \
 		src/event_handler/Makefile \
+		src/include/Makefile \
 		src/mysql/Makefile \
 		src/eldap/Makefile \
 		src/database/Makefile \

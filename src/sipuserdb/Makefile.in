@@ -37,7 +37,7 @@ erl_FILES = \
 	sipuserdb_mysql.erl
 
 imported_hrl_FILES = \
-	../config/yxa_config.hrl
+	../include/yxa_config.hrl
 
 hrl_FILES = \
 	sipuserdb_file.hrl

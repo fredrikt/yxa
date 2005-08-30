@@ -88,7 +88,7 @@ imported_hrl_FILES = \
 	include/sipproxy.hrl \
 	include/siprecords.hrl \
 	include/sipsocket.hrl \
-	config/yxa_config.hrl
+	include/yxa_config.hrl
 
 hrl_FILES = \
 
@@ -114,6 +114,7 @@ SUBDIRS = \
 	database \
 	eldap \
 	event_handler \
+	include \
 	mysql \
 	sipuserdb \
 	transactionlayer \
