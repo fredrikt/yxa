@@ -28,7 +28,7 @@ install_PROGRAM = @INSTALL_PROGRAM@
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 systools_make_script = \
-	$(ERLC) $*.rel
+	$(ERLC) -I$(srcdir) $*.rel
 
 create_start_script = \
 	sed -e "s!@PROGRAMNAME@!$@!" \
