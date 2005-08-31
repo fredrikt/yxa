@@ -29,6 +29,7 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 
 erl_FILES = \
+	LDAPv3.erl \
 	eldap.erl
 
 imported_hrl_FILES = \
