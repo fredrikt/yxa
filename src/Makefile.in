@@ -40,6 +40,8 @@ create_start_script = \
 	chmod +x $@.new && \
 	mv $@.new $@
 
+LOCAL_ERL = local.erl-$(local_file)
+
 erl_FILES = \
 	appserver.erl \
 	appserver_glue.erl \
@@ -49,10 +51,12 @@ erl_FILES = \
 	contact_param.erl \
 	directory.erl \
 	dnsutil.erl \
+	group_regexp.erl \
 	hex.erl \
 	incomingproxy.erl \
 	key_val_db.erl \
 	keylist.erl \
+	local.erl \
 	logger.erl \
 	lookup.erl \
 	outgoingproxy.erl \
