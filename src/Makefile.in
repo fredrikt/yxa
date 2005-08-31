@@ -30,16 +30,6 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 systools_make_script = \
 	$(ERLC) -I$(srcdir) $(srcdir)/$*.rel
 
-create_start_script = \
-	sed -e "s!@PROGRAMNAME@!$@!" \
-	    -e 's!@CONFIGDIR@!$(confdir)!' \
-	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
-	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
-	    -e 's!@erl@!$(ERL)!' \
-	    -e 's!@beamdir@!$(beamdir)!' < $(srcdir)/init.sh.in > $@.new && \
-	chmod +x $@.new && \
-	mv $@.new $@
-
 LOCAL_ERL = local.erl-$(local_file)
 
 erl_FILES = \
@@ -104,7 +94,6 @@ boot_FILES = \
 	appserver.boot \
 	outgoingproxy.boot
 
-start_FILES = $(boot_FILES:.boot=)
 app_FILES = $(boot_FILES:.boot=.app)
 
 CC = gcc
@@ -126,7 +115,7 @@ SUBDIRS = \
 
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
-all: $(beam_FILES) all-recursive $(boot_FILES) start_ssl.boot $(start_FILES)
+all: $(beam_FILES) all-recursive $(boot_FILES) start_ssl.boot
 
 $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
@@ -135,7 +124,7 @@ $(RECURSIVE_TARGETS):
 	(cd $$subdir && $(MAKE) $$target) || exit 1; \
 	done
 
-install: $(boot_FILES) $(beam_FILES) $(start_FILES) $(hrl_FILES) yxa-bootstrap.sh start_ssl.boot install-recursive
+install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) start_ssl.boot install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
 	$(mkinstalldirs) $(DESTDIR)$(includedir)
 	for p in $(beam_FILES) $(boot_FILES) $(app_FILES) start_ssl.boot; do \
@@ -144,26 +133,19 @@ install: $(boot_FILES) $(beam_FILES) $(start_FILES) $(hrl_FILES) yxa-bootstrap.s
 	for p in $(hrl_FILES); do \
 	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
 	done
-	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)
-	$(mkinstalldirs) $(DESTDIR)$(sbindir)
-	for p in $(start_FILES) yxa-bootstrap.sh ; do \
-	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
-	done
 
 clean: clean-recursive
 	rm -f core *.core *~
-	rm -f yxa-bootstrap.sh local.erl
+	rm -f local.erl
 	rm -f *.beam *.script *.start *.boot *.app
 	rm -f *.o ktrace.out erl_crash.dump
-	rm -f $(start_FILES)
 
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
-$(start_FILES): $(boot_FILES)
 
-SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
 .SUFFIXES:
-.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .app .app-in
 
 .erl.beam:
 	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info $<
@@ -174,35 +156,20 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 local.erl: $(LOCAL_ERL)
 	cp $(srcdir)/$(LOCAL_ERL) local.erl
 
-incomingproxy.boot: incomingproxy.app incomingproxy.rel
+incomingproxy.boot: incomingproxy.app $(srcdir)/incomingproxy.rel
 	$(systools_make_script)
 
-pstnproxy.boot: pstnproxy.app pstnproxy.rel
+pstnproxy.boot: pstnproxy.app $(srcdir)/pstnproxy.rel
 	$(systools_make_script)
 
-appserver.boot: appserver.app appserver.rel
+appserver.boot: appserver.app $(srcdir)/appserver.rel
 	$(systools_make_script)
 
-outgoingproxy.boot: outgoingproxy.app outgoingproxy.rel
+outgoingproxy.boot: outgoingproxy.app $(srcdir)/outgoingproxy.rel
 	$(systools_make_script)
 
-start_ssl.boot: start_ssl.rel
+start_ssl.boot: $(srcdir)/start_ssl.rel
 	$(systools_make_script)
-
-yxa-bootstrap.sh: init.sh.in $(builddir)/../config.status
-	$(create_start_script)
-
-incomingproxy: incomingproxy.boot $(builddir)/../config.status
-	$(create_start_script)
-
-pstnproxy: pstnproxy.boot $(builddir)/../config.status
-	$(create_start_script)
-
-appserver: appserver.boot $(builddir)/../config.status
-	$(create_start_script)
-
-outgoingproxy: outgoingproxy.boot $(builddir)/../config.status
-	$(create_start_script)
 
 test: autotest.beam
 	$(ERL) -noshell -s autotest run shell -pz $(SUBDIRS)

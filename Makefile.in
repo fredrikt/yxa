@@ -27,13 +27,35 @@ install_PROGRAM = @INSTALL_PROGRAM@
 
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
+create_start_script = \
+	sed -e "s!@PROGRAMNAME@!$@!" \
+	    -e 's!@CONFIGDIR@!$(confdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@erl@!$(ERL)!' \
+	    -e 's!@beamdir@!$(beamdir)!' < $(top_srcdir)/scripts/init.sh.in > $@.new && \
+	chmod +x $@.new && \
+	mv $@.new $@
+
 SUBDIRS = \
 	src \
 	yaws/src
 
 RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
 
-all: all-recursive
+erl_FILES = \
+	version.erl
+
+beam_FILES = $(erl_FILES:.erl=.beam)
+
+start_FILES = \
+	appserver \
+	incomingproxy \
+	outgoingproxy \
+	pstnproxy \
+	yxa-bootstrap.sh
+
+all: $(beam_FILES) all-recursive $(start_FILES)
 
 $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
@@ -45,13 +67,21 @@ $(RECURSIVE_TARGETS):
 install: install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(confdir)
 	$(mkinstalldirs) $(DESTDIR)$(sslcertdir)
+	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)
+	$(mkinstalldirs) $(DESTDIR)$(sbindir)
+	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	for p in $(beam_FILES); do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(start_FILES) yxa-bootstrap.sh ; do \
+	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
+	done
 
 clean: clean-recursive
 	rm -f core *.core *~
-	rm -f yxa-bootstrap.sh local.erl
-	rm -f newversion.erl.new version.erl.in
-	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
+	rm -f *.beam newversion.erl.new version.erl.in
 	rm -f *.o ktrace.out erl_crash.dump
+	rm -f $(start_FILES)
 
 sslkey:
 	@if [ -f $(DESTDIR)$(sslcertdir)/ssl.config ]; then \
@@ -70,6 +100,30 @@ sslkey:
 	cd $(DESTDIR)$(sslcertdir) && openssl req -days 2002 -x509 -in cert.req -text -key cert.pem -out cert.cert
 	cat $(DESTDIR)$(sslcertdir)/cert.cert $(DESTDIR)$(sslcertdir)/cert.pem > $(DESTDIR)$(sslcertdir)/cert.comb
 
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
+.SUFFIXES:
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .app .app-in
+
+.erl.beam:
+	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info $<
+
+$(start_FILES): $(top_srcdir)/scripts/init.sh.in $(builddir)/config.status
+
+yxa-bootstrap.sh:
+	$(create_start_script)
+
+incomingproxy: $(builddir)/src/incomingproxy.boot
+	$(create_start_script)
+
+pstnproxy: $(builddir)/src/pstnproxy.boot
+	$(create_start_script)
+
+appserver: $(builddir)/src/appserver.boot
+	$(create_start_script)
+
+outgoingproxy: $(builddir)/src/outgoingproxy.boot
+	$(create_start_script)
+
 test:
 	echo "Making test in src/"; \
 	(cd src/ && $(MAKE) test) || exit 1
@@ -77,3 +131,4 @@ test:
 covertest:
 	echo "Making covertest in src/"; \
 	(cd src/ && $(MAKE) covertest) || exit 1
+
