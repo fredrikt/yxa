@@ -97,7 +97,7 @@ while [ $# -gt 0 -a $exit_now -eq 0 ]
 do
       arg=$1
       # complicated shift to not make picky sh's whine
-      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 
       case $arg in
 	  -h)
@@ -106,22 +106,22 @@ do
 	  -config)
 	      configpath="$1"
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  -c_ssl)
 	      client_sslcertfile="$1"
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  -s_ssl)
 	      server_sslcertfile="$1"
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  -mnesiadir)
 	      mnesiadir="$1"
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  -d)
 	      if [ "x$myname" = "xyxa-bootstrap.sh" ]; then
@@ -138,18 +138,18 @@ do
 	      fi
 	      replica="$1"
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  -name)
 	      name="$1"
 	      explicit_name=1
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  -hostname)
 	      hostname="$1"
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  start|stop|status|info|reload|restart)
 	      # $arg not applicable to bootstrapping
@@ -162,7 +162,7 @@ do
 		  if [ "x$1" = "xall" ]; then
 		      command_arguments="$1"
 		      # complicated shift to not make picky sh's whine
-		      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+		      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 		  fi
 	      fi
 
@@ -178,7 +178,7 @@ do
 
 	      command="$arg"
 	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else $exit_now=1; fi
+	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
 	      ;;
 	  *)
 	      usage
