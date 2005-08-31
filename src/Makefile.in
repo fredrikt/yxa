@@ -28,7 +28,7 @@ install_PROGRAM = @INSTALL_PROGRAM@
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 systools_make_script = \
-	$(ERLC) -I$(srcdir) $*.rel
+	$(ERLC) -I$(srcdir) $(srcdir)/$*.rel
 
 create_start_script = \
 	sed -e "s!@PROGRAMNAME@!$@!" \
@@ -153,7 +153,7 @@ install: $(boot_FILES) $(beam_FILES) $(start_FILES) $(hrl_FILES) yxa-bootstrap.s
 clean: clean-recursive
 	rm -f core *.core *~
 	rm -f yxa-bootstrap.sh local.erl
-	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
+	rm -f *.beam *.script *.start *.boot *.app
 	rm -f *.o ktrace.out erl_crash.dump
 	rm -f $(start_FILES)
 
@@ -170,9 +170,6 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 .app-in.app:
 	cp $(srcdir)/$*.app-in $*.app
-
-.rel-in.rel:
-	cp $(srcdir)/$*.rel-in $*.rel
 
 local.erl: $(LOCAL_ERL)
 	cp $(srcdir)/$(LOCAL_ERL) local.erl
