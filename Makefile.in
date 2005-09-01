@@ -64,7 +64,7 @@ $(RECURSIVE_TARGETS):
 	(cd $$subdir && $(MAKE) $$target) || exit 1; \
 	done
 
-install: install-recursive
+install: $(beam_FILES) $(start_FILES) install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(confdir)
 	$(mkinstalldirs) $(DESTDIR)$(sslcertdir)
 	$(mkinstalldirs) $(DESTDIR)$(mnesiadir)
