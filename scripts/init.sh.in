@@ -104,28 +104,45 @@ do
 	      usage
 	      ;;
 	  -config)
-	      configpath="$1"
-	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
+	      if [ "x$1" = "x" ]; then
+		  echo "$0: '$arg' requires an argument"
+		  exit 1
+	      else
+		  configpath="$1"
+		  shift
+	      fi
 	      ;;
 	  -c_ssl)
-	      client_sslcertfile="$1"
-	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
+	      if [ "x$1" = "x" ]; then
+		  echo "$0: '$arg' requires an argument"
+		  exit 1
+	      else
+		  client_sslcertfile="$1"
+		  shift
+	      fi
 	      ;;
 	  -s_ssl)
-	      server_sslcertfile="$1"
-	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
+	      if [ "x$1" = "x" ]; then
+		  echo "$0: '$arg' requires an argument"
+		  exit 1
+	      else
+		  server_sslcertfile="$1"
+		  shift
+	      fi
 	      ;;
 	  -mnesiadir)
-	      mnesiadir="$1"
-	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
+	      if [ "x$1" = "x" ]; then
+		  echo "$0: '$arg' requires an argument"
+		  exit 1
+	      else
+		  mnesiadir="$1"
+		  shift
+	      fi
 	      ;;
 	  -d)
-	      if [ "x$myname" = "xyxa-bootstrap.sh" ]; then
-		  usage
+	      if [ $is_bootstrap -eq 1 ]; then
+		  echo "$0: '-d' not applicable to bootstrapping, use '-h' for usage"
+		  exit 1
 	      fi
 
 	      detach=""
@@ -134,27 +151,42 @@ do
 	  -replica)
 	      # $arg only applicable to bootstrapping
 	      if [ $is_bootstrap -ne 1 ]; then
-		  usage
+		  echo "$0: '-replica' only applicable to bootstrapping, use '-h' for usage"
+		  exit 1
 	      fi
-	      replica="$1"
-	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
+
+	      if [ "x$1" = "x" ]; then
+		  echo "$0: '$arg' requires an argument"
+		  exit 1
+	      else
+		  replica="$1"
+		  shift
+	      fi
 	      ;;
 	  -name)
-	      name="$1"
-	      explicit_name=1
-	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
+	      if [ "x$1" = "x" ]; then
+		  echo "$0: '$arg' requires an argument"
+		  exit 1
+	      else
+		  name="$1"
+		  explicit_name=1
+		  shift
+	      fi
 	      ;;
 	  -hostname)
-	      hostname="$1"
-	      # complicated shift to not make picky sh's whine
-	      if [ "x$1" != "x" ]; then shift; else exit_now=1; fi
+	      if [ "x$1" = "x" ]; then
+		  echo "$0: '$arg' requires an argument"
+		  exit 1
+	      else
+		  hostname="$1"
+		  shift
+	      fi
 	      ;;
 	  start|stop|status|info|reload|restart)
 	      # $arg not applicable to bootstrapping
 	      if [ $is_bootstrap -eq 1 ]; then
-		  usage
+		  echo "$0: '$arg' not applicable to bootstrapping, use '-h' for usage"
+		  exit 1
 	      fi
 
 	      if [ "$arg" = "info" ]; then
@@ -208,7 +240,7 @@ fi
 if [ "x$mnesiadir" = "x" ]; then
     mnesiaparameters=""
 else
-    if [ ! -d "$mnesiadir" ]; then
+    if [ ! -d "$mnesiadir" -a $is_bootstrap -ne 1 ]; then
 	echo "$0: Mnesia directory '$mnesiadir' does not exist!"
 	exit 1
     fi
@@ -219,7 +251,7 @@ if [ -d "${PWD}/src/event_handler" -a -d "${PWD}/src/cpl" ]; then
     # we must be running from the build directory, add all subdirectorys
     # to src/ to the code search path
     beamdirs=$(
-	echo src/
+	echo "-pa src/"
 	ls ${PWD}/src/ | while read entry; do
 	    if [ -d "src/$entry" ]; then
 		echo "-pa src/$entry"
@@ -278,11 +310,11 @@ else
 
     case $command in
 	start)
-	    if [ -f "${PROGRAMNAME}.boot" ]; then
-		bootfile="$PROGRAMNAME"
+	    if [ -f "$PWD/src/${PROGRAMNAME}.boot" ]; then
+		bootfile="$PWD/src/${PROGRAMNAME}"
 	    else
-		if [ -f "$PWD/src/${PROGRAMNAME}.boot" ]; then
-		    bootfile="$PWD/src/${PROGRAMNAME}"
+		if [ -f "${beamdir}/${PROGRAMNAME}.boot" ]; then
+		    bootfile="${beamdir}/$PROGRAMNAME"
 		fi
 	    fi
 	    ${erl} -boot $bootfile -pz ${beamdir} \
