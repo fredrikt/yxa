@@ -260,26 +260,20 @@ get_telephonenumber_for_user(Username) ->
 	    nomatch;
 	User when is_record(User, user) ->
 	    %% use get_addresses_using_user2/3 to get addresses with order preserved
-	    case get_addresses_using_user2(Username, fetch_addresses(), []) of
+	    A = get_addresses_using_user2(Username, fetch_addresses(), []),
+	    %% Look through the addresses returned and return the first one
+	    %% which has an all numeric user-part.
+	    case find_first_telephonenumber(A) of
 		nomatch ->
+		    %% XXX Should we perhaps turn that into 'error' since we
+		    %% apparenlty had a user with this name in our database but
+		    %% that user did not have an address that looks like a phone
+		    %% number?
+		    logger:log(debug, "userdb-file: User ~p has no address that looks like a phone number (addresses : ~p)",
+			       [Username, collect_addresses(A)]),
 		    nomatch;
-		error ->
-		    error;
-		A when is_list(A) ->
-		    %% Look through the addresses returned and return the first one
-		    %% which has an all numeric user-part.
-		    case find_first_telephonenumber(A) of
-			nomatch ->
-			    %% XXX Should we perhaps turn that into 'error' since we
-			    %% apparenlty had a user with this name in our database but
-			    %% that user did not have an address that looks like a phone
-			    %% number?
-			    logger:log(debug, "userdb-file: User ~p has no address that looks like a phone number (addresses : ~p)",
-				       [Username, collect_addresses(A)]),
-			    nomatch;
-			Address when is_record(Address, address) ->
-			    (Address#address.url)#sipurl.user
-		    end
+		Address when is_record(Address, address) ->
+		    (Address#address.url)#sipurl.user
 	    end
     end.
 
@@ -301,8 +295,6 @@ get_forwards_for_users2([H | T], Res) ->
 	Fwd when is_list(Fwd) ->
 	    get_forwards_for_users2(T, lists:append(Res, Fwd));
 	nomatch ->
-	    get_forwards_for_users2(T, Res);
-	error ->
 	    get_forwards_for_users2(T, Res)
     end.
 
