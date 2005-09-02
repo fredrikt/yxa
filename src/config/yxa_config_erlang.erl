@@ -116,6 +116,10 @@ parse(State) when is_record(State, yxa_config_erlang_state) ->
 			   end, L1),
 	    Cfg = #yxa_cfg{entrys = L2},
 	    {ok, Cfg};
+	{ok, _Unknown} ->
+	    Msg = io_lib:format("Could not parse data in file ~p.",
+				[File]),
+	    {error, lists:flatten(Msg)};
 	{error, {Line, Mod, Term}} ->
 	    Msg = io_lib:format("Failed parsing file ~p, line ~p. Module ~p - term ~p",
 				[File, Line, Mod, Term]),
