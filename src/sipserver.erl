@@ -66,7 +66,7 @@ start(normal, [AppModule]) ->
 	      io_lib:format("~p", [now()])
 	     ]),
     mnesia:start(),
-    [RemoteMnesiaTables, stateful, AppSupdata] = apply(AppModule, init, []),
+    [MnesiaTables, stateful, AppSupdata] = apply(AppModule, init, []),
     ok = init_statistics(),
     case sipserver_sup:start_link(AppModule) of
 	{ok, Supervisor} ->
@@ -78,7 +78,7 @@ start(normal, [AppModule]) ->
 		_ ->
 		    true
 	    end,
-	    ok = init_mnesia(RemoteMnesiaTables),
+	    ok = init_mnesia(MnesiaTables),
 	    {ok, Supervisor} = sipserver_sup:start_extras(Supervisor, AppModule, AppSupdata),
 	    {ok, Supervisor} = sipserver_sup:start_transportlayer(Supervisor),
 	    %% now that everything is started, seed ssl with more stuff
@@ -114,16 +114,46 @@ restart() ->
     init:restart().
 
 %%--------------------------------------------------------------------
-%% Function: init_mnesia(RemoteTables)
-%%           RemoteTables = list() of atom(), names of remote Mnesia
-%%                          tables needed by this Yxa application.
+%% Function: init_mnesia(Tables)
+%%           Tables = list() of atom(), names of Mnesia tables needed
+%%                    by this Yxa application.
 %% Descrip.: Initiate Mnesia on this node. If there are no remote
 %%           mnesia-tables, we conclude that we are a mnesia master
 %%           and check if any of the tables needs to be updated.
 %% Returns : ok | throw(...)
 %%--------------------------------------------------------------------
 init_mnesia(none) ->
-    ok = check_for_tables([phone]),
+    init_mnesia_update();
+
+init_mnesia(Tables) when is_list(Tables) ->
+    case get_remote_tables(Tables) of
+	{ok, []} ->
+	    %% no remote tables, we are master
+	    init_mnesia_update();
+	{ok, RemoteTables} ->
+	    case yxa_config:get_env(databaseservers) of
+		{ok, DbNodes} ->
+		    logger:log(debug, "Mnesia extra db nodes : ~p (needed for tables ~p)", [DbNodes, RemoteTables]),
+		    case mnesia:change_config(extra_db_nodes, DbNodes) of
+			{error, Reason} ->
+			    logger:log(error, "Startup problem: Could not add configured databaseservers: ~p",
+				       [mnesia:error_description(Reason)]),
+			    throw('Could not add configured databaseservers');
+			{ok, _Ret} ->
+			    check_for_tables(Tables),
+			    ok
+		    end,
+		    find_remote_mnesia_tables(RemoteTables);
+		none ->
+		    logger:log(error, "Startup: This application needs remote tables ~p but you "
+			       "haven't configured any databaseservers, exiting.",
+			       [RemoteTables]),
+		    throw('No databaseservers configured (Did you bootstrap Yxa? See the README file)')
+	    end
+    end.
+
+%% init_mnesia_update/0, part of init_mnesia/1. Do table update if we are Mnesia db-master node.
+init_mnesia_update() ->
     %% update old database versions
     try table_update:update() of
 	ok -> ok
@@ -139,27 +169,24 @@ init_mnesia(none) ->
 	    mnesia:info(),
 	    throw('Mnesia table update error')
     end,
-    ok;
-init_mnesia(RemoteTables) when is_list(RemoteTables) ->
-    DbNodes = case yxa_config:get_env(databaseservers) of
-		  {ok, Res} -> Res;
-		  none ->
-		      logger:log(error, "Startup: This application needs remote tables ~p but you " ++
-				 "haven't configured any databaseservers, exiting.",
-				 [RemoteTables]),
-		      throw('No databaseservers configured')
-	      end,
-    logger:log(debug, "Mnesia extra db nodes : ~p", [DbNodes]),
-    case mnesia:change_config(extra_db_nodes, DbNodes) of
-	{error, Reason} ->
-	    logger:log(error, "Startup problem: Could not add configured databaseservers: ~p",
-		       [mnesia:error_description(Reason)]),
-	    throw('Could not add configured databaseservers');
-	{ok, _Ret} ->
-	    true
-    end,
-    find_remote_mnesia_tables(RemoteTables).
+    ok.
 
+get_remote_tables(Tables) ->
+    get_remote_tables(Tables, []).
+
+get_remote_tables([H | T], Res) when is_atom(H) ->
+    try mnesia:table_info(H, storage_type) of
+	unknown ->
+	    get_remote_tables(T, [H | Res]);
+	_ ->
+	    get_remote_tables(T, Res)
+    catch
+	exit: {aborted, {no_exists, _, storage_type}} ->
+	    get_remote_tables(T, [H | Res])
+    end;
+get_remote_tables([], Res) ->
+    {ok, Res}.
+    
 %%--------------------------------------------------------------------
 %% Function: check_for_tables(Tables) ->
 %%           Tables = list() of atom(), list of table names

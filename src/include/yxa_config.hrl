@@ -346,11 +346,6 @@
 	[
 	 {pstnproxy,
 	  [
-	   #cfg_entry{key	= databaseservers,
-		      list_of	= true,
-		      type	= atom,
-		      required	= true
-		     },
 	   #cfg_entry{key	= internal_to_e164,
 		      default	= [],
 		      list_of	= true,
@@ -457,11 +452,6 @@
 
 	 {outgoingproxy,
 	  [
-	   #cfg_entry{key	= databaseservers,
-		      list_of	= true,
-		      type	= atom,
-		      required	= true
-		     },
 	   #cfg_entry{key	= sipproxy,
 		      type	= sip_sipurl
 		     },
@@ -482,11 +472,6 @@
 
 	 {appserver,
 	  [
-	   #cfg_entry{key	= databaseservers,
-		      list_of	= true,
-		      type	= atom,
-		      required	= true
-		     },
 	   #cfg_entry{key	= internal_to_e164,
 		      default	= [],
 		      list_of	= true,
@@ -518,11 +503,6 @@
 	  ]},
 	 {admin_www,
 	  [
-	   #cfg_entry{key	= databaseservers,
-		      list_of	= true,
-		      type	= atom,
-		      required	= true
-		     },
 	   #cfg_entry{key	= httpd_config,
 		      type	= string,
 		      required	= true

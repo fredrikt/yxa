@@ -43,7 +43,8 @@
 %%--------------------------------------------------------------------
 init() ->
     Registrar = {registrar, {registrar, start_link, []}, permanent, 2000, worker, [registrar]},
-    [none, stateful, {append, [Registrar]}].
+    Tables = [user, numbers, phone, cpl_script_graph, regexproute],
+    [Tables, stateful, {append, [Registrar]}].
 
 %%--------------------------------------------------------------------
 %% Function: request(Request, Origin, LogStr)
