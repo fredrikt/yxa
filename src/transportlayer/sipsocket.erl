@@ -294,36 +294,36 @@ test() ->
 
     %% test get_listenport(Proto)
     %%--------------------------------------------------------------------
-    io:format("test: get_listenport/1 - 1~n"),
+    autotest:mark(?LINE, "get_listenport/1 - 1"),
     %% test with 'udp'
     5060 = get_listenport(udp),
 
-    io:format("test: get_listenport/1 - 2~n"),
+    autotest:mark(?LINE, "get_listenport/1 - 2"),
     %% test with 'tls6'
     5061 = get_listenport(tls6),
 
-    io:format("test: get_listenport/1 - 3~n"),
+    autotest:mark(?LINE, "get_listenport/1 - 3"),
     %% test with invalid value (string)
     {'EXIT', {function_clause, _}} = (catch get_listenport("invalid")),
 
-    io:format("test: get_listenport/1 - 4~n"),
+    autotest:mark(?LINE, "get_listenport/1 - 4"),
     %% test with invalid value (atom)
     {'EXIT', {function_clause, _}} = (catch get_listenport(none)),
 
 
     %% test get_all_listenports()
     %%--------------------------------------------------------------------
-    io:format("test: get_all_listenports/0 - 1~n"),
+    autotest:mark(?LINE, "get_all_listenports/0 - 1"),
     %% simply call function
     ListenPorts1 = get_all_listenports(),
 
-    io:format("test: get_all_listenports/0 - 2~n"),
+    autotest:mark(?LINE, "get_all_listenports/0 - 2"),
     %% check that all entrys returned are integers
     true = lists:all(fun(H) ->
 			     is_integer(H)
 		     end, ListenPorts1),
 
-    io:format("test: get_all_listenports/0 - 3~n"),
+    autotest:mark(?LINE, "get_all_listenports/0 - 3"),
     %% check that we didn't get an empty list
     [_ | _] = ListenPorts1,
 
@@ -331,31 +331,31 @@ test() ->
     %% default_port(Proto, PortIn)
     %%--------------------------------------------------------------------
     %% udp/udp6/tcp/tcp6/"sip"
-    io:format("test: default_port/2 - 1~n"),
+    autotest:mark(?LINE, "default_port/2 - 1"),
     5060 = default_port(udp, none),
-    io:format("test: default_port/2 - 2~n"),
+    autotest:mark(?LINE, "default_port/2 - 2"),
     5060 = default_port(udp6, none),
-    io:format("test: default_port/2 - 3~n"),
+    autotest:mark(?LINE, "default_port/2 - 3"),
     5060 = default_port(tcp, none),
-    io:format("test: default_port/2 - 4~n"),
+    autotest:mark(?LINE, "default_port/2 - 4"),
     5060 = default_port(tcp6, none),
-    io:format("test: default_port/2 - 5~n"),
+    autotest:mark(?LINE, "default_port/2 - 5"),
     5060 = default_port("sip", none),
 
     %% tls/tls6/"sips"
-    io:format("test: default_port/2 - 6~n"),
+    autotest:mark(?LINE, "default_port/2 - 6"),
     5061 = default_port(tls, none),
-    io:format("test: default_port/2 - 7~n"),
+    autotest:mark(?LINE, "default_port/2 - 7"),
     5061 = default_port(tls6, none),
-    io:format("test: default_port/2 - 8~n"),
+    autotest:mark(?LINE, "default_port/2 - 8"),
     5061 = default_port("sips", none),
 
     %% none of the above, port specified
-    io:format("test: default_port/2 - 9~n"),
+    autotest:mark(?LINE, "default_port/2 - 9"),
     1234 = default_port(whatever, 1234),
 
     %% none of the above, port NOT specified - expect crash
-    io:format("test: default_port/2 - 11~n"),
+    autotest:mark(?LINE, "default_port/2 - 11"),
     {'EXIT', {function_clause, _}} = (catch default_port("foo", none)),
 
 

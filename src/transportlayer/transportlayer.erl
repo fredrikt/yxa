@@ -312,7 +312,7 @@ test() ->
 
     %% send_proxy_response(Socket, Response)
     %%--------------------------------------------------------------------
-    io:format("test: send_proxy_response/2 - 0~n"),
+    autotest:mark(?LINE, "send_proxy_response/2 - 0"),
     SPResponse_Res1 = #response{status = 100,
 				reason = "Trying",
 				header = keylist:from_list([{"Via",  ["SIP/2.0/YXA-TEST " ++ Me,
@@ -324,27 +324,27 @@ test() ->
 				body   = <<>>
 			       },
 
-    io:format("test: send_proxy_response/2 - 1.1~n"),
+    autotest:mark(?LINE, "send_proxy_response/2 - 1.1"),
     %% test normal case with a single Via besides mine
     ok = send_proxy_response(none, SPResponse_Res1),
     
-    io:format("test: send_proxy_response/2 - 1.2~n"),
+    autotest:mark(?LINE, "send_proxy_response/2 - 1.2"),
     %% now check process mailbox to extract the SIP message 'sent'
     receive
 	{sipsocket_test, send, {yxa_test, "192.0.2.2", 6050}, SPRes_Msg1} ->
 	    %%io:format("SENT :~n~s~n", [binary_to_list(SPRes_Msg1)]),
 	    %% parse message that was 'sent'
-	    io:format("test: send_proxy_response/2 - 1.3~n"),
+	    autotest:mark(?LINE, "send_proxy_response/2 - 1.3"),
 	    SPResponse_Res1_1 = sippacket:parse(SPRes_Msg1, none),
 	    true = is_record(SPResponse_Res1_1, response),
 
-	    io:format("test: send_proxy_response/2 - 1.4~n"),
+	    autotest:mark(?LINE, "send_proxy_response/2 - 1.4"),
 	    #response{status = 100,
 		      reason = "Trying",
 		      body   = <<>>
 		     } = SPResponse_Res1_1,
 
-	    io:format("test: send_proxy_response/2 - 1.5~n"),
+	    autotest:mark(?LINE, "send_proxy_response/2 - 1.5"),
 	    %% check that from, to and cseq are the same
 	    lists:map(fun(N) ->
 			      New = keylist:fetch(N, SPResponse_Res1_1#response.header),
@@ -352,11 +352,11 @@ test() ->
 			      {N, New} = {N, Old}
 		      end, ['from', 'to', 'cseq']),
 
-	    io:format("test: send_proxy_response/2 - 1.6~n"),
+	    autotest:mark(?LINE, "send_proxy_response/2 - 1.6"),
 	    %% check that Content-Length have been set correctly
 	    ["0"] = keylist:fetch('content-length', SPResponse_Res1_1#response.header),
 	    
-	    io:format("test: send_proxy_response/2 - 1.7~n"),
+	    autotest:mark(?LINE, "send_proxy_response/2 - 1.7"),
 	    %% check that the top Via header has been removed
 	    [#via{proto = "SIP/2.0/YXA-TEST",
 		  host  = "192.0.2.2"}] = sipheader:via(SPResponse_Res1_1#response.header),
@@ -366,20 +366,20 @@ test() ->
 	    throw("test failed, SIP message 'sent' not found in process mailbox")
     end,
 
-    io:format("test: send_proxy_response/2 - 2.0~n"),
+    autotest:mark(?LINE, "send_proxy_response/2 - 2.0"),
     %% test with only one Via - should be rejected
     SPResponse_H2 = SPResponse_Res1#response.header,
     SPResponse_H2_1 = keylist:set("Via", ["SIP/2.0/YXA-TEST " ++ Me], SPResponse_H2),
     SPResponse_Res2 = SPResponse_Res1#response{header = SPResponse_H2_1},
 
-    io:format("test: send_proxy_response/2 - 2.1~n"),
+    autotest:mark(?LINE, "send_proxy_response/2 - 2.1"),
     {error, invalid_Via} = send_proxy_response(none, SPResponse_Res2),
     
 
 
     %% send_proxy_request(Socket, Request, Dst, ViaParameters)
     %%--------------------------------------------------------------------
-    io:format("test: send_proxy_request/4 - 0~n"),
+    autotest:mark(?LINE, "send_proxy_request/4 - 0"),
     SPRequest_URI1 = sipurl:parse("sip:test@example.org"),
     SPRequest_Req1 = #request{method = "OPTIONS",
 			uri    = SPRequest_URI1,
@@ -396,27 +396,27 @@ test() ->
 		       uri   = SPRequest_URI1
 		      },
 
-    io:format("test: send_proxy_request/4 - 1.1~n"),
+    autotest:mark(?LINE, "send_proxy_request/4 - 1.1"),
     %% test normal case
     {ok, #sipsocket{proto = yxa_test}, "z9hG4bK-yxa-" ++ _} = send_proxy_request(none, SPRequest_Req1, SPRequest_Dst1, []),
 
-    io:format("test: send_proxy_request/4 - 1.2~n"),
+    autotest:mark(?LINE, "send_proxy_request/4 - 1.2"),
     %% now check process mailbox to extract the SIP message 'sent'
     receive
 	{sipsocket_test, send, {yxa_test, "192.0.2.1", 6050}, SPRequest_Msg1} ->
 	    %%io:format("SENT :~n~s~n", [binary_to_list(SPRequest_Msg1)]),
 	    %% parse message that was 'sent'
-	    io:format("test: send_proxy_request/4 - 1.3~n"),
+	    autotest:mark(?LINE, "send_proxy_request/4 - 1.3"),
 	    SPRequest_Req1_1 = sippacket:parse(SPRequest_Msg1, none),
 	    true = is_record(SPRequest_Req1_1, request),
 
-	    io:format("test: send_proxy_request/4 - 1.4~n"),
+	    autotest:mark(?LINE, "send_proxy_request/4 - 1.4"),
 	    #request{method = "OPTIONS",
 		     uri    = SPRequest_URI1,
 		     body   = <<"testing">>
 		    } = SPRequest_Req1_1,
 
-	    io:format("test: send_proxy_request/4 - 1.5~n"),
+	    autotest:mark(?LINE, "send_proxy_request/4 - 1.5"),
 	    %% check that from, to and cseq are the same
 	    lists:map(fun(N) ->
 			      New = keylist:fetch(N, SPRequest_Req1_1#request.header),
@@ -424,11 +424,11 @@ test() ->
 			      {N, New} = {N, Old}
 		      end, ['from', 'to', 'cseq']),
 
-	    io:format("test: send_proxy_request/4 - 1.6~n"),
+	    autotest:mark(?LINE, "send_proxy_request/4 - 1.6"),
 	    %% check that Content-Length have been set correctly
 	    ["7"] = keylist:fetch('content-length', SPRequest_Req1_1#request.header),
 	    
-	    io:format("test: send_proxy_request/4 - 1.7~n"),
+	    autotest:mark(?LINE, "send_proxy_request/4 - 1.7"),
 	    %% check that there are now two YXA-TEST via headers and that they are in the
 	    %% expected order
 	    [#via{proto = "SIP/2.0/YXA-TEST",
@@ -443,12 +443,12 @@ test() ->
     end,
 
 
-    io:format("test: send_proxy_request/4 - 2.1~n"),
+    autotest:mark(?LINE, "send_proxy_request/4 - 2.1"),
     %% test send error
     SPRequest_2_Res = {error, {test, make_ref()}},
     put({sipsocket_test, send_result}, SPRequest_2_Res),
     SPRequest_2_Res = send_proxy_request(none, SPRequest_Req1, SPRequest_Dst1, []),
-    io:format("test: send_proxy_request/4 - 2.2~n"),
+    autotest:mark(?LINE, "send_proxy_request/4 - 2.2"),
     %% clean up
     erase({sipsocket_test, send_result}),
     receive
@@ -459,19 +459,19 @@ test() ->
     end,
 
 
-    io:format("test: send_proxy_request/4 - 3.1~n"),
+    autotest:mark(?LINE, "send_proxy_request/4 - 3.1"),
     %% test get socket error
     SPRequest_3_Res = {error, {test, make_ref()}},
     put({sipsocket_test, get_socket}, SPRequest_3_Res),
     SPRequest_3_Res = send_proxy_request(none, SPRequest_Req1, SPRequest_Dst1, []),
-    io:format("test: send_proxy_request/4 - 3.2~n"),
+    autotest:mark(?LINE, "send_proxy_request/4 - 3.2"),
     %% clean up
     erase({sipsocket_test, get_socket}),
 
 
     %% send_result(RequestHeader, Socket, Body, Status, Reason)
     %%--------------------------------------------------------------------
-    io:format("test: send_result/5 - 0~n"),
+    autotest:mark(?LINE, "send_result/5 - 0"),
     SResult_H1 = keylist:from_list([{"Via",     ["SIP/2.0/YXA-TEST sip.example.org;received=192.0.2.4"]},
 				    {"From",    ["sip:ft@example.org;tag=f-tag"]},
 				    {"To",      ["sip:ft@example.org"]},
@@ -479,27 +479,27 @@ test() ->
 				    {"CSeq",    ["1 OPTIONS"]}
 				   ]),
 
-    io:format("test: send_result/5 - 1.1~n"),
+    autotest:mark(?LINE, "send_result/5 - 1.1"),
     %% test normal case
     ok = send_result(SResult_H1, none, <<"response-body">>, 100, "Trying"),
 
-    io:format("test: send_result/5 - 1.2~n"),
+    autotest:mark(?LINE, "send_result/5 - 1.2"),
     %% now check process mailbox to extract the SIP message 'sent'
     receive
 	{sipsocket_test, send, {yxa_test, "192.0.2.4", 6050}, SPResponse_Msg1} ->
 	    %%io:format("SENT :~n~s~n", [binary_to_list(SPResponse_Msg1)]),
 	    %% parse message that was 'sent'
-	    io:format("test: send_result/5 - 1.3~n"),
+	    autotest:mark(?LINE, "send_result/5 - 1.3"),
 	    SResult_Res1_1 = sippacket:parse(SPResponse_Msg1, none),
 	    true = is_record(SResult_Res1_1, response),
 
-	    io:format("test: send_result/5 - 1.4~n"),
+	    autotest:mark(?LINE, "send_result/5 - 1.4"),
 	    #response{status = 100,
 		      reason = "Trying",
 		      body   = <<"response-body">>
 		     } = SResult_Res1_1,
 
-	    io:format("test: send_result/5 - 1.5~n"),
+	    autotest:mark(?LINE, "send_result/5 - 1.5"),
 	    %% check that from, to and cseq are the same
 	    lists:map(fun(N) ->
 			      New = keylist:fetch(N, SResult_Res1_1#response.header),
@@ -507,11 +507,11 @@ test() ->
 			      {N, New} = {N, Old}
 		      end, ['from', 'to', 'cseq']),
 
-	    io:format("test: send_result/5 - 1.6~n"),
+	    autotest:mark(?LINE, "send_result/5 - 1.6"),
 	    %% check that Content-Length have been set correctly
 	    ["13"] = keylist:fetch('content-length', SResult_Res1_1#response.header),
 	    
-	    io:format("test: send_result/5 - 1.7~n"),
+	    autotest:mark(?LINE, "send_result/5 - 1.7"),
 	    %% check the Via header
 	    [#via{proto = "SIP/2.0/YXA-TEST",
 		  host  = "sip.example.org",
@@ -528,21 +528,21 @@ test() ->
 
     %% send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
     %%--------------------------------------------------------------------
-    io:format("test: send_result/6 - 1.1~n"),
+    autotest:mark(?LINE, "send_result/6 - 1.1"),
     %% test normal case
     ok = send_result(SResult_H1, none, <<"response-body">>, 100, "Trying",
 		     [{"Foo", ["bar", "baz"]}, {"Subject", ["is a test"]}]),
 
-    io:format("test: send_result/6 - 1.2~n"),
+    autotest:mark(?LINE, "send_result/6 - 1.2"),
     %% now check process mailbox to extract the SIP message 'sent'
     receive
 	{sipsocket_test, send, {yxa_test, "192.0.2.4", 6050}, SPResponse_Msg2} ->
 	    %%io:format("SENT :~n~s~n", [binary_to_list(SPResponse_Msg2)]),
 	    %% parse message that was 'sent'
-	    io:format("test: send_result/6 - 1.3~n"),
+	    autotest:mark(?LINE, "send_result/6 - 1.3"),
 	    SResult_Res2_1 = sippacket:parse(SPResponse_Msg2, none),
 
-	    io:format("test: send_result/6 - 1.4~n"),
+	    autotest:mark(?LINE, "send_result/6 - 1.4"),
 	    %% just verify our extra headers, besides that this function is identical
 	    %% to the already tested send_result/5
 	    ["bar", "baz"] = keylist:fetch("Foo", SResult_Res2_1#response.header),
@@ -556,14 +556,14 @@ test() ->
 
     %% send_response(Socket, Response)
     %%--------------------------------------------------------------------
-    io:format("test: send_response/2 - 0~n"),
+    autotest:mark(?LINE, "send_response/2 - 0"),
     SendResponse1 = #response{status = 100,
 			      reason = "Trying",
 			      header = keylist:from_list([]),
 			      body   = <<>>
 			     },
     
-    io:format("test: send_response/2 - 1~n"),
+    autotest:mark(?LINE, "send_response/2 - 1"),
     %% test only invalid case, other functionality already covered
     {senderror, "malformed response"} = send_response(none, SendResponse1),
 
@@ -572,7 +572,7 @@ test() ->
     %%--------------------------------------------------------------------
     %% test only errors, other functionality already covered
 
-    io:format("test: send_response_to/3 - 0~n"),
+    autotest:mark(?LINE, "send_response_to/3 - 0"),
     SendResponseTo_Response1 = #response{status = 100,
 					 reason = "Trying",
 					 header = keylist:from_list([]),
@@ -580,12 +580,12 @@ test() ->
 					},
     [SendResponseTo_Via1] = sipheader:via(["SIP/2.0/YXA-TEST 192.0.2.9"]),
 
-    io:format("test: send_response_to/3 - 1.1~n"),
+    autotest:mark(?LINE, "send_response_to/3 - 1.1"),
     %% test send error
     SendResponseTo_1_Ref = {test, make_ref()},
     put({sipsocket_test, send_result}, {error, SendResponseTo_1_Ref}),
     {senderror, SendResponseTo_1_Ref} = send_response_to(none, SendResponseTo_Response1, SendResponseTo_Via1),
-    io:format("test: send_response_to/3 - 1.2~n"),
+    autotest:mark(?LINE, "send_response_to/3 - 1.2"),
     %% clean up
     erase({sipsocket_test, send_result}),
     receive
@@ -596,26 +596,26 @@ test() ->
     end,
 
 
-    io:format("test: send_response_to/3 - 2.1~n"),
+    autotest:mark(?LINE, "send_response_to/3 - 2.1"),
     %% test get socket error
     put({sipsocket_test, get_socket}, {error, "testing get_socket error"}),
     {senderror, "Could not get socket"} = send_response_to(none, SendResponseTo_Response1, SendResponseTo_Via1),
-    io:format("test: send_response_to/3 - 2.2~n"),
+    autotest:mark(?LINE, "send_response_to/3 - 2.2"),
     %% clean up
     erase({sipsocket_test, get_socket}),
 
 
-    io:format("test: send_response_to/3 - 3.0~n"),
+    autotest:mark(?LINE, "send_response_to/3 - 3.0"),
     %% test get destination failure, non-IP Via header without received= information
     [SendResponseTo_Via3] = sipheader:via(["SIP/2.0/YXA-TEST sip.example.org"]),
 
-    io:format("test: send_response_to/3 - 3.1~n"),
+    autotest:mark(?LINE, "send_response_to/3 - 3.1"),
     {senderror, "Failed finding destination"} = send_response_to(none, SendResponseTo_Response1, SendResponseTo_Via3),
 
 
     %% get_good_socket(DefaultSocket, Dst)
     %%--------------------------------------------------------------------
-    io:format("test: get_good_socket/2 - 0~n"),
+    autotest:mark(?LINE, "get_good_socket/2 - 0"),
     GGSocket_Dst1 = #sipdst{proto = yxa_test,
 			    addr  = "192.0.2.11",
 			    port  = 6050
@@ -627,22 +627,22 @@ test() ->
 				   },
 
     %% test normal case
-    io:format("test: get_good_socket/2 - 1~n"),
+    autotest:mark(?LINE, "get_good_socket/2 - 1"),
     #sipsocket{proto = yxa_test} = get_good_socket(GGSocket_GoodSocket, GGSocket_Dst1),
 
     %% test invalid socket
-    io:format("test: get_good_socket/2 - 2~n"),
+    autotest:mark(?LINE, "get_good_socket/2 - 2"),
     #sipsocket{proto = yxa_test} = get_good_socket(GGSocket_BadSocket, GGSocket_Dst1),
 
     %% test get socket error
-    io:format("test: get_good_socket/2 - 3~n"),
+    autotest:mark(?LINE, "get_good_socket/2 - 3"),
     put({sipsocket_test, get_socket}, {error, "testing get_socket error"}),
     {error, "testing get_socket error"} = get_good_socket(none, GGSocket_Dst1),
     %% clean up
     erase({sipsocket_test, get_socket}),
 
     %% test get socket failure
-    io:format("test: get_good_socket/2 - 4~n"),
+    autotest:mark(?LINE, "get_good_socket/2 - 4"),
     put({sipsocket_test, get_socket}, none),
     {error, "Failed getting a socket"} = get_good_socket(none, GGSocket_Dst1),
     %% clean up

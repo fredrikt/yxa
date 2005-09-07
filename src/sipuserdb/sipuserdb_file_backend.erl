@@ -562,48 +562,48 @@ test() ->
     %%--------------------------------------------------------------------
     ParseAddress_URL1 = sipurl:parse("sip:ft@example.org"),
 
-    io:format("test: parse_address/2 - 1~n"),
+    autotest:mark(?LINE, "parse_address/2 - 1"),
     %% valid entry
     #address{user    = "test",
 	     address = "sip:ft@example.org",
 	     url     = ParseAddress_URL1} =
 	parse_address([{user, "test"}, {address, "sip:ft@example.org"}], #address{}),
 
-    io:format("test: parse_address/2 - 2~n"),
+    autotest:mark(?LINE, "parse_address/2 - 2"),
     %% unparsable URL
     {error, "unparsable URL in address record " ++ _} =
 	parse_address([{address, "unsupported:ft@example.org"}], #address{}),
 
-    io:format("test: parse_address/2 - 3~n"),
+    autotest:mark(?LINE, "parse_address/2 - 3"),
     %% no user
     {error, "address record incomplete (no user, " ++ _} =
 	parse_address([{address, "sip:ft@example.org"}], #address{}),
 
-    io:format("test: parse_address/2 - 4~n"),
+    autotest:mark(?LINE, "parse_address/2 - 4"),
     %% no address
     {error, "address record incomplete (no address, " ++ _} =
 	parse_address([{user, "test"}], #address{}),
 
-    io:format("test: parse_address/2 - 5~n"),
+    autotest:mark(?LINE, "parse_address/2 - 5"),
     %% non-list user
     {error, "bad data in address record " ++ _} = parse_address([{user, none}], #address{}),
 
-    io:format("test: parse_address/2 - 6~n"),
+    autotest:mark(?LINE, "parse_address/2 - 6"),
     %% non-list address
     {error, "bad data in address record " ++ _} = parse_address([{address, none}], #address{}),
 
-    io:format("test: parse_address/2 - 7~n"),
+    autotest:mark(?LINE, "parse_address/2 - 7"),
     %% unknown parameter
     {error, "bad data in address record " ++ _} = parse_address([{true, "x"}], #address{}),
 
 
     %% test parse_user(Params, U, Addrs)
     %%--------------------------------------------------------------------
-    io:format("test: parse_user/3 - 1~n"),
+    autotest:mark(?LINE, "parse_user/3 - 1"),
     %% minimalistic case
     {ok, #user{name="foo"}, []} = parse_user([{name, "foo"}], #user{}, []),
 
-    io:format("test: parse_user/3 - 2~n"),
+    autotest:mark(?LINE, "parse_user/3 - 2"),
     %% all settings possible
     {ok, #user{name     = "foo",
 	       password = "secret",
@@ -612,15 +612,15 @@ test() ->
 	      }, ["test"]} =
 	parse_user([{name, "foo"}, {password, "secret"}, {classes, [none]}, {addresses, ["test"]}], #user{}, []),
 
-    io:format("test: parse_user/3 - 3~n"),
+    autotest:mark(?LINE, "parse_user/3 - 3"),
     %% test not-implemented forward
     {error, "forward not implemented in sipuserdb_file yet" ++ _} = parse_user([{forward, "foo"}], #user{}, []),
 
-    io:format("test: parse_user/3 - 4~n"),
+    autotest:mark(?LINE, "parse_user/3 - 4"),
     %% non-list username
     {error, "bad data in user record" ++ _} = parse_user([{name, none}], #user{}, []),
 
-    io:format("test: parse_user/3 - 5~n"),
+    autotest:mark(?LINE, "parse_user/3 - 5"),
     %% without username
     {error, "user record incomplete (no user, " ++ _} = parse_user([{password, "secret"}], #user{}, []),
 
@@ -637,7 +637,7 @@ test() ->
 		       #address{user = "t2", address = "sip:2.1@example.net", url = sipurl:parse("sip:2.1@example.net")},
 		       #address{user = "t2", address = "sip:2.2@example.net", url = sipurl:parse("sip:2.2@example.net")}],
 
-    io:format("test: parse_term/3 - 1~n"),
+    autotest:mark(?LINE, "parse_term/3 - 1"),
     %% uncomplicated case
     {ok, ParseTermUserL1, ParseTermAddrL1} = parse_term([{user, [{name, "t1"}]},
 							 {address, [{user, "t1"},
@@ -648,7 +648,7 @@ test() ->
 								    {address, "sip:2@example.net"}]}
 							 ], [], []),
 
-    io:format("test: parse_term/3 - 2~n"),
+    autotest:mark(?LINE, "parse_term/3 - 2"),
     %% addresses grouped with user
     {ok, ParseTermUserL1, ParseTermAddrL2} = parse_term([{user, [{name, "t1"},
 								 {addresses, ["sip:1.1@example.net",
@@ -658,22 +658,22 @@ test() ->
 									      "sip:2.2@example.net"]}]}
 							], [], []),
 
-    io:format("test: parse_term/3 - 3~n"),
+    autotest:mark(?LINE, "parse_term/3 - 3"),
     %% unknown term
     {error, "sipuserdb_file: Unknown data :" ++ _} = parse_term([{none, []}], [], []),
 
-    io:format("test: parse_term/3 - 4~n"),
+    autotest:mark(?LINE, "parse_term/3 - 4"),
     %% user without name
     {error, "bad data in user record" ++ _} = parse_term([{user, [{password, secret}]}], [], []),
 
-    io:format("test: parse_term/3 - 5~n"),
+    autotest:mark(?LINE, "parse_term/3 - 5"),
     %% invalid address listed with user
     {error, "unparsable URL in address record " ++ _} =
 	parse_term([{user, [{name, "t1"},
 			    {addresses, ["unsupported:ft@example.org"]}
 			   ]}], [], []),
 
-    io:format("test: parse_term/3 - 6~n"),
+    autotest:mark(?LINE, "parse_term/3 - 6"),
     %% invalid address
     {error, "unparsable URL in address record " ++ _} =
 	parse_term([{address, [{user, "t1"},
@@ -683,7 +683,7 @@ test() ->
 
     %% verify_consistency2(Users, Addresses)
     %%--------------------------------------------------------------------
-    io:format("test: verify_consistency2/2 - 1~n"),
+    autotest:mark(?LINE, "verify_consistency2/2 - 1"),
     %% no warnings
     {ok, VC_U1, VC_A1} = parse_term([{user, [{name, "test1"},
 					     {addresses, ["sip:test@example.org"]}
@@ -694,7 +694,7 @@ test() ->
 				     ], [], []),
     {ok, [], []} = verify_consistency2(VC_U1, VC_A1),
 
-    io:format("test: verify_consistency2/2 - 2~n"),
+    autotest:mark(?LINE, "verify_consistency2/2 - 2"),
     %% one address warning
     {ok, VC_U2, VC_A2} = parse_term([{user, [{name, "test1"},
 					     {addresses, ["sip:test@example.org"]}
@@ -707,7 +707,7 @@ test() ->
 				     ], [], []),
     {ok, [], ["sip:x@example.org"]} = verify_consistency2(VC_U2, VC_A2),
 
-    io:format("test: verify_consistency2/2 - 3~n"),
+    autotest:mark(?LINE, "verify_consistency2/2 - 3"),
     %% one user warning
     {ok, VC_U3, VC_A3} = parse_term([{user, [{name, "test1"}]},
 				     {user, [{name, "test2"},
@@ -721,19 +721,19 @@ test() ->
     %%--------------------------------------------------------------------
     RUE_Now = util:timestamp(),
 
-    io:format("test: read_userdb_error/3 - 1~n"),
+    autotest:mark(?LINE, "read_userdb_error/3 - 1"),
     %% Caller = init
     {error, "test"} = read_userdb_error(["te", "st"], #state{}, init),
 
-    io:format("test: read_userdb_error/3 - 2~n"),
+    autotest:mark(?LINE, "read_userdb_error/3 - 2"),
     %% Caller = cast
     #state{} = read_userdb_error("test", #state{}, cast),
 
-    io:format("test: read_userdb_error/3 - 3.1~n"),
+    autotest:mark(?LINE, "read_userdb_error/3 - 3.1"),
     %% Caller = info, first error (last_fail = undefined)
     RUE_State_out3 = read_userdb_error("test", #state{last_fail = undefined}, info),
 
-    io:format("test: read_userdb_error/3 - 3.2~n"),
+    autotest:mark(?LINE, "read_userdb_error/3 - 3.2"),
     %% verify new state
     if
 	is_integer(RUE_State_out3#state.last_fail), RUE_State_out3#state.last_fail >= RUE_Now ->
@@ -746,18 +746,18 @@ test() ->
 	    throw(RUE_Msg3)
     end,
 
-    io:format("test: read_userdb_error/3 - 4~n"),
+    autotest:mark(?LINE, "read_userdb_error/3 - 4"),
     %% Caller = info, error that should not be logged
     RUE_State4 = #state{last_fail = RUE_Now - ?LOG_THROTTLE_SECONDS + 5},
 
     RUE_State4 = read_userdb_error("test", RUE_State4, info),
 
-    io:format("test: read_userdb_error/3 - 5.1~n"),
+    autotest:mark(?LINE, "read_userdb_error/3 - 5.1"),
     %% Caller = info, error that should be logged
     RUE_State5 = #state{last_fail = RUE_Now - ?LOG_THROTTLE_SECONDS - 5},
     RUE_State_out5 = read_userdb_error("test", RUE_State5, info),
 
-    io:format("test: read_userdb_error/3 - 5.2~n"),
+    autotest:mark(?LINE, "read_userdb_error/3 - 5.2"),
     %% verify new state
     if
 	is_integer(RUE_State_out5#state.last_fail), RUE_State_out5#state.last_fail >= RUE_Now ->

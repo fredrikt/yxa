@@ -685,31 +685,31 @@ test() ->
     UDP6 = #sipdns_srv{proto=udp6, host="[2001:6b0:5:987::2]", port=none},
     TLS6 = #sipdns_srv{proto=tls6, host="[2001:6b0:5:987::3]", port=none},
 
-    io:format("test: remove_tls_destinations/2 - 1~n"),
+    autotest:mark(?LINE, "remove_tls_destinations/2 - 1"),
     [TCP4, UDP4] = remove_tls_destinations([TCP4, UDP4]),
 
-    io:format("test: remove_tls_destinations/2 - 2~n"),
+    autotest:mark(?LINE, "remove_tls_destinations/2 - 2"),
     [UDP4] = remove_tls_destinations([UDP4]),
 
-    io:format("test: remove_tls_destinations/2 - 3~n"),
+    autotest:mark(?LINE, "remove_tls_destinations/2 - 3"),
     [TCP4] = remove_tls_destinations([TCP4, TLS4]),
 
-    io:format("test: remove_tls_destinations/2 - 4~n"),
+    autotest:mark(?LINE, "remove_tls_destinations/2 - 4"),
     [] = remove_tls_destinations([TLS4]),
 
-    io:format("test: remove_tls_destinations/2 - 5~n"),
+    autotest:mark(?LINE, "remove_tls_destinations/2 - 5"),
     [] = remove_tls_destinations([TLS6]),
 
-    io:format("test: remove_tls_destinations/2 - 6~n"),
+    autotest:mark(?LINE, "remove_tls_destinations/2 - 6"),
     [] = remove_tls_destinations([TLS6, TLS4, TLS6, TLS4]),
 
-    io:format("test: remove_tls_destinations/2 - 7~n"),
+    autotest:mark(?LINE, "remove_tls_destinations/2 - 7"),
     [TCP6, UDP6] = remove_tls_destinations([TLS6, TCP6, TLS4, UDP6, TLS4]),
 
 
     %% test remove_non_tls_destinations(SRVList)
     %%--------------------------------------------------------------------
-    io:format("test: remove_non_tls_destinations/2 - 1~n"),
+    autotest:mark(?LINE, "remove_non_tls_destinations/2 - 1"),
     %% test normal case
     [TLS4, TLS6] = remove_non_tls_destinations([TLS4, TCP6, TLS6, UDP6]),
 
@@ -718,19 +718,19 @@ test() ->
     %%--------------------------------------------------------------------
     URL = sipurl:parse("sip:ft@example.org:1234"),
 
-    io:format("test: make_sipdst_from_hostport/3 - 1~n"),
+    autotest:mark(?LINE, "make_sipdst_from_hostport/3 - 1"),
     %% simple case, tcp and no supplied port in the tuple
     HostPort1 = #sipdns_hostport{family=inet, addr="address", port=none},
     Dst1 = #sipdst{proto=tcp, addr="address", port=5060, uri=URL, ssl_hostname="ssl1"},
     [Dst1] = make_sipdst_from_hostport(tcp, URL, "ssl1", [HostPort1]),
 
-    io:format("test: make_sipdst_from_hostport/3 - 2~n"),
+    autotest:mark(?LINE, "make_sipdst_from_hostport/3 - 2"),
     %% tcp 'upped' to tcp6 since tuple protocol is inet6. port from tuple used.
     HostPort2 = #sipdns_hostport{family=inet6, addr="address", port=5070},
     Dst2 = #sipdst{proto=tcp6, addr="address", port=5070, uri=URL, ssl_hostname=undefined},
     [Dst2] = make_sipdst_from_hostport(tcp, URL, undefined, [HostPort2]),
 
-    io:format("test: make_sipdst_from_hostport/3 - 3~n"),
+    autotest:mark(?LINE, "make_sipdst_from_hostport/3 - 3"),
     %% mixed
     Dst2_2 = Dst2#sipdst{ssl_hostname="ssl1"},
     [Dst1, Dst2_2] =
@@ -742,22 +742,22 @@ test() ->
     %% off by default, so when the tests are run enable_v6 might not be
     %% 'true'.
     %%--------------------------------------------------------------------
-    io:format("test: get_response_host_proto/1 - 1~n"),
+    autotest:mark(?LINE, "get_response_host_proto/1 - 1"),
     %% straight forward, no received= parameter
     TopVia1 = #via{proto="SIP/2.0/TCP", host="192.0.2.1", param=[]},
     {ok, "192.0.2.1", tcp} = get_response_host_proto(TopVia1),
 
-    io:format("test: get_response_host_proto/1 - 2~n"),
+    autotest:mark(?LINE, "get_response_host_proto/1 - 2"),
     %% straight forward, address in received= parameter
     TopVia2 = #via{proto="SIP/2.0/TCP", host="phone.example.org", param=["received=192.0.2.1"]},
     {ok, "192.0.2.1", tcp} = get_response_host_proto(TopVia2),
 
-    io:format("test: get_response_host_proto/1 - 3~n"),
+    autotest:mark(?LINE, "get_response_host_proto/1 - 3"),
     %% error, hostname in Via host and no received= parameter
     TopVia3 = #via{proto="SIP/2.0/TCP", host="phone.example.org", param=[]},
     error = get_response_host_proto(TopVia3),
 
-    io:format("test: get_response_host_proto/1 - 4~n"),
+    autotest:mark(?LINE, "get_response_host_proto/1 - 4"),
     %% invalid received= parameter, but luckily valid IP address in Via host
     TopVia4 = #via{proto="SIP/2.0/TLS", host="192.0.2.1", param=["received=X"]},
     {ok, "192.0.2.1", tls} = get_response_host_proto(TopVia4),
@@ -765,18 +765,18 @@ test() ->
 
     %% test format_siplookup_result(InPort, ReqURI, SSLHost, DstList)
     %%--------------------------------------------------------------------
-    io:format("test: format_siplookup_result/4 - 1~n"),
+    autotest:mark(?LINE, "format_siplookup_result/4 - 1"),
     %% InPort 'none', use the one from DNS
     SRV3 = #sipdns_srv{proto=tcp, host="192.0.2.1", port=1234},
     Dst3 = #sipdst{proto=tcp, addr="192.0.2.1", port=1234, uri=URL},
     [Dst3] = format_siplookup_result(none, URL, undefined, [SRV3]),
 
-    io:format("test: format_siplookup_result/4 - 2~n"),
+    autotest:mark(?LINE, "format_siplookup_result/4 - 2"),
     %% InPort 2345, overrides the one in DNS (1234 in Tuple3)
     Dst4 = #sipdst{proto=tcp, addr="192.0.2.1", port=2345, uri=URL},
     [Dst4] = format_siplookup_result(2345, URL, undefined, [SRV3]),
 
-    io:format("test: format_siplookup_result/4 - 3~n"),
+    autotest:mark(?LINE, "format_siplookup_result/4 - 3"),
     SRV5 = #sipdns_srv{proto=tcp, host="192.0.2.2", port=5065},
     Dst5 = #sipdst{proto=tcp, addr="192.0.2.2", port=5065, uri=URL},
     %% more than one tuple in
@@ -785,24 +785,24 @@ test() ->
 
     %% test combine_host_portres(In)
     %%--------------------------------------------------------------------
-    io:format("test: combine_host_portres/1 - 1~n"),
+    autotest:mark(?LINE, "combine_host_portres/1 - 1"),
     %% test with only a single error
     {error, 1} = combine_host_portres([{error, 1}]),
 
-    io:format("test: combine_host_portres/1 - 2~n"),
+    autotest:mark(?LINE, "combine_host_portres/1 - 2"),
     %% test with only errors
     {error, 1} = combine_host_portres([{error, 1}, {error, 2}]),
 
-    io:format("test: combine_host_portres/1 - 3~n"),
+    autotest:mark(?LINE, "combine_host_portres/1 - 3"),
     %% test with errors, and one valid sipdst
     [#sipdst{proto=1}] = combine_host_portres([{error, 1}, {error, 2}, #sipdst{proto=1}]),
 
-    io:format("test: combine_host_portres/1 - 4~n"),
+    autotest:mark(?LINE, "combine_host_portres/1 - 4"),
     %% test with errors, and two valid sipdst's
     [#sipdst{proto=1}, #sipdst{proto=2}] =
 	combine_host_portres([#sipdst{proto=1}, {error, 1}, {error, 2}, #sipdst{proto=2}]),
 
-    io:format("test: combine_host_portres/1 - 5~n"),
+    autotest:mark(?LINE, "combine_host_portres/1 - 5"),
     %% test with three valid sipdst's only
     [#sipdst{proto=1}, #sipdst{proto=2}, #sipdst{proto=3}] =
 	combine_host_portres([[#sipdst{proto=1}, #sipdst{proto=2}], [#sipdst{proto=3}]]),
@@ -810,23 +810,23 @@ test() ->
 
     %% test get_proto_from_parameters(URL)
     %%--------------------------------------------------------------------
-    io:format("test: get_proto_from_parameters/1 - 1~n"),
+    autotest:mark(?LINE, "get_proto_from_parameters/1 - 1"),
     %% test that we default to UDP
     udp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org") ),
 
-    io:format("test: get_proto_from_parameters/1 - 2~n"),
+    autotest:mark(?LINE, "get_proto_from_parameters/1 - 2"),
     %% test UDP protocol specified
     udp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org;transport=UDP") ),
 
-    io:format("test: get_proto_from_parameters/1 - 3~n"),
+    autotest:mark(?LINE, "get_proto_from_parameters/1 - 3"),
     %% test TCP protocol specified, and strange casing
     tcp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org;transport=tCp") ),
 
-    io:format("test: get_proto_from_parameters/1 - 4~n"),
+    autotest:mark(?LINE, "get_proto_from_parameters/1 - 4"),
     %% test unknown transport parameter and SIPS URL
     tls = get_proto_from_parameters( sipurl:parse("sips:ft@example.org;transport=foobar") ),
 
-    io:format("test: get_proto_from_parameters/1 - 4~n"),
+    autotest:mark(?LINE, "get_proto_from_parameters/1 - 4"),
     %% test unknown transport parameter and non-SIPS URL
     udp = get_proto_from_parameters( sipurl:parse("sip:ft@example.org;transport=foobar") ),
 
@@ -841,38 +841,38 @@ test() ->
     CSP_UDP6 = #sipdst{proto=udp6},
     CSP_TLS6 = #sipdst{proto=tls6},
 
-    io:format("test: change_sipdst_protocol/2 - 1~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 1"),
     %% test no change
     [CSP_TCP] = change_sipdst_protocol(tcp, [CSP_TCP]),
 
-    io:format("test: change_sipdst_protocol/2 - 2~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 2"),
     %% test no change with mixed v4/v6 and error
     [CSP_TCP, CSP_TCP6] = change_sipdst_protocol(tcp, [CSP_TCP, CSP_TCP6]),
 
-    io:format("test: change_sipdst_protocol/2 - 3.1~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 3.1"),
     %% test simple change (to tcp)
     [CSP_TCP, CSP_TCP, CSP_TCP, CSP_TCP6, CSP_TCP6, CSP_TCP6] =
 	change_sipdst_protocol(tcp, [CSP_UDP, CSP_TLS, CSP_TCP, CSP_TCP6, CSP_UDP6, CSP_TLS6]),
 
-    io:format("test: change_sipdst_protocol/2 - 3.2~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 3.2"),
     %% test simple change (to udp)
     [CSP_UDP, CSP_UDP, CSP_UDP, CSP_UDP6, CSP_UDP6, CSP_UDP6] =
 	change_sipdst_protocol(udp, [CSP_UDP, CSP_TLS, CSP_TCP, CSP_TCP6, CSP_UDP6, CSP_TLS6]),
 
-    io:format("test: change_sipdst_protocol/2 - 3.3~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 3.3"),
     %% test simple change (to tls)
     [CSP_TLS, CSP_TLS, CSP_TLS, CSP_TLS6, CSP_TLS6, CSP_TLS6] =
 	change_sipdst_protocol(tls, [CSP_UDP, CSP_TLS, CSP_TCP, CSP_TCP6, CSP_UDP6, CSP_TLS6]),
 
-    io:format("test: change_sipdst_protocol/2 - 4~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 4"),
     %% test simple v6-to-v6 change
     [CSP_TCP6] = change_sipdst_protocol(tcp, [CSP_UDP6]),
 
-    io:format("test: change_sipdst_protocol/2 - 5~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 5"),
     %% test multiple v6-to-v6 change
     [CSP_TCP6, CSP_TCP6, CSP_TCP6] = change_sipdst_protocol(tcp, [CSP_UDP6, CSP_TCP6, CSP_TLS6]),
 
-    io:format("test: change_sipdst_protocol/2 - 6~n"),
+    autotest:mark(?LINE, "change_sipdst_protocol/2 - 6"),
     %% test error tuple
     {error, undefined} = change_sipdst_protocol(tcp, {error, undefined}),
 

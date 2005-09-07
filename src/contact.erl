@@ -600,7 +600,7 @@ test() ->
     %% parse
     %%--------------------------------------------------------------------
     %% test "Contact: *"
-    io:format("test: parse/1 - 1~n"),
+    autotest:mark(?LINE, "parse/1 - 1"),
     P1 = [#contact{display_name = none,
 		   urlstr = "*",
 		   contact_param = contact_param:to_norm([])
@@ -608,7 +608,7 @@ test() ->
     P1 = parse(["*"]),
 
     %% test single name-addr contact entry
-    io:format("test: parse/1 - 2~n"),
+    autotest:mark(?LINE, "parse/1 - 2"),
     P2 = [#contact{display_name = none,
 		   urlstr = "sip:alice@pc33.atlanta.com",
 		   contact_param = contact_param:to_norm([])
@@ -616,7 +616,7 @@ test() ->
     P2 = parse(["<sip:alice@pc33.atlanta.com>"]),
 
     %% test name_addr with display-name
-    io:format("test: parse/1 - 5~n"),
+    autotest:mark(?LINE, "parse/1 - 5"),
     P5 = [#contact{display_name = "Mr. Watson",
 		   urlstr = "sip:watson@worcester.bell-telephone.com",
 		   contact_param = contact_param:to_norm([])
@@ -624,7 +624,7 @@ test() ->
     P5 = parse(["\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>"]),
 
     %% test addr_spec
-    io:format("test: parse/1 - 6~n"),
+    autotest:mark(?LINE, "parse/1 - 6"),
     P6 = [#contact{display_name = none,
 		   urlstr = "sip:watson@worcester.bell-telephone.com",
 		   contact_param = contact_param:to_norm([])
@@ -632,7 +632,7 @@ test() ->
     P6 = parse(["sip:watson@worcester.bell-telephone.com"]),
 
     %% test addr_spec with contact-params, test generic-param rule
-    io:format("test: parse/1 - 8~n"),
+    autotest:mark(?LINE, "parse/1 - 8"),
     P8 = [#contact{display_name = none,
 		   urlstr = "sip:watson@worcester.bell-telephone.com",
 		   contact_param = contact_param:to_norm([{"foo","bar"},{"zoo","123"}])
@@ -641,7 +641,7 @@ test() ->
 
     %% test addr_spec with contact-params, test "q" and "expires"
     %% as well as IPv4address, hostname and IPv6reference rules
-    io:format("test: parse/1 - 9~n"),
+    autotest:mark(?LINE, "parse/1 - 9"),
     P9 = [#contact{display_name = none,
 		   urlstr = "sip:watson@worcester.bell-telephone.com",
 		   contact_param = contact_param:to_norm([{"q","1.000"}, {"expires","123456"}, {"host","1.2.3.4"},
@@ -652,7 +652,7 @@ test() ->
 		"ipv6=[1:2:3:4:5:6:7:8]"]),
 
     %% test name_addr with contact-params
-    io:format("test: parse/1 - 10~n"),
+    autotest:mark(?LINE, "parse/1 - 10"),
     P10 = [#contact{display_name = "Mr. Watson",
 		    urlstr = "sip:watson@worcester.bell-telephone.com",
 		    contact_param = contact_param:to_norm([{"q","0.000"}, {"expires","123456"}, {"host","1.2.3.4"},
@@ -663,7 +663,7 @@ test() ->
 		 "    ipv6=[1:2:3:4:5:6:7:8]"]),
 
     %% test strange Contact and DisplayName using token rule
-    io:format("test: parse/1 - 11~n"),
+    autotest:mark(?LINE, "parse/1 - 11"),
     P11 = [#contact{display_name = "Watson-.!%*_+`'~",
 		    urlstr = "sip:watson@worcester.bell-telephone.com",
 		    contact_param = contact_param:to_norm([{"q","0.950"}, {"expires","123456"}, {"host","1.2.3.4"},
@@ -676,7 +676,7 @@ test() ->
 
 
     %% validate correct handling of encounterd bug in old version: we LOOSE parameters outside the URI
-    io:format("test: parse/1 - 12~n"),
+    autotest:mark(?LINE, "parse/1 - 12"),
     P12 = [#contact{display_name = none,
 		    urlstr = "sip:hotsip1@130.237.252.103:5060;transport=TCP",
 		    contact_param = contact_param:to_norm([{"q","1.000"},
@@ -687,7 +687,7 @@ test() ->
 		 "agentid=\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\";expires=0"]),
 
     %% test uri-parameters inside a SIP-URI (name-addr)
-    io:format("test: parse/1 - 13~n"),
+    autotest:mark(?LINE, "parse/1 - 13"),
     P13 = [#contact{display_name = "Hokan",
 		    urlstr = "sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42",
 		    contact_param = contact_param:to_norm([{"q","1.000"}, {"expires","0"}])
@@ -696,7 +696,7 @@ test() ->
 		 ";expires=0"]),
 
     %% test uri-parameters inside a SIP-URI (addr-spec)
-    io:format("test: parse/1 - 14~n"),
+    autotest:mark(?LINE, "parse/1 - 14"),
     P14 = [#contact{display_name = none,
 		    urlstr = "sip:hotsip1@130.237.252.103:5060",
 		    contact_param = contact_param:to_norm([{"transport","TCP"}, {"bar","42"}, {"q","1.000"},
@@ -706,14 +706,14 @@ test() ->
 		 " ;q=1.00;expires=0"]),
 
     %% test that "Contact: *;foo=bar" throws a exception (* can't have contact-params)
-    io:format("test: parse/1 - 15~n"),
+    autotest:mark(?LINE, "parse/1 - 15"),
     case parse(["*;foo=bar"]) of
 	{unparseable, _Reason} -> ok;
 	_ -> throw({error, test_failed})
     end,
 
     %% test contact-parameters without a value
-    io:format("test: parse/1 - 16~n"),
+    autotest:mark(?LINE, "parse/1 - 16"),
     P16 = [#contact{display_name = none,
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([{"foo", none}, {"lr", "true"}, {"bar", none},
@@ -722,7 +722,7 @@ test() ->
     P16 = parse(["sip:example.org;foo;lr=true;bar;baz"]),
 
     %% test display name with an unbalanced escaped quote in it
-    io:format("test: parse/1 - 17~n"),
+    autotest:mark(?LINE, "parse/1 - 17"),
     P17 = [#contact{display_name = "Fredrik \\\"",
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([])
@@ -730,7 +730,7 @@ test() ->
     P17 = parse(["\"Fredrik \\\"\" sip:example.org"]),
 
     %% test display name with <> and a fake parameter delimeter in it.
-    io:format("test: parse/1 - 18~n"),
+    autotest:mark(?LINE, "parse/1 - 18"),
     P18 = [#contact{display_name = "Fredrik <X>;notparam=foo Y",
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([])
@@ -738,7 +738,7 @@ test() ->
     P18 = parse(["\"Fredrik <X>;notparam=foo Y\" sip:example.org"]),
 
     %% test display name without quotes, that really should have quotes
-    io:format("test: parse/1 - 19~n"),
+    autotest:mark(?LINE, "parse/1 - 19"),
     P19 = [#contact{display_name = "Foo Bar",
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([{"test", "foo"}])
@@ -746,21 +746,21 @@ test() ->
     P19 = parse(["Foo Bar <sip:example.org>;test=foo"]),
 
     %% test display name without quotes, that really should have quotes
-    io:format("test: parse/1 - 20~n"),
+    autotest:mark(?LINE, "parse/1 - 20"),
     case catch parse(["Foo Bar sip:example.org"]) of
 	{unparseable, {unparseable_uri_without_brackets, _}} -> ok;
 	P20 -> throw({error, {test_failed, P20}})
     end,
 
     %% test display name without quotes, that really should have quotes
-    io:format("test: parse/1 - 21~n"),
+    autotest:mark(?LINE, "parse/1 - 21"),
     case catch parse(["Foo|Bar <sip:example.org>"]) of
 	{unparseable, {unquoted_displayname_is_not_a_valid_token, _}} -> ok;
 	P21 -> throw({error, {test_failed, P21}})
     end,
 
     %% test with empty quoted display name
-    io:format("test: parse/1 - 22~n"),
+    autotest:mark(?LINE, "parse/1 - 22"),
     P22 = [#contact{display_name = none,
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([{"test", "foo"}])
@@ -768,7 +768,7 @@ test() ->
     P22 = parse(["\t\"\" sip:example.org;test=foo \t"]),
 
     %% test no display name and contact parameters
-    io:format("test: parse/1 - 23~n"),
+    autotest:mark(?LINE, "parse/1 - 23"),
     P23 = [#contact{display_name = none,
 		    urlstr = "sip:example.org",
 		    contact_param = contact_param:to_norm([{"test", "foo"}])
@@ -776,7 +776,7 @@ test() ->
     P23 = parse(["sip:example.org;test=foo"]),
 
     %% test invalid hostname that is not quoted and not a token
-    io:format("test: parse/1 - 24~n"),
+    autotest:mark(?LINE, "parse/1 - 24"),
     case catch parse(["<sip:example.org>;foo=|.example.org"]) of
 	{unparseable, {invalid_contact_param, _}} -> ok;
 	P24 -> throw({error, {test_failed, P24}})
@@ -784,7 +784,7 @@ test() ->
 
     %% test parameters with delimeter-alike characters, interop problem (our fault) encountered
     %% with Cisco 79xx phones firmware > 7.4
-    io:format("test: parse/1 - 25~n"),
+    autotest:mark(?LINE, "parse/1 - 25"),
     P25 = [#contact{display_name = none,
 		    urlstr = "sip:ft@192.0.2.12:5060;user=ip",
 		    contact_param = contact_param:to_norm([{"+sip.instance", "\"<urn:uuid:foo>\""}])
@@ -796,30 +796,30 @@ test() ->
     %%--------------------------------------------------------------------
 
     %% test "Contact: *"
-    io:format("test: print/1 - 1~n"),
+    autotest:mark(?LINE, "print/1 - 1"),
     "*" = print(hd(parse(["*"]))),
 
     %% test single name-addr
-    io:format("test: print/1 - 2~n"),
+    autotest:mark(?LINE, "print/1 - 2"),
     "<sip:alice@pc33.atlanta.com>" = print(hd(parse(["<sip:alice@pc33.atlanta.com>"]))),
 
     %% test single addr-spec
-    io:format("test: print/1 - 3~n"),
+    autotest:mark(?LINE, "print/1 - 3"),
     "<sip:bob@192.0.2.4>" = print(hd(parse(["sip:bob@192.0.2.4"]))),
 
     %% test name_addr with display-name
-    io:format("test: print/1 - 4~n"),
+    autotest:mark(?LINE, "print/1 - 4"),
     PH4 = hd(parse(["\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>"])),
     "\"Mr. Watson\" <sip:watson@worcester.bell-telephone.com>" = print(PH4),
 
     %% test addr-spec with contact-params, test generic-param rule
-    io:format("test: print/1 - 5~n"),
+    autotest:mark(?LINE, "print/1 - 5"),
     PH5 = hd(parse(["sip:watson@worcester.bell-telephone.com; foo = bar;zoo = 123"])),
     "<sip:watson@worcester.bell-telephone.com>;foo=bar;zoo=123" = print(PH5),
 
     %% test addr_spec with contact-params, test "q" and "expires"
     %% as well as IPv4address, hostname and IPv6reference rules
-    io:format("test: print/1 - 6~n"),
+    autotest:mark(?LINE, "print/1 - 6"),
     PH6 = hd(parse(["sip:watson@worcester.bell-telephone.com;q = 1.; "
 		    "expires=123456;host = 1.2.3.4;domain    = www.com;"
 		    "ipv6=[1:2:3:4:5:6:7:8]"])),
@@ -827,7 +827,7 @@ test() ->
 	"ipv6=[1:2:3:4:5:6:7:8]" = print(PH6),
 
     %% test name_addr with contact-params and display-name
-    io:format("test: print/1 - 7~n"),
+    autotest:mark(?LINE, "print/1 - 7"),
     PH7 = hd(parse(["\"Mr. Watson\"<sip:watson@worcester.bell-telephone.com>; q = 0; "
 		    "expires=123456    ;host =1.2.3.4   ;   domain=www.com;"
 		    "    ipv6=[1:2:3:4:5:6:7:8]"])),
@@ -835,7 +835,7 @@ test() ->
 	"expires=123456;host=1.2.3.4;domain=www.com;ipv6=[1:2:3:4:5:6:7:8]" = print(PH7),
 
     %% test strange Contact and DisplayName
-    io:format("test: print/1 - 8~n"),
+    autotest:mark(?LINE, "print/1 - 8"),
     PH8 = hd(parse(["Watson-.!%*_+`'~" ++ [?HTAB] ++
 		    "<sip:watson@worcester.bell-telephone.com>; q = 0.95; " ++
 		    "expires=123456    ;host =1.2.3.4   ;   domain=www.com;" ++
@@ -846,38 +846,38 @@ test() ->
     %% test print of encounterd bug: we LOOSE parameters outside the URI
     %% sipheader:parse_contact(["<sip:hotsip1@130.237.252.103:5060;transport=TCP>;q=1.00;"
     %%                          "agentid=\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\";expires=0"]).
-    io:format("test: print/1 - 9~n"),
+    autotest:mark(?LINE, "print/1 - 9"),
     PH9 = hd(parse(["<sip:hotsip1@130.237.252.103:5060;transport=TCP>;q=1.00;"
 		    "agentid=\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\";expires=0"])),
     "<sip:hotsip1@130.237.252.103:5060;transport=TCP>;q=1.000;"
 	"agentid=\"6a017b68-96b1-4c3f-9513-7a7a90ad501d\";expires=0" = print(PH9),
 
     %% test uri-parameters inside a SIP-URI (name-addr)
-    io:format("test: print/1 - 10~n"),
+    autotest:mark(?LINE, "print/1 - 10"),
     PH10 = hd(parse(["Hokan <sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42>;q=1.00;"
 		     ";expires=0"])),
     "\"Hokan\" <sip:hotsip1@130.237.252.103:5060;transport=TCP;foo;bar=42>;q=1.000;expires=0"
 	= print(PH10),
 
     %% test contact-parameters after a SIP-URI (addr-spec)
-    io:format("test: print/1 - 11~n"),
+    autotest:mark(?LINE, "print/1 - 11"),
     PH11 = hd(parse(["sip:hotsip1@130.237.252.103:5060;transport=TCP;bar=42"
 		     " ;q=1.00;expires=0"])),
     "<sip:hotsip1@130.237.252.103:5060>;transport=tcp;bar=42;q=1.000;expires=0" = print(PH11),
 
     %% test printing list of contacts - using a function in sipheader
-    io:format("test: print/1 - 12~n"),
+    autotest:mark(?LINE, "print/1 - 12"),
     PH12 = hd(parse(["<sip:alice@pc33.atlanta.com>"])),
     PH13 = hd(parse(["sip:bob@192.0.2.4"])),
     ["<sip:alice@pc33.atlanta.com>", "<sip:bob@192.0.2.4>"] = sipheader:contact_print([PH12, PH13]),
 
     %% test printing list of single contact
-    io:format("test: print/1 - 13~n"),
+    autotest:mark(?LINE, "print/1 - 13"),
     PH14 = hd(parse(["<sip:alice@pc33.atlanta.com>"])),
     "<sip:alice@pc33.atlanta.com>" = print(PH14),
 
     %% test printing empty list of contacts
-    io:format("test: print/1 - 14~n"),
+    autotest:mark(?LINE, "print/1 - 14"),
     "" = print([]),
 
     %% add_param/3
@@ -894,15 +894,15 @@ test() ->
     C4 = (new(none, "sip:alice@pc33.atlanta.com", []))#contact{ contact_param =  Contact4},
 
     %% add to empty params
-    io:format("test: add_param/3 - 1~n"),
+    autotest:mark(?LINE, "add_param/3 - 1"),
     C2 = add_param(C1, "foo", "bar"),
 
     %% add to single element params
-    io:format("test: add_param/3 - 2~n"),
+    autotest:mark(?LINE, "add_param/3 - 2"),
     C3 = add_param(C2, "zog", "42"),
 
     %% add to single element params
-    io:format("test: add_param/3 - 3~n"),
+    autotest:mark(?LINE, "add_param/3 - 3"),
     C4 = add_param(C3, "boo", "42"),
 
 
@@ -919,15 +919,15 @@ test() ->
     C4b = (new(none, "sip:alice@pc33.atlanta.com", []))#contact{ contact_param =  Contact4b},
 
     %% remove (non-existant key) from empty param
-    io:format("test: rm_param/3 - 1~n"),
+    autotest:mark(?LINE, "rm_param/3 - 1"),
     C1b = rm_param(C1b, "foo"),
 
     %% remove existing key
-    io:format("test: rm_param/3 - 2~n"),
+    autotest:mark(?LINE, "rm_param/3 - 2"),
     C3b = rm_param(C4b, "boo"),
 
     %% remove last param
-    io:format("test: rm_param/3 - 3~n"),
+    autotest:mark(?LINE, "rm_param/3 - 3"),
     C1b = rm_param(C2b, "foo"),
 
 

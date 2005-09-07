@@ -655,7 +655,7 @@ test() ->
 
     %% type_check_elements(Values, Type, Def, [])
     %%--------------------------------------------------------------------
-    io:format("test: type_check_elements/4 - 0~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - 0"),
 
     ok = test_type_check_atom(),
     ok = test_type_check_integer(),
@@ -672,7 +672,7 @@ test() ->
     %% check_cfg_entry_type(Key, Value, Src, Def)
     %%--------------------------------------------------------------------
 
-    io:format("test: check_cfg_entry_type/4 - 1~n"),
+    autotest:mark(?LINE, "check_cfg_entry_type/4 - 1"),
     %% check list of atom
     {ok, [true, false]} =
 	check_cfg_entry_type(test, [true, false], test_backend,
@@ -681,7 +681,7 @@ test() ->
 				       }
 			    ),
 
-    io:format("test: check_cfg_entry_type/4 - 2~n"),
+    autotest:mark(?LINE, "check_cfg_entry_type/4 - 2"),
     %% check list of atom when single value was expected
     {error, "parameter 'test' has invalid value ([true,false]) - expected atom : invalid type"} =
 	check_cfg_entry_type(test, [true, false], test_backend,
@@ -690,7 +690,7 @@ test() ->
 				       }
 			    ),
 
-    io:format("test: check_cfg_entry_type/4 - 3~n"),
+    autotest:mark(?LINE, "check_cfg_entry_type/4 - 3"),
     %% check single atom (normalize should be a no-op)
     {ok, true} =
 	check_cfg_entry_type(test, true, test_backend,
@@ -699,7 +699,7 @@ test() ->
 				       }
 			    ),
 
-    io:format("test: check_cfg_entry_type/4 - 4~n"),
+    autotest:mark(?LINE, "check_cfg_entry_type/4 - 4"),
     %% check single atom when list was expected
     {error, "parameter 'test' has invalid value (true) - list of atom expected"} =
 	check_cfg_entry_type(test, true, test_backend,
@@ -708,7 +708,7 @@ test() ->
 				       }
 			    ),
 
-    io:format("test: check_cfg_entry_type/4 - 5~n"),
+    autotest:mark(?LINE, "check_cfg_entry_type/4 - 5"),
     %% make sure we don't accept a string when we should get an integer (a bit tricky)
     {error,"parameter 'test' has invalid value (\"string\") - expected integer : invalid type"} =
 	check_cfg_entry_type(test, "string", test_backend,
@@ -719,7 +719,7 @@ test() ->
 
     %% get_cfg_definitions(AppModule)
     %%--------------------------------------------------------------------
-    io:format("test: get_cfg_definitions/1 - 1~n"),
+    autotest:mark(?LINE, "get_cfg_definitions/1 - 1"),
     %% test to make sure we get at least 25 configuration entrys back for
     %% our known applications. The tuple-tagging is to make test fail output
     %% indicate which one it was that failed.
@@ -728,11 +728,11 @@ test() ->
     {appserver, true}		= {appserver, length(get_cfg_definitions(appserver)) >= 25},
     {outgoingproxy, true}	= {outgoingproxy, length(get_cfg_definitions(outgoingproxy)) >= 25},
 
-    io:format("test: get_cfg_definitions/1 - 2~n"),
+    autotest:mark(?LINE, "get_cfg_definitions/1 - 2"),
     %% test that unknown application name also gets config (common config)
     {test, true}		= {test, length(get_cfg_definitions(false)) >= 20},
 
-    io:format("test: get_cfg_definitions/1 - 3~n"),
+    autotest:mark(?LINE, "get_cfg_definitions/1 - 3"),
     %% test that unknown application does NOT result in the same thing as known application
     GCD_Unknown_Length = length(get_cfg_definitions(false)),
     GCD_Known_Length = length(get_cfg_definitions(incomingproxy)),
@@ -744,7 +744,7 @@ test() ->
 
     %% merge_cfg_entrys(Entrys, In)
     %%--------------------------------------------------------------------
-    io:format("test: merge_cfg_entrys/2 - 1~n"),
+    autotest:mark(?LINE, "merge_cfg_entrys/2 - 1"),
     %% test no conflicts during merge
     [#cfg_entry{key = aaa},
      #cfg_entry{key = abb},
@@ -754,7 +754,7 @@ test() ->
 			  #cfg_entry{key = aaa}
 			 ]),
 
-    io:format("test: merge_cfg_entrys/2 - 2~n"),
+    autotest:mark(?LINE, "merge_cfg_entrys/2 - 2"),
     %% test conflicts
     [#cfg_entry{key = aaa, default = 2},
      #cfg_entry{key = abc}
@@ -765,7 +765,7 @@ test() ->
 
     %% check_types(Cfg, Definitions)
     %%--------------------------------------------------------------------
-    io:format("test: check_types/2 - 1~n"),
+    autotest:mark(?LINE, "check_types/2 - 1"),
     %% test complete set of definitions and no bad parameters
     CT_Def1 =
 	[#cfg_entry{key = abc,
@@ -793,13 +793,13 @@ test() ->
 				       ]},
     {ok, CT_Res1} = check_types(CT_Cfg1, CT_Def1),
 
-    io:format("test: check_types/2 - 2~n"),
+    autotest:mark(?LINE, "check_types/2 - 2"),
     %% test with missing definition
     CT_Def2 = CT_Def1,
     CT_Cfg2 = CT_Cfg1#yxa_cfg{entrys = CT_Cfg1#yxa_cfg.entrys ++ [{jkl, "unknown-i-am", test}]},
     {error, "Unknown configuration parameter jkl (source: test)"} = check_types(CT_Cfg2, CT_Def2),
 
-    io:format("test: check_types/2 - 3~n"),
+    autotest:mark(?LINE, "check_types/2 - 3"),
     %% test bad parameter type
     CT_Def3 = [#cfg_entry{key = abc,
 			  list_of = false,
@@ -811,7 +811,7 @@ test() ->
 	check_types(CT_Cfg3, CT_Def3),
 
 
-    io:format("test: check_types/2 - 4~n"),
+    autotest:mark(?LINE, "check_types/2 - 4"),
     %% test list with one bad parameter type
     CT_Def4 = [#cfg_entry{key = abc,
 			  list_of = true,
@@ -825,7 +825,7 @@ test() ->
 
     %% check_required(Cfg, Definitions)
     %%--------------------------------------------------------------------
-    io:format("test: check_required/2 - 1~n"),
+    autotest:mark(?LINE, "check_required/2 - 1"),
     %% test everything-ok
     CR_Cfg1 = #yxa_cfg{entrys = [{abc, 123, test},
 				 {req, "hi world", test}
@@ -837,7 +837,7 @@ test() ->
 
     ok = check_required(CR_Cfg1, CR_Def1),
 
-    io:format("test: check_required/2 - 2~n"),
+    autotest:mark(?LINE, "check_required/2 - 2"),
     %% test missing required parameter
     CR_Cfg2 = #yxa_cfg{entrys = [{abc, 123, test}]
 		      },
@@ -847,7 +847,7 @@ test() ->
 
     {error, "Required parameter 'req' not set"} = check_required(CR_Cfg2, CR_Def2),
 
-    io:format("test: check_required/2 - 3~n"),
+    autotest:mark(?LINE, "check_required/2 - 3"),
     %% test required parameter set to empty list
     CR_Cfg3 = #yxa_cfg{entrys = [{req, "", test}]
 		      },
@@ -859,7 +859,7 @@ test() ->
 
     %% check_loadable(Cfg, Definitions, Mode)
     %%--------------------------------------------------------------------
-    io:format("test: check_loadable/3 - 1~n"),
+    autotest:mark(?LINE, "check_loadable/3 - 1"),
     %% test hard reload, should _always_ return ok
 
     CL_Cfg1 = #yxa_cfg{entrys = [{test_hard, 123, test},
@@ -871,7 +871,7 @@ test() ->
 
     ok = check_loadable(CL_Cfg1, CL_Def1, hard),
 
-    io:format("test: check_loadable/3 - 2~n"),
+    autotest:mark(?LINE, "check_loadable/3 - 2"),
     %% test soft reload that should be permitted
 
     %% use make_ref to make sure the value changes
@@ -885,7 +885,7 @@ test() ->
     ok = check_loadable(CL_Cfg2, CL_Def2, soft),
 
 
-    io:format("test: check_loadable/3 - 3~n"),
+    autotest:mark(?LINE, "check_loadable/3 - 3"),
     %% test soft reload that should NOT be permitted
 
     %% use make_ref to make sure the value changes
@@ -899,7 +899,7 @@ test() ->
     {error, "Parameter 'test_hard' can't be changed with a soft reconfiguration" ++ _} =
 	check_loadable(CL_Cfg3, CL_Def3, soft),
 
-    io:format("test: check_loadable/3 - 4~n"),
+    autotest:mark(?LINE, "check_loadable/3 - 4"),
     %% test missing definition
     CL_Cfg4 = #yxa_cfg{entrys = [{test_hard, 4711, test}]
 		      },
@@ -914,7 +914,7 @@ test() ->
 
 
 test_type_check_atom() ->
-    io:format("test: type_check_elements/4 - atom 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - atom 1"),
     %% check list of atoms
     {ok, [true, false, nomatch]} = type_check_elements([true, false, nomatch],
 						       atom,
@@ -922,12 +922,12 @@ test_type_check_atom() ->
 						       []),
 
 
-    io:format("test: type_check_elements/4 - atom 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - atom 2"),
     %% check single atom
     {ok, [true]} = type_check_elements([true], atom,
 				       #cfg_entry{}, []),
 
-    io:format("test: type_check_elements/4 - atom 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - atom 3"),
     %% check integer among atoms
     try type_check_elements([true, "non-atom-value", false], atom,
 			    #cfg_entry{}, []) of
@@ -940,14 +940,14 @@ test_type_check_atom() ->
     ok.
 
 test_type_check_integer() ->
-    io:format("test: type_check_elements/4 - integer 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - integer 1"),
     %% check integer
     {ok, [3141592]} = type_check_elements([3141592], integer,
 					#cfg_entry{}, []),
 
 
 
-    io:format("test: type_check_elements/4 - integer 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - integer 2"),
     %% check non-integer
     try type_check_elements([9, {foo, 98}], integer,
 			    #cfg_entry{}, []) of
@@ -957,7 +957,7 @@ test_type_check_integer() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - integer 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - integer 3"),
     %% strings are list of integers, and we can't avoid 'accepting' a string
     %% as a list of integers here. We can (and do) in check_cfg_entry_type/4 though.
     {ok, [115, 116, 114, 105, 110, 103]} = type_check_elements("string", integer,
@@ -966,12 +966,12 @@ test_type_check_integer() ->
     ok.
 
 test_type_check_bool() ->
-    io:format("test: type_check_elements/4 - bool 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - bool 1"),
     %% check bools
     {ok, [true, false]} = type_check_elements([true, false], bool,
 					      #cfg_entry{}, []),
 
-    io:format("test: type_check_elements/4 - bool 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - bool 2"),
     %% check non-bool
     try type_check_elements([error], bool,
 			    #cfg_entry{}, []) of
@@ -983,7 +983,7 @@ test_type_check_bool() ->
     ok.
 
 test_type_check_term() ->
-    io:format("test: type_check_elements/4 - term 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - term 1"),
     %% check all kinds of weird things
     In = [self(), make_ref(), {1, false}],
 
@@ -994,18 +994,18 @@ test_type_check_term() ->
     ok.
 
 test_type_check_string() ->
-    io:format("test: type_check_elements/4 - string 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - string 1"),
     %% check single string
     {ok, ["test_string"]} = type_check_elements(["test_string"], string,
 						#cfg_entry{}, []),
 
-    io:format("test: type_check_elements/4 - string 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - string 2"),
     %% check list of strings
     {ok, ["test", "string"]} = type_check_elements(["test", "string"], string,
 						#cfg_entry{}, []),
 
 
-    io:format("test: type_check_elements/4 - string 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - string 3"),
     %% check too short string
     try type_check_elements(["why", "am", "i", "so", "short?"], string,
 			    #cfg_entry{}, []) of
@@ -1014,7 +1014,7 @@ test_type_check_string() ->
 	throw: {invalid_value, "string must be more than one character", 3, "i"} -> ok
     end,
 
-    io:format("test: type_check_elements/4 - string 4~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - string 4"),
     %% check accidental integer
     try type_check_elements([64], string,
 			    #cfg_entry{}, []) of
@@ -1023,13 +1023,13 @@ test_type_check_string() ->
 	throw: {invalid_value, "invalid type", 1, 64} -> ok
     end,
 
-    io:format("test: type_check_elements/4 - string 5~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - string 5"),
     %% check normalization
     {ok, ["foo"]} = type_check_elements(["FoO"], string,
 					#cfg_entry{normalize = true}, []),
 
 
-    io:format("test: type_check_elements/4 - string 6~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - string 6"),
     %% check without normalization
     {ok, ["FoO"]} = type_check_elements(["FoO"], string,
 					#cfg_entry{normalize = false}, []),
@@ -1037,12 +1037,12 @@ test_type_check_string() ->
     ok.
 
 test_type_check_regexp_rewrite() ->
-    io:format("test: type_check_elements/4 - regexp_rewrite 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_rewrite 1"),
     %% check single regexp
     {ok, [{"...", "foo"}]} = type_check_elements([{"...", "foo"}], regexp_rewrite,
 						  #cfg_entry{}, []),
 
-    io:format("test: type_check_elements/4 - regexp_rewrite 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_rewrite 2"),
     %% check list of regexps, the last one invalid because it is too short
     try type_check_elements([{"...", "foo"}, {".*", "bar"}, {".", "X"}], regexp_rewrite,
 			    #cfg_entry{}, []) of
@@ -1052,7 +1052,7 @@ test_type_check_regexp_rewrite() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - regexp_rewrite 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_rewrite 3"),
     %% check list of regexps, the last one invalid because it has atom LHS
     try type_check_elements([{"...", "foo"}, {false, "X"}], regexp_rewrite,
 			    #cfg_entry{}, []) of
@@ -1062,7 +1062,7 @@ test_type_check_regexp_rewrite() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - regexp_rewrite 4~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_rewrite 4"),
     %% check invalid regexp with illegal LHS
     try type_check_elements([{"+test", "foo"}], regexp_rewrite,
 			    #cfg_entry{}, []) of
@@ -1072,7 +1072,7 @@ test_type_check_regexp_rewrite() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - regexp_rewrite 5~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_rewrite 5"),
     %% check invalid RHS
     try type_check_elements([{".*", "x"}], regexp_rewrite,
 			    #cfg_entry{}, []) of
@@ -1082,7 +1082,7 @@ test_type_check_regexp_rewrite() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - regexp_rewrite 6~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_rewrite 6"),
     %% check invalid RHS
     try type_check_elements([{".*", false}], regexp_rewrite,
 			    #cfg_entry{}, []) of
@@ -1096,12 +1096,12 @@ test_type_check_regexp_rewrite() ->
 
 
 test_type_check_regexp_match() ->
-    io:format("test: type_check_elements/4 - regexp_match 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_match 1"),
     %% check single regexp
     {ok, [{"...", foo}]} = type_check_elements([{"...", foo}], regexp_match,
 						  #cfg_entry{}, []),
 
-    io:format("test: type_check_elements/4 - regexp_match 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_match 2"),
     %% check list of regexps, the last one invalid because it has atom LHS
     try type_check_elements([{"...", foo}, {false, true}], regexp_match,
 			    #cfg_entry{}, []) of
@@ -1111,7 +1111,7 @@ test_type_check_regexp_match() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - regexp_match 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - regexp_match 3"),
     %% check invalid regexp with illegal LHS
     try type_check_elements([{"+test", foo}], regexp_match,
 			    #cfg_entry{}, []) of
@@ -1124,23 +1124,23 @@ test_type_check_regexp_match() ->
     ok.
 
 test_type_check_sipurl() ->
-    io:format("test: type_check_elements/4 - sipurl 0~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sipurl 0"),
     TCE_URL_s1 = "sip:ft@example.com:5555",
     TCE_URL_s2 = "sip:example.com:4321",
     TCE_URL1 = sipurl:parse(TCE_URL_s1),
     TCE_URL2 = sipurl:parse(TCE_URL_s2),
 
-    io:format("test: type_check_elements/4 - sipurl 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sipurl 1"),
     %% check valid URLs with normalization
     {ok, [TCE_URL1, TCE_URL2]} = type_check_elements([TCE_URL_s1, TCE_URL_s2], sipurl,
 						     #cfg_entry{normalize = true}, []),
 
-    io:format("test: type_check_elements/4 - sipurl 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sipurl 2"),
     %% check valid URLs without normalization
     {ok, [TCE_URL_s1, TCE_URL_s2]} = type_check_elements([TCE_URL_s1, TCE_URL_s2], sipurl,
 							 #cfg_entry{normalize = false}, []),
 
-    io:format("test: type_check_elements/4 - sipurl 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sipurl 3"),
     %% check one valid and one invalid URL
     try type_check_elements([TCE_URL_s1, "not an URL"], sipurl,
 			    #cfg_entry{}, []) of
@@ -1150,7 +1150,7 @@ test_type_check_sipurl() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - sipurl 4~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sipurl 4"),
     %% check invalid type
     try type_check_elements([17], sipurl,
 			    #cfg_entry{normalize = true}, []) of
@@ -1164,7 +1164,7 @@ test_type_check_sipurl() ->
 
 
 test_type_check_sip_sipurl() ->
-    io:format("test: type_check_elements/4 - sip_sipurl 0~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sip_sipurl 0"),
     TCE_SIPURL_s1 = "ft@example.com:5555",
     TCE_SIPURL_s2 = "example.com:4321",
     TCE_SIPURL_s3 = "sips:secure.example.com",
@@ -1172,23 +1172,23 @@ test_type_check_sip_sipurl() ->
     TCE_SIPURL2 = sipurl:parse("sip:" ++ TCE_SIPURL_s2),
     TCE_SIPURL3 = sipurl:parse(TCE_SIPURL_s3),
 
-    io:format("test: type_check_elements/4 - sip_sipurl 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sip_sipurl 1"),
     %% check valid URLs with normalization
     {ok, [TCE_SIPURL1, TCE_SIPURL2]} = type_check_elements([TCE_SIPURL_s1, TCE_SIPURL_s2], sip_sipurl,
 						     #cfg_entry{normalize = true}, []),
 
-    io:format("test: type_check_elements/4 - sip_sipurl 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sip_sipurl 2"),
     %% check valid URLs without normalization
     {ok, [TCE_SIPURL_s1, TCE_SIPURL_s2]} = type_check_elements([TCE_SIPURL_s1, TCE_SIPURL_s2], sip_sipurl,
 							 #cfg_entry{normalize = false}, []),
 
 
-    io:format("test: type_check_elements/4 - sip_sipurl 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sip_sipurl 3"),
     %% check valid URL with protocol specified and with normalization
     {ok, [TCE_SIPURL3]} = type_check_elements([TCE_SIPURL_s3], sip_sipurl,
 					     #cfg_entry{normalize = true}, []),
 
-    io:format("test: type_check_elements/4 - sip_sipurl 4~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sip_sipurl 4"),
     %% check one valid and one invalid URL
     try type_check_elements([TCE_SIPURL_s1, "not an URL"], sip_sipurl,
 			    #cfg_entry{}, []) of
@@ -1198,7 +1198,7 @@ test_type_check_sip_sipurl() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - sip_sipurl 5~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sip_sipurl 5"),
     %% check invalid type
     try type_check_elements([17], sip_sipurl,
 			    #cfg_entry{normalize = true}, []) of
@@ -1212,23 +1212,23 @@ test_type_check_sip_sipurl() ->
 
 
 test_type_check_sips_sipurl() ->
-    io:format("test: type_check_elements/4 - sips_sipurl 0~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sips_sipurl 0"),
     TCE_SIPSURL_s1 = "ft@example.com:5555",
     TCE_SIPSURL_s2 = "example.com:4321",
     TCE_SIPSURL1 = sipurl:parse("sips:" ++ TCE_SIPSURL_s1),
     TCE_SIPSURL2 = sipurl:parse("sips:" ++ TCE_SIPSURL_s2),
 
-    io:format("test: type_check_elements/4 - sips_sipurl 1~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sips_sipurl 1"),
     %% check valid URLs with normalization
     {ok, [TCE_SIPSURL1, TCE_SIPSURL2]} = type_check_elements([TCE_SIPSURL_s1, TCE_SIPSURL_s2], sips_sipurl,
 						     #cfg_entry{normalize = true}, []),
 
-    io:format("test: type_check_elements/4 - sips_sipurl 2~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sips_sipurl 2"),
     %% check valid URLs without normalization
     {ok, [TCE_SIPSURL_s1, TCE_SIPSURL_s2]} = type_check_elements([TCE_SIPSURL_s1, TCE_SIPSURL_s2], sips_sipurl,
 							 #cfg_entry{normalize = false}, []),
 
-    io:format("test: type_check_elements/4 - sips_sipurl 3~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sips_sipurl 3"),
     %% check one valid and one invalid URL
     try type_check_elements([TCE_SIPSURL_s1, "not an URL"], sips_sipurl,
 			    #cfg_entry{}, []) of
@@ -1238,7 +1238,7 @@ test_type_check_sips_sipurl() ->
 	    ok
     end,
 
-    io:format("test: type_check_elements/4 - sips_sipurl 4~n"),
+    autotest:mark(?LINE, "type_check_elements/4 - sips_sipurl 4"),
     %% check invalid type
     try type_check_elements([17], sips_sipurl,
 			    #cfg_entry{normalize = true}, []) of

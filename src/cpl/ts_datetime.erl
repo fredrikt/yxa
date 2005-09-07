@@ -494,36 +494,36 @@ test() ->
     %% datetime_to_type(DateTime, Type, Timezone)
     %%--------------------------------------------------------------------
     %% utc -> utc
-    io:format("test: datetime_to_type/3 - 1~n"),
+    autotest:mark(?LINE, "datetime_to_type/3 - 1"),
     DTTDateTime1 = #date_time{date = {2005,5,15}, time = {12,0,0}, type = utc},
     DTTDateTime1 = datetime_to_type(DTTDateTime1, utc, dummy),
 
     %% floating -> floating
-    io:format("test: datetime_to_type/3 - 2~n"),
+    autotest:mark(?LINE, "datetime_to_type/3 - 2"),
     DTTDateTime2 = #date_time{date = {2005,5,15}, time = {12,0,0}, type = floating},
     DTTDateTime2 = datetime_to_type(DTTDateTime2, floating, dummy),
 
     %% floating (no DST) -> utc
-    io:format("test: datetime_to_type/3 - 3~n"),
+    autotest:mark(?LINE, "datetime_to_type/3 - 3"),
     DTTDateTime3a = #date_time{date = {2005,1,15}, time = {11 + cpl_test_util:timezone_offset(),0,0}, type = floating},
     DTTDateTime3b = #date_time{date = {2005,1,15}, time = {11,0,0}, type = utc},
     DTTDateTime3b = datetime_to_type(DTTDateTime3a, utc, dummy),
 
     %% utc -> floating (no DST)
-    io:format("test: datetime_to_type/3 - 4~n"),
+    autotest:mark(?LINE, "datetime_to_type/3 - 4"),
     DTTDateTime4a = #date_time{date = {2005,1,15}, time = {12,0,0}, type = utc},
     DTTDateTime4b = #date_time{date = {2005,1,15}, time = {12 + cpl_test_util:timezone_offset(),0,0}, type = floating},
     DTTDateTime4b = datetime_to_type(DTTDateTime4a, floating, dummy),
 
     %% floating (DST -> no DST transition) -> utc
-    io:format("test: datetime_to_type/3 - 5 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_type/3 - 5 - WARNING: test assumes that local = EU"),
     DTTDateTime5a = #date_time{date = {2005,10,30}, time = {1 + cpl_test_util:timezone_offset(),59,59}, 
 			       type = floating},
     DTTDateTime5b = #date_time{date = {2005,10,30}, time = {1,59,59}, type = utc},
     DTTDateTime5b = datetime_to_type(DTTDateTime5a, utc, dummy),
 
     %% floating (DST) -> utc
-    io:format("test: datetime_to_type/3 - 6 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_type/3 - 6 - WARNING: test assumes that local = EU"),
     DTTDateTime6a = #date_time{date = {2005,6,30}, time = {2 + cpl_test_util:timezone_offset(),0,0}, type = floating},
     DTTDateTime6b = #date_time{date = {2005,6,30}, time = {1,0,0}, type = utc},
     DTTDateTime6b = datetime_to_type(DTTDateTime6a, utc, dummy),
@@ -538,52 +538,52 @@ test() ->
 %% and a case where it overflows into the next higher element 
 %% (sec -> minute ... etc)
 test1() ->
-    io:format("test: add_seconds/2 - 1~n"),
+    autotest:mark(?LINE, "add_seconds/2 - 1"),
     DT1 = #date_time{date = {2005,1,1}, time = {0,0,0}, type = utc},
     R1 = add_seconds(DT1, 5),
     #date_time{date = {2005,1,1}, time = {0,0,5}, type = utc} = R1, 
 
-    io:format("test: add_seconds/2 - 2~n"),
+    autotest:mark(?LINE, "add_seconds/2 - 2"),
     DT2 = #date_time{date = {2005,1,1}, time = {0,0,5}, type = utc},
     R2 = add_seconds(DT2, 55),
     #date_time{date = {2005,1,1}, time = {0,1,0}, type = utc} = R2, 
 
-    io:format("test: add_minutes/2 - 1~n"),
+    autotest:mark(?LINE, "add_minutes/2 - 1"),
     DT3 = #date_time{date = {2005,1,1}, time = {0,1,0}, type = utc},
     R3 = add_minutes(DT3, 1),
     #date_time{date = {2005,1,1}, time = {0,2,0}, type = utc} = R3, 
 
-    io:format("test: add_minutes/2 - 2~n"),
+    autotest:mark(?LINE, "add_minutes/2 - 2"),
     DT4 = #date_time{date = {2005,1,1}, time = {0,2,0}, type = utc},
     R4 = add_minutes(DT4, 58),
     #date_time{date = {2005,1,1}, time = {1,0,0}, type = utc} = R4, 
 
-    io:format("test: add_hours/2 - 1~n"),
+    autotest:mark(?LINE, "add_hours/2 - 1"),
     DT5 = #date_time{date = {2005,1,1}, time = {1,0,0}, type = utc},
     R5 = add_hours(DT5, 1),
     #date_time{date = {2005,1,1}, time = {2,0,0}, type = utc} = R5, 
 
-    io:format("test: add_hours/2 - 2~n"),
+    autotest:mark(?LINE, "add_hours/2 - 2"),
     DT6 = #date_time{date = {2005,1,1}, time = {2,0,0}, type = utc},
     R6 = add_hours(DT6, 22),
     #date_time{date = {2005,1,2}, time = {0,0,0}, type = utc} = R6, 
 
-    io:format("test: add_days/2 - 1~n"),
+    autotest:mark(?LINE, "add_days/2 - 1"),
     DT7 = #date_time{date = {2005,1,2}, time = {0,0,0}, type = utc},
     R7 = add_days(DT7, 1),
     #date_time{date = {2005,1,3}, time = {0,0,0}, type = utc} = R7, 
 
-    io:format("test: add_days/2 - 2~n"),
+    autotest:mark(?LINE, "add_days/2 - 2"),
     DT8 = #date_time{date = {2005,1,3}, time = {0,0,0}, type = utc},
     R8 = add_days(DT8, 29),
     #date_time{date = {2005,2,1}, time = {0,0,0}, type = utc} = R8, 
 
-    io:format("test: add_weeks/2 - 1~n"),
+    autotest:mark(?LINE, "add_weeks/2 - 1"),
     DT9 = #date_time{date = {2005,1,2}, time = {0,0,0}, type = utc},
     R9 = add_weeks(DT9, 1),
     #date_time{date = {2005,1,9}, time = {0,0,0}, type = utc} = R9, 
 
-    io:format("test: add_weeks/2 - 2~n"),
+    autotest:mark(?LINE, "add_weeks/2 - 2"),
     DT10 = #date_time{date = {2005,1,9}, time = {0,0,0}, type = utc},
     R10 = add_weeks(DT10, 4),
     #date_time{date = {2005,2,6}, time = {0,0,0}, type = utc} = R10, 
@@ -596,7 +596,7 @@ test1() ->
 %% adding several different time units at once
 test2() ->
     %% overflow to new year
-    io:format("test: add_datetime_and_duration/2 - 1~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 1"),
     DT1 = #date_time{date = {2005,1,1}, time = {0,0,0}, type = utc},
     Dur1 = #duration{	  
       weeks = 53
@@ -606,7 +606,7 @@ test2() ->
     #date_time{date = {2006, 1, 6}, time = {23,59,59}, type = utc} = R1,
 
     %% overflow to new year
-    io:format("test: add_datetime_and_duration/2 - 2~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 2"),
     DT2 = #date_time{date = {2005,1,1}, time = {0,0,0}, type = utc},
     Dur2 = #duration{	  
       %% days = 365
@@ -617,7 +617,7 @@ test2() ->
     #date_time{date = {2006, 1, 1}, time = {23,59,59}, type = utc} = R2,
 
     %% overflow to new day
-    io:format("test: add_datetime_and_duration/2 - 3~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 3"),
     DT3 = #date_time{date = {2005,1,1}, time = {0,0,0}, type = utc},
     Dur3 = #duration{	  
       hours = 100
@@ -627,7 +627,7 @@ test2() ->
     #date_time{date = {2005,1,5}, time = {3,59,59}, type = utc} = R3,
 
     %% overflow to new month
-    io:format("test: add_datetime_and_duration/2 - 4~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 4"),
     DT4 = #date_time{date = {2005,1,31}, time = {0,0,0}, type = utc},
     Dur4 = #duration{	  
       minutes = (60 * 24 * 2) + 2
@@ -637,7 +637,7 @@ test2() ->
     #date_time{date = {2005,2,2}, time = {0,1,59}, type = utc} = R4,
 
     %% overflow to new year
-    io:format("test: add_datetime_and_duration/2 - 5~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 5"),
     DT5 = #date_time{date = {2005,12,31}, time = {0,0,0}, type = utc},
     Dur5 = #duration{	  
       seconds = (60 * 60 * 24) + (60 * 60 * 12) + (60 * 5) + 30 
@@ -649,7 +649,7 @@ test2() ->
     %% add multiple values
 
     %% no overflows
-    io:format("test: add_datetime_and_duration/2 - 6~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 6"),
     DT6 = #date_time{date = {2005,1,1}, time = {0,0,0}, type = utc},
     Dur6 = #duration{	  
       weeks = 1,  
@@ -663,7 +663,7 @@ test2() ->
     #date_time{date = {2005, 1, 9}, time = {1,1,0}, type = utc} = R6,
 
     %% owerflow 
-    io:format("test: add_datetime_and_duration/2 - 7~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 7"),
     DT7 = #date_time{date = {2005,1,1}, time = {0,0,0}, type = utc},
     Dur7 = #duration{	  
       weeks = 10,  
@@ -677,7 +677,7 @@ test2() ->
     #date_time{date = {2005,6,24}, time = {5,41,39}, type = utc} = R7,
 
     %% some overflow and some other date-time start values
-    io:format("test: add_datetime_and_duration/2 - 8~n"),
+    autotest:mark(?LINE, "add_datetime_and_duration/2 - 8"),
     DT8 = #date_time{date = {2005,4,24}, time = {15,3,29}, type = utc},
     Dur8 = #duration{	  
       weeks = 3,  
@@ -703,7 +703,7 @@ test3() ->
     DST = 1,
 
     %% no DST in effect
-    io:format("test: datetime_to_usec/2 - 1 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 1 - WARNING: test assumes that local = EU"),
     U1 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 27}, 
 						   time = {12, 0, 0}, type = utc}),
     U2 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 27}, 
@@ -712,7 +712,7 @@ test3() ->
     U1 = U2,
 
     %% DST in effect 
-    io:format("test: datetime_to_usec/2 - 2 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 2 - WARNING: test assumes that local = EU"),
     U3 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
 						   time = {12, 0, 0}, type = utc}),
     U4 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
@@ -721,7 +721,7 @@ test3() ->
     U3 /= U4,
 
     %% DST in effect 
-    io:format("test: datetime_to_usec/2 - 3 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 3 - WARNING: test assumes that local = EU"),
     U5 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
 						   time = {12, 0, 0}, type = utc}),
     U6 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
@@ -732,7 +732,7 @@ test3() ->
     %% changing to DST
 
     %% switch to DST at 1:00:00 UTC
-    io:format("test: datetime_to_usec/2 - 4 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 4 - WARNING: test assumes that local = EU"),
     R7 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
 						   time = {1 + DST + cpl_test_util:timezone_offset(), 0, 0}, 
 						   type = floating}),
@@ -742,7 +742,7 @@ test3() ->
 
     %% end of non-existent time interval, last second of it - 2:59:59 if 
     %% local = sweden (illegal range = 2:00:00 - 2:59:59)
-    io:format("test: datetime_to_usec/2 - 5 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 5 - WARNING: test assumes that local = EU"),
     R8 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
 						   time = {1 + cpl_test_util:timezone_offset(), 59, 59}, 
 						   type = floating}),
@@ -752,7 +752,7 @@ test3() ->
     T8 = Time8,
 
     %% first datetime after change to DST
-    io:format("test: datetime_to_usec/2 - 6 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 6 - WARNING: test assumes that local = EU"),
     R9 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
 						   time = {1 + DST + cpl_test_util:timezone_offset(), 0, 1}, 
 						   type = floating}),
@@ -762,7 +762,7 @@ test3() ->
 
     %% start of non-existent time interval, first second of it - 2:00:00 if 
     %% local = sweden (illegal range = 2:00:00 - 2:59:59)
-    io:format("test: datetime_to_usec/2 - 7 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 7 - WARNING: test assumes that local = EU"),
     R10 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28}, 
 						    time = {1 + cpl_test_util:timezone_offset(), 0, 0}, 
 						    type = floating}),
@@ -775,7 +775,7 @@ test3() ->
     %% changing back to non DST
 
     %% DST = false, first non DST modified time
-    io:format("test: datetime_to_usec/2 - 8 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 8 - WARNING: test assumes that local = EU"),
     R11 = datetime_to_usec(stop, dummy, #date_time{date = {2005, 10, 30}, 
 						   time = {1 + cpl_test_util:timezone_offset(), 0, 0}, 
 						   type = floating}),
@@ -784,7 +784,7 @@ test3() ->
     R11 = Time11,
 
     %% DST = false, last possible duplicate time value
-    io:format("test: datetime_to_usec/2 - 9 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 9 - WARNING: test assumes that local = EU"),
     R12 = datetime_to_usec(stop, dummy, #date_time{date = {2005, 10, 30}, 
 						   time = {1 + cpl_test_util:timezone_offset(), 59, 59}, 
 						   type = floating}),
@@ -793,7 +793,7 @@ test3() ->
     R12 = Time12,
 
     %% DST = true, first duplicate time value     
-    io:format("test: datetime_to_usec/2 - 10 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 10 - WARNING: test assumes that local = EU"),
     R13 = datetime_to_usec(start, dummy, #date_time{date = {2005, 10, 30},
 						    time = {0 + DST + cpl_test_util:timezone_offset(), 0, 0}, 
 						    type = floating}),
@@ -802,7 +802,7 @@ test3() ->
     R13 = Time13,
 
     %% first occurence (while DST = true) of last duplicat value
-    io:format("test: datetime_to_usec/2 - 11 - WARNING: test assumes that local = EU~n"),
+    autotest:mark(?LINE, "datetime_to_usec/2 - 11 - WARNING: test assumes that local = EU"),
     R14 = datetime_to_usec(start, dummy, #date_time{date = {2005, 10, 30}, 
 						    time = {0 + DST + cpl_test_util:timezone_offset(), 59, 59}, 
 						    type = floating}),
@@ -818,87 +818,87 @@ test3() ->
 test4() ->
     Timezone = dummy,
 
-    io:format("test: diff_datetime/4 - 1~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 1"),
     DT1a = #date_time{date = {2006, 1, 1}, time = {0, 0, 0}, type = utc},
     DT1b = #date_time{date = {2005, 1, 1}, time = {0, 0, 0}, type = utc},
     1 = diff_datetime(Timezone, DT1a, DT1b, yearly),
 
-    io:format("test: diff_datetime/4 - 2~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 2"),
     DT2a = #date_time{date = {2005, 1, 1}, time = {0, 0, 0}, type = utc},
     DT2b = #date_time{date = {2005, 1, 1}, time = {0, 0, 0}, type = utc},
     0 = diff_datetime(Timezone, DT2a, DT2b, yearly),
 
-    io:format("test: diff_datetime/4 - 3~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 3"),
     DT3a = #date_time{date = {2005, 1, 1}, time = {0, 0, 0}, type = utc},
     DT3b = #date_time{date = {2005, 2, 1}, time = {0, 0, 0}, type = utc},
     31 = diff_datetime(Timezone, DT3a, DT3b, daily),
 
-    io:format("test: diff_datetime/4 - 4~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 4"),
     DT4a = #date_time{date = {2005, 1, 10}, time = {0, 0, 0}, type = utc},
     DT4b = #date_time{date = {2005, 2, 5}, time = {0, 0, 0}, type = utc},
     26 = diff_datetime(Timezone, DT4a, DT4b, daily),
 
-    io:format("test: diff_datetime/4 - 5~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 5"),
     DT5a = #date_time{date = {2005, 1, 1}, time = {0, 0, 0}, type = utc},
     DT5b = #date_time{date = {2005, 4, 1}, time = {0, 0, 0}, type = utc},
     3 = diff_datetime(Timezone, DT5a, DT5b, monthly),
 
-    io:format("test: diff_datetime/4 - 6~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 6"),
     DT6a = #date_time{date = {2005, 1, 10}, time = {0, 0, 0}, type = utc},
     DT6b = #date_time{date = {2005, 1, 5}, time = {0, 0, 0}, type = utc},
     0 = diff_datetime(Timezone, DT6a, DT6b, monthly),
 
-    io:format("test: diff_datetime/4 - 7~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 7"),
     DT7a = #date_time{date = {2005, 1, 1}, time = {0, 0, 0}, type = utc},
     DT7b = #date_time{date = {2005, 4, 10}, time = {0, 0, 0}, type = utc},
     14 = diff_datetime(Timezone, DT7a, DT7b, weekly),
 
-    io:format("test: diff_datetime/4 - 8~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 8"),
     DT8a = #date_time{date = {2005, 1, 10}, time = {0, 0, 0}, type = utc},
     DT8b = #date_time{date = {2005, 2, 5}, time = {0, 0, 0}, type = utc},
     3 = diff_datetime(Timezone, DT8a, DT8b, weekly),
 
-    io:format("test: diff_datetime/4 - 9~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 9"),
     DT9a = #date_time{date = {2003, 5, 1}, time = {0, 0, 0}, type = utc},
     DT9b = #date_time{date = {2005, 4, 1}, time = {0, 0, 0}, type = utc},
     23 = diff_datetime(Timezone, DT9a, DT9b, monthly),
 
-    io:format("test: diff_datetime/4 - 10~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 10"),
     DT10a = #date_time{date = {2005, 5, 1}, time = {10, 0, 0}, type = utc},
     DT10b = #date_time{date = {2005, 5, 1}, time = {17, 0, 0}, type = utc},
     7 = diff_datetime(Timezone, DT10a, DT10b, hourly),
 
-    io:format("test: diff_datetime/4 - 11~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 11"),
     DT11a = #date_time{date = {2005, 1, 4}, time = {10, 0, 0}, type = utc},
     DT11b = #date_time{date = {2005, 1, 5}, time = {17, 0, 0}, type = utc},
     31 = diff_datetime(Timezone, DT11a, DT11b, hourly),
 
-    io:format("test: diff_datetime/4 - 12~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 12"),
     DT12a = #date_time{date = {2005, 1, 4}, time = {10, 0, 0}, type = utc},
     DT12b = #date_time{date = {2005, 1, 6}, time = {3, 0, 0}, type = utc},
     41 = diff_datetime(Timezone, DT12a, DT12b, hourly),
 
-    io:format("test: diff_datetime/4 - 13~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 13"),
     DT13a = #date_time{date = {2005, 1, 4}, time = {10, 0, 0}, type = utc},
     DT13b = #date_time{date = {2005, 3, 6}, time = {3, 0, 0}, type = utc},
     1457  = diff_datetime(Timezone, DT13a, DT13b, hourly),
 
-    io:format("test: diff_datetime/4 - 14~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 14"),
     DT14a = #date_time{date = {2005, 12, 31}, time = {10, 0, 0}, type = utc},
     DT14b = #date_time{date = {2006, 1, 1}, time = {3, 0, 0}, type = utc},
     17 = diff_datetime(Timezone, DT14a, DT14b, hourly),
 
-    io:format("test: diff_datetime/4 - 15~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 15"),
     DT15a = #date_time{date = {2004, 12, 31}, time = {10, 0, 0}, type = utc},
     DT15b = #date_time{date = {2006, 1, 1}, time = {3, 0, 0}, type = utc},
     8777 = diff_datetime(Timezone, DT15a, DT15b, hourly),
 
-    io:format("test: diff_datetime/4 - 16~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 16"),
     DT16a = #date_time{date = {2004, 12, 31}, time = {10, 5, 0}, type = utc},
     DT16b = #date_time{date = {2006, 1, 1}, time = {3, 45, 0}, type = utc},
     526660 = diff_datetime(Timezone, DT16a, DT16b, minutely),
 
-    io:format("test: diff_datetime/4 - 17~n"),
+    autotest:mark(?LINE, "diff_datetime/4 - 17"),
     DT17a = #date_time{date = {2004, 12, 31}, time = {10, 5, 30}, type = utc},
     DT17b = #date_time{date = {2006, 1, 1}, time = {3, 45, 42}, type = utc},
     31599612 = diff_datetime(Timezone, DT17a, DT17b, secondly),

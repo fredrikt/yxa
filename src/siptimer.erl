@@ -389,50 +389,50 @@ test_get_appsignals_sort(A, B) when is_record(A, siptimer), is_record(B, siptime
 test() ->
     %% empty()
     %%--------------------------------------------------------------------
-    io:format("test: emtpy/0 - 1~n"),
+    autotest:mark(?LINE, "emtpy/0 - 1"),
     #siptimerlist{list=[]} = EmptyList = empty(),
 
 
     %% add_timer(Timeout, Description, AppSignal, TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: add_timer/4 - 1~n"),
+    autotest:mark(?LINE, "add_timer/4 - 1"),
     %% Test with zero timeout, no timer will be created
     EmptyList = add_timer(0, "foo", none, EmptyList),
 
-    io:format("test: add_timer/4 - 2~n"),
+    autotest:mark(?LINE, "add_timer/4 - 2"),
     %% Add a timer with a high timeout so that we have time to cancel it again
     AddTimerL1 = add_timer(100 * 1000, "test: add_timer/4 timer 1", {test_siptimer, 1}, EmptyList),
 
-    io:format("test: add_timer/4 - 2~n"),
+    autotest:mark(?LINE, "add_timer/4 - 2"),
     %% Add another timer with a high timeout so that we have time to cancel it again
     AddTimerL2 = add_timer(200 * 1000, "test: add_timer/4 timer 2", {test_siptimer, 2}, AddTimerL1),
 
 
     %% get_length(TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: get_length/1 - 1~n"),
+    autotest:mark(?LINE, "get_length/1 - 1"),
     0 = get_length(EmptyList),
 
-    io:format("test: get_length/1 - 2~n"),
+    autotest:mark(?LINE, "get_length/1 - 2"),
     1 = get_length(AddTimerL1),
 
-    io:format("test: get_length/1 - 3~n"),
+    autotest:mark(?LINE, "get_length/1 - 3"),
     2 = get_length(AddTimerL2),
 
 
     %% get_timers_appsignal_matching(AppSignal, TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: get_timers_appsignal_matching/2 - 1~n"),
+    autotest:mark(?LINE, "get_timers_appsignal_matching/2 - 1"),
     %% Look for timer that does not exist
     [] = get_timers_appsignal_matching(none, AddTimerL2),
 
-    io:format("test: get_timers_appsignal_matching/2 - 2~n"),
+    autotest:mark(?LINE, "get_timers_appsignal_matching/2 - 2"),
     %% Get timer 1
     [GTAM_T1] = get_timers_appsignal_matching({test_siptimer, 1}, AddTimerL2),
     %% verify results
     #siptimer{appsignal = {test_siptimer, 1}} = GTAM_T1,
 
-    io:format("test: get_timers_appsignal_matching/2 - 3~n"),
+    autotest:mark(?LINE, "get_timers_appsignal_matching/2 - 3"),
     %% Get timer 2
     [GTAM_T2] = get_timers_appsignal_matching({test_siptimer, 2}, AddTimerL2),
     %% verify results
@@ -441,17 +441,17 @@ test() ->
 
     %% get_timer(Ref, TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: get_timer/2 - 1~n"),
+    autotest:mark(?LINE, "get_timer/2 - 1"),
     none = get_timer(make_ref(), AddTimerL2),
 
-    io:format("test: get_timer/2 - 2~n"),
+    autotest:mark(?LINE, "get_timer/2 - 2"),
     GTAM_T2_Ref = GTAM_T2#siptimer.ref,
     GTAM_T2 = get_timer(GTAM_T2_Ref, AddTimerL2),
 
 
     %% extract(Values, SipTimer)
     %%--------------------------------------------------------------------
-    io:format("test: extract/2 - 1~n"),
+    autotest:mark(?LINE, "extract/2 - 1"),
     {GTAM_T2_Timeout, GTAM_T2_Desc, GTAM_T2_Start, GTAM_T2_AppS} =
 	{GTAM_T2#siptimer.timeout, GTAM_T2#siptimer.description,
 	 GTAM_T2#siptimer.starttime, GTAM_T2#siptimer.appsignal},
@@ -462,78 +462,78 @@ test() ->
 
     %% cancel_timers(Timers, TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: cancel_timers/2 - 1~n"),
+    autotest:mark(?LINE, "cancel_timers/2 - 1"),
     %% Cancel second timer
     AddTimerL1 = cancel_timers([GTAM_T2], AddTimerL2),
 
-    io:format("test: cancel_timers/2 - 2~n"),
+    autotest:mark(?LINE, "cancel_timers/2 - 2"),
     %% Cancel first timer
     EmptyList = cancel_timers([GTAM_T1], AddTimerL1),
 
-    io:format("test: cancel_timers/2 - 3~n"),
+    autotest:mark(?LINE, "cancel_timers/2 - 3"),
     %% Cancel first timer in list, so that second timer remains
     #siptimerlist{list = [GTAM_T2]} = cancel_timers([GTAM_T1], AddTimerL2),
 
 
     %% cancel_timers_with_appsignal(AppSignal, TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: cancel_timers_with_appsignal/2 - 1~n"),
+    autotest:mark(?LINE, "cancel_timers_with_appsignal/2 - 1"),
     AddTimerL2 = cancel_timers_with_appsignal("no match", AddTimerL2),
 
-    io:format("test: cancel_timers_with_appsignal/2 - 2~n"),
+    autotest:mark(?LINE, "cancel_timers_with_appsignal/2 - 2"),
     AddTimerL1 = cancel_timers_with_appsignal({test_siptimer, 2}, AddTimerL2),
 
-    io:format("test: cancel_timers_with_appsignal/2 - 3~n"),
+    autotest:mark(?LINE, "cancel_timers_with_appsignal/2 - 3"),
     #siptimerlist{list = [GTAM_T2]} = cancel_timers_with_appsignal({test_siptimer, 1}, AddTimerL2),
 
 
     %% cancel_all_timers(TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: cancel_all_timers/1 - 1~n"),
+    autotest:mark(?LINE, "cancel_all_timers/1 - 1"),
     EmptyList = cancel_all_timers(EmptyList),
 
-    io:format("test: cancel_all_timers/1 - 2~n"),
+    autotest:mark(?LINE, "cancel_all_timers/1 - 2"),
     EmptyList = cancel_all_timers(AddTimerL2),
 
 
     %% revive_timer(SipTimer, NewTimeout, TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: revive_timer/3 - 1~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 1"),
     %% Revive timer that does not exist in list
     AddTimerL1 = revive_timer(GTAM_T2, 100 * 1000, AddTimerL1),
 
-    io:format("test: revive_timer/3 - 2~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 2"),
     %% Set up two new timers
     ReviveTimerL1 = add_timer(100 * 1000, "test: revive_timer/3 T1", {test_siptimer, "revive timer 1"}, EmptyList),
     ReviveTimerL2 = add_timer(100 * 1000, "test: revive_timer/3 T2", {test_siptimer, "revive timer 2"}, ReviveTimerL1),
     [ReviveT_T1] = get_timers_appsignal_matching({test_siptimer, "revive timer 1"}, ReviveTimerL2),
     [ReviveT_T2] = get_timers_appsignal_matching({test_siptimer, "revive timer 2"}, ReviveTimerL2),
 
-    io:format("test: revive_timer/3 - 3.1~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 3.1"),
     %% revive first timer in list (ReviveT_T1)
     ReviveTimerL3 = revive_timer(ReviveT_T1, 120 * 1000, ReviveTimerL2),
 
-    io:format("test: revive_timer/3 - 3.2~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 3.2"),
     %% verify results (verify that second timer was unchanged, and extract first timer as ReviveT_T1_1)
     #siptimerlist{list = [#siptimer{} = ReviveT_T1_1, ReviveT_T2]} = ReviveTimerL3,
 
-    io:format("test: revive_timer/3 - 3.3~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 3.3"),
     %% verify that the first timer in the list (ReviveT_T1) really was updated
     true = test_timer_was_updated(ReviveT_T1, ReviveT_T1_1),
 
-    io:format("test: revive_timer/3 - 4.1~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 4.1"),
     %% revive second timer in list (ReviveT_T2)
     ReviveTimerL4 = revive_timer(ReviveT_T2, 120 * 1000, ReviveTimerL3),
 
-    io:format("test: revive_timer/3 - 4.2~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 4.2"),
     %% verify results (verify that first timer was unchanged, and extract second timer as ReviveT_T2_1)
     #siptimerlist{list = [ReviveT_T1_1, #siptimer{} = ReviveT_T2_1]} = ReviveTimerL4,
 
-    io:format("test: revive_timer/3 - 4.3~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 4.3"),
     %% verify that the second timer in the list (ReviveT_T2) really was updated
     true = test_timer_was_updated(ReviveT_T2, ReviveT_T2_1),
 
-    io:format("test: revive_timer/3 - 5~n"),
+    autotest:mark(?LINE, "revive_timer/3 - 5"),
     %% clean up
     EmptyList = cancel_all_timers(ReviveTimerL1),
     EmptyList = cancel_all_timers(ReviveTimerL2),
@@ -543,86 +543,86 @@ test() ->
 
     %% reset_timers(Timers, TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: reset_timers/2 - 0~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 0"),
     %% Set up two new timers
     ResetTimersL1 = add_timer(100 * 1000, "test: reset_timers/2 T1", {test_siptimer, "reset timer 1"}, EmptyList),
     ResetTimersL2 = add_timer(100 * 1000, "test: reset_timers/2 T2", {test_siptimer, "reset timer 2"}, ResetTimersL1),
     [ResetT_T1] = get_timers_appsignal_matching({test_siptimer, "reset timer 1"}, ResetTimersL2),
     [ResetT_T2] = get_timers_appsignal_matching({test_siptimer, "reset timer 2"}, ResetTimersL2),
 
-    io:format("test: reset_timers/2 - 1~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 1"),
     %% Reset timer that does not exist in list
     ResetTimersL2 = reset_timers([#siptimer{ref = make_ref()}], ResetTimersL2),
 
-    io:format("test: reset_timers/2 - 2.1~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 2.1"),
     %% reset first timer in list (ResetT_T1)
     ResetTimersL3 = reset_timers([ResetT_T1], ResetTimersL2),
 
-    io:format("test: reset_timers/2 - 2.2~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 2.2"),
     %% verify results (verify that second timer was unchanged, and extract first timer as ResetT_T1_1)
     #siptimerlist{list = [#siptimer{} = ResetT_T1_1, ResetT_T2]} = ResetTimersL3,
 
-    io:format("test: reset_timers/2 - 2.3~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 2.3"),
     %% verify that the first timer in the list (ResetT_T1) really was updated
     test_timer_was_updated(ResetT_T1, ResetT_T1_1),
 
-    io:format("test: reset_timers/2 - 3.1~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 3.1"),
     %% reset second timer in list (ResetT_T2)
     ResetTimersL4 = reset_timers([ResetT_T2], ResetTimersL3),
 
-    io:format("test: reset_timers/2 - 3.2~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 3.2"),
     %% verify results (verify that first timer was unchanged, and extract second timer as ResetT_T2_1)
     #siptimerlist{list = [ResetT_T1_1, #siptimer{} = ResetT_T2_1]} = ResetTimersL4,
 
-    io:format("test: reset_timers/2 - 4.3~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 4.3"),
     %% verify that the second timer in the list (ResetT_T2) really was updated
     test_timer_was_updated(ResetT_T2, ResetT_T2_1),
 
-    io:format("test: reset_timers/2 - 5.1~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 5.1"),
     %% reset both timers (in the wrong order), and also one timer that does not exist
     ResetTimersL5 = reset_timers([ResetT_T2_1, #siptimer{ref = make_ref()}, ResetT_T1_1], ResetTimersL4),
 
-    io:format("test: reset_timers/2 - 5.2~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 5.2"),
     %% verify results
     #siptimerlist{list = [#siptimer{} = ResetT_T1_2, #siptimer{} = ResetT_T2_2]} = ResetTimersL5,
 
-    io:format("test: reset_timers/2 - 5.3~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 5.3"),
     %% verify that the first timer in the list (ResetT_T2_1) really was updated
     test_timer_was_updated(ResetT_T2_1, ResetT_T2_2),
 
-    io:format("test: reset_timers/2 - 5.4~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 5.4"),
     %% verify that the second timer in the list (ResetT_T1_1) really was updated
     true = test_timer_was_updated(ResetT_T1_1, ResetT_T1_2),
 
-    io:format("test: reset_timers/2 - 6~n"),
+    autotest:mark(?LINE, "reset_timers/2 - 6"),
     %% clean up
     EmptyList = cancel_all_timers(ResetTimersL5),
 
 
     %% timeout2str(Timeout)
     %%--------------------------------------------------------------------
-    io:format("test: timeout2str/1 - 1~n"),
+    autotest:mark(?LINE, "timeout2str/1 - 1"),
     "0.5" = timeout2str(500),
 
-    io:format("test: timeout2str/1 - 2~n"),
+    autotest:mark(?LINE, "timeout2str/1 - 2"),
     "1" = timeout2str(1000),
 
-    io:format("test: timeout2str/1 - 3~n"),
+    autotest:mark(?LINE, "timeout2str/1 - 3"),
     "2" = timeout2str(2222),
 
 
     %% debugfriendly(TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: debugfriendly/1 - 1~n"),
+    autotest:mark(?LINE, "debugfriendly/1 - 1"),
     [] = debugfriendly(EmptyList),
 
-    io:format("test: debugfriendly/1 - 2~n"),
+    autotest:mark(?LINE, "debugfriendly/1 - 2"),
     2 = length( debugfriendly(AddTimerL2) ),
 
 
     %% test_get_appsignals(TimerList)
     %%--------------------------------------------------------------------
-    io:format("test: test_get_appsignals/1 - 1~n"),
+    autotest:mark(?LINE, "test_get_appsignals/1 - 1"),
     TestGetAppsignals_TL1 = #siptimerlist{list = [
 						  #siptimer{appsignal = second,
 							    starttime = 101,
@@ -639,7 +639,7 @@ test() ->
 						 ]},
     [first, second, third] = test_get_appsignals(TestGetAppsignals_TL1),
 
-    io:format("test: test_get_appsignals/1 - 1~n"),
+    autotest:mark(?LINE, "test_get_appsignals/1 - 1"),
     %% test with same timeout
     TestGetAppsignals_TL2 = #siptimerlist{list = [
 						  #siptimer{appsignal = first,
@@ -656,7 +656,7 @@ test() ->
 
     %% test siptimer operations
     %%--------------------------------------------------------------------
-    io:format("test: siptimer operations - 0~n"),
+    autotest:mark(?LINE, "siptimer operations - 0"),
     TimerOp_L1 = add_timer(1, "timer that will fire but be cancelled", {test_siptimer, cancel_me}, EmptyList),
     TimerOp_L2 = add_timer(2, "timer that will fire", {test_siptimer, find_me, 1}, TimerOp_L1),
     TimerOp_L3 = add_timer(100 * 1000, "timer that will be cancelled", {test_siptimer, cancel_me}, TimerOp_L2),
@@ -664,7 +664,7 @@ test() ->
     TimerOp_L5 = add_timer(1, "timer that will fire but be cancelled #2", {test_siptimer, cancel_me}, TimerOp_L4),
     [TimerOp_T1, TimerOp_T2, _, _, TimerOp_T5] = TimerOp_L5#siptimerlist.list,
 
-    io:format("test: siptimer operations - 1~n"),
+    autotest:mark(?LINE, "siptimer operations - 1"),
     %% wait for the timer that will fire (appsignal '{test_siptimer, find_me, 1}')
     TimerOp_T2_Ref = TimerOp_T2#siptimer.ref,
     receive
@@ -673,7 +673,7 @@ test() ->
 	    erlang:fault({error, "siptimer that should fire in 2 ms did not fire in 1 s"})
     end,
 
-    io:format("test: siptimer operations - 2~n"),
+    autotest:mark(?LINE, "siptimer operations - 2"),
     %% check that the timer that will fire but be cancelled has fired now
     TimerOp_T1_Ref = TimerOp_T1#siptimer.ref,
     receive
@@ -684,11 +684,11 @@ test() ->
 	    erlang:fault({error, "siptimer that should fire in 1 ms did not fire in > 100 ms"})
     end,
 
-    io:format("test: siptimer operations - 3.1~n"),
+    autotest:mark(?LINE, "siptimer operations - 3.1"),
     %% cancel timers
     TimerOp_L6 = cancel_timers_with_appsignal({test_siptimer, cancel_me}, TimerOp_L5),
 
-    io:format("test: siptimer operations - 3.2~n"),
+    autotest:mark(?LINE, "siptimer operations - 3.2"),
     %% verify that the cancelling of timers remove pending fired signals from our mailbox
     TimerOp_T5_Ref = TimerOp_T5#siptimer.ref,
     receive
@@ -700,14 +700,14 @@ test() ->
 	    ok
     end,
 
-    io:format("test: siptimer operations - 4.1~n"),
+    autotest:mark(?LINE, "siptimer operations - 4.1"),
     %% clean up
     cancel_all_timers(TimerOp_L6),
 
 
     %% final verification of operations
     %%--------------------------------------------------------------------
-    io:format("test: siptimer test cleanups - 1~n"),
+    autotest:mark(?LINE, "siptimer test cleanups - 1"),
     %% verify that we don't have any siptimer signals in our mailbox here
     receive
 	{siptimer, UnknownRef, UnknownDesc} ->

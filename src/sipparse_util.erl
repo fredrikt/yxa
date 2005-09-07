@@ -533,31 +533,31 @@ test() ->
     %% split_fields/2
     %%--------------------------------------------------------------------
     %% test regular case
-    io:format("test: split_fields/2 - 1~n"),
+    autotest:mark(?LINE, "split_fields/2 - 1"),
     {"foo", "bar"} = sipparse_util:split_fields("foo@bar", $@),
     %% test missplaced Separator
-    io:format("test: split_fields/2 - 2~n"),
+    autotest:mark(?LINE, "split_fields/2 - 2"),
     case catch sipparse_util:split_fields("@bar", $@) of
 	{error, _} -> ok;
 	_ -> throw({error, test_case_failed})
     end,
     %% test missplaced Separator
-    io:format("test: split_fields/2 - 3~n"),
+    autotest:mark(?LINE, "split_fields/2 - 3"),
     case catch sipparse_util:split_fields("foo@", $@) of
 	{error, _} -> ok;
 	_ -> throw({error, test_case_failed})
     end,
     %% test without Separator
-    io:format("test: split_fields/2 - 4~n"),
+    autotest:mark(?LINE, "split_fields/2 - 4"),
     {"foo"} = sipparse_util:split_fields("foo", $@),
     %% test with to many separators
-    io:format("test: split_fields/2 - 5~n"),
+    autotest:mark(?LINE, "split_fields/2 - 5"),
     case catch sipparse_util:split_fields("foo@@bar", $@) of
 	{error, _} -> ok;
 	_ -> throw({error, test_case_failed})
     end,
     %% test with only separator
-    io:format("test: split_fields/2 - 6~n"),
+    autotest:mark(?LINE, "split_fields/2 - 6"),
     case catch sipparse_util:split_fields("@", $@) of
 	{error, _} -> ok;
 	_ -> throw({error, test_case_failed})
@@ -567,23 +567,23 @@ test() ->
     %% split_quoted_string/1
     %%--------------------------------------------------------------------
     %% regular test case
-    io:format("test: split_quoted_string/1 - 1~n"),
+    autotest:mark(?LINE, "split_quoted_string/1 - 1"),
     {ok, "Foo Bar", " baz"} = split_quoted_string("\"Foo Bar\" baz"),
 
     %% nothing more except the quoted string
-    io:format("test: split_quoted_string/1 - 2~n"),
+    autotest:mark(?LINE, "split_quoted_string/1 - 2"),
     {ok, "Foo Bar", ""} = split_quoted_string("\"Foo Bar\""),
 
     %% nested quotes
-    io:format("test: split_quoted_string/1 - 3~n"),
+    autotest:mark(?LINE, "split_quoted_string/1 - 3"),
     {ok, "Foo Bar \\\"Baz\\\"", " x"} = split_quoted_string("\"Foo Bar \\\"Baz\\\"\" x"),
 
     %% nothing in between quotes
-    io:format("test: split_quoted_string/1 - 4~n"),
+    autotest:mark(?LINE, "split_quoted_string/1 - 4"),
     {ok, "", " X"} = split_quoted_string("\"\" X"),
 
     %% does not start with quote
-    io:format("test: split_quoted_string/1 - 5~n"),
+    autotest:mark(?LINE, "split_quoted_string/1 - 5"),
     try split_quoted_string("foo \"bar\"") of
 	SQS_Res5 -> throw({error, test_case_failed, SQS_Res5})
     catch
@@ -593,7 +593,7 @@ test() ->
     %% no ending quote
     %% do this second one as a 'case catch' instead of try/catch to avoid
     %% triggering a compiler bug in R10B-4
-    io:format("test: split_quoted_string/1 - 6~n"),
+    autotest:mark(?LINE, "split_quoted_string/1 - 6"),
     case catch split_quoted_string("\"foo ") of
 	{'EXIT', {no_end_quote, _}} -> ok;
 	SQS_Res6 -> throw({error, test_case_failed, SQS_Res6})
@@ -603,60 +603,60 @@ test() ->
     %% parse_hostport/1
     %%--------------------------------------------------------------------
     %% regular test case
-    io:format("test: parse_hostport/1 - 1~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 1"),
     {"foo.bar", 42} = sipparse_util:parse_hostport("foo.bar:42"),
     %% test trailing "." in host name
-    io:format("test: parse_hostport/1 - 2~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 2"),
     {"foo", 42} = sipparse_util:parse_hostport("foo.:42"),
     %% trailing "." and no port
-    io:format("test: parse_hostport/1 - 3~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 3"),
     {"foo", none} = sipparse_util:parse_hostport("foo."),
     %% IPv4 host and port
-    io:format("test: parse_hostport/1 - 4~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 4"),
     {"1.1.1.1", 42} = sipparse_util:parse_hostport("1.1.1.1:42"),
     %% IPv4 host and no port
-    io:format("test: parse_hostport/1 - 5~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 5"),
     {"1.1.1.1", none} = sipparse_util:parse_hostport("1.1.1.1"),
     %% IPv6 host and port
-    io:format("test: parse_hostport/1 - 6~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 6"),
     {"[1:2:3:4:5:6:7:8]", 42} = sipparse_util:parse_hostport("[1:2:3:4:5:6:7:8]:42"),
     %% IPv6 host and no port
-    io:format("test: parse_hostport/1 - 7~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 7"),
     {"[1:2:3:4:5:6:7:8]", none} = sipparse_util:parse_hostport("[1:2:3:4:5:6:7:8]"),
     %% IPv6 address not starting with digit
-    io:format("test: parse_hostport/1 - 8~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 8"),
     {"[ab:CD:3::5:6:7:8]", none} = sipparse_util:parse_hostport("[ab:CD:3::5:6:7:8]"),
     %% IPv6 host and no port, no brackets
-    io:format("test: parse_hostport/1 - 9~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 9"),
     {"[1:2:3:4:5:6:7:8]", none} = sipparse_util:parse_hostport("1:2:3:4:5:6:7:8"),
     %% IPv6 host and no port, no brackets
-    io:format("test: parse_hostport/1 - 10~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 10"),
     {"[abcd:2:3:4:5:6:7:8]", none} = sipparse_util:parse_hostport("abcd:2:3:4:5:6:7:8"),
     %% IPv6 host and no port, no brackets
-    io:format("test: parse_hostport/1 - 11~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 11"),
     {"[1:2::8]", none} = sipparse_util:parse_hostport("1:2::8"),
     %% IPv6 host and no port, no brackets
-    io:format("test: parse_hostport/1 - 12~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 12"),
     {"[abcd:2::6:7:8]", none} = sipparse_util:parse_hostport("abcd:2::6:7:8"),
     %% IPv6 host and no port, no brackets
-    io:format("test: parse_hostport/1 - 13~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 13"),
     {"[abcd:2::6:BCDE:8]", none} = sipparse_util:parse_hostport("abcd:2::6:BCDE:8"),
     %% test bad port value
-    io:format("test: parse_hostport/1 - 8~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 8"),
     case catch sipparse_util:parse_hostport("1.1.1.1:1A1") of
 	{'EXIT', _} -> ok;
 	{error, _} -> ok;
 	_ -> throw({error, test_failed})
     end,
     %% test out of range IPv4 number
-    io:format("test: parse_hostport/1 - 9~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 9"),
     case catch sipparse_util:parse_hostport("1.1.300.1") of
 	{'EXIT', _} -> ok;
 	{error, _} -> ok;
 	_ -> throw({error, test_failed})
     end,
     %% test bad domain name
-    io:format("test: parse_hostport/1 - 10~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 10"),
     case catch sipparse_util:parse_hostport("foo_bar.com") of
 	{'EXIT', _} -> ok;
 	{error, _} -> ok;
@@ -665,7 +665,7 @@ test() ->
     end,
     %% test out of range IPv6 number
     %% XXX I'm somewhat unsure about the format and range of IPv6
-    io:format("test: parse_hostport/1 - 11~n"),
+    autotest:mark(?LINE, "parse_hostport/1 - 11"),
     case catch sipparse_util:parse_hostport("[1:2:30000:4:5:6:7:8]") of
 	{'EXIT', _} -> ok;
 	{error, _} -> ok;
@@ -676,184 +676,184 @@ test() ->
     %% str_to_float/1
     %%--------------------------------------------------------------------
     %%
-    io:format("test: str_to_float/1  - 1~n"),
+    autotest:mark(?LINE, "str_to_float/1  - 1"),
     1.0 = str_to_float("1.0"),
-    io:format("test: str_to_float/1  - 2~n"),
+    autotest:mark(?LINE, "str_to_float/1  - 2"),
     1.0 = str_to_float("1"),
-    io:format("test: str_to_float/1  - 3~n"),
+    autotest:mark(?LINE, "str_to_float/1  - 3"),
     1.0 = str_to_float("0001.0000"),
-    io:format("test: str_to_float/1  - 4~n"),
+    autotest:mark(?LINE, "str_to_float/1  - 4"),
     fail(fun() -> str_to_float("foo") end),
 
     %% str_to_qval/1
     %%--------------------------------------------------------------------
     %% int = 1
-    io:format("test: str_to_qval/1  - 1~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 1"),
     1.0 = str_to_qval("1"),
 
     %% int = 0
-    io:format("test: str_to_qval/1  - 2~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 2"),
     0.0 = str_to_qval("0"),
 
     %% max float value
-    io:format("test: str_to_qval/1  - 3~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 3"),
     1.0 = str_to_qval("1.000"),
 
     %% min float value
-    io:format("test: str_to_qval/1  - 4~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 4"),
     0.0 = str_to_qval("0.000"),
 
     %% value in 0-1 range
-    io:format("test: str_to_qval/1  - 5~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 5"),
     0.567 = str_to_qval("0.567"),
 
     %% to large int
-    io:format("test: str_to_qval/1  - 6~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 6"),
     fail(fun() -> str_to_qval("3") end),
 
     %% to many chars
-    io:format("test: str_to_qval/1  - 7~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 7"),
     fail(fun() -> str_to_qval("0.1234") end),
 
     %% float out of range
-    io:format("test: str_to_qval/1  - 8~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 8"),
     fail(fun() -> str_to_qval("1.001") end),
 
     %% missing 0 before .00
-    io:format("test: str_to_qval/1  - 9~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 9"),
     fail(fun() -> str_to_qval(".00") end),
 
     %% to many 0 before .0
-    io:format("test: str_to_qval/1  - 10~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 10"),
     fail(fun() -> str_to_qval("00.0") end),
 
     %% parse "0."
-    io:format("test: str_to_qval/1  - 11~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 11"),
     0.0 = str_to_qval("0."),
 
     %% parse "1."
-    io:format("test: str_to_qval/1  - 12~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 12"),
     1.0 = str_to_qval("1."),
 
     %% is_qval/1
     %%--------------------------------------------------------------------
     %%
     %% int = 1
-    io:format("test: is_qval/1  - 1~n"),
+    autotest:mark(?LINE, "is_qval/1  - 1"),
     true = is_qval("1"),
 
     %% int = 0
-    io:format("test: is_qval/1  - 2~n"),
+    autotest:mark(?LINE, "is_qval/1  - 2"),
     true = is_qval("0"),
 
     %% max float value
-    io:format("test: is_qval/1  - 3~n"),
+    autotest:mark(?LINE, "is_qval/1  - 3"),
     true = is_qval("1.000"),
 
     %% min float value
-    io:format("test: is_qval/1  - 4~n"),
+    autotest:mark(?LINE, "is_qval/1  - 4"),
     true = is_qval("0.000"),
 
     %% value in 0-1 range
-    io:format("test: is_qval/1  - 5~n"),
+    autotest:mark(?LINE, "is_qval/1  - 5"),
     true = is_qval("0.567"),
 
     %% to large int
-    io:format("test: is_qval/1  - 6~n"),
+    autotest:mark(?LINE, "is_qval/1  - 6"),
     false = is_qval("3"),
 
     %% to many chars
-    io:format("test: is_qval/1  - 7~n"),
+    autotest:mark(?LINE, "is_qval/1  - 7"),
     false = is_qval("0.1234"),
 
     %% float out of range
-    io:format("test: is_qval/1  - 8~n"),
+    autotest:mark(?LINE, "is_qval/1  - 8"),
     false = is_qval("1.001"),
 
     %% missing 0 before .00
-    io:format("test: is_qval/1  - 9~n"),
+    autotest:mark(?LINE, "is_qval/1  - 9"),
     false = is_qval(".00"),
 
     %% to many 0 before .0
-    io:format("test: is_qval/1  - 10~n"),
+    autotest:mark(?LINE, "is_qval/1  - 10"),
     false = is_qval("00.0"),
 
     %% parse "0."
-    io:format("test: str_to_qval/1  - 11~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 11"),
     true = is_qval("0."),
 
     %% parse "1."
-    io:format("test: str_to_qval/1  - 12~n"),
+    autotest:mark(?LINE, "str_to_qval/1  - 12"),
     true = is_qval("1."),
 
     %% strip
     %%--------------------------------------------------------------------
     %% test left strip
-    io:format("test: strip/3 - 1~n"),
+    autotest:mark(?LINE, "strip/3 - 1"),
     "abc" = strip("+-+-+-+-abc", left, "-+"),
 
     %% test left strip without strip char
-    io:format("test: strip/3 - 2~n"),
+    autotest:mark(?LINE, "strip/3 - 2"),
     "abc" = strip("abc", left, "-+"),
 
     %% test left strip on empty string
-    io:format("test: strip/3 - 3~n"),
+    autotest:mark(?LINE, "strip/3 - 3"),
     "" = strip("", left, "-+"),
 
     %% test left strip with no strip chars
-    io:format("test: strip/3 - 4~n"),
+    autotest:mark(?LINE, "strip/3 - 4"),
     "abc" = strip("abc", left, ""),
 
     %% test left strip with strip char matching chars inside string to strip
-    io:format("test: strip/3 - 5~n"),
+    autotest:mark(?LINE, "strip/3 - 5"),
     "a+-+-+-+-abc" = strip("a+-+-+-+-abc", left, "-+"),
 
     %% test left strip with strip char matching chars on right end
-    io:format("test: strip/3 - 6~n"),
+    autotest:mark(?LINE, "strip/3 - 6"),
     "abc++++" = strip("abc++++", left, "-+"),
 
     %% --------------------
     %% test right strip
-    io:format("test: strip/3 - 7~n"),
+    autotest:mark(?LINE, "strip/3 - 7"),
     "abc" = strip("abc+-+-+-+-", right, "-+"),
 
     %% test right strip without strip char
-    io:format("test: strip/3 - 8~n"),
+    autotest:mark(?LINE, "strip/3 - 8"),
     "abc" = strip("abc", right, "-+"),
 
     %% test right strip on empty string
-    io:format("test: strip/3 - 9~n"),
+    autotest:mark(?LINE, "strip/3 - 9"),
     "" = strip("", right, "-+"),
 
     %% test right strip with no strip chars
-    io:format("test: strip/3 - 10~n"),
+    autotest:mark(?LINE, "strip/3 - 10"),
     "abc" = strip("abc", right, ""),
 
     %% test right strip with strip char matching chars inside string to strip
-    io:format("test: strip/3 - 11~n"),
+    autotest:mark(?LINE, "strip/3 - 11"),
     "a+-+-+-+-abc" = strip("a+-+-+-+-abc", right, "-+"),
 
     %% test right strip with strip char matching chars on left end
-    io:format("test: strip/3 - 12~n"),
+    autotest:mark(?LINE, "strip/3 - 12"),
     "++++abc" = strip("++++abc", right, "-+"),
 
     %% --------------------
     %% test both strip
 
     %% test strip from left and right
-    io:format("test: strip/3 - 13~n"),
+    autotest:mark(?LINE, "strip/3 - 13"),
     "abc" = strip("+-+++abc-+---++", both, "-+"),
 
     %% test when strip chars are inside string
-    io:format("test: strip/3 - 14~n"),
+    autotest:mark(?LINE, "strip/3 - 14"),
     "abc++++abc" = strip("abc++++abc", both, "-+"),
 
     %% test with empty string
-    io:format("test: strip/3 - 15~n"),
+    autotest:mark(?LINE, "strip/3 - 15"),
     "" = strip("", both, "-+"),
 
     %% test with no strip chars
-    io:format("test: strip/3 - 16~n"),
+    autotest:mark(?LINE, "strip/3 - 16"),
     "+abc-" = strip("+abc-", both, ""),
 
 

@@ -867,53 +867,53 @@ test() ->
     %% is_subdomain2/2
     %%--------------------------------------------------------------------
     %% Str = SubStr
-    io:format("test: is_subdomain2/2  - 1~n"),
+    autotest:mark(?LINE, "is_subdomain2/2  - 1"),
     true = is_subdomain2("foo.bar.com", "foo.bar.com"),
 
     %% SubStr is proper substring
-    io:format("test: is_subdomain2/2  - 2~n"),
+    autotest:mark(?LINE, "is_subdomain2/2  - 2"),
     true = is_subdomain2("foo.bar.com", "bar.com"),
 
     %% SubStr is proper substring
-    io:format("test: is_subdomain2/2  - 3~n"),
+    autotest:mark(?LINE, "is_subdomain2/2  - 3"),
     true = is_subdomain2("foo.bar.com", "com"),
 
     %% SubStr is = "" - i.e. cant be a domain name
-    io:format("test: is_subdomain2/2  - 4~n"),
+    autotest:mark(?LINE, "is_subdomain2/2  - 4"),
     false = is_subdomain2("foo.bar.com", ""),
 
     %% SubStr is broken domain name
-    io:format("test: is_subdomain2/2  - 5~n"),
+    autotest:mark(?LINE, "is_subdomain2/2  - 5"),
     false = is_subdomain2("foo.bar.com", "o.bar.com"),
 
     %% SubStr is broken domain name
-    io:format("test: is_subdomain2/2  - 6~n"),
+    autotest:mark(?LINE, "is_subdomain2/2  - 6"),
     false = is_subdomain2("foo.bar.com", ".com"),
 
     %% is_true/1
     %%--------------------------------------------------------------------
-    io:format("test: is_success/1  - 1~n"),
+    autotest:mark(?LINE, "is_success/1  - 1"),
     true = is_true(fun() -> true end),
 
-    io:format("test: is_success/1  - 2~n"),
+    autotest:mark(?LINE, "is_success/1  - 2"),
     false = is_true(fun() -> throw({error, foobar}) end),
 
-    io:format("test: is_success/1  - 3~n"),
+    autotest:mark(?LINE, "is_success/1  - 3"),
     false = is_true(fun() -> "foo" end),
 
 
     %% checktype/1
     %%--------------------------------------------------------------------
-    io:format("test: checktype/1  - 1~n"),
+    autotest:mark(?LINE, "checktype/1  - 1"),
     domain_name = checktype("foo.bar.com"),
     
-    io:format("test: checktype/1  - 2~n"),
+    autotest:mark(?LINE, "checktype/1  - 2"),
     ip4addr = checktype("1.1.1.1"),
     
-    io:format("test: checktype/1  - 3~n"),
+    autotest:mark(?LINE, "checktype/1  - 3"),
     ip6addr = checktype("1:1:1:1:2:2:2:2"),
     
-    io:format("test: checktype/1  - 4~n"),
+    autotest:mark(?LINE, "checktype/1  - 4"),
     autotest:fail(fun() -> checktype("1:1:1:1:xxx:2:2:2") end), 
 
     %% is_subdomain/2
@@ -921,123 +921,123 @@ test() ->
     %% is_subdomain(SubHostVal, ScriptVal) 
     
     %% SubHostVal = ScriptVal
-    io:format("test: is_subdomain/2  - 1~n"),
+    autotest:mark(?LINE, "is_subdomain/2  - 1"),
     true = is_subdomain("foo.bar.com", "foo.bar.com"),
 
     %% SubHostVal part of ScriptVal
-    io:format("test: is_subdomain/2  - 2~n"),
+    autotest:mark(?LINE, "is_subdomain/2  - 2"),
     true = is_subdomain("foo.bar.com", "com"),
 
     %% SubHostVal NOT suffix part of ScriptVal
-    io:format("test: is_subdomain/2  - 3~n"),
+    autotest:mark(?LINE, "is_subdomain/2  - 3"),
     false = is_subdomain("foo.bar.com", "foo.bar"),
 
     %% IPv4 = IPv4
-    io:format("test: is_subdomain/2  - 4~n"),
+    autotest:mark(?LINE, "is_subdomain/2  - 4"),
     true = is_subdomain("1.1.1.1", "1.1.1.1"),
 
     %% IPv4 NOT = IPv4
-    io:format("test: is_subdomain/2  - 5~n"),
+    autotest:mark(?LINE, "is_subdomain/2  - 5"),
     false = is_subdomain("1.2.1.1", "1.1.1.1"),
     
 
     %% prefix_match/2
     %%--------------------------------------------------------------------
     %% LangPrefix = Lang
-    io:format("test: prefix_match/2  - 1~n"),
+    autotest:mark(?LINE, "prefix_match/2  - 1"),
     true = prefix_match("en", "en"),
 
     %% prefix matches
-    io:format("test: prefix_match/2  - 2~n"),
+    autotest:mark(?LINE, "prefix_match/2  - 2"),
     true = prefix_match("en", "en-gb"),
 
     %% test multi part language code
-    io:format("test: prefix_match/2  - 3~n"),
+    autotest:mark(?LINE, "prefix_match/2  - 3"),
     true = prefix_match("en", "en-gb-LonDon"),
 
     %% test multi part prefix & pattern (test case insesetive handling)
-    io:format("test: prefix_match/2  - 4~n"),
+    autotest:mark(?LINE, "prefix_match/2  - 4"),
     true = prefix_match("en-GB", "en-gb-LonDon"),
 
     %% test multi part prefix & pattern (test case insesetive handling)
-    io:format("test: prefix_match/2  - 5~n"),
+    autotest:mark(?LINE, "prefix_match/2  - 5"),
     true = prefix_match("En-gB-lONdON", "en-gb-LonDon"),
 
     %% parse_accept_language/1
     %%--------------------------------------------------------------------
     %%
-    io:format("test: parse_accept_language/1  - 1~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 1"),
     {1.0, "da"} = parse_accept_language("da"),
     
-    io:format("test: parse_accept_language/1  - 2~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 2"),
     {0.8, "da"} = parse_accept_language("da;q=0.8"),
 
-    io:format("test: parse_accept_language/1  - 3~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 3"),
     {0.8, "da"} = parse_accept_language("   da   ;  q  =  0.8"),
     
-    io:format("test: parse_accept_language/1  - 4~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 4"),
     autotest:fail(fun() -> parse_accept_language("daq=0.8") end),
     
-    io:format("test: parse_accept_language/1  - 5~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 5"),
     autotest:fail(fun() -> parse_accept_language("da;q0.8") end),
 
-    io:format("test: parse_accept_language/1  - 6~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 6"),
     autotest:fail(fun() -> parse_accept_language("da;q=") end),
 
-    io:format("test: parse_accept_language/1  - 7~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 7"),
     autotest:fail(fun() -> parse_accept_language("da;b=0.8") end),
 
-    io:format("test: parse_accept_language/1  - 8~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 8"),
     autotest:fail(fun() -> parse_accept_language("daq0.8") end),
 
-    io:format("test: parse_accept_language/1  - 9~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 9"),
     autotest:fail(fun() -> parse_accept_language(";q=0.8") end),
 
-    io:format("test: parse_accept_language/1  - 10~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 10"),
     autotest:fail(fun() -> parse_accept_language("da;q0.8") end),
 
-    io:format("test: parse_accept_language/1  - 11~n"),
+    autotest:mark(?LINE, "parse_accept_language/1  - 11"),
     autotest:fail(fun() -> parse_accept_language("da;0.8") end),
 
     %% sort_languages_in_q_order/1
     %%--------------------------------------------------------------------
     %%
-    io:format("test: sort_languages_in_q_order/1  - 1~n"),
+    autotest:mark(?LINE, "sort_languages_in_q_order/1  - 1"),
     Res1 = sort_languages_in_q_order(["da", "en-gb;q=0.8", "en;q=0.7"]),
     %%io:format("Res1 = ~p~n", [Res1]),
     ["da", "en-gb", "en"] = Res1,
     
-    io:format("test: sort_languages_in_q_order/1  - 2~n"),
+    autotest:mark(?LINE, "sort_languages_in_q_order/1  - 2"),
     Res2 = sort_languages_in_q_order(["da", "en-gb", "en"]),
     %%io:format("Res2 = ~p~n", [Res2]),
     ["da", "en-gb", "en"] = Res2,
     
-    io:format("test: sort_languages_in_q_order/1  - 3~n"),
+    autotest:mark(?LINE, "sort_languages_in_q_order/1  - 3"),
     Res3 = sort_languages_in_q_order(["en", "en-gb", "da"]),
     %%io:format("Res3 = ~p~n", [Res3]),
     ["en", "en-gb", "da"] = Res3,
 
-    io:format("test: sort_languages_in_q_order/1  - 4~n"),
+    autotest:mark(?LINE, "sort_languages_in_q_order/1  - 4"),
     Res4 = sort_languages_in_q_order(["da;q=0", "en-gb;q=0.5", "en;q=1"]),
     %%io:format("Res3 = ~p~n", [Res4]),
     ["en", "en-gb"] = Res4, 
 
-    io:format("test: sort_languages_in_q_order/1  - 5~n"),
+    autotest:mark(?LINE, "sort_languages_in_q_order/1  - 5"),
     [] = sort_languages_in_q_order([]),
 
     %% language_matches/2
     %%--------------------------------------------------------------------
     %%
-    io:format("test: language_matches/2  - 1~n"),
+    autotest:mark(?LINE, "language_matches/2  - 1"),
     true = language_matches(sort_languages_in_q_order(["da", "en-gb;q=0.8", "en;q=0.7"]), "da"),
     
-    io:format("test: language_matches/2  - 2~n"),
+    autotest:mark(?LINE, "language_matches/2  - 2"),
     true = language_matches(sort_languages_in_q_order(["da", "en-gb;q=0.8", "en;q=0.7"]), "en-gb"),
 
-    io:format("test: language_matches/2  - 3~n"),
+    autotest:mark(?LINE, "language_matches/2  - 3"),
     true = language_matches(sort_languages_in_q_order(["da", "en-gb;q=0.8", "en;q=0.7"]), "en"),
 
-    io:format("test: language_matches/2  - 4~n"),
+    autotest:mark(?LINE, "language_matches/2  - 4"),
     false = language_matches(sort_languages_in_q_order(["da", "en-gb;q=0.8", "en;q=0.7"]), "se"),
     
 

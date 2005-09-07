@@ -195,49 +195,49 @@ test() ->
     %% test to_norm
     %%---------------------------------------------------------------
     %% test regular case
-    io:format("test: to_norm/1 - 1~n"),
+    autotest:mark(?LINE, "to_norm/1 - 1"),
     NDB1 = key_val_db:new([{"foo","bar"}, {"bar","42"}, {"a", "43"}]),
     #url_param{pairs = NDB1 } = to_norm(["foo=bar", "bar=42", "a=43"]),
 
     %% test empty param list
-    io:format("test: to_norm/1 - 2~n"),
+    autotest:mark(?LINE, "to_norm/1 - 2"),
     NDB2 = key_val_db:new([]),
     #url_param{pairs = NDB2} = to_norm([]),
 
     %% test that duplicate names are detected
-    io:format("test: to_norm/1 - 3~n"),
+    autotest:mark(?LINE, "to_norm/1 - 3"),
     case catch to_norm(["foo=bar", "bar=42", "foo=43"]) of
 	{error, _} -> ok;
 	_ -> throw({error, test_failed})
     end,
     %% test that duplicate names in different case are detected
-    io:format("test: to_norm/1 - 4~n"),
+    autotest:mark(?LINE, "to_norm/1 - 4"),
     case catch to_norm(["foo=bar", "bar=42", "FOO=43"]) of
 	{error, _} -> ok;
 	_ -> throw({error, test_failed})
     end,
     %% test params that only consist of a name part
-    io:format("test: to_norm/1 - 5~n"),
+    autotest:mark(?LINE, "to_norm/1 - 5"),
     NDB3 = key_val_db:new([{"foo","bar"}, {"bar", none}, {"a", "43"}]),
     #url_param{pairs = NDB3 } = to_norm(["foo=bar", "bar", "a=43"]),
 
     %% test handling of hex encoding (with both upper and lower case hex values)
-    io:format("test: to_norm/1 - 6~n"),
+    autotest:mark(?LINE, "to_norm/1 - 6"),
     NDB4 = key_val_db:new([{"foo=","bar"}, {"=bar", none}, {"a", "43"}]),
     #url_param{pairs = NDB4 } = to_norm(["foo%3d=bar", "%3Dbar", "a=43"]),
 
     %% test to_string_list
     %%---------------------------------------------------------------
     %% test that case and missing value part are handled properly
-    io:format("test: to_string_list/1 - 1~n"),
+    autotest:mark(?LINE, "to_string_list/1 - 1"),
     Urlparam1 = to_norm(["foo=bAr", "BaR", "lr", "a=43"]),
     ["foo=bar", "bar", "lr=true", "a=43"] = to_string_list(Urlparam1),
     %% test empty param
-    io:format("test: to_string_list/1 - 2~n"),
+    autotest:mark(?LINE, "to_string_list/1 - 2"),
     Urlparam2 = to_norm([]),
     [] = to_string_list(Urlparam2),
     %% test that hex encoding is used
-    io:format("test: to_string_list/1 - 3~n"),
+    autotest:mark(?LINE, "to_string_list/1 - 3"),
     Urlparam3 = to_norm(["foo%3d=bAr", "Ba%3DR", "lr", "a=43"]),
     ["foo%3D=bar", "ba%3Dr", "lr=true", "a=43"] = to_string_list(Urlparam3),
 
@@ -245,35 +245,35 @@ test() ->
     %% test to_string
     %%---------------------------------------------------------------
     %% test that case and missing value part are handled properly
-    io:format("test: to_string/1 - 1~n"),
+    autotest:mark(?LINE, "to_string/1 - 1"),
     ";foo=bar;bar;lr=true;a=43" = to_string(Urlparam1),
     %% test empty param
-    io:format("test: to_string/1 - 2~n"),
+    autotest:mark(?LINE, "to_string/1 - 2"),
     "" = to_string(Urlparam2),
 
     %% test to_list
     %%---------------------------------------------------------------
     %% regular case
-    io:format("test: to_list/1 - 1~n"),
+    autotest:mark(?LINE, "to_list/1 - 1"),
     [{"foo","bar"}, {"bar","42"}, {"a", "43"}] = to_list(to_norm(["foo=bar", "bar=42", "a=43"])),
     %% empty list
-    io:format("test: to_list/1 - 2~n"),
+    autotest:mark(?LINE, "to_list/1 - 2"),
     [] = to_list(to_norm([])),
     %% test case handling
-    io:format("test: to_list/1 - 3~n"),
+    autotest:mark(?LINE, "to_list/1 - 3"),
     [{"foo","bar"}, {"bar",none}, {"a", "43"}] = to_list(to_norm(["foo=bAr", "bar", "A=43"])),
 
 
     %% test add
     %%---------------------------------------------------------------
     %% add Key-Val to empty url_param
-    io:format("test: add/2 - 1~n"),
+    autotest:mark(?LINE, "add/2 - 1"),
     UrlParam1 = to_norm([]),
     ADB1 = key_val_db:new([{"foo","bar"}]),
     #url_param{pairs = ADB1 } = add(UrlParam1, "foo", "bar"),
 
     %% add Key _only_ to empty url_param
-    io:format("test: add/2 - 2~n"),
+    autotest:mark(?LINE, "add/2 - 2"),
     ADB2 = key_val_db:new([{"foo", none}]),
     #url_param{pairs = ADB2 } = add(UrlParam1, "foo"),
 
@@ -281,12 +281,12 @@ test() ->
     UrlParam2 = to_norm(["foo=bar", "bar=42", "a=43"]),
 
     %% add a new key-val
-    io:format("test: add/2 - 5~n"),
+    autotest:mark(?LINE, "add/2 - 5"),
     ADB5 = key_val_db:new([{"foo","bar"}, {"bar","42"}, {"a", "43"}, {"gazong", "zog"}]),
     #url_param{pairs = ADB5 } = add(UrlParam2, "gazong", "zog"),
 
     %% add a new key
-    io:format("test: add/2 - 6~n"),
+    autotest:mark(?LINE, "add/2 - 6"),
     ADB6 = key_val_db:new([{"foo","bar"}, {"bar","42"}, {"a", "43"}, {"gazong", none}]),
     #url_param{pairs = ADB6} = add(UrlParam2, "gazong"),
 

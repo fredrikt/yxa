@@ -796,29 +796,29 @@ test() ->
     %%--------------------------------------------------------------------
     MyHostname = siprequest:myhostname(),
 
-    io:format("test: homedomain/1 - 1~n"),
+    autotest:mark(?LINE, "homedomain/1 - 1"),
     %% test with my IP address
     %% XXX test fails if we have no interfaces up!
     true = homedomain(MyHostname),
 
-    io:format("test: homedomain/1 - 1~n"),
+    autotest:mark(?LINE, "homedomain/1 - 1"),
     %% test with something that should definately NOT be our hostname
     false = homedomain("1-2"),
 
 
     %% test is_request_to_this_proxy(Request)
     %%--------------------------------------------------------------------
-    io:format("test: is_request_to_this_proxy/1 - 1~n"),
+    autotest:mark(?LINE, "is_request_to_this_proxy/1 - 1"),
     %% test OPTIONS with Max-Forwards: 1
     true = is_request_to_this_proxy(#request{method="OPTIONS", uri=sipurl:parse("sip:ft@example.org"),
 					     header=keylist:from_list([{"Max-Forwards", ["1"]}])}),
 
-    io:format("test: is_request_to_this_proxy/1 - 2~n"),
+    autotest:mark(?LINE, "is_request_to_this_proxy/1 - 2"),
     %% test OPTIONS with Max-Forwards: 10
     false = is_request_to_this_proxy(#request{method="OPTIONS", uri=sipurl:parse("sip:ft@example.org"),
 					      header=keylist:from_list([{"Max-Forwards", ["10"]}])}),
 
-    io:format("test: is_request_to_this_proxy/1 - 3~n"),
+    autotest:mark(?LINE, "is_request_to_this_proxy/1 - 3"),
     %% test MESSAGE with Max-Forwards: 10, but with URI pointing at us
     IRTTP_URI1 = sipurl:new([{proto, "sip"}, {host, MyHostname}]),
     true = is_request_to_this_proxy(#request{method="MESSAGE", uri=IRTTP_URI1,
@@ -837,17 +837,17 @@ test() ->
     Unsuitable_LDBE3 = #siplocationdb_e{address=Unsuitable_URL3},
     Unsuitable_LDBE4 = #siplocationdb_e{address=Unsuitable_URL4},
 
-    io:format("test: remove_unsuitable_locations/2 - 1~n"),
+    autotest:mark(?LINE, "remove_unsuitable_locations/2 - 1"),
     %% test with non-SIPS URI, no entrys should be removed
     [Unsuitable_LDBE1, Unsuitable_LDBE2, Unsuitable_LDBE3] =
 	remove_unsuitable_locations(Unsuitable_URL1, [Unsuitable_LDBE1, Unsuitable_LDBE2, Unsuitable_LDBE3]),
 
-    io:format("test: remove_unsuitable_locations/2 - 2~n"),
+    autotest:mark(?LINE, "remove_unsuitable_locations/2 - 2"),
     %% test with SIPS URI
     [Unsuitable_LDBE2] =
 	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_LDBE1, Unsuitable_LDBE2, Unsuitable_LDBE3]),
 
-    io:format("test: remove_unsuitable_locations/2 - 3~n"),
+    autotest:mark(?LINE, "remove_unsuitable_locations/2 - 3"),
     %% test with SIP URI but transport parameter indicating TLS
     [Unsuitable_LDBE4] =
 	remove_unsuitable_locations(Unsuitable_URL2, [Unsuitable_LDBE1, Unsuitable_LDBE4]),
@@ -855,7 +855,7 @@ test() ->
 
     %% test lookupnumber(Number)
     %%--------------------------------------------------------------------
-    io:format("test: lookupnumber/1 - 1~n"),
+    autotest:mark(?LINE, "lookupnumber/1 - 1"),
 
     %% only thing we can test here is non-numeric input
     error = lookupnumber("foo"),
@@ -864,34 +864,34 @@ test() ->
     %% test lookupnumber2(Number, RegExps)
     %%--------------------------------------------------------------------
 
-    io:format("test: lookupnumber2/2 - 1~n"),
+    autotest:mark(?LINE, "lookupnumber2/2 - 1"),
     %% test empty result
     error = lookupnumber2("123", [{"123", ""}]),
 
-    io:format("test: lookupnumber2/2 - 2~n"),
+    autotest:mark(?LINE, "lookupnumber2/2 - 2"),
     %% test no matching regexp
     none = lookupnumber2("123", [{"12x", "foo"}]),
 
-    io:format("test: lookupnumber2/2 - 3~n"),
+    autotest:mark(?LINE, "lookupnumber2/2 - 3"),
     %% test valid rewrite
     LNURL3 = sipurl:parse("sips:ft@example.org"),
     {relay, LNURL3} = lookupnumber2("123", [{"123", "sips:ft@example.org"}]),
 
-    io:format("test: lookupnumber2/2 - 4~n"),
+    autotest:mark(?LINE, "lookupnumber2/2 - 4"),
     %% test valid rewrite, with default protocol
     LNURL4 = sipurl:parse("sip:ft@example.org"),
     {relay, LNURL4} = lookupnumber2("123", [{"123", "ft@example.org"}]),
 
-    io:format("test: lookupnumber2/2 - 5~n"),
+    autotest:mark(?LINE, "lookupnumber2/2 - 5"),
     %% test valid rewrite, with invalid result
     error = lookupnumber2("123", [{"123", "unknown::ft@example.org"}]),
 
-    io:format("test: lookupnumber2/2 - 6~n"),
+    autotest:mark(?LINE, "lookupnumber2/2 - 6"),
     %% test valid rewrite with homedomain result
     LNURL6 = sipurl:parse("sips:ft@" ++ MyHostname),
     {proxy, LNURL6} = lookupnumber2("123", [{"123", "sips:ft@" ++ MyHostname}]),
 
-    io:format("test: lookupnumber2/2 - 7~n"),
+    autotest:mark(?LINE, "lookupnumber2/2 - 7"),
     %% test valid rewrite, with default protocol and homedomain result
     LNURL7 = sipurl:parse("sip:ft@" ++ MyHostname),
     {proxy, LNURL7} = lookupnumber2("123", [{"123", "ft@" ++ MyHostname}]),
@@ -900,7 +900,7 @@ test() ->
     %% test lookupregexproute2(Input, Routes)
     %%--------------------------------------------------------------------
 
-    io:format("test: lookupregexproute2/2 - 1.0~n"),
+    autotest:mark(?LINE, "lookupregexproute2/2 - 1.0"),
 
     LRR_SortRoutes = [#regexproute{regexp = "^sip:4000@.*",
 				   flags = [{priority, 200}],
@@ -914,17 +914,17 @@ test() ->
 				   address = "sip:prio100@example.org"}
 		      ],
 
-    io:format("test: lookupregexproute2/2 - 1.1~n"),
+    autotest:mark(?LINE, "lookupregexproute2/2 - 1.1"),
     %% test that we use the route with highest priority if we have two matching
     LRR_URL11 = sipurl:parse("sip:prio200@example.org"),
     {proxy, LRR_URL11} = lookupregexproute2("sip:4000@example.org", LRR_SortRoutes),
     
-    io:format("test: lookupregexproute2/2 - 1.2~n"),
+    autotest:mark(?LINE, "lookupregexproute2/2 - 1.2"),
     %% test non-matching input
     none = lookupregexproute2("foo", LRR_SortRoutes),
 
     LRR_Now = util:timestamp(),
-    io:format("test: lookupregexproute2/2 - 2.0~n"),
+    autotest:mark(?LINE, "lookupregexproute2/2 - 2.0"),
     LRR_Expire = [#regexproute{regexp = "^sip:testexpire@.*",
 			       flags = [{priority, 200}],
 			       class = permanent,
@@ -937,7 +937,7 @@ test() ->
 			       address = "sip:matches-not-expired@example.org"}
 		 ],
 
-    io:format("test: lookupregexproute2/2 - 2.1~n"),
+    autotest:mark(?LINE, "lookupregexproute2/2 - 2.1"),
     %% test that we don't pick the one with priority 200 because it is expired
     LRR_URL21 = sipurl:parse("sip:matches-not-expired@example.org"),
     {proxy, LRR_URL21} = lookupregexproute2("sip:testexpire@example.org", LRR_Expire),

@@ -330,72 +330,72 @@ test() ->
 
     %% test timestamp()
     %%--------------------------------------------------------------------
-    io:format("test: timestamp/0 - 1~n"),
+    autotest:mark(?LINE, "timestamp/0 - 1"),
     %% we can't test more than that this function returns an integer...
     Timestamp1 = timestamp(),
     true = is_integer(Timestamp1),
 
-    io:format("test: timestamp/0 - 2~n"),
+    autotest:mark(?LINE, "timestamp/0 - 2"),
     %% ... and that the integer returned is at least 1.1 billion
     true = (Timestamp1 >= 1100000000),    
 
     %% test sec_to_date(Seconds)
     %%--------------------------------------------------------------------
-    io:format("test: sec_to_date/1 - 1~n"),
+    autotest:mark(?LINE, "sec_to_date/1 - 1"),
     "2005-01-31 14:06:07" = sec_to_date(1107176767),
 
-    io:format("test: sec_to_date/1 - 2~n"),
+    autotest:mark(?LINE, "sec_to_date/1 - 2"),
     "never" = sec_to_date(never),
 
     %% test isnumeric(Number)
     %%--------------------------------------------------------------------
-    io:format("test: isnumeric/1 - 1~n"),
+    autotest:mark(?LINE, "isnumeric/1 - 1"),
     %% small number
     true = isnumeric("123"),
 
-    io:format("test: isnumeric/1 - 2~n"),
+    autotest:mark(?LINE, "isnumeric/1 - 2"),
     %% big number
     true = isnumeric(string:copies("123", 10)),
 
-    io:format("test: isnumeric/1 - 3~n"),
+    autotest:mark(?LINE, "isnumeric/1 - 3"),
     %% not only number
     false = isnumeric(" 123"),
 
-    io:format("test: isnumeric/1 - 4~n"),
+    autotest:mark(?LINE, "isnumeric/1 - 4"),
     %% not number at all
     false = isnumeric("X"),
 
-    io:format("test: isnumeric/1 - 5~n"),
+    autotest:mark(?LINE, "isnumeric/1 - 5"),
     %% not even a string
     false = isnumeric({1,2,3}),
 
     
     %% test apply_rewrite(Rewrite, List)
     %%--------------------------------------------------------------------
-    io:format("test: apply_rewrite/2 - 1~n"),
+    autotest:mark(?LINE, "apply_rewrite/2 - 1"),
     %% single group to replace
     "first@foo" = apply_rewrite("\\1@foo", ["first"]),
 
-    io:format("test: apply_rewrite/2 - 2~n"),
+    autotest:mark(?LINE, "apply_rewrite/2 - 2"),
     %% two groups
     "abc123def456" = apply_rewrite("abc\\1def\\2", ["123", "456"]),
 
-    io:format("test: apply_rewrite/2 - 3~n"),
+    autotest:mark(?LINE, "apply_rewrite/2 - 3"),
     %% double backslash check
     %% XXX is this really correct? We loose our backslashes - ft
     "a\\1bc123" = apply_rewrite("a\\\\1bc\\1", ["123"]),
 
-    io:format("test: apply_rewrite/2 - 4~n"),
+    autotest:mark(?LINE, "apply_rewrite/2 - 4"),
     %% Two groups, only one used in rewrite. Such a List might not be
     %% possible for regexp_rewrite to call us with, but we currently
     %% don't check that.
     "foobar" = apply_rewrite("\\1bar", ["foo", "456"]),
 
-    io:format("test: apply_rewrite/2 - 5~n"),
+    autotest:mark(?LINE, "apply_rewrite/2 - 5"),
     %% Too few elements in List - we crash on that.
     {'EXIT', {function_clause, _}} = (catch apply_rewrite("\\1bar", [])),
 
-    io:format("test: apply_rewrite/2 - 6~n"),
+    autotest:mark(?LINE, "apply_rewrite/2 - 6"),
     %% backslashes not followed by digits between 1 and 9 (one '0' and one 'c')
     %% XXX is this really correct? We loose our backslashes - ft
     "a0bc123" = apply_rewrite("a\\0b\\c\\1", ["123"]),
@@ -403,103 +403,103 @@ test() ->
 
     %% test regexp_rewrite(Input, RegexpList)
     %%--------------------------------------------------------------------
-    io:format("test: regexp_rewrite/2 - 1~n"),
+    autotest:mark(?LINE, "regexp_rewrite/2 - 1"),
     %% Single regexp
     "foobar" = regexp_rewrite("123foobar456", [{".*foo(...)", "foo\\1"}]),
 
-    io:format("test: regexp_rewrite/2 - 2~n"),
+    autotest:mark(?LINE, "regexp_rewrite/2 - 2"),
     %% More than one regexp
     "foobar" = regexp_rewrite("123foobar456", [{"nomatch", "abc123"},
 					       {".*foo(...)", "foo\\1"}]),
 
-    io:format("test: regexp_rewrite/2 - 3~n"),
+    autotest:mark(?LINE, "regexp_rewrite/2 - 3"),
     %% No matching regexp
     nomatch = regexp_rewrite("123f00bar456", [{"nomatch", "abc123"},
 					      {".*foo(...)", "foo\\1"}]),
 
     %% test casecompare(Str1, Str2)
     %%--------------------------------------------------------------------
-    io:format("test: casecompare/2 - 1~n"),
+    autotest:mark(?LINE, "casecompare/2 - 1"),
     true = casecompare("abc", "ABC"),
 
-    io:format("test: casecompare/2 - 2~n"),
+    autotest:mark(?LINE, "casecompare/2 - 2"),
     true = casecompare("", ""),
 
-    io:format("test: casecompare/2 - 3~n"),
+    autotest:mark(?LINE, "casecompare/2 - 3"),
     true = casecompare(none, none),
 
-    io:format("test: casecompare/2 - 4~n"),
+    autotest:mark(?LINE, "casecompare/2 - 4"),
     false = casecompare("zzz", "zzzz"),
 
-    io:format("test: casecompare/2 - 5~n"),
+    autotest:mark(?LINE, "casecompare/2 - 5"),
     false = casecompare("zzz", none),
 
-    io:format("test: casecompare/2 - 6~n"),
+    autotest:mark(?LINE, "casecompare/2 - 6"),
     false = casecompare(none, "A"),
 
 
     %% test casegrep(String, List)
     %%--------------------------------------------------------------------
-    io:format("test: casegrep/2 - 1~n"),
+    autotest:mark(?LINE, "casegrep/2 - 1"),
     true = casegrep("test", ["test"]),
 
-    io:format("test: casegrep/2 - 2~n"),
+    autotest:mark(?LINE, "casegrep/2 - 2"),
     true = casegrep("test", ["foo", "TEST"]),
 
-    io:format("test: casegrep/2 - 3~n"),
+    autotest:mark(?LINE, "casegrep/2 - 3"),
     true = casegrep("teSt", [none, "test"]),
 
-    io:format("test: casegrep/2 - 4~n"),
+    autotest:mark(?LINE, "casegrep/2 - 4"),
     true = casegrep(none, ["test", none]),
 
-    io:format("test: casegrep/2 - 5~n"),
+    autotest:mark(?LINE, "casegrep/2 - 5"),
     false = casegrep(none, ["test", "foo"]),
 
-    io:format("test: casegrep/2 - 6~n"),
+    autotest:mark(?LINE, "casegrep/2 - 6"),
     false = casegrep("bar", ["test", "foo"]),
 
 
     %% test join(Strings, Separator)
     %%--------------------------------------------------------------------
-    io:format("test: join/2 - 1~n"),
+    autotest:mark(?LINE, "join/2 - 1"),
     %% straight forward
     "hi world" = join(["hi", "world"], " "),
 
-    io:format("test: join/2 - 2~n"),
+    autotest:mark(?LINE, "join/2 - 2"),
     %% a single element
     "hi" = join(["hi"], " "),
 
-    io:format("test: join/2 - 3~n"),
+    autotest:mark(?LINE, "join/2 - 3"),
     %% empty separator
     "hiworld" = join(["hi", "world"], ""),
 
-    io:format("test: join/2 - 3~n"),
+    autotest:mark(?LINE, "join/2 - 3"),
     %% empty Strings
     [] = join([], "neverseen"),
 
 
     %% test concat(Strings, Separator)
     %%--------------------------------------------------------------------
-    io:format("test: concat/2 - 1~n"),
+    autotest:mark(?LINE, "concat/2 - 1"),
     %% straight forward
     "hi world " = concat(["hi", "world"], " "),
 
-    io:format("test: concat/2 - 2~n"),
+    autotest:mark(?LINE, "concat/2 - 2"),
     %% a single element
     "hi " = concat(["hi"], " "),
 
-    io:format("test: concat/2 - 3~n"),
+    autotest:mark(?LINE, "concat/2 - 3"),
     %% empty separator
     "hiworld" = concat(["hi", "world"], ""),
 
-    io:format("test: concat/2 - 4~n"),
+    autotest:mark(?LINE, "concat/2 - 4"),
     %% empty Strings
     [] = concat([], "neverseen"),
 
 
     %% test safe_is_process_alive(PidOrName)
     %%--------------------------------------------------------------------
-    io:format("test: safe_is_process_alive/1 - 0~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 0"),
     %% get a reference to a dead process
     DeadPid = spawn(fun() -> ok end),
 
@@ -512,41 +512,41 @@ test() ->
 	    throw({error, "test: safe_is_process_alive/1: the process I spawned did not exit!"})
     end,
 
-    io:format("test: safe_is_process_alive/1 - 1~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 1"),
     %% myself as input, should definately be alive
     MyPid = self(),
     {true, MyPid} = safe_is_process_alive(MyPid),
 
-    io:format("test: safe_is_process_alive/1 - 2~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 2"),
     %% atom input (valid) of a process that should really be alive
     {true, LoggerPid} = safe_is_process_alive(logger),
     true = is_pid(LoggerPid),
 
-    io:format("test: safe_is_process_alive/1 - 3~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 3"),
     %% list input (invalid)
     {'EXIT', {function_clause, _}} = (catch safe_is_process_alive("foo")),
 
-    io:format("test: safe_is_process_alive/1 - 4~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 4"),
     %% reference input (invalid)
     {'EXIT', {function_clause, _}} = (catch safe_is_process_alive(make_ref())),
 
-    io:format("test: safe_is_process_alive/1 - 5~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 5"),
     %% test dead process
     {false, DeadPid} = safe_is_process_alive(DeadPid),
 
-    io:format("test: safe_is_process_alive/1 - 6~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 6"),
     %% test non-existing registered name
     {false, undefined} = safe_is_process_alive(util_autotest_does_not_exist),
 
 
     %% test safe_signal(LogTag, PidOrName, Message)
     %%--------------------------------------------------------------------
-    io:format("test: safe_is_process_alive/1 - 1.1~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.1"),
     %% send message to ourselves
     SafeSignalRef = make_ref(),
     ok = safe_signal("foo", self(), {SafeSignalRef, "test"}),
 
-    io:format("test: safe_is_process_alive/1 - 1.2~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.2"),
     %% check that we got the message
     receive
 	{SafeSignalRef, "test"} ->
@@ -556,27 +556,27 @@ test() ->
 	    throw({error, "test: safe_is_process_alive/1: did not get signal I sent to myself"})
     end,
 
-    io:format("test: safe_is_process_alive/1 - 1.2~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.2"),
     %% dead pid
     error = safe_signal("foo", DeadPid, {SafeSignalRef, "test with dead recipient"}),
 
-    io:format("test: safe_is_process_alive/1 - 1.2~n"),
+    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.2"),
     %% for 100% coverage
     error = safe_signal(none, DeadPid, {SafeSignalRef, "test with dead recipient"}),
 
     
     %% test remove_v6_brackets(In)
     %%--------------------------------------------------------------------
-    io:format("test: remove_v6_brackets/1 - 1~n"),
+    autotest:mark(?LINE, "remove_v6_brackets/1 - 1"),
     "[non-IPv6-address]" = remove_v6_brackets("[non-IPv6-address]"),
 
-    io:format("test: remove_v6_brackets/1 - 2~n"),
+    autotest:mark(?LINE, "remove_v6_brackets/1 - 2"),
     "2001::abc" = remove_v6_brackets("[2001::abc]"),
 
-    io:format("test: remove_v6_brackets/1 - 3~n"),
+    autotest:mark(?LINE, "remove_v6_brackets/1 - 3"),
     "[2001::" = remove_v6_brackets("[2001::"),
 
-    io:format("test: remove_v6_brackets/1 - 4~n"),
+    autotest:mark(?LINE, "remove_v6_brackets/1 - 4"),
     "2001::]" = remove_v6_brackets("2001::]"),
 
     ok.

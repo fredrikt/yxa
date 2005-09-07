@@ -179,7 +179,7 @@ test() ->
     %% get_section(Key, TermL)
     %%--------------------------------------------------------------------
 
-    io:format("test: get_section/2 - 0~n"),
+    autotest:mark(?LINE, "get_section/2 - 0"),
     GS_Term_Test = {test, [{1, 2},
 			   {2, 3}
 			  ]},
@@ -192,20 +192,20 @@ test() ->
 			 {1, 11}
 			]},
 
-    io:format("test: get_section/2 - 1~n"),
+    autotest:mark(?LINE, "get_section/2 - 1"),
     GS_Term_Test = get_section(test, [GS_Term_Test]),
 
-    io:format("test: get_section/2 - 2~n"),
+    autotest:mark(?LINE, "get_section/2 - 2"),
     GS_Term_Test = get_section(test, [GS_Term_Foo, GS_Term_Test]),
 
-    io:format("test: get_section/2 - 3~n"),
+    autotest:mark(?LINE, "get_section/2 - 3"),
     GS_Term_Common = get_section(common, [GS_Term_Foo, GS_Term_Common, GS_Term_Test]),
 
 
     %% merge_config(Config1, Config2)
     %%--------------------------------------------------------------------
 
-    io:format("test: merge_config/2 - 0~n"),
+    autotest:mark(?LINE, "merge_config/2 - 0"),
     MConfig_1 = [{userdb_modules,		[sipuserdb_file]},
 		 {sipuserdb_file_filename,	"/etc/yxa-userdb"},
 		 {sipauth_realm,		"test.example.org"},
@@ -220,7 +220,7 @@ test() ->
 		 {record_route,			true}
 		],
 
-    io:format("test: merge_config/2 - 1~n"),
+    autotest:mark(?LINE, "merge_config/2 - 1"),
     %% sipauth_password #2 should replace #1
     [{sipauth_password,             "other-pw"},
      {sipauth_realm,                "test.example.org"},
@@ -228,11 +228,11 @@ test() ->
      {userdb_modules,               [sipuserdb_file]}
     ] = merge_config(MConfig_1, MConfig_2),
 
-    io:format("test: merge_config/2 - 2~n"),
+    autotest:mark(?LINE, "merge_config/2 - 2"),
     %% #1 should be totally overwritten by list #2
     MConfig_1_S = merge_config(MConfig_2, MConfig_1),
 
-    io:format("test: merge_config/2 - 3~n"),
+    autotest:mark(?LINE, "merge_config/2 - 3"),
     %% record_route should 'shine through'
     [{record_route,	       true},
      {sipauth_password,        "pw"},
@@ -241,7 +241,7 @@ test() ->
      {userdb_modules,          [sipuserdb_file]}
     ] = merge_config(MConfig_3, MConfig_1),
 
-    io:format("test: merge_config/2 - 4~n"),
+    autotest:mark(?LINE, "merge_config/2 - 4"),
     %% no conflicts at all
     [{record_route,true},
      {sipauth_password,"other-pw"},

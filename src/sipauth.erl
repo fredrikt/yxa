@@ -540,26 +540,26 @@ test() ->
     ClassifyRegexp1 = [{"^123", internal},
 		       {"^00", external}
 		      ],
-    io:format("test: classify_number/2 - 1~n"),
+    autotest:mark(?LINE, "classify_number/2 - 1"),
     {ok, unknown} = classify_number(none, []),
 
-    io:format("test: classify_number/2 - 2~n"),
+    autotest:mark(?LINE, "classify_number/2 - 2"),
     %% test normal case #1
     {ok, internal} = classify_number("1234", ClassifyRegexp1),
 
-    io:format("test: classify_number/2 - 3~n"),
+    autotest:mark(?LINE, "classify_number/2 - 3"),
     %% test normal case #2
     {ok, external} = classify_number("00234", ClassifyRegexp1),
 
-    io:format("test: classify_number/2 - 4~n"),
+    autotest:mark(?LINE, "classify_number/2 - 4"),
     %% test unmatched number
     {ok, unknown} = classify_number("9", ClassifyRegexp1),
 
-    io:format("test: classify_number/2 - 5~n"),
+    autotest:mark(?LINE, "classify_number/2 - 5"),
     %% test invalid regexp (circumflex-plus), should be skipped
     {ok, unknown} = classify_number("+123", [{"^+1", internal}]),
 
-    io:format("test: classify_number/2 - 6~n"),
+    autotest:mark(?LINE, "classify_number/2 - 6"),
     %% test invalid regexp
     {error, _} = classify_number("+123", [{"unbalanced (", internal}]),
 
@@ -568,28 +568,28 @@ test() ->
     %%--------------------------------------------------------------------
     CanUseURL1 = sipurl:parse("sip:ft@example.org"),
 
-    io:format("test: can_use_address_detail2/3 - 1~n"),
+    autotest:mark(?LINE, "can_use_address_detail2/3 - 1"),
     {true, ok} = can_use_address_detail2("ft", CanUseURL1, ["ft"]),
 
-    io:format("test: can_use_address_detail2/3 - 2~n"),
+    autotest:mark(?LINE, "can_use_address_detail2/3 - 2"),
     {false, eperm} = can_use_address_detail2("ft", CanUseURL1, ["not-ft"]),
 
-    io:format("test: can_use_address_detail2/3 - 3~n"),
+    autotest:mark(?LINE, "can_use_address_detail2/3 - 3"),
     {false, nomatch} = can_use_address_detail2("ft", CanUseURL1, []),
 
-    io:format("test: can_use_address_detail2/3 - 3~n"),
+    autotest:mark(?LINE, "can_use_address_detail2/3 - 3"),
     {true, ok} = can_use_address_detail2("ft", CanUseURL1, ["foo", "ft", "bar"]),
 
-    io:format("test: can_use_address_detail2/3 - 3~n"),
+    autotest:mark(?LINE, "can_use_address_detail2/3 - 3"),
     {false, eperm} = can_use_address_detail2("ft", CanUseURL1, ["foo", "bar"]),
 
-    io:format("test: can_use_address_detail2/3 - 1~n"),
+    autotest:mark(?LINE, "can_use_address_detail2/3 - 1"),
     {false, nomatch} = can_use_address_detail2("ft", CanUseURL1, nomatch),
 
 
     %% Auth tests
     %%--------------------------------------------------------------------
-    io:format("test: auth - 0~n"),
+    autotest:mark(?LINE, "auth - 0"),
     AuthNow1		= 11000000,
     AuthTimestamp1	= hex:to(AuthNow1, 8),
     AuthOpaque1		= AuthTimestamp1,
@@ -608,61 +608,61 @@ test() ->
 
     %% test get_nonce(Timestamp)
     %%--------------------------------------------------------------------
-    io:format("test: get_nonce/1 - 1~n"),
+    autotest:mark(?LINE, "get_nonce/1 - 1"),
     "22d10c95a33616d16599317751534c4d" = get_nonce(hex:to(0, 8)),
 
-    io:format("test: get_nonce/1 - 2~n"),
+    autotest:mark(?LINE, "get_nonce/1 - 2"),
     "2b9d0abeef571102304778343b31a5e1" = get_nonce(hex:to(11000000, 8)),
 
-    io:format("test: get_nonce/1 - 3~n"),
+    autotest:mark(?LINE, "get_nonce/1 - 3"),
     "be7ef379132a226876b70668ee46dc8f" = get_nonce(hex:to(22000000, 8)),
 
 
     %% test do_get_user_verified2(Method, User, UAuser, Password, Realm, Now, AuthDict)
     %%--------------------------------------------------------------------
-    io:format("test: do_get_user_verified2/7 - 1~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 1"),
     %% Correct response (AuthDict1)
     {authenticated, "canon-user"} =
 	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
 			      AuthRealm1, AuthNow1, AuthDict1),
 
-    io:format("test: do_get_user_verified2/7 - 2~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 2"),
     %% Correct response, time in the future
     false =
 	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
 			      AuthRealm1, AuthNow1 - 1, AuthDict1),
 
-    io:format("test: do_get_user_verified2/7 - 3~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 3"),
     %% Correct response, time since challenge: 30 seconds
     {authenticated, "canon-user"} =
 	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
 			      AuthRealm1, AuthNow1 + 30, AuthDict1),
 
-    io:format("test: do_get_user_verified2/7 - 4~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 4"),
     %% Correct response, time since challenge: 31 seconds = stale
     {stale, "canon-user"} =
 	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
 			      AuthRealm1, AuthNow1 + 31, AuthDict1),
 
-    io:format("test: do_get_user_verified2/7 - 5~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 5"),
     %% Invalid password
     false =
 	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, "incorrect",
 			      AuthRealm1, AuthNow1, AuthDict1),
 
-    io:format("test: do_get_user_verified2/7 - 6~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 6"),
     %% Invalid user, indicated by password 'nomatch'
     false =
 	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, nomatch,
 			      AuthRealm1, AuthNow1, AuthDict1),
 
-    io:format("test: do_get_user_verified2/7 - 7~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 7"),
     %% Wrong 'nonce' parameter
     false =
 	do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, AuthPassword1,
 			      AuthRealm1, AuthNow1, dict:store("nonce", "0a1b2c", AuthDict1)),
 
-    io:format("test: do_get_user_verified2/7 - 8~n"),
+    autotest:mark(?LINE, "do_get_user_verified2/7 - 8"),
     %% Missing 'opaque' parameter
     {siperror, 400, "Authorization should contain opaque"} =
 	(catch do_get_user_verified2(AuthMethod1, "canon-user", AuthUser1, nomatch,
@@ -671,10 +671,10 @@ test() ->
 
     %% test get_challenge()
     %%--------------------------------------------------------------------
-    io:format("test: get_challenge/0 - 1.1~n"),
+    autotest:mark(?LINE, "get_challenge/0 - 1.1"),
     {_Realm, ChallengeNonce1, ChallengeTimestamp1} = get_challenge(),
 
-    io:format("test: get_challenge/0 - 1.1~n"),
+    autotest:mark(?LINE, "get_challenge/0 - 1.1"),
     %% verify results as good as we can
     ChallengeNonce1 = get_nonce(ChallengeTimestamp1),
     true = (ChallengeTimestamp1 > 11000000),
@@ -682,7 +682,7 @@ test() ->
 
     %% test get_user_verified(Header, Method)
     %%--------------------------------------------------------------------
-    io:format("test: get_user_verified/2 - 1~n"),
+    autotest:mark(?LINE, "get_user_verified/2 - 1"),
     %% Test without Authorization header - that is the only thing we can test
     %% here. The testable parts of this code is tested above (do_get_user_verified2).
     false = get_user_verified(keylist:from_list([]), "INVITE"),
@@ -690,7 +690,7 @@ test() ->
 
     %% test get_user_verified_proxy(Header, Method)
     %%--------------------------------------------------------------------
-    io:format("test: get_user_verified_proxy/2 - 1~n"),
+    autotest:mark(?LINE, "get_user_verified_proxy/2 - 1"),
     %% Test without Authorization header - that is the only thing we can test
     %% here. The testable parts of this code is tested above (do_get_user_verified2).
     false = get_user_verified(keylist:from_list([]), "INVITE"),
@@ -699,7 +699,7 @@ test() ->
     %% test pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
     %% Not much can be tested in this function, but some is better than nothing
     %%--------------------------------------------------------------------
-    io:format("test: pstn_call_check_auth/5 - 1~n"),
+    autotest:mark(?LINE, "pstn_call_check_auth/5 - 1"),
     {false, none, testclass} = pstn_call_check_auth("INVITE", keylist:from_list([]),
 						    sipurl:parse("sip:ft@example.org"),
 						    "123456789", [{"^123", testclass}]),
@@ -708,13 +708,13 @@ test() ->
     %% test is_allowed_pstn_dst(User, ToNumber, Header, Class)
     %% Not much can be tested in this function, but some is better than nothing
     %%--------------------------------------------------------------------
-    io:format("test: is_allowed_pstn_dst/4 - 1~n"),
+    autotest:mark(?LINE, "is_allowed_pstn_dst/4 - 1"),
     %% test request with Route header
     true = is_allowed_pstn_dst("ft.testuser", "123456789", keylist:from_list([{"Route", "sip:example.org"}]),
 			       testclass),
 
     %% This test depends on too much unspecified things in sipuserdb
-    %%io:format("test: is_allowed_pstn_dst/4 - 2 (disabled)~n"),
+    %%autotest:mark(?LINE, "is_allowed_pstn_dst/4 - 2 (disabled)"),
     %%%% test general unknown user/number/class
     %%false = is_allowed_pstn_dst("ft.testuser", "123456789", keylist:from_list([]), testclass),
 
@@ -722,14 +722,14 @@ test() ->
     %% test can_use_address(User, URL)
     %% Not much can be tested in this function, but some is better than nothing
     %%--------------------------------------------------------------------
-    io:format("test: can_use_address/2 - 1~n"),
+    autotest:mark(?LINE, "can_use_address/2 - 1"),
     false = can_use_address("ft.testuser", sipurl:parse("sip:not-homedomain.example.org")),
 
 
     %% test can_register(Header, ToURL)
     %% Not much can be tested in this function, but some is better than nothing
     %%--------------------------------------------------------------------
-    io:format("test: can_register/2 - 1~n"),
+    autotest:mark(?LINE, "can_register/2 - 1"),
     {false, none} = can_register(keylist:from_list([]), sipurl:parse("sip:ft@example.org")),
 
     ok.

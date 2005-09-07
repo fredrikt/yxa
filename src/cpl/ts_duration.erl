@@ -434,7 +434,7 @@ test() ->
     %% time_switch__cond_2
     %%----------------------------
     %% no reoccurrence
-    io:format("test: valid_duration/1 - 1~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 1"),
     TimeSwitchCond1 = #time_switch__cond_2{
       dtstart = #date_time{date = {2005,1,1}, time = {8,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 8, minutes = 40}}
@@ -444,7 +444,7 @@ test() ->
     %% time_switch__cond_5
     %%----------------------------
     %% freq base reoccurrence - duration < reoccurrence
-    io:format("test: valid_duration/1 - 2~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 2"),
     TimeSwitchCond2 = #time_switch__cond_5{
       dtstart = #date_time{date = {2005,1,1}, time = {8,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 8, minutes = 40}},
@@ -455,7 +455,7 @@ test() ->
     true = valid_duration(TimeSwitchCond2),
     
     %% freq base reoccurrence - duration > reoccurrence
-    io:format("test: valid_duration/1 - 2~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 2"),
     TimeSwitchCond3 = #time_switch__cond_5{
       dtstart = #date_time{date = {2005,1,1}, time = {8,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 8, minutes = 40}},
@@ -466,7 +466,7 @@ test() ->
     false = valid_duration(TimeSwitchCond3), 
     
    %% freq base reoccurrence - duration == reoccurrence
-    io:format("test: valid_duration/1 - 4~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 4"),
     TimeSwitchCond4 = #time_switch__cond_5{
       dtstart = #date_time{date = {2005,1,1}, time = {8,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 8}},
@@ -477,7 +477,7 @@ test() ->
     true = valid_duration(TimeSwitchCond4), 
     
     %% freq base reoccurrence - duration > reoccurrence by 1 second
-    io:format("test: valid_duration/1 - 5~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 5"),
     TimeSwitchCond5 = #time_switch__cond_5{
       dtstart = #date_time{date = {2005,1,1}, time = {8,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 8, seconds = 1}},
@@ -491,7 +491,7 @@ test() ->
     %%----------------------------
 
     %% freq base reoccurrence - duration == reoccurrence 
-    io:format("test: valid_duration/1 - 6~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 6"),
     TimeSwitchCond6 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 2}},
@@ -504,7 +504,7 @@ test() ->
     true = valid_duration(TimeSwitchCond6),
 
     %% freq base reoccurrence - duration == reoccurrence (use dtend instead of duration)
-    io:format("test: valid_duration/1 - 7~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 7"),
     TimeSwitchCond7 = 
 	TimeSwitchCond6#time_switch__cond_7{
 	  dtend_duration = {dtend, #date_time{date = {2005,1,1}, time = {0,2,0}, type = floating}}  
@@ -513,7 +513,7 @@ test() ->
  
     %% freq base reoccurrence - duration == reoccurrence 
     %% [M/25, M+1/2] => days = 25,26,27,28,1 => Duration =< 5 days 
-    io:format("test: valid_duration/1 - 8~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 8"),
     TimeSwitchCond8 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 5}},
@@ -526,7 +526,7 @@ test() ->
     true = valid_duration(TimeSwitchCond8),
 
     %% freq base reoccurrence - duration > reoccurrence by 1 second 
-    io:format("test: valid_duration/1 - 9~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 9"),
     TimeSwitchCond9 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 5, seconds = 1}},
@@ -539,7 +539,7 @@ test() ->
     false = valid_duration(TimeSwitchCond9),
 
     %% freq base reoccurrence - duration == reoccurrence, when _single_ bymonthday = 31
-    io:format("test: valid_duration/1 - 10~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 10"),
     TimeSwitchCond10 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 31}}, 
@@ -554,7 +554,7 @@ test() ->
     %% -N positions
     %%----------------------------
     %% freq base reoccurrence - days = 5,10,[24,25,26,27] => best duration = 5 (day 5 - 10)
-    io:format("test: valid_duration/1 - 11~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 11"),
     TimeSwitchCond11 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 5}},
@@ -568,7 +568,7 @@ test() ->
 
     %% freq base reoccurrence - days = 5,[19,20,21,22],[24,25,26,27] => 
     %% best duration = 5 (day 19-24, 20-25, ...) 
-    io:format("test: valid_duration/1 - 12~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 12"),
     TimeSwitchCond12 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 5}},
@@ -584,7 +584,7 @@ test() ->
     %% byday N/-N/all
     %%----------------------------
     %% freq base reoccurrence - all (duration =< 2 days [sa,mo] is the shortest range)
-    io:format("test: valid_duration/1 - 13~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 13"),
     TimeSwitchCond13 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 2}},
@@ -597,7 +597,7 @@ test() ->
     true = valid_duration(TimeSwitchCond13),
 
     %% freq base reoccurrence - N, Shortest range = [M/27 (4th sa), M+1/1 (1st mo)] days = 27,28
-    io:format("test: valid_duration/1 - 14~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 14"),
     TimeSwitchCond14 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 2}},
@@ -610,7 +610,7 @@ test() ->
     true = valid_duration(TimeSwitchCond14),
 
     %% freq base reoccurrence - -N (duration =< 2, 18(-2we) 21(-2sa) 23(-1mo) month length = 28/29)
-    io:format("test: valid_duration/1 - 15~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 15"),
     TimeSwitchCond15 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 2}},
@@ -623,7 +623,7 @@ test() ->
     true = valid_duration(TimeSwitchCond15),
 
     %% freq base reoccurrence - -N (duration 1 second to long)
-    io:format("test: valid_duration/1 - 16~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 16"),
     TimeSwitchCond16 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 2, seconds = 1}},
@@ -636,7 +636,7 @@ test() ->
     false = valid_duration(TimeSwitchCond16),
 
     %% freq base reoccurrence - N/-N/all (duration =< 2, range [th,sa] => days = th,fr)
-    io:format("test: valid_duration/1 - 17~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 17"),
     TimeSwitchCond17 = #time_switch__cond_7{
       dtstart = #date_time{date = {2005,1,1}, time = {0,0,0}, type = floating},  
       dtend_duration = {duration, #duration{days = 2}},
@@ -653,7 +653,7 @@ test() ->
     %% test 7a :
     %%  <time dtstart=\"20000703T090000\" duration=\"PT8H\" freq=\"weekly\"
     %%          byday=\"MO,TU,WE,TH,FR\">
-    io:format("test: valid_duration/1 - 18~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 18"),
     TimeSwitchCond18 = #time_switch__cond_7{
       dtstart = #date_time{date = {2000,7,3}, time = {9,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 8}},
@@ -668,7 +668,7 @@ test() ->
 
     %% maximum min_diff is 48 hours (mo -> we), monday range = [mo 9:00, we 8:59]
     %% interval > 1
-    io:format("test: valid_duration/1 - 19~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 19"),
     TimeSwitchCond19 = #time_switch__cond_7{
       dtstart = #date_time{date = {2000,7,3}, time = {9,0,0}, type = floating},  
       dtend_duration = {duration, #duration{hours = 48}},
@@ -680,7 +680,7 @@ test() ->
      },
     true = valid_duration(TimeSwitchCond19),
 
-    io:format("test: valid_duration/1 - 20~n"),
+    autotest:mark(?LINE, "valid_duration/1 - 20"),
     TimeSwitchCond20 = TimeSwitchCond19#time_switch__cond_7{
 			 dtend_duration = {duration, #duration{hours = 48, seconds = 1}}
 			},
@@ -692,17 +692,17 @@ test() ->
 test1() ->
     %% duration_to_seconds(Duration)
     %%--------------------------------------------------------------------
-    io:format("test: duration_to_seconds/1 - 1~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1 - 1"),
     D_a1 = #duration{weeks = 1, days = 1, hours = 1, minutes = 1, seconds = 1},
     S_a1 = ?SecInWeek + ?SecInDay + ?SecInHour + ?SecInMin + 1,
     S_a1 = duration_to_seconds(D_a1),
 
-    io:format("test: duration_to_seconds/1 - 2~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1 - 2"),
     D_a2 = #duration{weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0},
     S_a2 = 0,
     S_a2 = duration_to_seconds(D_a2),
 
-    io:format("test: duration_to_seconds/1 - 3~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1 - 3"),
     D_a3 = #duration{weeks = 3, days = 4, hours = 5, minutes = 6, seconds = 7},
     S_a3 = (3 * ?SecInWeek) + (4 * ?SecInDay) + (5 * ?SecInHour) + (6 * ?SecInMin) + 7,
     S_a3 = duration_to_seconds(D_a3),
@@ -711,17 +711,17 @@ test1() ->
 test2() ->
     %% sec_to_duration(Sec)
     %%--------------------------------------------------------------------
-    io:format("test: sec_to_duration/1 - 1~n"),
+    autotest:mark(?LINE, "sec_to_duration/1 - 1"),
     D_b1 = #duration{weeks = 1, days = 1, hours = 1, minutes = 1, seconds = 1},
     S_b1 = ?SecInWeek + ?SecInDay + ?SecInHour + ?SecInMin + 1,
     D_b1 = sec_to_duration(S_b1),
 
-    io:format("test: sec_to_duration/1 - 2~n"),
+    autotest:mark(?LINE, "sec_to_duration/1 - 2"),
     D_b2 = #duration{weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0},
     S_b2 = 0,
     D_b2 = sec_to_duration(S_b2),
 
-    io:format("test: sec_to_duration/1 - 3~n"),
+    autotest:mark(?LINE, "sec_to_duration/1 - 3"),
     D_b3 = #duration{weeks = 3, days = 4, hours = 5, minutes = 6, seconds = 7},
     S_b3 = (3 * ?SecInWeek) + (4 * ?SecInDay) + (5 * ?SecInHour) + (6 * ?SecInMin) + 7,
     D_b3 = sec_to_duration(S_b3),
@@ -730,31 +730,31 @@ test2() ->
 test3() ->
     %% duration_to_seconds(Duration), sec_to_duration(Sec)
     %%--------------------------------------------------------------------
-    io:format("test: duration_to_seconds/1, sec_to_duration/1 - 1~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1, sec_to_duration/1 - 1"),
     D1 = #duration{weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0},
     D1 = sec_to_duration(duration_to_seconds(D1)),
 
-    io:format("test: duration_to_seconds/1, sec_to_duration/1 - 2~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1, sec_to_duration/1 - 2"),
     D2 = #duration{weeks = 1, days = 0, hours = 0, minutes = 0, seconds = 0},
     D2 = sec_to_duration(duration_to_seconds(D2)),
 
-    io:format("test: duration_to_seconds/1, sec_to_duration/1 - 3~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1, sec_to_duration/1 - 3"),
     D3 = #duration{weeks = 0, days = 1, hours = 0, minutes = 0, seconds = 0},
     D3 = sec_to_duration(duration_to_seconds(D3)),
 
-    io:format("test: duration_to_seconds/1, sec_to_duration/1 - 4~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1, sec_to_duration/1 - 4"),
     D4 = #duration{weeks = 0, days = 0, hours = 1, minutes = 0, seconds = 0},
     D4 = sec_to_duration(duration_to_seconds(D4)),
 
-    io:format("test: duration_to_seconds/1, sec_to_duration/1 - 5~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1, sec_to_duration/1 - 5"),
     D5 = #duration{weeks = 0, days = 0, hours = 0, minutes = 1, seconds = 0},
     D5 = sec_to_duration(duration_to_seconds(D5)),
 
-    io:format("test: duration_to_seconds/1, sec_to_duration/1 - 6~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1, sec_to_duration/1 - 6"),
     D6 = #duration{weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 1},
     D6 = sec_to_duration(duration_to_seconds(D6)),
 
-    io:format("test: duration_to_seconds/1, sec_to_duration/1 - 6~n"),
+    autotest:mark(?LINE, "duration_to_seconds/1, sec_to_duration/1 - 6"),
     D7 = #duration{weeks = 1, days = 1, hours = 1, minutes = 1, seconds = 1},
     D7 = sec_to_duration(duration_to_seconds(D7)),
     ok.
@@ -762,22 +762,22 @@ test3() ->
 test4() ->
     %% sub_second(Duration)
     %%--------------------------------------------------------------------
-    io:format("test: sub_second/1 - 1~n"),
+    autotest:mark(?LINE, "sub_second/1 - 1"),
     D_c1a = #duration{weeks = 1, days = 1, hours = 1, minutes = 1, seconds = 1},
     D_c1b = #duration{weeks = 1, days = 1, hours = 1, minutes = 1, seconds = 0},
     D_c1b = sub_second(D_c1a),
     
-    io:format("test: sub_second/1 - 2~n"),
+    autotest:mark(?LINE, "sub_second/1 - 2"),
     D_c2a = #duration{weeks = 3, days = 4, hours = 5, minutes = 6, seconds = 7},
     D_c2b = #duration{weeks = 3, days = 4, hours = 5, minutes = 6, seconds = 6},
     D_c2b = sub_second(D_c2a),
     
-    io:format("test: sub_second/1 - 3~n"),
+    autotest:mark(?LINE, "sub_second/1 - 3"),
     D_c3a = #duration{weeks = 3, days = 4, hours = 5, minutes = 6, seconds = 0},
     D_c3b = #duration{weeks = 3, days = 4, hours = 5, minutes = 5, seconds = 59},
     D_c3b = sub_second(D_c3a),
     
-    io:format("test: sub_second/1 - 4~n"),
+    autotest:mark(?LINE, "sub_second/1 - 4"),
     D_c4a = #duration{weeks = 3, days = 0, hours = 0, minutes = 0, seconds = 0},
     D_c4b = #duration{weeks = 2, days = 6, hours = 23, minutes = 59, seconds = 59},
     D_c4b = sub_second(D_c4a),

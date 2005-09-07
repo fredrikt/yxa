@@ -768,78 +768,78 @@ test() ->
     %% unescape_str/1
     %%--------------------------------------------------------------------
     %% test unescaped string
-    io:format("test: unescape_str/1 - 1~n"),
+    autotest:mark(?LINE, "unescape_str/1 - 1"),
     Str1 = "hello",
     "hello" = unescape_str(Str1),
 
     %% test escaped string, with all values as hex
-    io:format("test: unescape_str/1 - 2~n"),
+    autotest:mark(?LINE, "unescape_str/1 - 2"),
     Str2 = "%68%65%6c%6c%6f",
     "hello" = unescape_str(Str2),
 
     %% test escaped string, with first char as hex
-    io:format("test: unescape_str/1 - 3~n"),
+    autotest:mark(?LINE, "unescape_str/1 - 3"),
     Str3 = "%68ello",
     "hello" = unescape_str(Str3),
 
     %% test escaped string, with last char as hex
-    io:format("test: unescape_str/1 - 4~n"),
+    autotest:mark(?LINE, "unescape_str/1 - 4"),
     Str4 = "hell%6f",
     "hello" = unescape_str(Str4),
 
     %% test escaped string, with middel char as hex
-    io:format("test: unescape_str/1 - 5~n"),
+    autotest:mark(?LINE, "unescape_str/1 - 5"),
     Str5 = "he%6clo",
     "hello" = unescape_str(Str5),
 
     %% test escaped string, with upper case hex values
-    io:format("test: unescape_str/1 - 6~n"),
+    autotest:mark(?LINE, "unescape_str/1 - 6"),
     Str6 = "%68%65%6C%6C%6F",
     "hello" = unescape_str(Str6),
 
     %% escape_parameters/1
     %%--------------------------------------------------------------------
     %% test non-escaped string
-    io:format("test: escape_parameters/1 - 1~n"),
+    autotest:mark(?LINE, "escape_parameters/1 - 1"),
     "hello" = escape_parameters("hello"),
 
     %% test string of only escaped chars
-    io:format("test: escape_parameters/1 - 2~n"),
+    autotest:mark(?LINE, "escape_parameters/1 - 2"),
     "%3D" = escape_parameters("="),
 
     %% test partialy escaped string
-    io:format("test: escape_parameters/1 - 3~n"),
+    autotest:mark(?LINE, "escape_parameters/1 - 3"),
     "hel%3Dlo" = escape_parameters("hel=lo"),
 
 
     %% is_parameters/1
     %%--------------------------------------------------------------------
     %% test empty parameter string
-    io:format("test: is_parameters/1 - 1~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 1"),
     true = is_parameters(""),
     %% single "name" parameter
-    io:format("test: is_parameters/1 - 2~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 2"),
     true = is_parameters("bar"),
     %% test case and "name=val" parameter
-    io:format("test: is_parameters/1 - 3~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 3"),
     true = is_parameters("foo=BAr"),
     %% test several "name" parameters
-    io:format("test: is_parameters/1 - 4~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 4"),
     true = is_parameters("bar;foo"),
     %% test several "name=val" parameters (and case)
-    io:format("test: is_parameters/1 - 5~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 5"),
     true = is_parameters("bar=Zopg;vaF=ghjT;BOF=tOp"),
     %% test escape hex codes
-    io:format("test: is_parameters/1 - 6~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 6"),
     true = is_parameters("bar=Zo%3Dp%3dg;vaF=ghjT;BOF=tOp"),
     %% check that "name==val" doesn't work
-    io:format("test: is_parameters/1 - 7~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 7"),
     false = is_parameters("bar=Zo%3Dp%3dg;vaF==ghjT;BOF=tOp"),
     %% check that "name=val;;name=val" doesn't work
-    io:format("test: is_parameters/1 - 8~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 8"),
     false = is_parameters("bar=Zo%3Dp%3dg;vaF=ghjT;;;BOF=tOp"),
     %% check that quoted parameters DON'T work, sipurl BNF does not allow quoted URI parameters
-    io:format("test: is_parameters/1 - 9~n"),
+    autotest:mark(?LINE, "is_parameters/1 - 9"),
     false = is_parameters("foo=\"bar\""),
 
     %% test new
@@ -849,12 +849,12 @@ test() ->
 		     %% header = []
 		    },
     %% test new/1
-    io:format("test: new/1 - 1~n"),
+    autotest:mark(?LINE, "new/1 - 1"),
     SipUrl = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"},
 		  {host, "Su.iT"}, {port, 42}, {param, ["foO=bar", "bAz"]}]),
 
     %% test new/1 - no protocol, should default to sip
-    io:format("test: new/1 - 2~n"),
+    autotest:mark(?LINE, "new/1 - 2"),
     SipUrl = new([{user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"},
 		  {port, 42}, {param, ["foO=bar", "bAz"]}]),
 
@@ -864,16 +864,16 @@ test() ->
 		     },
 
     %% test new/1
-    io:format("test: new/1 - 3~n"),
+    autotest:mark(?LINE, "new/1 - 3"),
     SipUrl2 = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 42}]),
 
     %% test url_param record() as argument
-    io:format("test: new/1 - 4~n"),
+    autotest:mark(?LINE, "new/1 - 4"),
     SipUrl = new([{proto,  "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 42},
 		  {param, url_param:to_norm(["foo=bar", "baz"])}]),
 
     %% test integer port
-    io:format("test: new/1 - 5~n"),
+    autotest:mark(?LINE, "new/1 - 5"),
     SipUrl2 = new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 42}]),
 
     SipUrl3 = #sipurl{proto = "sip", user = "test", pass = none, host = "su.it", port = none,
@@ -882,11 +882,11 @@ test() ->
 		     },
 
     %% test default attribute values
-    io:format("test: new/1 - 6~n"),
+    autotest:mark(?LINE, "new/1 - 6"),
     SipUrl3 = new([{user, "test"}, {host, "SU.IT"}]),
 
     %% test stripping of trailing dots on hostname
-    io:format("test: new/1 - 7~n"),
+    autotest:mark(?LINE, "new/1 - 7"),
     SipUrl3 = new([{user, "test"}, {host, "SU.IT.."}]),
 
     %% test new sips
@@ -895,7 +895,7 @@ test() ->
 		      param_pairs = url_param:to_norm(["foo=bar", "baz"])
 		      %% header = []
 		     },
-    io:format("test: new/1 sips - 1~n"),
+    autotest:mark(?LINE, "new/1 sips - 1"),
     SipUrl4 = new([{proto, "sips"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"},
 		   {port, 42}, {param, ["foO=bar", "bAz"]}]),
 
@@ -910,27 +910,27 @@ test() ->
 		      %% header = []
 		     },
     %% test set
-    io:format("test: set/8 - 1~n"),
+    autotest:mark(?LINE, "set/8 - 1"),
     SipUrl6 = set([{proto, "SIPS"}, {user, "hoKan"}, {pass, "fOObar"}, {host, "foo.su.it"},
 		   {port, 43}, {param, ["foo=BarBaz", "baz"]}], SipUrl5),
 
     %% test do_not_set part
-    io:format("test: set/8 - 2~n"),
+    autotest:mark(?LINE, "set/8 - 2"),
     SipUrl5 = set([], SipUrl5),
 
     %% test url_param record() as argument
-    io:format("test: set/8 - 3~n"),
+    autotest:mark(?LINE, "set/8 - 3"),
     SipUrl6 = set([{proto, "SIPS"}, {user, "hoKan"}, {pass, "fOObar"}, {host, "foo.su.it"},
 		   {port, 43}, {param, url_param:to_norm(["foo=barbaz", "baz"])}], SipUrl5),
 
     %% test setting of hostname with trailing dots
-    io:format("test: set/8 - 4~n"),
+    autotest:mark(?LINE, "set/8 - 4"),
     SipUrl6 = set([{host, "foo.su.it.."}], SipUrl6),
 
     %% get_port
     %%--------------------------------------------------------------------
     %% integer() in sipurl record
-    io:format("test: get_port/1 - 1~n"),
+    autotest:mark(?LINE, "get_port/1 - 1"),
     43 = get_port(new([{proto, "sIp"}, {user, "hokan"}, {pass, "foobar"}, {host, "Su.iT"}, {port, 43}])),
 
     %% parse
@@ -941,7 +941,7 @@ test() ->
 			host = "atlanta.com", port = none,
 			param_pairs = url_param:to_norm([])
 		       },
-    io:format("test: parse/1 - 1~n"),
+    autotest:mark(?LINE, "parse/1 - 1"),
     ParsedUrl = parse("sip:atlanta.com"),
     %% parse url with host and port
     ParsedUrl2 = #sipurl{proto = "sip",
@@ -949,7 +949,7 @@ test() ->
 			 host = "atlanta.com", port = 42,
 			 param_pairs = url_param:to_norm([])
 			},
-    io:format("test: parse/1 - 2~n"),
+    autotest:mark(?LINE, "parse/1 - 2"),
     ParsedUrl2 = parse("sip:atlanta.com:42"),
     %% parse url with user, host and port
     ParsedUrl3 = #sipurl{proto = "sip",
@@ -957,7 +957,7 @@ test() ->
 			 host = "atlanta.com", port = 42,
 			 param_pairs = url_param:to_norm([])
 			},
-    io:format("test: parse/1 - 3~n"),
+    autotest:mark(?LINE, "parse/1 - 3"),
     ParsedUrl3 = parse("sip:alice@atlanta.com:42"),
     %% parse url with user, password, host and port
     ParsedUrl4 = #sipurl{proto = "sip",
@@ -965,7 +965,7 @@ test() ->
 			 host = "atlanta.com", port = 42,
 			 param_pairs = url_param:to_norm([])
 			},
-    io:format("test: parse/1 - 4~n"),
+    autotest:mark(?LINE, "parse/1 - 4"),
     ParsedUrl4 = parse("sip:alice:foo@atlanta.com:42"),
     %% parse url with user, password, host, port and parameters
     ParsedUrl5 = #sipurl{proto = "sip",
@@ -973,7 +973,7 @@ test() ->
 			 host = "atlanta.com", port = 42,
 			 param_pairs = url_param:to_norm(["foo=bar", "zop"])
 			},
-    io:format("test: parse/1 - 5~n"),
+    autotest:mark(?LINE, "parse/1 - 5"),
     ParsedUrl5 = parse("sip:alice:foo@atlanta.com:42;foo=bar;zop"),
 
     %% parse url with escape codes
@@ -982,7 +982,7 @@ test() ->
 			 host = "atlanta.com", port = none,
 			 param_pairs = url_param:to_norm(["transport=tcp"])
 			},
-    io:format("test: parse/1 - 6~n"),
+    autotest:mark(?LINE, "parse/1 - 6"),
     ParsedUrl6 = parse("sip:%61lice@atlanta.com;transport=TCP"),
 
     %% parse url with escape codes (which must be escaped chars) in all escapable fields
@@ -991,7 +991,7 @@ test() ->
 			 host = "atlanta.com", port = none,
 			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
 			},
-    io:format("test: parse/1 - 7~n"),
+    autotest:mark(?LINE, "parse/1 - 7"),
     ParsedUrl7 = parse("sip:%3Alice:%3A@atlanta.com;transp%3b%3Bort=TCP"),
 
     %% Parse url with escape codes (which must be escaped chars) in all escapable fields
@@ -1001,7 +1001,7 @@ test() ->
 			 host = "2.2.2.2", port = none,
 			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
 			},
-    io:format("test: parse/1 - 8~n"),
+    autotest:mark(?LINE, "parse/1 - 8"),
     ParsedUrl8 = parse("sip:%3Alice:%3A@2.2.2.2;transp%3b%3Bort=TCP"),
 
     %% Parse url with escape codes (which must be escaped chars) in all escapable fields
@@ -1011,49 +1011,49 @@ test() ->
 			 host = "[1:1:1:1:2:2:2:2]", port = none,
 			 param_pairs = url_param:to_norm(["transp%3b%3Bort=TCP"])
 			},
-    io:format("test: parse/1 - 9~n"),
+    autotest:mark(?LINE, "parse/1 - 9"),
     ParsedUrl9 = parse("sip:%3Alice:%3A@[1:1:1:1:2:2:2:2];transp%3b%3Bort=TCP"),
 
     %% print(URL)
     %%--------------------------------------------------------------------
     %% test host
-    io:format("test: print/1 - 1~n"),
+    autotest:mark(?LINE, "print/1 - 1"),
     URL1 = parse("sip:atlanta.com"),
     "sip:atlanta.com" = print(URL1),
 
     %% test host, port
-    io:format("test: print/1 - 2~n"),
+    autotest:mark(?LINE, "print/1 - 2"),
     URL2 = parse("sip:atlanta.com:42"),
     "sip:atlanta.com:42" = print(URL2),
 
     %% test host, port and parameters
-    io:format("test: print/1 - 3~n"),
+    autotest:mark(?LINE, "print/1 - 3"),
     URL3 = parse("sip:atlanta.com:42;TransPort=TcP"),
     "sip:atlanta.com:42;transport=tcp" = print(URL3),
 
     %% test user, host and parameters
-    io:format("test: print/1 - 4~n"),
+    autotest:mark(?LINE, "print/1 - 4"),
     URL4 = parse("sip:alice@atlanta.com;transport=TCP"),
     "sip:alice@atlanta.com;transport=tcp" = print(URL4),
 
     %% test user, password, host and parameters
-    io:format("test: print/1 - 5~n"),
+    autotest:mark(?LINE, "print/1 - 5"),
     URL5 = parse("sip:alice:foo@atlanta.com;transport=TCP"),
     "sip:alice:foo@atlanta.com;transport=tcp" = print(URL5),
 
     %% test escaped char ":" in user field, that need to be escaped in output
-    io:format("test: print/1 - 6~n"),
+    autotest:mark(?LINE, "print/1 - 6"),
     URL6 = parse("sip:%3ali%3Ace@atlanta.com;TransPort=TcP"),
     "sip:%3Ali%3Ace@atlanta.com;transport=tcp" = print(URL6),
 
     %% test escaped char ":" in user and password field, that need to be escaped in output
-    io:format("test: print/1 - 7~n"),
+    autotest:mark(?LINE, "print/1 - 7"),
     URL7 = parse("sip:%3ali%3Ace:%3a@atlanta.com;LR;FoO"),
     "sip:%3Ali%3Ace:%3A@atlanta.com;lr=true;foo" = print(URL7),
 
     %% test escaped char ":" in user and password and ";"
     %% and "=" in paramter field, that need to be escaped in output
-    io:format("test: print/1 - 8~n"),
+    autotest:mark(?LINE, "print/1 - 8"),
     URL8 = parse("sip:%3ali%3Ace:%3a@atlanta.com;LR%3b;F%3doO"),
     "sip:%3Ali%3Ace:%3A@atlanta.com;lr%3B;f%3Doo" = print(URL8),
 
@@ -1061,25 +1061,25 @@ test() ->
     %% url_is_equal/2
     %%--------------------------------------------------------------------
     %% compare host
-    io:format("test: url_is_equal/2 - 11~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 11"),
     A11 = parse("sip:atlanta.com"),
     B11 = parse("sip:AtLanTa.CoM"),
     true = url_is_equal(A11, B11),
 
     %% compare host and port
-    io:format("test: url_is_equal/2 - 12~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 12"),
     A12 = parse("sip:atlanta.com:42"),
     B12 = parse("sip:AtLanTa.CoM:42"),
     true = url_is_equal(A12, B12),
 
     %% compare host, port and user
-    io:format("test: url_is_equal/2 - 13~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 13"),
     A13 = parse("sip:foo@atlanta.com:42"),
     B13 = parse("sip:foo@AtLanTa.CoM:42"),
     true = url_is_equal(A13, B13),
 
     %% compare host, port, user and password
-    io:format("test: url_is_equal/2 - 14~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 14"),
     A14 = parse("sip:foo:bar@atlanta.com"),
     B14 = parse("sip:foo:bar@AtLanTa.CoM"),
     true = url_is_equal(A14, B14),
@@ -1088,13 +1088,13 @@ test() ->
     %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     %% equal, only escape codes and case difference in fields that ignore case
-    io:format("test: url_is_equal/2 - 1~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 1"),
     A1 = parse("sip:%61lice@atlanta.com;transport=TCP"),
     B1 = parse("sip:alice@AtLanTa.CoM;Transport=tcp"),
     true = url_is_equal(A1, B1),
 
     %% equal, unique parameters that aren't = transport, user, ttl, maddr or method
-    io:format("test: url_is_equal/2 - 2~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 2"),
     A2 = parse("sip:carol@chicago.com"),
     B2 = parse("sip:carol@chicago.com;newparam=5"),
     C2 = parse("sip:carol@chicago.com;security=on"),
@@ -1104,54 +1104,54 @@ test() ->
 
     %% equal, only different order on the uri-parameters
     %% XXX header fields are currently not tested
-    io:format("test: url_is_equal/2 - 3~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 3"),
     A3 = parse("sip:biloxi.com;transport=tcp;method=REGISTER"),
     B3 = parse("sip:biloxi.com;method=REGISTER;transport=tcp"),
     true = url_is_equal(A3, B3),
-    %%     io:format("test: url_is_equal/2 - 3~n"),
+    %%     autotest:mark(?LINE, "url_is_equal/2 - 3"),
     %%     A3 = parse("sip:biloxi.com;transport=tcp;method=REGISTER?to=sip:bob%40biloxi.com"),
     %%     B3 = parse("sip:biloxi.com;method=REGISTER;transport=tcp?to=sip:bob%40biloxi.com"),
     %%     true = url_is_equal(A3, B3),
 
     %% equal, only different order on the header parameters
     %% XXX headers are currently not tested
-    %%     io:format("test: url_is_equal/2 - 4~n"),
+    %%     autotest:mark(?LINE, "url_is_equal/2 - 4"),
     %%     A4 = parse("sip:alice@atlanta.com?subject=project%20x&priority=urgent"),
     %%     B4 = parse("sip:alice@atlanta.com?priority=urgent&subject=project%20x"),
     %%     true = url_is_equal(A4, B4),
 
     %% not equal, different usernames
-    io:format("test: url_is_equal/2 - 5~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 5"),
     A5 = parse("SIP:ALICE@AtLanTa.CoM;Transport=udp"),
     B5 = parse("sip:alice@AtLanTa.CoM;Transport=UDP"),
     false = url_is_equal(A5, B5),
 
     %% not equal, can resolve to different ports
-    io:format("test: url_is_equal/2 - 6~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 6"),
     A6 = parse("sip:bob@biloxi.com"),
     B6 = parse("sip:bob@biloxi.com:5060"),
     false = url_is_equal(A6, B6),
 
     %% not equal, can resolve to different transports
-    io:format("test: url_is_equal/2 - 7~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 7"),
     A7 = parse("sip:bob@biloxi.com"),
     B7 = parse("sip:bob@biloxi.com;transport=udp"),
     false = url_is_equal(A7, B7),
 
     %% not equal, can resolve to different port and transports
-    io:format("test: url_is_equal/2 - 8~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 8"),
     A8 = parse("sip:bob@biloxi.com"),
     B8 = parse("sip:bob@biloxi.com:6000;transport=tcp"),
     false = url_is_equal(A8, B8),
 
     %% not equal, different header component
-    %% io:format("test: url_is_equal/2 - 9~n"),
+    %% autotest:mark(?LINE, "url_is_equal/2 - 9"),
     %%     A9 = parse("sip:carol@chicago.com"),
     %%     B9 = parse("sip:carol@chicago.com?Subject=next%20meeting"),
     %%     false = url_is_equal(A9, B9),
 
     %% not equal, different host
-    io:format("test: url_is_equal/2 - 10~n"),
+    autotest:mark(?LINE, "url_is_equal/2 - 10"),
     A10 = parse("sip:bob@phone21.boxesbybob.com"),
     B10 = parse("sip:bob@192.0.2.4"),
     false = url_is_equal(A10, B10),

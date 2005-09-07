@@ -490,7 +490,7 @@ reload_userdb() ->
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
-    io:format("test: init variables~n"),
+    autotest:mark(?LINE, "init variables"),
 
     Test_User1_Addresses = [test_make_address("test", "sip:a@example.org"),
 			    test_make_address("test", "sip:b@example.org"),
@@ -516,38 +516,38 @@ test() ->
 
     %% get_addresses_using_user2(Username, Addresses, Res)
     %%--------------------------------------------------------------------
-    io:format("test: get_addresses_using_user2/3 - 1~n"),
+    autotest:mark(?LINE, "get_addresses_using_user2/3 - 1"),
     %% test normal case, make sure order is preserved
     Test_User1_Addresses = get_addresses_using_user2("test", Test_Addresses, []),
 
 
     %% find_first_telephonenumber(In)
     %%--------------------------------------------------------------------
-    io:format("test: find_first_telephonenumber/1 - 1~n"),
+    autotest:mark(?LINE, "find_first_telephonenumber/1 - 1"),
     %% test normal case
     #address{user = "test2", address = "sip:2@example.org"} =
 	find_first_telephonenumber(Test_User2_Addresses),
 
-    io:format("test: find_first_telephonenumber/1 - 2~n"),
+    autotest:mark(?LINE, "find_first_telephonenumber/1 - 2"),
     nomatch = find_first_telephonenumber([]),
 
-    io:format("test: find_first_telephonenumber/1 - 3~n"),
+    autotest:mark(?LINE, "find_first_telephonenumber/1 - 3"),
     FFT_Addressses3 = [test_make_address("foo", "sip:alpha@example.org")],
     nomatch = find_first_telephonenumber(FFT_Addressses3),
 
 
     %% get_usernames_for_url(URL, Addresses, [])
     %%--------------------------------------------------------------------
-    io:format("test: get_usernames_for_url/3 - 1~n"),
+    autotest:mark(?LINE, "get_usernames_for_url/3 - 1"),
     ["test"] = get_usernames_for_url(sipurl:parse("sip:a@example.org"), Test_Addresses, []),
 
-    io:format("test: get_usernames_for_url/3 - 2~n"),
+    autotest:mark(?LINE, "get_usernames_for_url/3 - 2"),
     ["test", "test2"] = get_usernames_for_url(sipurl:parse("sip:both@example.org"), Test_Addresses, []),
 
 
     %% collect_addresses(In)
     %%--------------------------------------------------------------------
-    io:format("test: collect_addresses/1 - 1~n"),
+    autotest:mark(?LINE, "collect_addresses/1 - 1"),
     CollectAddresses_L1 = [test_make_address("foo", "sip:first@example.org"),
 			   test_make_address("foo", "sip:second@example.org")],
     ["sip:first@example.org", "sip:second@example.org"] = collect_addresses(CollectAddresses_L1),

@@ -165,72 +165,72 @@ test() ->
     %% test to_norm(Params)
     %%---------------------------------------------------------------
     %% test regular case, with case insensitivity
-    io:format("test: to_norm/1 - 1~n"),
+    autotest:mark(?LINE, "to_norm/1 - 1"),
     DB1 = key_val_db:new([{"foo","bar"}, {"bar","42"}, {"a", "43"}]),
     #contact_param{pairs = DB1 } = to_norm([{"foo","bar"}, {"bar","42"}, {"a", "43"}]),
 
     %% test empty param list
-    io:format("test: to_norm/1 - 2~n"),
+    autotest:mark(?LINE, "to_norm/1 - 2"),
     DB2 = key_val_db:new([]),
     #contact_param{pairs = DB2 } = to_norm([]),
 
     %% test that duplicate names are detected
-    io:format("test: to_norm/1 - 3~n"),
+    autotest:mark(?LINE, "to_norm/1 - 3"),
     case catch to_norm([{"foo","bar"}, {"bar","42"}, {"foo", "43"}]) of
  	{error, _} -> ok;
  	_ -> throw({error, test_failed})
     end,
 
     %% test that duplicate names in different case are detected
-    io:format("test: to_norm/1 - 4~n"),
+    autotest:mark(?LINE, "to_norm/1 - 4"),
     case catch to_norm([{"foo","bar"}, {"bar","42"}, {"FOO", "43"}]) of
  	{error, _} -> ok;
  	_ -> throw({error, test_failed})
     end,
 
     %% test that quoted value isn't lowercased
-    io:format("test: to_norm/1 - 5~n"),
+    autotest:mark(?LINE, "to_norm/1 - 5"),
     #contact_param{pairs = [{"key","\"Value\""}]} = to_norm([{"Key", "\"Value\""}]),
 
 
     %% test to_string(Norm)
     %%---------------------------------------------------------------
     %% test that case and missing value part are handled properly
-    io:format("test: to_string/1 - 1~n"),
+    autotest:mark(?LINE, "to_string/1 - 1"),
     ";foo=bar;lr=true;a=43" = to_string(to_norm([{"foo","bar"}, {"lr","true"}, {"a","43"}])),
 
     %% test empty param
-    io:format("test: to_string/1 - 2~n"),
+    autotest:mark(?LINE, "to_string/1 - 2"),
     "" = to_string(to_norm([])),
 
     %% test empty value
-    io:format("test: to_string/1 - 3~n"),
+    autotest:mark(?LINE, "to_string/1 - 3"),
     ";lr" = to_string( to_norm([{"lr", none}]) ),
 
     %% test empty value #2
-    io:format("test: to_string/1 - 4~n"),
+    autotest:mark(?LINE, "to_string/1 - 4"),
     ";lr" = to_string( to_norm([{"lr", []}]) ),
 
 
     %% test to_list(Norm)
     %%---------------------------------------------------------------
     %% regular case
-    io:format("test: to_list/1 - 1~n"),
+    autotest:mark(?LINE, "to_list/1 - 1"),
     [{"foo","bar"}, {"bar","42"}, {"a", "43"}] = to_list(to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}])),
 
     %% empty list
-    io:format("test: to_list/1 - 2~n"),
+    autotest:mark(?LINE, "to_list/1 - 2"),
     [] = to_list(to_norm([])),
 
     %% test case handling
-    io:format("test: to_list/1 - 3~n"),
+    autotest:mark(?LINE, "to_list/1 - 3"),
     [{"foo","bar"}, {"bar","42"}, {"a", "43"}] = to_list(to_norm([{"foo","bAr"}, {"BAr","42"}, {"A","43"}])),
 
 
     %% test add(ContactParam, Key, Value)
     %%---------------------------------------------------------------
     %% add Key-Val to empty url_param
-    io:format("test: add/3 - 1~n"),
+    autotest:mark(?LINE, "add/3 - 1"),
     ContactParam1 = to_norm([]),
     AddDB1 = key_val_db:new([{"foo","bar"}]),
     #contact_param{pairs = AddDB1 } = add(ContactParam1, "foo", "bar"),
@@ -239,7 +239,7 @@ test() ->
     ContactParam2 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
 
     %% add a new key-val
-    io:format("test: add/3 - 5~n"),
+    autotest:mark(?LINE, "add/3 - 5"),
     AddDB3 = key_val_db:new([{"foo","bar"}, {"bar","42"}, {"a", "43"}, {"gazong", "zog"}]),
     #contact_param{pairs =  AddDB3 } =
 	add(ContactParam2, "gazong", "zog"),
@@ -249,17 +249,17 @@ test() ->
     %%---------------------------------------------------------------
     %% test find with existing value
     ContactParam4 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
-    io:format("test: find/2 - 1~n"),
+    autotest:mark(?LINE, "find/2 - 1"),
     ["42"] = find(ContactParam4, "bar"),
 
     %% test find with missing value
     ContactParam5 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
-    io:format("test: find/2 - 2~n"),
+    autotest:mark(?LINE, "find/2 - 2"),
     [] = find(ContactParam5, "zog"),
 
     %% test that find handles Key in a case insensitive manner
     ContactParam4_2 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
-    io:format("test: find/2 - 3~n"),
+    autotest:mark(?LINE, "find/2 - 3"),
     ["42"] = find(ContactParam4_2, "bAr"),
 
 
@@ -267,25 +267,25 @@ test() ->
     %%---------------------------------------------------------------
     %% test remove with existing value
     ContactParam6 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
-    io:format("test: remove/2 - 1~n"),
+    autotest:mark(?LINE, "remove/2 - 1"),
     RMDB1 = key_val_db:new([{"foo","bar"}, {"a","43"}]),
     #contact_param{pairs = RMDB1 } = remove(ContactParam6, "bar"),
 
     %% test remove with missing value
     ContactParam7 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
-    io:format("test: remove/2 - 2~n"),
+    autotest:mark(?LINE, "remove/2 - 2"),
     RMDB2 = key_val_db:new([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
     #contact_param{pairs = RMDB2 } = remove(ContactParam7, "zog"),
 
     %% test remove, ensure that Key is used in a case insensitive manner
     ContactParam8 = to_norm([{"foo","bar"}, {"bar","42"}, {"a","43"}]),
-    io:format("test: remove/2 - 3~n"),
+    autotest:mark(?LINE, "remove/2 - 3"),
     RMDB3 = key_val_db:new([{"foo","bar"}, {"a","43"}]),
     #contact_param{pairs = RMDB3 } = remove(ContactParam8, "BaR"),
 
     %% test remove, from empty #contact_param.pair
     ContactParam9 = to_norm([]),
-    io:format("test: remove/2 - 4~n"),
+    autotest:mark(?LINE, "remove/2 - 4"),
     RMDB4 = key_val_db:new([]),
     #contact_param{pairs = RMDB4 } = remove(ContactParam9, "BaR"),
 

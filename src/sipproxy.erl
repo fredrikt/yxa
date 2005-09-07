@@ -1141,36 +1141,36 @@ test() ->
     CheckAction_Wait1 = #sipproxy_action{action = wait, timeout = 3},
     CheckAction_Wait2 = #sipproxy_action{action = wait, timeout = 4},
 
-    io:format("test: start_check_actions/1 - 1~n"),
+    autotest:mark(?LINE, "start_check_actions/1 - 1"),
     %% test normal case
     ok = start_check_actions([CheckAction_Call1, CheckAction_Wait1]),
 
-    io:format("test: start_check_actions/1 - 2~n"),
+    autotest:mark(?LINE, "start_check_actions/1 - 2"),
     %% test normal case #2
     ok = start_check_actions([CheckAction_Call1, CheckAction_Wait1,
 			      CheckAction_Call2, CheckAction_Wait2]),
 
-    io:format("test: start_check_actions/1 - 3~n"),
+    autotest:mark(?LINE, "start_check_actions/1 - 3"),
     %% test only call
     {error, _} = start_check_actions([CheckAction_Call2]),
 
-    io:format("test: start_check_actions/1 - 4~n"),
+    autotest:mark(?LINE, "start_check_actions/1 - 4"),
     %% test only wait
     {error, _} = start_check_actions([CheckAction_Wait1, CheckAction_Wait2]),
 
 
     %% test get_next_target_branch(In)
     %%--------------------------------------------------------------------
-    io:format("test: get_next_target_branch - 1~n"),
+    autotest:mark(?LINE, "get_next_target_branch - 1"),
     "z9hG4bK-really-unique.1" = get_next_target_branch("z9hG4bK-really-unique"),
 
-    io:format("test: get_next_target_branch - 2~n"),
+    autotest:mark(?LINE, "get_next_target_branch - 2"),
     "z9hG4bK-really-unique.10" = get_next_target_branch("z9hG4bK-really-unique.9"),
 
 
     %% test mark_cancelled(Targets, TargetList)
     %%--------------------------------------------------------------------
-    io:format("test: mark_cancelled/2 - 0~n"),
+    autotest:mark(?LINE, "mark_cancelled/2 - 0"),
     MarkCancelledList0 = targetlist:empty(),
     MarkCancelledList1 = targetlist:add("branch1", #request{}, self(), calling,
 					1, [], MarkCancelledList0),
@@ -1179,16 +1179,16 @@ test() ->
     MarkCancelled_T1_1 = targetlist:get_using_branch("branch1", MarkCancelledList2),
     MarkCancelled_T2_1 = targetlist:get_using_branch("branch2", MarkCancelledList2),
 
-    io:format("test: mark_cancelled/2 - 1.1~n"),
+    autotest:mark(?LINE, "mark_cancelled/2 - 1.1"),
     MarkCancelledList2_1 = mark_cancelled([MarkCancelled_T1_1, MarkCancelled_T2_1],
 					  MarkCancelledList2),
 
-    io:format("test: mark_cancelled/2 - 1.2~n"),
+    autotest:mark(?LINE, "mark_cancelled/2 - 1.2"),
     %% verify the results (before)
     ["branch1", false] = targetlist:extract([branch, cancelled], MarkCancelled_T1_1),
     ["branch2", false] = targetlist:extract([branch, cancelled], MarkCancelled_T2_1),
 
-    io:format("test: mark_cancelled/2 - 1.3~n"),
+    autotest:mark(?LINE, "mark_cancelled/2 - 1.3"),
     %% verify the results (after)
     MarkCancelled_T1_2 = targetlist:get_using_branch("branch1", MarkCancelledList2_1),
     MarkCancelled_T2_2 = targetlist:get_using_branch("branch2", MarkCancelledList2_1),
@@ -1198,26 +1198,26 @@ test() ->
 
     %% test allterminated(State)
     %%--------------------------------------------------------------------
-    io:format("test: allterminated/1 - 0~n"),
+    autotest:mark(?LINE, "allterminated/1 - 0"),
     AllTerminatedList0 = targetlist:empty(),
     AllTerminatedList1 = targetlist:add("branch1", #request{}, self(), calling,
 					1, [], AllTerminatedList0),
     AllTerminatedList2 = targetlist:add("branch2", #request{}, self(), terminated,
 					1, [], AllTerminatedList1),
 
-    io:format("test: allterminated/1 - 1~n"),
+    autotest:mark(?LINE, "allterminated/1 - 1"),
     true = allterminated(#state{targets=AllTerminatedList0}),
 
-    io:format("test: allterminated/1 - 2~n"),
+    autotest:mark(?LINE, "allterminated/1 - 2"),
     true = allterminated(AllTerminatedList0),
 
-    io:format("test: allterminated/1 - 3~n"),
+    autotest:mark(?LINE, "allterminated/1 - 3"),
     false = allterminated(AllTerminatedList1),
 
-    io:format("test: allterminated/1 - 4~n"),
+    autotest:mark(?LINE, "allterminated/1 - 4"),
     false = allterminated(AllTerminatedList2),
 
-    io:format("test: allterminated/1 - 5~n"),
+    autotest:mark(?LINE, "allterminated/1 - 5"),
     AllTerminatedT1_1 = targetlist:get_using_branch("branch1", AllTerminatedList2),
     AllTerminatedT1_2 = targetlist:set_state(AllTerminatedT1_1, terminated),
     AllTerminatedList2_1 = targetlist:update_target(AllTerminatedT1_2, AllTerminatedList2),
@@ -1226,22 +1226,22 @@ test() ->
 
     %% test end_processing(EndTime, State)
     %%--------------------------------------------------------------------
-    io:format("test: end_processing/2 - 1~n"),
+    autotest:mark(?LINE, "end_processing/2 - 1"),
     false = end_processing(util:timestamp() + 10, #state{mystate = stayalive}),
 
-    io:format("test: end_processing/2 - 2~n"),
+    autotest:mark(?LINE, "end_processing/2 - 2"),
     true = end_processing(util:timestamp() - 1, #state{mystate = stayalive}),
 
-    io:format("test: end_processing/2 - 3~n"),
+    autotest:mark(?LINE, "end_processing/2 - 3"),
     true = end_processing(1, #state{mystate = completed}),
 
-    io:format("test: end_processing/2 - 4~n"),
+    autotest:mark(?LINE, "end_processing/2 - 4"),
     true = end_processing(util:timestamp() + 10, #state{mystate = completed}),
 
-    io:format("test: end_processing/2 - 5~n"),
+    autotest:mark(?LINE, "end_processing/2 - 5"),
     true = end_processing(util:timestamp() + 10, #state{mystate = completed}),
 
-    io:format("test: end_processing/2 - 6~n"),
+    autotest:mark(?LINE, "end_processing/2 - 6"),
     EndProcessingList0 = targetlist:empty(),
     EndProcessingList1 = targetlist:add("branch1", #request{}, self(), terminated,
 					1, [], EndProcessingList0),
@@ -1250,47 +1250,47 @@ test() ->
 
     true = end_processing(1, #state{targets = EndProcessingList1}),
 
-    io:format("test: end_processing/2 - 6~n"),
+    autotest:mark(?LINE, "end_processing/2 - 6"),
     false = end_processing(1, #state{targets = EndProcessingList2}),
 
 
     %% test forward_immediately(Method, Status, State)
     %%--------------------------------------------------------------------
-    io:format("test: forward_immediately/3 - 1~n"),
+    autotest:mark(?LINE, "forward_immediately/3 - 1"),
     %% INVITE, =< 100 response - never forwarded
     false = forward_immediately("INVITE", 100, #state{}),
 
-    io:format("test: forward_immediately/3 - 2~n"),
+    autotest:mark(?LINE, "forward_immediately/3 - 2"),
     %% INVITE, provisional response
     {true, #state{mystate = calling}} = forward_immediately("INVITE", 101, #state{mystate = calling}),
 
-    io:format("test: forward_immediately/3 - 3~n"),
+    autotest:mark(?LINE, "forward_immediately/3 - 3"),
     %% INVITE, provisional response
     {true, #state{mystate = calling}} = forward_immediately("INVITE", 199, #state{mystate = calling}),
 
-    io:format("test: forward_immediately/3 - 4~n"),
+    autotest:mark(?LINE, "forward_immediately/3 - 4"),
     %% INVITE, 2xx response always forwarded immediately
     {true, #state{mystate = completed, final_response_sent = true}} =
 	forward_immediately("INVITE", 200, #state{mystate = calling, final_response_sent = false}),
 
-    io:format("test: forward_immediately/3 - 5~n"),
+    autotest:mark(?LINE, "forward_immediately/3 - 5"),
     %% non-INVITE, response = 2xx and final response not yet sent
     {true, #state{mystate = completed, final_response_sent = true}} =
 	forward_immediately("OPTIONS", 200, #state{mystate = calling, final_response_sent = false}),
 
-    io:format("test: forward_immediately/3 - 6~n"),
+    autotest:mark(?LINE, "forward_immediately/3 - 6"),
     %% non-INVITE, response =< 299 and final response not yet sent
     {true, #state{mystate = completed, final_response_sent = true}} =
 	forward_immediately("OPTIONS", 299, #state{mystate = calling, final_response_sent = false}),
 
-    io:format("test: forward_immediately/3 - 6~n"),
+    autotest:mark(?LINE, "forward_immediately/3 - 6"),
     %% non-INVITE or response >= 300, final_response_sent is already 'true'
     false = forward_immediately("OPTIONS", 299, #state{mystate = calling, final_response_sent = true}),
 
 
     %% test pick_response(Nxx, Responses)
     %%--------------------------------------------------------------------
-    io:format("test: pick_response/2 4xx - 0~n"),
+    autotest:mark(?LINE, "pick_response/2 4xx - 0"),
     R400 = #sp_response{status=400},
     %% preferred ones
     R401 = #sp_response{status=401},
@@ -1301,11 +1301,11 @@ test() ->
     %% end preferred ones
     R499 = #sp_response{status=499},
 
-    io:format("test: pick_response/2 4xx - 1~n"),
+    autotest:mark(?LINE, "pick_response/2 4xx - 1"),
     %% test lowest response is returned if no preferred ones
     R400 = pick_response(4, [R499, R400]),
 
-    io:format("test: pick_response/2 4xx - 2~n"),
+    autotest:mark(?LINE, "pick_response/2 4xx - 2"),
     %% test that preferred responses work
     R401 = pick_response(4, [R499, R401, R400]),
     R407 = pick_response(4, [R499, R407, R400]),
@@ -1313,35 +1313,35 @@ test() ->
     R420 = pick_response(4, [R499, R420, R400]),
     R484 = pick_response(4, [R499, R484, R400]),
 
-    io:format("test: pick_response/2 4xx - 3~n"),
+    autotest:mark(?LINE, "pick_response/2 4xx - 3"),
     %% test that equal responses work
     R401 = pick_response(4, [R401, R407, R401]),
 
-    io:format("test: pick_response/2 4xx - 4~n"),
+    autotest:mark(?LINE, "pick_response/2 4xx - 4"),
     %% test that numerical sorting between preferred responses works as last option
     R401 = pick_response(4, [R400, R401, R407, R415, R420, R484, R499]),
 
-    io:format("test: pick_response/2 5xx - 0~n"),
+    autotest:mark(?LINE, "pick_response/2 5xx - 0"),
     R500 = #sp_response{status=500},
     R503 = #sp_response{status=503},
     R599 = #sp_response{status=599},
 
-    io:format("test: pick_response/2 5xx - 1~n"),
+    autotest:mark(?LINE, "pick_response/2 5xx - 1"),
     %% test that we never choose the 503 if there is another response too
     R500 = pick_response(5, [R500, R503]),
 
-    io:format("test: pick_response/2 5xx - 2~n"),
+    autotest:mark(?LINE, "pick_response/2 5xx - 2"),
     %% test that we never choose the 503 if there is another response too
     R599 = pick_response(5, [R503, R599, R503]),
 
-    io:format("test: pick_response/2 5xx - 3~n"),
+    autotest:mark(?LINE, "pick_response/2 5xx - 3"),
     %% test that choosing a 503 if we have to works
     R503 = pick_response(5, [R503]),
 
 
     %% test aggregate_authreqs(BestResponse, Responses)
     %%--------------------------------------------------------------------
-    io:format("test: aggregate_authreqs/2 - 0~n"),
+    autotest:mark(?LINE, "aggregate_authreqs/2 - 0"),
     AuthReq_EmptyH = keylist:from_list([]),
     AuthReq_R400   = #sp_response{status=400, header=AuthReq_EmptyH},
     AuthReq_R401_1 = #sp_response{status=401, header=keylist:set("WWW-Authenticate", ["R401_1"], AuthReq_EmptyH)},
@@ -1351,28 +1351,28 @@ test() ->
     AuthReq_R407_2 = #sp_response{status=407, header=keylist:set("Proxy-Authenticate", ["R407_2"], AuthReq_EmptyH)},
     AuthReqL = [AuthReq_R400, AuthReq_R401_1, AuthReq_R401_2, AuthReq_R401_3, AuthReq_R407_1, AuthReq_R407_2],
 
-    io:format("test: aggregate_authreqs/2 - 1.1~n"),
+    autotest:mark(?LINE, "aggregate_authreqs/2 - 1.1"),
     %% Aggregate WWW-Authenticate headers, _don't_ copy the erroneous Proxy-Authenticate
     %% header in a 401 response
     Aggr401 = aggregate_authreqs(#sp_response{status=401, header=AuthReq_EmptyH}, AuthReqL),
 
-    io:format("test: aggregate_authreqs/2 - 1.2~n"),
+    autotest:mark(?LINE, "aggregate_authreqs/2 - 1.2"),
     %% verify results
     ["R401_1", "R401_2"] = keylist:fetch('www-authenticate', Aggr401#sp_response.header),
     [] = keylist:fetch('proxy-authenticate', Aggr401#sp_response.header),
 
-    io:format("test: aggregate_authreqs/2 - 2.1~n"),
+    autotest:mark(?LINE, "aggregate_authreqs/2 - 2.1"),
     %% Aggregate Proxy-Authenticate headers
     Aggr407 = aggregate_authreqs(#sp_response{status=407, header=AuthReq_EmptyH}, AuthReqL),
 
-    io:format("test: aggregate_authreqs/2 - 2.2~n"),
+    autotest:mark(?LINE, "aggregate_authreqs/2 - 2.2"),
     %% verify results
     ["R407_1", "R407_2"] = keylist:fetch('proxy-authenticate', Aggr407#sp_response.header),
 
 
     %% test make_final_response(Responses)
     %%--------------------------------------------------------------------
-    io:format("test: make_final_response/1 - 0~n"),
+    autotest:mark(?LINE, "make_final_response/1 - 0"),
     FinalRes_R1 = #sp_response{status=100},	%% not a real final response
     FinalRes_R2 = #sp_response{status=200},
     FinalRes_R3 = #sp_response{status=300},
@@ -1380,34 +1380,34 @@ test() ->
     FinalRes_R5 = #sp_response{status=599},
     FinalRes_R6 = #sp_response{status=600},
 
-    io:format("test: make_final_response/1 - 1~n"),
+    autotest:mark(?LINE, "make_final_response/1 - 1"),
     %% test pick of 6xx
     FinalRes_R6 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R6, FinalRes_R4, FinalRes_R3, FinalRes_R2]),
 
-    io:format("test: make_final_response/1 - 2~n"),
+    autotest:mark(?LINE, "make_final_response/1 - 2"),
     %% test pick of 2xx
     FinalRes_R2 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R4, FinalRes_R3, FinalRes_R2]),
 
-    io:format("test: make_final_response/1 - 3~n"),
+    autotest:mark(?LINE, "make_final_response/1 - 3"),
     %% test pick of 3xx
     FinalRes_R3 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R3, FinalRes_R4]),
 
-    io:format("test: make_final_response/1 - 4~n"),
+    autotest:mark(?LINE, "make_final_response/1 - 4"),
     %% test pick of 4xx
     FinalRes_R4 = make_final_response([FinalRes_R1, FinalRes_R5, FinalRes_R4]),
 
-    io:format("test: make_final_response/1 - 5~n"),
+    autotest:mark(?LINE, "make_final_response/1 - 5"),
     %% test pick of 5xx
     FinalRes_R5 = make_final_response([FinalRes_R1, FinalRes_R5]),
 
-    io:format("test: make_final_response/1 - 6~n"),
+    autotest:mark(?LINE, "make_final_response/1 - 6"),
     %% test that we don't fall for the 100 response (it is not a final response)
     none = make_final_response([FinalRes_R1]),
 
 
     %% test report_upstreams(AllTerminated, State)
     %%--------------------------------------------------------------------
-    io:format("test: report_upstreams/2 - 0~n"),
+    autotest:mark(?LINE, "report_upstreams/2 - 0"),
     UpstreamsTargets1 = targetlist:add("branch1", #request{}, self(), calling,
 				       1, [], targetlist:empty()),
     UpstreamsTarget_1 = targetlist:get_using_branch("branch1", UpstreamsTargets1),
@@ -1475,7 +1475,7 @@ test() ->
     CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
     CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 0~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 0"),
 
     %% one pending and one already completed target
     CancelPendingReq1 = #request{method="INVITE", uri=sipurl:parse("sip:ft@it.su.se")},
@@ -1488,17 +1488,17 @@ test() ->
     %%
     %% Test provisional response
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 1~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 1"),
     %% test provisional response to INVITE, no change expected
     CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("INVITE", 180, "Foo", CancelPendingState1),
 
     %%
     %% Test 2xx response to INVITE
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 2.1~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 2.1"),
     #state{} = cancel_pending_if_invite_2xx_or_6xx("INVITE", 200, "Ok", CancelPendingState1),
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 2.2~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 2.2"),
     %% check results
     receive
 	{CancelPendingRef, CancelPendingPid1,
@@ -1516,7 +1516,7 @@ test() ->
 	    throw({error, "did not receive the expected cancel signal from the pending target"})
     end,
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 2.3~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 2.3"),
     %% check that we did NOT cancel the second target, which was already in state 'completed'
     receive
 	{CancelPendingRef, CancelPendingPid2,
@@ -1534,17 +1534,17 @@ test() ->
     %%
     %% Test non-6xx response to non-INVITE
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 3~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 3"),
     %% test non-6xx response to non-INVITE, no change expected
     CancelPendingState1 = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 599, "Foo", CancelPendingState1),
 
     %%
     %% Test 6xx reponse
     %%
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 4.1~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 4.1"),
     #state{} = cancel_pending_if_invite_2xx_or_6xx("OPTIONS", 603, "Decline", CancelPendingState1),
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 4.2~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 4.2"),
     %% check results
     receive
 	{CancelPendingRef, CancelPendingPid1,
@@ -1562,7 +1562,7 @@ test() ->
 	    throw({error, "did not receive the expected cancel signal from the pending target"})
     end,
 
-    io:format("test: cancel_pending_if_invite_2xx_or_6xx/4 - 4.3~n"),
+    autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 4.3"),
     %% check that we did NOT cancel the second target, which was already in state 'completed'
     receive
 	{CancelPendingRef, CancelPendingPid2,
@@ -1583,10 +1583,10 @@ test() ->
 test_report_upstreams(Num, State, Expected) when is_record(State, state) ->
     UpstreamsMyself = self(),
 
-    io:format("test: report_upstreams/2 - ~s.1~n", [Num]),
+    autotest:mark(?LINE, "report_upstreams/2 - ~s.1", [Num]),
     #state{mystate=completed, final_response_sent=true} = report_upstreams(true, State),
 
-    io:format("test: report_upstreams/2 - ~s.2~n", [Num]),
+    autotest:mark(?LINE, "report_upstreams/2 - ~s.2", [Num]),
     %% Check result
     receive
 	{sipproxy_all_terminated, UpstreamsMyself, Expected} ->

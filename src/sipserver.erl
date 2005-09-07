@@ -1246,7 +1246,7 @@ test() ->
 
     %% build request header
     %%--------------------------------------------------------------------
-    io:format("test: init variables - 1~n"),
+    autotest:mark(?LINE, "init variables - 1"),
 
     MyHostname = siprequest:myhostname(),
     SipPort  = sipsocket:get_listenport(tcp),
@@ -1258,18 +1258,18 @@ test() ->
 
     %% test check_response_via(Origin, TopVia)
     %%--------------------------------------------------------------------
-    io:format("test: check_response_via/2 - 1~n"),
+    autotest:mark(?LINE, "check_response_via/2 - 1"),
     %% straight forward, via is what this proxy would use (ViaMe)
     ok = check_response_via(ViaOrigin1, ViaMe),
 
-    io:format("test: check_response_via/2 - 2~n"),
+    autotest:mark(?LINE, "check_response_via/2 - 2"),
     %% received response over unexpected protocol, still ok since this can
     %% happen if we for example send a request out over TCP but the other end
     %% fails to send the response back to us using the same connection so the
     %% response is received over UDP
     ok = check_response_via(ViaOrigin1#siporigin{proto=udp}, ViaMe),
 
-    io:format("test: check_response_via/2 - 3~n"),
+    autotest:mark(?LINE, "check_response_via/2 - 3"),
     %% no top via, invalid
     error = check_response_via(ViaOrigin1#siporigin{proto=udp}, none),
 
@@ -1277,7 +1277,7 @@ test() ->
     %% test process_parsed_packet(Response, Origin)
     %% tests sanity_check_contact(Type, Name, Header) indirectly
     %%--------------------------------------------------------------------
-    io:format("test: build response - 1~n"),
+    autotest:mark(?LINE, "build response - 1"),
     CRHeader1 = keylist:from_list([
 				    {"Via",	sipheader:via_print([ViaMe])},
 				    {"Via",	["SIP/2.0/FOO 192.0.2.78"]},
@@ -1287,17 +1287,17 @@ test() ->
 				   ]),
     CheckResponse1 = #response{status=200, reason="Ok", header=CRHeader1, body=EmptyBody},
 
-    io:format("test: process_parsed_packet/2 response - 1~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 response - 1"),
     %% straight forward
     {#response{}=_Response, _LogStr} = process_parsed_packet(CheckResponse1, #siporigin{proto=tcp}),
 
-    io:format("test: process_parsed_packet/2 response - 2~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 response - 2"),
     CRHeader2 = keylist:delete("Via", CRHeader1),
     CheckResponse2 = #response{status=200, reason="Ok", header=CRHeader2, body=EmptyBody},
     %% without Via-headers
     invalid = process_parsed_packet(CheckResponse2, #siporigin{proto=tcp}),
 
-    io:format("test: process_parsed_packet/2 response - 3 (disabled)~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 response - 3 (disabled)"),
     CRHeader3 = keylist:set("From", ["http://www.example.org/"], CRHeader1),
     CheckResponse3 = #response{status=200, reason="Ok", header=CRHeader3, body=EmptyBody},
     %% http From: URL, draft-ietf-sipping-torture-tests-04 argues that a proxy
@@ -1308,12 +1308,12 @@ test() ->
 
     %% build request header for other tests
     %%--------------------------------------------------------------------
-    io:format("test: build request header - 0~n"),
+    autotest:mark(?LINE, "build request header - 0"),
     ReqHeader1 = keylist:from_list([{"Via", ["SIP/2.0/TLS 192.0.2.78"]}]),
     Origin1 = #siporigin{proto=tcp, addr="192.0.2.78", port=1234},
     Origin2 = #siporigin{proto=tcp, addr="192.0.2.200", port=2345},
 
-    io:format("test: build request header - 1~n"),
+    autotest:mark(?LINE, "build request header - 1"),
     ReqHeader10 = keylist:from_list([
 				     {"Via",	["SIP/2.0/TLS 130.237.90.1:111",
 						 "SIP/2.0/TCP 2001:6b0:5:987::1"]},
@@ -1339,81 +1339,81 @@ test() ->
 
     %% no rport parameter tests :
 
-    io:format("test: fix_topvia_received_rport/2 no rport - 1.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 no rport - 1.1"),
     %% check Via that is IP-address (the right one), and no rport parameter
     ReqHeader1_1 = fix_topvia_received_rport(ReqHeader1, Origin1),
 
-    io:format("test: fix_topvia_received_rport/2 no rport - 1.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 no rport - 1.2"),
     %% check result
     ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch(via, ReqHeader1_1),
 
 
-    io:format("test: fix_topvia_received_rport/2 no rport - 2.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 no rport - 2.1"),
     %% check Via that is IP-address (but not the same as in Origin2), and no rport parameter
     ReqHeader1_2 = fix_topvia_received_rport(ReqHeader1, Origin2),
 
-    io:format("test: fix_topvia_received_rport/2 no rport - 2.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 no rport - 2.2"),
     %% check result
     ["SIP/2.0/TLS 192.0.2.78;received=192.0.2.200"] = keylist:fetch(via, ReqHeader1_2),
 
-    io:format("test: fix_topvia_received_rport/2 no rport - 3.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 no rport - 3.1"),
     ReqHeader2 = keylist:from_list([{"Via", ["SIP/2.0/TLS phone.example.org"]}]),
-    io:format("test: fix_topvia_received_rport/2 - 3.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 3.2"),
     %% check Via that is hostname, and no rport parameter
     ReqHeader2_1 = fix_topvia_received_rport(ReqHeader2, Origin1),
 
-    io:format("test: fix_topvia_received_rport/2 no rport - 3.3~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 no rport - 3.3"),
     %% check result
     ["SIP/2.0/TLS phone.example.org;received=192.0.2.78"] = keylist:fetch(via, ReqHeader2_1),
 
     %% rport parameter tests :
 
-    io:format("test: fix_topvia_received_rport/2 - 1.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 1.1"),
     ReqHeader3 = keylist:from_list([{"Via", ["SIP/2.0/TLS 192.0.2.78;rport"]}]),
-    io:format("test: fix_topvia_received_rport/2 - 1.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 1.2"),
     %% check Via that is IP address, with rport. When rport exists, we MUST add a
     %% received= even if the host-part equals the address we received the request from
     ReqHeader3_1 = fix_topvia_received_rport(ReqHeader3, Origin1),
 
-    io:format("test: fix_topvia_received_rport/2 - 1.3~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 1.3"),
     %% check result
     ["SIP/2.0/TLS 192.0.2.78;received=192.0.2.78;rport=1234"] = keylist:fetch(via, ReqHeader3_1),
 
 
-    io:format("test: fix_topvia_received_rport/2 - 2.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 2.1"),
     %% check Via that is IP address (wrong address), with rport.
     ReqHeader3_2 = fix_topvia_received_rport(ReqHeader3, Origin2),
 
-    io:format("test: fix_topvia_received_rport/2 - 2.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 2.2"),
     %% check result
     ["SIP/2.0/TLS 192.0.2.78;received=192.0.2.200;rport=2345"] = keylist:fetch(via, ReqHeader3_2),
 
 
-    io:format("test: fix_topvia_received_rport/2 - 3.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 3.1"),
     ReqHeader4 = keylist:from_list([{"Via", ["SIP/2.0/TCP phone.example.org;rport"]}]),
-    io:format("test: fix_topvia_received_rport/2 - 3.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 3.2"),
     %% check Via that is hostname, with rport.
     ReqHeader4_1 = fix_topvia_received_rport(ReqHeader4, Origin2),
 
-    io:format("test: fix_topvia_received_rport/2 - 3.3~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 3.3"),
     %% check result
     ["SIP/2.0/TCP phone.example.org;received=192.0.2.200;rport=2345"] = keylist:fetch(via, ReqHeader4_1),
 
-    io:format("test: fix_topvia_received_rport/2 - 4.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 4.1"),
     RportHeader4_1 = keylist:from_list([{"Via", ["SIP/2.0/TCP phone.example.org;rport=2345"]}]),
     %% rport with a value (right value, but still set - shouldn't be but we should handle it)
     RPortHeader4_2 = fix_topvia_received_rport(RportHeader4_1, Origin2),
 
-    io:format("test: fix_topvia_received_rport/2 - 4.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 4.2"),
     %% check result
     ["SIP/2.0/TCP phone.example.org;received=192.0.2.200;rport=2345"] = keylist:fetch(via, RPortHeader4_2),
 
-    io:format("test: fix_topvia_received_rport/2 - 5.1~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 5.1"),
     RportHeader5_1 = keylist:from_list([{"Via", ["SIP/2.0/TCP phone.example.org;rport=1111"]}]),
     %% rport with a value (WRONG value (1111), should be replaced by right value (2345))
     RPortHeader5_2 = fix_topvia_received_rport(RportHeader5_1, Origin2),
 
-    io:format("test: fix_topvia_received_rport/2 - 5.2~n"),
+    autotest:mark(?LINE, "fix_topvia_received_rport/2 - 5.2"),
     %% check result
     ["SIP/2.0/TCP phone.example.org;received=192.0.2.200;rport=2345"] = keylist:fetch(via, RPortHeader5_2),
 
@@ -1421,18 +1421,18 @@ test() ->
     %% test remove_route_matching_me(Header)
     %% indirectly tests route_matches_me(Route)
     %%--------------------------------------------------------------------
-    io:format("test: remove_route_matching_me/1 - 1~n"),
+    autotest:mark(?LINE, "remove_route_matching_me/1 - 1"),
     %% These two Route headers doesn't match me
     ["<sip:p1:1111>", "<sip:p2:2222>"] =
 	keylist:fetch(route, remove_route_matching_me(ReqHeader10)),
 
-    io:format("test: remove_route_matching_me/1 - 2~n"),
+    autotest:mark(?LINE, "remove_route_matching_me/1 - 2"),
     %% Test a single matching Route, should result in empty route set
     [] = keylist:fetch(route, remove_route_matching_me(
 				keylist:set("Route", [MyRouteStr], ReqHeader10)
 				)),
 
-    io:format("test: remove_route_matching_me/1 - 3~n"),
+    autotest:mark(?LINE, "remove_route_matching_me/1 - 3"),
     %% Test a matching Route, and some non-matching
     ["<sip:example.org>"] = keylist:fetch(route,
 					  remove_route_matching_me(
@@ -1440,27 +1440,27 @@ test() ->
 					   )),
 
 
-    io:format("test: remove_route_matching_me/1 - 4~n"),
+    autotest:mark(?LINE, "remove_route_matching_me/1 - 4"),
     %% Test a double matching Route, should result in the second one still there
     [MyRouteStr] = keylist:fetch(route, remove_route_matching_me(
 					  keylist:set("Route", [MyRouteStr, MyRouteStr], ReqHeader10)
 					 )),
 
-    io:format("test: remove_route_matching_me/1 - 5~n"),
+    autotest:mark(?LINE, "remove_route_matching_me/1 - 5"),
     %% Test Route matching on my IP address, plus one more Route
     ["<sip:example.org>"] = keylist:fetch(route,
 					  remove_route_matching_me(
 					    keylist:set("Route", [MyRouteStr2, "<sip:example.org>"], ReqHeader10)
 					   )),
 
-    io:format("test: remove_route_matching_me/1 - 6~n"),
+    autotest:mark(?LINE, "remove_route_matching_me/1 - 6"),
     %% Test Route matching on my IP address, plus one more Route
     ["<sip:example.org>"] = keylist:fetch(route,
 					  remove_route_matching_me(
 					    keylist:set("Route", [MyRouteStr2, "<sip:example.org>"], ReqHeader10)
 					   )),
 
-    io:format("test: remove_route_matching_me/1 - 7~n"),
+    autotest:mark(?LINE, "remove_route_matching_me/1 - 7"),
     %% Test Route with my hostname, but wrong port
     [MyRouteStr3] = keylist:fetch(route,
 				  remove_route_matching_me(
@@ -1469,51 +1469,51 @@ test() ->
 
     %% test remove_maddr_matching_me(URI, Origin)
     %%--------------------------------------------------------------------
-    io:format("test: remove_maddr_matching_me/2 - 1~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 1"),
     MaddrURL1 = sipurl:parse("sip:ft@example.org:5060;transport=tcp"),
     %% test no maddr
     MaddrURL1 = remove_maddr_matching_me(MaddrURL1, #siporigin{}),
 
-    io:format("test: remove_maddr_matching_me/2 - 2~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 2"),
     MaddrURL2 = sipurl:parse("sip:ft@example.org;maddr=testing"),
     %% test with maddr not matching me
     MaddrURL2 = remove_maddr_matching_me(MaddrURL2, #siporigin{}),
 
-    io:format("test: remove_maddr_matching_me/2 - 3~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 3"),
     MaddrURL3 = sipurl:parse("sip:ft@example.org:1234;maddr=" ++ MyHostname),
     %% test with maddr matching me, but not port
     MaddrURL3 = remove_maddr_matching_me(MaddrURL3, #siporigin{}),
 
-    io:format("test: remove_maddr_matching_me/2 - 4~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 4"),
     MaddrURL4 = sipurl:parse("sip:ft@example.org;transport=udp;maddr=" ++ MyHostname),
     %% test with maddr matching me, port matching me (by default) but not transport
     MaddrURL4 = remove_maddr_matching_me(MaddrURL4, #siporigin{proto = tcp}),
 
-    io:format("test: remove_maddr_matching_me/2 - 5~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 5"),
     MaddrURL5 = sipurl:parse("sip:ft@example.org;maddr=" ++ MyHostname),
     MaddrURL5_expected = sipurl:parse("sip:ft@example.org"),
     %% test with maddr matching me, port matching me (by default) and no transport
     MaddrURL5_expected = remove_maddr_matching_me(MaddrURL5, #siporigin{proto = udp}),
 
-    io:format("test: remove_maddr_matching_me/2 - 6~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 6"),
     MaddrURL6 = sipurl:parse("sips:ft@example.org:" ++ integer_to_list(SipsPort) ++ ";maddr=" ++ MyHostname),
     MaddrURL6_expected = sipurl:parse("sips:ft@example.org:" ++ integer_to_list(SipsPort)),
     %% test with maddr matching me, port matching me (explicitly) and no transport
     MaddrURL6_expected = remove_maddr_matching_me(MaddrURL6, #siporigin{proto = udp}),
 
-    io:format("test: remove_maddr_matching_me/2 - 7~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 7"),
     MaddrURL7 = sipurl:parse("sip:ft@example.org;transport=tcp;maddr=" ++ MyHostname),
     MaddrURL7_expected = sipurl:parse("sip:ft@example.org"),
     %% test with maddr matching me, port matching me (by default) and matching transport
     MaddrURL7_expected = remove_maddr_matching_me(MaddrURL7, #siporigin{proto = tcp}),
 
-    io:format("test: remove_maddr_matching_me/2 - 8~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 8"),
     MaddrURL8 = sipurl:parse("sip:ft@example.org;transport=udp;maddr=" ++ MyHostname),
     MaddrURL8_expected = sipurl:parse("sip:ft@example.org"),
     %% test with maddr matching me, port matching me (by default) and matching transport
     MaddrURL8_expected = remove_maddr_matching_me(MaddrURL8, #siporigin{proto = udp6}),
 
-    io:format("test: remove_maddr_matching_me/2 - 9~n"),
+    autotest:mark(?LINE, "remove_maddr_matching_me/2 - 9"),
     MaddrURL9 = sipurl:parse("sip:ft@example.org;transport=tls;maddr=" ++ MyHostname),
     MaddrURL9_expected = sipurl:parse("sip:ft@example.org"),
     %% test with maddr matching me, port matching me (by default) and matching transport
@@ -1522,36 +1522,36 @@ test() ->
 
     %% test received_from_strict_router(URI, Header)
     %%--------------------------------------------------------------------
-    io:format("test: received_from_strict_router/2 - 0~n"),
+    autotest:mark(?LINE, "received_from_strict_router/2 - 0"),
     StrictHeader1 = keylist:from_list([{"Route", ["sip:user@example.org"]}]),
 
-    io:format("test: received_from_strict_router/2 - 1~n"),
+    autotest:mark(?LINE, "received_from_strict_router/2 - 1"),
     %% test with username part of URI, should always return false
     false = received_from_strict_router(sipurl:parse("sip:ft@example.org"), StrictHeader1),
 
-    io:format("test: received_from_strict_router/2 - 2~n"),
+    autotest:mark(?LINE, "received_from_strict_router/2 - 2"),
     %% This is an URL that we could actually have put in a Record-Route header
     RRURL1 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort) ++ ";maddr=" ++ siphost:myip(),
     true = received_from_strict_router(sipurl:parse(RRURL1), StrictHeader1),
 
-    io:format("test: received_from_strict_router/2 - 3~n"),
+    autotest:mark(?LINE, "received_from_strict_router/2 - 3"),
     %% This is the same URL, but without the maddr parameter. Some stacks strip RR parameters
     %% so unfortunately we must allow this one too.
     RRURL2 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort),
     false = received_from_strict_router(sipurl:parse(RRURL1), keylist:from_list([])),
 
-    io:format("test: received_from_strict_router/2 - 4~n"),
+    autotest:mark(?LINE, "received_from_strict_router/2 - 4"),
     %% RRURL2 is a matching URL but without the maddr parameter. As some stacks strip the
     %% parameters, this one should also work even though it wouldn't by the RFC.
     true = received_from_strict_router(sipurl:parse(RRURL2), StrictHeader1),
 
-    io:format("test: received_from_strict_router/2 - 5~n"),
+    autotest:mark(?LINE, "received_from_strict_router/2 - 5"),
     %% This is an URL that we could actually have put in a Record-Route header, but with the WRONG maddr.
     %% It still matches us though, since we only check on hostname and port.
     RRURL3 = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort) ++ ";maddr=192.0.2.123",
     true = received_from_strict_router(sipurl:parse(RRURL3), StrictHeader1),
 
-    io:format("test: received_from_strict_router/2 - 6~n"),
+    autotest:mark(?LINE, "received_from_strict_router/2 - 6"),
     %% This is an URL that we could actually have put in a Record-Route header, but without the port
     %% which we would have put in there. Unfortunately, some stacks strip the port if it is the default
     %% port for a protocol (which SipPort should be), so we must allow this too
@@ -1564,7 +1564,7 @@ test() ->
     %%--------------------------------------------------------------------
     Me = lists:concat([MyHostname, ":", SipPort]),
 
-    io:format("test: check_for_loop/2 - 1~n"),
+    autotest:mark(?LINE, "check_for_loop/2 - 1"),
     LoopHeader1 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
 				      "SIP/2.0/TCP example.org:2222"
 				     ], ReqHeader10),
@@ -1573,7 +1573,7 @@ test() ->
     %% No loop. No Via matches me at all.
     true = (catch check_for_loop(LoopHeader1, LoopURI1, LoopOrigin1)),
 
-    io:format("test: check_for_loop/2 - 2~n"),
+    autotest:mark(?LINE, "check_for_loop/2 - 2"),
     LoopHeader2 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
 				      "SIP/2.0/TCP " ++ Me
 				     ], ReqHeader10),
@@ -1581,21 +1581,21 @@ test() ->
     %% be considered cause to reject the request, but we currently don't.
     true = (catch check_for_loop(LoopHeader2, LoopURI1, LoopOrigin1)),
 
-    io:format("test: check_for_loop/2 - 3~n"),
+    autotest:mark(?LINE, "check_for_loop/2 - 3"),
     LoopHeader3 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
 				      "SIP/2.0/TCP " ++ Me ++ ";branch=noloop"
 				     ], ReqHeader10),
     %% No loop. The Via that matches me clearly does not have a matching loop cookie.
     true = (catch check_for_loop(LoopHeader3, LoopURI1, LoopOrigin1)),
 
-    io:format("test: check_for_loop/2 - 4~n"),
+    autotest:mark(?LINE, "check_for_loop/2 - 4"),
     LoopHeader4 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
 				      "SIP/2.0/TCP " ++ Me ++ ";branch=z9hG4bK-yxa-foo-oZo99DPyZILaWA73FVsm7Dw"
 				     ], ReqHeader10),
     %% Loop.
     {sipparseerror, request, _Keylst, 482, _Reason} = (catch check_for_loop(LoopHeader4, LoopURI1, LoopOrigin1)),
 
-    io:format("test: check_for_loop/2 - 5~n"),
+    autotest:mark(?LINE, "check_for_loop/2 - 5"),
     LoopHeader5 = keylist:set("Via", ["SIP/2.0/TLS example.org:1234",
 				      "SIP/2.0/UDP " ++ Me ++ ";branch=z9hG4bK-yxa-foo-o4711foo",
 				      "SIP/2.0/TLS example.com:5090",
@@ -1613,14 +1613,14 @@ test() ->
     %%--------------------------------------------------------------------
     Origin2Str1 = #siporigin{proto=tcp, addr="192.0.2.123", port=10},
 
-    io:format("test: origin2str/1 - 1~n"),
+    autotest:mark(?LINE, "origin2str/1 - 1"),
     %% straight forward
     "tcp:192.0.2.123:10" = origin2str(Origin2Str1),
 
 
     %% test make_logstr(Request, Origin)
     %%--------------------------------------------------------------------
-    io:format("test: make_logstr/2 - 1~n"),
+    autotest:mark(?LINE, "make_logstr/2 - 1"),
     %% create records
     LogStrH1 = keylist:from_list([
 				  {"From",	["<sip:test@it.su.se>;tag=f-123"]},
@@ -1629,7 +1629,7 @@ test() ->
     LogStrReq1 = #request{method="INVITE", uri=sipurl:parse("sip:ft@example.org"),
 			  header=LogStrH1, body=EmptyBody},
 
-    io:format("test: make_logstr/2 - 2~n"),
+    autotest:mark(?LINE, "make_logstr/2 - 2"),
     %% straight forward
     LogStrResult1 = "INVITE sip:ft@example.org [client=tcp:192.0.2.123:10, from=<sip:test@it.su.se>, to=<sip:test@it.su.se>]",
     LogStrResult1 = make_logstr(LogStrReq1, Origin2Str1),
@@ -1638,7 +1638,7 @@ test() ->
     %% test check_packet(Request, Origin)
     %% several parts of this is tested separately, focus on the CSeq checks
     %%--------------------------------------------------------------------
-    io:format("test: check_packet/2 request - 1~n"),
+    autotest:mark(?LINE, "check_packet/2 request - 1"),
     %% create records
     CPacketH1 = keylist:from_list([
 				   {"From",	["<sip:test@it.su.se>;tag=f-123"]},
@@ -1648,24 +1648,24 @@ test() ->
     CPacketU1 = sipurl:parse("sip:ft@example.net"),
     CPacketR1 = #request{method="INVITE", uri=CPacketU1, header=CPacketH1, body=EmptyBody},
 
-    io:format("test: check_packet/2 request - 2~n"),
+    autotest:mark(?LINE, "check_packet/2 request - 2"),
     %% valid CSeq
     true = check_packet(CPacketR1, Origin2Str1),
 
-    io:format("test: check_packet/2 request - 3~n"),
+    autotest:mark(?LINE, "check_packet/2 request - 3"),
     CPacketH2 = keylist:set("CSeq", ["foo"], CPacketH1),
     CPacketR2 = CPacketR1#request{header=CPacketH2},
     %% completely invalid CSeq
     {sipparseerror, request, _, 400, "Invalid CSeq"} = (catch check_packet(CPacketR2, Origin2Str1)),
 
-    io:format("test: check_packet/2 request - 4~n"),
+    autotest:mark(?LINE, "check_packet/2 request - 4"),
     CPacketH3 = keylist:set("CSeq", ["A INVITE"], CPacketH1),
     CPacketR3 = CPacketR1#request{header=CPacketH3},
     %% non-integer CSeq number
     {sipparseerror, request, _, 400, "CSeq number 'A' is not an integer"} =
 							(catch check_packet(CPacketR3, Origin2Str1)),
 
-    io:format("test: check_packet/2 request - 5~n"),
+    autotest:mark(?LINE, "check_packet/2 request - 5"),
     CPacketH4 = keylist:set("CSeq", ["1 NOMATCH"], CPacketH1),
     CPacketR4 = CPacketR1#request{header=CPacketH4},
     %% wrong method in CSeq
@@ -1676,7 +1676,7 @@ test() ->
     %% test check_packet(Response, Origin)
     %%--------------------------------------------------------------------
 
-    io:format("test: check_packet/2 response - 1~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 1"),
     %% create records
     CPacketRH1 = keylist:from_list([
 				    {"From",	["<sip:test@it.su.se>;tag=f-123"]},
@@ -1684,33 +1684,33 @@ test() ->
 				   ]),
     CPacketRR1 = #response{status=100, reason="Trying", header=CPacketRH1, body=""},
 
-    io:format("test: check_packet/2 response - 1~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 1"),
     %% test valid case
     true = check_packet(CPacketRR1, Origin2Str1),
 
-    io:format("test: check_packet/2 response - 2.1~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 2.1"),
     %% test invalid status code #1
     {sipparseerror, response, _, 400, "Response code out of bounds"} =
 	(catch check_packet(CPacketRR1#response{status=99}, Origin2Str1)),
 
-    io:format("test: check_packet/2 response - 2.2~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 2.2"),
     %% test invalid status code #2
     {sipparseerror, response, _, 400, "Response code out of bounds"} =
 	(catch check_packet(CPacketRR1#response{status=-1}, Origin2Str1)),
 
-    io:format("test: check_packet/2 response - 2.3~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 2.3"),
     %% test invalid status code #3
     {sipparseerror, response, _, 400, "Response code out of bounds"} =
 	(catch check_packet(CPacketRR1#response{status=700}, Origin2Str1)),
 
-    io:format("test: check_packet/2 response - 2.4~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 2.4"),
     %% test invalid status code #4
     {sipparseerror, response, _, 400, "Response code out of bounds"} =
 	(catch check_packet(CPacketRR1#response{status=4294967301}, Origin2Str1)),
 
     WWWURL = "http:/www.stacken.kth.se/projekt/yxa/",
 
-    io:format("test: check_packet/2 response - 3~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 3"),
     %% Test strange From:. draft-ietf-sipping-torture-tests-04 argues that a
     %% proxy should not break on this, unless it is really required to be able
     %% to understand the From:. That is a good point, but our current behavior
@@ -1719,19 +1719,19 @@ test() ->
     {sipparseerror, response, CPacketRH3, 400, "Invalid From: header"} =
 	(catch check_packet(CPacketRR1#response{header=CPacketRH3}, Origin2Str1)),
 
-    io:format("test: check_packet/2 response - 4~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 4"),
     %% Test response with more than one From: header
     CPacketRH4 = keylist:set("From", ["sip:first@example.com", "sip:second@example.com"], CPacketRH1),
     {sipparseerror, response, CPacketRH4, 400, "Missing or invalid From: header"} =
 	(catch check_packet(CPacketRR1#response{header=CPacketRH4}, Origin2Str1)),
 
-    io:format("test: check_packet/2 response - 5~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 5"),
     %% Test response with no From: header
     CPacketRH5 = keylist:delete("From", CPacketRH1),
     {sipparseerror, response, CPacketRH5, 400, "Missing or invalid From: header"} =
 	(catch check_packet(CPacketRR1#response{header=CPacketRH5}, Origin2Str1)),
 
-    io:format("test: check_packet/2 response - 6~n"),
+    autotest:mark(?LINE, "check_packet/2 response - 6"),
     %% Test strange To:. I think it is enough to test just one To: - that should suffice
     %% to tell that To: is checked the same way as From: (see tests above).
     CPacketRH6 = keylist:set("To", [WWWURL], CPacketRH1),
@@ -1741,7 +1741,7 @@ test() ->
 
     %% test process_parsed_packet(Request, Origin)
     %%--------------------------------------------------------------------
-    io:format("test: process_parsed_packet/2 - 1~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 1"),
     %% create records
     PPPH1 = keylist:from_list([
 			       {"Via",		["SIP/2.0/TLS example.org:1234;rport",
@@ -1753,21 +1753,21 @@ test() ->
 			      ]),
     PPPRequest1 = LogStrReq1#request{header=PPPH1},
 
-    io:format("test: process_parsed_packet/2 - 2.1~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 2.1"),
     %% test that received= and rport= is set correctly in top Via
     {PPPRequest1_res, LogStrResult1} = process_parsed_packet(PPPRequest1, Origin2Str1),
-    io:format("test: process_parsed_packet/2 - 2.2~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 2.2"),
     %% check result
     ["SIP/2.0/TLS example.org:1234;received=192.0.2.123;rport=10", "SIP/2.0/TCP foo"] =
 	keylist:fetch('via', PPPRequest1_res#request.header),
 
-    io:format("test: process_parsed_packet/2 - 3~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 3"),
     %% check that process_parsed_packet actually verifys packet using check_packet
     PPPH3 = keylist:set("CSeq", ["bogus-cseq"], PPPH1),
     PPPRequest3 = PPPRequest1#request{header=PPPH3},
     {sipparseerror, request, _, 400, "Invalid CSeq"} = (catch process_parsed_packet(PPPRequest3, Origin2Str1)),
 
-    io:format("test: process_parsed_packet/2 - 4.1~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 4.1"),
     %% This is an URL that we could actually have put in a Record-Route header
     PPPURL4_str = "sip:" ++ MyHostname ++ ":" ++ integer_to_list(SipPort) ++ ";maddr=" ++ siphost:myip(),
     PPPURL4 = sipurl:parse(PPPURL4_str),
@@ -1779,14 +1779,14 @@ test() ->
     PPPH4 = keylist:append({"Route", ["<" ++ PPPH4_urlstr ++ ">"]}, PPPH1),
     PPPRequest4 = PPPRequest1#request{uri=PPPURL4, header=PPPH4},
     {PPPRequest4_res, PPPH4_logstr} = process_parsed_packet(PPPRequest4, Origin2Str1),
-    io:format("test: process_parsed_packet/2 - 4.2~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 4.2"),
     %% check resulting URI
     PPPH4_url = PPPRequest4_res#request.uri,
-    io:format("test: process_parsed_packet/2 - 4.3~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 4.3"),
     %% check resulting Route-header.
     ["sip:192.0.2.222"] = keylist:fetch('route', PPPRequest4_res#request.header),
 
-    io:format("test: process_parsed_packet/2 - 5.1~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 5.1"),
     %% now check that Route is empty if it contained only the real Request-URI
     PPPH5 = keylist:set("Route", ["<" ++ PPPH4_urlstr ++ ">"], PPPH1),
     PPPRequest5 = PPPRequest1#request{uri=PPPURL4, header=PPPH5},
@@ -1796,7 +1796,7 @@ test() ->
     %% check resulting Route-header (should be empty)
     [] = keylist:fetch('route', PPPRequest5_res#request.header),
 
-    io:format("test: process_parsed_packet/2 - 6~n"),
+    autotest:mark(?LINE, "process_parsed_packet/2 - 6"),
     %% test with non-strict-router Request-URI (should remain the same)
     %% and Route matching me - just to make sure that process_parsed_packet()
     %% includes remove_route_matching_me()
@@ -1819,11 +1819,11 @@ test() ->
     URISchemeURL1 = sipurl:parse("sip:ft@example.org"),
     URISchemeHeader = keylist:from_list([]),
 
-    io:format("test: check_supported_uri_scheme/2 - 1~n"),
+    autotest:mark(?LINE, "check_supported_uri_scheme/2 - 1"),
     %% valid test
     true = check_supported_uri_scheme(URISchemeURL1, URISchemeHeader),
 
-    io:format("test: check_supported_uri_scheme/2 - 1~n"),
+    autotest:mark(?LINE, "check_supported_uri_scheme/2 - 1"),
     URISchemeURL2 = sipurl:parse("bogus:ft@example.org"),
     %% URL was unparseable
     {sipparseerror, request, URISchemeHeader, 416, "Unsupported URI Scheme (bogus:)"} =

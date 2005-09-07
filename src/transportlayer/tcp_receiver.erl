@@ -485,27 +485,27 @@ test() ->
     %%--------------------------------------------------------------------
     EmptyRecv = #recv{},
 
-    io:format("test: handle_received_data2/2 - 1~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 1"),
     %% check that we properly ignore leading CRLF's
     EmptyRecv = handle_received_data2(<<?CR, ?LF>>, EmptyRecv),
 
-    io:format("test: handle_received_data2/2 - 2~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 2"),
     %% check that we properly ignore leading LF's
     EmptyRecv = handle_received_data2(<<?LF>>, EmptyRecv),
 
-    io:format("test: handle_received_data2/2 - 3~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 3"),
     %% one CR is stored in recv.frame
     #recv{frame = <<?CR>>} = HRD_2_Recv = handle_received_data2(<<?CR>>, EmptyRecv),
 
-    io:format("test: handle_received_data2/2 - 4~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 4"),
     %% but when it is followed by a LF recv.frame is emptied
     EmptyRecv = handle_received_data2(<<?LF>>, HRD_2_Recv),
 
-    io:format("test: handle_received_data2/2 - 5~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 5"),
     %% check that we properly ignore a bundle of leading CRLF's and LF's
     EmptyRecv = handle_received_data2(<<?CR, ?LF, ?LF, ?LF, ?CR, ?LF, ?CR, ?LF, ?LF>>, EmptyRecv),
 
-    io:format("test: handle_received_data2/2 - 7.1~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 7.1"),
     HRD_7_Data = <<
 		  "INVITE sip:ft@example.org SIP/2.0", ?CR, ?LF,
 		  "Foo: bar", ?CR, ?LF,
@@ -521,7 +521,7 @@ test() ->
     %% verify that msg_stack was the only thing set in HRD_7_Recv
     EmptyRecv = HRD_7_Recv#recv{msg_stack=[]},
 
-    io:format("test: handle_received_data2/2 - 7.2~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 7.2"),
     %% verify results
     true = is_record(HRD_7_Req, request),
     "INVITE" = HRD_7_Req#request.method,
@@ -530,7 +530,7 @@ test() ->
     ["0"] = keylist:fetch('content-length', HRD_7_Req#request.header),
     <<>> = HRD_7_Req#request.body,
 
-    io:format("test: handle_received_data2/2 - 8~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 8"),
     %% test two requests in the same packet (use the requests from test 7 above)
     HRD_8_Recv = handle_received_data2(list_to_binary([HRD_7_Data, HRD_7_Data]), EmptyRecv),
     %% verify msg_stack
@@ -538,18 +538,18 @@ test() ->
     %% verify that msg_stack was the only thing set in HRD_8_Recv
     EmptyRecv = HRD_8_Recv#recv{msg_stack=[]},
 
-    io:format("test: handle_received_data2/2 - 9~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 9"),
     %% start receiving a request
     HRD_9_Recv = handle_received_data2(<<?LF, ?CR, ?LF, "INVITE sip:ft@example.org ">>, EmptyRecv),
     HRD_9_Recv = EmptyRecv#recv{frame = <<"INVITE sip:ft@example.org ">>},
 
-    io:format("test: handle_received_data2/2 - 10~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 10"),
     HRD_10_Data = <<"INVITE sip:ft@example.org SIP/2.0", ?CR, ?LF>>,
     %% receive more
     HRD_10_Recv = handle_received_data2(<<"SIP/2.0", ?CR, ?LF>>, HRD_9_Recv),
     HRD_10_Recv = EmptyRecv#recv{frame = HRD_10_Data},
 
-    io:format("test: handle_received_data2/2 - 11~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 11"),
     HRD_11_Data = <<
 		   "Foo: ", ?LF,
 		   "  bar", ?CR, ?LF,
@@ -562,44 +562,44 @@ test() ->
     HRD_11_Frame = list_to_binary([HRD_10_Data, HRD_11_Data]),
     HRD_11_Frame = HRD_11_Recv#recv.frame,
 
-    io:format("test: handle_received_data2/2 - 12.1~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 12.1"),
     %% now receive a single LF which means we now are exactly at the header-body
     %% separator and are just waiting for four bytes of body
     HRD_12_Recv = handle_received_data2(<<?LF>>, HRD_11_Recv),
-    io:format("test: handle_received_data2/2 - 12.2~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 12.2"),
     %% quickly verify the results (body length)
     4 = HRD_12_Recv#recv.body_length,
-    io:format("test: handle_received_data2/2 - 12.3~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 12.3"),
     %% quickly verify the results (body offset)
     HRD_12_Right_Body_Offset = size(HRD_11_Frame) + 1,
     HRD_12_Right_Body_Offset = HRD_12_Recv#recv.body_offset,
-    io:format("test: handle_received_data2/2 - 12.4~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 12.4"),
     4 = HRD_12_Recv#recv.bytes_left,
 
-    io:format("test: handle_received_data2/2 - 13.1~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 13.1"),
     %% receive the four body bytes plus some chars from the next request
     HRD_13_Recv = handle_received_data2(<<"testINV">>, HRD_12_Recv),
 
-    io:format("test: handle_received_data2/2 - 13.2~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 13.2"),
     %% verify the results
     [HRD_13_Req] = HRD_13_Recv#recv.msg_stack,
     true = is_record(HRD_13_Req, request),
 
-    io:format("test: handle_received_data2/2 - 13.3~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 13.3"),
     %% verify headers
     ["bar"] = keylist:fetch("foo", HRD_13_Req#request.header),
-    io:format("test: handle_received_data2/2 - 13.4~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 13.4"),
     ["0004"] = keylist:fetch('content-length', HRD_13_Req#request.header),
 
-    io:format("test: handle_received_data2/2 - 13.5~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 13.5"),
     %% verify body
     <<"test">> = HRD_13_Req#request.body,
 
-    io:format("test: handle_received_data2/2 - 13.6~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 13.6"),
     %% verify next frame data
     <<"INV">> = HRD_13_Recv#recv.frame,
 
-    io:format("test: handle_received_data2/2 - 14.1~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 14.1"),
     %% Make a data entry with a request, two responses and then the same request again.
     %% We then feed this to handle_received_data2/2 one byte at a time, and then verify
     %% the results
@@ -628,21 +628,21 @@ test() ->
     HRD_14_Data = HRD_14_Req_Data ++ HRD_14_Res1_Data ++ HRD_14_Ignore ++
 	HRD_14_Res2_Data ++ HRD_14_Ignore ++ HRD_14_Req_Data,
 
-    io:format("test: handle_received_data2/2 - 14.2~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 14.2"),
     HRD_14_Recv =
 	lists:foldl(fun(H, Recv) when is_record(Recv, recv) ->
 			    B = list_to_binary([H]),
 			    handle_received_data2(B, Recv)
 		    end, EmptyRecv, HRD_14_Data),
 
-    io:format("test: handle_received_data2/2 - 14.3~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 14.3"),
     %% verify the results (msg_stack and record types)
     [HRD_14_Req, HRD_14_Res1, HRD_14_Res2, HRD_14_Req] = lists:reverse(HRD_14_Recv#recv.msg_stack),
     true = is_record(HRD_14_Req, request),
     true = is_record(HRD_14_Res1, response),
     true = is_record(HRD_14_Res2, response),
 
-    io:format("test: handle_received_data2/2 - 14.4~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 14.4"),
     %% verify the results (bodys)
     <<"one">> = HRD_14_Req#request.body,
     <<>> = HRD_14_Res1#response.body,
@@ -651,7 +651,7 @@ test() ->
 
     %% test invalid content-length
 
-    io:format("test: handle_received_data2/2 - 15~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 15"),
     %% invalid Content-Length in request
     HRD_15_Data = <<
 		   "INVITE sip:ft@example.org SIP/2.0", ?CR, ?LF,
@@ -662,7 +662,7 @@ test() ->
     {error, parse_failed, _} =
 	(catch handle_received_data2(HRD_15_Data, EmptyRecv)),
 
-    io:format("test: handle_received_data2/2 - 16~n"),
+    autotest:mark(?LINE, "handle_received_data2/2 - 16"),
     %% invalid (double) Content-Length in response
     HRD_16_Data = <<
 		   "SIP/2.0 100 Trying", ?CR, ?LF,

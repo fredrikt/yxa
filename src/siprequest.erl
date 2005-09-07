@@ -885,7 +885,7 @@ test() ->
     %% myhostname()
     %%--------------------------------------------------------------------
     %% test that we get a list back from myhostname()
-    io:format("test: myhostname/0 - 1~n"),
+    autotest:mark(?LINE, "myhostname/0 - 1"),
     MyHostname = myhostname(),
     true = is_list(MyHostname),
 
@@ -893,7 +893,7 @@ test() ->
     %% generate_branch()
     %%--------------------------------------------------------------------
     %% test that generate_branch gives us a RFC3261 branch
-    io:format("test: generate_branch/0 - 1~n"),
+    autotest:mark(?LINE, "generate_branch/0 - 1"),
     Branch = generate_branch(),
     "z9hG4bK-yxa-" = string:substr(Branch, 1, 12),
 
@@ -901,10 +901,10 @@ test() ->
     %% make_3261_token(In)
     %%--------------------------------------------------------------------
     %% test that our make_3261_token produces the expected results
-    io:format("test: make_3261_token/1 - 1~n"),
+    autotest:mark(?LINE, "make_3261_token/1 - 1"),
     "abcdeXYZ-.!%*_+`'~123_" = make_3261_token("abcdeXYZ-.!%*_+`'~123@"),
 
-    io:format("test: make_base64_md5_token/1 - 1~n"),
+    autotest:mark(?LINE, "make_base64_md5_token/1 - 1"),
     "Wd_CG1j2CfuAv0NWdJLxTQ" = make_base64_md5_token("abcdeXYZ123-.!%*_+`'~123@"),
 
 
@@ -914,103 +914,103 @@ test() ->
     SipsLPort = sipsocket:get_listenport(tls),
 
     %% tcp
-    io:format("test: create_via/2 - 1~n"),
+    autotest:mark(?LINE, "create_via/2 - 1"),
     #via{proto="SIP/2.0/TCP", host=MyHostname, port=SipLPort, param=["foo=bar"]} =
 	create_via(tcp, ["foo=bar"]),
 
     %% tcp6
-    io:format("test: create_via/2 - 2~n"),
+    autotest:mark(?LINE, "create_via/2 - 2"),
     #via{proto="SIP/2.0/TCP", host=MyHostname, port=SipLPort, param=[]} =
 	create_via(tcp6, []),
 
     %% udp
-    io:format("test: create_via/2 - 3~n"),
+    autotest:mark(?LINE, "create_via/2 - 3"),
     #via{proto="SIP/2.0/UDP", host=MyHostname, port=SipLPort, param=[]} =
 	create_via(udp, []),
 
     %% udp6
-    io:format("test: create_via/2 - 4~n"),
+    autotest:mark(?LINE, "create_via/2 - 4"),
     #via{proto="SIP/2.0/UDP", host=MyHostname, port=SipLPort, param=[]} =
 	create_via(udp6, []),
 
     %% tls
-    io:format("test: create_via/2 - 5~n"),
+    autotest:mark(?LINE, "create_via/2 - 5"),
     #via{proto="SIP/2.0/TLS", host=MyHostname, port=SipsLPort, param=[]} =
 	create_via(tls, []),
 
     %% tls6
-    io:format("test: create_via/2 - 6~n"),
+    autotest:mark(?LINE, "create_via/2 - 6"),
     #via{proto="SIP/2.0/TLS", host=MyHostname, port=SipsLPort, param=[]} =
 	create_via(tls6, []),
 
     %% foo protocol - expect crash
-    io:format("test: create_via/2 - 7~n"),
+    autotest:mark(?LINE, "create_via/2 - 7"),
     {'EXIT', {function_clause, _}} = (catch create_via(foo, [])),
 
 
     %% add_record_route(URL, Header)
     %% and implicitly add_record_route/4
     %%--------------------------------------------------------------------
-    io:format("test: add_record_route/2 - 1~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 1"),
     EmptyHeader = keylist:from_list([]),
 
     RRHeader1 = add_record_route(sipurl:parse("sip:ft@one.example.org;transport=tcp"), EmptyHeader),
 
     %% check that there is now a single Record-Route in RRHeader1
-    io:format("test: add_record_route/2 - 2~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 2"),
     [RRoute1] = sipheader:record_route(RRHeader1),
 
     %% check the contents in the single Record-Route
     %% contact.display_name
-    io:format("test: add_record_route/2 - 3~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 3"),
     none = RRoute1#contact.display_name,
 
     %% contact.urlstr
-    io:format("test: add_record_route/2 - 4.1~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 4.1"),
     #sipurl{proto="sip", host=MyHostname, port=none, param_pairs=RRParam1} =
 	sipurl:parse(RRoute1#contact.urlstr),
 
     %% contact.urlstr sipurl parameters
-    io:format("test: add_record_route/2 - 4.2~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 4.2"),
     ["true"] = url_param:find(RRParam1, "lr"),
     %% we should never set transport
     [] = url_param:find(RRParam1, "transport"),
 
     %% contact.contact_param
-    io:format("test: add_record_route/2 - 5~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 5"),
     EmptyContactParam = contact_param:to_norm([]),
     EmptyContactParam = RRoute1#contact.contact_param,
 
     %% Already existing RR, and test SIPS protocol as well
-    io:format("test: add_record_route/2 - 6.1~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 6.1"),
     RRHeader2 = add_record_route(sipurl:parse("sips:ft@two.example.org;transport=tls"), RRHeader1),
     %% get our RRoute2 and also check that RRoute1 is still there
-    io:format("test: add_record_route/2 - 6.2~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 6.2"),
     [RRoute2, RRoute1] = sipheader:record_route(RRHeader2),
 
     %% contact.urlstr
-    io:format("test: add_record_route/2 - 6.3~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 6.3"),
     #sipurl{proto="sips", host=MyHostname, port=none, param_pairs=RRParam2} =
 	sipurl:parse(RRoute2#contact.urlstr),
 
     %% contact.urlstr sipurl parameters
-    io:format("test: add_record_route/2 - 6.4~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 6.4"),
     ["true"] = url_param:find(RRParam2, "lr"),
     %% transport=tls is deprecated
     [] = url_param:find(RRParam2, "transport"),
 
     %% check that add_record_route/2 does not add duplicate Record-Route
-    io:format("test: add_record_route/2 - 7~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 7"),
     RRHeader3 = add_record_route(sipurl:parse("sips:ft@two.example.org;transport=tls"), RRHeader2),
 
-    io:format("test: add_record_route/2 - 8~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 8"),
     [RRoute2, RRoute1] = sipheader:record_route(RRHeader3),
 
-    io:format("test: add_record_route/2 - 9.1~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 9.1"),
     %% check that we don't care about unknown transport=
     RRHeader9 = add_record_route(sipurl:parse("sip:ft@foo.example.org;transport=foo"), EmptyHeader),
 
-    io:format("test: add_record_route/2 - 9.2~n"),
+    autotest:mark(?LINE, "add_record_route/2 - 9.2"),
     [RRoute9] = sipheader:record_route(RRHeader9),
     RRoute9_URL = sipurl:parse(RRoute9#contact.urlstr),
     %% we should never set transport
@@ -1019,7 +1019,7 @@ test() ->
 
     %% build request header
     %%--------------------------------------------------------------------
-    io:format("test: build request header - 1~n"),
+    autotest:mark(?LINE, "build request header - 1"),
     ReqHeader = keylist:from_list([
 				   {"Via",	["SIP/2.0/TLS 130.237.90.1:111",
 						 "SIP/2.0/TCP 2001:6b0:5:987::1"]},
@@ -1038,15 +1038,15 @@ test() ->
     %% make_answerheader(RequestHeader)
     %%--------------------------------------------------------------------
     %% check that our Record-Route was turned into a Route
-    io:format("test: make_answerheader/1 - 1~n"),
+    autotest:mark(?LINE, "make_answerheader/1 - 1"),
     AHeader1 = make_answerheader(ReqHeader),
     ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch('route', AHeader1),
 
-    io:format("test: make_answerheader/1 - 2~n"),
+    autotest:mark(?LINE, "make_answerheader/1 - 2"),
     %% Check that the Record-Route was deleted
     [] = keylist:fetch('record-route', AHeader1),
 
-    io:format("test: make_answerheader/1 - 3~n"),
+    autotest:mark(?LINE, "make_answerheader/1 - 3"),
     %% Test without a Record-Route header
     AHeader2 = keylist:delete('record-route', ReqHeader),
     AHeader2 = make_answerheader(AHeader2),
@@ -1054,58 +1054,58 @@ test() ->
 
     %% get_loop_cookie(ReqHeader, URI, Proto
     %%--------------------------------------------------------------------
-    io:format("test: get_loop_cookie/3 - 1~n"),
+    autotest:mark(?LINE, "get_loop_cookie/3 - 1"),
     "JYJPsr4IqjymexLGUB58yg" = get_loop_cookie(ReqHeader, sipurl:parse("sip:test@example.org"), tcp),
 
 
     %% make_response(Status, Reason, Body, ExtraHeaders, Parameters, Proto, Request)
     %%--------------------------------------------------------------------
-    io:format("test: make_response/7 - 1.1~n"),
+    autotest:mark(?LINE, "make_response/7 - 1.1"),
     Response1 = make_response(100, "Trying", "test", [], [], tcp, #request{header=ReqHeader}),
 
     %% basic response record check
-    io:format("test: make_response/7 - 1.2~n"),
+    autotest:mark(?LINE, "make_response/7 - 1.2"),
     #response{status=100, reason="Trying", body = <<"test">>} = Response1,
 
     %% Timestamp still present in 100 Trying check
-    io:format("test: make_response/7 - 1.3~n"),
+    autotest:mark(?LINE, "make_response/7 - 1.3"),
     ["1234"] = keylist:fetch("Timestamp", Response1#response.header),
 
     %% correct Content-Length added
-    io:format("test: make_response/7 - 1.4~n"),
+    autotest:mark(?LINE, "make_response/7 - 1.4"),
     ["4"] = keylist:fetch('content-length', Response1#response.header),
 
     %% Foo header not copied
-    io:format("test: make_response/7 - 1.5~n"),
+    autotest:mark(?LINE, "make_response/7 - 1.5"),
     [] = keylist:fetch("Foo", Response1#response.header),
 
     %% test make_response/7
-    io:format("test: make_response/7 - 2.1~n"),
+    autotest:mark(?LINE, "make_response/7 - 2.1"),
     Response2 = make_response(486, "_BUSY_", <<>>, [{"Extra-Header", ["test"]}], ["test=true"],
 			      tls6, #request{header=ReqHeader}),
 
     %% basic response record check
-    io:format("test: make_response/7 - 2.2~n"),
+    autotest:mark(?LINE, "make_response/7 - 2.2"),
     #response{status=486, reason="_BUSY_", body = <<>>} = Response2,
 
     %% Timestamp NOT present in 486 Busy Here
-    io:format("test: make_response/7 - 2.3~n"),
+    autotest:mark(?LINE, "make_response/7 - 2.3"),
     [] = keylist:fetch("Timestamp", Response2#response.header),
 
     %% Content-Type NOT present in 486 Busy Here with empty body
-    io:format("test: make_response/7 - 2.4~n"),
+    autotest:mark(?LINE, "make_response/7 - 2.4"),
     [] = keylist:fetch("Content-Type", Response2#response.header),
 
     %% Extra-Header supplied added correctly
-    io:format("test: make_response/7 - 2.5~n"),
+    autotest:mark(?LINE, "make_response/7 - 2.5"),
     ["test"] = keylist:fetch("Extra-Header", Response2#response.header),
 
     %% Make sure Record-Route is NOT turned into Route (we used to do that, but it was wrong)
-    io:format("test: make_response/7 - 2.6.1~n"),
+    autotest:mark(?LINE, "make_response/7 - 2.6.1"),
     ["<sip:p1:1111>", "<sip:p2:2222>"] = keylist:fetch('record-route', Response2#response.header),
 
     %% (make sure Route is still empty)
-    io:format("test: make_response/7 - 2.6.2~n"),
+    autotest:mark(?LINE, "make_response/7 - 2.6.2"),
     [] = keylist:fetch('route', Response2#response.header),
 
 
@@ -1113,15 +1113,15 @@ test() ->
     %%--------------------------------------------------------------------
     CVPR_Header = keylist:from_list([{"Proxy-Require", ["fooextension"]}]),
 
-    io:format("test: check_valid_proxy_request/2 - 1~n"),
+    autotest:mark(?LINE, "check_valid_proxy_request/2 - 1"),
     %% verify that we don't reject ACK even if there is a Proxy-Require in there
     true = check_valid_proxy_request("ACK", CVPR_Header),
 
-    io:format("test: check_valid_proxy_request/2 - 2~n"),
+    autotest:mark(?LINE, "check_valid_proxy_request/2 - 2"),
     %% verify that we don't reject CANCEL even if there is a Proxy-Require in there
     true = check_valid_proxy_request("CANCEL", CVPR_Header),
 
-    io:format("test: check_valid_proxy_request/2 - 3~n"),
+    autotest:mark(?LINE, "check_valid_proxy_request/2 - 3"),
     %% verify that we reject everything else that has a Proxy-Require (since we don't
     %% support any extensions)
     {siperror, 420, "Bad Extension", _EH} = (catch check_valid_proxy_request("OPTIONS", CVPR_Header)),
@@ -1129,23 +1129,23 @@ test() ->
 
     %% check_proxy_request(Request)
     %%--------------------------------------------------------------------
-    io:format("test: check_proxy_request/1 - 1~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 1"),
     ReqHeader2 = keylist:set("Content-Length", ["900"], ReqHeader),
     Req2 = #request{method="MESSAGE", uri=sipurl:parse("sip:test@example.org"), header=ReqHeader2, body = <<"foo">>},
 
-    io:format("test: check_proxy_request/1 - 2~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 2"),
     {ok, ReqHeader2_2, ApproxMsgSize2_2} = check_proxy_request(Req2),
 
     %% check that Content-Length has been properly set in ReqHeader2_2
-    io:format("test: check_proxy_request/1 - 3~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 3"),
     ["3"] = keylist:fetch('content-length', ReqHeader2_2),
 
     %% check that requests get a default Max-Forwards if they lack it
-    io:format("test: check_proxy_request/1 - 4~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 4"),
     ["70"] = keylist:fetch('max-forwards', ReqHeader2_2),
 
     %% check that the approximate message size is reasonable
-    io:format("test: check_proxy_request/1 - 5~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 5"),
     %% can't do exact match here since size depends on variables like hostname
     %% or IP address as string which is not the same for everyone
     RecordRouteLen = length(lists:flatten( keylist:fetch('record-route', ReqHeader2_2) )),
@@ -1157,20 +1157,20 @@ test() ->
     end,
 
     %% check that we don't accept unknown Proxy-Require
-    io:format("test: check_proxy_request/1 - 6~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 6"),
     ReqHeader3 = keylist:set("Proxy-Require", ["CantBeSupported"], ReqHeader2),
     Req3 = Req2#request{method="INVITE", header=ReqHeader3, body = <<>>},
     Unsupported = [{"Unsupported",["CantBeSupported"]}],
     {siperror, 420, _, Unsupported} = (catch check_proxy_request(Req3)),
 
     %% check that we do accept Max-Forwards 2
-    io:format("test: check_proxy_request/1 - 7~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 7"),
     ReqHeader4 = keylist:set("Max-Forwards", ["2"], ReqHeader),
     Req4 = Req3#request{header=ReqHeader4},
     {ok, _, _} = check_proxy_request(Req4),
 
     %% check that we don't accept Max-Forwards 1
-    io:format("test: check_proxy_request/1 - 8~n"),
+    autotest:mark(?LINE, "check_proxy_request/1 - 8"),
     ReqHeader5 = keylist:set("Max-Forwards", ["1"], ReqHeader),
     Req5 = Req3#request{header=ReqHeader5},
     {siperror, 483, _} = (catch check_proxy_request(Req5)),
@@ -1178,7 +1178,7 @@ test() ->
 
     %% process_route_header(Header, URI)
     %%--------------------------------------------------------------------
-    io:format("test: process_route_header/2 - 1~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 1"),
     InURI = sipurl:parse("sip:in@example.org"),
     [InURIasContact] = contact:parse(["<sip:in@example.org>"]),
     StrictRouter = "<sip:strict-router.example.org>",
@@ -1189,37 +1189,37 @@ test() ->
     LooseRouterURL = sipurl:parse("sip:loose-router.example.org;lr=true"),
 
     %% Test strict router traversal
-    io:format("test: process_route_header/2 - 2.1~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 2.1"),
     PRHeader1 = keylist:from_list([{"Route", [StrictRouter, LooseRouter]}]),
     {ok, PRHeader1_out, StrictRouterURL, StrictRouterURL} =
 	process_route_header(PRHeader1, InURI),
 
-    io:format("test: process_route_header/2 - 2.2~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 2.2"),
     %% check the Route headers in the new headers returned
     [LooseRouterContact, InURIasContact] = sipheader:route(PRHeader1_out),
 
     %% Test strict router traversal with no other Route-header
-    io:format("test: process_route_header/2 - 3.1~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 3.1"),
     PRHeader2 = keylist:from_list([{"Route", [StrictRouter]}]),
     {ok, PRHeader2_out, StrictRouterURL, StrictRouterURL} =
 	process_route_header(PRHeader2, InURI),
 
-    io:format("test: process_route_header/2 - 3.2~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 3.2"),
     %% check the Route headers in the new headers returned
     [InURIasContact] = sipheader:route(PRHeader2_out),
 
     %% Test loose router, with one more Route
-    io:format("test: process_route_header/2 - 4.1~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 4.1"),
     PRHeader3 = keylist:from_list([{"Route", [LooseRouter, StrictRouter]}]),
     {ok, PRHeader3_out, LooseRouterURL, InURI} =
 	process_route_header(PRHeader3, InURI),
 
-    io:format("test: process_route_header/2 - 4.2~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 4.2"),
     %% check the Route headers in the new headers returned
     [LooseRouterContact, StrictRouterContact] = sipheader:route(PRHeader3_out),
 
     %% Test loose router alone
-    io:format("test: process_route_header/2 - 5.1~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 5.1"),
     PRHeader4 = keylist:from_list([{"Route", [LooseRouter]}]),
     {ok, PRHeader4_out, LooseRouterURL, InURI} =
 	process_route_header(PRHeader4, InURI),
@@ -1227,61 +1227,61 @@ test() ->
     [LooseRouterContact] = sipheader:route(PRHeader4_out),
 
     %% check empty header, no Route present
-    io:format("test: process_route_header/2 - 6~n"),
+    autotest:mark(?LINE, "process_route_header/2 - 6"),
     nomatch = process_route_header(keylist:from_list([]), InURI),
 
 
     %% create_via(Proto, Parameters)
     %%--------------------------------------------------------------------
-    io:format("test: create_via/1 - 1.1~n"),
+    autotest:mark(?LINE, "create_via/1 - 1.1"),
     TLSBasicVia = create_via(tls, []),
 
-    io:format("test: create_via/1 - 1.2~n"),
+    autotest:mark(?LINE, "create_via/1 - 1.2"),
     #via{proto="SIP/2.0/TLS", host=MyHostname, port=SipsLPort} = TLSBasicVia,
 
 
     %% branch_contains_loopcookie(Branch)
     %%--------------------------------------------------------------------
-    io:format("test: branch_contains_loopcookie/1 - 1~n"),
+    autotest:mark(?LINE, "branch_contains_loopcookie/1 - 1"),
     %% contains Yxa loop cookie
     true = branch_contains_loopcookie("z9hG4bK-yxa-foo-oLOOPCOOKIE"),
 
-    io:format("test: branch_contains_loopcookie/1 - 2~n"),
+    autotest:mark(?LINE, "branch_contains_loopcookie/1 - 2"),
     %% contains -oSOMETHING, but does not begin with "z9hG4bK-yxa"
     false = branch_contains_loopcookie("z9hG4bK-foo-oLOOPCOOKIE"),
 
-    io:format("test: branch_contains_loopcookie/1 - 3~n"),
+    autotest:mark(?LINE, "branch_contains_loopcookie/1 - 3"),
     %% begins with "z9hG4bK-yxa", but has no loop cookie
     false = branch_contains_loopcookie("z9hG4bK-yxa-foo"),
 
 
     %% stateless_generate_branch(OrigURI, Header, Nodename)
     %%--------------------------------------------------------------------
-    io:format("test: stateless_generate_branch/3 - 0~n"),
+    autotest:mark(?LINE, "stateless_generate_branch/3 - 0"),
     SGB_URL1 = sipurl:parse("sip:ft@example.org"),
 
-    io:format("test: stateless_generate_branch/3 - 1~n"),
+    autotest:mark(?LINE, "stateless_generate_branch/3 - 1"),
     %% test normal case
     {ok, "z9hG4bK-yxa-S1Xsdm0n23TBxJnAMqP3ww"} =
 	stateless_generate_branch(SGB_URL1, ReqHeader, "test-nodename"),
 
-    io:format("test: stateless_generate_branch/3 - 2~n"),
+    autotest:mark(?LINE, "stateless_generate_branch/3 - 2"),
     SGB_Header2 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
     {ok, "z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg"} =
 	stateless_generate_branch(SGB_URL1, SGB_Header2, "test-nodename"),
 
-    io:format("test: stateless_generate_branch/3 - 3~n"),
+    autotest:mark(?LINE, "stateless_generate_branch/3 - 3"),
     %% Test without Via header
     error = stateless_generate_branch(SGB_URL1, keylist:delete('via', ReqHeader), "test-nodename"),
 
 
     %% add_loopcookie_to_branch(LoopCookie, Branch, Parameters, ParamDict)
     %%--------------------------------------------------------------------
-    io:format("test: add_loopcookie_to_branch/4 - 1~n"),
+    autotest:mark(?LINE, "add_loopcookie_to_branch/4 - 1"),
     %% No loop cookie, transparently returns Parameters
     ["foo=Bar"] = add_loopcookie_to_branch(none, "foo", ["foo=Bar"], sipheader:param_to_dict([])),
 
-    io:format("test: add_loopcookie_to_branch/4 - 2~n"),
+    autotest:mark(?LINE, "add_loopcookie_to_branch/4 - 2"),
     %% Normal case
     ["branch=x-oLOOP"] = add_loopcookie_to_branch("LOOP", "x", ["branch=x"],
 						  sipheader:param_to_dict(["branch=x"])),
@@ -1289,14 +1289,14 @@ test() ->
 
     %% add_stateless_generated_branch2(Header, OrigURI, LoopCookie, Parameters, Node)
     %%--------------------------------------------------------------------
-    io:format("test: add_stateless_generated_branch2/5 - 1~n"),
+    autotest:mark(?LINE, "add_stateless_generated_branch2/5 - 1"),
     {siperror, 500, _} =
 	(catch add_stateless_generated_branch2( keylist:delete('via', ReqHeader),
 					        sipurl:parse("sip:ft@example.org"),
 					        "LOOPCOOKIE", ["branch=x"], 'test-nodename'
 					       )),
 
-    io:format("test: add_stateless_generated_branch2/5 - 2~n"),
+    autotest:mark(?LINE, "add_stateless_generated_branch2/5 - 2"),
     ASGB_Header1 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
     ["branch=z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg-oLOOPCOOKIE"] =
 	add_stateless_generated_branch2( ASGB_Header1,
@@ -1304,7 +1304,7 @@ test() ->
 					 "LOOPCOOKIE", [], 'test-nodename'
 					),
 
-    io:format("test: add_stateless_generated_branch2/5 - 3~n"),
+    autotest:mark(?LINE, "add_stateless_generated_branch2/5 - 3"),
     ASGB_Header1 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
     ["branch=z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg"] =
 	add_stateless_generated_branch2( ASGB_Header1,
@@ -1315,105 +1315,105 @@ test() ->
 
     %% proxy_add_via(Header, URI, Parameters, Proto)
     %%--------------------------------------------------------------------
-    io:format("test: proxy_add_via/1 - 0~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 0"),
     PAV_Header = keylist:delete("Via", ReqHeader),
 
     %% test proxy_add_via/1 with no present Via header
-    io:format("test: proxy_add_via/1 - 1.2~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 1.2"),
     PAVheader1 = proxy_add_via(PAV_Header, InURI,
 			       ["branch=z9hG4bK-test"], tcp6),
     PAV_TopVia1 = sipheader:topvia(PAVheader1),
 
     %% get branch from added Via, branch computated depends on your hostname
     %% so we can't check for a static one
-    io:format("test: proxy_add_via/1 - 1.3~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 1.3"),
     Branch1 = sipheader:get_via_branch_full(PAV_TopVia1),
 
     %% basic check the top via that was added
-    io:format("test: proxy_add_via/1 - 1.4~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 1.4"),
     #via{proto="SIP/2.0/TCP", host=MyHostname, port=SipLPort,
 	 param=["branch=" ++ Branch1]} = PAV_TopVia1,
 
 
-    io:format("test: proxy_add_via/1 - 2.1~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 2.1"),
     PAV_HeaderIn2 = keylist:set("Via", sipheader:via_print([TLSBasicVia]), PAV_Header),
 
     %% test proxy_add_via/1 with an existing Via header
-    io:format("test: proxy_add_via/1 - 2.2~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 2.2"),
     PAV_Header2 = proxy_add_via(PAV_HeaderIn2, InURI,
 				["branch=z9hG4bK-test"], tcp6),
 
     %% check the two via's that should be present in PAVheader2
-    io:format("test: proxy_add_via/1 - 2.3~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 2.3"),
     Branch2 = sipheader:get_via_branch_full(sipheader:topvia(PAV_Header2)),
     PAV_TopVia1_NewLoopCookie = PAV_TopVia1#via{param=["branch=" ++ Branch2]},
     [PAV_TopVia1_NewLoopCookie, TLSBasicVia] = sipheader:via(PAV_Header2),
 
 
     %% test with a branch that already contains a loop cookie
-    io:format("test: proxy_add_via/1 - 3.1~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 3.1"),
     PAV_Header3 = proxy_add_via(PAV_Header, InURI,
 				["branch=z9hG4bK-yxa-foo-oLOOPCOOKIE"], tcp6),
     PAV_TopVia3 = sipheader:topvia(PAV_Header3),
 
     %% get branch from added Via, branch computated depends on your hostname
     %% so we can't check for a static one
-    io:format("test: proxy_add_via/1 - 3.2~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 3.2"),
     "z9hG4bK-yxa-foo-oLOOPCOOKIE" = sipheader:get_via_branch_full(PAV_TopVia3),
 
 
-    io:format("test: proxy_add_via/1 - 4.1~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 4.1"),
     PAV_HeaderIn4 = keylist:set("Via", sipheader:via_print([TLSBasicVia]), PAV_Header),
 
-    io:format("test: proxy_add_via/1 - 4.2~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 4.2"),
     %% test without a supplied branch - a stateless branch should be added
     PAV_Header4 = proxy_add_via(PAV_HeaderIn4, InURI, [], udp),
     PAV_TopVia4 = sipheader:topvia(PAV_Header4),
 
     %% get branch from added Via, branch computated depends on your hostname
     %% so we can't check for a static one
-    io:format("test: proxy_add_via/1 - 4.3~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 4.3"),
     "z9hG4bK-yxa-" ++ PAV_Branch4 = sipheader:get_via_branch_full(PAV_TopVia4),
 
     %% Make sure there is a loop cookie in the stateless branch that was added
-    io:format("test: proxy_add_via/1 - 4.4~n"),
+    autotest:mark(?LINE, "proxy_add_via/1 - 4.4"),
     true = branch_contains_loopcookie("z9hG4bK-yxa-" ++ PAV_Branch4),
 
 
     %% test proxy_check_maxforwards(Header)
     %%--------------------------------------------------------------------
-    io:format("test: proxy_check_maxforwards/1 - 1~n"),
+    autotest:mark(?LINE, "proxy_check_maxforwards/1 - 1"),
     %% check that we add the default specified in RFC3261 to header that has no Max-Forwards
     MaxFwd_H1 = proxy_check_maxforwards(keylist:from_list([])),
     ["70"] = keylist:fetch('max-forwards', MaxFwd_H1),
 
-    io:format("test: proxy_check_maxforwards/1 - 2~n"),
+    autotest:mark(?LINE, "proxy_check_maxforwards/1 - 2"),
     %% check that we decrease Max-Forwards by one (normal case)
     MaxFwd_H2 = proxy_check_maxforwards(MaxFwd_H1),
     ["69"] = keylist:fetch('max-forwards', MaxFwd_H2),
 
-    io:format("test: proxy_check_maxforwards/1 - 3~n"),
+    autotest:mark(?LINE, "proxy_check_maxforwards/1 - 3"),
     %% check that we don't allow overly large Max-Forwards
     MaxFwd_H3_in = keylist:set("Max-Forwards", ["500"], MaxFwd_H1),
     MaxFwd_H3 = proxy_check_maxforwards(MaxFwd_H3_in),
     ["255"] = keylist:fetch('max-forwards', MaxFwd_H3),
 
-    io:format("test: proxy_check_maxforwards/1 - 4~n"),
+    autotest:mark(?LINE, "proxy_check_maxforwards/1 - 4"),
     %% check that we don't refuse Max-Forwards: 2
     MaxFwd_H4_in = keylist:set("Max-Forwards", ["2"], MaxFwd_H1),
     MaxFwd_H4 = proxy_check_maxforwards(MaxFwd_H4_in),
     ["1"] = keylist:fetch('max-forwards', MaxFwd_H4),
 
-    io:format("test: proxy_check_maxforwards/1 - 5~n"),
+    autotest:mark(?LINE, "proxy_check_maxforwards/1 - 5"),
     %% check that we don't reach 0
     {siperror, 483, _} = (catch proxy_check_maxforwards(MaxFwd_H4)),
 
-    io:format("test: proxy_check_maxforwards/1 - 6~n"),
+    autotest:mark(?LINE, "proxy_check_maxforwards/1 - 6"),
     %% check that we don't allow 0
     MaxFwd_H6 = keylist:set("Max-Forwards", ["0"], MaxFwd_H1),
     {siperror, 483, _} = (catch proxy_check_maxforwards(MaxFwd_H6)),
 
-    io:format("test: proxy_check_maxforwards/1 - 7~n"),
+    autotest:mark(?LINE, "proxy_check_maxforwards/1 - 7"),
     %% check that we don't allow negative numbers
     MaxFwd_H7 = keylist:set("Max-Forwards", ["-1"], MaxFwd_H1),
     {siperror, 483, _} = (catch proxy_check_maxforwards(MaxFwd_H7)),
@@ -1421,18 +1421,18 @@ test() ->
 
     %% standardcopy(Header, ExtraHeaders)
     %%--------------------------------------------------------------------
-    io:format("test: standardcopy/2 - 1.1~n"),
+    autotest:mark(?LINE, "standardcopy/2 - 1.1"),
     SC_H1 = standardcopy(ReqHeader, []),
 
     %% verify results
-    io:format("test: standardcopy/2 - 1.2~n"),
+    autotest:mark(?LINE, "standardcopy/2 - 1.2"),
     ["SIP/2.0/TLS 130.237.90.1:111", "SIP/2.0/TCP 2001:6b0:5:987::1"] = keylist:fetch('via', SC_H1),
     ["<sip:test@it.su.se>;tag=f-123"] = keylist:fetch('from', SC_H1),
     ["<sip:test@it.su.se>;tag=t-123"] = keylist:fetch('to', SC_H1),
     ["abc123@test"] = keylist:fetch('call-id', SC_H1),
     ["4711 INVITE"] = keylist:fetch('cseq', SC_H1),
 
-    io:format("test: standardcopy/2 - 1.3~n"),
+    autotest:mark(?LINE, "standardcopy/2 - 1.3"),
     SC_H1_1 = keylist:delete('via',	SC_H1),
     SC_H1_2 = keylist:delete('from',	SC_H1_1),
     SC_H1_3 = keylist:delete('to',	SC_H1_2),
@@ -1441,16 +1441,16 @@ test() ->
     %% verify that no more headers than the ones we expected were copied
     SC_H1_5 = keylist:from_list([]),
 
-    io:format("test: standardcopy/2 - 2.1~n"),
+    autotest:mark(?LINE, "standardcopy/2 - 2.1"),
     %% test standardcopy with one extra header
     SC_H2_ExtraHeader = [{"Subject", keylist:fetch("subject", ReqHeader)}],
     SC_H2 = standardcopy(ReqHeader, SC_H2_ExtraHeader),
 
     %% verify results
-    io:format("test: standardcopy/2 - 2.2~n"),
+    autotest:mark(?LINE, "standardcopy/2 - 2.2"),
     ["test subject short form"] = keylist:fetch("subject", SC_H2),
 
-    io:format("test: standardcopy/2 - 2.3~n"),
+    autotest:mark(?LINE, "standardcopy/2 - 2.3"),
     SC_H2_1 = keylist:delete("subject", SC_H2),
     %% verify that no more headers than the ones we expected were copied
     SC_H2_1 = SC_H1,
@@ -1461,30 +1461,30 @@ test() ->
     SReqB_Header1 = keylist:from_list([{"Content-Length", ["1"]}]),
     SReqB_Header2 = keylist:from_list([]),
 
-    io:format("test: set_request_body/2 - 1.1~n"),
+    autotest:mark(?LINE, "set_request_body/2 - 1.1"),
     %% set a binary body
     #request{header=SReqB_Header1_1, body = <<"test">>} =
 	set_request_body(#request{header = SReqB_Header1, body = <<>>}, <<"test">>),
 
-    io:format("test: set_request_body/2 - 1.2~n"),
+    autotest:mark(?LINE, "set_request_body/2 - 1.2"),
     %% verify that Content-Length was set correctly
     ["4"] = keylist:fetch('content-length', SReqB_Header1_1),
 
-    io:format("test: set_request_body/2 - 2.1~n"),
+    autotest:mark(?LINE, "set_request_body/2 - 2.1"),
     %% set a list body - list bodies are kept for backwards compatibility
     #request{header=SReqB_Header2_1, body = <<"test">>} =
 	set_request_body(#request{header = SReqB_Header2, body = <<>>}, "test"),
 
-    io:format("test: set_request_body/2 - 2.2~n"),
+    autotest:mark(?LINE, "set_request_body/2 - 2.2"),
     %% verify that Content-Length was set correctly
     ["4"] = keylist:fetch('content-length', SReqB_Header2_1),
 
-    io:format("test: set_request_body/2 - 3.1~n"),
+    autotest:mark(?LINE, "set_request_body/2 - 3.1"),
     %% delete body
     #request{header=SReqB_Header3_1, body = <<>>} =
 	set_request_body(#request{header = SReqB_Header1, body = <<"test">>}, <<>>),
 
-    io:format("test: set_request_body/2 - 2.2~n"),
+    autotest:mark(?LINE, "set_request_body/2 - 2.2"),
     %% verify that Content-Length was set correctly
     ["0"] = keylist:fetch('content-length', SReqB_Header3_1),
 
@@ -1494,51 +1494,51 @@ test() ->
     SResB_Header1 = keylist:from_list([{"Content-Length", ["1"]}]),
     SResB_Header2 = keylist:from_list([]),
 
-    io:format("test: set_response_body/2 - 1.1~n"),
+    autotest:mark(?LINE, "set_response_body/2 - 1.1"),
     %% set a binary body
     #response{header=SResB_Header1_1, body = <<"test">>} =
 	set_response_body(#response{header = SResB_Header1, body = <<>>}, <<"test">>),
 
-    io:format("test: set_response_body/2 - 1.2~n"),
+    autotest:mark(?LINE, "set_response_body/2 - 1.2"),
     %% verify that Content-Length was set correctly
     ["4"] = keylist:fetch('content-length', SResB_Header1_1),
 
-    io:format("test: set_response_body/2 - 2.1~n"),
+    autotest:mark(?LINE, "set_response_body/2 - 2.1"),
     %% set a list body - list bodies are kept for backwards compatibility
     #response{header=SResB_Header2_1, body = <<"test">>} =
 	set_response_body(#response{header = SResB_Header2, body = <<>>}, "test"),
 
-    io:format("test: set_response_body/2 - 2.2~n"),
+    autotest:mark(?LINE, "set_response_body/2 - 2.2"),
     %% verify that Content-Length was set correctly
     ["4"] = keylist:fetch('content-length', SResB_Header2_1),
 
-    io:format("test: set_response_body/2 - 3.1~n"),
+    autotest:mark(?LINE, "set_response_body/2 - 3.1"),
     %% delete body
     #response{header=SResB_Header3_1, body = <<>>} =
 	set_response_body(#response{header = SResB_Header1, body = <<"test">>}, <<>>),
 
-    io:format("test: set_response_body/2 - 2.2~n"),
+    autotest:mark(?LINE, "set_response_body/2 - 2.2"),
     %% verify that Content-Length was set correctly
     ["0"] = keylist:fetch('content-length', SResB_Header3_1),
 
 
     %% fix_content_length(Header, Body)
     %%--------------------------------------------------------------------
-    io:format("test: fix_content_length/2 - 1~n"),
+    autotest:mark(?LINE, "fix_content_length/2 - 1"),
     %% binary body, no Content-Length header
     ["4"] = keylist:fetch('content-length', fix_content_length(
 					      keylist:from_list([]),
 					      <<"test">>)
 			 ),
 
-    io:format("test: fix_content_length/2 - 2~n"),
+    autotest:mark(?LINE, "fix_content_length/2 - 2"),
     %% list body, incorrect Content-Length header
     ["4"] = keylist:fetch('content-length', fix_content_length(
 					      keylist:from_list([{"Content-Length", ["600"]}]),
 					      "test")
 			 ),
 
-    io:format("test: fix_content_length/2 - 3~n"),
+    autotest:mark(?LINE, "fix_content_length/2 - 3"),
     %% delete body, incorrect Content-Length header
     ["0"] = keylist:fetch('content-length', fix_content_length(
 					      keylist:from_list([{"Content-Length", ["600"]}]),
@@ -1548,7 +1548,7 @@ test() ->
 
     %% proxyauth_without_response(Header)
     %%--------------------------------------------------------------------
-    io:format("test: proxyauth_without_response/1 - 1~n"),
+    autotest:mark(?LINE, "proxyauth_without_response/1 - 1"),
     PAWR_Str1 =
 	"Digest username=\"ft\", realm=\"su.se\", uri=\"sip:example.org\", "
 	"response=\"test-response\", nonce=\"test-nonce\", opaque=\"test-opaque\", "
@@ -1559,7 +1559,7 @@ test() ->
 		      keylist:from_list([{"Proxy-Authorization", [PAWR_Str1]}])
 		     )),
 
-    io:format("test: proxyauth_without_response/1 - 2~n"),
+    autotest:mark(?LINE, "proxyauth_without_response/1 - 2"),
     none = proxyauth_without_response( keylist:from_list([]) ),
 
     ok.

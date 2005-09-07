@@ -618,11 +618,11 @@ test() ->
     %% gregorian_weekno(Date, Wkst)
     %%--------------------------------------------------------------------
     %% first week (when Wkst = mo)
-    io:format("test: gregorian_weekno/2 - 1~n"),
+    autotest:mark(?LINE, "gregorian_weekno/2 - 1"),
     1  = gregorian_weekno({0,1,3}, mo),
   
     %% check that week boundaries are honored
-    io:format("test: gregorian_weekno/2 - 2~n"),
+    autotest:mark(?LINE, "gregorian_weekno/2 - 2"),
     W = gregorian_weekno({2005,5,2}, mo), %% mo
     W = gregorian_weekno({2005,5,3}, mo),
     W = gregorian_weekno({2005,5,4}, mo),
@@ -636,11 +636,11 @@ test() ->
     NW = gregorian_weekno({2005,5,9}, mo), % next week
 
     %% first week (when Wkst = mo)
-    io:format("test: gregorian_weekno/2 - 3~n"),
+    autotest:mark(?LINE, "gregorian_weekno/2 - 3"),
     2  = gregorian_weekno({0,1,10}, mo),
 
     %% check that week boundaries are honored - when Wkst = su
-    io:format("test: gregorian_weekno/2 - 4~n"),
+    autotest:mark(?LINE, "gregorian_weekno/2 - 4"),
     W2 = gregorian_weekno({1997,1,12}, su), %% su
     W2 = gregorian_weekno({1997,1,13}, su),
     W2 = gregorian_weekno({1997,1,14}, su),
@@ -657,267 +657,267 @@ test() ->
     %% diff_weekly(Date1, Date2, Wkst)
     %%--------------------------------------------------------------------
     %% same week - dates are start and end of week 
-    io:format("test: diff_weekly/3 - 1~n"),
+    autotest:mark(?LINE, "diff_weekly/3 - 1"),
     0 = diff_weekly({2005,2,20}, {2005,2,14}, mo),
 
     %% check week end boundary
-    io:format("test: diff_weekly/3 - 2~n"),
+    autotest:mark(?LINE, "diff_weekly/3 - 2"),
     1 = diff_weekly({2005,2,21}, {2005,2,14}, mo),
 
     %% check week start boundary
-    io:format("test: diff_weekly/3 - 3~n"),
+    autotest:mark(?LINE, "diff_weekly/3 - 3"),
     1 = diff_weekly({2005,2,20}, {2005,2,13}, mo),
 
     %% check both end and start boundary
-    io:format("test: diff_weekly/3 - 4~n"),
+    autotest:mark(?LINE, "diff_weekly/3 - 4"),
     2 = diff_weekly({2005,2,21}, {2005,2,13}, mo),
 
 
     %% date_to_weekno(DateTime, Wkst) 
     %%--------------------------------------------------------------------
     %% first week not part of year
-    io:format("test: date_to_weekno/2 - 1~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 1"),
     {2005, 40} = date_to_weekno({2005,10,5}, mo),
     
     %% first week part of year
-    io:format("test: date_to_weekno/2 - 2~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 2"),
     {2003, 40} = date_to_weekno({2003,10,5}, mo),
     
     %% test handling of first (partial) week in year 
     %% first week part of year 
-    io:format("test: date_to_weekno/2 - 3~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 3"),
     {2003, 1} = date_to_weekno({2003,1,1}, mo),
     %% first week not part of year
-    io:format("test: date_to_weekno/2 - 4~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 4"),
     {2004, 53} = date_to_weekno({2005,1,1}, mo),
 
     %% test handling of last (partial) week in year
     %% last week not part of year
-    io:format("test: date_to_weekno/2 - 5~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 5"),
     {2004, 1} = date_to_weekno({2003,12,31}, mo),
     %% last week part of year
-    io:format("test: date_to_weekno/2 - 6~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 6"),
     {2004, 53} = date_to_weekno({2004,12,31}, mo),
 
     %% same tests with sunday instead of monday as first day of week
     
     %% first week not part of year
-    io:format("test: date_to_weekno/2 - 7~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 7"),
     {2005, 40} = date_to_weekno({2005,10,5}, su),
     
     %% first week part of year
-    io:format("test: date_to_weekno/2 - 8~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 8"),
     {2003, 41} = date_to_weekno({2003,10,5}, su),
     
     %% test handling of first (partial) week in year 
     %% first week part of year 
-    io:format("test: date_to_weekno/2 - 9~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 9"),
     {2003, 1} = date_to_weekno({2003,1,1}, su),
     %% first week not part of year
-    io:format("test: date_to_weekno/2 - 10~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 10"),
     {2004, 52} = date_to_weekno({2005,1,1}, su),
 
     %% test handling of last (partial) week in year
     %% last week not part of year
-    io:format("test: date_to_weekno/2 - 11~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 11"),
     {2003, 53} = date_to_weekno({2003,12,31}, su),
     %% last week part of year
-    io:format("test: date_to_weekno/2 - 12~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 12"),
     {2004, 52} = date_to_weekno({2004,12,31}, su),
 
     %%--------------------------------------------------------------------
     
     %% last of first days belonging to week in prev. year
-    io:format("test: date_to_weekno/2 - 13~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 13"),
     {2004,53} = date_to_weekno({2005, 1, 2}, mo),
 
     %% first day, in first week of current  year
-    io:format("test: date_to_weekno/2 - 14~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 14"),
     {2005,1} = date_to_weekno({2005, 1, 3}, mo),
 
     %% last day (and week) of current year
-    io:format("test: date_to_weekno/2 - 15~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 15"),
     {2005,52} = date_to_weekno({2005, 12, 31}, mo),
 
     %% week in middle of year
-    io:format("test: date_to_weekno/2 - 16~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 16"),
     {2005,17} = date_to_weekno({2005, 4, 25}, mo),
 
     
     %% yearday = 1, week = 1 
-    io:format("test: date_to_weekno/2 - 17~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 17"),
     {2004,1} = date_to_weekno({2004, 1, 1}, mo),
 
     %% first day in last week of year
-    io:format("test: date_to_weekno/2 - 18~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 18"),
     {2004,53} = date_to_weekno({2004, 12, 27}, mo),
 
     %% week in middle of year
-    io:format("test: date_to_weekno/2 - 19~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 19"),
     {2004,40} = date_to_weekno({2004, 10, 1}, mo),
 
     %% last day of first week in year (last day of week = 1)
-    io:format("test: date_to_weekno/2 - 20~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 20"),
     {2003,1} = date_to_weekno({2003, 1, 5}, mo),
 
     %% first day of last week belonging to next year
-    io:format("test: date_to_weekno/2 - 21~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 21"),
     {2004,1} = date_to_weekno({2003, 12, 29}, mo),
 
     %% last day of last week belonging to current year 
-    io:format("test: date_to_weekno/2 - 22~n"),
+    autotest:mark(?LINE, "date_to_weekno/2 - 22"),
     {2003,52} = date_to_weekno({2003, 12, 28}, mo),
 
 
     %% days_in_range/2
     %%--------------------------------------------------------------------
     %% single month
-    io:format("test: days_in_range/2 - 1~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 1"),
     31 = days_in_range({2005,1}, {2005,1}),
 
     %% 2 months
-    io:format("test: days_in_range/2 - 2~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 2"),
     59 = days_in_range({2005,1}, {2005,2}),
 
     %% year boundary
-    io:format("test: days_in_range/2 - 3~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 3"),
     62 = days_in_range({2005,12}, {2006,1}),
 
     %% several months
-    io:format("test: days_in_range/2 - 4~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 4"),
     122 = days_in_range({2005,4}, {2005,7}),
 
     %% several years
-    io:format("test: days_in_range/2 - 5~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 5"),
     852 = days_in_range({2004,4}, {2006,7}),
 
     %% single month - Y-M-D format
-    io:format("test: days_in_range/2 - 6~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 6"),
     9 = days_in_range({2005,1,7}, {2005,1,15}),
 
     %% single month (start to end) - Y-M-D format
-    io:format("test: days_in_range/2 - 7~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 7"),
     31 = days_in_range({2005,1,1}, {2005,1,31}),
     
     %% 2 month - Y-M-D format (D1 > D2)
-    io:format("test: days_in_range/2 - 8~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 8"),
     17 = days_in_range({2005,1,25}, {2005,2,10}),
 
     %% 2 month - Y-M-D format (D1 < D2)
-    io:format("test: days_in_range/2 - 9~n"),
+    autotest:mark(?LINE, "days_in_range/2 - 9"),
     42 = days_in_range({2005,1,5}, {2005,2,15}),
 
 
     %% nth_bymonthday/3
     %%--------------------------------------------------------------------
     %% day in middle of month
-    io:format("test: nth_bymonthday/3 - 1~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 1"),
     {2005,4,10} = nth_bymonthday(2005, 4, 10),
 
     %% first day in month
-    io:format("test: nth_bymonthday/3 - 2~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 2"),
     {2005,4,1} = nth_bymonthday(2005, 4, 1),
 
     %% last day in month
-    io:format("test: nth_bymonthday/3 - 3~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 3"),
     {2005,4,30} = nth_bymonthday(2005, 4, 30),
 
     %% non-existent day in month
-    io:format("test: nth_bymonthday/3 - 4~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 4"),
     nth_day_does_not_exist = nth_bymonthday(2005, 4, 31),
 
     %% count days from end of month
-    io:format("test: nth_bymonthday/3 - 5~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 5"),
     {2005,4,21} = nth_bymonthday(2005, 4, -10),
 
     %% count days from end of month - last day
-    io:format("test: nth_bymonthday/3 - 6~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 6"),
     {2005,4,30} = nth_bymonthday(2005, 4, -1),
     
     %% count days from end of month - first day
-    io:format("test: nth_bymonthday/3 - 7~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 7"),
     {2005,4,1} = nth_bymonthday(2005, 4, -30),
 
     %% count days from end of month - non-existing day
-    io:format("test: nth_bymonthday/3 - 8~n"),
+    autotest:mark(?LINE, "nth_bymonthday/3 - 8"),
     nth_day_does_not_exist = nth_bymonthday(2005, 4, -31),
     
 
     %% nth_byday_in_month(Year,Month,N,DayType)
     %%--------------------------------------------------------------------
     %% 1st tuesday 
-    io:format("test: nth_byday_in_month/4 - 1~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 1"),
     {2005, 4, 5} = nth_byday_in_month(2005, 4, 1, tu),
 
     %% 2nd tuesday 
-    io:format("test: nth_byday_in_month/4 - 2~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 2"),
     {2005, 4, 12} = nth_byday_in_month(2005, 4, 2, tu),
 
     %% 3rd tuesday
-    io:format("test: nth_byday_in_month/4 - 3~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 3"),
     {2005, 4, 19} = nth_byday_in_month(2005, 4, 3, tu),
 
     %% 4th tuesday
-    io:format("test: nth_byday_in_month/4 - 4~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 4"),
     {2005, 4, 26} = nth_byday_in_month(2005, 4, 4, tu),
 
     %% no more tuesday in month
-    io:format("test: nth_byday_in_month/4 - 5~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 5"),
     nth_day_does_not_exist = nth_byday_in_month(2005, 4, 5, tu),
     
     %% 1st tuesday from end
-    io:format("test: nth_byday_in_month/4 - 6~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 6"),
     {2005, 4, 26} = nth_byday_in_month(2005, 4, -1, tu),
 
     %% 2nd tuesday from end
-    io:format("test: nth_byday_in_month/4 - 7~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 7"),
     {2005, 4, 19} = nth_byday_in_month(2005, 4, -2, tu),
 
     %% 3rd tuesday from end
-    io:format("test: nth_byday_in_month/4 - 8~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 8"),
     {2005, 4, 12} = nth_byday_in_month(2005, 4, -3, tu),
 
     %% 4th tuesday from end
-    io:format("test: nth_byday_in_month/4 - 9~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 9"),
     {2005, 4, 5} = nth_byday_in_month(2005, 4, -4, tu),
 
     %% no more tuesday in month
-    io:format("test: nth_byday_in_month/4 - 10~n"),
+    autotest:mark(?LINE, "nth_byday_in_month/4 - 10"),
     nth_day_does_not_exist = nth_byday_in_month(2005, 4, -5, tu),
 
 
     %% all_byday_in_month/3
     %%--------------------------------------------------------------------
     %% tuesdays in april
-    io:format("test: all_byday_in_month/3 - 1~n"),
+    autotest:mark(?LINE, "all_byday_in_month/3 - 1"),
     [{2005,4,5}, {2005,4,12}, {2005,4,19}, {2005,4,26}] = all_byday_in_month(2005, 4, tu),
     
     %% sundays in december
-    io:format("test: all_byday_in_month/3 - 2~n"),
+    autotest:mark(?LINE, "all_byday_in_month/3 - 2"),
     [{2005,12,4}, {2005,12,11}, {2005,12,18}, {2005,12,25}]  = all_byday_in_month(2005, 12, su),
 
     %% weekday first day of month
-    io:format("test: all_byday_in_month/3 - 3~n"),
+    autotest:mark(?LINE, "all_byday_in_month/3 - 3"),
     [{2005,8,1}, {2005,8,8}, {2005,8,15}, {2005,8,22}, {2005,8,29}] = all_byday_in_month(2005, 8, mo),
 
     %% weekday last day of month
-    io:format("test: all_byday_in_month/3 - 4~n"),
+    autotest:mark(?LINE, "all_byday_in_month/3 - 4"),
     [{2005,8,3}, {2005,8,10}, {2005,8,17}, {2005,8,24}, {2005,8,31}] = all_byday_in_month(2005, 8, we),
 
 
     %% dayno_to_month(Year,NthDay)
     %%--------------------------------------------------------------------
     %% last day (non-leap year)
-    io:format("test: dayno_to_month/2 - 1~n"),
+    autotest:mark(?LINE, "dayno_to_month/2 - 1"),
     12 = dayno_to_month(2005,365),
     
     %% first day (non-leap year)
-    io:format("test: dayno_to_month/2 - 2~n"),
+    autotest:mark(?LINE, "dayno_to_month/2 - 2"),
     1 = dayno_to_month(2005,1),
 
     %% test a few random days
     %% 2005-06-09 (non-leap year)
-    io:format("test: dayno_to_month/2 - 3~n"),
+    autotest:mark(?LINE, "dayno_to_month/2 - 3"),
     6 = dayno_to_month(2005,160),
     %% 2005-09-14 (non-leap year)
     9 = dayno_to_month(2005,257),
@@ -926,232 +926,232 @@ test() ->
     
     %% check that leap year contains 
     %% last day (leap year)
-    io:format("test: dayno_to_month/2 - 4~n"),
+    autotest:mark(?LINE, "dayno_to_month/2 - 4"),
     12 = dayno_to_month(2004,366),
     
     %% first day (leap year)
-    io:format("test: dayno_to_month/2 - 5~n"),
+    autotest:mark(?LINE, "dayno_to_month/2 - 5"),
     1 = dayno_to_month(2004,1),
 
     %% test month transition
     %% 2004-11-01 (leap year)
-    io:format("test: dayno_to_month/2 - 6~n"),
+    autotest:mark(?LINE, "dayno_to_month/2 - 6"),
     11 = dayno_to_month(2004,306),
     %% 2004-10-31 (leap year)
     10 = dayno_to_month(2004,305),
 
     %% test that leap day is in right month
     %% 2004-02-29 (leap year)
-    io:format("test: dayno_to_month/2 - 7~n"),
+    autotest:mark(?LINE, "dayno_to_month/2 - 7"),
     2 = dayno_to_month(2004,60),
 
     %% dayno_to_date(Year, NthDay)
     %%--------------------------------------------------------------------
     %% leap day in leap year
-    io:format("test: dayno_to_date/2 - 1~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 1"),
     {2004, 2, 29} = dayno_to_date(2004,60),
 
     %% first day of year
-    io:format("test: dayno_to_date/2 - 2~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 2"),
     {2004, 1, 1} = dayno_to_date(2004,1),
 
     %% last day of non-leap year
-    io:format("test: dayno_to_date/2 - 3~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 3"),
     {2005, 12, 31} = dayno_to_date(2005,365),
 
     %% last day of leap year
-    io:format("test: dayno_to_date/2 - 4~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 4"),
     {2004, 12, 31} = dayno_to_date(2004,366),
 
     %% day in middle of month, in leap year, after occurrence of leap day
-    io:format("test: dayno_to_date/2 - 5~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 5"),
     {2004, 8, 26} = dayno_to_date(2004,239),
 
     %% day in middle of month, in non-leap year
-    io:format("test: dayno_to_date/2 - 6~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 6"),
     {2005, 8, 27} = dayno_to_date(2005,239),
 
     %% first day of month
-    io:format("test: dayno_to_date/2 - 7~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 7"),
     {2005, 4, 1} = dayno_to_date(2005,91),
 
     %% last day of month
-    io:format("test: dayno_to_date/2 - 8~n"),
+    autotest:mark(?LINE, "dayno_to_date/2 - 8"),
     {2005, 4, 30} = dayno_to_date(2005,120),
 
 
     %% date_to_dayno(Date)
     %%--------------------------------------------------------------------
     %% leap day in leap year
-    io:format("test: date_to_dayno/2 - 1~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 1"),
     60 = date_to_dayno({2004, 2, 29}),
 
     %% first day of year
-    io:format("test: date_to_dayno/2 - 2~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 2"),
     1 = date_to_dayno({2004,1,1}),
 
     %% last day of non-leap year
-    io:format("test: date_to_dayno/2 - 3~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 3"),
     365 = date_to_dayno({2005,12,31}),
 
     %% last day of leap year
-    io:format("test: date_to_dayno/2 - 4~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 4"),
     366 = date_to_dayno({2004,12,31}),
 
     %% day in middle of month, in leap year, after occurrence of leap day
-    io:format("test: date_to_dayno/2 - 5~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 5"),
     239 = date_to_dayno({2004,8,26}),
 
     %% day in middle of month, in non-leap year
-    io:format("test: date_to_dayno/2 - 6~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 6"),
     239 = date_to_dayno({2005,8,27}),
 
     %% first day of month
-    io:format("test: date_to_dayno/2 - 7~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 7"),
     91 = date_to_dayno({2005,4,1}),
 
     %% last day of month
-    io:format("test: date_to_dayno/2 - 8~n"),
+    autotest:mark(?LINE, "date_to_dayno/2 - 8"),
     120 = date_to_dayno({2005,4,30}),
 
     
     %% nth_byday_in_year(Year,N,DayType)
     %%--------------------------------------------------------------------
     %% first monday in year
-    io:format("test: nth_byday_in_year/3 - 1~n"),
+    autotest:mark(?LINE, "nth_byday_in_year/3 - 1"),
     {2004,1,5} = nth_byday_in_year(2004,1,mo),
     
     %% last monday in year
-    io:format("test: nth_byday_in_year/3 - 2~n"),
+    autotest:mark(?LINE, "nth_byday_in_year/3 - 2"),
     {2004,12,27} = nth_byday_in_year(2004,-1,mo),
     
     %% 10:th monday in year
-    io:format("test: nth_byday_in_year/3 - 3~n"),
+    autotest:mark(?LINE, "nth_byday_in_year/3 - 3"),
     {2004,3,4} = nth_byday_in_year(2004,10,th),
     
     %% 10.th monday from end of year
-    io:format("test: nth_byday_in_year/3 - 4~n"),
+    autotest:mark(?LINE, "nth_byday_in_year/3 - 4"),
     {2004,10,28} = nth_byday_in_year(2004,-10,th),
 
 
     %% weeks_in_year(Year, Wkst)
     %%--------------------------------------------------------------------
     %% first and last week part of year
-    io:format("test: weeks_in_year/1 - 1~n"),
+    autotest:mark(?LINE, "weeks_in_year/1 - 1"),
     53 = weeks_in_year(2004, mo),
     
     %% first week part of year
-    io:format("test: weeks_in_year/1 - 2~n"),
+    autotest:mark(?LINE, "weeks_in_year/1 - 2"),
     52 = weeks_in_year(2003, mo),
 
     %% last week part of year
-    io:format("test: weeks_in_year/1 - 3~n"),
+    autotest:mark(?LINE, "weeks_in_year/1 - 3"),
     52 = weeks_in_year(2005, mo),
 
     %% sunday as first day of week 
 
     %% last week part of year
-    io:format("test: weeks_in_year/1 - 4~n"),
+    autotest:mark(?LINE, "weeks_in_year/1 - 4"),
     52 = weeks_in_year(2004, su),
     
     %% first week part of year
-    io:format("test: weeks_in_year/1 - 5~n"),
+    autotest:mark(?LINE, "weeks_in_year/1 - 5"),
     53 = weeks_in_year(2003, su),
 
     %% last week part of year
-    io:format("test: weeks_in_year/1 - 6~n"),
+    autotest:mark(?LINE, "weeks_in_year/1 - 6"),
     52 = weeks_in_year(2005, su),
 
 
     %% get_week_no(Year, Wkst, WeekNo)
     %%--------------------------------------------------------------------
 
-    io:format("test: get_week_no/3 - 1~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 1"),
     52 = get_week_no(2005, mo, -1),
     
-    io:format("test: get_week_no/3 - 2~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 2"),
     53 = get_week_no(2004, mo, -1),
 
-    io:format("test: get_week_no/3 - 3~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 3"),
     1 = get_week_no(2005, mo, -52),
 
-    io:format("test: get_week_no/3 - 4~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 4"),
     1 = get_week_no(2004, mo, -53),
     
-    io:format("test: get_week_no/3 - 5~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 5"),
     nth_week_does_not_exits = get_week_no(2005, mo, -53),
 
-    io:format("test: get_week_no/3 - 6~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 6"),
     44 = get_week_no(2004, mo, -10),
 
-    io:format("test: get_week_no/3 - 7~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 7"),
     43 = get_week_no(2005, mo, 43),
     
-    io:format("test: get_week_no/3 - 8~n"),
+    autotest:mark(?LINE, "get_week_no/3 - 8"),
     nth_week_does_not_exits = get_week_no(2005, mo, 53),
 
 
     %% weekno_to_date(Year, Wkst, WeekNo)
     %%--------------------------------------------------------------------
     %% first (partial) week in year
-    io:format("test: weekno_to_date/3 - 1~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 1"),
     {2003,12,29} = weekno_to_date(2004, mo, 1),
     
     %% first full week in year
-    io:format("test: weekno_to_date/3 - 2~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 2"),
     {2004,1,5} = weekno_to_date(2004, mo, 2),
 
     %% last week in year
-    io:format("test: weekno_to_date/3 - 3~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 3"),
     {2004,12,27} = weekno_to_date(2004, mo, 53),
 
     %% next to last week in year
-    io:format("test: weekno_to_date/3 - 4~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 4"),
     {2004,12,20} = weekno_to_date(2004, mo, 52),
 
     %% week in middle of year
-    io:format("test: weekno_to_date/3 - 5~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 5"),
     {2004,7,12} = weekno_to_date(2004, mo, 29),
 
     %% last week in year (last days are part of week 1 in next year
-    io:format("test: weekno_to_date/3 - 6~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 6"),
     {2003,12,22} = weekno_to_date(2003, mo, 52),
 
     %% week in middle of year
-    io:format("test: weekno_to_date/3 - 7~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 7"),
     {2003,7,14} = weekno_to_date(2003, mo, 29),
 
     %% first week, first days are part of week 53 in previous year
-    io:format("test: weekno_to_date/3 - 8~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 8"),
     {2005,1,3} = weekno_to_date(2005, mo, 1),
 
     %% week in middle of year
-    io:format("test: weekno_to_date/3 - 9~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 9"),
     {2005,7,18} = weekno_to_date(2005, mo, 29),
     
     %% --------------
     %% Wkst = su
     %% first week of year
-    io:format("test: weekno_to_date/3 - 10~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 10"),
     {1996,12,29} = weekno_to_date(1997, su, 1),
 
     %% last week of year
-    io:format("test: weekno_to_date/3 - 11~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 11"),
     {1997,12,28} = weekno_to_date(1997, su, 53),
 
     %% week in middle of year
-    io:format("test: weekno_to_date/3 - 12~n"),
+    autotest:mark(?LINE, "weekno_to_date/3 - 12"),
     {1997,1,12} = weekno_to_date(1997, su, 3),
 
 
     %% byyearday_to_date(Year,N) 
     %%--------------------------------------------------------------------
     %% day N to date (in leap year)
-    io:format("test: byyearday_to_date/3 - 1~n"),
+    autotest:mark(?LINE, "byyearday_to_date/3 - 1"),
     {2004,4,9} = byyearday_to_date(2004, 100),
 
     %% day -N to date (in leap year)
-    io:format("test: byyearday_to_date/3 - 2~n"),
+    autotest:mark(?LINE, "byyearday_to_date/3 - 2"),
     {2004,9,23} = byyearday_to_date(2004, -100),
 
 

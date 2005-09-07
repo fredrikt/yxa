@@ -1065,144 +1065,144 @@ test() ->
     %% test comma(String)
     %%--------------------------------------------------------------------
     %% test empty string
-    io:format("test: comma/1 - 1~n"),
+    autotest:mark(?LINE, "comma/1 - 1"),
     [""] = comma(""),
 
     %% test string without comma
-    io:format("test: comma/1 - 2~n"),
+    autotest:mark(?LINE, "comma/1 - 2"),
     ["foobar"] = comma("foobar"),
 
     %% test with single comma
-    io:format("test: comma/1 - 3~n"),
+    autotest:mark(?LINE, "comma/1 - 3"),
     ["foo","bar"] = comma("foo,bar"),
 
     %% test with several comma
-    io:format("test: comma/1 - 4~n"),
+    autotest:mark(?LINE, "comma/1 - 4"),
     ["fo","ob","ar"] = comma("fo,ob,ar"),
 
     %% test with quotes inside string
-    io:format("test: comma/1 - 5~n"),
+    autotest:mark(?LINE, "comma/1 - 5"),
     ["foobar: \"this is a string\""] = comma("foobar: \"this is a string\""),
 
     %% test with commas inside quoted string part
-    io:format("test: comma/1 - 6~n"),
+    autotest:mark(?LINE, "comma/1 - 6"),
     ["foobar: \"this, is, a, string,\""] = comma("foobar: \"this, is, a, string,\""),
 
     %% test with commas outside quoutes
-    io:format("test: comma/1 - 7~n"),
+    autotest:mark(?LINE, "comma/1 - 7"),
     ["foobar:", "\",this is a string\""] = comma("foobar:, \",this is a string\""),
 
     %% test with commas outside and inside quoutes
-    io:format("test: comma/1 - 8~n"),
+    autotest:mark(?LINE, "comma/1 - 8"),
     ["foobar:", "\",this is a ,string\"", "foo"] = comma("foobar:, \",this is a ,string\",foo"),
 
     %% test escaped chars inside quotes
-    io:format("test: comma/1 - 9~n"),
+    autotest:mark(?LINE, "comma/1 - 9"),
     ["hi","\" world \\\" \"","foo"] = comma("hi, \" world \\\" \", foo"),
 
     %% trailing comma
-    io:format("test: comma/1 - 10~n"),
+    autotest:mark(?LINE, "comma/1 - 10"),
     ["fo","ob","ar",""] = comma("fo,ob,ar,"),
 
     %% preceding comma
-    io:format("test: comma/1 - 11~n"),
+    autotest:mark(?LINE, "comma/1 - 11"),
     ["","fo","ob","ar"] = comma(",fo,ob,ar"),
 
     %% comma inside <>
-    io:format("test: comma/1 - 12~n"),
+    autotest:mark(?LINE, "comma/1 - 12"),
     ["this","is <sip:a,b@example.com>","URI","comma","test"] =
 	comma("this, is <sip:a,b@example.com>, URI, comma, test"),
 
 
     %% test via(ViaList)
     %%--------------------------------------------------------------------
-    io:format("test: via/1 - 1~n"),
+    autotest:mark(?LINE, "via/1 - 1"),
     [#via{proto="SIP/2.0/TLS", host="192.0.2.123", port=none, param=[]}] =
 	via(["SIP/2.0/TLS 192.0.2.123"]),
 
-    io:format("test: via/1 - 2~n"),
+    autotest:mark(?LINE, "via/1 - 2"),
     [#via{proto="SIP/2.0/TLS", host="192.0.2.123", port=1234, param=[]}] =
 	via(["SIP/2.0/TLS 192.0.2.123:1234"]),
 
-    io:format("test: via/1 - 3~n"),
+    autotest:mark(?LINE, "via/1 - 3"),
     [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=5060, param=[]}] =
 	via(["SIP/2.0/TLS [2001:6b0:5:987::5060]:5060"]),
 
-    io:format("test: via/1 - 4~n"),
+    autotest:mark(?LINE, "via/1 - 4"),
     [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=none, param=[]}] =
 	via(["SIP/2.0/TLS [2001:6b0:5:987::5060]"]),
 
-    io:format("test: via/1 - 5~n"),
+    autotest:mark(?LINE, "via/1 - 5"),
     [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=none, param=[]}] =
 	via(["SIP/2.0/TLS 2001:6b0:5:987::5060"]),
 
-    io:format("test: via/1 - 6~n"),
+    autotest:mark(?LINE, "via/1 - 6"),
     [#via{proto="SIP/2.0/TLS", host="[2001:6b0:5:987::5060]", port=none, param=[]},
      #via{proto="SIP/2.0/TCP", host="phone.example.org", port=none, param=["received=192.0.2.123"]}] =
 	via(["SIP/2.0/TLS 2001:6b0:5:987::5060", "SIP/2.0/TCP phone.example.org;received=192.0.2.123"]),
 
-    io:format("test: via/1 - 7~n"),
+    autotest:mark(?LINE, "via/1 - 7"),
     %% test unparsable via - fail in tokenizing
     {'EXIT', _} = (catch via(["SIP/2.0/TLS2001:6b0:5:987::5060"])),
 
-    io:format("test: via/1 - 8~n"),
+    autotest:mark(?LINE, "via/1 - 8"),
     %% test unparsable via - fail inside sipparse_util:parse_hostport() since there is an X in the address
     {'EXIT', _} = (catch via(["SIP/2.0/TLS 2001:6b0:X:987::5060"])),
 
-    io:format("test: via/1 - 9~n"),
+    autotest:mark(?LINE, "via/1 - 9"),
     %% test unparsable via - fail inside sipparse_util:parse_hostport() since there is a 500 in the address
     {'EXIT', _} = (catch via(["SIP/2.0/TLS 192.0.2.500:5060"])),
 
-    io:format("test: via/1 - 10~n"),
+    autotest:mark(?LINE, "via/1 - 10"),
     %% test with Via containing stupid spaces #1, from the '3.1.1.1  A short tortuous INVITE'
     %% from draft-ietf-sipping-torture-tests-04.txt.
     [#via{proto="SIP/2.0/UDP", host="192.0.2.2", port=none, param=["branch=390skdjuw"]}] =
 	via(["SIP  /   2.0/UDP   192.0.2.2;branch=390skdjuw"]),
 
-    io:format("test: via/1 - 11~n"),
+    autotest:mark(?LINE, "via/1 - 11"),
     %% test with Via containing stupid spaces #2, from the '3.1.1.1  A short tortuous INVITE'
     %% from draft-ietf-sipping-torture-tests-04.txt.
     [#via{proto="SIP/2.0/TCP", host="spindle.example.com", port=none, param=[" branch =  z9hG4bK9ikj8"]}] =
 	via(["SIP  / 2.0  / TCP     spindle.example.com   ; branch =  z9hG4bK9ikj8"]),
 
-    io:format("test: via/1 - 12~n"),
+    autotest:mark(?LINE, "via/1 - 12"),
     %% test with Via containing stupid spaces #3, from the '3.1.1.1  A short tortuous INVITE'
     %% from draft-ietf-sipping-torture-tests-04.txt.
     [#via{proto="SIP/2.0/UDP", host="192.168.255.111", port=none, param=[" branch=z9hG4bK30239"]}] =
 	via(["SIP  /    2.0   / UDP  192.168.255.111   ; branch=z9hG4bK30239"]),
 
-    io:format("test: via/1 - 13~n"),
+    autotest:mark(?LINE, "via/1 - 13"),
     %% test via with multiple parameters and some ill-placed tabs
     %% XXX are Via-param values case sensitive or not?
     [#via{proto="SIP/2.0/UDP", host="192.0.2.1", port=none, param=["foo=BaR", "bar=\"BaZ\""]}] =
 	  via(["SIP \t/\t 2.0 \t /\tUDP\t192.0.2.1\t;foo=BaR;bar=\"BaZ\""]),
 
-    io:format("test: via/1 - 14~n"),
+    autotest:mark(?LINE, "via/1 - 14"),
     %% test via with whitespace after-colon-before-port - valid according to RFC3261 #20.42
     [#via{proto="SIP/2.0/UDP", host="first.example.com", port=4000,
 	  param=["ttl=16", "maddr=224.2.0.1 ", "branch=z9hG4bK-foo"]}] =
 	via(["SIP / 2.0 / UDP first.example.com: 4000;ttl=16;maddr=224.2.0.1 ;branch=z9hG4bK-foo"]),
 
-    io:format("test: via/1 - 15~n"),
+    autotest:mark(?LINE, "via/1 - 15"),
     %% test via with whitespace before colon-port - valid according to my understanding of the BNF
     %% COLON   =  SWS ":" SWS ; colon
     [#via{proto="SIP/2.0/UDP", host="first.example.com", port=4000,
 	  param=["ttl=16", "maddr=224.2.0.1 ", "branch=z9hG4bK-foo"]}] =
 	via(["SIP / 2.0 / UDP first.example.com :4000;ttl=16;maddr=224.2.0.1 ;branch=z9hG4bK-foo"]),
 
-    io:format("test: via/1 - 16~n"),
+    autotest:mark(?LINE, "via/1 - 16"),
     %% test via with whitespace before and after colon in host-colon-port -
     %% valid according to my understanding of the BNF
     %% COLON   =  SWS ":" SWS ; colon
     [#via{proto="SIP/2.0/UDP", host="first.example.com", port=4000, param=[]}] =
 	via(["SIP / 2.0 / UDP first.example.com : 4000"]),
 
-    io:format("test: via/1 - 17~n"),
+    autotest:mark(?LINE, "via/1 - 17"),
     %% test that we don't accept Vias with space between host and port, but no colon
     {error, {invalid_proto_host_port_in_via, _}} =
      (catch via(["SIP/2.0/UDP first.example.com 4000"])),
 
-    io:format("test: via/1 - 18~n"),
+    autotest:mark(?LINE, "via/1 - 18"),
     %% test with semi-colon but no parameters
     [#via{proto="SIP/2.0/UDP", host="example.com", port=none, param=[]}] =
 	via(["SIP/2.0/UDP example.com;"]),
@@ -1210,35 +1210,35 @@ test() ->
 
     %% test topvia(Header)
     %%--------------------------------------------------------------------
-    io:format("test: topvia/1 - 1~n"),
+    autotest:mark(?LINE, "topvia/1 - 1"),
     %% test simple case
     [TopVia_1] = via(["SIP/2.0/TLS sip.example.org:5061"]),
     TopVia_1 = topvia( keylist:from_list([{"Via", ["SIP/2.0/TLS sip.example.org:5061",
 						   "SIP/2.0/TLS foo.example.org:5060"]}])),
 
-    io:format("test: topvia/1 - 2~n"),
+    autotest:mark(?LINE, "topvia/1 - 2"),
     %% test without via
     none = topvia( keylist:from_list([])),
 
 
     %% test get_via_branch(TopVia)
     %%--------------------------------------------------------------------
-    io:format("test: get_via_branch/1 - 1~n"),
+    autotest:mark(?LINE, "get_via_branch/1 - 1"),
     %% test Yxa branch
     [GetViaBranch_1] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-yxa-abc123-oloopcookie"]),
     "z9hG4bK-yxa-abc123" = get_via_branch(GetViaBranch_1),
 
-    io:format("test: get_via_branch/1 - 2~n"),
+    autotest:mark(?LINE, "get_via_branch/1 - 2"),
     %% test Yxa branch without loop cookie
     [GetViaBranch_2] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-yxa-abc123"]),
     "z9hG4bK-yxa-abc123" = get_via_branch(GetViaBranch_2),
 
-    io:format("test: get_via_branch/1 - 3~n"),
+    autotest:mark(?LINE, "get_via_branch/1 - 3"),
     %% test non-Yxa branch
     [GetViaBranch_3] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-abc123-oloopcookie"]),
     "z9hG4bK-abc123-oloopcookie" = get_via_branch(GetViaBranch_3),
 
-    io:format("test: get_via_branch/1 - 3~n"),
+    autotest:mark(?LINE, "get_via_branch/1 - 3"),
     %% test Via without branch
     [GetViaBranch_4] = via(["SIP/2.0/TLS sip.example.org:5061"]),
     none = get_via_branch(GetViaBranch_4),
@@ -1246,7 +1246,7 @@ test() ->
 
     %% test via_params(Via)
     %%--------------------------------------------------------------------
-    io:format("test: via_params/1 - 1~n"),
+    autotest:mark(?LINE, "via_params/1 - 1"),
     %% test simple case
     [ViaParams_Via1] = via(["SIP/2.0/TCP 192.0.2.123;transport=tcp;rport"]),
     ["rport", "transport=tcp"] = dict_to_param( via_params(ViaParams_Via1) ),
@@ -1254,29 +1254,29 @@ test() ->
 
     %% test name_header(String)
     %%--------------------------------------------------------------------
-    io:format("test: name_header/1 - 1~n"),
+    autotest:mark(?LINE, "name_header/1 - 1"),
     %% test without Display Name, just URI
     NameHeaderURI1 = sipurl:parse("sip:ft@example.org"),
     {none, NameHeaderURI1} = name_header("sip:ft@example.org"),
 
-    io:format("test: name_header/1 - 1~n"),
+    autotest:mark(?LINE, "name_header/1 - 1"),
     %% test without Display Name, just URI inside <>
     NameHeaderURI1 = sipurl:parse("sip:ft@example.org"),
     {none, NameHeaderURI1} = name_header("<sip:ft@example.org>"),
 
-    io:format("test: name_header/1 - 3~n"),
+    autotest:mark(?LINE, "name_header/1 - 3"),
     %% test with unqouted Display Name
     {"Fredrik", NameHeaderURI1} = name_header("Fredrik    <sip:ft@example.org>"),
 
-    io:format("test: name_header/1 - 4~n"),
+    autotest:mark(?LINE, "name_header/1 - 4"),
     %% test with qouted Display Name
     {"testing, Fredrik", NameHeaderURI1} = name_header("\"testing, Fredrik\" <sip:ft@example.org>"),
 
-    io:format("test: name_header/1 - 5~n"),
+    autotest:mark(?LINE, "name_header/1 - 5"),
     %% test with URI missing <>
     {none, {unparseable, "Fredrik sip:ft@example.org"}} = name_header("Fredrik sip:ft@example.org"),
 
-    io:format("test: name_header/1 - 6 (disabled)~n"),
+    autotest:mark(?LINE, "name_header/1 - 6 (disabled)"),
     %% test with quoted quotes in the display name
     %%{"Quoted \\\" here", NameHeaderURI1} = name_header("\"Quoted \\\" here\" <sip:ft@example.org>"),
 
@@ -1289,36 +1289,36 @@ test() ->
     [ViaIsEqual4] = via(["SIP/2.0/TLS sip.example.net:5061;branch=z9hG4bK-really-unique"]),	%% different host
     [ViaIsEqual5] = via(["SIP/2.0/TCP sip.example.org:5061;branch=z9hG4bK-really-unique"]),	%% different protocol
 
-    io:format("test: via_is_equal/2 - 1~n"),
+    autotest:mark(?LINE, "via_is_equal/2 - 1"),
     %% two of the same
     true = via_is_equal(ViaIsEqual1, ViaIsEqual1),
 
-    io:format("test: via_is_equal/2 - 2~n"),
+    autotest:mark(?LINE, "via_is_equal/2 - 2"),
     %% different branch parameter
     false = via_is_equal(ViaIsEqual1, ViaIsEqual2),
 
-    io:format("test: via_is_equal/2 - 3~n"),
+    autotest:mark(?LINE, "via_is_equal/2 - 3"),
     %% different port
     false = via_is_equal(ViaIsEqual1, ViaIsEqual3),
 
-    io:format("test: via_is_equal/2 - 4~n"),
+    autotest:mark(?LINE, "via_is_equal/2 - 4"),
     %% different host
     false = via_is_equal(ViaIsEqual1, ViaIsEqual4),
 
-    io:format("test: via_is_equal/2 - 5~n"),
+    autotest:mark(?LINE, "via_is_equal/2 - 5"),
     %% different protocol
     false = via_is_equal(ViaIsEqual1, ViaIsEqual5),
 
 
     %% test via_is_equal(A, B, CmpList)
     %%--------------------------------------------------------------------
-    io:format("test: via_is_equal/3 - 1~n"),
+    autotest:mark(?LINE, "via_is_equal/3 - 1"),
     true = via_is_equal(ViaIsEqual1, ViaIsEqual2, [proto, host, port]),
 
-    io:format("test: via_is_equal/3 - 2~n"),
+    autotest:mark(?LINE, "via_is_equal/3 - 2"),
     false = via_is_equal(ViaIsEqual1, ViaIsEqual2, [parameters]),
 
-    io:format("test: via_is_equal/3 - 2~n"),
+    autotest:mark(?LINE, "via_is_equal/3 - 2"),
     %% test with same parameters, but different order
     true = via_is_equal(ViaIsEqual1#via{param=["a=b", "b=a"]},
 			ViaIsEqual2#via{param=["b=a", "a=b"]}, [parameters]),
@@ -1326,7 +1326,7 @@ test() ->
 
     %% test get_server_transaction_id(Request)
     %%--------------------------------------------------------------------
-    io:format("test: get_server_transaction_id/1 - 1.1~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 1.1"),
     %% get Id for INVITE with RFC3261 branch tag in top Via
     InviteHeader1 = keylist:from_list([
 				       {"Via",	["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-really-unique"]},
@@ -1339,11 +1339,11 @@ test() ->
 		       header=InviteHeader1, body = <<>>},
     Invite1Id = get_server_transaction_id(Invite1),
 
-    io:format("test: get_server_transaction_id/1 - 1.2~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 1.2"),
     %% check result
     {"z9hG4bK-really-unique", {"SIP/2.0/TLS", "sip.example.org", 5061}, "INVITE"} = Invite1Id,
 
-    io:format("test: get_server_transaction_id/1 - 2~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 2"),
     %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123"
     AckInvite1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], InviteHeader1),
     AckInvite1Header1  = keylist:set("CSeq", ["2 ACK"], AckInvite1Header_1),
@@ -1352,11 +1352,11 @@ test() ->
 
     AckInvite1Id = get_server_transaction_id(AckInvite1),
 
-    io:format("test: get_server_transaction_id/1 - 3~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 3"),
     %% Test that the INVITE id matches the ACK id
     Invite1Id = AckInvite1Id,
 
-    io:format("test: get_server_transaction_id/1 - 4.1~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 4.1"),
     %% get Id for INVITE with RFC2543 branch tag in top Via
     Invite2543_1Header = keylist:from_list([
 					    {"Via",	["SIP/2.0/TLS sip.example.org:5061;branch=not-really-unique"]},
@@ -1369,7 +1369,7 @@ test() ->
 			    header=Invite2543_1Header, body = <<>>},
     Invite2543_1Id = get_server_transaction_id(Invite2543_1),
 
-    io:format("test: get_server_transaction_id/1 - 4.2~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 4.2"),
     %% check result
     {#sipurl{proto="sip", user="alice", pass=none, host="example.org", port=none, param_pairs={url_param,[]}},
      none,
@@ -1378,11 +1378,11 @@ test() ->
      {via, "SIP/2.0/TLS", "sip.example.org", 5061, ["branch=not-really-unique"]}
     } = Invite2543_1Id,
 
-    io:format("test: get_server_transaction_id/1 - 5.1~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 5.1"),
     %% for RFC2543 INVITE, we must also get the ACK-id to match future ACKs with this INVITE
     Invite2543_1AckId = get_server_transaction_ack_id_2543(Invite2543_1),
 
-    io:format("test: get_server_transaction_id/1 - 5.2~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 5.2"),
     %% check result
     {#sipurl{proto="sip", user="alice", pass=none, host="example.org", port=none, param_pairs={url_param,[]}},
      "f-abc",
@@ -1391,7 +1391,7 @@ test() ->
      {via,"SIP/2.0/TLS","sip.example.org",5061,[]}
     } = Invite2543_1AckId,
 
-    io:format("test: get_server_transaction_id/1 - 6~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 6"),
     %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123", check that
     %% get_server_transaction_id refuses and tells us it is an 2543 ACK
     AckInvite2543_1Header_1 = keylist:set("To", ["<sip:bob@example.org>;tag=t-123"], Invite2543_1Header),
@@ -1401,18 +1401,18 @@ test() ->
 
     is_2543_ack = get_server_transaction_id(AckInvite2543_1),
 
-    io:format("test: get_server_transaction_id/1 - 7~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 7"),
     %% now get the 2543 ACK id from the ACK
     AckInvite2543_1Id = get_server_transaction_ack_id_2543(AckInvite2543_1),
 
-    io:format("test: get_server_transaction_id/1 - 8~n"),
+    autotest:mark(?LINE, "get_server_transaction_id/1 - 8"),
     %% check that the 2543 ACK id matches the 2543 INVITE id
     AckInvite2543_1Id = Invite2543_1AckId,
 
 
     %% test get_client_transaction_id(Response)
     %%--------------------------------------------------------------------
-    io:format("test: get_client_transaction_id/1 - 1~n"),
+    autotest:mark(?LINE, "get_client_transaction_id/1 - 1"),
     Response1 = #response{status=699, reason="foo", header=Invite2543_1Header, body = <<>>},
     {"not-really-unique", "INVITE"} = get_client_transaction_id(Response1),
 
@@ -1425,7 +1425,7 @@ test() ->
 					{"Contact", ["<sip:bob@example.org>;lr=true"]}
 				       ]),
 
-    io:format("test: contact/1 - 1~n"),
+    autotest:mark(?LINE, "contact/1 - 1"),
     %% test using list key
     [#contact{urlstr="sip:bob@example.org"}] = contact(ContactHeader1),
 
@@ -1433,18 +1433,18 @@ test() ->
     %% test contact(Header, Name).
     %% No full test of parameters - we don't test the actual contact parsing here.
     %%--------------------------------------------------------------------
-    io:format("test: contact/2 - 1~n"),
+    autotest:mark(?LINE, "contact/2 - 1"),
     %% test using atom key
     [#contact{urlstr="sip:alice@example.org"}] = contact(ContactHeader1, 'from'),
 
-    io:format("test: contact/2 - 2~n"),
+    autotest:mark(?LINE, "contact/2 - 2"),
     %% test using list key
     [#contact{urlstr="sip:alice@example.org"}] = contact(ContactHeader1, "From"),
 
 
     %% test via_sentby(Via)
     %%--------------------------------------------------------------------
-    io:format("test: via_sentby/1 - 1~n"),
+    autotest:mark(?LINE, "via_sentby/1 - 1"),
     {"proto", "host", 1234} = via_sentby(#via{proto="proto", host="host", port=1234}),
 
 
@@ -1460,33 +1460,33 @@ test() ->
     ViaPrint2 = ViaPrint1#via{port = none},
     ViaPrint2_Str = "SIP/2.0/UDP example.org;foo=bar;user=ft",
 
-    io:format("test: via_print/1 - 1~n"),
+    autotest:mark(?LINE, "via_print/1 - 1"),
     %% one Via
     [ViaPrint1_Str] = via_print([ViaPrint1]),
 
-    io:format("test: via_print/1 - 2~n"),
+    autotest:mark(?LINE, "via_print/1 - 2"),
     %% one Via, not in list
     [ViaPrint1_Str] = via_print(ViaPrint1),
 
-    io:format("test: via_print/1 - 3~n"),
+    autotest:mark(?LINE, "via_print/1 - 3"),
     %% two Vias
     [ViaPrint1_Str, ViaPrint2_Str] = via_print([ViaPrint1, ViaPrint2]),
 
 
     %% test auth_print(Auth)
     %%--------------------------------------------------------------------
-    io:format("test: auth_print/1 - 1~n"),
+    autotest:mark(?LINE, "auth_print/1 - 1"),
     ["Digest realm=\"su.se\", nonce=\"nonce\", opaque=\"opaque\""] =
 	auth_print({"su.se", "nonce", "opaque"}),
 
 
     %% test auth_print(Auth, Stale)
     %%--------------------------------------------------------------------
-    io:format("test: auth_print/2 - 1~n"),
+    autotest:mark(?LINE, "auth_print/2 - 1"),
     ["Digest realm=\"su.se\", nonce=\"nonce\", opaque=\"opaque\", stale=true"] =
 	auth_print({"su.se", "nonce", "opaque"}, true),
 
-    io:format("test: auth_print/2 - 2~n"),
+    autotest:mark(?LINE, "auth_print/2 - 2"),
     ["Digest realm=\"su.se\", nonce=\"nonce\", opaque=\"opaque\""] =
 	auth_print({"su.se", "nonce", "opaque"}, false),
 
@@ -1501,74 +1501,74 @@ test() ->
     AuthOut1 = [{"response","1response1"}, {"uri","2bar2"}],
     AuthOut2 = [{"noquote", "test"}, {"response","1response1"}, {"uri","2bar2"}],
 
-    io:format("test: auth/1 - 1~n"),
+    autotest:mark(?LINE, "auth/1 - 1"),
     %% digest
     AuthOut1 = lists:keysort(1, dict:to_list( auth(AuthIn1) )),
 
-    io:format("test: auth/1 - 2~n"),
+    autotest:mark(?LINE, "auth/1 - 2"),
     %% GSSAPI
     AuthOut2 = lists:keysort(1, dict:to_list( auth(AuthIn2) )),
 
-    io:format("test: auth/1 - 3~n"),
+    autotest:mark(?LINE, "auth/1 - 3"),
     %% Unknown
     {siperror, 500, "Server Internal Error"} = (catch auth(AuthIn3)),
 
-    io:format("test: auth/1 - 4~n"),
+    autotest:mark(?LINE, "auth/1 - 4"),
     %% Invalid
     {siperror, 500, "Server Internal Error"} = (catch auth(["TestInvalid"])),
 
-    io:format("test: auth/1 - 4~n"),
+    autotest:mark(?LINE, "auth/1 - 4"),
     %% Not handled - not sure if we should or not..
     {'EXIT', _} = (catch auth(["Digest foo"])),
 
 
     %% test param_to_dict(Param)
     %%--------------------------------------------------------------------
-    io:format("test: param_to_dict/1 - 1~n"),
+    autotest:mark(?LINE, "param_to_dict/1 - 1"),
     %% test simple case
     [{"foo", "bar"}] = dict:to_list(
 			 param_to_dict(["foo=bar"])
 			),
 
-    io:format("test: param_to_dict/1 - 2~n"),
+    autotest:mark(?LINE, "param_to_dict/1 - 2"),
     %% test more complicated case - uppercase in key, escaped characters in value and multiple entrys
     ["foo=bAr", "user=ft"] = dict_to_param( param_to_dict(["Foo=b%41r", "user=ft"]) ),
 
 
     %% test cseq(Header)
     %%--------------------------------------------------------------------
-    io:format("test: cseq/1 - 1~n"),
+    autotest:mark(?LINE, "cseq/1 - 1"),
     %% test valid CSeq
     {"1", "INVITE"} = cseq( keylist:from_list([{"CSeq", ["1 INVITE"]}]) ),
 
-    io:format("test: cseq/1 - 2~n"),
+    autotest:mark(?LINE, "cseq/1 - 2"),
     %% test invalid CSeq
     {unparseable, "INVITE_1"} = cseq( keylist:from_list([{"CSeq", ["INVITE_1"]}]) ),
 
 
     %% test cseq_print({Seq, Method})
     %%--------------------------------------------------------------------
-    io:format("test: cseq_print/1 - 1~n"),
+    autotest:mark(?LINE, "cseq_print/1 - 1"),
     "1 INVITE" = cseq_print({"1", "INVITE"}),
 
 
     %% test callid(Header)
     %%--------------------------------------------------------------------
-    io:format("test: callid/1 - 1~n"),
+    autotest:mark(?LINE, "callid/1 - 1"),
     "call-id-test" = callid( keylist:from_list([{"Call-Id", ["call-id-test"]}]) ),
 
 
     %% test build_header_binary(Header)
     %%--------------------------------------------------------------------
-    io:format("test: build_header_binary/1 - 1~n"),
+    autotest:mark(?LINE, "build_header_binary/1 - 1"),
     %% test single header
     [[<<"Call-Id: call-id-test\r\n">>]] = build_header_binary( keylist:from_list([{"Call-Id", ["call-id-test"]}]) ),
 
-    io:format("test: build_header_binary/1 - 2~n"),
+    autotest:mark(?LINE, "build_header_binary/1 - 2"),
     %% test multiple values
     [[<<"Via: via1\r\n">>, <<"Via: via2\r\n">>]] = build_header_binary( keylist:from_list([{"Via", ["via1", "via2"]}]) ),
 
-    io:format("test: build_header_binary/1 - 3~n"),
+    autotest:mark(?LINE, "build_header_binary/1 - 3"),
     %% test more complex case
     BuildHeaderBin_H1 = keylist:from_list([{"Via", ["via1", "via2"]},
 					   {"Call-Id", ["call-id-test"]},
@@ -1582,27 +1582,27 @@ test() ->
      <<"Accept: accept1, accept2\r\n">>,
      [<<"Date: Thu, 10 Feb 2005 14:41:04 GMT\r\n">>]] = build_header_binary(BuildHeaderBin_H1),
 
-    io:format("test: build_header_binary/1 - 4~n"),
+    autotest:mark(?LINE, "build_header_binary/1 - 4"),
     %% test Reason-header without value
     {siperror, 500, _Reason} = (catch build_header_binary( keylist:from_list([{"Reason", []}]) )),
 
 
     %% test get_tag([String])
     %%--------------------------------------------------------------------
-    io:format("test: get_tag/1 - 1~n"),
+    autotest:mark(?LINE, "get_tag/1 - 1"),
     "foo" = get_tag(["\"Fredrik\" <sip:ft@example.org>;test=auto;tag=foo"]),
 
-    io:format("test: get_tag/1 - 2~n"),
+    autotest:mark(?LINE, "get_tag/1 - 2"),
     "foo" = get_tag(["\"Fredrik\" <sip:ft@example.org>;tag=foo;test=auto"]),
 
-    io:format("test: get_tag/1 - 3~n"),
+    autotest:mark(?LINE, "get_tag/1 - 3"),
     none = get_tag(["\"Fredrik\" <sip:ft@example.org>;test=auto"]),
 
-    io:format("test: get_tag/1 - 4~n"),
+    autotest:mark(?LINE, "get_tag/1 - 4"),
     %% >;tag= appearing more than once
     "foo" = get_tag(["\"Evil <evil>;tag=bar displayname\" <sip:ft@example.org>;tag=foo"]),
 
-    io:format("test: get_tag/1 - 5~n"),
+    autotest:mark(?LINE, "get_tag/1 - 5"),
     %% token names (tag=) should be case-insensitive
     "foo" = get_tag(["<sip:ft@example.org>;Tag=foo"]),
 
@@ -1614,53 +1614,53 @@ test() ->
 				       {"To", ["<sip:ft@example.org>;tag=totag"]}
 				      ]),
 
-    io:format("test: dialogid/1 - 1~n"),
+    autotest:mark(?LINE, "dialogid/1 - 1"),
     {"call-id-test", "fromtag", "totag"} = dialogid(DialogHeader1),
 
-    io:format("test: dialogid/1 - 2~n"),
+    autotest:mark(?LINE, "dialogid/1 - 2"),
     {"call-id-test", "fromtag", none} = dialogid(keylist:set("To", ["sip:foo@example.org"], DialogHeader1)),
 
-    io:format("test: dialogid/1 - 3~n"),
+    autotest:mark(?LINE, "dialogid/1 - 3"),
     {"call-id-test", none, "totag"} = dialogid(keylist:set("From", ["sip:foo@example.org"], DialogHeader1)),
 
 
     %% test expires(Header)
     %%--------------------------------------------------------------------
-    io:format("test: expires/1 - 1~n"),
+    autotest:mark(?LINE, "expires/1 - 1"),
     ["123"] = expires(keylist:from_list([{"Expires", ["123"]}])),
 
 
     %% test from(Header)
     %%--------------------------------------------------------------------
-    io:format("test: from/1 - 1~n"),
+    autotest:mark(?LINE, "from/1 - 1"),
     FromURL1 = sipurl:parse("sip:ft@example.org"),
     {"Fredrik", FromURL1} = from(keylist:from_list([{"From", ["Fredrik <sip:ft@example.org>"]}])),
 
 
     %% test to(Header)
     %%--------------------------------------------------------------------
-    io:format("test: to/1 - 1~n"),
+    autotest:mark(?LINE, "to/1 - 1"),
     ToURL1 = sipurl:parse("sip:ft@example.org"),
     {"Fredrik", ToURL1} = to(keylist:from_list([{"To", ["\"Fredrik\" <sip:ft@example.org>"]}])),
 
 
     %% test route(Header)
     %%--------------------------------------------------------------------
-    io:format("test: route/1 - 1~n"),
+    autotest:mark(?LINE, "route/1 - 1"),
     [RouteContact1] = route(keylist:from_list([{"Route", ["<sip:example.org>"]}])),
     #contact{urlstr = "sip:example.org"} = RouteContact1,
 
 
     %% test record_route(Header)
     %%--------------------------------------------------------------------
-    io:format("test: record_route/1 - 1~n"),
+    autotest:mark(?LINE, "record_route/1 - 1"),
     [RecordRouteContact1] = record_route(keylist:from_list([{"Record-Route", ["<sip:rr.example.org>"]}])),
     #contact{urlstr = "sip:rr.example.org"} = RecordRouteContact1,
 
 
     %% test contact_print(Contacts)
     %%--------------------------------------------------------------------
-    io:format("test: contact_print/1 - 1~n"),
+    autotest:mark(?LINE, "contact_print/1 - 1"),
     ["<sip:example.org>","<sip:rr.example.org>"] = contact_print([RouteContact1, RecordRouteContact1]),
 
 

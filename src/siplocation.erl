@@ -846,11 +846,11 @@ test() ->
     Loc2 = #siplocationdb_e{flags=[{priority, 2}], expire=2},
     Loc3 = #siplocationdb_e{flags=[{priority, 2}], expire=3},
 
-    io:format("test: get_priorities/1 - 1~n"),
+    autotest:mark(?LINE, "get_priorities/1 - 1"),
     %% normal case
     [1, 2, 2] = get_priorities([Loc0, Loc1, Loc2, Loc3]),
 
-    io:format("test: get_priorities/1 - 2~n"),
+    autotest:mark(?LINE, "get_priorities/1 - 2"),
     %% no location with priority
     [] = get_priorities([Loc0]),
 
@@ -859,57 +859,57 @@ test() ->
     %%--------------------------------------------------------------------
     Loc4 = #siplocationdb_e{flags=[{priority, 4}], expire=4},
 
-    io:format("test: prioritize_locations/1 - 1~n"),
+    autotest:mark(?LINE, "prioritize_locations/1 - 1"),
     [Loc1] = prioritize_locations([Loc0, Loc1, Loc2, Loc3, Loc4]),
 
-    io:format("test: prioritize_locations/1 - 2~n"),
+    autotest:mark(?LINE, "prioritize_locations/1 - 2"),
     [Loc2, Loc3] = prioritize_locations([Loc2, Loc3, Loc4]),
 
-    io:format("test: prioritize_locations/1 - 3~n"),
+    autotest:mark(?LINE, "prioritize_locations/1 - 3"),
     [Loc4] = prioritize_locations([Loc4, Loc0]),
 
 
     %% is_valid_wildcard_request(Header, ContactList)
     %%--------------------------------------------------------------------
-    io:format("test: is_valid_wildcard_request/2 - 1~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 1"),
     %% test valid wildcard
     true = is_valid_wildcard_request(keylist:from_list([{"Expires", ["0"]}]), [contact:new("*")]),
 
-    io:format("test: is_valid_wildcard_request/2 - 2~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 2"),
     %% test non-zero Expires
     {siperror, 400, _} =
 	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["1"]}]), [contact:new("*")])),
 
-    io:format("test: is_valid_wildcard_request/2 - 3~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 3"),
     %% test non-zero Expires, starting with a zero
     {siperror, 400, _} =
 	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["01"]}]), [contact:new("*")])),
 
-    io:format("test: is_valid_wildcard_request/2 - 4~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 4"),
     %% test without Expires-header
     {siperror, 400, _} =
 	(catch is_valid_wildcard_request(keylist:from_list([]), [contact:new("*")])),
 
-    io:format("test: is_valid_wildcard_request/2 - 5~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 5"),
     %% test with non-numeric Expires-header
     {siperror, 400, _} =
 	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["test"]}]), [contact:new("*")])),
 
-    io:format("test: is_valid_wildcard_request/2 - 6~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 6"),
     %% test with invalid Expires-header
     {siperror, 400, _} =
 	(catch is_valid_wildcard_request(keylist:from_list([{"Expires", ["0 invalid"]}]), [contact:new("*")])),
 
-    io:format("test: is_valid_wildcard_request/2 - 7~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 7"),
     %% non-wildcard contact
     false = is_valid_wildcard_request(keylist:from_list([]), [contact:new("sip:ft@example.org")]),
 
-    io:format("test: is_valid_wildcard_request/2 - 8~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 8"),
     %% multiple non-wildcard contact
     false = is_valid_wildcard_request(keylist:from_list([]), [contact:new("sip:ft@example.org"),
 							      contact:new("sip:ft@example.net")]),
 
-    io:format("test: is_valid_wildcard_request/2 - 9~n"),
+    autotest:mark(?LINE, "is_valid_wildcard_request/2 - 9"),
     %% multiple contacts, one is a wildcard
     {siperror, 400, _} =
 	(catch is_valid_wildcard_request(keylist:from_list([]), [contact:new("*"),
@@ -917,41 +917,41 @@ test() ->
 
     %% parse_register_expire(ExpireHeader, Contact)
     %%--------------------------------------------------------------------
-    io:format("test: parse_register_expire/2 - 1~n"),
+    autotest:mark(?LINE, "parse_register_expire/2 - 1"),
     %% test default
     3600 = parse_register_expire([], contact:new("sip:ft@example.org")),
 
-    io:format("test: parse_register_expire/2 - 2~n"),
+    autotest:mark(?LINE, "parse_register_expire/2 - 2"),
     %% test that contact parameter is used if present
     1201 = parse_register_expire(["1202"], contact:new("sip:ft@example.org", [{"expires", "1201"}])),
 
-    io:format("test: parse_register_expire/2 - 3~n"),
+    autotest:mark(?LINE, "parse_register_expire/2 - 3"),
     %% test that expires header is used if contact parameter is absent
     1202 = parse_register_expire(["1202"], contact:new("sip:ft@example.org")),
 
-    io:format("test: parse_register_expire/2 - 4~n"),
+    autotest:mark(?LINE, "parse_register_expire/2 - 4"),
     %% test that contact can't be larger than maximum
     43200 = parse_register_expire([], contact:new("sip:ft@example.org", [{"expires", "86400"}])),
 
 
     %% locations_to_contacts2(Locations, Now, [])
     %%--------------------------------------------------------------------
-    io:format("test: locations_to_contacts2/3 - 0~n"),
+    autotest:mark(?LINE, "locations_to_contacts2/3 - 0"),
     LTCNow = util:timestamp(),
     LTC_L1 = #siplocationdb_e{expire = LTCNow + 1, address = sipurl:parse("sip:ft@one.example.org")},
     LTC_L2 = #siplocationdb_e{expire = LTCNow + 2, address = sipurl:parse("sip:ft@two.example.org")},
     LTC_L3 = #siplocationdb_e{expire = never, address = sipurl:parse("sip:ft@static.example.org")},
 
-    io:format("test: locations_to_contacts2/3 - 1~n"),
+    autotest:mark(?LINE, "locations_to_contacts2/3 - 1"),
     %% test basic case
     ["<sip:ft@one.example.org>;expires=1", "<sip:ft@two.example.org>;expires=2"] =
 	locations_to_contacts2([LTC_L2, LTC_L1], LTCNow, []),
 
-    io:format("test: locations_to_contacts2/3 - 2~n"),
+    autotest:mark(?LINE, "locations_to_contacts2/3 - 2"),
     %% test that we ignore entrys that never expire
     [] = locations_to_contacts2([LTC_L3], LTCNow, []),
 
-    io:format("test: locations_to_contacts2/3 - 3~n"),
+    autotest:mark(?LINE, "locations_to_contacts2/3 - 3"),
     %% test that we ignore entrys that never expire together with other entrys
     ["<sip:ft@one.example.org>;expires=1", "<sip:ft@two.example.org>;expires=2"] =
 	locations_to_contacts2([LTC_L2, LTC_L3, LTC_L1], LTCNow, []),
@@ -959,34 +959,34 @@ test() ->
 
     %% to_url(LDBE)
     %%--------------------------------------------------------------------
-    io:format("test: to_url/1 - 0~n"),
+    autotest:mark(?LINE, "to_url/1 - 0"),
     ToURL_URL1 = sipurl:parse("sip:ft@192.0.2.111;line=foo"),
     ToURL_URL2 = sipurl:parse("sips:ft@192.0.2.111;line=foo"),
     ToURL_URL3 = sipurl:parse("sip:ft@192.0.2.111;line=foo;transport=TLS"),
 
-    io:format("test: to_url/1 - 1~n"),
+    autotest:mark(?LINE, "to_url/1 - 1"),
     %% test without outgoingproxy flag
     ToURL_URL1 = to_url(#siplocationdb_e{flags = [], address = ToURL_URL1}),
 
-    io:format("test: to_url/1 - 2~n"),
+    autotest:mark(?LINE, "to_url/1 - 2"),
     %% test with outgoingproxy flag
     "sip:out.example.org;addr=sip:ft%40192.0.2.111%3Bline%3Dfoo" =
 	sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sip:out.example.org"}],
 					      address = ToURL_URL1}) ),
 
-    io:format("test: to_url/1 - 3~n"),
+    autotest:mark(?LINE, "to_url/1 - 3"),
     %% test that parameters in outgoingproxy URL are preserved
     "sips:out.example.org;a=b;addr=sip:ft%40192.0.2.111%3Bline%3Dfoo" =
 	sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sips:out.example.org;a=b"}],
 					      address = ToURL_URL1}) ),
 
-    io:format("test: to_url/1 - 4 (disabled)~n"),
+    autotest:mark(?LINE, "to_url/1 - 4 (disabled)"),
     %% test that outgoingproxy URL is upgraded to SIPS if address is SIPS
     %%    "sips:out.example.org;a=b;addr=sips:ft%40192.0.2.111%3Bline%3Dfoo" =
     sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sip:out.example.org;a=b"}],
 					  address = ToURL_URL2}) ),
 
-    io:format("test: to_url/1 - 5 (disabled)~n"),
+    autotest:mark(?LINE, "to_url/1 - 5 (disabled)"),
     %% test that outgoingproxy URL is upgraded to SIPS if address has transport=TLS
     %%    "sips:out.example.org;a=b;addr=sips:ft%40192.0.2.111%3Bline%3Dfoo%3Btransport%3Dtls" =
     sipurl:print( to_url(#siplocationdb_e{flags = [{outgoingproxy, "sip:out.example.org"}],

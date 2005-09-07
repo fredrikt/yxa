@@ -305,7 +305,7 @@ set_cancelled(Target, Value) when is_record(Target, target), Value == true; Valu
 test() ->
     %% test empty/0
     %%--------------------------------------------------------------------
-    io:format("test: emtpy/0 - 1~n"),
+    autotest:mark(?LINE, "emtpy/0 - 1"),
     #targetlist{list=[]} = EmptyList = empty(),
 
 
@@ -313,52 +313,52 @@ test() ->
     %%--------------------------------------------------------------------
     AddReq = #request{method="TEST", uri=sipurl:parse("sip:test@example.org")},
 
-    io:format("test: add/7 - 1~n"),
+    autotest:mark(?LINE, "add/7 - 1"),
     %% just add an element
     List1 = add("branch1", AddReq, self(), trying, 4711, [123], EmptyList),
     
-    io:format("test: add/7 - 2~n"),
+    autotest:mark(?LINE, "add/7 - 2"),
     %% test that we can't add another element with the same branch
     List1 = add("branch1", AddReq, self(), calling, 123, [234], List1),
 
-    io:format("test: add/7 - 3~n"),
+    autotest:mark(?LINE, "add/7 - 3"),
     %% add another target
     List2 = add("branch2", AddReq, whereis(logger), completed, 123, [], List1),
 
-    io:format("test: add/7 - 4~n"),
+    autotest:mark(?LINE, "add/7 - 4"),
     %% another element
     List3 = add("branch3", AddReq, whereis(init), terminated, 345, [], List2),
 
-    io:format("test: add/7 - 5~n"),
+    autotest:mark(?LINE, "add/7 - 5"),
     %% another element
     List4 = add("branch4", AddReq, self(), trying, 345, [456], List3),
     
 
     %% test length/1
     %%--------------------------------------------------------------------
-    io:format("test: get_length/1 - 1~n"),
+    autotest:mark(?LINE, "get_length/1 - 1"),
     %% check length
     1 = get_length(List1),
 
-    io:format("test: get_length/1 - 2~n"),
+    autotest:mark(?LINE, "get_length/1 - 2"),
     %% check length
     4 = get_length(List4),
 
 
     %% test get_using_branch/2
     %%--------------------------------------------------------------------
-    io:format("test: get_using_branch/2 - 1~n"),
+    autotest:mark(?LINE, "get_using_branch/2 - 1"),
     %% check that we can get targets using branch
     Target1 = get_using_branch("branch1", List4),
 
-    io:format("test: get_using_branch/2 - 2~n"),
+    autotest:mark(?LINE, "get_using_branch/2 - 2"),
     %% check that we can get targets using branch
     none = get_using_branch("branch9", List4),
 
 
     %% test extract/2
     %%--------------------------------------------------------------------
-    io:format("test: extract/2 - 1~n"),
+    autotest:mark(?LINE, "extract/2 - 1"),
     %% check all the elements we added in the first target
     Extract_Me = self(),
     ["branch1", AddReq, Extract_Me, trying, 4711, [123]] =
@@ -367,91 +367,91 @@ test() ->
 
     %% test get_using_pid/2
     %%--------------------------------------------------------------------
-    io:format("test: get_using_pid/2 - 1~n"),
+    autotest:mark(?LINE, "get_using_pid/2 - 1"),
     %% check that we can get targets using pid
     Target1 = get_using_pid(self(), List4),
 
-    io:format("test: get_using_pid/2 - 2~n"),
+    autotest:mark(?LINE, "get_using_pid/2 - 2"),
     %% check that we can get targets using pid (note: List2 does not have target 3)
     none = get_using_pid(whereis(init), List2),
 
 
     %% test get_targets_in_state/2
     %%--------------------------------------------------------------------
-    io:format("test: get_targets_in_state/2 - 1~n"),
+    autotest:mark(?LINE, "get_targets_in_state/2 - 1"),
     [#target{branch="branch3"}] = get_targets_in_state(terminated, List4),
 
-    io:format("test: get_targets_in_state/2 - 2~n"),
+    autotest:mark(?LINE, "get_targets_in_state/2 - 2"),
     [#target{branch="branch1"}, #target{branch="branch4"}] = get_targets_in_state(trying, List4),
     
-    io:format("test: get_targets_in_state/2 - 3~n"),
+    autotest:mark(?LINE, "get_targets_in_state/2 - 3"),
     [] = get_targets_in_state(none, List4),
 
     
     %% test debugfriendly/1
     %%--------------------------------------------------------------------
-    io:format("test: debugfriendly/1 - 1~n"),
+    autotest:mark(?LINE, "debugfriendly/1 - 1"),
     Debug1 = debugfriendly(List4),
 
-    io:format("test: debugfriendly/1 - 2~n"),
+    autotest:mark(?LINE, "debugfriendly/1 - 2"),
     %% check length of result, nothing more
     4 = length(Debug1),
 
 
     %% test update_target/2
     %%--------------------------------------------------------------------
-    io:format("test: update_target/2 - 1~n"),
+    autotest:mark(?LINE, "update_target/2 - 1"),
     %% test update with no change
     List4 = update_target(Target1, List4),
 
-    io:format("test: update_target/2 - 2.1~n"),
+    autotest:mark(?LINE, "update_target/2 - 2.1"),
     %% test update with small change
     Target1Response = #sp_response{status=404, reason="Not Found"},
     UpdatedTarget1 = set_endresult(Target1, Target1Response),
     UpdatedList1 = update_target(UpdatedTarget1, List4),
     
-    io:format("test: update_target/2 - 2.2~n"),
+    autotest:mark(?LINE, "update_target/2 - 2.2"),
     %% verify that target was updated
     UpdatedTarget1 = get_using_branch("branch1", UpdatedList1),
 
 
-    io:format("test: update_target/2 - 3.1~n"),
+    autotest:mark(?LINE, "update_target/2 - 3.1"),
     %% modify last target in the middle of list
     Target3 = get_using_branch("branch3", UpdatedList1),
     Target3Response = #sp_response{status=100, reason="Trying"},
     UpdatedTarget3 = set_endresult(Target3, Target3Response),
 
-    io:format("test: update_target/2 - 3.2~n"),
+    autotest:mark(?LINE, "update_target/2 - 3.2"),
     %% verify that we can update last target in list
     UpdatedList3 = update_target(UpdatedTarget3, UpdatedList1),
 
-    io:format("test: update_target/2 - 3.3~n"),
+    autotest:mark(?LINE, "update_target/2 - 3.3"),
     %% verify that target was updated
     UpdatedTarget3 = get_using_branch("branch3", UpdatedList3),
 
 
-    io:format("test: update_target/2 - 4.1~n"),
+    autotest:mark(?LINE, "update_target/2 - 4.1"),
     %% modify last target in list
     Target4 = get_using_branch("branch4", UpdatedList3),
     Target4Response = #sp_response{status=400, reason="Bad Request"},
     UpdatedTarget4 = set_endresult(Target4, Target4Response),
 
-    io:format("test: update_target/2 - 4.2~n"),
+    autotest:mark(?LINE, "update_target/2 - 4.2"),
     %% verify that we can update last target in list
     UpdatedList4 = update_target(UpdatedTarget4, UpdatedList3),
 
-    io:format("test: update_target/2 - 4.3~n"),
+    autotest:mark(?LINE, "update_target/2 - 4.3"),
     %% verify that target was updated
     UpdatedTarget4 = get_using_branch("branch4", UpdatedList4),
 
-    io:format("test: update_target/2 - 5~n"),
+    autotest:mark(?LINE, "update_target/2 - 5"),
     %% verify that we get an exception if we try to update non-existing target
     {error, update_of_non_existin_target} = (catch update_target(UpdatedTarget4#target{ref="update_target test 5"}, UpdatedList4)),
 
 
     %% test get_responses/1
     %%--------------------------------------------------------------------
-    io:format("test: update_target/2 - 1~n"),
+    autotest:mark(?LINE, "update_target/2 - 1"),
     %% check that we get the valid response, but not the invalid one ('123') for target #2
     [Target1Response, Target3Response, Target4Response] = get_responses(UpdatedList4),
 

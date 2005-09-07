@@ -13,7 +13,9 @@
 	 run/0,
 	 run/1,
 	 run_cover/1,
-	 fail/1
+	 fail/1,
+	 mark/2,
+	 mark/3
 	]).
 
 %%--------------------------------------------------------------------
@@ -145,8 +147,9 @@ run([Mode]) ->
 		case Res of
 		    ok ->
 			io:format("~25w: passed~n", [Module]);
-		    _ ->
-			io:format("~25w: failed - Error:~n~p~n~n", [Module,Res]),
+		    {Line, Name, Error} ->
+			io:format("~25w: failed (test ~p, line ~p) - Error:~n~p~n~n",
+				  [Module, lists:flatten(Name), Line, Error]),
 			put(autotest_result, error)
 		end
 	end,
@@ -192,10 +195,12 @@ test_module(Module) ->
     io:format("----------------------------------------------------------------------~n"),
     case catch Module:test() of
 	ok ->
+	    erase({autotest, position}),
 	    ok;
 	Error ->
+	    {Line, Name} = erase({autotest, position}),
 	    io:format("Test FAILED : ~p~n", [Error]),
-	    Error
+	    {Line, Name, Error}
     end.
 
 
@@ -268,6 +273,26 @@ fail(Fun) ->
 	_ -> ok %% catch user throw()
     end.
 
+
+%%--------------------------------------------------------------------
+%% Function: mark(Line, Msg)
+%%           mark(Line, Fmt, Args)
+%%           Line = integer() | undefined
+%%           Fmt  = string()
+%%           Args = list()
+%% Descrip.: Mark a new test. Record whereabout information in the
+%%           process dictionary to help locate failing tests at the
+%%           end result stage.
+%% Returns : ok
+%%--------------------------------------------------------------------
+mark(Line, Msg) ->
+    mark(Line, Msg, []).
+
+mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
+    Name = io_lib:format(Fmt, Args),
+    io:put_chars(["test: ", Name, "\n"]),
+    put({autotest, position}, {Line, Name}),
+    ok.
 
 %%====================================================================
 %% Internal functions

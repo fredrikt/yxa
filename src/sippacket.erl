@@ -600,7 +600,7 @@ test() ->
     %% parse/2
     %%--------------------------------------------------------------------
     %% init
-    io:format("test: parse/2 request - 1~n"),
+    autotest:mark(?LINE, "parse/2 request - 1"),
     Message1 =
 	"INVITE sip:test@example.org SIP/2.0\r\n"
 	"Via: SIP/2.0/TCP one.example.org\r\n"
@@ -610,14 +610,14 @@ test() ->
     %% REQUESTS
 
     %% basic parse
-    io:format("test: parse/2 request - 1.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 1.1"),
     #request{method = "INVITE",
 	     uri    = URL1,
 	     header = Header1,
 	     body   = <<"body">>} = parse(Message1, none),
 
     %% verify single Via
-    io:format("test: parse/2 request - 1.2~n"),
+    autotest:mark(?LINE, "parse/2 request - 1.2"),
     ["SIP/2.0/TCP one.example.org"] = keylist:fetch('via', Header1),
 
     Message2 =
@@ -628,7 +628,7 @@ test() ->
 	"via: SIP/2.0/UDP one.example.org\r\n"
 	"\r\nbody\r\n",
 
-    io:format("test: parse/2 request - 2.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 2.1"),
     %% More complex header, one faulty \r\n (end of To: line) and
     %% two Vias not located together. Also some extra spaces after To: value
     %% and extra \r\n at the end of body.
@@ -637,17 +637,17 @@ test() ->
 	     body   = <<"body\r\n">>
 	    } = parse(Message2, none),
 
-    io:format("test: parse/2 request - 2.2~n"),
+    autotest:mark(?LINE, "parse/2 request - 2.2"),
     %% Verify To:
     ["<sip:to@example.org>"] = keylist:fetch('to', Header2),
 
-    io:format("test: parse/2 request - 2.3~n"),
+    autotest:mark(?LINE, "parse/2 request - 2.3"),
     %% Verify Via's
     ["SIP/2.0/TCP two.example.org", "SIP/2.0/UDP one.example.org"] = keylist:fetch('via', Header2),
 
     Message3 = "INVITE sip:test@example.org   SIP/2.0\r\n",
 
-    io:format("test: parse/2 request - 3~n"),
+    autotest:mark(?LINE, "parse/2 request - 3"),
     %% Make sure we throw the right exception on extra spaces in Request-Line
     {error, invalid_sip_version} = (catch parse(Message3, none)),
 
@@ -659,14 +659,14 @@ test() ->
 	"\r\n",
 
     %% Extra spaces and missing spaces
-    io:format("test: parse/2 request - 4.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 4.1"),
     #request{method = "INVITE",
 	     header = Header4,
 	     body   = <<>>
 	    } = parse(Message4, none),
 
     %% verify the Via's
-    io:format("test: parse/2 request - 4.2~n"),
+    autotest:mark(?LINE, "parse/2 request - 4.2"),
     ["SIP/2.0/TLS four.example.org", "SIP/2.0/TCP three.example.org", "SIP/2.0/TCP two.example.org",
      "SIP/2.0/UDP one.example.org"] = keylist:fetch('via', Header4),
 
@@ -676,13 +676,13 @@ test() ->
 	"	SIP/2.0/TCP two.example.org\r\n"
 	"v: SIP/2.0/UDP one.example.org\r\n"
 	"\r\n",
-    io:format("test: parse/2 request - 5.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 5.1"),
     %% multiline Via
     #request{method = "INVITE",
 	     header = Header5,
 	     body   = <<>>} = parse(Message5, none),
 
-    io:format("test: parse/2 request - 5.2~n"),
+    autotest:mark(?LINE, "parse/2 request - 5.2"),
     %% verify the three Via's
     ["SIP/2.0/TLS three.example.org", "SIP/2.0/TCP two.example.org", "SIP/2.0/UDP one.example.org"] =
 	keylist:fetch('via', Header5),
@@ -722,77 +722,77 @@ test() ->
 	"test",
     URL6 = sipurl:parse("sip:vivekg@chair-dnrc.example.com;unknownparam"),
 
-    io:format("test: parse/2 request - 6.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.1"),
     %% parse tortuous INVITE
     {request, "INVITE" , URL6, Header6, <<"test">>} = parse(Message6, none),
 
     %% verify contents
 
-    io:format("test: parse/2 request - 6.2.1.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.1.1"),
     %% To: raw data extraction test
     ["sip:vivekg@chair-dnrc.example.com ;   tag    = 1918181833n"] = keylist:fetch('to', Header6),
 
-    io:format("test: parse/2 request - 6.2.1.2 (To: full parsing, disabled)~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.1.2 (To: full parsing, disabled)"),
     %% To: - parsing check disabled since we fail to parse the URI
     %%{none, Test6_ToURL} = sipheader:to(Header6),
     %%"sip:vivekg@chair-dnrc.example.com;tag=1918181833n" = sipurl:print(Test6_ToURL),
 
-    io:format("test: parse/2 request - 6.2.2.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.2.1"),
     %% From: raw data extraction test
     ["\"J Rosenberg \\\"\"       <sip:jdrosen@example.com> ; tag = 98asjd8"]
 	= keylist:fetch('from', Header6),
 
-    io:format("test: parse/2 request - 6.2.2.2 (From: full parsing, disabled)~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.2.2 (From: full parsing, disabled)"),
     %% From: - parsing check disabled since we fail to handle the escaped quote in the display name
     %% {"J Rosenberg \\\"", Test6_FromURL} = sipheader:from(Header6),
     %% "sip:jdrosen@example.com" = sipurl:print(Test6_FromURL),
 
-    io:format("test: parse/2 request - 6.2.3~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.3"),
     %% Max-Forwards:
     ["0068"] = keylist:fetch('max-forwards', Header6),
 
-    io:format("test: parse/2 request - 6.2.4~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.4"),
     %% Call-Id:
     "wsinv.ndaksdj@192.0.2.1" = sipheader:callid(Header6),
 
-    io:format("test: parse/2 request - 6.2.5~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.5"),
     %% Content-Length:
     ["4"] = keylist:fetch('content-length', Header6),
 
-    io:format("test: parse/2 request - 6.2.6~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.6"),
     %% CSeq:
     {"0009", "INVITE"} = sipheader:cseq(Header6),
 
-    io:format("test: parse/2 request - 6.2.7.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.7.1"),
     ["SIP  /   2.0/UDP   192.0.2.2;branch=390skdjuw",
      "SIP  / 2.0  / TCP     spindle.example.com   ; branch  =   z9hG4bK9ikj8",
      "SIP  /    2.0   / UDP  192.168.255.111   ; branch=z9hG4bK30239"] = keylist:fetch('via', Header6),
 
-    io:format("test: parse/2 request - 6.2.8~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.8"),
     %% Subject:
     [] = keylist:fetch('subject', Header6),
 
-    io:format("test: parse/2 request - 6.2.9~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.9"),
     %% NewFangledHeader:
     ["newfangled valuecontinued newfangled value"] = keylist:fetch("NewFangledHeader", Header6),
 
-    io:format("test: parse/2 request - 6.2.10~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.10"),
     [";;", "", ";;", ";"] = keylist:fetch("UnknownHeaderWithUnusualValue", Header6),
     
-    io:format("test: parse/2 request - 6.2.11~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.11"),
     %% Content-Type:
     ["application/sdp"] = keylist:fetch("Content-Type", Header6),
 
-    io:format("test: parse/2 request - 6.2.12~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.12"),
     %% Route:
     ["<sip:services.example.com;lr;unknownwith=value;unknown-no-value>"] = keylist:fetch('route', Header6),
 
-    io:format("test: parse/2 request - 6.2.13.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.13.1"),
     %% Contact:
     ["\"Quoted string \\\"\\\"\" <sip:jdrosen@example.com> ; newparam =     newvalue ; secondparam ; q = 0.33"]
 	= keylist:fetch('contact', Header6),
 
-    io:format("test: parse/2 request - 6.2.13.2 (Contact: full parse, disabled)~n"),
+    autotest:mark(?LINE, "parse/2 request - 6.2.13.2 (Contact: full parse, disabled)"),
     %% Contact: - disabled since we remove a quote too much from the Display name when we parse it in contact.
 %%    Parse13C = #contact{display_name = "Quoted string \\\"\\\"",
 %%			urlstr = "sip:jdrosen@example.com",
@@ -812,7 +812,7 @@ test() ->
         "INVITE sip:foo@example.com SIP/2.0\r\n"
         "this is just garbage received in the same packet\r\n",
 
-    io:format("test: parse/2 request - 7~n"),
+    autotest:mark(?LINE, "parse/2 request - 7"),
     %% extra data after request - should be ignored (Content-Length: 4)
     {request, "REGISTER" , _, _, <<"body">>} = parse(Message7, none),
 
@@ -820,12 +820,12 @@ test() ->
 	"INVITE <sip:user@example.com> SIP/2.0\r\n"
 	"Via: SIP/2.0/TLS 192.0.2.1, SIP/2.0/FOO 192.0.2.78\r\n"
 	"\r\n",
-    io:format("test: parse/2 request - 8.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 8.1"),
     %% Request-URI enclosed in <> - invalid, but should not be rejected here
     %% (it isn't THAT broken and should be responded to with a 400 Bad Request)
     {request, "INVITE" , {unparseable, "<sip:user@example.com>"}, Header8, <<>>} = parse(Message8, none),
 
-    io:format("test: parse/2 request - 8.2~n"),
+    autotest:mark(?LINE, "parse/2 request - 8.2"),
     %% verify the Via header so we know keylist is created as it should
     ["SIP/2.0/TLS 192.0.2.1", "SIP/2.0/FOO 192.0.2.78"] = keylist:fetch('via', Header8),
 
@@ -835,7 +835,7 @@ test() ->
 	"Via: SIP/2.0/TLS 192.0.2.1, SIP/2.0/FOO 192.0.2.78\r\n"
 	"\r\n" ++ Body9,
 
-    io:format("test: parse/2 request - 9~n"),
+    autotest:mark(?LINE, "parse/2 request - 9"),
     %% verify that we don't mess with line breaks in body
     BinBody9 = list_to_binary(Body9),
     {request, "INVITE", _, _, BinBody9} = parse(Message9, none),
@@ -847,26 +847,26 @@ test() ->
 	"\n"
 	"partial",
 
-    io:format("test: parse/2 request - 10.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 10.1"),
     %% make sure we can handle message where body is not yet fully received
     %% (also test \n instead of \r\n throughout the message)
     {request, "INVITE", _, Header10, <<"partial">>} = parse(Message10, none),
 
-    io:format("test: parse/2 request - 10.2~n"),
+    autotest:mark(?LINE, "parse/2 request - 10.2"),
     %% verify the Content-Length is untouched (to not re-introduce bug)
     ["20"] = keylist:fetch('content-length', Header10),
 
     Str11 = "INVITE sip:a@example.org SIP/2.0",
 
-    io:format("test: parse/2 request - 11.1~n"),
+    autotest:mark(?LINE, "parse/2 request - 11.1"),
     %% Make sure we throw the right exception on extra characters after SIP version
     {error, garbage_after_sip_version} = (catch parse(Str11 ++ "X\r\n", none)),
 
-    io:format("test: parse/2 request - 11.2~n"),
+    autotest:mark(?LINE, "parse/2 request - 11.2"),
     %% Make sure we throw the right exception on extra characters after SIP version
     {error, garbage_after_sip_version} = (catch parse(Str11 ++ "1\r\nTest: foo\r\n\r\n", none)),
 
-    io:format("test: parse/2 request - 11.3~n"),
+    autotest:mark(?LINE, "parse/2 request - 11.3"),
     %% Make sure we throw the right exception on extra characters after SIP version
     {error, garbage_after_sip_version} = (catch parse(Str11 ++ "\r\r\nTest: foo\r\n\r\n", none)),
 
@@ -875,7 +875,7 @@ test() ->
 	"Via: SIP/2.0/TCP two.example.org\r\n"
 	"body\r\n",
 
-    io:format("test: parse/2 request - 12~n"),
+    autotest:mark(?LINE, "parse/2 request - 12"),
     %% Only single CRLF between header and body - illegal. 'body' Can't be distinguished from another header.
     {error, no_end_of_key_or_no_header_body_separator} = (catch parse(Message12, none)),
 
@@ -886,7 +886,7 @@ test() ->
 	"\r\n"
 	"body",
 
-    io:format("test: parse/2 request - 13~n"),
+    autotest:mark(?LINE, "parse/2 request - 13"),
     %% Duplicate Content-Length
     try parse(Message13, none) of
 	_ -> throw(test_failed)
@@ -901,26 +901,26 @@ test() ->
 	"Content-Length: 3\r\n"
 	"\r\n"
 	"foo",
-    io:format("test: parse/2 response - 1.1~n"),
+    autotest:mark(?LINE, "parse/2 response - 1.1"),
     {response, 100, "Trying", RHeader1, RMessage1_body} = parse(RMessage1, none),
 
     %% verify the Via header so we know keylist is created as it should
-    io:format("test: parse/2 response - 1.2~n"),
+    autotest:mark(?LINE, "parse/2 response - 1.2"),
     ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch('via', RHeader1),
 
     %% verify the body
-    io:format("test: parse/2 response - 1.3~n"),
+    autotest:mark(?LINE, "parse/2 response - 1.3"),
     <<"foo">> = RMessage1_body,
 
     RMessage2 =
         "SIP/2.0 100 \r\n"
         "Via: SIP/2.0/TLS 192.0.2.78\r\n"
 	"\r\n",
-    io:format("test: parse/2 response - 2.1~n"),
+    autotest:mark(?LINE, "parse/2 response - 2.1"),
     {response, 100, "", RHeader2, <<>>} = parse(RMessage2, none),
 
     %% verify the Via header so we know keylist is created as it should
-    io:format("test: parse/2 response - 2.2~n"),
+    autotest:mark(?LINE, "parse/2 response - 2.2"),
     ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch('via', RHeader2),
 
     ok.

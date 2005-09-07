@@ -536,157 +536,157 @@ test() ->
     %% time/1
     %%--------------------------------------------------------------------
     %% normal, floating
-    io:format("test: time/1  - 1~n"),
+    autotest:mark(?LINE, "time/1  - 1"),
     #date_time{date = {1953, 12, 24}, time = {12, 53, 43}, type = floating} = time("19531224T125343"),
 
     %% normal, utc (lower and upper case)
-    io:format("test: time/1  - 2~n"),
+    autotest:mark(?LINE, "time/1  - 2"),
     #date_time{date = {1953, 12, 24}, time = {12, 53, 43}, type = utc} = time("19531224t125343Z"),
     #date_time{date = {1953, 12, 24}, time = {12, 53, 43}, type = utc} = time("19531224t125343z"),
 
     %% out of range date or time - month
-    io:format("test: time/1  - 3.1~n"),
+    autotest:mark(?LINE, "time/1  - 3.1"),
     autotest:fail(fun() -> time("19531324t125343Z") end),
 
     %% out of range date or time - day
-    io:format("test: time/1  - 3.2~n"),
+    autotest:mark(?LINE, "time/1  - 3.2"),
     autotest:fail(fun() -> time("19531234t125343Z") end),
 
     %% out of range date or time - hour
-    io:format("test: time/1  - 3.3~n"),
+    autotest:mark(?LINE, "time/1  - 3.3"),
     autotest:fail(fun() -> time("19531224t245343Z") end),
 
     %% out of range date or time - minut
-    io:format("test: time/1  - 3.4~n"),
+    autotest:mark(?LINE, "time/1  - 3.4"),
     autotest:fail(fun() -> time("19531224t126343Z") end),
 
     %% out of range date or time - second
-    io:format("test: time/1  - 3.5~n"),
+    autotest:mark(?LINE, "time/1  - 3.5"),
     autotest:fail(fun() -> time("19531224t125363Z") end),
     
     %% non-existent date
-    io:format("test: time/1  - 4.1~n"),
+    autotest:mark(?LINE, "time/1  - 4.1"),
     autotest:fail(fun() -> time("20040230t125343Z") end),
-    io:format("test: time/1  - 4.2~n"),
+    autotest:mark(?LINE, "time/1  - 4.2"),
     autotest:fail(fun() -> time("20040431t125343Z") end),
-    io:format("test: time/1  - 4.3~n"),
+    autotest:mark(?LINE, "time/1  - 4.3"),
     autotest:fail(fun() -> time("20040631t125343Z") end),
-    io:format("test: time/1  - 4.4~n"),
+    autotest:mark(?LINE, "time/1  - 4.4"),
     autotest:fail(fun() -> time("20040931t125343Z") end),
-    io:format("test: time/1  - 4.5~n"),
+    autotest:mark(?LINE, "time/1  - 4.5"),
     autotest:fail(fun() -> time("20041131t125343Z") end),
 
     %% non-numerical date-time
-    io:format("test: time/1  - 5~n"),
+    autotest:mark(?LINE, "time/1  - 5"),
     autotest:fail(fun() -> time("200A1131t125343Z") end),
 
     %% parse_until/1
     %%--------------------------------------------------------------------
     %% test date format
-    io:format("test: parse_until/1  - 1~n"),
+    autotest:mark(?LINE, "parse_until/1  - 1"),
     {1998, 10, 24} = parse_until("19981024"),
 
     %% test date-time format
-    io:format("test: parse_until/1  - 2~n"),
+    autotest:mark(?LINE, "parse_until/1  - 2"),
     #date_time{date = {1953, 12, 24}, time = {12, 53, 43}, type = utc} = parse_until("19531224t125343Z"),
 
     %% test that date-time without utc fails
-    io:format("test: parse_until/1  - 3~n"),
+    autotest:mark(?LINE, "parse_until/1  - 3"),
     autotest:fail(fun() -> parse_until("19531224t125343") end),
 
     %% non-existent date
-    io:format("test: parse_until/1  - 4~n"),
+    autotest:mark(?LINE, "parse_until/1  - 4"),
     autotest:fail(fun() -> parse_until("20040230") end),
-    io:format("test: parse_until/1  - 5~n"),
+    autotest:mark(?LINE, "parse_until/1  - 5"),
     autotest:fail(fun() -> parse_until("20040431") end),
-    io:format("test: parse_until/1  - 6~n"),
+    autotest:mark(?LINE, "parse_until/1  - 6"),
     autotest:fail(fun() -> parse_until("20040631") end),
-    io:format("test: parse_until/1  - 7~n"),
+    autotest:mark(?LINE, "parse_until/1  - 7"),
     autotest:fail(fun() -> parse_until("20040931") end),
-    io:format("test: parse_until/1  - 8~n"),
+    autotest:mark(?LINE, "parse_until/1  - 8"),
     autotest:fail(fun() -> parse_until("20041131") end),
 
     %% parse_byday/1
     %%--------------------------------------------------------------------
     %% test sequence of days
-    io:format("test: parse_byday/1  - 1~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 1"),
     L1 = [{all,mo}, {all,we}, {all,fr}],
     L1 = parse_byday("mo,we,fr"),
 
     %% test case handling
-    io:format("test: parse_byday/1  - 2~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 2"),
     L2 = [{all,mo}, {all, we}, {all, fr}],
     L2 = parse_byday("Mo,wE,FR"),
 
     %% test support for +/-Ndd format
-    io:format("test: parse_byday/1  - 3~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 3"),
     L3 = [{1,mo}, {-2, we}, {2, fr}],
     L3 = parse_byday("+1mo,-2we,2fr"),
     
     %% test empty byday
-    io:format("test: parse_byday/1  - 4~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 4"),
     [] = parse_byday(""),
 
     %% test single entry byday
-    io:format("test: parse_byday/1  - 5~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 5"),
     [{-2, sa}] = parse_byday("-2sa"),
 
     %% missing day
-    io:format("test: parse_byday/1  - 6~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 6"),
     autotest:fail(fun() -> parse_byday("21") end),
     %% incorrect format
-    io:format("test: parse_byday/1  - 7~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 7"),
     autotest:fail(fun() -> parse_byday("21foo") end),
     %% 'fo' isn't a day
-    io:format("test: parse_byday/1  - 8~n"),
+    autotest:mark(?LINE, "parse_byday/1  - 8"),
     autotest:fail(fun() -> parse_byday("21fo") end),
 
 
     %% duration/1
     %%--------------------------------------------------------------------
     %% test day-hour-min-sec
-    io:format("test: duration/1  - 1~n"),
+    autotest:mark(?LINE, "duration/1  - 1"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 20} = duration("P15DT5H2M20S"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 0} = duration("P15DT5H2M"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 0, seconds = 0} = duration("P15DT5H"),
     
     %% test week
-    io:format("test: duration/1  - 2~n"),
+    autotest:mark(?LINE, "duration/1  - 2"),
     #duration{weeks = 7, days = 0, hours = 0, minutes = 0, seconds = 0}  = duration("P7W"),
 						
     %% test hour-min-sec
-    io:format("test: duration/1  - 3~n"),
+    autotest:mark(?LINE, "duration/1  - 3"),
     #duration{weeks = 0, days = 0, hours = 5, minutes = 2, seconds = 20}  = duration("PT5H2M20S"),
     #duration{weeks = 0, days = 0, hours = 5, minutes = 2, seconds = 0}  = duration("PT5H2M"),
     #duration{weeks = 0, days = 0, hours = 5, minutes = 0, seconds = 0} = duration("PT5H"),
 
     %% usage of week disallows all other duration values 
-    io:format("test: duration/1  - 4~n"),
+    autotest:mark(?LINE, "duration/1  - 4"),
     autotest:fail(fun() -> duration("P7W15D") end),
     autotest:fail(fun() -> duration("P7W15DT5H") end),
     
     %% negative or zero duration
-    io:format("test: duration/1  - 5~n"),
+    autotest:mark(?LINE, "duration/1  - 5"),
     autotest:fail(fun() -> duration("-P15DT5H2M20S") end),
     autotest:fail(fun() -> duration("P0DT0H0M0S") end),
 
     %% use of "+" sign
-    io:format("test: duration/1  - 6~n"),
+    autotest:mark(?LINE, "duration/1  - 6"),
     duration("+P15DT5H2M20S"),
 
     %% skip M in H-M-S sequence - should fail
-    io:format("test: duration/1  - 7~n"),
+    autotest:mark(?LINE, "duration/1  - 7"),
     autotest:fail(fun() -> duration("P15DT5H20S") end),
 
     %% test case insensitivity
-    io:format("test: duration/1  - 8~n"),
+    autotest:mark(?LINE, "duration/1  - 8"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 20} = duration("p15dt5h2m20s"),
     #duration{weeks = 7, days = 0, hours = 0, minutes = 0, seconds = 0}  = duration("p7w"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 20} = duration("p15Dt5H2m20S"),
     #duration{weeks = 7, days = 0, hours = 0, minutes = 0, seconds = 0} = duration("p7W"),
 
     %% test only day
-    io:format("test: duration/1  - 9~n"),
+    autotest:mark(?LINE, "duration/1  - 9"),
     #duration{weeks = 0, days = 19, hours = 0, minutes = 0, seconds = 0}  = duration("P19D"),
 						
 
@@ -694,99 +694,99 @@ test() ->
     %% iolist_to_str/1
     %%--------------------------------------------------------------------
     %% regular string
-    io:format("test: iolist_to_str/1  - 1~n"),
+    autotest:mark(?LINE, "iolist_to_str/1  - 1"),
     "hello world !" = iolist_to_str("hello world !"),
     
     %% binary
-    io:format("test: iolist_to_str/1  - 2~n"),
+    autotest:mark(?LINE, "iolist_to_str/1  - 2"),
     "hello world !" = iolist_to_str([<<"hello world !">>]),
 				     
     %% char + binary
-    io:format("test: iolist_to_str/1  - 3~n"),
+    autotest:mark(?LINE, "iolist_to_str/1  - 3"),
     "hello world !" = iolist_to_str([$h, $e, $l, <<"lo world !">>]),
 
     %% nested binary (= one binary)
-    io:format("test: iolist_to_str/1  - 4~n"),
+    autotest:mark(?LINE, "iolist_to_str/1  - 4"),
     "hello world !" = iolist_to_str([<< <<"hello">>/binary, <<" world !">>/binary >>]),
 
     %% nesting binary, chars and lists 
-    io:format("test: iolist_to_str/1  - 5~n"),
+    autotest:mark(?LINE, "iolist_to_str/1  - 5"),
     "hello world !" = iolist_to_str([[[$h],[$e],[$l],[$l],[$o],[$ ]], [$w,$o,$r], <<"ld !">>]),
     "hello world !" = iolist_to_str([[[$h],[$e],[<<"ll">>],[[[$o]]],[$ ]], $w, [$o,$r], <<"ld !">>]),
 
     %% check_range/2
     %%--------------------------------------------------------------------
     %% 
-    io:format("test: check_range/1  - 1~n"),
+    autotest:mark(?LINE, "check_range/1  - 1"),
     true = check_range(42, [23,52]),
     true = check_range(42, [52,23]),
     false = check_range(1, [2,3]),
 
-    io:format("test: check_range/1  - 2.1~n"),
+    autotest:mark(?LINE, "check_range/1  - 2.1"),
     1 = check_range(1, {[1,3],[-1,-3]}),
-    io:format("test: check_range/1  - 2.2~n"),
+    autotest:mark(?LINE, "check_range/1  - 2.2"),
     -2 = check_range(-2, {[1,3],[-1,-3]}),
-    io:format("test: check_range/1  - 2.3~n"),
+    autotest:mark(?LINE, "check_range/1  - 2.3"),
     autotest:fail(fun() -> check_range(0, {[1,3],[-1,-3]}) end),
 
     %% is_language_tag/1
     %%--------------------------------------------------------------------
     %%
-    io:format("test: is_language_tag  - 1~n"),
+    autotest:mark(?LINE, "is_language_tag  - 1"),
     is_language_tag("f"),
     
-    io:format("test: is_language_tag  - 2~n"),
+    autotest:mark(?LINE, "is_language_tag  - 2"),
     is_language_tag("fr"),
 
-    io:format("test: is_language_tag  - 3~n"),
+    autotest:mark(?LINE, "is_language_tag  - 3"),
     is_language_tag("de-En-Bar"),
 
     %% too long sub part
-    io:format("test: is_language_tag  - 4~n"),
+    autotest:mark(?LINE, "is_language_tag  - 4"),
     autotest:fail(fun() -> is_language_tag("abcdabcda") end),
 
     %% ilegal chars in first part of tag
-    io:format("test: is_language_tag  - 5~n"),
+    autotest:mark(?LINE, "is_language_tag  - 5"),
     autotest:fail(fun() -> is_language_tag("abc42") end),
 
     %% empty string
-    io:format("test: is_language_tag  - 6~n"),
+    autotest:mark(?LINE, "is_language_tag  - 6"),
     autotest:fail(fun() -> is_language_tag("") end),
 
     %% legal tag with numbers
-    io:format("test: is_language_tag  - 9~n"),
+    autotest:mark(?LINE, "is_language_tag  - 9"),
     is_language_tag("de-En11-Bar22-24"),
 
     %% is_language_range/1
     %%--------------------------------------------------------------------
     %%
-    io:format("test: is_language_range  - 1~n"),
+    autotest:mark(?LINE, "is_language_range  - 1"),
     is_language_range("f"),
     
-    io:format("test: is_language_range  - 2~n"),
+    autotest:mark(?LINE, "is_language_range  - 2"),
     is_language_range("fr"),
 
-    io:format("test: is_language_range  - 3~n"),
+    autotest:mark(?LINE, "is_language_range  - 3"),
     is_language_range("de-En-Bar"),
 
     %% too long sub part
-    io:format("test: is_language_range  - 4~n"),
+    autotest:mark(?LINE, "is_language_range  - 4"),
     autotest:fail(fun() -> is_language_range("abcdabcda") end),
 
     %% ilegal chars in first part of range
-    io:format("test: is_language_range  - 5~n"),
+    autotest:mark(?LINE, "is_language_range  - 5"),
     autotest:fail(fun() -> is_language_range("abc42") end),
 
     %% empty string
-    io:format("test: is_language_range  - 6~n"),
+    autotest:mark(?LINE, "is_language_range  - 6"),
     autotest:fail(fun() -> is_language_range("") end),
 
     %% legal range with numbers
-    io:format("test: is_language_range  - 9~n"),
+    autotest:mark(?LINE, "is_language_range  - 9"),
     is_language_range("de-En11-Bar22-24"),
 
     %% empty string
-    io:format("test: is_language_range  - 10~n"),
+    autotest:mark(?LINE, "is_language_range  - 10"),
     is_language_range("*"),
 
 

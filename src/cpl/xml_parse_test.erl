@@ -57,7 +57,7 @@ test() ->
     %% cpl_script_to_graph/1
     %%--------------------------------------------------------------------
     %% RFC 3880 - Figure 19
-    io:format("test: cpl_script_to_graph/1  - 1~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 1"),
     ScriptStr1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
       <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -82,7 +82,7 @@ test() ->
 
 
     %% RFC 3880 - Figure 20
-    io:format("test: cpl_script_to_graph/1  - 2~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 2"),
     ScriptStr2 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -134,7 +134,7 @@ test() ->
 
 
     %% RFC 3880 - Figure 21 - redirection proxy case removed, it's unreachable code
-    io:format("test: cpl_script_to_graph/1  - 3a~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 3a"),
     ScriptStr3a = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -179,7 +179,7 @@ test() ->
     %% RFC 3880 - Figure 21 - this CPL parser is strict and rejects code
     %% that appears meaningless, in this case the creation of unreachable
     %% branches
-    io:format("test: cpl_script_to_graph/1  - 3b~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 3b"),
     ScriptStr3b = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -203,7 +203,7 @@ test() ->
 
 
     %% RFC 3880 - Figure 22
-    io:format("test: cpl_script_to_graph/1  - 4~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 4"),
     ScriptStr4 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -230,7 +230,7 @@ test() ->
 		   ]), 
 
     %% RFC 3880 - Figure 23
-    io:format("test: cpl_script_to_graph/1  - 5~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 5"),
     ScriptStr5 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -290,7 +290,7 @@ test() ->
 		   ]), 
 
     %% RFC 3880 - Figure 24, subfield="tel" replaced with subfield="host", as yxa doesn't have tel support
-    io:format("test: cpl_script_to_graph/1  - 6~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 6"),
     ScriptStr6 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -318,7 +318,7 @@ test() ->
 		   ]), 
 
     %% RFC 3880 - Figure 24, test that subfield="tel" is rejected (by yxa due to lack of tel support)
-    io:format("test: cpl_script_to_graph/1  - 6b~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 6b"),
     ScriptStr6b = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -337,7 +337,7 @@ test() ->
 
     %% RFC 3880 - Figure 25 - removed tzid and tzurl attribute 
     %% as they are currently unsupported
-    io:format("test: cpl_script_to_graph/1  - 7a~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7a"),
     ScriptStr7a = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -410,7 +410,7 @@ test() ->
 
     %% RFC 3880 - Figure 25 - tests that tzid and tzurl usage 
     %% is rejected as, they are currently unsupported
-    io:format("test: cpl_script_to_graph/1  - 7b~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7b"),
     ScriptStr7b = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -437,7 +437,7 @@ test() ->
     autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7b) end),
 
     %% test creation of time_switch__cond_8 record
-    io:format("test: cpl_script_to_graph/1  - 7c~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7c"),
     ScriptStr7c = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -478,7 +478,7 @@ test() ->
 		   ]),
 
     %% test creation of time_switch__cond_2 record
-    io:format("test: cpl_script_to_graph/1  - 7d~n"), 
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7d"), 
     ScriptStr7d = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <cpl
     xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -511,7 +511,7 @@ test() ->
 		   ]),
 
     %% test creation of time_switch__cond_5 record
-    io:format("test: cpl_script_to_graph/1  - 7e~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7e"),
     ScriptStr7e = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -544,7 +544,7 @@ test() ->
 		   ]),
 
     %% test creation of time_switch__cond_5 record, count = 5
-    io:format("test: cpl_script_to_graph/1  - 7f~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7f"),
     ScriptStr7f = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -581,7 +581,7 @@ test() ->
     ] = Nodes7f,
 
     %% test creation of time_switch__cond_5 record, until = COS DATE 
-    io:format("test: cpl_script_to_graph/1  - 7g~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7g"),
     ScriptStr7g = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -614,7 +614,7 @@ test() ->
 		   ]),
 
     %% test creation of time_switch__cond_5 record, until = COS DATE 
-    io:format("test: cpl_script_to_graph/1  - 7h~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7h"),
     ScriptStr7h = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -649,7 +649,7 @@ test() ->
 		   ]),
 
     %% test that dtstart >= dtend is invalid, dtstart < dtend should hold
-    io:format("test: cpl_script_to_graph/1  - 7i~n"), 
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7i"), 
     ScriptStr7i = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <cpl
     xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -665,7 +665,7 @@ test() ->
 autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7i) end),
 
 %% test that dtstart can't be set to a to early date not supported by OTP
-    io:format("test: cpl_script_to_graph/1  - 7j~n"), 
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7j"), 
     ScriptStr7j = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <cpl
     xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -681,7 +681,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7i) end),
 autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7j) end),
 
 %% test that count limit (default = 100) is checked
-    io:format("test: cpl_script_to_graph/1  - 7k~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 7k"),
     ScriptStr7k = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -698,7 +698,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
 
 
 %% RFC 3880 - Figure 26
-    io:format("test: cpl_script_to_graph/1  - 8~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 8"),
     ScriptStr8 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -743,7 +743,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
 
 %% RFC 3880 - Figure 27, http source currently unsupported, 
 %% source="http://www.example.com/cgi-bin/locate.cgi?user=mary" currently replaced by source="registration"
-    io:format("test: cpl_script_to_graph/1  - 9~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 9"),
     ScriptStr9 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -790,7 +790,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
 %% RFC 3880 - Figure 30 - <location url="tel:+19175551212"> 
 %% replaced by <location url="sip:boss2@foo.com">, as tel is
 %% currently not a supported YXA protocol.
-    io:format("test: cpl_script_to_graph/1  - 10a~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 10a"),
     ScriptStr10a = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -863,7 +863,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
 
 %% RFC 3880 - Figure 30 - test that script with unsupported 
 %% protocol tel is rejected
-    io:format("test: cpl_script_to_graph/1  - 10b~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 10b"),
     ScriptStr10b = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -898,7 +898,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
     autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr10b) end),
 
 %% RFC 3880 - Figure 2 
-    io:format("test: cpl_script_to_graph/1  - 11~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 11"),
     ScriptStr11 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -960,7 +960,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
 		   ]), 
 
 %% test that self reference fails
-    io:format("test: cpl_script_to_graph/1  - 12~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 12"),
     ScriptStr12 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -975,7 +975,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
     autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr12) end),
 
 %% RFC 3880 - test that reference to later subaction fails
-io:format("test: cpl_script_to_graph/1  - 13~n"),
+autotest:mark(?LINE, "cpl_script_to_graph/1  - 13"),
     ScriptStr13 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -993,7 +993,7 @@ io:format("test: cpl_script_to_graph/1  - 13~n"),
 autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr13) end),
 
 %% RFC 3880 - test that existence of unreachable node results in failure
-    io:format("test: cpl_script_to_graph/1  - 14~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 14"),
     ScriptStr14 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1008,7 +1008,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr13) end),
 autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr14) end),
 
 %% test log tag (fail as no log destination is currently supported)
-io:format("test: cpl_script_to_graph/1  - 15~n"),
+autotest:mark(?LINE, "cpl_script_to_graph/1  - 15"),
     ScriptStr15 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1030,7 +1030,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
 
 
 %% test that outgoing and incoming tags can be empty
-    io:format("test: cpl_script_to_graph/1  - 16~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 16"),
     ScriptStr16 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1051,7 +1051,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
 		   ]), 
 
 %% test that subaction tag can be empty
-    io:format("test: cpl_script_to_graph/1  - 17~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 17"),
     ScriptStr17 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
    <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
      xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1072,7 +1072,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
 		   ]),
 
 %% test that duplicate sub tags are not accepted
-    io:format("test: cpl_script_to_graph/1  - 18~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 18"),
     ScriptStr18 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1093,7 +1093,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
     autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr18)) end),
 
 %% test that unknown sub tag (foo) can't be used  
-    io:format("test: cpl_script_to_graph/1  - 19~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 19"),
     ScriptStr19 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1114,7 +1114,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
     autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr19)) end),
 
 %% test that unknown tag (foo) can't be used  
-    io:format("test: cpl_script_to_graph/1  - 20~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 20"),
     ScriptStr20 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1128,7 +1128,7 @@ autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr20)) en
 
 %%
 %% test dtstart with utc is rejected when byparameters are supplied
-    io:format("test: cpl_script_to_graph/1  - 21a~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 21a"),
     ScriptStr21a = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1144,7 +1144,7 @@ autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr20)) en
 autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr21a)) end),
 
 %% test dtstart with utc is not rejected when byparameters are not supplied
-    io:format("test: cpl_script_to_graph/1  - 21b~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 21b"),
     ScriptStr21b = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1160,7 +1160,7 @@ _ = lists:sort(xml_parse:cpl_script_to_graph(ScriptStr21b)),
 
 
 %% test creation of time_switch__cond_8 record, count = 2
-    io:format("test: cpl_script_to_graph/1  - 22~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 22"),
     ScriptStr22 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -1207,7 +1207,7 @@ _ = lists:sort(xml_parse:cpl_script_to_graph(ScriptStr21b)),
 
 
 %% verify that to large search tree are not run to get the count 
-    io:format("test: cpl_script_to_graph/1  - 23~n"),
+    autotest:mark(?LINE, "cpl_script_to_graph/1  - 23"),
     ScriptStr23 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
     <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"

@@ -1239,14 +1239,14 @@ test() ->
 
     %% 17.2.1 INVITE Server Transaction
 
-    io:format("test: send_response_statemachine/3 INVITE - 1~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 INVITE - 1"),
     %% When a server transaction is constructed for a request, it enters the
     %% "Proceeding" state.
     %% Send 100 Trying only in 'trying'. 'trying' for INVITE is not in the RFC3261
     %% spec, it is our internal way of saying "we haven't sent a 100 Trying yet".
     {send, false, proceeding} = send_response_statemachine("INVITE", 100, trying),
 
-    io:format("test: send_response_statemachine/3 INVITE - 2~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 INVITE - 2"),
     %% The TU passes any number of provisional responses to the server
     %% transaction.  So long as the server transaction is in the
     %% "Proceeding" state, each of these MUST be passed to the transport
@@ -1257,7 +1257,7 @@ test() ->
     {send, false, proceeding} = send_response_statemachine("INVITE", 183, proceeding),
     {send, false, proceeding} = send_response_statemachine("INVITE", 199, proceeding),
 
-    io:format("test: send_response_statemachine/3 INVITE - 3~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 INVITE - 3"),
     %% If, while in the "Proceeding" state, the TU passes a 2xx response to
     %% the server transaction, the server transaction MUST pass this
     %% response to the transport layer for transmission.  It is not
@@ -1266,7 +1266,7 @@ test() ->
     %% transition to the "Terminated" state.
     {send, false, terminated} = send_response_statemachine("INVITE", 200, proceeding),
 
-    io:format("test: send_response_statemachine/3 INVITE - 4~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 INVITE - 4"),
     %% While in the "Proceeding" state, if the TU passes a response with
     %% status code from 300 to 699 to the server transaction, the response
     %% MUST be passed to the transport layer for transmission, and the state
@@ -1281,7 +1281,7 @@ test() ->
 
     %% own conclusions
 
-    io:format("test: send_response_statemachine/3 INVITE - 5~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 INVITE - 5"),
     %% Don't send 100 Trying in any other state than 'trying'. This means that the TU
     %% will be ignored if it asks us to send out a 100 Trying, since we did that ourselves
     %% when in our internal mode (for INVITE) 'trying'.
@@ -1289,7 +1289,7 @@ test() ->
     ignore = send_response_statemachine("INVITE", 100, completed),
     ignore = send_response_statemachine("INVITE", 100, terminated),
 
-    io:format("test: send_response_statemachine/3 INVITE - 6~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 INVITE - 6"),
     %% don't send any more responses once we have sent a final response
     ignore = send_response_statemachine("INVITE", 100, completed),
     ignore = send_response_statemachine("INVITE", 200, completed),
@@ -1298,7 +1298,7 @@ test() ->
     ignore = send_response_statemachine("INVITE", 500, completed),
     ignore = send_response_statemachine("INVITE", 600, completed),
 
-    io:format("test: send_response_statemachine/3 INVITE - 7~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 INVITE - 7"),
     %% don't send any more responses if we should happen to end up here even if we are
     %% really supposed to have terminated (like if we are emptying our mailbox before
     %% _really_ terminating)
@@ -1313,7 +1313,7 @@ test() ->
 
     %% The state machine is initialized in the "Trying" state ...
 
-    io:format("test: send_response_statemachine/3 non-INVITE - 1~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 non-INVITE - 1"),
     %% While in the "Trying" state, if the TU passes a provisional response
     %% to the server transaction, the server transaction MUST enter the
     %% "Proceeding" state.  The response MUST be passed to the transport
@@ -1321,14 +1321,14 @@ test() ->
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 100, trying),
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, trying),
 
-    io:format("test: send_response_statemachine/3 non-INVITE - 2~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 non-INVITE - 2"),
     %% Any further provisional responses that are received from the TU while in the
     %% "Proceeding" state MUST be passed to the transport layer for transmission.
     %% Yxa note: we filter out 100 Trying
     ignore = send_response_statemachine("OPTIONS", 100, proceeding),
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, proceeding),
 
-    io:format("test: send_response_statemachine/3 non-INVITE - 3~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 non-INVITE - 3"),
     %% If the TU passes a final response (status codes 200-699) to the server while
     %% in the "Proceeding" state, the transaction MUST enter the "Completed" state,
     %% and the response MUST be passed to the transport layer for transmission.
@@ -1339,7 +1339,7 @@ test() ->
     {send, false, completed} = send_response_statemachine("OPTIONS", 600, proceeding),
     {send, false, completed} = send_response_statemachine("OPTIONS", 699, proceeding),
 
-    io:format("test: send_response_statemachine/3 non-INVITE - 4~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 non-INVITE - 4"),
     %% Any other final responses passed by the TU to the server transaction MUST
     %% be discarded while in the "Completed" state.
     ignore = send_response_statemachine("OPTIONS", 200, completed),
@@ -1351,12 +1351,12 @@ test() ->
 
     %% own conclusions
 
-    io:format("test: send_response_statemachine/3 non-INVITE - 5~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 non-INVITE - 5"),
     %% provisional responses received from the TU when already completed is ignored
     ignore = send_response_statemachine("OPTIONS", 100, completed),
     ignore = send_response_statemachine("OPTIONS", 199, completed),
 
-    io:format("test: send_response_statemachine/3 non-INVITE - 6~n"),
+    autotest:mark(?LINE, "send_response_statemachine/3 non-INVITE - 6"),
     %% handle 2/3/4/5/6xx responses when in state 'trying' as we would in state 'proceeding'
     {send, false, completed} = send_response_statemachine("OPTIONS", 200, trying),
     {send, false, completed} = send_response_statemachine("OPTIONS", 300, trying),
@@ -1368,7 +1368,7 @@ test() ->
 
     %% handle_call({get_branch}, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:call() {get_branch} - 1~n"),
+    autotest:mark(?LINE, "gen_server:call() {get_branch} - 1"),
     %% is just normal case
     GetBranchState = #state{branch = "Branch"},
     {reply, {ok, "Branch"}, GetBranchState, ?TIMEOUT} =
@@ -1378,7 +1378,7 @@ test() ->
     %% handle_call({set_report_to, Pid}, ...)
     %%--------------------------------------------------------------------
 
-    io:format("test: gen_server:call() {set_report_to, Pid} - 0~n"),
+    autotest:mark(?LINE, "gen_server:call() {set_report_to, Pid} - 0"),
     SetReportTo_DeadPid = spawn(fun() -> ok end),
     erlang:yield(),	%% make sure SetReportTo_DeadPid finishes
     SetReportTo_S = #state{logtag = "test",
@@ -1386,33 +1386,33 @@ test() ->
 			   cancelled = false
 			  },
 
-    io:format("test: gen_server:call() {set_report_to, Pid} - 1~n"),
+    autotest:mark(?LINE, "gen_server:call() {set_report_to, Pid} - 1"),
     %% test already set
     SetReportTo_S1 = SetReportTo_S#state{report_to = SetReportTo_DeadPid},
     {reply, {error, "Server transaction already adopted"}, SetReportTo_S1, ?TIMEOUT} =
 	handle_call({set_report_to, self()}, undefined, SetReportTo_S1),
 
-    io:format("test: gen_server:call() {set_report_to, Pid} - 2~n"),
+    autotest:mark(?LINE, "gen_server:call() {set_report_to, Pid} - 2"),
     %% test cancelled
     SetReportTo_S2 = SetReportTo_S#state{cancelled = true},
     {reply, {ignore, cancelled}, SetReportTo_S2, ?TIMEOUT} =
 	handle_call({set_report_to, self()}, undefined, SetReportTo_S2),
 
-    io:format("test: gen_server:call() {set_report_to, Pid} - 3~n"),
+    autotest:mark(?LINE, "gen_server:call() {set_report_to, Pid} - 3"),
     %% test normal case (sipstate: trying)
     SetReportTo_S3_1 = SetReportTo_S#state{sipstate = trying},
     SetReportTo_S3_2 = SetReportTo_S3_1#state{report_to = self()},
     {reply, ok, SetReportTo_S3_2, ?TIMEOUT} =
 	handle_call({set_report_to, self()}, undefined, SetReportTo_S3_1),
 
-    io:format("test: gen_server:call() {set_report_to, Pid} - 4~n"),
+    autotest:mark(?LINE, "gen_server:call() {set_report_to, Pid} - 4"),
     %% test normal case (sipstate: proceeding)
     SetReportTo_S4_1 = SetReportTo_S#state{sipstate = proceeding},
     SetReportTo_S4_2 = SetReportTo_S4_1#state{report_to = self()},
     {reply, ok, SetReportTo_S4_2, ?TIMEOUT} =
 	handle_call({set_report_to, self()}, undefined, SetReportTo_S4_1),
 
-    io:format("test: gen_server:call() {set_report_to, Pid} - 5~n"),
+    autotest:mark(?LINE, "gen_server:call() {set_report_to, Pid} - 5"),
     %% test already completed (sipstate: completed)
     SetReportTo_S5 = SetReportTo_S#state{sipstate = completed},
     {reply, {ignore, completed}, SetReportTo_S5, ?TIMEOUT} =
@@ -1421,7 +1421,7 @@ test() ->
 
     %% handle_call(get_my_to_tag, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:call() get_my_to_tag - 1~n"),
+    autotest:mark(?LINE, "gen_server:call() get_my_to_tag - 1"),
     %% is just normal case
     GetMyToTagState = #state{my_to_tag = "to-tag"},
     {reply, {ok, "to-tag"}, GetMyToTagState, ?TIMEOUT} =
@@ -1430,7 +1430,7 @@ test() ->
 
     %% handle_cast({siprequest, Request, Origin}, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:call() {siprequest, ...} - 0~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 0"),
     SipRequest_State =
 	#state{logtag    = "testing",
 	       request   = Test_OrigRequest,
@@ -1438,7 +1438,7 @@ test() ->
 	       socket    = #sipsocket{proto = yxa_test}
 	      },
 
-    io:format("test: gen_server:call() {siprequest, ...} - 1.1~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 1.1"),
     %% test resend scenario
     SipRequest_State1 =
 	SipRequest_State#state{response  = Test_Response,
@@ -1450,7 +1450,7 @@ test() ->
     test_verify_response_was_sent(100, "Testing", <<>>,
 				  "gen_server:call() {siprequest, ...}", 1, 2),
 
-    io:format("test: gen_server:call() {siprequest, ...} - 2~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 2"),
     %% test resend scenario without a response to resend
     SipRequest_State2 =
 	SipRequest_State#state{response  = undefined},
@@ -1458,7 +1458,7 @@ test() ->
 	handle_cast({siprequest, Test_OrigRequest, #siporigin{}}, SipRequest_State2),
 
 
-    io:format("test: gen_server:call() {siprequest, ...} - 3.1~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 3.1"),
     %% test received ACK
     SipRequest_State3_in = SipRequest_State#state{timerlist = siptimer:empty(),
 						  response  = Test_Response,
@@ -1467,21 +1467,21 @@ test() ->
     SipRequest_Request3 = Test_OrigRequest#request{method = "ACK"},
     {noreply, SipRequest_State3_out, ?TIMEOUT} =
 	handle_cast({siprequest, SipRequest_Request3, #siporigin{}}, SipRequest_State3_in),
-    io:format("test: gen_server:call() {siprequest, ...} - 3.2~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 3.2"),
     %% check that a timer was set up
     [{terminate_transaction}] = siptimer:test_get_appsignals(SipRequest_State3_out#state.timerlist),
-    io:format("test: gen_server:call() {siprequest, ...} - 3.3~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 3.3"),
     %% cancel timer
     SipRequest_3_NewTL = siptimer:cancel_all_timers(SipRequest_State3_out#state.timerlist),
     SipRequest_State3_out1 = SipRequest_State3_out#state{timerlist = SipRequest_3_NewTL},
-    io:format("test: gen_server:call() {siprequest, ...} - 3.4~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 3.4"),
     %% and finally verify that SipRequest_State3_out1 is the same as SipRequest_State3_in
     %% with sipstate changed from 'completed' to 'confirmed'
     confirmed = SipRequest_State3_out1#state.sipstate,
     SipRequest_State3_out2 = SipRequest_State3_out1#state{sipstate = completed},
     SipRequest_State3_out2 = SipRequest_State3_in,
 
-    io:format("test: gen_server:call() {siprequest, ...} - 4~n"),
+    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 4"),
     %% test resend scenario with bad new request (different Request-URI)
     SipRequest_State4 = SipRequest_State,
     SipRequest_Request4 = Test_OrigRequest#request{uri = sipurl:parse("sip:changed@example.org")},
@@ -1491,14 +1491,14 @@ test() ->
 
     %% unknown handle_call
     %%--------------------------------------------------------------------
-    io:format("test: unknown gen_server:call() - 1~n"),
+    autotest:mark(?LINE, "unknown gen_server:call() - 1"),
     UnknownCallState = #state{},
     {reply, error, UnknownCallState, ?TIMEOUT} = handle_call(undefined, none, UnknownCallState),
 
 
     %% process_received_ack(State)
     %%--------------------------------------------------------------------
-    io:format("test: process_received_ack/1 - 0~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 0"),
     ReceivedAckRequest1 = #request{method = "INVITE",
 				   uri    = sipurl:parse("sip:user@example.org")
 				  },
@@ -1511,38 +1511,38 @@ test() ->
 			      timerlist = siptimer:empty()
 			     },
 
-    io:format("test: process_received_ack/1 - 1~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 1"),
     %% test ACK when 'trying', no change expected
     ReceivedAckState_1 = ReceivedAckState#state{sipstate = trying},
     ReceivedAckState_1 = process_received_ack(ReceivedAckState_1),
 
-    io:format("test: process_received_ack/1 - 2~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 2"),
     %% test ACK when 'proceeding', no change expected
     ReceivedAckState_2 = ReceivedAckState#state{sipstate = proceeding},
     ReceivedAckState_2 = process_received_ack(ReceivedAckState_2),
 
-    io:format("test: process_received_ack/1 - 3.1~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 3.1"),
     %% test normal case
     ReceivedAckState_3 = process_received_ack(ReceivedAckState#state{sipstate = completed}),
 
-    io:format("test: process_received_ack/1 - 3.2~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 3.2"),
     %% check that the expected changes were made
     confirmed = ReceivedAckState_3#state.sipstate,
     [{terminate_transaction}] = siptimer:test_get_appsignals(ReceivedAckState_3#state.timerlist),
     ReceivedAckState_3_1 = ReceivedAckState_3#state{timerlist = undefined, sipstate = undefined},
     ReceivedAckState_3_1 = ReceivedAckState#state{timerlist = undefined},
 
-    io:format("test: process_received_ack/1 - 3.3~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 3.3"),
     %% cancel timer started
     siptimer:cancel_all_timers(ReceivedAckState_3#state.timerlist),
 
-    io:format("test: process_received_ack/1 - 4~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 4"),
     %% test ACK to non-INVITE, no change expected
     ReceivedAckRequest_4 = ReceivedAckRequest1#request{method = "OPTIONS"},
     ReceivedAckState_4 = ReceivedAckState#state{request = ReceivedAckRequest_4},
     ReceivedAckState_4 = process_received_ack(ReceivedAckState_4),
 
-    io:format("test: process_received_ack/1 - 5~n"),
+    autotest:mark(?LINE, "process_received_ack/1 - 5"),
     %% test ACK when no response sent, no change expected
     ReceivedAckState_5 = ReceivedAckState#state{response = undefined},
     ReceivedAckState_5 = process_received_ack(ReceivedAckState_5),
@@ -1550,7 +1550,7 @@ test() ->
 
     %% handle_cast({create_response, Status, Reason, ExtraHeaders, RBody}, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:cast() {create_response, ...} - 0~n"),
+    autotest:mark(?LINE, "gen_server:cast() {create_response, ...} - 0"),
     CreateResponse_State =
 	#state{logtag    = "testing",
 	       request   = Test_OrigRequest,
@@ -1559,12 +1559,12 @@ test() ->
 	       branch    = "test-branch"
 	      },
 
-    io:format("test: gen_server:cast() {create_response, ...} - 1.1~n"),
+    autotest:mark(?LINE, "gen_server:cast() {create_response, ...} - 1.1"),
     %% test normal case: 100 Trying
     {noreply, CreateResponse_State1, ?TIMEOUT} =
 	handle_cast({create_response, 100, "Testing", [], <<>>}, CreateResponse_State),
 
-    io:format("test: gen_server:cast() {create_response, ...} - 1.2~n"),
+    autotest:mark(?LINE, "gen_server:cast() {create_response, ...} - 1.2"),
     proceeding = CreateResponse_State1#state.sipstate,
     100 = (CreateResponse_State1#state.response)#response.status,
     "Testing" = (CreateResponse_State1#state.response)#response.reason,
@@ -1572,7 +1572,7 @@ test() ->
     test_verify_response_was_sent(100, "Testing", <<>>,
 				  "gen_server:cast() {create_response, ...}", 1, 3),
 
-    io:format("test: gen_server:cast() {create_response, ...} - 2~n"),
+    autotest:mark(?LINE, "gen_server:cast() {create_response, ...} - 2"),
     %% test '101 Testing' with invalid SIP-state, should not work (no change expected)
     CreateResponse_State2 = CreateResponse_State#state{sipstate = false,
 						       my_to_tag = "to123"
@@ -1581,7 +1581,7 @@ test() ->
 	handle_cast({create_response, 101, "Testing", [], <<>>}, CreateResponse_State2),
 
 
-    io:format("test: gen_server:cast() {create_response, ...} - 3~n"),
+    autotest:mark(?LINE, "gen_server:cast() {create_response, ...} - 3"),
     %% test '100 Testing' when alreday 'proceeding', no change expected
     CreateResponse_State3 = CreateResponse_State#state{sipstate = proceeding},
     {noreply, CreateResponse_State3, ?TIMEOUT} =
@@ -1590,7 +1590,7 @@ test() ->
 
     %% handle_cast({forwardresponse, Status, Reason, ExtraHeaders, RBody}, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:cast() {forwardresponse, ...} - 0~n"),
+    autotest:mark(?LINE, "gen_server:cast() {forwardresponse, ...} - 0"),
     ForwardResponse_State =
 	#state{logtag    = "testing",
 	       request   = Test_OrigRequest,
@@ -1602,23 +1602,23 @@ test() ->
 	      },
     ForwardResponse_Response = Test_Response#response{status = 404},
 
-    io:format("test: gen_server:cast() {forwardresponse, ...} - 1.1~n"),
+    autotest:mark(?LINE, "gen_server:cast() {forwardresponse, ...} - 1.1"),
     %% test normal case: 404 Testing
     {noreply, ForwardResponse_State1, ?TIMEOUT} =
 	handle_cast({forwardresponse, ForwardResponse_Response}, ForwardResponse_State),
 
-    io:format("test: gen_server:cast() {forwardresponse, ...} - 1.2~n"),
+    autotest:mark(?LINE, "gen_server:cast() {forwardresponse, ...} - 1.2"),
     %% verify new state
     completed = ForwardResponse_State1#state.sipstate,
     404 = (ForwardResponse_State1#state.response)#response.status,
     "Testing" = (ForwardResponse_State1#state.response)#response.reason,
 
-    io:format("test: gen_server:cast() {forwardresponse, ...} - 1.3~n"),
+    autotest:mark(?LINE, "gen_server:cast() {forwardresponse, ...} - 1.3"),
     %% verify that we 'sent' the 404 response
     test_verify_response_was_sent(404, "Testing", <<>>,
 				  "gen_server:cast() {forwardresponse, ...}", 1, 3),
 
-    io:format("test: gen_server:cast() {forwardresponse, ...} - 2.1~n"),
+    autotest:mark(?LINE, "gen_server:cast() {forwardresponse, ...} - 2.1"),
     %% test forwarding response without To-tag
     ForwardResponse_Header2_1 = Test_Response#response.header,
     ForwardResponse_Header2 = keylist:set("To", ["sip:no-to-tag@example.org"], ForwardResponse_Header2_1),
@@ -1627,7 +1627,7 @@ test() ->
     {noreply, ForwardResponse_State2, ?TIMEOUT} =
 	handle_cast({forwardresponse, ForwardResponse_Response2}, ForwardResponse_State),
 
-    io:format("test: gen_server:cast() {forwardresponse, ...} - 2.2~n"),
+    autotest:mark(?LINE, "gen_server:cast() {forwardresponse, ...} - 2.2"),
     %% verify new state
     completed = ForwardResponse_State2#state.sipstate,
     404 = (ForwardResponse_State2#state.response)#response.status,
@@ -1640,14 +1640,14 @@ test() ->
 
     %% handle_cast({expired}, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:cast() {expired} - 1~n"),
+    autotest:mark(?LINE, "gen_server:cast() {expired} - 1"),
     ExpiredState = #state{logtag = "testing"},
     {stop, _, ExpiredState} = handle_cast({expired}, ExpiredState),
 
 
     %% handle_cast({cancelled, ExtraHeaders}, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:cast() {cancelled, ...} - 1.1~n"),
+    autotest:mark(?LINE, "gen_server:cast() {cancelled, ...} - 1.1"),
     %% test normal case
     CancelledState1 = #state{sipstate  = trying,
 			     report_to = self(),
@@ -1655,13 +1655,13 @@ test() ->
 			   },
     {noreply, CancelledState1_out, ?TIMEOUT} = handle_cast({cancelled, []}, CancelledState1),
 
-    io:format("test: gen_server:cast() {cancelled, ...} - 1.2~n"),
+    autotest:mark(?LINE, "gen_server:cast() {cancelled, ...} - 1.2"),
     %% verify new state
     true = CancelledState1_out#state.cancelled,
     CancelledState1_out1 = CancelledState1#state{cancelled = true},
     CancelledState1_out1 = CancelledState1_out,
 
-    io:format("test: gen_server:cast() {cancelled, ...} - 1.3~n"),
+    autotest:mark(?LINE, "gen_server:cast() {cancelled, ...} - 1.3"),
     %% check that we got a servertransaction_cancelled message (since parent = self())
     CancelledMyself = self(),
     receive
@@ -1671,7 +1671,7 @@ test() ->
 	    throw("test failed, no {servertransaction_cancelled, ...} signal in process mailbox")
     end,
 
-    io:format("test: gen_server:cast() {cancelled, ...} - 2.1~n"),
+    autotest:mark(?LINE, "gen_server:cast() {cancelled, ...} - 2.1"),
     %% test without report_to, in which case we should generate a 487 response
     CancelledState2 = #state{logtag    = "testing",
 			     sipstate  = trying,
@@ -1684,7 +1684,7 @@ test() ->
 			   },
     {noreply, CancelledState2_out, ?TIMEOUT} = handle_cast({cancelled, []}, CancelledState2),
 
-    io:format("test: gen_server:cast() {cancelled, ...} - 2.2~n"),
+    autotest:mark(?LINE, "gen_server:cast() {cancelled, ...} - 2.2"),
     %% verify new state
     true = CancelledState2_out#state.cancelled,
     CancelledState2 = CancelledState2_out#state{cancelled = false,
@@ -1695,7 +1695,7 @@ test() ->
     test_verify_response_was_sent(487, "Request Cancelled", <<>>,
 				  "gen_server:cast() {cancelled, ...}", 2, 3),
 
-    io:format("test: gen_server:cast() {cancelled, ...} - 3~n"),
+    autotest:mark(?LINE, "gen_server:cast() {cancelled, ...} - 3"),
     %% test states that should return in no action
     lists:map(fun(S) ->
 		      CS3 = #state{logtag   = "testing",
@@ -1709,21 +1709,21 @@ test() ->
 
     %% handle_cast({quit}, ...)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server:cast() {quit} - 1~n"),
+    autotest:mark(?LINE, "gen_server:cast() {quit} - 1"),
     QuitState = #state{logtag = "testing"},
     {stop, _, QuitState} = handle_cast({quit}, QuitState),
 
 
     %% unknown handle_cast
     %%--------------------------------------------------------------------
-    io:format("test: unknown gen_server:cast() - 1~n"),
+    autotest:mark(?LINE, "unknown gen_server:cast() - 1"),
     UnknownCastState = #state{},
     {noreply, UnknownCastState, ?TIMEOUT} = handle_cast(undefined, UnknownCastState),
 
 
     %% handle_info(timeout, State)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server signal 'timeout' - 0~n"),
+    autotest:mark(?LINE, "gen_server signal 'timeout' - 0"),
     WaitFun = fun() ->
 		      receive
 			  _ -> ok
@@ -1743,10 +1743,10 @@ test() ->
 			  testing   = true
 			 },
 
-    io:format("test: gen_server signal 'timeout' - 1.1~n"),
+    autotest:mark(?LINE, "gen_server signal 'timeout' - 1.1"),
     {noreply, TimeoutState_out, ?TIMEOUT} = handle_info(timeout, TimeoutState),
 
-    io:format("test: gen_server signal 'timeout' - 1.2~n"),
+    autotest:mark(?LINE, "gen_server signal 'timeout' - 1.2"),
     %% verify new state
     completed = TimeoutState_out#state.sipstate,
     [{resendresponse},{resendresponse_timeout}] =
@@ -1757,7 +1757,7 @@ test() ->
     test_verify_response_was_sent(500, "Server Internal Error", <<>>,
 				  "gen_server signal 'timeout'", 1, 3),
 
-    io:format("test: gen_server signal 'timeout' - 1.6~n"),
+    autotest:mark(?LINE, "gen_server signal 'timeout' - 1.6"),
     %% verify that report_to/parent was killed
     receive
 	{'DOWN', TimeoutMonitorRef, process, TimeoutReportTo, servertransaction_timed_out} ->
@@ -1768,7 +1768,7 @@ test() ->
 
     %% handle_info({siptimer, TRef, TDesc}, State)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server signal '{siptimer, ...}' - 0~n"),
+    autotest:mark(?LINE, "gen_server signal '{siptimer, ...}' - 0"),
     %% set up a timer and let it fire
     SipTimerTest_Timerlist1 = siptimer:add_timer(1, "Testing testing",
 						 {terminate_transaction},
@@ -1786,11 +1786,11 @@ test() ->
 		throw("test failed, the timer we set up never fired")
 	end,
 
-    io:format("test: gen_server signal '{siptimer, ...}' - 1~n"),
+    autotest:mark(?LINE, "gen_server signal '{siptimer, ...}' - 1"),
     %% test normal case, the transaction should terminate
     {stop, normal, #state{sipstate = terminated}} = handle_info(TimerTest_Signal, TimerTest_State),
 
-    io:format("test: gen_server signal '{siptimer, ...}' - 1~n"),
+    autotest:mark(?LINE, "gen_server signal '{siptimer, ...}' - 1"),
     %% test with unknown timer
     {noreply, TimerTest_State, ?TIMEOUT} =
 	handle_info({siptimer, make_ref(), "Testing unknown timer"}, TimerTest_State),
@@ -1798,7 +1798,7 @@ test() ->
 
     %% handle_info({'EXIT', ...}, State)
     %%--------------------------------------------------------------------
-    io:format("test: gen_server signal '{'EXIT', ...}' - 0~n"),
+    autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 0"),
     ExitSignal_State = #state{logtag    = "testing",
 			      parent    = self(),
 			      request   = Test_OrigRequest,
@@ -1808,23 +1808,23 @@ test() ->
 			      testing   = true
 			     },
 
-    io:format("test: gen_server signal '{'EXIT', ...}' - 1~n"),
+    autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 1"),
     %% test parent exit normal when completed, no change expected
     ExitSignal_State1 = ExitSignal_State#state{sipstate = completed},
     {noreply, ExitSignal_State1, ?TIMEOUT} = handle_info({'EXIT', self(), normal}, ExitSignal_State1),
 
-    io:format("test: gen_server signal '{'EXIT', ...}' - 2~n"),
+    autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 2"),
     %% test parent exit abnormally when completed, no change expected
     ExitSignal_State2 = ExitSignal_State#state{sipstate = completed},
     {noreply, ExitSignal_State2, ?TIMEOUT} = handle_info({'EXIT', self(), false}, ExitSignal_State2),
 
-    io:format("test: gen_server signal '{'EXIT', ...}' - 3.1~n"),
+    autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 3.1"),
     %% test parent exit normally when NOT completed, generates a 500
     ExitSignal_State3 = ExitSignal_State#state{sipstate = proceeding},
     {noreply, ExitSignal_State3_out, ?TIMEOUT} =
 	handle_info({'EXIT', self(), normal}, ExitSignal_State3),
 
-    io:format("test: gen_server signal '{'EXIT', ...}' - 3.2~n"),
+    autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 3.2"),
     %% verify new state
     completed = ExitSignal_State3_out#state.sipstate,
     [{resendresponse},{resendresponse_timeout}] =
@@ -1838,19 +1838,19 @@ test() ->
 
     %% unknown handle_info
     %%--------------------------------------------------------------------
-    io:format("test: unknown gen_server signal - 1~n"),
+    autotest:mark(?LINE, "unknown gen_server signal - 1"),
     UnknownInfoState = #state{},
     {noreply, UnknownInfoState, ?TIMEOUT} = handle_info(undefined, UnknownInfoState),
 
 
     %% terminate(Reason, State)
     %%--------------------------------------------------------------------
-    io:format("test: terminate/2 - 1.1~n"),
+    autotest:mark(?LINE, "terminate/2 - 1.1"),
     %% test normal case
     TerminateState1 = #state{report_to = self()},
     normal = terminate(normal, TerminateState1),
 
-    io:format("test: terminate/2 - 1.2~n"),
+    autotest:mark(?LINE, "terminate/2 - 1.2"),
     %% verify that report_to (we) got a 'servertransaction_terminating' signal
     TerminateSelf = self(),
     receive
@@ -1860,11 +1860,11 @@ test() ->
 	    throw("test failed, we never got a servertransaction_terminating signal")
     end,
 
-    io:format("test: terminate/2 - 2~n"),
+    autotest:mark(?LINE, "terminate/2 - 2"),
     %% test non-normal exit
     "testing" = terminate("testing", #state{}),
 
-    io:format("test: terminate/2 - 3~n"),
+    autotest:mark(?LINE, "terminate/2 - 3"),
     %% test with dead report_to
     TerminateDeadPid = spawn(fun() -> ok end),
     erlang:yield(),	%% make sure TerminateDeadPid finishes
@@ -1874,7 +1874,7 @@ test() ->
 
     %% check_quit2(Res, From, State)
     %%--------------------------------------------------------------------
-    io:format("test: check_quit2/3 - 1~n"),
+    autotest:mark(?LINE, "check_quit2/3 - 1"),
     %% test Res = {reply, ...} (but From = none)
     CheckQuit_State1 = #state{logtag   = "testing",
 			      request  = Test_OrigRequest,
@@ -1882,7 +1882,7 @@ test() ->
 			     },
     {stop, normal, CheckQuit_State1} = check_quit2({reply, 1, 2, 3}, none, CheckQuit_State1),
 
-    io:format("test: check_quit2/3 - 2~n"),
+    autotest:mark(?LINE, "check_quit2/3 - 2"),
     %% test Res = {stop, ...}
     CheckQuit_State2 = #state{logtag   = "testing",
 			      request  = Test_OrigRequest,
@@ -1891,7 +1891,7 @@ test() ->
 			     },
     {stop, true, CheckQuit_State2} = check_quit2({stop, true, CheckQuit_State2}, none, CheckQuit_State2),
 
-    io:format("test: check_quit2/3 - 2~n"),
+    autotest:mark(?LINE, "check_quit2/3 - 2"),
     %% test Res = {noreply, ...}
     CheckQuit_State3 = #state{logtag  = "testing",
 			      request = Test_OrigRequest,
@@ -1902,7 +1902,7 @@ test() ->
 
     %% process_timer2({resendresponse}, Timer, State)
     %%--------------------------------------------------------------------
-    io:format("test: process_timer2/3 {resendresponse} - 0~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse} - 0"),
     %% set up a timer and let it fire
     ResendResponseTimer_Timerlist1 =
 	siptimer:add_timer(1, "Testing testing",
@@ -1926,12 +1926,12 @@ test() ->
 		throw("test failed, the timer we set up never fired")
 	end,
 
-    io:format("test: process_timer2/3 {resendresponse} - 1.1~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse} - 1.1"),
     %% test normal case, the transaction should terminate
     {noreply, ResendResponseTimer_State_out, ?TIMEOUT} =
 	handle_info(ResendResponseTimer_Signal, ResendResponseTimer_State),
 
-    io:format("test: process_timer2/3 {resendresponse} - 1.2~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse} - 1.2"),
     %% cancel the revived timer
     siptimer:cancel_all_timers(ResendResponseTimer_State_out#state.timerlist),
     %% verify new state
@@ -1941,14 +1941,14 @@ test() ->
     test_verify_response_was_sent(100, "Testing", <<>>,
 				  "process_timer2/3 {resendresponse}", 1, 3),
 
-    io:format("test: process_timer2/3 {resendresponse} - 2~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse} - 2"),
     %% test not in sipstate 'completed', no change expected
     %% not really an error but we should not normally end up there either
     ResendResponseTimer_State2 = ResendResponseTimer_State#state{sipstate = proceeding},
     {noreply, ResendResponseTimer_State2, ?TIMEOUT} =
 	handle_info(ResendResponseTimer_Signal, ResendResponseTimer_State2),
 
-    io:format("test: process_timer2/3 {resendresponse} - 3~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse} - 3"),
     %% test with no response sent
     ResendResponseTimer_State3 = ResendResponseTimer_State#state{response = undefined},
     {noreply, ResendResponseTimer_State3, ?TIMEOUT} =
@@ -1957,7 +1957,7 @@ test() ->
 
     %% process_timer2({resendresponse_timeout}, Timer, State)
     %%--------------------------------------------------------------------
-    io:format("test: process_timer2/3 {resendresponse_timeout} - 0~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse_timeout} - 0"),
     %% set up a timer and let it fire
     ResendResponseTimeout_Timerlist1 =
 	siptimer:add_timer(1, "Testing testing",
@@ -1981,12 +1981,12 @@ test() ->
 		throw("test failed, the timer we set up never fired")
 	end,
 
-    io:format("test: process_timer2/3 {resendresponse_timeout} - 1.1~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse_timeout} - 1.1"),
     %% test normal case, the transaction should terminate
     {stop, normal, ResendResponseTimeout_State_out} =
 	handle_info(ResendResponseTimeout_Signal, ResendResponseTimeout_State),
 
-    io:format("test: process_timer2/3 {resendresponse_timeout} - 1.2~n"),
+    autotest:mark(?LINE, "process_timer2/3 {resendresponse_timeout} - 1.2"),
     %% verify new state
     terminated = ResendResponseTimeout_State_out#state.sipstate,
     ResendResponseTimeout_State =
@@ -1997,12 +1997,12 @@ test() ->
 
     %% enter_sip_state(SipState, State)
     %%--------------------------------------------------------------------
-    io:format("test: enter_sip_state/2 - 1~n"),
+    autotest:mark(?LINE, "enter_sip_state/2 - 1"),
     %% enter same state, no change expected
     EnterSipState_State1 = #state{sipstate = trying},
     EnterSipState_State1 = enter_sip_state(trying, EnterSipState_State1),
 
-    io:format("test: enter_sip_state/2 - 2.1~n"),
+    autotest:mark(?LINE, "enter_sip_state/2 - 2.1"),
     %% enter state 'completed' with non-INVITE transaction, should start Timer I
     EnterSipState_State2 = #state{sipstate = proceeding,
 				  logtag = "testing",
@@ -2011,7 +2011,7 @@ test() ->
 				 },
     EnterSipState_State2_out = enter_sip_state(completed, EnterSipState_State2),
 
-    io:format("test: enter_sip_state/2 - 2.2~n"),
+    autotest:mark(?LINE, "enter_sip_state/2 - 2.2"),
     %% verify new state
     completed = EnterSipState_State2_out#state.sipstate,
     EnterSipState_State2 = EnterSipState_State2_out#state{timerlist = siptimer:empty(),
@@ -2022,19 +2022,19 @@ test() ->
 
     %% make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
     %%--------------------------------------------------------------------
-    io:format("test: make_response/6 - 0~n"),
+    autotest:mark(?LINE, "make_response/6 - 0"),
     MakeResponse_Header1 = Test_OrigRequest#request.header,
     MakeResponse_Header1_1 = keylist:set("To", ["sip:with-to-tag@example.org;tag=foo"], MakeResponse_Header1),
     MakeResponse_Request1 = Test_OrigRequest#request{header = MakeResponse_Header1_1},
 
-    io:format("test: make_response/6 - 1.1~n"),
+    autotest:mark(?LINE, "make_response/6 - 1.1"),
     %% test that we use the To-tag from the request, if it has one
     MakeResponse_State1 = #state{request = MakeResponse_Request1,
 				 socket  = #sipsocket{proto = yxa_test}
 				},
     MakeResponse_Response1 = make_response(400, "Testing", <<>>, [], [], MakeResponse_State1),
 
-    io:format("test: make_response/6 - 1.2~n"),
+    autotest:mark(?LINE, "make_response/6 - 1.2"),
     %% verify response created
     #response{status = 400,
 	      reason = "Testing",
@@ -2042,7 +2042,7 @@ test() ->
 	     } = MakeResponse_Response1,
     ["sip:with-to-tag@example.org;tag=foo"] = keylist:fetch('to', MakeResponse_Response1#response.header),
 
-    io:format("test: make_response/6 - 2.1~n"),
+    autotest:mark(?LINE, "make_response/6 - 2.1"),
     %% test that we don't add my_to_tag to a 100 Trying if it does not contain a To-tag
     MakeResponse_Header2 = Test_OrigRequest#request.header,
     MakeResponse_Header2_1 = keylist:set("To", ["sip:without-to-tag@example.org"], MakeResponse_Header2),
@@ -2052,7 +2052,7 @@ test() ->
 				 request   = MakeResponse_Request2
 				},
     MakeResponse_Response2 = make_response(100, "Testing", <<>>, [], [], MakeResponse_State2),
-    io:format("test: make_response/6 - 2.2~n"),
+    autotest:mark(?LINE, "make_response/6 - 2.2"),
     %% verify response created
     #response{status = 100,
 	      reason = "Testing",
@@ -2060,11 +2060,11 @@ test() ->
 	     } = MakeResponse_Response2,
     ["sip:without-to-tag@example.org"] = keylist:fetch('to', MakeResponse_Response2#response.header),
 
-    io:format("test: make_response/6 - 3.1~n"),
+    autotest:mark(?LINE, "make_response/6 - 3.1"),
     %% test that we leave the To-tag in a 100 Trying if the request had a To-tag
     MakeResponse_State3 = MakeResponse_State1#state{my_to_tag = "my_to_tag"},
     MakeResponse_Response3 = make_response(100, "Testing", <<>>, [], [], MakeResponse_State3),
-    io:format("test: make_response/6 - 3.2~n"),
+    autotest:mark(?LINE, "make_response/6 - 3.2"),
     %% verify response created
     #response{status = 100,
 	      reason = "Testing",
@@ -2072,7 +2072,7 @@ test() ->
 	     } = MakeResponse_Response3,
     ["sip:with-to-tag@example.org;tag=foo"] = keylist:fetch('to', MakeResponse_Response3#response.header),
 
-    io:format("test: make_response/6 - 4.1~n"),
+    autotest:mark(?LINE, "make_response/6 - 4.1"),
     %% test that we use my_to_tag from State if request does not have one
     MakeResponse_Header4 = Test_OrigRequest#request.header,
     MakeResponse_Header4_1 = keylist:set("To", ["sip:without-to-tag@example.org"], MakeResponse_Header4),
@@ -2083,7 +2083,7 @@ test() ->
 				},
     MakeResponse_Response4 = make_response(400, "Testing", <<>>, [], [], MakeResponse_State4),
 
-    io:format("test: make_response/6 - 4.2~n"),
+    autotest:mark(?LINE, "make_response/6 - 4.2"),
     %% verify response created
     #response{status = 400,
 	      reason = "Testing",
@@ -2095,16 +2095,16 @@ test() ->
 
 
 test_verify_response_was_sent(Status, Reason, Body, TestLabel, Major, Minor) ->
-    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor]),
+    autotest:mark(?LINE, "~s - ~p.~p", [TestLabel, Major, Minor]),
     %% check that a xxx response was generated
     receive
 	{sipsocket_test, send, {yxa_test, "192.0.2.27", 6050}, SipMsg} ->
 	    %% parse message that was 'sent'
-	    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor + 1]),
+	    autotest:mark(?LINE, "~s - ~p.~p", [TestLabel, Major, Minor + 1]),
 	    Response = sippacket:parse(SipMsg, none),
 	    true = is_record(Response, response),
 
-	    io:format("test: ~s - ~p.~p~n", [TestLabel, Major, Minor + 2]),
+	    autotest:mark(?LINE, "~s - ~p.~p", [TestLabel, Major, Minor + 2]),
 	    %% check that it was the expected response that was resent
 	    #response{status = Status,
 		      reason = Reason,

@@ -440,98 +440,98 @@ test() ->
 
     %% normalize/1
     %%--------------------------------------------------------------------
-    io:format("test: normalize/1 - 1~n"),
+    autotest:mark(?LINE, "normalize/1 - 1"),
     via = normalize("Via"),
 
-    io:format("test: normalize/1 - 2~n"),
+    autotest:mark(?LINE, "normalize/1 - 2"),
     via = normalize("vIA"),
 
-    io:format("test: normalize/1 - 3~n"),
+    autotest:mark(?LINE, "normalize/1 - 3"),
     via = normalize(via),
 
-    io:format("test: normalize/1 - 4~n"),
+    autotest:mark(?LINE, "normalize/1 - 4"),
     "other" = normalize("OTHER"),
 
-    io:format("test: normalize/1 - 5~n"),
+    autotest:mark(?LINE, "normalize/1 - 5"),
     "other" = normalize("other"),
 
-    io:format("test: normalize/1 - 6~n"),
+    autotest:mark(?LINE, "normalize/1 - 6"),
     "other " = normalize("otheR "),
 
-    io:format("test: normalize/1 - 7~n"),
+    autotest:mark(?LINE, "normalize/1 - 7"),
     %% test short format
     from = normalize("f"),
 
     %% from_list/1
     %%--------------------------------------------------------------------
-    io:format("test: from_list/1 - 1~n"),
+    autotest:mark(?LINE, "from_list/1 - 1"),
     %% empty list
     #keylist{list=[]} = from_list([]),
 
-    io:format("test: from_list/1 - 2~n"),
+    autotest:mark(?LINE, "from_list/1 - 2"),
     %% list() of {Key, Name, Value} tuples
     H1 = from_list([{via, "Via", ["one", "two", "three"]},
 		    {"test", "Test", ["foo", "bar", "baz"]}]),
 
-    io:format("test: from_list/1 - 3~n"),
+    autotest:mark(?LINE, "from_list/1 - 3"),
     %% check result
     #keylist{list=[
 		   #keyelem{key=via, name="Via", item=["one", "two", "three"]},
 		   #keyelem{key="test", name="Test", item=["foo", "bar", "baz"]}
 		  ]} = H1,
 
-    io:format("test: from_list/1 - 4~n"),
+    autotest:mark(?LINE, "from_list/1 - 4"),
     %% list() of {Name, Value} tuples
     H2 = from_list([{"ATOM", [atom]}]),
 
-    io:format("test: from_list/1 - 5~n"),
+    autotest:mark(?LINE, "from_list/1 - 5"),
     %% check result
     #keylist{list=[
 		   #keyelem{key="atom", name="ATOM", item=[atom]}
 		  ]} = H2,
     %% fetch/2
     %%--------------------------------------------------------------------
-    io:format("test: fetch/2 - 1~n"),
+    autotest:mark(?LINE, "fetch/2 - 1"),
     %% fetch using name, will match key after normalize()
     ["one", "two", "three"] = fetch("Via", H1),
 
-    io:format("test: fetch/2 - 2~n"),
+    autotest:mark(?LINE, "fetch/2 - 2"),
     %% fetch using name, will match key after normalize()
     ["one", "two", "three"] = fetch("VIA", H1),
 
-    io:format("test: fetch/2 - 3~n"),
+    autotest:mark(?LINE, "fetch/2 - 3"),
     %% fetch using key
     ["one", "two", "three"] = fetch('via', H1),
 
-    io:format("test: fetch/2 - 4~n"),
+    autotest:mark(?LINE, "fetch/2 - 4"),
     %% when giving atom, it must be an exact match
     [] = fetch('Via', H1),
 
-    io:format("test: fetch/2 - 5~n"),
+    autotest:mark(?LINE, "fetch/2 - 5"),
     %% fetch using name
     [atom] = fetch("atom", H2),
 
-    io:format("test: fetch/2 - 6~n"),
+    autotest:mark(?LINE, "fetch/2 - 6"),
     %% fetch using name, will match after normalize()
     [atom] = fetch("ATOM", H2),
 
     %% append/2
     %%--------------------------------------------------------------------
-    io:format("test: append/2 - 1~n"),
+    autotest:mark(?LINE, "append/2 - 1"),
     %% {Name, Value} tuple
     AppendH1 = append({"Header", ["one"]}, empty()),
 
-    io:format("test: append/2 - 2~n"),
+    autotest:mark(?LINE, "append/2 - 2"),
     %% check result of append
     #keylist{list=[
 		   #keyelem{key="header", name="Header", item=["one"]}
 		  ]} = AppendH1,
 
-    io:format("test: append/2 - 3~n"),
+    autotest:mark(?LINE, "append/2 - 3"),
     %% {Key, Name, Value}
     AppendH2 = append({"header", "Header", ["two"]}, AppendH1),
 
-    io:format("test: append/2 - 4~n"),
+    autotest:mark(?LINE, "append/2 - 4"),
     %% check result of append
     #keylist{list=[
 		   #keyelem{key="header", name="Header", item=["one", "two"]}
@@ -539,23 +539,23 @@ test() ->
 
     %% set/3
     %%--------------------------------------------------------------------
-    io:format("test: set/3 - 1~n"),
+    autotest:mark(?LINE, "set/3 - 1"),
     SetH1 = set("FOO", ["test"], empty()),
 
-    io:format("test: set/3 - 2~n"),
+    autotest:mark(?LINE, "set/3 - 2"),
     %% check results
     #keylist{list=[
 		   #keyelem{key="foo", name="FOO", item=["test"]}
 		  ]} = SetH1,
 
-    io:format("test: set/3 - 3~n"),
+    autotest:mark(?LINE, "set/3 - 3"),
     %% should not change SetH1
     SetH1 = set("foo", ["test"], SetH1),
 
-    io:format("test: set/3 - 4~n"),
+    autotest:mark(?LINE, "set/3 - 4"),
     SetH2 = set("bar", ["test2"], SetH1),
 
-    io:format("test: set/3 - 5~n"),
+    autotest:mark(?LINE, "set/3 - 5"),
     %% check results
     #keylist{list=[
 		   #keyelem{key="foo", name="FOO", item=["test"]},
@@ -564,23 +564,23 @@ test() ->
 
     %% prepend/2
     %%--------------------------------------------------------------------
-    io:format("test: prepend/3 - 1~n"),
+    autotest:mark(?LINE, "prepend/3 - 1"),
     %% have one more keyelem in the test case to make sure prepend() only
     %% affects the element we want
     PrependH0 = keylist:set("Other", ["foo"], empty()),
     PrependH1 = prepend({"Header", ["one"]}, PrependH0),
 
-    io:format("test: prepend/3 - 2~n"),
+    autotest:mark(?LINE, "prepend/3 - 2"),
     %% check result
     #keylist{list=[
 		   #keyelem{key="other", name="Other", item=["foo"]},
 		   #keyelem{key="header", name="Header", item=["one"]}
 		  ]} = PrependH1,
 
-    io:format("test: prepend/3 - 3~n"),
+    autotest:mark(?LINE, "prepend/3 - 3"),
     PrependH2 = prepend({"header", ["zero"]}, PrependH1),
 
-    io:format("test: prepend/3 - 4~n"),
+    autotest:mark(?LINE, "prepend/3 - 4"),
     %% check result
     #keylist{list=[
 		   #keyelem{key="other", name="Other", item=["foo"]},
@@ -589,42 +589,42 @@ test() ->
 
     %% delete/2
     %%--------------------------------------------------------------------
-    io:format("test: delete/2 - 1~n"),
+    autotest:mark(?LINE, "delete/2 - 1"),
     %% add Via to PrependH2 so that we have one header with an atom key
     DeleteH1 = set("Via", ["bar"], PrependH2),
 
-    io:format("test: delete/2 - 2~n"),
+    autotest:mark(?LINE, "delete/2 - 2"),
     %% delete the "other" element, leaving the 'via' and "header" elements
     DeleteH2 = delete("other", DeleteH1),
 
-    io:format("test: delete/2 - 2~n"),
+    autotest:mark(?LINE, "delete/2 - 2"),
     %% check results
     #keylist{list=[
 		   #keyelem{key="header", name="Header", item=["zero", "one"]},
 		   #keyelem{key=via, name="Via", item=["bar"]}
 		  ]} = DeleteH2,
 
-    io:format("test: delete/2 - 2~n"),
+    autotest:mark(?LINE, "delete/2 - 2"),
     %% delete both the 'via' and "header" elements, leaving an empty list
     #keylist{list=[]} = delete("header", delete(via, DeleteH2)),
 
     %% deletefirstvalue/2
     %%--------------------------------------------------------------------
-    io:format("test: deletefirstvalue/2 - 1~n"),
+    autotest:mark(?LINE, "deletefirstvalue/2 - 1"),
     DFVH1 = from_list([{via, "Via", ["one", "two", "three"]},
 		       {"other", "Other", ["foo"]}]),
 
-    io:format("test: deletefirstvalue/2 - 2~n"),
+    autotest:mark(?LINE, "deletefirstvalue/2 - 2"),
     DFVH2 = deletefirstvalue("Via", DFVH1),
 
-    io:format("test: deletefirstvalue/2 - 3~n"),
+    autotest:mark(?LINE, "deletefirstvalue/2 - 3"),
     %% check results
     #keylist{list=[
 		   #keyelem{key=via, name="Via", item=["two", "three"]},
 		   #keyelem{key="other", name="Other", item=["foo"]}
 		  ]},
 
-    io:format("test: deletefirstvalue/2 - 3~n"),
+    autotest:mark(?LINE, "deletefirstvalue/2 - 3"),
     DFVH3 = deletefirstvalue("Other", DFVH2),
 
     %% check results, current deletefirstvalue doesn't remove the element
@@ -637,47 +637,47 @@ test() ->
 
     %% copy/2
     %%--------------------------------------------------------------------
-    io:format("test: copy/2 - 1~n"),
+    autotest:mark(?LINE, "copy/2 - 1"),
     CopyH1 = from_list([{via, "Via", ["one", "two", "three"]},
 			{"other", "Other", ["foo"]}]),
 
-    io:format("test: copy/2 - 2~n"),
+    autotest:mark(?LINE, "copy/2 - 2"),
     %% should not change CopyH1
     CopyH1 = copy(CopyH1, [via, "other"]),
 
-    io:format("test: copy/2 - 3~n"),
+    autotest:mark(?LINE, "copy/2 - 3"),
     %% should not change CopyH1
     CopyH1 = copy(CopyH1, [via, "oThEr"]),
 
-    io:format("test: copy/2 - 3~n"),
+    autotest:mark(?LINE, "copy/2 - 3"),
     %% copy only via
     #keylist{list=[
 		   #keyelem{key=via, name="Via", item=["one", "two", "three"]}
 		  ]} = copy(CopyH1, [via]),
 
-    io:format("test: copy/2 - 3~n"),
+    autotest:mark(?LINE, "copy/2 - 3"),
     %% copy headers not in source, result in empty keylist
     #keylist{list=[]} = copy(CopyH1, [warning, 'call-id', "foobar"]),
 
     %% appendlist/2
     %%--------------------------------------------------------------------
-    io:format("test: appendlist/2 - 1~n"),
+    autotest:mark(?LINE, "appendlist/2 - 1"),
     %% {Name, Value} tuples
     AppendLH1 = appendlist(empty(), [{"ViA", ["one"]}, {"via", ["two"]}]),
 
-    io:format("test: appendlist/2 - 2~n"),
+    autotest:mark(?LINE, "appendlist/2 - 2"),
     %% check result
     #keylist{list=[
 		   #keyelem{key=via, name="ViA", item=["one", "two"]}
 		  ]} = AppendLH1,
 
-    io:format("test: appendlist/2 - 3~n"),
+    autotest:mark(?LINE, "appendlist/2 - 3"),
     %% {Name, Key, Value} tuples
     AppendLH2 = appendlist(AppendLH1, [{via, "Via", ["three"]},
 				       {"other", "Other", ["X"]}
 				      ]),
 
-    io:format("test: appendlist/2 - 4~n"),
+    autotest:mark(?LINE, "appendlist/2 - 4"),
     %% check result
     #keylist{list=[
 		   #keyelem{key=via, name="ViA", item=["one", "two", "three"]},
@@ -686,7 +686,7 @@ test() ->
 
     %% map/2
     %%--------------------------------------------------------------------
-    io:format("test: map/2 - 1~n"),
+    autotest:mark(?LINE, "map/2 - 1"),
     CheckFun = fun(Key, Name, Item) ->
 		       case {Key, Name, Item} of
 			   {one, "one", ["one"]} -> ok;
@@ -697,12 +697,12 @@ test() ->
 				 {two, "TWO", ["TWO"]}
 				]),
 
-    io:format("test: map/2 - 2~n"),
+    autotest:mark(?LINE, "map/2 - 2"),
     map(CheckFun, MapH1),
 
     MapH2 = appendlist(MapH1, [{three, "three", ["thr33"]}]),
 
-    io:format("test: map/2 - 3~n"),
+    autotest:mark(?LINE, "map/2 - 3"),
     %% make sure CheckFun does not pass MapH2
     {'EXIT', {{case_clause, _}, _}} = (catch map(CheckFun, MapH2)),
 

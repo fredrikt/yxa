@@ -714,24 +714,24 @@ test() ->
     CombineSRV_2 = #srventry{dnsrrdata = {0, 21, 5061, "example.net"}, proto=tls},
     CombineSRV_3 = {error, undefined},
     
-    io:format("test: combine_srvresults/1 - 1~n"),
+    autotest:mark(?LINE, "combine_srvresults/1 - 1"),
     %% remove error when there are also valid results
     [#sipdns_srv{proto=tcp, host="example.org", port=5060},
      #sipdns_srv{proto=tls, host="example.net", port=5061}] =
 	combine_srvresults([CombineSRV_1, CombineSRV_2, CombineSRV_3]),
     
-    io:format("test: combine_srvresults/1 - 2~n"),
+    autotest:mark(?LINE, "combine_srvresults/1 - 2"),
     %% only error present
     {error, undefined} = combine_srvresults([{error, undefined}]),
     
-    io:format("test: combine_srvresults/1 - 3~n"),
+    autotest:mark(?LINE, "combine_srvresults/1 - 3"),
     %% neither valid entrys or errors
     {error, nxdomain} = combine_srvresults([]),
 
 
     %% test sortsrv(A, B)
     %%--------------------------------------------------------------------
-    io:format("test: sortsrv/2 - 1~n"),
+    autotest:mark(?LINE, "sortsrv/2 - 1"),
     %% sort only valid results
 
     %% for 'order', high is better. for 'preference', lower is better.
@@ -745,12 +745,12 @@ test() ->
     %% test that all permutations of SortSRV_L1 run through sortsrv/2
     %% results in the sorted list again
     lists:foldl(fun(H, Num) ->
-			%%io:format("test: sortsrv/2 - 1.~p~n", [Num]),
+			%%autotest:mark(?LINE, "sortsrv/2 - 1.~p", [Num]),
 			SortSRV_L1 = lists:sort(fun sortsrv/2, H),
 			Num + 1
 		end, 1, test_permutations(SortSRV_L1)),
 
-    io:format("test: sortsrv/2 - 2~n"),
+    autotest:mark(?LINE, "sortsrv/2 - 2"),
     %% sort some errors together with valid results
     SortSRV_E1 = {error, nxdomain},
     SortSRV_E2 = {error, undefined},
@@ -760,12 +760,12 @@ test() ->
     %% test that all permutations of SortSRV_L1 run through sortsrv/2
     %% results in the sorted list again
     lists:foldl(fun(H, Num) ->
-			%%io:format("test: sortsrv/2 - 2.~p~n", [Num]),
+			%%autotest:mark(?LINE, "sortsrv/2 - 2.~p", [Num]),
 			SortSRV_L2 = lists:sort(fun sortsrv/2, H),
 			Num + 1
 		end, 1, test_permutations(SortSRV_L2)),
 
-    io:format("test: sortsrv/2 - 3~n"),
+    autotest:mark(?LINE, "sortsrv/2 - 3"),
     %% nxdomain should beat other errors
     [SortSRV_E1, SortSRV_E2] = lists:sort(fun sortsrv/2, [SortSRV_E2, SortSRV_E1]),
 
@@ -776,31 +776,31 @@ test() ->
 
     %% test fixplus(Regexp)
     %%--------------------------------------------------------------------
-    io:format("test: fixplus/1 - 1~n"),
+    autotest:mark(?LINE, "fixplus/1 - 1"),
     %% incorrect regexp (can't have more than one start of string (^ - circumflex) )
     "^\\+foo" = fixplus("^+foo"),
 
-    io:format("test: fixplus/1 - 2~n"),
+    autotest:mark(?LINE, "fixplus/1 - 2"),
     "other" = fixplus("other"),
 
     %% test applyregexp(Number, RegexpList)
     %%--------------------------------------------------------------------
-    io:format("test: applyregexp/1 - 1~n"),
+    autotest:mark(?LINE, "applyregexp/1 - 1"),
     "bar" = applyregexp("Xfoobar", ["!.+foo(...)$!\\1"]),
     
-    io:format("test: applyregexp/1 - 2~n"),
+    autotest:mark(?LINE, "applyregexp/1 - 2"),
     %% XXX this is a potential problem - the regexp "foo..." does not match "Xfoobar" - shouldn't it?
     none = applyregexp("Xfoobar", ["!foo...$!foo"]),
 
-    io:format("test: applyregexp/1 - 3~n"),
+    autotest:mark(?LINE, "applyregexp/1 - 3"),
     %% multiple regexps, none matching
     none = applyregexp("ABC", ["!foo!foo", "!bar!123"]),
 
-    io:format("test: applyregexp/1 - 4~n"),
+    autotest:mark(?LINE, "applyregexp/1 - 4"),
     %% multiple regexps, the first one without our token ($!)
     "123" = applyregexp("bar", ["/foo/foo", "!bar!123"]),
 
-    io:format("test: applyregexp/1 - 4~n"),
+    autotest:mark(?LINE, "applyregexp/1 - 4"),
     %% XXX an artefact of using string:tokens() is that multiple tokens are treated as one,
     %% so this test should really NOT match
     "123" = applyregexp("bar", ["!!!!bar!!!123"]),
@@ -817,35 +817,35 @@ test() ->
     
     ChooseENUM_L1 = [ChooseENUM_1, ChooseENUM_2, ChooseENUM_3, ChooseENUM_4, ChooseENUM_5],
 
-    io:format("test: chooseenum/2 - 1~n"),
+    autotest:mark(?LINE, "chooseenum/2 - 1"),
     %% single match
     [ChooseENUM_2] = chooseenum(ChooseENUM_L1, "E2U+msg"),
 
-    io:format("test: chooseenum/2 - 2~n"),
+    autotest:mark(?LINE, "chooseenum/2 - 2"),
     %% more than one match, one matches even though it has a sub-type (":sub")
     [ChooseENUM_1, ChooseENUM_3] = chooseenum(ChooseENUM_L1, "E2U+sip"),
     
-    io:format("test: chooseenum/2 - 3 (disabled)~n"),
+    autotest:mark(?LINE, "chooseenum/2 - 3 (disabled)"),
 %    %% more than one match, verify that we compare case insensitively
 %    %% XXX should we do case sensitive or not? Read the RFC!
 %    [ChooseENUM_1, ChooseENUM_3] = chooseenum(ChooseENUM_L1, "e2u+SIP"),
     
-    io:format("test: chooseenum/2 - 4~n"),
+    autotest:mark(?LINE, "chooseenum/2 - 4"),
     %% no match
     [] = chooseenum(ChooseENUM_L1, "E2U+foo"),
 
 
     %% test naptr_regexp(NAPTRList)
     %%--------------------------------------------------------------------
-    io:format("test: naptr_regexp/1 - 1~n"),
+    autotest:mark(?LINE, "naptr_regexp/1 - 1"),
     [1] = naptr_regexp([#naptrrecord{regexp=1}]),
 
-    io:format("test: naptr_regexp/1 - 2~n"),
+    autotest:mark(?LINE, "naptr_regexp/1 - 2"),
     [1, 2] = naptr_regexp([#naptrrecord{regexp=1}, #naptrrecord{regexp=2}]),
 
     %% test parsenaptr(Binary)
     %%--------------------------------------------------------------------
-    io:format("test: parsenaptr/1 - 1~n"),
+    autotest:mark(?LINE, "parsenaptr/1 - 1"),
     %% domain NAPTR
     NAPTR1 = <<20:16,		%% order
 	      0:16,		%% preference
@@ -864,7 +864,7 @@ test() ->
 			    replacement = "_sip._udp.sip.su.se"},
     NAPTR1_R = parsenaptr(NAPTR1),
 
-    io:format("test: parsenaptr/1 - 2~n"),
+    autotest:mark(?LINE, "parsenaptr/1 - 2"),
     %% ENUM NAPTR
     NAPTR2 = <<100:16,		%% order
 	      10:16,		%% preference
@@ -883,7 +883,7 @@ test() ->
 
     %% test parse_naptr_answer(DNSRRList)
     %%--------------------------------------------------------------------
-    io:format("test: parse_naptr_answer/1 - 1~n"),
+    autotest:mark(?LINE, "parse_naptr_answer/1 - 1"),
     %% we should get only the NAPTR records back (in list() of naptrrecord record())
     NAPTRList1 = [#dns_rr{type=?T_NS, data=[]},
 		  #dns_rr{type=?T_NAPTR, data=binary_to_list(NAPTR2)},
@@ -902,11 +902,11 @@ test() ->
 
     SortENUM_L1 = [SortENUM_O1, SortENUM_O2, SortENUM_O3, SortENUM_O4],
 
-    io:format("test: sortenum/2 - 1~n"),
+    autotest:mark(?LINE, "sortenum/2 - 1"),
     %% test that all permutations of SortENUM_L1 run through sortenum/2
     %% results in the sorted list again
     lists:foldl(fun(H, Num) ->
-			%%io:format("test: sortenum/2 - ~p~n", [Num]),
+			%%autotest:mark(?LINE, "sortenum/2 - ~p", [Num]),
 			SortENUM_L1 = lists:sort(fun sortenum/2, H),
 			Num + 1
 		end, 1, test_permutations(SortENUM_L1)),
@@ -921,21 +921,21 @@ test() ->
     
     FilterNAPTR_L1 = [FilterNAPTR_1, FilterNAPTR_2, FilterNAPTR_3, FilterNAPTR_4, FilterNAPTR_5],
 
-    io:format("test: filter_naptr/3 - 1~n"),
+    autotest:mark(?LINE, "filter_naptr/3 - 1"),
     %% single match
     [FilterNAPTR_4] = filter_naptr(FilterNAPTR_L1, "s", "E2U+msg"),
 
-    io:format("test: filter_naptr/3 - 2~n"),
+    autotest:mark(?LINE, "filter_naptr/3 - 2"),
     %% more than one match, but one has a sub-type (":sub") and will be ignored
     %% XXX is this correct? Does the RFC3761 say that domain NAPTRs can't have sub-type?
     [FilterNAPTR_1] = filter_naptr(FilterNAPTR_L1, "u", "E2U+sip"),
      
-    io:format("test: filter_naptr/3 - 3 (disabled)~n"),
+    autotest:mark(?LINE, "filter_naptr/3 - 3 (disabled)"),
 %    %% one match, verify that we compare case insensitively
 %    %% XXX should we do case sensitive or not? Read the RFC!
 %    [FilterNAPTR_1] = filter_naptr(FilterNAPTR_L1, "e2u+SIP"),
 
-    io:format("test: filter_naptr/3 - 4~n"),
+    autotest:mark(?LINE, "filter_naptr/3 - 4"),
     %% no match
     [] = filter_naptr(FilterNAPTR_L1, "zz", "E2U+foo"),
 
