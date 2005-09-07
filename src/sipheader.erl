@@ -588,11 +588,9 @@ build_header_unsafe_binary(Header) ->
     Lines = keylist:map(fun print_one_header_binary/3, Header),
     Lines.
 
-
-print_one_header_binary(Key, Name, []) ->
-    %% Header without value. We should accept those from other SIP devices, but we should
-    %% not send them out ourselves, so we reject them here.
-    erlang:error(header_without_value, [Key, Name, []]);
+print_one_header_binary(_Key, Name, []) ->
+    %% Header without value.
+    list_to_binary([Name, $:, 32, 13, 10]);
 print_one_header_binary(Key, Name, ValueList) ->
     %% certain headers that have multiple values are written on a single line separated by "," -
     %% this is not because any RFC says so but because these are common headers that look
