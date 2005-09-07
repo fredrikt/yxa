@@ -365,9 +365,7 @@ make_keylist2(_Bin, [], Res) ->
 %%           otherwise just return it as [Value].
 %% Returns : ValueList, list() of string() or just [Value]
 %%--------------------------------------------------------------------
-split_header_value(_Key, [], _Bin, _Comma) ->
-    [];
-%% Except the headers listed in RFC3261 7.3.1 and some other that needs
+%% Except the headers listed in RFC3261 7.3.1 and in the RFC3261 BNF
 %% to be excepted from standard header comma splitting
 split_header_value('www-authenticate', ValuePtrs, Bin, _Comma) ->
     extract_value_s(ValuePtrs, Bin);
@@ -377,8 +375,45 @@ split_header_value('proxy-authenticate', ValuePtrs, Bin, _Comma) ->
     extract_value_s(ValuePtrs, Bin);
 split_header_value('proxy-authorization', ValuePtrs, Bin, _Comma) ->
     extract_value_s(ValuePtrs, Bin);
+split_header_value('call-id', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('content-disposition', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('content-length', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('content-type', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('cseq', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
 split_header_value('date', ValuePtrs, Bin, _Comma) ->
     extract_value_s(ValuePtrs, Bin);
+split_header_value('expires', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('from', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('max-forwards', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('mime-version', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('min-expires', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('organization', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('priority', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('reply-to', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('retry-after', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('server', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('timestamp', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('to', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+split_header_value('user-agent', ValuePtrs, Bin, _Comma) ->
+    extract_value_s(ValuePtrs, Bin);
+%% Non-RFC3261 ones that should not be splitted
 split_header_value('x-yxa-peer-auth', ValuePtrs, Bin, _Comma) ->
     extract_value_s(ValuePtrs, Bin);
 split_header_value(_Key, ValuePtrs, Bin, false) ->
@@ -758,7 +793,7 @@ test() ->
 	= keylist:fetch('contact', Header6),
 
     io:format("test: parse/2 request - 6.2.13.2 (Contact: full parse, disabled)~n"),
-    %% Contact: - disabled since we remove a quote too much from the Display name when we parse it in concat.
+    %% Contact: - disabled since we remove a quote too much from the Display name when we parse it in contact.
 %%    Parse13C = #contact{display_name = "Quoted string \\\"\\\"",
 %%			urlstr = "sip:jdrosen@example.com",
 %%			contact_param = contact_param:to_norm([{"newparam", "newvalue"},
