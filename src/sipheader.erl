@@ -1584,7 +1584,7 @@ test() ->
 
     autotest:mark(?LINE, "build_header_binary/1 - 4"),
     %% test Reason-header without value
-    {siperror, 500, _Reason} = (catch build_header_binary( keylist:from_list([{"Reason", []}]) )),
+    [<<"Reason: ", 13, 10>>] = build_header_binary( keylist:from_list([{"Reason", []}]) ),
 
 
     %% test get_tag([String])
