@@ -94,21 +94,23 @@ extract_body(Bin, BodyOffset, [LLen]) ->
     %% Extract BodyLen from Content-Length header if one exists. If we get
     %% a datagram with excess data, we are to just ignore the extra data.
     BodyLen = size(Bin) - BodyOffset,
-    CLen = list_to_integer(LLen),
-    if
-	CLen < BodyLen ->
+    try list_to_integer(LLen) of
+	CLen when CLen < BodyLen ->
 	    <<_:BodyOffset/binary, Body:CLen/binary-unit:8, Rest/binary>> = Bin,
 	    logger:log(debug, "Ignoring ~p bytes of excess data : ~p", [size(Rest), binary_to_list(Rest)]),
 	    {ok, Body};
-	CLen > BodyLen ->
+	CLen when CLen > BodyLen ->
 	    %% We haven't got the whole body. For stream-oriented transport (like TCP)
 	    %% this is not an error - we just haven't received the complete message yet
 	    <<_:BodyOffset/binary, Body:BodyLen/binary-unit:8>> = Bin,
 	    {ok, Body};
-	true ->
+	BodyLen ->
 	    %% CLen matches BodyLen
 	    <<_:BodyOffset/binary, Body:BodyLen/binary-unit:8>> = Bin,
 	    {ok, Body}
+    catch
+	_ : _ ->
+	    {error, "invalid Content-Length"}
     end;
 extract_body(Bin, BodyOffset, []) ->
     %% No Content-Length header supplied, assume the body is the rest of the packet.
