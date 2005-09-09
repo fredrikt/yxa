@@ -281,19 +281,27 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
 	    %% A SRV-lookup of the Host part of the URL returned NXDOMAIN, this is
 	    %% not an error and we will now try to resolve the Host-part directly
 	    %% (look for A or AAAA record)
-	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host),
-	    case ApproxMsgSize > 1200 of
+	    case URL#sipurl.proto == "sips" of
 		true ->
-		    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, and the message size "
-			       "is > 1200 bytes. Resolving hostname and trying TCP and then UDP.",
-			       [URL#sipurl.host]),
-		    TCP = change_sipdst_protocol(tcp, UDP),
-		    combine_host_portres([TCP, UDP]);
+		    SipsPort = sipsocket:default_port("sips", sipurl:get_port(URL)),
+		    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, but input was a SIPS URI. "
+			       "Resolving hostname and trying TLS only.", [URL#sipurl.host]),
+		    host_port_to_dstlist(tls, URL#sipurl.host, SipsPort, ReqURI, URL#sipurl.host);
 		false ->
-		    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, and the message size "
-			       "is =< 1200 bytes. Resolving hostname and defaulting to UDP (only).",
-			       [URL#sipurl.host]),
-		    UDP
+		    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host),
+		    case ApproxMsgSize > 1200 of
+			true ->
+			    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, and the message size "
+				       "is > 1200 bytes. Resolving hostname and trying TCP and then UDP.",
+				       [URL#sipurl.host]),
+			    TCP = change_sipdst_protocol(tcp, UDP),
+			    combine_host_portres([TCP, UDP]);
+			false ->
+			    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, and the message size "
+				       "is =< 1200 bytes. Resolving hostname and defaulting to UDP (only).",
+				       [URL#sipurl.host]),
+			    UDP
+		    end
 	    end;
 	{error, What} ->
 	    {error, What};
