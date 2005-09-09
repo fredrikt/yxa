@@ -60,8 +60,7 @@
 %%--------------------------------------------------------------------
 start(normal, [AppModule]) ->
     catch ssl:start(),
-    %% XXX uhm, is this sufficient? better than ssl:s internal seeding at least
-    %% (since it uses a constant number)
+    %% We seed SSL better after starting our configuration subsystem
     ssl:seed([
 	      io_lib:format("~p", [now()])
 	     ]),
@@ -80,7 +79,6 @@ start(normal, [AppModule]) ->
 	    end,
 	    ok = init_mnesia(MnesiaTables),
 	    {ok, Supervisor} = sipserver_sup:start_extras(Supervisor, AppModule, AppSupdata),
-	    {ok, Supervisor} = sipserver_sup:start_transportlayer(Supervisor),
 	    %% now that everything is started, seed ssl with more stuff
 	    ssl:seed([
 		      io_lib:format("~p ~p",
@@ -88,6 +86,7 @@ start(normal, [AppModule]) ->
 				     yxa_config:list()
 				    ])
 		     ]),
+	    {ok, Supervisor} = sipserver_sup:start_transportlayer(Supervisor),
 	    logger:log(normal, "proxy started (Yxa version ~s)", [version:get_version()]),
 	    {ok, Supervisor};
 	Unknown ->
