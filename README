@@ -701,33 +701,32 @@ Table definitions matching the default querys :
 Bootstrapping
 =============
 
-In your build directory, you should have a file called yxa-bootstrap.sh.
-Execute this script with the environment variable ADMINPW set to whatever
-initial admin-user password you wish. This script will create a
-Mnesia schema and all the needed Mnesia tables for you. You will have to
-execute it on the host where you are going to run the incomingproxy.
+In your build directory, or in the directory you chosed to have the executable
+files installed in (default: /usr/local/XXX) you should have a file called
+yxa-bootstrap. Execute this script, and it will create a Mnesia schema and all
+the needed Mnesia tables for you. By default, the incomingproxy application will
+be Mnesia database master. If you do not wish to have some other node be the
+Mnesia database master, you should execute yxa-bootstrap on the server that
+you will be running incomingproxy on.
 
 Example :
 
-   $ ADMINPW=foo /path/to/build/directory/yxa-bootstrap.sh
+   $ /path/to/yxa-bootstrap
 
-You should now have the necessary Mnesia databases and a user called 'admin'
-in the Mnesia user database. The 'admin' user is currently not used for
-anything (it was used by the old web interface, adminwww), but it might be
-used for the new web interface in the future, so it is still a part of the
-bootstrap process.
+
+
+You should now have the necessary Mnesia database and tables.
 
 All of the Yxa application can run just fine without root permissions.
 
 If you want to have more than one incomingproxy node (and thus more than
 one database master node), do the following on incomingproxy server #1 :
 
-   $ ADMINPW=foo /path/to/build/directory/yxa-bootstrap.sh
+   $ /path/to/yxa-bootstrap
 
 and then, on incomingproxy server #2 :
 
-   $ /path/to/build/directory/yxa-bootstrap.sh \
-	-replica incomingproxy1@server1.example.org
+   $ /path/to/yxa-bootstrap -replica incomingproxy1@server1.example.org
 
 You should then set the configuration parameter databaseservers like this
 on all your non-incomingproxy nodes :
@@ -735,6 +734,12 @@ on all your non-incomingproxy nodes :
    {databaseservers, ['incomingproxy1@server1.example.org',
 		      'incomingproxy2@server2.example.org']}
 
+If you want some other Yxa application node than incomingproxy to be your
+Mnesia database master, supply the -name argument to yxa-bootstrap. For
+example, if you are only using the pstnproxy, invoke yxa-bootstrap like
+this :
+
+   $ /path/to/yxa-bootstrap -name pstnproxy
 
 =============
 Web interface

@@ -53,7 +53,7 @@ start_FILES = \
 	incomingproxy \
 	outgoingproxy \
 	pstnproxy \
-	yxa-bootstrap.sh
+	yxa-bootstrap
 
 all: $(beam_FILES) all-recursive $(start_FILES)
 
@@ -73,7 +73,7 @@ install: $(beam_FILES) $(start_FILES) install-recursive
 	for p in $(beam_FILES); do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
 	done
-	for p in $(start_FILES) yxa-bootstrap.sh ; do \
+	for p in $(start_FILES) yxa-bootstrap ; do \
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
@@ -109,7 +109,7 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
 
 $(start_FILES): $(top_srcdir)/scripts/init.sh.in $(builddir)/config.status
 
-yxa-bootstrap.sh:
+yxa-bootstrap:
 	$(create_start_script)
 
 incomingproxy: $(builddir)/src/incomingproxy.boot

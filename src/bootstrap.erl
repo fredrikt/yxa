@@ -1,6 +1,6 @@
 -module(bootstrap).
 
--export([start/1,
+-export([start/0,
 	 replica/1
 	]).
 
@@ -20,13 +20,12 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: start([AdminPassword])
-%%           AdminPassword = string()
+%% Function: start()
 %% Descrip.: Create a first Mnesia database server at the node where
-%%           this is run (through the execution of "yxa-bootstrap.sh").
+%%           this is run (through the execution of "yxa-bootstrap").
 %% Returns : ok | does not return
 %%--------------------------------------------------------------------
-start([AdminPassword]) ->
+start() ->
     io:format("Bootstrapping Yxa on node ~p :~n", [node()]),
     ok = create_schema(node()),
     ok = mnesia:start(),
@@ -36,9 +35,6 @@ start([AdminPassword]) ->
 
     io:format("* Updating any pre-existing table definitions~n"),
     ok = table_update:update(),
-
-    io:format("* Creating admin-user~n"),
-    phone:insert_user("admin", AdminPassword, [admin], []),
 
     io:format("* Stopping Mnesia~n"),
     stopped = mnesia:stop(),
@@ -69,7 +65,7 @@ init_db_module([], _Node) ->
 %% Function: replica([Master])
 %%           Master = string()
 %% Descrip.: Create a second Mnesia database server at the node where
-%%           this is run (through the execution of "yxa-bootstrap.sh").
+%%           this is run (through the execution of "yxa-bootstrap").
 %% Returns : ok | does not return
 %%--------------------------------------------------------------------
 replica([Master]) ->

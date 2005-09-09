@@ -11,7 +11,7 @@ beamdir="@beamdir@"
 erl="@erl@"
 
 myname=`basename $0`
-if [ "x$myname" = "xyxa-bootstrap.sh" ]; then
+if [ "x$myname" = "xyxa-bootstrap" ]; then
     is_bootstrap=1
 else
     is_bootstrap=0
@@ -79,13 +79,9 @@ explicit_name=0
 hostname=$(hostname)
 
 if [ $is_bootstrap -eq 1 ]; then
-    # yes, the name should be incomingproxy when bootstrapping
+    # yes, the default name should be incomingproxy when bootstrapping
     name="incomingproxy"
     command="bootstrap"
-
-    # Adjust Mnesia dir path when bootstrapping so that it is the same as when
-    # we run the real system (incomingproxy is database server node)
-    mnesiadir="$MNESIABASE/incomingproxy"
 else
     name="$PROGRAMNAME"
     mnesiadir="$MNESIABASE/$PROGRAMNAME"
@@ -225,6 +221,12 @@ if [ "x`echo $hostname | grep '\.'`" = "x" ]; then
     echo "WARNING: Your hostname ($hostname) is not fully qualified" 1>&2
 fi
 
+if [ $is_bootstrap -eq 1 -a "x$mnesiadir" = "x" ]; then
+    # Adjust Mnesia dir path when bootstrapping so that it is the same as when
+    # we run the real system
+    mnesiadir="$MNESIABASE/${name}"
+fi
+
 if [ -f ${client_sslcertfile} ] ; then
     ssloptions="-proto_dist inet_ssl \
 	-ssl_dist_opt client_certfile $client_sslcertfile \
@@ -284,22 +286,11 @@ if [ $is_bootstrap -eq 1 ]; then
 	    -run bootstrap replica "$replica" \
 	    -run init stop
     else
-	if [ "x$ADMINPW" = "x" ]; then
-	    echo "You are not following the instructions in README!"
-	    echo ""
-	    echo "You need to set the environment variable ADMINPW"
-	    echo "before executing $0. Like this :"
-	    echo ""
-	    echo "  $ ADMINPW=foo $0"
-	    echo ""
-	    exit 1
-	fi
-
 	${erl} -pz ${beamdir} \
 	    $EXTRA_ERL_ARGUMENTS \
 	    -name $name \
 	    -noshell $mnesiaparameters \
-	    -run bootstrap start "$ADMINPW" \
+	    -run bootstrap start \
 	    -run init stop
     fi
 else
