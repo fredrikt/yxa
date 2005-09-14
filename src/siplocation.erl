@@ -394,6 +394,10 @@ unregister(LogTag, Header, PhoneEntrys) ->
 	end,
     %% process unregistration atomically - change all or nothing in database
     case mnesia:transaction(F) of
+	{throw, {siperror, Status, Reason}} ->
+	    logger:log(error, "Database: unregister of registrations failed for one or more"
+		       " contact entries -> ~p ~s", [Status, Reason]),
+	    {siperror, Status, Reason};
 	{aborted, Reason} ->
 	    logger:log(error, "Database: unregister of registrations failed for one or more"
 		       " contact entries, due to: ~p",
