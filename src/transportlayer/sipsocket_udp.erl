@@ -61,7 +61,7 @@
 %%--------------------------------------------------------------------
 -define(SOCKETOPTS, [{reuseaddr, true}, binary]).
 %% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
--define(SOCKETOPTSv6, [{reuseaddr, true}, inet6, {buffer, 8 * 1024}]).
+-define(SOCKETOPTSv6, [{reuseaddr, true}, binary, inet6, {buffer, 8 * 1024}]).
 
 
 %%====================================================================
@@ -428,8 +428,9 @@ get_localaddr(Socket, DefaultAddr) ->
 received_packet(<<"\r\n">>, IP, Port, Proto) ->
     logger:log(debug, "Keepalive packet (CRLF) received from ~p:~s:~p", [Proto, IP, Port]),
     ok;
-received_packet(Packet, IP, Port, Proto) when is_binary(Packet), size(Packet) =< 20 ->
+received_packet(Packet, IP, Port, Proto) when is_binary(Packet), size(Packet) =< 30 ->
     %% Too short to be anywhere near a real SIP message
+    %% STUN packets (or whatever they are) look like "\r111.222.333.444:pppp"
     case is_only_nulls(Packet) of
 	true ->
 	    logger:log(debug, "Keepalive packet (~p NULLs) received from ~p:~s:~p",
