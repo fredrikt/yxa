@@ -97,7 +97,7 @@ extract_body(Bin, BodyOffset, [LLen]) ->
     try list_to_integer(LLen) of
 	CLen when CLen < BodyLen ->
 	    <<_:BodyOffset/binary, Body:CLen/binary-unit:8, Rest/binary>> = Bin,
-	    logger:log(debug, "Ignoring ~p bytes of excess data : ~p", [size(Rest), binary_to_list(Rest)]),
+	    logger:log(debug, "Ignoring ~p bytes of excess data (for now) : ~p", [size(Rest), binary_to_list(Rest)]),
 	    {ok, Body};
 	CLen when CLen > BodyLen ->
 	    %% We haven't got the whole body. For stream-oriented transport (like TCP)
@@ -130,8 +130,9 @@ extract_body(_Bin, _BodyOffset, CL) ->
 %% Descrip.: Parse a request/response. Extract the first line
 %%           contents, build a Header keylist, and return the offset
 %%           to the body.
-%% Returns : {FirstLine, Header, BodyOffset}
-%%           keepalive
+%% Returns : {FirstLine, Header, BodyOffset} |
+%%           keepalive                       |
+%%           throw()
 %%           FirstLine  = {request, {Method, URIstr}} |
 %%                        {response, {Status, Reason}
 %%           Header     = keylist record()
