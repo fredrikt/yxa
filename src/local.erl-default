@@ -594,7 +594,7 @@ get_cpl_for_user(User) ->
 %%           Socket  = term(), the socket
 %%           Dir     = atom(), in | out - direction of connection
 %%           Proto   = atom(), tcp | tcp6 | tls | tls6
-%%           Host    = string(), the hostname this socket should match
+%%           Host    = string(), IP address or hostname of remote end
 %%           Port    = integer()
 %%           Module  = atom(), SIP-socket module name (sipsocket_tcp)
 %%           Subject = term() | undefined, SSL socket Subject

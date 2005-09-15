@@ -15,7 +15,7 @@
 	  addr,		% string(), typically IP address
 	  port,		% integer()
 	  uri,		% sipurl record() | undefined
-	  ssl_hostname	% string() | undefined, name to verify SSL certificate against
+	  ssl_names	% list() of string(), name(s) to verify SSL certificate against
 	 }).
 
 %% Information about the origin of a received SIP request/response

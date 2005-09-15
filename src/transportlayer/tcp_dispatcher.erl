@@ -387,8 +387,8 @@ get_socket_from_list(#sipdst{proto=Proto}=Dst, SocketList) when Proto == tcp; Pr
 		    %% XXX this is a TLS socket, we must check that the cached connection is valid
 		    %% considering the ssl_hostname in Dst!
 		    logger:log(debug, "Warning: Reusing cached connection to TLS destination without "
-			       "verifying that the certificate is valid for ssl_hostname ~p!",
-			       [Dst#sipdst.ssl_hostname]);
+			       "verifying that the certificate is valid for ssl_names ~p!",
+			       [Dst#sipdst.ssl_names]);
 		false ->
 		    ok
 	    end,

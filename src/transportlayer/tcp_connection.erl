@@ -71,14 +71,15 @@
 %%           Socket       = term()
 %%           Local        = term() ({Host, Port} tuple())
 %%           Remote       = term() ({Host, Port} tuple())
-%% Descrip.: Starts a tcp_connection gen_server to handle this socket.
+%% Descrip.: Incoming connection. Starts a tcp_connection gen_server
+%%           to handle this socket.
 %% Returns : {ok, Pid} | ignore
 %% Note    : 'ignore' is returned if the socket is not acceptable for
 %%           some reason (e.g. SSL certificate validation failed)
 %%--------------------------------------------------------------------
 start_link(in, SocketModule, Proto, Socket, Local, Remote) ->
-    {SSLHost, _RPort} = Remote,
-    gen_server:start_link(?MODULE, [in, SocketModule, Proto, Socket, Local, Remote, SSLHost], []).
+    {Validation, _RPort} = Remote,
+    gen_server:start_link(?MODULE, [in, SocketModule, Proto, Socket, Local, Remote, Validation], []).
 
 %%--------------------------------------------------------------------
 %% Function: start_link(connect, Dst, GenServerFrom)
@@ -125,7 +126,7 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
 
 %%--------------------------------------------------------------------
 %% Function: init([Direction, SocketModule, Proto, Socket, Local,
-%%                Remote, SSLHost])
+%%                 Remote, SSLNames])
 %%           Direction    = in | out
 %%           SocketModule = atom(), the name of the socket module
 %%                          this socket uses (gen_tcp | ssl)
@@ -133,28 +134,36 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
 %%           Socket       = term()
 %%           Local        = term() ({Host, Port} tuple())
 %%           Remote       = term() ({Host, Port} tuple())
-%%           SSLHost      = string(), hostname to verify a SSL
-%%                          certificate against (or IP address of
-%%                          remote host if this is an inbound
-%%                          connection).
+%%           Validation   = list() of string(), certificate names to
+%%                          verify a SSL certificate against, or a
+%%                          list containing a single string() with the
+%%			    IP of the remote host if this is an
+%%                          inbound non-TLS connection
 %% Descrip.: Initialize this tcp_connection process to handle Socket.
+%%           This function is called either directly from start_link,
+%%           or in case we are connecting to a remote party, by
+%%           handle_call({connect_to_remote, ...) when it has
+%%           established a connection that needs to be checked and
+%%           initialized.
 %% Returns : {ok, State, Timeout} |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Direction, SocketModule, Proto, Socket, Local, Remote, SSLHost]) ->
+init([Direction, SocketModule, Proto, Socket, Local, Remote, Validation]) ->
     %% First check if socket is acceptable
-    {IP, Port} = Remote,
-    case is_acceptable_socket(Socket, Direction, Proto, SSLHost, Port) of
+    case is_acceptable_socket(Socket, Direction, Proto, Remote, Validation) of
 	true ->
 	    init2([Direction, SocketModule, Proto, Socket, Local, Remote]);
 	false ->
-	    logger:log(normal, "TCP connection: Closing unacceptable connection to ~p:~s:~p",
-		       [Proto, IP, Port]),
+	    {Res, DirStr} =
+		case Direction of
+		    in -> {ignore, "from"};
+		    out -> {{stop, unacceptable}, "to"}
+		end,
+	    {IP, Port} = Remote,
+	    logger:log(normal, "TCP connection: Closing unacceptable connection ~s ~p:~s:~p",
+		       [DirStr, Proto, IP, Port]),
 	    SocketModule:close(Socket),
-	    case Direction of
-		in -> ignore;
-		out -> {stop, unacceptable}
-	    end
+	    Res
     end.
 
 init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
@@ -166,9 +175,17 @@ init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
 	    {ok, TimeoutSec} = yxa_config:get_env(tcp_connection_idle_timeout),
 	    Timeout = TimeoutSec * 1000,
 	    Now = util:timestamp(),
-	    State = #state{socketmodule=SocketModule, proto=Proto, socket=Socket, receiver=Receiver,
-			   local=Local, remote=Remote, starttime=Now, sipsocket=SipSocket, timeout=Timeout,
-			   on=true},
+	    State = #state{socketmodule	= SocketModule,
+			   proto	= Proto,
+			   socket	= Socket,
+			   receiver	= Receiver,
+			   local	= Local,
+			   remote	= Remote,
+			   starttime	= Now,
+			   sipsocket	= SipSocket,
+			   timeout	= Timeout,
+			   on		= true
+			  },
 	    {ok, State, Timeout};
 	{error, E} ->
 	    logger:log(error, "TCP connection: Failed registering with TCP dispatcher : ~p", [E]),
@@ -275,7 +292,7 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 	    Remote = {Host, Port},
 
 	    %% Call init() to get the connection properly initialized before we do our gen_server:reply()
-	    case init([out, SocketModule, Proto, NewSocket, Local, Remote, Dst#sipdst.ssl_hostname]) of
+	    case init([out, SocketModule, Proto, NewSocket, Local, Remote, Dst#sipdst.ssl_names]) of
 		{ok, NewState, Timeout} ->
 		    SipSocket = NewState#state.sipsocket,
 		    logger:log(debug, "TCP connection: Extra debug: Connected to ~s, socket ~p",
@@ -313,10 +330,16 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 %%--------------------------------------------------------------------
 handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
     {IP, Port} = State#state.remote,
-    SipSocket = #sipsocket{module=sipsocket_tcp, proto=State#state.proto, pid=self(),
-			   data={State#state.local, State#state.remote}},
-    Origin = #siporigin{proto=State#state.proto, addr=IP, port=Port, receiver=self(),
-			sipsocket=SipSocket},
+    SipSocket = #sipsocket{module	= sipsocket_tcp,
+			   proto	= State#state.proto, pid=self(),
+			   data		= {State#state.local, State#state.remote}
+			  },
+    Origin = #siporigin{proto		= State#state.proto,
+			addr		= IP,
+			port		= Port,
+			receiver	= self(),
+			sipsocket	= SipSocket
+		       },
     sipserver:safe_spawn(sipserver, process, [Msg, Origin, transactionlayer]),
     {noreply, State, State#state.timeout};
 
@@ -479,23 +502,27 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
     {ok, Receiver}.
 
 %%--------------------------------------------------------------------
-%% Function: is_acceptable_socket(Socket, Dir, Proto, Host, Port)
+%% Function: is_acceptable_socket(Socket, Dir, Proto, Remote, Names)
 %%           Socket = term()
 %%           Dir    = atom(), in | out
 %%           Proto  = tls | tcp
-%%           Host   = string(), the hostname the upper layer wanted to
-%%                    connect to.
-%%           Port   = integer()
+%%           Remote = {IP, Port} tuple()
+%%             IP   = string()
+%%             Port = integer()
+%%           Names  = list() of string(), list of names for the
+%%                    certificate that the upper layer is willing to
+%%                    accept
 %% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
-%%           verify that the subjectAltName matches the hostname.
+%%           verify that the subjectAltName/CN is included in Names.
 %% Returns : true
 %%           false
 %%--------------------------------------------------------------------
 %%
 %% SSL socket
 %%
-is_acceptable_socket(Socket, Dir, Proto, Host, Port) when Proto == tls; Proto == tls6 ->
-    case get_ssl_peercert(Socket, Dir, Host, Port) of
+is_acceptable_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls; Proto == tls6, is_list(Names) ->
+    {IP, Port} = Remote,
+    case get_ssl_peercert(Socket, Dir, Remote) of
 	{ok, Subject} ->
 
 	    {ok, Ident} = get_ssl_identification(Subject),
@@ -503,23 +530,23 @@ is_acceptable_socket(Socket, Dir, Proto, Host, Port) when Proto == tls; Proto ==
 			 in -> "from";
 			 out -> "to"
 		     end,
-	    logger:log(debug, "TCP connection: SSL connection ~s ~s:~p (~s)", [DirStr, Host, Port, Ident]),
+	    logger:log(debug, "TCP connection: SSL connection ~s ~s:~p (~s)", [DirStr, IP, Port, Ident]),
 
 	    %% See if Local has an opinion about the validity of this socket...
-	    case local:is_acceptable_socket(Socket, Dir, Proto, Host, Port, ?MODULE, Subject) of
+	    case local:is_acceptable_socket(Socket, Dir, Proto, IP, Port, ?MODULE, Subject) of
 		true ->
 		    true;
 		false ->
 		    false;
 		undefined ->
-		    %% Do our own default checking of the subjectAltName, if this is an outbound
-		    %% connection. Per default, we accept any incoming TLS connetions as valid,
+		    %% Do our own default checking of the subjectAltName/CN, if this is an outbound
+		    %% connection. Per default, we accept any incoming TLS connections as valid,
 		    %% although we don't trust those connections in any special way.
 		    case Dir of
 			in -> true;
 			out ->
 			    {ok, Reject} = yxa_config:get_env(ssl_check_subject_altname),
-			    is_valid_ssl_altname(Host, Subject, Reject)
+			    is_valid_ssl_certname(Names, Subject, Reject)
 		    end
 	    end;
 	true ->
@@ -530,8 +557,8 @@ is_acceptable_socket(Socket, Dir, Proto, Host, Port) when Proto == tls; Proto ==
 %%
 %% Non-SSL socket
 %%
-is_acceptable_socket(Socket, Dir, Proto, Host, Port) ->
-    case local:is_acceptable_socket(Socket, Dir, Proto, Host, Port, ?MODULE, undefined) of
+is_acceptable_socket(Socket, Dir, Proto, Names, Port) ->
+    case local:is_acceptable_socket(Socket, Dir, Proto, Names, Port, ?MODULE, undefined) of
 	true ->
 	    true;
 	false ->
@@ -542,7 +569,7 @@ is_acceptable_socket(Socket, Dir, Proto, Host, Port) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_ssl_peercert(Socket, Dir, Proto, Host, Port)
+%% Function: get_ssl_peercert(Socket, Dir, {IP, Port})
 %%           Socket = term()
 %%           Dir    = atom(), in | out
 %%           Host   = string(), the hostname the upper layer wanted to
@@ -558,8 +585,23 @@ is_acceptable_socket(Socket, Dir, Proto, Host, Port) ->
 %%           false
 %%           Subject = term(), ssl:peercert() subject data
 %%--------------------------------------------------------------------
-get_ssl_peercert(Socket, Dir, Host, Port) ->
-    case ssl:peercert(Socket, [ssl, subject]) of
+get_ssl_peercert(Socket, Dir, {IP, Port}) when is_atom(Dir), is_list(IP), is_integer(Port) ->
+    %% ssl:peercert/3 needs to be wrapped in a try/catch - it fails badly on some certificates
+    PeerCertRes =
+	try ssl:peercert(Socket, [ssl, subject]) of
+	    PCRes -> PCRes
+	catch
+	    error: E ->
+		ST = erlang:get_stacktrace(),
+		logger:log(error, "=ERROR REPORT==== from ssl:peercert/2 on certificate from ~s:~p :~n"
+			   "~p~nstacktrace : ~p", [IP, Port, E, ST]),
+		{error, "Certificate decoding error"};
+	      X: Y ->
+		logger:log(error, "=ERROR REPORT==== from ssl:peercert/2 on certificate from ~s:~p :~n"
+			   "~p ~p", [IP, Port, X, Y]),
+		{error, "Certificate decoding error"}
+	end,
+    case PeerCertRes of
 	{ok, Subject} ->
 	    {ok, Subject};
 	{error, Reason} ->
@@ -567,46 +609,47 @@ get_ssl_peercert(Socket, Dir, Host, Port) ->
 	    case {Dir, RequireClientCert} of
 		{in, true} ->
 		    logger:log(debug, "TCP connection: Could not get SSL subject information, "
-			       "considering SSL connection from ~s:~p invalid : ~p", [Host, Port, Reason]),
+			       "considering SSL connection from ~s:~p invalid : ~p", [IP, Port, Reason]),
 		    false;
 		{in, false} ->
 		    logger:log(debug, "TCP connection: Could not get SSL subject information for connection "
-			       "from ~s:~p : ~p", [Host, Port, Reason]),
+			       "from ~s:~p : ~p (ignoring)", [IP, Port, Reason]),
 		    true;
 		{out, _RequireClientCert} ->
 		    logger:log(debug, "TCP connection: Could not get SSL subject information, "
-			       "considering SSL connection to ~s:~p invalid : ~p", [Host, Port, Reason]),
+			       "considering SSL connection to ~s:~p invalid : ~p", [IP, Port, Reason]),
 		    false
 	    end
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_valid_ssl_altname(Host, Dir, Reject)
-%%           Host    = string() | undefined, the hostname we want to
-%%                     make sure the subjectAltName matches.
-%%           Subject = term(), SSL subject data
-%%           Reject  = true | false, reject if name does not match or
-%%                     just log?
+%% Function: is_valid_ssl_certname(ValidNames, Dir, Reject)
+%%           ValidNames = list() of string(), the hostname(s) we want
+%%                        to make sure the subjectAltName matches.
+%%           Subject    = term(), SSL subject data
+%%           Reject     = true | false, reject if name does not match
+%%                        or just log?
 %% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
-%%           verify that the subjectAltName matches the hostname.
+%%           verify that the subjectAltName/commonName is in the list
+%%           of names we expect.
 %% Returns : true | false
 %%--------------------------------------------------------------------
-is_valid_ssl_altname(undefined, _Subject, _Reject) ->
-    true;
-is_valid_ssl_altname(Host, Subject, Reject) when Reject == true; Reject == false ->
+is_valid_ssl_certname(ValidNames, Subject, Reject) when Reject == true; Reject == false ->
     {ok, AltName} = get_ssl_socket_altname(Subject),
-    case {(AltName == Host), Reject} of
+    Matches = util:casegrep(AltName, ValidNames),
+    case {Matches, Reject} of
 	{true, _Reject} ->
-	    logger:log(debug, "TCP connection: Verified that subjectAltName (~p) matches hostname ~p",
-		       [AltName, Host]),
+	    logger:log(debug, "TCP connection: Verified that subjectAltName/CN (~p) is in list of "
+		       "valid names for this certificate (~p)", [AltName, ValidNames]),
 	    true;
 	{false, true} ->
-	    logger:log(normal, "Transport layer: rejecting SSL socket since subjectAltName (~p) "
-		       "does not match hostname (~p)", [AltName, Host]),
+	    logger:log(normal, "Transport layer: rejecting SSL socket since subjectAltName/CN (~p) "
+		       "is not in list of valid names for this certificate (~p)", [AltName, ValidNames]),
 	    false;
 	{false, false} ->
-	    logger:log(debug, "Transport layer: Warning: subjectAltName (~p) does not match hostname (~p)",
-		       [AltName, Host]),
+	    logger:log(debug, "Transport layer: Warning: subjectAltName/CN (~p) is not in list of "
+		       "valid names for this certificate (~p)",
+		       [AltName, ValidNames]),
 	    true
     end.
 

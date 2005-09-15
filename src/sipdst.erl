@@ -237,16 +237,16 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
     if
 	IsSIPS ->
 	    logger:log(debug, "Resolver: Port was explicitly supplied and URL protocol is SIPS - only try TLS"),
-	    host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host);
+	    host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI);
 	IsTransportTLS ->
 	    %% RFC3261 #26.2.2 (SIPS URI Scheme) does say that transport=tls is deprecated, but
 	    %% since our URI could be from a Record-Route header where it might not have been
 	    %% appropriate to use SIPS, even though a request might have used TLS for that hop,
 	    %% it seems as if we have to use the deprecated algorithm anyways...
 	    logger:log(debug, "Resolver: Port was explicitly supplied and transport parameter says TLS - only try TLS"),
-	    host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host);
+	    host_port_to_dstlist(tls, URL#sipurl.host, sipurl:get_port(URL), ReqURI);
 	true ->
-	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host),
+	    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
 	    case ApproxMsgSize > 1200 of
 		true ->
 		    %% RFC3263 #4.1 "... use UDP for SIP URI ... However, another transport, such as TCP,
@@ -274,8 +274,6 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
   when is_record(URL, sipurl), is_integer(ApproxMsgSize), is_record(ReqURI, sipurl), URL#sipurl.port == none ->
     %% RFC3263 #4.1 "Otherwise, if no transport protocol or port is specified, and the target is not
     %% a numeric IP address, the client SHOULD perform a NAPTR query for the domain in the URI.".
-    %%
-    %% XXX check for transport here!
     case dnsutil:siplookup(URL#sipurl.host) of
 	{error, nxdomain} ->
 	    %% A SRV-lookup of the Host part of the URL returned NXDOMAIN, this is
@@ -286,9 +284,9 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
 		    SipsPort = sipsocket:default_port("sips", sipurl:get_port(URL)),
 		    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, but input was a SIPS URI. "
 			       "Resolving hostname and trying TLS only.", [URL#sipurl.host]),
-		    host_port_to_dstlist(tls, URL#sipurl.host, SipsPort, ReqURI, URL#sipurl.host);
+		    host_port_to_dstlist(tls, URL#sipurl.host, SipsPort, ReqURI);
 		false ->
-		    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI, URL#sipurl.host),
+		    UDP = host_port_to_dstlist(udp, URL#sipurl.host, sipurl:get_port(URL), ReqURI),
 		    case ApproxMsgSize > 1200 of
 			true ->
 			    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, and the message size "
@@ -320,7 +318,8 @@ url_to_dstlist_not_ip(URL, ApproxMsgSize, ReqURI)
 			   {ok, false} ->
 			       DstList2
 		       end,
-	    format_siplookup_result(sipurl:get_port(URL), ReqURI, URL#sipurl.host, DstList3)
+	    HostIn = URL#sipurl.host,
+	    format_siplookup_result(sipurl:get_port(URL), ReqURI, HostIn, DstList3)
     end.
 
 %%--------------------------------------------------------------------
@@ -448,13 +447,15 @@ remove_non_tls_destinations2([H | T], RCount, Res) when is_record(H, sipdns_srv)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: host_port_to_dstlist(Proto, InHost, InPort, URI, SSLHost)
-%%           Proto   = atom(), tcp | udp | tls
-%%           Host    = string()
-%%           Port    = integer() | none
-%%           URI     = sipurl record() to put in the created sipdst
-%%                     records
-%%           SSLHost = string() | undefined, SSL hostname to expect
+%% Function: host_port_to_dstlist(Proto, InHost, InPort, URI)
+%%           host_port_to_dstlist(Proto, InHost, InPort, URI,
+%%                                SSLNames)
+%%           Proto    = atom(), tcp | udp | tls
+%%           Host     = string()
+%%           Port     = integer() | none
+%%           URI      = sipurl record() to put in the created sipdst
+%%                      records
+%%           SSLNames = list() of string(), SSL certname(s) to expect
 %% Descrip.: Resolves a hostname and returns a list of sipdst
 %%           records of the protocol requested.
 %%           InPort should either be an integer, or the atom 'none'
@@ -463,25 +464,28 @@ remove_non_tls_destinations2([H | T], RCount, Res) when is_record(H, sipdns_srv)
 %%           {error, Reason}
 %%           DstList = list() of sipdst record()
 %%--------------------------------------------------------------------
-host_port_to_dstlist(Proto, Host, Port, URI, SSLHost) when is_integer(Port) ; Port == none,
-							   is_record(URI, sipurl),
-							   is_list(SSLHost) ; SSLHost == undefined ->
+host_port_to_dstlist(Proto, Host, Port, URI) ->
+    host_port_to_dstlist(Proto, Host, Port, URI, [Host]).
+
+host_port_to_dstlist(Proto, Host, Port, URI, SSLNames) when is_integer(Port) ; Port == none,
+							    is_record(URI, sipurl), is_list(SSLNames) ->
     case dnsutil:get_ip_port(Host, Port) of
 	{error, What} ->
 	    {error, What};
 	L when is_list(L) ->
 	    %% L is a list of sipdns_hostport record()
-	    make_sipdst_from_hostport(Proto, URI, SSLHost, L)
+	    make_sipdst_from_hostport(Proto, URI, SSLNames, L)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: make_sipdst_from_hostport(Proto, URI, SSLHost, In)
-%%           Proto   = atom(), tcp | udp | tls
-%%           URI     = sipurl record(), URI to stick into the
-%%                     resulting sipdst records
-%%           SSLHost = string() | undefined, SSL hostname to expect
-%%           In      = list() of sipdns_hostport record() - typically
-%%                     the result of a call to dnsutil:get_ip_port()
+%% Function: make_sipdst_from_hostport(Proto, URI, SSLNames, In)
+%%           Proto    = atom(), tcp | udp | tls
+%%           URI      = sipurl record(), URI to stick into the
+%%                      resulting sipdst records
+%%           SSLNames = list() of string(), hostnames to validate SSL
+%%                      certificate subjectAltName/CN against
+%%           In       = list() of sipdns_hostport record() - typically
+%%                      the result of a call to dnsutil:get_ip_port()
 %% Descrip.: Turns the result of a dnsutil:get_ip_port() into a list
 %%           of sipdst records. get_ip_port() return a list of tuples
 %%           like {Inet, Addr, Port} where IP is a string ("10.0.0.1",
@@ -492,25 +496,30 @@ host_port_to_dstlist(Proto, Host, Port, URI, SSLHost) when is_integer(Port) ; Po
 %%           DstList = list() of sipdst record()
 %%           Reason  = string()
 %%--------------------------------------------------------------------
-make_sipdst_from_hostport(Proto, URI, SSLHost, In) when Proto == tcp; Proto == udp; Proto == tls,
-							is_record(URI, sipurl), is_list(SSLHost), is_list(In) ->
-    make_sipdst_from_hostport2(Proto, URI, SSLHost, In, []).
+make_sipdst_from_hostport(Proto, URI, SSLNames, In) when Proto == tcp; Proto == udp; Proto == tls,
+							 is_record(URI, sipurl), is_list(SSLNames), is_list(In) ->
+    make_sipdst_from_hostport2(Proto, URI, SSLNames, In, []).
 
 %%
 %% sipdns_hostport.family == inet
 %%
-make_sipdst_from_hostport2(Proto, URI, SSLHost, [#sipdns_hostport{family=inet}=H | T], Res) ->
+make_sipdst_from_hostport2(Proto, URI, SSLNames, [#sipdns_hostport{family=inet}=H | T], Res) ->
     UsePort = sipsocket:default_port(Proto, H#sipdns_hostport.port),
-    This = #sipdst{proto=Proto,
-		   addr=H#sipdns_hostport.addr,
-		   port=UsePort,
-		   uri=URI,
-		   ssl_hostname=SSLHost},
-    make_sipdst_from_hostport2(Proto, URI, SSLHost, T, [This | Res]);
+    UseSSLNames = case Proto == tls of
+		      true -> SSLNames;
+		      false -> []
+		  end,
+    This = #sipdst{proto	= Proto,
+		   addr		= H#sipdns_hostport.addr,
+		   port		= UsePort,
+		   uri		= URI,
+		   ssl_names	= UseSSLNames
+		  },
+    make_sipdst_from_hostport2(Proto, URI, SSLNames, T, [This | Res]);
 %%
 %% sipdns_hostport.family == inet6
 %%
-make_sipdst_from_hostport2(Proto, URI, SSLHost, [#sipdns_hostport{family=inet6}=H | T], Res) ->
+make_sipdst_from_hostport2(Proto, URI, SSLNames, [#sipdns_hostport{family=inet6}=H | T], Res) ->
     %% inet6 family, must turn Proto into IPv6 variant
     UseProto = case Proto of
 		   tcp -> tcp6;
@@ -518,12 +527,17 @@ make_sipdst_from_hostport2(Proto, URI, SSLHost, [#sipdns_hostport{family=inet6}=
 		   tls -> tls6
 	       end,
     UsePort = sipsocket:default_port(UseProto, H#sipdns_hostport.port),
-    This = #sipdst{proto=UseProto,
-		   addr=H#sipdns_hostport.addr,
-		   port=UsePort,
-		   uri=URI,
-		   ssl_hostname=SSLHost},
-    make_sipdst_from_hostport2(Proto, URI, SSLHost, T, [This | Res]);
+    UseSSLNames = case Proto == tls of
+		      true -> SSLNames;
+		      false -> []
+		  end,
+    This = #sipdst{proto	= UseProto,
+		   addr		= H#sipdns_hostport.addr,
+		   port		= UsePort,
+		   uri		= URI,
+		   ssl_names	= UseSSLNames
+		  },
+    make_sipdst_from_hostport2(Proto, URI, SSLNames, T, [This | Res]);
 %%
 %% No more input
 %%
@@ -532,23 +546,24 @@ make_sipdst_from_hostport2(_Proto, _URI, _SSLHost, [], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: format_siplookup_result(InPort, ReqURI, SSLHost, DstList)
+%% Function: format_siplookup_result(InPort, ReqURI, HostIn, DstList)
 %%           InPort        = integer() | none
 %%           ReqURI        = sipurl record()
-%%           SSLHost       = string() | undefined
+%%           HostIn        = string() | undefined, the hostname (or
+%%                           domain name) we got as input
 %%           DstList       = list() of {Proto, Host, Port} tuple()
 %% Descrip.: Turns the result of a dnsutil:siplookup() into a list
 %%           of sipdst records. The ordering is preserved.
 %% Returns : DstList, list() of sipdst record()
 %%--------------------------------------------------------------------
-format_siplookup_result(InPort, ReqURI, SSLHost, DstList)
-  when is_integer(InPort) ; InPort == none, is_record(ReqURI, sipurl), is_list(SSLHost) ; SSLHost == undefined,
+format_siplookup_result(InPort, ReqURI, HostIn, DstList)
+  when is_integer(InPort) ; InPort == none, is_record(ReqURI, sipurl), is_list(HostIn) ; HostIn == undefined,
        is_list(DstList) ->
-    format_siplookup_result2(InPort, ReqURI, SSLHost, DstList, []).
+    format_siplookup_result2(InPort, ReqURI, HostIn, DstList, []).
 
-format_siplookup_result2(_InPort, _ReqURI, _SSLHost, [], Res) ->
+format_siplookup_result2(_InPort, _ReqURI, _HostIn, [], Res) ->
     Res;
-format_siplookup_result2(InPort, ReqURI, SSLHost, [H | T], Res) when is_record(H, sipdns_srv) ->
+format_siplookup_result2(InPort, ReqURI, HostIn, [H | T], Res) when is_record(H, sipdns_srv) ->
     {Proto, Host, Port} = {H#sipdns_srv.proto, H#sipdns_srv.host, H#sipdns_srv.port},
     %% If InPort is 'none', then use the port from DNS. Otherwise, use InPort.
     %% This is to handle if we for example receive a request with a Request-URI of
@@ -565,18 +580,41 @@ format_siplookup_result2(InPort, ReqURI, SSLHost, [H | T], Res) when is_record(H
 		       [Host, Port, UsePort]);
 	true -> true
     end,
+    SSLNames = format_siplookup_result2_sslnames(Proto, HostIn, Host),
     %% XXX what if host_port_to_dstlist for this hostname returns a sipdst-record with a
     %% different address (because of DNS round-robin, or DNS TTL reaching zero) the second
     %% time we query for the very same hostname returned in a siplookup result set?
-    DstList = case host_port_to_dstlist(Proto, Host, UsePort, ReqURI, SSLHost) of
-		  {error, Reason} ->
-		      logger:log(error, "Warning: Could not make DstList out of ~p:~p:~p : ~p",
-				 [Proto, Host, UsePort, Reason]),
-		      [];
-		  L when is_list(L) ->
-		      L
-	      end,
-    format_siplookup_result2(InPort, ReqURI, SSLHost, T, lists:append(Res, DstList)).
+    NewRes =
+	case host_port_to_dstlist(Proto, Host, UsePort, ReqURI, SSLNames) of
+	    {error, Reason} ->
+		logger:log(error, "Warning: Could not make DstList out of ~p:~p:~p : ~p",
+			   [Proto, Host, UsePort, Reason]),
+		Res;
+	    L when is_list(L) ->
+		Res ++ L
+	end,
+    format_siplookup_result2(InPort, ReqURI, HostIn, T, NewRes).
+
+%% format_siplookup_result2_sslnames, part of format_siplookup_result2.
+%% Returns : Names = list() of string()
+format_siplookup_result2_sslnames(Proto, HostIn, Host) when Proto == tls; Proto == tls6 ->
+    %% Determine what we will later use to validate the SSL connection made. The default
+    %% is to use HostIn (which is typically what a user entered as domain-name in a URL),
+    %% but it is very common to have a per-server certificate, so if configured to we
+    %% will instead use the hostname from the NAPTR/SRV lookup. This is of course less
+    %% secure, unless the NAPTR/SRV DNS lookup is secured using DNSSEC.
+    case yxa_config:get_env(ssl_check_subject_altname_allow_servername) of
+	{ok, true} ->
+	    case HostIn of
+		undefined -> [Host];
+		_ -> [Host | [HostIn]]
+	    end;
+	{ok, false} ->
+	    [HostIn]
+    end;
+format_siplookup_result2_sslnames(_Proto, _HostIn, _Host) ->
+    %% Not TLS, no reason to construct a list of validation names
+    [].
 
 
 %%--------------------------------------------------------------------
@@ -729,20 +767,20 @@ test() ->
     autotest:mark(?LINE, "make_sipdst_from_hostport/3 - 1"),
     %% simple case, tcp and no supplied port in the tuple
     HostPort1 = #sipdns_hostport{family=inet, addr="address", port=none},
-    Dst1 = #sipdst{proto=tcp, addr="address", port=5060, uri=URL, ssl_hostname="ssl1"},
-    [Dst1] = make_sipdst_from_hostport(tcp, URL, "ssl1", [HostPort1]),
+    Dst1 = #sipdst{proto=tcp, addr="address", port=5060, uri=URL, ssl_names=[]},
+    [Dst1] = make_sipdst_from_hostport(tcp, URL, ["ssl1"], [HostPort1]),
 
     autotest:mark(?LINE, "make_sipdst_from_hostport/3 - 2"),
     %% tcp 'upped' to tcp6 since tuple protocol is inet6. port from tuple used.
     HostPort2 = #sipdns_hostport{family=inet6, addr="address", port=5070},
-    Dst2 = #sipdst{proto=tcp6, addr="address", port=5070, uri=URL, ssl_hostname=undefined},
-    [Dst2] = make_sipdst_from_hostport(tcp, URL, undefined, [HostPort2]),
+    Dst2 = #sipdst{proto=tcp6, addr="address", port=5070, uri=URL, ssl_names=[]},
+    [Dst2] = make_sipdst_from_hostport(tcp, URL, [], [HostPort2]),
 
     autotest:mark(?LINE, "make_sipdst_from_hostport/3 - 3"),
     %% mixed
-    Dst2_2 = Dst2#sipdst{ssl_hostname="ssl1"},
+    Dst2_2 = Dst2#sipdst{ssl_names=[]},
     [Dst1, Dst2_2] =
-	make_sipdst_from_hostport(tcp, URL, "ssl1", [HostPort1, HostPort2]),
+	make_sipdst_from_hostport(tcp, URL, ["ssl1"], [HostPort1, HostPort2]),
 
 
     %% test get_response_host_proto(TopVia)
@@ -776,17 +814,17 @@ test() ->
     autotest:mark(?LINE, "format_siplookup_result/4 - 1"),
     %% InPort 'none', use the one from DNS
     SRV3 = #sipdns_srv{proto=tcp, host="192.0.2.1", port=1234},
-    Dst3 = #sipdst{proto=tcp, addr="192.0.2.1", port=1234, uri=URL},
-    [Dst3] = format_siplookup_result(none, URL, undefined, [SRV3]),
+    Dst3 = #sipdst{proto=tcp, addr="192.0.2.1", port=1234, uri=URL, ssl_names=[]},
+    [Dst3] = format_siplookup_result(none, URL, "192.0.2.1", [SRV3]),
 
     autotest:mark(?LINE, "format_siplookup_result/4 - 2"),
     %% InPort 2345, overrides the one in DNS (1234 in Tuple3)
-    Dst4 = #sipdst{proto=tcp, addr="192.0.2.1", port=2345, uri=URL},
+    Dst4 = #sipdst{proto=tcp, addr="192.0.2.1", port=2345, uri=URL, ssl_names=[]},
     [Dst4] = format_siplookup_result(2345, URL, undefined, [SRV3]),
 
     autotest:mark(?LINE, "format_siplookup_result/4 - 3"),
     SRV5 = #sipdns_srv{proto=tcp, host="192.0.2.2", port=5065},
-    Dst5 = #sipdst{proto=tcp, addr="192.0.2.2", port=5065, uri=URL},
+    Dst5 = #sipdst{proto=tcp, addr="192.0.2.2", port=5065, uri=URL, ssl_names=[]},
     %% more than one tuple in
     [Dst3, Dst5] = format_siplookup_result(none, URL, undefined, [SRV3, SRV5]),
 

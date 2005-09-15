@@ -249,6 +249,10 @@
 		    default	= true,
 		    type	= bool
 		   },
+	 #cfg_entry{key		= ssl_check_subject_altname_allow_servername,
+		    default	= true,
+		    type	= bool
+		   },
 	 #cfg_entry{key		= ssl_require_sips_registration,
 		    default	= true,
 		    type	= bool
