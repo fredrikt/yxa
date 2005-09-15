@@ -982,40 +982,21 @@ send_response_statemachine(Method, Status, terminated) when Status >= 100, Statu
 %%           NewState = state record()
 %%--------------------------------------------------------------------
 send_response(Response, SendReliably, State) when is_record(Response, response), is_record(State, state) ->
-    {Status, Reason, RHeader} = {Response#response.status, Response#response.reason, Response#response.header},
+    {Status, Reason} = {Response#response.status, Response#response.reason},
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     Socket = State#state.socket,
     LogTag = State#state.logtag,
-    if
-	Method == "INVITE", Status >= 300 ->
-	    %% Tell transactionlayer pid about this response to INVITE - it needs to know
-	    %% what To-tag we have used in order to match any ACK:s received for this
-	    %% response back to this server transaction.
-	    case sipheader:get_tag(keylist:fetch('to', RHeader)) of
-		none ->
-		    %% XXX abort sending?
-		    logger:log(debug, "~s: Warning: No To-tag in response received (~p ~s) - transaction "
-			       "layer might not be able to route the ACK to us!", [LogTag, Status, Reason]),
-		    true;
-		ToTag when is_list(ToTag) ->
-		    case State#state.testing of
-			true -> ok;
-			false ->
-			    case transactionlayer:store_to_tag(Request, ToTag) of
-				ok -> true;
-				R ->
-				    %% XXX abort sending?
-				    logger:log(error, "~s: Failed storing To-tag with transactionlayer : ~p",
-					       [LogTag, R])
-			    end
-		    end
-	    end;
-	true -> true
-    end,
-    logger:log(debug, "~s: Sending response to ~s ~s : ~p ~s",
+    SendResponse =
+	if
+	    Method == "INVITE", Status >= 300 ->
+		send_response_process_to_tag(Response, State);
+	    true ->
+		Response
+	end,
+    logger:log(debug, "~s: Sending response to '~s ~s' : ~p ~s",
 	       [LogTag, Method, sipurl:print(URI), Status, Reason]),
-    transportlayer:send_proxy_response(Socket, Response),
+    transportlayer:send_proxy_response(Socket, SendResponse),
     NewState1 =
 	case {SendReliably, Method} of
 	    {true, "INVITE"} ->
@@ -1035,6 +1016,47 @@ send_response(Response, SendReliably, State) when is_record(Response, response),
 	end,
     NewState = NewState1#state{response=Response},
     {ok, NewState}.
+
+send_response_process_to_tag(Response, State) ->
+    {Status, Reason, RHeader} = {Response#response.status, Response#response.reason, Response#response.header},
+    {LogTag, Request} = {State#state.logtag, State#state.request},
+    %% Tell transactionlayer pid about this response to INVITE - it needs to know
+    %% what To-tag we have used in order to match any ACK:s received for this
+    %% response back to this server transaction.
+    {StoreToTag, NewResponse} =
+	case sipheader:get_tag(keylist:fetch('to', RHeader)) of
+	    none ->
+		%% RFC3261 #16.7 (Response Processing) says a proxy SHOULD preserve To-tags,
+		%% MUST NOT modify if a To-tag is set, but also notes that it makes no
+		%% difference to upstreams if a proxy should modify To-tag on 3-6xx responses
+		%% to INVITE. However, this is a response without a To-tag and we can be more
+		%% confident that an ACK is for this response if we set a To-tag in it, so we do.
+		logger:log(debug, "~s: No To-tag in 3/4/5/6xx response to INVITE received (~p ~s), "
+			   "using mine (~p)", [LogTag, Status, Reason, State#state.my_to_tag]),
+		{DisplayName, ToURI} = sipheader:to(keylist:fetch('to', Response#response.header)),
+		[NewTo] = sipheader:contact_print([ contact:new(DisplayName, ToURI,
+								[{"tag", State#state.my_to_tag}])
+						   ]),
+		NewHeader = keylist:set("To", [NewTo], Response#response.header),
+		SendResponse1_1 = Response#response{header = NewHeader},
+		{State#state.my_to_tag, SendResponse1_1};
+	    ToTag when is_list(ToTag) ->
+		{ToTag, Response}
+	end,
+    case State#state.testing of
+	true -> ok;
+	false ->
+	    case transactionlayer:store_to_tag(Request, StoreToTag) of
+		ok -> true;
+		R ->
+		    %% Abort sending? Nah, this way we get the response to the caller, even
+		    %% though we might resend it a couple of times because the transaction
+		    %% layer might fail to match the ACK to this server transaction
+		    logger:log(error, "~s: Failed storing To-tag with transactionlayer : ~p",
+			       [LogTag, R])
+	    end
+    end,
+    NewResponse.
 
 add_timer(Timeout, Description, AppSignal, State) when is_record(State, state) ->
     NewTimerList = siptimer:add_timer(Timeout, Description, AppSignal, State#state.timerlist),
