@@ -73,7 +73,7 @@ send(SipSocket, _Proto, Host, Port, Message) when is_record(SipSocket, sipsocket
 	{'EXIT', Reason} ->
 	    Msg = io_lib:format("sipsocket_tcp failed sending through pid ~p : ~p",
 				[SPid, Reason]),
-	    {error, Msg}
+	    {error, lists:flatten(Msg)}
     end.
 
 %%--------------------------------------------------------------------
@@ -99,7 +99,9 @@ get_socket(#sipdst{proto=Proto}=Dst) when Proto == tls; Proto == tls6 ->
 		{ok, Socket} ->
 		    Socket;
 		{'EXIT', Reason} ->
-		    {error, Reason}
+		    Msg = io_lib:format("sipsocket_tcp failed fetching TLS socket : ~p",
+					[Reason]),
+		    {error, lists:flatten(Msg)}
 		end;
 	{ok, true} ->
 	    {error, "TLS client disabled"}
@@ -115,7 +117,9 @@ get_socket(#sipdst{proto=Proto}=Dst) when Proto == tcp; Proto == tcp6 ->
 	{ok, Socket} ->
 	    Socket;
 	{'EXIT', Reason} ->
-            {error, Reason}
+	    Msg = io_lib:format("sipsocket_tcp failed fetching TLS socket : ~p",
+				[Reason]),
+            {error, lists:flatten(Msg)}
     end.
 
 %%--------------------------------------------------------------------
@@ -140,7 +144,7 @@ get_raw_socket(SipSocket) when is_record(SipSocket, sipsocket) ->
 	{'EXIT', Reason} ->
 	    Msg = io_lib:format("sipsocket_tcp failed getting raw socket from pid ~p : ~p",
 				[SPid, Reason]),
-	    {error, Msg}
+	    {error, lists:flatten(Msg)}
     end.
 
 %%--------------------------------------------------------------------
