@@ -531,7 +531,14 @@ parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
 		  {siperror, Status, Reason, _ExtraHeaders} ->
 		    logger:log(error, "INVALID packet [client=~s] -> '~p ~s', CAN'T SEND RESPONSE",
 			       [origin2str(Origin), Status, Reason]),
-		    false
+		    false;
+		error:
+		  E ->
+		    ST = erlang:get_stacktrace(),
+		    logger:log(error, "=ERROR REPORT==== from SIP message parser (stage 2) "
+			       "(in sipserver:parse_packet()) :~n~p, stacktrace : ~p", [E, ST]),
+		    %% pass the error on (will probably go unnoticed)
+		    erlang:error({caught_error, E, ST})
 	    end;
 	ignore -> ignore;
 	error -> error
@@ -564,6 +571,10 @@ parse_packet2(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigi
 	  {siperror, Status, Reason, _ExtraHeaders} ->
 	    logger:log(error, "INVALID packet [client=~s] -> '~p ~s', CAN'T SEND RESPONSE",
 		       [origin2str(Origin), Status, Reason]),
+	    error;
+	  Error ->
+	    logger:log(error, "INVALID packet [client=~s], probably not SIP-message at all (reason: ~p) ",
+		       [origin2str(Origin), Error]),
 	    error
     end.
 
