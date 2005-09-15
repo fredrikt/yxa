@@ -111,13 +111,14 @@ lookupregexproute2(Input, Routes) ->
 %%           users' function that incomingproxy uses, when it
 %%           determines that a request is for one of it's homedomains.
 %% Returns : {ok, Users, Res} |
-%%           none             |   The user was found but has no locations registered
 %%           nomatch              No such user
 %%           Users = list() of string(), usernames that matched this URL
 %%           Res   = {proxy, URL}               |
 %%                   {relay, URL}               |
 %%                   {forward, URL}             |
 %%                   {response, Status, Reason} |
+%%                   none    - The user was found but has no locations
+%%                             registered
 %%--------------------------------------------------------------------
 lookupuser(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
