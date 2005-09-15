@@ -245,7 +245,7 @@ request_to_sip(Request, THandler) when is_record(Request, request) ->
 	{proxy, NewURI} when is_record(NewURI, sipurl) ->
 	    NewHeader = add_caller_identity_for_sip(Method, Request#request.header),
 	    NewRequest = Request#request{header=NewHeader},
-	    proxy_request(THandler, NewRequest, NewURI);
+	    proxy_request(THandler, NewRequest, restore_sips_proto(URI, NewURI));
 	{reply, Status, Reason} ->
 	    transactionlayer:send_response_handler(THandler, Status, Reason);
 	{reply, Status, Reason, ExtraHeaders} ->
@@ -285,9 +285,12 @@ determine_sip_location(URI) when is_record(URI, sipurl) ->
 	    end;
 	none ->
 	    case yxa_config:get_env(sipproxy) of
-		{ok, ProxyURL} when is_record(ProxyURL, sipurl) ->
+		{ok, ProxyURL1} when is_record(ProxyURL1, sipurl) ->
 		    %% Use configured sipproxy but exchange user with user from Request-URI
-		    {proxy, ProxyURL#sipurl{user=User, pass=none}};
+		    ProxyURL = sipurl:set([{user, User},
+					   {pass, none}
+					  ], ProxyURL1),
+		    {proxy, ProxyURL};
 		none ->
 		    %% No ENUM and no SIP-proxy configured, return failure so that the PBX
 		    %% on the other side of the gateway can fall back to PSTN or something
@@ -311,7 +314,7 @@ request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, reque
     URI = Request#request.uri,
     {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
 
-    Decision = 
+    Decision =
 	case is_localhostname(ToHost) of
 	    true ->
 		%% XXX check port too, not just hostname? Maybe not since pstnproxy by definition
@@ -330,7 +333,7 @@ request_to_pstn(Request, Origin, THandler, LogTag) when is_record(Request, reque
 
     case Decision of
 	{relay, DstURI, NewRequest} when is_record(DstURI, sipurl), is_record(NewRequest, request) ->
-	    relay_request_to_pstn(THandler, NewRequest, DstURI, DstNumber, LogTag);
+	    relay_request_to_pstn(THandler, NewRequest, restore_sips_proto(URI, DstURI), DstNumber, LogTag);
 	ignore ->
 	    ok
     end.
@@ -352,17 +355,12 @@ request_to_pstn_non_e164(DstNumber, Request, Origin, THandler) ->
 	undefined ->
 	    %% Route to default PSTN gateway
 	    case yxa_config:get_env(default_pstngateway) of
-		{ok, PSTNgateway1} when is_list(PSTNgateway1) ->
-		    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [PSTNgateway1]),
-		    case sipurl:parse_url_with_default_protocol("sip", PSTNgateway1) of
-			GwURL when is_record(GwURL, sipurl) ->
-			    NewURI2 = GwURL#sipurl{user=DstNumber, pass=none},
-			    {relay, NewURI2, Request};
-			Unknown ->
-			    logger:log(error, "pstnproxy: Failed parsing configuration value "
-				       "'default_pstngateway' (~p) : ~p", [PSTNgateway1, Unknown]),
-			    erlang:fault("invalid default_pstngateway", [Unknown])
-		    end;
+		{ok, GwURL} when is_record(GwURL, sipurl) ->
+		    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [sipurl:print(GwURL)]),
+		    NewURI = sipurl:set([{user, DstNumber},
+					 {pass, none}
+					], GwURL),
+		    {relay, NewURI, Request};
 		none ->
 		    logger:log(debug, "pstnproxy: Found no destination for request to PSTN, number ~p. "
 			       "Answering '404 Not Found'.", [DstNumber]),
@@ -567,7 +565,7 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
 	    %% Now that we know which user this request is authorized as, add Caller-ID information to it
 	    PSTNgateway = DstURI#sipurl.host,
 	    NewHeader = add_caller_identity_for_pstn(Method, Header, DstURI, User, PSTNgateway),
-    
+
 	    relay_request_to_pstn_isauth(THandler, Request#request{header = NewHeader}, DstURI);
 	{stale, User, Class} ->
 	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)",
@@ -595,4 +593,20 @@ relay_request_to_pstn_isauth(THandler, Request, DstURI) ->
 	_Route ->
 	    sippipe:start(THandler, none, Request, route, 900)
     end.
-	
+
+%%--------------------------------------------------------------------
+%% Function: restore_sips_proto(OldURL, NewURL)
+%%           OldURL = sipurl()
+%%           NewURL = sipurl()
+%% Descrip.: Whenever we have constructed a brand new URL to use as a
+%%           destination, we can use this function to easily make sure
+%%           we didn't downgrade SIPS to SIP (which RFC3261 forbids).
+%% Returns : URL = sipurl record()
+%%--------------------------------------------------------------------
+restore_sips_proto(OldURL, NewURL) when is_record(OldURL, sipurl), is_record(NewURL, sipurl) ->
+    case {OldURL#sipurl.proto, NewURL#sipurl.proto} of
+	{"sips", "sip"} ->
+	    sipurl:set([{proto, "sips"}], NewURL);
+	_ ->
+	    NewURL
+    end.

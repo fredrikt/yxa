@@ -367,7 +367,7 @@
 		      required	= true
 		     },
 	   #cfg_entry{key	= default_pstngateway,
-		      type	= string
+		      type	= sip_sipurl
 		     },
 	   #cfg_entry{key	= classdefs,
 		      default	= [{"", unknown}],
