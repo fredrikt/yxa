@@ -405,7 +405,7 @@ set_appdata(TState, Value) when is_record(TState, transactionstate) ->
 %%--------------------------------------------------------------------
 %% Function: set_response_to_tag(TState, Value)
 %%           TState = transactionstate record()
-%%           Value  = string() ???
+%%           Value  = string()
 %% Descrip.: Set response_to_tag in a transactionstate record()
 %% Returns : NewTState = transactionstate record()
 %%--------------------------------------------------------------------
@@ -603,8 +603,16 @@ ets_insert_new(TName, Data) when is_atom(TName), is_tuple(Data) ->
 	    true;
 	false ->
 	    logger:log(error, "Transaction state list: Failed adding entry to ets table '~p'", [TName]),
-	    logger:log(debig, "Transaction state list: Data that did not get added to ets table '~p' :~n~p",
+	    logger:log(debug, "Transaction state list: Data that did not get added to ets table '~p' :~n~p",
 		       [TName, Data]),
+	    case Data of
+		{Key, _Value} ->
+		    X = (catch ets:lookup(TName, Key)),
+		    logger:log(debug, "Transaction state list: Colliding data in ets table '~p' :~n~p",
+			       [TName, X]);
+		_ ->
+		    logger:log(debug, "Transaction state list: Data is not {Key, Value}")
+	    end,
 	    true
     end.
 
