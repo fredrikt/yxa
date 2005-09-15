@@ -82,9 +82,9 @@ url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integ
 url_to_dstlist_not_maddr(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize),
 							  is_record(ReqURI, sipurl) ->
     Host = URL#sipurl.host,
-    %% Check if URL host is either IPv4 or IPv6 address. For IPv6, host must not have surrounding brackets!
+    %% Check if URL host is either IPv4 or IPv6 address.
     %% Note: inet_parse:address/1 is not a supported Erlang/OTP function
-    case inet_parse:address(Host) of
+    case inet_parse:address(util:remove_v6_brackets(Host)) of
 	{ok, _IPtuple} ->
 	    Port = sipurl:get_port(URL),
 	    logger:log(debug, "url_to_dstlist: ~p is an IP address, not performing domain NAPTR/SRV lookup", [Host]),
