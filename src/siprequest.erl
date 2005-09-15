@@ -170,11 +170,24 @@ stateless_route_proxy_request(Request) when is_record(Request, request) ->
     case stateless_route_proxy_request2(Request#request{header=NewHeader}, ApproxMsgSize) of
 	{ok, [Dst], NewRequest} ->
 	    {ok, Dst, NewRequest};
-	{ok, [Dst | Rest], NewRequest} ->
-	    logger:log(debug, "Siprequest (transport layer) : Warning: request being forwarded "
-		       "statelessly had more than one destination, ignoring all but the first "
-		       "one :~n~p", [sipdst:debugfriendly([Dst | Rest])]),
-	    {ok, Dst, NewRequest};
+	{ok, [Dst | Rest] = DstL, NewRequest} ->
+	    IsAck = (Request#request.method == "ACK"),
+	    {ok, BendRFC} = yxa_config:get_env(stateless_send_ack_with_backup_plan),
+	    if
+		IsAck, BendRFC ->
+		    %% This is an ACK (probably of an 2xx response to INVITE), and we are not
+		    %% configured to be foolishly following the RFC3261 which says we should
+		    %% route stateless requests to one and only one destination. The INVITE
+		    %% could very well have been sent to the second destination in a destination
+		    %% list, because the primary destination was not responding. We can at least
+		    %% try to do the same for the ACK (will work for TCP, but fail for UDP).
+		    {ok, DstL, NewRequest};
+		true ->
+		    logger:log(debug, "Siprequest (transport layer) : Warning: request being forwarded "
+			       "statelessly had more than one destination, ignoring all but the first "
+			       "one :~n~p", [sipdst:debugfriendly([Dst | Rest])]),
+		    {ok, Dst, NewRequest}
+	    end;
 	{error, Reason} ->
 	    logger:log(error, "Siprequest (transport layer) : stateless_route_proxy_request2/2 "
 		       "returned error : ~p", [Reason]),
@@ -561,13 +574,15 @@ get_loop_cookie(Header, OrigURI, Proto) ->
 proxyauth_without_response(Header) ->
     case keylist:fetch('proxy-authorization', Header) of
 	[] -> none;
-	ProxyAuth ->
-	    AuthDict = sipheader:auth(ProxyAuth),
-	    NewDict1 = dict:erase("response", AuthDict),
-	    NewDict2 = dict:erase("nonce", NewDict1),
-	    NewDict3 = dict:erase("cnonce", NewDict2),
-	    NewDict4 = dict:erase("opaque", NewDict3),
-	    sipheader:dict_to_param(NewDict4)
+	ProxyAuths ->
+	    lists:foldl(fun(This, Acc) ->
+				AuthDict = sipheader:auth(This),
+				NewDict1 = dict:erase("response", AuthDict),
+				NewDict2 = dict:erase("nonce", NewDict1),
+				NewDict3 = dict:erase("cnonce", NewDict2),
+				NewDict4 = dict:erase("opaque", NewDict3),
+				Acc ++ sipheader:dict_to_param(NewDict4)
+			end, [], ProxyAuths)
     end.
 
 %%--------------------------------------------------------------------

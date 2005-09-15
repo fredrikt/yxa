@@ -340,7 +340,7 @@ check_auth_user(Env, User) ->
     end.
 
 check_auth2(Header, Env, WantAdmin) ->
-    Authorization = sipheader:auth([Header]),
+    Authorization = sipheader:auth(Header),
     {value, {_, Method}} = lists:keysearch(request_method, 1, Env),
     Response = dict:fetch("response", Authorization),
     URI = dict:fetch("uri", Authorization),
@@ -378,7 +378,7 @@ check_auth2(Header, Env, WantAdmin) ->
     end.
 
 check_auth_user2(Header, Env, InUser) ->
-    Authorization = sipheader:auth([Header]),
+    Authorization = sipheader:auth(Header),
     {value, {_, Method}} = lists:keysearch(request_method, 1, Env),
     Response = dict:fetch("response", Authorization),
     URI = dict:fetch("uri", Authorization),

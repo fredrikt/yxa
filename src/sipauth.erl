@@ -153,9 +153,9 @@ get_user_verified(Header, Method) ->
 	[] ->
 	    logger:log(debug, "Auth: get_user_verified: No Authorization header, returning false"),
 	    false;
-	Authheader ->
-	    %% XXX how do we handle multiple Authorization headers (for different realms)?
-	    get_user_verified2(Method, Authheader, Header)
+	AuthHeaders ->
+	    AuthRealmMatches = parse_auth_filter_realm(AuthHeaders, realm(), "Authorization"),
+	    get_user_verified2(Method, AuthRealmMatches, Header)
     end.
 
 %%--------------------------------------------------------------------
@@ -179,9 +179,9 @@ get_user_verified_proxy(Header, Method) ->
 	[] ->
 	    logger:log(debug, "Auth: get_user_verified_proxy: No Proxy-Authorization header, returning false"),
 	    false;
-	Authheader ->
-	    %% XXX how do we handle multiple Proxy-Authorization headers (for different realms)?
-	    get_user_verified2(Method, Authheader, Header)
+	AuthHeaders ->
+	    AuthRealmMatches = parse_auth_filter_realm(AuthHeaders, realm(), "Proxy-Authorization"),
+	    get_user_verified2(Method, AuthRealmMatches, Header)
     end.
 
 %%--------------------------------------------------------------------
@@ -204,20 +204,34 @@ get_user_verified_yxa_peer(Header, Method) ->
 	[] ->
 	    logger:log(debug, "Auth: get_user_verified_yxa_peer: No X-Yxa-Peer-Auth header, returning false"),
 	    false;
-	Authheader ->
-	    %% XXX how do we handle multiple X-Yxa-Peer-Auth headers (for different realms)?
-	    Authorization = sipheader:auth(Authheader),
-	    OrigUser = User = dict:fetch("username", Authorization),
-	    case yxa_config:get_env(x_yxa_peer_auth_secret) of
-		{ok, Password} when is_list(Password) ->
-		    Realm = dict:fetch("realm", Authorization),
-		    Now = util:timestamp(),
-		    do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization);
-		none ->
-		    logger:log(debug, "Auth: Request has X-Yxa-Peer-Auth header, but I have no configured secret"),
-		    false
-	    end
+	AuthHeaders ->
+	    Realm = realm(),
+	    AuthRealmMatches = parse_auth_filter_realm(AuthHeaders, Realm, "X-Yxa-Peer-Auth"),
+	    get_user_verified_yxa_peer2(Header, Method, AuthRealmMatches, Realm, false)
     end.
+
+get_user_verified_yxa_peer2(Header, Method, [Authorization | T], Realm, _LastRes) ->
+    OrigUser = User = dict:fetch("username", Authorization),
+    case yxa_config:get_env(x_yxa_peer_auth_secret) of
+	{ok, Password} ->
+	    Now = util:timestamp(),
+	    case do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization) of
+		false ->
+		    %% Look for another Authheader with our realm
+		    get_user_verified_yxa_peer2(Header, Method, T, Realm, false);
+		{stale, VResUser} ->
+		    %% Look for another Authheader with our realm that might _not_ be stale
+		    get_user_verified_yxa_peer2(Header, Method, T, Realm, {stale, VResUser});
+		VRes ->
+		    VRes
+	    end;
+	none ->
+	    logger:log(debug, "Auth: Request has X-Yxa-Peer-Auth header for my realm, but I have no configured secret"),
+	    false
+    end;
+get_user_verified_yxa_peer2(_Header, _Method, [], _Realm, LastRes) ->
+    logger:log(debug, "Auth: No more auth headers matching my realm, returning last result : ~p", [LastRes]),
+    LastRes.
 
 get_user_verified2(_Method, ["GSSAPI" ++ _R] = Authheader, _Header) ->
     Authorization = sipheader:auth(Authheader),
@@ -228,18 +242,20 @@ get_user_verified2(_Method, ["GSSAPI" ++ _R] = Authheader, _Header) ->
     erlang:fault({error, "GSSAPI code broken and not yet fixed"});
 
 %%--------------------------------------------------------------------
-%% Function: get_user_verified2(Method, Authheader, Header)
-%%           Method     = string()
-%%           Authheader = [string()], the auth header in question
-%%           Header     = keylist record()
+%% Function: get_user_verified2(Method, AuthDicts, Header)
+%%           Method    = string()
+%%           AuthDicts = list() of dict(), the authorization data
+%%           Header    = keylist record()
 %% Descrip.: Authenticate a request.
 %% Returns : {authenticated, User} |
 %%           {stale, User}         |
 %%           false                 |
 %%           throw({siperror, ...})
 %%--------------------------------------------------------------------
-get_user_verified2(Method, Authheader, Header) ->
-    Authorization = sipheader:auth(Authheader),
+get_user_verified2(Method, AuthDicts, Header) ->
+    get_user_verified2(Method, AuthDicts, Header, false).
+
+get_user_verified2(Method, [Authorization | T], Header, _LastRes) ->
     %% Remember the username the client used
     OrigUser = dict:fetch("username", Authorization),
     %% Canonify username
@@ -257,7 +273,19 @@ get_user_verified2(Method, Authheader, Header) ->
 	       end,
     Realm = realm(),
     Now = util:timestamp(),
-    do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization).
+    case do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, Authorization) of
+	false ->
+	    %% Look for another Authheader with our realm
+	    get_user_verified2(Method, T, Header, false);
+	{stale, VResUser} ->
+	    %% Look for another Authheader with our realm that might _not_ be stale
+	    get_user_verified2(Method, T, Header, {stale, VResUser});
+	VRes ->
+	    VRes
+    end;
+get_user_verified2(_Method, [], _Header, LastRes) ->
+    logger:log(debug, "Auth: No more credentials, returning last result : ~p", [LastRes]),
+    LastRes.
 
 %% do_get_user_verified2/7 - part of get_user_verified2/3 in order to make it testable
 do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
@@ -300,6 +328,36 @@ do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
 	    {authenticated, User}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: parse_auth_filter_realm(In, Realm, Name)
+%%           In    = list() of string, auth header values
+%%           Realm = string(), this proxys realm
+%%           Name  = string(), description of header we are parsing
+%% Descrip.: Parse a number of auth-header values (auth headers are
+%%           Proxy-Authorization, Authorization and X-Yxa-Peer-Auth)
+%%           with sipheader:auth/1 and return the ones whose realm
+%%           matches Realm.
+%% Returns : list() of dict()
+%%--------------------------------------------------------------------
+parse_auth_filter_realm(In, Realm, Name) when is_list(Name), is_list(In), is_list(Realm) ->
+    parse_auth_filter_realm(In, Realm, Name, []).
+
+parse_auth_filter_realm([H | T], Realm, Name, Res) when is_list(H) ->
+    Dict = sipheader:auth(H),
+    case dict:find("realm", Dict) of
+	{ok, Realm} ->
+	    parse_auth_filter_realm(T, Realm, Name, [Dict | Res]);
+	{ok, OtherRealm} ->
+	    logger:log(debug, "Auth: Ignoring ~s header with realm not matching mine (~p /= ~p)",
+		       [Name, OtherRealm, Realm]),
+	    parse_auth_filter_realm(T, Realm, Name, Res);
+	_ ->
+	    logger:log(error, "Auth: Ignoring ~s header without realm", [Name]),
+	    parse_auth_filter_realm(T, Realm, Name, Res)
+    end;
+parse_auth_filter_realm([], _Realm, _Name, Res) ->
+    lists:reverse(Res).
+    
 %% Authenticate through X-Yxa-Peer-Auth or, if that does not exist, through Proxy-Authentication
 pstn_get_user_verified(Header, Method) ->
     case get_user_verified_yxa_peer(Header, Method) of
@@ -603,7 +661,7 @@ test() ->
     AuthCorrectResponse1 = get_response(AuthNonce1, AuthMethod1, AuthURI1, AuthUser1, AuthPassword1, AuthRealm1),
     AuthResponse1 = print_auth_response("Digest", AuthUser1, AuthRealm1, AuthURI1, AuthCorrectResponse1,
 					AuthNonce1, AuthOpaque1, "md5"),
-    AuthDict1 = sipheader:auth([AuthResponse1]),
+    AuthDict1 = sipheader:auth(AuthResponse1),
 
 
     %% test get_nonce(Timestamp)
@@ -731,5 +789,25 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "can_register/2 - 1"),
     {false, none} = can_register(keylist:from_list([]), sipurl:parse("sip:ft@example.org")),
+
+
+    %% test parse_auth_filter_realm(In, Realm, Name)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "parse_auth_filter_realm/3 - 1"),
+    %% no matching
+    [] = parse_auth_filter_realm(["Digest username=\"test\", realm=\"nomatch\""], "test", "Test-Auth"),
+
+    autotest:mark(?LINE, "parse_auth_filter_realm/3 - 2.1"),
+    %% two matching, one non-matching
+    [RealmFilterDict1, RealmFilterDict2] =
+	parse_auth_filter_realm(["Digest username=\"test1\", realm=\"test\"",
+				 "Digest username=\"test\", realm=\"nomatch\"",
+				 "Digest username=\"test2\", realm=\"test\""],
+				"test", "Test-Auth"),
+
+    autotest:mark(?LINE, "parse_auth_filter_realm/3 - 2.2"),
+    %% verify the usernames in the dicts
+    {ok, "test1"} = dict:find("username", RealmFilterDict1),
+    {ok, "test2"} = dict:find("username", RealmFilterDict2),
 
     ok.

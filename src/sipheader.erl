@@ -400,17 +400,21 @@ auth_print(Auth, Stale) when is_tuple(Auth), is_atom(Stale) ->
     ].
 
 %%--------------------------------------------------------------------
-%% Function: auth([In])
-%%           In = string()
+%% Function: auth(In)
+%%           In = string(), one authentication header value
 %% Descrip.: Parse an authorization header.
 %% Returns : throw() | dict()
+%% Note    : In is a string like
+%%           "Digest username=\"test\",realm=\"example.org\" ...",
+%%           a SIP message can have multiple of those header values
+%%           in it. This function only handles one at a time.
 %%--------------------------------------------------------------------
-auth([In]) when is_list(In) ->
+auth(In) when is_list(In) ->
     %% lowercase first word (to implement case insensitivity)
     case string:chr(In, $\ ) of	%% Find first space ($\ ) is a space
 	0 ->
 	    %% no space found, really badly formatted data
-	    logger:log(error, "sipheader:auth() called with unparsable input (~p)", [In]),
+	    logger:log(error, "sipheader:auth/1 called with unparsable input (~p)", [In]),
 	    throw({siperror, 500, "Server Internal Error"});
 	Index ->
 	    FirstWord = string:substr(In, 1, Index - 1),
@@ -1492,11 +1496,11 @@ test() ->
 
 
 
-    %% test auth([In])
+    %% test auth(In)
     %%--------------------------------------------------------------------
-    AuthIn1 = ["Digest response=\"1response1\", uri=\"2bar2\""],
-    AuthIn2 = ["GSSAPI response=\"1response1\", uri=\"2bar2\", noquote=test"],
-    AuthIn3 = ["Unknown response=\"1response1\", uri=\"2bar2\""],
+    AuthIn1 = "Digest response=\"1response1\", uri=\"2bar2\"",
+    AuthIn2 = "GSSAPI response=\"1response1\", uri=\"2bar2\", noquote=test",
+    AuthIn3 = "Unknown response=\"1response1\", uri=\"2bar2\"",
 
     AuthOut1 = [{"response","1response1"}, {"uri","2bar2"}],
     AuthOut2 = [{"noquote", "test"}, {"response","1response1"}, {"uri","2bar2"}],
@@ -1515,11 +1519,11 @@ test() ->
 
     autotest:mark(?LINE, "auth/1 - 4"),
     %% Invalid
-    {siperror, 500, "Server Internal Error"} = (catch auth(["TestInvalid"])),
+    {siperror, 500, "Server Internal Error"} = (catch auth("TestInvalid")),
 
     autotest:mark(?LINE, "auth/1 - 4"),
     %% Not handled - not sure if we should or not..
-    {'EXIT', _} = (catch auth(["Digest foo"])),
+    {'EXIT', _} = (catch auth("Digest foo")),
 
 
     %% test param_to_dict(Param)
