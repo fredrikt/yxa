@@ -13,6 +13,7 @@
 
 -define(MNESIA_TABLES, [cpl_script_graph,
 			forward,
+			user,
 			numbers,
 			phone,
 			regexproute
