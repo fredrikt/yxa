@@ -191,6 +191,10 @@
 		    default	= 5000,
 		    type	= integer
 		   },
+	 #cfg_entry{key		= stateless_send_ack_with_backup_plan,
+		    default	= true,
+		    type	= bool
+		   },	 
 
 	 %% Transport layer settings
 	 #cfg_entry{key		= listenport,

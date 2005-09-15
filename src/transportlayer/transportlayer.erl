@@ -158,22 +158,34 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
 %%--------------------------------------------------------------------
 stateless_proxy_request(LogTag, Request) when is_list(LogTag), is_record(Request, request) ->
     case siprequest:stateless_route_proxy_request(Request) of
-	{ok, Dst, NewRequest} ->
-	    case send_proxy_request(none, NewRequest, Dst, []) of
-		{ok, _SendSocket, _BranchUsed} ->
-		    logger:log(normal, "~s: Proxied stateless request '~s ~s' to ~p:~s:~p",
-			       [LogTag, NewRequest#request.method, sipurl:print(NewRequest#request.uri),
-				Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
-		    ok;
-		{error, Reason} ->
-		    logger:log(normal, "~s: FAILED proxying stateless request '~s ~s' to ~p:~s:~p : ~p",
-			       [LogTag, NewRequest#request.method, sipurl:print(NewRequest#request.uri),
-				Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, Reason]),
-		    {error, Reason}
-	    end;
+	{ok, Dst, NewRequest} when is_record(Dst, sipdst) ->
+	    stateless_proxy_request2(LogTag, NewRequest, [Dst]);
+	{ok, DstList, NewRequest} when is_list(DstList) ->
+	    stateless_proxy_request2(LogTag, NewRequest, DstList);
 	{error, Reason} ->
 	    logger:log(error, "~s: Could not get destination for stateless request : ~p", [LogTag, Reason]),
 	    {error, Reason}
+    end.
+
+%% stateless_proxy_request2/3 - part of stateless_proxy_request/2
+%% Returns : ok | {error, Reason}
+stateless_proxy_request2(LogTag, Request, [Dst | Rest]) when is_record(Dst, sipdst) ->
+    case send_proxy_request(none, Request, Dst, []) of
+	{ok, _SendSocket, _BranchUsed} ->
+	    logger:log(normal, "~s: Proxied stateless request '~s ~s' to ~p:~s:~p",
+		       [LogTag, Request#request.method, sipurl:print(Request#request.uri),
+			Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
+	    ok;
+	{error, Reason} ->
+	    logger:log(normal, "~s: FAILED proxying stateless request '~s ~s' to ~p:~s:~p : ~p",
+		       [LogTag, Request#request.method, sipurl:print(Request#request.uri),
+			Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, Reason]),
+	    case Rest of
+		[] ->
+		    {error, Reason};
+		_ ->
+		    stateless_proxy_request2(LogTag, Request, Rest)
+	    end
     end.
 
 %%--------------------------------------------------------------------
