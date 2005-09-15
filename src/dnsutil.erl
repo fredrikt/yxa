@@ -73,7 +73,7 @@
 %%           Reason  = atom(), nxdomain | ...
 %%--------------------------------------------------------------------
 siplookup([]) ->
-    none;
+    {error, invalid_domainname};
 siplookup(Domain) ->
     case siplookup_naptr(Domain) of
 	nomatch ->
@@ -691,6 +691,12 @@ srvlookup(Proto, Name) when is_list(Name) ->
 %%--------------------------------------------------------------------
 test() ->
     %% test siplookup(Domain)
+    %%--------------------------------------------------------------------
+
+    autotest:mark(?LINE, "siplookup/1 - 1"),
+    %% test invalid input domain
+    {error, invalid_domainname} = siplookup([]),
+
 
     %% test enumlookup(E164Number)
 
