@@ -460,7 +460,7 @@
 		      type	= integer
 		     },
 	   #cfg_entry{key	= tcp_connection_idle_timeout,
-		      default	= 10000000,
+		      default	= 86400 * 31,
 		      type	= integer
 		     },
 	   #cfg_entry{key	= record_route,
