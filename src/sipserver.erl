@@ -536,7 +536,8 @@ parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
 		  E ->
 		    ST = erlang:get_stacktrace(),
 		    logger:log(error, "=ERROR REPORT==== from SIP message parser (stage 2) "
-			       "(in sipserver:parse_packet()) :~n~p, stacktrace : ~p", [E, ST]),
+			       "(in sipserver:parse_packet()) -> CAN'T SEND RESPONSE :~n~p, "
+			       "stacktrace : ~p", [E, ST]),
 		    %% pass the error on (will probably go unnoticed)
 		    erlang:error({caught_error, E, ST})
 	    end;
@@ -1159,10 +1160,10 @@ make_logstr(Response, Origin) when is_record(Response, response), is_record(Orig
     end.
 
 %% part of make_logstr/2
-url2str({unparseable, _}) ->
-    "unparseable";
-url2str(URL) ->
-    sipurl:print(URL).
+url2str(URL) when is_record(URL, sipurl) ->
+    sipurl:print(URL);
+url2str({unparseable, URLstr}) when is_list(URLstr) ->
+    "unparseable".
 
 %%--------------------------------------------------------------------
 %% Function: sanity_check_contact(Type, Name, Header)
@@ -1178,10 +1179,13 @@ sanity_check_contact(Type, Name, Header) when Type == request; Type == response;
 					      is_record(Header, keylist) ->
     case keylist:fetch(Name, Header) of
 	[Str] when is_list(Str) ->
-	    case sipheader:from([Str]) of
+	    try sipheader:from([Str]) of
 		{_, URI} when is_record(URI, sipurl) ->
 		    sanity_check_uri(Type, Name ++ ":", URI, Header);
 		_ ->
+		    throw({sipparseerror, Type, Header, 400, "Invalid " ++ Name ++ ": header"})
+	    catch
+		_X: _Y ->
 		    throw({sipparseerror, Type, Header, 400, "Invalid " ++ Name ++ ": header"})
 	    end;
 	_ ->
@@ -1204,13 +1208,17 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
 %%           have failed, and we just format the 416 error response.
 %% Returns : true | throw({sipparseerror, ...})
 %%--------------------------------------------------------------------
-check_supported_uri_scheme({unparseable, URIstr}, Header) when is_record(Header, keylist) ->
+check_supported_uri_scheme({unparseable, URIstr}, Header) when is_list(URIstr), is_record(Header, keylist) ->
     case string:chr(URIstr, $:) of
 	0 ->
 	    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme"});
 	Index ->
-	    Scheme = string:substr(URIstr, 1, Index),
-	    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme (" ++ Scheme ++ ")"})
+	    case http_util:to_lower(string:substr(URIstr, 1, Index)) of
+		Proto when Proto == "sip:"; Proto == "sips:" ->
+		    throw({sipparseerror, request, Header, 400, "Unparsable Request-URI"});
+		Scheme ->
+		    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme (" ++ Scheme ++ ")"})
+	    end
     end;
 check_supported_uri_scheme(URI, Header) when is_record(URI, sipurl), is_record(Header, keylist) ->
     true.
@@ -1314,6 +1322,13 @@ test() ->
     %% should be able to process a request/response with this unless the
     %% proxy really has to understand the From:. We currently don't.
     _ = (catch process_parsed_packet(CheckResponse3, #siporigin{proto=tcp})),
+
+    autotest:mark(?LINE, "process_parsed_packet/2 response - 4"),
+    CRHeader4 = keylist:set("From", ["<sip:test@example.org"], CRHeader1),
+    CheckResponse4 = #response{status=200, reason="Ok", header=CRHeader4, body=EmptyBody},
+    %% check with From: without closing ">"
+    {sipparseerror, response, _, 400, "Invalid From: header"} =
+	(catch process_parsed_packet(CheckResponse4, #siporigin{proto=tcp})),
 
 
     %% build request header for other tests
@@ -1742,11 +1757,23 @@ test() ->
 	(catch check_packet(CPacketRR1#response{header=CPacketRH5}, Origin2Str1)),
 
     autotest:mark(?LINE, "check_packet/2 response - 6"),
+    %% Test response with totally invalid From: header
+    CPacketRH6 = keylist:set("From", ["1"], CPacketRH1),
+    {sipparseerror, response, CPacketRH6, 400, "Invalid From: header"} =
+	(catch check_packet(CPacketRR1#response{header=CPacketRH6}, Origin2Str1)),
+
+    autotest:mark(?LINE, "check_packet/2 response - 7"),
+    %% Test response with parsable From: but URL without closing ">"
+    CPacketRH7 = keylist:set("From", ["<sip:test@example.org"], CPacketRH1),
+    {sipparseerror, response, CPacketRH7, 400, "Invalid From: header"} =
+	(catch check_packet(CPacketRR1#response{header=CPacketRH7}, Origin2Str1)),
+
+    autotest:mark(?LINE, "check_packet/2 response - 8"),
     %% Test strange To:. I think it is enough to test just one To: - that should suffice
     %% to tell that To: is checked the same way as From: (see tests above).
-    CPacketRH6 = keylist:set("To", [WWWURL], CPacketRH1),
-    {sipparseerror, response, CPacketRH6, 400, "Invalid To: header"} =
-	(catch check_packet(CPacketRR1#response{header=CPacketRH6}, Origin2Str1)),
+    CPacketRH8 = keylist:set("To", [WWWURL], CPacketRH1),
+    {sipparseerror, response, CPacketRH8, 400, "Invalid To: header"} =
+	(catch check_packet(CPacketRR1#response{header=CPacketRH8}, Origin2Str1)),
 
 
     %% test process_parsed_packet(Request, Origin)
@@ -1833,10 +1860,16 @@ test() ->
     %% valid test
     true = check_supported_uri_scheme(URISchemeURL1, URISchemeHeader),
 
-    autotest:mark(?LINE, "check_supported_uri_scheme/2 - 1"),
+    autotest:mark(?LINE, "check_supported_uri_scheme/2 - 2"),
     URISchemeURL2 = sipurl:parse("bogus:ft@example.org"),
     %% URL was unparseable
     {sipparseerror, request, URISchemeHeader, 416, "Unsupported URI Scheme (bogus:)"} =
 	(catch check_supported_uri_scheme(URISchemeURL2, URISchemeHeader)),
+
+    autotest:mark(?LINE, "check_supported_uri_scheme/2 - 3"),
+    URISchemeURL3 = sipurl:parse("SiP:ft@454.247.207.112"),
+    %% URL was unparseable, but it wasn't the URI scheme that we could not understand
+    {sipparseerror, request, URISchemeHeader, 400, "Unparsable Request-URI"} =
+	(catch check_supported_uri_scheme(URISchemeURL3, URISchemeHeader)),
 
     ok.
