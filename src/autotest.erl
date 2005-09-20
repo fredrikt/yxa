@@ -73,7 +73,8 @@
 		       yxa_config_erlang,
 		       yxa_config_check,
 		       transportlayer,
-		       sipsocket
+		       sipsocket,
+		       sipsocket_tcp
 		      ]).
 
 %%====================================================================
