@@ -329,6 +329,8 @@ handle_info(timeout, State) ->
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
 	normal -> logger:log(debug, "TCP dispatcher: Received normal exit-signal from process ~p", [Pid]);
+	shutdown -> logger:log(debug, "TCP dispatcher: Received 'shutdown' exit-signal from process ~p", [Pid]);
+	killed -> logger:log(debug, "TCP dispatcher: Received 'killed' exit-signal from process ~p", [Pid]);
 	_ -> logger:log(error, "TCP dispatcher: =ERROR REPORT==== Received non-normal exit signal "
 			"from process ~p :~n~p", [Pid, Reason])
     end,
@@ -359,8 +361,9 @@ handle_info(Unknown, State) ->
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
-        normal -> logger:log(error, "TCP dispatcher terminating normally");
-        _ -> logger:log(error, "TCP dispatcher terminating : ~p", [Reason])
+        normal -> logger:log(debug, "TCP dispatcher: terminating normally");
+        shutdown -> logger:log(debug, "TCP dispatcher: shutting down");
+        _ -> logger:log(error, "TCP dispatcher: terminating : ~p", [Reason])
     end,
     Reason.
 
