@@ -136,7 +136,7 @@ send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_a
     SipSocketM:send(Socket, Proto, Host, Port, Message).
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Proto, Dst)
+%% Function: get_socket(Dst)
 %%           Dst   = sipdst record()
 %% Descrip.: Get a socket, cached or new, useable to send messages to
 %%           Dst using protocol Proto.
