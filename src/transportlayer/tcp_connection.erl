@@ -288,6 +288,13 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 
     case ConnectRes of
 	{ok, NewSocket} ->
+	    case SocketModule of
+		ssl ->
+		    {ok, {Protocol, Cipher}} = ssl:connection_info(NewSocket),
+		    logger:log(debug, "Extra debug: TCP connection: SSL socket info for ~p : "
+			       "Protocol = ~p, Cipher = ~p", [NewSocket, Protocol, Cipher]);
+		_ -> ok
+	    end,
 	    Local = get_local_ip_port(NewSocket, InetModule, Proto),
 	    Remote = {Host, Port},
 
@@ -392,7 +399,7 @@ handle_cast({connection_closed, FromPid}, #state{receiver=FromPid}=State) when i
 
 handle_cast(Msg, State) ->
     logger:log(error, "TCP connection: Received unknown gen_server cast : ~p", [Msg]),
-    {noreply, State}.
+    {noreply, State, State#state.timeout}.
 
 
 %%--------------------------------------------------------------------
@@ -408,7 +415,7 @@ handle_cast(Msg, State) ->
 %% Descrip.: This connection has neither received nor sent any data in
 %%           our configured maximum time period. Make the socket go
 %%           away.
-%% Returns : {noreply, State, ?TIMEOUT}          (terminate/2 is called)
+%% Returns : {stop, normal, NewState}          (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_info(timeout, State) when State#state.on == true ->
     {IP, Port} = State#state.remote,
@@ -429,7 +436,7 @@ handle_info(timeout, State) when State#state.on == true ->
 
 handle_info(Info, State) ->
     logger:log(debug, "TCP connection: Received unknown gen_server info :~n~p", [Info]),
-    {noreply, State}.
+    {noreply, State, State#state.timeout}.
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State)
@@ -437,11 +444,11 @@ handle_info(Info, State) ->
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(normal, _State) ->
-    ok;
+    normal;
 terminate(Reason, _State) ->
     logger:log(error, "TCP connection: Terminating for some other reason than 'normal' : ~n~p",
 	       [Reason]),
-    ok.
+    Reason.
 
 %%--------------------------------------------------------------------
 %% Function: code_change(OldVsn, State, Extra)
@@ -634,12 +641,12 @@ get_ssl_peercert(Socket, Dir, {IP, Port}) when is_atom(Dir), is_list(IP), is_int
 %%           of names we expect.
 %% Returns : true | false
 %%--------------------------------------------------------------------
-is_valid_ssl_certname(ValidNames, Subject, Reject) when Reject == true; Reject == false ->
+is_valid_ssl_certname(ValidNames, Subject, Reject) when is_list(ValidNames), is_list(Subject), Reject == true; Reject == false ->
     {ok, AltName} = get_ssl_socket_altname(Subject),
     Matches = util:casegrep(AltName, ValidNames),
     case {Matches, Reject} of
 	{true, _Reject} ->
-	    logger:log(debug, "TCP connection: Verified that subjectAltName/CN (~p) is in list of "
+	    logger:log(debug, "Transport layer: Verified that subjectAltName/CN (~p) is in list of "
 		       "valid names for this certificate (~p)", [AltName, ValidNames]),
 	    true;
 	{false, true} ->
@@ -651,7 +658,15 @@ is_valid_ssl_certname(ValidNames, Subject, Reject) when Reject == true; Reject =
 		       "valid names for this certificate (~p)",
 		       [AltName, ValidNames]),
 	    true
-    end.
+    end;
+is_valid_ssl_certname(undefined, Subject, true) ->
+    logger:log(debug, "Transport layer: Rejecting connection with subjectAltName/CN ~p since list of valid "
+	       "names is undefined", [Subject]),
+    false;
+is_valid_ssl_certname(undefined, Subject, false) ->
+    logger:log(debug, "Transport layer: Warning: subjectAltName/CN ~p not matched against list of"
+	       "valid names, since list is undefined", [Subject]),
+    true.
 
 get_ssl_socket_altname({rndSequence, AttrList}) ->
     %% XXX commonName is not always set to the FQDN. Find a better (more correct)
