@@ -116,13 +116,35 @@ start_link(connect, Dst, GenServerFrom) when is_record(Dst, sipdst) ->
 %%                           reply with the new socket to the process
 %%                           that requested it.
 %% Descrip.: Try to connect to a remote host, and answer GenServerFrom
-%% Returns : {ok, State}
+%% Returns : {ok, State} | ignore
 %%--------------------------------------------------------------------
 init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
-    %% To not block tcp_dispatcher (who starts these tcp_connections), we
-    %% send ourself a cast and return immediately.
-    gen_server:cast(self(), {connect_to_remote, Dst, GenServerFrom}),
-    {ok, #state{}};
+    %% to avoid trying to connect to a destination more than once at the same time,
+    %% we insert Dst and our own pid into the ets table transportlayer_tcp_conn_queue.
+    case ets:insert_new(transportlayer_tcp_conn_queue, {Dst, self()}) of
+	true ->
+	    %% To not block tcp_dispatcher (who starts these tcp_connections), we
+	    %% send ourself a cast and return immediately.
+	    gen_server:cast(self(), {connect_to_remote, Dst, GenServerFrom}),
+	    {ok, #state{}};
+	false ->
+	    logger:log(debug, "TCP connection: Not starting parallell connection to ~s",
+		       [sipdst:dst2str(Dst)]),
+	    case ets:lookup(transportlayer_tcp_conn_queue, Dst) of
+		[{Dst, ConnPid}] ->
+		    %% Tell ConnPid to do a gen_server:reply() to GenServerFrom
+		    %% when it has a connection result
+		    logger:log(debug, "TCP connection: Telling ~p to answer for me, and exiting",
+			       [ConnPid]),
+		    ConnPid ! {also_notify, GenServerFrom},
+		    ignore;
+		[] ->
+		    logger:log(debug, "TCP connection: The other connecting pid seems to have "
+			       "completed right now - answering try_again"),
+		    gen_server:reply(GenServerFrom, {error, try_again}),
+		    ignore
+	    end
+    end;
 
 %%--------------------------------------------------------------------
 %% Function: init([Direction, SocketModule, Proto, Socket, Local,
@@ -309,22 +331,30 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 		    %% someone (GenServerFrom) made, but where there were no cached connection available.
 		    gen_server:reply(GenServerFrom, {ok, SipSocket}),
 
+		    ets:delete(transportlayer_tcp_conn_queue, #sipdst{proto = Proto,
+								      addr  = Host,
+								      port  = Port}),
+
 		    {noreply, NewState, Timeout};
 		{stop, Reason} ->
 		    gen_server:reply(GenServerFrom, {error, Reason}),
+		    connect_fail_handle_conn_queue(Proto, Host, Port, {error, Reason}),
 		    {stop, normal, State}
 	    end;
 	{error, econnrefused} ->
 	    gen_server:reply(GenServerFrom, {error, "Connection refused"}),
+	    connect_fail_handle_conn_queue(Proto, Host, Port, {error, "Connection refused"}),
 	    {stop, normal, State};
 	{error, ehostunreach} ->
 	    %% If we don't get a connection before ConnectTimeout, we end up here
 	    gen_server:reply(GenServerFrom, {error, "Host unreachable"}),
+	    connect_fail_handle_conn_queue(Proto, Host, Port, {error, "Host unreachable"}),
 	    {stop, normal, State};
 	{error, E} ->
 	    logger:log(error, "TCP connection: Failed connecting to ~s : ~p (~s)",
 		       [DstStr, E, inet:format_error(E)]),
 	    gen_server:reply(GenServerFrom, {error, "Failed connecting to remote host"}),
+	    connect_fail_handle_conn_queue(Proto, Host, Port, {error, E}),
 	    {stop, normal, State}
     end;
 
@@ -433,6 +463,19 @@ handle_info(timeout, State) when State#state.on == true ->
 	    SocketModule:close(State#state.socket)
     end,
     {stop, normal, State#state{socket=undefined}};
+
+%%--------------------------------------------------------------------
+%% Function: handle_info({also_notify, GenServerFrom}, State)
+%%           GenServerFrom = term()
+%% Descrip.: Do a gen_server:reply with our sipsocket to all processes
+%%           that have queued with us instead of starting a parallell
+%%           connection attempt to the same destination we have now
+%%           connected to.
+%% Returns : {noreply, State, ?TIMEOUT}          (terminate/2 is called)
+%%--------------------------------------------------------------------
+handle_info({also_notify, GenServerFrom}, State) when State#state.on == true ->
+    gen_server:reply(GenServerFrom, {ok, State#state.sipsocket}),
+    {noreply, State, State#state.timeout};
 
 handle_info(Info, State) ->
     logger:log(debug, "TCP connection: Received unknown gen_server info :~n~p", [Info]),
@@ -745,3 +788,50 @@ get_local_ip_port(Socket, InetModule, Proto) ->
 %%--------------------------------------------------------------------
 get_defaultaddr(tcp) -> "0.0.0.0";
 get_defaultaddr(tcp6) -> "[::]".
+
+%%--------------------------------------------------------------------
+%% Function: connect_fail_handle_conn_queue(Proto, Host, Port, Reply)
+%%           Proto = tcp | tcp6 | tls | tls6
+%%           Host  = string(), IP address
+%%           Port  = integer()
+%%           Reply = term(), probably {error, Reason}
+%% Descrip.: When we have failed connecting to a remote destination,
+%%           we remove the entry saying that we are trying from the
+%%           connection queue ets table, and then notify any other
+%%           processes waiting for a connection to Proto:Host:Port
+%%           about our failure.
+%% Returns : ok
+%%--------------------------------------------------------------------
+connect_fail_handle_conn_queue(Proto, Host, Port, Reply) ->
+    %% we are no longer trying to connect to this destination
+    ets:delete(transportlayer_tcp_conn_queue, #sipdst{proto = Proto,
+						      addr  = Host,
+						      port  = Port}),
+
+    %% tell processes in queue about our failure
+    check_also_notify(Reply),
+    %% sleep, then check notify queue again to try and handle race here
+    timer:sleep(100),
+    check_also_notify(Reply),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: check_also_notify(Reply)
+%%           Reply = term(), but probably {error, Reason}
+%% Descrip.: Tell any processes that have queued with this one about
+%%           the result of our connection attempt. If we have
+%%           succeeded, this function will not be called (instead
+%%           handle_info({also_notify, ) will deliver good news to
+%%           processes in notify queue.
+%% Returns : ok
+%%--------------------------------------------------------------------
+check_also_notify(Reply) ->
+    receive
+	{also_notify, GenServerFrom} ->
+	    logger:log(debug, "TCP connection: Telling gen_serverfrom ~p about my failure : ~p",
+		       [GenServerFrom, Reply]),
+	    gen_server:reply(GenServerFrom, Reply),
+	    check_also_notify(Reply)
+    after 0 ->
+	    ok
+    end.

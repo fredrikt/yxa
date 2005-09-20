@@ -94,7 +94,10 @@ get_socketlist() ->
 init([]) ->
     %% This is a system process that traps EXIT signals from TCP/TLS connection handlers
     process_flag(trap_exit, true),
-    {ok, #state{socketlist=socketlist:empty()}, ?TIMEOUT}.
+    State = #state{socketlist = socketlist:empty()
+		  }, 
+    ets:new(transportlayer_tcp_conn_queue, [public, set, named_table]),
+    {ok, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
 %% Function: get_listenerspecs()
@@ -171,12 +174,14 @@ format_listener_specs([{Proto, Port} | T], Res)
 %% Function: handle_call({get_socket, Dst}, From, State)
 %%           Dst = sipdst record()
 %% Descrip.: Look for a cached connection to the destination in Dst.
-%%           If one is found, return {reply, ...} with it. Else, start
-%%           a tcp_connection process that tries to connect to the
-%%           Proto:Host:Port and will do gen_server:reply(...) when it
-%%           either succeeds or fails. We must do it this way since we
-%%           can't block the tcp_dispatcher process. There is a race
-%%           here where we might end up having more than one
+%%           If one is found, return {reply, ...} with it. If we are
+%%           already trying to connect to this destination, queue this
+%%           requestor with the existing tcp_connection process. Else,
+%%           start a tcp_connection process that tries to connect to
+%%           the Proto:Host:Port and will do gen_server:reply(...)
+%%           when it either succeeds or fails. We must do it this way
+%%           since we can't block the tcp_dispatcher process. There is
+%%           a race here where we might end up having more than one
 %%           connection to Proto:Host:Port at the same time, but that
 %%           should be OK.
 %% Returns : {reply, Reply, NewState, ?TIMEOUT} |
@@ -196,6 +201,8 @@ handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
 		{ok, CH} ->
 		    logger:log(debug, "TCP dispatcher: No cached connection to remote destination ~s, trying to "
 			       "connect (started TCP connection handler ~p)", [sipdst:dst2str(Dst), CH]),
+		    {noreply, State, ?TIMEOUT};
+		ignore ->
 		    {noreply, State, ?TIMEOUT};
 		E ->
 		    logger:log(error, "TCP dispatcher: Failed starting TCP connection handler for destination "
@@ -265,7 +272,8 @@ handle_call({get_socketlist}, _From, State) ->
     {reply, {ok, State#state.socketlist}, State, ?TIMEOUT};
 
 handle_call({quit}, _From, State) ->
-    {stop, "Asked to quit", State};
+    logger:log(debug, "TCP dispatcher: Shutting down upon receiving {quit}"),
+    {stop, normal, State};
 
 handle_call(Msg, _From, State) ->
     logger:log(error, "TCP dispatcher: Received unknown gen_server call : ~p", [Msg]),
