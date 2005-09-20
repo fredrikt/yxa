@@ -92,7 +92,7 @@ add({Type, _, _}=Id, Pid, Proto, Local, Remote, SipSocket, Expire, SocketList)
 	    #socketlist{list=lists:append(SList1#socketlist.list, [NewElem])};
 	Elem when is_record(Elem, socketlistelem) ->
 	    [StoredPid] = extract([pid], Elem),
-	    logger:log(error, "socketlist: Asked to add duplicate Id ~p (to OTHER pid, "
+	    logger:log(debug, "socketlist: Asked to add duplicate Id ~p (to OTHER pid, "
 		       "~p - stored pid ~p) to list :~n~p", [Id, Pid, StoredPid, SocketList]),
 	    {error, "Duplicate Id, new Pid"}
     end.
