@@ -99,6 +99,13 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
   when is_atom(Proto), is_integer(Port), is_atom(InetModule), is_atom(SocketModule), is_list(Options) ->
     TCPsocket = case SocketModule:listen(Port, Options) of
 		    {ok, S} ->
+			case SocketModule of
+			    ssl ->
+				{ok, {Protocol, Cipher}} = ssl:connection_info(S),
+				logger:log(debug, "Extra debug: TCP listener : SSL socket info for ~p : "
+					   "Protocol = ~p, Cipher = ~p", [S, Protocol, Cipher]);
+			    _ -> ok
+			end,
 			S;
 		    {error, E1} ->
 			logger:log(error, "TCP listener: Could not open socket - module ~p, proto ~p, port ~p : ~p (~s)",
