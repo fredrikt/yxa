@@ -1,3 +1,30 @@
+This is the Yxa README file. Yxa is a set of SIP servers written in Erlang.
+
+To install Yxa, you need to have Erlang/OTP R10B-6 installed.
+                                 ^^^^^^^^^^^^^^^^^
+
+Quick installation guide :
+
+	$ tar zxvf yxa-version.tar.gz
+	$ mkdir build
+	$ cd build
+	$ ../yxa-version/configure && make && make install
+
+and then start configuring your new SIP server(s). These steps are
+described in more detail below, so keep on reading.
+
+If you run into problems, check the archive of the yxa-devel mailing list
+and if the answer to your question is not to be found in the archives then
+subscribe to the list (necessary for posting) and ask.
+
+Yxa-devel    : https://lists.su.se/mailman/listinfo/yxa-devel
+Yxa-announce : https://lists.su.se/mailman/listinfo/yxa-announce
+
+(the announce-list is moderated and only gets e-mail when there is a new
+snapshot or release available).
+
+
+
 ============
 Applications
 ============
@@ -204,6 +231,14 @@ stateless_challenges		(default: false) Send challenges without state
 				See comments in transactionlayer.erl,
 				function send_challenge2().
 
+stateless_send_ack_with_backup_plan: (default: true) Bend the stateless proxying
+				of request rules in RFC3261 slightly, to not
+				fail to proxy ACK of 2xx response because the
+				first destination resolved is not available.
+				Caveat: This works only for TCP/TLS destinations,
+				we currently can't detect that UDP destinations
+				are not available.
+
 tcp_connection_idle_timeout	(default: 300) Number of seconds of inactivity
 				before we close a TCP connection.
 
@@ -252,8 +287,11 @@ ssl_client_ssloptions		(default: []) SSL client SSL options, see
 				 {verify, 2}, {depth, 2}].
 
 ssl_check_subject_altname	(default: true) Whether we should reject SSL
-				server certificates with subjectAltName not
+				server certificates with subjectAltName/CN not
 				matching whatever hostname/domainname we expected.
+
+ssl_check_subject_altname_allow_servername (default: true) Treat NAPTR/SRV host-
+				name as valid subjectAltName/CN in certificates.
 
 ssl_require_sips_registration	(default: true) If you leave this at 'true', your
 				users phones must register with SIPS URIs to be
