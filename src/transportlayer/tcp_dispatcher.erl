@@ -233,33 +233,26 @@ handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
 %%--------------------------------------------------------------------
 handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Type), is_record(SipSocket, sipsocket) ->
     CPid = SipSocket#sipsocket.pid,
-    %% Link to the connection handler to receive EXIT signals from it so that we
-    %% can remove it from our list.
-    case catch link(CPid) of
-	true ->
-	    {Local, Remote} = SipSocket#sipsocket.data,
-	    Proto = SipSocket#sipsocket.proto,
-	    Ident = case Type of
-			listener ->
-			    {_IP, Port} = Local,
-			    {listener, Proto, Port};
-			in ->
-			    {from, Proto, Remote};
-			out ->
-			    {to, Proto, Remote}
-		    end,
-	    %% Socket expiration not implemented. Perhaps not even needed. If you are thinking of
-	    %% implementing it remember that listening sockets should always have timeout 0.
-	    Timeout = 0,	
-	    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, Timeout, State#state.socketlist) of
-		{error, E} ->
-		    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
-		    {reply, {error, E}, State, ?TIMEOUT};
-		NewSocketList1 ->
-		    {reply, ok, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
-	    end;
-	_ ->
-	    {reply, {error, "Could not link to sipsocket pid"}, State, ?TIMEOUT}
+    {Local, Remote} = SipSocket#sipsocket.data,
+    Proto = SipSocket#sipsocket.proto,
+    Ident = case Type of
+		listener ->
+		    {_IP, Port} = Local,
+		    {listener, Proto, Port};
+		in ->
+		    {from, Proto, Remote};
+		out ->
+		    {to, Proto, Remote}
+	    end,
+    %% Socket expiration not implemented. Perhaps not even needed. If you are thinking of
+    %% implementing it remember that listening sockets should always have timeout 0.
+    Timeout = 0,	
+    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, Timeout, State#state.socketlist) of
+	{error, E} ->
+	    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
+	    {reply, {error, E}, State, ?TIMEOUT};
+	NewSocketList1 ->
+	    {reply, ok, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
     end;
 
 %%--------------------------------------------------------------------
@@ -324,7 +317,8 @@ handle_info(timeout, State) ->
 %% Returns : {noreply, NewState, ?TIMEOUT}
 %%
 %% Note    : XXX how should we handle the situation if it is a
-%%           listener that exits?
+%%           listener that exits? Exiting listener processes should be
+%%           removed from the ets table 'yxa_sipsocket_info'.
 %%--------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
@@ -334,11 +328,22 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	_ -> logger:log(error, "TCP dispatcher: =ERROR REPORT==== Received non-normal exit signal "
 			"from process ~p :~n~p", [Pid, Reason])
     end,
+    %% Remove any entrys for this pid from transportlayer_tcp_conn_queue
+    lists:map(fun({QKey, QPid}) when QPid == Pid ->
+		      ets:delete(transportlayer_tcp_conn_queue, QKey);
+		 ({_DestTuple, _OtherQPid}) ->
+		      ok
+	      end, ets:tab2list(transportlayer_tcp_conn_queue)),
     NewState = case socketlist:get_using_pid(Pid, State#state.socketlist) of
 		   none ->
-		       logger:log(error, "TCP dispatcher: Received exit signal from ~p not in my list.", [Pid]),
-		       logger:log(debug, "TCP dispatcher: Socketlist is :~n~p",
-				  [socketlist:debugfriendly(State#state.socketlist)]),
+		       case Reason of
+			   normal ->
+			       logger:log(debug, "TCP dispatcher: Received normal exit signal from ~p not in my list.", [Pid]);
+			   _ ->
+			       logger:log(error, "TCP dispatcher: Received non-normal exit signal from ~p not in my list.", [Pid]),
+			       logger:log(debug, "TCP dispatcher: Socketlist is :~n~p",
+					  [socketlist:debugfriendly(State#state.socketlist)])
+		       end,
 		       State;
 		   L when is_record(L, socketlist) ->
 		       NewL = socketlist:delete_using_pid(Pid, State#state.socketlist),
