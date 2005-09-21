@@ -323,11 +323,10 @@ request_to_homedomain(URL, LogTag, Recursing) when is_record(URL, sipurl) ->
     case local:lookupuser(URL) of
 	nomatch ->
 	    request_to_homedomain_not_sipuser(URL, LogTag, Recursing);
-        {ok, _Users, none} ->
-	    
-	    logger:log(debug, "Routing: I currently have no locations for user(s) matching ~p "
+        {ok, Users, none} ->
+	    logger:log(debug, "Routing: I currently have no locations for user(s) ~p, "
 		       "in the location database, answering '480 Temporarily Unavailable'",
-		       [sipurl:print(URL)]),
+		       [Users]),
 	    {response, 480, "Users location currently unknown"};
 	{ok, Users, Res} when is_list(Users) ->
 	    request_to_homedomain_log_result(URLstr, Res),
