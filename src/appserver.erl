@@ -286,9 +286,12 @@ create_session_nomatch(Request, LogStr) when is_record(Request, request), is_lis
 		       [LogStr]),
 	    transactionlayer:send_response_request(Request, 404, "Not Found");
 	SIPuser when is_list(SIPuser) ->
-	    logger:log(normal, "Appserver: ~s -> Forwarding statelessly (no actions found, SIP user ~p)",
+	    logger:log(normal, "Appserver: ~s -> Not forking, just forwarding (no actions found, SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:stateless_proxy_request("appserver", Request)
+	    ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
+	    DstList = sipdst:url_to_dstlist(Request#request.uri, ApproxMsgSize, Request#request.uri),
+	    THandler = transactionlayer:get_handler_for_request(Request),
+	    sippipe:start(THandler, none, Request, DstList, 900)
     end.
 
 %%--------------------------------------------------------------------
