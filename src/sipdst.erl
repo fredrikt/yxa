@@ -607,7 +607,9 @@ format_siplookup_result2_sslnames(Proto, HostIn, Host) when Proto == tls; Proto 
 	{ok, true} ->
 	    case HostIn of
 		undefined -> [Host];
-		_ -> [Host | [HostIn]]
+		_ ->
+		    L = [Host | [HostIn]],
+		    lists:usort(L)
 	    end;
 	{ok, false} ->
 	    [HostIn]
