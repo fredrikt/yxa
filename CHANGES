@@ -1,0 +1,32 @@
+-- 0.90pre1 (2005-09-21)
+
+Changes since Snapshot 2005-09-01 :
+
+ - Allow hostnames from DNS SRV/NAPTR records in TLS certificates,
+   unless configured not to.
+ - Fix bugs found at SIPit 17
+   (IPv6, multiple authentication headers etc.).
+
+
+-- Baseline (from project homepage) :
+
+Main features :
+
+ - RFC3261 compliant (almost) SIP-server, capable of everything a
+   generic domain needs :
+
+  - Registrar that keeps track of your users
+  - Handles incoming SIP requests to your domain
+  - Handles routing of requests from your users to remote domains
+  - TCP, UDP and TLS (including SIPS) support
+  - Automatically maps e-mail addresses of your users to their SIP
+    addresses, if you have the e-mail addresses in LDAP
+  - Handles multiple domains using a single server instance
+  - ENUM support for PSTN-bypass whenever possible
+  - IPv6 support
+  - Forking, both parallel and sequential
+  - CPL (RFC3880) support for advanced user-control of events
+    (currently incoming calls only)
+  - Modular user database, currently with LDAP, Mnesia, MySQL and
+    text-file backends
+  - PSTN destination access control (per user or for anonymous users)
