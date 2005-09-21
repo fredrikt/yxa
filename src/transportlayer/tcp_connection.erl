@@ -94,7 +94,7 @@ start_link(in, SocketModule, Proto, Socket, Local, Remote) ->
 %%           Error = term(), result of gen_server:start()
 %%--------------------------------------------------------------------
 start_link(connect, Dst, GenServerFrom) when is_record(Dst, sipdst) ->
-    gen_server:start(?MODULE, [connect, Dst, GenServerFrom], []).
+    gen_server:start_link(?MODULE, [connect, Dst, GenServerFrom], []).
 
 %%====================================================================
 %% Server functions
@@ -121,7 +121,8 @@ start_link(connect, Dst, GenServerFrom) when is_record(Dst, sipdst) ->
 init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
     %% to avoid trying to connect to a destination more than once at the same time,
     %% we insert Dst and our own pid into the ets table transportlayer_tcp_conn_queue.
-    case ets:insert_new(transportlayer_tcp_conn_queue, {Dst, self()}) of
+    QKey = {Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port},
+    case ets:insert_new(transportlayer_tcp_conn_queue, {QKey, self()}) of
 	true ->
 	    %% To not block tcp_dispatcher (who starts these tcp_connections), we
 	    %% send ourself a cast and return immediately.
@@ -130,8 +131,8 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
 	false ->
 	    logger:log(debug, "TCP connection: Not starting parallell connection to ~s",
 		       [sipdst:dst2str(Dst)]),
-	    case ets:lookup(transportlayer_tcp_conn_queue, Dst) of
-		[{Dst, ConnPid}] ->
+	    case ets:lookup(transportlayer_tcp_conn_queue, QKey) of
+		[{QKey, ConnPid}] ->
 		    %% Tell ConnPid to do a gen_server:reply() to GenServerFrom
 		    %% when it has a connection result
 		    logger:log(debug, "TCP connection: Telling ~p to answer for me, and exiting",
@@ -185,6 +186,7 @@ init([Direction, SocketModule, Proto, Socket, Local, Remote, Validation]) ->
 	    logger:log(normal, "TCP connection: Closing unacceptable connection ~s ~p:~s:~p",
 		       [DirStr, Proto, IP, Port]),
 	    SocketModule:close(Socket),
+	    ets:delete(transportlayer_tcp_conn_queue, {Proto, IP, Port}),
 	    Res
     end.
 
@@ -331,9 +333,7 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 		    %% someone (GenServerFrom) made, but where there were no cached connection available.
 		    gen_server:reply(GenServerFrom, {ok, SipSocket}),
 
-		    ets:delete(transportlayer_tcp_conn_queue, #sipdst{proto = Proto,
-								      addr  = Host,
-								      port  = Port}),
+		    ets:delete(transportlayer_tcp_conn_queue, {Proto, Host, Port}),
 
 		    {noreply, NewState, Timeout};
 		{stop, Reason} ->
@@ -487,6 +487,8 @@ handle_info(Info, State) ->
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(normal, _State) ->
+    %% if someone is waiting in the connection queue for us when we terminate normally, then
+    %% that is an error
     normal;
 terminate(Reason, _State) ->
     logger:log(error, "TCP connection: Terminating for some other reason than 'normal' : ~n~p",
@@ -684,7 +686,7 @@ get_ssl_peercert(Socket, Dir, {IP, Port}) when is_atom(Dir), is_list(IP), is_int
 %%           of names we expect.
 %% Returns : true | false
 %%--------------------------------------------------------------------
-is_valid_ssl_certname(ValidNames, Subject, Reject) when is_list(ValidNames), is_list(Subject), Reject == true; Reject == false ->
+is_valid_ssl_certname(ValidNames, Subject, Reject) when is_list(ValidNames), Reject == true; Reject == false ->
     {ok, AltName} = get_ssl_socket_altname(Subject),
     Matches = util:casegrep(AltName, ValidNames),
     case {Matches, Reject} of
@@ -693,7 +695,7 @@ is_valid_ssl_certname(ValidNames, Subject, Reject) when is_list(ValidNames), is_
 		       "valid names for this certificate (~p)", [AltName, ValidNames]),
 	    true;
 	{false, true} ->
-	    logger:log(normal, "Transport layer: rejecting SSL socket since subjectAltName/CN (~p) "
+	    logger:log(normal, "Transport layer: Rejecting SSL socket since subjectAltName/CN (~p) "
 		       "is not in list of valid names for this certificate (~p)", [AltName, ValidNames]),
 	    false;
 	{false, false} ->
@@ -703,12 +705,14 @@ is_valid_ssl_certname(ValidNames, Subject, Reject) when is_list(ValidNames), is_
 	    true
     end;
 is_valid_ssl_certname(undefined, Subject, true) ->
+    {ok, AltName} = get_ssl_socket_altname(Subject),
     logger:log(debug, "Transport layer: Rejecting connection with subjectAltName/CN ~p since list of valid "
-	       "names is undefined", [Subject]),
+	       "names is undefined", [AltName]),
     false;
 is_valid_ssl_certname(undefined, Subject, false) ->
+    {ok, AltName} = get_ssl_socket_altname(Subject),
     logger:log(debug, "Transport layer: Warning: subjectAltName/CN ~p not matched against list of"
-	       "valid names, since list is undefined", [Subject]),
+	       "valid names, since list is undefined", [AltName]),
     true.
 
 get_ssl_socket_altname({rndSequence, AttrList}) ->
@@ -804,9 +808,7 @@ get_defaultaddr(tcp6) -> "[::]".
 %%--------------------------------------------------------------------
 connect_fail_handle_conn_queue(Proto, Host, Port, Reply) ->
     %% we are no longer trying to connect to this destination
-    ets:delete(transportlayer_tcp_conn_queue, #sipdst{proto = Proto,
-						      addr  = Host,
-						      port  = Port}),
+    ets:delete(transportlayer_tcp_conn_queue, {Proto, Host, Port}),
 
     %% tell processes in queue about our failure
     check_also_notify(Reply),
