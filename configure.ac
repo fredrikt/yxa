@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 AC_REVISION($Revision$)
 AC_PREREQ(2.53)
-AC_INIT(Yxa, 0.1, yxa-devel@lists.su.se)
+AC_INIT(Yxa, 0.90pre-current, yxa-devel@lists.su.se)
 AC_CONFIG_SRCDIR([src/incomingproxy.erl])
 AC_CONFIG_AUX_DIR([scripts])
 
