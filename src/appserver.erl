@@ -48,7 +48,7 @@
 %% Returns : [Tables, Mode, SupData]
 %%           Tables  = list() of atom(), remote mnesia tables the Yxa
 %%                     startup sequence should make sure are available
-%%           Mode    = stateful (or 'stateless' but DON'T use that).
+%%           Mode    = stateful
 %%           SupData = {append, SupSpec} |
 %%                     none
 %%           SupSpec = OTP supervisor child specification. Extra
