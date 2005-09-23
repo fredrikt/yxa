@@ -99,13 +99,6 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
   when is_atom(Proto), is_integer(Port), is_atom(InetModule), is_atom(SocketModule), is_list(Options) ->
     TCPsocket = case SocketModule:listen(Port, Options) of
 		    {ok, S} ->
-			case SocketModule of
-			    ssl ->
-				{ok, {Protocol, Cipher}} = ssl:connection_info(S),
-				logger:log(debug, "Extra debug: TCP listener : SSL socket info for ~p : "
-					   "Protocol = ~p, Cipher = ~p", [S, Protocol, Cipher]);
-			    _ -> ok
-			end,
 			S;
 		    {error, E1} ->
 			logger:log(error, "TCP listener: Could not open socket - module ~p, proto ~p, port ~p : ~p (~s)",
@@ -235,6 +228,9 @@ accept_loop(State) when is_record(State, state) ->
 %% SSL socket
 %%
 start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
+    {ok, {Protocol, Cipher}} = ssl:connection_info(Socket),
+    logger:log(debug, "Extra debug: TCP listener : SSL socket info for ~p : "
+	       "Protocol = ~p, Cipher = ~p", [Socket, Protocol, Cipher]),
     case tcp_connection:start_link(in, ssl, Proto, Socket, Local, Remote) of
 	{ok, ConnPid} ->
 	    {ok, RecvPid} = gen_server:call(ConnPid, {get_receiver}),
