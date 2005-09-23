@@ -246,8 +246,8 @@ handle_call(reload, _From, State) ->
 				   [Msg]),
 			{error, validation, Msg}
 		end;
-	    {error, E} when is_list(E) ->
-		logger:log(error, "Config server: Failed parsing configuration : ~p", [E]),
+	    {error, Backend, E} when is_list(E) ->
+		logger:log(error, "Config server: Failed parsing configuration (~p) : ~p", [Backend, E]),
 		{error, parse, E}
 	end,
     {reply, Reply, State};
