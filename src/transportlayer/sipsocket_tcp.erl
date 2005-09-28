@@ -190,7 +190,7 @@ get_timeout(tls6) -> 5000.
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
-    autotest:mark(?LINE, "test tcp connections - 0"),
+    autotest:mark(?LINE, "tcp connections - 0"),
 
     %% check if tcp_dispatcher is running, otherwise we need to start it
     StartedDispatcher =
@@ -204,11 +204,11 @@ test() ->
 
     LocalhostAddr = {127, 0, 0, 1},
 
-    autotest:mark(?LINE, "test outgoing connections - 0"),
+    autotest:mark(?LINE, "outgoing connections - 0"),
     %% start one server process that listens on an available port
     {ok, TestPort} = test_start_listener(LocalhostAddr),
 
-    autotest:mark(?LINE, "test outgoing connections - 1.0"),
+    autotest:mark(?LINE, "outgoing connections - 1.0"),
     %% Start 10 processes that will all try to connect to TestPort. Only the
     %% first one should actually try to connect, but all should succeed.
     TestConnectDst1 = #sipdst{proto = tcp,
@@ -220,7 +220,7 @@ test() ->
 
     {ok, ConnectResults1} = test_collect_results(TestConnectNumConnects, []),
 
-    autotest:mark(?LINE, "test outgoing connections - 1.1"),
+    autotest:mark(?LINE, "outgoing connections - 1.1"),
     %% make sure all connection attemtps returned in the same thing
     case lists:all(fun(Elem) ->
 			   (Elem == hd(ConnectResults1))
@@ -228,21 +228,21 @@ test() ->
 	true ->
 	    ok;
 	false ->
-	    io:format("Test FAILED, connection results :~n~p~n", [ConnectResults1]),
-	    throw("test failed, not all connections are the same")
+	    io:format("FAILED, connection results :~n~p~n", [ConnectResults1]),
+	    throw("failed, not all connections are the same")
     end,
 
-    autotest:mark(?LINE, "test outgoing connections - 1.2"),
+    autotest:mark(?LINE, "outgoing connections - 1.2"),
     %% make sure they all succeeded (all are the same, checked above)
     #sipsocket{proto = tcp,
 	       pid = OutgoingPid1
 	      } = hd(ConnectResults1),
 
-    autotest:mark(?LINE, "test outgoing connections - 1.3"),
+    autotest:mark(?LINE, "outgoing connections - 1.3"),
     %% make sure the connection pid is still alive
     true = erlang:is_process_alive(OutgoingPid1),
 
-    autotest:mark(?LINE, "test outgoing connections - 1.4"),
+    autotest:mark(?LINE, "outgoing connections - 1.4"),
     %% now make sure the connection is closed
     erlang:monitor(process, OutgoingPid1),
     gen_server:cast(OutgoingPid1, {close, self()}),
@@ -252,18 +252,18 @@ test() ->
 	    ok
     after
 	1000 ->
-	    Msg = io_lib:format("Test FAILED, could not get tcp_connection ~p to shut down",
+	    Msg = io_lib:format("FAILED, could not get tcp_connection ~p to shut down",
 				[OutgoingPid1]),
 	    throw(lists:flatten(Msg))
     end,
 
-    autotest:mark(?LINE, "test outgoing connections - 2.0"),
+    autotest:mark(?LINE, "outgoing connections - 2.0"),
     %% test with no server listening, port should be closed now
     ok = test_start_connecting_processes(TestConnectDst1, TestConnectNumConnects),
 
     {ok, ConnectResults2} = test_collect_results(TestConnectNumConnects, []),
 
-    autotest:mark(?LINE, "test outgoing connections - 2.1"),
+    autotest:mark(?LINE, "outgoing connections - 2.1"),
     %% make sure all connection attemtps returned in the same thing
     case lists:all(fun(Elem) ->
 			   (Elem == hd(ConnectResults2))
@@ -271,16 +271,16 @@ test() ->
 	true ->
 	    ok;
 	false ->
-	    io:format("Test FAILED, connection results :~n~p~n", [ConnectResults2]),
-	    throw("test failed, not all connections are the same")
+	    io:format("FAILED, connection results :~n~p~n", [ConnectResults2]),
+	    throw("failed, not all connections are the same")
     end,
 
-    autotest:mark(?LINE, "test outgoing connections - 2.2"),
+    autotest:mark(?LINE, "outgoing connections - 2.2"),
     %% make sure they all succeeded (all are the same, checked above)
     {error, "Connection refused"} = hd(ConnectResults2),
 
 
-    autotest:mark(?LINE, "test tcp connections - 1"),
+    autotest:mark(?LINE, "tcp connections - 1"),
     %% stop TCP dispatcher again if we started it
     case StartedDispatcher of
 	true ->
