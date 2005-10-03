@@ -187,7 +187,7 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 			_ ->
 			    OStr = sipserver:origin2str(Origin),
 			    Msg = io_lib:format("Request from ~s failed authentication : ~s", [OStr, LogStr]),
-			    event_handler:event(normal, auth, failure, LogTag, Msg),
+			    event_handler:generic_event(normal, auth, LogTag, Msg),
 			    false
 		    end
 	    end;
