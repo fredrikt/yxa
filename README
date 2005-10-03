@@ -274,9 +274,9 @@ ssl_server_certfile		(no default) Filename of your SSL (TLS) server
 ssl_server_ssloptions           (default: []) SSL server SSL options, see
 				ssl(3erl) (the Erlang SSL documentation) for more
 				information, but you should for example be able
-                                to use a separate file for your certificates key
-                                by setting this to
-                                [{keyfile, "/path/to/root-cert.key"}].
+                                to for example use a separate file for your
+				certificates key by setting this to
+                                [{keyfile, "/path/to/cert.key"}].
 
 ssl_client_ssloptions		(default: []) SSL client SSL options, see
 				ssl(3erl) (the Erlang SSL documentation) for more
