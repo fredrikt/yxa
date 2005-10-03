@@ -307,7 +307,7 @@ check_cfg_entry_type(Key, Value, Src, Def) when is_atom(Key), is_record(Def, cfg
 %% Note    : XXX test this code with actual local_ variables!
 %%--------------------------------------------------------------------
 check_local_cfg_entry_type(Key, Value, Src) ->
-    try case local:check_config_type({Key, Value, Src}) of
+    try case local:check_config_type(Key, Value, Src) of
 	    {ok, NewValue} when NewValue /= Value ->
 		%% just while testing
 		logger:log(debug, "Config: Normalized local parameter ~p = ~p (orig ~p)", [Key, NewValue, Value]),

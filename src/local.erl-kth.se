@@ -110,7 +110,7 @@
 %% configuration
 -export([
 	 check_config_type/3,
-	 config_is_soft_reloadable/3
+	 config_is_soft_reloadable/2
 	]).
 
 %% local.erl-kth.se specifics
@@ -628,15 +628,13 @@ check_config_type(_Key, Value, _Src) ->
     {ok, Value}.
 
 %%--------------------------------------------------------------------
-%% Function: config_is_soft_reloadable(Key, Value, Src)
+%% Function: config_is_soft_reloadable(Key, Value)
 %%           Key     = atom()
 %%           Value   = term()
-%%           Src     = atom(), config backend module that found this
-%%                             configuration parameter
 %% Descrip.: Check if it is possible to change a local configuration
 %%           parameter with a soft reconfiguration (true), or if a
 %%           complete restart of the application is necessary (false).
 %% Returns : true | false
 %%--------------------------------------------------------------------
-config_is_soft_reloadable(_Key, _Value, _Src) ->
+config_is_soft_reloadable(_Key, _Value) ->
     true.
