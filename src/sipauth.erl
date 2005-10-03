@@ -37,13 +37,16 @@
 
 %%--------------------------------------------------------------------
 %% Function: realm()
-%% Descrip.: Return this proxys configured authentication realm.
+%% Descrip.: Return this proxys configured authentication realm, or
+%%           the hostname if no realm has been configured.
 %% Returns : string()
 %%--------------------------------------------------------------------
 realm() ->
     case yxa_config:get_env(sipauth_realm) of
-	{ok, Realm} -> Realm;
-	none -> ""
+	{ok, Realm} ->
+	    Realm;
+	none ->
+	    siprequest:myhostname()
     end.
 
 %%--------------------------------------------------------------------
@@ -393,7 +396,7 @@ pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
 		   N -> N
 	       end,
     {ok, Class} = classify_number(ToNumber, Classdefs),
-    {ok, UnauthClasses} = yxa_config:get_env(sipauth_unauth_classlist, []),
+    {ok, UnauthClasses} = yxa_config:get_env(sipauth_unauth_classlist),
     case lists:member(Class, UnauthClasses) of
 	true ->
 	    %% This is a class that anyone should be allowed to call,
