@@ -41,7 +41,7 @@
 	 log/3,
 
 	 %% mail
-	 mail/1,
+	 mail/2,
 
 	 %% time-switch
 	 in_time_range/2,
@@ -213,8 +213,8 @@ log(LogAttrs, User, Request) ->
 %% Descrip.: 
 %% Returns : 
 %%--------------------------------------------------------------------
-mail(Mail) ->
-    interpret_backend:mail(Mail).
+mail(Mail, User) ->
+    interpret_backend:mail(Mail, User).
 
 %%--------------------------------------------------------------------
 %% Function:
