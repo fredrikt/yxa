@@ -80,7 +80,7 @@ request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Or
     case route_request(Request, Origin, THandler, LogTag) of
 	pstn ->
 	    logger:log(debug, "~s: pstnproxy: Route request to PSTN gateway", [LogTag]),
-	    AllowedMethods = ["INVITE", "ACK", "PRACK", "CANCEL", "BYE", "OPTIONS"],
+	    {ok, AllowedMethods} = yxa_config:get_env(allowed_request_methods),
 	    case lists:member(Method, AllowedMethods) of
 		true ->
 		    request_to_pstn(Request, Origin, THandler, LogTag);
@@ -130,10 +130,10 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
 %%           LogTag   = string(), prefix for logging
 %% Descrip.: Determines if we should route this request to one of
 %%           our PSTN gateways or not.
-%% Returns: pstn |
-%%          sip  |
-%%          me   |
-%%          drop
+%% Returns : pstn |
+%%           sip  |
+%%           me   |
+%%           drop
 %%--------------------------------------------------------------------
 route_request(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin) ->
     case local:is_request_to_this_proxy(Request) of

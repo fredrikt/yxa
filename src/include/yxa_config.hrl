@@ -51,7 +51,7 @@
 		    soft_reload	= false
 		   },
 	 #cfg_entry{key		= max_logfile_size,
-		    default	= 262144000,
+		    default	= 250 * 1024 * 1024,
 		    type	= integer
 		   },
 	 #cfg_entry{key		= event_handler_handlers,
@@ -410,6 +410,12 @@
 		      default	= true,
 		      type	= bool,
 		      required	= true
+		     },
+	   #cfg_entry{key	= allowed_request_methods,
+		      default	= ["INVITE", "ACK", "PRACK", "CANCEL", "BYE", "OPTIONS"],
+		      list_of	= true,
+		      type	= string,
+		      normalize	= false
 		     },
 
 	   %% undocumented, don't use unless you really know you should!
