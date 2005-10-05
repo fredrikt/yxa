@@ -349,14 +349,11 @@ get_classes_for_user(User) ->
 	nomatch ->
 	    case yxa_config:get_env(ldap_server) of
 		{ok, Server} ->
-		    case get_classes_for_user_is_itsuse(Server, User) of
-			true ->
-			    %% Override with default classes for it.su.se user since sipuserdb returned 'nomatch'
-			    NewRes = [internal, national, mobile],
-			    logger:log(debug, "Local: User ~p is an it.su.se user, granting default classes : ~p",
-				       [User, NewRes]),
-			    NewRes;
-			false ->
+		    case get_classes_for_user_in_domain(Server, User) of
+			{ok, Classes} when is_list(Classes) ->
+			    %% Override with default classes for domain user since sipuserdb returned 'nomatch'
+			    Classes;
+			nomatch ->
 			    Res
 		    end;
 		none ->
@@ -366,27 +363,37 @@ get_classes_for_user(User) ->
 	    Res
     end.
 
-%% get_classes_for_user_is_itsuse/2, part of get_classes_for_user/2.
-%% Determine if User belongs to "it.su.se" or not. Returns true | false
-get_classes_for_user_is_itsuse(Server, User) when is_list(Server), is_list(User) ->
-    %% look if User belongs to it.su.se
+%% get_classes_for_user_in_domain/2, part of get_classes_for_user/2.
+%% Determine if User belongs to "it.su.se" or not. Returns : {ok, Classes} (list() of atom()) | nomatch
+get_classes_for_user_in_domain(Server, User) when is_list(Server), is_list(User) ->
     case directory:ldapsearch(Server, "sipAuthenticationUser", User, ["sipAuthenticationUser"]) of
 	[LR] when is_record(LR, ldapres) ->
 	    Dn = LR#ldapres.dn,
-	    DnLen = length(Dn),
-	    MatchLen = 18,	%% length(",dc=it,dc=su,dc=se")
-	    if
-		DnLen >= MatchLen ->
-		    %% Return 'true' if the end of Dn matches ",dc=it,dc=su,dc=se"
-		    (string:substr(Dn, DnLen - MatchLen + 1, MatchLen) == ",dc=it,dc=su,dc=se");
-		true ->
-		    %% Dn not long enough to even compare
-		    false
-	    end;
+	    {ok, Regexps} = yxa_config:get_env(local_su_domain_classes, []),
+	    get_classes_for_user_in_domain2(User, Dn, Regexps);
 	_ ->
-	    false
+	    nomatch
     end.
 
+get_classes_for_user_in_domain2(User, Dn, [{Regexp, ClassL} | T]) when is_list(User), is_list(Dn),
+								       is_list(Regexp), is_list(ClassL) ->
+    case regexp:first_match(Dn, Regexp) of
+	{match, _, _} ->
+	    logger:log(debug, "local: User ~p (dn ~p) matches dn-regexp ~p -> ~p",
+		       [User, Dn, Regexp, ClassL]),
+	    {ok, ClassL};
+	nomatch ->
+	    get_classes_for_user_in_domain2(User, Dn, T);
+	{error, E} ->
+	    logger:log(normal, "Error in local_su_domain_classes regexp ~p: ~p", [Regexp, E]),
+	    get_classes_for_user_in_domain2(User, Dn, T)
+    end;
+get_classes_for_user_in_domain2(User, Dn, []) ->
+    logger:log(debug, "local: User ~p (dn ~p) does not match any of my domains with default classes",
+	      [User, Dn]),
+    nomatch.
+
+    
 get_telephonenumber_for_user("ft.sip1") ->
     "1225";
 get_telephonenumber_for_user("ft.sip2") ->
