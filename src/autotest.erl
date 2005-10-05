@@ -74,7 +74,9 @@
 		       yxa_config_check,
 		       transportlayer,
 		       sipsocket,
-		       sipsocket_tcp
+		       sipsocket_tcp,
+		       tcp_connection,
+		       ssl_util
 		      ]).
 
 %%====================================================================
@@ -103,7 +105,7 @@ run([Mode]) ->
 	    %%directory:start_link(),
 	    Logger = spawn(?MODULE, fake_logger_loop, []),
 	    register(logger, Logger),
-	    
+
 	    {ok, _CfgPid} = yxa_config:start_link({autotest, incomingproxy}),
 
 	    ets:new(yxa_sipsocket_info, [public, bag, named_table]),
@@ -124,7 +126,7 @@ run([Mode]) ->
 		      );
 	_ -> ok
     end,
-    
+
     {{Year,Month,Day},{Hour,Min,_Sec}} = calendar:local_time(),
     TimeStr = integer_to_list(Year) ++ "-" ++ string:right(integer_to_list(Month), 2, $0) ++ "-"
 	++ string:right(integer_to_list(Day), 2, $0) ++ " " ++ string:right(integer_to_list(Hour), 2, $0)
@@ -268,9 +270,9 @@ run_cover([Mode]) ->
 %% Returns : ok | throw() (if Fun did not generate a exception)
 %%--------------------------------------------------------------------
 fail(Fun) ->
-    try Fun() of 
+    try Fun() of
 	_  -> throw({error, no_exception_thrown_by_test})
-    catch 
+    catch
 	_ -> ok %% catch user throw()
     end.
 
