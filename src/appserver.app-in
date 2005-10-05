@@ -9,7 +9,6 @@
 		yxa_config,
 		logger,
 		ldap_client,
-		tranasctionlayer,
 		tcp_dispatcher,
 		sipsocket_udp,
 		transactionlayer
