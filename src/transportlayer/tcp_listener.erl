@@ -193,9 +193,18 @@ accept_loop(State) when is_record(State, state) ->
 	    logger:log(debug, "TCP listener: SSL handshake with unidentified peer failed "
 		       "(just ignore, usually a portscan or similar)"),
 	    accept_loop(State);
+	{error, E} when SocketModule == ssl1 ->
+	    logger:log(normal, "TCP listener: SSL accept returned error : (~p) ~s", [E, ssl:format_error(E)]),
+	    %% We don't terminate on accept error for SSL sockets, since the error can be that the client
+	    %% did not present a client certificate signed by someone we trust, or any other kind of SSL
+	    %% error. Terminating the listener on those errors makes it trivial to DoS the whole Yxa application
+	    %% by just connecting to the SSL port a couple of times.
+	    accept_loop(State);
 	{error, E} ->
-	    logger:log(error, "TCP listener: accept() returned error : ~s (~p)", [inet:format_error(E), E]),
-	    erlang:error({"Accept failed", {error, E}}, [State]);
+	    logger:log(error, "TCP listener: accept() returned error : (~p) ~s", [E, inet:format_error(E)]),
+	    %% accept failed for non-SSL socket. This is probably more serious, so we terminate the listener.
+	    %% It will be restarted by the transport layer supervisor according to the restart strategy.
+            erlang:error({"Accept failed", {error, E}}, [State]);
 	Unknown ->
 	    %% To keep Dialyzer happy (otherwise complains about this function having no local return)
 	    logger:log(error, "TCP listener: ~p:accept() returned unknown data", [SocketModule]),
