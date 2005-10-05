@@ -588,6 +588,43 @@ appserver.config:
 	      {listenport, 5070}
              ]}].
 
+Combined configuration file for more than one application :
+-----------------------------------------------------------
+[
+ %% Common configuration
+ %% --------------------------------------------------------------------
+ {common,	[{sipauth_realm,		"example.com"},
+		 {sipauth_password,		"secret"},
+
+		 {logger_logdir,		"/var/log/yxa"},
+
+		 {databaseservers,		['incomingproxy@server.example.com']},
+
+		 {ssl_server_certfile,		"/var/yxa/ssl/cert.comb"},
+		 {ssl_client_certfile,		"/var/yxa/ssl/cert.comb"},
+		 {ssl_server_ssloptions,	[{verify, 1},
+						 {cacertfile, "/var/yxa/ssl/ca-chain.crt"}
+						]},
+		 {ssl_client_ssloptions,	[{verify, 1},
+						 {cacertfile, "/var/yxa/ssl/ca-chain.crt"}
+						]}
+		]},
+
+ %% Application specific configuration
+ %% --------------------------------------------------------------------
+ {incomingproxy,	[{appserver,		"appserver.server.example.com"},
+			 
+			 {myhostnames,		["incomingproxy.server.example.com", "server.example.com"]},
+			 {homedomain,		["example.com", "example.net", "example.org"],
+			 
+			 {enum_domainlist,	["e164.arpa"]}
+			]},
+ 
+ {appserver,		[{listenport,		5070},
+			 {tls_listenport, 	5071}
+	 		]}
+].
+
 
 ======================================
 User database (sipuserdb_file) example
