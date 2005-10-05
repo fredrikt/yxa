@@ -2,6 +2,8 @@
 
 Changes since 0.90pre1 :
 
+ - Don't terminate listener on SSL socket accept() errors, to avoid
+   denial of service.
  - A couple of bug fixes.
 
 
