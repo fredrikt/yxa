@@ -1,3 +1,12 @@
+--
+
+Changes since 0.90pre1 :
+
+ - Implement SSL subjectAltName checking. We used to only check the
+   commonName.
+ - A couple of bug fixes.
+
+
 -- 0.90pre1 (2005-09-21)
 
 Changes since Snapshot 2005-09-01 :
