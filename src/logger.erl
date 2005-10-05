@@ -6,16 +6,9 @@
 %%%
 %%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%
-%%% Note: with the current implementation - the logger being
-%%%       registered as 'logger' there can be only one logger per
-%%%       node. Running the same application on several nodes both
-%%%       wich have the same file:get_cwd/0 will result in both
-%%%       using the same log files UNLESS they have a different
-%%%       configured logger_logbasename.
-%%% Note: Erlang/OTP has it's own log module - disk_log, that among
-%%%       other things is able to do log rotation. People having used
-%%%       it is not all happy though.
-%%%
+%%% Note    : Erlang/OTP has it's own log module - disk_log, that
+%%%           among other things is able to do log rotation. People
+%%%           having used it is not all happy though.
 %%%-------------------------------------------------------------------
 -module(logger).
 
@@ -81,26 +74,35 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(AppName)
+%% Function: start_link(LogBase)
 %%           start_link()
-%% Descrip.: start the server.
-%%           start_link/0 uses the current application as AppName.
-%%           The logger is only registered localy (on the current
+%%           LogBase = string(), base name of logfiles to use
+%% Descrip.: Start the 'logger' server
+%%           start_link/0 uses the current application name, together
+%%           with any configured logger_logdir as LogBase.
+%%           The logger is only registered locally (on the current
 %%           node)
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
 start_link() ->
-    LogBase = case yxa_config:get_env(logger_logbasename) of
-		  {ok, LogBase1} -> LogBase1;
-		  none ->
-		      case application:get_application() of
-			  {ok, Name} ->
-			      Name;
-			  _ ->
-			      io:format("ERROR: Can't start logger: Application name undefined~n"),
-			      erlang:error("Application name undefined")
-		      end
-	      end,
+    LogBase =
+	case yxa_config:get_env(logger_logbasename) of
+	    {ok, LogBase1} -> LogBase1;
+	    none ->
+		case application:get_application() of
+		    {ok, Name} when is_atom(Name) ->
+			AppName = atom_to_list(Name),
+			case yxa_config:get_env(logger_logdir) of
+			    {ok, LogDir} ->
+				filename:join(LogDir, AppName);
+			    none ->
+				AppName
+			end;
+		    _ ->
+			io:format("ERROR: Can't start logger: Application name undefined~n"),
+			erlang:error("Application name undefined")
+		end
+	end,
     start_link(LogBase).
 
 start_link(LogBase) when is_list(LogBase) ->

@@ -50,8 +50,12 @@
 		    type	= string,
 		    soft_reload	= false
 		   },
+	 #cfg_entry{key		= logger_logdir,
+		    type	= string,
+		    soft_reload	= false
+		   },
 	 #cfg_entry{key		= max_logfile_size,
-		    default	= 262144000,
+		    default	= 250 * 1024 * 1024,
 		    type	= integer
 		   },
 	 #cfg_entry{key		= event_handler_handlers,

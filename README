@@ -153,6 +153,11 @@ logger_logbasename		(default: application name) Create log files
 				/var/log/incomingproxy.log   (informational)
 				/var/log/incomingproxy.error (errors)
 
+logger_logdir			(default: current working directory) If
+				logger_logbasename is NOT set, a default logfile
+				basename will be created using this parameters
+				value, and the running applications name.
+
 sipauth_realm			(default: "") HTTP Auth realm
 
 sipauth_password		(default: "") HTTP Auth internal cookie
