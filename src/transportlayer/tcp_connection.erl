@@ -16,7 +16,9 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([start_link/3,
-	 start_link/6
+	 start_link/6,
+
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -34,7 +36,6 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("sipsocket.hrl").
-
 
 %%--------------------------------------------------------------------
 %% Records
@@ -191,7 +192,11 @@ init([Direction, SocketModule, Proto, Socket, Local, Remote, Validation]) ->
     end.
 
 init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
-    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=self(), data={Local, Remote}},
+    SipSocket = #sipsocket{module	= sipsocket_tcp,
+			   proto	= Proto,
+			   pid		= self(),
+			   data		= {Local, Remote}
+			  },
     %% Register this connection with the TCP listener process before we proceed
     case gen_server:call(tcp_dispatcher, {register_sipsocket, Direction, SipSocket}) of
 	ok ->
@@ -573,39 +578,7 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
 %% SSL socket
 %%
 is_acceptable_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls; Proto == tls6, is_list(Names) ->
-    {IP, Port} = Remote,
-    case get_ssl_peercert(Socket, Dir, Remote) of
-	{ok, Subject} ->
-
-	    {ok, Ident} = get_ssl_identification(Subject),
-	    DirStr = case Dir of
-			 in -> "from";
-			 out -> "to"
-		     end,
-	    logger:log(debug, "TCP connection: SSL connection ~s ~s:~p (~s)", [DirStr, IP, Port, Ident]),
-
-	    %% See if Local has an opinion about the validity of this socket...
-	    case local:is_acceptable_socket(Socket, Dir, Proto, IP, Port, ?MODULE, Subject) of
-		true ->
-		    true;
-		false ->
-		    false;
-		undefined ->
-		    %% Do our own default checking of the subjectAltName/CN, if this is an outbound
-		    %% connection. Per default, we accept any incoming TLS connections as valid,
-		    %% although we don't trust those connections in any special way.
-		    case Dir of
-			in -> true;
-			out ->
-			    {ok, Reject} = yxa_config:get_env(ssl_check_subject_altname),
-			    is_valid_ssl_certname(Names, Subject, Reject)
-		    end
-	    end;
-	true ->
-	    true;
-	false ->
-	    false
-    end;
+    ssl_util:is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names);
 %%
 %% Non-SSL socket
 %%
@@ -619,122 +592,6 @@ is_acceptable_socket(Socket, Dir, Proto, Names, Port) ->
 	    %% Default accept
 	    true
     end.
-
-%%--------------------------------------------------------------------
-%% Function: get_ssl_peercert(Socket, Dir, {IP, Port})
-%%           Socket = term()
-%%           Dir    = atom(), in | out
-%%           Host   = string(), the hostname the upper layer wanted to
-%%                    connect to.
-%%           Port   = integer()
-%% Descrip.: Try to get the SSL peer certificate using a socket. If
-%%           that fails, we check if it was a client that connected to
-%%           us and if clients are required to present a certificate.
-%%           Returns either {ok, Subject}, or true/false saying if the
-%%           socket should be considered valid or not.
-%% Returns : {ok, Subject} |
-%%           true          |
-%%           false
-%%           Subject = term(), ssl:peercert() subject data
-%%--------------------------------------------------------------------
-get_ssl_peercert(Socket, Dir, {IP, Port}) when is_atom(Dir), is_list(IP), is_integer(Port) ->
-    %% ssl:peercert/3 needs to be wrapped in a try/catch - it fails badly on some certificates
-    PeerCertRes =
-	try ssl:peercert(Socket, [ssl, subject]) of
-	    PCRes -> PCRes
-	catch
-	    error: E ->
-		ST = erlang:get_stacktrace(),
-		logger:log(error, "=ERROR REPORT==== from ssl:peercert/2 on certificate from ~s:~p :~n"
-			   "~p~nstacktrace : ~p", [IP, Port, E, ST]),
-		{error, "Certificate decoding error"};
-	      X: Y ->
-		logger:log(error, "=ERROR REPORT==== from ssl:peercert/2 on certificate from ~s:~p :~n"
-			   "~p ~p", [IP, Port, X, Y]),
-		{error, "Certificate decoding error"}
-	end,
-    case PeerCertRes of
-	{ok, Subject} ->
-	    {ok, Subject};
-	{error, Reason} ->
-	    {ok, RequireClientCert} = yxa_config:get_env(ssl_require_client_has_cert),
-	    case {Dir, RequireClientCert} of
-		{in, true} ->
-		    logger:log(debug, "TCP connection: Could not get SSL subject information, "
-			       "considering SSL connection from ~s:~p invalid : ~p", [IP, Port, Reason]),
-		    false;
-		{in, false} ->
-		    logger:log(debug, "TCP connection: Could not get SSL subject information for connection "
-			       "from ~s:~p : ~p (ignoring)", [IP, Port, Reason]),
-		    true;
-		{out, _RequireClientCert} ->
-		    logger:log(debug, "TCP connection: Could not get SSL subject information, "
-			       "considering SSL connection to ~s:~p invalid : ~p", [IP, Port, Reason]),
-		    false
-	    end
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: is_valid_ssl_certname(ValidNames, Dir, Reject)
-%%           ValidNames = list() of string(), the hostname(s) we want
-%%                        to make sure the subjectAltName matches.
-%%           Subject    = term(), SSL subject data
-%%           Reject     = true | false, reject if name does not match
-%%                        or just log?
-%% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
-%%           verify that the subjectAltName/commonName is in the list
-%%           of names we expect.
-%% Returns : true | false
-%%--------------------------------------------------------------------
-is_valid_ssl_certname(ValidNames, Subject, Reject) when is_list(ValidNames), Reject == true; Reject == false ->
-    {ok, AltName} = get_ssl_socket_altname(Subject),
-    Matches = util:casegrep(AltName, ValidNames),
-    case {Matches, Reject} of
-	{true, _Reject} ->
-	    logger:log(debug, "Transport layer: Verified that subjectAltName/CN (~p) is in list of "
-		       "valid names for this certificate (~p)", [AltName, ValidNames]),
-	    true;
-	{false, true} ->
-	    logger:log(normal, "Transport layer: Rejecting SSL socket since subjectAltName/CN (~p) "
-		       "is not in list of valid names for this certificate (~p)", [AltName, ValidNames]),
-	    false;
-	{false, false} ->
-	    logger:log(debug, "Transport layer: Warning: subjectAltName/CN (~p) is not in list of "
-		       "valid names for this certificate (~p)",
-		       [AltName, ValidNames]),
-	    true
-    end;
-is_valid_ssl_certname(undefined, Subject, true) ->
-    {ok, AltName} = get_ssl_socket_altname(Subject),
-    logger:log(debug, "Transport layer: Rejecting connection with subjectAltName/CN ~p since list of valid "
-	       "names is undefined", [AltName]),
-    false;
-is_valid_ssl_certname(undefined, Subject, false) ->
-    {ok, AltName} = get_ssl_socket_altname(Subject),
-    logger:log(debug, "Transport layer: Warning: subjectAltName/CN ~p not matched against list of"
-	       "valid names, since list is undefined", [AltName]),
-    true.
-
-get_ssl_socket_altname({rndSequence, AttrList}) ->
-    %% XXX commonName is not always set to the FQDN. Find a better (more correct)
-    %% way to get the subjectAltName
-    {ok, {printableString, CN}} = ssl_subject_get(commonName, AttrList),
-    {ok, CN}.
-
-get_ssl_identification({rndSequence, AttrList}) ->
-    {ok, C} = ssl_subject_get(countryName, AttrList),
-    {ok, {printableString, O}} = ssl_subject_get(organizationName, AttrList),
-    {ok, {printableString, CN}} = ssl_subject_get(commonName, AttrList),
-    {ok, lists:append(["C=", C, ", O=", O, ", CN=", CN])}.
-
-%% XXX 'AttributeTypeAndValue' is really a record defined in ssl_pkix.hrl, but I
-%% haven't found a way to include that file.
-ssl_subject_get(Key, [[{'AttributeTypeAndValue', Key, Value}] | _T]) ->
-    {ok, Value};
-ssl_subject_get(Key, [_H | T]) ->
-    ssl_subject_get(Key, T);
-ssl_subject_get(_Key, []) ->
-    none.
 
 %%--------------------------------------------------------------------
 %% Function: get_settings(Proto)
@@ -837,3 +694,17 @@ check_also_notify(Reply) ->
     after 0 ->
 	    ok
     end.
+
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+    ok.
