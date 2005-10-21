@@ -113,11 +113,7 @@ start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, 
 	    NewSocketList = socketlist:add({listener, udp, Port}, self(), udp, Local, none, SipSocket,
 					   0, State#state.socketlist),
 	    {LocalIP, _} = Local,
-	    InfoRecord = #yxa_sipsocket_info_e{proto = udp,
-					       addr  = LocalIP,
-					       port  = Port
-					      },
-	    ets:insert(yxa_sipsocket_info, {self(), InfoRecord}),
+	    sipsocket:add_listener_info(udp, LocalIP, Port),
 	    start_listening(T, Port, State#state{socket=Socket, socketlist=NewSocketList});
 	{error, Reason} ->
 	    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",

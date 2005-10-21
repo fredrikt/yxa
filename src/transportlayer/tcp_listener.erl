@@ -97,6 +97,12 @@ start_link(Proto, Port) when is_atom(Proto), is_integer(Port) ->
 %%--------------------------------------------------------------------
 start_listening(Proto, Port, InetModule, SocketModule, Options)
   when is_atom(Proto), is_integer(Port), is_atom(InetModule), is_atom(SocketModule), is_list(Options) ->
+    case link(whereis(tcp_dispatcher)) of
+	true -> ok;
+	false ->
+	    logger:log(error, "TCP listener: Failed to link myself to the tcp_dispatcher process!"),
+	    erlang:error("failed linking to tcp_dispatcher")
+    end,
     TCPsocket = case SocketModule:listen(Port, Options) of
 		    {ok, S} ->
 			S;
@@ -126,11 +132,7 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
     SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=self(), data={Local, Remote}},
     ok = gen_server:call(tcp_dispatcher, {register_sipsocket, listener, SipSocket}),
     {LocalIP, _} = Local,
-    InfoRecord = #yxa_sipsocket_info_e{proto = Proto,
-				       addr  = LocalIP,
-				       port  = Port
-				      },
-    ets:insert(yxa_sipsocket_info, {self(), InfoRecord}),
+    sipsocket:add_listener_info(Proto, LocalIP, Port),
     accept_loop_start(State).
 
 

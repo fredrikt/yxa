@@ -14,16 +14,22 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([send/5,
-	 is_reliable_transport/1,
+
 	 get_socket/1,
 	 get_raw_socket/1,
+
 	 viastr2proto/1,
 	 proto2viastr/1,
-	 is_good_socket/1,
+
 	 proto2module/1,
+
+	 is_good_socket/1,
+	 is_reliable_transport/1,
+	 default_port/2,
+
 	 get_listenport/1,
 	 get_all_listenports/0,
-	 default_port/2,
+	 add_listener_info/3,
 
 	 behaviour_info/1,
 
@@ -249,9 +255,6 @@ get_listenport(yxa_test) ->
 %% Notes   : Perhaps this problem can't be solved this easilly - what
 %%           if we have multiple interfaces and listen on different
 %%           ports on them?
-%%
-%% XXX finish this function! Have to fetch a list of the ports we
-%% listen on from the transport layer.
 %%--------------------------------------------------------------------
 get_all_listenports() ->
     get_all_listenports2(ets:tab2list(yxa_sipsocket_info), []).
@@ -260,6 +263,42 @@ get_all_listenports2([{_Pid, #yxa_sipsocket_info_e{port = Port}} | T], Res) ->
     get_all_listenports2(T, [Port | Res]);
 get_all_listenports2([], Res) ->
     lists:usort(Res).
+
+%%--------------------------------------------------------------------
+%% Function: add_listener_info(Proto, Addr, Port)
+%%           Proto = atom(), udp | udp6 | tcp | tcp6 | tls | tls6
+%%           Addr  = string(), listening IP address
+%%           Port  = integer()
+%% Descrip.: Add an entry to ETS table yxa_sipsocket_info and sweep it
+%%           for stale entrys.
+%% Returns : ok
+%%--------------------------------------------------------------------
+add_listener_info(Proto, Addr, Port) when is_atom(Proto), is_list(Addr), is_integer(Port) ->
+    InfoRecord = #yxa_sipsocket_info_e{proto = Proto,
+				       addr  = Addr,
+				       port  = Port
+				      },
+    ets:insert(yxa_sipsocket_info, {self(), InfoRecord}),
+    %% Remove any stale records from yxa_sipsocket_info while we are at it
+    %% This is really because the ETS table is created by the sipsocket supervisor,
+    %% but a supervisor has no hooks that are called when it restarts it's children.
+    %% The tcp_dispatcher can clean up for TCP/TLS listeners, but who is going to clean
+    %% away dead UDP listeners, or clean away the previous generation of TCP/TLS listeners
+    %% if the tcp_dispatcher terminates? A better solution would be welcome.
+    lists:map(fun({Pid, Y}) when is_pid(Pid), is_record(Y, yxa_sipsocket_info_e) ->
+		      case erlang:is_process_alive(Pid) of
+			  true ->
+			      ok;
+			  false ->
+			      ets:delete(yxa_sipsocket_info, Pid),
+			      logger:log(debug, "Sipsocket: Removed stale listener from sipsocket info list : "
+					 "~p (~p:~s:~p)", [Pid,
+							   Y#yxa_sipsocket_info_e.proto,
+							   Y#yxa_sipsocket_info_e.addr,
+							   Y#yxa_sipsocket_info_e.port])
+		      end
+		      end, ets:tab2list(yxa_sipsocket_info)),
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: default_port(Proto, Port)

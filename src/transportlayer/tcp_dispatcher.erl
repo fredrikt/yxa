@@ -315,10 +315,6 @@ handle_info(timeout, State) ->
 %%           Log if they exit with an error, and remove them from our
 %%           list of existing sockets.
 %% Returns : {noreply, NewState, ?TIMEOUT}
-%%
-%% Note    : XXX how should we handle the situation if it is a
-%%           listener that exits? Exiting listener processes should be
-%%           removed from the ets table 'yxa_sipsocket_info'.
 %%--------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
@@ -338,9 +334,11 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		   none ->
 		       case Reason of
 			   normal ->
-			       logger:log(debug, "TCP dispatcher: Received normal exit signal from ~p not in my list.", [Pid]);
+			       logger:log(debug, "TCP dispatcher: Received normal exit signal "
+					  "from ~p not in my list.", [Pid]);
 			   _ ->
-			       logger:log(error, "TCP dispatcher: Received non-normal exit signal from ~p not in my list.", [Pid]),
+			       logger:log(error, "TCP dispatcher: Received non-normal exit signal "
+					  "from ~p not in my list.", [Pid]),
 			       logger:log(debug, "TCP dispatcher: Socketlist is :~n~p",
 					  [socketlist:debugfriendly(State#state.socketlist)])
 		       end,
@@ -351,7 +349,16 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 				  "(new list is ~p entry(s))", [socketlist:get_length(L),
 								socketlist:debugfriendly(L),
 								socketlist:get_length(NewL)]),
-		       State#state{socketlist=NewL}
+		       case ets:lookup(yxa_sipsocket_info, Pid) of
+			   [{Pid, Y}] when is_record(Y, yxa_sipsocket_info_e) ->
+			       logger:log(debug, "TCP dispatcher: Deleted listener ~p (~p:~s:~p) from "
+					  "sipsocket info list", [Pid, Y#yxa_sipsocket_info_e.proto,
+								  Y#yxa_sipsocket_info_e.addr,
+								  Y#yxa_sipsocket_info_e.port]),
+			       ets:delete(yxa_sipsocket_info, Pid);
+			   [] -> ok
+		       end,
+		       State#state{socketlist = NewL}
 	       end,
     {noreply, NewState, ?TIMEOUT};
 
