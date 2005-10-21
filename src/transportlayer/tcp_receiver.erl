@@ -400,7 +400,11 @@ decode_frame(Frame, #recv{bytes_left=BL} = Recv) when is_binary(Frame), is_integ
 	end,
     NewStack = [Msg | Recv#recv.msg_stack],
     OriginStr = Recv#recv.origin_str,
-    logger:log_iolist(debug, [<<"Frame received (from ">>, OriginStr, <<") :", 10>>, Frame, 10]),
+    %% For logging purposes, we now extract this exact frame
+    %% XXX if body is binary, or very large, we shouldn't log it
+    ThisFrameLen = BodyOffset + BodyLen,
+    <<ThisFrame:ThisFrameLen/binary, _/binary>> = Frame,
+    logger:log_iolist(debug, [<<"Frame received (from ">>, OriginStr, <<") :", 10>>, ThisFrame, 10]),
     %% Check if there is already a header-body separator in NewFrame
     case has_header_body_separator(NewFrame, 0) of
 	{true, NewFrameBO} ->
