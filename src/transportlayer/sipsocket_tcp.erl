@@ -228,7 +228,7 @@ test() ->
 	true ->
 	    ok;
 	false ->
-	    io:format("FAILED, connection results :~n~p~n", [ConnectResults1]),
+	    io:format("Test FAILED, connection results :~n~p~n", [ConnectResults1]),
 	    throw("failed, not all connections are the same")
     end,
 
@@ -252,7 +252,7 @@ test() ->
 	    ok
     after
 	1000 ->
-	    Msg = io_lib:format("FAILED, could not get tcp_connection ~p to shut down",
+	    Msg = io_lib:format("Test FAILED, could not get tcp_connection ~p to shut down",
 				[OutgoingPid1]),
 	    throw(lists:flatten(Msg))
     end,
@@ -271,7 +271,7 @@ test() ->
 	true ->
 	    ok;
 	false ->
-	    io:format("FAILED, connection results :~n~p~n", [ConnectResults2]),
+	    io:format("Test FAILED, connection results :~n~p~n", [ConnectResults2]),
 	    throw("failed, not all connections are the same")
     end,
 
