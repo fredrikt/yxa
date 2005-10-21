@@ -1,6 +1,11 @@
-%% This module handles storage and loading of cpl scripts
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : cpl_db.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: This module handles storage and loading of cpl scripts.
+%%%           to disk (and erlang shell).
+%%%
+%%% Created : 17 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(cpl_db).
 
 %%--------------------------------------------------------------------
@@ -12,9 +17,11 @@
 	 load_cpl_for_user/2,
 	 set_cpl_for_user/2,
 	 get_cpl_for_user/1,
+	 get_cpl_text_for_user/1,
 	 user_has_cpl_script/1,
 	 user_has_cpl_script/2,
-	 rm_cpl_for_user/1
+	 rm_cpl_for_user/1,
+	 do_transform_table/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -33,8 +40,9 @@
 %%--------------------------------------------------------------------
 
 -record(cpl_script_graph, {
-	  user,
-	  graph
+	  user,		%% string(), username
+	  graph,	%% term(), parsed CPL script
+	  text		%% string(), CPL script before parsing
 	 }).
 
 %%--------------------------------------------------------------------
@@ -66,7 +74,7 @@ servers() ->
 %%--------------------------------------------------------------------
 %% Function: get_cpl_for_user(User) 
 %% Descrip.: get the cpl script graph for a certain user
-%% Returns : nomtach | {ok, CPLGraph}
+%% Returns : nomatch | {ok, CPLGraph}
 %%           CPLGraph = a cpl graph for use in 
 %%           interpret_cpl:process_cpl_script(...)
 %%--------------------------------------------------------------------
@@ -76,6 +84,18 @@ get_cpl_for_user(User) ->
 	[Rec] -> {ok, Rec#cpl_script_graph.graph}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_cpl_text_for_user(User) 
+%% Descrip.: Get the CPL script for User as text.
+%% Returns : nomatch | {ok, CPLText}
+%%           CPLGraph = a cpl graph for use in 
+%%           interpret_cpl:process_cpl_script(...)
+%%--------------------------------------------------------------------
+get_cpl_text_for_user(User) ->
+    case mnesia:dirty_read({cpl_script_graph, User}) of
+	[] -> nomatch;
+	[Rec] -> {ok, Rec#cpl_script_graph.text}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: load_cpl_for_user(User, FilePath) 
@@ -86,7 +106,7 @@ get_cpl_for_user(User) ->
 load_cpl_for_user(User, FilePath) ->
     Str = load_file(FilePath),
     Graph = xml_parse:cpl_script_to_graph(Str),
-    store_graph(User, Graph).
+    store_graph(User, Graph, Str).
 
 %%--------------------------------------------------------------------
 %% Function: set_cpl_for_user(User, CPLXML) 
@@ -97,11 +117,14 @@ load_cpl_for_user(User, FilePath) ->
 %%--------------------------------------------------------------------
 set_cpl_for_user(User, CPLXML) when is_list(User), is_list(CPLXML) ->
     Graph = xml_parse:cpl_script_to_graph(CPLXML),
-    store_graph(User, Graph).
+    store_graph(User, Graph, CPLXML).
 
-store_graph(User, Graph) ->
+store_graph(User, Graph, Text) ->
     F = fun() ->
-		mnesia:write(#cpl_script_graph{user = User, graph = Graph})
+		mnesia:write(#cpl_script_graph{user  = User,
+					       graph = Graph,
+					       text  = Text}
+			    )
 	end,
     mnesia:transaction(F).
 
@@ -150,7 +173,35 @@ user_has_cpl_script(User, Type) ->
 	    end
     end.
 
-	
+
+%%--------------------------------------------------------------------
+%% Function: do_transform_table()
+%% Descrip.: Check if we need to do a Mnesia transform on the
+%%           cpl_script_graph table.
+%% Returns : WasUpdated = true | false
+%%--------------------------------------------------------------------
+do_transform_table() ->	
+    put({cpl_script_graph, update}, false),
+    F = fun
+	    %% check for old cpl_script_graph lacking text element
+	    ({cpl_script_graph, User, Graph}) ->
+		put({cpl_script_graph, update}, true),
+		{cpl_script_graph, User, Graph, ""};
+	    (CPL) when is_record(CPL, cpl_script_graph) ->
+		%% nothing to update
+		CPL
+	end,
+    case mnesia:transform_table(cpl_script_graph, F, record_info(fields, cpl_script_graph)) of
+	{atomic, ok} ->
+	    ok;
+	{aborted, {not_active, Reason, cpl_script_graph, _NodeList}} ->
+	    %% All disc_copies nodes must be online for table transforming, but we can't require
+	    %% all those nodes to be alive in order to start the Yxa servers.
+	    logger:log(normal, "Warning: Failed to update Mnesia table 'cpl_script_graph' : ~s", [Reason]),
+	    ok
+    end,
+    erase({cpl_script_graph, update}).
+
 %%====================================================================
 %% Behaviour functions
 %%====================================================================

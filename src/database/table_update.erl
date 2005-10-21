@@ -1,8 +1,11 @@
-%% this code updates older database tables - code commited before
-%% 25-10-2004
-%%
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : table_update.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: This code updates older database tables.
+%%%           to disk (and erlang shell).
+%%%
+%%% Created : 25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(table_update).
 
 %%--------------------------------------------------------------------
@@ -45,13 +48,14 @@ update() ->
     logger:log(debug, "Checking if any mnesia tables needs updating"),
     phone(),
     regexproute(),
+    cpl_script_graph(),
     ok.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.: phone record got two new fields, add dummy fields for old
-%%           existing database entries
-%% Returns :
+%% Function: phone()
+%% Descrip.: Phone record got two new fields, add dummy fields for old
+%%           existing database entries. Change dated ~2004-12.
+%% Returns : void()
 %%--------------------------------------------------------------------
 phone() ->
     put(update, false),
@@ -105,10 +109,11 @@ phone() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.: update the sipurl record() in the regexproute, and store
-%%           it as a string instead of as a record.
-%% Returns :
+%% Function: regexproute()
+%% Descrip.: Update the sipurl record() in the regexproute, and store
+%%           it as a string instead of as a record. Change dated
+%%           2005-02.
+%% Returns : void()
 %%--------------------------------------------------------------------
 regexproute() ->
     put(update, false),
@@ -169,15 +174,20 @@ regexproute() ->
 	    true
     end.
 
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: cpl_script_graph()
+%% Descrip.: Update the cpl_script_graph record() in cpl_db to also
+%%           store CPL script as plain text. Change dated 2005-10.
+%% Returns : void()
 %%--------------------------------------------------------------------
+cpl_script_graph() ->
+    case cpl_db:do_transform_table() of
+	true ->
+	    logger:log(debug, "cpl_script_graph: updated");
+	false ->
+	    ok
+    end.
 
 %%====================================================================
 %% Internal functions
