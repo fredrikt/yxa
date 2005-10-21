@@ -1,6 +1,9 @@
--- 0.90pre2 (2005-10-06)
+-- 0.90		(2005-10-21)
 
-Changes since 0.90pre1 :
+ - Fix minor problems in two log messages.
+
+
+-- 0.90pre2	(2005-10-06)
 
  - Don't terminate listener on SSL socket accept() errors, to avoid
    denial of service.
@@ -9,7 +12,7 @@ Changes since 0.90pre1 :
  - A couple of bug fixes.
 
 
--- 0.90pre1 (2005-09-21)
+-- 0.90pre1	(2005-09-21)
 
 Changes since Snapshot 2005-09-01 :
 
