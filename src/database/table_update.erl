@@ -158,7 +158,7 @@ regexproute() ->
 	{aborted, {not_active, Reason, regexproute, _NodeList}} ->
 	    %% All disc_copies nodes must be online for table transforming, but we can't require
 	    %% all those nodes to be alive in order to start the Yxa servers.
-	    logger:log(normal, "Warning: Failed to update Mnesia table 'phone' : ~s", [Reason]),
+	    logger:log(normal, "Warning: Failed to update Mnesia table 'regexproute' : ~s", [Reason]),
 	    ok
     end,
 
