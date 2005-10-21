@@ -64,10 +64,10 @@ init() ->
 %% responses.
 request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     THandler = transactionlayer:get_handler_for_request(Request),
-    LogTag = get_branch_from_handler(THandler),
+    LogTag = get_branchbase_from_handler(THandler),
     case siplocation:process_register_request(Request, THandler, LogTag, LogStr, incomingproxy) of
 	not_homedomain ->
-	    do_request(Request, Origin);
+	    do_request(Request, Origin, THandler, LogTag);
 	_ ->
 	    true
     end,
@@ -98,7 +98,7 @@ request(#request{method=Method}=Request, Origin, _LogStr) when is_record(Origin,
 request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
     {_, FromURI} = sipheader:from(Request#request.header),
     THandler = transactionlayer:get_handler_for_request(Request),
-    LogTag = get_branch_from_handler(THandler),
+    LogTag = get_branchbase_from_handler(THandler),
     %% Check if the From: address matches our homedomains, and if so
     %% call verify_homedomain_user() to make sure the user is
     %% authorized and authenticated to use this From: address
@@ -106,7 +106,7 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 	true ->
 	    case verify_homedomain_user(Request, LogTag, Origin, LogStr) of
 		true ->
-		    do_request(Request, Origin);
+		    do_request(Request, Origin, THandler, LogTag);
 		false ->
 		    logger:log(normal, "~s: incomingproxy: Not authorized to use this From: -> 403 Forbidden",
 			       [LogTag]),
@@ -115,7 +115,7 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 		    ok
 	    end;
 	_ ->
-	    do_request(Request, Origin)
+	    do_request(Request, Origin, THandler, LogTag)
     end,
     ok.
 
@@ -197,18 +197,24 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 
 %%--------------------------------------------------------------------
 %% Function: do_request(RequestIn, Origin)
+%%           do_request(RequestIn, Origin, THandler, LogTag)
 %%           RequestIn = request record()
-%%           Origin = siporigin record()
+%%           Origin    = siporigin record()
+%%           THandler  = term(), server transaction handle
+%%           LogTag    = string() | undefined
 %% Descrip.: Calls route_request() to determine what to do with a
 %%           request, and then takes whatever action we are
 %%           supposed to.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-do_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
+do_request(Request, Origin) ->
+    THandler = transactionlayer:get_handler_for_request(Request),
+    LogTag = get_branchbase_from_handler(THandler),
+    do_request(Request, Origin, THandler, LogTag).
+do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin),
+						   is_list(LogTag) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     logger:log(debug, "incomingproxy: Processing request ~s ~s~n", [Method, sipurl:print(URI)]),
-    THandler = transactionlayer:get_handler_for_request(Request),
-    LogTag = get_branch_from_handler(THandler),
     Location = route_request(Request, LogTag),
     logger:log(debug, "incomingproxy: Location: ~p", [Location]),
     case Location of
@@ -441,15 +447,15 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
     transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 %%--------------------------------------------------------------------
-%% Function: get_branch_from_handler(TH)
+%% Function: get_branchbase_from_handler(TH)
 %%           TH = term(), server transaction handle
 %% Descrip.: Get branch from server transaction handler and then
 %%           remove the -UAS suffix. The result is used as a tag
 %%           when logging actions.
-%% Returns : Branch
+%% Returns : BranchBase = string()
 %%--------------------------------------------------------------------
-get_branch_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
+get_branchbase_from_handler(TH) ->
+    CallBranch = transactionlayer:get_branchbase_from_handler(TH),
     case string:rstr(CallBranch, "-UAS") of
 	0 ->
 	    CallBranch;
@@ -461,9 +467,9 @@ get_branch_from_handler(TH) ->
 %%--------------------------------------------------------------------
 %% Function: proxy_request(THandler, Request, DstList)
 %%           THandler = term(), server transaction handle
-%%           Request = request record()
-%%           DstList = list() of sipdst record() | sipurl record() |
-%%                     route
+%%           Request  = request record()
+%%           DstList  = list() of sipdst record() | sipurl record() |
+%%                      route
 %% Descrip.: Proxy a request somewhere without authentication.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
