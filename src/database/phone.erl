@@ -587,6 +587,7 @@ delete_record(Obj) ->
 delete_user(User) when is_list(User) ->
     F = fun() ->
 		{atomic, ok} = set_user_numbers(User, []),
+		{atomic, ok} = cpl_db:rm_cpl_for_user(User),
 		{atomic, ok} = delete_with_key(user, User),
 		ok
 	end,
