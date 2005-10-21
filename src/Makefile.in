@@ -67,6 +67,7 @@ erl_FILES = \
 	siptimer.erl \
 	sipurl.erl \
 	siputil.erl \
+	sup_error_logger.erl \
 	targetlist.erl \
 	url_param.erl \
 	util.erl \

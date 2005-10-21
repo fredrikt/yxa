@@ -59,6 +59,10 @@
 %%                 sipserver_sup)
 %%--------------------------------------------------------------------
 start(normal, [AppModule]) ->
+    %% First of all, we add a custom error_logger module. This is the only
+    %% way to really get all information about why supervised subsystems fails
+    %% to start.
+    sup_error_logger:start(),
     catch ssl:start(),
     %% We seed SSL better after starting our configuration subsystem
     ssl:seed([
