@@ -455,7 +455,7 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
 %% Returns : BranchBase = string()
 %%--------------------------------------------------------------------
 get_branchbase_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branchbase_from_handler(TH),
+    CallBranch = transactionlayer:get_branch_from_handler(TH),
     case string:rstr(CallBranch, "-UAS") of
 	0 ->
 	    CallBranch;
