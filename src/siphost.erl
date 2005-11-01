@@ -37,11 +37,11 @@ get_if([], Res) ->
 get_if([H | T], Res) ->
     {ok, B} = inet:ifget(H, [addr, flags]),
     {value, {flags, Flags}} = lists:keysearch(flags, 1, B),
-    case lists:member(loopback,Flags) of
-	true ->
-	    %% Ignore interfaces with loopback flag
-	    get_if(T, Res);
+    case usable_if(Flags) of
 	false ->
+	    %% Ignore unusable interfaces
+	    get_if(T, Res);
+	true ->
 	    case lists:keysearch(addr, 1, B) of
 		{value, {addr, Addr}} ->
 		    get_if(T, [makeip(Addr) | Res]);
@@ -50,6 +50,11 @@ get_if([H | T], Res) ->
 		    get_if(T, Res)
 	    end
     end.
+
+%% Interface must be up and not loopback to be usable.
+usable_if(Flags) ->
+    not lists:member(loopback, Flags)
+	and lists:member(up, Flags).
 
 get_iplist() ->
     {ok, If} = inet:getiflist(),
