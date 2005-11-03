@@ -76,7 +76,8 @@
 		       sipsocket,
 		       sipsocket_tcp,
 		       tcp_connection,
-		       ssl_util
+		       ssl_util,
+		       siphost
 		      ]).
 
 %%====================================================================
