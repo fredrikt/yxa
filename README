@@ -396,6 +396,10 @@ x_yxa_peer_auth_secret		(no default, not required) Shared secret for this
 				to PSTN on behalf of a particular user using
 				appserver.
 
+allowed_request_methods		(default: ["INVITE", "ACK", "PRACK", "CANCEL",
+					   "BYE", "OPTIONS"]) What SIP requests
+				we should allow to reach our PSTN gateways.
+
 incomingproxy:
 --------------
 internal_to_e164		(default: []) Regexps for rewriting
