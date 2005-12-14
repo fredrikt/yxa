@@ -458,6 +458,9 @@ max_register_time		(default: 43200) If registers have an 'expire'
 				of more than this many seconds, use this
 				value instead.
 
+homedomain			(required) List of SIP domains this proxy
+				should handle requests for.
+
 adminwww:
 ---------
 www_baseurl			(required) Base URL for web server

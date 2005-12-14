@@ -485,6 +485,11 @@
 		      default	= true,
 		      type	= bool,
 		      required	= true
+		     },
+	   #cfg_entry{key	= homedomain,
+		      list_of	= true,
+		      type	= string,
+		      required	= true
 		     }
 	  ]},
 
