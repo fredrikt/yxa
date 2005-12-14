@@ -403,8 +403,8 @@ get_fields(LogFun, RecvPid, Res) ->
 get_rows(N, LogFun, RecvPid, Res) ->
     case do_recv(LogFun, RecvPid, undefined) of
 	{ok, Packet, _Num} ->
-	    case {Packet, size(Packet) > 8} of
-		{<<254:8, _Rest/binary>>, false} ->
+	    case Packet of
+		<<254:8, Rest/binary>> when size(Rest) < 8 ->
 		    {ok, lists:reverse(Res)};
 		_ ->
 		    {ok, This} = get_row(N, Packet, []),
