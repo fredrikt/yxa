@@ -38,7 +38,7 @@
 			ldap_password,
 			x_yxa_peer_auth_secret,
 			x_yxa_peer_auth]).
-	
+
 -define(COMMON_DEFAULTS,
 	[
 	 %% General
@@ -198,7 +198,7 @@
 	 #cfg_entry{key		= stateless_send_ack_with_backup_plan,
 		    default	= true,
 		    type	= bool
-		   },	 
+		   },
 
 	 %% Transport layer settings
 	 #cfg_entry{key		= listenport,
@@ -350,7 +350,7 @@
 
 %%
 %% Application defaults - these override the common defaults.
-%% You can either re-define something here (like overriding the default value of 
+%% You can either re-define something here (like overriding the default value of
 %% 'record_route' for pstnproxy), or add a setting that is completely application
 %% specific, like 'appserver' for incomingproxy.
 %%
@@ -390,7 +390,6 @@
 		      type	= sip_sipurl
 		     },
 	   #cfg_entry{key	= enum_domainlist,
-		      default	= [],
 		      list_of	= true,
 		      type	= string
 		     },
@@ -515,7 +514,7 @@
 		      normalize	= false
 		     }
 	  ]},
-	 {testserver, 
+	 {testserver,
 	  [
 	   #cfg_entry{key	= testserver_userdb,
 		      default	= [],

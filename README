@@ -350,7 +350,7 @@ sipproxy			(default: "") The name of the SIP proxy to route
 				the number being called is not found using ENUM,
 				503 Service Unavailable will be returned.
 
-enum_domainlist			(default: []) List of domains in which to look
+enum_domainlist			(no default) List of domains in which to look
 				for NAPTR-records for requests _from_ the
 				PSTN gateway. If you use this, you probably
 				also want to configure internal_to_e164. The
@@ -420,7 +420,7 @@ defaultroute			(default: "") SIP host name part of default
 homedomain			(required) List of SIP domains this proxy
 				should handle requests for.
 
-enum_domainlist			(default: []) List of domains in which to look
+enum_domainlist			(no default) List of domains in which to look
 				for NAPTR-records for requests that are not
 				to SIP-users but where the user part matches
 				one of the regexps in internal_to_e164. The
@@ -509,7 +509,7 @@ although you can't count on me doing it for you.
 
 Brief introduction to the Erlang syntax :
 
-{}  - Curly brackets define a tuple. A tuple is like a list of fixed lenght, for
+{}  - Curly brackets define a tuple. A tuple is like a list of fixed length, for
       example {Key, Value} or {Key, Value1, Value2}.
 []  - Brackets enclose lists. If a parameter can have any number of values
       (like 'myhostnames' for example), the values will be in a list. Example :
@@ -620,13 +620,13 @@ Combined configuration file for more than one application :
  %% Application specific configuration
  %% --------------------------------------------------------------------
  {incomingproxy,	[{appserver,		"appserver.server.example.com"},
-			 
+
 			 {myhostnames,		["incomingproxy.server.example.com", "server.example.com"]},
 			 {homedomain,		["example.com", "example.net", "example.org"],
-			 
+
 			 {enum_domainlist,	["e164.arpa"]}
 			]},
- 
+
  {appserver,		[{listenport,		5070},
 			 {tls_listenport, 	5071}
 	 		]}

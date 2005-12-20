@@ -108,12 +108,12 @@ enumlookup(none) ->
     none;
 enumlookup("+" ++ Number) ->
     case yxa_config:get_env(enum_domainlist) of
-	{ok, []} ->
-	    logger:log(debug, "Resolver: Not performing ENUM lookup on ~p since enum_domainlist is empty",
-		       ["+" ++ Number]),
-	    none;
 	{ok, DomainList} ->
-	    enumlookup("+" ++ Number, DomainList)
+	    enumlookup("+" ++ Number, DomainList);
+	none ->
+	    logger:log(debug, "Resolver: Not performing ENUM lookup on ~p since enum_domainlist is not set",
+		       ["+" ++ Number]),
+	    none
     end;
 enumlookup(Foo) ->
     logger:log(error, "Resolver: ENUM lookup on non-E.164 number (~p)", [Foo]),
@@ -719,17 +719,17 @@ test() ->
     CombineSRV_1 = #srventry{dnsrrdata = {0, 21, 5060, "example.org"}, proto=tcp},
     CombineSRV_2 = #srventry{dnsrrdata = {0, 21, 5061, "example.net"}, proto=tls},
     CombineSRV_3 = {error, undefined},
-    
+
     autotest:mark(?LINE, "combine_srvresults/1 - 1"),
     %% remove error when there are also valid results
     [#sipdns_srv{proto=tcp, host="example.org", port=5060},
      #sipdns_srv{proto=tls, host="example.net", port=5061}] =
 	combine_srvresults([CombineSRV_1, CombineSRV_2, CombineSRV_3]),
-    
+
     autotest:mark(?LINE, "combine_srvresults/1 - 2"),
     %% only error present
     {error, undefined} = combine_srvresults([{error, undefined}]),
-    
+
     autotest:mark(?LINE, "combine_srvresults/1 - 3"),
     %% neither valid entrys or errors
     {error, nxdomain} = combine_srvresults([]),
@@ -793,7 +793,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "applyregexp/1 - 1"),
     "bar" = applyregexp("Xfoobar", ["!.+foo(...)$!\\1"]),
-    
+
     autotest:mark(?LINE, "applyregexp/1 - 2"),
     %% XXX this is a potential problem - the regexp "foo..." does not match "Xfoobar" - shouldn't it?
     none = applyregexp("Xfoobar", ["!foo...$!foo"]),
@@ -820,7 +820,7 @@ test() ->
     ChooseENUM_3 = #naptrrecord{flags="u", replacement="", services="E2U+sip:sub"},	%% sub-type
     ChooseENUM_4 = #naptrrecord{flags="s", replacement="", services="E2U+msg"},		%% flag not "u"
     ChooseENUM_5 = #naptrrecord{flags="u", replacement="X", services="E2U+msg"},	%% replacement not ""
-    
+
     ChooseENUM_L1 = [ChooseENUM_1, ChooseENUM_2, ChooseENUM_3, ChooseENUM_4, ChooseENUM_5],
 
     autotest:mark(?LINE, "chooseenum/2 - 1"),
@@ -830,12 +830,12 @@ test() ->
     autotest:mark(?LINE, "chooseenum/2 - 2"),
     %% more than one match, one matches even though it has a sub-type (":sub")
     [ChooseENUM_1, ChooseENUM_3] = chooseenum(ChooseENUM_L1, "E2U+sip"),
-    
+
     autotest:mark(?LINE, "chooseenum/2 - 3 (disabled)"),
 %    %% more than one match, verify that we compare case insensitively
 %    %% XXX should we do case sensitive or not? Read the RFC!
 %    [ChooseENUM_1, ChooseENUM_3] = chooseenum(ChooseENUM_L1, "e2u+SIP"),
-    
+
     autotest:mark(?LINE, "chooseenum/2 - 4"),
     %% no match
     [] = chooseenum(ChooseENUM_L1, "E2U+foo"),
@@ -924,7 +924,7 @@ test() ->
     FilterNAPTR_3 = #naptrrecord{flags="u", replacement="", services="E2U+sip:sub"},	%% sub-type
     FilterNAPTR_4 = #naptrrecord{flags="s", replacement="", services="E2U+msg"},
     FilterNAPTR_5 = #naptrrecord{flags="u", replacement="X", services="E2U+msg"},
-    
+
     FilterNAPTR_L1 = [FilterNAPTR_1, FilterNAPTR_2, FilterNAPTR_3, FilterNAPTR_4, FilterNAPTR_5],
 
     autotest:mark(?LINE, "filter_naptr/3 - 1"),
@@ -935,7 +935,7 @@ test() ->
     %% more than one match, but one has a sub-type (":sub") and will be ignored
     %% XXX is this correct? Does the RFC3761 say that domain NAPTRs can't have sub-type?
     [FilterNAPTR_1] = filter_naptr(FilterNAPTR_L1, "u", "E2U+sip"),
-     
+
     autotest:mark(?LINE, "filter_naptr/3 - 3 (disabled)"),
 %    %% one match, verify that we compare case insensitively
 %    %% XXX should we do case sensitive or not? Read the RFC!
