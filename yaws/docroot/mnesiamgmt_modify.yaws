@@ -1,0 +1,308 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : mnesiamgmt_modify.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI for managing Mnesia table replicas.
+%%%
+%%% Created : 27 May 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, filename:dirname(A#arg.fullpath)),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2(A, ?GET_VAR("node")) of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           A       = term(), Yaws request data
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Check if this is a GET or a POST and act accordingly.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
+    Node = list_to_atom(NodeStr),
+    {ok, Tables} = get_tables(Node),
+    case (Req = A#arg.req)#http_request.method of
+	'POST' ->
+	    case write_changes(A, Node, Tables) of
+		ok ->
+		    NodeURL = yaws_api:url_encode(NodeStr),
+		    {redirect, "mnesiamgmt.yaws?node=" ++ NodeURL};
+		E ->
+		    E
+	    end;
+	'GET' ->
+	    print_form(A, Node, NodeStr, Tables)
+    end;
+out2(_A, _) ->
+    throw({error, "Invalid node specified"}).
+
+
+%%--------------------------------------------------------------------
+%% Function: write_changes(A, Node, Tables)
+%%           A      = term(), Yaws request data
+%%           Node   = atom(), node we are to talk with
+%%           Tables = list() of atom()
+%% Descrip.:
+%% Returns : ok | throw({error, Reason})
+%%--------------------------------------------------------------------
+write_changes(A, Node, Tables) when is_atom(Node) ->
+    ModifyNode = case ?GET_VAR("modify") of
+		     {ok, ModifyNode1} when is_list(ModifyNode1) ->
+			 list_to_atom(ModifyNode1);
+		     _ ->
+			 throw({error, "Can't write schema changes without modify-nodename"})
+		 end,
+
+    ok = write_table_changes(A, Node, ModifyNode, Tables),
+    ok.
+
+    %% Get values from POST
+    %%
+    %%    Password = case ?GET_VAR("password") of
+    %%		   {ok, PasswordValue} when is_list(PasswordValue) ->
+    %%		       PasswordValue;
+    %%		   _ ->
+    %%		       %% no password in form, use the one from the database, don't set password
+    %%		       undefined
+    %%	       end,
+    %%    Flags = yxa_yaws_util:get_checkbox_input(A, ?USER_FLAGS),
+    %%    Classes = yxa_yaws_util:get_checkbox_input(A, ?USER_CLASSES),
+
+    %%    ok = write_user_settings(Node, User, Password, Flags, Classes),
+    %%    ok = write_user_address(A, Node, User),
+%%    ok.
+
+write_table_changes(A, Node, ModifyNode, [H | T]) ->
+    NewValue =
+	case ?GET_VAR("table_" ++ atom_to_list(H)) of
+	    {ok, "disc"} -> disc_copies;
+	    {ok, "ram"} -> ram_copies;
+	    {ok, "none"} -> none
+	end,
+    OldValue = get_node_table_status(Node, ModifyNode, H),
+    case {OldValue, NewValue} of
+	{OldValue, OldValue} ->
+	    ok;
+	{none, NewValue} ->
+	    case rpc:call(Node, mnesia, add_table_copy, [H, ModifyNode, NewValue]) of
+		{atomic, ok} -> ok;
+		Error ->
+		    Msg = io_lib:format("Failed adding ~p replica of table ~p to node ~p : ~p",
+					[NewValue, H, ModifyNode, Error]),
+		    throw({error, Msg})
+	    end;
+	{OldValue, none} ->
+	    case rpc:call(Node, mnesia, del_table_copy, [H, ModifyNode]) of
+		{atomic, ok} -> ok;
+		Error ->
+		    Msg = io_lib:format("Failed removing ~p replica of table ~p from node ~p : ~p",
+					[OldValue, H, ModifyNode, Error]),
+		    throw({error, Msg})
+	    end;
+	{OldValue, NewValue} ->
+	    case rpc:call(Node, mnesia, change_table_copy_type, [H, ModifyNode, NewValue]) of
+		{atomic, ok} -> ok;
+		Error ->
+		    Msg = io_lib:format("Failed changing type of table ~p on node ~p from ~p to ~p : ~p",
+					[H, ModifyNode, OldValue, NewValue, Error]),
+		    throw({error, Msg})
+	    end
+    end,
+    write_table_changes(A, Node, ModifyNode, T);
+write_table_changes(_A, _Node, _ModifyNode, []) ->
+    ok.
+
+get_node_table_status(Node, ModifyNode, Table) when is_atom(Node), is_atom(ModifyNode), is_atom(Table) ->
+    {ok, [{Table, {DiscL, RamL}}]} = get_tableinfo2(Node, [Table], []),
+    case lists:member(ModifyNode, DiscL) of
+	true ->
+	    disc_copies;
+	false ->
+	    case lists:member(ModifyNode, RamL) of
+		true ->
+		    ram_copies;
+		false ->
+		    none
+	    end
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: print_form(A, Node, NodeStr)
+%%           A       = term(), Yaws request data
+%%           Node    = atom(), the node we are to talk with
+%%           NodeStr = string(), the node as a string
+%% Descrip.:
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+print_form(A, Node, NodeStr, Tables) when is_atom(Node), is_list(NodeStr) ->
+    case ?GET_VAR("modify") of
+	{ok, ModifyNode} when is_list(ModifyNode) ->
+	    NodeURL = yaws_api:url_encode(NodeStr),
+	    {ok, TableInfo} = get_tableinfo(NodeStr, Tables),
+
+	    Subject = [{tr, [], [
+				 {th, [{colspan, 2}],
+				  "Mnesia&nbsp;tables&nbsp;on&nbsp;node&nbsp;" ++
+				  ModifyNode ++ "&nbsp;:"
+				 }]
+		       }],
+
+	    Form = {form, [{name, "mnesiatables"},
+			   {method, "post"},
+			   {action, "mnesiamgmt_modify.yaws"}],
+		    [
+		     {table, [{border, 0},
+			      {width, "50%"}],
+		      [Subject,
+		       print_tables_data(Tables, ModifyNode, TableInfo),
+
+		       {tr, [], [{td, [{colspan, 2}], "&nbsp;"}]},
+
+		       {tr, [], [
+				 {td, [], [
+					   {input, [{type, submit},
+						    {value, "Submit"}
+						   ]}
+					  ]},
+				 {td, [{valign, "center"}], [{a, [{href, "mnesiamgmt.yaws?node=" ++ NodeURL}],
+					    "Abort"}
+					  ]}
+				]}
+
+		      ]
+		     },
+
+		     yxa_yaws_util:hidden_inputs([{"node", NodeStr}]),
+		     yxa_yaws_util:hidden_inputs([{"modify", ModifyNode}])
+		    ]},
+
+	    {p, [], [
+		     {p, [], []},
+		     Form
+		    ]};
+        _ ->
+	    throw({error, "modify-nodename not supplied"})
+    end.
+
+print_tables_data(Tables, ModifyNode, TableInfo) when is_list(Tables), is_list(ModifyNode), is_list(TableInfo) ->
+    print_tables_data2(Tables, list_to_atom(ModifyNode), TableInfo, []).
+
+print_tables_data2([H | T], ModifyNode, TableInfo, Res) ->
+    {DiscL, RamL} = proplists:get_value(H, TableInfo, [[], []]),
+    Disc = lists:member(ModifyNode, DiscL),
+    Ram = lists:member(ModifyNode, RamL),
+
+    Dropdown =
+	case {Disc, Ram} of
+	    {true, false} ->
+		[
+		 {option, [{selected, "selected"}, {value, "disc"}], "disc"},
+		 {option, [{value, "ram"}], "ram"},
+		 {option, [{value, "none"}], "none"}
+		];
+	    {false, true} ->
+		[
+		 {option, [], "disc"},
+		 {option, [{selected, "selected"}], "ram"},
+		 {option, [], "none"}
+		];
+	    {false, false} ->
+		[
+		 {option, [], "disc"},
+		 {option, [], "ram"},
+		 {option, [{selected, "selected"}], "none"}
+		]
+	end,
+
+    This =
+	{tr, [], [
+		  {td, [], [atom_to_list(H)]},
+		  {td, [], [
+			    {select, [{name, "table_" ++ atom_to_list(H)}],
+			     Dropdown
+			    }
+			   ]}
+		 ]},
+    print_tables_data2(T, ModifyNode, TableInfo, [This | Res]);
+print_tables_data2([], _ModifyNode, _TableInfo, Res) ->
+    lists:reverse(Res).
+
+%%--------------------------------------------------------------------
+%% Function: get_tables(Incomingproxy)
+%%           Incomingproxy = atom(), node we are to talk with
+%% Descrip.:
+%% Returns : {ok, TableList} | error
+%%           TableList = list() of atom()
+%%--------------------------------------------------------------------
+get_tables(Incomingproxy) when is_atom(Incomingproxy) ->
+    case rpc:call(Incomingproxy, mnesia, system_info, [tables]) of
+	{badrpc, nodedown} ->
+	    error;
+	Tables when is_list(Tables) ->
+	    {ok, sort_tables(Tables)}
+    end.
+
+%% sort schema first of all, then in alphabetic order
+sort_tables(In) ->
+    lists:sort(fun(schema, _) -> true;
+		  (_, schema) -> false;
+		  (A, B) -> (A < B)
+	       end, In).
+
+%%--------------------------------------------------------------------
+%% Function: get_tableinfo(Incomingproxy, TableList)
+%%           Incomingproxy = atom(), node we are to talk with
+%%           TableList     = list() of atom(), table names
+%% Descrip.:
+%% Returns : {ok, TableInfoList} | error
+%%           TableInfoList = list() of {Table, {DiscNodes, RamNodes}}
+%%--------------------------------------------------------------------
+get_tableinfo(Incomingproxy, TableList) when is_list(Incomingproxy), is_list(TableList) ->
+    Node = list_to_atom(Incomingproxy),
+    get_tableinfo2(Node, TableList, []).
+
+get_tableinfo2(Node, [H | T], Res) when is_atom(Node), is_atom(H) ->
+    case rpc:call(Node, mnesia, table_info, [H, all]) of
+	{badrpc, nodedown} ->
+	    error;
+	TInfo when is_list(TInfo) ->
+	    Disc = proplists:get_value(disc_copies, TInfo, []),
+	    Ram = proplists:get_value(ram_copies, TInfo, []),
+	    This = {H, {Disc, Ram}},
+	    get_tableinfo2(Node, T, [This | Res])
+    end;
+get_tableinfo2(_Node, [], Res) ->
+    {ok, lists:reverse(Res)}.
+
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(filename:dirname(A#arg.fullpath), ["/BOTTOM"]).
+</erl>

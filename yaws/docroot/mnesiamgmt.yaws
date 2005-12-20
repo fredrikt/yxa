@@ -1,0 +1,194 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : mnesiamgmt.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI Mnesia node management page.
+%%%
+%%% Created : 15 Dec 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, filename:dirname(A#arg.fullpath)),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    try out2() of
+	Res ->
+	    yxa_yaws_util:script_output(Res)
+    catch
+	throw: {error, E} when is_list(E) ->
+	    Error = yxa_yaws_util:error(E),
+	    yxa_yaws_util:script_output(Error)
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2()
+%% Descrip.: 
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2() ->
+    Incomingproxy = yxa_yaws_util:get_yxa_application_node(),
+
+    case get_nodes(Incomingproxy) of
+	error ->
+	    throw({error, "Could not contact node " ++ Incomingproxy});
+	Nodes when is_list(Nodes) ->
+	    {ok, TableList} = get_tables(Incomingproxy),
+	    {ok, TableInfo} = get_tableinfo(Incomingproxy, TableList),
+
+	    NodeURL = yaws_api:url_encode(Incomingproxy),
+	    TablesNodes = format_nodes_tables(Nodes, TableList, TableInfo, NodeURL),
+
+	    Content =
+		{table, [], [
+			     {tr, [], [
+				       {th, [], "&nbsp;"},
+				       {th, [{align, "center"}], ["Tables"]}
+				      ]},
+			     {tr, [], [
+				       {th, [], "Nodes"},
+				       {td, [], TablesNodes}
+				      ]}
+			    ]},
+	    
+	    {p, [], [
+		     {h3, [], ["Mnesia table layout :"]},
+		     {p, [], [
+			      Content
+			     ]}
+		    ]}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_nodes(Incomingproxy)
+%%           Incomingproxy = string()
+%% Descrip.:
+%% Returns : Nodes = list() of atom() | error
+%%--------------------------------------------------------------------
+get_nodes(Incomingproxy) when is_list(Incomingproxy) ->
+    A = list_to_atom(Incomingproxy),
+    case rpc:call(A, erlang, nodes, []) of
+	{badrpc, nodedown} ->
+	    error;
+	RemoteNodes when is_list(RemoteNodes) ->
+	    Nodes = lists:usort([A | RemoteNodes]),
+	    WithoutMe = Nodes -- [node()],
+	    WithoutMe
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_tables(Incomingproxy)
+%%           Incomingproxy = string()
+%% Descrip.:
+%% Returns : {ok, TableList} | error
+%%           TableList = list() of atom()
+%%--------------------------------------------------------------------
+get_tables(Incomingproxy) when is_list(Incomingproxy) ->
+    A = list_to_atom(Incomingproxy),
+    case rpc:call(A, mnesia, system_info, [tables]) of
+	{badrpc, nodedown} ->
+	    error;
+	Tables when is_list(Tables) ->
+	    {ok, sort_tables(Tables)}
+    end.
+
+%% sort schema first of all, then in alphabetic order
+sort_tables(In) ->
+    lists:sort(fun(schema, _) -> true;
+		  (_, schema) -> false;
+		  (A, B) -> (A < B)
+	       end, In).
+		       
+
+%%--------------------------------------------------------------------
+%% Function: get_tableinfo(Incomingproxy, TableList)
+%%           Incomingproxy = string()
+%%           TableList     = list() of atom(), table names
+%% Descrip.:
+%% Returns : {ok, TableInfoList} | error
+%%           TableInfoList = list() of {Table, {Readers, Writers}}
+%%--------------------------------------------------------------------
+get_tableinfo(Incomingproxy, TableList) when is_list(Incomingproxy), is_list(TableList) ->
+    Node = list_to_atom(Incomingproxy),
+    get_tableinfo2(Node, TableList, []).
+
+get_tableinfo2(Node, [H | T], Res) when is_atom(Node), is_atom(H) ->
+    case rpc:call(Node, mnesia, table_info, [H, all]) of
+	{badrpc, nodedown} ->
+	    error;
+	TInfo when is_list(TInfo) ->
+	    Disc = proplists:get_value(disc_copies, TInfo, []),
+	    Ram = proplists:get_value(ram_copies, TInfo, []),
+	    This = {H, {Disc, Ram}},
+	    get_tableinfo2(Node, T, [This | Res])
+    end;
+get_tableinfo2(_Node, [], Res) ->
+    {ok, lists:reverse(Res)}.
+
+
+format_nodes_tables(Nodes, TableList, TableInfo, NodeURL) when is_list(Nodes), is_list(TableList), is_list(TableInfo) ->
+    Header = [{tr, [], [{td, [], "&nbsp;"},
+			lists:map(fun(Table) ->
+					  {th, [], [atom_to_list(Table)]}
+				  end, TableList)
+		       ]}
+	     ],
+
+    [{table, [{border, 1}], [
+		  Header,
+		  format_nodes_tables2(Nodes, TableList, TableInfo, NodeURL, [])
+		 ]}].
+
+format_nodes_tables2([H | T], TableList, TableInfo, NodeURL, Res) ->
+    HURL = yaws_api:url_encode(atom_to_list(H)),
+    ModifyLink = {a, [{href, ["mnesiamgmt_modify.yaws",
+			      "?node=" ++ NodeURL,
+			      "&modify=" ++ HURL
+			     ]}],
+		  atom_to_list(H)
+		 },
+    This =
+	[{tr, [], [
+		   {th, [], ModifyLink},
+		   format_nodes_tables2_node(H, TableList, TableInfo, [])
+		  ]}
+	],
+    format_nodes_tables2(T, TableList, TableInfo, NodeURL, [This | Res]);
+format_nodes_tables2([], _TableList, _TableInfo, _NodeURL, Res) ->
+    lists:reverse(Res).
+
+format_nodes_tables2_node(Node, [H | T], TableInfo, Res) ->
+    {Disc, Ram} = proplists:get_value(H, TableInfo, [[], []]),
+    NodeHasDisc = lists:member(Node, Disc),
+    NodeHasRam = lists:member(Node, Ram),
+    This =
+	if
+	    NodeHasDisc, NodeHasRam ->
+		"disc+ram";
+	    NodeHasDisc ->
+		"disc";
+	    NodeHasRam ->
+		"ram";
+	    true ->
+		"&nbsp;"
+	end,
+    format_nodes_tables2_node(Node, T, TableInfo, [{td, [], [This]} | Res]);
+format_nodes_tables2_node(_Node, [], _TableInfo, Res) ->
+    lists:reverse(Res).
+
+
+</erl>
+
+<erl>
+out(A) -> yaws_api:ssi(filename:dirname(A#arg.fullpath), ["/BOTTOM"]).
+</erl>
