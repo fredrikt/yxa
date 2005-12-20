@@ -38,7 +38,7 @@ out(A) ->
 %% Returns : HTML = term(), Yaws html data
 %%--------------------------------------------------------------------
 out2() ->
-    Incomingproxy = get_incomingproxy_nodename(),
+    Incomingproxy = yxa_yaws_util:get_yxa_application_node(),
 
     case get_nodes(Incomingproxy) of
 	error ->
@@ -66,35 +66,12 @@ out2() ->
 		      {p, [], [
 			       {a, [{href, "regexp.yaws?node=" ++ NodeURL}],
 				"Regexp-route management"}
+			      ]},
+		      {p, [], [
+			       {a, [{href, "mnesiamgmt.yaws?node=" ++ NodeURL}],
+				"Mnesia node management"}
 			      ]}
 		     ]}
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: get_incomingproxy_nodename()
-%% Descrip.: Get name of incomingproxy node. Per default we do this by
-%%           figuring out our local hostname, and prepending it with
-%%           "incomingproxy@". Patch this function if you want to run
-%%           your web interface on another host than your
-%%           incomingproxy (NOTE: you MUST make sure the nodes can
-%%           talk to each other through distributed Erlang).
-%% Returns : HTML = term(), Yaws html data
-%%--------------------------------------------------------------------
-get_incomingproxy_nodename() ->
-    {ok, MyHostname} = my_hostname(),
-    Incomingproxy = "incomingproxy@" ++ MyHostname.
-
-%% part of get_incomingproxy_nodename/0, inet:gethostname/0 without the
-%% domain-name removing part.
-%% Returns : {ok, Hostname}, Hostname = string()
-my_hostname() ->
-    case inet_udp:open(0, []) of
-        {ok, Socket} ->
-            {ok, Res} = inet:gethostname(Socket),
-            inet_udp:close(Socket),
-            {ok, Res};
-        _ ->
-            {ok, "nohost.nodomain"}
     end.
 
 %%--------------------------------------------------------------------
