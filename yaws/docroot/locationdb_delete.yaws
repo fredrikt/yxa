@@ -24,7 +24,7 @@
 
 out(A) ->
     %% necessary to not make our build process depend on Yaws include files
-    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, docroot}, filename:dirname(A#arg.fullpath)),
     put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
 
     try out2(A,
@@ -148,5 +148,5 @@ delete_location(Node, User, ClassStr, Location, NodeStr) when is_atom(Node), is_
 </erl>
 
 <erl>
-out(A) -> yaws_api:ssi(A#arg.docroot, ["/BOTTOM"]).
+out(A) -> yaws_api:ssi(filename:dirname(A#arg.fullpath), ["/BOTTOM"]).
 </erl>
