@@ -85,7 +85,7 @@ out2(_A, _) ->
 %%           Node    = atom(), node we are to talk with
 %% Descrip.: Update a users settings/numbers based on data POSTed,
 %%           then print our main form.
-%% Returns : HTML = term(), Yaws html data
+%% Returns : ok | throw({error, Reason})
 %%--------------------------------------------------------------------
 write_user(A, Node) when is_atom(Node) ->
     User = case ?GET_VAR("user") of
