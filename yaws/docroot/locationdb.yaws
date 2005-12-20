@@ -105,7 +105,7 @@ get_locations_info(Node, NodeStr) when is_atom(Node), is_list(NodeStr) ->
 %%--------------------------------------------------------------------
 %% Function: fmt_locations(Locations, Node, NodeStr)
 %%           fmt_locations(Locations, Node, NodeStr, [])
-%%           Locations = list() of siplocationdb_e record()
+%%           Locations = list() of phone record()
 %%           Node      = atom(), the node we are to talk with
 %%           NodeStr   = string(), name of node we are to talk with
 %% Descrip.: HTML format information about each element of Locations.
@@ -115,7 +115,7 @@ fmt_locations(Locations, Node, NodeStr) ->
     Sorted = lists:sort(fun output_sort_locations/2, Locations),
     fmt_locations(Sorted, Node, NodeStr, [], []).
 
-fmt_locations([H | T], Node, NodeStr, LastUser, Res) ->
+fmt_locations([H | T], Node, NodeStr, LastUser, Res) when is_record(H, phone) ->
     ShowUser = case H#phone.number of
 		   LastUser ->
 		       "&nbsp;";
@@ -154,7 +154,7 @@ fmt_locations([], _Node, _Nodestr, LastUser, Res) ->
 
 output_sort_locations(#phone{number=UserA}, #phone{number=UserB}) when UserA /= UserB ->
     %% not same user
-    %% XXX terribly unefficient I'm sure. just can't think of a better way right now.
+    %% XXX terribly inefficient I'm sure. just can't think of a better way right now.
     case lists:sort([UserA, UserB]) of
 	[UserA, UserB] ->
 	    true;
@@ -175,7 +175,7 @@ output_sort_locations(#phone{number=User}, #phone{number=User, class=Known}) whe
     false;
 output_sort_locations(#phone{number=User, class=ClassA}, #phone{number=User, class=ClassB}) when ClassA /= ClassB ->
     %% same user, but not same class
-    %% XXX terribly unefficient I'm sure. Just can't think of a better way right now.
+    %% XXX terribly inefficient I'm sure. Just can't think of a better way right now.
     AList = atom_to_list(ClassA),
     BList = atom_to_list(ClassB),
     case lists:sort([AList, BList]) of
@@ -200,7 +200,7 @@ output_sort_locations(#phone{number=User, class=Class, expire=Expire, address=Ad
 		      #phone{number=User, class=Class, expire=Expire, address=AddrB}) ->
     %% same user, class AND expire. sort on address as a last resort.
     %% we should never have two identical addresses with the same class in our location database.
-    %% XXX terribly unefficient I'm sure. just can't think of a better way right now.
+    %% XXX terribly inefficient I'm sure. just can't think of a better way right now.
     case lists:sort([AddrA, AddrB]) of
 	[AddrA, AddrB] ->
 	    true;
