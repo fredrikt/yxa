@@ -34,6 +34,11 @@
 	 get_user_addresses/2
 	]).
 
+%% Ops functions
+-export([
+	 get_yxa_application_node/0
+	]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -301,7 +306,7 @@ user_exists(User, Node) when is_list(User), is_atom(Node) ->
 %%           addresses are called numbers in the Mnesia backend.
 %% Returns : list() of string()
 %%--------------------------------------------------------------------
-get_user_addresses(User, Node) when is_record(User, user) ->
+get_user_addresses(User, Node) when is_record(User, user), is_atom(Node) ->
     case get_user_addresses(User#user.user, Node) of
 	[] ->
 	    case User#user.number of
@@ -313,7 +318,7 @@ get_user_addresses(User, Node) when is_record(User, user) ->
 	Res when is_list(Res) ->
 	    Res
     end;
-get_user_addresses(User, Node) when is_list(User) ->
+get_user_addresses(User, Node) when is_list(User), is_atom(Node) ->
     {atomic, L} = rpc:call(Node, phone, get_numbers_for_user, [User]),
     true = is_list(L),
     L.
@@ -352,3 +357,31 @@ fmt_daystime_short({0, {H, M, S}}) ->
 fmt_daystime_short({D, {H, M, S}}) ->
     io_lib:format("~pd, ~s", [D, fmt_daystime_short({0, {H, M, S}})]).
 
+
+
+%%--------------------------------------------------------------------
+%% Function: get_incomingproxy_node()
+%% Descrip.: Get name of incomingproxy node. Per default we do this by
+%%           figuring out our local hostname, and prepending it with
+%%           "incomingproxy@". Patch this function if you want to run
+%%           your web interface on another host than your
+%%           incomingproxy (NOTE: you MUST make sure the nodes can
+%%           talk to each other through distributed Erlang).
+%% Returns : Nodename = string()
+%%--------------------------------------------------------------------
+get_yxa_application_node() ->
+    {ok, MyHostname} = my_hostname(),
+    "incomingproxy@" ++ MyHostname.
+
+%% part of get_incomingproxy_nodename/0, inet:gethostname/0 without the
+%% domain-name removing part.
+%% Returns : {ok, Hostname}, Hostname = string()
+my_hostname() ->
+    case inet_udp:open(0, []) of
+        {ok, Socket} ->
+            {ok, Res} = inet:gethostname(Socket),
+            inet_udp:close(Socket),
+            {ok, Res};
+        _ ->
+            {ok, "nohost.nodomain"}
+    end.
