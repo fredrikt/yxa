@@ -173,9 +173,9 @@ fmt_user_locations(Locations) ->
     Dynamic = count_locations(dynamic, Locations),
     Unknown = length(Locations) - Static - Dynamic,
 
-    StaticStr = io_lib:format("~p static", [Static]),
-    DynamicStr = io_lib:format("~p dynamic", [Dynamic]),
-    UnknownStr = io_lib:format("~p unknown", [Unknown]),
+    StaticStr = io_lib:format("~p&nbsp;static~n", [Static]),
+    DynamicStr = io_lib:format("~p&nbsp;dynamic~n", [Dynamic]),
+    UnknownStr = io_lib:format("~p&nbsp;unknown~n", [Unknown]),
 
     pretty_join([{Unknown, UnknownStr},
 		 {Dynamic, DynamicStr},
