@@ -1,6 +1,6 @@
 This is the Yxa README file. Yxa is a set of SIP servers written in Erlang.
 
-To install Yxa, you need to have Erlang/OTP R10B-6 installed.
+To install Yxa, you need to have Erlang/OTP R10B-9 installed.
                                  ^^^^^^^^^^^^^^^^^
 
 Quick installation guide :
