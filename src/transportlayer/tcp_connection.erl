@@ -218,6 +218,7 @@ init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
 	    {ok, State, Timeout};
 	{error, E} ->
 	    logger:log(error, "TCP connection: Failed registering with TCP dispatcher : ~p", [E]),
+	    SocketModule:close(Socket),
 	    {stop, "Failed registering with TCP dispatcher"}
     end.
 
@@ -670,6 +671,7 @@ connect_fail_handle_conn_queue(Proto, Host, Port, Reply) ->
     %% tell processes in queue about our failure
     check_also_notify(Reply),
     %% sleep, then check notify queue again to try and handle race here
+    %% XXX this needs to be truly fixed!
     timer:sleep(100),
     check_also_notify(Reply),
     ok.
