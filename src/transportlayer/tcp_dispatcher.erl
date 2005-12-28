@@ -197,7 +197,7 @@ handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
 	    %% We must spawn a tcp_connection process to take care of making this new connection
 	    %% since the tcp_dispatcher may not be blocked by time consuming operations. The spawned
 	    %% process will do a gen_server:reply(...).
-	    case tcp_connection:start_link(connect, Dst, From) of
+	    case tcp_connection:connect_to(Dst, From) of
 		{ok, CH} ->
 		    logger:log(debug, "TCP dispatcher: No cached connection to remote destination ~s, trying to "
 			       "connect (started TCP connection handler ~p)", [sipdst:dst2str(Dst), CH]),

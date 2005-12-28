@@ -242,7 +242,7 @@ start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
     {ok, {Protocol, Cipher}} = ssl:connection_info(Socket),
     logger:log(debug, "Extra debug: TCP listener : SSL socket info for ~p : "
 	       "Protocol = ~p, Cipher = ~p", [Socket, Protocol, Cipher]),
-    case tcp_connection:start_link(in, ssl, Proto, Socket, Local, Remote) of
+    case tcp_connection:connection_from(ssl, Proto, Socket, Local, Remote) of
 	{ok, ConnPid} ->
 	    {ok, RecvPid} = gen_server:call(ConnPid, {get_receiver}),
 	    case ssl:controlling_process(Socket, RecvPid) of
@@ -261,7 +261,7 @@ start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
 %% Non-SSL socket
 %%
 start_tcp_connection(SocketModule, Proto, Socket, Local, Remote) ->
-    {ok, _ConnPid} = tcp_connection:start_link(in, SocketModule, Proto, Socket, Local, Remote),
+    {ok, _ConnPid} = tcp_connection:connection_from(SocketModule, Proto, Socket, Local, Remote),
     ok.
 
 %%--------------------------------------------------------------------

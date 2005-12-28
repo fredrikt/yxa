@@ -15,8 +15,8 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start_link/3,
-	 start_link/6,
+-export([connect_to/2,
+	 connection_from/5,
 
 	 test/0
 	]).
@@ -65,8 +65,8 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(in, SocketModule, Proto, Socket, Local,
-%%                      Remote)
+%% Function: connection_from(SocketModule, Proto, Socket, Local,
+%%                           Remote)
 %%           SocketModule = atom(), socket module (gen_tcp | ssl)
 %%           Proto        = atom(), tcp | tcp6 | tls | tls6
 %%           Socket       = term()
@@ -78,12 +78,12 @@
 %% Note    : 'ignore' is returned if the socket is not acceptable for
 %%           some reason (e.g. SSL certificate validation failed)
 %%--------------------------------------------------------------------
-start_link(in, SocketModule, Proto, Socket, Local, Remote) ->
+connection_from(SocketModule, Proto, Socket, Local, Remote) ->
     {Validation, _RPort} = Remote,
-    gen_server:start_link(?MODULE, [in, SocketModule, Proto, Socket, Local, Remote, Validation], []).
+    gen_server:start(?MODULE, [in, SocketModule, Proto, Socket, Local, Remote, Validation], []).
 
 %%--------------------------------------------------------------------
-%% Function: start_link(connect, Dst, GenServerFrom)
+%% Function: connect_to(Dst, GenServerFrom)
 %%           Dst           = sipdst record()
 %%           GenServerFrom = term(), send result of connection attempt
 %%                           to this caller using gen_server:reply().
@@ -94,7 +94,7 @@ start_link(in, SocketModule, Proto, Socket, Local, Remote) ->
 %% Returns : {ok, Pid} | Error
 %%           Error = term(), result of gen_server:start()
 %%--------------------------------------------------------------------
-start_link(connect, Dst, GenServerFrom) when is_record(Dst, sipdst) ->
+connect_to(Dst, GenServerFrom) when is_record(Dst, sipdst) ->
     gen_server:start_link(?MODULE, [connect, Dst, GenServerFrom], []).
 
 %%====================================================================
