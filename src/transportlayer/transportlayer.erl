@@ -1,9 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : transportlayer
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transport layer functions. Because of legacy reasons,
-%%%           the actual code is in siprequest.erl but the sending
-%%%           code will be moved here RSN.
+%%% Descrip.: Transport layer functions.
 %%%
 %%% Created : 01 Mar 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
