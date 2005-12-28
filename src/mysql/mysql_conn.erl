@@ -372,6 +372,8 @@ get_fields(LogFun, RecvPid, Res) ->
 	    case Packet of
 		<<254:8>> ->
 		    {ok, lists:reverse(Res)};
+		<<254:8, Rest/binary>> when size(Rest) < 8 ->
+		    {ok, lists:reverse(Res)};
 		_ ->
 		    {Table, Rest} = get_with_length(Packet),
 		    {Field, Rest2} = get_with_length(Rest),
