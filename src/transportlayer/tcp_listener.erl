@@ -253,6 +253,10 @@ start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
 		    erlang:error({"Failed changing controlling process for SSL socket", {error, Reason}},
 				 [ssl, Proto, Socket, Local, Remote])
 	    end;
+	{error, Reason} ->
+	    logger:log(debug, "TCP listener: Failed starting a tcp_connection handler for socket ~p : ~p",
+		       [Socket, Reason]),
+	    ok;
 	ignore ->
 	    %% SSL socket was not acceptable. This is already logged and everything, so just return.
 	    ok
@@ -261,8 +265,14 @@ start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
 %% Non-SSL socket
 %%
 start_tcp_connection(SocketModule, Proto, Socket, Local, Remote) ->
-    {ok, _ConnPid} = tcp_connection:connection_from(SocketModule, Proto, Socket, Local, Remote),
-    ok.
+    case tcp_connection:connection_from(SocketModule, Proto, Socket, Local, Remote) of
+	{ok, _ConnPid} ->
+	    ok;
+	{error, Reason} ->
+	    logger:log(debug, "TCP listener: Failed starting a tcp_connection handler for socket ~p : ~p",
+		       [Socket, Reason]),
+	    ok
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_defaultaddr(Proto)
