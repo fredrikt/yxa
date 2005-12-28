@@ -95,7 +95,7 @@ init([]) ->
     %% This is a system process that traps EXIT signals from TCP/TLS connection handlers
     process_flag(trap_exit, true),
     State = #state{socketlist = socketlist:empty()
-		  }, 
+		  },
     ets:new(transportlayer_tcp_conn_queue, [public, set, named_table]),
     {ok, State, ?TIMEOUT}.
 
@@ -246,7 +246,7 @@ handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Ty
 	    end,
     %% Socket expiration not implemented. Perhaps not even needed. If you are thinking of
     %% implementing it remember that listening sockets should always have timeout 0.
-    Timeout = 0,	
+    Timeout = 0,
     case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, Timeout, State#state.socketlist) of
 	{error, E} ->
 	    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),

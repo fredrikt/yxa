@@ -337,7 +337,7 @@ test() ->
     autotest:mark(?LINE, "send_proxy_response/2 - 1.1"),
     %% test normal case with a single Via besides mine
     ok = send_proxy_response(none, SPResponse_Res1),
-    
+
     autotest:mark(?LINE, "send_proxy_response/2 - 1.2"),
     %% now check process mailbox to extract the SIP message 'sent'
     receive
@@ -365,7 +365,7 @@ test() ->
 	    autotest:mark(?LINE, "send_proxy_response/2 - 1.6"),
 	    %% check that Content-Length have been set correctly
 	    ["0"] = keylist:fetch('content-length', SPResponse_Res1_1#response.header),
-	    
+
 	    autotest:mark(?LINE, "send_proxy_response/2 - 1.7"),
 	    %% check that the top Via header has been removed
 	    [#via{proto = "SIP/2.0/YXA-TEST",
@@ -384,7 +384,7 @@ test() ->
 
     autotest:mark(?LINE, "send_proxy_response/2 - 2.1"),
     {error, invalid_Via} = send_proxy_response(none, SPResponse_Res2),
-    
+
 
 
     %% send_proxy_request(Socket, Request, Dst, ViaParameters)
@@ -437,7 +437,7 @@ test() ->
 	    autotest:mark(?LINE, "send_proxy_request/4 - 1.6"),
 	    %% check that Content-Length have been set correctly
 	    ["7"] = keylist:fetch('content-length', SPRequest_Req1_1#request.header),
-	    
+
 	    autotest:mark(?LINE, "send_proxy_request/4 - 1.7"),
 	    %% check that there are now two YXA-TEST via headers and that they are in the
 	    %% expected order
@@ -520,7 +520,7 @@ test() ->
 	    autotest:mark(?LINE, "send_result/5 - 1.6"),
 	    %% check that Content-Length have been set correctly
 	    ["13"] = keylist:fetch('content-length', SResult_Res1_1#response.header),
-	    
+
 	    autotest:mark(?LINE, "send_result/5 - 1.7"),
 	    %% check the Via header
 	    [#via{proto = "SIP/2.0/YXA-TEST",
@@ -572,7 +572,7 @@ test() ->
 			      header = keylist:from_list([]),
 			      body   = <<>>
 			     },
-    
+
     autotest:mark(?LINE, "send_response/2 - 1"),
     %% test only invalid case, other functionality already covered
     {senderror, "malformed response"} = send_response(none, SendResponse1),

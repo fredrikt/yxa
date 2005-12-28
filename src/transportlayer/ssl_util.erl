@@ -577,7 +577,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "is_valid_ssl_certname/4 - 0"),
     IsValidSubject1 = #ssl_conn_subject{commonName = "commonname.example.org"},
-    
+
     autotest:mark(?LINE, "is_valid_ssl_certname/4 - 1"),
     %% test non-matching name #1 (reject: true)
     false = is_valid_ssl_certname(["example.org"], IsValidSubject1, [], true),
