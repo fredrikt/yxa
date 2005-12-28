@@ -247,12 +247,18 @@ handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Ty
     %% Socket expiration not implemented. Perhaps not even needed. If you are thinking of
     %% implementing it remember that listening sockets should always have timeout 0.
     Timeout = 0,
-    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, Timeout, State#state.socketlist) of
-	{error, E} ->
-	    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
-	    {reply, {error, E}, State, ?TIMEOUT};
-	NewSocketList1 ->
-	    {reply, ok, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
+    case link(CPid) of
+	true ->
+	    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, Timeout, State#state.socketlist) of
+		{error, E} ->
+		    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
+		    {reply, {error, E}, State, ?TIMEOUT};
+		NewSocketList1 ->
+		    {reply, ok, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
+	    end;
+	_ ->
+	    logger:log(error, "TCP dispatcher: Failed linking to ~p (pid ~p)", [Ident, CPid]),
+	    {reply, {error, "Link failed"}, State, ?TIMEOUT}
     end;
 
 %%--------------------------------------------------------------------
