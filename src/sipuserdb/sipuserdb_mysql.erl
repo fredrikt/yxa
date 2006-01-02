@@ -118,15 +118,15 @@ get_user_with_address(Address) ->
 					     Address),
 	    case mysql:fetch(yxa, Query2) of
 		{ok, _, []} ->
-		    logger:log(debug, "userdb-mysql: No user with name or number ~p", [Address]),
+		    logger:log(debug, "userdb-mysql: No user with name or address ~p", [Address]),
 		    nomatch;
 		{ok, _, [[User]]} ->
 		    User;
 		{ok, _, Users} ->
-		    logger:log(debug, "userdb-mysql: More than one user with number ~p (~p)", [Address, lists:append(Users)]),
+		    logger:log(debug, "userdb-mysql: More than one user with address ~p (~p)", [Address, lists:append(Users)]),
 		    error;
 		{error, Reason} ->
-		    logger:log(error, "userdb-mysql: Error for number ~p: ~p", [Address, Reason]),
+		    logger:log(error, "userdb-mysql: Error for address ~p: ~p", [Address, Reason]),
 		    error
 	    end;
 	{ok, _, [[User]]} ->
@@ -209,7 +209,7 @@ get_addresses_for_user(User) ->
 				User),
     case mysql:fetch(yxa, Query1) of
 	{ok, _, []} ->
-	    logger:log(debug, "userdb-mysql: No numbers for user ~p", [User]),
+	    logger:log(debug, "userdb-mysql: No addressses for user ~p", [User]),
 	    %% Check if there is a user with that name, if so we canonify the username
 	    Query2 = make_sql_statement(sipuserdb_mysql_get_user,
 					User),
@@ -223,13 +223,13 @@ get_addresses_for_user(User) ->
 		    logger:log(error, "userdb-mysql: Error for username ~p: ~p", [User, Reason]),
 		    error
 	    end;
-	{ok, _, Numbers} ->
-	    FlatNumbers = lists:append(Numbers),
-	    logger:log(debug, "userdb-mysql: Found number(s) ~p for user ~p",
-		       [FlatNumbers, User]),
+	{ok, _, Addresses} ->
+	    FlatAddresses = lists:append(Addresses),
+	    logger:log(debug, "userdb-mysql: Found address(es) ~p for user ~p",
+		       [FlatAddresses, User]),
 	    CanonL = [local:canonify_user(User)],
-	    NumberL = local:canonify_numberlist(FlatNumbers),
-	    All = lists:append([CanonL, NumberL]),
+	    AddrL = local:canonify_addresses(FlatAddresses),
+	    All = lists:append([CanonL, AddrL]),
 	    lists:usort(All);
 	{error, Reason} ->
 	    logger:log(error, "userdb-mysql: Error for username ~p: ~p", [User, Reason]),

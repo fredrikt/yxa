@@ -191,12 +191,12 @@ get_addresses_for_user(User) ->
 		{atomic, []} ->
 		    logger:log(debug, "userdb-mnesia: No numbers for user ~p", [User]),
 		    [local:canonify_user(User)];
-		{atomic, Numbers} ->
-		    logger:log(debug, "userdb-mnesia: Found number(s) ~p for user ~p",
-			       [Numbers, User]),
+		{atomic, Addresses} ->
+		    logger:log(debug, "userdb-mnesia: Found address(es)/number(s) ~p for user ~p",
+			       [Addresses, User]),
 		    CanonL = [local:canonify_user(User)],
-		    NumberL = local:canonify_numberlist(Numbers),
-		    All = lists:append([CanonL, NumberL]),
+		    AddrL = local:canonify_addresses(Addresses),
+		    All = lists:append([CanonL, AddrL]),
 		    lists:usort(All);
 		Unknown ->
 		    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_numbers_for_user(), user ~p result : ~p",

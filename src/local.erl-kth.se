@@ -3,7 +3,7 @@
 -export([
 	 url2mnesia_userlist/1,
 	 canonify_user/1,
-	 canonify_numberlist/1
+	 canonify_addresses/1
 	]).
 
 %% lookup
@@ -141,26 +141,35 @@ canonify_user(Fulluser) ->
 	    "sip:" ++ User ++ "@" ++ sipauth:realm()
     end.
 
-% Turns numbers into fully qualified tel: URLs or if that is not
-% possible, return empty list. Used from some userdb-modules which
-% get non-fully qualified phone numbers (like local extension numbers)
-% back from the database.
-canonify_numberlist([]) ->
-    [];
-canonify_numberlist(["tel:+" ++ E164 | Rest]) ->
-    lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
-canonify_numberlist(["+" ++ E164 | Rest]) ->
-    case util:isnumeric(E164) of
+%% Canonify a list of addresses. Turn anything numeric into it's E.164
+%% canonical representation. Used from some userdb-modules which potentially
+%% get non-fully qualified phone numbers (like local extension numbers)
+%% back from the database.
+canonify_addresses(In) when is_list(In) ->
+    canonify_addresses2(In, []).
+
+canonify_addresses2(["tel:+" ++ _ = H | T], Res) ->
+    canonify_addresses2(T, [H | Res]);
+canonify_addresses2(["+" ++ Num = H | T], Res) ->
+    case util:isnumeric(Num) of
 	true ->
-	    lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
-	_ ->
-	    canonify_numberlist(Rest)
+	    This = "tel:+" ++ Num,
+	    canonify_addresses2(T, [This | Res]);
+	false ->
+	    %% non-numeric part after '+' - leave unaltered
+	    canonify_addresses2(T, [H | Res])
     end;
-canonify_numberlist([Number | Rest]) ->
-    case rewrite_potn_to_e164(Number) of
-	"+" ++ E164 -> lists:append(["tel:+" ++ E164], canonify_numberlist(Rest));
-	_ -> canonify_numberlist(Rest)
-    end.
+canonify_addresses2([H | T], Res) ->
+    case rewrite_potn_to_e164(H) of
+	"+" ++ _ = E164->
+	    This = "tel:" ++ E164,
+	    canonify_addresses2(T, [This | Res]);
+	_ ->
+	    %% could not rewrite using rewrite_potn_to_e164/1 - leave unaltered
+	    canonify_addresses2(T, [H | Res])
+    end;
+canonify_addresses2([], Res) ->
+    lists:reverse(Res).
 
 
 % Routing hooks
