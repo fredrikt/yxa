@@ -52,7 +52,7 @@
 %% Internal exports
 %%--------------------------------------------------------------------
 -export([
-	 signal_collector/2
+	 signal_collector/3
 	 ]).
 
 %%--------------------------------------------------------------------
@@ -90,26 +90,26 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_actions(BranchBase, GluePid, OrigRequest, Actions)
+%% Function: start_actions(BranchBase, Parent, OrigRequest, Actions)
 %%           BranchBase = string(), the "base" part of the server
 %%                        transactions branch - so that we can get
 %%                        sipproxy to generate intuitive branches for
 %%                        it's corresponding client transactions
-%%           GluePid = pid(), the pid to which sipproxy should report
+%%           Parent     = pid(), the pid to which sipproxy should report
 %%           OrigRequest = request record()
 %%           Actions = list() of sipproxy_action record()
 %% Descrip.: This function is spawned by the appserver glue process
 %%           and executes sipproxy:start() in this new thread.
 %% Returns : ok | error
 %%--------------------------------------------------------------------
-start_actions(BranchBase, GluePid, OrigRequest, Actions) when is_record(OrigRequest, request) ->
+start_actions(BranchBase, Parent, OrigRequest, Actions) when is_record(OrigRequest, request) ->
     case start_check_actions(Actions) of
 	ok ->
 	    {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
 	    Timeout = 32,	%% wait at the end of actions-list timeout
-	    %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals GluePid
+	    %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals Parent
 	    %% when it is done.
-	    case start(BranchBase, GluePid, OrigRequest, Actions, Timeout) of
+	    case start(BranchBase, Parent, OrigRequest, Actions, Timeout) of
 		ok ->
 		    logger:log(debug, "sipproxy: fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
 		    ok;
@@ -154,8 +154,10 @@ start(BranchBase, Parent, Request, Actions, Timeout)
 					 approx_msgsize=ApproxMsgSize},
 			  %% We need to trap exits so that we can handle client transcations failing, and
 			  %% cancel all client transactions if the parent crashes.
-			  process_flag(trap_exit, true),
+			  TrapExit = process_flag(trap_exit, true),
 			  fork(EndTime, State),
+			  %% restore trapexit in case we are testing
+			  true = process_flag(trap_exit, TrapExit),
 			  ok;
 		      _ ->
 			  logger:log(error, "sipproxy: Can't fork request with Route header"),
@@ -223,7 +225,7 @@ start_check_actions2([], Calls, Waits) ->
 %%
 %% No actions left
 %%
-fork(EndTime, State) when is_integer(EndTime), is_record(State, state), State#state.actions == [] ->
+fork(_EndTime, State) when is_record(State, state), State#state.actions == [] ->
     OrigRequest = State#state.request,
     Targets = State#state.targets,
     {Method, ReqURI} = {OrigRequest#request.method, OrigRequest#request.uri},
@@ -245,19 +247,26 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state), State#st
 
 		logger:log(debug, "sipproxy: waiting ~p seconds for any final responses", [State#state.timeout]),
 		NewEndTime = util:timestamp() + State#state.timeout,
-		NewState1 = case process_wait(false, NewEndTime, State#state{mystate=stayalive, targets=NewTargets}) of
-				{discontinue, NewState1_1} when is_record(NewState1_1, state) ->
-				    NewState1_1;
-				{timeout, NewState1_1} ->
-				    NewState1_1
-			    end,
-		logger:log(debug, "sipproxy: final responses wait is over, exiting."),
-		NewState1
+		case process_wait(NewEndTime, State#state{mystate=stayalive, targets=NewTargets}) of
+		    {discontinue, NewState1_1} when is_record(NewState1_1, state) ->
+			logger:log(debug, "sipproxy: final responses wait is over (discontinue), exiting."),
+			NewState1_1;
+		    {timeout, NewState1_1} when is_record(NewState1_1, state) ->
+			logger:log(debug, "sipproxy: final responses wait is over (timeout), exiting."),
+			case NewState1_1#state.final_response_sent of
+			    true ->
+				NewState1_1;
+			    false ->
+				TimeoutResponse = {408, "Request Timeout"},
+				NewState1_1#state.parent ! {sipproxy_all_terminated, self(), TimeoutResponse},
+				NewState1_1#state{final_response_sent = true}
+			end
+		    end
 	end,
 
-    %% Check that this set of actions actually resulted in a final response. Actions can be empty, or
-    %% contain only waits or something equally stupid (the stupidity lies in the hand of the end user
-    %% with CPL scripts ;) ).
+    %% Check that this set of actions actually resulted in a final response. The original list of Actions
+    %% could have been empty, or contained only waits or something equally stupid (the stupidity lies in
+    %% the hand of the end user with CPL scripts ;) ).
     case NewState#state.final_response_sent of
 	false ->
 	    logger:log(debug, "sipproxy: No final response sent to parent for this set of actions, "
@@ -309,12 +318,14 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
 	wait ->
 	    Time = HAction#sipproxy_action.timeout,
 	    logger:log(debug, "sipproxy: waiting ~p seconds", [Time]),
+	    %% XXX we loose our original endtime that is starttime + timeout given to start() here,
+	    %% we probably shouldn't. The meaning of the timeout to start() is not clearly specified.
 	    NewEndTime = util:timestamp() + Time,
-	    case process_wait(false, NewEndTime, State) of
+	    case process_wait(NewEndTime, State) of
 		{discontinue, NewState} when is_record(NewState, state) ->
 		    logger:log(debug, "sipproxy: discontinue processing"),
 		    fork(NewEndTime, NewState#state{actions = []});
-		{timeout, NewState} ->
+		{timeout, NewState} when is_record(NewState, state) ->
 		    fork(NewEndTime, NewState#state{actions = TAction})
 	    end
     end.
@@ -337,7 +348,7 @@ make_new_target_request(Request, URI, _User) when is_record(Request, request), i
 %% Function: cancel_pending_targets(Targets, ExtraHeaders)
 %%           Targets      = targetlist record()
 %%           ExtraHeaders = list() of {Key, ValueList} tuples
-%% Descrip.: Cancel all targets in state 'proceeding'.
+%% Descrip.: Cancel all targets in state 'calling' or 'proceeding'.
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
 cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
@@ -378,21 +389,15 @@ mark_cancelled([H | T], TargetList) ->
     mark_cancelled(T, NewTargetList).
 
 %%--------------------------------------------------------------------
-%% Function: process_wait(EndProcessing, EndTime, State)
-%%           EndProcessing  = atom(), true | false
-%%           EndTime        = integer(), time when we should end this wait
-%%           State          = state record()
+%% Function: process_wait(EndTime, State)
+%%           EndTime = integer(), time when we should end this wait
+%%           State   = state record()
 %% Descrip.: Marks a number of targets (Targets) as cancelled.
 %% Returns : {discontinue, NewState} |
 %%           {timeout, NewState}
 %%           NewState = state record()
 %%--------------------------------------------------------------------
-process_wait(true, _EndTime, State) when is_record(State, state) ->
-    Targets = State#state.targets,
-    logger:log(debug, "sipproxy: All Targets terminated or completed. Ending process_wait(), returning discontinue. "
-	       "debugfriendly(TargetList) :~n~p", [targetlist:debugfriendly(Targets)]),
-    {discontinue, State};
-process_wait(false, EndTime, State) when is_record(State, state) ->
+process_wait(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
     Time = lists:max([EndTime - util:timestamp(), 0]),
     {Res, NewState} =
 	receive
@@ -409,22 +414,32 @@ process_wait(false, EndTime, State) when is_record(State, state) ->
 	    NewState_1 = report_upstreams(AllTerminated, NewState),
 	    TimeLeft = lists:max([EndTime - util:timestamp(), 0]),
 	    EndProcessing = end_processing(EndTime, NewState_1),
-	    logger:log(debug, "sipproxy: State changer, (old) MyState=~p, NewMyState=~p, TimeLeft=~p, "
+	    logger:log(debug, "sipproxy: Extra debug: State changer, MyState=~p (was: ~p), TimeLeft=~p, "
 		       "FinalResponseSent=~p, AllTerminated=~p, EndProcessing=~p",
-		       [State#state.mystate, NewState_1#state.mystate, TimeLeft,
+		       [NewState_1#state.mystate, State#state.mystate, TimeLeft,
 			NewState_1#state.final_response_sent, AllTerminated, EndProcessing]),
-	    process_wait(EndProcessing, EndTime, NewState_1);
+	    case EndProcessing of
+		true ->
+		    Targets = State#state.targets,
+		    logger:log(debug, "sipproxy: All Targets terminated or completed. Ending process_wait(), "
+			       "returning discontinue. debugfriendly(TargetList) :~n~p",
+			       [targetlist:debugfriendly(Targets)]),
+		    {discontinue, State};
+		false ->
+		    process_wait(EndTime, NewState_1)
+	    end;
 	timeout ->
 	    {timeout, NewState};
 	quit ->
+	    %% Parent has exited, so we don't need to report any final response upstreams
 	    {discontinue, State}
     end.
 
 %%--------------------------------------------------------------------
 %% Function: process_signal({cancel_pending}, State)
-%%           State          = state record()
-%% Descrip.: We are asked to terminate all pending targets.%
-% Returns : {ok, NewState}
+%%           State = state record()
+%% Descrip.: We are asked to terminate all pending targets.
+%% Returns : {ok, NewState}
 %%           NewState = state record()
 %%--------------------------------------------------------------------
 process_signal({cancel_pending, ExtraHeaders}, State) when is_record(State, state) ->
@@ -698,12 +713,10 @@ allterminated(TargetList) ->
     TargetsCalling = targetlist:get_targets_in_state(calling, TargetList),
     TargetsTrying = targetlist:get_targets_in_state(trying, TargetList),
     TargetsProceeding = targetlist:get_targets_in_state(proceeding, TargetList),
-    %%TargetsCompleted = targetlist:get_targets_in_state(completed, TargetList),
     if
 	TargetsCalling /= [] -> false;
 	TargetsTrying /= [] -> false;
 	TargetsProceeding /= [] -> false;
-	%%TargetsCompleted /= [] -> false;
 	true -> true
     end.
 
@@ -1133,6 +1146,7 @@ get_range_responses(Min, Max, [H | T], Res) when is_record(H, sp_response) ->
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
+    Self = self(),
 
     %% test start_check_actions(Actions)
     %%--------------------------------------------------------------------
@@ -1159,6 +1173,123 @@ test() ->
     {error, _} = start_check_actions([CheckAction_Wait1, CheckAction_Wait2]),
 
 
+    %% test start_actions(BranchBase, Parent, OrigRequest, Actions)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "start_actions/4 - 1.1"),
+    %% test normal case, but with too low Max-Forwards for a fork to actually happen
+    StartAcReq1 = #request{method = "OPTIONS", uri = sipurl:parse("sip:ft@testcase.example.org"),
+			   header = keylist:from_list([{"Max-Forwards", ["1"]}]), body = <<>>},
+    error = start_actions("testbranchbase", self(), StartAcReq1, [CheckAction_Call1, CheckAction_Wait1]),
+
+    autotest:mark(?LINE, "start_actions/4 - 1.2"),
+    check_we_got_signal({sipproxy_all_terminated, Self, {483, "Too Many Hops"}}),
+    check_we_got_signal({sipproxy_terminating, Self}),
+
+    autotest:mark(?LINE, "start_actions/4 - 2"),
+    %% test failure case
+    error = start_actions("foo", self(), #request{}, []),
+
+
+    %% test start(BranchBase, Parent, Request, Actions, Timeout)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "start/5 - 0"),
+    StartRef = make_ref(),
+    StartSigCol = spawn_link(?MODULE, signal_collector, [self(), StartRef, passive]),
+
+    autotest:mark(?LINE, "start/5 - 1"),
+    %% Test with Route header
+    StartReq1 = #request{method = "OPTIONS", uri = sipurl:parse("sip:ft@testcase.example.org"),
+			 header = keylist:from_list([{"Route", ["<sip:testcase.example.org>"]}]), body = <<>>},
+    {error, "Request with Route header could not be forked"} =
+	start("testbranchbase", StartSigCol, StartReq1, [], 0),
+    StartExpectedSignals1 = [{sipproxy_all_terminated, Self,
+			      {500, "Server Internal Error"}},
+			     {sipproxy_terminating, Self}],
+    poll_signal_collector(StartRef, StartSigCol, StartExpectedSignals1),
+
+    autotest:mark(?LINE, "start/5 - 2.0"),
+    %% Test normal case (but only wait action, so a 500 will be generated)
+    StartReq2 = #request{method = "OPTIONS", uri = sipurl:parse("sip:ft@testcase.example.org"),
+			 header = keylist:from_list([]), body = <<>>},
+
+    autotest:mark(?LINE, "start/5 - 2.1"),
+    ok = start("testbranchbase", StartSigCol, StartReq2, [#sipproxy_action{action = wait, timeout = 0}], 0),
+
+    autotest:mark(?LINE, "start/5 - 2.2"),
+    StartExpectedSignals2 = [{sipproxy_all_terminated, Self,
+			      {500, "Server Internal Error"}},
+			     {sipproxy_terminating, Self}],
+    poll_signal_collector(StartRef, StartSigCol, StartExpectedSignals2),
+
+    StartSigCol ! {quit, self()},
+
+
+
+    %% test fork(EndTime, State)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "fork/2 - 0"),
+    %% test that we send a 408 Request Timeout if we reach our timeout and
+    %% haven't sent a final response yet. This can happen if one of our
+    %% branches has been cancelled but have not received a response yet.
+    ForkList0 = targetlist:empty(),
+    ForkRequest1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@example.org"),
+			    header = keylist:from_list([]), body = <<>>},
+    %% start a signal collector
+    ForkRef1 = make_ref(),
+    ForkSigCollect1 = spawn_link(?MODULE, signal_collector, [self(), ForkRef1, passive]),
+    ForkList1_1 = targetlist:add("branch1", ForkRequest1, ForkSigCollect1, calling,
+			       1, [], ForkList0),
+    ForkList1 = targetlist:add("branch2", ForkRequest1, ForkSigCollect1, terminated,
+			       1, [], ForkList1_1),
+
+    autotest:mark(?LINE, "fork/2 - 1.1"),
+    ForkState1 = #state{request = ForkRequest1,
+			timeout = 0,
+			parent  = ForkSigCollect1,
+			targets = ForkList1,
+			actions = []
+		       },
+    ok = fork(0, ForkState1),
+
+    autotest:mark(?LINE, "fork/2 - 1.2"),
+    ForkCancelCast = {'$gen_cast', {cancel, "cancel_targets_state", []}},
+    ForkExpectSignals1 = [ForkCancelCast,
+			  {sipproxy_no_more_actions, Self},
+			  {sipproxy_all_terminated, Self, {408, "Request Timeout"}}
+			 ],
+    poll_signal_collector(ForkRef1, ForkSigCollect1, ForkExpectSignals1),
+
+    autotest:mark(?LINE, "fork/2 - 2.1"),
+    %% test all terminated
+    ForkList2 = targetlist:add("terminatedbranch", ForkRequest1, ForkSigCollect1, terminated,
+			       1, [], ForkList0),
+    ForkState2 = #state{request = ForkRequest1,
+			timeout = 0,
+			parent  = ForkSigCollect1,
+			targets = ForkList2,
+			actions = [],
+			final_response_sent = true
+		       },
+    ok = fork(0, ForkState2),
+
+    autotest:mark(?LINE, "fork/2 - 2.2"),
+    %% verify that no signals were sent to the signal collector
+    poll_signal_collector(ForkRef1, ForkSigCollect1, []),
+
+    autotest:mark(?LINE, "fork/2 - 3.1"),
+    %% test generation of 500 Server Internal Error when no final repsonse has been generated,
+    %% for whatever reason
+    ForkState3 = ForkState2#state{final_response_sent = false},
+    ok = fork(0, ForkState3),
+
+    autotest:mark(?LINE, "fork/2 - 3.2"),
+    ForkExpectedSignals3 = [{sipproxy_all_terminated, Self, {500, "Server Internal Error"}}],
+    poll_signal_collector(ForkRef1, ForkSigCollect1, ForkExpectedSignals3),
+
+
+    ForkSigCollect1 ! {quit, self()},
+
+
     %% test get_next_target_branch(In)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_next_target_branch - 1"),
@@ -1166,6 +1297,9 @@ test() ->
 
     autotest:mark(?LINE, "get_next_target_branch - 2"),
     "z9hG4bK-really-unique.10" = get_next_target_branch("z9hG4bK-really-unique.9"),
+
+    autotest:mark(?LINE, "get_next_target_branch - 3"),
+    "z9hG4bK-really-unique.foo.1" = get_next_target_branch("z9hG4bK-really-unique.foo"),
 
 
     %% test mark_cancelled(Targets, TargetList)
@@ -1338,6 +1472,10 @@ test() ->
     %% test that choosing a 503 if we have to works
     R503 = pick_response(5, [R503]),
 
+    autotest:mark(?LINE, "pick_response/2 5xx - 4"),
+    %% test 5xx without 503
+    R500 = pick_response(5, [R599, R500]),
+
 
     %% test aggregate_authreqs(BestResponse, Responses)
     %%--------------------------------------------------------------------
@@ -1472,8 +1610,8 @@ test() ->
     %% test cancel_pending_if_invite_2xx_or_6xx(Method, Status, Reason, State)
     %%--------------------------------------------------------------------
     CancelPendingRef = make_ref(),
-    CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
-    CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef]),
+    CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active]),
+    CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active]),
 
     autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 0"),
 
@@ -1481,9 +1619,9 @@ test() ->
     CancelPendingReq1 = #request{method="INVITE", uri=sipurl:parse("sip:ft@it.su.se")},
     CancelPendingTargets1 = targetlist:add("branch1", CancelPendingReq1, CancelPendingPid1, calling,
 					   1, [], targetlist:empty()),
-    CancelPendingTargets2 = targetlist:add("branch1", CancelPendingReq1, CancelPendingPid2, completed,
+    CancelPendingTargets2 = targetlist:add("branch2", CancelPendingReq1, CancelPendingPid2, completed,
 					   1, [], CancelPendingTargets1),
-    CancelPendingState1 = #state{targets=CancelPendingTargets2},
+    CancelPendingState1 = #state{targets = CancelPendingTargets2},
 
     %%
     %% Test provisional response
@@ -1496,10 +1634,12 @@ test() ->
     %% Test 2xx response to INVITE
     %%
     autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 2.1"),
-    #state{} = cancel_pending_if_invite_2xx_or_6xx("INVITE", 200, "Ok", CancelPendingState1),
+    CancelPendingState2_out = cancel_pending_if_invite_2xx_or_6xx("INVITE", 200, "Ok", CancelPendingState1),
 
     autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 2.2"),
     %% check results
+    true = get_target_value(CancelPendingState2_out, "branch1", cancelled),
+    false = get_target_value(CancelPendingState2_out, "branch2", cancelled),
     receive
 	{CancelPendingRef, CancelPendingPid1,
 	 {'$gen_cast',
@@ -1577,8 +1717,101 @@ test() ->
 	    ok
     end,
 
-    ok.
+    CancelPendingPid1 ! {quit, self()},
+    CancelPendingPid2 ! {quit, self()},
 
+
+    %% test process_wait(EndTime, State)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "process_wait/2 - 0"),
+    ProcessWaitState1 = #state{targets = targetlist:empty(),
+			       mystate = completed
+			      },
+    Self ! {showtargets},
+
+    autotest:mark(?LINE, "process_wait/2 - 1"),
+    {discontinue, ProcessWaitState1} = process_wait(util:timestamp(), ProcessWaitState1),
+
+
+    %% test process_signal({cancel_pending, ExtraHeaders}, State)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 0"),
+    PSCancelPendingRef = make_ref(),
+    PSCancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive]),
+    PSCancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive]),
+
+    %% one pending and one already completed target
+    PSCancelPendingReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
+    PSCancelPendingTargets1 = targetlist:add("branch1", PSCancelPendingReq1, PSCancelPendingPid1, calling,
+					     1, [], targetlist:empty()),
+    PSCancelPendingTargets2 = targetlist:add("branch2", PSCancelPendingReq1, PSCancelPendingPid2, completed,
+					     1, [], PSCancelPendingTargets1),
+    PSCancelPendingState1 = #state{targets = PSCancelPendingTargets2, mystate = calling},
+
+    autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 1.1"),
+    %% test normal case, mystate = calling
+    {ok, PSCancelPendingState1_out} = process_signal({cancel_pending, [{"Reason", ["test"]}]}, PSCancelPendingState1),
+
+    autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 1.2"),
+    %% verify results
+    cancelled = PSCancelPendingState1_out#state.mystate,
+    true = get_target_value(PSCancelPendingState1_out, "branch1", cancelled),
+    false = get_target_value(PSCancelPendingState1_out, "branch2", cancelled),
+    autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 1.3"),
+    poll_signal_collector(PSCancelPendingRef, PSCancelPendingPid1,
+			  [{'$gen_cast', {cancel, "cancel_targets_state", [{"Reason", ["test"]}]}}]
+			 ),
+    autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 1.4"),
+    poll_signal_collector(PSCancelPendingRef, PSCancelPendingPid2, []),
+
+    autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 2.1"),
+    %% test normal case, mystate = completed
+    PSCancelPendingState2 = #state{targets = PSCancelPendingTargets1, mystate = completed},
+    {ok, PSCancelPendingState2_out} = process_signal({cancel_pending, []}, PSCancelPendingState2),
+
+    autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 2.2"),
+    %% verify results
+    completed = PSCancelPendingState2_out#state.mystate,
+    poll_signal_collector(PSCancelPendingRef, PSCancelPendingPid1,
+			  [{'$gen_cast', {cancel, "cancel_targets_state", []}}]
+			 ),
+    true = get_target_value(PSCancelPendingState2_out, "branch1", cancelled),
+
+    PSCancelPendingPid1 ! {quit, self()},
+    PSCancelPendingPid2 ! {quit, self()},
+
+
+    %% test process_signal({clienttransaction_terminating, ClientPid, Branch}, State)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 0"),
+    PSClientTermRef = make_ref(),
+    PSClientTermPid1 = spawn_link(?MODULE, signal_collector, [self(), PSClientTermRef, passive]),
+
+    PSClientTermReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
+    PSClientTermTargets1 = targetlist:add("branch1", PSClientTermReq1, PSClientTermPid1, calling,
+					     1, [], targetlist:empty()),
+    PSClientTermState1 = #state{targets = PSClientTermTargets1},
+
+    autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 1.1"),
+    %% test normal case
+    {ok, PSClientTermState1_out} = process_signal({clienttransaction_terminating, PSClientTermPid1,
+						   "branch1"}, PSClientTermState1),
+
+    autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 1.2"),
+    %% verify result
+    terminated = get_target_value(PSClientTermState1_out, "branch1", state),
+
+    autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 2"),
+    %% test with invalid pid, expected to crash
+    {'EXIT', {{badmatch, _}, _}} = (catch process_signal({clienttransaction_terminating, 
+							   self(), "branch1"}, PSClientTermState1)),
+
+    autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 3"),
+    %% test with unknown branch, no change expected
+    {ok, PSClientTermState1} =
+	process_signal({clienttransaction_terminating, self(), "unknownbranch"}, PSClientTermState1),
+
+    ok.
 
 test_report_upstreams(Num, State, Expected) when is_record(State, state) ->
     UpstreamsMyself = self(),
@@ -1596,17 +1829,71 @@ test_report_upstreams(Num, State, Expected) when is_record(State, state) ->
     end.
 
 %% signal collector
-signal_collector(Parent, Ref) ->
+signal_collector(Parent, Ref, Mode) ->
     erlang:monitor(process, Parent),
+    signal_collector(Parent, Ref, Mode, []).
+
+signal_collector(Parent, Ref, Mode, Buf) ->
     receive
 	{quit, Parent} ->
 	    ok;
+	{flush, Parent} when Mode == passive ->
+	    %% send stored messages to parent
+	    Parent ! {Ref, self(), flush, lists:reverse(Buf)},
+	    signal_collector(Parent, Ref, Mode, []);
 	{'DOWN', _MRef, process, Parent, _Info} ->
 	    ok;
 	Msg ->
-	    %% Relay message to parent, with a reference and our pid as tags
-	    Parent ! {Ref, self(), Msg},
-	    signal_collector(Parent, Ref)
+	    case Mode of
+		active ->
+		    %% Relay message to parent, with a reference and our pid as tags
+		    Parent ! {Ref, self(), Msg},
+		    signal_collector(Parent, Ref, Mode, []);
+		passive ->
+		    %% store message
+		    signal_collector(Parent, Ref, Mode, [Msg | Buf])
+	    end
     after 10000 ->
+	    erlang:error("signal collector timed out")
+    end.
+
+poll_signal_collector(Ref, Pid, Expected) ->
+    Pid ! {flush, self()},
+    receive
+	{Ref, Pid, flush, Signals} ->
+	    poll_signal_collector2(Signals, Expected, 0)
+    after 1000 ->
+	    throw({error, "test: signal collector does not respond"})
+    end,
+    ok.
+
+poll_signal_collector2([S1 | ST], [E1 | ET], N) when S1 == E1 ->
+    poll_signal_collector2(ST, ET, N + 1);
+poll_signal_collector2([S1 | _ST], [E1 | _ET], N) ->
+    Msg = io_lib:format("test: signal collector signal ~p does not match~n(~p, expected ~p)~n",
+			[N, S1, E1]),
+    throw({error, lists:flatten(Msg)});
+poll_signal_collector2([], [], _N) ->
+    ok;
+poll_signal_collector2(S, E, _N) ->
+    Msg = io_lib:format("test: signal collector signals does not match~n(signals left: ~p, expected :~p)~n",
+			[S, E]),
+    throw({error, lists:flatten(Msg)}).
+
+check_we_got_signal(Signal) ->
+    receive
+	Signal ->
 	    ok
+    after 1000 ->
+	    Msg = io_lib:format("error: test did not result in a ~p signal", [Signal]),
+	    erlang:error(lists:flatten(Msg))
+    end.
+
+get_target_value(State, Branch, Key) when is_record(State, state), is_list(Branch), is_atom(Key) ->
+    case targetlist:get_using_branch(Branch, State#state.targets) of
+	none ->
+	    erlang:error("Could not find target with branch " ++ Branch);
+	Target ->
+	    [Value] = targetlist:extract([Key], Target),
+	    Value
     end.
