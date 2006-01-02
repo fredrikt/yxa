@@ -21,7 +21,7 @@
 	 user_has_cpl_script/1,
 	 user_has_cpl_script/2,
 	 rm_cpl_for_user/1,
-	 do_transform_table/0
+	 get_transform_fun/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -175,32 +175,23 @@ user_has_cpl_script(User, Type) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_transform_table()
-%% Descrip.: Check if we need to do a Mnesia transform on the
-%%           cpl_script_graph table.
-%% Returns : WasUpdated = true | false
+%% Function: get_transform_fun()
+%% Descrip.: Return a function to transform the cpl_script_graph
+%%           Mnesia table.
+%% Returns : {ok, Fun}
 %%--------------------------------------------------------------------
-do_transform_table() ->	
-    put({cpl_script_graph, update}, false),
+get_transform_fun() ->	
+    Table = cpl_script_graph,
     F = fun
 	    %% check for old cpl_script_graph lacking text element
 	    ({cpl_script_graph, User, Graph}) ->
-		put({cpl_script_graph, update}, true),
+		put({Table, update}, true),
 		{cpl_script_graph, User, Graph, ""};
 	    (CPL) when is_record(CPL, cpl_script_graph) ->
 		%% nothing to update
 		CPL
 	end,
-    case mnesia:transform_table(cpl_script_graph, F, record_info(fields, cpl_script_graph)) of
-	{atomic, ok} ->
-	    ok;
-	{aborted, {not_active, Reason, cpl_script_graph, _NodeList}} ->
-	    %% All disc_copies nodes must be online for table transforming, but we can't require
-	    %% all those nodes to be alive in order to start the Yxa servers.
-	    logger:log(normal, "Warning: Failed to update Mnesia table 'cpl_script_graph' : ~s", [Reason]),
-	    ok
-    end,
-    erase({cpl_script_graph, update}).
+    {ok, record_info(fields, cpl_script_graph), F}.
 
 %%====================================================================
 %% Behaviour functions

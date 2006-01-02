@@ -58,11 +58,10 @@ update() ->
 %% Returns : void()
 %%--------------------------------------------------------------------
 phone() ->
-    put(update, false),
-    F = fun
-	    %% check for old record lacking callid and cseq field
-	    ({phone, Number, Flags, Class, Expire, Address, ReqUriStr}) ->
-		put(update, true),
+    Table = phone,
+    F = fun({phone, Number, Flags, Class, Expire, Address, ReqUriStr}) ->
+		%% check for old record lacking callid and cseq field
+		put({Table, update}, true),
 		#phone{
 		     number = Number,
 		     flags = Flags,
@@ -73,10 +72,10 @@ phone() ->
 		     callid = "",
 		     cseq = 0
 		    };
-	    %% debug related patch - to fix when new phone entries got improperly updated -
-	    %% forgot setting CallId and CSeq field values
-	    ({phone, Number, Flags, Class, Expire, Address, ReqUriStr, undefined, undefined}) ->
-		put(update, true),
+	   ({phone, Number, Flags, Class, Expire, Address, ReqUriStr, undefined, undefined}) ->
+		%% debug related patch - to fix when new phone entries got improperly updated -
+		%% forgot setting CallId and CSeq field values
+		put({Table, update}, true),
 		#phone{
 		     number = Number,
 		     flags = Flags,
@@ -87,26 +86,12 @@ phone() ->
 		     callid = "",
 		     cseq = 0
 		    };
-	    %% nothing to update
-	    ({phone, _Number, _Flags, _Class, _Expire, _Address, _ReqUriStr, _CallId, _CSeq} = Phone) ->
+	   ({phone, _Number, _Flags, _Class, _Expire, _Address, _ReqUriStr, _CallId, _CSeq} = Phone) ->
+		%% nothing to update
 		Phone
 	end,
-    case mnesia:transform_table(phone, F, record_info(fields, phone)) of
-	{atomic, ok} ->
-	    ok;
-	{aborted, {not_active, Reason, phone, _NodeList}} ->
-	    %% All disc_copies nodes must be online for table transforming, but we can't require
-	    %% all those nodes to be alive in order to start the Yxa servers.
-	    logger:log(normal, "Warning: Failed to update Mnesia table 'phone' : ~s", [Reason]),
-	    ok
-    end,
+    do_transform_table(Table, F, record_info(fields, phone)).
 
-    case erase(update) of
-	true ->
-	    logger:log(debug, "phone: updated");
-	false ->
-	    true
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: regexproute()
@@ -116,13 +101,10 @@ phone() ->
 %% Returns : void()
 %%--------------------------------------------------------------------
 regexproute() ->
-    put(update, false),
-    F = fun
-	    %% check for old sipurl's lacking url_param field
-	    ({regexproute, Regexp, Flags,  Class,  Expire,
-	      {sipurl, Proto, User, Pass, Host, Port, Param}
-	     }) ->
-		put(update, true),
+    Table = regexproute,
+    F = fun({regexproute, Regexp, Flags,  Class,  Expire, {sipurl, Proto, User, Pass, Host, Port, Param}}) ->
+		%% old sipurl's lacking url_param field
+		put({Table, update}, true),
 		%% fixes so that url_param record is used
 		URL = sipurl:new([{proto, Proto}, {user, User}, {pass, Pass},
 				  {host, Host}, {port, Port}, {param, Param}]),
@@ -130,49 +112,32 @@ regexproute() ->
 		%% conversions like this in the future when we modify records
 		URLstr = sipurl:print(URL),
 		#regexproute{
-		     regexp = Regexp,
-		     flags = Flags,
-		     class = Class,
-		     expire = Expire,
-		     address = URLstr
-		    };
-	    %% check for sipurl's with both param and url_param field
-	    ({regexproute, Regexp, Flags,  Class,  Expire,
-	      {sipurl, Proto, User, Pass, Host, Port, _Param, UrlParam}
-	     }) ->
-		put(update, true),
+				       regexp = Regexp,
+				       flags = Flags,
+				       class = Class,
+				       expire = Expire,
+				       address = URLstr
+				      };
+	   ({regexproute, Regexp, Flags,  Class,  Expire, {sipurl, Proto, User, Pass, Host, Port, _Param, UrlParam}}) ->
+		%% sipurl's with both param and url_param field
+		put({Table, update}, true),
 		URL = sipurl:new([{proto, Proto}, {user, User}, {pass, Pass},
-				  {host, Host}, {port, Port}, {param, UrlParam}]),
+					{host, Host}, {port, Port}, {param, UrlParam}]),
 		%% store as string instead of record, so that we don't have to do
 		%% conversions like this in the future when we modify records
 		URLstr = sipurl:print(URL),
 		#regexproute{
-		     regexp = Regexp,
-		     flags = Flags,
-		     class = Class,
-		     expire = Expire,
-		     address = URLstr
-		    };
-	    %% nothing to update
-	    (RegExpRoute) when is_record(RegExpRoute, regexproute) ->
+				       regexp = Regexp,
+				       flags = Flags,
+				       class = Class,
+				       expire = Expire,
+				       address = URLstr
+				      };
+	   (RegExpRoute) when is_record(RegExpRoute, regexproute) ->
+		%% nothing to update
 		RegExpRoute
 	end,
-    case mnesia:transform_table(regexproute, F, record_info(fields, regexproute)) of
-	{atomic, ok} ->
-	    ok;
-	{aborted, {not_active, Reason, regexproute, _NodeList}} ->
-	    %% All disc_copies nodes must be online for table transforming, but we can't require
-	    %% all those nodes to be alive in order to start the Yxa servers.
-	    logger:log(normal, "Warning: Failed to update Mnesia table 'regexproute' : ~s", [Reason]),
-	    ok
-    end,
-
-    case erase(update) of
-	true ->
-	    logger:log(debug, "regexproute: updated");
-	false ->
-	    true
-    end.
+    do_transform_table(Table, F, record_info(fields, regexproute)).
 
 
 %%--------------------------------------------------------------------
@@ -182,13 +147,37 @@ regexproute() ->
 %% Returns : void()
 %%--------------------------------------------------------------------
 cpl_script_graph() ->
-    case cpl_db:do_transform_table() of
-	true ->
-	    logger:log(debug, "cpl_script_graph: updated");
-	false ->
-	    ok
-    end.
+    Table = cpl_script_graph,
+    {ok, Attrs, Fun} = cpl_db:get_transform_fun(),
+    do_transform_table(Table, Fun, Attrs).
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+%% Returns: ok
+do_transform_table(Table, Fun, Fields) when is_atom(Table), is_function(Fun, 1), is_list(Fields) ->
+    put({Table, update}, false),
+
+    case mnesia:transform_table(Table, Fun, Fields) of
+	{atomic, ok} ->
+	    ok;
+	{aborted, {not_active, Reason, Table, NodeList}} ->
+	    %% All disc_copies nodes must be online for table transforming, but we can't require
+	    %% all those nodes to be alive in order to start the Yxa servers.
+	    logger:log(normal, "Warning: Failed to update Mnesia table '~p' : ~s~n(node list : ~p)",
+		       [Table, Reason, NodeList]);
+	{aborted, {"Bad transform function", Table, _BadFun, OtherNode, {{badfun, _BadFun}, _ST}}} ->
+	    logger:log(error, "Error: Failed to update Mnesia table '~p' because the local transformation "
+		       "function is not the same as the one on node ~p", [Table, OtherNode]),
+	    erlang:error('Version inconsistency with other disc_copies nodes - table transform impossible')
+    end,
+    
+    case erase({Table, update}) of
+	true ->
+	    logger:log(debug, "~p: updated", [Table]);
+	false ->
+	    true
+    end,
+
+    ok.

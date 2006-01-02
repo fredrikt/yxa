@@ -132,6 +132,7 @@ init_mnesia(Tables) when is_list(Tables) ->
     case get_remote_tables(Tables) of
 	{ok, []} ->
 	    %% no remote tables, we are master
+	    find_mnesia_tables("local", Tables),
 	    init_mnesia_update();
 	{ok, RemoteTables} ->
 	    case yxa_config:get_env(databaseservers) of
@@ -143,10 +144,11 @@ init_mnesia(Tables) when is_list(Tables) ->
 				       [mnesia:error_description(Reason)]),
 			    throw('Could not add configured databaseservers');
 			{ok, _Ret} ->
+			    ensure_mnesia_nodes_running(DbNodes),
 			    check_for_tables(Tables),
 			    ok
 		    end,
-		    find_remote_mnesia_tables(RemoteTables);
+		    find_mnesia_tables("remote", RemoteTables);
 		none ->
 		    logger:log(error, "Startup: This application needs remote tables ~p but you "
 			       "haven't configured any databaseservers, exiting.",
@@ -155,6 +157,21 @@ init_mnesia(Tables) when is_list(Tables) ->
 	    end
     end.
 
+%% part of init_mnesia/1
+%% Returns : true | throw()
+ensure_mnesia_nodes_running([]) ->
+    true;
+ensure_mnesia_nodes_running(DbNodes) when is_list(DbNodes) ->
+    Running = mnesia:system_info(running_db_nodes),
+    ensure_mnesia_nodes_running(DbNodes, Running).
+
+ensure_mnesia_nodes_running([H | T], RunningNodes) when is_atom(H), is_list(RunningNodes) ->
+    lists:member(H, RunningNodes)
+	orelse ensure_mnesia_nodes_running(T, RunningNodes);
+ensure_mnesia_nodes_running([], _RunningNodes) ->
+    logger:log(error, "Startup problem: Could not establish a connection to any of the configured databaseservers"),
+    throw('Could not establish a connection to any of the configured databaseservers').
+    
 %% init_mnesia_update/0, part of init_mnesia/1. Do table update if we are Mnesia db-master node.
 init_mnesia_update() ->
     %% update old database versions
@@ -213,9 +230,10 @@ check_for_tables([]) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: find_remote_mnesia_tables(RemoteTables)
-%%           RemoteTables = list() of atom(), names of remote Mnesia
-%%                          tables needed by this Yxa application.
+%% Function: find_mnesia_tables(Descr, Tables)
+%%           Descr  = "local" | "remote"
+%%           Tables = list() of atom(), names of local/remote Mnesia
+%%                    tables needed by this Yxa application.
 %% Descrip.: Do mnesia:wait_for_tables() for RemoteTables, with a
 %%           timeout since we (Stockholm university) have had
 %%           intermittent problems with mnesia startups. Try a mnesia
@@ -228,30 +246,31 @@ check_for_tables([]) ->
 %% or is it the usage of ctrl-c to terminate node when debugging
 %% which mnesia might perceive as a network error? - hsten
 %%--------------------------------------------------------------------
-find_remote_mnesia_tables(RemoteTables) ->
-    logger:log(debug, "Initializing remote Mnesia tables ~p", [RemoteTables]),
-    find_remote_mnesia_tables1(RemoteTables, RemoteTables, 0).
+find_mnesia_tables(Descr, Tables) ->
+    logger:log(debug, "Initializing ~s Mnesia tables ~p", [Descr, Tables]),
+    find_mnesia_tables2(Descr, Tables, Tables, 0).
 
-find_remote_mnesia_tables1(OrigTableList, RemoteTables, Count) ->
-    case mnesia:wait_for_tables(RemoteTables, 10000) of
+find_mnesia_tables2(Descr, OrigTableList, Tables, Count) ->
+    case mnesia:wait_for_tables(Tables, 10000) of
 	ok ->
 	    ok;
 	{timeout, BadTabList} ->
 	    case Count of
 		3 ->
-		    logger:log(normal, "Attempting a Mnesia restart because I'm still waiting for tables ~p",
-			       [BadTabList]),
+		    logger:log(normal, "Attempting a Mnesia restart because I'm still waiting for ~s tables ~p",
+			       [Descr, BadTabList]),
 		    StopRes = mnesia:stop(),
 		    StartRes = mnesia:start(),
 		    logger:log(debug, "Mnesia stop() -> ~p, start() -> ~p", [StopRes, StartRes]),
-		    find_remote_mnesia_tables1(OrigTableList, OrigTableList, Count + 1);
+		    find_mnesia_tables2(Descr, OrigTableList, OrigTableList, Count + 1);
 		6 ->
-		    logger:log(error, "Could not initiate remote Mnesia tables ~p, exiting.", [BadTabList]),
+		    logger:log(error, "Could not initiate ~s Mnesia tables ~p, exiting.", [Descr, BadTabList]),
 		    logger:quit(none),
-		    throw('Mnesia remote table init error');
+		    Msg = io_lib:format("Mnesia ~s table init error", [Descr]),
+		    throw(list_to_atom(Msg));
 		_ ->
-		    logger:log(debug, "Still waiting for tables ~p", [BadTabList]),
-		    find_remote_mnesia_tables1(OrigTableList, BadTabList, Count + 1)
+		    logger:log(debug, "Still waiting for ~s tables ~p", [Descr, BadTabList]),
+		    find_mnesia_tables2(Descr, OrigTableList, BadTabList, Count + 1)
 	    end
     end.
 
