@@ -316,7 +316,7 @@ parse(CfgL, State) when is_record(CfgL, yxa_cfg), is_record(State, state) ->
     end.
 
 parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
-    case apply(Module, parse, [Opaque]) of
+    try Module:parse(Opaque) of
 	{error, Msg} ->
 	    {error, Module, Msg};
 	continue ->
@@ -324,6 +324,10 @@ parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
 	{ok, This} when is_record(This, yxa_cfg) ->
 	    NewEntrys = merge_entrys(Entrys, This#yxa_cfg.entrys),
 	    parse2(T, NewEntrys)
+    catch
+	throw:
+	  {error, Msg} ->
+	    {error, Module, Msg}
     end;
 parse2([], Entrys) ->
     {ok, lists:keysort(1, Entrys)}.

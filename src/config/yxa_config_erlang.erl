@@ -145,10 +145,22 @@ extract_config(TermL, AppModule) when is_list(TermL), is_atom(AppModule) ->
 get_section(Key, TermL) when is_atom(Key), is_list(TermL) ->
     case lists:keysearch(Key, 1, TermL) of
 	{value, {Key, Res}} when is_list(Res) ->
+	    check_for_dups(Key, Res),
 	    {Key, Res};
 	false ->
 	    {Key, []}
     end.
+
+%% There must not be two instances of a parameter inside the same section.
+check_for_dups(Section, Data) ->
+    lists:foldl(fun({Key, _Value}, Previous) when Key == Previous ->
+			Msg = io_lib:format("Duplicate configuration parameter '~p' in section '~p'",
+					    [Key, Section]),
+			throw({error, lists:flatten(Msg)});
+		   ({Key, _Value}, _Previous) ->
+			Key
+		end, [], lists:keysort(1, Data)),
+    ok.
 
 merge_config(Config, [{Key, Value} | T]) ->
     NewL =
@@ -162,7 +174,6 @@ merge_config(Config, [{Key, Value} | T]) ->
     merge_config(NewL, T);
 merge_config(Config, []) ->
     lists:keysort(1, Config).
-
 
 %%====================================================================
 %% Test functions
@@ -192,6 +203,10 @@ test() ->
 			 {1, 11}
 			]},
 
+    GS_Term_Dups = {dups_test, [{dup, 10},
+				{dup, 11}
+			       ]},
+
     autotest:mark(?LINE, "get_section/2 - 1"),
     GS_Term_Test = get_section(test, [GS_Term_Test]),
 
@@ -200,6 +215,10 @@ test() ->
 
     autotest:mark(?LINE, "get_section/2 - 3"),
     GS_Term_Common = get_section(common, [GS_Term_Foo, GS_Term_Common, GS_Term_Test]),
+
+    autotest:mark(?LINE, "get_section/2 - 4"),
+    {error, "Duplicate configuration parameter 'dup' in section 'dups_test'"} =
+	(catch get_section(dups_test, [GS_Term_Dups])),
 
 
     %% merge_config(Config1, Config2)
