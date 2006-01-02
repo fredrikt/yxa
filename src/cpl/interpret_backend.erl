@@ -803,7 +803,7 @@ make_proxy_destinations_response(Status, Response)
     {success, none, Response};
 make_proxy_destinations_response(Status, Response)
   when is_integer(Status), Status >= 300, Status =< 399, is_record(Response, response) ->
-    Contact = sipheader:contact(Response#response.header),
+    [Contact | _MoreContacts] = sipheader:contact(Response#response.header),
     {redirection, sipurl:parse(Contact#contact.urlstr), Response};
 make_proxy_destinations_response(408, Response) ->
     {noanswer, none, Response};
