@@ -388,7 +388,7 @@ type_check(Key, Value, #cfg_entry{list_of = true} = Def) ->
 %%--------------------------------------------------------------------
 
 %%
-%% integer
+%% atom
 %%
 type_check_elements([H | T], atom, Def, Res) when is_atom(H) ->
     type_check_elements(T, atom, Def, [H | Res]);
@@ -482,7 +482,7 @@ type_check_elements([H | T], sipurl, Def, Res) when is_list(H) ->
     end;
 
 %%
-%% sips_sipurl
+%% sip_sipurl
 %%
 type_check_elements([H | T], sip_sipurl, Def, Res) when is_list(H) ->
     case sipurl:parse_url_with_default_protocol("sip", H) of
@@ -909,7 +909,7 @@ test() ->
 	throw: {error, "Config check: definition missing in check_loadable_soft, should not happen!"} ->
 	    ok
     end,
-   
+
     ok.
 
 
@@ -1249,5 +1249,3 @@ test_type_check_sips_sipurl() ->
     end,
 
     ok.
-
-
