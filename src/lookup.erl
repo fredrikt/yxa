@@ -720,10 +720,15 @@ homedomain(Domain) when is_list(Domain) ->
 get_remote_party_number(User, _Header, URI, DstHost) when is_list(User), is_list(DstHost), is_record(URI, sipurl) ->
     case local:get_telephonenumber_for_user(User) of
 	Number when is_list(Number) ->
-	    {ok, FormattedNumber} = local:format_number_for_remote_party_id(Number, URI, DstHost),
-	    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
-	    RPURI = sipurl:set([{user, FormattedNumber}, {pass, none}, {param, []}], URI),
-	    {ok, contact:new(none, RPURI, Parameters), FormattedNumber};
+	    case local:format_number_for_remote_party_id(Number, URI, DstHost) of
+		{ok, FormattedNumber} ->
+		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
+		    RPURI = sipurl:set([{user, FormattedNumber}, {pass, none}, {param, []}], URI),
+		    {ok, contact:new(none, RPURI, Parameters), FormattedNumber};
+		none ->
+		    logger:log(error, "Lookup: Failed to format telephone number for Remote-Party-Id", [Number]),
+		    none
+	    end;
 	nomatch ->
 	    logger:log(debug, "Lookup: No telephone number found for user ~p", [User]),
 	    none
@@ -741,7 +746,7 @@ get_remote_party_number(User, _Header, URI, DstHost) when is_list(User), is_list
 %%           the number to E.164. If one or more of your PSTN gateways
 %%           wants the Caller-ID information in any other format, then
 %%           override this function in local.erl.
-%% Returns : {ok, Number}
+%% Returns : {ok, Number} | none
 %%           Number = string()
 %%--------------------------------------------------------------------
 format_number_for_remote_party_id(Number, _Header, _DstHost) when is_list(Number) ->
