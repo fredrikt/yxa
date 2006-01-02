@@ -292,7 +292,13 @@ lookup_url_to_addresses(sipuserdb_mnesia, URL) when is_record(URL, sipurl) ->
 lookup_url_to_addresses(_Src, URL) when is_record(URL, sipurl) ->
     %% Make a list of all possible addresses we
     %% can create out of this URL
-    Addrs = local:canonify_addresses([URL#sipurl.user]),
+    Addrs =
+	case URL#sipurl.user of
+	    none ->
+		[];
+	    _ ->
+		local:canonify_addresses([URL#sipurl.user])
+	end,
     BareURLstr = sipurl:print(sipurl:set([{pass, none}, {port, none}, {param, []}], URL)),
     lists:append([BareURLstr], Addrs).
 
