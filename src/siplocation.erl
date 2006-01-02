@@ -318,13 +318,14 @@ process_updates(LogTag, Header, SipUser, Contacts, AppName) ->
 	    SipError
     end.
 
-%% part of process_updates/4. Returns {200, "OK", []} | {200, "OK", ExtraHeaders}
+%% part of process_updates/4. Returns {200, "OK", ExtraHeaders}
 create_process_updates_response(SipUser) ->
+    Date = {"Date", [httpd_util:rfc1123_date()]},
     case fetch_contacts(SipUser) of
 	[] ->
-	    {200, "OK", []};
+	    {200, "OK", [Date]};
 	NewContacts when is_list(NewContacts) ->
-	    {200, "OK", [{"Contact", NewContacts}]}
+	    {200, "OK", [{"Contact", NewContacts}, Date]}
     end.
 
 
