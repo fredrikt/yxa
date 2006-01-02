@@ -1,13 +1,13 @@
-%% Code for testing during development. Finds misspelled function 
-%% names and incorrect arity usage. It requiers that the modules 
-%% tested, have already been debug compiled - use erlc with the 
+%% Code for testing during development. Finds misspelled function
+%% names and incorrect arity usage. It requiers that the modules
+%% tested, have already been debug compiled - use erlc with the
 %% +debug_info flag, e.g. :
-%% 
+%%
 %% erlc +debug_info xxxx.erl
 %%
-%% This code assumes that the current directory (when calling 
-%% xref_test:run) is the build folder (the directory where the .beam 
-%% files are). 
+%% This code assumes that the current directory (when calling
+%% xref_test:run) is the build folder (the directory where the .beam
+%% files are).
 %% This code has been tested on my (hsten) local machine, with a
 %%
 %% > cd src
@@ -15,7 +15,7 @@
 %% > erl
 %% 1> xref_test:run().
 %%
-%% in the source directory, but should also work in the build 
+%% in the source directory, but should also work in the build
 %% directory using the yxa Makefile to compile it.
 %%--------------------------------------------------------------------
 
@@ -55,7 +55,7 @@
 %%--------------------------------------------------------------------
 run() ->
 
-    Xref = foobar,  
+    Xref = foobar,
 
     %% stop any old xref process
     try xref:stop(Xref)
@@ -73,16 +73,16 @@ run() ->
 
 
     AddOptions = [
-		  {builtins, false}, 
-		  {recurse, false}, 
-		  {verbose, true}, 
+		  {builtins, false},
+		  {recurse, false},
+		  {verbose, true},
 		  {warnings, true}
 		 ],
 
-    %% tell xref where to look for modules to check    
-    Res = xref:add_directory(Xref, ".", [{recurse, true}]), 
+    %% tell xref where to look for modules to check
+    Res = xref:add_directory(Xref, ".", [{recurse, true}]),
     io:format("add_directory: ~n~p~n", [Res]),
-    
+
 
 
     %% determine which properties to check with xref
@@ -91,26 +91,26 @@ run() ->
 		undefined_functions,
 		locals_not_used,
 
-		%% this lists lots of functions - some are exported 
+		%% this lists lots of functions - some are exported
 		%% behaviour callbacks, others are unused functions intended
 		%% for future use (to expose a useful interface to the module)
 		%% and some are probably callback functions not related to
 		%% behaviours.
 
-		%% exports_not_used, 
-		deprecated_function_calls, 
-		deprecated_functions 
-		
-		%% {deprecated_function_calls, DeprFlag}, 
-		%% {deprecated_functions, DeprFlag}, 
-		%% {call, FuncSpec}, 
-		%% {use, FuncSpec}, 
-		%% {module_call, ModSpec}, 
-		%% {module_use, ModSpec}, 
-		%% {application_call, AppSpec}, 
-		%% {application_use, AppSpec}, 
-		%% {release_call, RelSpec}, 
-		%% {release_use, RelSpec} 
+		%% exports_not_used,
+		deprecated_function_calls,
+		deprecated_functions
+
+		%% {deprecated_function_calls, DeprFlag},
+		%% {deprecated_functions, DeprFlag},
+		%% {call, FuncSpec},
+		%% {use, FuncSpec},
+		%% {module_call, ModSpec},
+		%% {module_use, ModSpec},
+		%% {application_call, AppSpec},
+		%% {application_use, AppSpec},
+		%% {release_call, RelSpec},
+		%% {release_use, RelSpec}
 	       ],
 
     %% format analysis results
@@ -135,8 +135,8 @@ run() ->
 %%--------------------------------------------------------------------
 %% Function: filter(Res, AnalysisKind)
 %%           Res          = term(), return value of xref:analyze
-%%           AnalysisKind = atom(), the xref:analyze kind 
-%% Descrip.: remove certain xref:analyze output that only appears 
+%%           AnalysisKind = atom(), the xref:analyze kind
+%% Descrip.: remove certain xref:analyze output that only appears
 %%           to be wrong
 %% Returns : list() of term()
 %%--------------------------------------------------------------------
