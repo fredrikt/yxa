@@ -126,7 +126,7 @@ handle_event({info_report, _SomePid, {Parent, progress, Args}}, #state{parent = 
 %%           logger process is running, log it using the logger too.
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
-handle_event({error_report, _SomePid, ReportArgs} = Report, State) ->
+handle_event({error_report, _SomePid, _ReportArgs} = Report, State) ->
     ReportStr = lists:flatten( io_lib:format("~p", [Report]) ),
     io:format("Supervisor error:~n~s~nLast five successfully started subsystems (oldest last) :~n~p~n~n",
 	      [ReportStr, State#state.stack]),
