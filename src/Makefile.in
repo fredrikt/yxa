@@ -177,3 +177,6 @@ test: autotest.beam
 
 covertest: autotest.beam
 	$(ERL) -noshell -s autotest run_cover shell -pz $(SUBDIRS)
+
+xreftest: $(beam_FILES)
+	$(ERL) -noshell -s xref_test run_shell -pz .. $(SUBDIRS)

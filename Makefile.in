@@ -132,3 +132,6 @@ covertest:
 	echo "Making covertest in src/"; \
 	(cd src/ && $(MAKE) covertest) || exit 1
 
+xreftest: $(beam_FILES)
+	echo "Making xreftest in src/"; \
+	(cd src/ && $(MAKE) xreftest) || exit 1
