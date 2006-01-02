@@ -22,6 +22,7 @@
 %% Internal exports
 %%--------------------------------------------------------------------
 -export([
+	 test_module2/2,
 	 fake_logger_loop/0
 	]).
 
@@ -197,16 +198,37 @@ test_module(Module) ->
     io:format("~n"),
     io:format("testing module: ~p~n",[Module]),
     io:format("----------------------------------------------------------------------~n"),
-    case catch Module:test() of
-	ok ->
-	    erase({autotest, position}),
-	    ok;
-	Error ->
-	    {Line, Name} = erase({autotest, position}),
-	    io:format("Test FAILED : ~p~n", [Error]),
-	    {Line, Name, Error}
+    %% run each module test in a new pid to avoid being affected by other tests (like
+    %% having signals in the process mailbox, getting old timers firing upon us etc.)
+    TestPid = spawn_link(?MODULE, test_module2, [self(), Module]),
+    receive
+	{test_result, TestPid, Res} ->
+	    case Res of
+		ok ->
+		    ok;
+		{autotest_error, Line, Name, Error} ->
+		    io:format("Test FAILED : ~p~n", [Error]),
+		    {Line, Name, Error}
+	    end
+    after 600 * 1000 ->
+	    %% just to avoid hangs in case the execution of the tests are automated
+	    %% and runs from cron or similar
+	    io:format("Test FAILED : never finished~n"),
+	    {0, "Unknown", "module test never finished"}
     end.
 
+%% test_module2 - part of test_module but runs in a separate pid and
+%% reports result to parent (test_module)
+test_module2(Parent, Module) ->
+    Res =
+	case catch Module:test() of
+	    ok ->
+		ok;
+	    Error ->
+		{Line, Name} = erase({autotest, position}),
+		{autotest_error, Line, Name, Error}
+	end,
+    Parent ! {test_result, self(), Res}.
 
 %%--------------------------------------------------------------------
 %% Function: run_cover([Mode])
