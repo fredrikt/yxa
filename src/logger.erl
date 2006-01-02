@@ -446,20 +446,23 @@ rotate([Level | T], Suffix, State) when record(State, state) ->
     case rotate_file(Fn, Suffix) of
  	{ok, NewIoDev} ->
  	    logger:log(debug, "Rotated '~p' logfile with suffix ~p", [Level, Suffix]),
- 	    rotate(T, Suffix, update_iodev(Level, NewIoDev, State));
+	    NewState = case Level of
+			   debug ->
+			       file:close(State#state.debug_iodev),
+			       State#state{debug_iodev = NewIoDev};
+			   normal ->
+			       file:close(State#state.normal_iodev),
+			       State#state{normal_iodev = NewIoDev};
+			   error ->
+			       file:close(State#state.error_iodev),
+			       State#state{error_iodev = NewIoDev}
+		       end,
+ 	    rotate(T, Suffix, NewState);
  	{error, E} ->
  	    logger:log(error, "Failed rotating '~p' logfile with suffix ~p : ~p", [Level, Suffix, E]),
  	    Str = lists:concat(["Failed rotating '", Level, "' logfile"]),
  	    {{error, Str}, State}
     end.
-
-
-update_iodev(debug, N, State) when record(State, state) ->
-    State#state{debug_iodev=N};
-update_iodev(normal, N, State) when record(State, state) ->
-    State#state{normal_iodev=N};
-update_iodev(error, N, State) when record(State, state) ->
-    State#state{error_iodev=N}.
 
 level2filename(debug, State) when record(State, state) ->
     State#state.debug_fn;
