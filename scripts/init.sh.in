@@ -251,9 +251,9 @@ fi
 
 if [ -d "${PWD}/src/event_handler" -a -d "${PWD}/src/cpl" ]; then
     # we must be running from the build directory, add all subdirectorys
-    # to src/ to the code search path
+    # to src/ plus yaws/src/ to the code search path
     beamdirs=$(
-	echo "-pa src/"
+	echo "-pa src/ -pa yaws/src/"
 	ls ${PWD}/src/ | while read entry; do
 	    if [ -d "src/$entry" ]; then
 		echo "-pa src/$entry"
