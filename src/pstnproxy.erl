@@ -274,12 +274,9 @@ request_to_sip(Request, THandler) when is_record(Request, request) ->
 %%           NewURI = sipurl record()
 %%--------------------------------------------------------------------
 determine_sip_location(URI) when is_record(URI, sipurl) ->
-    {ok, Order} = yxa_config:get_env(sip_dest_order),
-    determine_sip_location(URI, Order).
-
-determine_sip_location(URI, [enum | T]) ->
     User = URI#sipurl.user,
     logger:log(debug, "pstnproxy: Performing ENUM lookup on ~p", [User]),
+    %% XXX handle {proxy, Loc} return from lookupenum? Should never happen in pstnproxy...
     case local:lookupenum(User) of
 	{relay, Loc} when is_record(Loc, sipurl) ->
 	    case yxa_config:get_env(pstnproxy_redirect_on_enum) of
@@ -292,61 +289,21 @@ determine_sip_location(URI, [enum | T]) ->
 		{ok, false} ->
 		    {proxy, Loc}
 	    end;
-	{proxy, ProxyURL} when is_record(ProxyURL, sipurl) ->
-	    %% Proxy instead of relay means that the ENUM result points at a 'homedomain'.
-	    %% Since pstnproxy can't be configured with homedomains, it means the result
-	    %% matched one of our hostnames. This is probably not a good thing, but should
-	    %% be investigated. What if a PSTN gateway sends a request to us, and we have
-	    %% 'forwarding' information for that number in ENUM? XXX
-	    logger:log(normal, "pstnproxy: ENUM for number ~p points back at me (~p) - ignoring",
-		       [User, sipurl:print(ProxyURL)]),
-	    determine_sip_location(URI, T);
 	none ->
-	    determine_sip_location(URI, T)
-    end;
-
-determine_sip_location(URI, [pstn_to_sip | T]) ->
-    User = URI#sipurl.user,
-    case yxa_config:get_env(pstn_to_sip, []) of
-	{ok, Regexps} ->
-	    case util:regexp_rewrite(User, Regexps) of
-		nomatch ->
-		    logger:log(debug, "pstnproxy: No match for number ~p in pstn_to_sip regexps", [User]),
-		    determine_sip_location(URI, T);
-		Res when is_list(Res)->
-		    case sipurl:parse_url_with_default_protocol("sip", Res) of
-			URL when is_record(URL, sipurl) ->
-			    {proxy, URL};
-			error ->
-			    logger:log(error, "pstnproxy: Could not parse result of pstn_to_sip regexp rewrite "
-				       "(~p -> ~p)", [User, Res]),
-			    determine_sip_location(URI, T)
-		    end
-	    end;
-	_ ->
-	    determine_sip_location(URI, T)
-    end;
-
-determine_sip_location(URI, [sipproxy | T]) ->
-    User = URI#sipurl.user,
-    case yxa_config:get_env(sipproxy) of
-	{ok, ProxyURL1} when is_record(ProxyURL1, sipurl) ->
-	    %% Use configured sipproxy but exchange user with user from Request-URI
-	    ProxyURL = sipurl:set([{user, User},
-				   {pass, none}
-				  ], ProxyURL1),
-	    {proxy, ProxyURL};
-	none ->
-	    logger:log(debug, "pstnproxy: No sipproxy configured", [User]),
-	    determine_sip_location(URI, T)
-    end;
-
-determine_sip_location(URI, []) ->
-    User = URI#sipurl.user,
-    %% No ENUM and no SIP-proxy configured, return failure so that the PBX
-    %% on the other side of the gateway can fall back to PSTN or something
-    {ok, Status} = yxa_config:get_env(pstnproxy_no_sip_dst_code),
-    {reply, Status, "No destination found for number " ++ User}.
+	    case yxa_config:get_env(sipproxy) of
+		{ok, ProxyURL1} when is_record(ProxyURL1, sipurl) ->
+		    %% Use configured sipproxy but exchange user with user from Request-URI
+		    ProxyURL = sipurl:set([{user, User},
+					   {pass, none}
+					  ], ProxyURL1),
+		    {proxy, ProxyURL};
+		none ->
+		    %% No ENUM and no SIP-proxy configured, return failure so that the PBX
+		    %% on the other side of the gateway can fall back to PSTN or something
+		    {ok, Status} = yxa_config:get_env(pstnproxy_no_sip_dst_code),
+		    {reply, Status, "No destination found for number " ++ User}
+	    end
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: request_to_pstn(Request, Origin, THandler, LogTag)
