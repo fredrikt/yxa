@@ -309,11 +309,10 @@ get_classes_for_user(User) ->
 %%--------------------------------------------------------------------
 %% Function: get_telephonenumber_for_user(Username)
 %%           Username = string()
-%% Descrip.: Return the telephone number for a user. We do this by
-%%           fetching all addresses for the user and then examining
-%%           them to see if any of them is a tel: URL, or has a
-%%           user part which is all numeric or is an E.164 number.
-%%           The numbering plan in the number return is not specified.
+%% Descrip.: Return the telephone number for a user. Return the number
+%%           as a string which is probably an E.164 number or just a
+%%           string with digits. The numbering plan in the number
+%%           return is not specified.
 %% Returns : Number  |
 %%           nomatch |
 %%           error
@@ -326,7 +325,9 @@ get_telephonenumber_for_user(User) ->
 	{ok, _, []} ->
 	    logger:log(debug, "userdb-mysql: No numbers for user ~p", [User]),
 	    nomatch;
-	{ok, _, [[FirstNumber] | _]} ->
+	{ok, _, [["tel:" ++ Rest] | _]} ->
+	    Rest;
+	{ok, _, [[FirstNumber] | _]} when is_list(FirstNumber) ->
 	    FirstNumber;
 	{error, Reason} ->
 	    logger:log(error, "userdb-mysql: Error for username ~p: ~p", [User, Reason]),
