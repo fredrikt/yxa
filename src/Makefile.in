@@ -16,7 +16,7 @@ includedir = @libdir@/yxa/include
 sbindir = @sbindir@
 exec_prefix=${prefix}
 builddir = @builddir@
-local_file = @local_file@
+local_module = @local_module@
 
 ERLC = @ERLC@
 ERL = @ERL@
@@ -30,7 +30,6 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 systools_make_script = \
 	$(ERLC) -I$(srcdir) $(srcdir)/$*.rel
 
-LOCAL_ERL = local.erl-$(local_file)
 
 erl_FILES = \
 	appserver.erl \
@@ -72,7 +71,8 @@ erl_FILES = \
 	url_param.erl \
 	util.erl \
 	xref_test.erl \
-	yxa_ctl.erl
+	yxa_ctl.erl \
+	$(local_module).erl
 
 
 imported_hrl_FILES = \
@@ -137,7 +137,6 @@ install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) start_ssl.boot install-recursi
 
 clean: clean-recursive
 	rm -f core *.core *~
-	rm -f local.erl
 	rm -f *.beam *.script *.start *.boot *.app
 	rm -f *.o ktrace.out erl_crash.dump
 
@@ -151,11 +150,12 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
 .erl.beam:
 	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info $<
 
+local.beam: $(srcdir)/local.erl ../config.status
+	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info -DLOCAL_MODULE=$(local_module) $(srcdir)/local.erl
+
 .app-in.app:
 	cp $(srcdir)/$*.app-in $*.app
 
-local.erl: $(LOCAL_ERL)
-	cp $(srcdir)/$(LOCAL_ERL) local.erl
 
 incomingproxy.boot: incomingproxy.app $(srcdir)/incomingproxy.rel
 	$(systools_make_script)

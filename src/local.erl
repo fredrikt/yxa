@@ -1,5 +1,22 @@
+%%%-------------------------------------------------------------------
+%%% File    : local.erl
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Interface to local functions hooking into lots of
+%%%           different parts of the various Yxa applications.
+%%%
+%%% Created : 03 Jan 2006 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
 -module(local).
 
+%%--------------------------------------------------------------------
+%% External exports
+%%--------------------------------------------------------------------
+-export([init/0
+	]).
+
+%%--------------------------------------------------------------------
+%% Hooks
+%%--------------------------------------------------------------------
 -export([
 	 url2mnesia_userlist/1,
 	 canonify_user/1,
@@ -112,21 +129,94 @@
 	 config_is_soft_reloadable/2
 	]).
 
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
-url2mnesia_userlist(URL) when record(URL, sipurl), is_list(URL#sipurl.user) ->
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(LOCAL_ETS_TABLE_NAME, yxa_hooks).
+
+-define(CHECK_EXPORTED(LocalMacroKey, LocalMacroIfSo, LocalMacroOtherwise),
+	case ets:lookup(?LOCAL_ETS_TABLE_NAME, LocalMacroKey) of
+	    [LocalMacroKey] ->
+		LocalMacroIfSo;
+	    _ ->
+		LocalMacroOtherwise
+	end).
+
+%%====================================================================
+%% External functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: init()
+%% Descrip.: Look at the list of exported functions from the module
+%%           specified as ?LOCAL_MODULE, and make a cache of which
+%%           of _this_ modules functions are overridden in the
+%%           ?LOCAL_MODULE module.
+%% Returns : ok
+%%--------------------------------------------------------------------
+init() ->
+    ets:new(?LOCAL_ETS_TABLE_NAME, [named_table]),
+    Exports = ?MODULE:module_info(exports),
+    MyLocalExports = ?LOCAL_MODULE:module_info(exports),
+    %% Check which of this ('local') modules exported functions are also exported
+    %% by the ?LOCAL_MODULE function. The LOCAL_MODULE define is provided at compile
+    %% time and can be affected by supplying a --with-local=modulename argument to
+    %% the Yxa 'configure' script.
+    Fun = fun({init, 0}) ->
+		  ?LOCAL_MODULE:init(),
+		  [];
+	     ({module_info, _A}) ->
+		  [];
+	     ({F, A}) ->
+		  case lists:member({F, A}, Exports) of
+		      true ->
+			  ets:insert(?LOCAL_ETS_TABLE_NAME, {F, A}),
+			  F;
+		      false ->
+			  []
+		  end
+	  end,
+    [Fun(V) || V <- MyLocalExports],
+    Overridden = ets:tab2list(?LOCAL_ETS_TABLE_NAME),
+    logger:log(normal, "Local: Found ~p overriding functions in module '~p' : ~p",
+	       [length(Overridden), ?LOCAL_MODULE, Overridden]),
+    ok.
+
+
+%%====================================================================
+%% Hooks
+%%====================================================================
+
+url2mnesia_userlist(URL) when is_record(URL, sipurl) ->
+    ?CHECK_EXPORTED({url2mnesia_userlist, 1},
+		    ?LOCAL_MODULE:url2mnesia_userlist(URL),
+		    default_url2mnesia_userlist(URL)
+		   ).
+
+default_url2mnesia_userlist(URL) when is_list(URL#sipurl.user) ->
     [URL#sipurl.user ++ "@" ++ URL#sipurl.host];
-url2mnesia_userlist(URL) when record(URL, sipurl) ->
+default_url2mnesia_userlist(_URL) ->
     [].
 
 % Turn a SIP username into an address which can be reached from anywhere.
 % Used for example from the Mnesia userdb-module. It should be possible
 % to call Mnesia users based on their username, but the username might
 % need sip: prepended to it, or a default domain name appended to it.
-canonify_user("sip:" ++ User) ->
+canonify_user(User) when is_list(User) ->
+    ?CHECK_EXPORTED({canonify_user, 1},
+		    ?LOCAL_MODULE:canonfiy_user(User),
+		    default_canonify_user(User)
+		   ).
+
+default_canonify_user("sip:" ++ User) ->
     "sip:" ++ User;
-canonify_user(Fulluser) ->
+default_canonify_user(Fulluser) ->
     case string:tokens(Fulluser, "@") of
         [_User, _Host] ->
             "sip:" ++ Fulluser;
@@ -139,29 +229,35 @@ canonify_user(Fulluser) ->
 %% get non-fully qualified phone numbers (like local extension numbers)
 %% back from the database.
 canonify_addresses(In) when is_list(In) ->
-    canonify_addresses2(In, []).
+    ?CHECK_EXPORTED({canonify_addresses, 1},
+		    ?LOCAL_MODULE:canonfiy_addresses(In),
+		    default_canonify_addresses(In)
+		   ).
 
-canonify_addresses2(["tel:+" ++ _ = H | T], Res) ->
-    canonify_addresses2(T, [H | Res]);
-canonify_addresses2(["+" ++ Num = H | T], Res) ->
+default_canonify_addresses(In) when is_list(In) ->
+    default_canonify_addresses2(In, []).
+
+default_canonify_addresses2(["tel:+" ++ _ = H | T], Res) ->
+    default_canonify_addresses2(T, [H | Res]);
+default_canonify_addresses2(["+" ++ Num = H | T], Res) ->
     case util:isnumeric(Num) of
 	true ->
 	    This = "tel:+" ++ Num,
-	    canonify_addresses2(T, [This | Res]);
+	    default_canonify_addresses2(T, [This | Res]);
 	false ->
 	    %% non-numeric part after '+' - leave unaltered
-	    canonify_addresses2(T, [H | Res])
+	    default_canonify_addresses2(T, [H | Res])
     end;
-canonify_addresses2([H | T], Res) ->
+default_canonify_addresses2([H | T], Res) ->
     case rewrite_potn_to_e164(H) of
 	"+" ++ _ = E164->
 	    This = "tel:" ++ E164,
-	    canonify_addresses2(T, [This | Res]);
+	    default_canonify_addresses2(T, [This | Res]);
 	_ ->
 	    %% could not rewrite using rewrite_potn_to_e164/1 - leave unaltered
-	    canonify_addresses2(T, [H | Res])
+	    default_canonify_addresses2(T, [H | Res])
     end;
-canonify_addresses2([], Res) ->
+default_canonify_addresses2([], Res) ->
     lists:reverse(Res).
 
 
@@ -169,20 +265,32 @@ canonify_addresses2([], Res) ->
 %%%%%%%%%%%%%%%%
 
 lookup_homedomain_url(URL) when record(URL, sipurl) ->
-    none.
+    ?CHECK_EXPORTED({lookup_homedomain_url, 1},
+		    ?LOCAL_MODULE:lookup_homedomain_url(URL),
+		    none
+		   ).
 
-lookup_remote_url(_URL) ->
-    none.
+lookup_remote_url(URL) ->
+    ?CHECK_EXPORTED({lookup_remote_url, 1},
+		    ?LOCAL_MODULE:lookup_remote_url(URL),
+		    none
+		   ).
 
 is_request_to_this_proxy(Request) when record(Request, request) ->
-    lookup:is_request_to_this_proxy(Request).
+    ?CHECK_EXPORTED({is_request_to_this_proxy, 1},
+		    ?LOCAL_MODULE:is_request_to_this_proxy(Request),
+		    lookup:is_request_to_this_proxy(Request)
+		   ).
 
 
 % lookup.erl hooks
 %%%%%%%%%%%%%%%%%%%
 
 lookupregexproute(User) ->
-    lookup:lookupregexproute(User).
+    ?CHECK_EXPORTED({lookupregexproute, 1},
+		    ?LOCAL_MODULE:lookupregexproute(User),
+		    lookup:lookupregexproute(User)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: lookupuser(URL)
@@ -198,7 +306,10 @@ lookupregexproute(User) ->
 %%           nomatch     No such user
 %%--------------------------------------------------------------------
 lookupuser(URL) ->
-    lookup:lookupuser(URL).
+    ?CHECK_EXPORTED({lookupuser, 1},
+		    ?LOCAL_MODULE:lookupuser(URL),
+		    lookup:lookupuser(URL)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: lookupuser_locations(Users, URL)
@@ -212,7 +323,10 @@ lookupuser(URL) ->
 %% Returns : Locations = list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 lookupuser_locations(Users, URL) ->
-    lookup:lookupuser_locations(Users, URL).
+    ?CHECK_EXPORTED({lookupuser_locations, 2},
+		    ?LOCAL_MODULE:lookupuser_locations(Users, URL),
+		    lookup:lookupuser_locations(Users, URL)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: remove_unsuitable_locations(URL, Locations)
@@ -223,46 +337,88 @@ lookupuser_locations(Users, URL) ->
 %% Returns : list() of sipurl()
 %%--------------------------------------------------------------------
 remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
-    lookup:remove_unsuitable_locations(URL, Locations).
+    ?CHECK_EXPORTED({remove_unsuitable_locations, 2},
+		    ?LOCAL_MODULE:remove_unsuitable_locations(URL, Locations),
+		    lookup:remove_unsuitable_locations(URL, Locations)
+		   ).
 
 lookup_url_to_locations(URL) ->
-    lookup:lookup_url_to_locations(URL).
+    ?CHECK_EXPORTED({lookup_url_to_locations, 1},
+		    ?LOCAL_MODULE:lookup_url_to_locations(URL),
+		    lookup:lookup_url_to_locations(URL)
+		   ).
 
 lookup_url_to_addresses(Src, URL) ->
-    lookup:lookup_url_to_addresses(Src, URL).
+    ?CHECK_EXPORTED({lookup_url_to_addresses, 2},
+		    ?LOCAL_MODULE:lookup_url_to_addresses(Src, URL),
+		    lookup:lookup_url_to_addresses(Src, URL)
+		   ).
 
 lookup_addresses_to_users(Addresses) ->
-    lookup:lookup_addresses_to_users(Addresses).
+    ?CHECK_EXPORTED({lookup_addresses_to_users, 1},
+		    ?LOCAL_MODULE:lookup_addresses_to_users(Addresses),
+		    lookup:lookup_addresses_to_users(Addresses)
+		   ).
 
 lookup_address_to_users(Address) ->
-    lookup:lookup_address_to_users(Address).
+    ?CHECK_EXPORTED({lookup_address_to_users, 1},
+		    ?LOCAL_MODULE:lookup_address_to_users(Address),
+		    lookup:lookup_address_to_users(Address)
+		   ).
 
 lookupappserver(Key) ->
-    lookup:lookupappserver(Key).
+    ?CHECK_EXPORTED({lookupappserver, 1},
+		    ?LOCAL_MODULE:lookupappserver(Key),
+		    lookup:lookupappserver(Key)
+		   ).
 
-prioritize_locations(_Key, Locations) ->
-    siplocation:prioritize_locations(Locations).
+prioritize_locations(Key, Locations) ->
+    ?CHECK_EXPORTED({prioritize_locations, 2},
+		    ?LOCAL_MODULE:prioritize_locations(Key, Locations),
+		    siplocation:prioritize_locations(Locations)
+		   ).
 
 lookupdefault(URL) ->
-    lookup:lookupdefault(URL).
+    ?CHECK_EXPORTED({lookupdefault, 1},
+		    ?LOCAL_MODULE:lookupdefault(URL),
+		    lookup:lookupdefault(URL)
+		   ).
 
 lookuppotn(Number) ->
-    lookup:lookuppotn(Number).
+    ?CHECK_EXPORTED({lookuppotn, 1},
+		    ?LOCAL_MODULE:lookuppotn(Number),
+		    lookup:lookuppotn(Number)
+		   ).
 
 lookupnumber(Number) ->
-    lookup:lookupnumber(Number).
+    ?CHECK_EXPORTED({lookupnumber, 1},
+		    ?LOCAL_MODULE:lookupnumber(Number),
+		    lookup:lookupnumber(Number)
+		   ).
 
 lookupenum(Number) ->
-    lookup:lookupenum(Number).
+    ?CHECK_EXPORTED({lookupenum, 1},
+		    ?LOCAL_MODULE:lookupenum(Number),
+		    lookup:lookupenum(Number)
+		   ).
 
 lookuppstn(Number) ->
-    lookup:lookuppstn(Number).
+    ?CHECK_EXPORTED({lookuppstn, 1},
+		    ?LOCAL_MODULE:lookuppstn(Number),
+		    lookup:lookuppstn(Number)
+		   ).
 
 isours(URL) ->
-    lookup:isours(URL).
+    ?CHECK_EXPORTED({isours, 1},
+		    ?LOCAL_MODULE:isours(URL),
+		    lookup:isours(URL)
+		   ).
 
 homedomain(Domain) ->
-    lookup:homedomain(Domain).
+    ?CHECK_EXPORTED({homedomain, 1},
+		    ?LOCAL_MODULE:homedomain(Domain),
+		    lookup:homedomain(Domain)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: get_remote_party_number(User, Header, DstHost)
@@ -282,7 +438,10 @@ homedomain(Domain) ->
 %%           Number = string()
 %%--------------------------------------------------------------------
 get_remote_party_number(User, Header, URI, DstHost) when is_list(User) ->
-    lookup:get_remote_party_number(User, Header, URI, DstHost).
+    ?CHECK_EXPORTED({get_remote_party_number, 4},
+		    ?LOCAL_MODULE:get_remote_party_number(User, Header, URI, DstHost),
+		    lookup:get_remote_party_number(User, Header, URI, DstHost)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: format_number_for_remote_party_id(Number, Header, DstHost)
@@ -296,7 +455,10 @@ get_remote_party_number(User, Header, URI, DstHost) when is_list(User) ->
 %%           Number = string()
 %%--------------------------------------------------------------------
 format_number_for_remote_party_id(Number, Header, DstHost) when is_list(Number) ->
-    lookup:format_number_for_remote_party_id(Number, Header, DstHost).
+    ?CHECK_EXPORTED({format_number_for_remote_party_id, 3},
+		    ?LOCAL_MODULE:format_number_for_remote_party_id(Number, Header, DstHost),
+		    lookup:format_number_for_remote_party_id(Number, Header, DstHost)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: get_remote_party_name(Key, DstHost)
@@ -312,14 +474,20 @@ format_number_for_remote_party_id(Number, Header, DstHost) when is_list(Number) 
 %%           DisplayName = string()
 %%--------------------------------------------------------------------
 get_remote_party_name(Key, DstHost) ->
-    case rewrite_potn_to_e164(Key) of
-	"+" ++ E164 ->
-	    lookup:get_remote_party_name("+" ++ E164, DstHost);
-	_ -> none
-    end.
+    ?CHECK_EXPORTED({get_remote_party_name, 2},
+		    ?LOCAL_MODULE:get_remote_party_name(Key, DstHost),
+		    case rewrite_potn_to_e164(Key) of
+			"+" ++ E164 ->
+			    lookup:get_remote_party_name("+" ++ E164, DstHost);
+			_ -> none
+		    end
+		   ).
 
 rewrite_potn_to_e164(Key) ->
-    lookup:rewrite_potn_to_e164(Key).
+    ?CHECK_EXPORTED({rewrite_potn_to_e164, 1},
+		    ?LOCAL_MODULE:rewrite_potn_to_e164(Key),
+		    lookup:rewrite_potn_to_e164(Key)
+		   ).
 
 
 % userdb hooks
@@ -329,39 +497,69 @@ rewrite_potn_to_e164(Key) ->
 % for example in REGISTER. If there are multiple
 % users with an address, this function returns {error}.
 get_user_with_address(Address) ->
-   sipuserdb:get_user_with_address(Address).
+    ?CHECK_EXPORTED({get_user_with_address, 1},
+		    ?LOCAL_MODULE:get_user_with_address(Address),
+		    sipuserdb:get_user_with_address(Address)
+		   ).
 
 % Looks up all users with a given address. Used
 % to find out to which users we should send a request.
 get_users_for_address_of_record(Address) ->
-    sipuserdb:get_users_for_address_of_record(Address).
+    ?CHECK_EXPORTED({get_users_for_address_of_record, 1},
+		    ?LOCAL_MODULE:get_users_for_address_of_record(Address),
+		    sipuserdb:get_users_for_address_of_record(Address)
+		   ).
 
 get_users_for_addresses_of_record(Addresses) ->
-    sipuserdb:get_users_for_addresses_of_record(Addresses).
+    ?CHECK_EXPORTED({get_users_for_addresses_of_record, 1},
+		    ?LOCAL_MODULE:get_users_for_addresses_of_record(Addresses),
+		    sipuserdb:get_users_for_addresses_of_record(Addresses)
+		   ).
 
 % Gets all addresses for a user. Used for example
 % to check if a request from a user has an acceptable
 % From: header.
 get_addresses_for_user(User) ->
-    sipuserdb:get_addresses_for_user(User).
+    ?CHECK_EXPORTED({get_addresses_for_user, 1},
+		    ?LOCAL_MODULE:get_addresses_for_user(User),
+		    sipuserdb:get_addresses_for_user(User)
+		   ).
 
 get_addresses_for_users(Users) ->
-    sipuserdb:get_addresses_for_users(Users).
+    ?CHECK_EXPORTED({get_addresses_for_users, 1},
+		    ?LOCAL_MODULE:get_addresses_for_users(Users),
+		    sipuserdb:get_addresses_for_users(Users)
+		   ).
 
 get_users_for_url(URL) ->
-    sipuserdb:get_users_for_url(URL).
+    ?CHECK_EXPORTED({get_users_for_url, 1},
+		    ?LOCAL_MODULE:get_users_for_url(URL),
+		    sipuserdb:get_users_for_url(URL)
+		   ).
 
 get_password_for_user(User) ->
-    sipuserdb:get_password_for_user(User).
+    ?CHECK_EXPORTED({get_password_for_user, 1},
+		    ?LOCAL_MODULE:get_password_for_user(User),
+		    sipuserdb:get_password_for_user(User)
+		   ).
 
 get_classes_for_user(User) ->
-    sipuserdb:get_classes_for_user(User).
+    ?CHECK_EXPORTED({get_classes_for_user, 1},
+		    ?LOCAL_MODULE:get_classes_for_user(User),
+		    sipuserdb:get_classes_for_user(User)
+		   ).
 
 get_telephonenumber_for_user(User) ->
-    sipuserdb:get_telephonenumber_for_user(User).
+    ?CHECK_EXPORTED({get_telephonenumber_for_user, 1},
+		    ?LOCAL_MODULE:get_telephonenumber_for_user(User),
+		    sipuserdb:get_telephonenumber_for_user(User)
+		   ).
 
 get_forwards_for_users(Users) ->
-    sipuserdb:get_forwards_for_users(Users).
+    ?CHECK_EXPORTED({get_forwards_for_user, 1},
+		    ?LOCAL_MODULE:get_forwards_for_users(Users),
+		    sipuserdb:get_forwards_for_users(Users)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: sipuserdb_backend_override(Module, Function, Args)
@@ -373,8 +571,11 @@ get_forwards_for_users(Users) ->
 %%           will be called
 %% Returns : {ok, Res} | undefined
 %%--------------------------------------------------------------------
-sipuserdb_backend_override(_Module, _Function, _Args) ->
-    undefined.
+sipuserdb_backend_override(Module, Function, Args) ->
+    ?CHECK_EXPORTED({sipuserdb_backend_override, 3},
+		    ?LOCAL_MODULE:sipuserdb_backend_override(Module, Function, Args),
+		    undefined
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: sipuserdb_backend_override(CfgKey, Args)
@@ -394,8 +595,11 @@ sipuserdb_backend_override(_Module, _Function, _Args) ->
 %%
 %% Note    : You have to mysql:quote() everything you use from Args!
 %%--------------------------------------------------------------------
-sipuserdb_mysql_make_sql_statement(_CfgKey, _Args) ->
-    undefined.
+sipuserdb_mysql_make_sql_statement(CfgKey, Args) ->
+    ?CHECK_EXPORTED({sipuserdb_mysql_make_sql_statement, 2},
+		    ?LOCAL_MODULE:sipuserdb_mysql_make_sql_statement(CfgKey, Args),
+		    undefined
+		   ).
 
 % Location lookup hooks
 %%%%%%%%%%%%%%%%%%%%%%%%
@@ -404,23 +608,35 @@ sipuserdb_mysql_make_sql_statement(_CfgKey, _Args) ->
 % to find out where a set of users are to see where
 % we should route a request.
 get_locations_for_users(Users) ->
-    siplocation:get_locations_for_users(Users).
+    ?CHECK_EXPORTED({get_locations_for_users, 1},
+		    ?LOCAL_MODULE:get_locations_for_users(Users),
+		    siplocation:get_locations_for_users(Users)
+		   ).
 
 % Checks if any of our users are registered at the
 % location specified. Used to determine if we should
 % proxy requests to a URI without authorization.
 get_user_with_contact(URI) ->
-    siplocation:get_user_with_contact(URI).
+    ?CHECK_EXPORTED({get_user_with_contact, 1},
+		    ?LOCAL_MODULE:get_user_with_contact(URI),
+		    siplocation:get_user_with_contact(URI)
+		   ).
 
 
 % AAA hooks
 %%%%%%%%%%%%
 
 get_user_verified(Header, Method) ->
-    sipauth:get_user_verified(Header, Method).
+    ?CHECK_EXPORTED({get_user_verified, 2},
+		    ?LOCAL_MODULE:get_user_verified(Header, Method),
+		    sipauth:get_user_verified(Header, Method)
+		   ).
 
 get_user_verified_proxy(Header, Method) ->
-    sipauth:get_user_verified_proxy(Header, Method).
+    ?CHECK_EXPORTED({get_user_verified_proxy, 2},
+		    ?LOCAL_MODULE:get_user_verified_proxy(Header, Method),
+		    sipauth:get_user_verified_proxy(Header, Method)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: can_use_address(User, URL)
@@ -432,7 +648,10 @@ get_user_verified_proxy(Header, Method) ->
 %%           false
 %%--------------------------------------------------------------------
 can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
-    sipauth:can_use_address(User, URL).
+    ?CHECK_EXPORTED({can_use_address, 2},
+		    ?LOCAL_MODULE:can_use_address(User, URL),
+		    sipauth:can_use_address(User, URL)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: can_use_address_detail(User, URL)
@@ -445,7 +664,10 @@ can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
 %%           Reason  = ok | eperm | nomatch | error
 %%--------------------------------------------------------------------
 can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
-    sipauth:can_use_address_detail(User, URL).
+    ?CHECK_EXPORTED({can_use_address, 2},
+		    ?LOCAL_MODULE:can_use_address_detail(User, URL),
+		    sipauth:can_use_address_detail(User, URL)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: can_register(Header, ToURL)
@@ -460,10 +682,16 @@ can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
 %%           Reason  = ok | eperm | nomatch | error
 %%--------------------------------------------------------------------
 can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, sipurl) ->
-    sipauth:can_register(Header, ToURL).
+    ?CHECK_EXPORTED({can_register, 2},
+		    ?LOCAL_MODULE:can_register(Header, ToURL),
+		    sipauth:can_register(Header, ToURL)
+		   ).
 
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
-    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).
+    ?CHECK_EXPORTED({is_allowed_pstn_dst, 4},
+		    ?LOCAL_MODULE:is_allowed_pstn_dst(User, ToNumber, Header, Class),
+		    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: canonify_authusername(Username, Header)
@@ -479,14 +707,20 @@ is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
 %%           NewUsername = string()
 %%--------------------------------------------------------------------
 canonify_authusername(Username, Header) when is_list(Username), is_record(Header, keylist) ->
-    undefined.
+    ?CHECK_EXPORTED({canonify_authusername, 2},
+		    ?LOCAL_MODULE:canonify_authusername(Username, Header),
+		    undefined
+		   ).
 
 % incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
-incomingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origin, siporigin),
-								 is_record(Request, request) ->
-    true.
+incomingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
+								is_record(Request, request) ->
+    ?CHECK_EXPORTED({incomingproxy_challenge_before_relay, 3},
+		    ?LOCAL_MODULE:incomingproxy_challenge_before_relay(Origin, Request, Dst),
+		    true
+		   ).
 
 %% pstnproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%%
@@ -517,15 +751,21 @@ incomingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origi
 %% Returns : undefined | nomatch | ignore | Relay
 %%           Relay = {relay, DstURI, NewRequest}
 %%--------------------------------------------------------------------
-pstnproxy_route_pstn_not_e164(_DstNumber, _Request, _Origin, _THandler) ->
-    undefined.
+pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin, THandler) ->
+    ?CHECK_EXPORTED({pstnproxy_route_pstn_not_e164, 4},
+		    ?LOCAL_MODULE:pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin, THandler),
+		    undefined
+		   ).
 
 % outgoingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
-outgoingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origin, siporigin),
+outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
 								 is_record(Request, request) ->
-    true.
+    ?CHECK_EXPORTED({outgoingproxy_challenge_before_relay, 3},
+		    ?LOCAL_MODULE:outgoingproxy_challenge_before_relay(Origin, Request, Dst),
+		    true
+		   ).
 
 % sippipe hooks
 %%%%%%%%%%%%%%%%
@@ -552,12 +792,18 @@ outgoingproxy_challenge_before_relay(Origin, Request, _Dst) when is_record(Origi
 %%           Reason = string(), SIP reason phrase
 %%           NewDstList = list() of sipdst record()
 %%--------------------------------------------------------------------
-sippipe_received_response(Request, Response, _DstList) when is_record(Request, request),
-							    is_record(Response, response) ->
-    undefined;
-sippipe_received_response(Request, {Status, Reason}, _DstList) when is_record(Request, request),
-								    is_integer(Status), is_list(Reason) ->
-    undefined.
+sippipe_received_response(Request, Response, DstList) when is_record(Request, request),
+							   is_record(Response, response) ->
+    ?CHECK_EXPORTED({sippipe_received_response, 3},
+		    ?LOCAL_MODULE:sippipe_received_response(Request, Response, DstList),
+		    undefined
+		   );
+sippipe_received_response(Request, {Status, Reason}, DstList) when is_record(Request, request),
+								   is_integer(Status), is_list(Reason) ->
+    ?CHECK_EXPORTED({sippipe_received_response, 3},
+		    ?LOCAL_MODULE:sippipe_received_response(Request, {Status, Reason}, DstList),
+		    undefined
+		   ).
 
 % cpl_db hooks
 %%%%%%%%%%%%%%%%
@@ -570,7 +816,10 @@ sippipe_received_response(Request, {Status, Reason}, _DstList) when is_record(Re
 %% Returns : true | false
 %%--------------------------------------------------------------------
 user_has_cpl_script(User) ->
-    cpl_db:user_has_cpl_script(User).
+    ?CHECK_EXPORTED({user_has_cpl_script, 1},
+		    ?LOCAL_MODULE:user_has_cpl_script(User),
+		    cpl_db:user_has_cpl_script(User)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: user_has_cpl_script(User)
@@ -581,7 +830,10 @@ user_has_cpl_script(User) ->
 %% Returns : true | false
 %%--------------------------------------------------------------------
 user_has_cpl_script(User, Direction) ->
-    cpl_db:user_has_cpl_script(User, Direction).
+    ?CHECK_EXPORTED({user_has_cpl_script, 2},
+		    ?LOCAL_MODULE:user_has_cpl_script(User, Direction),
+		    cpl_db:user_has_cpl_script(User, Direction)
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: get_cpl_for_user(User)
@@ -592,7 +844,33 @@ user_has_cpl_script(User, Direction) ->
 %%                      interpret_cpl:process_cpl_script(...)
 %%--------------------------------------------------------------------
 get_cpl_for_user(User) ->
-    cpl_db:get_cpl_for_user(User).
+    ?CHECK_EXPORTED({get_cpl_for_user, 1},
+		    ?LOCAL_MODULE:get_cpl_for_user(User),
+		    cpl_db:get_cpl_for_user(User)
+		   ).
+
+
+%%--------------------------------------------------------------------
+%% See cpl/README
+%%--------------------------------------------------------------------
+cpl_log(LogName, Comment, User, Request) ->
+    ?CHECK_EXPORTED({cpl_log, 4},
+		    ?LOCAL_MODULE:cpl_log(LogName, Comment, User, Request),
+		    undefined
+		   ).
+
+cpl_is_log_dest(LogName) ->
+    ?CHECK_EXPORTED({cpl_is_log_dest, 1},
+		    ?LOCAL_MODULE:cpl_is_log_dest(LogName),
+		    undefined
+		   ).
+
+cpl_mail(Mail, User) ->
+    ?CHECK_EXPORTED({cpl_mail, 2},
+		    ?LOCAL_MODULE:cpl_mail(Mail, User),
+		    undefined
+		   ).
+
 
 %% transport layer hooks
 %%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -612,8 +890,11 @@ get_cpl_for_user(User) ->
 %%           for NOT acceptable and 'undefined' to do default checks.
 %% Returns : true | false | undefined
 %%--------------------------------------------------------------------
-is_acceptable_socket(_Socket, _Dir, _Proto, _Host, _Port, _Module, _Subject) ->
-    undefined.
+is_acceptable_socket(Socket, Dir, Proto, Host, Port, Module, Subject) ->
+    ?CHECK_EXPORTED({is_acceptable_socket, 7},
+		    ?LOCAL_MODULE:is_acceptable_socket(Socket, Dir, Proto, Host, Port, Module, Subject),
+		    undefined
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: is_tls_equivalent(Proto, Host, Port)
@@ -625,22 +906,11 @@ is_acceptable_socket(_Socket, _Dir, _Proto, _Host, _Port, _Module, _Subject) ->
 %%           considered secure at the transport layer.
 %% Returns : true | false | undefined
 %%--------------------------------------------------------------------
-is_tls_equivalent(_Proto, _Host, _Port) ->
-    undefined.
-
-
-%%--------------------------------------------------------------------
-%% See cpl/README
-%%--------------------------------------------------------------------
-cpl_log(_LogName, _Comment, _User, _Request) ->
-    undefined.
-
-cpl_is_log_dest(_LogName) ->
-    undefined.
-
-cpl_mail(_Mail, _User) ->
-    undefined.
-
+is_tls_equivalent(Proto, Host, Port) ->
+    ?CHECK_EXPORTED({is_tls_equivalent, 3},
+		    ?LOCAL_MODULE:is_tls_equivalent(Proto, Host, Port),
+		    undefined
+		   ).
 
 %% configuration hooks
 %%%%%%%%%%%%%%%%%%%%%%%
@@ -658,8 +928,11 @@ cpl_mail(_Mail, _User) ->
 %%           NewValue = term()
 %%           Msg      = string()
 %%--------------------------------------------------------------------
-check_config_type(_Key, Value, _Src) ->
-    {ok, Value}.
+check_config_type(Key, Value, Src) ->
+    ?CHECK_EXPORTED({check_config_type, 3},
+		    ?LOCAL_MODULE:check_config_type(Key, Value, Src),
+		    {ok, Value}
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: config_is_soft_reloadable(Key, Value)
@@ -670,5 +943,8 @@ check_config_type(_Key, Value, _Src) ->
 %%           complete restart of the application is necessary (false).
 %% Returns : true | false
 %%--------------------------------------------------------------------
-config_is_soft_reloadable(_Key, _Value) ->
-    true.
+config_is_soft_reloadable(Key, Value) ->
+    ?CHECK_EXPORTED({config_is_soft_reloadable, 2},
+		    ?LOCAL_MODULE:config_is_soft_reloadable(Key, Value),
+		    true
+		   ).

@@ -1,3 +1,10 @@
+ - Rewrote local.erl framework so that only functions that are
+   actually to be overridden has to be in the domain specific
+   modules.
+ - Include Date: header in '200 Ok' response to REGISTER.
+ - Various bugfixes, including making sure we close the old log
+   files upon rotation.
+
 -- 0.90		(2005-10-21)
 
  - Fix minor problems in two log messages.

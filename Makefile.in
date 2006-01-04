@@ -16,7 +16,6 @@ includedir = @libdir@/yxa/include
 sbindir = @sbindir@
 exec_prefix=${prefix}
 builddir = @builddir@
-local_file = @local_file@
 
 ERLC = @ERLC@
 ERL = @ERL@

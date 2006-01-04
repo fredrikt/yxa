@@ -56,18 +56,18 @@ fi],[sslcertdir='${confdir}'])
 
 
 AC_ARG_WITH(local,
-	AC_HELP_STRING([--with-local=file],
-		[use file as local erlang configuration file]),
+	AC_HELP_STRING([--with-local=module],
+		[use module as local hooks module (e.g. "my_local" - don't include the ".erl" suffix)]),
 [if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_local" = "X"; then
-    local_file="default"
+    local_module="local_default"
 else
-    local_file="$with_local"
-fi],[local_file="default"])
+    local_module="$with_local"
+fi],[local_module="local_default"])
 
 AC_SUBST(DESTDIR)
 AC_SUBST(mnesiadir)
 AC_SUBST(sslcertdir)
-AC_SUBST(local_file)
+AC_SUBST(local_module)
 AC_SUBST(ERL)
 AC_SUBST(ERLC)
 
