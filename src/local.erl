@@ -141,10 +141,10 @@
 -define(LOCAL_ETS_TABLE_NAME, yxa_hooks).
 
 -define(CHECK_EXPORTED(LocalMacroKey, LocalMacroIfSo, LocalMacroOtherwise),
-	case ets:lookup(?LOCAL_ETS_TABLE_NAME, LocalMacroKey) of
-	    [LocalMacroKey] ->
+	case ets:member(?LOCAL_ETS_TABLE_NAME, LocalMacroKey) of
+	    true ->
 		LocalMacroIfSo;
-	    _ ->
+	    false ->
 		LocalMacroOtherwise
 	end).
 
@@ -161,7 +161,7 @@
 %% Returns : ok
 %%--------------------------------------------------------------------
 init() ->
-    ets:new(?LOCAL_ETS_TABLE_NAME, [named_table]),
+    ets:new(?LOCAL_ETS_TABLE_NAME, [named_table, set]),
     Exports = ?MODULE:module_info(exports),
     MyLocalExports = ?LOCAL_MODULE:module_info(exports),
     %% Check which of this ('local') modules exported functions are also exported
@@ -176,18 +176,28 @@ init() ->
 	     ({F, A}) ->
 		  case lists:member({F, A}, Exports) of
 		      true ->
-			  ets:insert(?LOCAL_ETS_TABLE_NAME, {F, A}),
+			  ets:insert(?LOCAL_ETS_TABLE_NAME, {{F, A}, 1}),
 			  F;
 		      false ->
 			  []
 		  end
 	  end,
     [Fun(V) || V <- MyLocalExports],
-    Overridden = ets:tab2list(?LOCAL_ETS_TABLE_NAME),
-    logger:log(normal, "Local: Found ~p overriding functions in module '~p' : ~p",
-	       [length(Overridden), ?LOCAL_MODULE, Overridden]),
+    {ok, Count, Descr} = init_get_overridden(),
+    logger:log(debug, "Local: Found ~p overriding functions in module '~p' : ~s",
+	       [Count, ?LOCAL_MODULE, Descr]),
     ok.
 
+init_get_overridden() ->
+    Overridden = ets:tab2list(?LOCAL_ETS_TABLE_NAME),
+    {ok, length(Overridden), format_overridden(Overridden, [])}.
+
+format_overridden([{{F, A}, _Foo} | T], Res) ->
+    This = lists:concat([F, "/", A]),
+    format_overridden(T, [This | Res]);
+format_overridden([], Res) ->
+    util:join(lists:reverse(Res), ", ").
+    
 
 %%====================================================================
 %% Hooks
