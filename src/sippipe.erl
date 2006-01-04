@@ -111,7 +111,7 @@ guarded_start2(Branch, ServerHandler, none, Request, Dst, Timeout, ApproxMsgSize
 	    error;
 	[FirstDst | _] = DstList when is_record(FirstDst, sipdst) ->
 	    NewRequest = Request#request{uri=FirstDst#sipdst.uri},
-	    case transactionlayer:start_client_transaction(NewRequest, none, FirstDst, Branch, Timeout, self()) of
+	    case local:start_client_transaction(NewRequest, FirstDst, Branch, Timeout) of
 		BranchPid when is_pid(BranchPid) ->
 		    final_start(Branch, ServerHandler, BranchPid, Request, DstList, Timeout, ApproxMsgSize);
 		{error, E} ->
@@ -321,15 +321,13 @@ start_next_client_transaction(#state{cancelled=false}=State) ->
 	    %% equally preferred hosts in the SRV response for a destination.
 	    %% It makes more sense to try to connect to Proxy B over TCP/UDP than to
 	    %% try Proxy A over UDP when Proxy A over TCP has just failed.
-	    NewState = case transactionlayer:start_client_transaction(NewRequest, none, FirstDst,
-								      NewBranch, Timeout, self()) of
-			   BranchPid when is_pid(BranchPid) ->
-			       State#state{clienttransaction_pid=BranchPid, branch=NewBranch, dstlist=NewDstList};
-			   {error, E} ->
-			       logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
-			       erlang:exit(failed_starting_client_transaction)
-		       end,
-	    NewState
+	    case local:start_client_transaction(NewRequest, FirstDst, NewBranch, Timeout) of
+		BranchPid when is_pid(BranchPid) ->
+		    State#state{clienttransaction_pid=BranchPid, branch=NewBranch, dstlist=NewDstList};
+		{error, E} ->
+		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
+		    erlang:exit(failed_starting_client_transaction)
+	    end
     end.
 
 %%--------------------------------------------------------------------

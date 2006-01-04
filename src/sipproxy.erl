@@ -296,15 +296,15 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
 	    Request = make_new_target_request(OrigRequest, CallURI, HAction#sipproxy_action.user),
 	    case sipdst:url_to_dstlist(CallURI, State#state.approx_msgsize, CallURI) of
 		[FirstDst | _] = DstList ->
-		    NewTargets = case transactionlayer:start_client_transaction(Request, none, FirstDst, Branch,
-										CallTimeout, self()) of
-				     BranchPid when is_pid(BranchPid) ->
-					 targetlist:add(Branch, Request, BranchPid, calling,
-							CallTimeout, DstList, Targets);
-				     {error, E} ->
-					 logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
-					 fork(EndTime, State#state{actions=TAction})
-				 end,
+		    NewTargets =
+			case local:start_client_transaction(Request, FirstDst, Branch, CallTimeout) of
+			    BranchPid when is_pid(BranchPid) ->
+				targetlist:add(Branch, Request, BranchPid, calling,
+					       CallTimeout, DstList, Targets);
+			    {error, E} ->
+				logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
+				fork(EndTime, State#state{actions=TAction})
+			end,
 		    fork(EndTime, State#state{actions=TAction, targets=NewTargets});
 		[] ->
 		    logger:log(normal, "~s: Target URI ~s did not resolve to any destinations we could use - ignoring",
@@ -656,8 +656,7 @@ try_next_destination(Status, Target, Targets, State) when is_integer(Status), is
 		    %% It makes more sense to try to connect to Proxy B over TCP/UDP than to
 		    %% try Proxy A over UDP when Proxy A over TCP has just failed.
 		    NewTargets =
-			case transactionlayer:start_client_transaction(Request, none, FirstDst, NewBranch,
-								       Timeout, self()) of
+			case local:start_client_transaction(Request, FirstDst, NewBranch, Timeout) of
 			    BranchPid when is_pid(BranchPid) ->
 				targetlist:add(NewBranch, Request, BranchPid, calling, Timeout, DstList, Targets);
 			    {error, E} ->

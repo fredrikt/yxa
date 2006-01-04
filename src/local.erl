@@ -110,6 +110,11 @@
 	 get_cpl_for_user/1
 	]).
 
+%% transaction layer
+-export([
+	 start_client_transaction/4
+	]).
+
 %% transport layer
 -export([
 	 is_acceptable_socket/7,
@@ -881,6 +886,29 @@ cpl_mail(Mail, User) ->
 		    undefined
 		   ).
 
+
+%% transaction layer hooks
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: start_client_transaction(Request, Dst, Branch, Timeout)
+%%           Request  = request record()
+%%           Dst      = sipdst record(), the destination for this
+%%                                       client transaction
+%%           Branch   = string()
+%%           Timeout  = integer(), timeout for INVITE transactions
+%% Descrip.: Start a client transaction, possibly after altering the
+%%           request to be sent.
+%% Returns : Pid |
+%%           {error, Reason}
+%%           Pid    = pid() of started client transaction handler
+%%           Reason = string()
+%%--------------------------------------------------------------------
+start_client_transaction(Request, Dst, Branch, Timeout) ->
+    ?CHECK_EXPORTED({start_client_transaction, 4},
+		    ?LOCAL_MODULE:start_client_transaction(Request, Dst, Branch, Timeout),
+		    transactionlayer:start_client_transaction(Request, none, Dst, Branch, Timeout, self())
+		   ).
 
 %% transport layer hooks
 %%%%%%%%%%%%%%%%%%%%%%%%%%
