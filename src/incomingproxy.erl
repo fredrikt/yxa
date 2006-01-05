@@ -516,7 +516,7 @@ relay_request(THandler, #request{method=Method}=Request, Dst, _Origin, LogTag)
 %%
 relay_request(THandler, Request, Dst, Origin, LogTag) when is_record(Request, request) ->
     {Method, Header} = {Request#request.method, Request#request.header},
-    case sipauth:get_user_verified_proxy(Header, Method) of
+    case local:get_user_verified_proxy(Header, Method) of
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, relay_dst2str(Dst)]),
