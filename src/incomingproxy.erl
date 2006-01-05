@@ -215,7 +215,7 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 						   is_list(LogTag) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     logger:log(debug, "incomingproxy: Processing request ~s ~s~n", [Method, sipurl:print(URI)]),
-    Location = route_request(Request, LogTag),
+    Location = route_request(Request, Origin, LogTag),
     logger:log(debug, "incomingproxy: Location: ~p", [Location]),
     case Location of
 	none ->
@@ -223,7 +223,7 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	    transactionlayer:send_response_handler(THandler, 404, "Not Found");
 	{error, Errorcode} ->
 	    logger:log(normal, "~s: incomingproxy: Error ~p", [LogTag, Errorcode]),
-	    transactionlayer:send_response_handler(THandler, Errorcode, "Unknown code");
+	    transactionlayer:send_response_handler(THandler, Errorcode, "Unexplained error");
 	{response, Status, Reason} ->
 	    logger:log(normal, "~s: incomingproxy: Response '~p ~s'", [LogTag, Status, Reason]),
 	    transactionlayer:send_response_handler(THandler, Status, Reason);
@@ -235,7 +235,7 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	    Contact = [contact:new(none, Loc, [])],
 	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
 	    transactionlayer:send_response_handler(THandler, 302, "Moved Temporarily", ExtraHeaders);
-	{relay, Loc} ->
+	{relay, Loc} when is_record(Loc, sipurl); Loc == route; is_list(Loc) ->
 	    relay_request(THandler, Request, Loc, Origin, LogTag);
 	{forward, FwdURL} when is_record(FwdURL, sipurl), FwdURL#sipurl.user == none, FwdURL#sipurl.pass == none ->
 	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~s",
@@ -262,8 +262,9 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
     end.
 
 %%--------------------------------------------------------------------
-%% Function: route_request(Request, LogTag)
+%% Function: route_request(Request, Origin, LogTag)
 %%           Request = request record()
+%%           Origin  = siporigin record()
 %%           LogTag  = string()
 %% Descrip.: Check if a request is destined for this proxy, a local
 %%           domain or a remote domain. In case of a local domain,
@@ -278,7 +279,7 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 %%           {me}                       |
 %%           none
 %%--------------------------------------------------------------------
-route_request(Request, LogTag) when is_record(Request, request), is_list(LogTag) ->
+route_request(Request, Origin, LogTag) when is_record(Request, request), is_list(LogTag) ->
     case keylist:fetch('route', Request#request.header) of
 	[] ->
 	    URL = Request#request.uri,
@@ -288,10 +289,10 @@ route_request(Request, LogTag) when is_record(Request, request), is_list(LogTag)
 			       true ->
 				   {me};
 			       _ ->
-				   request_to_homedomain(URL, LogTag)
+				   request_to_homedomain(Request, Origin, LogTag)
 			   end;
 		       _ ->
-			   request_to_remote(URL)
+			   request_to_remote(Request, Origin)
 		   end,
 	    case Loc1 of
 		nomatch ->
@@ -307,9 +308,10 @@ route_request(Request, LogTag) when is_record(Request, request), is_list(LogTag)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: request_to_homedomain(URL, LogTag)
-%%           URL    = sipurl record()
-%%           LogTag = string()
+%% Function: request_to_homedomain(Request, Origin, LogTag)
+%%           Request = request record()
+%%           Origin  = siporigin record()
+%%           LogTag  = string()
 %% Descrip.: Find out where to route this request which is for one
 %%           of our homedomains.
 %% Returns : {error, Status}              |
@@ -319,16 +321,19 @@ route_request(Request, LogTag) when is_record(Request, request), is_list(LogTag)
 %%           {forward, Proto, Host, Port} |
 %%           none
 %%--------------------------------------------------------------------
-request_to_homedomain(URL, LogTag) when is_record(URL, sipurl) ->
-    request_to_homedomain(URL, LogTag, init).
+request_to_homedomain(Request, Origin, LogTag) when is_record(Request, request), is_record(Origin, siporigin),
+						    is_list(LogTag) ->
+    request_to_homedomain(Request, Origin, LogTag, init).
 
-request_to_homedomain(URL, LogTag, Recursing) when is_record(URL, sipurl) ->
+request_to_homedomain(Request, Origin, LogTag, Recursing) when is_record(Request, request), is_record(Origin, siporigin),
+							       is_list(LogTag) ->
+    URL = Request#request.uri,
     URLstr = sipurl:print(URL),
     logger:log(debug, "Routing: Request to homedomain, URI ~p", [URLstr]),
 
     case local:lookupuser(URL) of
 	nomatch ->
-	    request_to_homedomain_not_sipuser(URL, LogTag, Recursing);
+	    request_to_homedomain_not_sipuser(Request, Origin, LogTag, Recursing);
         {ok, Users, none} ->
 	    logger:log(debug, "Routing: I currently have no locations for user(s) ~p, "
 		       "in the location database, answering '480 Temporarily Unavailable'",
@@ -352,15 +357,17 @@ request_to_homedomain_log_result(URLstr, Res) ->
     logger:log(debug, "Routing: lookupuser on ~p -> ~p", [URLstr, Res]).
 
 %%--------------------------------------------------------------------
-%% Function: request_to_homedomain_not_sipuser(URL, LogTag, Recursing)
-%%           URL       = sipurl record()
+%% Function: request_to_homedomain_not_sipuser(Request, Origin,
+%%                                             LogTag, Recursing)
+%%           Request   = request record()
+%%           Origin    = siporigin record()
 %%           LogTag    = string()
 %%           Recursing = init | loop, have we recursed already?
 %% Descrip.: Second part of request_to_homedomain/1. The request
 %%           is not for one of our SIP-users, call
-%%           local:lookup_homedomain_url() and if that does not
-%%           result in something usefull then see if this is
-%%           something we can interpret as a phone number.
+%%           local:lookup_homedomain_request() and if that does not
+%%           result in something usefull then see if this is something
+%%           we can interpret as a phone number.
 %% Returns : {error, Status}            |
 %%           {response, Status, Reason} |
 %%           {proxy, Location}          |
@@ -368,12 +375,14 @@ request_to_homedomain_log_result(URLstr, Res) ->
 %%           {forward, Location}        |
 %%           none
 %%--------------------------------------------------------------------
-request_to_homedomain_not_sipuser(URL, _LogTag, loop) when is_record(URL, sipurl) ->
+request_to_homedomain_not_sipuser(_Request, _Origin, _LogTag, loop) ->
     none;
-request_to_homedomain_not_sipuser(URL, LogTag, init) when is_record(URL, sipurl) ->
+request_to_homedomain_not_sipuser(Request, Origin, LogTag, init)
+  when is_record(Request, request), is_record(Origin, siporigin), is_list(LogTag) ->
+    URL = Request#request.uri,
 
-    Loc1 = local:lookup_homedomain_url(URL),
-    logger:log(debug, "Routing: local:lookup_homedomain_url on ~s -> ~p", [sipurl:print(URL), Loc1]),
+    Loc1 = local:lookup_homedomain_request(Request, Origin),
+    logger:log(debug, "Routing: local:lookup_homedomain_request on ~s -> ~p", [sipurl:print(URL), Loc1]),
 
     case Loc1 of
 	none ->
@@ -382,11 +391,11 @@ request_to_homedomain_not_sipuser(URL, LogTag, init) when is_record(URL, sipurl)
 	    Res1 = local:lookuppotn(URL#sipurl.user),
 	    logger:log(debug, "Routing: lookuppotn on ~s -> ~p", [URL#sipurl.user, Res1]),
 	    Res1;
-	{proxy, NewURL} ->
+	{proxy, NewURL} when is_record(NewURL, sipurl) ->
 	    logger:log(debug, "Routing: request_to_homedomain_not_sipuser: Calling request_to_homedomain on "
-		       "result of local:lookup_homedomain_url (local URL ~s)",
+		       "result of local:lookup_homedomain_request (local URL ~s)",
 		       [sipurl:print(NewURL)]),
-	    request_to_homedomain(NewURL, LogTag, loop);
+	    request_to_homedomain(Request#request{uri = URL}, Origin, LogTag, loop);
 	{relay, Dst} ->
 	    logger:log(debug, "Routing: request_to_homedomain_not_sipuser: Turning relay into proxy, original "
 		       "request was to a local domain"),
@@ -396,8 +405,9 @@ request_to_homedomain_not_sipuser(URL, LogTag, init) when is_record(URL, sipurl)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: request_to_remote(URL)
-%%           URL = sipurl record()
+%% Function: request_to_remote(Request, Origin)
+%%           Request   = request record()
+%%           Origin    = siporigin record()
 %% Descrip.: Find out where to route this request which is for a
 %%           remote domain.
 %% Returns : {error, Status}            |
@@ -407,8 +417,9 @@ request_to_homedomain_not_sipuser(URL, LogTag, init) when is_record(URL, sipurl)
 %%           {forward, Location}        |
 %%           none
 %%--------------------------------------------------------------------
-request_to_remote(URL) when is_record(URL, sipurl) ->
-    case local:lookup_remote_url(URL) of
+request_to_remote(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
+    URL = Request#request.uri,
+    case local:lookup_remote_request(Request, Origin) of
 	none ->
 	    case local:get_user_with_contact(URL) of
 		none ->
@@ -421,7 +432,7 @@ request_to_remote(URL) when is_record(URL, sipurl) ->
 		    {proxy, URL}
 	    end;
 	Location ->
-	    logger:log(debug, "Routing: local:lookup_remote_url() ~s -> ~p", [sipurl:print(URL), Location]),
+	    logger:log(debug, "Routing: local:lookup_remote_request() ~s -> ~p", [sipurl:print(URL), Location]),
 	    Location
     end.
 

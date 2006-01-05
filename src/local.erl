@@ -25,8 +25,8 @@
 
 %% lookup
 -export([
-	 lookup_homedomain_url/1,
-	 lookup_remote_url/1,
+	 lookup_homedomain_request/2,
+	 lookup_remote_request/2,
 	 lookupregexproute/1,
 	 lookupuser/1,
 	 lookupuser_locations/2,
@@ -279,19 +279,67 @@ default_canonify_addresses2([], Res) ->
 % Routing hooks
 %%%%%%%%%%%%%%%%
 
-lookup_homedomain_url(URL) when record(URL, sipurl) ->
-    ?CHECK_EXPORTED({lookup_homedomain_url, 1},
-		    ?LOCAL_MODULE:lookup_homedomain_url(URL),
+%%--------------------------------------------------------------------
+%% Function: lookup_homedomain_request(Request, Origin)
+%%           Request = request record()
+%%           Origin  = request record()
+%% Descrip.: Determine where to route a request that arrived to the
+%%           'incomingproxy' application, destined for a local domain
+%%           when it has been determined that the request was not
+%%           addressed to one of our users (see local:lookupuser/1).
+%% Returns : {proxy, URL}	| proxy unauthenticated
+%%           {relay, Dst}	| relay requiring Proxy-Authentication
+%%           {error, S}		| reject request with SIP status S 
+%%           {response, S, R}	| reject request with 'S R'
+%%           {forward, Fwd}	| forward request to another server
+%%           none		  perform default routing
+%%           URL = sipurl record()
+%%           Dst = sipurl record() | list() of sipdst record() | route
+%%           S   = integer(), SIP status code
+%%           R   = string(), SIP reason phrase
+%%           Fwd = sipurl record() that MUST have 'user' and 'pass'
+%%                 set to 'none'
+%%--------------------------------------------------------------------
+lookup_homedomain_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
+    ?CHECK_EXPORTED({lookup_homedomain_request, 2},
+		    ?LOCAL_MODULE:lookup_homedomain_request(Request, Origin),
 		    none
 		   ).
 
-lookup_remote_url(URL) ->
-    ?CHECK_EXPORTED({lookup_remote_url, 1},
-		    ?LOCAL_MODULE:lookup_remote_url(URL),
+%%--------------------------------------------------------------------
+%% Function: lookup_remote_request(Request, Origin)
+%%           Request = request record()
+%%           Origin  = request record()
+%% Descrip.: Determine where to route a request that arrived to the
+%%           'incomingproxy' application, destined for a remote
+%%           domain.
+%% Returns : {proxy, URL}	| proxy unauthenticated
+%%           {relay, Dst}	| relay requiring Proxy-Authentication
+%%           {error, S}		| reject request with SIP status S 
+%%           {response, S, R}	| reject request with 'S R'
+%%           {forward, Fwd}	| forward request to another server
+%%           none		  perform default routing
+%%           URL = sipurl record()
+%%           Dst = sipurl record() | list() of sipdst record() | route
+%%           S   = integer(), SIP status code
+%%           R   = string(), SIP reason phrase
+%%           Fwd = sipurl record() that MUST have 'user' and 'pass'
+%%                 set to 'none'
+%%--------------------------------------------------------------------
+lookup_remote_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
+    ?CHECK_EXPORTED({lookup_remote_request, 2},
+		    ?LOCAL_MODULE:lookup_remote_request(Request, Origin),
 		    none
 		   ).
 
-is_request_to_this_proxy(Request) when record(Request, request) ->
+%%--------------------------------------------------------------------
+%% Function: lookup_remote_request(Request)
+%%           Request = request record()
+%% Descrip.: Determine if a request is meant for this proxy itself, as
+%%           opposed to say a user of the system.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_request_to_this_proxy(Request) when is_record(Request, request) ->
     ?CHECK_EXPORTED({is_request_to_this_proxy, 1},
 		    ?LOCAL_MODULE:is_request_to_this_proxy(Request),
 		    lookup:is_request_to_this_proxy(Request)
