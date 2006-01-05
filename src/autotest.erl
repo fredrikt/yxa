@@ -125,7 +125,9 @@ run([Mode]) ->
 									  addr  = "0.0.0.0",
 									  port  = 5061
 									 }}
-		      );
+		      ),
+
+	    ets:new(yxa_hooks, [named_table, set]);
 	_ -> ok
     end,
 
