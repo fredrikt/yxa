@@ -221,12 +221,14 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	none ->
 	    logger:log(normal, "~s: incomingproxy: 404 Not found", [LogTag]),
 	    transactionlayer:send_response_handler(THandler, 404, "Not Found");
+
 	{error, Errorcode} ->
 	    logger:log(normal, "~s: incomingproxy: Error ~p", [LogTag, Errorcode]),
 	    transactionlayer:send_response_handler(THandler, Errorcode, "Unexplained error");
 	{response, Status, Reason} ->
 	    logger:log(normal, "~s: incomingproxy: Response '~p ~s'", [LogTag, Status, Reason]),
 	    transactionlayer:send_response_handler(THandler, Status, Reason);
+
 	{proxy, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
 	    proxy_request(THandler, Request, Loc);
@@ -237,32 +239,24 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	{proxy, route} ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s according to Route header", [LogTag, Method]),
 	    proxy_request(THandler, Request, route);
+
 	{redirect, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Redirect ~s", [LogTag, sipurl:print(Loc)]),
 	    Contact = [contact:new(none, Loc, [])],
 	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
 	    transactionlayer:send_response_handler(THandler, 302, "Moved Temporarily", ExtraHeaders);
+
 	{relay, Loc} when is_record(Loc, sipurl); Loc == route; is_list(Loc) ->
 	    relay_request(THandler, Request, Loc, Origin, LogTag);
+
 	{forward, FwdURL} when is_record(FwdURL, sipurl), FwdURL#sipurl.user == none, FwdURL#sipurl.pass == none ->
 	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~s",
 		       [LogTag, Method, sipurl:print(URI), sipurl:print(FwdURL)]),
-	    ApproxMsgSize = siprequest:get_approximate_msgsize(Request#request{uri=FwdURL}),
-	    case sipdst:url_to_dstlist(FwdURL, ApproxMsgSize, URI) of
-		{error, nxdomain} ->
-		    logger:log(debug, "incomingproxy: Failed resolving FwdURL : NXDOMAIN"
-			       " (responding '604 Does Not Exist Anywhere')"),
-                    transactionlayer:send_response_handler(THandler, 604, "Does Not Exist Anywhere"),
-                    error;
-		{error, What} ->
-		    logger:log(normal, "incomingproxy: Failed resolving FwdURL : ~p", [What]),
-                    transactionlayer:send_response_handler(THandler, 500, "Failed resolving forward destination"),
-                    error;
-		DstList when is_list(DstList) ->
-		    proxy_request(THandler, Request, DstList)
-	    end;
-	{me} ->
+	    forward_request(THandler, Request, FwdURL);
+
+	to_this_proxy ->
 	    request_to_me(THandler, Request, LogTag);
+
 	_ ->
 	    logger:log(error, "~s: incomingproxy: Invalid Location ~p", [LogTag, Location]),
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
@@ -283,7 +277,7 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 %%           {proxy, Location}          |
 %%           {relay, Location}          |
 %%           {forward, Location}        |
-%%           {me}                       |
+%%           to_this_proxy              |
 %%           none
 %%--------------------------------------------------------------------
 route_request(Request, Origin, LogTag) when is_record(Request, request), is_list(LogTag) ->
@@ -294,7 +288,7 @@ route_request(Request, Origin, LogTag) when is_record(Request, request), is_list
 		       true ->
 			   case local:is_request_to_this_proxy(Request) of
 			       true ->
-				   {me};
+				   to_this_proxy;
 			       _ ->
 				   request_to_homedomain(Request, Origin, LogTag)
 			   end;
@@ -480,6 +474,34 @@ get_branchbase_from_handler(TH) ->
 	Index when is_integer(Index) ->
 	    BranchBase = string:substr(CallBranch, 1, Index - 1),
 	    BranchBase
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: forward_request(THandler, Request, FwdURL)
+%%           THandler = term(), server transaction handle
+%%           Request  = request record()
+%%           FwdURL   = sipurl record()
+%% Descrip.: Forward a request somewhere without authentication. This
+%%           function is used when forwarding requests to another
+%%           proxy that should handle it instead of us. It preserves
+%%           the Request-URI.
+%% Returns : Does not matter
+%%--------------------------------------------------------------------
+forward_request(THandler, Request, FwdURL) ->
+    URI = Request#request.uri,
+    ApproxMsgSize = siprequest:get_approximate_msgsize(Request#request{uri=FwdURL}),
+    case sipdst:url_to_dstlist(FwdURL, ApproxMsgSize, URI) of
+	{error, nxdomain} ->
+	    logger:log(debug, "incomingproxy: Failed resolving FwdURL : NXDOMAIN"
+		       " (responding '604 Does Not Exist Anywhere')"),
+	    transactionlayer:send_response_handler(THandler, 604, "Does Not Exist Anywhere"),
+	    error;
+	{error, What} ->
+	    logger:log(normal, "incomingproxy: Failed resolving FwdURL : ~p", [What]),
+	    transactionlayer:send_response_handler(THandler, 500, "Failed resolving forward destination"),
+	    error;
+	DstList when is_list(DstList) ->
+	    proxy_request(THandler, Request, DstList)
     end.
 
 %%--------------------------------------------------------------------
