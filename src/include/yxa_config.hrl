@@ -489,6 +489,10 @@
 		      list_of	= true,
 		      type	= string,
 		      required	= true
+		     },
+	   #cfg_entry{key	= allow_foreign_registers,
+		      default	= false,
+		      type	= bool
 		     }
 	  ]},
 

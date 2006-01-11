@@ -461,6 +461,15 @@ max_register_time		(default: 43200) If registers have an 'expire'
 homedomain			(required) List of SIP domains this proxy
 				should handle requests for.
 
+allow_foreign_registers 	(default: false) Set to true to have your out-
+				goingproxy forward non-local REGISTERs to other
+				proxys. Defaults to false since it doesn't make
+				much sense for the clients to use the outgoing-
+				proxy in the first place if they register with
+				a domain that the outgoingproxy doesn't consider
+				local (what domains are 'local' is determined
+				by the 'homedomain' parameter).
+
 adminwww:
 ---------
 www_baseurl			(required) Base URL for web server
@@ -620,13 +629,13 @@ Combined configuration file for more than one application :
  %% Application specific configuration
  %% --------------------------------------------------------------------
  {incomingproxy,	[{appserver,		"appserver.server.example.com"},
-
+			 
 			 {myhostnames,		["incomingproxy.server.example.com", "server.example.com"]},
 			 {homedomain,		["example.com", "example.net", "example.org"],
-
+			 
 			 {enum_domainlist,	["e164.arpa"]}
 			]},
-
+ 
  {appserver,		[{listenport,		5070},
 			 {tls_listenport, 	5071}
 	 		]}

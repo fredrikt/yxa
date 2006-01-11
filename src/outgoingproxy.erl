@@ -55,7 +55,12 @@ request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Orig
     LogTag = get_branch_from_handler(THandler),
     case siplocation:process_register_request(Request, THandler, LogTag, LogStr, outgoingproxy) of
 	not_homedomain ->
-	    do_request(Request, Origin);
+	    case yxa_config:get_env(allow_foreign_registers) of
+		true ->
+		    do_request(Request, Origin);
+		false ->
+		    transactionlayer:send_response_handler(THandler, 403, "Domain not handled by this proxy")
+	    end;
 	_ ->
 	    true
     end,
