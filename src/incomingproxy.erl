@@ -230,6 +230,13 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	{proxy, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
 	    proxy_request(THandler, Request, Loc);
+	{proxy, [H | _] = DstList} when is_record(H, sipdst) ->
+	    logger:log(normal, "~s: incomingproxy: Proxy ~s to list of destinations", [LogTag, Method]),
+	    logger:log(debug, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, DstList]),
+	    proxy_request(THandler, Request, DstList);
+	{proxy, route} ->
+	    logger:log(normal, "~s: incomingproxy: Proxy ~s according to Route header", [LogTag, Method]),
+	    proxy_request(THandler, Request, route);
 	{redirect, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Redirect ~s", [LogTag, sipurl:print(Loc)]),
 	    Contact = [contact:new(none, Loc, [])],
@@ -448,7 +455,7 @@ request_to_remote(Request, Origin) when is_record(Request, request), is_record(O
 %%--------------------------------------------------------------------
 request_to_me(THandler, Request, LogTag) when is_record(Request, request), Request#request.method == "OPTIONS" ->
     logger:log(normal, "~s: incomingproxy: OPTIONS to me -> 200 OK", [LogTag]),
-    %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and 
+    %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and
     %% Supported headers. RFC 3261 section 11.
     transactionlayer:send_response_handler(THandler, 200, "OK");
 
@@ -484,8 +491,8 @@ get_branchbase_from_handler(TH) ->
 %% Descrip.: Proxy a request somewhere without authentication.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-proxy_request(THandler, Request, DstList) when is_record(Request, request) ->
-    sippipe:start(THandler, none, Request, DstList, 900).
+proxy_request(THandler, Request, Dst) when is_record(Request, request) ->
+    sippipe:start(THandler, none, Request, Dst, 900).
 
 %%--------------------------------------------------------------------
 %% Function: relay_request(THandler, Request, Dst, Origin, LogTag)

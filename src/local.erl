@@ -202,7 +202,7 @@ format_overridden([{{F, A}, _Foo} | T], Res) ->
     format_overridden(T, [This | Res]);
 format_overridden([], Res) ->
     util:join(lists:reverse(Res), ", ").
-    
+
 
 %%====================================================================
 %% Hooks
@@ -287,18 +287,20 @@ default_canonify_addresses2([], Res) ->
 %%           'incomingproxy' application, destined for a local domain
 %%           when it has been determined that the request was not
 %%           addressed to one of our users (see local:lookupuser/1).
-%% Returns : {proxy, URL}	| proxy unauthenticated
-%%           {relay, Dst}	| relay requiring Proxy-Authentication
-%%           {error, S}		| reject request with SIP status S 
+%% Returns : {proxy, PDst}	| proxy unauthenticated
+%%           {relay, RDst}	| relay requiring Proxy-Authentication
+%%           {error, S}		| reject request with SIP status S
 %%           {response, S, R}	| reject request with 'S R'
 %%           {forward, Fwd}	| forward request to another server
 %%           none		  perform default routing
-%%           URL = sipurl record()
-%%           Dst = sipurl record() | list() of sipdst record() | route
-%%           S   = integer(), SIP status code
-%%           R   = string(), SIP reason phrase
-%%           Fwd = sipurl record() that MUST have 'user' and 'pass'
-%%                 set to 'none'
+%%           PDst = sipurl record() | list() of sipdst record() |
+%%                  route
+%%           RDst = sipurl record() | list() of sipdst record() |
+%%                  route
+%%           S    = integer(), SIP status code
+%%           R    = string(), SIP reason phrase
+%%           Fwd  = sipurl record() that MUST have 'user' and 'pass'
+%%                  set to 'none'
 %%--------------------------------------------------------------------
 lookup_homedomain_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     ?CHECK_EXPORTED({lookup_homedomain_request, 2},
@@ -313,18 +315,20 @@ lookup_homedomain_request(Request, Origin) when is_record(Request, request), is_
 %% Descrip.: Determine where to route a request that arrived to the
 %%           'incomingproxy' application, destined for a remote
 %%           domain.
-%% Returns : {proxy, URL}	| proxy unauthenticated
-%%           {relay, Dst}	| relay requiring Proxy-Authentication
-%%           {error, S}		| reject request with SIP status S 
+%% Returns : {proxy, PDst}	| proxy unauthenticated
+%%           {relay, RDst}	| relay requiring Proxy-Authentication
+%%           {error, S}		| reject request with SIP status S
 %%           {response, S, R}	| reject request with 'S R'
 %%           {forward, Fwd}	| forward request to another server
 %%           none		  perform default routing
-%%           URL = sipurl record()
-%%           Dst = sipurl record() | list() of sipdst record() | route
-%%           S   = integer(), SIP status code
-%%           R   = string(), SIP reason phrase
-%%           Fwd = sipurl record() that MUST have 'user' and 'pass'
-%%                 set to 'none'
+%%           PDst = sipurl record() | list() of sipdst record() |
+%%                  route
+%%           RDst = sipurl record() | list() of sipdst record() |
+%%                  route
+%%           S    = integer(), SIP status code
+%%           R    = string(), SIP reason phrase
+%%           Fwd  = sipurl record() that MUST have 'user' and 'pass'
+%%                  set to 'none'
 %%--------------------------------------------------------------------
 lookup_remote_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     ?CHECK_EXPORTED({lookup_remote_request, 2},
@@ -333,7 +337,7 @@ lookup_remote_request(Request, Origin) when is_record(Request, request), is_reco
 		   ).
 
 %%--------------------------------------------------------------------
-%% Function: lookup_remote_request(Request)
+%% Function: is_request_to_this_proxy(Request)
 %%           Request = request record()
 %% Descrip.: Determine if a request is meant for this proxy itself, as
 %%           opposed to say a user of the system.
