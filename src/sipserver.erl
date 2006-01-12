@@ -1,6 +1,11 @@
-%%
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : sipserver.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: Main OTP application startup function, and per-request
+%%%           start processing function.
+%%%
+%%% Created : 12 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 -module(sipserver).
 %%-compile(export_all).
 
@@ -12,6 +17,8 @@
 	 stop/0,
 	 restart/0,
 	 process/3,
+
+	 %% XXX should move these to some utility module
 	 safe_spawn_fun/2,
 	 safe_spawn/3,
 	 origin2str/1,
@@ -69,10 +76,11 @@ start(normal, [AppModule]) ->
 	      io_lib:format("~p", [now()])
 	     ]),
     mnesia:start(),
-    [MnesiaTables, stateful, AppSupdata] = apply(AppModule, init, []),
+    [MnesiaTables, stateful, AppSupdata] = AppModule:init(),
     ok = init_statistics(),
     case sipserver_sup:start_link(AppModule) of
 	{ok, Supervisor} ->
+	    local:init(),
 	    logger:log(debug, "starting, supervisor is ~p", [Supervisor]),
 	    case siphost:myip() of
 		"127.0.0.1" ->
