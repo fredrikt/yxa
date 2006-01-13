@@ -373,7 +373,7 @@ load_set([{Key, Value, Src} | T], Mode) ->
 		    case lists:member(Key, ?NO_DISCLOSURE) of
 			true ->
 			    logger:log(debug, "Config server: Set configuration parameter '~p' (value not shown)",
-				       [Key, Value]);
+				       [Key]);
 			false ->
 			    logger:log(debug, "Config server: Set configuration parameter '~p' (value : ~p)",
 				       [Key, Value])
@@ -407,7 +407,7 @@ update(Key, Value, Src, OldValue, Mode) ->
 	    case lists:member(Key, ?NO_DISCLOSURE) of
 		true ->
 		    logger:log(debug, "Config server: Updated configuration parameter '~p' (value not shown)",
-			       [Key, Value]);
+			       [Key]);
 		false ->
 		    logger:log(debug, "Config server: Updated configuration parameter '~p' "
 			       "(old value : ~p, new value ~p)", [Key, OldValue, Value])
