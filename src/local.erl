@@ -956,10 +956,11 @@ cpl_mail(Mail, User) ->
 %%           Pid    = pid() of started client transaction handler
 %%           Reason = string()
 %%--------------------------------------------------------------------
-start_client_transaction(Request, Dst, Branch, Timeout) ->
+start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, request), is_record(Dst, sipdst),
+							     is_list(Branch), is_integer(Timeout) ->
     ?CHECK_EXPORTED({start_client_transaction, 4},
 		    ?LOCAL_MODULE:start_client_transaction(Request, Dst, Branch, Timeout),
-		    transactionlayer:start_client_transaction(Request, none, Dst, Branch, Timeout, self())
+		    transactionlayer:start_client_transaction(Request, Dst, Branch, Timeout, self())
 		   ).
 
 %% transport layer hooks

@@ -42,7 +42,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/6,
+	 start_link/5,
 	 test/0
 	]).
 
@@ -68,9 +68,8 @@
 %%--------------------------------------------------------------------
 -record(state, {
 	  branch,	%% string(), the Via branch paramter for this client transaction
-	  socket_in,	%% sipsocket record(), the socket the original request was received on
 	  logtag,	%% string(), a prefix for logging
-	  socket,	%% sipsocket record(), the socket the transport layer sent out our request on
+	  socket=none,	%% sipsocket record(), the socket the transport layer sent out our request on
 	  parent,	%% pid() of our parent, must be kept to recognize exit messages from it
 	  report_to,	%% pid() | none, the pid we should notify of progress ('none' in case this is
 	  		%%   for example an independent CANCEL)
@@ -95,11 +94,19 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, SocketIn, Dst, Branch, Timeout,
-%%                      ReportTo)
-%% Descrip.: Starts the server, see init/1 description for details.
+%% Function: start_link(Request, Dst, Branch, Timeout, ReportTo)
+%%           Request  = request record()
+%%           Dst      = sipdst record(), the destination for this
+%%                                       client transaction
+%%           Branch   = string()
+%%           Timeout  = integer(), timeout for INVITE transactions
+%%           ReportTo = pid() | none, where we should report events
+%%           Parent   = pid(), the process that initiated this client
+%% Descrip.: Starts a client transaction process, linked to the
+%%           process that executed this function.
+%% Returns : gen_server:start() return value
 %%--------------------------------------------------------------------
-start_link(Request, SocketIn, Dst, Branch, Timeout, ReportTo) ->
+start_link(Request, Dst, Branch, Timeout, ReportTo) ->
     %% It is intentional to call gen_server:start(...) here even though
     %% this function is called start_link. That is because of a 'problem'
     %% with gen_servers in Erlang/OTP (at least R10B-2). If you use
@@ -108,19 +115,15 @@ start_link(Request, SocketIn, Dst, Branch, Timeout, ReportTo) ->
     %% set process_flag(trap_exit, true)! We set up a link to this process
     %% in the init/1 callback to achieve the same effect (although with
     %% a bitter taste).
-    gen_server:start(?MODULE, [Request, SocketIn, Dst, Branch, Timeout, ReportTo, self()], []).
+    gen_server:start(?MODULE, [Request, Dst, Branch, Timeout, ReportTo, self()], []).
 
 %%====================================================================
 %% Server functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, SocketIn, Dst, Branch, Timeout, ReportTo,
-%%                 Parent])
+%% Function: init([Request, Dst, Branch, Timeout, ReportTo, Parent])
 %%           Request  = request record()
-%%           SocketIn = sipsocket record(), the default socket we
-%%                      should give to the transport layer for this
-%%                      request. XXX remove - don't do stateless.
 %%           Dst      = sipdst record(), the destination for this
 %%                                       client transaction
 %%           Branch   = string()
@@ -135,7 +138,7 @@ start_link(Request, SocketIn, Dst, Branch, Timeout, ReportTo) ->
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
+init([Request, Dst, Branch, Timeout, ReportTo, Parent])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
        is_integer(Timeout), is_pid(Parent); Parent == none ->
     RegBranch = sipheader:remove_loop_cookie(Branch),
@@ -160,7 +163,7 @@ init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
 	    true = link(Parent),
 	    %% Trap exit signals so that we can cancel ongoing INVITEs if our parent dies
 	    process_flag(trap_exit, true),
-	    case init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent, LogTag]) of
+	    case init2([Request, Dst, Branch, Timeout, ReportTo, Parent, LogTag]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
 		Reply ->
@@ -172,7 +175,7 @@ init([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent])
 	    {stop, "Transaction layer failed"}
     end.
 
-init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
+init2([Request, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
        is_integer(Timeout), is_pid(Parent); Parent == none ->
     {Method, URI} = {Request#request.method, Request#request.uri},
@@ -180,9 +183,9 @@ init2([Request, SocketIn, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
 		   "INVITE" -> calling;
 		   _ -> trying
 	       end,
-    State = #state{branch=Branch, logtag=LogTag, socket=SocketIn, request=Request,
+    State = #state{branch=Branch, logtag=LogTag, request=Request,
 		   sipstate=SipState, timerlist=siptimer:empty(),
-		   dst=Dst, socket_in=SocketIn, timeout=Timeout,
+		   dst=Dst, timeout=Timeout,
 		   parent=Parent, report_to=ReportTo},
     logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~s).",
 	       [LogTag, Method, sipurl:print(URI), sipdst:dst2str(Dst)]),
@@ -1087,7 +1090,7 @@ initiate_request(State) when is_record(State, state) ->
     SocketDstStr = lists:concat([Dst#sipdst.proto, ":", Dst#sipdst.addr, ":", Dst#sipdst.port]),
     logger:log(normal, "~s: Sending ~s ~s (to ~s)", [LogTag, Method, sipurl:print(URI),
 						     SocketDstStr]),
-    case transportlayer:send_proxy_request(State#state.socket_in, Request, Dst, ["branch=" ++ Branch]) of
+    case transportlayer:send_proxy_request(none, Request, Dst, ["branch=" ++ Branch]) of
 	{ok, SendingSocket, TLBranch} ->
 	    {ok, T1} = yxa_config:get_env(timerT1),
 	    TimerA = get_initial_resend_timer(SendingSocket, T1),
@@ -1593,9 +1596,6 @@ test() ->
 				 branch       = "branch",
 				 request      = Test_Request,
 				 dst          = Test_Dst,
-				 socket_in    = #sipsocket{proto = yxa_test,
-							   module = sipsocket_test
-							  },
 				 timerlist    = siptimer:empty(),
 				 report_to    = self(),
 				 timeout      = 40,
@@ -2390,9 +2390,6 @@ test() ->
 				branch       = "branch",
 				request      = Test_Request,
 				dst	     = Test_Dst,
-				socket_in    = #sipsocket{proto = yxa_test,
-							  module = sipsocket_test
-							 },
 				timerlist    = siptimer:empty(),
 				report_to    = self(),
 				timeout      = 40
@@ -2409,7 +2406,7 @@ test() ->
     InitiateReq_State1 = InitiateReq_State1_out#state{
 			   timerlist = InitiateReq_State1#state.timerlist,
 			   tl_branch = undefined,
-			   socket    = undefined
+			   socket    = none
 			  },
 
     test_verify_request_was_sent(InitiateReq_State1#state.request, "initiate_request/1 INVITE", 1, 3),
@@ -2420,9 +2417,6 @@ test() ->
 				branch       = "branch",
 				request      = Test_Request#request{method = "TESTING"},
 				dst	     = Test_Dst,
-				socket_in    = #sipsocket{proto = yxa_test,
-							  module = sipsocket_test
-							 },
 				timerlist    = siptimer:empty(),
 				report_to    = self(),
 				timeout      = 40
@@ -2440,7 +2434,7 @@ test() ->
     InitiateReq_State2 = InitiateReq_State2_out#state{
 			   timerlist = InitiateReq_State2#state.timerlist,
 			   tl_branch = undefined,
-			   socket    = undefined
+			   socket    = none
 			  },
 
     test_verify_request_was_sent(InitiateReq_State2#state.request, "initiate_request/1 non-INVITE", 2, 3),
@@ -2452,9 +2446,6 @@ test() ->
 				branch       = "branch",
 				request      = Test_Request,
 				dst	     = Test_Dst,
-				socket_in    = #sipsocket{proto = yxa_test,
-							  module = sipsocket_test
-							 },
 				timerlist    = siptimer:empty(),
 				report_to    = self(),
 				sipstate     = calling,

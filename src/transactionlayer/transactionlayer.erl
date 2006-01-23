@@ -19,6 +19,7 @@
 	 transaction_terminating/1,
 	 get_handler_for_request/1,
 	 get_branch_from_handler/1,
+	 start_client_transaction/5,
 	 start_client_transaction/6,
 	 adopt_server_transaction/1,
 	 adopt_server_transaction_handler/1,
@@ -34,6 +35,10 @@
 	 get_my_to_tag/1,
 	 debug_show_transactions/0
 	]).
+
+-deprecated([
+             {start_client_transaction, 6}
+            ]).
 
 %%--------------------------------------------------------------------
 %% Transport layer internal exports (functions that should only be
@@ -737,10 +742,9 @@ transaction_terminating(TransactionPid) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: start_client_transaction(Request, SocketIn, Dst, Branch,
-%%                                    Timeout, ReportTo)
+%% Function: start_client_transaction(Request, Dst, Branch, Timeout,
+%%                                    ReportTo)
 %%           Request  = request record()
-%%           SocketIn = sipsocket record(), XXX which socket is this?
 %%           Dst      = sipdst record(), the destination for this
 %%                      client transaction
 %%           Branch   = string(), branch parameter to use
@@ -754,10 +758,16 @@ transaction_terminating(TransactionPid) ->
 %%           Pid = pid()
 %%           E   = string()
 %%--------------------------------------------------------------------
-start_client_transaction(Request, SocketIn, Dst, Branch, Timeout, ReportTo)
+start_client_transaction(Request, _SocketIn, Dst, Branch, Timeout, ReportTo) ->
+    %% OBSOLETE - there is no reason to pass sockets to client transactions anymore
+    logger:log(normal, "Warning: transactionlayer:start_client_transaction/6 is obsolete, "
+	       "use transactionlayer:start_client_transaction/5 instead"),
+    start_client_transaction(Request, Dst, Branch, Timeout, ReportTo).
+
+start_client_transaction(Request, Dst, Branch, Timeout, ReportTo)
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch), is_integer(Timeout),
        is_pid(ReportTo); ReportTo == none ->
-    case clienttransaction:start_link(Request, SocketIn, Dst, Branch, Timeout, ReportTo) of
+    case clienttransaction:start_link(Request, Dst, Branch, Timeout, ReportTo) of
 	{ok, CPid} ->
 	    CPid;
 	E ->
