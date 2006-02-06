@@ -731,7 +731,7 @@ can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
 %%           Reason  = ok | eperm | nomatch | error
 %%--------------------------------------------------------------------
 can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
-    ?CHECK_EXPORTED({can_use_address, 2},
+    ?CHECK_EXPORTED({can_use_address_detail, 2},
 		    ?LOCAL_MODULE:can_use_address_detail(User, URL),
 		    sipauth:can_use_address_detail(User, URL)
 		   ).
