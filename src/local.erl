@@ -985,6 +985,10 @@ start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, 
 %%                       responsibility to handle the request)
 %%           {modified, NewAppModule, NewRequest,
 %%                      NewOrigin, NewLogStr}
+%% Note    : DON'T ALTER THE URI OF INVITE REQUESTS HERE! If you do,
+%%           the ACKs of non-2xx responses will be disqualified by the
+%%           server transaction since the URI of the ACK doesn't match
+%%           the URI of the original INVITE (since you changed it).
 %%--------------------------------------------------------------------
 new_request(AppModule, Request, Origin, LogStr) ->
     ?CHECK_EXPORTED({new_request, 4},
@@ -993,7 +997,7 @@ new_request(AppModule, Request, Origin, LogStr) ->
 		   ).
 
 %%--------------------------------------------------------------------
-%% Function: new_request(AppModule, Response, Origin, LogStr)
+%% Function: new_response(AppModule, Response, Origin, LogStr)
 %%           AppModule = atom(), Yxa application module the
 %%                       transaction layer thought this request should
 %%                       be passed to
