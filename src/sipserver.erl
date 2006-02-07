@@ -275,7 +275,7 @@ find_mnesia_tables2(Descr, OrigTableList, Tables, Count) ->
 		    logger:log(error, "Could not initiate ~s Mnesia tables ~p, exiting.", [Descr, BadTabList]),
 		    logger:quit(none),
 		    Msg = io_lib:format("Mnesia ~s table init error", [Descr]),
-		    throw(list_to_atom(Msg));
+		    throw(list_to_atom(lists:flatten(Msg)));
 		_ ->
 		    logger:log(debug, "Still waiting for ~s tables ~p", [Descr, BadTabList]),
 		    find_mnesia_tables2(Descr, OrigTableList, BadTabList, Count + 1)
@@ -414,7 +414,8 @@ internal_error(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
 %% Function: process(Packet, Origin, Dst)
 %%           Packet = string()
 %%           Origin = siporigin record()
-%%           Dst = transport_layer | Module
+%%           Dst = transactionlayer | Module (always transactionlayer
+%%                                            in modern Yxa)
 %% Descrip.: Check if something we received from a socket (Packet) is
 %%           a valid SIP request/response by calling parse_packet() on
 %%           it. Then, use my_apply to either send it on to the
@@ -470,7 +471,7 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 %%                 function
 %%           Request = request record()
 %%           Origin  = siporigin record()
-%%           LogStr  = string(), textual description of request
+%%           LogStr  = string(), textual description of request/resp.
 %% Descrip.: If Dst is transactionlayer, gen_server call the
 %%           transaction layer and let it decide our next action. If
 %%           Dst is the name of a module, apply() that modules
@@ -497,7 +498,22 @@ my_apply(transactionlayer, R, Origin, LogStr) when is_record(R, request); is_rec
 	    %% request/response as argument. This is common when the transaction layer has started
 	    %% a new server transaction for this request and wants it passed to the core (or TU)
 	    %% but can't do it itself because that would block the transactionlayer process.
-	    my_apply(AppModule, R, Origin, LogStr)
+	    Action =
+		if
+		    is_record(R, request) ->
+			local:new_request(AppModule, R, Origin, LogStr);
+		    is_record(R, response) ->
+			local:new_response(AppModule, R, Origin, LogStr)
+		end,
+	    case Action of
+		undefined ->
+		    my_apply(AppModule, R, Origin, LogStr);
+		{modified, NewAppModule, NewR, NewOrigin, NewLogStr} ->
+		    logger:log(debug, "Sipserver: Passing possibly modified request/response to application"),
+		    my_apply(NewAppModule, NewR, NewOrigin, NewLogStr);
+		ignore ->
+		    ignore
+	    end
     end;
 my_apply(AppModule, Request, Origin, LogStr) when is_atom(AppModule), is_record(Request, request),
 						  is_record(Origin, siporigin) ->

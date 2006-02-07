@@ -112,7 +112,9 @@
 
 %% transaction layer
 -export([
-	 start_client_transaction/4
+	 start_client_transaction/4,
+	 new_request/4,
+	 new_response/4
 	]).
 
 %% transport layer
@@ -961,6 +963,61 @@ start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, 
     ?CHECK_EXPORTED({start_client_transaction, 4},
 		    ?LOCAL_MODULE:start_client_transaction(Request, Dst, Branch, Timeout),
 		    transactionlayer:start_client_transaction(Request, Dst, Branch, Timeout, self())
+		   ).
+
+%%--------------------------------------------------------------------
+%% Function: new_request(AppModule, Request, Origin, LogStr)
+%%           AppModule = atom(), Yxa application module the
+%%                       transaction layer thought this request should
+%%                       be passed to
+%%           Request   = request record()
+%%           Origin    = siporigin record()
+%%           LogStr    = string(), textual description of request
+%% Descrip.: This function gets called when the transaction layer has
+%%           decided that a new request has arrived, and figured it
+%%           should be passed to the Yxa application (proxy core/
+%%           transaction user). Depending on what this function
+%%           returns, the AppModule:request/3 function will either not
+%%           be called at all, called with the parameters unchanged or
+%%           called with a modified set of parameters.
+%% Returns : undefined | Continue processing with default arguments
+%%           ignore    | Don't continue at all (your code assumes
+%%                       responsibility to handle the request)
+%%           {modified, NewAppModule, NewRequest,
+%%                      NewOrigin, NewLogStr}
+%%--------------------------------------------------------------------
+new_request(AppModule, Request, Origin, LogStr) ->
+    ?CHECK_EXPORTED({new_request, 4},
+		    ?LOCAL_MODULE:new_request(AppModule, Request, Origin, LogStr),
+		    undefined
+		   ).
+
+%%--------------------------------------------------------------------
+%% Function: new_request(AppModule, Response, Origin, LogStr)
+%%           AppModule = atom(), Yxa application module the
+%%                       transaction layer thought this request should
+%%                       be passed to
+%%           Response  = response record()
+%%           Origin    = siporigin record()
+%%           LogStr    = string(), textual description of response
+%% Descrip.: This function gets called when the transaction layer has
+%%           decided that a response not assoicated with a running
+%%           client transaction has arrived. Such responses should be
+%%           passed to the Yxa application (proxy core/transaction
+%%           user). Depending on what this function returns, the
+%%           AppModule:response/3 function will either not be called
+%%           at all, called with the parameters unchanged or called
+%%           with a modified set of parameters.
+%% Returns : undefined | Continue processing with default arguments
+%%           ignore    | Don't continue at all (your code assumes
+%%                       responsibility to handle the response)
+%%           {modified, NewAppModule, NewResponse,
+%%                      NewOrigin, NewLogStr}
+%%--------------------------------------------------------------------
+new_response(AppModule, Response, Origin, LogStr) ->
+    ?CHECK_EXPORTED({new_response, 4},
+		    ?LOCAL_MODULE:new_response(AppModule, Response, Origin, LogStr),
+		    undefined
 		   ).
 
 %% transport layer hooks
