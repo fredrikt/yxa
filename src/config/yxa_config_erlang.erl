@@ -28,7 +28,8 @@
 %%--------------------------------------------------------------------
 -record(yxa_config_erlang_state, {
 	  filename,	%% string(), filename
-	  appmodule	%% atom(), Yxa application module
+	  appmodule,	%% atom(), Yxa application module
+	  recursing	%% bool()
 	 }).
 
 %%====================================================================
@@ -55,12 +56,13 @@ init(AppModule) ->
 	    {ok, FileName1} when is_list(FileName1) ->
 		FileName1
 	end,
-    State = #yxa_config_erlang_state{
-      filename         = FileName,
-      appmodule        = AppModule
-     },
     case is_readable_file(FileName) of
 	true ->
+	    State = #yxa_config_erlang_state{
+	      filename  = FileName,
+	      appmodule = AppModule,
+	      recursing = false
+	     },
 	    {ok, State};
 	false ->
 	    Msg = io_lib:format("File ~p not readable", [FileName]),
@@ -104,18 +106,42 @@ is_readable_file(Fn) when is_list(Fn) ->
 %%           Msg = string()
 %%--------------------------------------------------------------------
 parse(State) when is_record(State, yxa_config_erlang_state) ->
+    try begin
+	    case parse2(State) of
+		{ok, TermL} when is_list(TermL) ->
+		    AppModule = State#yxa_config_erlang_state.appmodule,
+		    Terms = extract_config(TermL, AppModule),
+		    %% turn all {Key, Value} tuples we get from extract_config() into
+		    %% the {Key, Value, ?MODULE} tuples that this function should return
+		    FormattedTerms =
+			lists:map(fun({K, V}) ->
+					  {K, V, ?MODULE}
+				  end, Terms),
+		    Cfg = #yxa_cfg{entrys = FormattedTerms},
+		    {ok, Cfg};
+		Res1 ->
+		    Res1
+	    end
+	end of
+	Res ->
+	    Res
+    catch
+	throw:
+	  {error, Msg} ->
+	    {error, Msg}
+    end.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%% parse2 parses the configuration file and recurses into included files
+parse2(State) when is_record(State, yxa_config_erlang_state) ->
     File = State#yxa_config_erlang_state.filename,
     case file:consult(File) of
 	{ok, [TermL]} when is_list(TermL) ->
-	    AppModule = State#yxa_config_erlang_state.appmodule,
-	    L1 = extract_config(TermL, AppModule),
-	    %% turn all {Key, Value} tuples we get from extract_config() into
-	    %% the {Key, Value, ?MODULE} tuples that this function should return
-	    L2 = lists:map(fun({K, V}) ->
-				   {K, V, ?MODULE}
-			   end, L1),
-	    Cfg = #yxa_cfg{entrys = L2},
-	    {ok, Cfg};
+	    parse_includes(State, TermL);
 	{ok, _Unknown} ->
 	    Msg = io_lib:format("Could not parse data in file ~p.",
 				[File]),
@@ -127,15 +153,46 @@ parse(State) when is_record(State, yxa_config_erlang_state) ->
 	{error, E} ->
 	    Msg = io_lib:format("Failed parsing file ~p : ~p",
 				[File, E]),
-	    {error, lists:flatten(Msg)}
+	    throw({error, lists:flatten(Msg)})
     end.
 
+%% parse_includes/2, part of parse2/1
+parse_includes(State, TermL) when is_record(State, yxa_config_erlang_state), is_list(TermL) ->
+    parse_includes2(State, TermL, []).
+    
+parse_includes2(State, [{include, Inc} | T], Res) when is_record(State, yxa_config_erlang_state), is_list(Inc) ->
+    CurrentFile = State#yxa_config_erlang_state.filename,
+    case State#yxa_config_erlang_state.recursing of
+	false ->
+	    IncFile =
+		case filename:pathtype(Inc) of
+		    absolute ->
+			Inc;
+		    _ ->
+			filename:absname_join(filename:dirname(CurrentFile), Inc)
+		end,
+	    
+	    {ok, This} = parse2(State#yxa_config_erlang_state{recursing = true, filename = IncFile}),
+	    parse_includes2(State, T, This ++ Res);
+	true ->
+	    Msg = io_lib:format("Multiple levels of configuration file includes not permitted (in ~p)",
+				[CurrentFile]),
+	    throw({error, lists:flatten(Msg)})
+    end;
+parse_includes2(State, [H | T], Res) when is_record(State, yxa_config_erlang_state), is_list(Res) ->
+    %% move all non-include statements to Res
+    parse_includes2(State, T, [H | Res]);
+parse_includes2(_State, [], Res) when is_list(Res) ->
+    {ok, Res}.
 
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-
+%%--------------------------------------------------------------------
+%% Function: extract_config(TermL, AppModule)
+%%           TermL     = list() of term()
+%%           AppModule = atom(), application for which to load config
+%% Descrip.: Get the 'common' and the application specific sections of
+%%           TermL, and merge them.
+%% Returns : Cfg = sorted list() of {Key, Value} tuples
+%%--------------------------------------------------------------------
 extract_config(TermL, AppModule) when is_list(TermL), is_atom(AppModule) ->
     {common, CommonConfig} = get_section(common, TermL),
     {AppModule, AppConfig} = get_section(AppModule, TermL),
@@ -143,13 +200,9 @@ extract_config(TermL, AppModule) when is_list(TermL), is_atom(AppModule) ->
     merge_config(CommonConfig, AppConfig).
 
 get_section(Key, TermL) when is_atom(Key), is_list(TermL) ->
-    case lists:keysearch(Key, 1, TermL) of
-	{value, {Key, Res}} when is_list(Res) ->
-	    check_for_dups(Key, Res),
-	    {Key, Res};
-	false ->
-	    {Key, []}
-    end.
+    Res = proplists:append_values(Key, TermL),
+    ok = check_for_dups(Key, Res),
+    {Key, Res}.
 
 %% There must not be two instances of a parameter inside the same section.
 check_for_dups(Section, Data) ->
@@ -186,6 +239,24 @@ merge_config(Config, []) ->
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
+    %% parse_includes(State, TermL)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "parse_includes/2 - 0"),
+    ParseIncludesState1 = #yxa_config_erlang_state{filename  = "test",
+						   recursing = false},
+
+    ParseIncludesState2 = #yxa_config_erlang_state{filename  = "test",
+						   recursing = true},
+
+    autotest:mark(?LINE, "parse_includes/2 - 1"),
+    {ok, [{foo, bar}]} = parse_includes(ParseIncludesState1, [{foo, bar}]),
+
+    autotest:mark(?LINE, "parse_includes/2 - 2"),
+    {ok, [{foo, bar}]} = parse_includes(ParseIncludesState2, [{foo, bar}]),
+
+    autotest:mark(?LINE, "parse_includes/2 - 3"),
+    {error, "Multiple levels" ++ _} = (catch parse_includes(ParseIncludesState2, [{include, "testfile"}])),
+
 
     %% get_section(Key, TermL)
     %%--------------------------------------------------------------------

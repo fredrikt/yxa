@@ -140,7 +140,7 @@ more than one Yxa node.
 Configuration
 =============
 
-The configuration file is named <application>.config and contains
+The configuration file is named <application>.config and can contain
 these variables:
 
 common:
@@ -317,6 +317,15 @@ tls_disable_server		(default: false) Set this to 'true' to not listen
 				to support SIP over TLS, so setting this to
 				'true' is NOT recommended.
 
+timerT1				(default: 500) See RFC 3261. You should
+				probably not touch this.
+
+timerT2				(default: 4000) See RFC 3261. You should
+				probably not touch this.
+
+timerT4				(default: 5000) See RFC 3261. You should
+				probably not touch this.
+
 pstnproxy:
 ----------
 e164_to_pstn			(no default) Regexps for choosing PSTN gateway
@@ -470,12 +479,6 @@ allow_foreign_registers 	(default: false) Set to true to have your out-
 				local (what domains are 'local' is determined
 				by the 'homedomain' parameter).
 
-adminwww:
----------
-www_baseurl			(required) Base URL for web server
-
-httpd_config			(required) Path to httpd.conf
-
 appserver:
 ----------
 internal_to_e164		(default: []) Regexps for rewriting
@@ -484,15 +487,6 @@ internal_to_e164		(default: []) Regexps for rewriting
 				internal_to_e164 with the incomingproxy
 				to be able to make the exact same routing
 				decisions.
-
-timerT1				(default: 500) See RFC 3261. You should
-				probably not touch this.
-
-timerT2				(default: 4000) See RFC 3261. You should
-				probably not touch this.
-
-timerT4				(default: 5000) See RFC 3261. You should
-				probably not touch this.
 
 appserver_call_timeout		(default: 40) The number of seconds to ring
 				a destination before concluding that noone
@@ -515,6 +509,14 @@ Please bear with this though, as steps have been taken to make it easy to add
 other configuration parsing backends. An ini-file format is likely to be written
 shortly, and it would be fairly easy to write for example an XML-format parser
 although you can't count on me doing it for you.
+
+It is possible to include other files from within the top-level configuration
+file (ie. you can't include a file from an included file). You do this by
+specifying {include, "filename.conf"} as a parameter where you want the contents
+of "filename.conf" to be included. The contents of filename.conf should not
+contain any sections - see the example below. "filename.conf" will be considered
+relative to the filename of the top-level configuration file, unless it is
+absolute.
 
 Brief introduction to the Erlang syntax :
 
@@ -606,11 +608,17 @@ appserver.config:
 
 Combined configuration file for more than one application :
 -----------------------------------------------------------
+
+yxa.config :
+
 [
+ %% Include files
+ %% --------------------------------------------------------------------
+ {include,	"secrets.config"},
+
  %% Common configuration
  %% --------------------------------------------------------------------
  {common,	[{sipauth_realm,		"example.com"},
-		 {sipauth_password,		"secret"},
 
 		 {logger_logdir,		"/var/log/yxa"},
 
@@ -639,6 +647,13 @@ Combined configuration file for more than one application :
  {appserver,		[{listenport,		5070},
 			 {tls_listenport, 	5071}
 	 		]}
+].
+
+secrets.config :
+
+[
+ {common, [{sipauth_password,		"secret"}
+	  ]}
 ].
 
 
