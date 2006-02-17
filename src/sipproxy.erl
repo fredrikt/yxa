@@ -420,11 +420,11 @@ process_wait(EndTime, State) when is_integer(EndTime), is_record(State, state) -
 			NewState_1#state.final_response_sent, AllTerminated, EndProcessing]),
 	    case EndProcessing of
 		true ->
-		    Targets = State#state.targets,
+		    Targets = NewState_1#state.targets,
 		    logger:log(debug, "sipproxy: All Targets terminated or completed. Ending process_wait(), "
 			       "returning discontinue. debugfriendly(TargetList) :~n~p",
 			       [targetlist:debugfriendly(Targets)]),
-		    {discontinue, State};
+		    {discontinue, NewState_1};
 		false ->
 		    process_wait(EndTime, NewState_1)
 	    end;
@@ -432,7 +432,7 @@ process_wait(EndTime, State) when is_integer(EndTime), is_record(State, state) -
 	    {timeout, NewState};
 	quit ->
 	    %% Parent has exited, so we don't need to report any final response upstreams
-	    {discontinue, State}
+	    {discontinue, NewState}
     end.
 
 %%--------------------------------------------------------------------
@@ -758,7 +758,7 @@ report_upstreams(true, #state{final_response_sent=false, mystate=MyState}=State)
     ForwardResponse =
 	case Responses of
 	    [] ->
-		logger:log(normal, "sipproxy: No responses to choose between, answering 408 Request Timeout"),
+		logger:log(normal, "sipproxy: No responses to choose between, answering '408 Request Timeout'"),
 		{408, "Request Timeout"};
 	    _ when is_list(Responses) ->
 		case make_final_response(Responses) of
