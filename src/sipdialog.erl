@@ -56,7 +56,7 @@
 %%--------------------------------------------------------------------
 -define(DEFAULT_EXPIRE, 600).
 -define(ETS_DIALOG_TABLE, yxa_dialogs).
-
+-define(DEFAULT_FIRST_LOCAL_CSEQ, 1).
 
 
 %%--------------------------------------------------------------------
@@ -597,7 +597,13 @@ dialog2str2([H1 | T1], [H2 | T2], Res) ->
 %%           NextCSeq  = integer()
 %%--------------------------------------------------------------------
 get_next_local_cseq(Dialog) when is_record(Dialog, dialog) ->
-    Num = Dialog#dialog.local_cseq + 1,
+    Num =
+	case Dialog#dialog.local_cseq of
+	    undefined ->
+		?DEFAULT_FIRST_LOCAL_CSEQ;
+	    N when is_integer(N) ->
+		N + 1
+	end,
     {ok, Num, Dialog#dialog{local_cseq = Num}}.
 
 
