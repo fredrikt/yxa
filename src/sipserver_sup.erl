@@ -95,10 +95,12 @@ init([AppModule]) ->
                  permanent, 2000, worker, [logger]},
     Directory = {directory, {directory, start_link, []},
                  permanent, 2000, worker, [directory]},
+    DialogServer = {dialog_server, {dialog_server, start_link, []},
+		    permanent, 2000, worker, [dialog_server]},
     TransactionLayer = {transactionlayer,
 			{transactionlayer, start_link, [AppModule]},
 			permanent, 2000, worker, [transactionlayer]},
-    MyList = [CfgServer, Logger, Directory, TransactionLayer],
+    MyList = [CfgServer, Logger, Directory, DialogServer, TransactionLayer],
     {ok, {{one_for_one, 20, 60}, MyList}}.
 
 start_extras(Supervisor, AppModule, AppSupdata) ->

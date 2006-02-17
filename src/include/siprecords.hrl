@@ -139,3 +139,23 @@
 	  class,	%% atom(), static | dynamic
 	  expire	%% integer(), util:timestamp/0 time when this record expires
 	  }).
+
+
+%%--------------------------------------------------------------------
+%% sipdialog.erl records
+%%--------------------------------------------------------------------
+
+%% RFC 3261 #12 (Dialogs)
+-record(dialog, {callid,
+		 local_cseq	= 1,		%% integer()
+		 remote_cseq	= 1,		%% integer()
+		 local_tag,			%% string()
+		 remote_tag	= none,		%% string() | none
+		 secure		= false,	%% true | false
+		 route_set,			%% list() of string()
+		 local_uri,			%% string(), URI from From: or To: header
+		 remote_uri,			%% string(), URI from From: or To: header
+		 remote_target,			%% string(), URI from Contact: header
+		 state				%% early | confirmed
+		}).
+

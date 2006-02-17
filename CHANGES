@@ -1,3 +1,4 @@
+ - Add basic SIP dialog support to the SIP stack.
  - Rewrote local.erl framework so that only functions that are
    actually to be overridden has to be in the domain specific
    modules.

@@ -968,7 +968,37 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
     case get_server_transaction_pid(Request) of
 	none ->
 	    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
-	    received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule);
+	    case received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule) of
+		{pass_to_core, NewAppModule} ->
+		    case get_dialog_handler(Request) of
+			nomatch ->
+			    {pass_to_core, NewAppModule};
+			DCPid when is_pid(DCPid) ->
+			    logger:log(debug, "Transaction layer: Passing request to dialog controller ~p", [DCPid]),
+			    case is_process_alive(DCPid) of
+				true ->
+				    Ref = make_ref(),
+				    DCPid ! {new_request, self(), Ref, Request, Origin, LogStr},
+				    receive
+					{ok, DCPid, Ref} ->
+					    ok
+				    after
+					5 * 1000 ->
+					    logger:log(error, "Transaction layer: Dialog handler ~p alive, but not responding "
+						       "- throwing '500 Server Internal Error'", [DCPid]),
+					    throw({siperror, 500, "Server Internal Error"})
+				    end;
+				false ->
+				    THandler = get_handler_for_request(Request),
+				    logger:log(error, "Transaction layer: Dialog handler pid ~p not alive, answering "
+					       "'481 Call/Transaction Does Not Exist'", [DCPid]),
+				    send_response_handler(THandler, 481, "Call/Transaction Does Not Exist")
+			    end,
+			    continue
+		    end;
+		Res ->
+		    Res
+	    end;
 	STPid when is_pid(STPid) ->
 	    gen_server:cast(STPid, {siprequest, Request, Origin}),
 	    continue
@@ -991,9 +1021,23 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
     case get_client_transaction_pid(Response) of
 	none ->
 	    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
-	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response(...).",
-		       [Response#response.status, Response#response.reason, AppModule]),
-	    {pass_to_core, AppModule};
+	    case get_dialog_handler(Response) of
+		nomatch ->
+		    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response(...).",
+			       [Response#response.status, Response#response.reason, AppModule]),
+		    {pass_to_core, AppModule};
+		DCPid when is_pid(DCPid) ->
+		    case is_process_alive(DCPid) of
+			true ->
+			    logger:log(debug, "Transaction layer: Passing response '~p ~s' to dialog controller ~p",
+				       [Response#response.status, Response#response.reason, DCPid]),
+			    DCPid ! {new_response, Response, Origin, LogStr};
+			false ->
+			    logger:log(debug, "Transaction layer: Dialog controller ~p dead, ignoring response '~p ~s'",
+				       [DCPid, Response#response.status, Response#response.reason])
+		    end,
+		    continue
+	    end;
 	CTPid when is_pid(CTPid) ->
 	    logger:log(debug, "Transaction layer: Passing response '~p ~s' to registered handler ~p",
 		       [Response#response.status, Response#response.reason, CTPid]),
@@ -1010,3 +1054,17 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
 %%--------------------------------------------------------------------
 get_my_to_tag(TH) when is_record(TH, thandler) ->
     gen_server:call(TH#thandler.pid, get_my_to_tag, ?STORE_TIMEOUT).
+
+%%--------------------------------------------------------------------
+%% Function: get_dialog_handler(Re)
+%%           Re = request record() | response record()
+%% Descrip.: Get the dialog controller for a request or response.
+%% Returns : DCPid = pid() |
+%%           nomatch       |
+%%           error
+%%--------------------------------------------------------------------
+get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
+    case sipdialog:get_dialog_controller(Re) of
+	{ok, Pid} -> Pid;
+	R -> R
+    end.

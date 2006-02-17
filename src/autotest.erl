@@ -79,7 +79,8 @@
 		       tcp_connection,
 		       ssl_util,
 		       siphost,
-		       hex
+		       hex,
+		       sipdialog
 		      ]).
 
 %%====================================================================

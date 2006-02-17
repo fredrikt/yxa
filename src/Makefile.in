@@ -38,6 +38,7 @@ erl_FILES = \
 	bootstrap.erl \
 	contact.erl \
 	contact_param.erl \
+	dialog_server.erl \
 	directory.erl \
 	dnsutil.erl \
 	group_regexp.erl \
@@ -52,6 +53,7 @@ erl_FILES = \
 	pstnproxy.erl \
 	registrar.erl \
 	sipauth.erl \
+	sipdialog.erl \
 	sipdst.erl \
 	sipheader.erl \
 	siphost.erl \
