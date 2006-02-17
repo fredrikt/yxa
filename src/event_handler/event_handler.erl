@@ -56,8 +56,10 @@ start_link(AppName) ->
     {ok, Handlers} = yxa_config:get_env(event_handler_handlers, []),
     case gen_event:start_link({local, ?SERVER}) of
 	{ok, Pid} ->
-	    lists:map(fun(M) ->
-			      gen_event:add_handler(?SERVER, M, [AppName])
+	    lists:map(fun(M) when is_atom(M) ->
+			      gen_event:add_handler(?SERVER, M, [AppName]);
+			 ({M, A}) when is_atom(M), is_list(A) ->
+			      gen_event:add_handler(?SERVER, M, [AppName] ++ A)
 		      end, Handlers),
 	    {ok, Pid};
 	Other ->

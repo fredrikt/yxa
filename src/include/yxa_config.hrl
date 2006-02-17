@@ -60,7 +60,7 @@
 		   },
 	 #cfg_entry{key		= event_handler_handlers,
 		    list_of	= true,
-		    type	= atom
+		    type	= term
 		   },
 	 #cfg_entry{key	= homedomain,
 		    list_of	= true,

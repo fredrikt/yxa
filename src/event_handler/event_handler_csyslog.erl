@@ -52,7 +52,7 @@
 %% Macros
 %%--------------------------------------------------------------------
 -define(SERVER, ?MODULE).
-
+-define(DEFAULT_PORTNAME, "syslog_c-port").
 
 %%====================================================================
 %% External functions
@@ -69,10 +69,12 @@
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
 init([AppName]) when is_atom(AppName) ->
+    init([AppName, ?DEFAULT_PORTNAME]);
+init([AppName, PortName]) when is_atom(AppName), is_list(PortName) ->
     %% Look for the syslog_c-port in the directory where this modules BEAM-file resides
     Directorys = [filename:dirname(code:which(?MODULE))] ++
 	[code:priv_dir(yxa)],
-    case locate_file(Directorys, "syslog_c-port") of
+    case locate_file(Directorys, PortName) of
 	{ok, Cmd} ->
 	    Port = open_port({spawn, Cmd}, [{packet, 2}]),
 	    %% syslog_port will openlog() with the first data we send it as identifier
@@ -80,8 +82,8 @@ init([AppName]) when is_atom(AppName) ->
 	    true = port_command(Port, Msg),
 	    {ok, #state{port=Port}};
 	not_found ->
-	    logger:log(error, "Event handler csyslog: Could not locate C port binary 'syslog_c-port' "
-		       "(searched in directorys : ~p)", [Directorys]),
+	    logger:log(error, "Event handler csyslog: Could not locate C port binary '~s' "
+		       "(searched in directorys : ~p)", [PortName, Directorys]),
 	    {error, "C port binary not found"}
     end.
 
