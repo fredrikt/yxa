@@ -1,5 +1,8 @@
 -module(sdp).
--export([parse/1, print/1]).
+-export([parse/1,
+	 print/1,
+	 print/2
+	]).
 
 parseline([C, $= | Value]) ->
     {C, Value};
@@ -23,13 +26,17 @@ parse(String) ->
     [_,Port | _] = Mediasplit,
     {Address, list_to_integer(Port)}.
 
-print({Address, Port}) ->
+print(AP) ->
+    print(AP, []).
+
+print({Address, Port}, Extra) when is_list(Extra) ->
     Headerlist = [{$v, "0"},
 		  {$o, "- 1 2 IN IP4 " ++ Address},
 		  {$s, "SIP Call"},
 		  {$c, "IN IP4 " ++ Address},
 		  {$t, "0 0"},
-		  {$m, "audio " ++ integer_to_list(Port) ++ " RTP/AVP 8"}],
+		  {$m, "audio " ++ integer_to_list(Port) ++ " RTP/AVP 8"}
+		 ] ++ Extra,
     Buildheader = fun({C, Value}) ->
 			  [C, $= | Value]
 		  end,
