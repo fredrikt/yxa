@@ -1020,28 +1020,49 @@ from_transportlayer(Response, Origin, LogStr) when is_record(Response, response)
 						   is_list(LogStr) ->
     case get_client_transaction_pid(Response) of
 	none ->
-	    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
-	    case get_dialog_handler(Response) of
-		nomatch ->
-		    logger:log(debug, "Transaction layer: No state for received response '~p ~s', passing to ~p:response(...).",
-			       [Response#response.status, Response#response.reason, AppModule]),
-		    {pass_to_core, AppModule};
-		DCPid when is_pid(DCPid) ->
-		    case is_process_alive(DCPid) of
-			true ->
-			    logger:log(debug, "Transaction layer: Passing response '~p ~s' to dialog controller ~p",
-				       [Response#response.status, Response#response.reason, DCPid]),
-			    DCPid ! {new_response, Response, Origin, LogStr};
-			false ->
-			    logger:log(debug, "Transaction layer: Dialog controller ~p dead, ignoring response '~p ~s'",
-				       [DCPid, Response#response.status, Response#response.reason])
-		    end,
-		    continue
-	    end;
+	    {_CSeqNum, Method} = sipheader:cseq(Response#response.header),
+	    from_transportlayer_response_no_transaction(Method, Response, Origin, LogStr);
 	CTPid when is_pid(CTPid) ->
 	    logger:log(debug, "Transaction layer: Passing response '~p ~s' to registered handler ~p",
 		       [Response#response.status, Response#response.reason, CTPid]),
 	    gen_server:cast(CTPid, {sipmessage, Response, Origin, LogStr}),
+	    continue
+    end.
+
+%% part of from_transportlayer/1
+%% Returns : continue | {pass_to_core, AppModule}
+from_transportlayer_response_no_transaction(Method, Response, _Origin, _LogStr) when is_list(Method),
+										     Method /= "INVITE" ->
+    %% RFC4320 #4.2 (Action 2)
+    %% A transaction-stateful SIP proxy MUST NOT send any response to a
+    %% non-INVITE request unless it has a matching server transaction that
+    %% is not in the Terminated state.  As a consequence, this proxy will
+    %% not forward any "late" non-INVITE responses.
+    %%
+    %% YXA applications does not have to be proxys, but I can't think of a reason why a
+    %% transaction user would want to get responses at all.
+    logger:log(debug, "Transaction layer: No transaction for received response to non-INVITE request ~s : "
+	       "'~p ~s', dropping response (RFC4320 #4.2)",
+	      [Method, Response#response.status, Response#response.reason]),
+    continue;
+from_transportlayer_response_no_transaction("INVITE", Response, Origin, LogStr) ->
+    {Status, Reason} = {Response#response.status, Response#response.reason},
+    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
+    case get_dialog_handler(Response) of
+	nomatch ->
+	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', "
+		       "passing to ~p:response(...).", [Status, Reason, AppModule]),
+	    {pass_to_core, AppModule};
+	DCPid when is_pid(DCPid) ->
+	    case is_process_alive(DCPid) of
+		true ->
+		    logger:log(debug, "Transaction layer: Passing response '~p ~s' to dialog controller ~p",
+			       [Status, Reason, DCPid]),
+		    DCPid ! {new_response, Response, Origin, LogStr};
+		false ->
+		    logger:log(debug, "Transaction layer: Dialog controller ~p dead, ignoring response '~p ~s'",
+			       [DCPid, Status, Reason])
+	    end,
 	    continue
     end.
 

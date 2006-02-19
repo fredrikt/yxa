@@ -1,3 +1,5 @@
+ - Implement RFC4320 which updates RFC3261 with regard to non-
+   INVITE transactions.
  - Add basic SIP dialog support to the SIP stack.
  - Add 'include' support to (erlang) configuration files.
  - Rewrote local.erl framework so that only functions that are
@@ -6,6 +8,7 @@
  - Include Date: header in '200 Ok' response to REGISTER.
  - Various bugfixes, including making sure we close the old log
    files upon rotation.
+
 
 -- 0.90		(2005-10-21)
 

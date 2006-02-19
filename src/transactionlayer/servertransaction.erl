@@ -86,6 +86,7 @@
 	  timerlist,		%% siptimerlist record(), our current set of timers
 	  my_to_tag,		%% string(), To-tag to use if we generate a response (as opposed to
 	  			%% if we forward a response)
+	  nit_100 = false,	%% non-INVITE '100 Trying' time reached?
 	  testing = false	%% true | false, are we just testing this modules functions?
 	 }).
 
@@ -230,7 +231,11 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
 		{ok, NewState1} = do_response(created, Response, State),
 		NewState1;
 	    true ->
-		State
+		%% set up a timer to send a 100 Trying for non-INVITE transactions
+		%% after T2 seconds, RFC4320 #4.1 (Action 1)
+		{ok, T2} = yxa_config:get_env(timerT2),
+		Desc = "send non-INVITE 100",
+		add_timer(T2, Desc, {send_nit_100}, State)
 	end,
 
     {ok, NewState, ?TIMEOUT}.
@@ -546,6 +551,7 @@ handle_info(timeout, State) ->
 
     %% Generate a 500 Server Internal Error. Maybe we should just exit() since the other end
     %% is unlikely to remember this transaction state by now.
+    %% XXX don't do this for non-INVITE transactions? RFC4320 #4.2?
     SendResponse = make_response(500, "Server Internal Error", <<>>, [], [], State),
     {ok, NewState} = do_response(created, SendResponse, State),
 
@@ -774,9 +780,9 @@ process_timer2({resendresponse}, Timer, State) when is_record(State, state) ->
 				 end,
 		    NewTimerList = siptimer:revive_timer(Timer, NewTimeout, State#state.timerlist),
 		    State#state{timerlist=NewTimerList};
-		_ ->
+		SipState ->
 		    logger:log(debug, "~s: Ignoring signal to resend response '~p ~s' (response to ~s ~s) since "
-			       "we are in state '~p'", [LogTag, Status, Reason, Method, sipurl:print(URI), State]),
+			       "we are in state '~p'", [LogTag, Status, Reason, Method, sipurl:print(URI), SipState]),
 		    State
 	    end;
 	_ ->
@@ -819,6 +825,25 @@ process_timer2({terminate_transaction}, _Timer, State) ->
     logger:log(debug, "~s: Received timer signal to terminate transaction", [LogTag]),
     enter_sip_state(terminated, State);
 
+process_timer2({send_nit_100}, _Timer, State) ->
+    LogTag = State#state.logtag,
+    case State#state.sipstate of
+	trying ->
+	    %% RFC4320 #4.1 (Action 1)
+	    %% Without regard to transport, an SIP element MUST respond to a non-
+	    %% INVITE request with a Status-Code of 100 if it has not otherwise
+	    %% responded after the amount of time it takes a client transaction's
+	    %% Timer E to be reset to T2.
+	    logger:log(debug, "~s: Sending '100 Trying' in response to non-INVITE", [LogTag]),
+	    Response = make_response(100, "Trying", <<>>, [], [], State),
+	    {ok, NewState1} = do_response(created, Response, State#state{nit_100 = true}),
+	    NewState1;
+	SipState ->
+	    logger:log(debug, "~s: Not sending '100 Trying' response to non-INVITE when in SIP state ~p",
+		       [LogTag, SipState]),
+	    State
+    end;
+
 process_timer2(Signal, Timer, State) when is_record(State, state) ->
     [TRef] = siptimer:extract([ref], Timer),
     LogTag = State#state.logtag,
@@ -851,24 +876,29 @@ do_response(Created, Response, State) when is_record(State, state), is_record(Re
 	    ignore ->
 		State;
 	    {send, SendReliably, NewSipState} ->
-		LogLevel = if
-			       Status >= 200 -> normal;
-			       true -> debug
-			   end,
-		What = case Created of
-			   created -> "Responding";
-			   forwarded -> "Forwarding response"
-		       end,
-		logger:log(LogLevel, "~s: ~s '~p ~s'", [LogTag, What, Status, Reason]),
-		case State#state.testing of
-		    true -> ok;
-		    false ->
-			store_transaction_result(NewSipState, Request, Status, Reason, LogTag)
-		end,
-		{ok, NewState2} = send_response(Response, SendReliably, State),
-		%% Make event out of the fact that we are sending a response
-		event_final_response(Created, NewState2, Status),
-		enter_sip_state(NewSipState, NewState2);
+		case catch send_response_non_invite_check(ResponseToMethod, Status, State) of
+		    ignore ->
+			enter_sip_state(NewSipState, State);
+		    send ->
+			LogLevel = if
+				       Status >= 200 -> normal;
+				       true -> debug
+				   end,
+			What = case Created of
+				   created -> "Responding";
+				   forwarded -> "Forwarding response"
+			       end,
+			logger:log(LogLevel, "~s: ~s '~p ~s'", [LogTag, What, Status, Reason]),
+			case State#state.testing of
+			    true -> ok;
+			    false ->
+				store_transaction_result(NewSipState, Request, Status, Reason, LogTag)
+			end,
+			{ok, NewState2} = send_response(Response, SendReliably, State),
+			%% Make event out of the fact that we are sending a response
+			event_final_response(Created, NewState2, Status),
+			enter_sip_state(NewSipState, NewState2)
+		end;
 	    E ->
 		logger:log(error, "~s: State machine does not allow us to send '~p ~s' in response to '~s ~s' "
 			   "when my SIP-state is '~p'", [LogTag, Status, Reason, ResponseToMethod,
@@ -982,6 +1012,51 @@ send_response_statemachine(Method, Status, terminated) when Status >= 100, Statu
 	       "ignoring", [Status, Method]),
     ignore.
 
+%%--------------------------------------------------------------------
+%% Function: send_response_non_invite_check(Method, Status, State)
+%% Descrip.: Check the plan to send a response against the rules in
+%%           RFC4320 (SIP Non-INVITE Actions) which updates RFC3261.
+%% Returns : ignore | send
+%%--------------------------------------------------------------------
+send_response_non_invite_check(Method, 100, State) when Method /= "INVITE" ->
+    T2hasFired = (State#state.nit_100 == true),
+    IsReliable = State#state.is_rel_sock,
+
+    if
+	IsReliable == true ->
+	    %% An SIP element MAY respond to a non-INVITE request with a Status-Code
+	    %% of 100 over a reliable transport at any time.
+	    send;
+	T2hasFired == true, State#state.sipstate == trying ->
+	    send;
+	true ->
+	    %% Either Timer T2 hadn't fired yet, or we are not in SIP-state 'trying'
+	    %% anymore (meaning that we have sent some other response already)
+	    LogTag = State#state.logtag,
+	    logger:log(normal, "~s: Ignoring request to send '100 Trying' response to non-INVITE request "
+		       "over non-reliable transport based on the rules in RFC4320 (which updates RFC3261)", [LogTag]),
+	    ignore
+    end;
+       
+send_response_non_invite_check(Method, Status, State) when Method /= "INVITE", Status >= 101, Status =< 199 ->
+    %% "An SIP element MUST NOT send any provisional response with a Status-
+    %%  Code other than 100 to a non-INVITE request." RFC4320 #4.1 (Action 1)
+    LogTag = State#state.logtag,
+    logger:log(normal, "~s: NOT sending non-100 provisional response to non-INVITE request (RFC4320)", [LogTag]),
+    ignore;
+
+send_response_non_invite_check(Method, 408, State) when Method /= "INVITE" ->
+    %% RFC4320 #4.2 :
+    %% A transaction-stateful SIP element MUST NOT send a response with
+    %% Status-Code of 408 to a non-INVITE request.  As a consequence, an
+    %% element that cannot respond before the transaction expires will not
+    %% send a final response at all.
+    LogTag = State#state.logtag,
+    logger:log(normal, "~s: NOT sending 408 response to non-INVITE request (RFC4320)", [LogTag]),
+    ignore;
+
+send_response_non_invite_check(_Method, _Status, _State) ->
+    send.
 
 %%--------------------------------------------------------------------
 %% Function: send_response(Response, SendReliably, State)
@@ -1092,6 +1167,31 @@ add_timer(Timeout, Description, AppSignal, State) when is_record(State, state) -
 enter_sip_state(SipState, #state{sipstate=SipState}=State) ->
     State;
 
+%%--------------------------------------------------------------------
+%% Function: enter_sip_state(proceeding, State)
+%%           State    = state record()
+%% Descrip.: Check if we are a non-INVITE transaction. If so, we might
+%%           need to cancel the {send_nit_100} timer because it is no
+%%           longer needed.
+%% Returns : State = state record()
+%%--------------------------------------------------------------------
+enter_sip_state(proceeding, State) ->
+    Method = (State#state.request)#request.method,
+    case Method /= "INVITE" andalso
+	State#state.is_rel_sock == true andalso
+	State#state.nit_100 == false of
+	true ->
+	    %% cancel the {send_nit_100} timer since we have apparently sent a '100 Trying'
+	    %% on behalf of our Transaction User, instead of because of the timer
+	    TimerList = State#state.timerlist,
+	    NewTimerList = siptimer:cancel_timers_with_appsignal({send_nit_100}, TimerList),
+	    State#state{timerlist = NewTimerList,
+			sipstate = proceeding
+		       };
+	false ->
+	    State#state{sipstate = proceeding}
+    end;
+	    
 %%--------------------------------------------------------------------
 %% Function: enter_sip_state(completed, State)
 %%           State    = state record()
