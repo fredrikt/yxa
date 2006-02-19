@@ -1303,7 +1303,6 @@ start_cancel_transaction(State) when is_record(State, state) ->
 
     {ok, T1} = yxa_config:get_env(timerT1),
     NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
-    Socket = State#state.socket,
     Dst = State#state.dst,
     %% Must use branch from original request sent out, so that next hop can match this
     %% CANCEL to the right transaction. tl_branch is not necessarily the same as branch
@@ -1313,9 +1312,9 @@ start_cancel_transaction(State) when is_record(State, state) ->
     case State#state.testing of
 	true ->
 	    {ok, testing, NewState#state{cancel_pid = testing},
-	     [CancelRequest, Socket, Dst, Branch, 32 * T1, none]};
+	     [CancelRequest, Dst, Branch, 32 * T1, none]};
 	false ->
-	    case transactionlayer:start_client_transaction(CancelRequest, Socket, Dst, Branch, 32 * T1, none) of
+	    case transactionlayer:start_client_transaction(CancelRequest, Dst, Branch, 32 * T1, none) of
 		P when is_pid(P) ->
 		    logger:log(debug, "~s: Started CANCEL client transaction with pid ~p", [LogTag, P]),
 		    NewState#state{cancel_pid=P};
@@ -2512,10 +2511,8 @@ test() ->
 
     autotest:mark(?LINE, "end_invite/1 - 1.3"),
     %% verify arguments that would have been used to start the CANCEL transaction
-    EndInviteSocket1 = EndInvite_State1#state.socket,
     EndInviteDst1 = EndInvite_State1#state.dst,
     [#request{method = "CANCEL"},
-     EndInviteSocket1,
      EndInviteDst1,
      "tl_branch",
      _EndInviteTimeout1,
