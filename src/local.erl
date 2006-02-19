@@ -1081,10 +1081,16 @@ is_tls_equivalent(Proto, Host, Port) ->
 %%           Msg      = string()
 %%--------------------------------------------------------------------
 check_config_type(Key, Value, Src) ->
-    ?CHECK_EXPORTED({check_config_type, 3},
-		    ?LOCAL_MODULE:check_config_type(Key, Value, Src),
-		    {ok, Value}
-		   ).
+    %% We have to do this with try/catch instead of ?CHECK_EXPORTED since
+    %% this function is needed before 'local' has been initialized
+    try	?LOCAL_MODULE:check_config_type(Key, Value, Src) of
+	Res ->
+	    Res
+    catch
+	error: undef ->
+	    %% the local module did not export check_config_type/3
+	    {ok, Value}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: config_is_soft_reloadable(Key, Value)
