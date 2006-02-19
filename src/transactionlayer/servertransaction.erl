@@ -76,6 +76,7 @@
 	  logtag,		%% string(), prefix to use when logging
 	  socket,		%% sipsocket record(), the socket the request was received on -
 	  			%% RFC3261 requires us to send responses using the very same socket
+	  is_rel_sock,		%% true | false, are the sockets transport reliable?
 	  report_to,		%% undefined | pid(), to whom we should report if we are cancelled
 	  parent,		%% pid(), our parent process - to handle trapped EXITs from it
 	  request,		%% request record(), the request we are handling
@@ -182,6 +183,9 @@ init([Request, Socket, LogStr, Parent]) ->
 
 init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
+
+    %% LogTag is essentially Branch + Method, LogStr is a string that
+    %% describes this request (METHOD URI [client=x, from=y, to=z])
     LogTag = Branch ++ " " ++ Method,
 
     MyToTag =
@@ -192,10 +196,18 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
 		Tag
 	end,
 
-    %% LogTag is essentially Branch + Method, LogStr is a string that
-    %% describes this request (METHOD URI [client=x, from=y, to=z])
-    State = #state{branch=Branch, logtag=LogTag, socket=Socket, request=Request, sipstate=trying,
-		   timerlist=siptimer:empty(), my_to_tag=MyToTag, parent=Parent},
+    IsRel = sipsocket:is_reliable_transport(Socket),
+
+    State = #state{branch	= Branch,
+		   logtag	= LogTag, 
+		   socket	= Socket,
+		   is_rel_sock	= IsRel,
+		   request	= Request,
+		   sipstate	= trying,
+		   timerlist	= siptimer:empty(),
+		   my_to_tag	= MyToTag,
+		   parent	= Parent
+		  },
 
     logger:log(debug, "~s: Started new server transaction for request ~s ~s.",
 	       [LogTag, Method, sipurl:print(URI)]),
@@ -1002,13 +1014,21 @@ send_response(Response, SendReliably, State) when is_record(Response, response),
 	    {true, "INVITE"} ->
 		%% Checking of Method here is just a safety net
 		{ok, T1} = yxa_config:get_env(timerT1),
-		TimerG = T1,
+		%% "For unreliable transports, timer G is set to fire in T1 seconds,
+		%%  and is not set to fire for reliable transports." RFC3261 #17.2.1
+		NewState2 = 
+		    case State#state.is_rel_sock of
+			true ->
+			    State;
+			false ->
+			    TimerG = T1,
+			    GDesc = "resendresponse " ++ integer_to_list(Status) ++ " " ++ Reason ++ " to " ++
+				sipurl:print(URI) ++ " (Timer G)",
+			    add_timer(TimerG, GDesc, {resendresponse}, State)
+		    end,
 		TimerH = 64 * T1,
-		GDesc = "resendresponse " ++ integer_to_list(Status) ++ " " ++ Reason ++ " to " ++
-		    sipurl:print(URI) ++ " (Timer G)",
 		HDesc = "stopresend of " ++ integer_to_list(Status) ++ " " ++ Reason ++ " to " ++
 		    sipurl:print(URI) ++ " (Timer H)",
-		NewState2 = add_timer(TimerG, GDesc, {resendresponse}, State),
 		NewState3 = add_timer(TimerH, HDesc, {resendresponse_timeout}, NewState2),
 		NewState3;
 	    {false, _} ->
@@ -1753,16 +1773,17 @@ test() ->
 	      end,
     TimeoutReportTo = spawn(WaitFun),
     TimeoutMonitorRef = erlang:monitor(process, TimeoutReportTo),
-    TimeoutState = #state{logtag    = "testing",
-			  request   = Test_OrigRequest,
-			  sipstate  = proceeding,
-			  my_to_tag = "totag",
-			  socket    = #sipsocket{proto = yxa_test},
-			  timerlist = siptimer:empty(),
-			  response  = Test_Response,
-			  report_to = TimeoutReportTo,
-			  parent    = TimeoutReportTo,
-			  testing   = true
+    TimeoutState = #state{logtag	= "testing",
+			  request	= Test_OrigRequest,
+			  sipstate	= proceeding,
+			  my_to_tag	= "totag",
+			  socket	= #sipsocket{proto = yxa_test},
+			  is_rel_sock	= false,
+			  timerlist	= siptimer:empty(),
+			  response	= Test_Response,
+			  report_to	= TimeoutReportTo,
+			  parent	= TimeoutReportTo,
+			  testing	= true
 			 },
 
     autotest:mark(?LINE, "gen_server signal 'timeout' - 1.1"),
@@ -1821,13 +1842,14 @@ test() ->
     %% handle_info({'EXIT', ...}, State)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 0"),
-    ExitSignal_State = #state{logtag    = "testing",
-			      parent    = self(),
-			      request   = Test_OrigRequest,
-			      socket    = #sipsocket{proto = yxa_test},
-			      my_to_tag = "ttt",
-			      timerlist = siptimer:empty(),
-			      testing   = true
+    ExitSignal_State = #state{logtag		= "testing",
+			      parent		= self(),
+			      request		= Test_OrigRequest,
+			      socket		= #sipsocket{proto = yxa_test},
+			      is_rel_sock	=  false,
+			      my_to_tag		= "ttt",
+			      timerlist		= siptimer:empty(),
+			      testing		= true
 			     },
 
     autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 1"),
