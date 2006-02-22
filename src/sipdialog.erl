@@ -436,11 +436,11 @@ create_dialog_state_uas(Request, Response) when is_record(Request, request), is_
     %% The local tag component of the dialog ID MUST be set to the tag in the To field
     %% in the response to the request (which always includes a tag)
     LocalTag =
-	case sipheader:get_tag(keylist:fetch('to', Header)) of
+	case sipheader:get_tag(keylist:fetch('to', Response#response.header)) of
 	    none ->
-		throw({error, "No To: tag in request"});
-	    FromTag1 ->
-		FromTag1
+		throw({error, "No To: tag in response"});
+	    ToTag1 ->
+		ToTag1
 	end,
 
     %% the remote tag component of the dialog ID MUST be set to the tag in the From
