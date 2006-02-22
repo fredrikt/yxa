@@ -451,8 +451,8 @@ create_dialog_state_uas(Request, Response) when is_record(Request, request), is_
 		%% A UAS MUST be prepared to receive a request without a tag in the
 		%% From field, in which case the tag is considered to have a value of null.
 		undefined;
-	    ToTag1 ->
-		ToTag1
+	    FromTag1 ->
+		FromTag1
 	end,
 
     %% The remote URI MUST be set to the URI in the From field, and the local
