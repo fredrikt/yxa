@@ -443,10 +443,10 @@ create_dialog_state_uas(Request, Response) when is_record(Request, request), is_
 		ToTag1
 	end,
 
-    %% the remote tag component of the dialog ID MUST be set to the tag in the From
-    %% field of the response.
+    %% the remote tag component of the dialog ID MUST be set to the tag from the
+    %% From field in the request
     RemoteTag =
-	case sipheader:get_tag(keylist:fetch('from', Response#response.header)) of
+	case sipheader:get_tag(keylist:fetch('from', Header)) of
 	    none ->
 		%% A UAS MUST be prepared to receive a request without a tag in the
 		%% From field, in which case the tag is considered to have a value of null.
