@@ -26,6 +26,11 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(SIPPIPE_TIMEOUT, 900).
+
 
 %%====================================================================
 %% Behaviour functions
@@ -512,7 +517,7 @@ proxy_request(THandler, Request, DstURI) when is_record(Request, request),
 					      is_record(DstURI, sipurl) ->
     case keylist:fetch('route', Request#request.header) of
 	[] ->
-	    sippipe:start(THandler, none, Request, DstURI, 900);
+	    sippipe:start(THandler, none, Request, DstURI, ?SIPPIPE_TIMEOUT);
 	Route ->
 	    %% XXX this is a configurable option only because in SU's setup it
 	    %% might break calls through the gateway when PRACKs it sends gets
@@ -521,9 +526,9 @@ proxy_request(THandler, Request, DstURI) when is_record(Request, request),
 		{ok, true} ->
 		    logger:log(debug, "Warning: Routing of request according to "
 			       "Route header disabled  : ~p - BAD IDEA", [Route]),
-		    sippipe:start(THandler, none, Request, DstURI, 900);
+		    sippipe:start(THandler, none, Request, DstURI, ?SIPPIPE_TIMEOUT);
 		{ok, false} ->
-		    sippipe:start(THandler, none, Request, route, 900)
+		    sippipe:start(THandler, none, Request, route, ?SIPPIPE_TIMEOUT)
 	    end
     end.
 
@@ -595,9 +600,9 @@ relay_request_to_pstn(THandler, Request, DstURI, DstNumber, LogTag) when is_reco
 relay_request_to_pstn_isauth(THandler, Request, DstURI) ->
     case keylist:fetch('route', Request#request.header) of
 	[] ->
-	    sippipe:start(THandler, none, Request, DstURI, 900);
+	    sippipe:start(THandler, none, Request, DstURI, ?SIPPIPE_TIMEOUT);
 	_Route ->
-	    sippipe:start(THandler, none, Request, route, 900)
+	    sippipe:start(THandler, none, Request, route, ?SIPPIPE_TIMEOUT)
     end.
 
 %%--------------------------------------------------------------------
