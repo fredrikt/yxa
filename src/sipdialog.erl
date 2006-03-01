@@ -19,6 +19,7 @@
 	 register_dialog_controller/4,
 	 get_dialog_controller/1,
 	 delete_using_pid/1,
+	 delete_dialog_controller/3,
 	 handle_expired_dialogs/1,
 
 	 %% dialog record users helper functions
@@ -248,6 +249,21 @@ delete_using_pid(Pid) when is_pid(Pid) ->
 	    nomatch
     end.
 
+delete_dialog_controller(CallId, LocalTag, RemoteTag) when is_list(CallId), is_list(LocalTag),
+							   is_list(RemoteTag); RemoteTag == undefined ->
+    Id = #dialogid{callid     = CallId,
+		   local_tag  = LocalTag,
+		   remote_tag = RemoteTag
+		  },
+    case ets:lookup(?ETS_DIALOG_TABLE, Id) of
+	[{Id, Attrs}] ->
+	    true = ets:delete_object(?ETS_DIALOG_TABLE, {Id, Attrs}),
+	    true = ets:delete_object(?ETS_DIALOG_TABLE, {Attrs#dialog_attrs.pid, Id});
+	_ ->
+	    ok
+    end,
+    ok.
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_expired_dialogs(Interval)
@@ -273,15 +289,10 @@ handle_expired_dialogs2(Interval, Entrys) when is_integer(Interval), is_list(Ent
 			erlang:exit(DCPid, kill);
 		    _Diff ->
 			%% send first signal to expired dialog controller when 'soft' expired
-			I = case Id#dialogid.remote_tag of
-				undefined ->
-				    {Id#dialogid.callid, Id#dialogid.local_tag};
-				_ ->
-				    {Id#dialogid.callid, Id#dialogid.local_tag, Id#dialogid.remote_tag}
-			    end,
+			DialogId = {Id#dialogid.callid, Id#dialogid.local_tag, Id#dialogid.remote_tag},
 			logger:log(debug, "Sipdialog: Notifying dialog controller ~p that dialog ~p has expired",
-				   [DCPid, Id]),
-			util:safe_signal("Sipdialog: ", DCPid, {dialog_expired, I})
+				   [DCPid, DialogId]),
+			util:safe_signal("Sipdialog: ", DCPid, {dialog_expired, DialogId})
 		end;
 	   (_) ->
 		%% ignore all other content than expired dialogs
@@ -650,7 +661,7 @@ test() ->
     autotest:mark(?LINE, "handle_expired_dialogs2/2 - 2.1"),
     %% check that we got an 'dialog_expired' signal for dialog 2, but not dialog 1 or 3
     receive
-	{dialog_expired, {2, _}} ->
+	{dialog_expired, {2, _, _}} ->
 	    ok;
 	M2 ->
 	    throw({error, {test_unknown_signal, M2}})
@@ -805,9 +816,9 @@ test() ->
 
     autotest:mark(?LINE, "create_dialog_state_uas/2 - 2"),
     %% test without To-tag in request
-    CDS_UAS_Req2 = CDS_UAS_Req1#request{header = keylist:set("To", ["<sip:ft@t.example.net>;no-to-tag"],
-							     CDS_UAS_Req1#request.header)},
-    {error, "No To: tag in request"} = (catch create_dialog_state_uas(CDS_UAS_Req2, CDS_UAS_Res1)),
+    CDS_UAS_Res2 = CDS_UAS_Res1#response{header = keylist:set("To", ["<sip:ft@t.example.net>;no-to-tag"],
+							      CDS_UAS_Res1#response.header)},
+    {error, "No To: tag in response"} = (catch create_dialog_state_uas(CDS_UAS_Req1, CDS_UAS_Res2)),
 
     autotest:mark(?LINE, "create_dialog_state_uas/2 - 3"),
     %% test without Contact in request
@@ -816,11 +827,11 @@ test() ->
 	(catch create_dialog_state_uas(CDS_UAS_Req3, CDS_UAS_Res1)),
 
     autotest:mark(?LINE, "create_dialog_state_uas/2 - 4"),
-    %% test without From-tag in response
-    CDS_UAS_Res4 = CDS_UAS_Res1#response{header = keylist:set("From", ["<sip:ft@t.example.net>;no-tag"],
-							      CDS_UAS_Res1#response.header)},
+    %% test without From-tag in request
+    CDS_UAS_Req4 = CDS_UAS_Req1#request{header = keylist:set("From", ["<sip:ft@f.example.net>;no-tag"],
+							     CDS_UAS_Req1#request.header)},
     CDC_UAS_Dialog4 = CDC_UAS_Dialog1#dialog{remote_tag = undefined},
-    {ok, CDC_UAS_Dialog4} = create_dialog_state_uas(CDS_UAS_Req1, CDS_UAS_Res4),
+    {ok, CDC_UAS_Dialog4} = create_dialog_state_uas(CDS_UAS_Req4, CDS_UAS_Res1),
 
 
     %% create_dialog_state_uas_is_secure(Request, ResponseContact)
