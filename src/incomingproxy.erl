@@ -23,6 +23,11 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(SIPPIPE_TIMEOUT, 900).
+
 %%====================================================================
 %% Behaviour functions
 %% Standard Yxa SIP-application callback functions
@@ -514,7 +519,7 @@ forward_request(THandler, Request, FwdURL) ->
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
 proxy_request(THandler, Request, Dst) when is_record(Request, request) ->
-    sippipe:start(THandler, none, Request, Dst, 900).
+    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT).
 
 %%--------------------------------------------------------------------
 %% Function: relay_request(THandler, Request, Dst, Origin, LogTag)
@@ -538,7 +543,7 @@ relay_request(THandler, #request{method=Method}=Request, Dst, _Origin, LogTag)
   when Method == "CANCEL"; Method == "BYE" ->
     logger:log(normal, "~s: incomingproxy: Relay ~s ~s (unauthenticated)",
 	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
-    sippipe:start(THandler, none, Request, Dst, 900);
+    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
 
 %%
 %% Anything but CANCEL or BYE
@@ -549,13 +554,13 @@ relay_request(THandler, Request, Dst, Origin, LogTag) when is_record(Request, re
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, relay_dst2str(Dst)]),
-	    sippipe:start(THandler, none, Request, Dst, 900);
+	    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
 	{stale, User} ->
 	    case local:incomingproxy_challenge_before_relay(Origin, Request, Dst) of
 		false ->
 		    logger:log(debug, "Relay: STALE authentication (user ~p), but local policy says we "
 			       "should not challenge", [User]),
-		    sippipe:start(THandler, none, Request, Dst, 900);
+		    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
 		true ->
 		    logger:log(debug, "Relay: STALE authentication, sending challenge"),
 		    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication (user ~p) ->"
@@ -567,7 +572,7 @@ relay_request(THandler, Request, Dst, Origin, LogTag) when is_record(Request, re
             case local:incomingproxy_challenge_before_relay(Origin, Request, Dst) of
                 false ->
                     logger:log(debug, "Relay: Failed authentication, but local policy says we should not challenge"),
-                    sippipe:start(THandler, none, Request, Dst, 900);
+                    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
                 _ ->
 		    logger:log(debug, "Relay: Failed authentication, sending challenge"),
 		    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required",
