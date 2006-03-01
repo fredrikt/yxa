@@ -139,7 +139,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	end,
     case sipdialog:delete_using_pid(Pid) of
 	{ok, DialogId} ->
-	    logger:log(DebugLevel, "Dialog server: Received exit-signal from dialog controller ~p,"
+	    logger:log(DebugLevel, "Dialog server: Received exit-signal from dialog controller ~p, "
 		       "deleted dialog ~p.", [Pid, DialogId]);
 	nomatch ->
 	    logger:log(DebugLevel, "Dialog server: Received exit-signal from ~p that was not a "
