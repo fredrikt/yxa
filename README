@@ -242,7 +242,8 @@ stateless_send_ack_with_backup_plan: (default: true) Bend the stateless proxying
 				first destination resolved is not available.
 				Caveat: This works only for TCP/TLS destinations,
 				we currently can't detect that UDP destinations
-				are not available.
+				are not available (we do check for blacklisted
+				destinations though).
 
 tcp_connection_idle_timeout	(default: 300) Number of seconds of inactivity
 				before we close a TCP connection.
@@ -325,6 +326,31 @@ timerT2				(default: 4000) See RFC 3261. You should
 
 timerT4				(default: 5000) See RFC 3261. You should
 				probably not touch this.
+
+sipsocket_blacklisting		(default: true) Should we do blacklisting of
+				unreachable/unresponsive destinations so that we
+				avoid them for some time?
+
+sipsocket_blacklist_duration	(default: 120) The amount of time (measured in
+				seconds) that we should blacklist an unresponsive
+				destination.
+
+sipsocket_blacklist_max		(default: 3600) An upper limit of how long we
+				allow entrys to reside in our blacklist. This is
+				needed because the time could come from a
+				Retry-After header in a 503 response.
+
+sipsocket_blacklist_probe_delay	(default: 60) After how long time of blacklisting
+				should we start a background probe to see if the
+				destination has became reachable again? Set this
+				to something greater than
+				sipsocket_blacklist_duration if you want black-
+				listing but not probes. You should probably keep
+				this value at less than
+				sipsocket_blacklist_duration minus 32 seconds
+				(64*T1) to allow probes to time out before the
+				blacklisting expires, if the destination is still
+				unavailable/unresponsive.
 
 pstnproxy:
 ----------

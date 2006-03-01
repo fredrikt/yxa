@@ -19,6 +19,11 @@
 	 send_result/6,
 	 stateless_proxy_request/2,
 
+	 report_unreachable/2,
+	 report_unreachable/3,
+	 remove_blacklisting/1,
+	 is_eligible_dst/1,
+
 	 test/0
 	]).
 
@@ -168,22 +173,30 @@ stateless_proxy_request(LogTag, Request) when is_list(LogTag), is_record(Request
 %% stateless_proxy_request2/3 - part of stateless_proxy_request/2
 %% Returns : ok | {error, Reason}
 stateless_proxy_request2(LogTag, Request, [Dst | Rest]) when is_record(Dst, sipdst) ->
-    case send_proxy_request(none, Request, Dst, []) of
-	{ok, _SendSocket, _BranchUsed} ->
-	    logger:log(normal, "~s: Proxied stateless request '~s ~s' to ~p:~s:~p",
-		       [LogTag, Request#request.method, sipurl:print(Request#request.uri),
-			Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
-	    ok;
-	{error, Reason} ->
-	    logger:log(normal, "~s: FAILED proxying stateless request '~s ~s' to ~p:~s:~p : ~p",
+    case transportlayer:is_eligable_dst(Dst) of
+	true ->
+	    case send_proxy_request(none, Request, Dst, []) of
+		{ok, _SendSocket, _BranchUsed} ->
+		    logger:log(normal, "~s: Proxied stateless request '~s ~s' to ~p:~s:~p",
+			       [LogTag, Request#request.method, sipurl:print(Request#request.uri),
+				Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port]),
+		    ok;
+		{error, Reason} ->
+		    logger:log(normal, "~s: FAILED proxying stateless request '~s ~s' to ~p:~s:~p : ~p",
+			       [LogTag, Request#request.method, sipurl:print(Request#request.uri),
+				Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, Reason]),
+		    case Rest of
+			[] ->
+			    {error, Reason};
+			_ ->
+			    stateless_proxy_request2(LogTag, Request, Rest)
+		    end
+	    end;
+	{false, Reason} ->
+	    logger:log(normal, "~s: Not proxying request '~s ~s' to ~p:~s:~p (~s)",
 		       [LogTag, Request#request.method, sipurl:print(Request#request.uri),
 			Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, Reason]),
-	    case Rest of
-		[] ->
-		    {error, Reason};
-		_ ->
-		    stateless_proxy_request2(LogTag, Request, Rest)
-	    end
+	    stateless_proxy_request2(LogTag, Request, Rest)
     end.
 
 %%--------------------------------------------------------------------
@@ -255,6 +268,57 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
 	    end;
 	error ->
 	    {senderror, "Failed finding destination"}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: remove_blacklisting(Dst)
+%%           Dst = sipdst record()
+%% Descrip.: Interface function to sipsocket_blacklist.
+%% Returns : ok
+%%--------------------------------------------------------------------
+remove_blacklisting(Dst) ->
+    sipsocket_blacklist:remove_blacklisting(Dst).
+
+%%--------------------------------------------------------------------
+%% Function: report_unreachable(Dst)
+%%           report_unreachable(Dst, Msg, RetryAfter)
+%%           Dst = sipdst record()
+%%           Msg = string(), reason for report
+%%           RetryAfter = undefined | integer(), seconds to blacklist
+%% Descrip.: Interface function to sipsocket_blacklist.
+%% Returns : ok
+%%--------------------------------------------------------------------
+report_unreachable(#sipdst{proto = yxa_test} = Dst, Msg) ->
+    self() ! {transportlayer, report_unreachable, Dst, lists:flatten(Msg)},
+    ok;
+report_unreachable(Dst, Msg) ->
+    sipsocket_blacklist:report_unreachable(Dst, Msg).
+
+report_unreachable(#sipdst{proto = yxa_test} = Dst, Msg, RetryAfter) ->
+    self() ! {transportlayer, report_unreachable, Dst, lists:flatten(Msg), RetryAfter},
+    ok;
+report_unreachable(Dst, Msg, RetryAfter) ->
+    sipsocket_blacklist:report_unreachable(Dst, Msg, RetryAfter).
+
+%%--------------------------------------------------------------------
+%% Function: is_eligible_dst(Dst)
+%%           Dst = sipdst record()
+%% Descrip.: Check if the transport layer thinks a destination is
+%%           eligible. Currently we only check if it is blacklisted,
+%%           but we could for example check if the protocol is
+%%           supported, if we change the resolving functions to
+%%           support more types of destinations than the transport
+%%           layer.
+%% Returns : true | {false, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+is_eligible_dst(Dst) when is_record(Dst, sipdst) ->
+    case sipsocket_blacklist:is_blacklisted(Dst) of
+	true ->
+	    {false, "blacklisted"};
+	false ->
+	    true
     end.
 
 %%====================================================================

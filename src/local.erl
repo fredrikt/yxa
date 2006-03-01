@@ -120,7 +120,8 @@
 %% transport layer
 -export([
 	 is_acceptable_socket/7,
-	 is_tls_equivalent/3
+	 is_tls_equivalent/3,
+	 lookup_sipsocket_blacklist/1
 	]).
 
 %% custom log and mail cpl functions
@@ -1062,6 +1063,25 @@ is_tls_equivalent(Proto, Host, Port) ->
     ?CHECK_EXPORTED({is_tls_equivalent, 3},
 		    ?LOCAL_MODULE:is_tls_equivalent(Proto, Host, Port),
 		    undefined
+		   ).
+
+%%--------------------------------------------------------------------
+%% Function: lookup_sipsocket_blacklist(Dst)
+%%           Dst = {Proto, Addr, Port} tuple()
+%%                 Proto = tcp | tcp6 | udp | udp6 | tls | tls6 ...
+%%                 Addr  = string(), typically IPv4/IPv6 address
+%%                 Port  = integer()
+%% Descrip.: Check if a destination is blacklisted/whitelisted.
+%% Returns : {ok, Entry}       |
+%%           {ok, blacklisted} |
+%%           {ok, whitelisted} |
+%%           undefined		  continue with default processing
+%%           Entry = blacklist_entry record()
+%%--------------------------------------------------------------------
+lookup_sipsocket_blacklist(Dst) ->
+    ?CHECK_EXPORTED({lookup_sipsocket_blacklist, 1},
+		    ?LOCAL_MODULE:lookup_sipsocket_blacklist(Dst),
+		    sipsocket_blacklist:lookup_sipsocket_blacklist(Dst)
 		   ).
 
 %% configuration hooks

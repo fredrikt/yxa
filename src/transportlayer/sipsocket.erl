@@ -102,12 +102,16 @@ behaviour_info(_Other) ->
 init([]) ->
     logger:log(debug, "Transport layer supervisor started"),
     ets:new(yxa_sipsocket_info, [public, bag, named_table]),
+    ets:new(sipsocket_blacklist:get_blacklist_name(),
+	    [public, bag, named_table]),
     UDP = {sipsocket_udp, {sipsocket_udp, start_link, []},
 	   permanent, 2000, worker, [sipsocket_udp]},
     TCP = {tcp_dispatcher, {sipsocket_tcp, start_link, []},
 	   permanent, 2000, worker, [tcp_dispatcher]},
     TCPlisteners = tcp_dispatcher:get_listenerspecs(),
-    MyList = [UDP, TCP] ++ TCPlisteners,
+    BlackList = {sipsocket_blacklist, {sipsocket_blacklist, start_link, []},
+		 permanent, 2000, worker, [sipsocket_blacklist]},
+    MyList = [UDP, TCP] ++ TCPlisteners ++ [BlackList],
     {ok, {{one_for_one, 5, 60}, MyList}}.
 
 

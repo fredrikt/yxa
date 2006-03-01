@@ -34,12 +34,16 @@
 		request,		%% request record(), the request we are working on
 		dstlist,		%% list() of sipdst record(), our list of destinations for this request
 		timeout,		%% integer(), timeout value for this process and transactions it starts
-		starttime,		%% integer(), when we started
 		endtime,		%% integer(), point in time when we terminate
 		warntime,		%% integer(), point in time when we should warn about still being alive
 		approxmsgsize,		%% integer(), approximate size of the SIP requests when we send them
 		cancelled=false		%% true | false, have we been cancelled or not?
 	       }).
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(WARN_AFTER, 300).
 
 %%====================================================================
 %% External functions
@@ -52,8 +56,12 @@
 %%                           client transaction that we should connect
 %%                           with the server transaction
 %%           Request       = request record(), original request
-%%           Dst           = list() of sipdst() record |
-%%
+%%           Dst           = sipurl record() | route |
+%%                           list() of sipdst record()
+%%           Timeout       = integer(), seconds given for this sippipe
+%%                           to finish. Our client transactions
+%%                           timeouts will be adjusted to not exceed
+%%                           this value in total.
 %% Descrip.: Try to be flexible. If we are provided with a URI as
 %%           DstList, we resolve it into a list of sipdst records.
 %%           If we are given a client transaction handle, we start out
@@ -104,10 +112,11 @@ guarded_start2(Branch, ServerHandler, ClientPid, Request, DstListIn, Timeout, Ap
 guarded_start2(Branch, ServerHandler, none, Request, Dst, Timeout, ApproxMsgSize) when is_record(Request, request) ->
     %% No client transaction handler is specified, start a client transaction on the first
     %% element from the destination list, after making sure it is complete.
-    case resolve_if_necessary(Dst, ApproxMsgSize) of
+    case get_next_sipdst(Dst, ApproxMsgSize) of
 	[] ->
-	    logger:log(error, "sippipe: Failed starting sippipe, no valid destination(s) found"),
-	    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
+	    logger:log(normal, "sippipe: Failed processing request '~s ~s', no valid destination(s) found",
+		       [Request#request.method, Request#request.uri]),
+	    transactionlayer:send_response_handler(ServerHandler, 500, "Destination unreachable"),
 	    error;
 	[FirstDst | _] = DstList when is_record(FirstDst, sipdst) ->
 	    NewRequest = Request#request{uri=FirstDst#sipdst.uri},
@@ -116,7 +125,7 @@ guarded_start2(Branch, ServerHandler, none, Request, Dst, Timeout, ApproxMsgSize
 		    final_start(Branch, ServerHandler, BranchPid, Request, DstList, Timeout, ApproxMsgSize);
 		{error, E} ->
 		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
-		    transactionlayer:send_response_handler(ServerHandler, 500, "Failed resolving destination"),
+		    transactionlayer:send_response_handler(ServerHandler, 500, "Server Internal Error"),
 		    error
 	    end
     end.
@@ -125,10 +134,17 @@ guarded_start2(Branch, ServerHandler, none, Request, Dst, Timeout, ApproxMsgSize
 final_start(Branch, ServerHandler, ClientPid, Request, [Dst|_]=DstList, Timeout, ApproxMsgSize)
   when is_list(Branch), is_pid(ClientPid), is_record(Request, request), is_record(Dst, sipdst),
        is_integer(Timeout), is_integer(ApproxMsgSize) ->
-    StartTime = util:timestamp(),
-    State=#state{branch=Branch, serverhandler=ServerHandler, clienttransaction_pid=ClientPid,
-		 request=Request, dstlist=DstList, approxmsgsize=ApproxMsgSize,
-		 timeout=Timeout, endtime=StartTime + Timeout, warntime=StartTime + 300},
+    Now = util:timestamp(),
+    State=#state{branch			= Branch,
+		 serverhandler		= ServerHandler,
+		 clienttransaction_pid	= ClientPid,
+		 request		= Request,
+		 dstlist		= DstList,
+		 approxmsgsize		= ApproxMsgSize,
+		 timeout		= Timeout,
+		 endtime		= Now + Timeout,
+		 warntime		= Now + ?WARN_AFTER
+		},
     logger:log(debug, "sippipe: All preparations finished, entering pipe loop (~p destinations in my list)",
 	       [length(DstList)]),
     loop(State).
@@ -144,8 +160,8 @@ loop(State) when is_record(State, state) ->
     ClientPid = State#state.clienttransaction_pid,
     ServerHandlerPid = transactionlayer:get_pid_from_handler(State#state.serverhandler),
 
+    WarnOrEnd = lists:min([State#state.warntime, State#state.endtime]) - util:timestamp(),
     {Res, NewState} = receive
-
 			  {servertransaction_cancelled, ServerHandlerPid, ExtraHeaders} ->
 			      NewState1 = cancel_transaction(State, "server transaction cancelled", ExtraHeaders),
 			      {ok, NewState1};
@@ -172,8 +188,8 @@ loop(State) when is_record(State, state) ->
 			      logger:log(error, "sippipe: Received unknown message ~p, ignoring", [Msg]),
 			      {error, State}
 		      after
-			  3 * 1000 ->
-			      tick(State, util:timestamp())
+			  WarnOrEnd * 1000 ->
+			      warn_or_end(State, util:timestamp())
 		      end,
     case Res of
 	quit ->
@@ -183,33 +199,29 @@ loop(State) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: tick(State, Now)
+%% Function: warn_or_end(State, Now)
 %%           Now = integer(), current time
-%% Descrip.: Check to see if it is time to warn, or perhaps time
-%%           to die.
+%% Descrip.: Check to see if it is time to warn, or time to die.
 %% Returns : {quit, NewState} |
 %%           {Res, NewState}
 %%           NewState = state record()
-%%           Res      = quit | ok | tick
+%%           Res      = quit | ok | warn_or_end
 %%--------------------------------------------------------------------
 
 %%
 %% Time to quit.
 %%
-tick(State, Now) when is_record(State, state), Now >= State#state.endtime ->
+warn_or_end(State, Now) when is_record(State, state), Now >= State#state.endtime ->
     logger:log(error, "sippipe: Reached end time after ~p seconds, exiting.", [State#state.timeout]),
     {quit, State};
 
 %%
 %% Time to warn
 %%
-tick(State, Now) when is_record(State, state), Now >= State#state.warntime ->
+warn_or_end(State, Now) when is_record(State, state), Now >= State#state.warntime ->
     logger:log(error, "sippipe: Warning: pipe process still alive!~nClient handler : ~p, Server handler : ~p",
 	       [State#state.clienttransaction_pid, State#state.serverhandler]),
-    {ok, State#state{warntime=Now + 60}};
-
-tick(State, _Now) ->
-    {tick, State}.
+    {ok, State#state{warntime=Now + 60}}.
 
 
 %%--------------------------------------------------------------------
@@ -298,35 +310,54 @@ default_process_received_response(Status, Reason, Response, State) when is_recor
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 start_next_client_transaction(#state{cancelled=false}=State) ->
-    DstListIn = State#state.dstlist,
-    case DstListIn of
-	[_FirstDst] ->
+    case State#state.dstlist of
+	[_LastDst] ->
 	    logger:log(debug, "sippipe: There are no more destinations to try for this target - " ++
 		       "telling server transaction to answer 500 No reachable destination"),
 	    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
 	    transactionlayer:send_response_handler(State#state.serverhandler, 500, "No reachable destination"),
-	    State#state{clienttransaction_pid=none, branch=none, dstlist=[]};
+	    State#state{clienttransaction_pid	= none,
+			branch			= none,
+			dstlist			= []
+		       };
 	[_FailedDst | DstList] ->
-	    NewBranch = get_next_target_branch(State#state.branch),
-	    logger:log(debug, "sippipe: Starting new branch ~p for next destination",
-		       [NewBranch]),
-	    Request = State#state.request,
-	    Timeout = State#state.timeout,
-	    ApproxMsgSize = State#state.approxmsgsize,
-	    NewDstList = resolve_if_necessary(DstList, ApproxMsgSize),
-	    [FirstDst | _] = NewDstList,
-	    NewRequest = Request#request{uri=FirstDst#sipdst.uri},
-	    %% XXX ideally we should not try to contact the same host over UDP, when
-	    %% we receive a transport layer error for TCP, if there were any other
-	    %% equally preferred hosts in the SRV response for a destination.
-	    %% It makes more sense to try to connect to Proxy B over TCP/UDP than to
-	    %% try Proxy A over UDP when Proxy A over TCP has just failed.
-	    case local:start_client_transaction(NewRequest, FirstDst, NewBranch, Timeout) of
-		BranchPid when is_pid(BranchPid) ->
-		    State#state{clienttransaction_pid=BranchPid, branch=NewBranch, dstlist=NewDstList};
-		{error, E} ->
-		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
-		    erlang:exit(failed_starting_client_transaction)
+	    case get_next_sipdst(DstList, State#state.approxmsgsize) of
+		[FirstDst | _] = NewDstList when is_record(FirstDst, sipdst) ->
+		    %% XXX ideally we should not try to contact the same host over UDP, when
+		    %% we receive a transport layer error for TCP, if there were any other
+		    %% equally preferred hosts in the SRV response for a destination.
+		    %% It makes more sense to try to connect to Proxy B over TCP/UDP than to
+		    %% try Proxy A over UDP when Proxy A over TCP has just failed.
+		    NewBranch = get_next_target_branch(State#state.branch),
+		    Request = State#state.request,
+		    NewRequest = Request#request{uri = FirstDst#sipdst.uri},
+		    %% Figure out what timeout to use. To not get stuck on a single destination, we divide the
+		    %% total ammount of time we have at our disposal with the number of remaining destinations
+		    %% that we might try. This might not be the ideal algorithm for this, but it is better than
+		    %% nothing.
+		    SecondsRemaining = State#state.endtime - util:timestamp(),
+		    BranchTimeout = SecondsRemaining div length(NewDstList),
+		    logger:log(debug, "sippipe: Starting new branch ~p for next destination (~s) (timeout ~p seconds)",
+			       [NewBranch, sipdst:dst2str(FirstDst), BranchTimeout]),
+		    case local:start_client_transaction(NewRequest, FirstDst, NewBranch, BranchTimeout) of
+			BranchPid when is_pid(BranchPid) ->
+			    State#state{clienttransaction_pid	= BranchPid,
+					branch			= NewBranch,
+					dstlist			= NewDstList
+				       };
+			{error, E} ->
+			    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
+			    erlang:exit(failed_starting_client_transaction)
+		    end;
+		[] ->
+		    logger:log(debug, "sippipe: There are no more destinations to try for this target - " ++
+			       "telling server transaction to answer '500 No reachable destination'"),
+		    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
+		    transactionlayer:send_response_handler(State#state.serverhandler, 500, "No reachable destination"),
+		    State#state{clienttransaction_pid  	= none,
+				branch			= none,
+				dstlist			= []
+			       }
 	    end
     end.
 
@@ -353,7 +384,7 @@ get_next_target_branch(In) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: resolve_if_necessary(DstList, ApproxMsgSize)
+%% Function: get_next_sipdst(DstList, ApproxMsgSize)
 %%           DstList       = list() of sipdst record()
 %%           ApproxMsgSize = integer()
 %% Descrip.: Look at the first element of the input DstList. If it is
@@ -362,9 +393,9 @@ get_next_target_branch(In) ->
 %%           the input DstList and return the new list
 %% Returns : NewDstList = list() of sipdst record()
 %%--------------------------------------------------------------------
-resolve_if_necessary([], _ApproxMsgSize) ->
+get_next_sipdst([], _ApproxMsgSize) ->
     [];
-resolve_if_necessary([#sipdst{proto=Proto, addr=Addr, port=Port}=Dst | T], ApproxMsgSize)
+get_next_sipdst([#sipdst{proto=Proto, addr=Addr, port=Port}=Dst | T], ApproxMsgSize)
   when Proto == undefined, Addr == undefined, Port == undefined ->
     URI = Dst#sipdst.uri,
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
@@ -372,17 +403,23 @@ resolve_if_necessary([#sipdst{proto=Proto, addr=Addr, port=Port}=Dst | T], Appro
 	true ->
 	    case sipdst:url_to_dstlist(URI, ApproxMsgSize, URI) of
 		DstList when is_list(DstList) ->
-		    DstList;
+		    get_next_sipdst(DstList ++ T, ApproxMsgSize);
 		Unknown ->
 		    logger:log(error, "sippipe: Failed resolving URI ~s : ~p", [sipurl:print(URI), Unknown]),
-		    resolve_if_necessary(T, ApproxMsgSize)
+		    get_next_sipdst(T, ApproxMsgSize)
 	    end;
 	false ->
 	    logger:log(error, "sippipe: Skipping destination with invalid URI : ~p", [URI]),
-	    resolve_if_necessary(T, ApproxMsgSize)
+	    get_next_sipdst(T, ApproxMsgSize)
     end;
-resolve_if_necessary([Dst | T], _ApproxMsgSize) when is_record(Dst, sipdst) ->
-    [Dst | T].
+get_next_sipdst([H | T] = DstList, ApproxMsgSize) when is_record(H, sipdst) ->
+    case transportlayer:is_eligible_dst(H) of
+	true ->
+	    DstList;
+	{false, Reason} ->
+	    logger:log(debug, "sippipe: Skipping non-eligible destination (~s) : ~s", [Reason, sipdst:dst2str(H)]),
+	    get_next_sipdst(T, ApproxMsgSize)
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: cancel_transaction(State, Reason, ExtraHeaders)
@@ -390,7 +427,7 @@ resolve_if_necessary([Dst | T], _ApproxMsgSize) when is_record(Dst, sipdst) ->
 %%           Reason       = string()
 %%           ExtraHeaders = list() of {Key, ValueList} tuples
 %% Descrip.: Our server transaction has been cancelled. Signal the
-%%           client transaction. 
+%%           client transaction.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 cancel_transaction(#state{cancelled=false}=State, Reason, ExtraHeaders) when is_list(Reason) ->

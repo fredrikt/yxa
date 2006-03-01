@@ -67,25 +67,28 @@
 %% Records
 %%--------------------------------------------------------------------
 -record(state, {
-	  branch,	%% string(), the Via branch paramter for this client transaction
-	  logtag,	%% string(), a prefix for logging
-	  socket=none,	%% sipsocket record(), the socket the transport layer sent out our request on
-	  parent,	%% pid() of our parent, must be kept to recognize exit messages from it
-	  report_to,	%% pid() | none, the pid we should notify of progress ('none' in case this is
-	  		%%   for example an independent CANCEL)
-	  request,	%% request record(), the request we are supposed to send
-	  response,	%% response record(), the last response we have received that caused a sipstate change
-	  sipstate,	%% atom(), trying|calling|proceeding|completed|terminated
-	  timerlist,	%% siptimerlist record(), list of timers managed by siptimer module
-	  dst,		%% sipdst record(), the destination for our request
-	  timeout,	%% integer(), our definite timeout before ending an INVITE - NB: only applies to INVITE
-	  cancelled=false,	%% atom(), true | false - have we cancelled ourselves? that is, sent out a CANCEL
-	  do_cancel=false,	%% atom(), {true, EH} | false - have we been instructed to cancel?
+	  branch,		%% string(), the Via branch paramter for this client transaction
+	  logtag,		%% string(), a prefix for logging
+	  socket = none,	%% sipsocket record(), the socket the transport layer sent out our request on
+	  parent,		%% pid() of our parent, must be kept to recognize exit messages from it
+	  report_to,		%% pid() | none, the pid we should notify of progress ('none' in case this is
+	  			%%   for example an independent CANCEL)
+	  request,		%% request record(), the request we are supposed to send
+	  response,		%% response record(), the last response we have received that caused a sipstate change
+	  res_count = 0,	%% integer(), response count - for knowing whether to report a destination as
+	  			%% unreachable on timeout or not
+	  sipstate,		%% atom(), trying|calling|proceeding|completed|terminated
+	  timerlist,		%% siptimerlist record(), list of timers managed by siptimer module
+	  dst,			%% sipdst record(), the destination for our request
+	  timeout,		%% integer(), our definite timeout before ending an INVITE - NB: only applies to INVITE
+	  cancelled = false,	%% bool(), have we cancelled ourselves? that is, sent out a CANCEL
+	  do_cancel = false,	%% atom(), {true, EH} | false - have we been instructed to cancel?
 	  tl_branch,		%% string(), the branch the transaction layer actually used when sending our request
-	  initialized=no,	%% atom(), yes | no - have we finished our initialization process
-	  cancel_pid,		%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that transaction
-	  final_r_sent=false,	%% atom(), true | false - have we sent a final response to our parent yet?
-	  testing = false	%% true | false, are we testing the module?
+	  initialized = false,	%% bool(), have we finished our initialization process?
+	  cancel_pid,		%% undefined | pid(), if we start a CANCEL for ourselves, this is the pid of that
+	  			%% transaction
+	  final_r_sent = false,	%% bool(), have we sent a final response to our parent yet?
+	  testing = false	%% bool(), are we testing the module?
 	 }).
 
 
@@ -240,7 +243,8 @@ handle_cast({sipmessage, Response, Origin, _LogStr}, State) when is_record(Respo
 		   true -> debug
 	       end,
     logger:log(LogLevel, "~s: Received response '~p ~s'", [LogTag, Response#response.status, Response#response.reason]),
-    NewState = process_received_response(Response, State),
+    OldCount = State#state.res_count,
+    NewState = process_received_response(Response, State#state{res_count = OldCount + 1}),
     check_quit({noreply, NewState});
 
 %%--------------------------------------------------------------------
@@ -342,8 +346,8 @@ handle_info({siptimer, TRef, TDesc}, State) ->
 %%           send our request to it's destination.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_info(timeout, #state{initialized=no}=State) ->
-    check_quit({noreply, initiate_request(State#state{initialized=yes})});
+handle_info(timeout, #state{initialized = false}=State) ->
+    check_quit({noreply, initiate_request(State#state{initialized = true})});
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({'EXIT', Pid, Reason}, State)
@@ -780,6 +784,15 @@ act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State)
 act_on_new_sipstate2(proceeding, BranchAction, State) when is_record(State, state) ->
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
+    if
+	(State#state.response)#response.status == 100, State#state.testing /= true ->
+	    %% since 100 repsonses aren't reported to parent, a destination could be
+	    %% blacklisted even though it is responding since the sipsocket_blacklist_probe
+	    %% wouldn't notice '100 Trying' responses.
+	    sipsocket_blacklist:remove_blacklisting(State#state.dst);
+	true ->
+	    ok
+    end,
     case Method of
 	"INVITE" ->
 	    case State#state.do_cancel of
@@ -892,6 +905,7 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 			   {Status1, Reason1} when is_integer(Status1), is_list(Reason1) ->
 			       Response
 		       end,
+    blacklist_report_if_unreachable(State),
     ReportTo = State#state.report_to,
     case util:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} when is_pid(ReportTo) ->
@@ -931,6 +945,56 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 		       "response '~p ~s' to anyone", [LogTag, ReportTo, Status, Reason]),
 	    State
     end.
+
+%%--------------------------------------------------------------------
+%% Function: blacklist_report_if_unreachable(State)
+%%           State = state record()
+%% Descrip.: Inform transport layer blacklisting if we have concluded
+%%           this branches destination unreachable/unsuitable.
+%% Returns : void()
+%%--------------------------------------------------------------------
+blacklist_report_if_unreachable(#state{response = {408, _Reason}, res_count = 0} = State) ->
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    Msg = io_lib:format("'~s ~s' timed out (408)", [Method, sipurl:print(URI)]),
+    transportlayer:report_unreachable(State#state.dst, Msg);
+blacklist_report_if_unreachable(#state{response = {487, _Reason}, res_count = 0} = State) ->
+    %% we were cancelled, but never recieved a provisional response
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    Msg = io_lib:format("'~s ~s' was cancelled without receiving a response (487)", [Method, sipurl:print(URI)]),
+    transportlayer:report_unreachable(State#state.dst, Msg);
+blacklist_report_if_unreachable(#state{response = {503, _Reason}, res_count = 0} = State) ->
+    Request = State#state.request,
+    {Method, URI} = {Request#request.method, Request#request.uri},
+    Msg = io_lib:format("'~s ~s' transport layer failure (503)", [Method, sipurl:print(URI)]),
+    transportlayer:report_unreachable(State#state.dst, Msg);
+blacklist_report_if_unreachable(#state{response = #response{status = 503}} = State) ->
+    %% RFC3261 #21.5.4 (503 Service Unavailable)
+    case keylist:fetch('retry-after', (State#state.response)#response.header) of
+	[RStr] ->
+	    try list_to_integer(RStr) of
+		RetryAfter when is_integer(RetryAfter) ->
+		    %% we received a 503 with information about how long dst should be
+		    %% treated as unreachable
+		    Request = State#state.request,
+		    {Method, URI} = {Request#request.method, Request#request.uri},
+		    Msg = io_lib:format("'~s ~s' received 503 with Retry-After (503)",
+					[Method, sipurl:print(URI)]),
+		    transportlayer:report_unreachable(State#state.dst, Msg, RetryAfter)
+	    catch
+		_: _ ->
+		    %% non-numeric Retry-After
+		    error
+	    end;
+	_ ->
+	    %% zero or more Retry-After headers
+	    none
+    end,
+    ok;
+blacklist_report_if_unreachable(_State) ->
+    ok.
+
 
 %%--------------------------------------------------------------------
 %% Function: received_response_state_machine(Method, Status, State)
@@ -1520,9 +1584,11 @@ test() ->
     %% verify new state
     proceeding = SipMessage_State1_out#state.sipstate,
     100 = (SipMessage_State1_out#state.response)#response.status,
+    1 = SipMessage_State1_out#state.res_count,
     "Testing" = (SipMessage_State1_out#state.response)#response.reason,
-    SipMessage_State1 = SipMessage_State1_out#state{sipstate = calling,
-						    response = undefined
+    SipMessage_State1 = SipMessage_State1_out#state{sipstate  = calling,
+						    response  = undefined,
+						    res_count = 0
 						   },
 
 
@@ -1546,6 +1612,7 @@ test() ->
     %% verify new state
     true = Cancel_State2_out#state.cancelled,
     Cancel_State2 = Cancel_State2_out#state{cancelled = false},
+
 
 
     %% handle_cast({expired}, ...)
@@ -1599,19 +1666,31 @@ test() ->
 				 report_to    = self(),
 				 timeout      = 40,
 				 sipstate     = calling,
-				 initialized  = no,
+				 initialized  = false,
 				 testing      = true
 				},
 
     autotest:mark(?LINE, "gen_server signal 'timeout' - 1.0"),
     %% test that we terminate immediately if this attempt to send the request fails
     put({sipsocket_test, send_result}, {error, "testing"}),
-    {stop, normal, _TimeoutSignal_State_out} = handle_info(timeout, TimeoutSignal_State), 
+    {stop, normal, _TimeoutSignal_State_out} = handle_info(timeout, TimeoutSignal_State),
     erase({sipsocket_test, send_result}),
 
     %% clear fake-sent-request message from process mailbox
     test_verify_request_was_sent(Test_Request, "gen_server signal 'timeout'", 1, 1),
-    
+
+    autotest:mark(?LINE, "gen_server signal 'timeout' - 1.4"),
+    %% clear branch_result with fake 503 from process mailbox
+    receive
+	{branch_result, _, "branch", terminated, {503, "Service Unavailable"}} ->
+	    ok
+    after 0 ->
+	    throw({error, "Test did not result in fake 503 branch_result"})
+    end,
+
+    autotest:mark(?LINE, "gen_server signal 'timeout' - 1.5"),
+    %% verify blacklisting on 503
+    test_absorb_blacklisting(503, Test_Dst),
 
 
     %% handle_info({'EXIT', Pid, Reason}, State)
@@ -1763,10 +1842,14 @@ test() ->
     autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 0"),
     {ok, ResendRequestTimeout_Signal, ResendRequestTimeout_Timerlist1} =
 	test_get_timer({resendrequest_timeout}),
+    ResendRequestTimeout_Dst = #sipdst{proto = yxa_test,
+				       port = ?LINE
+				      },
 
     ResendRequestTimeout_State =
 	#state{logtag    = "testing",
 	       socket    = #sipsocket{proto = yxa_test},
+	       dst	 = ResendRequestTimeout_Dst,
 	       timerlist = ResendRequestTimeout_Timerlist1,
 	       request   = Test_Request,
 	       sipstate  = calling,
@@ -1786,6 +1869,10 @@ test() ->
 					     1, 2
 					    ),
 
+    autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 1.4"),
+    %% verify blacklisting on 408
+    test_absorb_blacklisting(408, ResendRequestTimeout_Dst),
+
     autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 2.1"),
     %% test normal case with cancelled request
     ResendRequestTimeout_State2 =
@@ -1801,6 +1888,10 @@ test() ->
 					     2, 2
 					    ),
 
+    autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 2.4"),
+    %% verify blacklisting on 487
+    test_absorb_blacklisting(487, ResendRequestTimeout_Dst),
+
     autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 3.1"),
     %% test normal case in state 'calling' with cancelled request
     ResendRequestTimeout_State3 =
@@ -1815,6 +1906,10 @@ test() ->
 					     {408, "Request Timeout"},
 					     3, 2
 					    ),
+
+    autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 3.4"),
+    %% verify blacklisting on 408
+    test_absorb_blacklisting(408, ResendRequestTimeout_Dst),
 
     autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 4"),
     %% test normal case in state 'proceeding', cancelled = true to not actually start a CANCEL transaction
@@ -1842,6 +1937,10 @@ test() ->
 					     5, 2
 					    ),
 
+    autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 5.4"),
+    %% verify blacklisting on 408
+    test_absorb_blacklisting(408, ResendRequestTimeout_Dst),
+
     autotest:mark(?LINE, "process_timer2/3 {resendrequest_timeout} - 6"),
     %% test normal case in state 'proceeding', cancelled = true to not actually start a CANCEL transaction
     ResendRequestTimeout_State6 =
@@ -1858,9 +1957,13 @@ test() ->
     {ok, InviteTimeout_Signal, InviteTimeout_Timerlist1} =
 	test_get_timer({invite_timeout}),
 
+    InviteTimeout_Dst = #sipdst{proto = yxa_test,
+				port = ?LINE
+			       },
     InviteTimeout_State =
 	#state{logtag    = "testing",
 	       socket    = #sipsocket{proto = yxa_test},
+	       dst       = InviteTimeout_Dst,
 	       timerlist = InviteTimeout_Timerlist1,
 	       request   = Test_Request,
 	       sipstate  = calling,
@@ -1892,6 +1995,10 @@ test() ->
 	    throw("test failed, report_to was not notified about branch result")
     end,
 
+    autotest:mark(?LINE, "process_timer2/3 {invite_timeout} - 1.4"),
+    %% verify that 408 resulted in blacklisting
+    test_absorb_blacklisting(408, InviteTimeout_Dst),
+
 
     %% process_timer2({invite_expire}, Timer, State)
     %%--------------------------------------------------------------------
@@ -1899,9 +2006,13 @@ test() ->
     {ok, InviteExpire_Signal, InviteExpire_Timerlist1} =
 	test_get_timer({invite_expire}),
 
+    InviteExpire_Dst = #sipdst{proto = yxa_test,
+			       port = ?LINE
+			      },
     InviteExpire_State =
 	#state{logtag    = "testing",
 	       socket    = #sipsocket{proto = yxa_test},
+	       dst	 = InviteExpire_Dst,
 	       timerlist = InviteExpire_Timerlist1,
 	       request   = Test_Request,
 	       sipstate  = calling,
@@ -1925,7 +2036,7 @@ test() ->
 						      timerlist    = InviteExpire_State#state.timerlist
 						     },
 
-    autotest:mark(?LINE, "process_timer2/3 {invite_expire} - 1.2"),
+    autotest:mark(?LINE, "process_timer2/3 {invite_expire} - 1.3"),
     %% verify that report_to was notified
     Self = self(),
     receive
@@ -1934,6 +2045,9 @@ test() ->
     after 0 ->
 	    throw("test failed, report_to was not notified about branch result")
     end,
+
+    autotest:mark(?LINE, "process_timer2/3 {invite_expire} - 1.4"),
+    test_absorb_blacklisting(408, InviteExpire_Dst),
 
 
     %% process_timer2(Signal, Timer, State)
@@ -2000,7 +2114,9 @@ test() ->
     Self = self(),
     receive
 	{branch_result, Self, "branch", completed, #response{status = 400, reason = "Testing"}} ->
-	    ok
+	    ok;
+	PPRes_M1 ->
+	    throw({error, unknown_signal, PPRes_M1})
     after 0 ->
 	    throw("test failed, report_to was not notified about branch result")
     end,
@@ -2097,6 +2213,7 @@ test() ->
     proceeding = PRRes_State3_out#state.sipstate,
 
     erase({sipsocket_test, is_reliable_transport}),
+
 
     %% act_on_new_sipstate2(SipState, BranchAction, State)
     %%--------------------------------------------------------------------
@@ -2218,9 +2335,76 @@ test() ->
     %% verify that report_to was notified
     receive
 	{branch_result, Self, "branch", proceeding, {101, "Testing"}} ->
-	    ok
+	    ok;
+	PerformBAction_M1 ->
+	    throw({error, unknown_signal, PerformBAction_M1})
     after 0 ->
 	    throw("test failed, report_to was not notified about branch result")
+    end,
+
+
+    %% blacklist_report_if_unreachable(State)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "blacklist_report_if_unreachable/1 - 0"),
+    BL_Req1 = #request{method = "TEST",
+		       uri = sipurl:parse("sip:test.example.org")
+		      },
+    BL_Dst1 = #sipdst{proto = yxa_test, addr = "192.0.2.254", port = "9090"},
+    BL_State1 = #state{res_count = 0,
+		       request   = BL_Req1,
+		       dst       = BL_Dst1
+		      },
+
+    autotest:mark(?LINE, "blacklist_report_if_unreachable/1 - 1"),
+    %% test faked 408 response
+    ok = blacklist_report_if_unreachable(BL_State1#state{response  = {408, "Testing"}}),
+    test_absorb_blacklisting(408, BL_Dst1),
+
+    autotest:mark(?LINE, "blacklist_report_if_unreachable/1 - 2"),
+    %% test faked 487 response
+    ok = blacklist_report_if_unreachable(BL_State1#state{response  = {487, "Testing"}}),
+    test_absorb_blacklisting(487, BL_Dst1),
+
+    autotest:mark(?LINE, "blacklist_report_if_unreachable/1 - 3"),
+    %% test faked 503 response
+    ok = blacklist_report_if_unreachable(BL_State1#state{response  = {503, "Testing"}}),
+    test_absorb_blacklisting(503, BL_Dst1),
+
+    autotest:mark(?LINE, "blacklist_report_if_unreachable/1 - 4"),
+    %% test received 503 response without Retry-After header, should NOT result in blacklisting
+    BL_Res4 = #response{status	= 503,
+			reason	= "Testing",
+			header	= keylist:from_list([]),
+			body	= <<>>
+		       },
+    ok = blacklist_report_if_unreachable(BL_State1#state{response  = BL_Res4}),
+    receive
+	{transportlayer, report_unreachable, BL_Dst1, _} ->
+	    throw({error, "503 without Retry-After should be treated like 500"})
+    after 0 ->
+	    ok
+    end,
+
+    autotest:mark(?LINE, "blacklist_report_if_unreachable/1 - 5"),
+    %% test received 503 response with Retry-After header, SHOULD result in blacklisting
+    BL_Res5 = BL_Res4#response{header = keylist:from_list([{"Retry-After", ["60"]}])},
+    ok = blacklist_report_if_unreachable(BL_State1#state{response  = BL_Res5}),
+    receive
+	{transportlayer, report_unreachable, BL_Dst1, _, 60} ->
+	    ok
+    after 0 ->
+	    throw({error, "did not receive the expected signal about blacklisting"})
+    end,
+
+    autotest:mark(?LINE, "blacklist_report_if_unreachable/1 - 6"),
+    %% test received 503 response with invalid Retry-After header, should NOT result in blacklisting
+    BL_Res6 = BL_Res4#response{header = keylist:from_list([{"Retry-After", ["1 2"]}])},
+    ok = blacklist_report_if_unreachable(BL_State1#state{response  = BL_Res6}),
+    receive
+	{transportlayer, report_unreachable, BL_Dst1, _} ->
+	    throw({error, "503 with invalid Retry-After should be treated like 500"})
+    after 0 ->
+	    ok
     end,
 
 
@@ -2481,6 +2665,10 @@ test() ->
 	    throw("test failed, report_to was not notified about branch result")
     end,
 
+    autotest:mark(?LINE, "initiate_request/1 - 3.7"),
+    test_absorb_blacklisting(503, Test_Dst),
+
+
     %% end_invite(State)
     %%--------------------------------------------------------------------
 
@@ -2660,3 +2848,14 @@ test_get_timer(AppSignal) ->
 	end,
 
     {ok, Signal, Timerlist}.
+
+test_absorb_blacklisting(Status, Dst) ->
+    receive
+	{transportlayer, report_unreachable, Dst, _} ->
+	    ok;
+	M ->
+	    throw({error, unknown_signal, M})
+    after 0 ->
+	    Msg = io_lib:format("response ~p did not result in blacklisting", [Status]),
+	    throw({error, lists:flatten(Msg)})
+    end.

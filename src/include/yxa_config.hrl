@@ -271,6 +271,24 @@
 		    soft_reload	= false
 		   },
 
+	 %% Sipsocket blacklisting settings
+	 #cfg_entry{key		= sipsocket_blacklisting,
+		    default	= true,
+		    type	= bool
+		   },
+	 #cfg_entry{key		= sipsocket_blacklist_duration,
+		    default	= 120,
+		    type	= integer
+		   },
+	 #cfg_entry{key		= sipsocket_blacklist_max,
+		    default	= 3600,
+		    type	= integer
+		   },
+	 #cfg_entry{key		= sipsocket_blacklist_probe_delay,
+		    default	= 60,
+		    type	= integer
+		   },
+
 	 %% LDAP
 	 #cfg_entry{key		= ldap_server,
 		    type	= string,

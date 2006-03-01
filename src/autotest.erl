@@ -80,7 +80,8 @@
 		       ssl_util,
 		       siphost,
 		       hex,
-		       sipdialog
+		       sipdialog,
+		       sipsocket_blacklist
 		      ]).
 
 %%====================================================================
@@ -113,6 +114,7 @@ run([Mode]) ->
 	    {ok, _CfgPid} = yxa_config:start_link({autotest, incomingproxy}),
 
 	    ets:new(yxa_sipsocket_info, [public, bag, named_table]),
+	    ets:new(yxa_sipsocket_blacklist, [public, bag, named_table]),
 	    ets:insert(yxa_sipsocket_info, {self(), #yxa_sipsocket_info_e{proto = tcp,
 									  addr  = "0.0.0.0",
 									  port  = 5060

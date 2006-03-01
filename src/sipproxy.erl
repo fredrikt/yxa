@@ -638,32 +638,30 @@ try_next_destination(Status, Target, Targets, State) when is_integer(Status), is
 	{503, calling} ->
 	    %% The first entry in dstlist is the one we have just finished with,
 	    %% not the next one to try.
-	    case targetlist:extract([dstlist], Target) of
-		[[_FirstDst]] ->
+	    [[_FailedDst | DstList]] = targetlist:extract([dstlist], Target),
+	    case get_next_sipdst(DstList) of
+		[] ->
 		    logger:log(debug, "sipproxy: Received response ~p, but there are no more destinations to try "
 			       "for this target", [Status]),
 		    Targets;
-		[[_FailedDst | DstList]] ->
+		[FirstDst | _] = NewDstList ->
 		    [Branch] = targetlist:extract([branch], Target),
 		    NewBranch = get_next_target_branch(Branch),
-		    logger:log(debug, "sipproxy: Received response ~p, starting new branch ~p for next destination",
-			       [Status, NewBranch]),
+		    logger:log(debug, "sipproxy: Received response ~p, starting new branch ~p for next destination ~s",
+			       [Status, NewBranch, sipdst:dst2str(FirstDst)]),
 		    [Request, Timeout] = targetlist:extract([request, timeout], Target),
-		    [FirstDst | _] = DstList,
 		    %% XXX ideally we should not try to contact the same host over UDP, when
 		    %% we receive a transport layer error for TCP, if there were any other
 		    %% equally preferred hosts in the SRV response for a destination.
 		    %% It makes more sense to try to connect to Proxy B over TCP/UDP than to
 		    %% try Proxy A over UDP when Proxy A over TCP has just failed.
-		    NewTargets =
-			case local:start_client_transaction(Request, FirstDst, NewBranch, Timeout) of
-			    BranchPid when is_pid(BranchPid) ->
-				targetlist:add(NewBranch, Request, BranchPid, calling, Timeout, DstList, Targets);
-			    {error, E} ->
-				logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
-				Targets
-			end,
-		    NewTargets
+		    case local:start_client_transaction(Request, FirstDst, NewBranch, Timeout) of
+			BranchPid when is_pid(BranchPid) ->
+			    targetlist:add(NewBranch, Request, BranchPid, calling, Timeout, NewDstList, Targets);
+			{error, E} ->
+			    logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
+			    Targets
+		    end
 	    end;
 	{503, S} ->
 	    logger:log(debug, "sipproxy: Received response 503 but not trying next destination when I'm in state ~p",
@@ -672,6 +670,26 @@ try_next_destination(Status, Target, Targets, State) when is_integer(Status), is
 	_ ->
 	    Targets
     end.
+
+%%--------------------------------------------------------------------
+%% Function: get_next_sipdst(DstList)
+%%           DstList = list() of sipdst record()
+%% Descrip.: Get the next entry in DstList that the transport layer
+%%           considers eligible. This includes checking if the dest-
+%%           ination is currently blacklisted or not.
+%% Returns : NewDstList = list() of sipdst record()
+%%--------------------------------------------------------------------
+get_next_sipdst([H | T] = DstList) ->
+    case transportlayer:is_eligible_dst(H) of
+	true ->
+	    DstList;
+	{false, Reason} ->
+	    logger:log(debug, "sipproxy: Skipping non-eligible destination (~s) : ~s", [Reason, sipdst:dst2str(H)]),
+	    get_next_sipdst(T)
+    end;
+get_next_sipdst([]) ->
+    [].
+
 
 %%--------------------------------------------------------------------
 %% Function: get_next_target_branch(In)
@@ -1802,7 +1820,7 @@ test() ->
 
     autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 2"),
     %% test with invalid pid, expected to crash
-    {'EXIT', {{badmatch, _}, _}} = (catch process_signal({clienttransaction_terminating, 
+    {'EXIT', {{badmatch, _}, _}} = (catch process_signal({clienttransaction_terminating,
 							   self(), "branch1"}, PSClientTermState1)),
 
     autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 3"),

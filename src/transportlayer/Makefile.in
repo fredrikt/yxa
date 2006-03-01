@@ -30,6 +30,8 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 erl_FILES = \
 	sipsocket.erl \
+	sipsocket_blacklist.erl \
+	sipsocket_blacklist_probe.erl \
 	sipsocket_tcp.erl \
 	sipsocket_test.erl \
 	sipsocket_udp.erl \
