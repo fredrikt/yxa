@@ -229,12 +229,37 @@ test_module2(Parent, Module) ->
     Res =
 	case catch Module:test() of
 	    ok ->
-		ok;
+		fail_on_leftover_messages();
 	    Error ->
 		{Line, Name} = erase({autotest, position}),
 		{autotest_error, Line, Name, Error}
 	end,
     Parent ! {test_result, self(), Res}.
+
+fail_on_leftover_messages() ->
+    fail_on_leftover_messages([]).
+fail_on_leftover_messages(Res) when is_list(Res) ->
+    receive
+	M ->
+	    fail_on_leftover_messages([M | Res])
+    after 0 ->
+	    %% no (more) messages in mailbox
+	    case Res of
+		[] -> ok;
+		_ ->
+		    Msg = ["The following ",
+			   case length(Res) of
+			       1 -> "message";
+			       Len -> lists:concat([Len, " messages"])
+			   end,
+			   " was in the test processes mailbox when it finished :"
+			  ],
+		    {autotest_error, 0, "Messages left in process mailbox",
+		      [lists:flatten(Msg), lists:reverse(Res)
+		      ]
+		     }
+	    end
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: run_cover([Mode])
