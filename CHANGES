@@ -1,3 +1,4 @@
+ - Temporarily blacklist unreachable/unresponsive destinations.
  - Implement RFC4320 which updates RFC3261 with regard to non-
    INVITE transactions.
  - Add basic SIP dialog support to the SIP stack.
