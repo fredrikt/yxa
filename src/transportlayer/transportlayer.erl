@@ -173,7 +173,7 @@ stateless_proxy_request(LogTag, Request) when is_list(LogTag), is_record(Request
 %% stateless_proxy_request2/3 - part of stateless_proxy_request/2
 %% Returns : ok | {error, Reason}
 stateless_proxy_request2(LogTag, Request, [Dst | Rest]) when is_record(Dst, sipdst) ->
-    case transportlayer:is_eligable_dst(Dst) of
+    case transportlayer:is_eligible_dst(Dst) of
 	true ->
 	    case send_proxy_request(none, Request, Dst, []) of
 		{ok, _SendSocket, _BranchUsed} ->
