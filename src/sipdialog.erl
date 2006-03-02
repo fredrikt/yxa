@@ -221,7 +221,7 @@ get_dialog_controller2(CallId, LocalTag, RemoteTag) when is_list(CallId), is_lis
 			       [Id, Pid]),
 		    {ok, Pid};
 		_ ->
-		    logger:log(debug, "Sipdialog: Extra debug: Found NO dialog controller ~p for dialog ~p",
+		    logger:log(debug, "Sipdialog: Extra debug: Found NO dialog controller for dialog ~p",
 			       [Id]),
 		    nomatch
 	    end
