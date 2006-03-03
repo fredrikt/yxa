@@ -111,6 +111,7 @@ SUBDIRS = \
 	eldap \
 	event_handler \
 	include \
+	local \
 	mysql \
 	sipuserdb \
 	transactionlayer \
