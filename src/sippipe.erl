@@ -115,7 +115,7 @@ guarded_start2(Branch, ServerHandler, none, Request, Dst, Timeout, ApproxMsgSize
     case get_next_sipdst(Dst, ApproxMsgSize) of
 	[] ->
 	    logger:log(normal, "sippipe: Failed processing request '~s ~s', no valid destination(s) found",
-		       [Request#request.method, Request#request.uri]),
+		       [Request#request.method, sipurl:print(Request#request.uri)]),
 	    transactionlayer:send_response_handler(ServerHandler, 500, "Destination unreachable"),
 	    error;
 	[FirstDst | _] = DstList when is_record(FirstDst, sipdst) ->
