@@ -527,8 +527,7 @@ handle_info(timeout, State) ->
 	       undefined ->
 		   "no responses sent"
 	   end,
-    logger:log(error, "~s: Stateful server transaction (~s ~s) still alive after 5 minutes! SIP-state is ~p, ~s. "
-	       "Answering '500 Server Internal Error'.",
+    logger:log(debug, "~s: Server transaction (~s ~s) still alive after 5 minutes! SIP-state is ~p, ~s",
 	       [LogTag, Method, sipurl:print(URI), State#state.sipstate, RStr]),
     logger:log(debug, "~s: Internal state dump :~n~p", [LogTag, State]),
     transactionlayer:debug_show_transactions(),
@@ -542,20 +541,27 @@ handle_info(timeout, State) ->
     %% to us wouldn't get killed. Use catch to not fall on our face if one of them is dead already.
     Parent = State#state.parent,
     (catch exit(Parent, servertransaction_timed_out)),
-    ReportTo = State#state.report_to,
-    case ReportTo of
+    case State#state.report_to of
 	Parent -> ok;
-	_ when is_pid(ReportTo) ->
+	ReportTo when is_pid(ReportTo) ->
 	    (catch exit(ReportTo, servertransaction_timed_out))
     end,
 
-    %% Generate a 500 Server Internal Error. Maybe we should just exit() since the other end
-    %% is unlikely to remember this transaction state by now.
-    %% XXX don't do this for non-INVITE transactions? RFC4320 #4.2?
-    SendResponse = make_response(500, "Server Internal Error", <<>>, [], [], State),
-    {ok, NewState} = do_response(created, SendResponse, State),
+    case (Method == "INVITE") of
+	true ->
+	    %% Generate a '500 Server Internal Error' for INVITE transactions
+	    logger:log(error, "~s: non-INVITE server transaction timed out (after ~ps of inactivity), "
+		       "answering '500 Server Internal Error'", [LogTag, ?TIMEOUT div 1000]),
+	    SendResponse = make_response(500, "Server Internal Error", <<>>, [], [], State),
+	    {ok, NewState} = do_response(created, SendResponse, State),
+	    check_quit({noreply, NewState, ?TIMEOUT});
+	false ->
+	    %% when we timeout, we shouldn't send any response at all to non-INVITE (RFC4320 #4.2)
+	    logger:log(error, "~s: non-INVITE server transaction timed out (after ~ps of inactivity), "
+		       "exiting withouth having sent a final response (RFC4320)", [LogTag, ?TIMEOUT div 1000]),
+	    check_quit({stop, normal, State})
+    end;
 
-    check_quit({noreply, NewState, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({siptimer, TRef, TDesc}, State)
