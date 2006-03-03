@@ -286,9 +286,9 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 %%           none
 %%--------------------------------------------------------------------
 route_request(Request, Origin, LogTag) when is_record(Request, request), is_list(LogTag) ->
+    URL = Request#request.uri,
     case keylist:fetch('route', Request#request.header) of
 	[] ->
-	    URL = Request#request.uri,
 	    Loc1 = case local:homedomain(URL#sipurl.host) of
 		       true ->
 			   case local:is_request_to_this_proxy(Request) of
@@ -309,8 +309,18 @@ route_request(Request, Origin, LogTag) when is_record(Request, request), is_list
 	    end;
 	_ ->
 	    %% Request has Route header
-	    logger:log(debug, "Routing: Request has Route header, following Route."),
-	    {relay, route}
+	    case local:get_user_with_contact(URL) of
+		none ->
+		    %% XXX also do proxy instead of relay if Request-URI matching one of our users addresses?
+		    %% Maybe we should do proxying instead of relaying if the Request-URI matches one of our
+		    %% homedomains?
+		    logger:log(debug, "Routing: Request has Route header, relaying according to Route."),
+		    {relay, route};
+		User ->
+		    logger:log(debug, "Routing: Request has Route header, and is for our user ~p - "
+			       "proxy according to Route.", [User]),
+		    {proxy, route}
+	    end
     end.
 
 %%--------------------------------------------------------------------
