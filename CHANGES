@@ -1,3 +1,9 @@
+-- 0.91		(2006-03-21)
+
+ - Fix bug which made applications crash on config-reload when there
+   was an include file that contained syntax errors.
+
+
 -- 0.91pre1	(2006-03-07)
 
  - Temporarily blacklist unreachable/unresponsive destinations.
