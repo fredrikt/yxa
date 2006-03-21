@@ -172,8 +172,12 @@ parse_includes2(State, [{include, Inc} | T], Res) when is_record(State, yxa_conf
 			filename:absname_join(filename:dirname(CurrentFile), Inc)
 		end,
 	    
-	    {ok, This} = parse2(State#yxa_config_erlang_state{recursing = true, filename = IncFile}),
-	    parse_includes2(State, T, This ++ Res);
+	    case parse2(State#yxa_config_erlang_state{recursing = true, filename = IncFile}) of
+		{ok, This} ->
+		    parse_includes2(State, T, This ++ Res);
+		{error, Reason} ->
+		    {error, Reason}
+	    end;
 	true ->
 	    Msg = io_lib:format("Multiple levels of configuration file includes not permitted (in ~p)",
 				[CurrentFile]),
