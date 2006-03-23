@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipserver_sup.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Description : Yxa general application supervisor. 
+%%% Descrip.: YXA application main supervisor.
 %%%
 %%% Created : 21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -16,7 +16,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/1,
+	 start_link/2,
 	 start_extras/3,
 	 start_transportlayer/1,
 	 get_pids/0
@@ -44,8 +44,8 @@
 %% Function: start_link/3
 %% Description: Starts the supervisor
 %%--------------------------------------------------------------------
-start_link(AppCallbacks) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, [AppCallbacks]).
+start_link(AppModule, MnesiaTables) ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, [AppModule, MnesiaTables]).
 
 %%--------------------------------------------------------------------
 %% Function: get_pids()
@@ -82,13 +82,13 @@ extract_pids([], Res) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule])
+%% Function: init([AppModule, MnesiaTables])
 %%           AppModule = atom(), name of Yxa application module
 %% Returns : {ok,  {SupFlags,  [ChildSpec]}} |
 %%           ignore                          |
 %%           {error, Reason}   
 %%--------------------------------------------------------------------
-init([AppModule]) ->
+init([AppModule, MnesiaTables]) ->
     CfgServer = {yxa_config, {yxa_config, start_link, [AppModule]},
 		 permanent, 2000, worker, [yxa_config]},
     Logger = {logger, {logger, start_link, []},
@@ -100,7 +100,9 @@ init([AppModule]) ->
     TransactionLayer = {transactionlayer,
 			{transactionlayer, start_link, [AppModule]},
 			permanent, 2000, worker, [transactionlayer]},
-    MyList = [CfgServer, Logger, Directory, DialogServer, TransactionLayer],
+    Monitor = {yxa_monitor, {yxa_monitor, start_link, [AppModule, MnesiaTables]},
+	       permanent, 2000, worker, [yxa_monitor]},
+    MyList = [CfgServer, Logger, Monitor, Directory, DialogServer, TransactionLayer],
     {ok, {{one_for_one, 20, 60}, MyList}}.
 
 start_extras(Supervisor, AppModule, AppSupdata) ->

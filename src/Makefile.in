@@ -74,6 +74,7 @@ erl_FILES = \
 	util.erl \
 	xref_test.erl \
 	yxa_ctl.erl \
+	yxa_monitor.erl \
 	$(local_module).erl
 
 

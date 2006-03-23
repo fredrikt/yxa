@@ -78,7 +78,7 @@ start(normal, [AppModule]) ->
     mnesia:start(),
     [MnesiaTables, stateful, AppSupdata] = AppModule:init(),
     ok = init_statistics(),
-    case sipserver_sup:start_link(AppModule) of
+    case sipserver_sup:start_link(AppModule, MnesiaTables) of
 	{ok, Supervisor} ->
 	    local:init(),
 	    logger:log(debug, "starting, supervisor is ~p", [Supervisor]),
