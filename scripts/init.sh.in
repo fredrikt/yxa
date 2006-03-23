@@ -251,7 +251,7 @@ fi
 
 if [ -d "${PWD}/src/event_handler" -a -d "${PWD}/src/cpl" ]; then
     # we must be running from the build directory, add all subdirectorys
-    # to src/ plus yaws/src/ to the code search path
+    # to src/ plus yaws/src to the code search path
     beamdirs=$(
 	echo "-pa src/ -pa yaws/src/"
 	ls ${PWD}/src/ | while read entry; do
@@ -327,6 +327,7 @@ else
 		$EXTRA_ERL_ARGUMENTS \
 		-name "$name" \
 		$ssloptions \
+		-hidden \
 		-noshell \
 		-s yxa_ctl -extra $node $command $command_arguments
 	    ;;
