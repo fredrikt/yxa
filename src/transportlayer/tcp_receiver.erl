@@ -16,7 +16,8 @@
 %%%           (our State#state.parent) to close it, and then we just
 %%%           terminate. This is not really true for SSL sockets
 %%%           though, since the ssl module should send received data
-%%%           to this process we are also the owner of SSL sockets.
+%%%           to this process and not our parent we are also the owner
+%%%           of SSL sockets.
 %%%
 %%%           Signals we send to our parent :
 %%%
@@ -65,11 +66,11 @@
 	  local,
 	  remote,
 	  sipsocket,
-	  linked=no
+	  linked = no
 	 }).
 
 -record(recv, {
-	  msg_stack=[],		%% First-in-last-out stack of received frames (messages)
+	  msg_stack = [],	%% First-in-last-out stack of received frames (messages)
 	  frame = <<>>,		%% The current frame
 
 	  parsed,		%% undefined | request record() | response record()
@@ -96,15 +97,25 @@
 %% Returns : void()
 %%--------------------------------------------------------------------
 start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
-    State = #state{socketmodule=SocketModule, socket=Socket, parent=self(),
-		   local=Local, remote=Remote, sipsocket=SipSocket},
+    State = #state{socketmodule	= SocketModule,
+		   socket	= Socket,
+		   parent	= self(),
+		   local	= Local,
+		   remote	= Remote,
+		   sipsocket	= SipSocket
+		  },
 
     %% Create origin string for logging the source of received frames
     {IP, Port} = State#state.remote,
-    Origin = #siporigin{proto=SipSocket#sipsocket.proto, addr=IP, port=Port, receiver=self(), sipsocket=SipSocket},
+    Origin = #siporigin{proto		= SipSocket#sipsocket.proto,
+			addr		= IP,
+			port		= Port,
+			receiver	= self(),
+			sipsocket	= SipSocket
+		       },
     OriginStr = sipserver:origin2str(Origin),
 
-    Recv = #recv{origin_str=OriginStr},
+    Recv = #recv{origin_str = OriginStr},
     Pid = spawn_link(?MODULE, recv_loop, [State, Recv]),
     Pid.
 
@@ -122,20 +133,21 @@ start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
 %%           error occur.
 %% Returns : void()
 %%--------------------------------------------------------------------
-recv_loop(#state{linked=no, socketmodule=ssl}=State, Recv) when is_record(Recv, recv) ->
+recv_loop(#state{linked = no, socketmodule = ssl} = State, Recv) when is_record(Recv, recv) ->
     %% Socket is SSL and this is the first time we enter recv_loop(). Link to sockets pid
     %% and set us up to receive exit signals from our parent and from the sockets pid.
     process_flag(trap_exit, true),
     SocketPid = ssl:pid(State#state.socket),
     true = link(SocketPid),
-    recv_loop(State#state{linked=yes}, Recv);
-recv_loop(#state{socketmodule=ssl}=State, Recv) when is_record(Recv, recv) ->
-    Socket = State#state.socket,
-    SocketPid = ssl:pid(State#state.socket),
+    recv_loop(State#state{linked = yes}, Recv);
+recv_loop(#state{socketmodule = ssl} = State, Recv) when is_record(Recv, recv) ->
+    #state{socket = Socket,
+	   parent = Parent
+	  } = State,
+    SocketPid = ssl:pid(Socket),
     %% Must set {active, once} here even if tcp_listener did it right before us -
     %% it seems as if the SSL socket looses this status when controlling process is changed.
-    ssl:setopts(State#state.socket, [{active, once}]),
-    Parent = State#state.parent,
+    ssl:setopts(Socket, [{active, once}]),
     Res =
 	receive
 	    {ssl, Socket, B} ->
@@ -180,11 +192,11 @@ recv_loop(#state{socketmodule=ssl}=State, Recv) when is_record(Recv, recv) ->
 		    ok;
 		E ->
 		    logger:log(error, "TCP receiver: Closing SSL socket ~p failed : ~p",
-			       [State#state.socket, E])
+			       [Socket, E])
 	    end,
 	    gen_server:cast(Parent, {close, self()});
 	quit ->
-	    ssl:close(State#state.socket),
+	    ssl:close(Socket),
 	    ok;
 	NewRecv when is_record(NewRecv, recv) ->
 	    recv_loop(State, NewRecv)
@@ -201,9 +213,10 @@ recv_loop(#state{socketmodule=ssl}=State, Recv) when is_record(Recv, recv) ->
 %% Returns : void()
 %%--------------------------------------------------------------------
 recv_loop(State, Recv) when is_record(State, state), is_record(Recv, recv) ->
-    Parent = State#state.parent,
-    SocketModule = State#state.socketmodule,
-    Socket = State#state.socket,
+    #state{parent	= Parent,
+	   socketmodule	= SocketModule,
+	   socket	= Socket
+	  } = State,
     Res =
 	case SocketModule:recv(Socket, 0) of
 	    {ok, B} ->
@@ -244,21 +257,21 @@ recv_loop(State, Recv) when is_record(State, state), is_record(Recv, recv) ->
 %%--------------------------------------------------------------------
 handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, recv) ->
     try handle_received_data2(Data, Recv) of
-	#recv{msg_stack=[]} = NewRecv ->
+	#recv{msg_stack = []} = NewRecv ->
 	    %% No messages on the stack
 	    NewRecv;
-	#recv{msg_stack=ReverseMsgs} = NewRecv ->
+	#recv{msg_stack = ReverseMsgs} = NewRecv ->
 	    Msgs = lists:reverse(ReverseMsgs),
 	    ok = send_messages_to_parent(Msgs, State#state.parent),
-	    NewRecv#recv{msg_stack=[]}
+	    NewRecv#recv{msg_stack = []}
     catch
 	throw:
 	  {error, parse_failed, E} ->
 	    {IP, Port} = State#state.remote,
 	    Msg = binary_to_list( list_to_binary([Recv#recv.frame, Data]) ),
 	    ProtoStr = case State#state.socketmodule of
-			   ssl -> "tls";
-			   gen_tcp -> "tcp"
+			   ssl ->	"tls";
+			   gen_tcp ->	"tcp"
 		       end,
 	    logger:log(error, "TCP receiver: Failed parsing data received from ~s:~s:~p, "
 		       "discarding and closing socket.", [ProtoStr, IP, Port]),
@@ -278,15 +291,15 @@ handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, re
 %%           specified by RFC3261 #7.5.
 %% Returns : NewRecv = recv record()
 %%--------------------------------------------------------------------
-handle_received_data2(<<?CR, ?LF, Rest/binary>>, #recv{frame = <<>>}=Recv) ->
+handle_received_data2(<<?CR, ?LF, Rest/binary>>, #recv{frame = <<>>} = Recv) ->
     %% Ignore CRLF received when current recv.frame is empty.
     handle_received_data2(Rest, Recv);
 
-handle_received_data2(<<?LF, Rest/binary>>, #recv{frame = <<>>}=Recv) ->
+handle_received_data2(<<?LF, Rest/binary>>, #recv{frame = <<>>} = Recv) ->
     %% Ignore LF received when current recv.frame is empty.
     handle_received_data2(Rest, Recv);
 
-handle_received_data2(<<?LF, Rest/binary>>, #recv{frame = <<?CR>>}=Recv) ->
+handle_received_data2(<<?LF, Rest/binary>>, #recv{frame = <<?CR>>} = Recv) ->
     %% LF received when current recv.frame was a CR - ignore it and clear recv.frame.
     handle_received_data2(Rest, Recv#recv{frame = <<>>});
 
@@ -302,7 +315,7 @@ handle_received_data2(<<?LF, Rest/binary>>, #recv{frame = <<?CR>>}=Recv) ->
 %%           and start on a new frame.
 %% Returns : NewRecv = recv record()
 %%--------------------------------------------------------------------
-handle_received_data2(Data, #recv{body_offset = undefined}=Recv) when is_binary(Data) ->
+handle_received_data2(Data, #recv{body_offset = undefined} = Recv) when is_binary(Data) ->
     %% No body_offset information - means we haven't parsed the headers yet
     OldLen = size(Recv#recv.frame),
     NewFrame = list_to_binary([Recv#recv.frame, Data]),
@@ -316,7 +329,7 @@ handle_received_data2(Data, #recv{body_offset = undefined}=Recv) when is_binary(
 	    init_frame(NewFrame, BodyOffset, Recv);
 	false ->
 	    %% Header-body separator not found
-	    Recv#recv{frame=NewFrame}
+	    Recv#recv{frame = NewFrame}
     end;
 
 %%--------------------------------------------------------------------
@@ -335,7 +348,7 @@ handle_received_data2(Data, Recv) when is_binary(Data), is_record(Recv, recv) ->
     %% we were working on, and parts of (or whole) the next frame.
     NewFrame = list_to_binary([Recv#recv.frame, Data]),
     BL = Recv#recv.bytes_left - size(Data),
-    decode_frame(NewFrame, Recv#recv{bytes_left=BL}).
+    decode_frame(NewFrame, Recv#recv{bytes_left = BL}).
 
 
 %%--------------------------------------------------------------------
@@ -358,11 +371,19 @@ init_frame(Frame, BodyOffset, Recv) when is_binary(Frame), is_integer(BodyOffset
 	Request when is_record(Request, request) ->
 	    CL = get_content_length(request, Request#request.header),
 	    Left = (BodyOffset + CL) - size(Frame),
-	    decode_frame(Frame, Recv#recv{parsed=Request, body_offset=BodyOffset, body_length=CL, bytes_left=Left});
+	    decode_frame(Frame, Recv#recv{parsed	= Request,
+					  body_offset	= BodyOffset,
+					  body_length	= CL,
+					  bytes_left	= Left
+					 });
 	Response when is_record(Response, response) ->
 	    CL = get_content_length(response, Response#response.header),
 	    Left = (BodyOffset + CL) - size(Frame),
-	    decode_frame(Frame, Recv#recv{parsed=Response, body_offset=BodyOffset, body_length=CL, bytes_left=Left});
+	    decode_frame(Frame, Recv#recv{parsed	= Response,
+					  body_offset	= BodyOffset,
+					  body_length	= CL,
+					  bytes_left	= Left
+					 });
 	Unknown ->
 	    throw({error, parse_failed, Unknown})
     end.
@@ -381,10 +402,12 @@ init_frame(Frame, BodyOffset, Recv) when is_binary(Frame), is_integer(BodyOffset
 %%           we can process there at this time.
 %% Returns : NewRecv = recv record()
 %%--------------------------------------------------------------------
-decode_frame(Frame, #recv{bytes_left=BL} = Recv) when is_binary(Frame), is_integer(BL), BL =< 0 ->
+decode_frame(Frame, #recv{bytes_left = BL} = Recv) when is_binary(Frame), is_integer(BL), BL =< 0 ->
     %% Bytes left is zero or less, we have a full frame
-    BodyOffset = Recv#recv.body_offset,
-    BodyLen = Recv#recv.body_length,
+    #recv{body_offset	= BodyOffset,
+	  body_length	= BodyLen,
+	  origin_str	= OriginStr
+	 } = Recv,
     %% Extract the complete body from Frame, put it into the request/response record
     %% we have already parsed and insert the results first in the msg_stack.
     <<_:BodyOffset/binary, Body:BodyLen/binary, NewFrame/binary>> = Frame,
@@ -399,7 +422,6 @@ decode_frame(Frame, #recv{bytes_left=BL} = Recv) when is_binary(Frame), is_integ
 		(Recv#recv.parsed)#response{body = Body}
 	end,
     NewStack = [Msg | Recv#recv.msg_stack],
-    OriginStr = Recv#recv.origin_str,
     %% For logging purposes, we now extract this exact frame
     %% XXX if body is binary, or very large, we shouldn't log it
     ThisFrameLen = BodyOffset + BodyLen,
@@ -408,14 +430,17 @@ decode_frame(Frame, #recv{bytes_left=BL} = Recv) when is_binary(Frame), is_integ
     %% Check if there is already a header-body separator in NewFrame
     case has_header_body_separator(NewFrame, 0) of
 	{true, NewFrameBO} ->
-	    init_frame(NewFrame, NewFrameBO, Recv#recv{msg_stack=NewStack});
+	    init_frame(NewFrame, NewFrameBO, Recv#recv{msg_stack = NewStack});
 	false ->
 	    %% create new recv record to get correct defaults, then just set msg_stack and frame (and origin_str)
-	    #recv{msg_stack=NewStack, frame=NewFrame, origin_str=OriginStr}
+	    #recv{msg_stack	= NewStack,
+		  frame		= NewFrame,
+		  origin_str	= OriginStr
+		 }
     end;
 decode_frame(Frame, Recv) when is_binary(Frame), is_record(Recv, recv) ->
     %% bytes_left is > 0, we can't decode a frame right now. Save it in recv.
-    Recv#recv{frame=Frame}.
+    Recv#recv{frame = Frame}.
 
 %%--------------------------------------------------------------------
 %% Function: has_header_body_separator(Data, Offset)
