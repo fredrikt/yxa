@@ -97,10 +97,11 @@ start_link(Proto, Port) when is_atom(Proto), is_integer(Port) ->
 %%--------------------------------------------------------------------
 start_listening(Proto, Port, InetModule, SocketModule, Options)
   when is_atom(Proto), is_integer(Port), is_atom(InetModule), is_atom(SocketModule), is_list(Options) ->
-    case link(whereis(tcp_dispatcher)) of
-	true -> ok;
-	false ->
-	    logger:log(error, "TCP listener: Failed to link myself to the tcp_dispatcher process!"),
+    case whereis(tcp_dispatcher) of
+	TDisp when is_pid(TDisp) ->
+	    true = link(TDisp);
+	_ ->
+	    logger:log(error, "TCP listener: tcp_dispatcher process not found, can't start listening!"),
 	    erlang:error("failed linking to tcp_dispatcher")
     end,
     TCPsocket = case SocketModule:listen(Port, Options) of
