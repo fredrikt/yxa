@@ -1049,7 +1049,7 @@ test() ->
     %% test escaped char ":" in user and password field, that need to be escaped in output
     autotest:mark(?LINE, "print/1 - 7"),
     URL7 = parse("sip:%3ali%3Ace:%3a@atlanta.com;LR;FoO"),
-    "sip:%3Ali%3Ace:%3A@atlanta.com;lr=true;foo" = print(URL7),
+    "sip:%3Ali%3Ace:%3A@atlanta.com;lr;foo" = print(URL7),
 
     %% test escaped char ":" in user and password and ";"
     %% and "=" in paramter field, that need to be escaped in output

@@ -105,9 +105,6 @@ to_list(Norm) when is_record(Norm, url_param) ->
 to_string_list(Norm) when is_record(Norm, url_param) ->
     F = fun(E) ->
 		case E of
-		    %% XXX compatibility hack - this is not correct according to the specification
-		    {"lr", none} ->
-			"lr=true";
 		    {Name, none} ->
 			EscName = sipurl:escape_parameters(Name),
 			lists:flatten(io_lib:format("~s",[EscName]));
@@ -231,7 +228,7 @@ test() ->
     %% test that case and missing value part are handled properly
     autotest:mark(?LINE, "to_string_list/1 - 1"),
     Urlparam1 = to_norm(["foo=bAr", "BaR", "lr", "a=43"]),
-    ["foo=bar", "bar", "lr=true", "a=43"] = to_string_list(Urlparam1),
+    ["foo=bar", "bar", "lr", "a=43"] = to_string_list(Urlparam1),
     %% test empty param
     autotest:mark(?LINE, "to_string_list/1 - 2"),
     Urlparam2 = to_norm([]),
@@ -239,14 +236,16 @@ test() ->
     %% test that hex encoding is used
     autotest:mark(?LINE, "to_string_list/1 - 3"),
     Urlparam3 = to_norm(["foo%3d=bAr", "Ba%3DR", "lr", "a=43"]),
-    ["foo%3D=bar", "ba%3Dr", "lr=true", "a=43"] = to_string_list(Urlparam3),
-
+    ["foo%3D=bar", "ba%3Dr", "lr", "a=43"] = to_string_list(Urlparam3),
+    % test lr with value
+    autotest:mark(?LINE, "to_string_list/1 - 4"),
+    ["lr=true"] = to_string_list(to_norm(["lR=trUE"])),
 
     %% test to_string
     %%---------------------------------------------------------------
     %% test that case and missing value part are handled properly
     autotest:mark(?LINE, "to_string/1 - 1"),
-    ";foo=bar;bar;lr=true;a=43" = to_string(Urlparam1),
+    ";foo=bar;bar;lr;a=43" = to_string(Urlparam1),
     %% test empty param
     autotest:mark(?LINE, "to_string/1 - 2"),
     "" = to_string(Urlparam2),
