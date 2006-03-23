@@ -249,9 +249,7 @@ init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
 handle_call({send, {_Host, _Port, Message}}, _From, State) when State#state.on == true ->
     %% XXX verify that Host:Port matches host and port in State#State.sipsocket!
     SocketModule = State#state.socketmodule,
-    SendRes = case catch SocketModule:send(State#state.socket, Message) of
-		  R -> R
-	      end,
+    SendRes = (catch SocketModule:send(State#state.socket, Message)),
     Reply = {send_result, SendRes},
     {reply, Reply, State, State#state.timeout};
 
@@ -367,14 +365,15 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({recv_sipmsg, Data}, State)
 %%           Data = request record() | response record()
-%% Descrip.: Our received process has received a SIP message on our
+%% Descrip.: Our receiver process has received a SIP message on our
 %%           socket, invoke sipserver:process() on it.
 %% Returns : {noreply, State, Timeout}
 %%--------------------------------------------------------------------
 handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
     {IP, Port} = State#state.remote,
     SipSocket = #sipsocket{module	= sipsocket_tcp,
-			   proto	= State#state.proto, pid=self(),
+			   proto	= State#state.proto,
+			   pid		= self(),
 			   data		= {State#state.local, State#state.remote}
 			  },
     Origin = #siporigin{proto		= State#state.proto,
@@ -384,6 +383,20 @@ handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
 			sipsocket	= SipSocket
 		       },
     sipserver:safe_spawn(sipserver, process, [Msg, Origin, transactionlayer]),
+    {noreply, State, State#state.timeout};
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast({send_stun_response, STUNresponse}, State)
+%%           STUNresponse = iolist(), data to send to peer
+%% Descrip.:
+%% Returns : {noreply, State, Timeout}
+%%--------------------------------------------------------------------
+handle_cast({send_stun_response, STUNresponse}, State) when State#state.on == true ->
+    {IP, Port} = State#state.remote,
+    logger:log(debug, "TCP connection: Extra debug: Sending STUN response to ~p:~s:~p",
+	      [State#state.proto, IP, Port]),
+    SocketModule = State#state.socketmodule,
+    (catch SocketModule:send(State#state.socket, STUNresponse)),
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
@@ -527,10 +540,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModule), is_record(SipSocket, sipsocket),
 							      Dir == in; Dir == out ->
-    Proto = SipSocket#sipsocket.proto,
-    {Local, Remote} = SipSocket#sipsocket.data,
-    {IP, Port} = Remote,
-    Receiver = tcp_receiver:start_link(SocketModule, Socket, Local, Remote, SipSocket),
+    Receiver = tcp_receiver:start_link(SocketModule, Socket, SipSocket),
     S = case Dir of
 	    in -> "Connection from";
 	    out -> "Connected to"
@@ -555,6 +565,9 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
 	_ ->
 	    ok
     end,
+    #sipsocket{proto	= Proto,
+	       data	= {_Local, {IP, Port}}
+	      } = SipSocket,
     logger:log(debug, "TCP connection: ~s ~p:~s:~p (socket ~p, started receiver ~p)",
 	       [S, Proto, IP, Port, Socket, Receiver]),
     {ok, Receiver}.

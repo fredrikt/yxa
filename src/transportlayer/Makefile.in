@@ -36,6 +36,7 @@ erl_FILES = \
 	sipsocket_test.erl \
 	sipsocket_udp.erl \
 	ssl_util.erl \
+	stun.erl \
 	socketlist.erl \
 	tcp_connection.erl \
 	tcp_dispatcher.erl \
@@ -49,7 +50,8 @@ imported_hrl_FILES = \
 
 
 hrl_FILES = \
-	socketlist.hrl
+	socketlist.hrl \
+	stun.hrl
 
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)

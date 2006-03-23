@@ -352,6 +352,12 @@ sipsocket_blacklist_probe_delay	(default: 60) After how long time of blacklistin
 				blacklisting expires, if the destination is still
 				unavailable/unresponsive.
 
+stun_demuxing_on_sip_ports	(default: false (except for outgoingproxy))
+				Should we demux and process STUN requests received
+				on our SIP ports? This is becoming a popular way
+				for clients to keep NAT bindings alive. See
+				draft-ietf-sip-outbound-03 for more information.
+
 pstnproxy:
 ----------
 e164_to_pstn			(no default) Regexps for choosing PSTN gateway
@@ -504,6 +510,12 @@ allow_foreign_registers 	(default: false) Set to true to have your out-
 				a domain that the outgoingproxy doesn't consider
 				local (what domains are 'local' is determined
 				by the 'homedomain' parameter).
+
+stun_demuxing_on_sip_ports	(default: true) Allow clients to keep NAT
+				bindings alive by (quite frequently) send STUN
+				requests to the outgoingproxy on the same socket
+				used for SIP signalling. See
+				draft-ietf-sip-outbound-03 for more information.
 
 appserver:
 ----------

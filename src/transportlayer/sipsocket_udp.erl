@@ -50,11 +50,15 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("sipsocket.hrl").
+-include("stun.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
--record(state, {socket, socket6, socketlist}).
+-record(state, {inet_socketlist  = [],	%% list() of {Socket, SipSocket} - the first one is the one we send using
+		inet6_socketlist = [],	%% list() of {Socket, SipSocket} - the first one is the one we send using
+		socketlist
+	       }).
 
 %%--------------------------------------------------------------------
 %% Macros
@@ -88,21 +92,38 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     Port = sipsocket:get_listenport(udp),  %% same for UDP and UDPv6
-    start_listening([udp, udp6], Port, #state{socketlist=socketlist:empty()}).
+    IPv4Spec =
+	lists:foldl(fun(IP, Acc) ->
+			    case inet_parse:ipv4_address(IP) of
+				{ok, IPt} ->
+				    [{udp, IPt, Port} | Acc];
+				_ ->
+				    Acc
+			    end
+		    end, [], lists:reverse(siphost:myip_list())),
+    Spec = 
+	case yxa_config:get_env(enable_v6) of
+	    {ok, true} ->
+		[{udp6, {0,0,0,0,0,0,0,0}, Port} | IPv4Spec];
+	    {ok, false} ->
+		IPv4Spec
+	end,
+    start_listening(Spec, #state{socketlist = socketlist:empty()}).
 
 %%--------------------------------------------------------------------
-%% Function: start_listening(ProtoList, Port, State)
-%%           ProtoList = list() of atom(), udp | udp6
-%%           Port      = integer()
-%% Descrip.: Begin listening on port Port.
+%% Function: start_listening(Spec, State)
+%%           Spec  = list() of {Proto, IP, Port}
+%%           Proto = udp | udp6
+%%           IP    = {A,B,C,D} | {A,B,C,D,E,F,G,H,I}
+%%           Port  = integer()
+%% Descrip.: Begin listening on port Port for interface with IP IP.
 %% Returns : {ok, State}    |
 %%           {stop, Reason}
 %%           Reason = string()
 %%--------------------------------------------------------------------
-start_listening([], _Port, State) ->
-    {ok, State};
-start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, state) ->
-    case gen_udp:open(Port, ?SOCKETOPTS) of
+start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(State, state) ->
+    SocketOpts = [{ip, IP} | ?SOCKETOPTS],
+    case gen_udp:open(Port, SocketOpts) of
 	{ok, Socket} ->
 	    Local = get_localaddr(Socket, "0.0.0.0"),
 	    SipSocket = #sipsocket{module = sipsocket_udp,
@@ -114,36 +135,41 @@ start_listening([udp | T], Port, State) when is_integer(Port), is_record(State, 
 					   0, State#state.socketlist),
 	    {LocalIP, _} = Local,
 	    sipsocket:add_listener_info(udp, LocalIP, Port),
-	    start_listening(T, Port, State#state{socket=Socket, socketlist=NewSocketList});
+	    NewInetSocketL = [{Socket, SipSocket} | State#state.inet_socketlist],
+	    start_listening(T, State#state{inet_socketlist = NewInetSocketL,
+					   socketlist      = NewSocketList
+					  });
 	{error, Reason} ->
 	    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",
-		       [?SOCKETOPTS, Port, inet:format_error(Reason)]),
+		       [SocketOpts, Port, inet:format_error(Reason)]),
 	    {stop, "Could not open UDP socket"}
     end;
-start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State, state) ->
-    case yxa_config:get_env(enable_v6) of
-	{ok, true} ->
-	    case gen_udp:open(Port, ?SOCKETOPTSv6) of
-		{ok, Socket} ->
-		    Local = get_localaddr(Socket, "[::]"),
-		    SipSocket = #sipsocket{module=sipsocket_udp, proto=udp6, pid=self(), data={Local, none}},
-		    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket,
-						   0, State#state.socketlist),
-		    {LocalIP, _} = Local,
-		    InfoRecord = #yxa_sipsocket_info_e{proto = udp6,
-						       addr  = LocalIP,
-						       port  = Port
-						      },
-		    ets:insert(yxa_sipsocket_info, {self(), InfoRecord}),
-		    start_listening(T, Port, State#state{socket6=Socket, socketlist=NewSocketList});
-		{error, Reason} ->
-		    logger:log(error, "Could not open IPv6 UDP socket (options ~p), port ~p : ~s",
-			       [?SOCKETOPTSv6, Port, inet:format_error(Reason)]),
-		    {stop, "Could not open IPv6 UDP socket"}
-	    end;
-	{ok, false} ->
-	    start_listening(T, Port, State)
-    end.
+start_listening([{udp6, IP, Port} | T], State) when is_integer(Port), is_record(State, state) ->
+    SocketOpts = [{ip, IP} | ?SOCKETOPTSv6],
+    case gen_udp:open(Port, SocketOpts) of
+	{ok, Socket} ->
+	    Local = get_localaddr(Socket, "[::]"),
+	    SipSocket = #sipsocket{module = sipsocket_udp,
+				   proto  = udp6,
+				   pid    = self(),
+				   data   = {Local, none}
+				  },
+	    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket,
+					   0, State#state.socketlist),
+	    {LocalIP, _} = Local,
+	    sipsocket:add_listener_info(udp6, LocalIP, Port),
+	    NewInet6SocketL = [{Socket, SipSocket} | State#state.inet6_socketlist],
+	    start_listening(T, State#state{inet6_socketlist = NewInet6SocketL,
+					   socketlist	    = NewSocketList
+					  });
+	{error, Reason} ->
+	    logger:log(error, "Could not open IPv6 UDP socket (options ~p), port ~p : ~s",
+		       [SocketOpts, Port, inet:format_error(Reason)]),
+	    {stop, "Could not open IPv6 UDP socket"}
+    end;
+start_listening([], State) ->
+    {ok, State}.
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Msg, From, State)
@@ -160,10 +186,8 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 %%--------------------------------------------------------------------
 %% Function: handle_call({get_socket, Proto}, From, State)
 %%           Proto = atom(), udp | udp6
-%% Descrip.: Get a socket for a certain protocol (Proto).
-%%           sipsocket_udp is currently not multi-socket, we just have
-%%           a single UDP socket for each protocol and that is
-%%           'listener'. Locate and return it.
+%% Descrip.: Get a socket for a certain protocol (Proto). Always
+%%           return the first socket for the requested Proto for now.
 %% Returns : {reply, Reply, State}
 %%           Reply = {ok, SipSocket} |
 %%                   {error, Reason}
@@ -171,17 +195,24 @@ start_listening([udp6 | T], Port, State) when is_integer(Port), is_record(State,
 %%           Reason    = string()
 %%--------------------------------------------------------------------
 handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
-    Id = {listener, Proto, sipsocket:get_listenport(Proto)},
-    case socketlist:get_using_id(Id, State#state.socketlist) of
-	[] ->
-	    logger:log(error, "Sipsocket UDP: Failed fetching socket with id '~p' from list :~n~p",
-		       [Id, socketlist:debugfriendly(State#state.socketlist)]),
-	    {reply, {error, "UDP socket for specified protocol not found"}, State};
-	SElem ->
-	    [CPid, Local, Remote] = socketlist:extract([pid, local, remote], SElem),
-	    SipSocket = #sipsocket{module=sipsocket_udp, proto=Proto, pid=CPid, data={Local, Remote}},
-	    {reply, {ok, SipSocket}, State}
-    end;
+    MakeRes = fun(L) when is_list(L) ->
+		      case L of
+			  [] ->
+			      {error, "No socket found"};
+			  [{_Socket, SipSocket} | _] ->
+			      {ok, SipSocket}
+		      end
+	      end,
+    Res =
+	case Proto of
+	    udp ->
+		MakeRes(State#state.inet_socketlist);
+	    udp6 ->
+		MakeRes(State#state.inet6_socketlist)
+	end,
+
+    {reply, Res, State};
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_call({get_raw_socket, Proto}, From, State)
@@ -192,12 +223,24 @@ handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
 %%           RawSocket = term()
 %%--------------------------------------------------------------------
 handle_call({get_raw_socket, Proto}, _From, State) when is_atom(Proto) ->
-    case Proto of
-	udp ->
-	    {reply, {ok, State#state.socket}, State};
-	udp6 ->
-	    {reply, {ok, State#state.socket6}, State}
-    end;
+    MakeRes = fun(L) when is_list(L) ->
+		      case L of
+			  [] ->
+			      {error, "No socket found"};
+			  [{Socket, _SipSocket} | _] ->
+			      {ok, Socket}
+		      end
+	      end,
+    Res =
+	case Proto of
+	    udp ->
+		MakeRes(State#state.inet_socketlist);
+	    udp6 ->
+		MakeRes(State#state.inet6_socketlist)
+	end,
+
+    {reply, Res, State};
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_call({send, {Host, Port, Message}}, From, State)
@@ -221,14 +264,24 @@ handle_call({send, {"[" ++ HostT, Port, Message}}, _From, State) when is_list(Ho
 		{error, "Unknown format of destination"};
 	    Index when is_integer(Index) ->
 		Addr = string:substr(HostT, 1, Index - 1),
-		gen_udp:send(State#state.socket6, Addr, Port, Message)
+		case State#state.inet6_socketlist of
+		    [] ->
+			{error, no_inet6_socket};
+		    [{Socket, _SipSocket} | _] ->
+			gen_udp:send(Socket, Addr, Port, Message)
+		end
 	end,
     {reply, {send_result, SendRes}, State};
 %%
 %% Host is not IPv6 reference (inside brackets)
 %%
 handle_call({send, {Host, Port, Message}}, _From, State) when is_list(Host), is_integer(Port) ->
-    SendRes = gen_udp:send(State#state.socket, Host, Port, Message),
+    SendRes = case State#state.inet_socketlist of
+		  [] ->
+		      {error, no_inet_socket};
+		  [{Socket, _SipSocket} | _] ->
+		      gen_udp:send(Socket, Host, Port, Message)
+	      end,
     {reply, {send_result, SendRes}, State}.
 
 
@@ -255,25 +308,36 @@ handle_cast(Msg, State) ->
 %% Function: handle_info({udp, Socket, IPlist, InPortNo, Packet},
 %%                       State)
 %%           Socket   = term()
-%%           IPlist   = term()
+%%           IPtuple  = term(), source IP address
 %%           InPortNo = integer()
 %%           Packet   = list()
 %% Descrip.: Handle data received (as a signal) from one of our
 %%           sockets.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_info({udp, Socket, IPlist, InPortNo, Packet}, State) when is_integer(InPortNo) ->
-    Sv4 = State#state.socket,
-    Sv6 = State#state.socket6,
-    Proto = case Socket of
-		Sv4 -> udp;
-		Sv6 -> udp6;
-		_ ->
-		    logger:log(error, "Sipsocket UDP: Received gen_server info 'udp' "
-			       "from unknown source '~p', ignoring", [Socket])
+handle_info({udp, Socket, IPtuple, InPortNo, Packet}, State) when is_integer(InPortNo) ->
+    Proto =
+	case lists:keysearch(Socket, 1, State#state.inet_socketlist) of
+	    {value, {Socket, _SipSocket}} ->
+		udp;
+	    false ->
+		case lists:keysearch(Socket, 1, State#state.inet6_socketlist) of
+		    {value, {Socket, _SipSocket}} ->
+			udp6;
+		    false ->
+			nomatch
+		end
 	end,
-    IP = siphost:makeip(IPlist),
-    received_packet(Packet, IP, InPortNo, Proto),
+
+    case (Proto == udp orelse Proto == udp6) of
+	true ->
+	    IP = siphost:makeip(IPtuple),
+	    received_packet(Packet, IPtuple, IP, InPortNo, Proto, Socket);
+	false ->
+	    logger:log(error, "Sipsocket UDP: Received gen_server info 'udp' "
+		       "from unknown source '~p', ignoring", [Socket])
+    end,
+
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -410,21 +474,23 @@ get_localaddr(Socket, DefaultAddr) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: received_packet(Packet, IP, Port, Proto)
-%%           Packet = binary(), packet received from network
-%%           IP     = string(), source IP address
-%%           Port   = integer(), source port
-%%           Proto  = atom(), source protocol
+%% Function: received_packet(Packet, IPtuple, IP, Port, Proto, Socket)
+%%           Packet  = binary(), packet received from network
+%%           IPtuple = term(), source IP address tuple
+%%           IP      = string(), source IP address
+%%           Port    = integer(), source port
+%%           Proto   = atom(), source protocol
+%%           Socket  = term(), receiving socket
 %% Descrip.: Check if a received packet is a keepalive or possibly a
 %%           SIP message. For the latter case, we spawn
 %%           sipserver:process(...) on the packet, after creating the
 %%           necessary sipsocket and origin records.
 %% Returns : ok
 %%--------------------------------------------------------------------
-received_packet(<<"\r\n">>, IP, Port, Proto) ->
+received_packet(<<"\r\n">>, _IPtuple, IP, Port, Proto, _Socket) ->
     logger:log(debug, "Keepalive packet (CRLF) received from ~p:~s:~p", [Proto, IP, Port]),
     ok;
-received_packet(Packet, IP, Port, Proto) when is_binary(Packet), size(Packet) =< 30 ->
+received_packet(Packet, IPtuple, IP, Port, Proto, Socket) when is_binary(Packet), size(Packet) =< 30 ->
     %% Too short to be anywhere near a real SIP message
     %% STUN packets (or whatever they are) look like "\r111.222.333.444:pppp"
     case is_only_nulls(Packet) of
@@ -432,15 +498,112 @@ received_packet(Packet, IP, Port, Proto) when is_binary(Packet), size(Packet) =<
 	    logger:log(debug, "Keepalive packet (~p NULLs) received from ~p:~s:~p",
 		       [size(Packet), Proto, IP, Port]);
 	false ->
-	    logger:log(debug, "Packet received from ~p:~s:~p too short to be a SIP message :~n~p~n"
-		       "(as list: ~p)", [Proto, IP, Port, Packet, binary_to_list(Packet)])
+	    case Packet of
+		<<N:8, _Rest/binary>> when N == 0; N == 1 ->
+		    case yxa_config:get_env(stun_demuxing_on_sip_ports) of
+			{ok, true} ->
+			    stun_process(Packet, Proto, IPtuple, IP, Port, Socket);
+			{ok, false} ->
+			    logger:log(debug, "Ignoring STUN packet received from ~p:~s:~p",
+				       [Proto, IP, Port])
+		    end;
+		_ ->
+		    logger:log(debug, "Packet received from ~p:~s:~p too short to be a SIP message :~n~p~n"
+			       "(as list: ~p)", [Proto, IP, Port, Packet, binary_to_list(Packet)])
+	    end
     end,
     ok;
-received_packet(Packet, IP, Port, Proto) when is_binary(Packet), is_list(IP), is_integer(Port), is_atom(Proto) ->
-    SipSocket = #sipsocket{module=sipsocket_udp, proto=Proto, pid=self(), data=none},
-    Origin = #siporigin{proto=Proto, addr=IP, port=Port,
-			receiver=self(), sipsocket=SipSocket},
-    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transactionlayer]),
+received_packet(Packet, IPtuple, IP, Port, Proto, Socket) when is_binary(Packet), is_list(IP), is_integer(Port),
+								is_atom(Proto) ->
+    case Packet of
+	<<N:8, _Rest/binary>> when N == 0; N == 1 ->
+	    case yxa_config:get_env(stun_demuxing_on_sip_ports) of
+		{ok, true} ->
+		    stun_process(Packet, Proto, IPtuple, IP, Port, Socket);
+		{ok, false} ->
+		    logger:log(debug, "Ignoring STUN packet received from ~p:~s:~p",
+			       [Proto, IP, Port])
+	    end;
+	_ ->
+	    IP = siphost:makeip(IPtuple),
+	    SipSocket = #sipsocket{module	= sipsocket_udp,
+				   proto	= Proto,
+				   pid		= self(),
+				   data		= none
+				  },
+	    Origin = #siporigin{proto		= Proto,
+				addr		= IP,
+				port		= Port,
+				receiver	= self(),
+				sipsocket	= SipSocket
+			       },
+	    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transactionlayer]),
+	    ok
+    end.
+
+stun_process(Packet, Proto, IPtuple, IP, Port, Socket) ->
+    {ok, {LocalIP, LocalPort}} = inet:sockname(Socket),
+    SocketOpts =
+	case Proto of
+	    udp ->
+		[{ip, LocalIP} | ?SOCKETOPTS];
+	    udp6 ->
+		[{ip, LocalIP} | ?SOCKETOPTSv6] -- [{buffer, 8 * 1024}]
+	end,
+    %% Get a socket with an alternate port number on the same interface that we received
+    %% this STUN packet on. STUN has options for getting the server to answer using a
+    %% different port (which is unspecified), and different IP address than the request
+    %% was received on (to help classify NAT devices between the client and server).
+    %% We currently only support the 'use other port' mode - not the 'use other IP'.
+    {AltSocket, _AltIP, AltPort} =
+	case gen_udp:open(0, SocketOpts) of
+	    {ok, AltSocket1} ->
+		{ok, {A, P}} = inet:sockname(AltSocket1),
+		{AltSocket1, A, P};
+	    {error, Reason} ->
+		logger:log(error, "Failed acquiring a second socket for alternate-port STUN using socket options "
+			   "~p : ~p", [SocketOpts, Reason]),
+		{undefined, undefined, undefined}
+	end,
+
+    StunEnv =
+	#stun_env{proto			= Proto,
+		  local_ip		= LocalIP,
+		  local_port		= LocalPort,
+		  remote_ip		= IPtuple,
+		  remote_ip_str		= IP,
+		  remote_port		= Port,
+		  alt_ip		= undefined,	%% Alternate IP not supported (patches welcome)
+		  alt_port		= AltPort
+		 },
+
+    case stun:process(Packet, StunEnv) of
+	#stun_result{action = send_response, change = Change, response = STUNResponse} ->
+	    case Change of
+		none ->	gen_udp:send(Socket, IP, Port, STUNResponse);
+		port ->	gen_udp:send(AltSocket, IP, Port, STUNResponse);
+		ip ->
+		    %% This should never happen since we set StunEnv alt_ip to 'undefined', but who knows...
+		    %% We don't want the UDP receiving gen_server to crash, so we check for it.
+		    logger:log(debug, "STUN module request us to change IP for the response, but that is not "
+			       "currently supported - not sending STUN response");
+		both ->
+		    %% This should never happen since we set StunEnv alt_ip to 'undefined', but who knows...
+		    %% We don't want the UDP receiving gen_server to crash, so we check for it.
+		    logger:log(debug, "STUN module request us to change both IP and port for the response, "
+			       "but changing IP is currently not supported - not sending STUN response")
+	    end;
+	ignore ->
+	    ok;
+	{error, not_stun} ->
+	    logger:log(debug, "Non-STUN packet received from ~p:~s:~p : ~n~p~n"
+		       "(as list: ~p)", [Proto, IP, Port, Packet, binary_to_list(Packet)]);
+	{error, Reason2} ->
+	    logger:log(debug, "Failed processing STUN packet from ~p:~s:~p : ~p",
+		       [Proto, IP, Port, Reason2]),
+	    ok
+    end,
+    gen_udp:close(AltSocket),
     ok.
 
 %%--------------------------------------------------------------------

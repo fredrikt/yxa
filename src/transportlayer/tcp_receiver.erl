@@ -19,11 +19,15 @@
 %%%           to this process and not our parent we are also the owner
 %%%           of SSL sockets.
 %%%
+%%%           XXX describe STUN demuxing done by this module
+%%%
 %%%           Signals we send to our parent :
 %%%
 %%%           {recv_sipmsg, R} - we have received a complete SIP
 %%%                              message and parsed it into a request
 %%%                              or response record()
+%%%           {send_stun_response, Data} - request to send a STUN
+%%%                                        response packet to the peer
 %%%           {close, self()}  - close the socket, please
 %%%           {connection_closed, self()} - the other end has closed
 %%%                                         the socket
@@ -41,7 +45,8 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start_link/5,
+-export([start_link/3,
+
 	 test/0]).
 
 %%--------------------------------------------------------------------
@@ -55,18 +60,17 @@
 %%--------------------------------------------------------------------
 -include("sipsocket.hrl").
 -include("siprecords.hrl").
+-include("stun.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
 -record(state, {
-	  socketmodule,
-	  socket,
-	  parent,
-	  local,
-	  remote,
-	  sipsocket,
-	  linked = no
+	  socketmodule,		%% atom(), the module used to handle 'socket'
+	  socket,		%% term(), the socket we should read from
+	  parent,		%% pid() of our parent (tcp_connection)
+	  sipsocket,		%% sipsocket record()
+	  linked = false	%% bool(), some SSL initialization performed yet?
 	 }).
 
 -record(recv, {
@@ -78,7 +82,9 @@
 	  body_length,		%% undefined | integer(), the content length of the message
 	  bytes_left,		%% undefined | integer(), number of bytes left on this frame -
 				%% redundant data (we could always calculate it) but it is easier this way
-	  origin_str		%% string(), used when logging receved frames
+	  origin_str,		%% string(), used when logging receved frames
+	  stun_env,		%% undefined | stun_env record() if we are de-muxing STUN
+	  is_stun = false	%% bool(), are we currently receiving a STUN packet?
 	 }).
 
 %%--------------------------------------------------------------------
@@ -92,32 +98,55 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link/6
+%% Function: start_link(SocketModule, Socket, SipSocket)
+%%           SocketModule = atom(), ssl | gen_tcp
+%%           Socket       = term(), socket to read from
+%%           SipSocket    = sipsocket record() 
 %% Descrip.: Spawn a tcp_receiver process into it's recv_loop().
-%% Returns : void()
+%% Returns : Receiver = pid()
 %%--------------------------------------------------------------------
-start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
+start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModule == gen_tcp,
+						 is_record(SipSocket, sipsocket) ->
+    #sipsocket{proto	= Proto,
+	       data	= {{LocalIP, LocalPort}, {RemoteIP, RemotePort}}
+	      } = SipSocket,
+    StunEnv =
+	case yxa_config:get_env(stun_demuxing_on_sip_ports) of
+	    {ok, true} ->
+		{ok, LocalIPtuple} = inet_parse:ipv4_address(LocalIP),
+		{ok, RemoteIPtuple} = inet_parse:ipv4_address(RemoteIP),
+		#stun_env{proto			= Proto,
+			  local_ip		= LocalIPtuple,
+			  local_port		= LocalPort,
+			  remote_ip		= RemoteIPtuple,
+			  remote_ip_str		= RemoteIP,
+			  remote_port		= RemotePort,
+			  alt_ip		= undefined,	%% Alternate IP not supported (patches welcome)
+			  alt_port		= undefined	%% Alternate port not supported for TCP/TLS
+			 };
+	    {ok, false} ->
+		undefined
+	end,
+    
     State = #state{socketmodule	= SocketModule,
 		   socket	= Socket,
 		   parent	= self(),
-		   local	= Local,
-		   remote	= Remote,
 		   sipsocket	= SipSocket
 		  },
 
     %% Create origin string for logging the source of received frames
-    {IP, Port} = State#state.remote,
-    Origin = #siporigin{proto		= SipSocket#sipsocket.proto,
-			addr		= IP,
-			port		= Port,
+    Origin = #siporigin{proto		= Proto,
+			addr		= RemoteIP,
+			port		= RemotePort,
 			receiver	= self(),
 			sipsocket	= SipSocket
 		       },
     OriginStr = sipserver:origin2str(Origin),
 
-    Recv = #recv{origin_str = OriginStr},
-    Pid = spawn_link(?MODULE, recv_loop, [State, Recv]),
-    Pid.
+    Recv = #recv{origin_str	= OriginStr,
+		 stun_env	= StunEnv
+		},
+    spawn_link(?MODULE, recv_loop, [State, Recv]).
 
 %%====================================================================
 %% Internal functions
@@ -133,13 +162,13 @@ start_link(SocketModule, Socket, Local, Remote, SipSocket) ->
 %%           error occur.
 %% Returns : void()
 %%--------------------------------------------------------------------
-recv_loop(#state{linked = no, socketmodule = ssl} = State, Recv) when is_record(Recv, recv) ->
+recv_loop(#state{linked = false, socketmodule = ssl} = State, Recv) when is_record(Recv, recv) ->
     %% Socket is SSL and this is the first time we enter recv_loop(). Link to sockets pid
     %% and set us up to receive exit signals from our parent and from the sockets pid.
     process_flag(trap_exit, true),
     SocketPid = ssl:pid(State#state.socket),
     true = link(SocketPid),
-    recv_loop(State#state{linked = yes}, Recv);
+    recv_loop(State#state{linked = true}, Recv);
 recv_loop(#state{socketmodule = ssl} = State, Recv) when is_record(Recv, recv) ->
     #state{socket = Socket,
 	   parent = Parent
@@ -156,8 +185,9 @@ recv_loop(#state{socketmodule = ssl} = State, Recv) when is_record(Recv, recv) -
 		handle_received_data(B, Recv, State);
 
 	    {ssl_closed, Socket} ->
+		{Local, Remote} = (State#state.sipsocket)#sipsocket.data,
 		logger:log(debug, "TCP receiver: Extra debug: Socket closed (Socket: ~p, local ~p, remote ~p)",
-			   [Socket, State#state.local, State#state.remote]),
+			   [Socket, Local, Remote]),
 		connection_closed;
 
 	    {ssl_error, Socket, Reason} ->
@@ -262,12 +292,13 @@ handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, re
 	    NewRecv;
 	#recv{msg_stack = ReverseMsgs} = NewRecv ->
 	    Msgs = lists:reverse(ReverseMsgs),
-	    ok = send_messages_to_parent(Msgs, State#state.parent),
+	    ok = process_msg_stack(Msgs, State#state.parent),
 	    NewRecv#recv{msg_stack = []}
     catch
 	throw:
 	  {error, parse_failed, E} ->
-	    {IP, Port} = State#state.remote,
+	    {_Local, Remote} = (State#state.sipsocket)#sipsocket.data,
+	    {IP, Port} = Remote,
 	    Msg = binary_to_list( list_to_binary([Recv#recv.frame, Data]) ),
 	    ProtoStr = case State#state.socketmodule of
 			   ssl ->	"tls";
@@ -278,6 +309,7 @@ handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, re
 	    logger:log(debug, "TCP receiver: Data : ~n~p~nError : ~p", [Msg, E]),
 	    close
     end.
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_received_data2(Data, Recv)
@@ -303,6 +335,16 @@ handle_received_data2(<<?LF, Rest/binary>>, #recv{frame = <<?CR>>} = Recv) ->
     %% LF received when current recv.frame was a CR - ignore it and clear recv.frame.
     handle_received_data2(Rest, Recv#recv{frame = <<>>});
 
+handle_received_data2(<<N, _/binary>> = Data, #recv{frame = <<>>} = Recv) when N == 0; N == 1 ->
+    %% empty frame, received something that is definately not SIP but might be STUN
+    handle_received_data2_stun(Data, Recv);
+
+handle_received_data2(Data, #recv{is_stun = true} = Recv) ->
+    %% 'pop' stored partial STUN packet from Recv, construct new frame and
+    %% call handle_received_data2_stun on it
+    NewFrame = list_to_binary([Recv#recv.frame, Data]),
+    handle_received_data2_stun(NewFrame, Recv#recv{frame = <<>>});
+
 %%--------------------------------------------------------------------
 %% Function: handle_received_data2(Data, Recv)
 %%           Data = binary(), the data we have just received
@@ -315,13 +357,14 @@ handle_received_data2(<<?LF, Rest/binary>>, #recv{frame = <<?CR>>} = Recv) ->
 %%           and start on a new frame.
 %% Returns : NewRecv = recv record()
 %%--------------------------------------------------------------------
-handle_received_data2(Data, #recv{body_offset = undefined} = Recv) when is_binary(Data) ->
+handle_received_data2(Data, #recv{body_offset = undefined, is_stun = false} = Recv) when is_binary(Data) ->
     %% No body_offset information - means we haven't parsed the headers yet
     OldLen = size(Recv#recv.frame),
     NewFrame = list_to_binary([Recv#recv.frame, Data]),
     %% Now look for header-body separator in NewFrame - we only have to look from position
     %% (OldLen - 3) since worst case is that we have CRLFCR in the previously received data
     %% and Data begins with LF.
+
     case has_header_body_separator(NewFrame, OldLen - 3) of
 	{true, BodyOffset} ->
 	    %% Ok, we found the header-body separator. We might now have a complete message,
@@ -332,6 +375,7 @@ handle_received_data2(Data, #recv{body_offset = undefined} = Recv) when is_binar
 	    Recv#recv{frame = NewFrame}
     end;
 
+	 
 %%--------------------------------------------------------------------
 %% Function: handle_received_data2(Data, Recv)
 %%           Data = binary(), the data we have just received
@@ -342,13 +386,51 @@ handle_received_data2(Data, #recv{body_offset = undefined} = Recv) when is_binar
 %%           decode_frame() to see if we have a complete frame now.
 %% Returns : NewRecv = recv record()
 %%--------------------------------------------------------------------
-handle_received_data2(Data, Recv) when is_binary(Data), is_record(Recv, recv) ->
+handle_received_data2(Data, #recv{is_stun = false} = Recv) when is_binary(Data), is_record(Recv, recv) ->
     %% bytes_left is set, means we have already received the headers and are now just
     %% adding to the body. Note that we might just have received the rest of the frame
     %% we were working on, and parts of (or whole) the next frame.
     NewFrame = list_to_binary([Recv#recv.frame, Data]),
     BL = Recv#recv.bytes_left - size(Data),
     decode_frame(NewFrame, Recv#recv{bytes_left = BL}).
+
+
+
+%%--------------------------------------------------------------------
+%% Function: handle_received_data2_stun(Data, Recv)
+%%           Data = binary(), the data we have just received
+%%           Recv = recv record(), receive state
+%% Descrip.:
+%% Returns : NewRecv = recv record()
+%%--------------------------------------------------------------------
+handle_received_data2_stun(Frame, #recv{stun_env = undefined, frame = <<>>}) when is_binary(Frame) ->
+    logger:log(error, "TCP receiver: Received non-SIP-probably-STUN when not de-muxing, "
+	       "throwing parse failed error"),
+    throw({error, parse_failed, "STUN demuxing not enabled"});
+handle_received_data2_stun(Frame, #recv{stun_env = StunEnv, frame = <<>>} = Recv) when is_binary(Frame) ->
+    case stun:process_stream(Frame, StunEnv) of
+	{ok, StunResult, FrameRest} ->
+	    NewStack = [StunResult | Recv#recv.msg_stack],
+	    NewRecv = Recv#recv{msg_stack = NewStack},
+	    %% we decoded a STUN packet, FrameRest are leftovers and might be SIP or STUN data
+	    %% so we call handle_received_data2/2 on it
+	    handle_received_data2(FrameRest, NewRecv);
+	{need_more_data, Num} ->
+	    Recv#recv{is_stun		= true,
+		      frame		= Frame,
+		      bytes_left	= Num
+		     };
+	ignore ->
+	    logger:log(error, "TCP receiver: STUN packet decoding failure, "
+		       "throwing parse failed error"),
+	    logger:log(debug, "TCP receiver: The data that made us fail was : ~p", [Frame]),
+	    throw({error, parse_failed, "STUN packet parse error"});
+	{error, not_stun} ->
+	    logger:log(error, "TCP receiver: What looked like a STUN packet wasn't, "
+		       "throwing parse failed error"),
+	    logger:log(debug, "TCP receiver: The data that made us fail was : ~p", [Frame]),
+	    throw({error, parse_failed, "STUN packet parse error"})
+    end.
 
 
 %%--------------------------------------------------------------------
@@ -398,8 +480,7 @@ init_frame(Frame, BodyOffset, Recv) when is_binary(Frame), is_integer(BodyOffset
 %%           Recv to Frame. The caller is responsible for updating
 %%           bytes_left in Recv. If we have enough data, split out
 %%           this frame and push it onto the msg_stack in Recv. Then
-%%           check any remaining data to see if there are more data
-%%           we can process there at this time.
+%%           call handle_received_data2 on any remaining bytes.
 %% Returns : NewRecv = recv record()
 %%--------------------------------------------------------------------
 decode_frame(Frame, #recv{bytes_left = BL} = Recv) when is_binary(Frame), is_integer(BL), BL =< 0 ->
@@ -427,17 +508,16 @@ decode_frame(Frame, #recv{bytes_left = BL} = Recv) when is_binary(Frame), is_int
     ThisFrameLen = BodyOffset + BodyLen,
     <<ThisFrame:ThisFrameLen/binary, _/binary>> = Frame,
     logger:log_iolist(debug, [<<"Frame received (from ">>, OriginStr, <<") :", 10>>, ThisFrame, 10]),
-    %% Check if there is already a header-body separator in NewFrame
-    case has_header_body_separator(NewFrame, 0) of
-	{true, NewFrameBO} ->
-	    init_frame(NewFrame, NewFrameBO, Recv#recv{msg_stack = NewStack});
-	false ->
-	    %% create new recv record to get correct defaults, then just set msg_stack and frame (and origin_str)
-	    #recv{msg_stack	= NewStack,
-		  frame		= NewFrame,
-		  origin_str	= OriginStr
-		 }
-    end;
+
+    %% create new recv record to get correct defaults, then just set msg_stack and frame (and origin_str)
+    StunEnv = Recv#recv.stun_env,
+    NewRecv =
+	#recv{msg_stack		= NewStack,
+	      frame		= <<>>,
+	      origin_str	= OriginStr,
+	      stun_env		= StunEnv
+	     },
+    handle_received_data2(NewFrame, NewRecv);
 decode_frame(Frame, Recv) when is_binary(Frame), is_record(Recv, recv) ->
     %% bytes_left is > 0, we can't decode a frame right now. Save it in recv.
     Recv#recv{frame = Frame}.
@@ -470,16 +550,26 @@ has_header_body_separator2(Data, Offset) when is_binary(Data), is_integer(Offset
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_messages_to_parent(MsgList, Parent)
-%%           MsgList = list() of request or response record()
+%% Function: process_msg_stack(MsgList, Parent)
+%%           MsgList = list() of request record() or response record()
+%%                     or stun_result record()
 %%           Parent  = term(), pid() or atom()
-%% Descrip.: Send received frames to parent (tcp_connection pid).
+%% Descrip.: Send received frames to parent (tcp_connection pid), and
+%%           respond to STUN requests.
 %% Returns : ok
 %%--------------------------------------------------------------------
-send_messages_to_parent([H | T], Parent) ->
+process_msg_stack([H | T], Parent) when is_record(H, stun_result) ->
+    case H of
+	#stun_result{action = send_response, change = none, response = STUNResponse} ->
+	    gen_server:cast(Parent, {send_stun_response, STUNResponse});
+	_ ->
+	    logger:log(debug, "TCP Receiver: Ignoring incompatible STUN response")
+    end,
+    process_msg_stack(T, Parent);
+process_msg_stack([H | T], Parent) ->
     gen_server:cast(Parent, {recv_sipmsg, H}),
-    send_messages_to_parent(T, Parent);
-send_messages_to_parent([], _Parent) ->
+    process_msg_stack(T, Parent);
+process_msg_stack([], _Parent) ->
     ok.
 
 %%--------------------------------------------------------------------
@@ -702,14 +792,161 @@ test() ->
     {error, parse_failed, _} =
 	(catch handle_received_data2(HRD_16_Data, EmptyRecv)),
 
+    autotest:mark(?LINE, "handle_received_data2/2 - 17"),
+    %% test STUN packet (all of it received at once)
+    Test_StunEnv =
+	#stun_env{proto		= tcp,
+		  local_ip	= {192,0,2,190},
+		  local_port	= 2233,
+		  remote_ip	= {192,0,2,192},
+		  remote_ip_str	= "192.0.2.192",
+		  remote_port	= 1919,
+		  alt_ip	= undefined,
+		  alt_port	= undefined
+		 },
+    Test_StunRecv = #recv{stun_env = Test_StunEnv},
+
+    HRD_17_Data = <<16#0001:16/big-unsigned,	%% STUN binding request
+		   0:16/big-unsigned,		%% STUN length of attributes
+		   1234:128/big-unsigned>>,	%% STUN transaction ID
+    #recv{msg_stack	= [#stun_result{action = send_response}],
+	  frame		= <<>>,
+	  bytes_left	= undefined,
+	  is_stun	= false,
+	  stun_env	= Test_StunEnv
+	 } = handle_received_data2(HRD_17_Data, Test_StunRecv),
+
+    autotest:mark(?LINE, "handle_received_data2/2 - 18"),
+    %% test reception of a STUN packet when STUN demuxing is not enabled
+    {error, parse_failed, "STUN demuxing not enabled"} =
+	(catch handle_received_data2(<<16#0001:16/big-unsigned>>, EmptyRecv)),
+
+    autotest:mark(?LINE, "handle_received_data2/2 - 19.1"),
+    %% test need more data (only received one byte)
+    #recv{frame		= <<0>>,
+	  is_stun	= true,
+	  bytes_left	= 3
+	 } = handle_received_data2(<<0>>, Test_StunRecv),
+
+    autotest:mark(?LINE, "handle_received_data2/2 - 19.2"),
+    %% test need more data
+    #recv{frame		= <<16#0001:16/big-unsigned>>,
+	  is_stun	= true,
+	  bytes_left	= 2
+	 } = handle_received_data2(<<16#0001:16/big-unsigned>>, Test_StunRecv),
+
+    autotest:mark(?LINE, "handle_received_data2/2 - 19.3"),
+    %% test need more data, missing 128 bits (16 bytes) of STUN header
+    HRD_19_3_Data = <<16#0001:16/big-unsigned,    %% STUN binding request
+		     0:16/big-unsigned>>,		%% STUN length of attributes
+    #recv{frame		= HRD_19_3_Data,
+	  is_stun	= true,
+	  bytes_left	= 16
+	 } = handle_received_data2(HRD_19_3_Data, Test_StunRecv),
+
+
+    autotest:mark(?LINE, "handle_received_data2/2 - 19.3"),
+    %% test need more data, missing 96 bits (12 bytes) of STUN transaction ID
+    HRD_19_4_Data = <<16#0001:16/big-unsigned,		%% STUN binding request
+		     0:16/big-unsigned,			%% STUN length of attributes
+		     16#2112A442:32/big-unsigned>>,	%% STUN RFC3489bis magic cookie
+    #recv{frame		= HRD_19_4_Data,
+	  is_stun	= true,
+	  bytes_left	= 12
+	 } = HRD_19_4_Recv = handle_received_data2(HRD_19_4_Data, Test_StunRecv),
+
+    autotest:mark(?LINE, "handle_received_data2/2 - 20"),
+    %% test receiving some more bytes of the last tests STUN packet
+    HRD_19_5_Data = list_to_binary([HRD_19_4_Data, 0, 1, 2, 4]),
+    #recv{frame		= HRD_19_5_Data,
+	  is_stun	= true,
+	  bytes_left	= 8
+	 } = handle_received_data2(<<0, 1 , 2, 4>>, HRD_19_4_Recv),
+	  
+    
+
     %% handle_received_data(Data, Recv, State)
     %% we can't test much of this function since it is not side-effect free
     %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "handle_received_data/2 - 1"),
     %% minimal state
-    HRD_State1 = #state{remote = {"192.0.2.1", 5060},
-			socketmodule = ssl
+    HRD_State1 = #state{socketmodule	= ssl,
+			sipsocket	= #sipsocket{data = {{"0.0.0.0", 0},
+							     {"192.0.2.1", 5060}
+							    }},
+			parent		= self()
 		       },
-    HDR_Data1 = list_to_binary("broken\n\n"),
-    close = handle_received_data(HDR_Data1, EmptyRecv, HRD_State1),
+    close = handle_received_data(<<"broken\n\n">>, EmptyRecv, HRD_State1),
+
+    autotest:mark(?LINE, "handle_received_data/2 - 2"),
+    %% no data, only CRLFs
+    #recv{frame = <<>>,
+	  msg_stack = []
+	 } = handle_received_data(<<"\r\n">>, EmptyRecv, HRD_State1),
+
+    autotest:mark(?LINE, "handle_received_data/2 - 3.1"),
+    %% test with SIP request, STUN request and SIP response received back to back, PLUS some extra bytes
+
+    HRD_Full_3_Data =
+	<<%% CRLF between requests (should be ignored)
+	 "\r\n" 
+	 "INVITE sip:ft@example.org SIP/2.0\n"
+	 "Foo: bar\n"
+	 "Content-Length: 3\n"
+	 "\n"
+	 "one"
+	 %% A bunch of CR/LFs between requests (should be ignored)
+	 "\r\n\r\n\n\n\r\n",
+	 %% A complete STUN request
+	 16#0001:16/big-unsigned,    %% STUN binding request
+	 0:16/big-unsigned,           %% STUN length of attributes
+	 1234:128/big-unsigned,
+	 %% A bunch of CR/LFs between requests (should be ignored)
+	 "\r\n\r\n"
+	 %% Short form of header Content-Length
+	 "SIP/2.0 100 Trying\r\n"
+	 "Foo: bar\r\n"
+	 "l:0\r\n"
+	 "\r\n"
+	 %% A bunch of CR/LFs between requests (should be ignored)
+	 "\r\n\r\n\n\n\r\n"
+	 "OPTIONS "
+	 >>,
+    #recv{frame		= <<"OPTIONS ">>,
+	  msg_stack	= []
+	 } = handle_received_data(HRD_Full_3_Data, Test_StunRecv, HRD_State1),
+
+    autotest:mark(?LINE, "handle_received_data/2 - 3.2"),
+    receive
+	{'$gen_cast', {recv_sipmsg, #request{method = "INVITE"}}} ->
+	    ok;
+	HRD_Signal1 ->
+	    HRD_Msg1 = io_lib:format("Received unknown signal : ~p", [HRD_Signal1]),
+	    throw({error, lists:flatten(HRD_Msg1)})
+    after
+	0 -> throw({error, "Test did not result in the expected signal"})
+    end,
+
+    autotest:mark(?LINE, "handle_received_data/2 - 3.3"),
+    receive
+	{'$gen_cast', {send_stun_response, [<<_:20/binary>>, _]}} ->
+	    ok;
+	HRD_Signal2 ->
+	    HRD_Msg2 = io_lib:format("Received unknown signal : ~p", [HRD_Signal2]),
+	    throw({error, lists:flatten(HRD_Msg2)})
+    after
+	0 -> throw({error, "Test did not result in the expected signal"})
+    end,
+
+    autotest:mark(?LINE, "handle_received_data/2 - 3.4"),
+    receive
+	{'$gen_cast', {recv_sipmsg, #response{status = 100}}} ->
+	    ok;
+	HRD_Signal3 ->
+	    HRD_Msg3 = io_lib:format("Received unknown signal : ~p", [HRD_Signal3]),
+	    throw({error, lists:flatten(HRD_Msg3)})
+    after
+	0 -> throw({error, "Test did not result in the expected signal"})
+    end,
 
     ok.

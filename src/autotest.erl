@@ -81,7 +81,8 @@
 		       siphost,
 		       hex,
 		       sipdialog,
-		       sipsocket_blacklist
+		       sipsocket_blacklist,
+		       stun
 		      ]).
 
 %%====================================================================

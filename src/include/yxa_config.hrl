@@ -153,6 +153,11 @@
 		    normalize	= false
 		   },
 
+	 %% STUN settings
+	 #cfg_entry{key		= stun_demuxing_on_sip_ports,
+		    default	= false,
+		    type	= bool
+		   },
 
 	 %% SIP stack settings
 	 #cfg_entry{key		= default_max_forwards,
@@ -498,6 +503,10 @@
 		      default	= 86400 * 31,
 		      type	= integer
 		     },
+	   #cfg_entry{key	= stun_demuxing_on_sip_ports,
+		    default	= true,
+		    type	= bool
+		   },
 	   #cfg_entry{key	= record_route,
 		      default	= true,
 		      type	= bool,
