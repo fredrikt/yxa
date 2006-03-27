@@ -230,14 +230,14 @@
 parse(Contacts) when is_list(Contacts) ->
     %% throw({unparseable, Str}) if parsing failed
     case catch [parse_star(Contact) || Contact <- Contacts] of
-	%% parse error - detected by yxa code or Erlang match operations
 	{error, Reason} ->
+	    %% parse error - detected by yxa code or Erlang match operations
 	    {unparseable, Reason};
 	{'EXIT', Reason} ->
 	    {unparseable, Reason};
 
-	%% parsed data
 	ResLists ->
+	    %% parsed data
 	    lists:append(ResLists)
     end.
 
@@ -344,10 +344,7 @@ parse_addr_and_param(In) ->
 	    try sipparse_util:split_fields(Rest, 62) of	%% 62 is ">"
 		{AddrSpec, Params} ->
 		    {sipparse_util:strip(AddrSpec, both, [?SP, ?HTAB]),
-		     sipparse_util:strip(Params, both, [?SP, ?HTAB])};
-		{AddrSpec} ->
-		    {sipparse_util:strip(AddrSpec, both, [?SP, ?HTAB]),
-		     ""}
+		     sipparse_util:strip(Params, both, [?SP, ?HTAB])}
 	    catch
 		throw: {error, no_second_part} ->
 		    %% ">" was the last character of Rest, not an error
@@ -367,16 +364,19 @@ parse_addr_and_param(In) ->
 	    end
     end.
 
-
 %% input = data after first ";"
 %% return: contact_param record()
 %%
 parse_params([]) ->
     contact_param:to_norm([]);
 parse_params(ParamsStr) ->
-    Params = string:tokens(ParamsStr,";"),
-    NameValList = [parse_param(Param) || Param <- Params],
-    contact_param:to_norm(NameValList).
+    case sipparse_util:split_non_quoted($;, ParamsStr) of
+	{ok, Params} ->
+	    NameValList = [parse_param(Param) || Param <- Params],
+	    contact_param:to_norm(NameValList);
+	{error, Reason} ->
+	    throw({error, {unparsable_contact_params, Reason}})
+    end.
 
 %% return: {NameStr, ValueStr} | throw()
 parse_param(ParamStr) ->
@@ -437,18 +437,16 @@ is_addr_spec(In) ->
     end.
 
 %% part of is_addr_spec/1 - check if In is "[v6-reference]"
-is_addr_spec2(In) ->
-    case In of
-	[91 | Rest] ->	%% 91 is "["
-	    case catch string:tokens(Rest, "]") of
-		[Check] ->
-		    sipparse_util:is_IPv6reference(Check);
-		_ ->
-		    false
-	    end;
+is_addr_spec2([91 | Rest]) ->	%% 91 is "["
+    case lists:reverse(Rest) of
+	[93 | RCheck] ->	%% 93 is "]"
+	    Check = lists:reverse(RCheck),
+	    sipparse_util:is_IPv6reference(Check);
 	_ ->
 	    false
-    end.
+    end;
+is_addr_spec2(_NoMatch) ->
+    false.
 
 %% return: string() (of "x.xxx" format, that can be turned into a float() with list_to_float/1) |
 %%         throw()
@@ -532,11 +530,10 @@ new(DisplayName, [$< | Rest], Params) ->
 
 new(DisplayName, UrlStr, Params) when is_list(DisplayName); DisplayName == none,
 				      is_list(UrlStr), is_list(Params) ->
-    #contact{
-								display_name = DisplayName,
-								urlstr = UrlStr,
-								contact_param = contact_param:to_norm(Params)
-							       }.
+    #contact{display_name = DisplayName,
+	     urlstr = UrlStr,
+	     contact_param = contact_param:to_norm(Params)
+	    }.
 
 
 %%--------------------------------------------------------------------
@@ -565,12 +562,12 @@ rm_param(Contact, Key) ->
 
 %%--------------------------------------------------------------------
 %% Function: set_display_name(Contact, DispName)
-%%           Contact = contact record()
-%%           DispName = string()
+%%           Contact  = contact record()
+%%           DispName = none | string()
 %% Descrip.: change the display name of Contact
 %% Returns : contact record()
 %%--------------------------------------------------------------------
-set_display_name(Contact, DispName) ->
+set_display_name(Contact, DispName) when is_record(Contact, contact), DispName == none; is_list(DispName) ->
     Contact#contact{display_name = DispName}.
 
 %%--------------------------------------------------------------------
@@ -597,7 +594,7 @@ set_urlstr(Contact, URLstr) when is_list(URLstr) ->
 %%--------------------------------------------------------------------
 test() ->
 
-    %% parse
+    %% parse(Contacts)
     %%--------------------------------------------------------------------
     %% test "Contact: *"
     autotest:mark(?LINE, "parse/1 - 1"),
@@ -705,12 +702,9 @@ test() ->
     P14 = parse(["sip:hotsip1@130.237.252.103:5060;transport=TCP;bar=42"
 		 " ;q=1.00;expires=0"]),
 
-    %% test that "Contact: *;foo=bar" throws a exception (* can't have contact-params)
+    %% test that "Contact: *;foo=bar" throws an exception (* can't have contact-params)
     autotest:mark(?LINE, "parse/1 - 15"),
-    case parse(["*;foo=bar"]) of
-	{unparseable, _Reason} -> ok;
-	_ -> throw({error, test_failed})
-    end,
+    {unparseable, _} = parse(["*;foo=bar"]),
 
     %% test contact-parameters without a value
     autotest:mark(?LINE, "parse/1 - 16"),
@@ -747,17 +741,12 @@ test() ->
 
     %% test display name without quotes, that really should have quotes
     autotest:mark(?LINE, "parse/1 - 20"),
-    case catch parse(["Foo Bar sip:example.org"]) of
-	{unparseable, {unparseable_uri_without_brackets, _}} -> ok;
-	P20 -> throw({error, {test_failed, P20}})
-    end,
+    {unparseable, {unparseable_uri_without_brackets, _}} = (catch parse(["Foo Bar sip:example.org"])),
 
     %% test display name without quotes, that really should have quotes
     autotest:mark(?LINE, "parse/1 - 21"),
-    case catch parse(["Foo|Bar <sip:example.org>"]) of
-	{unparseable, {unquoted_displayname_is_not_a_valid_token, _}} -> ok;
-	P21 -> throw({error, {test_failed, P21}})
-    end,
+    {unparseable, {unquoted_displayname_is_not_a_valid_token, _}} = (catch parse(["Foo|Bar <sip:example.org>"])),
+
 
     %% test with empty quoted display name
     autotest:mark(?LINE, "parse/1 - 22"),
@@ -777,10 +766,7 @@ test() ->
 
     %% test invalid hostname that is not quoted and not a token
     autotest:mark(?LINE, "parse/1 - 24"),
-    case catch parse(["<sip:example.org>;foo=|.example.org"]) of
-	{unparseable, {invalid_contact_param, _}} -> ok;
-	P24 -> throw({error, {test_failed, P24}})
-    end,
+    {unparseable, {invalid_contact_param, _}} = (catch parse(["<sip:example.org>;foo=|.example.org"])),
 
     %% test parameters with delimeter-alike characters, interop problem (our fault) encountered
     %% with Cisco 79xx phones firmware > 7.4
@@ -791,8 +777,36 @@ test() ->
 		   }],
     P25 = parse(["<sip:ft@192.0.2.12:5060;user=ip>;+sip.instance=\"<urn:uuid:foo>\""]),
 
+    %% test parameters containing quoted semi-colon, and ending with semicolons
+    autotest:mark(?LINE, "parse/1 - 26"),
+    P26 = [#contact{display_name = none,
+		    urlstr = "sip:ft@192.0.2.12:5060",
+		    contact_param = contact_param:to_norm([{"gruu", "\"sip:ft@example.net;opaque=test;gruu\""}])
+		   }],
+    P26 = parse(["<sip:ft@192.0.2.12:5060>;gruu=\"sip:ft@example.net;opaque=test;gruu\";;;"]),
 
-    %% print/1
+    %% test parameters with unbalanced quotes
+    autotest:mark(?LINE, "parse/1 - 27"),
+    {unparseable, {unparsable_contact_params, unbalanced_quotes}} =
+	(catch parse(["<sip:ft@192.0.2.12:5060>;foo=\"test"])),
+
+    %% test invalid expires parameter
+    autotest:mark(?LINE, "parse/1 - 28"),
+    {unparseable, {malformed_expires, "aa"}} =
+	(catch parse(["<sip:ft@192.0.2.12:5060>;expires=aa"])),
+
+    %% test with invalid IPv6 address in parameter
+    autotest:mark(?LINE, "parse/1 - 29"),
+    {unparseable, {invalid_contact_param, "test=[2001:6b0:5:987::1234"}} =
+	(catch parse(["<sip:ft@192.0.2.12:5060>;test=[2001:6b0:5:987::1234"])),
+
+    %% test invalid q parameter
+    autotest:mark(?LINE, "parse/1 - 30"),
+    {unparseable, {malformed_qvalue, "aa"}} =
+	(catch parse(["<sip:ft@192.0.2.12:5060>;q=aa"])),
+
+
+    %% print(Contact) / print(Contacts)
     %%--------------------------------------------------------------------
 
     %% test "Contact: *"
@@ -880,7 +894,7 @@ test() ->
     autotest:mark(?LINE, "print/1 - 14"),
     "" = print([]),
 
-    %% add_param/3
+    %% add_param(Contact, Key, Val)
     %%--------------------------------------------------------------------
 
     Contact1 = contact_param:to_norm([]),
@@ -906,7 +920,7 @@ test() ->
     C4 = add_param(C3, "boo", "42"),
 
 
-    %% rm_param/2
+    %% rm_param(Contact, Key)
     %%--------------------------------------------------------------------
     Contact1b = contact_param:to_norm([]),
     Contact2b = contact_param:add(Contact1, "foo", "bar"),
@@ -931,34 +945,75 @@ test() ->
     C1b = rm_param(C2b, "foo"),
 
 
-    %% set_display_name/2
+    %% new(SipURI)
     %%--------------------------------------------------------------------
+    NewEmptyParam = contact_param:to_norm([]),
 
-    %% set_urlstr/2
+    autotest:mark(?LINE, "new/1 - 1"),
+    #contact{display_name = none,
+	     urlstr = "sip:ft@example.org",
+	     contact_param = NewEmptyParam
+	    } = new("sip:ft@example.org"),
+
+    autotest:mark(?LINE, "new/1 - 2"),
+    #contact{display_name = none,
+	     urlstr = "sip:ft@example.org",
+	     contact_param = NewEmptyParam
+	    } = new(sipurl:parse("sip:ft@example.org")),
+
+
+    %% new(SipURI, Params)
     %%--------------------------------------------------------------------
+    New2Param = contact_param:to_norm([{"foo", "bar"}]),
+    autotest:mark(?LINE, "new/2 - 1"),
+    #contact{display_name = none,
+	     urlstr = "sip:ft@example.org",
+	     contact_param = New2Param
+	    } = new("sip:ft@example.org", [{"foo", "bar"}]),
 
+    autotest:mark(?LINE, "new/2 - 2"),
+    #contact{display_name = none,
+	     urlstr = "sip:ft@example.org",
+	     contact_param = New2Param
+	    } = new(sipurl:parse("sip:ft@example.org"), [{"foo", "bar"}]),
+
+
+    %% new(DisplayName, URL, Params)
+    %%--------------------------------------------------------------------
+    New3Param = contact_param:to_norm([{"foo", "bar"}]),
+    autotest:mark(?LINE, "new/3 - 1"),
+    #contact{display_name = none,
+	     urlstr = "sip:ft@example.org",
+	     contact_param = New3Param
+	    } = new(none, "sip:ft@example.org", [{"foo", "bar"}]),
+
+    autotest:mark(?LINE, "new/3 - 2"),
+    #contact{display_name = "Test",
+	     urlstr = "sip:ft@example.org",
+	     contact_param = New3Param
+	    } = new("Test", sipurl:parse("sip:ft@example.org"), [{"foo", "bar"}]),
+
+    autotest:mark(?LINE, "new/3 - 3"),
+    {'EXIT', {"contact:new failed, urlstr should be without <>", _}} =
+	(catch new("Test", "<sip:ft@example.org>", [{"foo", "bar"}])),
+
+
+    %% set_display_name(Contact, DispName)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "set_display_name/2 - 1"),
+    #contact{display_name = none} = set_display_name(#contact{display_name = "test"}, none),
+
+    autotest:mark(?LINE, "set_display_name/2 - 2"),
+    #contact{display_name = "test"} = set_display_name(#contact{display_name = none}, "test"),
+
+
+    %% set_urlstr(Contact, URLstr) / set_urlstr(Contact, URI)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "set_urlstr/2 - 1"),
+    #contact{urlstr = "sip:ft@example.org"} = set_urlstr(#contact{}, "sip:ft@example.org"),
+
+    autotest:mark(?LINE, "set_urlstr/2 - 2"),
+    #contact{urlstr = "sip:ft@example.org"} = set_urlstr(#contact{}, sipurl:parse("sip:ft@example.org")),
 
 
     ok.
-
-
-
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
