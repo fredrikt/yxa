@@ -1,4 +1,4 @@
-% This module implements some of the parsing rules needed for
+%% This module implements some of the parsing rules needed for
 %% the BNF defined in RFC 3261 (chapter 25 page 218)
 %%
 %% Note: The functions in this module are assumed to conform STRICTLY
@@ -14,6 +14,7 @@
 -export([
 	 split_fields/2,
 	 split_quoted_string/1,
+	 split_non_quoted/2,
 	 parse_host/1,
 	 parse_hostport/1,
 	 is_alpha/1,
@@ -117,6 +118,60 @@ split_quoted_string2([H | T], _Escape, Res) ->
     split_quoted_string2(T, false, [H | Res]);
 split_quoted_string2([], Escape, Res) ->
     erlang:error(no_end_quote, [Escape, Res]).
+
+
+%%--------------------------------------------------------------------
+%% Function: split_non_quoted(Delim, In)
+%%           Delim = char()
+%%           In = string()
+%% Descrip.: Split In using Delim as delimeter, but don't split on
+%%           delimeters inside quotes.
+%% Returns : {ok, Result}    |
+%%           {error, Reason}
+%%           Result = list() of string()
+%%           Reason = atom()
+%%--------------------------------------------------------------------
+split_non_quoted(Delim, In) ->
+    split_non_quoted2(Delim, In, [], [], _InQuote = false).
+
+%% quoted char found inside quotes, don't treat in any special way
+split_non_quoted2(Delim, [$\\, Char | T], This, Res, InQuote = true) ->
+    split_non_quoted2(Delim, T, [Char, $\\ | This], Res, InQuote);
+
+%% InQuote = false, quote spotted - entering quoted string
+split_non_quoted2(Delim, [34 | T], This, Res, _InQuote = false) ->	%% 34 is "
+    split_non_quoted2(Delim, T, [34 | This], Res, true);
+
+%% InQuote = true and a new quote found, end of quoted string
+split_non_quoted2(Delim, [34 | T], This, Res, _InQuote = true) ->	%% 34 is "
+    split_non_quoted2(Delim, T, [34 | This], Res, false);
+
+%% any other char inside quoted string, don't treat in any special way
+split_non_quoted2(Delim, [H | T], This, Res, InQuote = true) ->
+    split_non_quoted2(Delim, T, [H | This], Res, InQuote);
+
+%% delimeter spotted outside quotes, but This is empty so we just ignore it
+split_non_quoted2(Delim, [Delim | T], _This = [], Res, InQuote = false) ->
+    split_non_quoted2(Delim, T, [], Res, InQuote);
+
+%% delimeter spotted outside quotes, reset This
+split_non_quoted2(Delim, [Delim | T], This, Res, InQuote = false) ->
+    split_non_quoted2(Delim, T, [], [lists:reverse(This) | Res], InQuote);
+
+%% any other char outside quoted string, don't treat in any special way
+split_non_quoted2(Delim, [H | T], This, Res, InQuote = false) ->
+    split_non_quoted2(Delim, T, [H | This], Res, InQuote);
+
+%% end of input, This is empty
+split_non_quoted2(_Delim, [], _This = [], Res, _InQuote = false) ->
+    {ok, lists:reverse(Res)};
+
+%% end of input, if InQuote is not false then the quotes are unbalanced
+split_non_quoted2(_Delim, [], This, Res, _InQuote = false) ->
+    {ok, lists:reverse([lists:reverse(This) | Res])};
+
+split_non_quoted2(_Delim, [], _This, _Res, _InQuote = true) ->
+    {error, unbalanced_quotes}.
 
 
 %%--------------------------------------------------------------------
@@ -599,6 +654,25 @@ test() ->
 	SQS_Res6 -> throw({error, test_case_failed, SQS_Res6})
     end,
 
+
+    %% split_non_quoted(Delim, In)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "split_non_quoted/2 - 1"),
+    %% regular test case
+    {ok, ["foo", "bar"]} = split_non_quoted($;, "foo;bar"),
+
+    autotest:mark(?LINE, "split_non_quoted/2 - 2"),
+    %% with quotes and empty elements, this function does not strip spaces
+    {ok, ["foo\";\" ", "bar"]} = split_non_quoted($;, ";foo\";\" ;;bar;;;"),
+
+    autotest:mark(?LINE, "split_non_quoted/2 - 3"),
+    %% with quotes and empty elements
+    {ok, ["foo \"this is quoted ;\\\" baz \\ quote end here\" ", "bar"]} =
+	split_non_quoted($;, ";foo \"this is quoted ;\\\" baz \\ quote end here\" ;;;bar;"),
+
+    autotest:mark(?LINE, "split_non_quoted/2 - 4"),
+    %% unbalanced quotes
+    {error, unbalanced_quotes} = split_non_quoted($;, ";foo=\"bar"),
 
     %% parse_hostport/1
     %%--------------------------------------------------------------------
