@@ -36,6 +36,12 @@
 	  completed
 	 }).
 
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(APPSERVER_GLUE_TIMEOUT, 1200 * 1000).
+-define(SIPPIPE_TIMEOUT, 900).
+
 
 %%====================================================================
 %% Behaviour functions
@@ -115,7 +121,7 @@ request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin
 			route
 		end,
 	    THandler = transactionlayer:get_handler_for_request(Request),
-	    sippipe:start(THandler, none, Request, Dst, 900)
+	    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT)
     end,
     ok;
 
@@ -158,7 +164,7 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 		    %% XXX check credentials here - our appserver is currently an open relay!
 		    logger:log(normal, "Appserver: ~s -> Not forking, just forwarding (~s)", [LogStr, NoForkReason]),
 		    THandler = transactionlayer:get_handler_for_request(Request),
-		    sippipe:start(THandler, none, Request, PipeDst, 900)
+		    sippipe:start(THandler, none, Request, PipeDst, ?SIPPIPE_TIMEOUT)
 	    end
     end,
     ok.
@@ -260,7 +266,7 @@ create_session_actions(Request, Users, Actions) when is_record(Request, request)
 	    logger:log(error, "Appserver: Received unknown signal after starting appserver_glue worker : ~p",
 		       [Msg]),
 	    create_session_actions(Request, Users, Actions)
-    after 1200 * 1000 ->
+    after ?APPSERVER_GLUE_TIMEOUT ->
 	    %% We should _really_ never get here, but just as an additional safeguard...
 	    logger:log(error, "appserver: ERROR: the appserver_glue process I started (~p) never finished! Exiting.",
 		       [Pid]),
@@ -291,7 +297,7 @@ create_session_nomatch(Request, LogStr) when is_record(Request, request), is_lis
 	    ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
 	    DstList = sipdst:url_to_dstlist(Request#request.uri, ApproxMsgSize, Request#request.uri),
 	    THandler = transactionlayer:get_handler_for_request(Request),
-	    sippipe:start(THandler, none, Request, DstList, 900)
+	    sippipe:start(THandler, none, Request, DstList, ?SIPPIPE_TIMEOUT)
     end.
 
 %%--------------------------------------------------------------------
@@ -420,20 +426,20 @@ locations_to_actions2([], Res) ->
 locations_to_actions2([H | T], Res) when is_record(H, siplocationdb_e) ->
     {ok, Timeout} = yxa_config:get_env(appserver_call_timeout),
     URL = siplocation:to_url(H),
-    CallAction = #sipproxy_action{action=call,
-				  requri=URL,
-				  timeout=Timeout},
+    CallAction = #sipproxy_action{action  = call,
+				  requri  = URL,
+				  timeout = Timeout},
     locations_to_actions2(T, [CallAction | Res]);
 
 locations_to_actions2([{URL, Timeout} | T], Res) when is_record(URL, sipurl), is_integer(Timeout) ->
-    CallAction = #sipproxy_action{action=call,
-				  requri=URL,
-				  timeout=Timeout},
+    CallAction = #sipproxy_action{action  = call,
+				  requri  = URL,
+				  timeout = Timeout},
     locations_to_actions2(T, [CallAction | Res]);
 
 locations_to_actions2([{wait, Timeout} | T], Res) ->
-    WaitAction = #sipproxy_action{action=wait,
-				  timeout=Timeout},
+    WaitAction = #sipproxy_action{action  = wait,
+				  timeout = Timeout},
     locations_to_actions2(T, [WaitAction | Res]).
 
 %%--------------------------------------------------------------------
@@ -451,10 +457,11 @@ locations_to_actions2([{wait, Timeout} | T], Res) ->
 %% "concurrent ringing or not" information
 forward_call_actions([Fwd], Actions, Proto) when is_record(Fwd, sipproxy_forward), is_list(Actions),
 						 is_list(Proto) ->
-    {User, Forwards, Timeout, Localring} = {Fwd#sipproxy_forward.user,
-					    Fwd#sipproxy_forward.forwards,
-					    Fwd#sipproxy_forward.timeout,
-					    Fwd#sipproxy_forward.localring},
+    #sipproxy_forward{user	= User,
+		      forwards	= Forwards,
+		      timeout	= Timeout,
+		      localring	= Localring
+		     } = Fwd,
     ForwardActions = forward_call_actions_create_calls(Forwards, Localring, User, Proto),
     case {Localring, Timeout} of
 	{_, 0} ->
