@@ -72,8 +72,8 @@
 	  actions,			%% list() of sipproxy_action record() - our list of actions
 	  targets,			%% targetlist record(), list of all our targets (ongoing or finished).
 					%% Targets are client transactions.
-	  final_response_sent=false,	%% true | false, have we forwarded a final response yet?
-	  mystate=calling,		%% calling | cancelled | completed | stayalive
+	  final_response_sent = false,	%% true | false, have we forwarded a final response yet?
+	  mystate = calling,		%% calling | cancelled | completed | stayalive
 	  approx_msgsize,		%% integer(), approximate size of requests we send out. Expensive to calculate,
 					%% so we remember it.
 	  timeout			%% integer(), number of seconds to wait for final response after we reach
@@ -148,10 +148,14 @@ start(BranchBase, Parent, Request, Actions, Timeout)
 		  case keylist:fetch('route', Request#request.header) of
 		      [] ->
 			  EndTime = util:timestamp() + Timeout,
-			  State = #state{parent=Parent, branchbase=BranchBase, timeout=Timeout,
-					 request=Request#request{header=NewHeader},
-					 actions=Actions, targets=targetlist:empty(),
-					 approx_msgsize=ApproxMsgSize},
+			  State = #state{parent		= Parent,
+					 branchbase	= BranchBase,
+					 timeout	= Timeout,
+					 request	= Request#request{header = NewHeader},
+					 actions	= Actions,
+					 targets	= targetlist:empty(),
+					 approx_msgsize	= ApproxMsgSize
+					},
 			  %% We need to trap exits so that we can handle client transcations failing, and
 			  %% cancel all client transactions if the parent crashes.
 			  TrapExit = process_flag(trap_exit, true),
@@ -209,9 +213,9 @@ start_check_actions(Actions) when is_list(Actions) ->
 	    ok
     end.
 
-start_check_actions2([#sipproxy_action{action=call} | T], Calls, Waits) ->
+start_check_actions2([#sipproxy_action{action = call} | T], Calls, Waits) ->
     start_check_actions2(T, Calls + 1, Waits);
-start_check_actions2([#sipproxy_action{action=wait} | T], Calls, Waits) ->
+start_check_actions2([#sipproxy_action{action = wait} | T], Calls, Waits) ->
     start_check_actions2(T, Calls, Waits + 1);
 start_check_actions2([], Calls, Waits) ->
     {ok, Calls, Waits}.
@@ -247,7 +251,9 @@ fork(_EndTime, State) when is_record(State, state), State#state.actions == [] ->
 
 		logger:log(debug, "sipproxy: waiting ~p seconds for any final responses", [State#state.timeout]),
 		NewEndTime = util:timestamp() + State#state.timeout,
-		case process_wait(NewEndTime, State#state{mystate=stayalive, targets=NewTargets}) of
+		case process_wait(NewEndTime, State#state{mystate = stayalive,
+							  targets = NewTargets}
+				 ) of
 		    {discontinue, NewState1_1} when is_record(NewState1_1, state) ->
 			logger:log(debug, "sipproxy: final responses wait is over (discontinue), exiting."),
 			NewState1_1;
@@ -303,17 +309,19 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
 					       CallTimeout, DstList, Targets);
 			    {error, E} ->
 				logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
-				fork(EndTime, State#state{actions=TAction})
+				fork(EndTime, State#state{actions = TAction})
 			end,
-		    fork(EndTime, State#state{actions=TAction, targets=NewTargets});
+		    fork(EndTime, State#state{actions = TAction,
+					      targets = NewTargets
+					     });
 		[] ->
 		    logger:log(normal, "~s: Target URI ~s did not resolve to any destinations we could use - ignoring",
 			       [Branch, sipurl:print(CallURI)]),
-		    fork(EndTime, State#state{actions=TAction});
+		    fork(EndTime, State#state{actions = TAction});
 		{error, Reason} ->
 		    logger:log(normal, "~s: Failed resolving URI ~s - ignoring this target (error : ~p)",
 			       [Branch, sipurl:print(CallURI), Reason]),
-		    fork(EndTime, State#state{actions=TAction})
+		    fork(EndTime, State#state{actions = TAction})
 	    end;
 	wait ->
 	    Time = HAction#sipproxy_action.timeout,
@@ -335,14 +343,15 @@ make_new_target_request(Request, URI, User) when is_record(Request, request), is
     case lists:keysearch(URI#sipurl.host, 1, PeerAuthL) of
 	{value, {_Host, Secret}} ->
 	    NewHeader = sipauth:add_x_yxa_peer_auth(Request#request.method, URI, Request#request.header, User, Secret),
-	    Request#request{uri=URI,
-			    header=NewHeader};
+	    Request#request{uri    = URI,
+			    header = NewHeader
+			   };
 	false ->
-	    Request#request{uri=URI}
+	    Request#request{uri = URI}
     end;
 make_new_target_request(Request, URI, _User) when is_record(Request, request), is_record(URI, sipurl) ->
     %% non-list User
-    Request#request{uri=URI}.
+    Request#request{uri = URI}.
 
 %%--------------------------------------------------------------------
 %% Function: cancel_pending_targets(Targets, ExtraHeaders)
@@ -453,7 +462,9 @@ process_signal({cancel_pending, ExtraHeaders}, State) when is_record(State, stat
 		     calling -> cancelled;
 		     S -> S
 		 end,
-    NewState = State#state{targets=NewTargets, mystate=NewMyState},
+    NewState = State#state{targets = NewTargets,
+			   mystate = NewMyState
+			  },
     {ok, NewState};
 
 %%--------------------------------------------------------------------
@@ -478,12 +489,19 @@ process_signal({branch_result, ClientPid, Branch, NewTState, Response}, State)
     SPResponse =
 	case Response of
 	    _ when is_record(Response, response) ->
-		#sp_response{status = Response#response.status, reason = Response#response.reason,
-			     header = Response#response.header, body = Response#response.body,
-			     created = false};
+		#sp_response{status  = Response#response.status,
+			     reason  = Response#response.reason,
+			     header  = Response#response.header,
+			     body    = Response#response.body,
+			     created = false
+			    };
 	    {Status, Reason} when is_integer(Status), is_list(Reason) ->
-		#sp_response{status = Status, reason = Reason, header = keylist:from_list([]),
-			     body = <<>>, created = true}
+		#sp_response{status  = Status,
+			     reason  = Reason,
+			     header  = keylist:from_list([]),
+			     body    = <<>>,
+			     created = true
+			    }
 	end,
     NewState = process_branch_result(ClientPid, Branch, NewTState, SPResponse, State),
     {ok, NewState};
@@ -514,7 +532,7 @@ process_signal({clienttransaction_terminating, ClientPid, Branch}, State) when i
 		NewTargets = targetlist:update_target(NewTarget1, Targets),
 		logger:log(debug, "sipproxy: Received notification that client transaction with pid ~p has terminated. "
 			   "Targetlist :~n~p", [ClientPid, targetlist:debugfriendly(NewTargets)]),
-		State#state{targets=NewTargets}
+		State#state{targets = NewTargets}
 	end,
     {ok, NewState};
 
@@ -545,8 +563,10 @@ process_signal({showtargets}, State) when is_record(State, state) ->
 %%
 %% final_response_sent == 'true' or mystate /= 'calling'
 %%
-process_signal({'EXIT', Pid, normal}, #state{parent=Parent, final_response_sent=FRS,
-					     mystate=MyState}=State)
+process_signal({'EXIT', Pid, normal}, #state{parent			= Parent,
+					     final_response_sent	= FRS,
+					     mystate			= MyState
+					    } = State)
   when Pid == Parent, FRS == true; MyState /= calling ->
     %% Parent exited when we are finishing up. This is considered normal, so we just exit too.
     {quit, State};
@@ -554,7 +574,7 @@ process_signal({'EXIT', Pid, normal}, #state{parent=Parent, final_response_sent=
 %%
 %% final_response_sent == 'false', or mystate is 'calling'
 %%
-process_signal({'EXIT', Pid, Reason}, #state{parent=Parent}) when Pid == Parent ->
+process_signal({'EXIT', Pid, Reason}, #state{parent = Parent}) when Pid == Parent ->
     %% Our parent has exited on us, either abnormally or before we sent a final response.
     %% Exit straight away since there is no point in us staying alive. The client branches
     %% are linked to this process, and will cancel themselves when we exit, if they need to.
@@ -594,7 +614,10 @@ process_signal({'EXIT', Pid, Reason}, State) when is_record(State, state) ->
 		    {_, {siperror, Status, SipReason}} ->
 			logger:log(error, "sipproxy: Branch with pid ~p FAILED : ~p ~s",
 				   [Pid, Status, SipReason]),
-			SPR = #sp_response{status=Status, reason=SipReason, created=true},
+			SPR = #sp_response{status  = Status,
+					   reason  = SipReason,
+					   created = true
+					  },
 			targetlist:set_endresult(ThisTarget, SPR);
 		    {_, {siperror, Status, SipReason, ExtraHeaders}} ->
 			%% We currently have no means to do anything intelligent with
@@ -602,17 +625,23 @@ process_signal({'EXIT', Pid, Reason}, State) when is_record(State, state) ->
 			logger:log(error, "sipproxy: Branch with pid ~p FAILED : ~p ~s"
 				   " (discarding extra headers : ~p)",
 				   [Pid, Status, SipReason, ExtraHeaders]),
-			SPR = #sp_response{status=Status, reason=SipReason, created=true},
+			SPR = #sp_response{status  = Status,
+					   reason  = SipReason,
+					   created = true
+					  },
 			targetlist:set_endresult(ThisTarget, SPR);
 		    _ ->
 			logger:log(error, "sipproxy: Branch with pid ~p exited ABNORMALLY:~n~p",
 				   [Pid, Reason]),
-			SPR = #sp_response{status=500, reason="Server Internal Error", created=true},
+			SPR = #sp_response{status  = 500,
+					   reason  = "Server Internal Error",
+					   created = true
+					  },
 			targetlist:set_endresult(ThisTarget, SPR)
 		end,
 	    NewTarget = targetlist:set_state(NewTarget1, terminated),
 	    NewTargets = targetlist:update_target(NewTarget, Targets),
-	    {ok, State#state{targets=NewTargets}}
+	    {ok, State#state{targets = NewTargets}}
     end;
 
 process_signal(Msg, State) when is_record(State, state) ->
@@ -768,7 +797,7 @@ end_processing(_EndTime, State) when is_record(State, state) ->
 %%
 %% AllTerminated == true, final_response_sent == false, mystate == calling or cancelled
 %%
-report_upstreams(true, #state{final_response_sent=false, mystate=MyState}=State)
+report_upstreams(true, #state{final_response_sent = false, mystate = MyState} = State)
   when MyState == calling; MyState == cancelled ->
     Responses = targetlist:get_responses(State#state.targets),
     logger:log(debug, "sipproxy: All targets are terminated, evaluating responses :~n~p",
@@ -790,13 +819,22 @@ report_upstreams(true, #state{final_response_sent=false, mystate=MyState}=State)
 			logger:log(normal, "sipproxy: Turning best response '503 ~s' into a "
 				   "'500 Only response to fork was 503'", [R503#response.reason]),
 			{500, "Only response to fork was 503"};
-		    #sp_response{created=false}=SP_FR ->
-			{Status, Reason, Header, Body} = {SP_FR#sp_response.status, SP_FR#sp_response.reason,
-							  SP_FR#sp_response.header, SP_FR#sp_response.body},
+		    #sp_response{created = false} = SP_FR ->
+			#sp_response{status = Status,
+				     reason = Reason,
+				     header = Header,
+				     body   = Body
+				    } = SP_FR,
 			logger:log(debug, "sipproxy: Picked best response '~p ~s' (received)", [Status, Reason]),
-			#response{status=Status, reason=Reason, header=Header, body=Body};
+			#response{status = Status,
+				  reason = Reason,
+				  header = Header,
+				  body = Body
+				 };
 		    SP_FR when is_record(SP_FR, sp_response) ->
-			{Status, Reason} = {SP_FR#sp_response.status, SP_FR#sp_response.reason},
+			#sp_response{status = Status,
+				     reason = Reason
+				    } = SP_FR,
 			logger:log(debug, "sipproxy: Picked best response '~p ~s' (created)", [Status, Reason]),
 			{Status, Reason}
 		end
@@ -805,7 +843,9 @@ report_upstreams(true, #state{final_response_sent=false, mystate=MyState}=State)
     logger:log(debug, "sipproxy: Sending the result to parent Pid ~p.", [Parent]),
     %% ForwardResponse is either a response record() or a {Status, Reason} tuple
     util:safe_signal("sipproxy: ", Parent, {sipproxy_all_terminated, self(), ForwardResponse}),
-    State#state{mystate=completed, final_response_sent=true};
+    State#state{mystate		    = completed,
+		final_response_sent = true
+	       };
 %%
 %% AllTerminated = false, final_response_sent == true, or mystate is not calling or cancelled
 %%
@@ -816,7 +856,9 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 									    is_record(SPResponse, sp_response),
 									    is_record(State, state) ->
     Targets = State#state.targets,
-    {Status, Reason} = {SPResponse#sp_response.status, SPResponse#sp_response.reason},
+    #sp_response{status = Status,
+		 reason = Reason
+		} = SPResponse,
     case targetlist:get_using_branch(Branch, Targets) of
 	none ->
 	    logger:log(error, "sipproxy: Received branch result '~p ~s' from an unknown "
@@ -826,7 +868,9 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 	    %% By matching on ClientPid here, we make sure we got the signal from
 	    %% the right process. XXX handle wrong pid more gracefully than crashing!
 	    [ClientPid, ResponseToRequest, OldTState] = targetlist:extract([pid, request, state], ThisTarget),
-	    {RMethod, RURI} = {ResponseToRequest#request.method, ResponseToRequest#request.uri},
+	    #request{method = RMethod,
+		     uri    = RURI
+		    } = ResponseToRequest,
 	    NewTarget1 = targetlist:set_state(ThisTarget, NewTState),
 	    NewTarget2 = targetlist:set_endresult(NewTarget1, SPResponse),	% XXX only do this for final responses?
 	    NewTargets1 = targetlist:update_target(NewTarget2, Targets),
@@ -841,7 +885,7 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 			       "My Targets-list (response context) now contain :~n~p",
 			       [OldTState, NewTState, targetlist:debugfriendly(NewTargets)])
 	    end,
-	    NewState2 = State#state{targets=NewTargets},
+	    NewState2 = State#state{targets = NewTargets},
 	    NewState3 = check_forward_immediately(ResponseToRequest, SPResponse, Branch, NewState2),
 	    NewState4 = cancel_pending_if_invite_2xx_or_6xx(RMethod, Status, Reason, NewState3),
 	    NewState4
@@ -861,7 +905,7 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 %%           2xx responses to INVITE.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-check_forward_immediately(_Request, #sp_response{status=Status, created=true}, _Branch, _State)
+check_forward_immediately(_Request, #sp_response{status = Status, created = true}, _Branch, _State)
   when Status == 401; Status == 407 ->
     %% We can't create authorization requests in client transactions! Firstly, it
     %% makes no sense - secondly we can't aggregate any authorization headers into
@@ -869,13 +913,18 @@ check_forward_immediately(_Request, #sp_response{status=Status, created=true}, _
     throw({error, sipproxy_cant_create_auth_response});
 check_forward_immediately(Request, SPResponse, Branch, State)
   when is_record(Request, request), is_record(SPResponse, sp_response), is_record(State, state) ->
-    {Method, URI} = {Request#request.method, Request#request.uri},
-    {Status, Reason} = {SPResponse#sp_response.status, SPResponse#sp_response.reason},
+    #request{method = Method,
+	     uri    = URI
+	    } = Request,
+    #sp_response{status = Status,
+		 reason = Reason
+		} = SPResponse,
     case forward_immediately(Method, Status, State) of
 	{true, NewState} ->
 	    Parent = NewState#state.parent,
 	    logger:log(debug, "sipproxy: Forwarding response '~p ~s' (in response to ~s ~s) to my parent (pid ~p) "
 		       "immediately", [Status, Reason, Method, sipurl:print(URI), Parent]),
+
 	    %% RFC 3261 16.7 bullet 5 (Check response for forwarding) says we MUST process any
 	    %% response chosen for immediate forwarding as described in
 	    %% "Aggregate Authorization Header Field Values" through "Record-Route".
@@ -890,8 +939,11 @@ check_forward_immediately(Request, SPResponse, Branch, State)
 		    true ->
 			{FwdSPR#sp_response.status, FwdSPR#sp_response.reason};
 		    false ->
-			#response{status = FwdSPR#sp_response.status, reason = FwdSPR#sp_response.reason,
-				  header = FwdSPR#sp_response.header, body = FwdSPR#sp_response.body}
+			#response{status = FwdSPR#sp_response.status,
+				  reason = FwdSPR#sp_response.reason,
+				  header = FwdSPR#sp_response.header,
+				  body   = FwdSPR#sp_response.body
+				 }
 		end,
 	    util:safe_signal("sipproxy: ", Parent, {sipproxy_response, self(), Branch, FwdResponse}),
 	    NewState;
@@ -924,13 +976,13 @@ forward_immediately(_Method, Status, State) when is_record(State, state), Status
     {true, State};
 forward_immediately("INVITE", Status, State) when is_record(State, state), Status >= 200, Status =< 299 ->
     %% 2xx responses to INVITE are always forwarded immediately, regardless of final_response_sent
-    NewState = State#state{mystate=completed, final_response_sent=true},
+    NewState = State#state{mystate = completed, final_response_sent = true},
     {true, NewState};
-forward_immediately(_Method, Status, #state{final_response_sent=FRS}=State)
+forward_immediately(_Method, Status, #state{final_response_sent = FRS} = State)
   when FRS /= true, Status >= 200, Status =< 299 ->
     %% 2xx responses to non-INVITE are forwarded immediately unless we have already
     %% forwarded some other final response already (implicitly another 2xx).
-    NewState = State#state{mystate=completed, final_response_sent=true},
+    NewState = State#state{mystate = completed, final_response_sent = true},
     {true, NewState};
 forward_immediately(_Method, Status, State) when is_record(State, state), Status =< 699 ->
     %% No other final responses are forwarded immediately
@@ -955,7 +1007,7 @@ cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, _Reason, State) when is_re
     ReasonStr = "SIP; cause=200; text=\"Call completed elsewhere\"",
     ExtraHeaders = [{"Reason", [ReasonStr]}],
     NewTargets = cancel_pending_targets(State#state.targets, ExtraHeaders),
-    State#state{targets=NewTargets};
+    State#state{targets = NewTargets};
 cancel_pending_if_invite_2xx_or_6xx(_Method, Status, _Reason, State) when is_record(State, state), Status =< 599 ->
     %% non-INVITE and not 6xx
     State;
@@ -964,7 +1016,7 @@ cancel_pending_if_invite_2xx_or_6xx(_Method, Status, Reason, State) when is_reco
     ReasonStr = lists:flatten( io_lib:format("SIP; cause=~p; text=~p", [Status, Reason]) ),
     ExtraHeaders = [{"Reason", [ReasonStr]}],
     NewTargets = cancel_pending_targets(State#state.targets, ExtraHeaders),
-    State#state{targets=NewTargets}.
+    State#state{targets = NewTargets}.
 
 %%--------------------------------------------------------------------
 %% Function: printable_responses(Responses)
@@ -1037,23 +1089,25 @@ make_final_response(Responses) ->
 %%
 %% BestResponse status == 407, Proxy-Authenticate
 %%
-aggregate_authreqs(#sp_response{status=407}=BestResponse, Responses) when is_list(Responses) ->
-    {Reason, Header} = {BestResponse#sp_response.reason, BestResponse#sp_response.header},
+aggregate_authreqs(#sp_response{status = 407} = BestResponse, Responses) when is_list(Responses) ->
+    #sp_response{reason = Reason,
+		 header = Header} = BestResponse,
     ProxyAuth = collect_auth_headers(407, 'proxy-authenticate', Responses),
     logger:log(debug, "Aggregating ~p Proxy-Authenticate headers into response '407 ~s'",
 	       [length(ProxyAuth), Reason]),
     NewHeader = keylist:set("Proxy-Authenticate", ProxyAuth, Header),
-    BestResponse#sp_response{header=NewHeader};
+    BestResponse#sp_response{header = NewHeader};
 %%
 %% BestResponse status == 401, WWW-Authenticate
 %%
 aggregate_authreqs(#sp_response{status=401}=BestResponse, Responses) when is_list(Responses) ->
-    {Reason, Header} = {BestResponse#sp_response.reason, BestResponse#sp_response.header},
+    #sp_response{reason = Reason,
+		 header = Header} = BestResponse,
     WWWAuth = collect_auth_headers(401, 'www-authenticate', Responses),
     logger:log(debug, "Aggregating ~p WWW-Authenticate headers into response '401 ~s'",
 	       [length(WWWAuth), Reason]),
     NewHeader = keylist:set("WWW-Authenticate", WWWAuth, Header),
-    BestResponse#sp_response{header=NewHeader};
+    BestResponse#sp_response{header = NewHeader};
 %%
 %% BestResponse status is neither 401 nor 407
 %%
