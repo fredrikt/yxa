@@ -99,23 +99,23 @@ request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, s
 request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
-	    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, " ++
+	    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, "
 		       "answer 481 Call/Transaction Does Not Exist", [LogStr]),
 	    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist");
 	SIPuser ->
-	    logger:log(normal, "Appserver: ~s -> Forwarding CANCEL not matchin any known transaction (SIP user ~p)",
+	    logger:log(normal, "Appserver: ~s -> Forwarding CANCEL not matching any known transaction (SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    DstList =
+	    Dst =
 		case keylist:fetch('route', Request#request.header) of
-		    true ->
-			route;
-		    false ->
+		    [] ->
 			ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
 			URI = Request#request.uri,
-			sipdst:url_to_dstlist(URI, ApproxMsgSize, URI)
+			sipdst:url_to_dstlist(URI, ApproxMsgSize, URI);
+		    _Route ->
+			route
 		end,
 	    THandler = transactionlayer:get_handler_for_request(Request),
-	    sippipe:start(THandler, none, Request, DstList, 900)
+	    sippipe:start(THandler, none, Request, Dst, 900)
     end,
     ok;
 
