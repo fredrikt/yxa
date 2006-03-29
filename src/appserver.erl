@@ -78,7 +78,7 @@ init() ->
 %%
 %% REGISTER
 %%
-request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     logger:log(normal, "Appserver: ~s Method not applicable here -> 403 Forbidden", [LogStr]),
     transactionlayer:send_response_request(Request, 403, "Forbidden"),
     ok;
@@ -86,7 +86,7 @@ request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Orig
 %%
 %% ACK
 %%
-request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding ACK statelessly (unknown SIP user)",
@@ -102,28 +102,10 @@ request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, s
 %%
 %% CANCEL
 %%
-request(#request{method="CANCEL"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
-    case local:get_user_with_contact(Request#request.uri) of
-	none ->
-	    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, "
-		       "answer 481 Call/Transaction Does Not Exist", [LogStr]),
-	    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist");
-	SIPuser ->
-	    logger:log(normal, "Appserver: ~s -> Forwarding CANCEL not matching any known transaction (SIP user ~p)",
-		       [LogStr, SIPuser]),
-	    Dst =
-		case keylist:fetch('route', Request#request.header) of
-		    [] ->
-			ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
-			URI = Request#request.uri,
-			sipdst:url_to_dstlist(URI, ApproxMsgSize, URI);
-		    _Route ->
-			route
-		end,
-	    THandler = transactionlayer:get_handler_for_request(Request),
-	    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT)
-    end,
-    ok;
+request(#request{method = "CANCEL"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+    logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, "
+	       "answer 481 Call/Transaction Does Not Exist", [LogStr]),
+    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist");
 
 %%
 %% Anything but REGISTER, ACK and CANCEL
@@ -154,7 +136,7 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 			end;
 		    _ ->
 			%% Request has a Route header, this proxy probably added a Record-Route in a previous
-			%% fork, and this request should just be proxyed - not forked.	
+			%% fork, and this request should just be proxyed - not forked.
 			{false, "Route-header present", route}
 		end,
 	    case ShouldFork of
@@ -181,7 +163,7 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
     %% RFC 3261 16.7 says we MUST act like a stateless proxy when no
     %% transaction can be found
-    {Status, Reason} = {Response#response.status, Response#response.reason},
+    #response{status = Status, reason = Reason} = Response,
     logger:log(normal, "incomingproxy: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
 	       [LogStr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
@@ -202,7 +184,7 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
 %%           transaction does not exist.
 %% Returns : Does not matter.
 %%--------------------------------------------------------------------
-request_to_me(#request{method="OPTIONS"}=Request, LogTag) ->
+request_to_me(#request{method = "OPTIONS"} = Request, LogTag) ->
     logger:log(normal, "~s: appserver: OPTIONS to me -> 200 OK", [LogTag]),
     logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
 	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
@@ -315,7 +297,7 @@ create_session_nomatch(Request, LogStr) when is_record(Request, request), is_lis
 %%           to 'false' to not end up here again.
 %% Returns : void() | throw({siperror, ...})
 %%--------------------------------------------------------------------
-create_session_cpl(Request, Origin, LogStr, User, Graph) 
+create_session_cpl(Request, Origin, LogStr, User, Graph)
   when is_record(Request, request), is_record(Origin, siporigin), is_list(LogStr), is_list(User) ->
     Res = interpret_cpl:process_cpl_script(Request, User, Graph, incoming),
     case Res of
