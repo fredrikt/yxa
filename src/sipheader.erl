@@ -53,6 +53,8 @@
 	 remove_loop_cookie/1,
 	 via_is_equal/2,
 	 via_is_equal/3,
+	 is_supported/2,
+	 is_required/2,
 
 	 test/0
 	]).
@@ -112,50 +114,50 @@ comma(String) ->
 
 
 %% start of quoted uri
-comma(Parsed, [$< | Rest], false, false) ->
+comma(Parsed, [$< | Rest], _InQuote = false, false) ->
     comma([$< | Parsed], Rest, false, true);
 
 %% end of quoted uri
-comma(Parsed, [$> | Rest], false, true) ->
+comma(Parsed, [$> | Rest], _InQuote = false, true) ->
     comma([$> | Parsed], Rest, false, false);
 
 %% inside quoted uri - ignore comma or any other special chars
-comma(Parsed, [Char | Rest], false, true) ->
+comma(Parsed, [Char | Rest], _InQuote = false, true) ->
     comma([Char | Parsed], Rest, false, true);
 
 %% -------------
 
 %% an escape code e.g. "\," has been found, don't treat it in any special manner
 %% only done inside a quoted segment of the string
-comma(Parsed, [$\\, Char | Rest], true, false) ->
+comma(Parsed, [$\\, Char | Rest], _InQuote = true, false) ->
     comma([Char, $\\ | Parsed], Rest, true, false);
 
 %% Inquote = false, we have now entered inside a quoted ("...") string segment
-comma(Parsed, [$\" | Rest], false, false) ->
+comma(Parsed, [$\" | Rest], _InQuote = false, false) ->
     comma([$\" | Parsed], Rest, true, false);
 
 %% Inquote = true and a new quote (") found - end of quoted string segment
-comma(Parsed, [$\" | Rest], true, false) ->
+comma(Parsed, [$\" | Rest], _InQuote = true, false) ->
     comma([$\" | Parsed], Rest, false, false);
 
 %% regular char, store in current string
-comma(Parsed, [Char | Rest], true, false) ->
+comma(Parsed, [Char | Rest], _InQuote = true, false) ->
     comma([Char | Parsed], Rest, true, false);
 
 %% -------------
 
 %% Inquote = false, so comma is a comma that splits string
 %% start looking for the next one
-comma(Parsed, [$, | Rest], false, false) ->
+comma(Parsed, [$, | Rest], _InQuote = false, false) ->
     [lists:reverse(string:strip(Parsed, both)) | comma([], Rest, false, false)];
 
 %% regular char, store in current string
-comma(Parsed, [Char | Rest], false, false) ->
+comma(Parsed, [Char | Rest], _InQuote = false, false) ->
     comma([Char | Parsed], Rest, false, false);
 
 %% end of string, clean up last comma separated entry (it's an error
 %% if Inquote or InUriQuote = true, the quotes are then unbalanced)
-comma(Parsed, [], false, false) ->
+comma(Parsed, [], _InQuote = false, false) ->
     [lists:reverse(string:strip(Parsed, both))].
 
 %%--------------------------------------------------------------------
@@ -408,6 +410,8 @@ auth_print(Auth, Stale) when is_tuple(Auth), is_atom(Stale) ->
 %%           "Digest username=\"test\",realm=\"example.org\" ...",
 %%           a SIP message can have multiple of those header values
 %%           in it. This function only handles one at a time.
+%% XXX We should preserve the type in the repsonse as well. Define a
+%% new record for parsed authentication data and use that.
 %%--------------------------------------------------------------------
 auth(In) when is_list(In) ->
     %% lowercase first word (to implement case insensitivity)
@@ -714,6 +718,8 @@ get_server_transaction_id(Request) ->
 
 guarded_get_server_transaction_id(Request) when is_record(Request, request) ->
     TopVia = sipheader:topvia(Request#request.header),
+    %% XXX the branch is actually a token and should apparently be compared case-insensitively
+    %% http://bugs.sipit.net/show_bug.cgi?id=661
     Branch = get_via_branch(TopVia),
     case Branch of
 	"z9hG4bK" ++ _RestOfBranch ->
@@ -823,6 +829,8 @@ remove_branch(Via) when is_record(Via, via) ->
 %% Returns : Branch = string() | none
 %%--------------------------------------------------------------------
 get_via_branch(TopVia) when is_record(TopVia, via) ->
+    %% XXX lowercase result since branches are to be compared case insensitively?
+    %% http://bugs.sipit.net/show_bug.cgi?id=661
     Branch = get_via_branch_full(TopVia),
     remove_loop_cookie(Branch).
 
@@ -926,6 +934,8 @@ via_is_equal(A, B, [port | _T]) when is_record(A, via), is_record(B, via) ->
 via_is_equal(A, B, [parameters | T]) when is_record(A, via), is_record(B, via) ->
     %% XXX we should probably do this case insensitive or whatever, but for now
     %% we just compare that the two Via's sorted parameters are identical.
+    %% XXX yes, at least the branch parameter is case insensitive
+    %% see RFC3261 section 7.3.1. 'When comparing header fields...'
     Alist = lists:sort(A#via.param),
     Blist = lists:sort(B#via.param),
     case Alist of
@@ -941,6 +951,27 @@ via_is_equal(A, B, [parameters | T]) when is_record(A, via), is_record(B, via) -
 via_is_equal(A, B, []) when is_record(A, via), is_record(B, via) ->
     true.
 
+%%--------------------------------------------------------------------
+%% Function: is_supported(Extension, Header)
+%%           Extension = string()
+%%           Header    = keylist record()
+%% Descrip.: Check if Extension appears in a Supported: header.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_supported(Extension, Header) when is_list(Extension), is_record(Header, keylist) ->
+    Supported = keylist:fetch('supported', Header),
+    lists:member(Extension, Supported).
+
+%%--------------------------------------------------------------------
+%% Function: is_required(Extension, Header)
+%%           Extension = string()
+%%           Header    = keylist record()
+%% Descrip.: Check if Extension appears in a Required: header.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_required(Extension, Header) when is_list(Extension), is_record(Header, keylist) ->
+    Supported = keylist:fetch('require', Header),
+    lists:member(Extension, Supported).
 
 %%====================================================================
 %% Behaviour functions
@@ -1670,6 +1701,31 @@ test() ->
 
     %% test httparg(String)
     %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "httparg/1 - 1"),
     ["bar","baz=true","foo"] = dict_to_param( httparg("foo&bar&baz=true") ),
+
+    %% is_supported(Extension, Header)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "is_supported/2 - 1"),
+    true = is_supported("foo", keylist:from_list([{"Supported", ["foo", "bar"]}])),
+
+    autotest:mark(?LINE, "is_supported/2 - 2"),
+    false = is_supported("test", keylist:from_list([{"Supported", ["foo", "bar"]}])),
+
+    autotest:mark(?LINE, "is_supported/2 - 3"),
+    false = is_supported("test", keylist:from_list([])),
+
+
+    %% is_required(Extension, Header)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "is_required/2 - 1"),
+    true = is_required("foo", keylist:from_list([{"Require", ["foo", "bar"]}])),
+
+    autotest:mark(?LINE, "is_required/2 - 2"),
+    false = is_required("test", keylist:from_list([{"Require", ["foo", "bar"]}])),
+
+    autotest:mark(?LINE, "is_required/2 - 3"),
+    false = is_required("test", keylist:from_list([])),
+    
 
     ok.
