@@ -15,7 +15,9 @@
 	 run_cover/1,
 	 fail/1,
 	 mark/2,
-	 mark/3
+	 mark/3,
+
+	 aggregate_coverage/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -23,13 +25,14 @@
 %%--------------------------------------------------------------------
 -export([
 	 test_module2/2,
-	 fake_logger_loop/0
+	 fake_logger_loop/1
 	]).
 
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
 -include("sipsocket.hrl").
+-include("phone.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -109,7 +112,7 @@ run([Mode]) ->
 	    io:format("Faking Yxa runtime environment...~n"),
 	    %%mnesia:start(),
 	    %%directory:start_link(),
-	    Logger = spawn(?MODULE, fake_logger_loop, []),
+	    Logger = spawn(?MODULE, fake_logger_loop, [false]),
 	    register(logger, Logger),
 
 	    {ok, _CfgPid} = yxa_config:start_link({autotest, incomingproxy}),
@@ -132,8 +135,20 @@ run([Mode]) ->
 									 }}
 		      ),
 
-	    ets:new(yxa_hooks, [named_table, set]);
-	_ -> ok
+	    ets:new(yxa_hooks, [named_table, set]),
+
+
+	    case mnesia:system_info(is_running) of
+		yes ->
+		    ok;
+		no ->
+		    io:format("Starting Mnesia..."),
+		    ok = mnesia:start(),
+		    %erlang:put(test_started_mnesia, true),
+		    io:format("ok~n")
+	    end;
+	_ ->
+	    ok
     end,
 
     {{Year,Month,Day},{Hour,Min,_Sec}} = calendar:local_time(),
@@ -145,7 +160,7 @@ run([Mode]) ->
     io:format("**********************************************************************~n"),
     io:format("*                      AUTOTEST STARTED            ~s  *~n",[TimeStr]),
     io:format("**********************************************************************~n"),
-    Results = [{Module, test_module(Module)} || Module <- ?TEST_MODULES],
+    Results = [{Module, test_module(Module)} || Module <- get_test_modules()],
 
 
     io:format("~n"),
@@ -172,6 +187,15 @@ run([Mode]) ->
     %% temp fix (?) to ensure that everything gets printed before halt/1 terminates erts
     timer:sleep(1000), % 1s
 
+%    case erlang:erase(test_started_mnesia) of
+%	true ->
+%	    io:format("~nStopping Mnesia since I started it..."),
+%	    stopped = mnesia:stop(),
+%	    io:format("ok~n");
+%	_ ->
+%	    ok
+%    end,
+    
     if
 	Status == error, Mode == shell -> erlang:halt(1);
 	Status == ok, Mode == shell -> erlang:halt(0);
@@ -270,7 +294,9 @@ fail_on_leftover_messages(Res) when is_list(Res) ->
 %% Returns : -
 %%--------------------------------------------------------------------
 run_cover([Mode]) ->
-    io:format("Cover-compiling ~p modules : ", [length(?TEST_MODULES)]),
+    TestModules = get_test_modules(),
+
+    io:format("Cover-compiling ~p modules : ", [length(TestModules)]),
 
     %% cover-compile all our test modules
     lists:foldl(fun(Module, Num) ->
@@ -282,14 +308,14 @@ run_cover([Mode]) ->
 				io:format(".")
 			end,
 			Num + 1
-		end, 0, ?TEST_MODULES),
-    io:format("~p~n", [length(?TEST_MODULES)]),
+		end, 0, TestModules),
+    io:format("~p~n", [length(TestModules)]),
 
     %% Run the tests
     Status = run([erl]),
 
     %% Calculate coverage
-    {ok, CoveredLines, TotalLines, ModuleStats} = aggregate_coverage(?TEST_MODULES),
+    {ok, CoveredLines, TotalLines, ModuleStats} = aggregate_coverage(TestModules),
 
     io:format("~n"),
     io:format("======================================================================~n"),
@@ -298,7 +324,7 @@ run_cover([Mode]) ->
 
     put(autotest_result, ok),
 
-    F = fun({Module, Percent}) ->
+    F = fun({Module, Percent, _Covered, _NotCovered}) ->
 		io:format("~25w: ~.1f%~n", [Module, Percent])
 	end,
     lists:foreach(F, lists:reverse(
@@ -308,7 +334,7 @@ run_cover([Mode]) ->
     TotalPercent = (CoveredLines / TotalLines * 100),
 
     io:format("~nTests covered ~p out of ~p lines of code in ~p modules (~.1f%)~n~n",
-	      [CoveredLines, TotalLines, length(?TEST_MODULES), TotalPercent]),
+	      [CoveredLines, TotalLines, length(TestModules), TotalPercent]),
 
     if
 	Status == error, Mode == shell -> erlang:halt(1);
@@ -357,19 +383,27 @@ mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: fake_logger_loop()
+%% Function: fake_logger_loop(Enabled)
+%%           Enabled = bool(), output to console or not?
 %% Descrip.: Main loop for a process that does nothing more than
 %%           registers itself as 'logger'. This is needed when this
 %%           module is executed from a unix-shell, instead of from an
 %%           erlang prompt with an Yxa application running.
 %% Returns : does not return.
 %%--------------------------------------------------------------------
-fake_logger_loop() ->
+fake_logger_loop(Enabled) ->
     receive
 	exit ->
 	    ok;
+	{'$gen_cast', {log, _Level, Data}} when Enabled == true ->
+	    io:format("~s~n", [binary_to_list(Data)]),
+	    fake_logger_loop(Enabled);
+	enable ->
+	    fake_logger_loop(true);
+	disable ->
+	    fake_logger_loop(false);
 	_ ->
-	    fake_logger_loop()
+	    fake_logger_loop(Enabled)
     end.
 
 %%--------------------------------------------------------------------
@@ -389,7 +423,8 @@ aggregate_coverage2([H | T], CoveredLines, TotalLines, ModuleStats) ->
     {ok, Cov, NotCov} = get_module_coverage(H),
     ModLines = Cov + NotCov,
     ModPercent = (Cov / ModLines * 100),
-    NewModuleStats = [{H, ModPercent} | ModuleStats],
+    This = {H, ModPercent, Cov, NotCov},
+    NewModuleStats = [This | ModuleStats],
     aggregate_coverage2(T,
 			CoveredLines + Cov,
 			TotalLines + ModLines,
@@ -435,3 +470,12 @@ remove_test_functions_data2([{{_M, F, _A}, {_Cov, _NotCov}} = H | T]) ->
     end;
 remove_test_functions_data2([]) ->
     [].
+
+
+get_test_modules() ->
+    case os:getenv("YXA_AUTOTEST_MODULES") of
+	Env when is_list(Env) ->
+	    [list_to_atom(Mod) || Mod <- string:tokens(Env, " ")];
+	false ->
+	    ?TEST_MODULES
+    end.
