@@ -90,7 +90,17 @@ phone() ->
 		%% nothing to update
 		Phone
 	end,
-    do_transform_table(Table, F, record_info(fields, phone)).
+    do_transform_table(Table, F, record_info(fields, phone)),
+    
+    case lists:member(#phone.requristr, mnesia:table_info(phone, index)) of
+	true ->
+	    ok;
+	false ->
+	    logger:log(debug, "Startup: Adding 'requristr' index to location database table 'phone'"),
+	    {atomic, ok} = mnesia:add_table_index(phone, #phone.requristr)
+    end,
+
+    ok.
 
 
 %%--------------------------------------------------------------------
