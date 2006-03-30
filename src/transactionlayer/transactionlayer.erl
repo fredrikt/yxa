@@ -33,7 +33,9 @@
 	 send_challenge/4,
 	 store_appdata/2,
 	 get_my_to_tag/1,
-	 debug_show_transactions/0
+	 debug_show_transactions/0,
+
+	 test_get_thandler_self/0
 	]).
 
 -deprecated([
@@ -1089,3 +1091,25 @@ get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
 	{ok, Pid} -> Pid;
 	R -> R
     end.
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+%%test() ->
+%%    ok.
+
+%%--------------------------------------------------------------------
+%% Function: test_get_thandler_self()
+%% Descrip.: Get fake transaction handler pointing at the calling
+%%           process for use in test cases in other modules.
+%% Returns : thandler record()
+%%--------------------------------------------------------------------
+test_get_thandler_self() ->
+    #thandler{pid = self()}.

@@ -31,6 +31,7 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 erl_FILES = \
 	database_call.erl \
 	database_forward.erl \
+	database_gruu.erl \
 	database_regexproute.erl \
 	db_util.erl \
 	phone.erl \
@@ -39,6 +40,7 @@ erl_FILES = \
 imported_hrl_FILES = \
 	../include/database_call.hrl \
 	../include/database_forward.hrl \
+	../include/database_gruu.hrl \
 	../include/database_regexproute.hrl \
 	../include/phone.hrl
 

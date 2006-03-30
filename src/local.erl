@@ -29,6 +29,7 @@
 	 lookup_remote_request/2,
 	 lookupregexproute/1,
 	 lookupuser/1,
+	 lookupuser_gruu/2,
 	 lookupuser_locations/2,
 	 lookup_url_to_locations/1,
 	 lookup_url_to_addresses/2,
@@ -54,7 +55,9 @@
 	 prioritize_locations/2,
 	 homedomain/1,
 	 get_locations_for_users/1,
-	 get_user_with_contact/1
+	 get_user_with_contact/1,
+	 gruu_make_url/4,
+	 is_gruu_url/1
 	]).
 
 %% sipauth
@@ -382,6 +385,24 @@ lookupuser(URL) ->
 		   ).
 
 %%--------------------------------------------------------------------
+%% Function: lookupuser_gruu(URL, GRUU)
+%%           URL  = sipurl record(), Request-URI
+%%           GRUU = string()
+%% Descrip.:
+%% Returns : {proxy, URL}               |
+%%           {relay, URL}               |
+%%           {forward, URL}             |
+%%           {response, Status, Reason} |
+%%           none    |   The user was found but has no locations registered
+%%           nomatch     No such user
+%%--------------------------------------------------------------------
+lookupuser_gruu(URL, GRUU) ->
+    ?CHECK_EXPORTED({lookupuser_gruu, 2},
+		    ?LOCAL_MODULE:lookupuser_gruu(URL, GRUU),
+		    lookup:lookupuser_gruu(URL, GRUU)
+		   ).
+
+%%--------------------------------------------------------------------
 %% Function: lookupuser_locations(Users, URL)
 %%           Users = list() of string(), SIP users to fetch locations
 %%                                       of
@@ -691,6 +712,20 @@ get_user_with_contact(URI) ->
 		    ?LOCAL_MODULE:get_user_with_contact(URI),
 		    siplocation:get_user_with_contact(URI)
 		   ).
+
+%% Returns: URL | undefined
+gruu_make_url(User, InstanceId, GRUU, To) ->
+    ?CHECK_EXPORTED({gruu_make_url, 4},
+		    ?LOCAL_MODULE:gruu_make_url(User, InstanceId, GRUU, To),
+		    undefined
+		   ).
+
+%% Returns : {true, GRUU} | false
+is_gruu_url(URL) ->    
+    ?CHECK_EXPORTED({is_gruu_url, 1},
+                    ?LOCAL_MODULE:is_gruu_url(URL),
+                    gruu:is_gruu_url(URL)
+                   ).
 
 
 % AAA hooks

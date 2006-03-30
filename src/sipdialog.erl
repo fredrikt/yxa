@@ -55,7 +55,7 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
--define(DEFAULT_EXPIRE, 600).
+-define(DEFAULT_EXPIRE, 60).
 -define(ETS_DIALOG_TABLE, yxa_dialogs).
 -define(DEFAULT_FIRST_LOCAL_CSEQ, 1).
 

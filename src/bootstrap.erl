@@ -8,15 +8,18 @@
 		     database_regexproute,
 		     database_forward,
 		     database_call,
-		     cpl_db
+		     cpl_db,
+		     database_gruu
 		    ]).
 
--define(MNESIA_TABLES, [cpl_script_graph,
-			forward,
-			user,
+-define(MNESIA_TABLES, [user,
 			numbers,
 			phone,
-			regexproute
+			regexproute,
+			forward,
+			%% call
+			cpl_script_graph,
+			gruu
 		       ]).
 
 

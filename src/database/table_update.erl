@@ -49,6 +49,7 @@ update() ->
     phone(),
     regexproute(),
     cpl_script_graph(),
+    gruu(),
     ok.
 
 %%--------------------------------------------------------------------
@@ -159,6 +160,16 @@ regexproute() ->
 cpl_script_graph() ->
     Table = cpl_script_graph,
     {ok, Attrs, Fun} = cpl_db:get_transform_fun(),
+    do_transform_table(Table, Fun, Attrs).
+
+%%--------------------------------------------------------------------
+%% Function: gruu()
+%% Descrip.: Update the gruu record().
+%% Returns : void()
+%%--------------------------------------------------------------------
+gruu() ->
+    Table = gruu,
+    {ok, Attrs, Fun} = database_gruu:get_transform_fun(),
     do_transform_table(Table, Fun, Attrs).
 
 %%====================================================================

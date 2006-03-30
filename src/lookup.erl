@@ -19,6 +19,7 @@
 %%--------------------------------------------------------------------
 -export([lookupregexproute/1,
 	 lookupuser/1,
+	 lookupuser_gruu/2,
 	 lookupuser_locations/2,
 	 lookup_url_to_locations/1,
 	 lookup_url_to_addresses/2,
@@ -112,15 +113,31 @@ lookupregexproute2(Input, Routes) ->
 %%           determines that a request is for one of it's homedomains.
 %% Returns : {ok, Users, Res} |
 %%           nomatch              No such user
-%%           Users = list() of string(), usernames that matched this URL
-%%           Res   = {proxy, URL}               |
-%%                   {relay, URL}               |
-%%                   {forward, URL}             |
-%%                   {response, Status, Reason} |
+%%           Users = list() of string() | none, usernames that matched
+%%                                              this URL
+%%           Res   = {proxy, URL}                    |
+%%                   {proxy, {with_path, URL, Path}} |
+%%                   {relay, URL}                    |
+%%                   {forward, URL}                  |
+%%                   {response, Status, Reason}      |
 %%                   none    - The user was found but has no locations
 %%                             registered
 %%--------------------------------------------------------------------
 lookupuser(URL) when is_record(URL, sipurl) ->
+    case local:is_gruu_url(URL) of
+	{true, GRUU} ->
+	    %% format lookupuser_gruu for incomingproxy, which is the one calling this function
+	    case local:lookupuser_gruu(URL, GRUU) of
+		{ok, User, Loc, _Contact} when is_list(User), is_tuple(Loc) ->
+		    {ok, [User], Loc};
+		{ok, User, Loc} ->
+		    {ok, [User], Loc}
+	    end;
+	false ->
+	    lookupuser2(URL)
+    end.
+
+lookupuser2(URL) ->
     case local:get_users_for_url(URL) of
 	nomatch ->
 	    NoParamURL = sipurl:set([{param, []}], URL),
@@ -192,6 +209,65 @@ lookupuser_get_locations(Users, URL) ->
 	    %% More than one location registered for this address, check for appserver...
 	    %% (appserver is the program that handles forking of requests)
 	    local:lookupappserver(URL)
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: lookupuser_gruu(URL, GRUU)
+%%           URL  = sipurl record(), GRUU Request-URI
+%%           GRUU = string()
+%% Descrip.: Look up the 'best' contact of a GRUU.
+%% Returns : {ok, User, Res}          |
+%%           {ok, User, Fwd, Contact}
+%%           Res     = {proxy, URL}                    |
+%%                   = {proxy, {with_path, URL, Path}} |
+%%                     {response, Status, Reason}
+%%           Fwd     = {forward, URL}
+%%           User    = none | string(), SIP authentication user of GRUU
+%%           Contact = siplocationdb_e record(), used by outgoingproxy
+%%
+%% Note    : used by incomingproxy and outgoingproxy
+%%--------------------------------------------------------------------
+lookupuser_gruu(URL, GRUU) when is_record(URL, sipurl), is_list(GRUU) ->
+    %% XXX if it was an 'opaque=' GRUU, verify somehow that the rest of the URI matches
+    %% the user we found when we look up the GRUU? Probably a good idea.
+    logger:log(debug, "Lookup: URL ~s contains a GRUU (~p), looking for active contact",
+	       [sipurl:print(URL), GRUU]),
+    case gruu:get_contact_for_gruu(GRUU) of
+	{ok, User, Contact} when is_record(Contact, siplocationdb_e) ->
+	    logger:log(debug, "Lookup: GRUU ~p matches user ~p contact ~s",
+		       [GRUU, User, sipurl:print(Contact#siplocationdb_e.address)]),
+	    
+	    ContactURL = gruu:prepare_contact(Contact, URL),
+
+	    %% RFC3327
+	    case lists:keysearch(path, 1, Contact#siplocationdb_e.flags) of
+		{value, {path, Path}} ->
+		    {ok, User, {proxy, {with_path, ContactURL, Path}}, Contact};
+		false ->
+		    %% No outgoingproxy stored for contact. Copy 'grid' parameter and proxy.
+		    {ok, User, {proxy, ContactURL}}
+	    end;
+	{ok, User, none} ->
+	    %% GRUU found, but user has no active contacts
+	    logger:log(debug, "Lookup: GRUU ~p matches user ~p, but user has no active contacts. "
+		       "Responding '480 Temporarily Unavailable'", [GRUU, User]),
+	    %% "If the request URI is within the domain of the proxy, and
+	    %% the URI has been constructed by the domain such that the proxy is
+	    %% able to determine that it has the form of a GRUU for an AOR that is
+	    %% known within the domain, but the instance ID is unknown, the proxy
+	    %% SHOULD generate a 480 (Temporarily Unavailable)."
+	    %% GRUU draft 06 #8.4.1 (Request Targeting)
+	    {ok, none, {response, 480, "Temporarily Unavailable"}};
+	nomatch ->
+	    %% looked like a GRUU, but not found
+	    logger:log(debug, "Lookup: Request-URI is a GRUU, but I have no record of it. "
+		       "Answering '404 Not Found'."),
+	    %% "If the request URI is within the domain of the proxy, and the URI has
+	    %% been constructed by the domain such that the proxy is able to
+	    %% determine that it has the form of a GRUU for an AOR that is unknown
+	    %% within the domain, the proxy rejects the request with a 404 (Not
+	    %% Found)." GRUU draft 06 #8.4.1 (Request Targeting)
+	    {ok, none, {response, 404, "Not Found"}}
     end.
 
 %%--------------------------------------------------------------------

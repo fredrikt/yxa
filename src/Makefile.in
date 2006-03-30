@@ -42,6 +42,7 @@ erl_FILES = \
 	directory.erl \
 	dnsutil.erl \
 	group_regexp.erl \
+	gruu.erl \
 	hex.erl \
 	incomingproxy.erl \
 	key_val_db.erl \
@@ -81,6 +82,7 @@ erl_FILES = \
 imported_hrl_FILES = \
 	include/database_regexproute.hrl \
 	include/database_forward.hrl \
+	include/database_gruu.hrl \
 	include/directory.hrl \
 	include/phone.hrl \
 	include/sipproxy.hrl \

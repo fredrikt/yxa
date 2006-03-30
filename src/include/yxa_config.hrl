@@ -157,6 +157,19 @@
 		    normalize	= false
 		   },
 
+	 %% Experimental GRUU parameters
+	 #cfg_entry{key		= experimental_gruu_enable,
+		    default	= false,
+		    type	= bool
+		   },
+	 #cfg_entry{key		= experimental_gruu_use_domain,
+		    type	= string
+		   },
+	 #cfg_entry{key		= experimental_gruu_gruu_indicator,
+		    default	= "gruu~",
+		    type	= string
+		   },
+
 	 %% STUN settings
 	 #cfg_entry{key		= stun_demuxing_on_sip_ports,
 		    default	= false,

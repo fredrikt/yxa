@@ -176,29 +176,33 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 	    transactionlayer:send_response_handler(THandler, Status, Reason);
 
 	{forward, FwdURL} when is_record(FwdURL, sipurl), FwdURL#sipurl.user == none, FwdURL#sipurl.pass == none ->
-	    logger:log(normal, "~s: outgoingproxy: Forward ~s ~s to ~s",
+	    logger:log(normal, "~s: outgoingproxy: Forward '~s ~s' to ~s",
 		       [LogTag, Method, sipurl:print(URI), sipurl:print(FwdURL)]),
 	    ApproxMsgSize = siprequest:get_approximate_msgsize(Request#request{uri=FwdURL}),
 	    case sipdst:url_to_dstlist(FwdURL, ApproxMsgSize, URI) of
 		{error, nxdomain} ->
-		    logger:log(debug, "outgoingproxy: Failed resolving FwdURL : NXDOMAIN"
-			       " (responding '604 Does Not Exist Anywhere')"),
+		    logger:log(debug, "~s: outgoingproxy: Failed resolving FwdURL : NXDOMAIN"
+			       " (responding '604 Does Not Exist Anywhere')", [LogTag]),
                     transactionlayer:send_response_handler(THandler, 604, "Does Not Exist Anywhere"),
                     error;
 		{error, What} ->
-		    logger:log(normal, "outgoingproxy: Failed resolving FwdURL : ~p", [What]),
+		    logger:log(normal, "~s: outgoingproxy: Failed resolving FwdURL : ~p", [LogTag, What]),
                     transactionlayer:send_response_handler(THandler, 500, "Failed resolving forward destination"),
                     error;
 		DstList when is_list(DstList) ->
 		    proxy_request(THandler, Request, DstList)
 	    end;
+
 	{proxy, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
 	    proxy_request(THandler, Request, Loc);
+
 	{relay, Loc} ->
 	    relay_request(THandler, Request, Loc, Origin, LogTag);
+
 	me ->
 	    request_to_me(THandler, Request, LogTag);
+
 	_ ->
 	    logger:log(error, "~s: outgoingproxy: Invalid Location ~p", [LogTag, Location]),
 	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error")
@@ -217,40 +221,87 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 %%           none
 %%--------------------------------------------------------------------
 route_request(Request) when is_record(Request, request) ->
+    route_request_check_gruu(Request).
+
+route_request_check_gruu(Request) when is_record(Request, request) ->
+    URI = Request#request.uri,
+    case gruu:is_gruu_url(URI) of
+	{true, GRUU} ->
+	    case local:lookupuser_gruu(URI, GRUU) of
+		{ok, User, {proxy, {with_path, DstURI, _Path}}, _Contact} ->
+		    logger:log(debug, "outgoingproxy: Request destined for GRUU (user ~p), forwarding to registered "
+			       "contact for user : ~p", [User, sipurl:print(DstURI)]),
+		    %% When we implement Outbound, we should check that first entry of Path
+		    %% still points at this server
+		    {proxy, DstURI};
+		{ok, _User, GRUU_Res} when is_tuple(GRUU_Res) ->
+		    GRUU_Res
+	    end;
+	false ->
+	    route_request_check_route(Request)
+    end.
+
+route_request_check_route(Request) when is_record(Request, request) ->
     case keylist:fetch('route', Request#request.header) of
 	[] ->
-	    URI = Request#request.uri,
-	    case local:is_request_to_this_proxy(Request) of
-		true ->
-		    case url_param:find(URI#sipurl.param_pairs, "addr") of
-			[Addr] ->
-			    %% XXX we should verify that this really is a location stored
-			    %% in the location database and not an attempt to relay SIP
-			    %% requests through this proxy
-			    logger:log(normal, "outgoingproxy: Decoded real destination ~p", [Addr]),
-			    {proxy, sipurl:parse(Addr)};
-			[] ->
-			    me
-		    end;
-		false ->
-		    case local:get_user_with_contact(URI) of
-			none ->
-			    case yxa_config:get_env(sipproxy) of
-				{ok, DefaultProxy} when is_record(DefaultProxy, sipurl) ->
-				    {forward, DefaultProxy};
-				none ->
-				    none
-			    end;
-			SIPuser when is_list(SIPuser) ->
-			    logger:log(debug, "outgoingproxy: Request destination ~p is a registered "
-				       "contact of user ~p - proxying", [URI, SIPuser]),
-			    {proxy, URI}
-		    end
-	    end;
+	    route_request_check_host(Request);
 	_Route ->
 	    %% Request has Route header
-	    logger:log(debug, "Routing: Request has Route header, following Route."),
-	    {relay, route}
+	    case local:get_user_with_contact(Request#request.uri) of
+		none ->
+		    logger:log(debug, "Routing: Request has Route header, relaying according to Route."),
+		    {relay, route};
+		User ->
+		    %% Some user agents don't respond well to mid-dialog challenges so we don't do that
+		    %% even though we _should_ be able to (we used to do it, with some things failing).
+		    %% After all, the destination is the address of one of our registered users.
+		    logger:log(debug, "Routing: Request has Route header, and is for our user ~p - "
+			       "proxy according to Route.", [User]),
+		    {proxy, route}
+	    end
+    end.
+
+route_request_check_host(Request) when is_record(Request, request) ->
+    case local:is_request_to_this_proxy(Request) of
+	true ->
+	    route_request_host_is_this_proxy(Request);
+	false ->
+	    URI = Request#request.uri,
+	    case local:get_user_with_contact(URI) of
+		none ->
+		    case yxa_config:get_env(sipproxy) of
+			{ok, DefaultProxy} when is_record(DefaultProxy, sipurl) ->
+			    {forward, DefaultProxy};
+			none ->
+			    none
+		    end;
+		SIPuser when is_list(SIPuser) ->
+		    logger:log(debug, "outgoingproxy: Request destination ~p is a registered "
+			       "contact of user ~p - proxying", [URI, SIPuser]),
+		    {proxy, URI}
+	    end
+    end.
+
+route_request_host_is_this_proxy(Request) when is_record(Request, request) ->
+    URI = Request#request.uri,
+    case url_param:find(URI#sipurl.param_pairs, "addr") of
+	[Addr] ->
+	    ParsedAddr = sipurl:parse(Addr),
+	    case siplocation:get_user_with_contact(ParsedAddr) of
+		none ->
+		    logger:log(normal, "outgoingproxy: Decoded real destination ~p which "
+			       "does not appear to belong to any of our users, POSSIBLE RELAY ATTEMPT",
+			       [Addr]),
+		    %% XXX proxy should be changed to relay when we have verified that this does
+		    %% not break anything
+		    {proxy, ParsedAddr};
+		SipUser ->
+		    logger:log(normal, "outgoingproxy: Decoded real destination ~p (user ~p)",
+			       [Addr, SipUser]),
+		    {proxy, sipurl:parse(Addr)}
+	    end;
+	[] ->
+	    me
     end.
 
 %%--------------------------------------------------------------------
@@ -265,7 +316,7 @@ route_request(Request) when is_record(Request, request) ->
 %%--------------------------------------------------------------------
 request_to_me(THandler, Request, LogTag) when is_record(Request, request), Request#request.method == "OPTIONS" ->
     logger:log(normal, "~s: incomingproxy: OPTIONS to me -> 200 OK", [LogTag]),
-    %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and 
+    %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and
     %% Supported headers. RFC 3261 section 11.
     transactionlayer:send_response_handler(THandler, 200, "OK");
 
