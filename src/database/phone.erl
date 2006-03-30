@@ -36,7 +36,7 @@
 	 get_users_for_number/1,
 	 list_numbers/0,
 	 delete_phone/3,
-	 get_phone_with_requri/1
+	 get_sipusers_using_location/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -409,14 +409,14 @@ get_users_for_number(Number) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: get_phone_with_requri(URI)
+%% Function: get_sipusers_using_location(URI)
 %%           URI = sipurl record()
 %% Descrip.: find all users (#phone.number) that use a cretain sip url
 %% Returns : {atomic, Users} | {aborted, Reason}
 %%           Users = list() of #phone.number values
 %% XXX this function is inefficient, as no keys are used during search
 %%--------------------------------------------------------------------
-get_phone_with_requri(URI) when is_record(URI, sipurl) ->
+get_sipusers_using_location(URI) when is_record(URI, sipurl) ->
     ReqURIstr = url_to_requristr(URI),
     F = fun() ->
 		[ E#phone.number || E <- mnesia:match_object(#phone{requristr = ReqURIstr,

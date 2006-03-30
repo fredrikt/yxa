@@ -537,16 +537,16 @@ wildcard_grep([_Foo | Rest]) ->
 %%           proxy requests to a URI without authorization.
 %% Returns : none | SIPuser
 %%           SIPuser = #phone.number field value
+%% NOTE    : If you want to know all the users (in case there is more
+%%           than one), you have to call
+%%           phone:get_sipusers_using_location/1 directly.
 %%--------------------------------------------------------------------
 get_user_with_contact(URI) when is_record(URI, sipurl) ->
-    case phone:get_phone_with_requri(URI) of
-	%% XXX can there be more than 1 matching SIPUser
-	%% - yes, should a list() of SIPuser be returned instead ?
-	{atomic, [SIPuser | _]} ->
+    case phone:get_sipusers_using_location(URI) of
+	{atomic, [SIPuser | _]} when is_list(SIPuser) ->
 	    SIPuser;
-	%% no one using URI found
 	{atomic, []} ->
-	    %% XXX test this
+	    %% no one using URI found
 	    none
     end.
 
