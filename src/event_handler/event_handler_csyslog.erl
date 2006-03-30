@@ -76,7 +76,7 @@ init([AppName, PortName]) when is_atom(AppName), is_list(PortName) ->
 	[code:priv_dir(yxa)],
     case locate_file(Directorys, PortName) of
 	{ok, Cmd} ->
-	    Port = open_port({spawn, Cmd}, [{packet, 2}]),
+	    Port = open_port({spawn, Cmd}, [{packet, 2}, exit_status]),
 	    %% syslog_port will openlog() with the first data we send it as identifier
 	    Msg = atom_to_list(AppName),
 	    true = port_command(Port, Msg),
@@ -150,6 +150,10 @@ handle_call(Request, State) ->
 %%--------------------------------------------------------------------
 handle_info({Port, {data, Data}}, State) when is_record(State, state), State#state.port == Port ->
     logger:log(error, "Event handler csyslog: Error from port driver : ~p", [Data]),
+    remove_handler;
+
+handle_info({Port, {exit_status, Status}}, #state{port = Port}) ->
+    logger:log(error, "Event handler csyslog: Port driver ~p exited : ~p", [Port, Status]),
     remove_handler;
 
 handle_info(Unknown, State) ->
