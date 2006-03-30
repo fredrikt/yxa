@@ -66,6 +66,10 @@
 		    list_of	= true,
 		    type	= string
 		   },
+	 #cfg_entry{key	= allow_proxy_inserted_path,
+		    default	= false,
+		    type	= bool
+		   },
 
 	 %% SIP authentication settings
 	 #cfg_entry{key		= sipauth_realm,
@@ -518,6 +522,10 @@
 		      required	= true
 		     },
 	   #cfg_entry{key	= allow_foreign_registers,
+		      default	= true,
+		      type	= bool
+		     },
+	   #cfg_entry{key	= always_do_path_for_foreign_registers,
 		      default	= false,
 		      type	= bool
 		     }
@@ -545,6 +553,7 @@
 		      normalize	= false
 		     }
 	  ]},
+
 	 {testserver,
 	  [
 	   #cfg_entry{key	= testserver_userdb,
@@ -554,6 +563,7 @@
 		      required	= true
 		     }
 	  ]},
+
 	 {admin_www,
 	  [
 	   #cfg_entry{key	= httpd_config,

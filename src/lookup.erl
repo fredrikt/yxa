@@ -182,7 +182,12 @@ lookupuser_get_locations(Users, URL) ->
 	[Location] when is_record(Location, siplocationdb_e) ->
 	    %% A single location was found in the location database (after removing any unsuitable ones)
 	    BestLocation = siplocation:to_url(Location),
-	    {proxy, BestLocation};
+	    case lists:keysearch(path, 1, Location#siplocationdb_e.flags) of
+		{value, {path, Path}} ->
+		    {proxy, {with_path, BestLocation, Path}};
+		false ->
+		    {proxy, BestLocation}
+	    end;
 	[Location | _] when is_record(Location, siplocationdb_e) ->
 	    %% More than one location registered for this address, check for appserver...
 	    %% (appserver is the program that handles forking of requests)

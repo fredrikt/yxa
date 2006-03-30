@@ -361,6 +361,7 @@ normalize2("max-forwards") ->		'max-forwards';
 normalize2("mime-version") ->		'mime-version';
 normalize2("min-expires") ->		'min-expires';
 normalize2("organization") ->		'organization';
+normalize2("path") ->			'path';
 normalize2("priority") ->		'priority';
 normalize2("proxy-authenticate") ->	'proxy-authenticate';
 normalize2("proxy-authorization") ->	'proxy-authorization';

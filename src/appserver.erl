@@ -408,8 +408,17 @@ locations_to_actions2([], Res) ->
 locations_to_actions2([H | T], Res) when is_record(H, siplocationdb_e) ->
     {ok, Timeout} = yxa_config:get_env(appserver_call_timeout),
     URL = siplocation:to_url(H),
+    %% RFC3327
+    Path =
+	case lists:keysearch(path, 1, H#siplocationdb_e.flags) of
+	    {value, {path, Path1}} ->
+		Path1;
+	    false ->
+		[]
+	end,
     CallAction = #sipproxy_action{action  = call,
 				  requri  = URL,
+				  path    = Path,
 				  timeout = Timeout},
     locations_to_actions2(T, [CallAction | Res]);
 

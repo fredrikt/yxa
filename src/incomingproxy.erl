@@ -244,6 +244,12 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	{proxy, route} ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s according to Route header", [LogTag, Method]),
 	    proxy_request(THandler, Request, route);
+	{proxy, {with_path, URL, Path}} when is_record(URL, sipurl), is_list(Path) ->
+	    %% RFC3327
+	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s (with path: ~p)",
+		       [LogTag, Method, sipurl:print(URL), Path]),
+	    NewHeader = keylist:prepend({"Route", Path}, Request#request.header),
+	    proxy_request(THandler, Request#request{header = NewHeader}, route);
 
 	{redirect, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Redirect ~s", [LogTag, sipurl:print(Loc)]),
@@ -362,6 +368,8 @@ request_to_homedomain(Request, Origin, LogTag, Recursing) when is_record(Request
 	    L = [{to_users, Users}],
 	    event_handler:request_info(normal, LogTag, L),
 
+	    Res;
+	{ok, none, Res} ->
 	    Res
     end.
 

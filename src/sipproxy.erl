@@ -293,14 +293,18 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
     Targets = State#state.targets,
     case HAction#sipproxy_action.action of
 	call ->
-	    CallURI = HAction#sipproxy_action.requri,
-	    CallTimeout = HAction#sipproxy_action.timeout,
+	    #sipproxy_action{requri  = CallURI,
+			     timeout = CallTimeout,
+			     user    = SIPUser,
+			     path    = Path
+			    } = HAction,
 	    logger:log(debug, "sipproxy: forking ~s request to ~s with timeout ~p",
 		       [Method, sipurl:print(CallURI), CallTimeout]),
 	    %% Create a new branch for this target (client transaction). BranchBase plus a sequence number is unique.
 	    Branch = State#state.branchbase ++ "-UAC" ++ integer_to_list(targetlist:get_length(Targets) + 1),
-	    Request = make_new_target_request(OrigRequest, CallURI, HAction#sipproxy_action.user),
-	    case sipdst:url_to_dstlist(CallURI, State#state.approx_msgsize, CallURI) of
+	    {ok, Request, DstList} = make_new_target_request(OrigRequest, CallURI, State#state.approx_msgsize,
+							     SIPUser, Path),
+	    case DstList of
 		[FirstDst | _] = DstList ->
 		    NewTargets =
 			case local:start_client_transaction(Request, FirstDst, Branch, CallTimeout) of
@@ -338,20 +342,44 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
 	    end
     end.
 
-make_new_target_request(Request, URI, User) when is_record(Request, request), is_record(URI, sipurl), is_list(User) ->
+%% Returns: {ok, NewRequest, NewCallURI}
+make_new_target_request(Request, URI, ApproxMsgSize, User, Path)
+  when is_record(Request, request), is_record(URI, sipurl), is_integer(ApproxMsgSize), is_list(User), is_list(Path) ->
+    %% Create a Route header if there was a RFC3327 path associated with the location db entry
     {ok, PeerAuthL} = yxa_config:get_env(x_yxa_peer_auth, []),
-    case lists:keysearch(URI#sipurl.host, 1, PeerAuthL) of
-	{value, {_Host, Secret}} ->
-	    NewHeader = sipauth:add_x_yxa_peer_auth(Request#request.method, URI, Request#request.header, User, Secret),
-	    Request#request{uri    = URI,
-			    header = NewHeader
-			   };
-	false ->
-	    Request#request{uri = URI}
-    end;
-make_new_target_request(Request, URI, _User) when is_record(Request, request), is_record(URI, sipurl) ->
-    %% non-list User
-    Request#request{uri = URI}.
+    {NewHeader1, DstURI} =
+	case Path of
+	    [] ->
+		{Request#request.header, URI};
+	    [FirstPath | _] = Path ->
+		NewHeader1_1 = keylist:prepend({"Route", Path}, Request#request.header),
+		[FirstC] = contact:parse([FirstPath]),
+		FirstURL = sipurl:parse(FirstC#contact.urlstr),
+		{NewHeader1_1, FirstURL}
+	end,
+
+    %% Add X-Yxa-Peer-Auth header if User is specified and we have configured entry for our peer
+    NewHeader =
+	case is_list(User) of
+	    true ->
+		case lists:keysearch(URI#sipurl.host, 1, PeerAuthL) of
+		    {value, {_Host, Secret}} ->
+			sipauth:add_x_yxa_peer_auth(Request#request.method, URI, NewHeader1, User, Secret);
+		    false ->
+			NewHeader1
+		end;
+	    false ->
+		NewHeader1
+	end,
+
+    DstList = sipdst:url_to_dstlist(DstURI, ApproxMsgSize, URI),
+
+    NewRequest =
+	Request#request{uri    = URI,
+			header = NewHeader
+		       },
+
+    {ok, NewRequest, DstList}.
 
 %%--------------------------------------------------------------------
 %% Function: cancel_pending_targets(Targets, ExtraHeaders)
@@ -361,7 +389,7 @@ make_new_target_request(Request, URI, _User) when is_record(Request, request), i
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
 cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
-    %% send {cancel} to all PIDs in states other than completed and terminated
+    %% send {cancel, ...} to all PIDs in states other than completed and terminated
     NewTargets1 = cancel_targets_state(Targets, calling, ExtraHeaders),
     cancel_targets_state(NewTargets1, proceeding, ExtraHeaders).
 

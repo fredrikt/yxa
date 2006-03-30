@@ -56,9 +56,9 @@ request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Orig
     case siplocation:process_register_request(Request, THandler, LogTag, LogStr, outgoingproxy) of
 	not_homedomain ->
 	    case yxa_config:get_env(allow_foreign_registers) of
-		true ->
-		    do_request(Request, Origin);
-		false ->
+		{ok, true} ->
+		    do_foreign_register(Request, Origin);
+		{ok, false} ->
 		    transactionlayer:send_response_handler(THandler, 403, "Domain not handled by this proxy")
 	    end;
 	_ ->
@@ -81,6 +81,60 @@ request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, s
 request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
     do_request(Request, Origin).
 
+%% Note: All the RFC quotes in this function are from RFC3327 #5.2 (Procedures at Intermediate Proxies)
+do_foreign_register(Request, Origin) ->
+    #request{uri    = URI,
+	     header = Header
+	    } = Request,
+
+    %% We do Path (RFC3327) if the UA said it supports it, or if we are configured to always do Path
+    %% for foreign registrations
+
+    DoPath =
+	case sipheader:is_supported("path", Header) of
+	    true -> {ok, true};
+	    false ->
+		case yxa_config:get_env(always_do_path_for_foreign_registers) of
+		    {ok, true} ->
+			%% "Intermediate proxies SHOULD NOT add a Path header field to a request
+			%% unless the UA has indicated support for this extension with a
+			%% Supported header field value."
+			logger:log(debug, "outgoingproxy: Notice: REGISTER request to foreign domain (~p), "
+				   "using Path even though UA did not say it supports it", [URI#sipurl.host]),
+			true;
+		    {ok, false} ->
+			false
+		end
+	end,
+
+    case DoPath of
+	true ->
+	    RRStr = siprequest:construct_record_route(URI#sipurl.proto),
+	    NewHeader1 = keylist:prepend({"Path", [RRStr]}, Header),
+	    NewHeader =
+		case sipheader:is_required("path", NewHeader1) of
+		    true ->
+			NewHeader1;
+		    false ->
+			%% "If the UA has indicated support and
+			%% the proxy requires the registrar to support the Path extension, then
+			%% the proxy SHOULD insert a Requires header field value for this
+			%% extension."
+			%% We do require it, since the only point of using an outgoingproxy is that you
+			%% must get all incoming requests through an existing network flow.
+			keylist:append({"Require", ["path"]}, NewHeader1)
+		end,
+	    do_request(Request#request{header = NewHeader}, Origin);
+	false ->
+	    %% "If the UA has not indicated support for the extension and
+	    %% the proxy requires support for it in the registrar, the proxy SHOULD
+	    %% reject the request with a 421 response indicating a requirement for
+	    %% the extension."
+	    THandler = transactionlayer:get_handler_for_request(Request),
+	    transactionlayer:send_response_handler(THandler, 421, "Extension Required",
+						  [{"Require", ["path"]}])
+    end.
+	
 
 %%--------------------------------------------------------------------
 %% Function: response(Response, Origin, LogStr)
@@ -116,6 +170,11 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 	none ->
 	    logger:log(normal, "~s: outgoingproxy: 403 Forbidden", [LogTag]),
 	    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
+
+	{response, Status, Reason} ->
+	    logger:log(normal, "~s: outgoingproxy: Response '~p ~s'", [LogTag, Status, Reason]),
+	    transactionlayer:send_response_handler(THandler, Status, Reason);
+
 	{forward, FwdURL} when is_record(FwdURL, sipurl), FwdURL#sipurl.user == none, FwdURL#sipurl.pass == none ->
 	    logger:log(normal, "~s: outgoingproxy: Forward ~s ~s to ~s",
 		       [LogTag, Method, sipurl:print(URI), sipurl:print(FwdURL)]),
@@ -148,13 +207,13 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 %%--------------------------------------------------------------------
 %% Function: route_request(Request)
 %%           Request = request record()
-%% Descrip.: 
+%% Descrip.:
 %% Returns : {error, Status}            |
 %%           {response, Status, Reason} |
 %%           {proxy, Location}          |
 %%           {relay, Location}          |
 %%           {forward, Location}        |
-%%           {me}                       |
+%%           me                         |
 %%           none
 %%--------------------------------------------------------------------
 route_request(Request) when is_record(Request, request) ->
