@@ -1,3 +1,16 @@
+
+ - Implement STUN server answering NAT keepalive STUN requests
+   received on our SIP ports.
+
+
+-- 0.91		(2006-03-21)
+
+ - Fix bug which made applications crash on config-reload when there
+   was an include file that contained syntax errors.
+
+
+-- 0.91pre1	(2006-03-07)
+
  - Temporarily blacklist unreachable/unresponsive destinations.
  - Implement RFC4320 which updates RFC3261 with regard to non-
    INVITE transactions.
