@@ -15,6 +15,8 @@
 	 make_answerheader/1,
 	 add_record_route/2,
 	 add_record_route/4,
+	 construct_record_route/1,
+	 construct_record_route/3,
 	 myhostname/0,
 	 create_via/2,
 	 get_loop_cookie/3,
@@ -637,67 +639,6 @@ create_via(Proto, Parameters) ->
     #via{proto=ViaProto, host=Hostname, port=Port, param=Parameters}.
 
 %%--------------------------------------------------------------------
-%% Function: add_record_route(Proto, Hostname, Port, Header)
-%%           Proto      = "sips" | "sip" | string()
-%%           Hostname   = string()
-%%           Port       = integer() | none
-%%           Header     = keylist record()
-%% Descrip.: Prepend a Record-Route header for Proto:Host:Port to the
-%%           Header keylist.
-%% Returns : NewHeader = keylist record()
-%%--------------------------------------------------------------------
-add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hostname), is_integer(Port);
-						     Port == none ->
-    RouteStr =
-	case yxa_config:get_env(record_route_url) of
-	    {ok, RRURL} ->
-		case {Proto, RRURL#sipurl.proto} of
-		    {"sips", "sip"} ->
-			%% Proto is SIPS, but RRURL's Proto is SIP. Upgrade SIP to SIPS.
-			sipurl:print( sipurl:set([{proto, Proto}], RRURL) );
-		    _ ->
-			sipurl:print(RRURL)
-		end;
-	    none ->
-		%% we use 'lr=true' instead of just 'lr' since some SIP stacks are known
-		%% to require that parameters are of the format 'key=value'.
-		Param1 = ["lr=true"],
-		RR_Elems =
-		    case Port of
-			none ->
-			    %% It was requested that we don't include a port number.
-			    [{proto, Proto}, {host, Hostname}, {param, Param1}];
-			_ when is_integer(Port) ->
-			    [{proto, Proto}, {host, Hostname}, {port, Port}, {param, Param1}]
-		    end,
-		sipurl:print(sipurl:new(RR_Elems))
-	end,
-
-    %% Check if our Record-Route (RouteStr) is already present as the first entry of
-    %% the Record-Route set in Header.
-    AlreadyPresent =
-	case sipheader:record_route(Header) of
-	    [FirstRoute | _] when is_record(FirstRoute, contact) ->
-		%% We only do byte-by-byte matching since the purpose of this check is to
-		%% make sure that this function isn't used twice on a message - not to make sure
-		%% that there is no Record-Route that would resolve to this proxy/UA in there.
-		case FirstRoute#contact.urlstr of
-		    RouteStr -> true;
-		    _ -> false
-		end;
-	    _ ->
-		%% No Record-Route in header
-		false
-	end,
-    case AlreadyPresent of
-	true ->
-	    logger:log(debug, "Siprequest: NOT adding Record-Route since the first Record-Route matches mine"),
-	    Header;
-	false ->
-	    [Route] = sipheader:contact_print([ contact:new(none, RouteStr, []) ]),
-	    keylist:prepend({"Record-Route", [Route]}, Header)
-    end.
-%%--------------------------------------------------------------------
 %% Function: add_record_route(URL, Header)
 %%           URL    = sipurl record(), original Request-URI
 %%           Header = keylist record()
@@ -706,19 +647,57 @@ add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hos
 %% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
 add_record_route(URL, Header) when is_record(URL, sipurl) ->
-    Proto =
-	case URL#sipurl.proto of
+    add_record_route(URL#sipurl.proto, undefined, undefined, Header).
+
+%%--------------------------------------------------------------------
+%% Function: add_record_route(Proto, Hostname, Port, Header)
+%%           Proto      = "sips" | "sip" | string()
+%%           Hostname   = undefined | string()
+%%           Port       = undefined | none | integer()
+%%           Header     = keylist record()
+%% Descrip.: Prepend a Record-Route header for Proto:Host:Port to the
+%%           Header keylist.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
+add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hostname); Hostname == undefined,
+						     is_integer(Port); Port == none; Port == undefined ->
+    RouteStr = construct_record_route(Proto, Hostname, Port),
+
+    %% Check if our Record-Route (RouteStr) is already present as the first entry of
+    %% the Record-Route set in Header.
+    AlreadyPresent =
+	case keylist:fetch('record-route', Header) of
+	    [RouteStr | _] ->
+		%% We only do byte-by-byte matching since the purpose of this check is to
+		%% make sure that this function isn't used twice on a message - not to make sure
+		%% that there is no Record-Route that would resolve to this proxy/UA in there.
+		true;
+	    _ ->
+		%% No Record-Route in header, or not matching ours
+		false
+	end,
+    case AlreadyPresent of
+	true ->
+	    logger:log(debug, "Siprequest: NOT adding Record-Route since the first Record-Route matches mine"),
+	    Header;
+	false ->
+	    keylist:prepend({"Record-Route", [RouteStr]}, Header)
+    end.
+
+%% Returns : RRStr = string(), URL enclosed in "<>"
+construct_record_route(Proto) when is_list(Proto) ->
+    construct_record_route(Proto, undefined, undefined).
+
+construct_record_route(Proto, undefined, undefined) when is_list(Proto) ->
+    {RRProto, MyPort} = 
+	case Proto of
 	    "sips" ->
-		"sips";
+		{"sips", sipsocket:get_listenport(tls)};
 	    _ ->
 		%% Create sip: Record-Route for everything except SIPS-URIs
-		"sip"
+		{"sip", sipsocket:get_listenport(udp)}
 	end,
-    URLport = sipsocket:default_port(URL#sipurl.proto, none),
-    MyPort = case URL#sipurl.proto of
-		 "sips" -> sipsocket:get_listenport(tls);
-		 _ -> sipsocket:get_listenport(udp)
-	     end,
+    URLport = sipsocket:default_port(Proto, none),
     %% If we are listening on the default port for the protocol in URL, we don't
     %% need to set a port in the Record-Route. If not however, we need to set the
     %% port because otherwise Cisco 79xx phones (version 7.5) will put port 5060
@@ -729,7 +708,33 @@ add_record_route(URL, Header) when is_record(URL, sipurl) ->
 	       false ->
 		   MyPort
 	   end,
-    add_record_route(Proto, myhostname(), Port, Header).
+    construct_record_route(RRProto, myhostname(), Port);
+    
+%% Returns : RRStr = string(), URL enclosed in "<>"
+construct_record_route(Proto, Hostname, Port) ->
+    URL =
+	case yxa_config:get_env(record_route_url) of
+	    {ok, RRURL} ->
+		case {Proto, RRURL#sipurl.proto} of
+		    {"sips", "sip"} ->
+			%% Proto is SIPS, but RRURL's Proto is SIP. Upgrade SIP to SIPS.
+			sipurl:set([{proto, Proto}], RRURL);
+		    _ ->
+			RRURL
+		end;
+	    none ->
+		%% we use 'lr=true' instead of just 'lr' since some SIP stacks are known
+		%% to require that parameters are of the format 'key=value'.
+		Param1 = ["lr=true"],
+		case Port of
+		    none ->
+			%% It was requested that we don't include a port number.
+			sipurl:new([{proto, Proto}, {host, Hostname}, {param, Param1}]);
+		    _ when is_integer(Port) ->
+			sipurl:new([{proto, Proto}, {host, Hostname}, {port, Port}, {param, Param1}])
+		end
+	end,
+    contact:print(contact:new(URL)).
 
 %%--------------------------------------------------------------------
 %% Function: standardcopy(Header, ExtraHeaders)
