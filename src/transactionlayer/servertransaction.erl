@@ -1163,6 +1163,10 @@ add_timer(Timeout, Description, AppSignal, State) when is_record(State, state) -
     NewTimerList = siptimer:add_timer(Timeout, Description, AppSignal, State#state.timerlist),
     State#state{timerlist=NewTimerList}.
 
+del_timer(AppSignal, State) ->
+    NewTL = siptimer:cancel_timers_with_appsignal(AppSignal, State#state.timerlist),
+    State#state{timerlist = NewTL}.
+    
 %%--------------------------------------------------------------------
 %% Function: enter_sip_state(SipState, State)
 %%           SipState = atom(), trying | proceeding | ...
@@ -1183,19 +1187,16 @@ enter_sip_state(SipState, #state{sipstate=SipState}=State) ->
 %%--------------------------------------------------------------------
 enter_sip_state(proceeding, State) ->
     Method = (State#state.request)#request.method,
+    NewState1 = State#state{sipstate = proceeding},
     case Method /= "INVITE" andalso
 	State#state.is_rel_sock == true andalso
 	State#state.nit_100 == false of
 	true ->
 	    %% cancel the {send_nit_100} timer since we have apparently sent a '100 Trying'
 	    %% on behalf of our Transaction User, instead of because of the timer
-	    TimerList = State#state.timerlist,
-	    NewTimerList = siptimer:cancel_timers_with_appsignal({send_nit_100}, TimerList),
-	    State#state{timerlist = NewTimerList,
-			sipstate = proceeding
-		       };
+	    del_timer({send_nit_100}, NewState1);
 	false ->
-	    State#state{sipstate = proceeding}
+	    NewState1
     end;
 	    
 %%--------------------------------------------------------------------
@@ -1207,13 +1208,13 @@ enter_sip_state(proceeding, State) ->
 %%--------------------------------------------------------------------
 enter_sip_state(completed, State) when is_record(State, state) ->
     LogTag = State#state.logtag,
-    NewState1 = State#state{sipstate=completed},
+    NewState1 = State#state{sipstate = completed},
     Request = State#state.request,
     {ResponseToMethod, ResponseToURI} = {Request#request.method, Request#request.uri},
-    case ResponseToMethod of
-	"INVITE" ->
+    case ResponseToMethod == "INVITE" of
+	true ->
 	    NewState1;
-	_ ->
+	false ->
 	    {ok, T1} = yxa_config:get_env(timerT1),
 	    TimerJ = 64 * T1,
 	    logger:log(debug, "~s: Server transaction: Entered state 'completed'. Original request was non-INVITE, "
@@ -1223,7 +1224,9 @@ enter_sip_state(completed, State) when is_record(State, state) ->
 	    %% resend our response whenever we receive a request resend.
 	    JDesc = "terminate server transaction " ++ ResponseToMethod ++ " " ++ sipurl:print(ResponseToURI) ++
 		" (Timer J)",
-	    add_timer(TimerJ, JDesc, {terminate_transaction}, NewState1)
+	    NewState2 = add_timer(TimerJ, JDesc, {terminate_transaction}, NewState1),
+	    %% cancel the {send_nit_100} timer since we have apparently produced a final response now
+	    del_timer({send_nit_100}, NewState2)
     end;
 
 %%--------------------------------------------------------------------
@@ -1282,9 +1285,7 @@ process_received_ack(State) when is_record(State, state), is_record(State#state.
 		    logger:log(debug, "~s: Received ACK, cancelling resend timers for response '~p ~s' "
 			       "(to request ~s ~s) and entering state 'confirmed'",
 			       [LogTag, Status, Reason, Method, sipurl:print(URI)]),
-		    TimerList = State#state.timerlist,
-		    NewTimerList = siptimer:cancel_timers_with_appsignal({resendresponse}, TimerList),
-		    NewState1 = State#state{timerlist=NewTimerList},
+		    NewState1 = del_timer({resendresponse}, State),
 		    NewState = enter_sip_state(confirmed, NewState1),
 		    NewState
 	    end;
