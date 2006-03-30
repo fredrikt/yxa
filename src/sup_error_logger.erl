@@ -20,7 +20,7 @@
 %%--------------------------------------------------------------------
 -export([init/1,
 	 handle_event/2,
-	 handle_call/2, 
+	 handle_call/2,
 	 handle_info/2,
 	 terminate/2,
 	 code_change/3
@@ -50,22 +50,12 @@
 %%--------------------------------------------------------------------
 %% Function: start()
 %% Descrip.: Tell error_logger to add this handler.
-%% Returns : {ok, Pid}       |
-%%           {error, Reason}
-%%           Pid    = pid()
-%%           Reason = string()
+%% Returns : ok | Error
+%%           Error = term(), error_logger:add_report_handler/2 result
 %%--------------------------------------------------------------------
 start() ->
-    error_logger:add_report_handler(?MODULE, [self()]),
-    receive
-	{sup_error_logger, init, Pid} ->
-	    {ok, Pid}
-    after
-	1000 ->
-	    io:format("ERROR: Supervisor error handler failed to start~n~n"),
-	    {error, "Supervisor error handler failed to start"}
-    end.
-    
+    error_logger:add_report_handler(?MODULE, [self()]).
+
 %%====================================================================
 %% Behaviour functions - gen_event callbacks
 %%====================================================================
@@ -77,7 +67,6 @@ start() ->
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
 init([Parent]) ->
-    Parent ! {sup_error_logger, init, self()},
     {ok, #state{parent = Parent,
 		stack = []
 	       }}.
@@ -106,7 +95,7 @@ handle_event({info_report, _SomePid, {Parent, progress, Args}}, #state{parent = 
 	 {started, ChildInfo}
 	] ->
 	    Descr = describe_started_child(ChildInfo),
-	    NewStack = 
+	    NewStack =
 		case State#state.stack of
 		    [A, B, C, D | _] ->
 			[Descr, A, B, C, D];
@@ -221,7 +210,7 @@ describe_started_child(ChildInfo) when is_list(ChildInfo) ->
 	    false ->
 		"no name"
 	end,
-    
+
     ChildPid =
 	case lists:keysearch(pid, 1, ChildInfo) of
 	    {value, {pid, ChildPid1}} ->
