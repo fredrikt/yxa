@@ -36,7 +36,11 @@
 	 get_users_for_number/1,
 	 list_numbers/0,
 	 delete_phone/3,
-	 get_sipusers_using_location/1
+	 delete_phone_for_user/2,
+	 get_sipusers_using_location/1,
+
+	 test/0,
+	 test_create_table/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -85,6 +89,7 @@ create() ->
 create(Servers) ->
     mnesia:create_table(phone, [{attributes, record_info(fields, phone)},
 				{disc_copies, Servers},
+				{index, [requristr]},
 				{type, bag}]),
     mnesia:create_table(user, [{attributes, record_info(fields, user)},
 			       {disc_copies, Servers}]),
@@ -167,10 +172,11 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is
     %% without requiring authorization in incomingproxy and appserver.
     URIstr = url_to_requristr(Address),
     Fun = fun() ->
-		  A = mnesia:match_object(#phone{number = SipUser,
-						 class = Class,
-						 requristr = URIstr,
-						 _ = '_'}),
+		  %% query on requristr since that is most likely unique
+		  L = mnesia:index_read(phone, URIstr, #phone.requristr),
+		  %% apply our other selection criterias as well
+		  A = [E || E <- L, E#phone.number == SipUser, E#phone.class == Class],
+
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
@@ -298,16 +304,16 @@ get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record
     Now = util:timestamp(),
     LocationStr = url_to_requristr(Location),
 
+    %% query on requristr since that is most likely unique
     F = fun() ->
-		mnesia:select(phone,
-			      [{#phone{number = SipUser,
-				       requristr = LocationStr,
-				       _ = '_'},
-				[{'>', {element, #phone.expire, '$_'}, Now}],
-				['$_']
-			       }])
+		mnesia:index_read(phone, LocationStr, #phone.requristr)
 	end,
-    mnesia:transaction(F).
+    {atomic, L} = mnesia:transaction(F),
+
+    %% remove entrys which are expired, or don't have #phone.number == SipUser
+    Res = [E || E <- L, E#phone.expire > Now orelse E#phone.expire == never, E#phone.number == SipUser],
+
+    {atomic, Res}.
 
 
 %%--------------------------------------------------------------------
@@ -320,28 +326,25 @@ get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record
 %%           Entries = list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 get_sipuser_locations(SipUser) when is_list(SipUser) ->
-    Now = util:timestamp(),
-
     F = fun() ->
-		mnesia:select(phone, [{#phone{number = SipUser, _ = '_'},
-				       [{'>', {element, #phone.expire, '$_'}, Now}],
-				       [{{{element, #phone.address, '$_'},
-					  {element, #phone.flags, '$_'},
-					  {element, #phone.class, '$_'},
-					  {element, #phone.expire, '$_'}
-					 }}]
-				      }])
+		 mnesia:read({phone, SipUser})
 	end,
     {atomic, L} = mnesia:transaction(F),
+
+    Now = util:timestamp(),
+
+    %% Remove expired entrys and convert into siplocationdb_e record().
     %% Convert the location strings stored in the database to sipurl record format.
     %% We can't store the locations as sipurl records in the database in case we
     %% have to change something in the sipurl record.
-    Rewrite = fun(Entry) ->
-		      {LocationStr, Flags, Class, Expire} = Entry,
-		      #siplocationdb_e{address=sipurl:parse(LocationStr), flags=Flags,
-				       class=Class, expire=Expire}
-	      end,
-    {ok, lists:map(Rewrite, L)}.
+    Rewrite =
+	[ #siplocationdb_e{address	= sipurl:parse(E#phone.address),
+			   flags	= E#phone.flags,
+			   class	= E#phone.class,
+			   expire	= E#phone.expire
+			  }
+	  || E <- L, E#phone.expire > Now orelse E#phone.expire == never],
+     {ok, Rewrite}.
 
 %%--------------------------------------------------------------------
 %% Function: get_phone(SipUser)
@@ -355,15 +358,15 @@ get_sipuser_locations(SipUser) when is_list(SipUser) ->
 %%           needs the Call-Id and CSeq information).
 %%--------------------------------------------------------------------
 get_phone(SipUser) when is_list(SipUser) ->
-    Now = util:timestamp(),
-
     F = fun() ->
-		mnesia:select(phone, [{#phone{number = SipUser, _ = '_'},
-				       [{'>', {element, #phone.expire, '$_'}, Now}],
-				       ['$_']
-				      }])
+		mnesia:read({phone, SipUser})
 	end,
-    mnesia:transaction(F).
+    {atomic, L} = mnesia:transaction(F),
+
+    Now = util:timestamp(),
+    Res = [E || E <- L, E#phone.expire > Now orelse E#phone.expire == never],
+
+    {atomic, Res}.
 
 %%--------------------------------------------------------------------
 %% Function: get_user(User)
@@ -399,12 +402,12 @@ get_numbers_for_user(User) when is_list(User) ->
 %%--------------------------------------------------------------------
 %% Function:
 %% Descrip.:
-%% Returns : list() of #numbers.user field values XXX
+%% Returns : {atomic, Res}
+%%           Res = list() of string() - list of #numbers.user
 %%--------------------------------------------------------------------
 get_users_for_number(Number) ->
     F = fun() ->
-		[ E#numbers.user || E <- mnesia:match_object(#numbers{number = Number,
-								      _ = '_'}) ]
+		[ E#numbers.user || E <- mnesia:index_read(numbers, Number, #numbers.number) ]
 	end,
     mnesia:transaction(F).
 
@@ -414,13 +417,11 @@ get_users_for_number(Number) ->
 %% Descrip.: find all users (#phone.number) that use a cretain sip url
 %% Returns : {atomic, Users} | {aborted, Reason}
 %%           Users = list() of #phone.number values
-%% XXX this function is inefficient, as no keys are used during search
 %%--------------------------------------------------------------------
 get_sipusers_using_location(URI) when is_record(URI, sipurl) ->
     ReqURIstr = url_to_requristr(URI),
     F = fun() ->
-		[ E#phone.number || E <- mnesia:match_object(#phone{requristr = ReqURIstr,
-								    _ = '_'}) ]
+		[ E#phone.number || E <- mnesia:index_read(phone, ReqURIstr, #phone.requristr) ]
 	end,
     mnesia:transaction(F).
 
@@ -569,6 +570,18 @@ delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
 	  end,
     mnesia:transaction(Fun).
 
+delete_phone_for_user(SipUser, Class) when is_list(SipUser), is_atom(Class) ->
+    Fun = fun() ->
+		  A = mnesia:match_object(#phone{number = SipUser,
+						 class = Class,
+						 _ = '_'}),
+		  Delete = fun(O) ->
+				   mnesia:delete_object(O)
+			   end,
+		  lists:foreach(Delete, A)
+	  end,
+    mnesia:transaction(Fun).
+
 %%--------------------------------------------------------------------
 %% Function: delete_record(Obj)
 %%           Obj = phone record()
@@ -622,3 +635,34 @@ url_to_requristr(URL) when is_record(URL, sipurl) ->
     %% sipurl:print/1 is used to create a consistent and therefore
     %% easily matchable string
     sipurl:print(sipurl:new([{proto, "sip"}, {user, User}, {host, Host}, {port, Port}])).
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+
+    %% test x
+    %%--------------------------------------------------------------------
+    %%autotest:mark(?LINE, "f/a - 1"),
+
+    ok.
+
+test_create_table() ->
+    case catch mnesia:table_info(phone, attributes) of
+	PhoneAttrs when is_list(PhoneAttrs) ->
+	    ok;
+	{'EXIT', {aborted, {no_exists, phone, attributes}}}  ->
+	    %% Create table 'phone' in RAM for use in the tests here
+	    mnesia:create_table(phone, [{attributes,	record_info(fields, phone)},
+					{index,		[requristr]},
+					{type,		bag}
+				       ])
+    end.
