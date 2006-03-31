@@ -1,4 +1,5 @@
 
+ - Implement RFC3327 (Path). Needed for Outbound.
  - Implement STUN server answering NAT keepalive STUN requests
    received on our SIP ports.
 
