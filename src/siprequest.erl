@@ -449,12 +449,12 @@ stateless_generate_branch(OrigURI, Header, Nodename) ->
 	    case sipheader:get_via_branch(TopVia) of
 		"z9hG4bK" ++ RestOfBranch ->
 		    %% The previous hop has put a RFC3261 branch in it's Via. Use that,
-		    %% togehter with our nodename as branch.
+		    %% together with our nodename as branch.
 		    In = lists:concat([Nodename, "-rbranch-", RestOfBranch]),
 		    {ok, "z9hG4bK-yxa-" ++ make_base64_md5_token(In)};
 		_ ->
 		    %% No branch, or non-RFC3261 branch. XXX RFC32611 #16.11 suggests
-		    %% to include the Top-Via in the hash we generte here. We don't,
+		    %% to include the Top-Via in the hash we generate here. We don't,
 		    %% but perhaps there was a reason. It was a long time since we were
 		    %% stateless, so I won't change that now - ft 2005-03-22. Revisit
 		    %% this question if/when we have a use case.
@@ -476,7 +476,8 @@ stateless_generate_branch(OrigURI, Header, Nodename) ->
 %% Function: make_base64_md5_token(In)
 %%           In = term(), indata - anything accepted by erlang:md5()
 %% Descrip.: Make md5 of input, base64 of that and RFC3261 token of
-%%           the result.
+%%           the result. Tokens are case-insensitive, so we lowercase
+%%           the ones we generate here to make them easier to read.
 %% Returns : Result of make_3261_token()
 %%--------------------------------------------------------------------
 make_base64_md5_token(In) ->
@@ -491,16 +492,17 @@ make_base64_md5_token(In) ->
 make_3261_token([]) ->
     [];
 make_3261_token([H | T]) when H >= $a, H =< $z ->
-    [H|make_3261_token(T)];
+    [H | make_3261_token(T)];
 make_3261_token([H | T]) when H >= $A, H =< $Z ->
-    [H|make_3261_token(T)];
+    %% tokens are case-insensitive, lowercase the ones we generate
+    [H + ($a - $A) | make_3261_token(T)];
 make_3261_token([H | T]) when H >= $0, H =< $9 ->
-    [H|make_3261_token(T)];
+    [H | make_3261_token(T)];
 make_3261_token([H | T]) when H == $-; H == $.; H == $!; H == $%;
 H == $*; H == $_; H == $+; H == $`; H == $\'; H == $~ ->
-    [H|make_3261_token(T)];
+    [H | make_3261_token(T)];
 make_3261_token([_H | T]) ->
-    [$_|make_3261_token(T)].
+    [$_ | make_3261_token(T)].
 
 %%--------------------------------------------------------------------
 %% Function: generate_branch()
@@ -922,10 +924,10 @@ test() ->
     %%--------------------------------------------------------------------
     %% test that our make_3261_token produces the expected results
     autotest:mark(?LINE, "make_3261_token/1 - 1"),
-    "abcdeXYZ-.!%*_+`'~123_" = make_3261_token("abcdeXYZ-.!%*_+`'~123@"),
+    "abcdexyz-.!%*_+`'~123_" = make_3261_token("abcdeXYZ-.!%*_+`'~123@"),
 
     autotest:mark(?LINE, "make_base64_md5_token/1 - 1"),
-    "Wd_CG1j2CfuAv0NWdJLxTQ" = make_base64_md5_token("abcdeXYZ123-.!%*_+`'~123@"),
+    "wd_cg1j2cfuav0nwdjlxtq" = make_base64_md5_token("abcdeXYZ123-.!%*_+`'~123@"),
 
 
     %% create_via(Proto, Parameters)
@@ -1075,7 +1077,7 @@ test() ->
     %% get_loop_cookie(ReqHeader, URI, Proto
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_loop_cookie/3 - 1"),
-    "JYJPsr4IqjymexLGUB58yg" = get_loop_cookie(ReqHeader, sipurl:parse("sip:test@example.org"), tcp),
+    "jyjpsr4iqjymexlgub58yg" = get_loop_cookie(ReqHeader, sipurl:parse("sip:test@example.org"), tcp),
 
 
     %% make_response(Status, Reason, Body, ExtraHeaders, Parameters, Proto, Request)
@@ -1282,12 +1284,12 @@ test() ->
 
     autotest:mark(?LINE, "stateless_generate_branch/3 - 1"),
     %% test normal case
-    {ok, "z9hG4bK-yxa-S1Xsdm0n23TBxJnAMqP3ww"} =
+    {ok, "z9hG4bK-yxa-s1xsdm0n23tbxjnamqp3ww"} =
 	stateless_generate_branch(SGB_URL1, ReqHeader, "test-nodename"),
 
     autotest:mark(?LINE, "stateless_generate_branch/3 - 2"),
     SGB_Header2 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
-    {ok, "z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg"} =
+    {ok, "z9hG4bK-yxa-wgvvbdixu1kkvqywwkmgcg"} =
 	stateless_generate_branch(SGB_URL1, SGB_Header2, "test-nodename"),
 
     autotest:mark(?LINE, "stateless_generate_branch/3 - 3"),
@@ -1318,7 +1320,7 @@ test() ->
 
     autotest:mark(?LINE, "add_stateless_generated_branch2/5 - 2"),
     ASGB_Header1 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
-    ["branch=z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg-oLOOPCOOKIE"] =
+    ["branch=z9hG4bK-yxa-wgvvbdixu1kkvqywwkmgcg-oLOOPCOOKIE"] =
 	add_stateless_generated_branch2( ASGB_Header1,
 					 sipurl:parse("sip:ft@example.org"),
 					 "LOOPCOOKIE", [], 'test-nodename'
@@ -1326,7 +1328,7 @@ test() ->
 
     autotest:mark(?LINE, "add_stateless_generated_branch2/5 - 3"),
     ASGB_Header1 = keylist:set("Via", ["SIP/2.0/TCP example.org;branch=z9hG4bK-test"], ReqHeader),
-    ["branch=z9hG4bK-yxa-WGvVbdiXU1kKvQYwWKmgcg"] =
+    ["branch=z9hG4bK-yxa-wgvvbdixu1kkvqywwkmgcg"] =
 	add_stateless_generated_branch2( ASGB_Header1,
 					 sipurl:parse("sip:ft@example.org"),
 					 none, [], 'test-nodename'
