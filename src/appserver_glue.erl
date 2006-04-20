@@ -42,7 +42,6 @@
 	  branchbase,		%% string(), base of branches we should use
 	  callhandler,		%% term(), the server transaction handler
 	  request,		%% request record()
-	  actions,		%% list() of sipproxy_action record()
 	  forkpid,		%% pid() of sipproxy process
 	  callhandler_pid,	%% pid() of server transaction handler, only use for matching!
 	  cancelled=false,	%% atom(), true | false
@@ -86,7 +85,7 @@ start_link_cpl(Parent, BranchBase, CallHandler, Request, Actions) when is_pid(Pa
 %%           Actions     = list() of sipproxy_action record()
 %%           Parent      = pid(), CPL interpreter backend process
 %%           BranchBase  = string()
-%% Descrip.: Initiates the server
+%% Descrip.: Initiates the server.
 %% Returns : {ok, State, Timeout} |
 %%           ok                   |
 %%           error (parent will throw a siperror (500))
@@ -101,10 +100,12 @@ init([Request, Actions]) when is_record(Request, request), is_list(Actions) ->
 		       [CallHandler, ForkPid]),
 	    %% We need the pid of the callhandler extracted to do guard matches on it
 	    CHPid = transactionlayer:get_pid_from_handler(CallHandler),
-	    logger:log(debug, "Appserver glue started"),
-	    {ok, #state{branchbase=BranchBase, callhandler=CallHandler, forkpid=ForkPid,
-			request=Request, actions=Actions, callhandler_pid=CHPid},
-	     ?TIMEOUT};
+	    {ok, #state{branchbase	= BranchBase,
+			callhandler	= CallHandler,
+			forkpid		= ForkPid,
+			request		= Request,
+			callhandler_pid	= CHPid
+		       }, ?TIMEOUT};
 	ignore ->
 	    ok;
 	Res ->
@@ -125,9 +126,13 @@ init([cpl, Parent, BranchBase, CallHandler, Request, Actions]) ->
 	       [Parent, CallHandler, ForkPid]),
     %% We need the pid of the callhandler extracted to do guard matches on it
     CHPid = transactionlayer:get_pid_from_handler(CallHandler),
-    logger:log(debug, "Appserver glue (CPL) started"),
-    {ok, #state{branchbase=BranchBase, callhandler=CallHandler, forkpid=ForkPid,
-		request=Request, actions=Actions, callhandler_pid=CHPid, cpl_pid=Parent}, ?TIMEOUT}.
+    {ok, #state{branchbase	= BranchBase,
+		callhandler	= CallHandler,
+		forkpid		= ForkPid,
+		request		= Request,
+		callhandler_pid	= CHPid,
+		cpl_pid		= Parent
+	       }, ?TIMEOUT}.
 
 
 %%--------------------------------------------------------------------
@@ -175,7 +180,8 @@ handle_cast(Msg, State) ->
 %% Returns : {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid=FromPid} = State) when is_pid(FromPid) ->
+handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid = FromPid} = State)
+  when is_pid(FromPid) ->
     ForkPid = State#state.forkpid,
     logger:log(debug, "Appserver glue: Original request has been cancelled, sending " ++
 	       "'cancel_pending' to ForkPid ~p and entering state 'cancelled' (answering '487 Request Cancelled')",
@@ -183,7 +189,7 @@ handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid=F
     %% By not doing util:safe_signal(...), we crash (and return 500) instead of returning 487 if this fails
     ForkPid ! {cancel_pending, EH},
     transactionlayer:send_response_handler(State#state.callhandler, 487, "Request Cancelled"),
-    NewState1 = State#state{cancelled=true},
+    NewState1 = State#state{cancelled = true},
     check_quit({noreply, NewState1, ?TIMEOUT}, none);
 
 %%--------------------------------------------------------------------
@@ -198,8 +204,10 @@ handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid=F
 %% Returns : {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({servertransaction_terminating, FromPid}, #state{callhandler_pid=FromPid}=State) when is_pid(FromPid) ->
-    {CallHandlerPid, ForkPid} = {State#state.callhandler_pid, State#state.forkpid},
+handle_info({servertransaction_terminating, FromPid}, #state{callhandler_pid = FromPid} = State) when is_pid(FromPid) ->
+    #state{callhandler_pid	= CallHandlerPid,
+	   forkpid		= ForkPid
+	  } = State,
     logger:log(debug, "Appserver glue: received servertransaction_terminating from my CallHandlerPid ~p "
 	       "(ForkPid is ~p) - terminating (completed: ~p)", [CallHandlerPid, ForkPid, State#state.completed]),
     check_quit({stop, normal, State});
@@ -218,7 +226,7 @@ handle_info({servertransaction_terminating, FromPid}, #state{callhandler_pid=Fro
 %% Returns : {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({sipproxy_response, FromPid, _Branch, Response}, #state{forkpid=FromPid}=State)
+handle_info({sipproxy_response, FromPid, _Branch, Response}, #state{forkpid = FromPid} = State)
   when is_record(Response, response), is_pid(FromPid) ->
     NewState = handle_sipproxy_response(Response, State),
     check_quit({noreply, NewState, ?TIMEOUT});
@@ -240,14 +248,14 @@ handle_info({sipproxy_response, FromPid, _Branch, Response}, #state{forkpid=From
 %% Returns : {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({sipproxy_all_terminated, FromPid, FinalResponse}, #state{forkpid=FromPid}=State) when is_pid(FromPid) ->
+handle_info({sipproxy_all_terminated, FromPid, FinalResponse}, #state{forkpid = FromPid} = State) when is_pid(FromPid) ->
     CallHandler = State#state.callhandler,
     NewState1 =
 	case State#state.cancelled of
 	    true ->
 		logger:log(debug, "Appserver glue: received sipproxy_all_terminated - request was "
 			   "previously cancelled. Silently enter state 'completed'."),
-		State#state{completed=true};
+		State#state{completed = true};
 	    false ->
 		case FinalResponse of
 		    _ when is_record(FinalResponse, response) ->
@@ -279,17 +287,16 @@ handle_info({sipproxy_all_terminated, FromPid, FinalResponse}, #state{forkpid=Fr
 %% Returns : {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({sipproxy_no_more_actions, FromPid}, #state{forkpid=FromPid}=State) when is_pid(FromPid) ->
+handle_info({sipproxy_no_more_actions, FromPid}, #state{forkpid = FromPid} = State) when is_pid(FromPid) ->
     NewState1 =
 	case State#state.cancelled of
 	    true ->
 		logger:log(debug, "Appserver glue: received sipproxy_no_more_actions when cancelled. Ignoring."),
-		State#state{completed=true};
+		State#state{completed = true};
 	    false ->
 		case State#state.completed of
 		    false ->
-			Request = State#state.request,
-			{Method, URI} = {Request#request.method, Request#request.uri},
+			#request{method = Method, uri = URI} = State#state.request,
 			logger:log(debug, "Appserver glue: received sipproxy_no_more_actions when NOT cancelled "
 				   "(and not completed), responding 408 Request Timeout to original request ~s ~s",
 				   [Method, sipurl:print(URI)]),
@@ -313,7 +320,9 @@ handle_info({sipproxy_no_more_actions, FromPid}, #state{forkpid=FromPid}=State) 
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_info({sipproxy_terminating, FromPid}, #state{forkpid=FromPid}=State) when is_pid(FromPid) ->
-    {CallHandlerPid, ForkPid} = {State#state.callhandler_pid, State#state.forkpid},
+    #state{callhandler_pid	= CallHandlerPid,
+	   forkpid		= ForkPid
+	  } = State,
     logger:log(debug, "Appserver glue: received sipproxy_terminating from my ForkPid ~p (CallHandlerPid is ~p) "
 	       "- exiting normally (completed: ~p).", [ForkPid, CallHandlerPid, State#state.completed]),
     check_quit({stop, normal, State});
@@ -329,10 +338,9 @@ handle_info({sipproxy_terminating, FromPid}, #state{forkpid=FromPid}=State) when
 %%           wherever.
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
-    {CallHandler, ForkPid} = {State#state.callhandler, State#state.forkpid},
     logger:log(error, "Appserver glue: Still alive after 5 minutes! Exiting. CallHandler '~p', ForkPid '~p'",
-	       [CallHandler, ForkPid]),
-    util:safe_signal("Appserver glue: ", ForkPid, {showtargets}),
+	       [State#state.callhandler, State#state.forkpid]),
+    util:safe_signal("Appserver glue: ", State#state.forkpid, {showtargets}),
     check_quit({stop, "appserver_glue should not live forever", State});
 
 handle_info(Info, State) ->
@@ -345,8 +353,8 @@ handle_info(Info, State) ->
 %% Returns : any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
-    {Request, BranchBase} = {State#state.request, State#state.branchbase},
-    {Method, URI} = {Request#request.method, Request#request.uri},
+    BranchBase = State#state.branchbase,
+    #request{method = Method, uri = URI} = State#state.request,
     case Reason of
 	normal ->
 	    logger:log(normal, "~s: Appserver glue: Finished with fork (~s ~s), exiting.",
@@ -397,12 +405,12 @@ check_quit(Res, From) ->
     end.
 
 %% part of check_quit/2
-check_quit2(Res, From, #state{cpl_pid=CPLpid, forkpid=FP}=State) when CPLpid /= none, FP == none ->
+check_quit2(Res, From, #state{cpl_pid = CPLpid, forkpid = FP} = State) when CPLpid /= none, FP == none ->
     %% When we are executing a CPL script, we never have a callhandler, so just check forkpid
     logger:log(debug, "Appserver glue: We are executing on behalf of a CPL script and ForkPid is 'none' - terminating"),
     check_quit2_terminate(Res, From, State);
 
-check_quit2(Res, From, #state{callhandler=CH, forkpid=FP}=State) when CH == none; FP == none ->
+check_quit2(Res, From, #state{callhandler = CH, forkpid = FP} = State) when CH == none; FP == none ->
     logger:log(debug, "Appserver glue: CallHandler (~p) or ForkPid (~p) is 'none' - terminating",
 	       [CH, FP]),
     check_quit2_terminate(Res, From, State);
@@ -438,10 +446,10 @@ check_quit2_terminate(Res, _From, State) ->
 %%--------------------------------------------------------------------
 send_final_response(State, Status, Reason) ->
     send_final_response(State, Status, Reason, []).
-send_final_response(#state{cpl_pid=none}=State, Status, Reason, EH) when is_integer(Status), is_list(Reason) ->
+send_final_response(#state{cpl_pid = none} = State, Status, Reason, EH) when is_integer(Status), is_list(Reason) ->
     TH = State#state.callhandler,
     transactionlayer:send_response_handler(TH, Status, Reason, EH),
-    State#state{completed=true};
+    State#state{completed = true};
 send_final_response(State, Status, Reason, EH) when is_record(State, state), is_integer(Status), is_list(Reason) ->
     Response = {Status, Reason},
     if
@@ -451,7 +459,7 @@ send_final_response(State, Status, Reason, EH) when is_record(State, state), is_
 	true -> true
     end,
     State#state.cpl_pid ! {appserver_glue_final_response, self(), Response},
-    State#state{completed=true}.
+    State#state{completed = true}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_sipproxy_response(Response, State)
@@ -466,10 +474,10 @@ send_final_response(State, Status, Reason, EH) when is_record(State, state), is_
 %%
 %% Method is INVITE and we are already completed
 %%
-handle_sipproxy_response(Response, #state{request=Request, completed=true}=State)
+handle_sipproxy_response(Response, #state{request = Request, completed = true}=State)
   when is_record(Response, response), is_record(Request, request), Request#request.method == "INVITE" ->
     URI = Request#request.uri,
-    {Status, Reason} = {Response#response.status, Response#response.reason},
+    #response{status = Status, reason = Reason} = Response,
     if
 	Status >= 200, Status =< 299 ->
 	    %% XXX change to debug level? Might be good to see in the log though, since
@@ -487,10 +495,9 @@ handle_sipproxy_response(Response, #state{request=Request, completed=true}=State
 %%
 %% Method is non-INVITE and we are already completed
 %%
-handle_sipproxy_response(Response, #state{completed=true}=State) when is_record(Response, response) ->
-    Request = State#state.request,
-    {Method, URI} = {Request#request.method, Request#request.uri},
-    {Status, Reason} = {Response#response.status, Response#response.reason},
+handle_sipproxy_response(Response, #state{completed = true} = State) when is_record(Response, response) ->
+    #request{method = Method, uri = URI} = State#state.request,
+    #response{status = Status, reason = Reason} = Response,
     logger:log(error, "Appserver glue: NOT forwarding response ~p ~s to non-INVITE request ~s ~s - " ++
 	       "a final response has already been forwarded (sipproxy should not do this!)",
 	       [Status, Reason, Method, sipurl:print(URI)]),
@@ -502,9 +509,8 @@ handle_sipproxy_response(Response, #state{completed=true}=State) when is_record(
 %%
 handle_sipproxy_response(#response{status=Status}=Response, #state{cpl_pid=CPLpid}=State)
   when is_pid(CPLpid), Status >= 200 ->
-    Request = State#state.request,
-    {Method, URI} = {Request#request.method, Request#request.uri},
-    {Status, Reason} = {Response#response.status, Response#response.reason},
+    #request{method = Method, uri = URI} = State#state.request,
+    #response{status = Status, reason = Reason} = Response,
     %% We always tell CallHandler about 2xx responses
     if
 	Status >= 200, Status =< 299 ->
@@ -519,7 +525,7 @@ handle_sipproxy_response(#response{status=Status}=Response, #state{cpl_pid=CPLpi
     logger:log(debug, "Appserver glue: Forwarding final response '~p ~s' to '~s ~s' to CPL-pid ~p",
 	       [Status, Reason, Method, sipurl:print(URI), CPLpid]),
     CPLpid ! {appserver_glue_final_response, self(), Response},
-    State#state{completed=true};
+    State#state{completed = true};
 %%
 %% We are not yet completed, and State does not contain a CPL-pid, or this is a provisional
 %% response so we basically forward the response to our CallHandler, and if if it >= 200 we
