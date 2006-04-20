@@ -320,11 +320,12 @@ test() ->
 
 test_create_table() ->
     case catch mnesia:table_info(gruu, attributes) of
-	GruuAttrs when is_list(GruuAttrs) ->
+	Attrs when is_list(Attrs) ->
 	    ok;
 	{'EXIT', {aborted, {no_exists, gruu, attributes}}} ->
 	    %% Create table 'gruu' in RAM for use in the tests here
-	    mnesia:create_table(gruu, [{attributes, record_info(fields, gruu)},
-				      {index, [sipuser, instance_id]}
-				      ])
+	    {atomic, ok} =
+		mnesia:create_table(gruu, [{attributes, record_info(fields, gruu)},
+					   {index, [sipuser, instance_id]}
+					  ])
     end.
