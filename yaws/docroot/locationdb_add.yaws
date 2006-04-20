@@ -171,7 +171,8 @@ write_location2(Node, User, Flags, Class, Expire, Address, CallId, CSeq) when is
 									      is_integer(Expire); Expire == never,
 									      is_record(Address, sipurl),
 									      is_list(CallId), is_integer(CSeq) ->
-    case rpc:call(Node, phone, insert_purge_phone, [User, Flags, Class, Expire, Address, CallId, CSeq]) of
+    Instance = [],
+    case rpc:call(Node, phone, insert_purge_phone, [User, Flags, Class, Expire, Address, CallId, CSeq, Instance]) of
 	{atomic, ok} ->
 	    ok;
 	E ->

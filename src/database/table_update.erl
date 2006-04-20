@@ -64,30 +64,40 @@ phone() ->
 		%% check for old record lacking callid and cseq field
 		put({Table, update}, true),
 		#phone{
-		     number = Number,
+		     user = Number,
 		     flags = Flags,
 		     class = Class,
 		     expire = Expire,
 		     address = Address,
 		     requristr = ReqUriStr,
 		     callid = "",
-		     cseq = 0
+		     cseq = 0,
+		     instance = ""
 		    };
-	   ({phone, Number, Flags, Class, Expire, Address, ReqUriStr, undefined, undefined}) ->
-		%% debug related patch - to fix when new phone entries got improperly updated -
-		%% forgot setting CallId and CSeq field values
+	   ({phone, User, Flags, Class, Expire, Address, ReqUriStr, CallId, CSeq}) ->
+		%% Add instance field with Instance ID, previously stored in Flags.
+		%% We don't care to remove it from Flags - no real need to.
+		Instance =
+		    case lists:keysearch(instance_id, 1, Flags) of
+			{value, {instance_id, InstanceId}} ->
+			    InstanceId;
+			false ->
+			    []
+		    end,
+
 		put({Table, update}, true),
 		#phone{
-		     number = Number,
+		     user = User,
 		     flags = Flags,
 		     class = Class,
 		     expire = Expire,
 		     address = Address,
 		     requristr = ReqUriStr,
-		     callid = "",
-		     cseq = 0
+		     callid = CallId,
+		     cseq = CSeq,
+		     instance = Instance
 		    };
-	   ({phone, _Number, _Flags, _Class, _Expire, _Address, _ReqUriStr, _CallId, _CSeq} = Phone) ->
+	   (Phone) when is_record(Phone, phone) ->
 		%% nothing to update
 		Phone
 	end,
@@ -99,6 +109,14 @@ phone() ->
 	false ->
 	    logger:log(debug, "Startup: Adding 'requristr' index to location database table 'phone'"),
 	    {atomic, ok} = mnesia:add_table_index(phone, #phone.requristr)
+    end,
+
+    case lists:member(#phone.instance, mnesia:table_info(phone, index)) of
+	true ->
+	    ok;
+	false ->
+	    logger:log(debug, "Startup: Adding 'instance' index to location database table 'phone'"),
+	    {atomic, ok} = mnesia:add_table_index(phone, #phone.instance)
     end,
 
     ok.

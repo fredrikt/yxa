@@ -135,6 +135,8 @@
 %% Location DB entry
 -record(siplocationdb_e, {
 	  address,	%% string(), parseable with sipurl:parse(...)
+	  sipuser,	%% string(), SIP username for this binding
+	  instance,	%% string(), instance ID
 	  flags,	%% list() of {Name, Value}
 	  class,	%% atom(), static | dynamic
 	  expire	%% integer(), util:timestamp/0 time when this record expires

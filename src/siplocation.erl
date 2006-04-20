@@ -642,7 +642,7 @@ wildcard_grep([_Foo | Rest]) ->
 %%           location specified. Used to determine if we should
 %%           proxy requests to a URI without authorization.
 %% Returns : none | SIPuser
-%%           SIPuser = #phone.number field value
+%%           SIPuser = #phone.user field value
 %% NOTE    : If you want to know all the users (in case there is more
 %%           than one), you have to call
 %%           phone:get_sipusers_using_location/1 directly.
@@ -801,7 +801,7 @@ check_same_call_id(RegReq, Contact, DBLocation) ->
 		    Priority = get_flag_value(priority, DBLocation),
 
 		    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
-			       [LogTag, DBLocation#phone.number, DBLocation#phone.requristr, Priority]),
+			       [LogTag, DBLocation#phone.user, DBLocation#phone.requristr, Priority]),
 		    phone:delete_record(DBLocation);
 		false ->
 		    register_contact(RegReq, Contact, Expire)
@@ -837,14 +837,14 @@ check_greater_cseq(RegReq, Contact, DBLocation, Expire) ->
 		    Priority = get_flag_value(priority, DBLocation),
 		    %% unregister binding
 		    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
-			       [LogTag, DBLocation#phone.number, DBLocation#phone.requristr, Priority]),
+			       [LogTag, DBLocation#phone.user, DBLocation#phone.requristr, Priority]),
 		    phone:delete_record(DBLocation);
 		false ->
 		    %% update the binding
 		    register_contact(RegReq, Contact, Expire)
 	    end;
 	false ->
-	    #phone{number    = DBSipUser,
+	    #phone{user	     = DBSipUser,
 		   requristr = DBContact,
 		   cseq      = DBCSeq
 		  } = DBLocation,
@@ -1014,7 +1014,7 @@ unregister_phone(LogTag, #phone{class = dynamic}=Location, RequestCallId, Reques
 	    phone:delete_record(Location),
 	    Priority = get_flag_value(priority, Location),
 
-	    SipUser = Location#phone.number,
+	    SipUser = Location#phone.user,
 	    logger:log(normal, "~s: UN-REGISTER ~s at ~s (priority ~p)",
 		       [LogTag, SipUser, Location#phone.requristr, Priority]),
 	    ok;

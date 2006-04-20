@@ -21,7 +21,7 @@
 	 get_user/1,
 	 insert_user/4,
 	 list_users/0,
-	 insert_purge_phone/7,
+	 insert_purge_phone/8,
 	 purge_class_phone/2,
 	 delete_location/3,
 	 expired_phones/0,
@@ -37,7 +37,8 @@
 	 list_numbers/0,
 	 delete_phone/3,
 	 delete_phone_for_user/2,
-	 get_sipusers_using_location/1,
+	 get_sipusers_using_contact/1,
+	 get_locations_using_contact/1,
 
 	 test/0,
 	 test_create_table/0
@@ -89,7 +90,7 @@ create() ->
 create(Servers) ->
     mnesia:create_table(phone, [{attributes, record_info(fields, phone)},
 				{disc_copies, Servers},
-				{index, [requristr]},
+				{index, [requristr, instance]},
 				{type, bag}]),
     mnesia:create_table(user, [{attributes, record_info(fields, user)},
 			       {disc_copies, Servers}]),
@@ -145,25 +146,25 @@ remove_phones(ExpiredPhones) ->
 
 %%--------------------------------------------------------------------
 %% Function: insert_purge_phone(SipUser, Flags, Class, Expire,
-%%                              Address, CallId, CSeq)
-%%           SipUser = string(), username
-%%           Flags   = list of {Name, Value}
-%%             Name  = atom()
-%%             Value = term(), but typically integer() or string()
-%%           Class   = static | dynamic
-%%           Expire  = integer() | never
-%%           Address = sipurl record()
-%%           CallId  = string()
-%%           CSeq    = integer()
+%%                              Address, CallId, CSeq, Instance)
+%%           SipUser  = string(), username
+%%           Flags    = list of {Name, Value}
+%%             Name   = atom()
+%%             Value  =  term(), but typically integer() or string()
+%%           Class    = static | dynamic
+%%           Expire   = integer() | never
+%%           Address  = sipurl record()
+%%           CallId   = string()
+%%           CSeq     = integer()
+%%           Instance = string(), Instance ID (or "")
 %% Descrip.: Remove a certain SipUser -> location mapping. Then create
 %%           a new entry with a new Expire value
 %% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is_list(SipUser), is_list(Flags),
-									      Class == static; Class == dynamic,
-									      is_integer(Expire); Expire == never,
-									      is_record(Address, sipurl),
-									      is_list(CallId), is_integer(CSeq) ->
+insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq, Instance)
+  when is_list(SipUser), is_list(Flags), Class == static; Class == dynamic, is_integer(Expire); Expire == never,
+       is_record(Address, sipurl), is_list(CallId), is_integer(CSeq), is_list(Instance) ->
+
     %% We store locations as strings in the location database, since any
     %% datastructure could have to be changed in the future
     LocationStr = sipurl:print(Address),
@@ -171,39 +172,98 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq) when is
     %% a location, when for example we need to determine if we should proxy a request
     %% without requiring authorization in incomingproxy and appserver.
     URIstr = url_to_requristr(Address),
-    Fun = fun() ->
-		  %% query on requristr since that is most likely unique
-		  L = mnesia:index_read(phone, URIstr, #phone.requristr),
-		  %% apply our other selection criterias as well
-		  A = [E || E <- L, E#phone.number == SipUser, E#phone.class == Class],
 
+    This = #phone{user = SipUser,
+		  flags = Flags,
+		  class = Class,
+		  expire = Expire,
+		  address = LocationStr,
+		  requristr = URIstr,
+		  callid = CallId,
+		  cseq = CSeq,
+		  instance = Instance
+		 },
+
+    case {Instance /= [], lists:keysearch(reg_id, 1, Flags)} of
+	{true, {value, {reg_id, RegId}}} when is_integer(RegId) ->
+	    insert_purge_phone_outbound(SipUser, Class, Instance, URIstr, RegId, This);
+	_ ->
+	    Fun = fun() ->
+			  %% query on requristr since that is most likely unique
+			  L = mnesia:index_read(phone, URIstr, #phone.requristr),
+			  %% apply our other selection criterias as well
+			  A = [E || E <- L, E#phone.user == SipUser, E#phone.class == Class],
+
+			  Delete = fun(O) ->
+					   mnesia:delete_object(O)
+				   end,
+			  lists:foreach(Delete, A),
+			  mnesia:write(This)
+		  end,
+	    mnesia:transaction(Fun)
+    end.
+
+%% part of insert_purge_phone/8
+insert_purge_phone_outbound(SipUser, Class, Instance, URIstr, RegId, This) ->
+    %% do Outbound registration - meaning we delete any record with the same
+    %% instance ID and reg-id this one has, not the same contact URI as we do
+    %% when not doing Outbound
+    Fun = fun() ->
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
-		  lists:foreach(Delete, A),
-		  mnesia:write(#phone{number = SipUser,
-				      flags = Flags,
-				      class = Class,
-				      expire = Expire,
-				      address = LocationStr,
-				      requristr = URIstr,
-				      callid = CallId,
-				      cseq = CSeq
-				     })
+
+		  %% delete every entry with instance id matching ours, and reg_id
+		  %% also matching
+		  L2 = mnesia:index_read(phone, Instance, #phone.instance),
+		  InvL =
+		      lists:foldl(fun(#phone{flags = HF} = H, Acc) ->
+					  case lists:member({reg_id, RegId}, HF) of
+					      true ->
+						  [H | Acc];
+					      false ->
+						  Acc
+					  end
+				  end, [], L2),
+		  lists:foreach(Delete, InvL),
+
+		  mnesia:write(This),
+
+		  {ok, {invalidated, InvL}}
 	  end,
-    mnesia:transaction(Fun).
+    Res = mnesia:transaction(Fun),
+
+    case Res of
+	{atomic, {ok, {invalidated, []}}} ->
+	    ok;
+	{atomic, {ok, {invalidated, L}}} when is_list(L) ->
+	    lists:map(fun(IP) when is_record(IP, phone) ->
+			      #phone{user = User,
+				     address = Address,
+				     class = Class
+				    } = IP,
+			      %% XXX change to 'debug' log level
+			      logger:log(normal, "Location: Registration with Outbound mechanism "
+					 "invalidated previously registered contact for user \"~s\" : ~s (~p)",
+					 [User, Address, Class])
+		      end, L)
+    end,
+
+    Res.
+
+
 
 %%--------------------------------------------------------------------
-%% Function: purge_class_phone(Number, Class)
-%%           Number = string()
-%%           Class  = atom()
-%% Descrip.: Removes all entrys matching a number (SIP user),
+%% Function: purge_class_phone(User, Class)
+%%           User  = string()
+%%           Class = atom()
+%% Descrip.: Removes all entrys matching User (SIP user),
 %%           and class from the location database.
 %% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
-purge_class_phone(Number, Class) ->
+purge_class_phone(User, Class) ->
     Fun = fun() ->
-		  A = mnesia:match_object(#phone{number = Number,
+		  A = mnesia:match_object(#phone{user = User,
 						 class = Class,
 						 _ = '_'}),
 		  Delete = fun(O) ->
@@ -216,17 +276,17 @@ purge_class_phone(Number, Class) ->
 
 %%--------------------------------------------------------------------
 %% Function: delete_location(User, Class, Address)
-%%           User    = string(), username (phone record 'number'
+%%           User    = string(), username (phone record 'user'
 %%                     element)
 %%           Class   = atom(), class of location (static | dynamic)
 %%           Address = string(), address to remove
-%% Descrip.: Delete a specific location from the location database. 
+%% Descrip.: Delete a specific location from the location database.
 %% Returns : The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
 delete_location(User, Class, Address) when is_list(User), Class == static; Class == dynamic,
 					   is_list(Address) ->
     Fun = fun() ->
-		  A = mnesia:match_object(#phone{number = User,
+		  A = mnesia:match_object(#phone{user = User,
 						 class = Class,
 						 address = Address,
 						 _ = '_'}),
@@ -310,8 +370,8 @@ get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record
 	end,
     {atomic, L} = mnesia:transaction(F),
 
-    %% remove entrys which are expired, or don't have #phone.number == SipUser
-    Res = [E || E <- L, E#phone.expire > Now orelse E#phone.expire == never, E#phone.number == SipUser],
+    %% remove entrys which are expired, or don't have #phone.user == SipUser
+    Res = [E || E <- L, E#phone.expire > Now orelse E#phone.expire == never, E#phone.user == SipUser],
 
     {atomic, Res}.
 
@@ -319,7 +379,7 @@ get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record
 %%--------------------------------------------------------------------
 %% Function: get_sipuser_locations(SipUser)
 %%           SipUser = string()
-%% Descrip.: Fetches all locations for a given number (SIP user)
+%% Descrip.: Fetches all locations for a given user (SIP user)
 %%           from the location database.
 %% Returns : {ok, Entries} |
 %%           the result of the mnesia:transaction()
@@ -339,6 +399,8 @@ get_sipuser_locations(SipUser) when is_list(SipUser) ->
     %% have to change something in the sipurl record.
     Rewrite =
 	[ #siplocationdb_e{address	= sipurl:parse(E#phone.address),
+			   sipuser	= E#phone.user,
+			   instance	= E#phone.instance,
 			   flags	= E#phone.flags,
 			   class	= E#phone.class,
 			   expire	= E#phone.expire
@@ -349,7 +411,7 @@ get_sipuser_locations(SipUser) when is_list(SipUser) ->
 %%--------------------------------------------------------------------
 %% Function: get_phone(SipUser)
 %%           SipUser = string()
-%% Descrip.: Fetches all locations for a given number (SIP user)
+%% Descrip.: Fetches all locations for a given user (SIP user)
 %%           from the location database. Return raw phone record()s.
 %% Returns : the result of the mnesia:transaction()
 %% Note    : Only use this for testing, use get_sipuser_locations/1
@@ -412,18 +474,46 @@ get_users_for_number(Number) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: get_sipusers_using_location(URI)
+%% Function: get_sipusers_using_contact(URI)
 %%           URI = sipurl record()
-%% Descrip.: find all users (#phone.number) that use a cretain sip url
+%% Descrip.: find all users (#phone.user) that use a certain sip url
 %% Returns : {atomic, Users} | {aborted, Reason}
-%%           Users = list() of #phone.number values
+%%           Users = list() of #phone.user values
 %%--------------------------------------------------------------------
-get_sipusers_using_location(URI) when is_record(URI, sipurl) ->
+get_sipusers_using_contact(URI) when is_record(URI, sipurl) ->
     ReqURIstr = url_to_requristr(URI),
+    Now = util:timestamp(),
     F = fun() ->
-		[ E#phone.number || E <- mnesia:index_read(phone, ReqURIstr, #phone.requristr) ]
+		L = mnesia:index_read(phone, ReqURIstr, #phone.requristr),
+		%% remove expired entrys
+		[ E#phone.user || E <- L, E#phone.expire > Now orelse E#phone.expire == never ]
 	end,
     mnesia:transaction(F).
+
+
+get_locations_using_contact(URI) when is_record(URI, sipurl) ->
+    ReqURIstr = url_to_requristr(URI),
+    F = fun() ->
+		mnesia:index_read(phone, ReqURIstr, #phone.requristr)
+	end,
+    {atomic, L} = mnesia:transaction(F),
+
+    Now = util:timestamp(),
+
+    %% Remove expired entrys and convert into siplocationdb_e record().
+    %% Convert the location strings stored in the database to sipurl record format.
+    %% We can't store the locations as sipurl records in the database in case we
+    %% have to change something in the sipurl record.
+    Rewrite =
+	[ #siplocationdb_e{address	= sipurl:parse(E#phone.address),
+			   sipuser	= E#phone.user,
+			   instance	= E#phone.instance,
+			   flags	= E#phone.flags,
+			   class	= E#phone.class,
+			   expire	= E#phone.expire
+			  }
+	  || E <- L, E#phone.expire > Now orelse E#phone.expire == never],
+     {ok, Rewrite}.
 
 %%--------------------------------------------------------------------
 %% Function: set_user_password(User, Password)
@@ -529,7 +619,7 @@ expired_phones() ->
     F = fun() ->
 		mnesia:select(phone, [{#phone{_ = '_'},
 				       [{'<', {element, #phone.expire, '$_'}, Now}],
-				       [{{{element, #phone.number, '$_'},
+				       [{{{element, #phone.user, '$_'},
 					  {element, #phone.address, '$_'},
 					  {element, #phone.class, '$_'}
 					 }}]
@@ -548,8 +638,8 @@ expired_phones() ->
 %% Function: delete_phone(SipUser, Address, Class)
 %%           SipUser = string()
 %%           Class   = atom()
-%%           Address = term()
-%% Descrip.: Removes all entrys matching a number (SIP user), class
+%%           Address = term() (should be string)
+%% Descrip.: Removes all entrys matching a user (SIP user), class
 %%           and address from the location database. Address can be
 %%           whatever - this function should not be depending on being
 %%           able to understand Address to remove old records from the
@@ -559,7 +649,7 @@ expired_phones() ->
 %%--------------------------------------------------------------------
 delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
     Fun = fun() ->
-		  A = mnesia:match_object(#phone{number = SipUser,
+		  A = mnesia:match_object(#phone{user = SipUser,
 						 class = Class,
 						 address = Address,
 						 _ = '_'}),
@@ -572,7 +662,7 @@ delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
 
 delete_phone_for_user(SipUser, Class) when is_list(SipUser), is_atom(Class) ->
     Fun = fun() ->
-		  A = mnesia:match_object(#phone{number = SipUser,
+		  A = mnesia:match_object(#phone{user = SipUser,
 						 class = Class,
 						 _ = '_'}),
 		  Delete = fun(O) ->
@@ -657,12 +747,13 @@ test() ->
 
 test_create_table() ->
     case catch mnesia:table_info(phone, attributes) of
-	PhoneAttrs when is_list(PhoneAttrs) ->
+	Attrs when is_list(Attrs) ->
 	    ok;
 	{'EXIT', {aborted, {no_exists, phone, attributes}}}  ->
 	    %% Create table 'phone' in RAM for use in the tests here
-	    mnesia:create_table(phone, [{attributes,	record_info(fields, phone)},
-					{index,		[requristr]},
-					{type,		bag}
-				       ])
+	    {atomic, ok} =
+		mnesia:create_table(phone, [{attributes,	record_info(fields, phone)},
+					    {index,		[requristr, instance]},
+					    {type,		bag}
+					   ])
     end.
