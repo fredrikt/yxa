@@ -89,13 +89,13 @@ request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(
 request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
-	    logger:log(normal, "Appserver: ~s -> Forwarding ACK statelessly (unknown SIP user)",
+	    logger:log(normal, "Appserver: ~s -> Forwarding ACK statelessly (to unknown SIP user)",
 		       [LogStr]),
-	    transportlayer:stateless_proxy_request("appserver", Request);
+	    transportlayer:stateless_proxy_ack("appserver", Request, LogStr);
 	SIPuser ->
-	    logger:log(normal, "Appserver: ~s -> Forwarding ACK statelessly (SIP user ~p)",
+	    logger:log(normal, "Appserver: ~s -> Forwarding ACK statelessly (to SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:stateless_proxy_request("appserver", Request)
+	    transportlayer:stateless_proxy_ack("appserver", Request, LogStr)
     end,
     ok;
 

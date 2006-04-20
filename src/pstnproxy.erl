@@ -66,13 +66,11 @@ init() ->
 %%
 %% ACK
 %%
-request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     %% ACK requests that end up here could not be matched to a server transaction,
     %% most probably they are ACK to 2xx of INVITE (or we have crashed) - proxy
     %% statelessly.
-    logger:log(normal, "pstnproxy: ~s -> Forwarding ACK received in core statelessly",
-	       [LogStr]),
-    transportlayer:stateless_proxy_request("incomingproxy", Request),
+    transportlayer:stateless_proxy_ack("pstnproxy", Request, LogStr),
     ok;
 
 %%

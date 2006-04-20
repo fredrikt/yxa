@@ -81,10 +81,8 @@ request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Orig
 %%
 %% ACK
 %%
-request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
-    logger:log(normal, "incomingproxy: ~s -> Forwarding ACK received in core statelessly",
-	       [LogStr]),
-    transportlayer:stateless_proxy_request("incomingproxy", Request),
+request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+    transportlayer:stateless_proxy_ack("incomingproxy", Request, LogStr),
     ok;
 
 %%

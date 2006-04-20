@@ -18,6 +18,7 @@
 	 send_result/5,
 	 send_result/6,
 	 stateless_proxy_request/2,
+	 stateless_proxy_ack/3,
 
 	 report_unreachable/2,
 	 report_unreachable/3,
@@ -64,7 +65,7 @@ send_proxy_response(Socket, Response)
 	[_Self | Via] ->
 	    %% Remove Via matching me (XXX should check that it does match me)
 	    NewHeader = keylist:set("Via", sipheader:via_print(Via), Response#response.header),
-	    NewResponse = Response#response{header=NewHeader},
+	    NewResponse = Response#response{header = NewHeader},
 	    send_response(Socket, NewResponse)
     end.
 
@@ -89,9 +90,10 @@ send_proxy_response(Socket, Response)
 %%--------------------------------------------------------------------
 send_proxy_request(Socket, Request, Dst, ViaParameters)
   when is_record(Socket, sipsocket); Socket == none, is_record(Request, request), is_record(Dst, sipdst) ->
-    IP = Dst#sipdst.addr,
-    Port = Dst#sipdst.port,
-    Proto = Dst#sipdst.proto,
+    #sipdst{addr  = IP,
+	    port  = Port,
+	    proto = Proto
+	   } = Dst,
     DestStr = sipdst:dst2str(Dst),
     case get_good_socket(Socket, Dst) of
 	{error, {timeout, _}} ->
@@ -103,8 +105,11 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
 		       [Proto, DestStr, What]),
 	    {error, What};
 	SipSocket when is_record(SipSocket, sipsocket) ->
-	    {Method, OrigURI, Header, Body} = {Request#request.method, Request#request.uri,
-					       Request#request.header, Request#request.body},
+	    #request{method = Method,
+		     uri    = OrigURI,
+		     header = Header,
+		     body   = Body
+		    } = Request,
 	    NewHeader1 = siprequest:proxy_add_via(Header, OrigURI, ViaParameters, Proto),
 	    NewHeader2 = siprequest:fix_content_length(NewHeader1, Body),
 	    BinLine1 = list_to_binary([Method, " ", sipurl:print(Dst#sipdst.uri), " SIP/2.0"]),
@@ -143,10 +148,63 @@ send_result(RequestHeader, Socket, Body, Status, Reason)
 send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
   when is_record(RequestHeader, keylist), is_record(Socket, sipsocket); Socket == none,
        is_binary(Body); is_list(Body), is_integer(Status), is_list(Reason), is_record(ExtraHeaders, keylist) ->
-    Response1 = #response{status=Status, reason=Reason,
-			  header=siprequest:standardcopy(RequestHeader, ExtraHeaders)},
+    Response1 = #response{status = Status,
+			  reason = Reason,
+			  header = siprequest:standardcopy(RequestHeader, ExtraHeaders)
+			 },
     Response = siprequest:set_response_body(Response1, Body),
     send_response(Socket, Response).
+
+%%--------------------------------------------------------------------
+%% Function: stateless_proxy_ack(LogTag, Request, LogStr)
+%%           LogTag  = string(), only used on error
+%%           Request = request record()
+%%           LogStr  = string(), describes request
+%% Descrip.: Proxy a request statelessly. We do that sometimes, for
+%%           example ACK 'requests' of to 2xx response to INVITE.
+%% Returns : Res = term()    |
+%%           ignore          |
+%%           {error, Reason}
+%%           Res    = result of transportlayer:send_proxy_request()
+%%           Reason = string()
+%%--------------------------------------------------------------------
+stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, LogStr) when is_list(LogTag),
+									     is_record(Request, request) ->
+    logger:log(debug, "~s: Checking if Request-URI of ACK received in core is a GRUU",
+	       [LogTag]),
+
+    %% Must check if Request-URI was a GRUU
+    Res =
+	case local:is_gruu_url(Request#request.uri) of
+	    {true, GRUU} ->
+		case local:lookupuser_gruu(Request#request.uri, GRUU) of
+		    {ok, _User, {proxy, NewURL}, _Contact} ->
+			Request#request{uri = NewURL};
+		    {ok, _User, {proxy, NewURL}} when is_record(NewURL, sipurl) ->
+			Request#request{uri = NewURL};
+		    {ok, _User, {response, Status1, Reason1}} ->
+			{response, Status1, Reason1};
+		    {ok, _User, {proxy, {with_path, NewURL, Path}}} ->
+			%% RFC3327
+			NewHeader = keylist:prepend({"Route", Path}, Request#request.header),
+			Request#request{header = NewHeader,
+					uri    = NewURL
+				       }
+		end;
+	    false ->
+		Request
+	end,
+
+    case Res of
+	NewRequest when is_record(NewRequest, request) ->
+	    logger:log(normal, "~s: ~s -> Forwarding ACK received in core statelessly",
+		       [LogTag, LogStr]),
+	    stateless_proxy_request(LogTag, NewRequest);
+	{response, Status, Reason} ->
+	    logger:log(normal, "~s: ~s -> Dropping ACK to GRUU '~s' : '~p ~s'",
+		       [LogTag, sipurl:print(Request#request.uri), Status, Reason]),
+	    ignore
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: stateless_proxy_request(LogTag, Request)
@@ -211,7 +269,9 @@ stateless_proxy_request2(LogTag, Request, [Dst | Rest]) when is_record(Dst, sipd
 send_response(Socket, Response) when is_record(Response, response) ->
     case sipheader:topvia(Response#response.header) of
 	none ->
-	    {Status, Reason} = {Response#response.status, Response#response.reason},
+	    #response{status = Status,
+		      reason = Reason
+		     } = Response,
 	    logger:log(error, "Transport layer: Can't send response '~p ~s', no Via left.", [Status, Reason]),
 	    {senderror, "malformed response"};
 	TopVia when is_record(TopVia, via) ->
@@ -232,8 +292,11 @@ send_response(Socket, Response) when is_record(Response, response) ->
 %%           fixed.
 %%--------------------------------------------------------------------
 send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, response), record(TopVia, via) ->
-    {Status, Reason, HeaderIn, Body} = {Response#response.status, Response#response.reason,
-					Response#response.header, Response#response.body},
+    #response{status = Status,
+	      reason = Reason,
+	      header = HeaderIn,
+	      body   = Body
+	     } = Response,
     Header = siprequest:fix_content_length(HeaderIn, Body),
     BinLine1 = list_to_binary(["SIP/2.0 ", integer_to_list(Status), " ", Reason]),
     BinMsg = siprequest:binary_make_message(BinLine1, Header, Body),
@@ -343,7 +406,7 @@ is_eligible_dst(Dst) when is_record(Dst, sipdst) ->
 %%
 %% Default socket provided, check that it is still valid
 %%
-get_good_socket(#sipsocket{proto=Proto}=DefaultSocket, #sipdst{proto=Proto}=Dst) ->
+get_good_socket(#sipsocket{proto = Proto} = DefaultSocket, #sipdst{proto = Proto} = Dst) ->
     case sipsocket:is_good_socket(DefaultSocket) of
 	true ->
 	    logger:log(debug, "Transport layer: Using default socket ~p", [DefaultSocket]),
