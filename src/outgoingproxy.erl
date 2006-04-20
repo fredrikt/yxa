@@ -50,10 +50,11 @@ init() ->
 %%
 %% REGISTER
 %%
-request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branch_from_handler(THandler),
-    case siplocation:process_register_request(Request, THandler, LogTag, LogStr, outgoingproxy) of
+    case siplocation:process_register_request(Request, Origin#siporigin.sipsocket, THandler,
+					      LogTag, LogStr, outgoingproxy) of
 	not_homedomain ->
 	    case yxa_config:get_env(allow_foreign_registers) of
 		{ok, true} ->
@@ -69,10 +70,8 @@ request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Orig
 %%
 %% ACK
 %%
-request(#request{method="ACK"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
-    logger:log(normal, "outgoingproxy: ~s -> Forwarding ACK received in core statelessly",
-	       [LogStr]),
-    transportlayer:stateless_proxy_request("outgoingproxy", Request),
+request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+    transportlayer:stateless_proxy_ack("outgoingproxy", Request, LogStr),
     ok;
 
 %%
@@ -134,7 +133,7 @@ do_foreign_register(Request, Origin) ->
 	    transactionlayer:send_response_handler(THandler, 421, "Extension Required",
 						  [{"Require", ["path"]}])
     end.
-	
+
 
 %%--------------------------------------------------------------------
 %% Function: response(Response, Origin, LogStr)
@@ -157,7 +156,9 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
 %%====================================================================
 
 do_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
-    {Method, URI} = {Request#request.method, Request#request.uri},
+    #request{method = Method,
+	     uri    = URI
+	    } = Request,
 
     %% outgoingproxys need to add Record-Route header to make sure in-dialog requests go
     %% through the proxy.
@@ -197,6 +198,26 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
 	    proxy_request(THandler, Request, Loc);
 
+	{proxy, [#sipdst{socket = Socket}] = DstList} when Socket /= undefined ->
+	    logger:log(normal, "~s: Outgoingproxy: Proxy ~s ~s -> socket ~p",
+		       [LogTag, Method, sipurl:print(URI), Socket#sipsocket.id]),
+	    logger:log(debug, "FREDRIK: CONNECTION CACHE : ~p", [tcp_dispatcher:get_socketlist()]),
+	    proxy_request(THandler, Request, DstList);
+
+	{proxy, {with_path, Path}} when is_list(Path) ->
+	    %% RFC3327
+	    PathStr =
+		case Path of
+		    [H]     -> io_lib:format("~s", [H]);
+		    [H | _] -> io_lib:format("~s, ...", [H])
+		end,
+
+	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> Path: ~s",
+		       [LogTag, Method, sipurl:print(URI), PathStr]),
+	    NewHeader = keylist:prepend({"Route", Path}, Request#request.header),
+	    NewRequest = Request#request{header = NewHeader},
+	    proxy_request(THandler, NewRequest, route);
+
 	{relay, Loc} ->
 	    relay_request(THandler, Request, Loc, Origin, LogTag);
 
@@ -228,12 +249,10 @@ route_request_check_gruu(Request) when is_record(Request, request) ->
     case gruu:is_gruu_url(URI) of
 	{true, GRUU} ->
 	    case local:lookupuser_gruu(URI, GRUU) of
-		{ok, User, {proxy, {with_path, DstURI, _Path}}, _Contact} ->
-		    logger:log(debug, "outgoingproxy: Request destined for GRUU (user ~p), forwarding to registered "
-			       "contact for user : ~p", [User, sipurl:print(DstURI)]),
-		    %% When we implement Outbound, we should check that first entry of Path
-		    %% still points at this server
-		    {proxy, DstURI};
+		{ok, User, {proxy, {with_path, Path}}, _Contact} ->
+		    logger:log(debug, "outgoingproxy: Request destined for GRUU (user ~p), using Path.",
+			       [User, Path]),
+		    {proxy, {with_path, Path}};
 		{ok, _User, GRUU_Res} when is_tuple(GRUU_Res) ->
 		    GRUU_Res
 	    end;
@@ -246,18 +265,16 @@ route_request_check_route(Request) when is_record(Request, request) ->
 	[] ->
 	    route_request_check_host(Request);
 	_Route ->
-	    %% Request has Route header
-	    case local:get_user_with_contact(Request#request.uri) of
-		none ->
-		    logger:log(debug, "Routing: Request has Route header, relaying according to Route."),
-		    {relay, route};
-		User ->
-		    %% Some user agents don't respond well to mid-dialog challenges so we don't do that
-		    %% even though we _should_ be able to (we used to do it, with some things failing).
-		    %% After all, the destination is the address of one of our registered users.
-		    logger:log(debug, "Routing: Request has Route header, and is for our user ~p - "
-			       "proxy according to Route.", [User]),
-		    {proxy, route}
+	    %% Request has Route header, allow if Request-URI is one of our users registered location
+	    URI = Request#request.uri,
+	    case local:get_locations_with_contact(URI) of
+		{ok, []} ->
+		    %% XXX think about this return code
+		    {response, 404, "Not Found"};
+		{ok, [#siplocationdb_e{sipuser = SIPuser} | _] = Locations} ->
+		    logger:log(debug, "outgoingproxy: Request destination ~p is a registered "
+			       "contact of user ~p - proxying (~p location(s))", [URI, SIPuser, length(Locations)]),
+		    route_request_to_user_contact(Locations)
 	    end
     end.
 
@@ -267,22 +284,72 @@ route_request_check_host(Request) when is_record(Request, request) ->
 	    route_request_host_is_this_proxy(Request);
 	false ->
 	    URI = Request#request.uri,
-	    case local:get_user_with_contact(URI) of
-		none ->
+	    case local:get_locations_with_contact(URI) of
+		{ok, []} ->
 		    case yxa_config:get_env(sipproxy) of
 			{ok, DefaultProxy} when is_record(DefaultProxy, sipurl) ->
 			    {forward, DefaultProxy};
 			none ->
 			    none
 		    end;
-		SIPuser when is_list(SIPuser) ->
+		{ok, [#siplocationdb_e{sipuser = SIPuser} | _] = Locations} ->
 		    logger:log(debug, "outgoingproxy: Request destination ~p is a registered "
-			       "contact of user ~p - proxying", [URI, SIPuser]),
-		    {proxy, URI}
+			       "contact of user ~p - proxying (~p location(s))", [URI, SIPuser, length(Locations)]),
+		    route_request_to_user_contact(Locations)
 	    end
     end.
 
+route_request_to_user_contact(Locations) ->
+    [First | _] = Sorted = siplocation:sort_most_recent_first(Locations),
+    ThisNode = node(),
+    case outbound_get_best_local(ThisNode, Sorted) of
+	none ->
+	    %% No Outbound registration found
+	    {proxy, siplocation:to_url(First)};
+	nomatch ->
+	    %% Outbound registration found, but none with this node (or all inactive)
+	    {response, 410, "Gone (used Outbound)"};
+        {ok, Loc, SipSocket} when is_record(Loc, siplocationdb_e) ->
+	    DstList =
+		[#sipdst{uri	= siplocation:to_url(Loc),
+			 socket	= SipSocket
+			}
+		],
+	    {proxy, DstList}
+    end.
+
+%% part of route_request_to_user_contact, find out if the local user has an
+%% Outbound flow to this proxy
+outbound_get_best_local(ThisNode, Sorted) ->
+    outbound_get_best_local2(ThisNode, Sorted, false).
+
+outbound_get_best_local2(LocalNode, [H | T], SomeOutbound) when is_atom(LocalNode), is_record(H, siplocationdb_e) ->
+    case lists:keysearch(socket_id, 1, H#siplocationdb_e.flags) of
+	{value, {socket_id, {LocalNode, SocketId}}} ->
+	    %% We have a stored socket_id, meaning the client did Outbound. We must now
+	    %% check if that socket is still available.
+	    case sipsocket:get_specific_socket(SocketId) of
+		{error, _Reason} ->
+		    %% keep looking
+		    outbound_get_best_local2(LocalNode, T, true);
+		SipSocket ->
+		    {ok, H, SipSocket}
+	    end;
+	{value, {socket_id, {_OtherNode, _SocketId}}} ->
+	    %% keep looking
+	    outbound_get_best_local2(LocalNode, T, true);
+	false ->
+	    %% keep looking
+	    outbound_get_best_local2(LocalNode, T, SomeOutbound)
+    end;
+outbound_get_best_local2(_LocalNode, [], _SomeOutbound = true) ->
+    nomatch;
+outbound_get_best_local2(_LocalNode, [], _SomeOutbound = false) ->
+    none.
+
 route_request_host_is_this_proxy(Request) when is_record(Request, request) ->
+    %% This function is obsolete now that we use RFC3327 Path instead of the contact-in-URI encoding
+    %% when routing requests to outgoingproxys
     URI = Request#request.uri,
     case url_param:find(URI#sipurl.param_pairs, "addr") of
 	[Addr] ->

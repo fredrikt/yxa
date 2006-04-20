@@ -57,7 +57,9 @@ start() ->
 		error ->
 		    erlang:halt(?EXIT_ERROR);
 		{badrpc, nodedown} ->
-		    io:format("Error: Node ~p not responding~n", [Node]),
+		    io:format("Error: Node ~p not responding,~n"
+			      "       verify that you have the same Erlang cookie and SSL dist settings~n",
+			      [Node]),
 		    erlang:halt(?EXIT_NODEDOWN);
 		Unknown ->
 		    io:format("Yxa_ctl RPC returned unknown result : ~p~n", [Unknown]),

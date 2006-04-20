@@ -49,7 +49,7 @@
 	 %% proxy
 	 get_min_ring/0,
 	 get_server_max/0,
-	 test_proxy_destinations/7
+	 test_proxy_destinations/8
 	]).
 
 %%--------------------------------------------------------------------
@@ -253,7 +253,7 @@ get_server_max() ->
 %% Descrip.:
 %% Returns : {Result, BestLocation, BestResponse}
 %%--------------------------------------------------------------------
-test_proxy_destinations(_Count, _BranchBase, _Request, _Actions, _Timeout, _Recurse, _STHandler) ->
+test_proxy_destinations(_Count, _BranchBase, _Request, _Actions, _Surplus, _Timeout, _Recurse, _STHandler) ->
     BestLocation = none,
     BestResponse = none,
     

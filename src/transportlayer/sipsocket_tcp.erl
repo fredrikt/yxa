@@ -19,6 +19,7 @@
 	 send/5,
 	 is_reliable_transport/1,
 	 get_socket/1,
+	 get_specific_socket/1,
 	 get_raw_socket/1,
 
 	 test/0
@@ -133,6 +134,26 @@ get_socket2(Dst, true) ->
     Msg = io_lib:format("sipsocket_tcp failed fetching ~p socket (tried twice)",
 			[Dst#sipdst.proto]),
     {error, lists:flatten(Msg)}.
+
+%%--------------------------------------------------------------------
+%% Function: get_specific_socket(Id)
+%%           Id = tuple() ({Proto, Id})
+%% Descrip.: Return a specific socket. Used by draft-Outbound implem-
+%%           entation to send requests using an existing flow, or not
+%%           at all.
+%% Returns : SipSocket       |
+%%           {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+get_specific_socket(Id) when is_tuple(Id), size(Id) == 2 ->
+    case catch gen_server:call(tcp_dispatcher, {get_specific_socket, Id}) of
+	{ok, Socket} ->
+	    Socket;
+	E ->
+	    logger:log(debug, "sipsocket_tcp: Failed fetching specific socket : ~p", [E]),
+	    E
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_raw_socket(Socket)

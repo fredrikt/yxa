@@ -31,6 +31,7 @@
 	 send/5,
 	 is_reliable_transport/1,
 	 get_socket/1,
+	 get_specific_socket/1,
 	 get_raw_socket/1
 	]).
 
@@ -101,7 +102,7 @@ init([]) ->
 				    Acc
 			    end
 		    end, [], lists:reverse(siphost:myip_list())),
-    Spec = 
+    Spec =
 	case yxa_config:get_env(enable_v6) of
 	    {ok, true} ->
 		[{udp6, {0,0,0,0,0,0,0,0}, Port} | IPv4Spec];
@@ -129,7 +130,8 @@ start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(S
 	    SipSocket = #sipsocket{module = sipsocket_udp,
 				   proto  = udp,
 				   pid    = self(),
-				   data   = {Local, none}
+				   data   = {Local, none},
+				   id     = {udp, erlang:now()}	%% unique ID for Outbound
 				  },
 	    NewSocketList = socketlist:add({listener, udp, Port}, self(), udp, Local, none, SipSocket,
 					   0, State#state.socketlist),
@@ -152,7 +154,8 @@ start_listening([{udp6, IP, Port} | T], State) when is_integer(Port), is_record(
 	    SipSocket = #sipsocket{module = sipsocket_udp,
 				   proto  = udp6,
 				   pid    = self(),
-				   data   = {Local, none}
+				   data   = {Local, none},
+				   id     = {udp6, erlang:now()}	%% unique ID for Outbound
 				  },
 	    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket,
 					   0, State#state.socketlist),
@@ -194,23 +197,32 @@ start_listening([], State) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
-    MakeRes = fun(L) when is_list(L) ->
-		      case L of
-			  [] ->
-			      {error, "No socket found"};
-			  [{_Socket, SipSocket} | _] ->
-			      {ok, SipSocket}
-		      end
-	      end,
-    Res =
-	case Proto of
-	    udp ->
-		MakeRes(State#state.inet_socketlist);
-	    udp6 ->
-		MakeRes(State#state.inet6_socketlist)
-	end,
+handle_call({get_socket, udp}, _From, #state{inet_socketlist = [{_Socket, SipSocket} | _]} = State) ->
+    {reply, {ok, SipSocket}, State};
 
+handle_call({get_socket, udp6}, _From, #state{inet6_socketlist = [{_Socket, SipSocket} | _]} = State) ->
+    {reply, {ok, SipSocket}, State};
+
+handle_call({get_socket, _Proto}, _From, State) ->
+    {reply, {error, "No socket found"}, State};
+
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({get_specific_socket, Id}, From, State)
+%%           Id = tuple() ({Proto, Id})
+%% Descrip.: Get a specific socket.
+%% Returns : {reply, Reply, State}
+%%           Reply = {ok, SipSocket} |
+%%                   {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+handle_call({get_specific_socket, {udp, _} = Id}, _From, State) ->
+    Res = get_sipsocket_id_match(Id, State#state.inet_socketlist),
+    {reply, Res, State};
+
+handle_call({get_specific_socket, {udp6, _} = Id}, _From, State) ->
+    Res = get_sipsocket_id_match(Id, State#state.inet6_socketlist),
     {reply, Res, State};
 
 
@@ -222,24 +234,14 @@ handle_call({get_socket, Proto}, _From, State) when is_atom(Proto) ->
 %%           Reply     = {ok, RawSocket}
 %%           RawSocket = term()
 %%--------------------------------------------------------------------
-handle_call({get_raw_socket, Proto}, _From, State) when is_atom(Proto) ->
-    MakeRes = fun(L) when is_list(L) ->
-		      case L of
-			  [] ->
-			      {error, "No socket found"};
-			  [{Socket, _SipSocket} | _] ->
-			      {ok, Socket}
-		      end
-	      end,
-    Res =
-	case Proto of
-	    udp ->
-		MakeRes(State#state.inet_socketlist);
-	    udp6 ->
-		MakeRes(State#state.inet6_socketlist)
-	end,
+handle_call({get_raw_socket, udp}, _From, #state{inet_socketlist = [{Socket, _SipSocket} | _]} = State) ->
+    {reply, {ok, Socket}, State};
 
-    {reply, Res, State};
+handle_call({get_raw_socket, udp6}, _From, #state{inet6_socketlist = [{Socket, _SipSocket} | _]} = State) ->
+    {reply, {ok, Socket}, State};
+
+handle_call({get_raw_socket, _Proto}, _From, State) ->
+    {reply, {error, "No socket found"}, State};
 
 
 %%--------------------------------------------------------------------
@@ -268,7 +270,8 @@ handle_call({send, {"[" ++ HostT, Port, Message}}, _From, State) when is_list(Ho
 		    [] ->
 			{error, no_inet6_socket};
 		    [{Socket, _SipSocket} | _] ->
-			gen_udp:send(Socket, Addr, Port, Message)
+			{ok, AddrT} = inet_parse:ipv6_address(Addr),
+			gen_udp:send(Socket, AddrT, Port, Message)
 		end
 	end,
     {reply, {send_result, SendRes}, State};
@@ -316,23 +319,23 @@ handle_cast(Msg, State) ->
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
 handle_info({udp, Socket, IPtuple, InPortNo, Packet}, State) when is_integer(InPortNo) ->
-    Proto =
+    {Proto, SipSocket} =
 	case lists:keysearch(Socket, 1, State#state.inet_socketlist) of
-	    {value, {Socket, _SipSocket}} ->
-		udp;
+	    {value, {Socket, SipSocket4}} ->
+		{udp, SipSocket4};
 	    false ->
 		case lists:keysearch(Socket, 1, State#state.inet6_socketlist) of
-		    {value, {Socket, _SipSocket}} ->
-			udp6;
+		    {value, {Socket, SipSocket6}} ->
+			{udp6, SipSocket6};
 		    false ->
-			nomatch
+			{nomatch, none}
 		end
 	end,
 
     case (Proto == udp orelse Proto == udp6) of
 	true ->
 	    IP = siphost:makeip(IPtuple),
-	    received_packet(Packet, IPtuple, IP, InPortNo, Proto, Socket);
+	    received_packet(Packet, IPtuple, IP, InPortNo, Proto, Socket, SipSocket);
 	false ->
 	    logger:log(error, "Sipsocket UDP: Received gen_server info 'udp' "
 		       "from unknown source '~p', ignoring", [Socket])
@@ -408,12 +411,33 @@ send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket)
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_socket(#sipdst{proto=Proto}) when Proto == udp; Proto == udp6 ->
+get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
     case catch gen_server:call(sipsocket_udp, {get_socket, Proto}, 1500) of
 	{ok, SipSocket} ->
 	    SipSocket;
 	{error, E} ->
 	    logger:log(error, "Sipsocket UDP: Failed fetching socket for protocol ~p : ~p", [Proto, E]),
+	    {error, E}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_specific_socket(Id)
+%%           Id = tuple() ({Proto, Id})
+%% Descrip.: Return a specific socket. Used by draft-Outbound implem-
+%%           entation to send requests using an existing flow, or not
+%%           at all.
+%% Returns : SipSocket       |
+%%           {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+get_specific_socket({Proto, _} = Id) when Proto == udp; Proto == udp6 ->
+    case catch gen_server:call(sipsocket_udp, {get_specific_socket, Id}) of
+	{ok, SipSocket} ->
+	    SipSocket;
+	{error, E} ->
+	    %% semi-normal to not find specific sockets
+	    logger:log(debug, "Sipsocket UDP: Failed fetching specific socket with id ~p : ~p", [Id, E]),
 	    {error, E}
     end.
 
@@ -430,7 +454,7 @@ get_socket(#sipdst{proto=Proto}) when Proto == udp; Proto == udp6 ->
 %%           RawSocket = term()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_raw_socket(#sipsocket{proto=Proto}) when Proto == udp; Proto == udp6 ->
+get_raw_socket(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     case catch gen_server:call(sipsocket_udp, {get_raw_socket, Proto}) of
 	{ok, RawSocket} ->
 	    {ok, RawSocket};
@@ -474,23 +498,25 @@ get_localaddr(Socket, DefaultAddr) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: received_packet(Packet, IPtuple, IP, Port, Proto, Socket)
-%%           Packet  = binary(), packet received from network
-%%           IPtuple = term(), source IP address tuple
-%%           IP      = string(), source IP address
-%%           Port    = integer(), source port
-%%           Proto   = atom(), source protocol
-%%           Socket  = term(), receiving socket
+%% Function: received_packet(Packet, IPtuple, IP, Port, Proto,
+%%                           Socket, SipSocket)
+%%           Packet     = binary(), packet received from network
+%%           IPtuple    = term(), source IP address tuple
+%%           IP         = string(), source IP address
+%%           Port       = integer(), source port
+%%           Proto      = atom(), source protocol
+%%           Soclet     = term(), socket we received packet on
+%%           SipSocket  = sipsocket record()
 %% Descrip.: Check if a received packet is a keepalive or possibly a
 %%           SIP message. For the latter case, we spawn
 %%           sipserver:process(...) on the packet, after creating the
 %%           necessary sipsocket and origin records.
 %% Returns : ok
 %%--------------------------------------------------------------------
-received_packet(<<"\r\n">>, _IPtuple, IP, Port, Proto, _Socket) ->
+received_packet(<<"\r\n">>, _IPtuple, IP, Port, Proto, _Socket, _SipSocket) ->
     logger:log(debug, "Keepalive packet (CRLF) received from ~p:~s:~p", [Proto, IP, Port]),
     ok;
-received_packet(Packet, IPtuple, IP, Port, Proto, Socket) when is_binary(Packet), size(Packet) =< 30 ->
+received_packet(Packet, IPtuple, IP, Port, Proto, Socket, _SipSocket) when is_binary(Packet), size(Packet) =< 30 ->
     %% Too short to be anywhere near a real SIP message
     %% STUN packets (or whatever they are) look like "\r111.222.333.444:pppp"
     case is_only_nulls(Packet) of
@@ -513,8 +539,8 @@ received_packet(Packet, IPtuple, IP, Port, Proto, Socket) when is_binary(Packet)
 	    end
     end,
     ok;
-received_packet(Packet, IPtuple, IP, Port, Proto, Socket) when is_binary(Packet), is_list(IP), is_integer(Port),
-								is_atom(Proto) ->
+received_packet(Packet, IPtuple, IP, Port, Proto, Socket, SipSocket)
+  when is_binary(Packet), is_list(IP), is_integer(Port), is_atom(Proto), is_record(SipSocket, sipsocket) ->
     case Packet of
 	<<N:8, _Rest/binary>> when N == 0; N == 1 ->
 	    case yxa_config:get_env(stun_demuxing_on_sip_ports) of
@@ -526,11 +552,6 @@ received_packet(Packet, IPtuple, IP, Port, Proto, Socket) when is_binary(Packet)
 	    end;
 	_ ->
 	    IP = siphost:makeip(IPtuple),
-	    SipSocket = #sipsocket{module	= sipsocket_udp,
-				   proto	= Proto,
-				   pid		= self(),
-				   data		= none
-				  },
 	    Origin = #siporigin{proto		= Proto,
 				addr		= IP,
 				port		= Port,
@@ -615,3 +636,20 @@ stun_process(Packet, Proto, IPtuple, IP, Port, Socket) ->
 is_only_nulls(Packet) when is_binary(Packet) ->
     ZeroList = lists:duplicate(size(Packet), 0),
     (Packet == list_to_binary(ZeroList)).
+
+%%--------------------------------------------------------------------
+%% Function: get_sipsocket_id_match(Id, L)
+%%           Id = term()
+%%           L  = list() of sipsocket record()
+%% Descrip.: Look for sipsocket with id matching Id.
+%% Returns : {ok, SipSocket} |
+%%           {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+get_sipsocket_id_match(Id, [{_Socket, #sipsocket{id = Id} = SipSocket} | _T]) ->
+    {ok, SipSocket};
+get_sipsocket_id_match(Id, [_H | T]) ->
+    get_sipsocket_id_match(Id, T);
+get_sipsocket_id_match(_Id, []) ->
+    {error, "No socket found"}.

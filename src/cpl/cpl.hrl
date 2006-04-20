@@ -165,6 +165,7 @@
 %%--------------------------------------------------------------------
 -record(location, {
 	  url,            % sipurl record()
+	  ldbe,           % undefined | siplocationdb_e record(), original data if from location db
 	  priority = 1.0  % float(), 0.0 - 1.0       XXX location tag uses 1.0 as default, so this may be ok ?  
 	 }).
 

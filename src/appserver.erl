@@ -14,7 +14,14 @@
 -export([
 	 init/0,
 	 request/3,
-	 response/3
+	 response/3,
+
+	 test/0
+	]).
+
+%% exported for CPL subsystem
+-export([locations_to_actions/2,
+	 location_to_call_action/2
 	]).
 
 %%--------------------------------------------------------------------
@@ -205,8 +212,8 @@ create_session(Request, Origin, LogStr, DoCPL) when is_record(Request, request),
 	    create_session_nomatch(Request, LogStr);
 	{cpl, User, Graph} ->
 	    create_session_cpl(Request, Origin, LogStr, User, Graph);
-	{Users, Actions} ->
-	    create_session_actions(Request, Users, Actions)
+	{ok, Users, Actions, Surplus} ->
+	    create_session_actions(Request, Users, Actions, Surplus)
     end.
 
 %%--------------------------------------------------------------------
@@ -225,10 +232,10 @@ create_session(Request, Origin, LogStr, DoCPL) when is_record(Request, request),
 %%           process that does the actual work exits - so we monitor
 %%           it.
 %%--------------------------------------------------------------------
-create_session_actions(Request, Users, Actions) when is_record(Request, request), is_list(Users),
-						     is_list(Actions) ->
+create_session_actions(Request, Users, Actions, Surplus) when is_record(Request, request), is_list(Users),
+							      is_list(Actions), is_list(Surplus) ->
     logger:log(debug, "Appserver: User(s) ~p actions :~n~p", [Users, Actions]),
-    {ok, Pid} = appserver_glue:start_link(Request, Actions),
+    {ok, Pid} = appserver_glue:start_link(Request, Actions, Surplus),
     MonitorRef = erlang:monitor(process, Pid),
     receive
 	{'DOWN', MonitorRef, process, Pid, _Info} ->
@@ -239,7 +246,7 @@ create_session_actions(Request, Users, Actions) when is_record(Request, request)
 	    %% consider this an error.
 	    logger:log(error, "Appserver: Received unknown signal after starting appserver_glue worker : ~p",
 		       [Msg]),
-	    create_session_actions(Request, Users, Actions)
+	    create_session_actions(Request, Users, Actions, Surplus)
     after ?APPSERVER_GLUE_TIMEOUT ->
 	    %% We should _really_ never get here, but just as an additional safeguard...
 	    logger:log(error, "appserver: ERROR: the appserver_glue process I started (~p) never finished! Exiting.",
@@ -343,12 +350,14 @@ get_actions_users(Users, Proto, _DoCPL) when is_list(Users), is_list(Proto) ->
 %% part of get_actions(), more than one user or DoCPL was false
 get_actions_users2(Users, Proto) when is_list(Users), is_list(Proto) ->
     case fetch_actions_for_users(Users, Proto) of
-	[] -> nomatch;
-	Actions when is_list(Actions) ->
+	{ok, [], _Surplus} -> nomatch;
+	{ok, Actions, Surplus} when is_list(Actions) ->
 	    {ok, Timeout} = yxa_config:get_env(appserver_call_timeout),
 	    WaitAction = #sipproxy_action{action  = wait,
-					  timeout = Timeout},
-	    {Users, lists:append(Actions, [WaitAction])}
+					  timeout = Timeout
+					 },
+	    NewActions = Actions ++ [WaitAction],
+	    {ok, Users, NewActions, Surplus}
     end.
 
 %%--------------------------------------------------------------------
@@ -359,19 +368,25 @@ get_actions_users2(Users, Proto) when is_list(Users), is_list(Proto) ->
 %%           of users, based on the contents of the location database
 %%           and the KTH-only 'forwards' database. Just ignore the
 %%           'forwards' part.
-%% Returns : Actions = list() of sipproxy_action record()
+%% Returns : {ok, Actions, Surplus}
+%%           Actions = list() of sipproxy_action record()
+%%           Surplus = list() of sipproxy_action record(), extra
+%%                     contacts for instances with more than one
+%%                     location binding (draft-Outbound)
 %%--------------------------------------------------------------------
 fetch_actions_for_users(Users, Proto) ->
-    Actions = fetch_users_locations_as_actions(Users, Proto),
-    case local:get_forwards_for_users(Users) of
-	nomatch ->
-	    Actions;
-	[] ->
-	    Actions;
-	Forwards when is_list(Forwards) ->
-	    %% Append forwards found to Actions
-	    forward_call_actions(Forwards, Actions, Proto)
-    end.
+    {ok, Actions, Surplus} = fetch_users_locations_as_actions(Users, Proto),
+    NewActions =
+	case local:get_forwards_for_users(Users) of
+	    nomatch ->
+		Actions;
+	    [] ->
+		Actions;
+	    Forwards when is_list(Forwards) ->
+		%% Append forwards found to Actions
+		forward_call_actions(Forwards, Actions, Proto)
+	end,
+    {ok, NewActions, Surplus}.
 
 %% part of fetch_actions_for_users/1
 fetch_users_locations_as_actions(Users, Proto) ->
@@ -381,6 +396,7 @@ fetch_users_locations_as_actions(Users, Proto) ->
 
 %%--------------------------------------------------------------------
 %% Function: locations_to_actions(Locations)
+%%           locations_to_actions(Locations, Timeout)
 %%           Locations = list() of Loc
 %%                 Loc = siplocationdb_e record() |
 %%                       {URL, Timeout}           |
@@ -389,16 +405,58 @@ fetch_users_locations_as_actions(Users, Proto) ->
 %%             Timeout = integer()
 %% Descrip.: Turn a list of location database entrys/pseudo-actions
 %%           into a list of sipproxy_action record()s.
-%% Returns : Actions = list() of sipproxy_action record()
+%% Returns : {ok, Actions, Surplus}
+%%           Actions = list() of sipproxy_action record()
+%%           Surplus = list() of sipproxy_action record(), extra
+%%                     contacts for instances with more than one
+%%                     location binding (draft-Outbound)
 %%--------------------------------------------------------------------
 locations_to_actions(L) when is_list(L) ->
-    locations_to_actions2(L, []).
+    {ok, CallTimeout} = yxa_config:get_env(appserver_call_timeout),
+    locations_to_actions2(L, CallTimeout, [], []).
 
-locations_to_actions2([], Res) ->
-    lists:reverse(Res);
+locations_to_actions(L, Timeout) when is_list(L), is_integer(Timeout) ->
+    %% Exported for CPL subsystem
+    locations_to_actions2(L, Timeout, [], []).
 
-locations_to_actions2([H | T], Res) when is_record(H, siplocationdb_e) ->
-    {ok, Timeout} = yxa_config:get_env(appserver_call_timeout),
+locations_to_actions2([], _CallTimeout, Res, Surplus) ->
+    {ok, lists:reverse(Res), Surplus};
+
+locations_to_actions2([H | T] = In, CallTimeout, Res, Surplus) when is_record(H, siplocationdb_e) ->
+    case H#siplocationdb_e.instance of
+	[] ->
+	    CallAction = location_to_call_action(H, CallTimeout),
+	    locations_to_actions2(T, CallTimeout, [CallAction | Res], Surplus);
+	Instance when is_list(Instance) ->
+	    %% draft-Outbound says we "MUST NOT populate the target set with more than one
+	    %% contact with the same AOR and instance-id at a time.". AOR translates to SipUser
+	    %% in YXA.
+	    [First | Rest] = Group = get_locations_with_instance(Instance, H#siplocationdb_e.sipuser, In),
+	    CallAction = location_to_call_action(First, CallTimeout),
+	    MoreSurplus = [location_to_call_action(E, CallTimeout) || E <- Rest],
+	    %% Remove all entrys we separated into the surplus list from the ones we are going
+	    %% to process next.
+	    NewTail = T -- Group,
+	    %% put action made out of First in Res, all locations matching Firsts user and instance
+	    %% into our Surplus list and recurse upon the NewTail we created
+	    locations_to_actions2(NewTail, CallTimeout, [CallAction | Res], Surplus ++ MoreSurplus)
+    end;
+
+locations_to_actions2([{URL, Timeout} | T], CallTimeout, Res, Surplus) when is_record(URL, sipurl),
+									    is_integer(Timeout) ->
+    CallAction = #sipproxy_action{action  = call,
+				  requri  = URL,
+				  timeout = Timeout
+				 },
+    locations_to_actions2(T, CallTimeout, [CallAction | Res], Surplus);
+
+locations_to_actions2([{wait, Timeout} | T], CallTimeout, Res, Surplus) ->
+    WaitAction = #sipproxy_action{action  = wait,
+				  timeout = Timeout
+				 },
+    locations_to_actions2(T, CallTimeout, [WaitAction | Res], Surplus).
+
+location_to_call_action(H, Timeout) ->
     URL = siplocation:to_url(H),
     %% RFC3327
     Path =
@@ -408,22 +466,19 @@ locations_to_actions2([H | T], Res) when is_record(H, siplocationdb_e) ->
 	    false ->
 		[]
 	end,
-    CallAction = #sipproxy_action{action  = call,
-				  requri  = URL,
-				  path    = Path,
-				  timeout = Timeout},
-    locations_to_actions2(T, [CallAction | Res]);
+    #sipproxy_action{action	= call,
+		     requri	= URL,
+		     path	= Path,
+		     timeout	= Timeout,
+		     user	= H#siplocationdb_e.sipuser,
+		     instance	= H#siplocationdb_e.instance
+		    }.
 
-locations_to_actions2([{URL, Timeout} | T], Res) when is_record(URL, sipurl), is_integer(Timeout) ->
-    CallAction = #sipproxy_action{action  = call,
-				  requri  = URL,
-				  timeout = Timeout},
-    locations_to_actions2(T, [CallAction | Res]);
+get_locations_with_instance(Instance, SipUser, In) ->
+    %% filter out all entrys from In which have instance and user matching our parameters
+    L = [E || E <- In, E#siplocationdb_e.instance == Instance, E#siplocationdb_e.sipuser == SipUser],
+    siplocation:sort_most_recent_first(L).
 
-locations_to_actions2([{wait, Timeout} | T], Res) ->
-    WaitAction = #sipproxy_action{action  = wait,
-				  timeout = Timeout},
-    locations_to_actions2(T, [WaitAction | Res]).
 
 %%--------------------------------------------------------------------
 %% Function: forward_call_actions(ForwardList, Actions)
@@ -495,3 +550,113 @@ forward_call_actions_create_calls2([H | T], Timeout, Localring, User, Proto, Res
     end;
 forward_call_actions_create_calls2([], _Timeout, _Localring, _User, _Proto, Res) ->
     lists:reverse(Res).
+
+
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+
+    %% locations_to_actions2(L, CallTimeout, [], [])
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "locations_to_actions2/4 - 1"),
+    %% test simple case
+    LToActions_Locations1 = [#siplocationdb_e{address	= sipurl:parse("sip:ft@1.example.org"),
+					      sipuser	= "user1",
+					      flags	= [],
+					      instance	= []
+					     },
+			     #siplocationdb_e{address	= sipurl:parse("sip:ft@2.example.org"),
+					      sipuser	= "user2",
+					      flags	= [],
+					      instance	= []
+					     }
+			    ],
+    LToActions_Actions1 = [#sipproxy_action{action	= call,
+					    timeout	= 10,
+					    requri	= sipurl:parse("sip:ft@1.example.org"),
+					    path	= [],
+					    user	= "user1",
+					    instance	= []
+					   },
+			   #sipproxy_action{action	= call,
+					    timeout	= 10,
+					    requri	= sipurl:parse("sip:ft@2.example.org"),
+					    path	= [],
+					    user	= "user2",
+					    instance	= []
+					   }
+			  ],
+
+    {ok, LToActions_Actions1, []} = locations_to_actions2(LToActions_Locations1, 10, [], []),
+
+    autotest:mark(?LINE, "locations_to_actions2/4 - 2"),
+    %% test complex case with same instances and usernames
+    LToActions_Locations2 = [#siplocationdb_e{address	= sipurl:parse("sip:ft@1.example.org"),
+					      sipuser	= "user",
+					      flags	= [{registration_time, 100}],
+					      instance	= "<urn:test:match>"
+					     },
+			     #siplocationdb_e{address	= sipurl:parse("sip:ft@2.example.org"),
+					      sipuser	= "user",
+					      flags	= [{registration_time, 200},
+							   {path, ["<test;lr>"]}
+							  ],
+					      instance	= "<urn:test:match>"
+					     }
+			    ],
+    LToActions_Actions2 = [#sipproxy_action{action	= call,
+					    timeout	= 10,
+					    requri	= sipurl:parse("sip:ft@2.example.org"),
+					    path	= ["<test;lr>"],
+					    user	= "user",
+					    instance	= "<urn:test:match>"
+					   }
+			  ],
+    LToActions_Surplus2 = [#sipproxy_action{action	= call,
+					    timeout	= 10,
+					    requri	= sipurl:parse("sip:ft@1.example.org"),
+					    path	= [],
+					    user	= "user",
+					    instance	= "<urn:test:match>"
+					   }
+			  ],
+    {ok, LToActions_Actions2, LToActions_Surplus2} = locations_to_actions2(LToActions_Locations2, 10, [], []),
+
+    autotest:mark(?LINE, "locations_to_actions2/4 - 3"),
+    %% test with non-siplocationdb_e input
+    LToActions_Locations3 = [#siplocationdb_e{address	= sipurl:parse("sip:ft@3.example.org"),
+					      sipuser	= "user3",
+					      flags	= [],
+					      instance	= []
+					     },
+			     {wait, 29},
+			     {sipurl:parse("sip:foo@4.example.org"), 31}
+			    ],
+    LToActions_Actions3 = [#sipproxy_action{action	= call,
+					    timeout	= 30,
+					    requri	= sipurl:parse("sip:ft@3.example.org"),
+					    path	= [],
+					    user	= "user3",
+					    instance	= []
+					   },
+			   #sipproxy_action{action	= wait,
+					    timeout	= 29
+					   },
+			   #sipproxy_action{action	= call,
+					    timeout	= 31,
+					    requri	= sipurl:parse("sip:foo@4.example.org")
+					   }
+			  ],
+
+    {ok, LToActions_Actions3, []} = locations_to_actions2(LToActions_Locations3, 30, [], []),
+
+    ok.

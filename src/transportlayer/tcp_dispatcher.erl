@@ -111,16 +111,38 @@ init([]) ->
 get_listenerspecs() ->
     Port = sipsocket:get_listenport(tcp),
     TLSport = sipsocket:get_listenport(tls),
-    TCPlisteners = [{tcp, Port}, {tcp6, Port}],
-    Listeners = case yxa_config:get_env(tls_disable_server) of
-		    {ok, false} ->
-			%% XXX add tls6 to this list when there is an Erlang version released
-			%% than has a ssl.erl that handles inet6. Current version (R9C-0) treats
-			%% inet6 as an invalid gen_tcp option.
-			lists:append(TCPlisteners, [{tls, TLSport}]);
-		    {ok, true} ->
-			TCPlisteners
-		end,
+
+    {ok, DisableTLS} = yxa_config:get_env(tls_disable_server),
+
+    IPv4Specs =
+	lists:foldl(fun(IP, Acc) ->
+			    TLS =
+				case DisableTLS of
+				    true -> [];
+				    false -> [{tls, IP, TLSport}]
+				end,
+			    This = [{tcp, IP, Port} | TLS],
+			    This ++ Acc
+		    end, [], lists:reverse(siphost:myip_list())),
+
+    IPv6Specs =
+	lists:foldl(fun(IP, Acc) ->
+			    TLS =
+				case DisableTLS of
+				    true -> [];
+				    false ->
+					%% XXX add tls6 to this list when there is an Erlang version released
+					%% than has a ssl.erl that handles inet6. Current version (R9C-0) treats
+					%% inet6 as an invalid gen_tcp option.
+					%% [{tls6, IP, TLSport}]
+					[]
+				end,
+			    This = [{tcp6, IP, Port} | TLS],
+			    This ++ Acc
+		    end, [], ["::"]),
+
+    Listeners = IPv4Specs ++ IPv6Specs,
+
     format_listener_specs(Listeners).
 
 %%--------------------------------------------------------------------
@@ -140,21 +162,23 @@ format_listener_specs(L) ->
 
 format_listener_specs([], Res) ->
     lists:reverse(Res);
-format_listener_specs([{Proto, Port} | T], Res)
-  when is_atom(Proto), is_integer(Port), Proto == tcp6; Proto == tls6 ->
+format_listener_specs([{Proto, IP, Port} | T], Res)
+  when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp6; Proto == tls6 ->
     case yxa_config:get_env(enable_v6) of
 	{ok, true} ->
 	    Id = {listener, Proto, Port},
-	    MFA = {tcp_listener, start_link, [Proto, Port]},
+	    {ok, IPt} = inet_parse:ipv6_address(IP),
+	    MFA = {tcp_listener, start_link, [IPt, Proto, Port]},
 	    Spec = {Id, MFA, permanent, brutal_kill, worker, [tcp_listener]},
 	    format_listener_specs(T, [Spec | Res]);
 	{ok, false} ->
 	    format_listener_specs(T, Res)
     end;
-format_listener_specs([{Proto, Port} | T], Res)
-  when is_atom(Proto), is_integer(Port), Proto == tcp; Proto == tls ->
+format_listener_specs([{Proto, IP, Port} | T], Res)
+  when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp; Proto == tls ->
     Id = {listener, Proto, Port},
-    MFA = {tcp_listener, start_link, [Proto, Port]},
+    {ok, IPt} = inet_parse:ipv4_address(IP),
+    MFA = {tcp_listener, start_link, [IPt, Proto, Port]},
     Spec = {Id, MFA, permanent, brutal_kill, worker, [tcp_listener]},
     format_listener_specs(T, [Spec | Res]).
 
@@ -212,7 +236,28 @@ handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
 	{error, E} ->
 	    {reply, {error, E}, State, ?TIMEOUT};
 	SipSocket when is_record(SipSocket, sipsocket) ->
-	    logger:log(debug, "TCP dispatcher: Using existing connection to ~s", [sipdst:dst2str(Dst)]),
+	    {reply, {ok, SipSocket}, State, ?TIMEOUT}
+    end;
+
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({get_specific_socket, Id}, From, State)
+%%           Id = tuple() ({Proto, Id})
+%% Descrip.: Return a specific socket. Used by draft-Outbound implem-
+%%           entation to send requests using an existing flow, or not
+%%           at all.
+%% Returns : {ok, SipSocket} |
+%%           {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+handle_call({get_specific_socket, Id}, _From, State) when is_tuple(Id), size(Id) == 2 ->
+    case get_specific_socket_from_list(Id, State#state.socketlist) of
+	none ->
+	    {reply, {error, "Specific socket not available"}, State, ?TIMEOUT};
+	{error, E} ->
+	    {reply, {error, E}, State, ?TIMEOUT};
+	SipSocket when is_record(SipSocket, sipsocket) ->
 	    {reply, {ok, SipSocket}, State, ?TIMEOUT}
     end;
 
@@ -426,5 +471,18 @@ get_socket_from_list(#sipdst{proto=Proto}=Dst, SocketList) when Proto == tcp; Pr
 		       [sipdst:dst2str(Dst), CPid]),
 	    SipSocket;
 	_ ->
+	    none
+    end.
+
+
+
+get_specific_socket_from_list(Id, SocketList) when is_tuple(Id), size(Id) == 2, is_record(SocketList, socketlist) ->
+    case socketlist:get_using_socketid(Id, SocketList) of
+	SListElem when is_record(SListElem, socketlistelem) ->
+	    [CPid, SipSocket] = socketlist:extract([pid, sipsocket], SListElem),
+	    logger:log(debug, "Sipsocket TCP: Reusing (specific) existing connection with id ~p (~p)",
+		       [Id, CPid]),
+	    SipSocket;
+	none ->
 	    none
     end.

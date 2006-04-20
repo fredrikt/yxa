@@ -195,8 +195,8 @@ process_cpl_script_res(Unmatched, _STHandler) ->
 %%           * a reject cpl tag was processed, see RFC 3880 chapter
 %%             6.3, Status is a numerical error code, Reason is a
 %%             textual description - both are supplied by the cpl
-%%             script. Reason is only supplied if the reason sub tag in the 
-%%             reject cpl tag is not = "" 
+%%             script. Reason is only supplied if the reason sub tag in the
+%%             reject cpl tag is not = ""
 %%
 %%           {server_default_action}
 %%           * process request the same way as it would be processed
@@ -699,18 +699,17 @@ outgoing(Index, State) ->
 %%--------------------------------------------------------------------
 location({#location__attrs{url = URI, priority = Prio, clear = Clear}, Dest}, State) ->
     Locations = State#state.locations,
+    This = #location{url = sipurl:parse(URI), priority = Prio},
     NewLocations = case Clear of
-		       yes -> [];
-		       no -> Locations
+		       yes -> [This];
+		       no -> [This | Locations]
 		   end,
-    NewState = State#state{locations =
-			   [#location{url = sipurl:parse(URI), priority = Prio} | NewLocations]
-			  },
+    NewState = State#state{locations = NewLocations},
     {Dest, NewState}.
 
 %%--------------------------------------------------------------------
 %% Function: lookup({Lookup,Cond}, State)
-%%           Lookup = lookup record()
+%%           Lookup = lookup__attrs record()
 %%           Cond = list of {LookupResult, Dest}
 %%           State = state record()
 %% Descrip.: process the lookup tag
@@ -719,15 +718,17 @@ location({#location__attrs{url = URI, priority = Prio, clear = Clear}, Dest}, St
 lookup({#lookup__attrs{source = Source, timeout = Timeout, clear = Clear}, Cond}, State) ->
     Backend = State#state.backend,
     Locations = State#state.locations,
-    NewLocations = case Clear of
-		       yes -> [];
-		       no -> Locations
-		   end,
-    {Res, URIs} = Backend:lookup(Source, State#state.user, (State#state.request)#request.uri, Timeout),
-    LookupLocations = [#location{url = URI} || URI <- URIs],
+    {Res, LocList} = Backend:lookup(Source, State#state.user, (State#state.request)#request.uri, Timeout),
     NewState = case Res of
 		   success ->
-		       State#state{locations = LookupLocations ++ NewLocations};
+		       Converted = [#location{url = siplocation:to_url(E),
+					      ldbe = E
+					     } || E <- LocList],
+		       NewLocations = case Clear of
+					  yes -> Converted;
+					  no -> Locations ++ Converted
+				      end,
+		       State#state{locations = NewLocations};
 		   notfound ->
 		       State;
 		   failure ->
@@ -796,7 +797,7 @@ log({Log, Dest}, State) ->
 mail({Mail, Dest}, State) ->
     User = State#state.user,
     Backend = State#state.backend,
-    Backend:mail(Mail, User),    
+    Backend:mail(Mail, User),
     {Dest, State}.
 
 %%--------------------------------------------------------------------
@@ -841,33 +842,54 @@ proxy({#proxy__attrs{timeout = TimeoutIn, recurse = Recurse, ordering = Ordering
 
     User = State#state.user,
 
-    {ProxyActions, RemainingLocations}
+    {ProxyActions, SurplusActions, RemainingLocations}
 	= case Ordering of
 	      %% check all locations at once
 	      parallel ->
-		  {[#sipproxy_action{action = call, timeout = Timeout, requri = E#location.url, user = User}
-		    || E <- Locations] ++
-		   [#sipproxy_action{action = wait, timeout = Timeout}],
-		   []};
+%%		  {ok, Actions, Surplus} = appserver:locations_to_actions(Locations, Timeout),
+		  {ok, Actions, Surplus} = cpl_locations_to_call_action(Locations, Timeout, User),
+		  NewActions = Actions ++ [#sipproxy_action{action = wait, timeout = Timeout}],
+		  {NewActions, Surplus, []};
 	      %% wait Timeout second for each location entry
 	      sequential ->
 		  PrioOrderLocs1 = lists:sort(fun(E1, E2) -> E1#location.priority > E2#location.priority end,
 					      Locations),
-		  {create_sequential_proxyaction_list(PrioOrderLocs1, Backend, Timeout, User), []};
+		  {ok, Actions, Surplus} = create_sequential_proxyaction_list(PrioOrderLocs1, Backend, Timeout, User),
+		  {Actions, Surplus, []};
 	      %% only check the highest priority location
 	      'first-only' ->
 		  PrioOrderLocs2 = lists:sort(fun(E1, E2) -> E1#location.priority > E2#location.priority end,
 					      Locations),
-		  [First | Rest] = PrioOrderLocs2,
-		  {[#sipproxy_action{action = call, timeout = Timeout, requri = First#location.url, user = User},
-		    #sipproxy_action{action = wait, timeout = Timeout}],
-		   Rest}
+		  [FirstLoc | Rest1] = PrioOrderLocs2,
+		  Instance = case is_record(FirstLoc#location.ldbe, siplocationdb_e) of
+				 true ->
+				     (FirstLoc#location.ldbe)#siplocationdb_e.instance;
+				 false ->
+				     []
+			     end,
+		  case Instance of
+		      [] ->
+			  %% No instance, try only the single best entry from our priority sort above
+			  FirstSPA =
+			      [#sipproxy_action{action	= call,
+						timeout	= Timeout,
+						requri	= FirstLoc#location.url,
+						user	= User},
+			       #sipproxy_action{action	= wait,
+						timeout	= Timeout}
+			      ],
+			  {FirstSPA, [], Rest1};
+		      Instance when is_list(Instance) ->
+			  LDBEUser = (FirstLoc#location.ldbe)#siplocationdb_e.sipuser,
+			  process_instance(Instance, LDBEUser, Timeout, PrioOrderLocs2)
+		      end
 	  end,
     Request = State#state.request,
     BranchBase = State#state.branch_base,
     STHandler = State#state.sthandler,
     {Result, BestURI, BestResponse} =
-	Backend:test_proxy_destinations(Count, BranchBase, Request, ProxyActions, Timeout, Recurse, STHandler),
+	Backend:test_proxy_destinations(Count, BranchBase, Request, ProxyActions, SurplusActions, Timeout, Recurse,
+					STHandler),
 
     %% remove used locations
     State2 = set_locations(State, RemainingLocations),
@@ -891,6 +913,74 @@ proxy({#proxy__attrs{timeout = TimeoutIn, recurse = Recurse, ordering = Ordering
 	_ ->
 	    {proxy_dest(Result, Conds), State4}
     end.
+
+%% Returns: {Actions, Surplus}
+%%          Actions = list() of sipproxy_action record()
+%%          Surplus = list() of sipproxy_action record()
+cpl_locations_to_call_action(Locations, Timeout, User) ->
+    cpl_locations_to_call_action2(Locations, Timeout, User, [], []).
+
+%% entry from location database
+cpl_locations_to_call_action2([#location{ldbe = LDBE} = H | _] = Locations, Timeout, User, Actions, Surplus)
+  when is_record(LDBE, siplocationdb_e) ->
+    %% entry from location database, need to process all entrys with matching user and instance
+    %% adding the best one (most recently registered) to Actions and the other ones to Surplus
+    #siplocationdb_e{sipuser  = User,
+		     instance = Instance
+		    } = LDBE,
+    {FirstSPA, SurplusSPA, RestLocations} = process_instance(Instance, User, Timeout, Locations),
+    NewActions = [FirstSPA | Actions],
+    NewSurplus = [SurplusSPA | Surplus],
+    cpl_locations_to_call_action2(RestLocations -- [H], Timeout, User, NewActions, NewSurplus);
+%% entry NOT from location database
+cpl_locations_to_call_action2([H | T], Timeout, User, Actions, Surplus) when is_record(H, location) ->
+    This =
+	#sipproxy_action{action		= call,
+			 timeout	= Timeout,
+			 requri		= H#location.url,
+			 user		= User
+			},
+    cpl_locations_to_call_action2(T, Timeout, User, [This | Actions], Surplus);
+%% no more locations
+cpl_locations_to_call_action2([], _Timeout, _User, Actions, Surplus) ->
+    %% order of Actions is (might be) important, order of Surplus is not
+    {ok, lists:reverse(Actions), Surplus}.
+
+
+%% Returns: {First, Surplus, Rest}
+%%          First   = sipproxy_action record(), 'call' action for the most recently registered location
+%%                    for this user and instance
+%%          Surplus = list() of sipproxy_action record(), 'call' actions for all the other registered locations
+%%                    for this user and instance
+%%          Rest    = list() of location record(), all entrys from Locations
+%%                    _not_ matching this user and instance (or not coming from the location
+%%                    database at all)
+process_instance(Instance, User, Timeout, PrioLocations) ->
+    {ok, Same, Other} = process_instance_divide(Instance, User, PrioLocations),
+
+    %% extract the siplocatiodb_e records from the location records in SameInstance
+    SameInstanceLDBE = [E1#location.ldbe || E1 <- Same],
+    {ok, [FirstSPA], SurplusSPA} = appserver:locations_to_actions(SameInstanceLDBE, Timeout),
+
+    {FirstSPA, SurplusSPA, Other}.
+
+
+process_instance_divide(Instance, User, PrioLocations) ->
+    process_instance_divide2(Instance, User, PrioLocations, [], []).
+
+process_instance_divide2(Instance, User, [#location{ldbe = LDBE} = H | T], Same, Other)
+  when is_record(LDBE, siplocationdb_e) ->
+    case LDBE of
+	#siplocationdb_e{instance = Instance, sipuser = User} ->
+	    process_instance_divide2(Instance, User, T, [H | Same], Other);
+	_ ->
+	    process_instance_divide2(Instance, User, T, Same, [H | Other])
+    end;
+process_instance_divide2(Instance, User, [H | T], Same, Other) ->
+    process_instance_divide2(Instance, User, T, Same, [H | Other]);
+process_instance_divide2(_Instance, _User, [], Same, Other) ->
+    {ok, Same, Other}.
+
 
 %% convert sipurl record to location record
 uri_to_location(URI) when is_record(URI, sipurl) ->
@@ -929,6 +1019,7 @@ find_result(Cond, [{Cond,Dest} | _R]) ->
     Dest;
 find_result(Cond, [ _ | R]) ->
     find_result(Cond, R).
+
 %%--------------------------------------------------------------------
 %% Function: create_sequential_proxyaction_list(PrioOrderLocs,
 %%           Backend, Timeout, User)
@@ -940,7 +1031,9 @@ find_result(Cond, [ _ | R]) ->
 %% Descrip.: return a list of sipproxy_action record() that defines
 %%           how the the sip proxy in yxa is supposed to check the
 %%           locations in PrioOrderLocs.
-%% Returns : list of sipproxy_action record()
+%% Returns : {ok, Actions, Surplus}
+%%           Actions = list of sipproxy_action record()
+%%           Surplus = list of sipproxy_action record()
 %% Note    : timeout for locations can be assigned in two ways:
 %%           * if (Timeout / no. of locations) > minimum ring timeout
 %%             the (Timeout / no. of locations) period is used for
@@ -954,46 +1047,96 @@ find_result(Cond, [ _ | R]) ->
 %%--------------------------------------------------------------------
 %% special case to handle TimePerLoc = Timeout div 0
 create_sequential_proxyaction_list([], _Backend, _Timeout, _User) ->
-    [];
+    {ok, [], []};
 create_sequential_proxyaction_list(PrioOrderLocs, Backend, Timeout, User) ->
-    %% get minimum ring time, before a timeout should occure
+    %% get minimum ring time, before a timeout should occur
     MinRing = Backend:get_min_ring(),
-    NoOfLoc = length(PrioOrderLocs),
+    GroupedLocs = group_on_user_instance(PrioOrderLocs),
+    NoOfLoc = length(GroupedLocs),
     TimePerLoc = Timeout div NoOfLoc,
     case TimePerLoc > MinRing of
 	true ->
-	    %% call all
-	    call_all_proxyaction_list(PrioOrderLocs, Timeout, User, TimePerLoc);
+	    %% we have enough time to call all locations
+	    Count = NoOfLoc,
+	    call_count_proxyaction_list(GroupedLocs, Timeout, User, TimePerLoc, Count, [], []);
 	false ->
 	    %% call as many as possible (during Timeout period) in prio order
 	    Count = Timeout div MinRing, % determine number of locations to call
-	    call_count_proxyaction_list(PrioOrderLocs, Timeout, User, MinRing, Count)
+	    call_count_proxyaction_list(GroupedLocs, Timeout, User, MinRing, Count, [], [])
     end.
 
-call_all_proxyaction_list([], _Timeout, _User, _TimePerLoc) ->
-    [];
-%% use any remaining Timeout seconds on the last location entry - the
-%% value may be slightly larger than TimePerLoc (but is < 2 * TimePerLoc)
-call_all_proxyaction_list([Location], Timeout, User, _TimePerLoc) ->
-    [#sipproxy_action{action = call, timeout = Timeout, requri = Location#location.url, user = User},
-     #sipproxy_action{action = wait, timeout = Timeout} ];
-call_all_proxyaction_list([Location | R], Timeout, User, TimePerLoc) ->
-    [#sipproxy_action{action = call, timeout = TimePerLoc, requri = Location#location.url, user = User},
-     #sipproxy_action{action = wait, timeout = TimePerLoc} ] ++
-	call_all_proxyaction_list(R, Timeout - TimePerLoc, User, TimePerLoc).
+group_on_user_instance(In) ->
+    group_on_user_instance(In, []).
+
+group_on_user_instance([#location{ldbe = LDBE} | T] = Locations, Res) when is_record(LDBE, siplocationdb_e) ->
+    Timeout = 10, %% arbitrary timeout, fixed later (in call_{all,count}_proxyaction_list)
+    #siplocationdb_e{sipuser  = User,
+		     instance = Instance
+		    } = LDBE,
+    case Instance == [] of
+	true ->
+	    This = appserver:location_to_call_action(LDBE, Timeout),
+	    group_on_user_instance(T, [{This, []} | Res]);
+	false ->
+	    {FirstSPA, SurplusSPA, RestLocations} = process_instance(Instance, User, Timeout, Locations),
+	    group_on_user_instance(RestLocations, [{FirstSPA, SurplusSPA} | Res])
+    end;
+group_on_user_instance([H | T], Res) when is_record(H, location) ->
+    group_on_user_instance(T, [{H, []} | Res]);
+group_on_user_instance([], Res) ->
+    lists:reverse(Res).
 
 
-call_count_proxyaction_list(_, 0, _User, _MinRing, 0) ->
-    [];
-%% use any remaining Timeout seconds on the last location entry - the
-%% value may be slightly larger than MinRing (but is < 2 * MinRing)
-call_count_proxyaction_list([Location | _R], Timeout, User, _MinRing, 1) ->
-    [#sipproxy_action{action = call, timeout = Timeout, requri = Location#location.url, user = User},
-     #sipproxy_action{action = wait, timeout = Timeout} ];
-call_count_proxyaction_list([Location | R], Timeout, User, MinRing, Count) ->
-    [#sipproxy_action{action = call, timeout = MinRing, requri = Location#location.url, user = User},
-     #sipproxy_action{action = wait, timeout = MinRing} ] ++
-	call_count_proxyaction_list(R, Timeout - MinRing, User, MinRing, Count - 1).
+call_count_proxyaction_list([{FirstSPA, SurplusSPA} | R], TimeLeft, User, TimePerLoc, Count, Actions, Surplus)
+  when is_record(FirstSPA, sipproxy_action) ->
+    case Count of
+	1 ->
+	    %% use any remaining TimeLeft seconds on the last location entry - the
+	    %% value may be slightly larger than TimePerLoc (but is < 2 * TimePerLoc)
+	    This =
+		[FirstSPA#sipproxy_action{timeout = TimeLeft},
+		 #sipproxy_action{action  = wait,
+				  timeout = TimeLeft
+				 }
+		],
+	    SurplusSPA2 = [E#sipproxy_action{timeout = TimeLeft} || E <- SurplusSPA],
+	    {ok, Actions ++ This, Surplus ++ SurplusSPA2};
+	_ ->
+	    This =
+		[FirstSPA#sipproxy_action{timeout = TimePerLoc},
+		 #sipproxy_action{action  = wait,
+				  timeout = TimePerLoc
+				 }
+		],
+	    SurplusSPA2 = [E#sipproxy_action{timeout = TimePerLoc} || E <- SurplusSPA],
+	    call_count_proxyaction_list(R, TimeLeft - TimePerLoc, User, TimePerLoc, Count - 1,
+					Actions ++ This, Surplus ++ SurplusSPA2)
+    end;
+
+call_count_proxyaction_list([{Location, []} | R], TimeLeft, User, TimePerLoc, Count, Actions, Surplus)
+  when is_record(Location, location) ->
+    case Count of
+	1 ->
+	    %% use any remaining TimeLeft seconds on the last location entry - the
+	    %% value may be slightly larger than TimePerLoc (but is < 2 * TimePerLoc)
+	    This =
+		[#sipproxy_action{action  = call,
+				  timeout = TimeLeft,
+				  requri  = Location#location.url,
+				  user    = User
+				 },
+		 #sipproxy_action{action  = wait,
+				  timeout = TimeLeft
+				 }
+		],
+	    {ok, Actions ++ This, Surplus};
+	_ ->
+	    This =
+		[#sipproxy_action{action = call, timeout = TimePerLoc, requri = Location#location.url, user = User},
+		 #sipproxy_action{action = wait, timeout = TimePerLoc} ],
+	    call_count_proxyaction_list(R, TimeLeft - TimePerLoc, User, TimePerLoc, Count - 1, Actions ++ This, Surplus)
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Function: redirect({Permanent, terminated}, State)
@@ -1030,7 +1173,7 @@ test() ->
 
     interpret_cpl_test:test(),
 
-    
+
 
     ok.
 
@@ -1038,6 +1181,8 @@ test() ->
 %% The test is done here so that create_sequential_proxyaction_list/4 doesn't
 %% need to be exported
 test27() ->
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.0"),
+
     URI1 = sipurl:parse("sip:test1@foo.com"),
     URI2 = sipurl:parse("sip:test2@foo.com"),
     URI3 = sipurl:parse("sip:test3@foo.com"),
@@ -1045,19 +1190,20 @@ test27() ->
     URI5 = sipurl:parse("sip:test5@foo.com"),
     URI6 = sipurl:parse("sip:test6@foo.com"),
 
-    PrioOrderLocs = [#location{url = URI1, priority = 1.0}, 
-		     #location{url = URI2, priority = 0.8}, 
-		     #location{url = URI3, priority = 0.7}, 
-		     #location{url = URI4, priority = 0.6}, 
-		     #location{url = URI5, priority = 0.0}, 
-		     #location{url = URI6, priority = 0.0} 
+    PrioOrderLocs = [#location{url = URI1, priority = 1.0},
+		     #location{url = URI2, priority = 0.8},
+		     #location{url = URI3, priority = 0.7},
+		     #location{url = URI4, priority = 0.6},
+		     #location{url = URI5, priority = 0.0},
+		     #location{url = URI6, priority = 0.0}
 		    ],
-    Backend = test_backend, 
+    Backend = test_backend,
     Timeout1 = 125,
     %% ensure that min ring time is set to the expected value
     10 = Backend:get_min_ring(),
 
-    Res1 = create_sequential_proxyaction_list(PrioOrderLocs, Backend, Timeout1, "test"),
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.1"),
+    {ok, Res1, []} = create_sequential_proxyaction_list(PrioOrderLocs, Backend, Timeout1, "test"),
     %% io:format("Res1 = ~p~n",[Res1]),
     [
      #sipproxy_action{action = call, timeout = 20, requri = URI1, user = "test"},
@@ -1079,7 +1225,8 @@ test27() ->
     %% ensure that min ring time is set to the expected value
     10 = Backend:get_min_ring(),
 
-    Res2 = create_sequential_proxyaction_list(PrioOrderLocs, Backend, Timeout2, "test"),
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.2"),
+    {ok, Res2, []} = create_sequential_proxyaction_list(PrioOrderLocs, Backend, Timeout2, "test"),
     %% io:format("Res2 = ~p~n",[Res2]),
     [
      #sipproxy_action{action = call, timeout = 10, requri = URI1, user = "test"},
@@ -1089,9 +1236,59 @@ test27() ->
      #sipproxy_action{action = call, timeout = 15, requri = URI3, user = "test"},
      #sipproxy_action{action = wait, timeout = 15}
     ] = Res2,
-    
+
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.3"),
     %% test empty list
     Timeout3 = 20,
-    Res3 = create_sequential_proxyaction_list([], Backend, Timeout3, "test"),
+    {ok, Res3, []} = create_sequential_proxyaction_list([], Backend, Timeout3, "test"),
     %% io:format("Res3 = ~p~n",[Res3]),
-    [] = Res3.
+    [] = Res3,
+    
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.4"),
+    %% test with location records containing siplocationdb_e records
+
+    PrioOrderLocs4 = [#location{url = URI1, priority = 1.0,
+				ldbe = #siplocationdb_e{address = URI1,
+							sipuser = "same-user-instance",
+							instance = "<urn:test:instance1>",
+							flags = [{registration_time, 100}]
+						       }
+			       },
+		      #location{url = URI3, priority = 0.9,
+				ldbe = #siplocationdb_e{address = URI3,
+							sipuser = "other-user-same-instance",
+							instance = "<urn:test:instance1>",
+							flags = [{registration_time, 300}]
+						       }
+			       },
+
+
+		      #location{url = URI2, priority = 0.8,
+				ldbe = #siplocationdb_e{address = URI2,
+							sipuser = "same-user-instance",
+							instance = "<urn:test:instance1>",
+							flags = [{registration_time, 200}]
+						       }
+			       },
+
+		      #location{url = URI4, priority = 0.5}
+
+		     ],
+    
+    Timeout4 = 40,
+    {ok, Res4, Surplus4} = create_sequential_proxyaction_list(PrioOrderLocs4, Backend, Timeout4, "cpl-user"),
+
+    [
+     #sipproxy_action{action = call, timeout = 13, requri = URI2, user = "same-user-instance"},
+     #sipproxy_action{action = wait, timeout = 13},
+     #sipproxy_action{action = call, timeout = 13, requri = URI4, user = "cpl-user"},
+     #sipproxy_action{action = wait, timeout = 13},
+     #sipproxy_action{action = call, timeout = 14, requri = URI3, user = "other-user-same-instance"},
+     #sipproxy_action{action = wait, timeout = 14}
+    ] = Res4,
+
+    [
+     #sipproxy_action{action = call, timeout = 13, requri = URI1, user = "same-user-instance"}
+    ] = Surplus4,
+    
+    ok.

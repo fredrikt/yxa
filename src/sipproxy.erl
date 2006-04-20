@@ -42,8 +42,8 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start/5,
-	 start_actions/4,
+	 start/6,
+	 start_actions/5,
 
 	 test/0
 	]).
@@ -70,6 +70,8 @@
 	  				%% Must be unique!
 	  request,			%% request record(), the request we are working on
 	  actions,			%% list() of sipproxy_action record() - our list of actions
+	  surplus,			%% list() of sipproxy_action record() - suplus actions that match user+instance of
+	 				%% one of the records stored in 'actions'
 	  targets,			%% targetlist record(), list of all our targets (ongoing or finished).
 					%% Targets are client transactions.
 	  final_response_sent = false,	%% true | false, have we forwarded a final response yet?
@@ -90,7 +92,8 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_actions(BranchBase, Parent, OrigRequest, Actions)
+%% Function: start_actions(BranchBase, Parent, OrigRequest, Actions,
+%%                         Surplus)
 %%           BranchBase = string(), the "base" part of the server
 %%                        transactions branch - so that we can get
 %%                        sipproxy to generate intuitive branches for
@@ -98,18 +101,19 @@
 %%           Parent     = pid(), the pid to which sipproxy should report
 %%           OrigRequest = request record()
 %%           Actions = list() of sipproxy_action record()
+%%           Surplus = list() of sipproxy_action record()
 %% Descrip.: This function is spawned by the appserver glue process
 %%           and executes sipproxy:start() in this new thread.
 %% Returns : ok | error
 %%--------------------------------------------------------------------
-start_actions(BranchBase, Parent, OrigRequest, Actions) when is_record(OrigRequest, request) ->
+start_actions(BranchBase, Parent, OrigRequest, Actions, Surplus) when is_record(OrigRequest, request) ->
     case start_check_actions(Actions) of
 	ok ->
 	    {Method, URI} = {OrigRequest#request.method, OrigRequest#request.uri},
 	    Timeout = 32,	%% wait at the end of actions-list timeout
 	    %% We don't return from sipproxy:start() until all Actions are done, and sipproxy signals Parent
 	    %% when it is done.
-	    case start(BranchBase, Parent, OrigRequest, Actions, Timeout) of
+	    case start(BranchBase, Parent, OrigRequest, Actions, Surplus, Timeout) of
 		ok ->
 		    logger:log(debug, "sipproxy: fork of request ~s ~s done, start_actions() returning", [Method, sipurl:print(URI)]),
 		    ok;
@@ -124,11 +128,13 @@ start_actions(BranchBase, Parent, OrigRequest, Actions) when is_record(OrigReque
     end.
 
 %%--------------------------------------------------------------------
-%% Function: start(BranchBase, Parent, Request, Actions, Timeout)
+%% Function: start(BranchBase, Parent, Request, Actions, Surplus,
+%%                 Timeout)
 %%           BranchBase = string()
 %%           Parent     = pid()
 %%           Request    = request record()
 %%           Actions    = list() of sipproxy_action record()
+%%           Surplus    = list() of sipproxy_action record()
 %%           Timeout    = integer()
 %% Descrip.: Start the processing, currently forking (in parallell or
 %%           sequentially) of Request according to Actions.
@@ -139,8 +145,9 @@ start_actions(BranchBase, Parent, OrigRequest, Actions) when is_record(OrigReque
 %%           supported actions are a list of 'call' and 'wait'. You
 %%           can mix calls and waits freely.
 %%--------------------------------------------------------------------
-start(BranchBase, Parent, Request, Actions, Timeout)
-  when is_list(BranchBase), is_pid(Parent), is_record(Request, request), is_list(Actions), is_integer(Timeout) ->
+start(BranchBase, Parent, Request, Actions, Surplus, Timeout)
+  when is_list(BranchBase), is_pid(Parent), is_record(Request, request), is_list(Actions), is_list(Surplus),
+       is_integer(Timeout) ->
     Res = case catch siprequest:check_proxy_request(Request) of
 	      {ok, NewHeader, ApproxMsgSize} ->
 		  %% sipproxy should never be invoked on a request that contains
@@ -153,6 +160,7 @@ start(BranchBase, Parent, Request, Actions, Timeout)
 					 timeout	= Timeout,
 					 request	= Request#request{header = NewHeader},
 					 actions	= Actions,
+					 surplus	= Surplus,
 					 targets	= targetlist:empty(),
 					 approx_msgsize	= ApproxMsgSize
 					},
@@ -293,27 +301,27 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
     Targets = State#state.targets,
     case HAction#sipproxy_action.action of
 	call ->
-	    #sipproxy_action{requri  = CallURI,
-			     timeout = CallTimeout,
-			     user    = SIPUser,
-			     path    = Path
+	    #sipproxy_action{requri   = CallURI,
+			     timeout  = CallTimeout,
+			     user     = SIPUser,
+			     instance = Instance
 			    } = HAction,
 	    logger:log(debug, "sipproxy: forking ~s request to ~s with timeout ~p",
 		       [Method, sipurl:print(CallURI), CallTimeout]),
 	    %% Create a new branch for this target (client transaction). BranchBase plus a sequence number is unique.
 	    Branch = State#state.branchbase ++ "-UAC" ++ integer_to_list(targetlist:get_length(Targets) + 1),
-	    {ok, Request, DstList} = make_new_target_request(OrigRequest, CallURI, State#state.approx_msgsize,
-							     SIPUser, Path),
+
+	    {ok, Request, DstList} = make_new_target_request(OrigRequest, State#state.approx_msgsize, HAction),
 	    case DstList of
 		[FirstDst | _] = DstList ->
 		    NewTargets =
 			case local:start_client_transaction(Request, FirstDst, Branch, CallTimeout) of
 			    BranchPid when is_pid(BranchPid) ->
 				targetlist:add(Branch, Request, BranchPid, calling,
-					       CallTimeout, DstList, Targets);
+					       CallTimeout, DstList, {SIPUser, Instance}, Targets);
 			    {error, E} ->
 				logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
-				fork(EndTime, State#state{actions = TAction})
+				Targets
 			end,
 		    fork(EndTime, State#state{actions = TAction,
 					      targets = NewTargets
@@ -342,9 +350,21 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: make_new_target_request(Request, ApproxMsgSize, Action)
+%%           Request       = request record()
+%%           ApproxMsgSize = integer()
+%%           Action        = sipproxy_action record()
+%% Descrip.:
 %% Returns: {ok, NewRequest, NewCallURI}
-make_new_target_request(Request, URI, ApproxMsgSize, User, Path)
-  when is_record(Request, request), is_record(URI, sipurl), is_integer(ApproxMsgSize), is_list(User), is_list(Path) ->
+%%--------------------------------------------------------------------
+make_new_target_request(Request, ApproxMsgSize, Action)
+  when is_record(Request, request), is_integer(ApproxMsgSize), is_record(Action, sipproxy_action) ->
+    #sipproxy_action{requri   = URI,
+		     user     = User,
+		     path     = Path
+		    } = Action,
+
     %% Create a Route header if there was a RFC3327 path associated with the location db entry
     {ok, PeerAuthL} = yxa_config:get_env(x_yxa_peer_auth, []),
     {NewHeader1, DstURI} =
@@ -688,10 +708,38 @@ process_signal(Msg, State) when is_record(State, state) ->
 %%           the next destination in this targets destination list.
 %%           The targets destination list is typically a list of
 %%           destinations derived from a URI.
-%% Returns : NewTargets = targetlist record()
+%% Returns : NewState = state record()
 %%--------------------------------------------------------------------
 try_next_destination(Status, Target, Targets, State) when is_integer(Status), is_record(State, state) ->
     case {Status, State#state.mystate} of
+	{410, calling} ->
+	    case targetlist:extract([user_instance], Target) of
+		[{User, Instance}] when is_list(User), is_list(Instance) ->
+		    SameUserInstance = [E || E <- State#state.surplus,
+					     E#sipproxy_action.user == User,
+					     E#sipproxy_action.instance == Instance],
+		    case SameUserInstance of
+			[] ->
+			    logger:log(debug, "sipproxy: Received 410 response, but I have no surplus actions for "
+				       "user ~p, instance ~p", [User, Instance]),
+			    State;
+			[NextAction | _] ->
+			    NewSurplus = State#state.surplus -- [NextAction],
+			    try_next_destination_410(NextAction, Target, {User, Instance},
+						     State#state{surplus = NewSurplus})
+		    end;
+		_ ->
+		    State
+	    end;
+	{410, S} ->
+	    case targetlist:extract([user_instance], Target) of
+		[{User, Instance}] when is_list(User), is_list(Instance) ->
+		    logger:log(debug, "sipproxy: Received response 410 but not trying next destination when I'm in state ~p",
+			       [S]);
+		_ ->
+		    ok
+	    end,
+	    State;
 	{503, calling} ->
 	    %% The first entry in dstlist is the one we have just finished with,
 	    %% not the next one to try.
@@ -700,9 +748,9 @@ try_next_destination(Status, Target, Targets, State) when is_integer(Status), is
 		[] ->
 		    logger:log(debug, "sipproxy: Received response ~p, but there are no more destinations to try "
 			       "for this target", [Status]),
-		    Targets;
+		    State;
 		[FirstDst | _] = NewDstList ->
-		    [Branch] = targetlist:extract([branch], Target),
+		    [Branch, UserInstance] = targetlist:extract([branch, user_instance], Target),
 		    NewBranch = get_next_target_branch(Branch),
 		    logger:log(debug, "sipproxy: Received response ~p, starting new branch ~p for next destination ~s",
 			       [Status, NewBranch, sipdst:dst2str(FirstDst)]),
@@ -714,18 +762,51 @@ try_next_destination(Status, Target, Targets, State) when is_integer(Status), is
 		    %% try Proxy A over UDP when Proxy A over TCP has just failed.
 		    case local:start_client_transaction(Request, FirstDst, NewBranch, Timeout) of
 			BranchPid when is_pid(BranchPid) ->
-			    targetlist:add(NewBranch, Request, BranchPid, calling, Timeout, NewDstList, Targets);
+			    NT = targetlist:add(NewBranch, Request, BranchPid, calling, Timeout, NewDstList,
+						UserInstance, Targets),
+			    State#state{targets = NT};
 			{error, E} ->
 			    logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
-			    Targets
+			    State
 		    end
 	    end;
 	{503, S} ->
 	    logger:log(debug, "sipproxy: Received response 503 but not trying next destination when I'm in state ~p",
 		       [S]),
-	    Targets;
+	    State;
 	_ ->
-	    Targets
+	    State
+    end.
+
+try_next_destination_410(NextAction, Target, UserInstance, State) when is_record(NextAction, sipproxy_action) ->
+    [Branch, CallTimeout] = targetlist:extract([branch, timeout], Target),
+    NewBranch = get_next_target_branch(Branch),
+    logger:log(debug, "sipproxy: Received 410 response, starting new branch ~p from surplus supply",
+	       [NewBranch]),
+
+    #state{request	  = OrigRequest,
+	   approx_msgsize = ApproxMsgSize
+	  } = State,
+    {ok, Request, DstList} = make_new_target_request(OrigRequest, ApproxMsgSize, NextAction),
+    case DstList of
+	[FirstDst | _] = DstList ->
+	    case local:start_client_transaction(Request, FirstDst, NewBranch, CallTimeout) of
+		BranchPid when is_pid(BranchPid) ->
+		    NT = targetlist:add(NewBranch, Request, BranchPid, calling,
+					CallTimeout, DstList, UserInstance, State#state.targets),
+		    State#state{targets = NT};
+		{error, E} ->
+		    logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
+		    State
+	    end;
+	[] ->
+	    logger:log(normal, "~s: Target URI ~s did not resolve to any destinations we could use - ignoring",
+		       [NewBranch, sipurl:print(Request#request.uri)]),
+	    State;
+	{error, Reason} ->
+	    logger:log(normal, "~s: Failed resolving URI ~s - ignoring this target (error : ~p)",
+		       [NewBranch, sipurl:print(Request#request.uri), Reason]),
+	    State
     end.
 
 %%--------------------------------------------------------------------
@@ -899,21 +980,20 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 	    #request{method = RMethod,
 		     uri    = RURI
 		    } = ResponseToRequest,
+	    logger:log(debug, "sipproxy: Received branch result '~p ~s' from ~p (request: ~s ~s). ",
+		       [Status, Reason, ClientPid, RMethod, sipurl:print(RURI)]),
 	    NewTarget1 = targetlist:set_state(ThisTarget, NewTState),
 	    NewTarget2 = targetlist:set_endresult(NewTarget1, SPResponse),	% XXX only do this for final responses?
 	    NewTargets1 = targetlist:update_target(NewTarget2, Targets),
-	    NewTargets = try_next_destination(Status, ThisTarget, NewTargets1, State),
-	    logger:log(debug, "sipproxy: Received branch result '~p ~s' from ~p (request: ~s ~s). ",
-		       [Status, Reason, ClientPid, RMethod, sipurl:print(RURI)]),
+	    NewState2 = try_next_destination(Status, ThisTarget, NewTargets1, State),
 	    case (OldTState == NewTState) of
 		true ->
 		    ok;	%% No change, don't have to log verbose things
 		false ->
 		    logger:log(debug, "sipproxy: Extra debug: Target state changed from '~p' to '~p'.~n"
 			       "My Targets-list (response context) now contain :~n~p",
-			       [OldTState, NewTState, targetlist:debugfriendly(NewTargets)])
+			       [OldTState, NewTState, targetlist:debugfriendly(NewState2#state.targets)])
 	    end,
-	    NewState2 = State#state{targets = NewTargets},
 	    NewState3 = check_forward_immediately(ResponseToRequest, SPResponse, Branch, NewState2),
 	    NewState4 = cancel_pending_if_invite_2xx_or_6xx(RMethod, Status, Reason, NewState3),
 	    NewState4
@@ -1278,7 +1358,7 @@ test() ->
     %% test normal case, but with too low Max-Forwards for a fork to actually happen
     StartAcReq1 = #request{method = "OPTIONS", uri = sipurl:parse("sip:ft@testcase.example.org"),
 			   header = keylist:from_list([{"Max-Forwards", ["1"]}]), body = <<>>},
-    error = start_actions("testbranchbase", self(), StartAcReq1, [CheckAction_Call1, CheckAction_Wait1]),
+    error = start_actions("testbranchbase", self(), StartAcReq1, [CheckAction_Call1, CheckAction_Wait1], []),
 
     autotest:mark(?LINE, "start_actions/4 - 1.2"),
     check_we_got_signal({sipproxy_all_terminated, Self, {483, "Too Many Hops"}}),
@@ -1286,7 +1366,7 @@ test() ->
 
     autotest:mark(?LINE, "start_actions/4 - 2"),
     %% test failure case
-    error = start_actions("foo", self(), #request{}, []),
+    error = start_actions("foo", self(), #request{}, [], []),
 
 
     %% test start(BranchBase, Parent, Request, Actions, Timeout)
@@ -1300,7 +1380,7 @@ test() ->
     StartReq1 = #request{method = "OPTIONS", uri = sipurl:parse("sip:ft@testcase.example.org"),
 			 header = keylist:from_list([{"Route", ["<sip:testcase.example.org>"]}]), body = <<>>},
     {error, "Request with Route header could not be forked"} =
-	start("testbranchbase", StartSigCol, StartReq1, [], 0),
+	start("testbranchbase", StartSigCol, StartReq1, [], [], 0),
     StartExpectedSignals1 = [{sipproxy_all_terminated, Self,
 			      {500, "Server Internal Error"}},
 			     {sipproxy_terminating, Self}],
@@ -1312,7 +1392,7 @@ test() ->
 			 header = keylist:from_list([]), body = <<>>},
 
     autotest:mark(?LINE, "start/5 - 2.1"),
-    ok = start("testbranchbase", StartSigCol, StartReq2, [#sipproxy_action{action = wait, timeout = 0}], 0),
+    ok = start("testbranchbase", StartSigCol, StartReq2, [#sipproxy_action{action = wait, timeout = 0}], [], 0),
 
     autotest:mark(?LINE, "start/5 - 2.2"),
     StartExpectedSignals2 = [{sipproxy_all_terminated, Self,
@@ -1337,9 +1417,9 @@ test() ->
     ForkRef1 = make_ref(),
     ForkSigCollect1 = spawn_link(?MODULE, signal_collector, [self(), ForkRef1, passive]),
     ForkList1_1 = targetlist:add("branch1", ForkRequest1, ForkSigCollect1, calling,
-			       1, [], ForkList0),
+			       1, [], none, ForkList0),
     ForkList1 = targetlist:add("branch2", ForkRequest1, ForkSigCollect1, terminated,
-			       1, [], ForkList1_1),
+			       1, [], none, ForkList1_1),
 
     autotest:mark(?LINE, "fork/2 - 1.1"),
     ForkState1 = #state{request = ForkRequest1,
@@ -1361,7 +1441,7 @@ test() ->
     autotest:mark(?LINE, "fork/2 - 2.1"),
     %% test all terminated
     ForkList2 = targetlist:add("terminatedbranch", ForkRequest1, ForkSigCollect1, terminated,
-			       1, [], ForkList0),
+			       1, [], none, ForkList0),
     ForkState2 = #state{request = ForkRequest1,
 			timeout = 0,
 			parent  = ForkSigCollect1,
@@ -1406,9 +1486,9 @@ test() ->
     autotest:mark(?LINE, "mark_cancelled/2 - 0"),
     MarkCancelledList0 = targetlist:empty(),
     MarkCancelledList1 = targetlist:add("branch1", #request{}, self(), calling,
-					1, [], MarkCancelledList0),
+					1, [], none, MarkCancelledList0),
     MarkCancelledList2 = targetlist:add("branch2", #request{}, self(), terminated,
-					1, [], MarkCancelledList1),
+					1, [], none, MarkCancelledList1),
     MarkCancelled_T1_1 = targetlist:get_using_branch("branch1", MarkCancelledList2),
     MarkCancelled_T2_1 = targetlist:get_using_branch("branch2", MarkCancelledList2),
 
@@ -1434,9 +1514,9 @@ test() ->
     autotest:mark(?LINE, "allterminated/1 - 0"),
     AllTerminatedList0 = targetlist:empty(),
     AllTerminatedList1 = targetlist:add("branch1", #request{}, self(), calling,
-					1, [], AllTerminatedList0),
+					1, [], none, AllTerminatedList0),
     AllTerminatedList2 = targetlist:add("branch2", #request{}, self(), terminated,
-					1, [], AllTerminatedList1),
+					1, [], none, AllTerminatedList1),
 
     autotest:mark(?LINE, "allterminated/1 - 1"),
     true = allterminated(#state{targets=AllTerminatedList0}),
@@ -1477,9 +1557,9 @@ test() ->
     autotest:mark(?LINE, "end_processing/2 - 6"),
     EndProcessingList0 = targetlist:empty(),
     EndProcessingList1 = targetlist:add("branch1", #request{}, self(), terminated,
-					1, [], EndProcessingList0),
+					1, [], none, EndProcessingList0),
     EndProcessingList2 = targetlist:add("branch2", #request{}, self(), calling,
-					1, [], EndProcessingList1),
+					1, [], none, EndProcessingList1),
 
     true = end_processing(1, #state{targets = EndProcessingList1}),
 
@@ -1646,7 +1726,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "report_upstreams/2 - 0"),
     UpstreamsTargets1 = targetlist:add("branch1", #request{}, self(), calling,
-				       1, [], targetlist:empty()),
+				       1, [], none, targetlist:empty()),
     UpstreamsTarget_1 = targetlist:get_using_branch("branch1", UpstreamsTargets1),
     UpstreamsState1 = #state{final_response_sent = false,
 			     mystate = calling,
@@ -1717,9 +1797,9 @@ test() ->
     %% one pending and one already completed target
     CancelPendingReq1 = #request{method="INVITE", uri=sipurl:parse("sip:ft@it.su.se")},
     CancelPendingTargets1 = targetlist:add("branch1", CancelPendingReq1, CancelPendingPid1, calling,
-					   1, [], targetlist:empty()),
+					   1, [], none, targetlist:empty()),
     CancelPendingTargets2 = targetlist:add("branch2", CancelPendingReq1, CancelPendingPid2, completed,
-					   1, [], CancelPendingTargets1),
+					   1, [], none, CancelPendingTargets1),
     CancelPendingState1 = #state{targets = CancelPendingTargets2},
 
     %%
@@ -1842,9 +1922,9 @@ test() ->
     %% one pending and one already completed target
     PSCancelPendingReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
     PSCancelPendingTargets1 = targetlist:add("branch1", PSCancelPendingReq1, PSCancelPendingPid1, calling,
-					     1, [], targetlist:empty()),
+					     1, [], none, targetlist:empty()),
     PSCancelPendingTargets2 = targetlist:add("branch2", PSCancelPendingReq1, PSCancelPendingPid2, completed,
-					     1, [], PSCancelPendingTargets1),
+					     1, [], none, PSCancelPendingTargets1),
     PSCancelPendingState1 = #state{targets = PSCancelPendingTargets2, mystate = calling},
 
     autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 1.1"),
@@ -1888,7 +1968,7 @@ test() ->
 
     PSClientTermReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
     PSClientTermTargets1 = targetlist:add("branch1", PSClientTermReq1, PSClientTermPid1, calling,
-					     1, [], targetlist:empty()),
+					     1, [], none, targetlist:empty()),
     PSClientTermState1 = #state{targets = PSClientTermTargets1},
 
     autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 1.1"),

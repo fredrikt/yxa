@@ -11,7 +11,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 add/7,
+	 add/8,
 	 empty/0,
 	 get_length/1,
 	 debugfriendly/1,
@@ -49,9 +49,10 @@
 	  pid,			%% pid() of client transaction ???
 	  state,		%% atom(), SIP state of this target
 	  timeout,		%% integer()
-	  endresult=none,	%% none | sp_response record()
+	  endresult = none,	%% none | sp_response record()
 	  dstlist,		%% list() of sipdst record(), more destinations if this one fail
-	  cancelled=false	%% true | false, is this branch cancelled?
+	  cancelled = false,	%% true | false, is this branch cancelled?
+	  user_instance		%% none | {User, Instance}
 	 }).
 
 %%--------------------------------------------------------------------
@@ -64,27 +65,34 @@
 
 %%--------------------------------------------------------------------
 %% Function: add(Branch, Request, Pid, State, Timeout, DstList,
-%%               TargetList)
+%%               User, Instance, TargetList)
 %%           Branch     = string()
 %%           Request    = request record()
 %%           Pid        = pid()
 %%           State      = atom()
 %%           Timeout    = integer()
 %%           DstList    = list() of sipdst record()
+%%           UserInst   = none | tuple() ({User, Instance})
 %%           TargetList = targetlist record()
 %% Descrip.: Add a new entry to TargetList, after verifying that a
 %%           target with this branch is not already in the list.
 %% Returns : NewTargetList = targetlist record()
 %%--------------------------------------------------------------------
-add(Branch, Request, Pid, State, Timeout, DstList, TargetList) when is_list(Branch), is_record(Request, request),
-								    is_pid(Pid), is_atom(State), is_integer(Timeout),
-								    is_list(DstList),
-								    is_record(TargetList, targetlist) ->
+add(Branch, Request, Pid, State, Timeout, DstList, UserInst, TargetList) 
+  when is_list(Branch), is_record(Request, request), is_pid(Pid), is_atom(State), is_integer(Timeout),
+       is_list(DstList), is_record(TargetList, targetlist), is_tuple(UserInst); UserInst == none ->
     case get_using_branch(Branch, TargetList) of
 	none ->
-	    NewTarget = #target{ref=make_ref(), branch=Branch, request=Request, pid=Pid, state=State,
-		   		dstlist=DstList, timeout=Timeout},
-	    #targetlist{list=lists:append(TargetList#targetlist.list, [NewTarget])};
+	    NewTarget = #target{ref		= make_ref(),
+				branch		= Branch,
+				request		= Request,
+				pid		= Pid,
+				state		= State,
+		   		dstlist		= DstList,
+				timeout		= Timeout,
+				user_instance	= UserInst
+			       },
+	    #targetlist{list = lists:append(TargetList#targetlist.list, [NewTarget])};
 	T when is_record(T, target) ->
 	    logger:log(error, "targetlist: Asked to add target with duplicate branch ~p to list :~n~p",
 	    	       [branch, debugfriendly(TargetList)]),
@@ -97,7 +105,7 @@ add(Branch, Request, Pid, State, Timeout, DstList, TargetList) when is_list(Bran
 %% Returns : TargetList = targetlist record()
 %%--------------------------------------------------------------------
 empty() ->
-    #targetlist{list=[]}.
+    #targetlist{list = []}.
 
 %%--------------------------------------------------------------------
 %% Function: get_length(TargetList)
@@ -120,7 +128,7 @@ get_length(TargetList) when is_record(TargetList, targetlist) ->
 update_target(Target, TargetList) when is_record(Target, target), is_record(TargetList, targetlist) ->
     Ref = Target#target.ref,
     NewList = update_target2(Ref, Target, TargetList#targetlist.list, []),
-    #targetlist{list=NewList}.
+    #targetlist{list = NewList}.
 
 update_target2(Ref, _NewT, [], Res) ->
     logger:log(error, "Targetlist: Asked to update a target, but I can't find it"),
@@ -148,16 +156,20 @@ debugfriendly(TargetList) when is_record(TargetList, targetlist) ->
 debugfriendly2([], Res) ->
     lists:reverse(Res);
 debugfriendly2([H | T], Res) when is_record(H, target) ->
-    Request = H#target.request,
-    {Method, URI} = {Request#request.method, Request#request.uri},
+    #request{method = Method, uri = URI} = H#target.request,
     RespStr = case H#target.endresult of
 		  none -> "no response";
 		  R when is_record(R, sp_response) ->
 		      lists:concat(["response=", R#sp_response.status, " ", R#sp_response.reason]);
 		  _ -> "INVALID response"
 	      end,
-    Str = lists:concat(["pid=", pid_to_list(H#target.pid), ", branch=", H#target.branch, ", request=", Method, " ",
-			sipurl:print(URI), ", ", RespStr, ", cancelled=", H#target.cancelled, ", state=" , H#target.state]),
+    Str = lists:concat(["pid=", pid_to_list(H#target.pid),
+			", branch=", H#target.branch,
+			", request=", Method, " ",
+			sipurl:print(URI), ", ",
+			RespStr,
+			", cancelled=", H#target.cancelled,
+			", state=" , H#target.state]),
     debugfriendly2(T, [binary_to_list(list_to_binary(Str)) | Res]).
 
 
@@ -226,10 +238,10 @@ get_responses(TargetList) when is_record(TargetList, targetlist) ->
 
 get_responses2([], Res) ->
     lists:reverse(Res);
-get_responses2([#target{endresult=H} | T], Res) when is_record(H, sp_response) ->
+get_responses2([#target{endresult = H} | T], Res) when is_record(H, sp_response) ->
     %% endresult is an sp_response record, add it to Res
     get_responses2(T, [H | Res]);
-get_responses2([#target{endresult=none} | T], Res) ->
+get_responses2([#target{endresult = none} | T], Res) ->
     %% endresult is 'none'
     get_responses2(T, Res).
 
@@ -245,24 +257,16 @@ get_responses2([#target{endresult=none} | T], Res) ->
 extract(Values, Target) when is_record(Target, target) ->
     extract(Values, Target, []).
 
-extract([], Target, Res) when is_record(Target, target) ->
-    lists:reverse(Res);
-extract([pid | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.pid | Res]);
-extract([branch | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.branch | Res]);
-extract([request | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.request | Res]);
-extract([state | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.state | Res]);
-extract([timeout | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.timeout | Res]);
-extract([dstlist | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.dstlist | Res]);
-extract([endresult | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.endresult | Res]);
-extract([cancelled | T], Target, Res) when is_record(Target, target) ->
-    extract(T, Target, [Target#target.cancelled | Res]).
+extract([pid | T],		#target{pid = Value} = Ta, 		Res) ->	extract(T, Ta, [Value | Res]);
+extract([branch | T],		#target{branch = Value} = Ta,		Res) ->	extract(T, Ta, [Value | Res]);
+extract([request | T],		#target{request = Value} = Ta,		Res) ->	extract(T, Ta, [Value | Res]);
+extract([state | T],		#target{state = Value} = Ta,		Res) ->	extract(T, Ta, [Value | Res]);
+extract([timeout | T],		#target{timeout = Value} = Ta,		Res) ->	extract(T, Ta, [Value | Res]);
+extract([dstlist | T],		#target{dstlist = Value} = Ta,		Res) ->	extract(T, Ta, [Value | Res]);
+extract([endresult | T],	#target{endresult = Value} = Ta,	Res) ->	extract(T, Ta, [Value | Res]);
+extract([cancelled | T],	#target{cancelled = Value} = Ta,	Res) ->	extract(T, Ta, [Value | Res]);
+extract([user_instance | T],	#target{user_instance = Value} = Ta,	Res) ->	extract(T, Ta, [Value | Res]);
+extract([],			#target{},				Res) -> lists:reverse(Res).
 
 %%--------------------------------------------------------------------
 %% Function: set_pid(Target, Value)
@@ -276,15 +280,15 @@ extract([cancelled | T], Target, Res) when is_record(Target, target) ->
 %% Returns : NewTarget = target record()
 %%--------------------------------------------------------------------
 set_pid(Target, Value) when is_record(Target, target), is_pid(Value) ->
-    Target#target{pid=Value}.
+    Target#target{pid = Value}.
 set_state(Target, Value) when is_record(Target, target), is_atom(Value) ->
-    Target#target{state=Value}.
+    Target#target{state = Value}.
 set_endresult(Target, Value) when is_record(Target, target), is_record(Value, sp_response) ->
-    Target#target{endresult=Value}.
+    Target#target{endresult = Value}.
 set_dstlist(Target, Value) when is_record(Target, target), is_list(Value) ->
-    Target#target{dstlist=Value}.
+    Target#target{dstlist = Value}.
 set_cancelled(Target, Value) when is_record(Target, target), Value == true; Value == false ->
-    Target#target{cancelled=Value}.
+    Target#target{cancelled = Value}.
 
 
 %%====================================================================
@@ -306,32 +310,34 @@ test() ->
     %% test empty/0
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "emtpy/0 - 1"),
-    #targetlist{list=[]} = EmptyList = empty(),
+    #targetlist{list = []} = EmptyList = empty(),
 
 
     %% test add/7
     %%--------------------------------------------------------------------
-    AddReq = #request{method="TEST", uri=sipurl:parse("sip:test@example.org")},
+    AddReq = #request{method = "TEST",
+		      uri    = sipurl:parse("sip:test@example.org")
+		     },
 
     autotest:mark(?LINE, "add/7 - 1"),
     %% just add an element
-    List1 = add("branch1", AddReq, self(), trying, 4711, [123], EmptyList),
+    List1 = add("branch1", AddReq, self(), trying, 4711, [123], {"user", "instance"}, EmptyList),
     
     autotest:mark(?LINE, "add/7 - 2"),
     %% test that we can't add another element with the same branch
-    List1 = add("branch1", AddReq, self(), calling, 123, [234], List1),
+    List1 = add("branch1", AddReq, self(), calling, 123, [234], none, List1),
 
     autotest:mark(?LINE, "add/7 - 3"),
     %% add another target
-    List2 = add("branch2", AddReq, whereis(logger), completed, 123, [], List1),
+    List2 = add("branch2", AddReq, whereis(logger), completed, 123, [], {"user", "instance2"}, List1),
 
     autotest:mark(?LINE, "add/7 - 4"),
     %% another element
-    List3 = add("branch3", AddReq, whereis(init), terminated, 345, [], List2),
+    List3 = add("branch3", AddReq, whereis(init), terminated, 345, [], {"user2", "instance"}, List2),
 
     autotest:mark(?LINE, "add/7 - 5"),
     %% another element
-    List4 = add("branch4", AddReq, self(), trying, 345, [456], List3),
+    List4 = add("branch4", AddReq, self(), trying, 345, [456], {"user2", "instance2"}, List3),
     
 
     %% test length/1
@@ -361,8 +367,8 @@ test() ->
     autotest:mark(?LINE, "extract/2 - 1"),
     %% check all the elements we added in the first target
     Extract_Me = self(),
-    ["branch1", AddReq, Extract_Me, trying, 4711, [123]] =
-	extract([branch, request, pid, state, timeout, dstlist], Target1),
+    ["branch1", AddReq, Extract_Me, trying, 4711, [123], {"user", "instance"}] =
+	extract([branch, request, pid, state, timeout, dstlist, user_instance], Target1),
 
 
     %% test get_using_pid/2

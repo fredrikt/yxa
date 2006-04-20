@@ -12,8 +12,8 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/2,
-	 start_link_cpl/5
+	 start_link/3,
+	 start_link_cpl/6
 	]).
 
 %%--------------------------------------------------------------------
@@ -33,7 +33,6 @@
 %%--------------------------------------------------------------------
 -include("sipproxy.hrl").
 -include("siprecords.hrl").
-%%-include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -44,9 +43,9 @@
 	  request,		%% request record()
 	  forkpid,		%% pid() of sipproxy process
 	  callhandler_pid,	%% pid() of server transaction handler, only use for matching!
-	  cancelled=false,	%% atom(), true | false
-	  completed=false,	%% atom(), true | false
-	  cpl_pid=none		%% pid(), CPL interpreter backend
+	  cancelled = false,	%% atom(), true | false
+	  completed = false,	%% atom(), true | false
+	  cpl_pid = none	%% pid(), CPL interpreter backend
 	 }).
 
 %%--------------------------------------------------------------------
@@ -60,18 +59,20 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, Actions)
+%% Function: start_link(Request, Actions, Surplus)
 %%           Request = request record()
 %%           Actions = list() of sipproxy_action record()
+%%           Surplus = list() of sipproxy_action record()
 %% Descrip.: start this appserver_glue gen_server.
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
-start_link(Request, Actions) when is_record(Request, request), is_list(Actions) ->
-    gen_server:start_link(?MODULE, [Request, Actions], []).
+start_link(Request, Actions, Surplus) when is_record(Request, request), is_list(Actions),
+					   is_list(Surplus) ->
+    gen_server:start_link(?MODULE, [Request, Actions, Surplus], []).
 
-start_link_cpl(Parent, BranchBase, CallHandler, Request, Actions) when is_pid(Parent), is_list(BranchBase),
-								       is_record(Request, request), is_list(Actions) ->
-    gen_server:start_link(?MODULE, [cpl, Parent, BranchBase, CallHandler, Request, Actions], []).
+start_link_cpl(Parent, BranchBase, CallHandler, Request, Actions, Surplus)
+  when is_pid(Parent), is_list(BranchBase), is_record(Request, request), is_list(Actions), is_list(Surplus) ->
+    gen_server:start_link(?MODULE, [cpl, Parent, BranchBase, CallHandler, Request, Actions, Surplus], []).
 
 
 %%====================================================================
@@ -79,10 +80,11 @@ start_link_cpl(Parent, BranchBase, CallHandler, Request, Actions) when is_pid(Pa
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, Actions])
-%%           init([cpl, Parent, BranchBase, Actions]) ->
+%% Function: init([Request, Actions, Surplus])
+%%           init([cpl, Parent, BranchBase, Actions, Surplus]) ->
 %%           Request     = request record()
 %%           Actions     = list() of sipproxy_action record()
+%%           Surplus     = list() of sipproxy_action record()
 %%           Parent      = pid(), CPL interpreter backend process
 %%           BranchBase  = string()
 %% Descrip.: Initiates the server.
@@ -90,12 +92,12 @@ start_link_cpl(Parent, BranchBase, CallHandler, Request, Actions) when is_pid(Pa
 %%           ok                   |
 %%           error (parent will throw a siperror (500))
 %%--------------------------------------------------------------------
-init([Request, Actions]) when is_record(Request, request), is_list(Actions) ->
+init([Request, Actions, Surplus]) when is_record(Request, request), is_list(Actions), is_list(Surplus) ->
     case transactionlayer:adopt_st_and_get_branchbase(Request) of
 	{ok, CallHandler, BranchBase} ->
-	    ForkPid = spawn_link(sipproxy, start_actions, [BranchBase, self(), Request, Actions]),
-	    logger:log(normal, "~s: Appserver glue: Forking request, ~p actions",
-		       [BranchBase, length(Actions)]),
+	    ForkPid = spawn_link(sipproxy, start_actions, [BranchBase, self(), Request, Actions, Surplus]),
+	    logger:log(normal, "~s: Appserver glue: Forking request, ~p actions (~p surplus actions)",
+		       [BranchBase, length(Actions), length(Surplus)]),
 	    logger:log(debug, "Appserver glue: Forking request, CallHandler (UAS) ~p, ForkPid (sipproxy) ~p",
 		       [CallHandler, ForkPid]),
 	    %% We need the pid of the callhandler extracted to do guard matches on it
@@ -118,8 +120,8 @@ init([Request, Actions]) when is_record(Request, request), is_list(Actions) ->
 %% everything but provisional responses and 2xx response to INVITE to the CPL
 %% script for further processing, instead of sending it to the STHandler like
 %% we do for non-CPL processing.
-init([cpl, Parent, BranchBase, CallHandler, Request, Actions]) ->
-    ForkPid = spawn_link(sipproxy, start_actions, [BranchBase, self(), Request, Actions]),
+init([cpl, Parent, BranchBase, CallHandler, Request, Actions, Surplus]) ->
+    ForkPid = spawn_link(sipproxy, start_actions, [BranchBase, self(), Request, Actions, Surplus]),
     logger:log(normal, "~s: Appserver glue: Forking request, ~p actions",
 	       [BranchBase, length(Actions)]),
     logger:log(debug, "Appserver glue: Forking request, CPL process ~p, CallHandler ~p, ForkPid ~p",
@@ -532,16 +534,15 @@ handle_sipproxy_response(#response{status=Status}=Response, #state{cpl_pid=CPLpi
 %% set 'completed' to 'true'.
 %%
 handle_sipproxy_response(Response, State) when is_record(Response, response), is_record(State, state) ->
-    Request = State#state.request,
-    {Method, URI} = {Request#request.method, Request#request.uri},
-    {Status, Reason} = {Response#response.status, Response#response.reason},
+    #request{method = Method, uri = URI} = State#state.request,
+    #response{status = Status, reason = Reason} = Response,
     CallHandler = State#state.callhandler,
     logger:log(debug, "Appserver glue: Forwarding response '~p ~s' to '~s ~s' to CallHandler ~p",
 	       [Status, Reason, Method, sipurl:print(URI), CallHandler]),
     transactionlayer:send_proxy_response_handler(CallHandler, Response),
     if
 	Status >= 200 ->
-	    State#state{completed=true};
+	    State#state{completed = true};
 	true ->
 	    State
     end.

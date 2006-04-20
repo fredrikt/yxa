@@ -50,7 +50,7 @@ create_if_not_exists(SipUser, InstanceId) ->
 	    GRUU = generate_unique_gruu(SipUser, InstanceId),
 	    {atomic, ok} = database_gruu:insert(GRUU, SipUser, InstanceId, []),
 	    %% XXX DEBUG LOG LEVEL
-	    logger:log(normal, "Registrar: Stored new GRUU ~p for SIP user ~p, instance id ~p",
+	    logger:log(debug, "Registrar: Stored new GRUU ~p for SIP user ~p, instance id ~p",
 		       [GRUU, SipUser, InstanceId]),
 	    {ok, GRUU};
 	{ok, [#gruu_dbe{gruu = GRUU}]} ->
@@ -58,7 +58,7 @@ create_if_not_exists(SipUser, InstanceId) ->
 	    %% wants to clean away old GRUUs
 	    database_gruu:update_last_registered(GRUU),
 	    %% XXX DEBUG LOG LEVEL
-	    logger:log(normal, "Registrar: SIP user ~p instance ~p already has a GRUU : ~p (updated)",
+	    logger:log(debug, "Registrar: SIP user ~p instance ~p already has a GRUU : ~p (updated)",
 		       [SipUser, InstanceId, GRUU]),
 	    {ok, GRUU}
     end.
@@ -86,15 +86,7 @@ get_contact_for_gruu(GRUUstr) when is_list(GRUUstr) ->
 	    InstanceId = GRUU#gruu_dbe.instance_id,
 
 	    %% Get location database entrys whose instance id matches our GRUU
-	    Contacts =
-		lists:foldl(fun(C, Acc) when is_record(C, siplocationdb_e) ->
-				    case lists:keysearch(instance_id, 1, C#siplocationdb_e.flags) of
-					{value, {instance_id, InstanceId}} ->
-					    [C | Acc];
-					_ ->
-					    Acc
-				    end
-			    end, [], AllContacts),
+	    Contacts = [E || E <- AllContacts, E#siplocationdb_e.instance == InstanceId],
 
 	    %% GRUU draft 06 #8.4.1 (Request Targeting)
 	    %% the proxy MUST populate the target set so

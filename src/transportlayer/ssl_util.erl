@@ -136,7 +136,8 @@ is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls; P
 			in -> true;
 			out ->
 			    {ok, Reject} = yxa_config:get_env(ssl_check_subject_altname),
-			    is_valid_ssl_certname(Names, Subject, AltNames, Reject)
+			    NewAltNames = local:get_valid_altnames(Names, Subject, AltNames),
+			    is_valid_ssl_certname(Names, Subject, NewAltNames, Reject)
 		    end
 	    end;
 	{error, Reason} ->

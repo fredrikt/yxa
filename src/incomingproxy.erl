@@ -48,7 +48,7 @@
 %%--------------------------------------------------------------------
 init() ->
     Registrar = {registrar, {registrar, start_link, []}, permanent, 2000, worker, [registrar]},
-    Tables = [user, numbers, phone, cpl_script_graph, regexproute],
+    Tables = [user, numbers, phone, cpl_script_graph, regexproute, gruu],
     [Tables, stateful, {append, [Registrar]}].
 
 %%--------------------------------------------------------------------
@@ -67,10 +67,11 @@ init() ->
 %% (step 2) compared to the RFC (RFC 3261 chapter 10.3) specification.
 %% This could theoreticaly result in unexpected, but legal, error
 %% responses.
-request(#request{method="REGISTER"}=Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branchbase_from_handler(THandler),
-    case siplocation:process_register_request(Request, THandler, LogTag, LogStr, incomingproxy) of
+    case siplocation:process_register_request(Request, Origin#siporigin.sipsocket,
+					      THandler, LogTag, LogStr, incomingproxy) of
 	not_homedomain ->
 	    do_request(Request, Origin, THandler, LogTag);
 	_ ->
@@ -243,14 +244,16 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s according to Route header", [LogTag, Method]),
 	    proxy_request(THandler, Request, route);
 	{proxy, {with_path, URL, Path}} when is_record(URL, sipurl), is_list(Path) ->
-	    %% RFC3327
-	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s (with path: ~p)",
-		       [LogTag, Method, sipurl:print(URL), Path]),
-	    NewHeader = keylist:prepend({"Route", Path}, Request#request.header),
-	    proxy_request(THandler, Request#request{header = NewHeader}, route);
+            %% RFC3327
+            logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s (with path: ~p)",
+                       [LogTag, Method, sipurl:print(URL), Path]),
+            NewHeader = keylist:prepend({"Route", Path}, Request#request.header),
+            proxy_request(THandler, Request#request{uri = URL,
+						    header = NewHeader
+						   }, route);
 
 	{redirect, Loc} when is_record(Loc, sipurl) ->
-	    logger:log(normal, "~s: incomingproxy: Redirect ~s", [LogTag, sipurl:print(Loc)]),
+	    logger:log(normal, "~s: incomingproxy: Redirect to ~s", [LogTag, sipurl:print(Loc)]),
 	    Contact = [contact:new(none, Loc, [])],
 	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
 	    transactionlayer:send_response_handler(THandler, 302, "Moved Temporarily", ExtraHeaders);
@@ -555,7 +558,7 @@ proxy_request(THandler, Request, Dst) when is_record(Request, request) ->
 %%
 %% CANCEL or BYE
 %%
-relay_request(THandler, #request{method=Method}=Request, Dst, _Origin, LogTag)
+relay_request(THandler, #request{method = Method} = Request, Dst, _Origin, LogTag)
   when Method == "CANCEL"; Method == "BYE" ->
     logger:log(normal, "~s: incomingproxy: Relay ~s ~s (unauthenticated)",
 	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),

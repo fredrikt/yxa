@@ -49,7 +49,7 @@
 	 %% proxy
 	 get_min_ring/0,
 	 get_server_max/0,
-	 test_proxy_destinations/7,
+	 test_proxy_destinations/8,
 
 
 	 %% test ---------------------
@@ -559,9 +559,11 @@ prio(Prio) ->
 %%           URI     = sipurl record()
 %%           Timeout = integer(), seconds to try lookup
 %% Descrip.:
-%% Returns : {Result, URIs}
+%% Returns : {Result, Locs}
 %%           Result = success | notfound | failure
-%%           URIs   = list() of sipurl record()          XXX Timeout isn't used, should result in {failure, ...}
+%%           Locs   = list() of siplocationdb_e record()
+%%
+%% Note    : XXX Timeout isn't used, should result in {failure, ...}
 %%--------------------------------------------------------------------
 %% XXX http lookup - unsupported
 %% lookup(URISource, User, URI, Timeout) ->
@@ -572,11 +574,7 @@ lookup("registration", User, URI, _Timeout) ->
     try local:lookupuser_locations([User], URI) of
 	[] -> {notfound, []};
 	Locations ->
-	    Res = lists:foldl(fun(L, Acc) when is_record(L, siplocationdb_e) ->
-				      [siplocation:to_url(L) | Acc]
-			      end, [], Locations),
-	    %% Reverse result since lookupuser_locations actually priority-sort the locations
-	    {success, lists:reverse(Res)}
+	    {success, Locations}
     catch
 	throw: _ ->
 	    {failure, []}
@@ -699,12 +697,12 @@ get_server_max() ->
 %% Descrip.:
 %% Returns : {Result, BestLocation, BestResponse}
 %%--------------------------------------------------------------------
-test_proxy_destinations(Count, BranchBase, Request, Actions, _Timeout, _Recurse, STHandler) ->
+test_proxy_destinations(Count, BranchBase, Request, Actions, Surplus, _Timeout, _Recurse, STHandler) ->
     %% Count is used to add a "-cplN" element to the branch name, this is
     %% needed as there my be more than one sipproxy:start call executed in a cpl script
     ProxyBranchBase = lists:concat([BranchBase, "-cpl", Count]),
     logger:log(debug, "~p: CPL proxy actions :~n~p", [ProxyBranchBase, Actions]),
-    {ok, AppGluePid} = appserver_glue:start_link_cpl(self(), ProxyBranchBase, STHandler, Request, Actions),
+    {ok, AppGluePid} = appserver_glue:start_link_cpl(self(), ProxyBranchBase, STHandler, Request, Actions, Surplus),
     %% We need the actual pid from STHandler to match signals from it inside _loop()
     STHandlerPid = transactionlayer:get_pid_from_handler(STHandler),
     %% Set up process monitors to both STHandlerPid and AppGluePid. We are linked to them,

@@ -12,7 +12,10 @@
 	 insert/5,
 	 list/0,
 	 purge_class/2,
-	 delete/5
+	 delete/5,
+
+	 test/0,
+	 test_create_table/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -126,3 +129,34 @@ purge_class(Regexp, Class) ->
 	  end,
     mnesia:transaction(Fun).
 
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+
+    %% test x
+    %%--------------------------------------------------------------------
+    %%autotest:mark(?LINE, "f/a - 1"),
+
+    ok.
+
+test_create_table() ->
+    case catch mnesia:table_info(regexproute, attributes) of
+	Attrs when is_list(Attrs) ->
+	    ok;
+	{'EXIT', {aborted, {no_exists, regexproute, attributes}}} ->
+	    %% Create table 'regexproute' in RAM for use in the tests here
+	    {atomic, ok} =
+		mnesia:create_table(regexproute, [{attributes, record_info(fields, regexproute)},
+						  {type, bag}
+						 ])
+    end.

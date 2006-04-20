@@ -13,7 +13,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 
--export([start_link/2]).
+-export([start_link/3]).
 
 %%--------------------------------------------------------------------
 %% Internal exports
@@ -58,7 +58,8 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Proto, Port)
+%% Function: start_link(IPt, Proto, Port)
+%%           IPt   = {A,B,C,D} | {A,B,C,D,E,F,G,H}
 %%           Proto = atom(), tcp | tcp6 | tls | tls6
 %%           Port  = integer()
 %% Descrip.: Starts the listener.
@@ -66,8 +67,8 @@
 %%           ignore
 %%           Pid = pid(), the process we spawn that does accept().
 %%--------------------------------------------------------------------
-start_link(Proto, Port) when is_atom(Proto), is_integer(Port) ->
-    {ok, InetModule, SocketModule, Options} = get_settings(Proto),
+start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
+    {ok, InetModule, SocketModule, Options} = get_settings(Proto, IPt),
     case (Proto == tls) or (Proto == tls6) of
 	true ->
 	    case lists:keysearch(certfile, 1, Options) of
@@ -85,10 +86,11 @@ start_link(Proto, Port) when is_atom(Proto), is_integer(Port) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: start_listening(Proto, Port, InetModule, SocketModule,
-%%                           Options)
-%%           Proto = atom(), tcp | tcp6 | tls | tls6
-%%           Port  = integer()
+%% Function: start_listening(Proto, Port, InetModule,
+%%                           SocketModule, Options)
+%%           Proto        = atom(), tcp | tcp6 | tls | tls6
+%%           IP           = string()
+%%           Port         = integer()
 %%           InetModule   = atom(), inet | ssl
 %%           SocketModule = atom(), gen_tcp | ssl
 %%           Options      = term(), socket options
@@ -196,7 +198,7 @@ accept_loop(State) when is_record(State, state) ->
 	    logger:log(debug, "TCP listener: SSL handshake with unidentified peer failed "
 		       "(just ignore, usually a portscan or similar)"),
 	    accept_loop(State);
-	{error, E} when SocketModule == ssl1 ->
+	{error, E} when SocketModule == ssl ->
 	    logger:log(normal, "TCP listener: SSL accept returned error : (~p) ~s", [E, ssl:format_error(E)]),
 	    %% We don't terminate on accept error for SSL sockets, since the error can be that the client
 	    %% did not present a client certificate signed by someone we trust, or any other kind of SSL
@@ -285,24 +287,29 @@ get_defaultaddr(tcp) -> "0.0.0.0";
 get_defaultaddr(tcp6) -> "[::]".
 
 %%--------------------------------------------------------------------
-%% Function: get_settings(Proto)
-%%           Proto = tcp | tcp6 | tls | tls6
+%% Function: get_settings(Proto, IPtuple)
+%%           IPtuple = {A,B,C,D} | {A,B,C,D,E,F,G,H} 
+%%           Proto   = tcp | tcp6 | tls | tls6
 %% Descrip.: Get the variable things depending on protocol.
 %% Returns : {ok, InetModule, SocketModule, Options}
 %%           InetModule   = atom(), inet | ssl
 %%           SocketModule = atom(), gen_tcp | ssl
 %%           Options      = term(), socket options
 %%--------------------------------------------------------------------
-get_settings(tcp) ->
-    {ok, inet, gen_tcp, [inet | ?SOCKETOPTS]};
-get_settings(tcp6) ->
-    {ok, inet, gen_tcp, [inet6 | ?SOCKETOPTS]};
-get_settings(tls) ->
+get_settings(tcp, IPtuple) ->
+    This = [inet, {ip, IPtuple}],
+    {ok, inet, gen_tcp, This ++ ?SOCKETOPTS};
+get_settings(tcp6, IPtuple) ->
+    This = [inet6, {ip, IPtuple}],
+    {ok, inet, gen_tcp, This ++ ?SOCKETOPTS};
+get_settings(tls, IPtuple) ->
     L = get_settings_tls(),
-    {ok, ssl, ssl, ?SSL_SOCKETOPTS ++ L};
-get_settings(tls6) ->
+    This = [{ip, IPtuple} | L],
+    {ok, ssl, ssl, This ++ ?SSL_SOCKETOPTS};
+get_settings(tls6, IPtuple) ->
     L = get_settings_tls(),
-    {ok, ssl, ssl, [inet6 | ?SSL_SOCKETOPTS ++ L]}.
+    This = [inet6, {ip, IPtuple}] ++ L,
+    {ok, ssl, ssl, This ++ ?SSL_SOCKETOPTS}.
 
 get_settings_tls() ->
     {ok, L1} = yxa_config:get_env(ssl_server_ssloptions),

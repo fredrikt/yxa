@@ -48,6 +48,7 @@
 %%--------------------------------------------------------------------
 -include("database_regexproute.hrl").
 -include("siprecords.hrl").
+-include("sipsocket.hrl").
 
 
 %%====================================================================
@@ -88,7 +89,7 @@ lookupregexproute2(Input, Routes) ->
 
     %% Build {Regexp, Address} tuples of all non-expired regexproutes in Sortedroutes
     Now = util:timestamp(),
-    ReversedRules = 
+    ReversedRules =
 	lists:foldl(fun(R, Acc) when R#regexproute.expire == never; R#regexproute.expire > Now ->
 			    This = {R#regexproute.regexp, R#regexproute.address},
 			    [This | Acc];
@@ -153,25 +154,29 @@ lookupuser2(URL) ->
 	    end;
 	[User] when is_list(User) ->
 	    %% single user, look if the user has a CPL script
-	    Res = case local:user_has_cpl_script(User, incoming) of
-		      true ->
-			  %% let appserver handle requests for users with CPL scripts
-			  case local:lookupappserver(URL) of
-			      {forward, AppS} ->
-				  logger:log(debug, "Lookup: User ~p has a CPL script, forwarding to appserver : ~p",
-					     [User, sipurl:print(AppS)]),
-				  {forward, AppS};
-			      {response, Status, Reason} ->
-				  {response, Status, Reason};
-			      _ ->
-				  logger:log(debug, "Lookup: User ~p has a CPL script, but I could not find an appserver",
-					     [User]),
-				  %% Fallback to just looking in the location database
-				  lookupuser_get_locations([User], URL)
-			  end;
-		      false ->
-			  lookupuser_get_locations([User], URL)
-		  end,
+	    Res =
+		case local:user_has_cpl_script(User, incoming) of
+		    true ->
+			%% let appserver handle requests for users with CPL scripts
+			case local:lookupappserver(URL) of
+			    {forward, AppS} ->
+				logger:log(debug, "Lookup: User ~p has a CPL script, forwarding to appserver : ~p",
+					   [User, sipurl:print(AppS)]),
+				{forward, AppS};
+			    {response, Status, Reason} ->
+				logger:log(debug, "Lookup: User ~p has a CPL script, but appserver lookup resulted in "
+					   "request to send SIP response '~p ~s'",
+					   [User, Status, Reason]),
+				{response, Status, Reason};
+			    _ ->
+				logger:log(error, "Lookup: User ~p has a CPL script, but I could not find an appserver",
+					   [User]),
+				%% Fallback to just looking in the location database
+				lookupuser_get_locations([User], URL)
+			end;
+		    false ->
+			lookupuser_get_locations([User], URL)
+		end,
 	    {ok, [User], Res};
 	Users when is_list(Users) ->
 	    %% multiple (or no) users
@@ -181,7 +186,7 @@ lookupuser2(URL) ->
 
 %% part of lookupuser()
 lookupuser_get_locations(Users, URL) ->
-    %% check if more than one location was found.
+    %% check if more than one location exists for our list of users.
     case local:lookupuser_locations(Users, URL) of
 	[] ->
 	    %% User exists but has no currently known locations
@@ -197,31 +202,169 @@ lookupuser_get_locations(Users, URL) ->
 		    {proxy, Loc}
 	    end;
 	[Location] when is_record(Location, siplocationdb_e) ->
-	    %% A single location was found in the location database (after removing any unsuitable ones)
-	    BestLocation = siplocation:to_url(Location),
+	    lookupuser_single_location(Location, URL);
+	[Location | _] = Locations when is_record(Location, siplocationdb_e) ->
+	    lookupuser_multiple_locations(Locations, URL)
+    end.
+
+%% Returns: {proxy, DstList}           |
+%%          {proxy, {with_path, Path}} |
+%%          {proxy, URL}               |
+%%          {response, Status, Reason}
+lookupuser_single_location(Location, URL) when is_record(Location, siplocationdb_e) ->
+    %% A single location was found in the location database (after removing any unsuitable ones)
+    ThisNode = node(),
+    Dst =
+	case lists:keysearch(socket_id, 1, Location#siplocationdb_e.flags) of
+	    {value, {socket_id, {ThisNode, SocketId}}} ->
+		%% We have a stored socket_id, meaning the client did Outbound. We must now
+		%% check if that socket is still available.
+		case sipsocket:get_specific_socket(SocketId) of
+		    {error, _Reason} ->
+			%% The socket the user registered using is no longer available - reject
+			%% request with a '410 Gone' response (draft-Outbound #5.3 (Forwarding Requests))
+			%% "For connection-oriented transports, if the flow no longer exists the
+			%% proxy SHOULD send a 410 response to the request."
+			{response, 410, "Gone (used Outbound)"};
+		    SipSocket ->
+			[#sipdst{uri	= siplocation:to_url(Location),
+				 socket	= SipSocket
+				}
+			]
+		end;
+	    {value, {socket_id, {OtherNode, _SocketId}}} ->
+		logger:log(debug, "Lookup: User has Outbound flow to other node (~p)", [OtherNode]),
+		none;
+	    false ->
+		none
+	end,
+
+    case Dst of
+	{response, _Status2, _Reason2} ->
+	    Dst;
+	_ when is_list(Dst) ->
+	    {proxy, Dst};
+	none ->
+	    %% No Outbound socket for this node to use, look for RFC3327 Path
 	    case lists:keysearch(path, 1, Location#siplocationdb_e.flags) of
 		{value, {path, Path}} ->
-		    {proxy, {with_path, BestLocation, Path}};
+		    %% Path found, check if the first element is ours
+		    Me = siprequest:construct_record_route(URL#sipurl.proto),
+		    case Path of
+			[Me] ->
+			    {proxy, siplocation:to_url(Location)};
+			[Me | PathRest] ->
+			    logger:log(debug, "Lookup: Removing myself from Path of location database entry, "
+				      "leaving ~p", [PathRest]),
+			    {proxy, {with_path, siplocation:to_url(Location), PathRest}};
+			_ ->
+			    {proxy, {with_path, siplocation:to_url(Location), Path}}
+		    end;
 		false ->
-		    {proxy, BestLocation}
+		    {proxy, siplocation:to_url(Location)}
+	    end
+    end.
+
+
+lookupuser_multiple_locations(Locations, URL) when is_list(Locations), is_record(URL, sipurl) ->
+    case is_same_outbound_client_without_path(Locations, URL) of
+	true ->
+	    %% We found more than one entry in the location database for this URL, but
+	    %% they all end up at the same User-Agent (they have the same Instance ID).
+	    %% Presumably this User-Agent does Outbound and registers more than once for
+	    %% redundancy. We should not parallell-fork this but rather go on a sequential
+	    %% hunt for a working destination.
+	    Sorted = siplocation:sort_most_recent_first(Locations),
+	    case make_dstlist(Sorted) of
+		[] ->
+		    %% All locations were removed by make_dstlist. This means they all used
+		    %% Outbound and the flows all terminated at this host, and are gone.
+		    {response, 410, "Gone (used Outbound)"};
+		DstList when is_list(DstList) ->
+		    {proxy, DstList}
 	    end;
-	[Location | _] when is_record(Location, siplocationdb_e) ->
+	false ->
 	    %% More than one location registered for this address, check for appserver...
 	    %% (appserver is the program that handles forking of requests)
 	    local:lookupappserver(URL)
     end.
+
+%% part of lookupuser_multiple_locations/2
+%% Returns: true | false
+is_same_outbound_client_without_path(In, URL) ->
+    Me = siprequest:construct_record_route(URL#sipurl.proto),
+    is_same_outbound_client_without_path2(In, undefined, undefined, Me).
+
+is_same_outbound_client_without_path2([#siplocationdb_e{instance = []} | _], _PrevInst, _PrevUser, _Me) ->
+    %% Binding without instance, this is not an Outbound client
+    false;
+
+is_same_outbound_client_without_path2([H | _] = In, undefined, undefined, Me) ->
+    %% First one, to get the path checked as well we recurse on all of In
+    #siplocationdb_e{instance = Instance,
+		     sipuser  = User
+		    } = H,
+    is_same_outbound_client_without_path2(In, Instance, User, Me);
+
+is_same_outbound_client_without_path2([#siplocationdb_e{instance = PrevInst, sipuser = PrevUser} = H | T],
+				      PrevInst, PrevUser, Me) ->
+    %% check Path too
+    case lists:keysearch(path, 1, H#siplocationdb_e.flags) of
+	{value, {path, [Me]}} ->
+	    %% This one is OK, check next
+	    is_same_outbound_client_without_path2(T, PrevInst, PrevUser, Me);
+	false ->
+	    %% No Path - that is OK, check next
+	    is_same_outbound_client_without_path2(T, PrevInst, PrevUser, Me);
+	_ ->
+	    %% uh oh, this one has Path. We currently can't return such complex data from lookupuser
+	    %% so we'll have to use appserver for this.
+	    false
+    end;
+
+is_same_outbound_client_without_path2([], _Instance, _User, _Me) ->
+    %% Instance ID was not empty, and all matched.
+    true.
+
+%% part of lookupuser_multiple_locations/2
+%% Returns: NewList = list() of siplocationdb_e record()
+make_dstlist(In) ->
+    ThisNode = node(),
+    make_dstlist2(In, ThisNode, []).
+
+make_dstlist2([H | T], ThisNode, Res) when is_record(H, siplocationdb_e) ->
+    case lists:keysearch(socket_id, 1, H#siplocationdb_e.flags) of
+	{value, {socket_id, {ThisNode, SocketId}}} ->
+	    case sipsocket:get_specific_socket(SocketId) of
+		{error, _Reason} ->
+		    %% Flow not avaliable anymore, skip this one
+		    make_dstlist2(T, ThisNode, Res);
+		SipSocket ->
+		    This = #sipdst{uri		= siplocation:to_url(H),
+				   socket	= SipSocket
+				  },
+		    make_dstlist2(T, ThisNode, [This | Res])
+	    end;
+	_ ->
+	    %% Not using Outbound, or connected to some other node - use as is.
+	    %% We already know we don't need to care about Path (checked by
+	    %% is_same_outbound_client_without_path).
+	    This = #sipdst{uri = siplocation:to_url(H)},
+	    make_dstlist2(T, ThisNode, [This | Res])
+    end;
+make_dstlist2([], _ThisNode, Res) ->
+    lists:reverse(Res).
+
 
 %%--------------------------------------------------------------------
 %% Function: lookupuser_gruu(URL, GRUU)
 %%           URL  = sipurl record(), GRUU Request-URI
 %%           GRUU = string()
 %% Descrip.: Look up the 'best' contact of a GRUU.
-%% Returns : {ok, User, Res}          |
-%%           {ok, User, Fwd, Contact}
+%% Returns : {ok, User, Res, Contact}
 %%           Res     = {proxy, URL}                    |
 %%                   = {proxy, {with_path, URL, Path}} |
 %%                     {response, Status, Reason}
-%%           Fwd     = {forward, URL}
 %%           User    = none | string(), SIP authentication user of GRUU
 %%           Contact = siplocationdb_e record(), used by outgoingproxy
 %%
@@ -236,17 +379,12 @@ lookupuser_gruu(URL, GRUU) when is_record(URL, sipurl), is_list(GRUU) ->
 	{ok, User, Contact} when is_record(Contact, siplocationdb_e) ->
 	    logger:log(debug, "Lookup: GRUU ~p matches user ~p contact ~s",
 		       [GRUU, User, sipurl:print(Contact#siplocationdb_e.address)]),
-	    
-	    ContactURL = gruu:prepare_contact(Contact, URL),
 
-	    %% RFC3327
-	    case lists:keysearch(path, 1, Contact#siplocationdb_e.flags) of
-		{value, {path, Path}} ->
-		    {ok, User, {proxy, {with_path, ContactURL, Path}}, Contact};
-		false ->
-		    %% No outgoingproxy stored for contact. Copy 'grid' parameter and proxy.
-		    {ok, User, {proxy, ContactURL}}
-	    end;
+	    %% Copy 'grid' parameter
+	    GridURL = gruu:prepare_contact(Contact, URL),
+
+	    Res = lookupuser_single_location(Contact#siplocationdb_e{address = GridURL}, URL),
+	    {ok, User, Res};
 	{ok, User, none} ->
 	    %% GRUU found, but user has no active contacts
 	    logger:log(debug, "Lookup: GRUU ~p matches user ~p, but user has no active contacts. "
@@ -285,7 +423,7 @@ lookupuser_locations(Users, URL) when is_list(Users), is_record(URL, sipurl) ->
     Locations1 = local:get_locations_for_users(Users),
     Locations = local:prioritize_locations(Users, Locations1),
     local:remove_unsuitable_locations(URL, Locations).
-    
+
 %%--------------------------------------------------------------------
 %% Function: remove_unsuitable_locations(URL, Locations)
 %%           URL      = sipurl record(), Request-URI of request
@@ -302,7 +440,7 @@ remove_unsuitable_locations(#sipurl{proto="sips"}, Locations) when is_list(Locat
 	    remove_non_sips_locations(Locations, []);
 	{ok, false} ->
 	    Locations
-    end;    
+    end;
 remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
     Locations.
 
@@ -328,12 +466,12 @@ remove_non_sips_locations([], Res) ->
 %%           URL = sipurl record()
 %% Descrip.: Turn an URL into a set of locations. The URL might map to
 %%           more than one user, in which case the locations for all
-%%           matched users are returned. Locations is returned
-%%           according to the priority values they have in the
-%%           location database.
-%% Returns : {proxy, URL} |
-%%           nomatch      |
-%%           throw({siperror, ...})
+%%           matched users are returned. Locations is sorted according
+%%           to the priority values they have in the location
+%%           database.
+%% Returns : Locations |
+%%           nomatch
+%%           Locations = list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
@@ -354,7 +492,7 @@ lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
 %%           more users for requests destined to an URL.
 %% Returns : list() of string()
 %%--------------------------------------------------------------------
-lookup_url_to_addresses(Src, #sipurl{proto="sips"}=URL) ->
+lookup_url_to_addresses(Src, #sipurl{proto = "sips"} = URL) ->
     %% When turning address into user, we make no difference on SIP and SIPS URI's
     %% (as any SIP URI may be "upgraded" to SIPS).
     %% RFC3261 #19.1 (SIP and SIPS Uniform Resource Indicators).
@@ -426,14 +564,17 @@ lookup_address_to_users(Address) ->
 %%           URL    = sipurl record()
 %%           Status = integer(), SIP status code
 %%           Reason = string(), SIP reason phrase
-%% Note    : XXX We need to make sure we don't return a SIP URI if Key
-%%           was SIPS. For this we need a general function
-%%           ensure_is_tls_protected_uri(ReqURI, URI)' or similar.
 %%--------------------------------------------------------------------
 lookupappserver(Key) when is_record(Key, sipurl) ->
     case yxa_config:get_env(appserver) of
 	{ok, URL} when is_record(URL, sipurl), URL#sipurl.user == none, URL#sipurl.pass == none ->
-	    {forward, URL};
+	    case Key#sipurl.proto of
+		"sips" ->
+		    SIPS_URL = sipurl:set([{proto, "sips"}], URL),
+		    {forward, SIPS_URL};
+		_ ->
+		    {forward, URL}
+	    end;
 	none ->
 	    logger:log(error, "Lookup: Requested to provide appserver for ~p, but no appserver configured! "
 		       "Responding '480 Temporarily Unavailable (no appserver configured)'.", [sipurl:print(Key)]),
@@ -541,7 +682,7 @@ lookupenum("+" ++ E164) ->
 	    %% Try to rewrite the userpart of the returned URL into a E164 number
 	    %% to make sure it is not a loop back to this proxy. If it is a remote
 	    %% domain, the username comparison test does not have any effect, so
-	    %% a remote URL with the E164 number as uesrname is OK.
+	    %% a remote URL with the E164 number as username is OK.
 	    {NewE164, SameE164} = case rewrite_potn_to_e164(E164User) of
 				      error ->
 					  {error, false};
@@ -673,7 +814,7 @@ lookupnumber2(Number, Regexps) when is_list(Number), is_list(Regexps) ->
 	    %% Regexp did not match
 	    none
     end.
-    
+
 %%--------------------------------------------------------------------
 %% Function: rewrite_potn_to_e164(Number)
 %%           Number = string()
@@ -1012,7 +1153,7 @@ test() ->
     %% test that we use the route with highest priority if we have two matching
     LRR_URL11 = sipurl:parse("sip:prio200@example.org"),
     {proxy, LRR_URL11} = lookupregexproute2("sip:4000@example.org", LRR_SortRoutes),
-    
+
     autotest:mark(?LINE, "lookupregexproute2/2 - 1.2"),
     %% test non-matching input
     none = lookupregexproute2("foo", LRR_SortRoutes),
@@ -1036,4 +1177,264 @@ test() ->
     LRR_URL21 = sipurl:parse("sip:matches-not-expired@example.org"),
     {proxy, LRR_URL21} = lookupregexproute2("sip:testexpire@example.org", LRR_Expire),
 
-    ok.
+    autotest:mark(?LINE, "lookupregexproute2/2 - 3.0"),
+    %% test with entrys without priority flag (no priority is worst)
+    LRR_RRoute3 = #regexproute{regexp = "^sip:4000@.*",
+			       class = permanent,
+			       expire = never
+			      },
+    LRR_SortRoutes3 = [LRR_RRoute3#regexproute{flags = [],
+					       address = "sip:noprio@example.org"
+					      },
+		       LRR_RRoute3#regexproute{flags = [{priority, 100}],
+					       address = "sip:prio100@example.org"
+					      },
+		       LRR_RRoute3#regexproute{flags = [{priority, 200}],
+					       address = "sip:prio200@example.org"
+					      },
+		       LRR_RRoute3#regexproute{flags = [],
+					       address = "sip:noprio2@example.org"
+					      }
+		      ],
+
+    autotest:mark(?LINE, "lookupregexproute2/2 - 2.1"),
+    %% test that we use the route with highest priority if we have two matching
+    LRR_URL3_1 = sipurl:parse("sip:prio200@example.org"),
+    {proxy, LRR_URL3_1} = lookupregexproute2("sip:4000@example.org", LRR_SortRoutes3),
+
+
+    %% is_same_outbound_client_without_path(Locations, URL)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "is_same_outbound_client_without_path/2 - 1"),
+    %% test with a single location
+    IsSame_URL = sipurl:parse("sip:ft@example.org"),
+    IsSame_Location1 = #siplocationdb_e{instance = "<urn:test:1>",
+					flags = []
+				       },
+    IsSame_Locations1 = [IsSame_Location1],
+    true = is_same_outbound_client_without_path(IsSame_Locations1, IsSame_URL),
+
+    autotest:mark(?LINE, "is_same_outbound_client_without_path/2 - 2"),
+    %% test with two simple (equal) locations
+    IsSame_Locations2 = [IsSame_Location1, IsSame_Location1],
+    true = is_same_outbound_client_without_path(IsSame_Locations2, IsSame_URL),
+
+    autotest:mark(?LINE, "is_same_outbound_client_without_path/2 - 3"),
+    %% test with one location without instance
+    IsSame_Locations3 = [IsSame_Location1,
+			 IsSame_Location1#siplocationdb_e{instance = []}
+			],
+    false = is_same_outbound_client_without_path(IsSame_Locations3, IsSame_URL),
+
+    autotest:mark(?LINE, "is_same_outbound_client_without_path/2 - 4"),
+    %% test with non-me Path
+    IsSame_Locations4 = [IsSame_Location1,
+                         IsSame_Location1#siplocationdb_e{flags = [{path, ["<notme;lr>"]}]}
+                        ],
+    false = is_same_outbound_client_without_path(IsSame_Locations4, IsSame_URL),
+
+    autotest:mark(?LINE, "is_same_outbound_client_without_path/2 - 5"),
+    %% test with yes-me Path
+    IsSame_PathMe = siprequest:construct_record_route(IsSame_URL#sipurl.proto),
+    IsSame_Locations5 = [IsSame_Location1,
+                         IsSame_Location1#siplocationdb_e{flags = [{path, [IsSame_PathMe]}]}
+                        ],
+    true = is_same_outbound_client_without_path(IsSame_Locations5, IsSame_URL),
+
+
+    %% lookupuser_multiple_locations(Locations, URL)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 0"),
+    LMult_Locations1 = [#siplocationdb_e{instance = "<urn:test:17>",
+					 flags    = [{socket_id, {node(),
+								  {yxa_test, erlang:now()}
+								 }}]
+					},
+			#siplocationdb_e{instance = "<urn:test:17>",
+					 flags    = [{socket_id, {node(),
+								  {yxa_test, erlang:now()}
+								 }}]
+					}
+		       ],
+    LMult_URL1 = sipurl:parse("sip:ft@example.org"),
+
+    autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 1"),
+    %% test with valid local Outbound sockets
+    {proxy, [_, _]} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
+
+    autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 2"),
+    %% test with invalid local Outbound socket
+    put({sipsocket_test, get_specific_socket}, {error, "testing"}),
+    {response, 410, "Gone (used Outbound)"} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
+
+
+    %% Mnesia dependant tests
+    %%--------------------------------------------------------------------
+
+
+    autotest:mark(?LINE, "Mnesia setup - 0"),
+
+    phone:test_create_table(),
+    database_gruu:test_create_table(),
+    database_regexproute:test_create_table(),
+
+    case mnesia:transaction(fun test_mnesia_dependant_functions/0) of
+	{aborted, ok} ->
+	    ok;
+	{aborted, Res} ->
+	    {error, Res}
+    end.
+
+
+test_mnesia_dependant_functions() ->
+
+    %% lookupuser(URL)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "lookupuser/1 - 0"),
+    LookupURL1 = sipurl:new([{user, "testuser1"},
+			     {host, "__test__.example.org"}
+			    ]),
+
+    LookupURL2 = sipurl:new([{user, "testuser2"},
+			     {host, "__test__.example.org"}
+			    ]),
+
+    autotest:mark(?LINE, "lookupuser/1 - 1"),
+    %% look for user that does not exist
+    nomatch = lookupuser(LookupURL1),
+
+    %% XXX not testing rest of this function yet because it requires sipuserdb_mnesia
+    %% to be used (for us to be able to predict the results that is).
+
+    %% lookupuser_get_locations(Users, URL)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 1"),
+    %% test with bad (unknown) user
+    none = lookupuser_get_locations(["__test_user_dont_exist__"], LookupURL2),
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 2.0"),
+    %% test that lookup_regexproute is called when user has no known locations
+    LGL_Rewritten2_Str = "sip:rewritten@test19119.example.com",
+    LGL_Rewritten2_URL = sipurl:parse(LGL_Rewritten2_Str),
+    {atomic, ok} = database_regexproute:insert(".*@__test__.example.org$", [], dynamic,
+					       util:timestamp() + 20, LGL_Rewritten2_Str),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 2.1"),
+    {proxy, LGL_Rewritten2_URL} = lookupuser_get_locations(["__test_user_dont_exist__"], LookupURL2),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 2.2"),
+    %% clean up
+    {atomic, ok} = database_regexproute:delete(".*@__test__.example.org$", [], dynamic,
+					       util:timestamp() + 20, LGL_Rewritten2_Str),
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 3.0"),
+    %% test with a single registered contact, no Outbound and no Path
+    LGL_Contact3_URL = sipurl:parse("sip:ft@192.0.2.133"),
+    LGL_Username3 = "__test_user_LGL_3__",
+
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username3, [], static, never,
+					    LGL_Contact3_URL, [], 1, []),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 3.1"),
+    {proxy, LGL_Contact3_URL} = lookupuser_get_locations([LGL_Username3], LookupURL1),
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 4.0"),
+    %% test with a single registered contact, Path matching me
+    LGL_Contact4_URL = sipurl:parse("sip:ft@192.0.2.144;foo=bar"),
+    LGL_Path4 = siprequest:construct_record_route(LGL_Contact4_URL#sipurl.proto),
+    LGL_Username4 = "__test_user_LGL_4__",
+
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username4, [{path, [LGL_Path4]}], static, never,
+					    LGL_Contact4_URL, [], 1, []),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 4.1"),
+    {proxy, LGL_Contact4_URL} = lookupuser_get_locations([LGL_Username4], LookupURL1),
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 5.0"),
+    %% test with a single registered contact, Path matching me and one more entry
+    LGL_Contact5_URL = sipurl:parse("sip:ft@192.0.2.155;foo=bar"),
+    LGL_Path5 = siprequest:construct_record_route(LGL_Contact5_URL#sipurl.proto),
+    LGL_Path5_2 = "<sip:__test__@__test_test__.example.org;lr>",
+    LGL_Username5 = "__test_user_LGL_5__",
+
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username5, [{path, [LGL_Path5, LGL_Path5_2]}], static, never,
+					    LGL_Contact5_URL, [], 1, []),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 5.1"),
+    {proxy, {with_path, LGL_Contact5_URL, [LGL_Path5_2]}} = lookupuser_get_locations([LGL_Username5], LookupURL1),
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 6.0"),
+    %% test with a single registered contact, Path pointing at some other host only
+    LGL_Contact6_URL = sipurl:parse("sip:ft@192.0.2.154;foo=bar"),
+    LGL_Path6 = "<sip:__test__@__test_test__.example.org;lr>",
+    LGL_Username6 = "__test_user_LGL_6__",
+
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username6, [{path, [LGL_Path6]}], static, never,
+					    LGL_Contact6_URL, [], 1, []),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 6.1"),
+    {proxy, {with_path, LGL_Contact6_URL, [LGL_Path6]}} = lookupuser_get_locations([LGL_Username6], LookupURL1),
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 9"),
+    %% clean up
+    {atomic, ok} = phone:delete_phone_for_user(LGL_Username3, static),
+    {atomic, ok} = phone:delete_phone_for_user(LGL_Username4, static),
+    {atomic, ok} = phone:delete_phone_for_user(LGL_Username5, static),
+    {atomic, ok} = phone:delete_phone_for_user(LGL_Username6, static),
+
+
+    %% Outbound TESTS
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 10.0"),
+    %% test with Outbound socket on other node
+    LGL_Contact10_URL = sipurl:parse("sip:ft@192.0.2.212"),
+    LGL_Username10 = "__test_user_LGL_10__",
+
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username10, [{socket_id, {'othernode@nowhere', 1}}],
+					    static, never, LGL_Contact10_URL, [], 1, []),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 10.1"),
+    {proxy, LGL_Contact10_URL} = lookupuser_get_locations([LGL_Username10], LookupURL1),
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 11.0"),
+    %% test with Outbound socket to this node but no longer available
+    LGL_Contact11_URL = sipurl:parse("sip:ft@192.0.2.212"),
+    LGL_Username11 = "__test_user_LGL_11__",
+    LGL_SocketId11 = {yxa_test, 1},
+    put({sipsocket_test, get_specific_socket}, {error, "testing"}),
+
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username11, [{socket_id, {node(), LGL_SocketId11}}],
+					    static, never, LGL_Contact11_URL, [], 1, []),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 11.1"),
+    {response, 410, _} = lookupuser_get_locations([LGL_Username11], LookupURL1),
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 11.2"),
+    %% now test with socket available
+    erase({sipsocket_test, get_specific_socket}),
+    LGL_SipSocket11 = sipsocket:get_specific_socket(LGL_SocketId11),
+    {proxy, [#sipdst{proto = undefined,
+		     addr = undefined,
+		     port = undefined,
+		     uri = LGL_Contact11_URL,
+		     socket = LGL_SipSocket11
+		    }
+	     ]} = lookupuser_get_locations([LGL_Username11], LookupURL1),
+
+
+
+
+    autotest:mark(?LINE, "lookupuser_get_locations/2 - 19"),
+    %% clean up
+    {atomic, ok} = phone:delete_phone_for_user(LGL_Username10, static),
+    {atomic, ok} = phone:delete_phone_for_user(LGL_Username11, static),
+
+
+    mnesia:abort(ok).

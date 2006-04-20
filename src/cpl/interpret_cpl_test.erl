@@ -25,8 +25,8 @@
 %%--------------------------------------------------------------------
 
 -include("cpl.hrl").
+-include("siprecords.hrl").
 %% -include("sipproxy.hrl").
-%% -include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -1015,7 +1015,12 @@ test11() ->
     %% io:format("1. ~n",[]),
     %% process cpl script
     %% do successful lookup and proxy
-    put(1, {success, [sipurl:parse("sip:test@foo.org")]}),
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:test@foo.org"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= User
+				      }
+		     ]}),
     %% proxy return val
     put(2, success),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
@@ -1086,7 +1091,12 @@ test11b() ->
     %% io:format("1. ~n",[]),
     %% process cpl script
     %% do successful lookup and proxy
-    put(1, {success, [sipurl:parse("sip:test@foo.org")]}),
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:test@foo.org"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= User
+				      }
+		     ]}),
     %% proxy return val
     put(2, success),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
@@ -1217,8 +1227,12 @@ test12() ->
     %% io:format("1. ~n",[]),
     %% 2005-11-15 = tuesday
     put(1, #date_time{date = {2005,11,15}, time = {15,34,35}, type = floating}),
-    URI1 = sipurl:parse("sip:me@mobile.provider.net"),
-    put(2, {success, [URI1]}),
+    put(2, {success, [#siplocationdb_e{address	= sipurl:parse("sip:me@mobile.provider.net"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= "user"
+				      }
+		     ]}),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res1 = ~p~n",[Res1]),
     {reject, 500} = Res1,
@@ -1226,8 +1240,12 @@ test12() ->
     %% io:format("2. ~n",[]),
     %% 2005-11-19 = saturday
     put(1, #date_time{date = {2005,11,19}, time = {15,34,35}, type = floating}),
-    URI2 = sipurl:parse("sip:jones@voicemail.example.com"),
-    put(2, {success, [URI2]}),
+    put(2, {success, [#siplocationdb_e{address	= sipurl:parse("sip:jones@voicemail.example.com"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= "user"
+				      }
+		     ]}),
     Res2 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res2 = ~p~n",[Res2]),
     {reject, 486} = Res2.
@@ -1667,7 +1685,12 @@ test19() ->
     
     %% io:format("1. ~n",[]),
     %% process cpl script (nothing to remove with remove-location tag)
-    put(1, {success, [sipurl:parse("sip:test@foo.org")]}),
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:test@foo.org"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= User
+				      }
+		     ]}),
     put(2, success),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res1 = ~p~n",[Res1]),
@@ -1675,7 +1698,12 @@ test19() ->
     
     %% io:format("2. ~n",[]),
     %% process cpl script (use remove-location tag to remove a single location so that locations become = [])
-    put(1, {success, [sipurl:parse("sip:me@mobile.provider.net")]}),
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:me@mobile.provider.net"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= User
+				      }
+		     ]}),
     put(2, success),
     Res2 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res1 = ~p~n",[Res2]),
@@ -1734,7 +1762,12 @@ test20() ->
     %% io:format("1. ~n",[]),
     %% process cpl script (nothing to remove with remove-location tag)
     URI1 = sipurl:parse("sip:test@foo.org"),
-    put(1, {success, [URI1]}),
+    put(1, {success, [#siplocationdb_e{address	= URI1,
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= "user"
+				      }
+		     ]}),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res1 = ~p~n",[Res1]),
     {redirect, _Permanent, [URI1]} = Res1,
@@ -1748,8 +1781,12 @@ test20() ->
     
     %% io:format("3. ~n",[]),
     %% process cpl script (remove-location tag URI3)
-    URI3 = sipurl:parse("sip:me@mobile.provider.net"),
-    put(1, {success, [URI3]}),
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:me@mobile.provider.net"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= "user"
+				      }
+		     ]}),
     Res3 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res3 = ~p~n",[Res3]),
     {redirect, _Permanent, []} = Res3.   
@@ -1805,8 +1842,12 @@ test21() ->
     
     %% io:format("1. ~n",[]),
     %% process cpl script (nothing to remove with remove-location tag)
-    URI1 = sipurl:parse("sip:test@foo.org"),
-    put(1, {success, [URI1]}),
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:test@foo.org"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= "user"
+				      }
+		     ]}),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res1 = ~p~n",[Res1]),
     {redirect, _Permanent, []} = Res1,
@@ -1982,8 +2023,18 @@ test24() ->
     %% io:format("1. ~n",[]),
     %% process cpl script
     %% test that "clear" works by supplying two different lookup results 
-    put(1, {success, [sipurl:parse("sip:test1@foo.org")]}),
-    put(2, {success, [sipurl:parse("sip:test2@foo.org")]}),
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:test1@foo.org"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= "user"
+				      }
+		     ]}),
+    put(2, {success, [#siplocationdb_e{address	= sipurl:parse("sip:test2@foo.org"),
+				       flags	= [],
+				       instance	= [],
+				       sipuser	= "user"
+				      }
+		     ]}),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res1 = ~p~n",[Res1]),
     URI1 = sipurl:parse("sip:test2@foo.org"),

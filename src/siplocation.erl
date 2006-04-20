@@ -94,11 +94,13 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 process_register_request/5,
+	 process_register_request/6,
 	 prioritize_locations/1,
 	 get_locations_for_users/1,
 	 get_user_with_contact/1,
+	 get_locations_with_contact/1,
 	 to_url/1,
+	 sort_most_recent_first/1,
 
 	 test/0
 	]).
@@ -131,7 +133,9 @@
 		      appname,			%% atom(), YXA application name
 		      do_gruu,			%% bool(), GRUU enabled or not?
 		      path_ignsup,		%% bool(), allow Path without Supported: path?
-		      path_vector		%% list() of string()
+		      path_vector,		%% list() of string()
+		      socket,			%% sipsocket record(), socket REGISTER was received on
+		      do_outbound		%% bool(), SIP Outbound enabled or not?
 		     }).
 
 
@@ -145,9 +149,11 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: process_register_request(Request, THandler, LogTag,
-%%                                    LogStr, AppName)
+%% Function: process_register_request(Request, Socket, THandler,
+%%                                    LogTag, LogStr, AppName)
 %%           Request  = response record()
+%%           Socket   = sipsocket record(), socket the REGISTER was
+%%                      received on (used with Outbound)
 %%           THandler = term(), server transaction handler
 %%           LogTag   = string(), tag for log messages
 %%           LogStr   = string(), description of request
@@ -160,9 +166,10 @@
 %%           Contact headers and update the location database.
 %% Returns : not_homedomain | void()
 %%--------------------------------------------------------------------
-process_register_request(Request, THandler, LogTag, LogStr, AppName) when is_record(Request, request),
-									  is_list(LogStr), is_list(LogTag),
-									  is_atom(AppName) ->
+process_register_request(Request, Socket, THandler, LogTag, LogStr, AppName) when is_record(Request, request),
+										  is_record(Socket, sipsocket),
+										  is_list(LogStr), is_list(LogTag),
+										  is_atom(AppName) ->
     URL = Request#request.uri,
     LogPrefix = lists:concat([LogTag, ": ", AppName]),
     logger:log(debug, "~p: REGISTER ~p", [LogPrefix, sipurl:print(URL)]),
@@ -172,6 +179,7 @@ process_register_request(Request, THandler, LogTag, LogStr, AppName) when is_rec
 	true ->
 	    RegReq = #reg_request{uri		= URL,
 				  header	= Request#request.header,
+				  socket	= Socket,
 				  logtag	= LogPrefix,
 				  logstr	= LogStr,
 				  thandler	= THandler,
@@ -228,13 +236,15 @@ register_authenticate(RegReq, OrigLogTag) when is_record(RegReq, reg_request), i
 	    %% Fetch configuration parameters here and pass as parameters, to make process_updates testable
 	    {ok, DoGRUU} = yxa_config:get_env(experimental_gruu_enable),
 	    {ok, PathIgnSup} = yxa_config:get_env(allow_proxy_inserted_path),
+	    {ok, DoOutbound} = yxa_config:get_env(experimental_outbound_enable),
 
 	    NewRegReq =
 		RegReq#reg_request{header	= NewHeader,
 				   to_url	= ToURL,
 				   sipuser	= SIPuser,
 				   do_gruu	= DoGRUU,
-				   path_ignsup	= PathIgnSup
+				   path_ignsup	= PathIgnSup,
+				   do_outbound	= DoOutbound
 				  },
 
 	    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6, step 7 and step 8
@@ -344,17 +354,11 @@ get_unsupported_extensions2([], _DoGRUU, Res) ->
 %% REGISTER request had no contact header
 process_updates(RegReq, []) when is_record(RegReq, reg_request) ->
     %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
-    #reg_request{sipuser = SipUser,
-		 header  = Header,
-		 do_gruu = DoGRUU
-		} = RegReq,
-    {ok, create_process_updates_response(SipUser, Header, DoGRUU)};
+    {ok, create_process_updates_response(RegReq)};
 
 process_updates(RegReq, Contacts) when is_record(RegReq, reg_request), is_list(Contacts) ->
     #reg_request{sipuser = SipUser,
-		 header  = Header,
-		 logtag  = LogTag,
-		 do_gruu = DoGRUU
+		 logtag  = LogTag
 		} = RegReq,
     %% Processing REGISTER Request - step 6
     %% check for and process wildcard (request contact = *)
@@ -382,7 +386,7 @@ process_updates(RegReq, Contacts) when is_record(RegReq, reg_request), is_list(C
 			    end;
 			{atomic, _ResultOfFun} ->
 			    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
-			    {ok, create_process_updates_response(SipUser, Header, DoGRUU)}
+			    {ok, create_process_updates_response(RegReq)}
 		    end;
 		Other ->
 		    Other
@@ -390,7 +394,7 @@ process_updates(RegReq, Contacts) when is_record(RegReq, reg_request), is_list(C
 	ok ->
 	    %% wildcard found and processed
 	    %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 8
-	    {ok, create_process_updates_response(SipUser, Header, DoGRUU)};
+	    {ok, create_process_updates_response(RegReq)};
 	SipError ->
 	    SipError
     end.
@@ -435,9 +439,14 @@ process_updates_get_path_vector3(_Proto, Path, _AppName) ->
     Path.
 
 %% part of process_updates/6. Returns {200, "OK", ExtraHeaders}
-create_process_updates_response(SipUser, Header, GRUU_enabled) ->
-    Do_GRUU = sipheader:is_supported("gruu", Header) andalso GRUU_enabled,
+create_process_updates_response(RegReq) ->
+    #reg_request{sipuser	= SipUser,
+		 header		= Header,
+		 do_gruu	= GRUU_enabled,
+		 do_outbound	= DoOutbound
+		} = RegReq,
     Date = {"Date", [httpd_util:rfc1123_date()]},
+
     Path =
 	case keylist:fetch('path', Header) of
 	    [] ->
@@ -448,11 +457,21 @@ create_process_updates_response(SipUser, Header, GRUU_enabled) ->
 		%% RFC3327 #5.3 (Procedures at the Registrar)
 		[{"Path", PathV}]
 	end,
+
+    %% "The Registrar MUST include the 'outbound' option-tag in a Supported
+    %% header field value in its responses to REGISTER requests."
+    %% draft Outbound 03 #6.1 (Processing Register Requests)
+    Outbound = case DoOutbound of
+		   true -> [{"Supported", ["outbound"]}];
+		   false -> []
+	       end,
+
+    Do_GRUU = sipheader:is_supported("gruu", Header) andalso GRUU_enabled,
     case fetch_contacts(SipUser, Do_GRUU, keylist:fetch('to', Header)) of
 	{ok, _AddRequireGRUU, []} ->
-	    {200, "OK", [Date] ++ Path};
+	    {200, "OK", [Date] ++ Outbound ++ Path};
 	{ok, AddRequireGRUU, NewContacts} when is_boolean(AddRequireGRUU), is_list(NewContacts) ->
-	    H1 = [{"Contact", NewContacts}, Date] ++ Path,
+	    H1 = [{"Contact", NewContacts}, Date] ++ Outbound ++ Path,
 	    ExtraHeaders =
 		case AddRequireGRUU of
 		    true ->
@@ -513,8 +532,11 @@ locations_to_contacts2([#siplocationdb_e{expire = Expire} = H | T], Now, SipUser
 locations_to_contacts2_gruu(_DoGRUU = false, _E, _SipUser, _To, GRUUs) ->
     {GRUUs, []};
 locations_to_contacts2_gruu(_DoGRUU = true, H, SipUser, To, GRUUs) ->
-    case lists:keysearch(instance_id, 1, H#siplocationdb_e.flags) of
-	{value, {instance_id, InstanceId}} ->
+    case H#siplocationdb_e.instance of
+	[] ->
+	    {GRUUs, []};
+	InstanceId when is_list(InstanceId) ->
+	    I_ID_param = {"+sip.instance", "\"" ++ InstanceId ++ "\""},
 	    case database_gruu:fetch_using_user_instance(SipUser, InstanceId) of
 		{ok, [GRUUdbe]} ->
 		    GRUU = gruu:extract(gruu, GRUUdbe),
@@ -530,13 +552,10 @@ locations_to_contacts2_gruu(_DoGRUU = true, H, SipUser, To, GRUUs) ->
 		    %% The value of the gruu parameter is a quoted string containing the URI
 		    %% that is the GRUU for the associated instance ID/AOR pair.
 		    GRUU_param = {"gruu", "\"" ++ sipurl:print(GRUU_URL) ++ "\""},
-		    I_ID_param = {"+sip.instance", "\"" ++ InstanceId ++ "\""},
 		    {true, [GRUU_param, I_ID_param]};
 		nomatch ->
-		    {GRUUs, []}
-	    end;
-	_ ->
-	    {GRUUs, []}
+		    {GRUUs, [I_ID_param]}
+	    end
     end.
 
 
@@ -644,16 +663,37 @@ wildcard_grep([_Foo | Rest]) ->
 %% Returns : none | SIPuser
 %%           SIPuser = #phone.user field value
 %% NOTE    : If you want to know all the users (in case there is more
-%%           than one), you have to call
-%%           phone:get_sipusers_using_location/1 directly.
+%%           than one), you should use get_locations_with_contact/1
+%%           instead.
 %%--------------------------------------------------------------------
 get_user_with_contact(URI) when is_record(URI, sipurl) ->
-    case phone:get_sipusers_using_location(URI) of
+    case phone:get_sipusers_using_contact(URI) of
 	{atomic, [SIPuser | _]} when is_list(SIPuser) ->
 	    SIPuser;
 	{atomic, []} ->
 	    %% no one using URI found
 	    none
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_locations_with_contact(URI)
+%%           URI = sipurl record()
+%% Descrip.: Checks if any of our users are registered at the
+%%           location specified. Return all the location database
+%%           entrys matching the URI, so that the caller can look
+%%           for a specific socket matching the registration(s) if
+%%           the client used Outbound.
+%% Returns : {ok, Locations} |
+%%           error
+%%           Locations = list() of siplocationdb_e record()
+%%--------------------------------------------------------------------
+get_locations_with_contact(URI) when is_record(URI, sipurl) ->
+    case phone:get_locations_using_contact(URI) of
+	{ok, L} when is_list(L) ->
+	    {ok, L};
+	Unknown ->
+	    logger:log(error, "Location: Unknown result from get_locations_using_contact/1 : ~p", [Unknown]),
+	    error
     end.
 
 %%--------------------------------------------------------------------
@@ -755,15 +795,12 @@ process_non_wildcard_contacts(RegReq, Contacts) ->
 
 %% process_non_wildcard_contacts2 - part of process_non_wildcard_contacts()
 process_non_wildcard_contacts2(RegReq, [Contact | T]) ->
-    #reg_request{sipuser = SipUser
-		} = RegReq,
-    %% check if SipUser-Location binding exists in database
-    case phone:get_sipuser_location_binding(SipUser, sipurl:parse(Contact#contact.urlstr)) of
-	{atomic, []} ->
+    case get_database_phone_entry(RegReq, Contact) of
+	{ok, []} ->
 	    %% User has no bindings in the location database, register this one
 	    Expire = parse_register_contact_expire(RegReq#reg_request.expire_h, Contact),
 	    register_contact(RegReq, Contact, Expire);
-	{atomic, [DBLocation]} ->
+	{ok, [DBLocation]} ->
 	    %% User has exactly one binding in the location database matching this one, do some checking
 	    check_same_call_id(RegReq, Contact, DBLocation)
     end,
@@ -771,13 +808,62 @@ process_non_wildcard_contacts2(RegReq, [Contact | T]) ->
 process_non_wildcard_contacts2(_RegReq, []) ->
     ok.
 
+
+
+get_database_phone_entry(RegReq, Contact) ->
+    %% Check if contact has instance-id and reg-id, if so use that as key. Otherwise
+    %% use Contact URI as key.
+    {DoOutbound, RegId, Instance} =
+	case get_contact_reg_id(Contact) of
+	    RegId1 when is_integer(RegId1) ->
+		case get_contact_instance_id(Contact) of
+		    [] ->
+			{false, [], []};
+		    InstanceId1 ->
+			{true, RegId1, InstanceId1}
+		end;
+	    none ->
+		{false, [], []};
+	    {error, _BadValue} ->
+		{false, [], []}
+	end,
+
+    SipUser = RegReq#reg_request.sipuser,
+
+    Res =
+	case DoOutbound of
+	    true ->
+		{atomic, DbPhones} = phone:get_phone(SipUser),
+		get_database_phone_instance_reg_id(Instance, RegId, DbPhones, []);
+	    false ->
+		%% check if SipUser-Location binding exists in database
+		{atomic, Res1} = phone:get_sipuser_location_binding(SipUser, sipurl:parse(Contact#contact.urlstr)),
+		Res1
+	end,
+
+    {ok, Res}.
+
+get_database_phone_instance_reg_id(Instance, RegId, [#phone{instance = Instance} = H | T], Res) ->
+    %% instance match, check reg-id flag too
+    case lists:keysearch(reg_id, 1, H#phone.flags) of
+	{value, {reg_id, RegId}} ->
+	    get_database_phone_instance_reg_id(Instance, RegId, T, [H | Res]);
+	_ ->
+	    get_database_phone_instance_reg_id(Instance, RegId, T, Res)
+    end;
+get_database_phone_instance_reg_id(Instance, RegId, [_H | T], Res) ->
+    %% no match
+    get_database_phone_instance_reg_id(Instance, RegId, T, Res);
+get_database_phone_instance_reg_id(_Instance, _RegId, [], Res) ->
+    Res.
+
 %%--------------------------------------------------------------------
 %% Function: check_same_call_id(RegReq, Contact, DBLocation)
-%%           RegReq     = reg_request record()
-%%           Contact    = contact record(), sipuser-location binding
-%%                        data in REGISTER request
-%%           DBLocation = phone record(), currently stored
-%%                        sipuser-location info
+%%           RegReq      = reg_request record()
+%%           Contact     = contact record(), sipuser-location binding
+%%                         data in REGISTER request
+%%           DBLocations = phone record(), currently stored
+%%                         sipuser-location info
 %% Descrip.: Check if the REGISTER we are processing has the same
 %%           Call-Id as the currently stored location binding.
 %% Returns : void() | throw(...) (throw is either a siperror or a
@@ -794,8 +880,7 @@ check_same_call_id(RegReq, Contact, DBLocation) ->
 	    %% call-id differs, so the UAC has probably been restarted.
 	    case (Expire == 0) of
 		true ->
-		    #reg_request{logtag = LogTag
-				} = RegReq,
+		    LogTag = RegReq#reg_request.logtag,
 
 		    %% zero expire-time, unregister binding
 		    Priority = get_flag_value(priority, DBLocation),
@@ -863,6 +948,23 @@ check_greater_cseq(RegReq, Contact, DBLocation, Expire) ->
 to_url(LDBE) when is_record(LDBE, siplocationdb_e) ->
     LDBE#siplocationdb_e.address.
 
+sort_most_recent_first(Locations) when is_list(Locations) ->
+    F = fun(A, B) when is_record(A, siplocationdb_e), is_record(B, siplocationdb_e) ->
+		A_Reg =
+		    case lists:keysearch(registration_time, 1, A#siplocationdb_e.flags) of
+			{value, {registration_time, ATime}} -> ATime;
+			false -> 0
+		    end,
+		B_Reg =
+		    case lists:keysearch(registration_time, 1, B#siplocationdb_e.flags) of
+			{value, {registration_time, BTime}} -> BTime;
+			false -> 0
+		    end,
+		(A_Reg >= B_Reg)
+	end,
+    lists:sort(F, Locations).
+
+
 %%====================================================================
 %% Internal functions
 %%====================================================================
@@ -880,78 +982,141 @@ register_contact(RegReq, Contact, ExpireIn) when is_record(RegReq, reg_request),
 		 sipuser	= SipUser,
 		 priority	= Priority,
 		 callid		= CallId,
-		 cseq		= CSeq,
-		 path_vector	= PathVector
+		 cseq		= CSeq
 		} = RegReq,
 
     Expire = get_register_expire(ExpireIn),
 
-    Flags = register_contact_flags(Priority, Contact, PathVector),
-
-    case lists:keysearch(instance_id, 1, Flags) of
-	{value, {instance_id, Instance_Id}} ->
-	    %% Always generate a GRUU for an instance id if there isn't any yet
-	    gruu:create_if_not_exists(SipUser, Instance_Id);
-	_ ->
-	    ok
-    end,
+    {ok, Flags, Instance} = register_contact_params(RegReq, Contact),
 
     logger:log(normal, "~s: REGISTER ~s at ~s (priority ~p, expire in ~p)",
 	       [LogTag, SipUser, Contact#contact.urlstr, Priority, Expire]),
 
+    case Instance /= [] of
+	true ->
+	    %% Always generate a GRUU for an instance id if there isn't any yet
+	    gruu:create_if_not_exists(SipUser, Instance);
+	false ->
+	    ok
+    end,
+
     phone:insert_purge_phone(SipUser, Flags, dynamic,
 			     Expire + util:timestamp(),
 			     sipurl:parse(Contact#contact.urlstr),
-			     CallId, CSeq).
+			     CallId, CSeq, Instance).
 
 %%--------------------------------------------------------------------
-%% Function: register_contact_flags(Priority, Contact, Path)
-%%           Priority = integer(), sorting parameter
+%% Function: register_contact_params(RegReq, Contact)
+%%           RegReq  = reg_request record()
 %%           Contact  = contact record()
-%%           Path     = list() of string(), RFC3327 path vector
 %% Descrip.: Create flags to store in the location database for this
 %%           registration. For outgoingproxy, this includes an 'addr'
 %%           that is the address of the proxy to which the UAC
 %%           (presumably) has a persistent TCP connection that must
 %%           be used in order to reach this client with SIP messages.
-%% Returns : L = list() of {Key, Value}
+%% Returns : {ok, Flags, Instance}
+%%           Flags = list() of {Key, Value} (sorted, to be testable)
 %%           Key   = atom()
 %%           Value = term()
+%%           Instance = string(), instance ID (or "")
 %% Note    : The registration_time is used by the GRUU mechanism in
 %%           case there is more than one registered contact with the
 %%           same instance id for a user.
 %%           GRUU draft 06 #8.4.1 (Request Targeting)
 %%--------------------------------------------------------------------
-register_contact_flags(Priority, Contact, Path) ->
-    case Path of
+register_contact_params(RegReq, Contact) ->
+    case RegReq#reg_request.path_vector of
 	[] ->
-	    register_contact_flags2(Priority, Contact);
-	_ ->
-	    More = register_contact_flags2(Priority, Contact),
-	    [{path, Path} | More]
+	    register_contact_params2(RegReq, Contact);
+	Path when is_list(Path) ->
+	    {ok, MoreFlags, Instance} = register_contact_params2(RegReq, Contact),
+	    {ok, lists:sort( [{path, Path} | MoreFlags] ), Instance}
     end.
 
-register_contact_flags2(Priority, Contact) ->
-    GRUU =
-	case contact_param:find(Contact#contact.contact_param, "+sip.instance") of
-	    [] -> [];
-	    [Instance1] ->
-		case string:chr(Instance1, 34) of    %% 34 is "
-		    0 ->
-			logger:log(debug, "Location: Ignoring +sip.instance parameter with non-quouted value ~p",
-				   [Instance1]),
+%% Returns: {ok, Flags, Instance}
+register_contact_params2(RegReq, Contact) ->
+    Priority = RegReq#reg_request.priority,
+
+    Instance = get_contact_instance_id(Contact),
+
+    OutboundFlags =
+	case Instance /= [] of
+	    true ->
+		case get_contact_reg_id(Contact) of
+		    RegId when is_integer(RegId) ->
+			%% draft Outbound 03 #6.1 (Processing Register Requests)
+			SocketId = (RegReq#reg_request.socket)#sipsocket.id,
+			[{reg_id, RegId},
+			 {socket_id, {node(), SocketId}}
+			];
+		    none ->
+			%% Instance, but no reg-id
 			[];
-		    LeftQuoteIndex ->
-			TempString = string:substr(Instance1, LeftQuoteIndex + 1),
-			RightQuoteIndex = string:chr(TempString, 34),   %% 34 is "
-			Instance = string:substr(TempString, 1, RightQuoteIndex - 1),
-			[{instance_id, Instance}]
-		end
+		    {error, BadValue} ->
+			logger:log(debug, "Location: Ignoring bad (non-integer) reg-id/flow-id contact "
+				   "parameter value ~p", [BadValue]),
+			[]
+		end;
+	    false ->
+		%% no Instance ID, so don't store reg-id even if it exists
+		[]
 	end,
 
-    [{priority, Priority},
-     {registration_time, util:timestamp()}
-    ] ++ GRUU.
+    Flags = lists:sort([{priority, Priority},
+			{registration_time, util:timestamp()}
+		       ] ++ OutboundFlags
+		      ),
+
+    {ok, Flags, Instance}.
+
+%% Returns : RegId             |
+%%           none              |
+%%           {error, BadValue}
+%%           RegId = integer()
+%%           BadValue = string(), invalid value encountered
+get_contact_reg_id(Contact) ->
+    Str =
+	case contact_param:find(Contact#contact.contact_param, "reg-id") of
+	    [] ->
+		%% earlier versions of draft-Outbound called it flow-id
+		case contact_param:find(Contact#contact.contact_param, "flow-id") of
+		    [FlowIdV] ->
+			FlowIdV;
+		    [] ->
+			[]
+		end;
+	    [RegIdV] ->
+		RegIdV
+	end,
+
+    case Str of
+	[] ->
+	    none;
+	_ ->
+	    case catch list_to_integer(Str) of
+		RegId when is_integer(RegId) ->
+		    RegId;
+		_ ->
+		    {error, Str}
+	    end
+    end.
+
+%% Returns : Instance = string() ([] if no instance was found)
+get_contact_instance_id(Contact) ->
+    case contact_param:find(Contact#contact.contact_param, "+sip.instance") of
+	[] -> [];
+	[Instance1] ->
+	    case string:chr(Instance1, 34) of    %% 34 is "
+		0 ->
+		    logger:log(debug, "Location: Ignoring +sip.instance parameter with non-quouted value ~p",
+			       [Instance1]),
+		    [];
+		LeftQuoteIndex ->
+		    TempString = string:substr(Instance1, LeftQuoteIndex + 1),
+		    RightQuoteIndex = string:chr(TempString, 34),   %% 34 is "
+		    string:substr(TempString, 1, RightQuoteIndex - 1)
+	    end
+    end.
 
 %% determine expiration time for a specific contact. Use default
 %% value if contact/header supplies no expiration period.
@@ -1215,27 +1380,59 @@ test() ->
     ToURL_URL1 = to_url(#siplocationdb_e{flags = [], address = ToURL_URL1}),
 
 
-    %% register_contact_flags(Priority, Contact, Path)
+    %% register_contact_params(Priority, Contact, Path)
     %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "register_contact_flags/3 - 1"),
+    autotest:mark(?LINE, "register_contact_params/3 - 1"),
     [RCF_Contact1] = contact:parse(["<sip:ft@192.0.2.123>"]),
-    [{priority, 100}, {registration_time, _}] =
-	lists:sort( register_contact_flags(100, RCF_Contact1, []) ),
+    RCF_RegReq1 = #reg_request{priority		= 100,
+			       path_vector	= []
+			      },
+    {ok, [{priority, 100}, {registration_time, _}], []} =
+	register_contact_params(RCF_RegReq1, RCF_Contact1),
 
-    autotest:mark(?LINE, "register_contact_flags/3 - 2"),
-    [{path, ["one", "two"]}, {priority, 102}, {registration_time, _}] =
-	lists:sort( register_contact_flags(102, RCF_Contact1, ["one", "two"]) ),
+    autotest:mark(?LINE, "register_contact_params/3 - 2"),
+    RCF_RegReq2 = #reg_request{priority		= 102,
+			       path_vector	= ["one", "two"]
+			      },
+    {ok, [{path, ["one", "two"]}, {priority, 102}, {registration_time, _}], []} =
+	register_contact_params(RCF_RegReq2, RCF_Contact1),
 
-    autotest:mark(?LINE, "register_contact_flags/3 - 3"),
+    autotest:mark(?LINE, "register_contact_params/3 - 3"),
     [RCF_Contact3] = contact:parse(["<sip:ft@192.0.2.123>;+sip.instance=\"<test-instance>\""]),
-    [{instance_id, "<test-instance>"}, {priority, 100}, {registration_time, _}] =
-	lists:sort( register_contact_flags(100, RCF_Contact3, []) ),
+    RCF_RegReq3 = #reg_request{priority		= 100,
+			       path_vector	= []
+			      },
+    {ok, [{priority, 100}, {registration_time, _}], "<test-instance>"} =
+	register_contact_params(RCF_RegReq3, RCF_Contact3),
 
-    autotest:mark(?LINE, "register_contact_flags/3 - 4"),
+    autotest:mark(?LINE, "register_contact_params/3 - 4"),
     %% test that we ignore non-quoted instance-ids
     [RCF_Contact4] = contact:parse(["<sip:ft@192.0.2.123>;+sip.instance=test"]),
-    [{priority, 100}, {registration_time, _}] =
-	lists:sort( register_contact_flags(100, RCF_Contact4, []) ),
+    RCF_RegReq4 = #reg_request{priority		= 100,
+			       path_vector	= []
+			      },
+    {ok, [{priority, 100}, {registration_time, _}], []} =
+	register_contact_params(RCF_RegReq4, RCF_Contact4),
+
+    autotest:mark(?LINE, "register_contact_params/3 - 5"),
+    %% test that we get reg_id and socket_id if reg-id and instance is present
+    [RCF_Contact5] = contact:parse(["<sip:ft@192.0.2.123>;+sip.instance=\"<test-instance>\";reg-id=1"]),
+    ThisNode = node(),
+    RCF_RegReq5 = #reg_request{priority		= 100,
+			       path_vector	= [],
+			       socket		= #sipsocket{id = "socketidRCF5"}
+			      },
+    {ok, [{priority, 100}, {reg_id, 1}, {registration_time, _},
+	  {socket_id, {ThisNode, "socketidRCF5"}}], "<test-instance>"} =
+	register_contact_params(RCF_RegReq5, RCF_Contact5),
+
+    autotest:mark(?LINE, "register_contact_params/3 - 6"),
+    %% test same thing but with old draft-Outbound semantics (flow-id instead of reg-id)
+    [RCF_Contact6] = contact:parse(["<sip:ft@192.0.2.123>;+sip.instance=\"<test-instance>\";flow-id=12"]),
+    {ok, [{priority, 100}, {reg_id, 12}, {registration_time, _},
+	  {socket_id, {ThisNode, "socketidRCF5"}}], "<test-instance>"} =
+	register_contact_params(RCF_RegReq5, RCF_Contact6),
+
 
 
     %% is_valid_register_request(Header)
@@ -1317,6 +1514,29 @@ test() ->
     [] = process_updates_get_path_vector(ProcUpd_RegReq1),
 
 
+    %% sort_most_recent_first(Locations)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "sort_most_recent_first/1 - 0"),
+    MostRecent_Now = util:timestamp(),
+    MostRecent_LMinus0 = #siplocationdb_e{flags = [{registration_time, MostRecent_Now - 0}]},
+    MostRecent_LMinus5 = #siplocationdb_e{flags = [{registration_time, MostRecent_Now - 5}]},
+    MostRecent_LMinus50 = #siplocationdb_e{flags = [{registration_time, MostRecent_Now - 50}]},
+    MostRecent_LMissing = #siplocationdb_e{flags = []},
+
+    autotest:mark(?LINE, "sort_most_recent_first/1 - 1"),
+    [MostRecent_LMinus0, MostRecent_LMinus5] = sort_most_recent_first([MostRecent_LMinus5, MostRecent_LMinus0]),
+
+    autotest:mark(?LINE, "sort_most_recent_first/1 - 2"),
+    [MostRecent_LMinus0, MostRecent_LMinus5, MostRecent_LMinus50, MostRecent_LMissing] =
+	sort_most_recent_first([MostRecent_LMissing, MostRecent_LMinus5, MostRecent_LMinus50, MostRecent_LMinus0]),
+
+    autotest:mark(?LINE, "sort_most_recent_first/1 - 3"),
+    [MostRecent_LMinus0, MostRecent_LMissing] = sort_most_recent_first([MostRecent_LMissing, MostRecent_LMinus0]),
+
+    autotest:mark(?LINE, "sort_most_recent_first/1 - 4"),
+    [MostRecent_LMinus0, MostRecent_LMissing] = sort_most_recent_first([MostRecent_LMinus0, MostRecent_LMissing]),
+
+
     %% Mnesia dependant tests
     %%--------------------------------------------------------------------
 
@@ -1336,7 +1556,6 @@ test() ->
 
 test_mnesia_dependant_functions() ->
 
-    %% register_contact(LogTag, SipUser, Location, Priority, ExpireHeader, CallId, CSeq, PathVector)
     %% register_contact(RegReq, Contact, Expire)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "register_contact/3 - 0"),
@@ -1365,13 +1584,14 @@ test_mnesia_dependant_functions() ->
     TestUser2 = "__unit-test__user2__",
 
     RC_RegReq1 =
-	#reg_request{logtag = "testing", 
+	#reg_request{logtag = "testing",
 		     sipuser = TestUser1,
 		     priority = 100,
 		     expire_h = [],
 		     callid  = "call-id123",
 		     cseq    = 1,
-		     path_vector = []
+		     path_vector = [],
+		     socket = #sipsocket{}
 		    },
 
     autotest:mark(?LINE, "register_contact/3 - 1.1"),
@@ -1417,14 +1637,14 @@ test_mnesia_dependant_functions() ->
     autotest:mark(?LINE, "register_contact/3 - 3.2"),
     [#siplocationdb_e{address = Register_Contact2_URL},
      #siplocationdb_e{address = Register_Contact3_URL,
-		      flags   = Register_Contact3_Flags}]
-	= lists:sort( get_locations_for_users([TestUser2])),
+		      flags   = Register_Contact3_Flags,
+		      instance = TestInstanceId1
+		     }] = lists:sort( get_locations_for_users([TestUser2])),
 
     autotest:mark(?LINE, "register_contact/3 - 3.3"),
     %% verify resulting flags
     [{priority,			100},
-     {registration_time,	_},
-     {instance_id,		TestInstanceId1}
+     {registration_time,	_}
     ] = Register_Contact3_Flags,
 
 
@@ -1475,12 +1695,13 @@ test_mnesia_dependant_functions() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_register_request/5 - 1"),
     Test_THandler = transactionlayer:test_get_thandler_self(),
+    S = #sipsocket{},
     %% test non-homedomain
     PRR_Request1 = #request{method = "REGISTER",
 			    uri    = sipurl:parse("sip:ft@something.not-local.test.example.org"),
 			    header = keylist:from_list([{"To", ["<sip:ft@example.org>"]}])
 			   },
-    not_homedomain = process_register_request(PRR_Request1, Test_THandler, "test logtag", "test logstring", test),
+    not_homedomain = process_register_request(PRR_Request1, S, Test_THandler, "test logtag", "test logstring", test),
 
 
     %% register_require_supported(RegReq, OrigLogTag)
@@ -1519,7 +1740,9 @@ test_mnesia_dependant_functions() ->
 			      sipuser	= TestUser1,
 			      appname	= incomingproxy,
 			      do_gruu	= false,
-			      path_ignsup = false
+			      do_outbound = true,
+			      path_ignsup = false,
+			      socket	= #sipsocket{}
 			     },
     PU_Contact1Str = "<sip:ft@192.0.2.10;up=foo>",
 
@@ -1527,13 +1750,16 @@ test_mnesia_dependant_functions() ->
     %% test unregister with wildcard first, to make sure we don't have any entrys for
     %% our test user in the database
     PU_Contacts1 = contact:parse(["*"]),
-    {ok, {200, "OK", [{"Date", _}]}} = process_updates(PU_RegReq1, PU_Contacts1),
+    {ok, {200, "OK", [{"Date", _},
+		      {"Supported", ["outbound"]}
+		     ]}} = process_updates(PU_RegReq1, PU_Contacts1),
 
     autotest:mark(?LINE, "process_updates/2 - 2.1"),
     %% simple register
     PU_Contacts2 = contact:parse([PU_Contact1Str ++ ";expires=20"]),
     {ok, {200, "OK", [{"Contact", PU_Contacts2_CRes},
-		      {"Date", _}
+		      {"Date", _},
+		      {"Supported", ["outbound"]}
 		     ]}} = process_updates(PU_RegReq1, PU_Contacts2),
 
     autotest:mark(?LINE, "process_updates/2 - 2.2"),
@@ -1559,8 +1785,9 @@ test_mnesia_dependant_functions() ->
     PU_Contacts4 = [contact:add_param(PU_Contacts4_2, "expires", "40")],
     PU_Header4 = keylist:set("CSeq", ["401 REGISTER"], PU_RegReq1#reg_request.header),
     PU_RegReq4 = PU_RegReq1#reg_request{header = PU_Header4},
-    {ok, {200, "OK", [{"Contact", PU_Contacts4_CRes},
-		      {"Date", _}
+    {ok, {200, "OK", [{"Contact",	PU_Contacts4_CRes},
+		      {"Date",		_},
+		      {"Supported",	["outbound"]}
 		     ]}} = process_updates(PU_RegReq4, PU_Contacts4),
 
     %% verify contact read back from the database
@@ -1569,7 +1796,8 @@ test_mnesia_dependant_functions() ->
     autotest:mark(?LINE, "process_updates/2 - 5"),
     %% test without contacts, database readback only (should give exactly the same result as the previous test)
     {ok, {200, "OK", [{"Contact", PU_Contacts5_CRes},
-		      {"Date", _}
+		      {"Date", _},
+		      {"Supported", ["outbound"]}
 		     ]}} = process_updates(PU_RegReq4, []),
 
     %% verify contact read back from the database
@@ -1580,7 +1808,8 @@ test_mnesia_dependant_functions() ->
     PU_Contacts7 = contact:parse([PU_Contact1Str ++ ";expires=0"]),
     PU_Header7 = keylist:set("CSeq", ["701 REGISTER"], PU_RegReq1#reg_request.header),
     PU_RegReq7 = PU_RegReq1#reg_request{header = PU_Header7},
-    {ok, {200, "OK", [{"Date", _}
+    {ok, {200, "OK", [{"Date", _},
+		      {"Supported", ["outbound"]}
 		     ]}} = process_updates(PU_RegReq7, PU_Contacts7),
 
 
@@ -1588,7 +1817,8 @@ test_mnesia_dependant_functions() ->
     %% register again
     PU_Contacts8_1 = contact:parse([PU_Contact1Str ++ ";expires=10"]),
     {ok, {200, "OK", [{"Contact", PU_Contacts8_1_CRes},
-		      {"Date", _}
+		      {"Date", _},
+		      {"Supported", ["outbound"]}
 		     ]}} = process_updates(PU_RegReq1, PU_Contacts8_1),
 
     test_verify_contacts(5, 10, [PU_Contact1Str], PU_Contacts8_1_CRes),
@@ -1599,7 +1829,8 @@ test_mnesia_dependant_functions() ->
     PU_Header8_2 = keylist:set("Call-Id", ["other-call-id19237"], PU_RegReq1#reg_request.header),
     PU_RegReq8_2 = PU_RegReq1#reg_request{header = PU_Header8_2},
     {ok, {200, "OK", [{"Contact", PU_Contacts8_2_CRes},
-		      {"Date", _}
+		      {"Date", _},
+		      {"Supported", ["outbound"]}
 		     ]}} = process_updates(PU_RegReq8_2, PU_Contacts8_2),
 
     %% verify binding was updated (longer expire now)
@@ -1610,7 +1841,8 @@ test_mnesia_dependant_functions() ->
     PU_Contacts8_3 = contact:parse([PU_Contact1Str ++ ";expires=0"]),
     PU_Header8_3 = keylist:set("Call-Id", ["yet-another-call-id56622"], PU_RegReq1#reg_request.header),
     PU_RegReq8_3 = PU_RegReq1#reg_request{header = PU_Header8_3},
-    {ok, {200, "OK", [{"Date", _}
+    {ok, {200, "OK", [{"Date", _},
+		      {"Supported", ["outbound"]}
 		     ]}} = process_updates(PU_RegReq8_3, PU_Contacts8_3),
 
     %%
@@ -1632,7 +1864,8 @@ test_mnesia_dependant_functions() ->
     %% but we will keep doing it until we are sure that clients don't ignore the GRUUs otherwise
     {ok, {200, "OK", [{"Require",	["gruu"]},
 		      {"Contact",	PU_Contacts10_CRes},
-		      {"Date",		_}
+		      {"Date",		_},
+		      {"Supported",	["outbound"]}
 		     ]}} =
 	process_updates(PU_RegReq10, PU_Contacts10),
 
@@ -1652,7 +1885,8 @@ test_mnesia_dependant_functions() ->
     PU_Header11 = keylist:set("CSeq", ["1101 REGISTER"], PU_RegReq1#reg_request.header),
     PU_RegReq11 = PU_RegReq1#reg_request{header = PU_Header11},
     {ok, {200, "OK", [{"Contact",	PU_Contacts11_CRes},
-		      {"Date",		_}
+		      {"Date",		_},
+		      {"Supported",	["outbound"]}
 		     ]}} = process_updates(PU_RegReq11, PU_Contacts10),
 
     autotest:mark(?LINE, "process_updates/2 - 11.2"),
@@ -1665,7 +1899,8 @@ test_mnesia_dependant_functions() ->
     PU_Contacts14 = contact:parse(["*"]),
     PU_Header14 = keylist:set("CSeq", ["1401 REGISTER"], PU_RegReq1#reg_request.header),
     PU_RegReq14 = PU_RegReq1#reg_request{header = PU_Header14},
-    {ok, {200, "OK", [{"Date", _}
+    {ok, {200, "OK", [{"Date", _},
+		      {"Supported", ["outbound"]}
 		     ]}} =
 	process_updates(PU_RegReq14, PU_Contacts14),
 
@@ -1688,6 +1923,7 @@ test_mnesia_dependant_functions() ->
     PU_RegReq16 = PU_RegReq15#reg_request{path_ignsup = true},
     {ok, {200, "OK", [{"Contact",	PU_Contacts16_CRes},
 		      {"Date",		_},
+		      {"Supported",	["outbound"]},
 		      {"Path",		["<sip:edge.example.org>"]}
 		     ]}} = process_updates(PU_RegReq16, PU_Contacts15),
 
@@ -1713,6 +1949,7 @@ test_mnesia_dependant_functions() ->
 					},
     {ok, {200, "OK", [{"Contact",	PU_Contacts17_CRes},
 		      {"Date",		_},
+		      {"Supported",	["outbound"]},
 		      {"Path",		["<sip:edge.example.org>"]}
 		     ]}} = process_updates(PU_RegReq17, PU_Contacts15),
 
@@ -1732,8 +1969,9 @@ test_mnesia_dependant_functions() ->
     PU_Contacts17_4 = contact:parse(["*"]),
     PU_Header17_4 = keylist:set("CSeq", ["1704 REGISTER"], PU_Header17_2),
     PU_RegReq17_4 = PU_RegReq17#reg_request{header = PU_Header17_4},
-    {ok, {200, "OK", [{"Date",	_},
-		      {"Path",	["<sip:edge.example.org>"]}
+    {ok, {200, "OK", [{"Date",		_},
+		      {"Supported",	["outbound"]},
+		      {"Path",		["<sip:edge.example.org>"]}
 		     ]}} = process_updates(PU_RegReq17_4, PU_Contacts17_4),
 
     %%
@@ -1747,10 +1985,10 @@ test_mnesia_dependant_functions() ->
     PU_20_Expire = util:timestamp() + 20,
     %% record with no priority
     {atomic, ok} = phone:insert_purge_phone(TestUser1, [], dynamic, PU_20_Expire,
-					    sipurl:parse("sip:dynamic@192.0.2.12"), PU_20_CSeq, "2000"),
+					    sipurl:parse("sip:dynamic@192.0.2.12"), PU_20_CSeq, "2000", ""),
     %% static registration
     {atomic, ok} = phone:insert_purge_phone(TestUser1, [], static, never,
-					    sipurl:parse("sip:static@example.org"), "", ""),
+					    sipurl:parse("sip:static@example.org"), "", "", ""),
 
     autotest:mark(?LINE, "process_updates/2 - 20.1"),
     %% verify that the static registration isn't included in REGISTER responses
@@ -1760,25 +1998,212 @@ test_mnesia_dependant_functions() ->
 					 path_ignsup	= true
 					},
     {ok, {200, "OK", [{"Contact",       PU_Contacts20_CRes},
-                      {"Date",          _}
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
                      ]}} = process_updates(PU_RegReq20, []),
 
     autotest:mark(?LINE, "process_updates/2 - 20.2"),
     %% verify the contacts in the response
     ok = test_verify_contacts(15, 20, ["<sip:dynamic@192.0.2.12>"], PU_Contacts20_CRes),
 
-    autotest:mark(?LINE, "process_updates/2 - 21"),
+    autotest:mark(?LINE, "process_updates/2 - 21.1"),
     %% test unregistering with wildcard when there are some 'strange' entrys there
     PU_Contacts21 = contact:parse(["*"]),
     PU_Header21 = keylist:set("CSeq", ["2101 REGISTER"], PU_RegReq1#reg_request.header),
     PU_RegReq21 = PU_RegReq1#reg_request{header	= PU_Header21,
 					 do_gruu	= true,
-					 path_ignsup	= true
+					 path_ignsup	= true,
+					 do_outbound	= false
 					},
     {ok, {200, "OK", [{"Date", _}
 		     ]}} =
 	process_updates(PU_RegReq21, PU_Contacts21),
 
+    autotest:mark(?LINE, "process_updates/2 - 21.2"),
+    %% delete the static entry too, can't be done through REGISTER message
+    {atomic, ok} = phone:delete_location(TestUser1, static, "sip:static@example.org"),
+
+    autotest:mark(?LINE, "process_updates/2 - 21.3"),
+    %% verify TestUser1 has no active registrations now
+    [] = get_locations_for_users([TestUser1]),
+
+
+
+    %% Outbound TESTS
+
+    autotest:mark(?LINE, "process_updates/2 - 25.1"),
+    %% test simple fetch with outbound disabled
+    {ok, {200, "OK", [{"Date", _}
+		     ]}} =
+	process_updates(PU_RegReq1#reg_request{do_outbound = false}, []),
+
+    autotest:mark(?LINE, "process_updates/2 - 25.2"),
+    %% test simple fetch with outbound enabled
+    {ok, {200, "OK", [{"Date", _},
+		      {"Supported", ["outbound"]}
+		     ]}} =
+	process_updates(PU_RegReq1#reg_request{do_outbound = true}, []),
+
+    autotest:mark(?LINE, "process_updates/2 - 26.1"),
+    %% test registration with both instance id and reg-id
+    PU_Contacts26_Instance = "<test:__unit_testing_instance_id_PU26__>",
+    PU_Contacts26 = contact:parse([PU_Contact1Str ++ ";+sip.instance=\"" ++ PU_Contacts26_Instance ++
+				   "\";reg-id=4711;expires=20"]),
+    PU_Header26 = keylist:set("CSeq", ["2601 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_RegReq26 = PU_RegReq1#reg_request{header		= PU_Header26,
+					 do_gruu	= false,
+					 path_ignsup	= true,
+					 do_outbound	= true,
+					 socket		= #sipsocket{id = "PU_test26_socketid"},
+					 sipuser	= TestUser1
+					},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts26_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq26, PU_Contacts26),
+
+    autotest:mark(?LINE, "process_updates/2 - 26.2"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(15, 20, [PU_Contact1Str], PU_Contacts26_CRes),
+
+    autotest:mark(?LINE, "process_updates/2 - 26.2"),
+    %% verify the record in the location database
+    [PU_Contacts26_Loc] = get_locations_for_users([TestUser1]),
+    #siplocationdb_e{instance = PU_Contacts26_Instance} = PU_Contacts26_Loc,
+    {value, {reg_id, 4711}} =
+	lists:keysearch(reg_id, 1, PU_Contacts26_Loc#siplocationdb_e.flags),
+    {value, {socket_id, {ThisNode, "PU_test26_socketid"}}} =
+	lists:keysearch(socket_id, 1, PU_Contacts26_Loc#siplocationdb_e.flags),
+
+    autotest:mark(?LINE, "process_updates/2 - 27.1"),
+    %% test client replacing previous registration with new flow
+    PU_Contact27Str = "<sip:new@192.0.2.10:1213>",
+    PU_Contacts27 = contact:parse([PU_Contact27Str ++ ";+sip.instance=\"" ++ PU_Contacts26_Instance ++
+				   "\";reg-id=4711;expires=30"]),
+    PU_Header27 = keylist:set("CSeq", ["2701 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_RegReq27 = PU_RegReq26#reg_request{header	= PU_Header27,
+					  socket	= #sipsocket{id = "PU_test27_socketid"}
+					},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts27_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq27, PU_Contacts27),
+
+    autotest:mark(?LINE, "process_updates/2 - 27.2"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(25, 30, [PU_Contact27Str], PU_Contacts27_CRes),
+
+    autotest:mark(?LINE, "process_updates/2 - 27.3"),
+    %% verify the record in the location database
+    [PU_Contacts27_Loc] = get_locations_for_users([TestUser1]),
+    #siplocationdb_e{instance = PU_Contacts26_Instance} = PU_Contacts27_Loc,
+    {value, {reg_id, 4711}} =
+	lists:keysearch(reg_id, 1, PU_Contacts27_Loc#siplocationdb_e.flags),
+    {value, {socket_id, {ThisNode, "PU_test27_socketid"}}} =
+	lists:keysearch(socket_id, 1, PU_Contacts27_Loc#siplocationdb_e.flags),
+
+
+    autotest:mark(?LINE, "process_updates/2 - 28.1"),
+    %% test client makes second REGISTER to other node
+    PU_Contacts28 = contact:parse([PU_Contact27Str ++ ";+sip.instance=\"" ++ PU_Contacts26_Instance ++
+				   "\";reg-id=4712;expires=30"]),
+    %% same CSeq (sent to another node, right?) but different Call-Id
+    PU_Header28_1 = keylist:set("CSeq", ["2701 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_Header28 = keylist:set("Call-Id", ["2345-some-other-call-id"], PU_Header28_1),
+    PU_RegReq28 = PU_RegReq27#reg_request{header	= PU_Header28,
+					    socket	= #sipsocket{id = "PU_test28_socketid_backup"}
+					},
+
+    {ok, {200, "OK", [{"Contact",       PU_Contacts28_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq28, PU_Contacts28),
+
+    autotest:mark(?LINE, "process_updates/2 - 28.2"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(25, 30, [PU_Contact27Str, PU_Contact27Str], PU_Contacts28_CRes),
+
+    autotest:mark(?LINE, "process_updates/2 - 28.3"),
+    %% verify the two records in the location database
+    [PU_Contacts27_Loc, PU_Contacts28_Loc] = get_locations_for_users([TestUser1]),
+    #siplocationdb_e{instance = PU_Contacts26_Instance} = PU_Contacts28_Loc,
+    {value, {reg_id, 4712}} =
+	lists:keysearch(reg_id, 1, PU_Contacts28_Loc#siplocationdb_e.flags),
+    {value, {socket_id, {ThisNode, "PU_test28_socketid_backup"}}} =
+	lists:keysearch(socket_id, 1, PU_Contacts28_Loc#siplocationdb_e.flags),
+
+
+    autotest:mark(?LINE, "process_updates/2 - 29"),
+    %% test client making the next subsequent re-register
+    PU_Header29 = keylist:set("CSeq", ["2801 REGISTER"], PU_RegReq28#reg_request.header),
+    PU_RegReq29 = PU_RegReq28#reg_request{header = PU_Header29},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts28_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq29, PU_Contacts28),
+
+
+    %% and test non-Outbound client registering when there are Outbound entrys involved -
+    %% can't have same Contact URI as the Outbound registrations though. Bug in draft? Naah.
+
+
+
+
+
+
+
+    autotest:mark(?LINE, "process_updates/2 - 30.1"),
+    %% test unregistering TestUser2 with wildcard and outbound enabled
+    PU_Contacts30 = contact:parse(["*"]),
+    PU_Header30 = keylist:set("CSeq", ["3001 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_RegReq30 = PU_RegReq1#reg_request{header	= PU_Header30,
+					 do_gruu	= true,
+					 path_ignsup	= true,
+					 do_outbound	= true,
+					 sipuser	= TestUser2
+					},
+    {ok, {200, "OK", [{"Date", _},
+		      {"Supported", ["outbound"]}
+		     ]}} =
+	process_updates(PU_RegReq30, PU_Contacts30),
+
+    autotest:mark(?LINE, "process_updates/2 - 30.2"),
+    %% verify TestUser2 has no active registrations now
+    [] = get_locations_for_users([TestUser2]),
+
+    autotest:mark(?LINE, "process_updates/2 - 31.1"),
+    %% test registration with invalid (non-numeric) reg-id parameter
+    PU_Contacts31_Instance = "<test:__unit_testing_instance_id_PU31__>",
+    PU_Contacts31 = contact:parse([PU_Contact1Str ++ ";+sip.instance=\"" ++ PU_Contacts31_Instance ++
+				   "\";reg-id=fyrtiosju;expires=20"]),
+    PU_Header31 = keylist:set("CSeq", ["3101 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_RegReq31 = PU_RegReq1#reg_request{header		= PU_Header31,
+					 do_gruu	= false,
+					 path_ignsup	= true,
+					 do_outbound	= true,
+					 socket		= #sipsocket{id = "PU_test31_socketid"},
+					 sipuser	= TestUser2
+					},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts31_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq31, PU_Contacts31),
+
+    autotest:mark(?LINE, "process_updates/2 - 31.2"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(15, 20, [PU_Contact1Str], PU_Contacts31_CRes),
+
+    autotest:mark(?LINE, "process_updates/2 - 31.2"),
+    %% verify the record in the location database, should NOT have reg-id (or socket_id)
+    [PU_Contacts31_Loc] = get_locations_for_users([TestUser2]),
+    #siplocationdb_e{instance = PU_Contacts31_Instance} = PU_Contacts31_Loc,
+    false = lists:keysearch(reg_id, 1, PU_Contacts31_Loc#siplocationdb_e.flags),
+    false = lists:keysearch(socket_id, 1, PU_Contacts31_Loc#siplocationdb_e.flags),
+
+
+
+
+    %% END Outbound TESTS
 
 
     mnesia:abort(ok).
@@ -1813,7 +2238,7 @@ test_verify_contacts2(ExpiresMin, ExpiresMax, [ExpectH | ExpectT], [GotH | GotT]
 	[] ->
 	    Msg = io_lib:format("Contact ~p missing expires parameter", [contact:print(GotH)]),
 	    io:format(Msg),
-	   {error, lists:flatten(Msg)}
+	    {error, lists:flatten(Msg)}
     end;
 test_verify_contacts2(_ExpiresMin, _ExpiresMax, [], []) ->
     ok.

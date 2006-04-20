@@ -113,8 +113,18 @@ start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModu
     StunEnv =
 	case yxa_config:get_env(stun_demuxing_on_sip_ports) of
 	    {ok, true} ->
-		{ok, LocalIPtuple} = inet_parse:ipv4_address(LocalIP),
-		{ok, RemoteIPtuple} = inet_parse:ipv4_address(RemoteIP),
+		{{ok, LocalIPtuple},
+		 {ok, RemoteIPtuple}
+		} = if
+			Proto == tcp; Proto == tls ->
+			    {inet_parse:ipv4_address(LocalIP),
+			     inet_parse:ipv4_address(RemoteIP)
+			    };
+			Proto == tcp6; Proto == tls6 ->
+			    {inet_parse:ipv6_address(util:remove_v6_brackets(LocalIP)),
+			     inet_parse:ipv6_address(util:remove_v6_brackets(RemoteIP))
+			    }
+		    end,
 		#stun_env{proto			= Proto,
 			  local_ip		= LocalIPtuple,
 			  local_port		= LocalPort,

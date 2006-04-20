@@ -35,7 +35,9 @@ erl_FILES = \
 	transactionstatelist.erl
 
 imported_hrl_FILES = \
-	../include/yxa_config.hrl
+	../include/yxa_config.hrl \
+	../include/siprecords.hrl \
+	../include/sipsocket.hrl
 
 hrl_FILES = \
 	transactionstatelist.hrl

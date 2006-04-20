@@ -19,6 +19,7 @@
 	 send/5,
 	 is_reliable_transport/1,
 	 get_socket/1,
+	 get_specific_socket/1,
 	 get_raw_socket/1
 	]).
 
@@ -78,6 +79,23 @@ send(SipSocket, yxa_test, Host, Port, Message) when is_record(SipSocket, sipsock
 %%--------------------------------------------------------------------
 get_socket(#sipdst{proto = yxa_test}) ->
     case get({sipsocket_test, get_socket}) of
+	undefined ->
+	    #sipsocket{module = ?MODULE,
+		       proto  = yxa_test,
+		       pid    = self()
+		      };
+	Res ->
+	    Res
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_specific_socket(Id)
+%%           Id = tuple() ({Proto, Id})
+%% Descrip.: Return a fake socket or a term based on process dict.
+%% Returns : sipsocket record() | term()
+%%--------------------------------------------------------------------
+get_specific_socket({yxa_test, _Id}) ->
+    case get({sipsocket_test, get_specific_socket}) of
 	undefined ->
 	    #sipsocket{module = ?MODULE,
 		       proto  = yxa_test,

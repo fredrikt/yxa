@@ -504,6 +504,10 @@
 		      list_of	= true,
 		      type	= string,
 		      required	= true
+		     },
+	   #cfg_entry{key	= experimental_outbound_enable,
+		      default	= true,
+		      type	= bool
 		     }
 	  ]},
 
@@ -540,6 +544,10 @@
 		     },
 	   #cfg_entry{key	= always_do_path_for_foreign_registers,
 		      default	= false,
+		      type	= bool
+		     },
+	   #cfg_entry{key	= experimental_outbound_enable,
+		      default	= true,
 		      type	= bool
 		     }
 	  ]},

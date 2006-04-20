@@ -412,17 +412,32 @@ get_good_socket(#sipsocket{proto = Proto} = DefaultSocket, #sipdst{proto = Proto
 	    logger:log(debug, "Transport layer: Using default socket ~p", [DefaultSocket]),
 	    DefaultSocket;
 	false ->
-	    logger:log(debug, "Transport layer: No good socket (~p) provided - asking transport layer for a ~p socket",
-		       [DefaultSocket, Proto]),
+	    logger:log(debug, "Transport layer: No good socket (~p) provided - asking sipsocket "
+		       "module for a ~p socket", [DefaultSocket, Proto]),
 	    get_good_socket(none, Dst)
     end;
 %%
-%% No default socket provided
+%% No default socket provided, but one is stuffed into Dst
+%%
+get_good_socket(none, #sipdst{socket = Socket}) when is_record(Socket, sipsocket) ->
+    case sipsocket:is_good_socket(Socket) of
+	true ->
+	    Socket;
+	false ->
+	    logger:log(debug, "Transport layer: Socket ~p is not valid anymore", [Socket]),
+	    {error, "Specific socket not valid anymore"}
+    end;
+
+%%
+%% No default socket provided, Dst#sipdst.socket is undefined
 %%
 get_good_socket(none, Dst) when is_record(Dst, sipdst) ->
     case sipsocket:get_socket(Dst) of
 	S when is_record(S, sipsocket) ->
-	    {Proto, Host, Port} = {Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port},
+	    #sipdst{proto = Proto,
+		    addr  = Host,
+		    port  = Port
+		   } = Dst,
 	    logger:log(debug, "Transport layer: Extra debug: Get socket ~p:~p:~p returned socket ~p",
 		       [Proto, Host, Port, S]),
 	    S;

@@ -16,6 +16,7 @@
 -export([send/5,
 
 	 get_socket/1,
+	 get_specific_socket/1,
 	 get_raw_socket/1,
 
 	 viastr2proto/1,
@@ -81,6 +82,7 @@ behaviour_info(callbacks) ->
      {send, 5},
      {is_reliable_transport, 1},
      {get_socket, 1},
+     {get_specific_socket, 1},
      {get_raw_socket, 1}
     ];
 behaviour_info(_Other) ->
@@ -147,7 +149,7 @@ send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_a
 
 %%--------------------------------------------------------------------
 %% Function: get_socket(Dst)
-%%           Dst   = sipdst record()
+%%           Dst = sipdst record()
 %% Descrip.: Get a socket, cached or new, useable to send messages to
 %%           Dst using protocol Proto.
 %% Returns : SipSocket       |
@@ -158,6 +160,24 @@ send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_a
 get_socket(Dst) when is_record(Dst, sipdst) ->
     Module = proto2module(Dst#sipdst.proto),
     Module:get_socket(Dst).
+
+
+%%--------------------------------------------------------------------
+%% Function: get_specific_socket(Id)
+%%           Dst = sipdst record()
+%% Descrip.: Get a specific socket. Don't try to open a new connection
+%%           if the requested one does not exist.
+%% Returns : SipSocket       |
+%%           {error, Reason}
+%%           SipSocket = sipsocket record()
+%%           Reason    = string()
+%%--------------------------------------------------------------------
+get_specific_socket({Proto, _} = Id) when is_atom(Proto) ->
+    Module = proto2module(Proto),
+    Module:get_specific_socket(Id);
+get_specific_socket(Unknown) ->
+    logger:log(error, "Sipsocket: Request for specific socket with invalid socket identifier : ~p", [Unknown]),
+    {error, "Invalid specific socket identifier"}.
 
 %%--------------------------------------------------------------------
 %% Function: get_raw_socket(Socket)
@@ -188,7 +208,7 @@ is_reliable_transport(#sipsocket{module=Module} = Socket) ->
 proto2module(tcp)  -> sipsocket_tcp;
 proto2module(tcp6) -> sipsocket_tcp;
 proto2module(tls)  -> sipsocket_tcp;
-proto2module(tls6) -> spisocket_tcp;
+proto2module(tls6) -> sipsocket_tcp;
 proto2module(udp)  -> sipsocket_udp;
 proto2module(udp6) -> sipsocket_udp;
 proto2module(yxa_test)  -> sipsocket_test;

@@ -192,10 +192,12 @@ init([Direction, SocketModule, Proto, Socket, Local, Remote, Validation]) ->
     end.
 
 init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
+    %% construct unique ID for this sipsocket, used by Outbound for example
     SipSocket = #sipsocket{module	= sipsocket_tcp,
 			   proto	= Proto,
 			   pid		= self(),
-			   data		= {Local, Remote}
+			   data		= {Local, Remote},
+			   id		= {Proto, erlang:now()}	%% unique ID for Outbound
 			  },
     %% Register this connection with the TCP listener process before we proceed
     case gen_server:call(tcp_dispatcher, {register_sipsocket, Direction, SipSocket}) of
@@ -371,16 +373,11 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 %%--------------------------------------------------------------------
 handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
     {IP, Port} = State#state.remote,
-    SipSocket = #sipsocket{module	= sipsocket_tcp,
-			   proto	= State#state.proto,
-			   pid		= self(),
-			   data		= {State#state.local, State#state.remote}
-			  },
     Origin = #siporigin{proto		= State#state.proto,
 			addr		= IP,
 			port		= Port,
 			receiver	= self(),
-			sipsocket	= SipSocket
+			sipsocket	= State#state.sipsocket
 		       },
     sipserver:safe_spawn(sipserver, process, [Msg, Origin, transactionlayer]),
     {noreply, State, State#state.timeout};

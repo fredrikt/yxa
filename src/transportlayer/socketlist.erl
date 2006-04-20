@@ -19,6 +19,7 @@
 	 get_using_id/2,
 	 get_using_pid/2,
 	 get_using_remote/3,
+	 get_using_socketid/2,
 	 extract/2,
 	 get_length/1,
 	 monitor_format/1,
@@ -223,6 +224,22 @@ get_using_remote1(Proto, Remote, [#socketlistelem{proto=Proto, remote=Remote}=H 
     H;
 get_using_remote1(Proto, Remote, [H | T]) when is_record(H, socketlistelem) ->
     get_using_remote1(Proto, Remote, T).
+
+
+get_using_socketid(Id, SocketList) when is_record(SocketList, socketlist), is_tuple(Id), size(Id) == 2 ->
+    case get_using_socketid1(Id, SocketList#socketlist.list, []) of
+	[] ->
+	    none;
+	[Elem] ->
+	    Elem
+    end.
+
+get_using_socketid1(_Id, [], Res) ->
+    Res;
+get_using_socketid1(Id, [#socketlistelem{sipsocket = #sipsocket{id = Id}} = H | T], Res) ->
+    get_using_socketid1(Id, T, [H | Res]);
+get_using_socketid1(Id, [H | T], Res) when is_record(H, socketlistelem) ->
+    get_using_socketid1(Id, T, Res).
 
 
 %%--------------------------------------------------------------------
