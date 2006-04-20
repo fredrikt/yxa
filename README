@@ -875,13 +875,13 @@ one database master node), do the following on incomingproxy server #1 :
 
 and then, on incomingproxy server #2 :
 
-   $ /path/to/yxa-bootstrap -replica incomingproxy1@server1.example.org
+   $ /path/to/yxa-bootstrap -replica incomingproxy@server1.example.org
 
 You should then set the configuration parameter databaseservers like this
 on all your non-incomingproxy nodes :
 
-   {databaseservers, ['incomingproxy1@server1.example.org',
-		      'incomingproxy2@server2.example.org']}
+   {databaseservers, ['incomingproxy@server1.example.org',
+		      'incomingproxy@server2.example.org']}
 
 If you want some other Yxa application node than incomingproxy to be your
 Mnesia database master, supply the -name argument to yxa-bootstrap. For
