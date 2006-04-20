@@ -56,6 +56,7 @@
 	 homedomain/1,
 	 get_locations_for_users/1,
 	 get_user_with_contact/1,
+	 get_locations_with_contact/1,
 	 gruu_make_url/4,
 	 is_gruu_url/1
 	]).
@@ -124,6 +125,7 @@
 -export([
 	 is_acceptable_socket/7,
 	 is_tls_equivalent/3,
+	 get_valid_altnames/3,
 	 lookup_sipsocket_blacklist/1
 	]).
 
@@ -270,7 +272,8 @@ default_canonify_addresses2(["+" ++ Num = H | T], Res) ->
 	    default_canonify_addresses2(T, [H | Res])
     end;
 default_canonify_addresses2([H | T], Res) ->
-    case rewrite_potn_to_e164(H) of
+    %% outgoingproxy don't have internal_to_e164 configuration parameter, so rewrite_potn_to_e164 might fail
+    case (catch rewrite_potn_to_e164(H)) of
 	"+" ++ _ = E164->
 	    This = "tel:" ++ E164,
 	    default_canonify_addresses2(T, [This | Res]);
@@ -713,6 +716,13 @@ get_user_with_contact(URI) ->
 		    siplocation:get_user_with_contact(URI)
 		   ).
 
+%% like get_user_with_contact but returns a list of siplocationdb_e records instead
+get_locations_with_contact(URI) ->
+    ?CHECK_EXPORTED({get_locations_with_contact, 1},
+		    ?LOCAL_MODULE:get_locations_with_contact(URI),
+		    siplocation:get_locations_with_contact(URI)
+		   ).
+
 %% Returns: URL | undefined
 gruu_make_url(User, InstanceId, GRUU, To) ->
     ?CHECK_EXPORTED({gruu_make_url, 4},
@@ -1098,6 +1108,29 @@ is_tls_equivalent(Proto, Host, Port) ->
     ?CHECK_EXPORTED({is_tls_equivalent, 3},
 		    ?LOCAL_MODULE:is_tls_equivalent(Proto, Host, Port),
 		    undefined
+		   ).
+
+%%--------------------------------------------------------------------
+%% Function: get_valid_altnames(Names, Subject, AltNames)
+%%           Names  = list() of string(), list of names for the
+%%                    certificate that the upper layer is willing to
+%%                    accept
+%%           Subject  = term(), ssl:peercert() subject data
+%%           AltNames = list of string(), subjectAltName:s in cert
+%% Descrip.: Hook that lets you manipulate what names are considered
+%%           valid for a SSL certificate presented by a host. If, for
+%%           example, the host p1.example.org returns a certificate
+%%           with the subjectAltNames, Names might be ["example.org"]
+%%           since a user tried to reach sip:user@example.org, and
+%%           AltNames might be ["p1.example.org"]. In this case, you
+%%           must add "example.org" to AltNames, to allow the
+%%           certificate.
+%% Returns : NewAltNames = list() of string()
+%%--------------------------------------------------------------------
+get_valid_altnames(Names, Subject, AltNames) ->
+    ?CHECK_EXPORTED({get_valid_altnames, 3},
+		    ?LOCAL_MODULE:get_valid_altnames(Names, Subject, AltNames),
+		    AltNames
 		   ).
 
 %%--------------------------------------------------------------------
