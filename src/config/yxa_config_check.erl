@@ -52,23 +52,19 @@ check_config(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModu
 	{ok, NewCfg} when is_record(NewCfg, yxa_cfg) ->
 	    case check_required(NewCfg, Definitions) of
 		ok ->
-		    %% XXX check dependant configuration parameters too!
-		    %%
-		    %% sipuserdb_file_filename is required if userdb_modules contains sipuserdb_file
-		    %%
-		    %% ssl_server_ssloptions should not contain {certfile, File} if ssl_server_certfile is set
-		    %%
-		    %% ssl_client_ssloptions should not contain {certfile, File} if ssl_client_certfile is set
-		    %%
-		    %% check that sipuserdb_mysql_{host, user, password, database} is set if userdb_modules
-		    %% contains sipuserdb_mysql
-		    %%
-		    %% check that record_route_url is a SIP/SIPS URL and (at least) warn if it does not have
-		    %% 'lr' parameter
-		    %%
-		    case check_loadable(NewCfg, Definitions, Mode) of
+		    case check_config_dependencys(NewCfg) of
 			ok ->
-			    {ok, NewCfg};
+			    case check_application_specific(AppModule, NewCfg) of
+				ok ->
+				    case check_loadable(NewCfg, Definitions, Mode) of
+					ok ->
+					    {ok, NewCfg};
+					{error, Msg} when is_list(Msg) ->
+					    {error, Msg}
+				    end;
+				{error, Msg} when is_list(Msg) ->
+				    {error, Msg}
+			    end;
 			{error, Msg} when is_list(Msg) ->
 			    {error, Msg}
 		    end;
@@ -555,6 +551,53 @@ check_required2([], _Entrys) ->
     ok.
 
 %%--------------------------------------------------------------------
+%% Function: check_config_dependencys(Cfg)
+%%           Cfg = yxa_cfg record()
+%% Descrip.: Check parameters that depend on other parameters.
+%% Returns : ok | {error, Msg}
+%%           Msg = string()
+%%--------------------------------------------------------------------
+check_config_dependencys(Cfg) when is_record(Cfg, yxa_cfg) ->
+    %% XXX check dependant configuration parameters too!
+    %%
+    %% sipuserdb_file_filename is required if userdb_modules contains sipuserdb_file
+    %%
+    %% ssl_server_ssloptions should not contain {certfile, File} if ssl_server_certfile is set
+    %%
+    %% ssl_client_ssloptions should not contain {certfile, File} if ssl_client_certfile is set
+    %%
+    %% check that sipuserdb_mysql_{host, user, password, database} is set if userdb_modules
+    %% contains sipuserdb_mysql
+    %%
+    %% check that record_route_url is a SIP/SIPS URL and (at least) warn if it does not have
+    %% 'lr' parameter
+    %%
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: check_application_specific(AppModule, Cfg)
+%%           AppModule = atom(), Yxa application module
+%%           Cfg       = yxa_cfg record()
+%% Descrip.: Check parameters that are application specific.
+%% Returns : ok | {error, Msg}
+%%           Msg = string()
+%%--------------------------------------------------------------------
+
+check_application_specific(AppModule, Cfg) when is_atom(AppModule), is_record(Cfg, yxa_cfg) ->
+    check_application_specific2(AppModule, Cfg#yxa_cfg.entrys).
+
+%% appserver requires loop detection, since it forks. draft-ietf-sip-fork-loop-fix-01.
+check_application_specific2(appserver, [{detect_loops, true, _Source} | T]) ->
+    check_application_specific2(appserver, T);
+check_application_specific2(appserver, [{detect_loops, false, _Source} | _T]) ->
+    {error, "Appserver must have detect_loops set to 'true'"};
+check_application_specific2(appserver, [{_Key, _Value, _Source} | T]) ->
+    check_application_specific2(appserver, T);
+
+check_application_specific2(_AppModule, _L) ->
+    ok.
+
+%%--------------------------------------------------------------------
 %% Function: check_loadable(Cfg, Definitions, Mode)
 %%           Cfg         = yxa_cfg record()
 %%           Definitions = list() of cfg_entry record()
@@ -909,6 +952,22 @@ test() ->
 	throw: {error, "Config check: definition missing in check_loadable_soft, should not happen!"} ->
 	    ok
     end,
+
+    %% check_application_specific(AppModule, Cfg)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "check_application_specific/2 - 1"),
+    CAS_Cfg1 = #yxa_cfg{entrys = [{1, true, test},
+				  {detect_loops, true, test},
+				  {2, true, test}
+				 ]
+		       },
+    ok = check_application_specific(appserver, CAS_Cfg1),
+
+    CAS_Cfg2 = #yxa_cfg{entrys = [{1, true, test},
+				  {detect_loops, false, test}
+				 ]
+		       },
+    {error, "Appserver must have" ++ _} = check_application_specific(appserver, CAS_Cfg2),
 
     ok.
 
