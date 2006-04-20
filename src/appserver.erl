@@ -27,14 +27,6 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
--record(state, {
-	  request,
-	  sipmethod,
-	  callhandler,
-	  forkpid,
-	  cancelled,
-	  completed
-	 }).
 
 %%--------------------------------------------------------------------
 %% Macros
@@ -62,7 +54,7 @@
 %%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 init() ->
-    [[user, numbers, phone, cpl_script_graph], stateful, none].
+    [[user, numbers, phone, cpl_script_graph, gruu], stateful, none].
 
 
 
