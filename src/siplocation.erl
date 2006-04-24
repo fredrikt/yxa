@@ -808,7 +808,9 @@ process_non_wildcard_contacts2(RegReq, [Contact | T]) ->
 	    %% User has exactly one binding in the location database matching this one, do some checking
 	    check_same_call_id(RegReq, Contact, DBLocation)
     end,
-    process_non_wildcard_contacts2(RegReq, T);
+    %% Remove any entrys byte-by-byte identical to Contact from T
+    NewT = T -- [Contact],
+    process_non_wildcard_contacts2(RegReq, NewT);
 process_non_wildcard_contacts2(_RegReq, []) ->
     ok.
 
@@ -2147,7 +2149,7 @@ test_mnesia_dependant_functions() ->
                      ]}} = process_updates(PU_RegReq29, PU_Contacts28),
 
 
-    %% and test non-Outbound client registering when there are Outbound entrys involved -
+    %% XXX and test non-Outbound client registering when there are Outbound entrys involved -
     %% can't have same Contact URI as the Outbound registrations though. Bug in draft? Naah.
 
 
@@ -2204,6 +2206,8 @@ test_mnesia_dependant_functions() ->
     false = lists:keysearch(reg_id, 1, PU_Contacts31_Loc#siplocationdb_e.flags),
     false = lists:keysearch(socket_id, 1, PU_Contacts31_Loc#siplocationdb_e.flags),
 
+    %% clean up
+    phone:delete_phone_for_user(TestUser2, dynamic),
 
 
 
@@ -2212,17 +2216,35 @@ test_mnesia_dependant_functions() ->
     autotest:mark(?LINE, "process_updates/2 - 50"),
     %% test wildcard with invalid expires, actually testing that siperrors thrown deep
     %% down are handled correctly (we've had bugs in that handling, turning 400 into 500)
-    
+
     PU_Contacts50 = contact:parse(["*"]),
     PU_Header50_1 = keylist:set("CSeq", ["5001 REGISTER"], PU_RegReq1#reg_request.header),
     PU_Header50 = keylist:set("Expires", ["1"], PU_Header50_1),
-    PU_RegReq50 = PU_RegReq1#reg_request{header		= PU_Header50
-					% socket		= #sipsocket{id = "PU_test50_socketid"},
-					% sipuser	= TestUser2
+    PU_RegReq50 = PU_RegReq1#reg_request{header	= PU_Header50
 					},
     {siperror, 400, "Wildcard with non-zero contact expires parameter"} =
 	process_updates(PU_RegReq50, PU_Contacts50),
-    
+
+    autotest:mark(?LINE, "process_updates/2 - 51"),
+    %% Test REGISTER with multiple identical contacs to make sure we don't fail because the
+    %% second one has same Call-Id and CSeq as the first one. Corner case not covered by
+    %% RFC3261, but actually happened (because of bug in other implementation) at SIPit 18.
+    PU_Contact51Str = "<sip:user@example.net>",
+    PU_Contacts51 = contact:parse([PU_Contact51Str, PU_Contact51Str]),
+    PU_Header51_1 = keylist:set("CSeq", ["5101 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_Header51 = keylist:set("Expires", ["20"], PU_Header51_1),
+    PU_RegReq51 = PU_RegReq1#reg_request{header	 = PU_Header51,
+					 sipuser = TestUser2
+					},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts51_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq51, PU_Contacts51),
+
+    autotest:mark(?LINE, "process_updates/2 - 51.1"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(15, 20, [PU_Contact51Str], PU_Contacts51_CRes),
+
     mnesia:abort(ok).
 
 
@@ -2259,3 +2281,7 @@ test_verify_contacts2(ExpiresMin, ExpiresMax, [ExpectH | ExpectT], [GotH | GotT]
     end;
 test_verify_contacts2(_ExpiresMin, _ExpiresMax, [], []) ->
     ok.
+
+
+%% XXX make test case where we register the _same requristr_ from two different proxys.
+%% Might happen with outbound.
