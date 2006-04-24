@@ -580,7 +580,9 @@ process_register_wildcard_isauth(RegReq, Contacts) ->
 		    {siperror, 500, "Server Internal Error"}
 	    end;
 	false ->
-	    none
+	    none;
+	SipError when is_tuple(SipError), element(1, SipError) == siperror ->
+	    SipError
     end.
 
 %% return = ok       | wildcard processed
@@ -613,9 +615,11 @@ unregister(LogTag, Header, PhoneEntrys) ->
 %%           Contacts    = list() of contact record()
 %% Descrip.: determine if request is a properly formed wildcard
 %%           request (see RFC 3261 Chapter 10 page 64 - step 6)
-%% Returns : true     |
-%%           false    |
-%%           throw({siperror, ...})
+%% Returns : true            |
+%%           false           |
+%%           {siperror, Status, Reason}
+%%           Status = integer(), SIP status code
+%%           Reason = string(), SIP reason phrase
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% there is only one Contact and it's a wildcard
 is_valid_wildcard_request(Header, [ #contact{urlstr = "*"} ]) ->
@@ -2205,7 +2209,20 @@ test_mnesia_dependant_functions() ->
 
     %% END Outbound TESTS
 
-
+    autotest:mark(?LINE, "process_updates/2 - 50"),
+    %% test wildcard with invalid expires, actually testing that siperrors thrown deep
+    %% down are handled correctly (we've had bugs in that handling, turning 400 into 500)
+    
+    PU_Contacts50 = contact:parse(["*"]),
+    PU_Header50_1 = keylist:set("CSeq", ["5001 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_Header50 = keylist:set("Expires", ["1"], PU_Header50_1),
+    PU_RegReq50 = PU_RegReq1#reg_request{header		= PU_Header50
+					% socket		= #sipsocket{id = "PU_test50_socketid"},
+					% sipuser	= TestUser2
+					},
+    {siperror, 400, "Wildcard with non-zero contact expires parameter"} =
+	process_updates(PU_RegReq50, PU_Contacts50),
+    
     mnesia:abort(ok).
 
 
