@@ -39,6 +39,8 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
+-define(DEFAULT_SOCKET_EXPIRE, 300).
+
 
 %%====================================================================
 %% External functions
@@ -46,8 +48,8 @@
 
 %%--------------------------------------------------------------------
 %% Function: add(Id, Pid, Proto, Local, Remote, SipSocket, SocketList)
-%%           Id         = {listener, Proto, Port} |
-%%                        {from, Proto, Remote}   |
+%%           Id         = {listener, Proto, IP, Port} |
+%%                        {from, Proto, Remote}       |
 %%                        {to, Proto, Remote}
 %%                        Proto = atom(), tcp|tcp6|udp|udp6|tls|tls6
 %%                        Remote = {IP, Port}
@@ -70,27 +72,41 @@
 %%           NewSocketList = socketlist record()
 %%           Reason        = string()
 %%--------------------------------------------------------------------
-add(Id, Pid, Proto, {_LIP, _LPort}=Local, Remote, SipSocket, SocketList)
+add(Id, Pid, Proto, {_LIP, _LPort} = Local, Remote, SipSocket, SocketList)
   when is_pid(Pid), is_atom(Proto), is_record(SipSocket, sipsocket), is_record(SocketList, socketlist) ->
-    %% Add without expire, use default of Now + 300 seconds
-    Now = util:timestamp(),
-    add(Id, Pid, Proto, {_LIP, _LPort}=Local, Remote, SipSocket, Now + 300, SocketList).
+    %% Add without expire, use default of Now + DEFAULT_SOCKET_EXPIRE seconds
+    Expire = util:timestamp() + ?DEFAULT_SOCKET_EXPIRE,
+    add(Id, Pid, Proto, Local, Remote, SipSocket, Expire, SocketList).
 
-add({Type, _, _}=Id, Pid, Proto, Local, Remote, SipSocket, Expire, SocketList)
+add(Id, Pid, Proto, Local, Remote, SipSocket, Expire, SocketList)
   when is_pid(Pid), is_atom(Proto), is_record(SipSocket, sipsocket), is_integer(Expire),
-       is_record(SocketList, socketlist), Type == listener; Type == from; Type == to ->
+       is_record(SocketList, socketlist),
+       element(1, Id) == listener; element(1, Id) == from; element(1, Id) == to ->
     case get_using_id(Id, SocketList) of
 	[] ->
-	    NewElem = #socketlistelem{ref=make_ref(), id=Id, pid=Pid, proto=Proto, local=Local,
-				      remote=Remote, sipsocket=SipSocket, expire=Expire},
-	    #socketlist{list=lists:append(SocketList#socketlist.list, [NewElem])};
+	    NewElem = #socketlistelem{ref	= make_ref(),
+				      id	= Id,
+				      pid	= Pid,
+				      proto	= Proto,
+				      local	= Local,
+				      remote	= Remote,
+				      sipsocket	= SipSocket,
+				      expire	= Expire
+				     },
+	    #socketlist{list = lists:append(SocketList#socketlist.list, [NewElem])};
 	Elem when is_record(Elem, socketlistelem), Elem#socketlistelem.pid == Pid ->
 	    %% delete and add to get fresh expires
 	    SList1 = delete_using_ref(Elem#socketlistelem.ref, SocketList),
 	    %% XXX should we keep old ref perhaps?
-	    NewElem = #socketlistelem{ref=make_ref(), id=Id, pid=Pid, local=Local,
-				      remote=Remote, sipsocket=SipSocket, expire=Expire},
-	    #socketlist{list=lists:append(SList1#socketlist.list, [NewElem])};
+	    NewElem = #socketlistelem{ref	= make_ref(),
+				      id	= Id,
+				      pid	= Pid,
+				      local	= Local,
+				      remote	= Remote,
+				      sipsocket	= SipSocket,
+				      expire	= Expire
+				     },
+	    #socketlist{list = lists:append(SList1#socketlist.list, [NewElem])};
 	Elem when is_record(Elem, socketlistelem) ->
 	    [StoredPid] = extract([pid], Elem),
 	    logger:log(debug, "socketlist: Asked to add duplicate Id ~p (to OTHER pid, "
@@ -104,7 +120,7 @@ add({Type, _, _}=Id, Pid, Proto, Local, Remote, SipSocket, Expire, SocketList)
 %% Returns : SocketList = socketlist record()
 %%--------------------------------------------------------------------
 empty() ->
-    #socketlist{list=[]}.
+    #socketlist{list = []}.
 
 %%--------------------------------------------------------------------
 %% Function: extract(Fields, SListElem)

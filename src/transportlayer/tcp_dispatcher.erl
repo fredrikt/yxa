@@ -166,7 +166,7 @@ format_listener_specs([{Proto, IP, Port} | T], Res)
   when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp6; Proto == tls6 ->
     case yxa_config:get_env(enable_v6) of
 	{ok, true} ->
-	    Id = {listener, Proto, Port},
+	    Id = {listener, Proto, IP, Port},
 	    {ok, IPt} = inet_parse:ipv6_address(IP),
 	    MFA = {tcp_listener, start_link, [IPt, Proto, Port]},
 	    Spec = {Id, MFA, permanent, brutal_kill, worker, [tcp_listener]},
@@ -176,7 +176,7 @@ format_listener_specs([{Proto, IP, Port} | T], Res)
     end;
 format_listener_specs([{Proto, IP, Port} | T], Res)
   when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp; Proto == tls ->
-    Id = {listener, Proto, Port},
+    Id = {listener, Proto, IP, Port},
     {ok, IPt} = inet_parse:ipv4_address(IP),
     MFA = {tcp_listener, start_link, [IPt, Proto, Port]},
     Spec = {Id, MFA, permanent, brutal_kill, worker, [tcp_listener]},
@@ -282,8 +282,8 @@ handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Ty
     Proto = SipSocket#sipsocket.proto,
     Ident = case Type of
 		listener ->
-		    {_IP, Port} = Local,
-		    {listener, Proto, Port};
+		    {IP, Port} = Local,
+		    {listener, Proto, IP, Port};
 		in ->
 		    {from, Proto, Remote};
 		out ->
