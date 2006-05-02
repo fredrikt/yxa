@@ -26,6 +26,7 @@
 	 %% dialog record users helper functions
 	 create_dialog_state_uac/2,
 	 create_dialog_state_uas/2,
+	 create_dialog_state_uas/3,
 
 	 update_dialog_recv_request/2,
 
@@ -212,7 +213,7 @@ get_dialog_controller2(CallId, LocalTag, RemoteTag) when is_list(CallId), is_lis
     case ets:lookup(?ETS_DIALOG_TABLE, Id) of
 	[{Id, #dialog_attrs{pid = Pid}}] ->
 	    logger:log(debug, "Sipdialog: Extra debug: Found dialog controller ~p for dialog ~p",
-		       [Id, Pid]),
+		       [Pid, Id]),
 	    {ok, Pid};
 	_ ->
 	    HalfId = Id#dialogid{remote_tag = undefined},
@@ -443,8 +444,12 @@ create_dialog_state_uac(Request, Response) when is_record(Request, request), is_
 
 %%--------------------------------------------------------------------
 %% Function: create_dialog_state_uas(Request, Response)
+%%           create_dialog_state_uas(Request, ResponseToTag,
+%%                                   ResponseContact)
 %%           Request  = request record()
 %%           Response = response record()
+%%           ResponseToTag = string(), To-tag of server transcation
+%%           ResponseContact = string(), Contact that will be used
 %% Descrip.: Call this when a local UAS prepares to answer a request
 %%           and thereby establishes a dialog, if you want a dialog
 %%           record() with all the information about the dialog filled
@@ -455,12 +460,23 @@ create_dialog_state_uac(Request, Response) when is_record(Request, request), is_
 %%           RFC3261 #12.1.1 (UAS behavior).
 %%--------------------------------------------------------------------
 create_dialog_state_uas(Request, Response) when is_record(Request, request), is_record(Response, response) ->
+    [ResponseContact] = keylist:fetch('contact', Response#response.header),
+    ResponseToTag =
+	case sipheader:get_tag(keylist:fetch('to', Response#response.header)) of
+	    none ->
+		throw({error, "No To: tag in response"});
+	    ToTag1 ->
+		ToTag1
+	end,
+    create_dialog_state_uas(Request, ResponseToTag, ResponseContact).
+
+create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
+  when is_record(Request, request), is_list(ResponseToTag), is_list(ResponseContact) ->
     Header = Request#request.header,
 
     %% If the request arrived over TLS, and the Request-URI contained a SIPS
     %% URI, the "secure" flag is set to TRUE.
-    ResponseContact = keylist:fetch('contact', Response#response.header),
-    Secure = create_dialog_state_uas_is_secure(Request, ResponseContact),
+    Secure = create_dialog_state_uas_is_secure(Request, [ResponseContact]),
 
     %% The route set MUST be set to the list of URIs in the Record-Route
     %% header field from the request, taken in order and preserving all URI
@@ -488,13 +504,7 @@ create_dialog_state_uas(Request, Response) when is_record(Request, request), is_
 
     %% The local tag component of the dialog ID MUST be set to the tag in the To field
     %% in the response to the request (which always includes a tag)
-    LocalTag =
-	case sipheader:get_tag(keylist:fetch('to', Response#response.header)) of
-	    none ->
-		throw({error, "No To: tag in response"});
-	    ToTag1 ->
-		ToTag1
-	end,
+    LocalTag = ResponseToTag,
 
     %% the remote tag component of the dialog ID MUST be set to the tag from the
     %% From field in the request
