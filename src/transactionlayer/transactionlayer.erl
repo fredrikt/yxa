@@ -330,8 +330,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%           in the transactionlayer. This is to achieve better
 %%           concurrency by not doing alot of work in the
 %%           transactionlayer process.
-%% Returns : {pass_to_core, AppModule} |
+%% Returns : {pass_to_core, AppModule, STPid} |
 %%           continue
+%%           STPid = pid() | undefined
 %%
 %% Notes   :
 %%           Meaning of Reply :
@@ -362,7 +363,7 @@ code_change(_OldVsn, State, _Extra) ->
 received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, AppModule) ->
     logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
 	       [sipurl:print(Request#request.uri)]),
-    {pass_to_core, AppModule};
+    {pass_to_core, AppModule, undefined};
 
 received_new_request(Request, Socket, LogStr, AppModule) when is_record(Request, request) ->
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
@@ -373,7 +374,7 @@ received_new_request(Request, Socket, LogStr, AppModule) when is_record(Request,
 		true ->
 		    logger:log(debug, "Transaction layer: Telling SIP message handler to start this applications "
 			       "request function."),
-		    {pass_to_core, AppModule};
+		    {pass_to_core, AppModule, STPid};
 		false ->
 		    continue
 	    end;
@@ -971,35 +972,16 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 	none ->
 	    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
 	    case received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule) of
-		{pass_to_core, NewAppModule} ->
+		{pass_to_core, NewAppModule, STPid} ->
 		    case get_dialog_handler(Request) of
 			nomatch ->
 			    {pass_to_core, NewAppModule};
 			DCPid when is_pid(DCPid) ->
-			    logger:log(debug, "Transaction layer: Passing request to dialog controller ~p", [DCPid]),
-			    case is_process_alive(DCPid) of
-				true ->
-				    Ref = make_ref(),
-				    DCPid ! {new_request, self(), Ref, Request, Origin, LogStr},
-				    receive
-					{ok, DCPid, Ref} ->
-					    ok
-				    after
-					5 * 1000 ->
-					    logger:log(error, "Transaction layer: Dialog handler ~p alive, but not responding "
-						       "- throwing '500 Server Internal Error'", [DCPid]),
-					    throw({siperror, 500, "Server Internal Error"})
-				    end;
-				false ->
-				    THandler = get_handler_for_request(Request),
-				    logger:log(error, "Transaction layer: Dialog handler pid ~p not alive, answering "
-					       "'481 Call/Transaction Does Not Exist'", [DCPid]),
-				    send_response_handler(THandler, 481, "Call/Transaction Does Not Exist")
-			    end,
+			    pass_to_dialog_controller(DCPid, STPid, Request, Origin, LogStr),
 			    continue
 		    end;
-		Res ->
-		    Res
+		continue ->
+		    continue
 	    end;
 	STPid when is_pid(STPid) ->
 	    gen_server:cast(STPid, {siprequest, Request, Origin}),
@@ -1066,6 +1048,44 @@ from_transportlayer_response_no_transaction("INVITE", Response, Origin, LogStr) 
 			       [DCPid, Status, Reason])
 	    end,
 	    continue
+    end.
+
+%% part of from_transportlayer (request).
+%% Returns : void()
+pass_to_dialog_controller(DCPid, STPid, Request, Origin, LogStr) when is_record(Request, request) ->
+    logger:log(debug, "Transaction layer: Passing request to dialog controller ~p", [DCPid]),
+    case is_process_alive(DCPid) of
+	true ->
+	    Ref = make_ref(),
+	    %% create a link bridge between server transaction and dialog controller
+	    %% while we are in the process of turning the server transaction ownership
+	    %% over to the dialog controller
+	    true = link(DCPid),
+	    DCPid ! {new_request, self(), Ref, Request, Origin, LogStr},
+	    receive
+		{ok, DCPid, Ref} ->
+		    %% If a server transaction has been started for this request, change it's
+		    %% parent from this process to the dialog controller. Server transactions
+		    %% are not started for ACKs since they are not real requests.
+		    case is_pid(STPid) of
+			true -> ok = gen_server:call(STPid, {change_parent, self(), DCPid});
+			false -> ok
+		    end,
+		    true = unlink(DCPid),
+		    logger:log(debug, "Transaction layer: Terminating after having turned over "
+			       "server transaction ~p to dialog controller ~p", [STPid, DCPid]),
+		    ok
+	    after
+		5 * 1000 ->
+		    logger:log(error, "Transaction layer: Dialog handler ~p alive, but not "
+			       "responding - throwing '500 Server Internal Error'", [DCPid]),
+		    throw({siperror, 500, "Server Internal Error"})
+	    end;
+	false ->
+	    THandler = get_handler_for_request(Request),
+	    logger:log(error, "Transaction layer: Dialog handler pid ~p not alive, answering "
+		       "'481 Call/Transaction Does Not Exist'", [DCPid]),
+	    send_response_handler(THandler, 481, "Call/Transaction Does Not Exist")
     end.
 
 %%--------------------------------------------------------------------
