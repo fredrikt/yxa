@@ -21,6 +21,7 @@
 	 delete_using_pid/1,
 	 delete_dialog_controller/3,
 	 handle_expired_dialogs/1,
+	 set_dialog_expires/4,
 
 	 %% dialog record users helper functions
 	 create_dialog_state_uac/2,
@@ -300,6 +301,47 @@ handle_expired_dialogs2(Interval, Entrys) when is_integer(Interval), is_list(Ent
 	end,
     [F(X) || X <- Entrys],
     ok.
+
+%%--------------------------------------------------------------------
+%% Function: set_dialog_expires(CallId, LocalTag, RemoteTag, Expires)
+%%           CallId    = string()
+%%           LocalTag  = string()
+%%           RemoteTag = string() | undefined
+%%           Expires   = integer()
+%% Descrip.: Set a new expiration time on an existing dialog.
+%% Returns : ok | nomatch
+%%--------------------------------------------------------------------
+set_dialog_expires(CallId, LocalTag, RemoteTag, Expires) when is_list(CallId), is_list(LocalTag),
+							      is_list(RemoteTag); RemoteTag == undefined,
+							      is_integer(Expires) ->
+    Id = #dialogid{callid     = CallId,
+		   local_tag  = LocalTag,
+		   remote_tag = RemoteTag
+		  },
+
+    Now = util:timestamp(),
+    NewExpires = Now + Expires,
+
+    case ets:lookup(?ETS_DIALOG_TABLE, Id) of
+	[{Id, DialogAttrs}] when is_record(DialogAttrs, dialog_attrs) ->
+	    logger:log(debug, "Sipdialog: Setting new 'expires' on dialog ~p (expire in ~p seconds)",
+		       [Id, Expires]),
+	    true = ets:insert(?ETS_DIALOG_TABLE, {Id, DialogAttrs#dialog_attrs{expires = NewExpires}}),
+	    ok;
+	_ ->
+	    HalfId = Id#dialogid{remote_tag = undefined},
+	    case ets:lookup(?ETS_DIALOG_TABLE, HalfId) of
+		[{HalfId, DialogAttrs}] ->
+		    logger:log(debug, "Sipdialog: Setting new 'expires' on half dialog ~p (expire in ~p seconds)",
+			       [HalfId, Expires]),
+		    true = ets:insert(?ETS_DIALOG_TABLE, {HalfId, DialogAttrs#dialog_attrs{expires = NewExpires}}),
+		    ok;
+		_ ->
+		    logger:log(debug, "Sipdialog: Extra debug: Found NO dialog controller for dialog ~p",
+			       [Id]),
+		    nomatch
+	    end
+    end.
 
 
 %%--------------------------------------------------------------------
