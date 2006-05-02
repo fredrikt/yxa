@@ -359,7 +359,7 @@ foreach $name (keys %standard_tests) {
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
 
     my $branch = 'z9hG4bK-yxa-testclient-' . md5_hex ($CallID);
-    my $fromtag = ';tag=ft-' . substr (md5_hex ("ft-${CallID}"), 1, 8); 
+    my $fromtag = ';tag=ft-' . substr (md5_hex ("ft-${CallID}"), 1, 8);
 
     if ($standard_tests{$name}{branch} =~ /.*2543$/ or
 	$rfc3261_branch eq 'no') {
@@ -423,7 +423,7 @@ foreach $name (keys %local_tests) {
     my $CallID = "time${callid_starttime}-pid$$-seq${callid_seq}\@$hostname";
 
     my $branch = 'z9hG4bK-yxa-testclient-' . md5_hex ($CallID);
-    my $fromtag = ';tag=ft-' . substr (md5_hex ("ft-${CallID}"), 1, 8); 
+    my $fromtag = ';tag=ft-' . substr (md5_hex ("ft-${CallID}"), 1, 8);
 
     if ($local_tests{$name}{branch} =~ /.*2543$/ or
 	$rfc3261_branch eq 'no') {
@@ -487,7 +487,7 @@ sub perform_test
 
     my $proto;
     my %testparams = %{$testparamsref};
-    
+
     my ($msg, $response, $code, $text);
 
     my $dst = $testparams{sendto} || $testserver;
@@ -527,7 +527,7 @@ sub perform_test
     my $MaxForwards = defined ($testparams{MaxForwards})?$testparams{MaxForwards}:'10';  # RFC3261 says 70 but that is not suitable for testing
     my $testheader = $testparams{Header} || '';
     my $sipuri = $testparams{RequestURI} || parse_sipurl ($To) or warn ("Could not create a Request URI!\n"), return 0;
-    my $body = $testparams{Body};
+    my $body = $testparams{Body} || '';
 
     my $proxyauthheader = '';
     if ($authrequestresponse) {
@@ -571,8 +571,7 @@ sub perform_test
 
     $my_via .= ";branch=$branch" if ($branch);
     my $content_length = length($body);
-    my $msgbody = "";
-    $msgbody = "\r\n$body" if ($content_length);
+    my $msgbody = "$body";
 
     $msg = "$Method $sipuri SIP/2.0
 Via: ${my_via}
