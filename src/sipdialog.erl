@@ -508,8 +508,9 @@ create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
 
     %% the remote tag component of the dialog ID MUST be set to the tag from the
     %% From field in the request
+    From = keylist:fetch('from', Header),
     RemoteTag =
-	case sipheader:get_tag(keylist:fetch('from', Header)) of
+	case sipheader:get_tag(From) of
 	    none ->
 		%% A UAS MUST be prepared to receive a request without a tag in the
 		%% From field, in which case the tag is considered to have a value of null.
@@ -538,7 +539,9 @@ create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
 		remote_target = RemoteTarget,
 		secure        = Secure,
 		route_set     = Route,
-		state         = undefined	%% XXX figure out dialog state here?
+		state         = undefined,	%% XXX figure out dialog state here?
+
+		remote_uri_str	= From		%% In the name of interoperability
 	       },
 
     {ok, Dialog}.

@@ -158,6 +158,10 @@
 		 local_uri,			%% string(), URI from From: or To: header
 		 remote_uri,			%% string(), URI from From: or To: header
 		 remote_target,			%% string(), URI from Contact: header
-		 state				%% early | confirmed
+		 state,				%% early | confirmed
+
+		 remote_uri_str			%% undefined | string(), the exact From: header value
+		 				%% of the request we received that initiated the dialog -
+						%% needed when speaking to non-RFC-compliant clients
 		}).
 
