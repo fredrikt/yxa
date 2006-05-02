@@ -527,6 +527,7 @@ sub perform_test
     my $MaxForwards = defined ($testparams{MaxForwards})?$testparams{MaxForwards}:'10';  # RFC3261 says 70 but that is not suitable for testing
     my $testheader = $testparams{Header} || '';
     my $sipuri = $testparams{RequestURI} || parse_sipurl ($To) or warn ("Could not create a Request URI!\n"), return 0;
+    my $body = $testparams{Body};
 
     my $proxyauthheader = '';
     if ($authrequestresponse) {
@@ -569,6 +570,9 @@ sub perform_test
     my $my_via = "SIP/2.0/$proto $hostname:$localport";
 
     $my_via .= ";branch=$branch" if ($branch);
+    my $content_length = length($body);
+    my $msgbody = "";
+    $msgbody = "\r\n$body" if ($content_length);
 
     $msg = "$Method $sipuri SIP/2.0
 Via: ${my_via}
@@ -577,22 +581,21 @@ To: $To
 Call-ID: $CallID
 CSeq: $CSeq $CSeqMethod
 Contact: $Contact
-Content-Length: 0
+Content-Length: $content_length
 Max-Forwards: $MaxForwards
 User-Agent: testclient.pl
-$testheader$proxyauthheader
-";
+$testheader$proxyauthheader";
 
     warn ("  Retrying with authentication :\n") if ($authrequestresponse);
     warn ("---\nTest '$testname' (send to $dst) :\n") if (! $authrequestresponse);
 
     warn ("	SEND: $Method $sipuri\n") if ($quiet);
-    send_message ($Socket, $use_udp, $testname, $msg, $dst, $quiet) or close ($Socket), return 0;
+    send_message ($Socket, $use_udp, $testname, $msg, $msgbody, $dst, $quiet) or close ($Socket), return 0;
     if ($testparams{cancel_immediately} and $Method eq 'INVITE') {
 	my $msg2 = $msg;
 	$msg2 =~ s/^INVITE /CANCEL /o;
 	$msg2 =~ s/^CSeq: $CSeq INVITE$/CSeq: $CSeq CANCEL/m;
-	send_message ($Socket, $use_udp, $testname, $msg2, $dst, $quiet) or close ($Socket), return 0;
+	send_message ($Socket, $use_udp, $testname, $msg2, "", $dst, $quiet) or close ($Socket), return 0;
     }
 
     $response = read_response ($Socket, $use_udp, $testname, $CallID, $quiet) or close ($Socket), return 0;
@@ -702,7 +705,7 @@ sub send_ack
 		    "User-Agent: testclient.pl",
 		    $extra_headers);
 
-    send_message($Socket, $is_udp, $testname, $ack, $dst, $quiet);
+    send_message($Socket, $is_udp, $testname, $ack, "", $dst, $quiet);
 }
 
 sub send_message
@@ -711,6 +714,7 @@ sub send_message
     my $is_udp = shift;
     my $testname = shift;
     my $msg_in = shift;
+    my $body_in = shift;
     my $dst_in = shift;
     my $quiet = shift;
 
@@ -718,7 +722,7 @@ sub send_message
 
     my ($sendto, $sendto_ip, $sendto_port) = resolve_destination ($dst_in);
 
-    my $msg = join("\r\n", split("\n", $msg_in)) . "\r\n\r\n";
+    my $msg = join("\r\n", split("\n", $msg_in)) . "\r\n\r\n" . $body_in;
 
     if ($is_udp) {
 	my $dst = sockaddr_in($sendto_port, inet_aton($sendto_ip));
