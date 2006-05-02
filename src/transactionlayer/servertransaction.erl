@@ -307,6 +307,14 @@ handle_call({set_report_to, Pid}, From, #state{report_to=undefined}=State) when 
 	end,
     check_quit(Reply, From);
 
+handle_call({change_parent, FromPid, ToPid}, From, #state{parent = FromPid} = State) when is_pid(ToPid) ->
+    LogTag = State#state.logtag,
+    logger:log(debug, "~s: Changing parent from ~p to ~p", [LogTag, FromPid, ToPid]),
+    true = link(ToPid),
+    true = unlink(FromPid),
+    Reply = {reply, ok, State#state{parent = ToPid}, ?TIMEOUT},
+    check_quit(Reply, From);
+
 %%--------------------------------------------------------------------
 %% Function: handle_call(get_my_to_tag, From, State)
 %% Descrip.: Return our To-tag. Functionality required for making
@@ -544,13 +552,15 @@ handle_info(timeout, State) ->
     case State#state.report_to of
 	Parent -> ok;
 	ReportTo when is_pid(ReportTo) ->
-	    (catch exit(ReportTo, servertransaction_timed_out))
+	    (catch exit(ReportTo, servertransaction_timed_out));
+	undefined ->
+	    ok
     end,
 
     case (Method == "INVITE") of
 	true ->
 	    %% Generate a '500 Server Internal Error' for INVITE transactions
-	    logger:log(error, "~s: non-INVITE server transaction timed out (after ~ps of inactivity), "
+	    logger:log(error, "~s: INVITE server transaction timed out (after ~ps of inactivity), "
 		       "answering '500 Server Internal Error'", [LogTag, ?TIMEOUT div 1000]),
 	    SendResponse = make_response(500, "Server Internal Error", <<>>, [], [], State),
 	    {ok, NewState} = do_response(created, SendResponse, State),
