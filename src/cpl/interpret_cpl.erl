@@ -929,7 +929,7 @@ cpl_locations_to_call_action2([#location{ldbe = LDBE} = H | _] = Locations, Time
 		     instance = Instance
 		    } = LDBE,
     {FirstSPA, SurplusSPA, RestLocations} = process_instance(Instance, User, Timeout, Locations),
-    NewActions = [FirstSPA | Actions],
+    NewActions = FirstSPA ++ Actions,
     NewSurplus = [SurplusSPA | Surplus],
     cpl_locations_to_call_action2(RestLocations -- [H], Timeout, User, NewActions, NewSurplus);
 %% entry NOT from location database
@@ -948,8 +948,9 @@ cpl_locations_to_call_action2([], _Timeout, _User, Actions, Surplus) ->
 
 
 %% Returns: {First, Surplus, Rest}
-%%          First   = sipproxy_action record(), 'call' action for the most recently registered location
-%%                    for this user and instance
+%%          First   = list() of sipproxy_action record(), 'call' action for the most recently registered location
+%%                    for this user and instance, if an instance id is present, otherwise a list of 'call'
+%%                    actions for this user
 %%          Surplus = list() of sipproxy_action record(), 'call' actions for all the other registered locations
 %%                    for this user and instance
 %%          Rest    = list() of location record(), all entrys from Locations
@@ -960,7 +961,7 @@ process_instance(Instance, User, Timeout, PrioLocations) ->
 
     %% extract the siplocatiodb_e records from the location records in SameInstance
     SameInstanceLDBE = [E1#location.ldbe || E1 <- Same],
-    {ok, [FirstSPA], SurplusSPA} = appserver:locations_to_actions(SameInstanceLDBE, Timeout),
+    {ok, FirstSPA, SurplusSPA} = appserver:locations_to_actions(SameInstanceLDBE, Timeout),
 
     {FirstSPA, SurplusSPA, Other}.
 
@@ -1078,8 +1079,17 @@ group_on_user_instance([#location{ldbe = LDBE} | T] = Locations, Res) when is_re
 	    This = appserver:location_to_call_action(LDBE, Timeout),
 	    group_on_user_instance(T, [{This, []} | Res]);
 	false ->
-	    {FirstSPA, SurplusSPA, RestLocations} = process_instance(Instance, User, Timeout, Locations),
-	    group_on_user_instance(RestLocations, [{FirstSPA, SurplusSPA} | Res])
+	    case process_instance(Instance, User, Timeout, Locations) of
+		{[FirstSPA], SurplusSPA, RestLocations} when is_record(FirstSPA, sipproxy_action) ->
+		    group_on_user_instance(RestLocations, [{FirstSPA, SurplusSPA} | Res]);
+		{FirstSPA_L, [], RestLocations} when is_list(FirstSPA_L) ->
+		    %% add a {SPA, []} tuple for each entry in FirstSPA_L to Res
+		    NewRes =
+			lists:foldl(fun(SPA, Acc) when is_record(SPA, sipproxy_action) ->
+					    [{SPA, []} | Acc]
+				    end, Res),
+		    group_on_user_instance(RestLocations, NewRes)
+	    end
     end;
 group_on_user_instance([H | T], Res) when is_record(H, location) ->
     group_on_user_instance(T, [{H, []} | Res]);

@@ -176,6 +176,10 @@ test() ->
     test32(),
     clean_up(),
 
+    autotest:mark(?LINE, "process_cpl_script/7 - 33"),
+    test33(),
+    clean_up(),
+
     ok.
 
 %% test cases that have proxy tags use put(...) to give
@@ -1706,7 +1710,7 @@ test19() ->
 		     ]}),
     put(2, success),
     Res2 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
-    %% io:format("Res1 = ~p~n",[Res2]),
+    %% io:format("Res2 = ~p~n",[Res2]),
     {proxy, _Response} = Res2.
 
 
@@ -2460,3 +2464,74 @@ test32() ->
     Res2 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res2 = ~p~n",[Res2]),
     {reject, 486} = Res2.
+
+
+
+%% test <lookup> and <proxy> with entrys in the location database both with and without instance id's
+test33() ->
+    %% create cpl graph
+    ScriptStr = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+   <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
+     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
+     xsi:schemaLocation=\"urn:ietf:params:xml:ns:cpl cpl.xsd \">
+     <incoming>
+       <lookup source=\"registration\">
+         <success>
+           <proxy/>
+         </success>
+       </lookup>
+     </incoming>
+   </cpl>",
+
+    Graph = xml_parse:cpl_script_to_graph(ScriptStr),
+    %% io:format("Graph = ~p~n", [Graph]),
+
+    %% create request
+    RequestStr1 =
+  	"INVITE sip:test@example.org SIP/2.0\r\n"
+  	"Via: SIP/2.0/TCP two.example.org\r\n"
+  	"From: \"Test Test\" <sip:test@example.org>;tag=abc\r\n"
+  	"To: <sip:to@example2.org>   \n"
+  	"via: SIP/2.0/UDP one.example.org\r\n"
+  	"\r\nbody\r\n",
+    Request1 = sippacket:parse(RequestStr1, none),
+    %% io:format("Request1 = ~p~n",[Request1]),
+    InstanceID = "instance-123-id",
+
+    %% additional process_cpl_script values
+    BranchBase = "foobar",
+    User = "no-instance",
+    Backend = test_backend,
+    STHandler = dummy_sthandler,
+    Direction = incoming,
+
+    %% io:format("1. ~n",[]),
+    %% process cpl script
+    %% do successful lookup and proxy
+    put(1, {success, [#siplocationdb_e{address	= sipurl:parse("sip:contact1@uac.example.org"),
+				       flags	= [],
+				       instance	= "",
+				       sipuser	= User
+				      },
+		      #siplocationdb_e{address	= sipurl:parse("sip:contact2@uac.example.org"),
+				       flags	= [],
+				       instance	= InstanceID,
+				       sipuser	= User
+				      },
+		      #siplocationdb_e{address	= sipurl:parse("sip:contact3@uac.example.org"),
+				       flags	= [],
+				       instance	= "",
+				       sipuser	= User
+				      },
+		      #siplocationdb_e{address	= sipurl:parse("sip:contact4@uac.example.org"),
+				       flags	= [],
+				       instance	= InstanceID,
+				       sipuser	= User
+				      }
+		     ]}),
+    %% proxy return val
+    put(2, success),
+    Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
+    %% io:format("Res1 = ~p~n",[Res1]),
+    {proxy, _Response} = Res1.
+
