@@ -220,7 +220,7 @@ get_dialog_controller2(CallId, LocalTag, RemoteTag) when is_list(CallId), is_lis
 	    case ets:lookup(?ETS_DIALOG_TABLE, HalfId) of
 		[{HalfId, #dialog_attrs{pid = Pid}}] ->
 		    logger:log(debug, "Sipdialog: Extra debug: Found dialog controller ~p for half dialog ~p",
-			       [Id, Pid]),
+			       [Pid, Id]),
 		    {ok, Pid};
 		_ ->
 		    logger:log(debug, "Sipdialog: Extra debug: Found NO dialog controller for dialog ~p",
@@ -853,17 +853,18 @@ test() ->
     CDS_UAS_Res1 = sippacket:parse(CDS_UAS_Res1Msg, none),
 
     CDC_UAS_Dialog1 =
-	#dialog{callid        = "1140081219-380326@foo",
-		local_cseq    = undefined,
-		remote_cseq   = 2,
-		local_tag     = "yxa-testtotag",
-		remote_tag    = "yxa-testfromtag",
-		secure        = true,
-		route_set     = [],
-		local_uri     = sipurl:parse("sip:ft@t.example.net"),
-		remote_uri    = sipurl:parse("sip:ft@f.example.net"),
-		remote_target = "<sips:contact@f.example.net>",
-		state         = undefined
+	#dialog{callid         = "1140081219-380326@foo",
+		local_cseq     = undefined,
+		remote_cseq    = 2,
+		local_tag      = "yxa-testtotag",
+		remote_tag     = "yxa-testfromtag",
+		secure         = true,
+		route_set      = [],
+		local_uri      = sipurl:parse("sip:ft@t.example.net"),
+		remote_uri     = sipurl:parse("sip:ft@f.example.net"),
+		remote_target  = "<sips:contact@f.example.net>",
+		state          = undefined,
+		remote_uri_str = ["<sip:ft@f.example.net>;tag=yxa-testfromtag"]
 	       },
 
     autotest:mark(?LINE, "create_dialog_state_uas/2 - 1.1"),
@@ -885,7 +886,9 @@ test() ->
     %% test without From-tag in request
     CDS_UAS_Req4 = CDS_UAS_Req1#request{header = keylist:set("From", ["<sip:ft@f.example.net>;no-tag"],
 							     CDS_UAS_Req1#request.header)},
-    CDC_UAS_Dialog4 = CDC_UAS_Dialog1#dialog{remote_tag = undefined},
+    CDC_UAS_Dialog4 = CDC_UAS_Dialog1#dialog{remote_tag = undefined,
+					     remote_uri_str = ["<sip:ft@f.example.net>;no-tag"]
+					    },
     {ok, CDC_UAS_Dialog4} = create_dialog_state_uas(CDS_UAS_Req4, CDS_UAS_Res1),
 
 
