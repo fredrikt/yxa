@@ -90,6 +90,29 @@ Installation
 
 6) Bootstrap your new installation. See "Bootstrapping" below.
 
+7) Configure the YXA applications you want to use (see "Configuration" below).
+
+8) Start the YXA applications you configured in step 7. To start an
+   incomingproxy application, execute the incomingproxy script with the
+   single argument 'start' :
+
+   $ incomingproxy start
+
+   Then check the log files for incomingproxy to see if it says
+   'proxy started'. If you haven't set logger_logbase or logger_logdir, the
+   three log files incomingproxy.debug, .log and .error will end up in your
+   current directory where you started incomingproxy from. If you run into
+   problems, and don't see anything in the logfiles (not even in the .debug
+   log file), start incomingproxy (or whichever application it is you are
+   having problems with) in the debug mode by using -d. -d implies 'start' :
+
+   $ incomingproxy -d
+
+   You will now end up in an Erlang shell 'console', or see more error
+   information hopefully telling you why your YXA application does not start.
+   To exit the console, hit Ctrl+C twice, or execute the Erlang command
+   "halt()." (without the quotes).
+
 
 Configure options special to YXA :
 
@@ -99,14 +122,15 @@ Configure options special to YXA :
 			database files. Default is "/var/yxa/db".
    --with-sslcertdir	The path to where you keep your SSL certificate
 			files (cert.comb).
-   --with-local		The suffix of local.erl-file you want. local.erl
-			is a file containing hooks for all sorts of
+   --with-local		The Erlang module to use for local customizations.
+                        This is a file containing hooks for all sorts of
 			things, making it possible to make your own
-			extensions to YXA. The default is 'default',
-			but 'su.se' and 'kth.se' local.erl's are also
-			included in the distribution.
-			Copy 'local.erl-default' to 'local.erl-your.domain'
-			and use --with-local='your.domain' if you want
+			extensions to YXA. The default is
+                        'local_default.erl', but 'local_su.erl' and
+                        'local_kth.erl' are also included in the
+                        distribution. Copy 'local_default.erl' to
+                        'local_your_domain.erl' and use
+			--with-local='local_your_domain' if you want
 			to make your own custom local.erl.
 
 ===
@@ -963,7 +987,7 @@ If you are using Linux, then you will need to
 	# echo 1 > /proc/sys/net/ipv6/bindv6only
 
 since YXA wants to use separate sockets for v6 and v4. IPv6 support has only
-been tested on Linux 2.4.x where x >= 20.
+been tested on Linux 2.4.x where x >= 20, and Linux 2.6.x where x >= 14.
 
 Note on Erlang OTP R10B-0 through R10B-6 :
 The resolver order was changed in R10B, so now Erlang primarily tries to use
