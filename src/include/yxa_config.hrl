@@ -512,6 +512,14 @@
 	   #cfg_entry{key	= experimental_outbound_enable,
 		      default	= true,
 		      type	= bool
+		     },
+	   #cfg_entry{key	= eventserver_for_package,
+		      list_of	= true,
+		      type	= term,
+		      default	= []
+		     },
+	   #cfg_entry{key	= eventserver,
+		      type	= sip_sipurl
 		     }
 	  ]},
 

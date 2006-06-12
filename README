@@ -517,6 +517,23 @@ appserver			(default: "") URL to where to send requests
 				Example: "appserver.example.com" or
 					 "sip:sipserver.example.com:5090".
 
+eventserver			(default: "") URL to where to send SUBSCRIBE
+                                and PUBLISH requests. Point this at your
+                                eventserver (another YXA application) or some
+                                other server that handles RFC3265 SIP events
+                                in your domain.
+				Example: "eventserver.example.com" or
+					 "sip:sipserver.example.com:5040".
+
+eventserver_for_package         (default: []) More fine grained control over
+                                which server should handle a specific type of
+                                events in your domain. Checked before the
+                                'eventserver' configuration parameter.
+                                Example:
+                                  [{"presence", "sip:presence.example.com"},
+                                   {"ua-config", "sip:prov.example.com"}
+                                  ]
+
 outgoingproxy:
 --------------
 

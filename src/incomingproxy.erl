@@ -375,25 +375,56 @@ request_to_homedomain(Request, Origin, LogTag, Recursing) when is_record(Request
     URLstr = sipurl:print(URL),
     logger:log(debug, "Routing: Request to homedomain, URI ~p", [URLstr]),
 
-    case local:lookupuser(URL) of
-	nomatch ->
-	    request_to_homedomain_not_sipuser(Request, Origin, LogTag, Recursing);
-        {ok, Users, none} ->
-	    logger:log(debug, "Routing: I currently have no locations for user(s) ~p, "
-		       "in the location database, answering '480 Temporarily Unavailable'",
-		       [Users]),
-	    {response, 480, "Users location currently unknown"};
-	{ok, Users, Res} when is_list(Users) ->
-	    request_to_homedomain_log_result(URLstr, Res),
+    case request_homedomain_event(Request, Origin) of
+	{forward, FwdURL} when is_record(FwdURL, sipurl) ->
+	    {forward, FwdURL};
+	false ->
+	    case local:lookupuser(URL) of
+		nomatch ->
+		    request_to_homedomain_not_sipuser(Request, Origin, LogTag, Recursing);
+		{ok, Users, none} ->
+		    logger:log(debug, "Routing: I currently have no locations for user(s) ~p, "
+			       "in the location database, answering '480 Temporarily Unavailable'",
+			       [Users]),
+		    {response, 480, "Users location currently unknown"};
+		{ok, Users, Res} when is_list(Users) ->
+		    request_to_homedomain_log_result(URLstr, Res),
 
-	    %% Generate a request_info event with some information about this request
-	    L = [{to_users, Users}],
-	    event_handler:request_info(normal, LogTag, L),
+		    %% Generate a request_info event with some information about this request
+		    L = [{to_users, Users}],
+		    event_handler:request_info(normal, LogTag, L),
 
-	    Res;
-	{ok, none, Res} ->
-	    Res
+		    Res;
+		{ok, none, Res} ->
+		    Res
+	    end
     end.
+
+request_homedomain_event(#request{method = Method} = Request, Origin) when Method == "PUBLISH";
+									   Method == "SUBSCRIBE" ->
+    case local:incomingproxy_request_homedomain_event(Request, Origin) of
+	undefined ->
+	    {ok, EventDstL} = yxa_config:get_env(eventserver_for_package),
+	    EventPackage = sipheader:event_package(Request#request.header),
+
+	    case lists:keysearch(EventPackage, 1, EventDstL) of
+		{value, {EventPackage, URL}} ->
+		    {forward, URL};
+		false ->
+		    %% use default eventserver parameter since we found no
+		    %% match for this specific EventPackage
+		    case yxa_config:get_env(eventserver) of
+			{ok, #sipurl{user = none, pass = none} = URL} ->
+			    {forward, URL};
+			none ->
+			    false
+		    end
+	    end;
+	Res ->
+	    Res
+    end;
+request_homedomain_event(_Request, _Origin) ->
+    false.
 
 request_to_homedomain_log_result(URLstr, {A, U}) when is_atom(A), is_record(U, sipurl) ->
     logger:log(debug, "Routing: lookupuser on ~p -> ~p to ~p", [URLstr, A, sipurl:print(U)]);
