@@ -186,7 +186,7 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq, Instanc
 
     case {Instance /= [], lists:keysearch(reg_id, 1, Flags)} of
 	{true, {value, {reg_id, RegId}}} when is_integer(RegId) ->
-	    insert_purge_phone_outbound(SipUser, Class, Instance, URIstr, RegId, This);
+	    insert_purge_phone_outbound(Instance, RegId, This);
 	_ ->
 	    Fun = fun() ->
 			  %% query on requristr since that is most likely unique
@@ -204,7 +204,7 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq, Instanc
     end.
 
 %% part of insert_purge_phone/8
-insert_purge_phone_outbound(SipUser, Class, Instance, URIstr, RegId, This) ->
+insert_purge_phone_outbound(Instance, RegId, This) ->
     %% do Outbound registration - meaning we delete any record with the same
     %% instance ID and reg-id this one has, not the same contact URI as we do
     %% when not doing Outbound
@@ -646,6 +646,7 @@ expired_phones() ->
 %%           database.
 %% Returns : The result of the Mnesia transaction
 %% Note    : used by remove_phones (and remove_expired_phones)
+%% XXX Redundant with delete_location/3???
 %%--------------------------------------------------------------------
 delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
     Fun = fun() ->

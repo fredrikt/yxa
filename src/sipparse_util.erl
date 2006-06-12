@@ -23,7 +23,6 @@
 	 is_token/1,
 	 is_IPv4address/1,
 	 is_IPv6reference/1,
-	 is_digit/1,
 	 is_hostname/1,
 	 str_to_float/1,
 	 str_to_qval/1,
