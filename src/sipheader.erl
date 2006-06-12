@@ -822,7 +822,7 @@ remove_branch(Via) when is_record(Via, via) ->
 %%--------------------------------------------------------------------
 %% Function: get_via_branch(TopVia)
 %% Descrip.: Get the branch from the TopVia parameters, and then
-%%           remove any Yxa loop cookie from it. This function should
+%%           remove any YXA loop cookie from it. This function should
 %%           typically only be called on a Via that matches this proxy
 %%           so that should be ok - we won't be altering anyone elses
 %%           branches.
@@ -837,8 +837,8 @@ get_via_branch(TopVia) when is_record(TopVia, via) ->
 %%--------------------------------------------------------------------
 %% Function: remove_loop_cookie(Branch)
 %%           Branch = string() | none
-%% Descrip.: Removes our special Yxa loop cookie from a branch, if it
-%%           really is an Yxa generated branch.
+%% Descrip.: Removes our special YXA loop cookie from a branch, if it
+%%           really is an YXA generated branch.
 %% Returns : Branch | NewBranch = string()
 %%--------------------------------------------------------------------
 remove_loop_cookie(Branch) ->
@@ -850,7 +850,7 @@ remove_loop_cookie(Branch) ->
 			0 ->
 			    Branch;
 			Index when is_integer(Index) ->
-			    %% Return branch without Yxa loop cookie
+			    %% Return branch without YXA loop cookie
 			    "z9hG4bK-yxa-" ++ string:substr(RestOfBranch, 1, Index - 1)
 		    end;
 		{ok, false} ->
@@ -1259,17 +1259,17 @@ test() ->
     %% test get_via_branch(TopVia)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_via_branch/1 - 1"),
-    %% test Yxa branch
+    %% test YXA branch
     [GetViaBranch_1] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-yxa-abc123-oloopcookie"]),
     "z9hG4bK-yxa-abc123" = get_via_branch(GetViaBranch_1),
 
     autotest:mark(?LINE, "get_via_branch/1 - 2"),
-    %% test Yxa branch without loop cookie
+    %% test YXA branch without loop cookie
     [GetViaBranch_2] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-yxa-abc123"]),
     "z9hG4bK-yxa-abc123" = get_via_branch(GetViaBranch_2),
 
     autotest:mark(?LINE, "get_via_branch/1 - 3"),
-    %% test non-Yxa branch
+    %% test non-YXA branch
     [GetViaBranch_3] = via(["SIP/2.0/TLS sip.example.org:5061;branch=z9hG4bK-abc123-oloopcookie"]),
     "z9hG4bK-abc123-oloopcookie" = get_via_branch(GetViaBranch_3),
 

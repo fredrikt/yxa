@@ -55,14 +55,14 @@
 
 %%--------------------------------------------------------------------
 %% Function: start(normal, [AppModule])
-%%           AppModule = atom(), name of this Yxa application
-%% Descrip.: The big start-function for the Yxa stack. Invoke this
+%%           AppModule = atom(), name of this YXA application
+%% Descrip.: The big start-function for the YXA stack. Invoke this
 %%           function to make the sun go up, and tell it the name of
-%%           your Yxa application (AppModule) to have the stack invoke
+%%           your YXA application (AppModule) to have the stack invoke
 %%           the correct init/0, request/3 and response/3 methods.
 %% Returns : {ok, Sup}              |
 %%           does not return at all
-%%           Sup = pid of the Yxa OTP supervisor (module
+%%           Sup = pid of the YXA OTP supervisor (module
 %%                 sipserver_sup)
 %%--------------------------------------------------------------------
 start(normal, [AppModule]) ->
@@ -99,7 +99,7 @@ start(normal, [AppModule]) ->
 				    ])
 		     ]),
 	    {ok, Supervisor} = sipserver_sup:start_transportlayer(Supervisor),
-	    logger:log(normal, "proxy started (Yxa version ~s)", [version:get_version()]),
+	    logger:log(normal, "proxy started (YXA version ~s)", [version:get_version()]),
 	    {ok, Supervisor};
 	Unknown ->
 	    E = lists:flatten(io_lib:format("Failed starting supervisor : ~p", [Unknown])),
@@ -127,7 +127,7 @@ restart() ->
 %%--------------------------------------------------------------------
 %% Function: init_mnesia(Tables)
 %%           Tables = list() of atom(), names of Mnesia tables needed
-%%                    by this Yxa application.
+%%                    by this YXA application.
 %% Descrip.: Initiate Mnesia on this node. If there are no remote
 %%           mnesia-tables, we conclude that we are a mnesia master
 %%           and check if any of the tables needs to be updated.
@@ -161,7 +161,7 @@ init_mnesia(Tables) when is_list(Tables) ->
 		    logger:log(error, "Startup: This application needs remote tables ~p but you "
 			       "haven't configured any databaseservers, exiting.",
 			       [RemoteTables]),
-		    throw('No databaseservers configured (Did you bootstrap Yxa? See the README file)')
+		    throw('No databaseservers configured (Did you bootstrap YXA? See the README file)')
 	    end
     end.
 
@@ -230,9 +230,9 @@ check_for_tables([H | T]) ->
 	    check_for_tables(T)
     catch
 	_E: {aborted, {no_exists, H, Type}} ->
-	    logger:log(error, "Startup problem: Mnesia table '~p' does not exist - did you bootstrap Yxa? "
+	    logger:log(error, "Startup problem: Mnesia table '~p' does not exist - did you bootstrap YXA? "
 		       "(see README file)~n", [H]),
-	    throw('Missing Mnesia table - Yxa probably not bootstrapped')
+	    throw('Missing Mnesia table - YXA probably not bootstrapped')
     end;
 check_for_tables([]) ->
     ok.
@@ -241,7 +241,7 @@ check_for_tables([]) ->
 %% Function: find_mnesia_tables(Descr, Tables)
 %%           Descr  = "local" | "remote"
 %%           Tables = list() of atom(), names of local/remote Mnesia
-%%                    tables needed by this Yxa application.
+%%                    tables needed by this YXA application.
 %% Descrip.: Do mnesia:wait_for_tables() for RemoteTables, with a
 %%           timeout since we (Stockholm university) have had
 %%           intermittent problems with mnesia startups. Try a mnesia
@@ -284,7 +284,7 @@ find_mnesia_tables2(Descr, OrigTableList, Tables, Count) ->
 
 %%--------------------------------------------------------------------
 %% Function: init_statistics()
-%% Descrip.: Create ETS tables used by Yxa.
+%% Descrip.: Create ETS tables used by YXA.
 %% Returns : ok
 %%--------------------------------------------------------------------
 init_statistics() ->
@@ -415,7 +415,7 @@ internal_error(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
 %%           Packet = string()
 %%           Origin = siporigin record()
 %%           Dst = transactionlayer | Module (always transactionlayer
-%%                                            in modern Yxa)
+%%                                            in modern YXA)
 %% Descrip.: Check if something we received from a socket (Packet) is
 %%           a valid SIP request/response by calling parse_packet() on
 %%           it. Then, use my_apply to either send it on to the

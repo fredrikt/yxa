@@ -1,6 +1,6 @@
-This is the Yxa README file. Yxa is a set of SIP servers written in Erlang.
+This is the YXA README file. YXA is a set of SIP servers written in Erlang.
 
-To install Yxa, you need to have Erlang/OTP R10B-9 installed.
+To install YXA, you need to have Erlang/OTP R10B-9 installed.
                                  ^^^^^^^^^^^^^^^^^
 
 Quick installation guide :
@@ -17,8 +17,8 @@ If you run into problems, check the archive of the yxa-devel mailing list
 and if the answer to your question is not to be found in the archives then
 subscribe to the list (necessary for posting) and ask.
 
-Yxa-devel    : https://lists.su.se/mailman/listinfo/yxa-devel
-Yxa-announce : https://lists.su.se/mailman/listinfo/yxa-announce
+YXA-devel    : https://lists.su.se/mailman/listinfo/yxa-devel
+YXA-announce : https://lists.su.se/mailman/listinfo/yxa-announce
 
 (the announce-list is moderated and only gets e-mail when there is a new
 snapshot or release available).
@@ -91,7 +91,7 @@ Installation
 6) Bootstrap your new installation. See "Bootstrapping" below.
 
 
-Configure options special to Yxa :
+Configure options special to YXA :
 
    --with-erlang	The path to your Erlang/OTP installation's
 			'bin' directory.
@@ -102,7 +102,7 @@ Configure options special to Yxa :
    --with-local		The suffix of local.erl-file you want. local.erl
 			is a file containing hooks for all sorts of
 			things, making it possible to make your own
-			extensions to Yxa. The default is 'default',
+			extensions to YXA. The default is 'default',
 			but 'su.se' and 'kth.se' local.erl's are also
 			included in the distribution.
 			Copy 'local.erl-default' to 'local.erl-your.domain'
@@ -133,7 +133,7 @@ same ~/.erlang.cookie file on all nodes. Also, if you have SSL (see SSL topic
 above) enabled on one node, you must have it enabled on all the other nodes
 as well. Distributed operation includes having the same Mnesia-tables readable
 on more than the local node, so you most probably should do this if you run
-more than one Yxa node.
+more than one YXA node.
 
 
 =============
@@ -263,7 +263,7 @@ max_logfile_size		(default: 262144000 (250 MB)) Max filesize (in
 				bytes) before the logfiles are rotated. This
 				option will probably go away when we invent a
 				controlling mechanism so that things like
-				logfile size can be checked outside of Yxa
+				logfile size can be checked outside of YXA
 				instead, but this is needed for now since Erlang
 				crashes when the logfiles reach 2 GB. We only
 				check if the file size exceeds this limit every
@@ -542,7 +542,7 @@ x_yxa_peer_auth			(default: []) List of {host, secret} shared
 
 
 At the moment, configuration files must be in Erlang syntax. This involves lots
-of brackets and curly brackets, and might be seen as an disadvantage for Yxa.
+of brackets and curly brackets, and might be seen as an disadvantage for YXA.
 Please bear with this though, as steps have been taken to make it easy to add
 other configuration parsing backends. An ini-file format is likely to be written
 shortly, and it would be fairly easy to write for example an XML-format parser
@@ -738,13 +738,13 @@ configured. Note that addresses can either be supplied as part of the
 User database
 =============
 
-Yxa has a modular interface for user database backends. The entry point is
+YXA has a modular interface for user database backends. The entry point is
 the sipuserdb module, which looks at your configuration to determine which
 database backends to query, and in what order. The default is to just look
 in the Mnesia database (tables user and numbers), but there is also an
 LDAP module, MySQL module and a plain text file backend available. The
 schema for storing SIP user information in LDAP is not yet finished, and
-is currently not even included in the Yxa source, but the sipuserdb_ldap
+is currently not even included in the YXA source, but the sipuserdb_ldap
 module is used in production at Stockholm university.
 
 sipuserdb_ldap configuration parameters :
@@ -789,7 +789,7 @@ sipuserdb_mysql_database	(required) MySQL database to use.
 
 MySQL query configuration parameters :
 --------------------------------------
-The default Yxa MySQL userdb querys are simple. They can be somewhat
+The default YXA MySQL userdb querys are simple. They can be somewhat
 'personalized' by changing the templates. All querys are made for a single
 key (or list of keys, when for example looking for all users matching a
 number of addresses), and the query is constructed by inserting the quoted
@@ -866,7 +866,7 @@ Example :
 
 You should now have the necessary Mnesia database and tables.
 
-All of the Yxa application can run just fine without root permissions.
+All of the YXA application can run just fine without root permissions.
 
 If you want to have more than one incomingproxy node (and thus more than
 one database master node), do the following on incomingproxy server #1 :
@@ -883,7 +883,7 @@ on all your non-incomingproxy nodes :
    {databaseservers, ['incomingproxy@server1.example.org',
 		      'incomingproxy@server2.example.org']}
 
-If you want some other Yxa application node than incomingproxy to be your
+If you want some other YXA application node than incomingproxy to be your
 Mnesia database master, supply the -name argument to yxa-bootstrap. For
 example, if you are only using the pstnproxy, invoke yxa-bootstrap like
 this :
@@ -898,7 +898,7 @@ To use the web interface, you first need to install the Erlang web-server
 Yaws version 1.56 or higher (available from http://yaws.hyber.org/).
 When you have configured a working Yaws web-server, you need to point your
 docroot at the yxa/yaws/docroot directory, and configure Yaws with module
-and include search paths to the Yxa include and ebin-directorys. Example
+and include search paths to the YXA include and ebin-directorys. Example
 parts of yaws.conf configuration file :
 
   ebin_dir = /path/to/lib/yxa/ebin
@@ -909,7 +909,7 @@ parts of yaws.conf configuration file :
   </server>
 
 NOTE: All access control must be performed using Yaws methods of access
-control. Currently, the Yxa Yaws SSIs will not perform any kind of
+control. Currently, the YXA Yaws SSIs will not perform any kind of
 authentication or authorization, so you must restrict access to the web
 interface using Yaws.
 
@@ -918,10 +918,10 @@ under /path/to/lib/yxa in the future, I just need to figure out where they
 belong.
 
 Then you need to start Yaws with "-name yaws" (or some other node name) in
-order to enable communication between the Yaws node and your Yxa node(s).
-You also need to start the Yaws node as the same user as you start your Yxa
+order to enable communication between the Yaws node and your YXA node(s).
+You also need to start the Yaws node as the same user as you start your YXA
 nodes as, or by other means make sure the Yaws node has the same shared
-secret in it's ~/.erlang.cookie file as the Yxa nodes has, or they will be
+secret in it's ~/.erlang.cookie file as the YXA nodes has, or they will be
 unable to communicate. See the section "Distributed operation" above for
 more information about Erlang distribution.
 
@@ -952,7 +952,7 @@ IPv6 support is disabled by default, because you need to know what you are
 doing before turning it on. If you enable it to make proxy-to-proxy
 communication use v6 and a v6-only proxy adds Record-Route headers, then
 v4-only clients won't be able to reach the v6-only proxy. This could be
-fixed by making Yxa always Record-Route when receiving a request over v4/v6
+fixed by making YXA always Record-Route when receiving a request over v4/v6
 and sending it out using the other but then there is still the problem with
 v6-only phones responding to INVITE with a SDP offer containing a v6 address.
 How will a v4-only phone be able to send audio to that phone, and receive
@@ -962,7 +962,7 @@ If you are using Linux, then you will need to
 
 	# echo 1 > /proc/sys/net/ipv6/bindv6only
 
-since Yxa wants to use separate sockets for v6 and v4. IPv6 support has only
+since YXA wants to use separate sockets for v6 and v4. IPv6 support has only
 been tested on Linux 2.4.x where x >= 20.
 
 Note on Erlang OTP R10B-0 through R10B-6 :
@@ -971,6 +971,6 @@ the 'native' resolver (meaning a C port driver) for DNS resolution.
 Unfortunately, this C port driver only handles getipnodebyname() and not
 getaddrinfo(). The latter is a POSIX standard, and the one that should be used.
 This means that you might not get IPv6 addresses back from
-dnsutil:get_ip_port(), which in turn means Yxa won't make outgoing connections
+dnsutil:get_ip_port(), which in turn means YXA won't make outgoing connections
 to IPv6 addresses. This is a problem with some versions of Linux (for example,
 RH7.3 to RH9 based systems).

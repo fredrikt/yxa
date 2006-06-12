@@ -202,7 +202,7 @@ accept_loop(State) when is_record(State, state) ->
 	    logger:log(normal, "TCP listener: SSL accept returned error : (~p) ~s", [E, ssl:format_error(E)]),
 	    %% We don't terminate on accept error for SSL sockets, since the error can be that the client
 	    %% did not present a client certificate signed by someone we trust, or any other kind of SSL
-	    %% error. Terminating the listener on those errors makes it trivial to DoS the whole Yxa application
+	    %% error. Terminating the listener on those errors makes it trivial to DoS the whole YXA application
 	    %% by just connecting to the SSL port a couple of times.
 	    accept_loop(State);
 	{error, E} ->

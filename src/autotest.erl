@@ -109,7 +109,7 @@ run() ->
 run([Mode]) ->
     case erlang:whereis(logger) of
 	undefined ->
-	    io:format("Faking Yxa runtime environment...~n"),
+	    io:format("Faking YXA runtime environment...~n"),
 	    %%mnesia:start(),
 	    %%directory:start_link(),
 	    Logger = spawn(?MODULE, fake_logger_loop, [false]),
@@ -388,7 +388,7 @@ mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
 %% Descrip.: Main loop for a process that does nothing more than
 %%           registers itself as 'logger'. This is needed when this
 %%           module is executed from a unix-shell, instead of from an
-%%           erlang prompt with an Yxa application running.
+%%           erlang prompt with an YXA application running.
 %% Returns : does not return.
 %%--------------------------------------------------------------------
 fake_logger_loop(Enabled) ->

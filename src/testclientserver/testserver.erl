@@ -1,18 +1,18 @@
 -module(testserver).
 
-%% Standard Yxa SIP-application exports
+%% Standard YXA SIP-application exports
 -export([init/0, request/3, response/3]).
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
-%%% Standard Yxa SIP-application exported functions
+%%% Standard YXA SIP-application exported functions
 %%--------------------------------------------------------------------
 
 
 %% Function: init/0
-%% Description: Yxa applications must export an init/0 function.
+%% Description: YXA applications must export an init/0 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
 init() ->
@@ -21,7 +21,7 @@ init() ->
 
 
 %% Function: request/3
-%% Description: Yxa applications must export an request/3 function.
+%% Description: YXA applications must export an request/3 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
 request(Request, Origin, _LogStr) when record(Request, request), record(Origin, siporigin) ->
@@ -45,7 +45,7 @@ request(Request, Origin, _LogStr) when record(Request, request), record(Origin, 
     end.
 
 %% Function: response/3
-%% Description: Yxa applications must export an response/3 function.
+%% Description: YXA applications must export an response/3 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
 response(Response, Origin, _LogStr) when record(Response, response), record(Origin, siporigin) ->

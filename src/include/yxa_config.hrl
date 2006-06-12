@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config.hrl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Records for Yxa configuration subsystem.
+%%% Descrip.: Records for YXA configuration subsystem.
 %%%
 %%% Created : 16 Jun 2005 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------

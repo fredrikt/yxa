@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipuserdb.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Yxa user database. Implemented to be easy to extend with
+%%% Descrip.: YXA user database. Implemented to be easy to extend with
 %%%           new backend modules. Which backends we use is managed
 %%%           through configuration (parameter 'userdb_modules'). We
 %%%           query the backends in the specified order and stop when
@@ -238,7 +238,7 @@ get_telephonenumber_for_user(User) ->
 %% Function: get_forwards_for_users(Usernames)
 %%           Usernames = list() of string()
 %% Descrip.: Return a list of forwards for this user. Forwards are
-%%           currently not in the main Yxa CVS repository - Magnus has
+%%           currently not in the main YXA CVS repository - Magnus has
 %%           some CVS merging to do.
 %% Returns : ForwardList            |
 %%           nomatch                |
@@ -254,7 +254,7 @@ get_forwards_for_users(Users) ->
 %% Function: get_forward_for_user(Username)
 %%           Username = string()
 %% Descrip.: Return the forward entry for a user. Forwards are
-%%           currently not in the main Yxa CVS repository - Magnus has
+%%           currently not in the main YXA CVS repository - Magnus has
 %%           some CVS merging to do.
 %% Returns : ForwardList            |
 %%           nomatch                |

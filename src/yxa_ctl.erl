@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_ctl.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Yxa command line control module.
+%%% Descrip.: YXA command line control module.
 %%%
 %%% Created : 28 May 2005 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -62,15 +62,15 @@ start() ->
 			      [Node]),
 		    erlang:halt(?EXIT_NODEDOWN);
 		Unknown ->
-		    io:format("Yxa_ctl RPC returned unknown result : ~p~n", [Unknown]),
+		    io:format("YXA_ctl RPC returned unknown result : ~p~n", [Unknown]),
 		    erlang:halt(?EXIT_ERROR)
 	    catch
 		error: Y ->
 		    ST = erlang:get_stacktrace(),
-		    io:format("Yxa_ctl failed : error ~p ~p~n", [Y, ST]),
+		    io:format("YXA_ctl failed : error ~p ~p~n", [Y, ST]),
 		    erlang:halt(?EXIT_ERROR);
 		X: Y ->
-		    io:format("Yxa_ctl failed : ~p ~p~n", [X, Y]),
+		    io:format("YXA_ctl failed : ~p ~p~n", [X, Y]),
 		    erlang:halt(?EXIT_ERROR)
 	    end;
 	_ ->
@@ -188,13 +188,13 @@ info(["all"]) ->
     
 info_transport() ->
     %% Transport layer information
-    YxaSipsocketInfo = lists:sort(ets:tab2list(yxa_sipsocket_info)),
+    YXASipsocketInfo = lists:sort(ets:tab2list(yxa_sipsocket_info)),
     ListenInfo = lists:map(fun({_Pid, H}) when is_record(H, yxa_sipsocket_info_e) ->
 				   Val = lists:concat([H#yxa_sipsocket_info_e.proto, ":",
 						       H#yxa_sipsocket_info_e.addr, ":",
 						       H#yxa_sipsocket_info_e.port]),
 				   {"Listening on", Val}
-			   end, YxaSipsocketInfo),
+			   end, YXASipsocketInfo),
 
     [{"Transportlayer information :", 2, 15,
       ListenInfo},

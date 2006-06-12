@@ -378,7 +378,7 @@ make_new_target_request(Request, ApproxMsgSize, Action)
 		{NewHeader1_1, FirstURL}
 	end,
 
-    %% Add X-Yxa-Peer-Auth header if User is specified and we have configured entry for our peer
+    %% Add X-YXA-Peer-Auth header if User is specified and we have configured entry for our peer
     NewHeader =
 	case is_list(User) of
 	    true ->

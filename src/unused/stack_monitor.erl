@@ -1,7 +1,7 @@
 %%--------------------------------------------------------------------
 %%% File     : stack_monitor.erl
 %%% Author   : Fredrik Thulin <ft@it.su.se>
-%%% Descrip. : Graphical real-time monitor for Yxa stacks.
+%%% Descrip. : Graphical real-time monitor for YXA stacks.
 %%% Created  : 22 Oct 2004 by Fredrik <ft@it.su.se>
 %%--------------------------------------------------------------------
 
@@ -63,7 +63,7 @@ start() ->
     WH = [{width, 1000}, {height, 500}],
 
     %% the parent of a top-level window is the gs server
-    Win = gs:create(window, GS, [{title, "Yxa stack monitor"}, 
+    Win = gs:create(window, GS, [{title, "YXA stack monitor"}, 
 				 {map, true}, {configure, true} | WH]),
 
     %% Packer
@@ -219,7 +219,7 @@ handle_gs(_Id, configure, _Data, [W,H|_], State) when is_record(State, state) ->
     State;
 
 handle_gs(Id, destroy, _Data, _Args, State) when is_record(State, state), Id == State#state.win ->
-    io:format("Yxa stack monitor main window closed, exiting.~n"),
+    io:format("YXA stack monitor main window closed, exiting.~n"),
     quit;
 
 handle_gs(Id, Event, Data, Args, State) ->

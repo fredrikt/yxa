@@ -203,7 +203,7 @@ do_transform_table(Table, Fun, Fields) when is_atom(Table), is_function(Fun, 1),
 	    ok;
 	{aborted, {not_active, Reason, Table, NodeList}} ->
 	    %% All disc_copies nodes must be online for table transforming, but we can't require
-	    %% all those nodes to be alive in order to start the Yxa servers.
+	    %% all those nodes to be alive in order to start the YXA servers.
 	    logger:log(normal, "Warning: Failed to update Mnesia table '~p' : ~s~n(node list : ~p)",
 		       [Table, Reason, NodeList]);
 	{aborted, {"Bad transform function", Table, _BadFun, OtherNode, {{badfun, _BadFun}, _ST}}} ->

@@ -36,7 +36,7 @@
 %%--------------------------------------------------------------------
 %% Function: check_config(Cfg, AppModule, Mode)
 %%           Cfg       = yxa_cfg record()
-%%           AppModule = atom(), Yxa application module
+%%           AppModule = atom(), YXA application module
 %%           Mode      = soft | hard, are we checking config for a
 %%                       soft or hard reload?
 %% Descrip.: Check Cfg and return a new yxa_cfg record with all the
@@ -78,7 +78,7 @@ check_config(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModu
 %%--------------------------------------------------------------------
 %% Function: start_bg_check(Cfg, AppModule)
 %%           Cfg       = yxa_cfg record()
-%%           AppModule = atom(), Yxa application module
+%%           AppModule = atom(), YXA application module
 %% Descrip.: Start sanity checks of parameters in the background to
 %%           warn about things.
 %% Returns : {ok, Pid}
@@ -97,7 +97,7 @@ start_bg_check(Cfg, AppModule) when is_record(Cfg, yxa_cfg), is_atom(AppModule) 
 
 %%--------------------------------------------------------------------
 %% Function: get_cfg_definitions(AppModule)
-%%           AppModule = atom(), Yxa application module
+%%           AppModule = atom(), YXA application module
 %% Descrip.: Get common + more specific configuration definitions for
 %%           this application.
 %% Returns : Entrys = list() of cfg_entry record()
@@ -576,7 +576,7 @@ check_config_dependencys(Cfg) when is_record(Cfg, yxa_cfg) ->
 
 %%--------------------------------------------------------------------
 %% Function: check_application_specific(AppModule, Cfg)
-%%           AppModule = atom(), Yxa application module
+%%           AppModule = atom(), YXA application module
 %%           Cfg       = yxa_cfg record()
 %% Descrip.: Check parameters that are application specific.
 %% Returns : ok | {error, Msg}

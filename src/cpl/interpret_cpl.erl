@@ -1,9 +1,9 @@
 %% This module implements the CPL graph logic and the user supplied
-%% Backend module handles the interaction with other Yxa modules -
+%% Backend module handles the interaction with other YXA modules -
 %% this design choice has been chosen for several reasons:
 %%
 %% * to keep the size of this module at a manageable level
-%% * to separate interpreter implementation, from Yxa configurations,
+%% * to separate interpreter implementation, from YXA configurations,
 %%   done due to cpl actions
 %% * to allow testing of the interpreter without requiring a fully
 %%   working backend (a test backend module can be used to better

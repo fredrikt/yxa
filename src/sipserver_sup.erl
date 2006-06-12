@@ -83,7 +83,7 @@ extract_pids([], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: init([AppModule, MnesiaTables])
-%%           AppModule = atom(), name of Yxa application module
+%%           AppModule = atom(), name of YXA application module
 %% Returns : {ok,  {SupFlags,  [ChildSpec]}} |
 %%           ignore                          |
 %%           {error, Reason}   

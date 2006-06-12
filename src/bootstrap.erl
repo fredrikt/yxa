@@ -30,7 +30,7 @@
 %% Returns : ok | does not return
 %%--------------------------------------------------------------------
 start() ->
-    io:format("Bootstrapping Yxa on node ~p :~n", [node()]),
+    io:format("Bootstrapping YXA on node ~p :~n", [node()]),
     ok = create_schema(node()),
     ok = mnesia:start(),
 
@@ -74,7 +74,7 @@ init_db_module([], _Node) ->
 %%--------------------------------------------------------------------
 replica([Master]) ->
     MasterNode = list_to_atom(Master),
-    io:format("Making Yxa on node ~p a Mnesia replica node~n", [node()]),
+    io:format("Making YXA on node ~p a Mnesia replica node~n", [node()]),
     
     io:format("* Starting Mnesia~n"),
     ok = mnesia:start(),

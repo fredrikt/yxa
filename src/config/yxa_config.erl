@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Yxa configuration subsystem.
+%%% Descrip.: YXA configuration subsystem.
 %%%
 %%% Created : 15 Jun 2005 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -45,7 +45,7 @@
 %%--------------------------------------------------------------------
 -record(state, {
 	  backends,	%% list() of {Module, Opaque} where Module is an atom and Opaque is state internal to Module
-	  appmodule	%% atom(), Yxa application module
+	  appmodule	%% atom(), YXA application module
 	 }).
 
 %%--------------------------------------------------------------------
@@ -63,7 +63,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: start_link(AppModule)
-%%           AppModule = atom(), Yxa application module
+%%           AppModule = atom(), YXA application module
 %% Descrip.: start the server.
 %% Returns : {ok, Pid}
 %%           Pid = pid() of yxa_config persistent gen_server
@@ -81,7 +81,7 @@ start_link(AppModule) when is_atom(AppModule) ->
 
 %%--------------------------------------------------------------------
 %% Function: init([AppModule, ExtraCfg])
-%%	     AppModule = atom(), Yxa application module
+%%	     AppModule = atom(), YXA application module
 %%           ExtraCfg  = yxa_cfg record(), extra config for autotest
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}

@@ -2417,14 +2417,14 @@ test() ->
     %% If the client transaction receives a provisional response while in
     %% the "Calling" state, it transitions to the "Proceeding" state.
     %% ... Furthermore, the provisional response MUST be passed to the TU.
-    %% Yxa comment: 100 Trying is just to make us stop resending, not forwarded to TU.
+    %% YXA comment: 100 Trying is just to make us stop resending, not forwarded to TU.
     {ignore, proceeding} = received_response_state_machine("INVITE", 100, calling),
     {tell_parent, proceeding} = received_response_state_machine("INVITE", 199, calling),
 
     autotest:mark(?LINE, "received_response_state_machine/3 INVITE - 2"),
     %% Any further provisional responses MUST be passed up to the TU while
     %% in the "Proceeding" state.
-    %% Yxa comment: 100 Trying is just to make us stop resending, not forwarded to TU.
+    %% YXA comment: 100 Trying is just to make us stop resending, not forwarded to TU.
     {ignore, proceeding} = received_response_state_machine("INVITE", 100, proceeding),
     {tell_parent, proceeding} = received_response_state_machine("INVITE", 199, proceeding),
 
@@ -2488,7 +2488,7 @@ test() ->
     %% If a provisional response is received while in the "Trying" state, the
     %% response MUST be passed to the TU, and then the client transaction
     %% SHOULD move to the "Proceeding" state.
-    %% Yxa comment: 100 Trying is just to make us stop resending, not forwarded to TU.
+    %% YXA comment: 100 Trying is just to make us stop resending, not forwarded to TU.
     {ignore, proceeding} = received_response_state_machine("OPTIONS", 100, trying),
     {tell_parent, proceeding} = received_response_state_machine("OPTIONS", 199, trying),
 

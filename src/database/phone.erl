@@ -116,7 +116,7 @@ remove_expired_phones() ->
 	    true;
 	{aborted, {no_exists, Table}} ->
 	    logger:log(error, "Location: Mnesia says that table '~p' does not exist"
-		       " - did you bootstrap Yxa? (See README file)", [Table]),
+		       " - did you bootstrap YXA? (See README file)", [Table]),
 	    error;
 	{aborted, Reason} ->
 	    logger:log(error, "Location: phone:expired_phones() returned unknown result : ~p", [Reason]),

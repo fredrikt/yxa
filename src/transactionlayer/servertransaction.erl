@@ -12,7 +12,7 @@
 %%% transaction layer when new requests arrive.
 %%%
 %%% At the same time, the transaction layer also starts the request/3
-%%% function of the Yxa application running (for example
+%%% function of the YXA application running (for example
 %%% incomingproxy:request/3). The application is what RFC3261 calls a
 %%% 'Transaction User' or 'proxy core'.
 %%%
@@ -267,7 +267,7 @@ handle_call({get_branch}, From, State) ->
 %% Function: handle_call({set_report_to, Pid}, From, State)
 %%           Pid = pid()
 %% Descrip.: This is a request to set our report_to. This is typically
-%%           done by a TU (Transaction User (Yxa application)) that
+%%           done by a TU (Transaction User (YXA application)) that
 %%           wants to receive notice if we terminate etc.
 %%           We can only report to one process, so this function will
 %%           fail if our report_to is already set. It will also fail
@@ -872,7 +872,7 @@ process_timer2(Signal, Timer, State) when is_record(State, state) ->
 %%           Timer   = siptimer record()
 %%           State   = state record()
 %% Descrip.: We have a response to send. It is either created by our
-%%           TU (Transaction User (Yxa application)) or it is a
+%%           TU (Transaction User (YXA application)) or it is a
 %%           response we have received and should proxy. Regardless of
 %%           which, we need to run it through our state machine to
 %%           see if we should change state. Do that, and pass this
@@ -1483,7 +1483,7 @@ test() ->
     autotest:mark(?LINE, "send_response_statemachine/3 non-INVITE - 2"),
     %% Any further provisional responses that are received from the TU while in the
     %% "Proceeding" state MUST be passed to the transport layer for transmission.
-    %% Yxa note: we filter out 100 Trying
+    %% YXA note: we filter out 100 Trying
     ignore = send_response_statemachine("OPTIONS", 100, proceeding),
     {send, false, proceeding} = send_response_statemachine("OPTIONS", 199, proceeding),
 

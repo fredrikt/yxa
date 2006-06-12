@@ -156,7 +156,7 @@ is_loose_router(Route) when is_record(Route, sipurl) ->
 %%--------------------------------------------------------------------
 %% Function: stateless_route_proxy_request(Request)
 %%           Request = request record()
-%% Descrip.: Inspect a request that some Yxa application has found it
+%% Descrip.: Inspect a request that some YXA application has found it
 %%           should proxy statelessly. Figure out a single sipdst
 %%           destination for this request (sorry, stateless SIP does
 %%           not handle multiple destinations) and return that
@@ -1265,7 +1265,7 @@ test() ->
     %% branch_contains_loopcookie(Branch)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "branch_contains_loopcookie/1 - 1"),
-    %% contains Yxa loop cookie
+    %% contains YXA loop cookie
     true = branch_contains_loopcookie("z9hG4bK-yxa-foo-oLOOPCOOKIE"),
 
     autotest:mark(?LINE, "branch_contains_loopcookie/1 - 2"),

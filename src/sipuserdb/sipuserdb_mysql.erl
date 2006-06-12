@@ -62,7 +62,7 @@ yxa_init() ->
 			  sipuserdb_mysql_database
 			 ]),
     %% create a logging function that makes the MySQL subsystem logs
-    %% end up in the standard Yxa log system.
+    %% end up in the standard YXA log system.
     LogFun = fun(Level, Fmt, Args) ->
 		     logger:log(Level, Fmt, Args)
 	     end,

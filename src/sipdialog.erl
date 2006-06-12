@@ -64,7 +64,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: init()
-%% Descrip.: Called when the Yxa node starts up. Create any ETS tables
+%% Descrip.: Called when the YXA node starts up. Create any ETS tables
 %%           we need.
 %% Returns : ok
 %%--------------------------------------------------------------------

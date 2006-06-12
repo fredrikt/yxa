@@ -106,7 +106,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: start_link(AppModule)
-%%           AppModule = atom(), name of Yxa application
+%%           AppModule = atom(), name of YXA application
 %% Descrip.: start the transactionlayer gen_server.
 %%           The transactionlayer is only registered localy (on the
 %%           current node)
@@ -121,7 +121,7 @@ start_link(AppModule) ->
 
 %%--------------------------------------------------------------------
 %% Function: init([AppModule])
-%%           AppModule = atom(), name of Yxa application
+%%           AppModule = atom(), name of YXA application
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}          |
 %%           {ok, State, Timeout} |
@@ -322,7 +322,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%           Socket    = sipsocket record(), the socket this request
 %%                                           was received on
 %%           LogStr    = string(), describes the request
-%%           AppModule = atom(), Yxa application module
+%%           AppModule = atom(), YXA application module
 %% Descrip.: Act on a new request that has just been delivered to the
 %%           transaction layer from the transport layer, where the
 %%           transaction layer did not have any prior transaction.
@@ -825,7 +825,7 @@ set_result(Request, Value) when is_record(Request, request), is_list(Value) ->
 %%           Request  = request record()
 %%           Value    = term()
 %% Descrip.: Store some arbitrary data associated with this
-%%           transcation for an application. The Yxa stack never uses
+%%           transcation for an application. The YXA stack never uses
 %%           this data - it is just provided as convenient storage
 %%           for application writers.
 %% Returns : ok         |
@@ -963,7 +963,7 @@ debug_show_transactions() ->
 %%           received.
 %% Returns : {pass_to_core, AppModule} |
 %%           continue
-%%           AppModule = atom(), Yxa application module name
+%%           AppModule = atom(), YXA application module name
 %%--------------------------------------------------------------------
 from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 						  is_record(Origin, siporigin),
@@ -997,7 +997,7 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 %%           received.
 %% Returns : {pass_to_core, AppModule} |
 %%           continue
-%%           AppModule = atom(), Yxa application module name
+%%           AppModule = atom(), YXA application module name
 %%--------------------------------------------------------------------
 from_transportlayer(Response, Origin, LogStr) when is_record(Response, response),
 						   is_record(Origin, siporigin),

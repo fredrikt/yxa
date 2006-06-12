@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 #
 # testclient.pl is a minimalistic SIP user agent used in testing
-# Yxa - the Erlang SIP server/stack
+# YXA - the Erlang SIP server/stack
 #
 # Author : Fredrik Thulin <ft@it.su.se>
 #

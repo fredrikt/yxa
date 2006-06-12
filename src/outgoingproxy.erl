@@ -1,7 +1,7 @@
 -module(outgoingproxy).
 
 %%--------------------------------------------------------------------
-%%% Standard Yxa SIP-application callback functions
+%%% Standard YXA SIP-application callback functions
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
@@ -18,14 +18,14 @@
 
 %%====================================================================
 %% Behaviour functions
-%% Standard Yxa SIP-application callback functions
+%% Standard YXA SIP-application callback functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
 %% Function: init()
-%% Descrip.: Yxa applications must export an init/0 function.
+%% Descrip.: YXA applications must export an init/0 function.
 %% Returns : [Tables, Mode, SupData]
-%%           Tables  = list() of atom(), remote mnesia tables the Yxa
+%%           Tables  = list() of atom(), remote mnesia tables the YXA
 %%                     startup sequence should make sure are available
 %%           Mode    = stateful
 %%           SupData = {append, SupSpec} |
@@ -42,7 +42,7 @@ init() ->
 %%           Request = request record()
 %%           Origin  = siporigin record()
 %%           LogStr  = string() describing request
-%% Descrip.: Yxa applications must export an request/3 function.
+%% Descrip.: YXA applications must export an request/3 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 
@@ -140,7 +140,7 @@ do_foreign_register(Request, Origin) ->
 %%           Request = response record()
 %%           Origin  = siporigin record()
 %%           LogStr  = string(), description of response
-%% Descrip.: Yxa applications must export an response/3 function.
+%% Descrip.: YXA applications must export an response/3 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->

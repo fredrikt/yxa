@@ -34,7 +34,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: init([AppModule])
-%%	     AppModule = atom(), Yxa application module
+%%	     AppModule = atom(), YXA application module
 %% Descrip.: Initiates the configuration backend.
 %% Returns : {ok, State} | ignore | {error, Msg}
 %%           State = yxa_config_erlang_state record()

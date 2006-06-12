@@ -2,7 +2,7 @@
 %%% File    : local.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
 %%% Descrip.: Interface to local functions hooking into lots of
-%%%           different parts of the various Yxa applications.
+%%%           different parts of the various YXA applications.
 %%%
 %%% Created : 03 Jan 2006 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -180,7 +180,7 @@ init() ->
     %% Check which of this ('local') modules exported functions are also exported
     %% by the ?LOCAL_MODULE function. The LOCAL_MODULE define is provided at compile
     %% time and can be affected by supplying a --with-local=modulename argument to
-    %% the Yxa 'configure' script.
+    %% the YXA 'configure' script.
     Fun = fun({init, 0}) ->
 		  ?LOCAL_MODULE:init(),
 		  [];
@@ -1013,7 +1013,7 @@ start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, 
 
 %%--------------------------------------------------------------------
 %% Function: new_request(AppModule, Request, Origin, LogStr)
-%%           AppModule = atom(), Yxa application module the
+%%           AppModule = atom(), YXA application module the
 %%                       transaction layer thought this request should
 %%                       be passed to
 %%           Request   = request record()
@@ -1021,7 +1021,7 @@ start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, 
 %%           LogStr    = string(), textual description of request
 %% Descrip.: This function gets called when the transaction layer has
 %%           decided that a new request has arrived, and figured it
-%%           should be passed to the Yxa application (proxy core/
+%%           should be passed to the YXA application (proxy core/
 %%           transaction user). Depending on what this function
 %%           returns, the AppModule:request/3 function will either not
 %%           be called at all, called with the parameters unchanged or
@@ -1044,7 +1044,7 @@ new_request(AppModule, Request, Origin, LogStr) ->
 
 %%--------------------------------------------------------------------
 %% Function: new_response(AppModule, Response, Origin, LogStr)
-%%           AppModule = atom(), Yxa application module the
+%%           AppModule = atom(), YXA application module the
 %%                       transaction layer thought this request should
 %%                       be passed to
 %%           Response  = response record()
@@ -1053,7 +1053,7 @@ new_request(AppModule, Request, Origin, LogStr) ->
 %% Descrip.: This function gets called when the transaction layer has
 %%           decided that a response not assoicated with a running
 %%           client transaction has arrived. Such responses should be
-%%           passed to the Yxa application (proxy core/transaction
+%%           passed to the YXA application (proxy core/transaction
 %%           user). Depending on what this function returns, the
 %%           AppModule:response/3 function will either not be called
 %%           at all, called with the parameters unchanged or called

@@ -191,7 +191,7 @@ get_user_verified_proxy(Header, Method) ->
 %% Function: get_user_verified_yxa_peer(Header, Method)
 %%           Header = keylist record()
 %%           Method = string()
-%% Descrip.: Check if there is an X-Yxa-Peer-Auth: header in Header
+%% Descrip.: Check if there is an X-YXA-Peer-Auth: header in Header
 %%           and check if it authorizes this request. Might throw an
 %%           {siperror, ...} if something is wrong with the
 %%           authorization header.
@@ -205,11 +205,11 @@ get_user_verified_proxy(Header, Method) ->
 get_user_verified_yxa_peer(Header, Method) ->
     case keylist:fetch('x-yxa-peer-auth', Header) of
 	[] ->
-	    logger:log(debug, "Auth: get_user_verified_yxa_peer: No X-Yxa-Peer-Auth header, returning false"),
+	    logger:log(debug, "Auth: get_user_verified_yxa_peer: No X-YXA-Peer-Auth header, returning false"),
 	    false;
 	AuthHeaders ->
 	    Realm = realm(),
-	    AuthRealmMatches = parse_auth_filter_realm(AuthHeaders, Realm, "X-Yxa-Peer-Auth"),
+	    AuthRealmMatches = parse_auth_filter_realm(AuthHeaders, Realm, "X-YXA-Peer-Auth"),
 	    get_user_verified_yxa_peer2(Header, Method, AuthRealmMatches, Realm, false)
     end.
 
@@ -229,7 +229,7 @@ get_user_verified_yxa_peer2(Header, Method, [Authorization | T], Realm, _LastRes
 		    VRes
 	    end;
 	none ->
-	    logger:log(debug, "Auth: Request has X-Yxa-Peer-Auth header for my realm, but I have no configured secret"),
+	    logger:log(debug, "Auth: Request has X-YXA-Peer-Auth header for my realm, but I have no configured secret"),
 	    false
     end;
 get_user_verified_yxa_peer2(_Header, _Method, [], _Realm, LastRes) ->
@@ -337,7 +337,7 @@ do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
 %%           Realm = string(), this proxys realm
 %%           Name  = string(), description of header we are parsing
 %% Descrip.: Parse a number of auth-header values (auth headers are
-%%           Proxy-Authorization, Authorization and X-Yxa-Peer-Auth)
+%%           Proxy-Authorization, Authorization and X-YXA-Peer-Auth)
 %%           with sipheader:auth/1 and return the ones whose realm
 %%           matches Realm.
 %% Returns : list() of dict()
@@ -361,7 +361,7 @@ parse_auth_filter_realm([H | T], Realm, Name, Res) when is_list(H) ->
 parse_auth_filter_realm([], _Realm, _Name, Res) ->
     lists:reverse(Res).
     
-%% Authenticate through X-Yxa-Peer-Auth or, if that does not exist, through Proxy-Authentication
+%% Authenticate through X-YXA-Peer-Auth or, if that does not exist, through Proxy-Authentication
 pstn_get_user_verified(Header, Method) ->
     case get_user_verified_yxa_peer(Header, Method) of
 	false ->
@@ -561,7 +561,7 @@ add_x_yxa_peer_auth(Method, URI, Header, User, Secret) when is_list(Method), is_
     Response = get_response(Nonce, Method, URIstr, User, Secret, Realm),
     AuthStr = print_auth_response("Digest", User, Realm, URIstr,
 				  Response, Nonce, Opaque, "md5"),
-    keylist:set("X-Yxa-Peer-Auth", [AuthStr], Header).
+    keylist:set("X-YXA-Peer-Auth", [AuthStr], Header).
     
 %%--------------------------------------------------------------------
 %% Function: print_auth_response(AuthMethod, User, Realm, URIstr,

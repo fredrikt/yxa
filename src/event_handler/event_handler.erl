@@ -48,7 +48,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: start_link(AppName)
-%%           AppName  = string(), name of Yxa application
+%%           AppName  = string(), name of YXA application
 %% Descrip.: start the server.
 %% Returns : Result of gen_server:start_link/4
 %%--------------------------------------------------------------------

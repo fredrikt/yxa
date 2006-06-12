@@ -684,7 +684,7 @@ get_response_host_proto(TopVia) when is_record(TopVia, via) ->
 %%           Proto   = atom(), tcp | udp | tcp6 | udp6 | tls | tls6 |
 %%                             yxa_test | yxa_test6
 %%           Reason  = string()
-%% Note    : yxa_test and yxa_test6 are just for Yxa unit tests.
+%% Note    : yxa_test and yxa_test6 are just for YXA unit tests.
 %%--------------------------------------------------------------------
 address_to_address_and_proto(Addr, DefaultProto) when DefaultProto == tcp; DefaultProto == udp; DefaultProto == tls;
 						      DefaultProto == yxa_test ->
