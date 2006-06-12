@@ -134,7 +134,7 @@
 
 %% Location DB entry
 -record(siplocationdb_e, {
-	  address,	%% string(), parseable with sipurl:parse(...)
+	  address,	%% sipurl record(), the registered contact
 	  sipuser,	%% string(), SIP username for this binding
 	  instance,	%% string(), instance ID
 	  flags,	%% list() of {Name, Value}
