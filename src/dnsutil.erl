@@ -35,8 +35,11 @@
 
 %% These records are entirely internal to this module
 -record(srventry, {
-	  proto,
-	  dnsrrdata
+	  proto,	%% inet or inet6 ? XXX
+	  order,	%% SRV RR order
+	  weight,	%% SRV RR weight
+	  host,		%% SRV RR host
+	  port		%% SRV RR port
 	 }).
 -record(naptrrecord, {
 	  order,
@@ -79,12 +82,15 @@ siplookup(Domain) ->
 	nomatch ->
 	    %% No domain NAPTR records found. Perform RFC2543 backwards compatible
 	    %% SRV lookup of the domain.
-	    logger:log(debug, "Resolver: Domain ~p has no NAPTR records, perform RFC2543 backwards " ++
+	    logger:log(debug, "Resolver: Domain ~p has no NAPTR records, perform RFC2543 backwards "
 		       "compatible lookup for SIP SRV records under that domain name", [Domain]),
 	    TCP = srvlookup(tcp, "_sip._tcp." ++ Domain),
 	    UDP = srvlookup(udp, "_sip._udp." ++ Domain),
 	    TLS = srvlookup(tls, "_sips._tcp." ++ Domain),
-	    R = combine_srvresults(lists:sort(fun sortsrv/2, lists:flatten([TCP, UDP, TLS]))),
+
+	    All = lists:flatten([TCP, UDP, TLS]),
+	    Sorted = sort_srvlist(All),
+	    R = combine_srvresults(Sorted),
 	    logger:log(debug, "Resolver: Result of RFC2543 compatible SIP SRV query for domain ~p :~n~p",
 		       [Domain, R]),
 	    R;
@@ -261,19 +267,19 @@ naptr_to_srvlist(In) ->
 %%
 %% Empty regexp
 %%
-naptr_to_srvlist2([#naptrrecord{regexp=""}=H | T], Res) ->
+naptr_to_srvlist2([#naptrrecord{regexp = ""} = H | T], Res) ->
     Proto = case H#naptrrecord.services of
 		"SIP+D2U"  ++ _ -> udp;
 		"SIP+D2T"  ++ _ -> tcp;
 		"SIPS+D2T" ++ _ -> tls
 	    end,
-    %% Regexp should be empty for domain NAPTR - RFC3263 #4.1. The
-    %% interesting thing is the replacement.
+    %% Regexp should be empty for domain NAPTR - RFC3263 #4.1. The interesting thing is
+    %% the replacement. (We make sure the regexp is empty in the function declaration)
     This = srvlookup(Proto, H#naptrrecord.replacement),
-    Sorted = lists:sort(fun sortsrv/2, This),
+    Sorted = sort_srvlist(This),
     naptr_to_srvlist2(T, lists:flatten([Res, Sorted]));
 %%
-%% Non-empty regexp, not a domain NAPTR
+%% Non-empty regexp, or not a domain NAPTR - skip
 %%
 naptr_to_srvlist2([H | T], Res) when is_record(H, naptrrecord) ->
     naptr_to_srvlist2(T, Res);
@@ -293,8 +299,12 @@ debugfriendly_srventry(In) when is_list(In) ->
 debugfriendly_srventry2([], Res) ->
     lists:reverse(Res);
 debugfriendly_srventry2([H|T], Res) when is_record(H, srventry) ->
-    {P, W, Port, Host} = H#srventry.dnsrrdata,
-    This = lists:flatten(lists:concat([H#srventry.proto, ", priority=", P, ", weight=", W,
+    #srventry{order  = O,
+	      weight = W,
+	      port   = Port,
+	      host   = Host
+	     } = H,
+    This = lists:flatten(lists:concat([H#srventry.proto, ", order=", O, ", weight=", W,
 				       " ", Host, ":", Port])),
     debugfriendly_srventry2(T, [This | Res]).
 
@@ -323,31 +333,39 @@ combine_srvresults([], Res, _) ->
 combine_srvresults([{error, What} | T], Res, Errors) ->
     combine_srvresults(T, Res, [{error, What} | Errors]);
 combine_srvresults([H | T], Res, Errors) when is_record(H, srventry) ->
-    {_Order, _Weight, Port, Host} = H#srventry.dnsrrdata,
-    This = #sipdns_srv{proto=H#srventry.proto, host=Host, port=Port},
+    This = #sipdns_srv{proto = H#srventry.proto,
+		       host  = H#srventry.host,
+		       port  = H#srventry.port
+		      },
     combine_srvresults(T, [This | Res], Errors).
 
-
 %%--------------------------------------------------------------------
-%% Function: sortsrv(A, B)
-%%           A = srventry record()
-%%           B = srventry record()
+%% Function: sort_srvlist(In)
+%%           In = list() of srventry record() | {error, R} tuple()
 %% Descrip.: Walk through a list of srventry records or {error, R}
 %%           tuples and sort them according to order and secondly by
 %%           weight. Sort errors last, but put nxdomain errors first
-%%           of the errors.
+%%           of the errors. The weight sorting is proportional for
+%%           entrys of the same order, not fixed.
 %% Returns : list() of srventry record()
-%% Note    : XXX weight should be proportional somehow, not just
-%%           sorted
 %%--------------------------------------------------------------------
+sort_srvlist(In) when is_list(In) ->
+    Sorted = lists:sort(fun sortsrv/2, In),
+    {T1, T2, T3} = erlang:now(),
+    random:seed(T1, T2, T3),
+    make_weight_proportional(Sorted).
+
+%% part of sort_svrlist, a lists:sort function for SRV records
 sortsrv(A, B) when is_record(A, srventry), is_record(B, srventry) ->
-    {Order1, Weight1, _Port1, _Host1} = A#srventry.dnsrrdata,
-    {Order2, Weight2, _Port2, _Host2} = B#srventry.dnsrrdata,
+    #srventry{order = Order1, weight = Weight1} = A,
+    #srventry{order = Order2, weight = Weight2} = B,
+
     if
 	Order1 < Order2 ->
 	    true;
 	Order1 == Order2 ->
-	    %% XXX weight should be proportional somehow, not just sorted
+	    %% Weight is really a proportional thing, but we sort on it for the same
+	    %% order here, to make sortsrv/2 deterministic (for test cases)
 	    if
 		Weight1 > Weight2 ->
 		    true;
@@ -371,6 +389,72 @@ sortsrv({error, nxdomain}, {error, _}) ->
 %% make errors come last
 sortsrv({error, _}, {error, _}) ->
     false.
+
+%%--------------------------------------------------------------------
+%% Function: make_weight_proportional(In)
+%%           In = list() of srventry record() | {error, R} tuple()
+%% Descrip.: First, separate out all entrys with the same priority.
+%%           Invoke order_proportional_weight once per priority.
+%% Returns : list() of ( srventry record() | {error, R} tuple() )
+%%--------------------------------------------------------------------
+make_weight_proportional(In) when is_list(In) ->
+    make_weight_proportional2(In, undefined, [], []).
+
+make_weight_proportional2([#srventry{order = Order} | _] = In, undefined, SRVs, Res) ->
+    %% first entry, no previous order
+    make_weight_proportional2(In, Order, SRVs, Res);
+make_weight_proportional2([#srventry{order = Order} = H | T], Order, SRVs, Res) ->
+    %% same order, append to SRVs and recurse
+    make_weight_proportional2(T, Order, [H | SRVs], Res);
+make_weight_proportional2([H | T], _OtherOrder, SRVs, Res) ->
+    %% Something else than another entry with the same Order encountered. Make the
+    %% proportional thing and append SRVs (plus H) to Res
+    OrderedSRVs = order_proportional_weight(SRVs),
+    case is_record(H, srventry) of
+	true ->
+	    %% another SRV, with different Order - we should recurse
+	    make_weight_proportional2(T, H#srventry.order, [H], [OrderedSRVs | Res]);
+	false ->
+	    %% not another SRV, append to Res and we are done - flatten before returning
+	    lists:flatten([[OrderedSRVs | Res], [H | T]])
+    end;
+make_weight_proportional2([], _Order, SRVs, Res) ->
+    %% End of input encountered. Do the  proportional thing and we are done
+    OrderedSRVs = order_proportional_weight(SRVs),
+    %% flatten before returning
+    lists:append([OrderedSRVs | Res]).
+
+%%--------------------------------------------------------------------
+%% Function: order_proportional_weight(In)
+%%           In = list() of srventry record()
+%% Descrip.: Use random to sort the entrys in In in a proportional
+%%           fashion. If three entrys have priority 45, 45 and 10,
+%%           the probability of one of the 45 percent entrys to be
+%%           returned first is 90 % (one of the two, not the first or
+%%           second one individually) and the probability of the last
+%%           entry being returned first is ten percent.
+%% Returns : list() of srventry record()
+%%--------------------------------------------------------------------
+order_proportional_weight(In) when is_list(In) ->
+    WeightSum = lists:foldl(fun(E, Acc) ->
+				    Acc + E#srventry.weight
+			    end, 0, In),
+    order_proportional_weight2(In, WeightSum, []).
+
+order_proportional_weight2([], _Sum, Res) ->
+    lists:reverse(Res);
+order_proportional_weight2(In, Sum, Res) ->
+    WinnerNum = random:uniform(Sum + 1) - 1,
+    Winner = get_winner(In, WinnerNum),
+    Rest = In -- [Winner],
+    NewSum = Sum - Winner#srventry.weight,
+    order_proportional_weight2(Rest, NewSum, [Winner | Res]).
+
+get_winner([#srventry{weight = ThisWeight} = H | _], WinnerNum) when WinnerNum =< ThisWeight ->
+    %% We found our winner
+    H;
+get_winner([#srventry{weight = ThisWeight} | T], WinnerNum) ->
+    get_winner(T, WinnerNum - ThisWeight).
 
 
 %%--------------------------------------------------------------------
@@ -669,7 +753,14 @@ srvlookup(Proto, Name) when is_list(Name) ->
     case inet_res:nslookup(Name, in, srv) of
 	{ok, Rec} ->
 	    ParseSRV = fun(Entry) ->
-			       #srventry{proto=Proto, dnsrrdata=Entry#dns_rr.data}
+			       {Order, Weight, Port, Host} = Entry#dns_rr.data,
+
+			       #srventry{proto  = Proto,
+					 order       = Order,
+					 weight      = Weight,
+					 port        = Port,
+					 host	     = Host
+					}
 		       end,
 	    lists:map(ParseSRV, Rec#dns_rec.anlist);
 	{error, What} ->
@@ -716,8 +807,8 @@ test() ->
 
     %% test combine_srvresults(In)
     %%--------------------------------------------------------------------
-    CombineSRV_1 = #srventry{dnsrrdata = {0, 21, 5060, "example.org"}, proto=tcp},
-    CombineSRV_2 = #srventry{dnsrrdata = {0, 21, 5061, "example.net"}, proto=tls},
+    CombineSRV_1 = #srventry{order = 0, weight = 21, port = 5060, host = "example.org", proto = tcp},
+    CombineSRV_2 = #srventry{order = 0, weight = 21, port = 5061, host = "example.net", proto = tls},
     CombineSRV_3 = {error, undefined},
 
     autotest:mark(?LINE, "combine_srvresults/1 - 1"),
@@ -741,10 +832,10 @@ test() ->
     %% sort only valid results
 
     %% for 'order', high is better. for 'preference', lower is better.
-    SortSRV_1 = #srventry{dnsrrdata = {0, 21, 1, "example.org"}},
-    SortSRV_2 = #srventry{dnsrrdata = {0, 20, 2, "example.org"}},
-    SortSRV_3 = #srventry{dnsrrdata = {1, 10, 3, "example.org"}},
-    SortSRV_4 = #srventry{dnsrrdata = {2, 10, 4, "example.org"}},
+    SortSRV_1 = #srventry{order = 0, weight = 21, port = 1, host = "example.org"},
+    SortSRV_2 = #srventry{order = 0, weight = 20, port = 2, host = "example.org"},
+    SortSRV_3 = #srventry{order = 1, weight = 10, port = 3, host = "example.org"},
+    SortSRV_4 = #srventry{order = 2, weight = 10, port = 4, host = "example.org"},
 
     SortSRV_L1 = [SortSRV_1, SortSRV_2, SortSRV_3, SortSRV_4],
 
@@ -948,7 +1039,65 @@ test() ->
 
     %% test srvlookup(Proto, Name)
 
+
+    %% make_weight_proportional(In)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "make_weight_proportional/1 - 0"),
+    MWP_E1 = #srventry{order  = 0, weight = 25, port   = 1},
+    MWP_E2 = #srventry{order  = 0, weight = 25, port   = 2},
+    MWP_E3 = #srventry{order  = 0, weight = 25, port   = 3},
+    MWP_E4 = #srventry{order  = 0, weight = 25, port   = 4},
+
+    MWP_L1 = [MWP_E1, MWP_E2, MWP_E3, MWP_E4],
+
+    {MWP_T1, MWP_T2, MWP_T3} = erlang:now(),
+    random:seed(MWP_T1, MWP_T2, MWP_T3),
+
+    MWP_Res1 = [make_weight_proportional(MWP_L1) || _ <- lists:seq(1, 1000)],
+
+    autotest:mark(?LINE, "make_weight_proportional/1 - 1"),
+    MWP_E1_Count = test_mwp_count(MWP_Res1, MWP_E1, 0),
+    MWP_E2_Count = test_mwp_count(MWP_Res1, MWP_E2, 0),
+    MWP_E3_Count = test_mwp_count(MWP_Res1, MWP_E3, 0),
+    MWP_E4_Count = test_mwp_count(MWP_Res1, MWP_E4, 0),
+
+    io:format("SRV sorting distribution : ~5s ~5s ~5s ~5s~n", ["A", "B", "C", "D"]),
+    io:format("                           ~.5w ~.5w ~.5w ~.5w~n", [MWP_E1_Count, MWP_E2_Count,
+								   MWP_E3_Count, MWP_E4_Count]),
+
+    MWP_1_Lower = 150,
+    MWP_1_Upper = 350,
+
+    case (MWP_E1_Count < MWP_1_Lower) orelse (MWP_E1_Count > MWP_1_Upper) orelse
+	 (MWP_E2_Count < MWP_1_Lower) orelse (MWP_E2_Count > MWP_1_Upper) orelse
+	 (MWP_E3_Count < MWP_1_Lower) orelse (MWP_E3_Count > MWP_1_Upper) orelse
+	 (MWP_E4_Count < MWP_1_Lower) orelse (MWP_E3_Count > MWP_1_Upper) of
+	true ->
+	    Msg = io_lib:format("SRV proportional weighting failure, value ~p/~p/~p/~p out of bounds (~p..~p)",
+				[MWP_E1_Count, MWP_E2_Count, MWP_E3_Count, MWP_E4_Count, MWP_1_Lower, MWP_1_Upper]),
+	    throw({error, lists:flatten(Msg)});
+	false ->
+	    ok
+    end,
+
+    autotest:mark(?LINE, "make_weight_proportional/1 - 2"),
+    %% test with error tuple (those are always last in the input to make_weight_proportional/1)
+    MWP_L2 = [MWP_E1, MWP_E2, {error, nxdomain}],
+    [#srventry{}, #srventry{}, {error, nxdomain}] = make_weight_proportional(MWP_L2),
+
+    autotest:mark(?LINE, "make_weight_proportional/1 - 3"),
+    %% test with only error tuple
+    MWP_L3 = [{error, nxdomain}],
+    MWP_L3 = make_weight_proportional(MWP_L3),
+
     ok.
+
+test_mwp_count([[H | _] | T], H, Count) ->
+    test_mwp_count(T, H, Count + 1);
+test_mwp_count([_ | T], H, Count) ->
+    test_mwp_count(T, H, Count);
+test_mwp_count([], _H, Count) ->
+    Count.
 
 %% Neat function from Joe Armstrongs thesis (page 58). Creates all
 %% possible permutations of the input list :
