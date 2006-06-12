@@ -309,7 +309,15 @@ route_request(Request, Origin, LogTag) when is_record(Request, request), is_list
     URL = Request#request.uri,
     case keylist:fetch('route', Request#request.header) of
 	[] ->
-	    Loc1 = case local:homedomain(URL#sipurl.host) of
+	    IsHomedomain = local:homedomain(URL#sipurl.host),
+	    IsMyPort =
+		case URL#sipurl.port of
+		    none ->
+			true;
+		    Port ->
+			lists:member(Port, sipsocket:get_all_listenports())
+		end,
+	    Loc1 = case IsHomedomain andalso IsMyPort of
 		       true ->
 			   case local:is_request_to_this_proxy(Request) of
 			       true ->
