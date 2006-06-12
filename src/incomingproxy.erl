@@ -158,46 +158,59 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 							     is_record(Origin, siporigin), is_list(LogStr) ->
     case yxa_config:get_env(always_verify_homedomain_user) of
 	{ok, true} ->
-	    {Method, Header} = {Request#request.method, Request#request.header},
-	    {_, FromURI} = sipheader:from(Header),
-	    %% Request has a From: address matching one of my domains.
-	    %% Verify sending user.
-	    case local:get_user_verified_proxy(Header, Method) of
-		{authenticated, SIPUser} ->
-		    case local:can_use_address(SIPUser, FromURI) of
-			true ->
-			    logger:log(debug, "Request: User ~p is allowed to use From: address ~p",
-				       [SIPUser, sipurl:print(FromURI)]),
-			    %% Generate a request_info event with some information about this request
-			    L = [{from_user, SIPUser}],
-			    event_handler:request_info(normal, LogTag, L),
-			    true;
-			false ->
-			    logger:log(error, "Authenticated user ~p may NOT use address ~p",
-				       [SIPUser, sipurl:print(FromURI)]),
-			    false
-		    end;
-		{stale, SIPuser} ->
-		    logger:log(normal, "~s: incomingproxy: From: address requires authentication (stale, user ~p)",
-			       [LogTag, SIPuser]),
-		    transactionlayer:send_challenge_request(Request, proxy, true, none),
-		    drop;
-		false ->
-		    case keylist:fetch('proxy-authenticate', Header) of
-			[] ->
-			    logger:log(normal, "~s: incomingproxy: From: address requires authentication", [LogTag]),
-			    transactionlayer:send_challenge_request(Request, proxy, false, none),
-			    drop;
-			_ ->
-			    OStr = sipserver:origin2str(Origin),
-			    Msg = io_lib:format("Request from ~s failed authentication : ~s", [OStr, LogStr]),
-			    event_handler:generic_event(normal, auth, LogTag, Msg),
-			    false
-		    end
+	    ToTag = sipheader:get_tag( keylist:fetch('to', Request#request.header) ),
+	    {ok, AuthInDialog} = yxa_config:get_env(authenticate_in_dialog_requests),
+	    if
+		ToTag /= none, AuthInDialog /= true ->
+		    %% This is a request inside a dialog. There is not as much need to authenticate such requests.
+		    logger:log(debug, "incomingproxy: NOT authenticating in-dialog request"),
+		    true;
+		true ->
+		    verify_homedomain_user2(Request, LogTag, Origin, LogStr)
 	    end;
 	{ok, false} ->
 	    true
     end.
+
+verify_homedomain_user2(Request, LogTag, Origin, LogStr) ->
+    {Method, Header} = {Request#request.method, Request#request.header},
+    {_, FromURI} = sipheader:from(Header),
+    %% Request has a From: address matching one of my domains.
+    %% Verify sending user.
+    case local:get_user_verified_proxy(Header, Method) of
+	{authenticated, SIPUser} ->
+	    case local:can_use_address(SIPUser, FromURI) of
+		true ->
+		    logger:log(debug, "Request: User ~p is allowed to use From: address ~p",
+			       [SIPUser, sipurl:print(FromURI)]),
+		    %% Generate a request_info event with some information about this request
+		    L = [{from_user, SIPUser}],
+		    event_handler:request_info(normal, LogTag, L),
+		    true;
+		false ->
+		    logger:log(error, "Authenticated user ~p may NOT use address ~p",
+			       [SIPUser, sipurl:print(FromURI)]),
+		    false
+	    end;
+	{stale, SIPuser} ->
+	    logger:log(normal, "~s: incomingproxy: From: address requires authentication (stale, user ~p)",
+		       [LogTag, SIPuser]),
+	    transactionlayer:send_challenge_request(Request, proxy, true, none),
+	    drop;
+	false ->
+	    case keylist:fetch('proxy-authenticate', Header) of
+		[] ->
+		    logger:log(normal, "~s: incomingproxy: From: address requires authentication", [LogTag]),
+		    transactionlayer:send_challenge_request(Request, proxy, false, none),
+		    drop;
+		_ ->
+		    OStr = sipserver:origin2str(Origin),
+		    Msg = io_lib:format("Request from ~s failed authentication : ~s", [OStr, LogStr]),
+		    event_handler:generic_event(normal, auth, LogTag, Msg),
+		    false
+	    end
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Function: do_request(RequestIn, Origin)
@@ -261,7 +274,7 @@ do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), 
 	{relay, Loc} when is_record(Loc, sipurl); Loc == route; is_list(Loc) ->
 	    relay_request(THandler, Request, Loc, Origin, LogTag);
 
-	{forward, FwdURL} when is_record(FwdURL, sipurl), FwdURL#sipurl.user == none, FwdURL#sipurl.pass == none ->
+	{forward, #sipurl{user = none, pass = none} = FwdURL} ->
 	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~s",
 		       [LogTag, Method, sipurl:print(URI), sipurl:print(FwdURL)]),
 	    forward_request(THandler, Request, FwdURL);
@@ -341,7 +354,7 @@ route_request(Request, Origin, LogTag) when is_record(Request, request), is_list
 %%           {response, Status, Reason}   |
 %%           {proxy, Location}            |
 %%           {relay, Location}            |
-%%           {forward, Proto, Host, Port} |
+%%           {forward, Location} |
 %%           none
 %%--------------------------------------------------------------------
 request_to_homedomain(Request, Origin, LogTag) when is_record(Request, request), is_record(Origin, siporigin),

@@ -497,6 +497,10 @@
 		      default	= true,
 		      type	= bool
 		     },
+	   #cfg_entry{key	= authenticate_in_dialog_requests,
+		      default	= false,
+		      type	= bool
+		     },
 	   #cfg_entry{key	= appserver,
 		      type	= sip_sipurl
 		     },

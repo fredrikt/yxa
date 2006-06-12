@@ -504,6 +504,11 @@ always_verify_homedomain_user	(default: true) If From: matches our definition
 				challenge user and make sure it is not someone
 				impersonating the calling party.
 
+authenticate_in_dialog_requests (default: false) Should we perform the From:
+                                check above for all in-dialog requests, or only
+                                the first one that establishes the request?
+                                Default is to only verify the first one.
+
 appserver			(default: "") URL to where to send requests
 				when there are more than a single location
 				for a request found in the location database,
