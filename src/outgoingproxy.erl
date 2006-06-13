@@ -199,9 +199,8 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 	    proxy_request(THandler, Request, Loc);
 
 	{proxy, [#sipdst{socket = Socket}] = DstList} when Socket /= undefined ->
-	    logger:log(normal, "~s: Outgoingproxy: Proxy ~s ~s -> socket ~p",
+	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> socket ~p",
 		       [LogTag, Method, sipurl:print(URI), Socket#sipsocket.id]),
-	    logger:log(debug, "FREDRIK: CONNECTION CACHE : ~p", [tcp_dispatcher:get_socketlist()]),
 	    proxy_request(THandler, Request, DstList);
 
 	{proxy, {with_path, Path}} when is_list(Path) ->
@@ -260,22 +259,41 @@ route_request_check_gruu(Request) when is_record(Request, request) ->
 	    route_request_check_route(Request)
     end.
 
+%% Check if request has a Route header. If it does, we must decide wether we should relay or
+%% proxy the request. We proxy (meaning without authentication) if the Request-URI or the last Route
+%% header resolves to the registered location of one of our users.
 route_request_check_route(Request) when is_record(Request, request) ->
     case keylist:fetch('route', Request#request.header) of
 	[] ->
 	    route_request_check_host(Request);
-	_Route ->
+	Route ->
 	    %% Request has Route header, allow if Request-URI is one of our users registered location
 	    URI = Request#request.uri,
-	    case local:get_locations_with_contact(URI) of
-		{ok, []} ->
-		    %% XXX think about this return code
-		    {response, 404, "Not Found"};
-		{ok, [#siplocationdb_e{sipuser = SIPuser} | _] = Locations} ->
-		    logger:log(debug, "outgoingproxy: Request destination ~p is a registered "
-			       "contact of user ~p - proxying (~p location(s))", [URI, SIPuser, length(Locations)]),
-		    route_request_to_user_contact(Locations)
-	    end
+	    {ok, URI_Locations} = local:get_locations_with_contact(URI),
+	    route_request_check_route2(Request#request.method, URI, URI_Locations, Route)
+    end.
+
+route_request_check_route2(_Method, URI, [#siplocationdb_e{sipuser = SIPuser} | _] = LocL, _Route) ->
+    logger:log(debug, "outgoingproxy: Request destination ~p is a registered contact of user ~p - "
+	       "proxying (~p location(s))", [sipurl:print(URI), SIPuser, length(LocL)]),
+    route_request_to_user_contact(LocL);
+
+route_request_check_route2("BYE", _URI, [], _Route) ->
+    %% BYE and ACK can't be challenged, but ACKs get special treatment in request/3
+    logger:log(debug, "outgoingproxy: Proxy BYE with Route header (without authentication)"),
+    {proxy, route};
+
+route_request_check_route2(Method, _URI, [], Route) ->
+    %% Check if the last element in the Route list resolves to one of our users locations
+    [LastRoute] = contact:parse([ hd(lists:reverse(Route)) ]),
+    case local:get_locations_with_contact( sipurl:parse(LastRoute#contact.urlstr) ) of
+	{ok, []} ->
+	    logger:log(debug, "outgoingproxy: Relay ~s with Route header", [Method]),
+	    {relay, route};
+	{ok, [#siplocationdb_e{sipuser = SIPuser} | _] = Locations} ->
+	    logger:log(debug, "outgoingproxy: Requests last route ~p is a registered contact of user ~p - "
+		       "proxying (~p location(s))", [LastRoute#contact.urlstr, SIPuser, length(Locations)]),
+	    route_request_to_user_contact(Locations)
     end.
 
 route_request_check_host(Request) when is_record(Request, request) ->
