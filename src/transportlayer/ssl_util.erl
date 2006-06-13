@@ -240,9 +240,9 @@ get_ssl_peer_info_subject(Cert) when is_record(Cert, 'Certificate') ->
     Subject = (Cert#'Certificate'.tbsCertificate)#'TBSCertificate'.subject,
     case decode_ssl_rdnseq(Subject) of
 	{ok, Decoded} ->
-	    {ok, C} = ssl_decoded_rdn_get(countryName, Decoded),
-	    {ok, O} = ssl_decoded_rdn_get(organizationName, Decoded),
-	    {ok, CN} = ssl_decoded_rdn_get(commonName, Decoded),
+	    C = ssl_decoded_rdn_get('at-countryName', Decoded),
+	    O = ssl_decoded_rdn_get('at-organizationName', Decoded),
+	    CN = ssl_decoded_rdn_get('at-commonName', Decoded),
 	    Descr = lists:append(["C=", C, "/O=", O, "/CN=", CN]),
 	    This = #ssl_conn_subject{countryName	= C,
 				     organizationName	= O,
@@ -256,13 +256,13 @@ get_ssl_peer_info_subject(Cert) when is_record(Cert, 'Certificate') ->
 	    error
     end.
 
-%% ssl_decoded_rdn_get/2, part of get_ssl_peer_info_subject/1. Returns : {ok, String}
+%% ssl_decoded_rdn_get/2, part of get_ssl_peer_info_subject/1. Returns : String
 ssl_decoded_rdn_get(Key, L) ->
     case lists:keysearch(Key, 1, L) of
 	{value, {Key, Value}} ->
-	    {ok, Value};
+	    Value;
 	false ->
-	    {ok, ""}
+	    ""
     end.
 
 %%--------------------------------------------------------------------
@@ -275,7 +275,7 @@ ssl_decoded_rdn_get(Key, L) ->
 %%--------------------------------------------------------------------
 get_ssl_peer_info_host_altnames(Cert) when is_record(Cert, 'Certificate') ->
     Extensions = (Cert#'Certificate'.tbsCertificate)#'TBSCertificate'.extensions,
-    AltNameExtensions = get_tbs_extensions(ssl_pkix_oid:atom2id(subjectAltName), Extensions),
+    AltNameExtensions = get_tbs_extensions(ssl_pkix_oid:atom2id('ce-subjectAltName'), Extensions),
     {ok, DNS_altNames} = get_host_altnames('SubjectAltName', AltNameExtensions),
     {ok, DNS_altNames}.
 
@@ -503,13 +503,13 @@ test() ->
     %% test decode_ssl_rdnseq(RdnSequence)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "decode_ssl_rdnseq/1 - 1"),
-    {ok, [{commonName,       "yxa-test-cert1.example.org"},
-	  {organizationName, "Stockholms universitet"},
-	  {countryName,      "SE"}
+    {ok, [{'at-commonName',       "yxa-test-cert1.example.org"},
+	  {'at-organizationName', "Stockholms universitet"},
+	  {'at-countryName',      "SE"}
 	 ]} = decode_ssl_rdnseq((TestCert1#'Certificate'.tbsCertificate)#'TBSCertificate'.subject),
 
     autotest:mark(?LINE, "decode_ssl_rdnseq/1 - 2"),
-    {ok, [{commonName, "Yxa test CA"}]} =
+    {ok, [{'at-commonName', "Yxa test CA"}]} =
 	decode_ssl_rdnseq((TestCert1#'Certificate'.tbsCertificate)#'TBSCertificate'.issuer),
 
     autotest:mark(?LINE, "decode_ssl_rdnseq/1 - 3"),

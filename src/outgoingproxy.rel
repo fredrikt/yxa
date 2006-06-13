@@ -1,7 +1,7 @@
-%% Erlang OTP R10B-9 library versions
+%% Erlang OTP R11B-0 library versions
 {release, {"YXA outgoingproxy","0.0"}, {erts, "5.2"},
- [{kernel,"2.10.12"},
-  {stdlib,"1.13.11"},
-  {ssl, "3.0.10"},
-  {mnesia, "4.2.3"},
+ [{kernel,"2.11"},
+  {stdlib,"1.14"},
+  {ssl, "3.0.12"},
+  {mnesia, "4.3.1"},
   {outgoingproxy, "0.0"}]}.
