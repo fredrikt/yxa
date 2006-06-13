@@ -417,6 +417,15 @@ get_good_socket(#sipsocket{proto = Proto} = DefaultSocket, #sipdst{proto = Proto
 	    get_good_socket(none, Dst)
     end;
 %%
+%% Default socket has other protocol than the requested one
+%%
+get_good_socket(#sipsocket{proto = Proto}, #sipdst{proto = OtherProto}) ->
+    %% This happens for example when we receive a request with the wrong protocol in the top Via
+    logger:log(debug, "Transport layer: Socket of protocol '~p' requested, different from default socket given (~p)",
+	       [Proto, OtherProto]),
+    Msg = io_lib:format("Default socket has wrong protocol (~p instead of ~p)", [Proto, OtherProto]),
+    {error, lists:flatten(Msg)};
+%%
 %% No default socket provided, but one is stuffed into Dst
 %%
 get_good_socket(none, #sipdst{socket = Socket}) when is_record(Socket, sipsocket) ->
