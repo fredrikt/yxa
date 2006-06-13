@@ -18,7 +18,8 @@
 	 get_telephonenumber_for_user/1,
 	 can_use_address/2,
 	 can_use_address_detail/2,
-	 canonify_authusername/2
+	 canonify_authusername/2,
+	 create_dialog_state_uas/4
 	]).
 
 -include("siprecords.hrl").
@@ -197,3 +198,64 @@ canonify_authusername2("ft", #sipurl{user="ft", host="pappersk.org"}=FromURL) wh
     "ft.sip2";
 canonify_authusername2("ft", _URL) ->
     undefined.
+
+
+create_dialog_state_uas(subscription, Request, ToTag, MyContact) ->
+    {ok, Dialog} = sipdialog:create_dialog_state_uas(Request, ToTag, MyContact),
+    case keylist:fetch('user-agent', Request#request.header) of
+	["Hotsip-CallTron/4.3.1.1212"] ->
+	    [Contact] = contact:parse([Dialog#dialog.remote_target]),
+	    logger:log(debug, "local: Hotsip UA detected, verifying Contact (~s)", [Contact#contact.urlstr]),
+	    URL = sipurl:parse(Contact#contact.urlstr),
+	    case local:get_locations_with_contact(URL) of
+		{ok, []} ->
+		    %% Contact is not the registered contact, have to figure out the
+		    %% registered one in order to get incomingproxy/outgoingproxy to
+		    %% relay the request without requiring authentication
+		    {_DisplayName, FromURL} = sipheader:from(Request#request.header),
+		    case find_real_contact(FromURL, URL, Dialog#dialog.remote_target) of
+			{ok, RealContact} ->
+			    {ok, Dialog#dialog{remote_target = RealContact}};
+			none ->
+			    logger:log(debug, "local: Found no substitute Contact for ~s (bad thing!)",
+				       [Dialog#dialog.remote_target]),
+			    {ok, Dialog}
+		    end;
+		{ok, Res} ->
+		    logger:log(debug, "local: Found location(s) for contact : ~p", [Res]),
+		    {ok, Dialog}
+	    end;
+	_ ->
+	    {ok, Dialog}
+    end;
+create_dialog_state_uas(_Caller, Request, ToTag, Contact) ->
+    sipdialog:create_dialog_state_uas(Request, ToTag, Contact).
+
+find_real_contact(FromURL, URL, RemoteTarget) ->
+    case local:lookup_url_to_locations(FromURL) of
+	Locations when is_list(Locations) ->
+	    logger:log(debug, "local: From: resolved to a number of locations : ~p", [Locations]),
+	    case find_matching_location(URL, Locations) of
+		{ok, Address} ->
+		    NewContactStr = "<" ++ sipurl:print(Address) ++ ">",
+		    logger:log(debug, "local: Using Contact ~s instead of ~s", [NewContactStr, RemoteTarget]),
+		    {ok, NewContactStr};
+		none ->
+		    none
+	    end;
+	nomatch ->
+	    %% nothing we can do
+	    logger:log(debug, "local: Found no locations for From: URL : (~s) - nothing I can do (bad thing!)",
+		       [sipurl:print(FromURL)]),
+	    none
+    end.
+
+find_matching_location(URL, [#siplocationdb_e{address = URL2} = H | T]) when is_record(URL2, sipurl) ->
+    case sipurl:url_is_equal(URL, URL2, [proto, host, port]) of
+	true ->
+	    {ok, siplocation:to_url(H)};
+	false ->
+	    find_matching_location(URL, T)
+    end;
+find_matching_location(_URL, []) ->
+    none.
