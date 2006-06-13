@@ -85,7 +85,9 @@
 		       hex,
 		       sipdialog,
 		       sipsocket_blacklist,
-		       stun
+		       stun,
+		       appserver,
+		       presence_pidf
 		      ]).
 
 %%====================================================================

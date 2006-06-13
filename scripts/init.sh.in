@@ -301,14 +301,22 @@ else
 
     case $command in
 	start)
-	    if [ -f "$PWD/src/${PROGRAMNAME}.boot" ]; then
-		bootfile="$PWD/src/${PROGRAMNAME}"
+	    dir="`dirname $0`"
+	    if [ -f "${dir}/${PROGRAMNAME}.boot" ]; then
+		bootfile="${dir}/${PROGRAMNAME}"
 	    else
-		if [ -f "${beamdir}/${PROGRAMNAME}.boot" ]; then
-		    bootfile="${beamdir}/$PROGRAMNAME"
+		if [ -f "${dir}/src/${PROGRAMNAME}.boot" ]; then
+		    bootfile="${dir}/src/${PROGRAMNAME}"
+		else
+		    if [ -f "${beamdir}/${PROGRAMNAME}.boot" ]; then
+			bootfile="${beamdir}/$PROGRAMNAME"
+		    else
+			echo "$0: No boot file for application '${PROGRAMNAME}' found!"
+			exit 1
+		    fi
 		fi
 	    fi
-	    ${erl} -boot $bootfile -pz ${beamdir} \
+	    ${erl} -boot "$bootfile" -pz ${beamdir} \
 		$EXTRA_ERL_ARGUMENTS \
 		-name $name \
 		-yxa_config $configpath \

@@ -112,6 +112,7 @@ SUBDIRS = \
 	cpl \
 	database \
 	eldap \
+	event \
 	event_handler \
 	include \
 	local \

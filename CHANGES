@@ -1,4 +1,8 @@
-
+ - Implemented generic SIP Event (RFC3265) server, with plugins for
+   the following packages : presence, dialog
+ - Implemented Outbound (draft-ietf-sip-outbound-03). Not very
+   tested since there are virtually no other implementations of
+   Outbound yet.
  - Implement RFC3327 (Path). Needed for Outbound.
  - Implement STUN server answering NAT keepalive STUN requests
    received on our SIP ports.

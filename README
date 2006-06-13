@@ -62,6 +62,18 @@ will send requests for that user on to appserver which is a statefull proxy
 and can fork the call to all the users registered user agents or according
 to the users CPL script.
 
+eventserver:
+
+Framework for SIP event packages. Dialog stateful UAS.
+Comes with default package handlers for the following packages :
+
+	presence	RFC3856
+	dialog		RFC4235
+
+NOTE: The eventserver itself is probably working, but the event packages
+are still under development and EXPERIMENTAL. Read more about the packages
+below, under the topic "SIP Events".
+
 testserver:
 
 Not useful for anything except regression testing. Answers 404 Not Found
@@ -587,6 +599,17 @@ x_yxa_peer_auth			(default: []) List of {host, secret} shared
 				at pstnproxy.example.com accept the requests.
 
 
+eventserver:
+------------
+eventserver_package_handlers	(default: [{"presence", presence_package}])
+
+presence_min_publish_time	(default: 5)
+
+presence_max_publish_time	(default: 3600)
+
+presence_default_publish_time	(default: 600)
+
+
 At the moment, configuration files must be in Erlang syntax. This involves lots
 of brackets and curly brackets, and might be seen as an disadvantage for YXA.
 Please bear with this though, as steps have been taken to make it easy to add
@@ -637,6 +660,7 @@ incomingproxy.config:
                   {homedomain, ["example.com", "example.net", "example.org"]},
 		  {myhostnames, ["sipserver.example.com", "sip.example.net", "sip.example.org"]},
 		  {appserver, "appserver.example.com:5070"},
+		  {eventserver, "eventserver.example.com"},
                   {ldap_server, "ldap.example.com"}
                  ]}].
 
@@ -1020,3 +1044,36 @@ This means that you might not get IPv6 addresses back from
 dnsutil:get_ip_port(), which in turn means YXA won't make outgoing connections
 to IPv6 addresses. This is a problem with some versions of Linux (for example,
 RH7.3 to RH9 based systems).
+
+
+====================
+SIP Events (RFC3265)
+====================
+
+The YXA application 'eventserver' handles subscriptions for SIP events in a
+modular fashion. The goal is to separate subscription handling, with all the
+issues regarding expiration and renewing of subscriptions, from the event
+packages. Event packages are Erlang modules implementing the behaviour
+'event_package'. There following event packages exist, and are enabled per
+default :
+
+  presence :    This is a presence state agent (presence server), that stores
+                presence that clients send using PUBLISH in a Mnesia database.
+                It is possible to have a distributed presence server with more
+                than one eventserver, running on more than one Erlang node.
+                Currently, all users in your domain are allowed to subscribe
+                to all other users in your domains presence. Users outside
+                your domain is not allowed to subscribe to your users presence
+                at all. The presence status of your users can also be obtained
+                through a bidirectional subscription (the eventserver subscri-
+                bes to your user when it subscribes to someone else), but this
+                is done on a per-User-Agent basis and probably requires you to
+                patch the code slightly. Anyone interested in implementing
+                XCAP for access control lists etc. should let me know, that
+                would be great. I won't do it.
+
+  dialog   :    A dialog state agent. The goal was to get 'shared line'
+                working on my Snom phones. Can't say I'm there just yet.
+
+NOTE that ALL these event packages are currently to be considered
+experimental.

@@ -1,0 +1,117 @@
+# $Id: Makefile.in 3031 2006-02-14 13:17:09Z ft $
+#
+
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+VPATH = @srcdir@
+prefix = @prefix@
+DESTDIR = @DESTDIR@
+SHELL = @SHELL@
+
+confdir = @sysconfdir@
+sslcertdir = @sslcertdir@
+mnesiadir = @mnesiadir@
+beamdir = @libdir@/yxa/ebin
+includedir = @libdir@/yxa/include
+sbindir = @sbindir@
+exec_prefix=${prefix}
+builddir = @builddir@
+local_module = @local_module@
+
+ERLC = @ERLC@
+ERL = @ERL@
+
+INSTALL = @INSTALL@
+install_DATA = @INSTALL_DATA@
+install_PROGRAM = @INSTALL_PROGRAM@
+
+mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
+
+systools_make_script = \
+	$(ERLC) -I$(srcdir) $(srcdir)/$*.rel
+
+
+erl_FILES = \
+	event_package.erl \
+	active_subscriber.erl \
+	active_subscription.erl \
+	dialog_package.erl \
+	eventserver.erl \
+	event_mnesia_monitor.erl \
+	notifylist.erl \
+	presence_package.erl \
+	presence_pidf.erl \
+	subscription.erl
+
+
+imported_hrl_FILES = \
+	../include/event.hrl \
+	../include/yxa_config.hrl
+
+hrl_FILES = \
+
+yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
+
+boot_FILES = \
+	eventserver.boot
+
+start_FILES = \
+	eventserver
+
+app_FILES = $(boot_FILES:.boot=.app)
+
+CC = gcc
+CFLAGS = -Wall
+
+beam_FILES = $(erl_FILES:.erl=.beam)
+
+all: $(beam_FILES) $(boot_FILES) $(start_FILES)
+
+install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) $(start_FILES)
+	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	$(mkinstalldirs) $(DESTDIR)$(includedir)
+	$(mkinstalldirs) $(DESTDIR)$(sbindir)
+	for p in $(beam_FILES) $(boot_FILES) $(app_FILES); do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(hrl_FILES); do \
+	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
+	done
+	for p in $(start_FILES); do \
+	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
+	done
+
+clean:
+	rm -f core *.core *~
+	rm -f *.beam *.script *.start *.boot *.app
+	rm -f *.o ktrace.out erl_crash.dump
+	rm -f $(start_FILES)
+
+$(beam_FILES): $(yxa_hrl_FILES)
+$(boot_FILES): $(beam_FILES)
+
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
+.SUFFIXES:
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .app .app-in
+
+.erl.beam:
+	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -W +debug_info $<
+
+.app-in.app:
+	cp $(srcdir)/$*.app-in $*.app
+
+
+eventserver.boot: eventserver.app $(srcdir)/eventserver.rel
+	$(systools_make_script)
+
+$(start_FILES): $(top_srcdir)/scripts/init.sh.in ../../config.status
+
+eventserver:
+	sed -e "s!@PROGRAMNAME@!$@!" \
+	    -e 's!@CONFIGDIR@!$(confdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@erl@!$(ERL)!' \
+	    -e 's!@beamdir@!$(beamdir)!' < $(top_srcdir)/scripts/init.sh.in > $@.new && \
+	chmod +x $@.new && \
+	mv $@.new $@

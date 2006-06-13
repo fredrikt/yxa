@@ -1,0 +1,19 @@
+{application, eventserver,
+ [{description, "Event package framework server"},
+  {vsn,"0.0"},
+  {modules, [
+	     eventserver
+	    ]},
+  {registered, [
+		sipserver_sup,
+		yxa_config,
+		logger,
+		ldap_client,
+		tcp_dispatcher,
+		sipsocket_udp,
+		transactionlayer
+	       ]},
+  {mod, {sipserver, [eventserver]}},
+  {env, []},
+  {applications,
+        [kernel, stdlib]}]}.

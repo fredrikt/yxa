@@ -607,6 +607,41 @@
 		      type	= string,
 		      required	= true
 		     }
+	  ]},
+
+	 {eventserver,
+	  [
+	   #cfg_entry{key	= presence_min_publish_time,
+		      type	= integer,
+		      required	= true,
+		      default	= 5
+		     },
+	   #cfg_entry{key	= presence_max_publish_time,
+		      type	= integer,
+		      required	= true,
+		      default	= 3600
+		     },
+	   #cfg_entry{key	= presence_default_publish_time,
+		      type	= integer,
+		      required	= true,
+		      default	= 600
+		     },
+	   #cfg_entry{key	= eventserver_package_handlers,
+		      list_of   = true,
+		      type	= term,
+		      required	= true,
+		      default	= [{"presence", presence_package},
+				   {"dialog",   dialog_package}
+				  ]
+		      %% XXX soft_reload should perhaps be 'false' since any new modules
+		      %% won't get initialized with their init() function? Big loss in
+		      %% flexibility though.
+		     },
+	   #cfg_entry{key	= set_useragent_and_server,
+		      type	= bool,
+		      required	= true,
+		      default	= true
+		     }
 	  ]}
 	]
        ).
