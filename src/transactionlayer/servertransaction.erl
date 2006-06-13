@@ -307,6 +307,19 @@ handle_call({set_report_to, Pid}, From, #state{report_to=undefined}=State) when 
 	end,
     check_quit(Reply, From);
 
+%%--------------------------------------------------------------------
+%% Function: handle_call(change_parent, FromPid, ToPid}, From, State)
+%%           FromPid = pid()
+%%           ToPid   = pid()
+%% Descrip.: Change our parent. Internal to the transaction layer -
+%%           used when a dialog controller is handed the request
+%%           instead of the YXA application's request/3 function being
+%%           invoked.
+%% Returns : {reply, Reply, State, ?TIMEOUT} |
+%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
+%%           Reply  = {ok, ToTag}
+%%           ToTag = string()
+%%--------------------------------------------------------------------
 handle_call({change_parent, FromPid, ToPid}, From, #state{parent = FromPid} = State) when is_pid(ToPid) ->
     LogTag = State#state.logtag,
     logger:log(debug, "~s: Changing parent from ~p to ~p", [LogTag, FromPid, ToPid]),
@@ -576,7 +589,7 @@ handle_info(timeout, State) ->
 %%--------------------------------------------------------------------
 %% Function: handle_info({siptimer, TRef, TDesc}, State)
 %%           TRef  = term(), siptimer reference
-%%           TDesc = string(), desciption of timer event
+%%           TDesc = string(), description of timer event
 %% Descrip.: One of our siptimers has fired. Find it in our list and
 %%           invoke process_timer/2.
 %% Returns : {noreply, NewState, ?TIMEOUT}
