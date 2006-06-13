@@ -18,9 +18,11 @@
 	 register_dialog_controller/3,
 	 register_dialog_controller/4,
 	 get_dialog_controller/1,
+	 unregister_dialog_controller/1,
 	 delete_using_pid/1,
 	 delete_dialog_controller/3,
 	 handle_expired_dialogs/1,
+	 set_dialog_expires/2,
 	 set_dialog_expires/4,
 
 	 %% dialog record users helper functions
@@ -31,6 +33,8 @@
 	 update_dialog_recv_request/2,
 
 	 get_next_local_cseq/1,
+
+	 generate_new_request/4,
 
 	 dialog2str/1,
 
@@ -231,6 +235,19 @@ get_dialog_controller2(CallId, LocalTag, RemoteTag) when is_list(CallId), is_lis
 
 
 %%--------------------------------------------------------------------
+%% Function: unregister_dialog_controller(Dialog)
+%%           Dialog = dialog record()
+%% Descrip.: Unregister a dialog. Really just a shortcut for
+%%           delete_dialog_controller/3.
+%% Returns : ok
+%%--------------------------------------------------------------------
+unregister_dialog_controller(Dialog) when is_record(Dialog, dialog) ->
+    delete_dialog_controller(Dialog#dialog.callid,
+			     Dialog#dialog.local_tag,
+			     Dialog#dialog.remote_tag).
+
+
+%%--------------------------------------------------------------------
 %% Function: delete_using_pid(Pid)
 %%           Pid = pid()
 %% Descrip.: Delete any records of dialogs controlled by Pid.
@@ -251,6 +268,13 @@ delete_using_pid(Pid) when is_pid(Pid) ->
 	    nomatch
     end.
 
+%%--------------------------------------------------------------------
+%% Function: delete_dialog_controller(CallId, LocalTag, RemoteTag)
+%%           Pid = pid()
+%% Descrip.: Delete a dialog from the ETS table. See also
+%%           unregister_dialog_controller/1 above.
+%% Returns : ok
+%%--------------------------------------------------------------------
 delete_dialog_controller(CallId, LocalTag, RemoteTag) when is_list(CallId), is_list(LocalTag),
 							   is_list(RemoteTag); RemoteTag == undefined ->
     Id = #dialogid{callid     = CallId,
@@ -304,14 +328,24 @@ handle_expired_dialogs2(Interval, Entrys) when is_integer(Interval), is_list(Ent
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: set_dialog_expires(CallId, LocalTag, RemoteTag, Expires)
+%% Function: set_dialog_expires(Dialog, Expires)
+%%           set_dialog_expires(CallId, LocalTag, RemoteTag, Expires)
 %%           CallId    = string()
 %%           LocalTag  = string()
 %%           RemoteTag = string() | undefined
-%%           Expires   = integer()
+%%           Expires   = integer(), seconds from now the dialog should
+%%                       expire
 %% Descrip.: Set a new expiration time on an existing dialog.
 %% Returns : ok | nomatch
 %%--------------------------------------------------------------------
+set_dialog_expires(Dialog, Expires) when is_record(Dialog, dialog), is_integer(Expires) ->
+    #dialog{callid     = CallId,
+	    local_tag  = LocalTag,
+	    remote_tag = RemoteTag
+	   } = Dialog,
+    
+    set_dialog_expires(CallId, LocalTag, RemoteTag, Expires).
+
 set_dialog_expires(CallId, LocalTag, RemoteTag, Expires) when is_list(CallId), is_list(LocalTag),
 							      is_list(RemoteTag); RemoteTag == undefined,
 							      is_integer(Expires) ->
@@ -632,6 +666,86 @@ update_dialog_recv_request(Request, Dialog) when is_record(Request, request), is
 	_ ->
 	    {error, old_cseq}
     end.
+
+
+%%--------------------------------------------------------------------
+%% Function: generate_new_request(Method, ExtraHeaders, Body, Dialog)
+%%           Method       = string(), SIP method
+%%           ExtraHeaders = list() of {Key, Value} tuple(), extra
+%%                          headers to include in response
+%%           Body         = binary() | list(), request body
+%%           Dialog       = dialog record()
+%% Descrip.: Generate a new request based on Method, supplied Extra-
+%%           Headers, body and dialog info found in Dialog.
+%% Returns : {ok, Request, NewDialog, DstList}
+%%           Request = request record()
+%%           NewDialog = dialog record()
+%%           DstList   = list() of sipdst record()
+%%--------------------------------------------------------------------
+generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), is_list(ExtraHeaders),
+							      is_binary(Body); is_list(Body),
+							      is_record(Dialog, dialog) ->
+    {ok, CSeqNum, NewDialog} = get_next_local_cseq(Dialog),
+
+    CallId = NewDialog#dialog.callid,
+
+    [C] = contact:parse([NewDialog#dialog.remote_target]),
+    TargetURI = sipurl:parse(C#contact.urlstr),
+    From = set_tag(NewDialog#dialog.local_tag, NewDialog#dialog.local_uri),
+    To =
+	case NewDialog#dialog.remote_uri_str of
+	    undefined ->
+		%% This really should be enough, but many clients expect To: byte-by-byte matching their From:
+		set_tag(NewDialog#dialog.remote_tag, NewDialog#dialog.remote_uri);
+	    [RemoteURI_str] when is_list(RemoteURI_str) ->
+		RemoteURI_str
+	end,
+
+    {Route, Dst} =
+	case NewDialog#dialog.route_set of
+	    [] ->
+		[Dst1_1 | _] = sipdst:url_to_dstlist(TargetURI, 500, TargetURI),
+		{[], Dst1_1};
+	    [FirstRoute | _] = RouteL1 ->
+		[FRC] = contact:parse([FirstRoute]),
+		FRURL = sipurl:parse(FRC#contact.urlstr),
+		[Dst1_1 | _] = sipdst:url_to_dstlist(FRURL, 500, TargetURI),
+		{[{"Route", RouteL1}], Dst1_1}
+	end,
+
+    Header = keylist:from_list([{"From",	[From]},
+				{"To",		[To]},
+				{"Call-Id",	[CallId]},
+				{"CSeq",	[lists:concat([CSeqNum, " ", Method])]}
+			       ] ++ Route ++ ExtraHeaders),
+
+    Request1 = #request{method = Method,
+			uri    = TargetURI,
+			header = Header
+		       },
+    Request = siprequest:set_request_body(Request1, Body),
+
+    {ok, Request, NewDialog, Dst}.
+
+
+%%--------------------------------------------------------------------
+%% Function: set_tag(ToTag, {DisplayName, ToURI})
+%%           ToTag       = string()
+%%           DisplayName = string() | none
+%%           ToURI       = sipurl record()
+%% Descrip.: Set tag on a parsed To: header.
+%% Returns : NewTo = string()
+%%--------------------------------------------------------------------
+set_tag(ToTag, {DisplayName, ToURI}) when is_list(ToTag) ->
+    [NewTo] = sipheader:contact_print(
+                [ contact:new(DisplayName, ToURI, [{"tag", ToTag}]) ]),
+    NewTo;
+
+set_tag(ToTag, URI) when is_list(ToTag), is_record(URI, sipurl) ->
+    [NewURL] = sipheader:contact_print(
+                [ contact:new(none, URI, [{"tag", ToTag}]) ]),
+    NewURL.
+
 
 %%--------------------------------------------------------------------
 %% Function: dialog2str(Dialog)
