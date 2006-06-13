@@ -73,6 +73,18 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% Used when building binary messages from headers - the headers will be
+%% outputed in the order of the fields in this record
+-record(header_sort, {via		= [],
+		      from		= [],
+		      to		= [],
+		      'call-id'		= [],
+		      cseq		= [],
+		      route		= [],
+		      'record-route'	= [],
+		      rest		= []
+		     }).
+
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
@@ -580,7 +592,7 @@ callid(Header) when is_record(Header, keylist) ->
 %%           to prioritize speed here, so we don't spend extra cycles
 %%           making the resulting data uniformed. We might return a
 %%           list of lists of binaries, or just binaries.
-%% Returns : I/O list() | throw()
+%% Returns : binary() | throw()
 %%--------------------------------------------------------------------
 build_header_binary(Header) when is_record(Header, keylist) ->
     case catch build_header_unsafe_binary(Header) of
@@ -595,11 +607,42 @@ build_header_binary(Header) when is_record(Header, keylist) ->
 build_header_unsafe_binary(Header) ->
     %% process each line in Header
     Lines = keylist:map(fun print_one_header_binary/3, Header),
-    Lines.
+    list_to_binary(sort_headers(Lines)).
 
-print_one_header_binary(_Key, Name, []) ->
+%%--------------------------------------------------------------------
+%% Function: sort_headers(In)
+%%           In = list() of {Key, Binary}
+%%              Key    = atom() | string()
+%%              Binary = binary()
+%% Descrip.: Rough sort headers for better readability (and to follow
+%%           RFC3261 #7.3.1 (Header Field Format) recommendations
+%%           about some sorting to facilitate more rapid parsing by
+%%           other nodes
+%% Returns : binary()
+%%--------------------------------------------------------------------
+sort_headers(In) when is_list(In) ->
+    sort_headers2(In, #header_sort{}).
+
+sort_headers2([{via, Val} | T], R) ->			sort_headers2(T, R#header_sort{via = Val});
+sort_headers2([{from, Val} | T], R) ->			sort_headers2(T, R#header_sort{from = Val});
+sort_headers2([{to, Val} | T], R) ->			sort_headers2(T, R#header_sort{to = Val});
+sort_headers2([{'call-id', Val} | T], R) ->		sort_headers2(T, R#header_sort{'call-id' = Val});
+sort_headers2([{cseq, Val} | T], R) ->			sort_headers2(T, R#header_sort{cseq = Val});
+sort_headers2([{route, Val} | T], R) ->			sort_headers2(T, R#header_sort{route = Val});
+sort_headers2([{'record-route', Val} | T], R) ->	sort_headers2(T, R#header_sort{'record-route' = Val});
+sort_headers2([{_Other, Val} | T], R) ->		
+    NewRest = [Val | R#header_sort.rest],
+    sort_headers2(T, R#header_sort{rest = NewRest});
+sort_headers2([], R) ->
+    [_ | Headers] = tuple_to_list(R),
+    Headers.
+
+%% Returns : list() of {Key, Binary}
+%%           Key = atom() or string(), keylist normalized header name
+%%           Binary = binary(), this header as binary (<<"Supported: something\r\n">> for example
+print_one_header_binary(Key, Name, []) ->
     %% Header without value.
-    list_to_binary([Name, $:, 32, 13, 10]);
+    {Key, list_to_binary([Name, $:, 32, 13, 10])};
 print_one_header_binary(Key, Name, ValueList) ->
     %% certain headers that have multiple values are written on a single line separated by "," -
     %% this is not because any RFC says so but because these are common headers that look
@@ -617,7 +660,8 @@ print_one_header_binary(Key, Name, ValueList) ->
 	    true -> false
 	end,
     BinName = list_to_binary(Name),
-    print_one_header_binary2(OneLine, BinName, ValueList, []).
+    This = print_one_header_binary2(OneLine, BinName, ValueList, []),
+    {Key, This}.
 
 %% print_one_header_binary2 - convert all the values to binarys
 print_one_header_binary2(OneLine, BinName, [H | T], Res) ->
@@ -1613,11 +1657,11 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "build_header_binary/1 - 1"),
     %% test single header
-    [[<<"Call-Id: call-id-test\r\n">>]] = build_header_binary( keylist:from_list([{"Call-Id", ["call-id-test"]}]) ),
+    <<"Call-Id: call-id-test\r\n">> = build_header_binary( keylist:from_list([{"Call-Id", ["call-id-test"]}]) ),
 
     autotest:mark(?LINE, "build_header_binary/1 - 2"),
     %% test multiple values
-    [[<<"Via: via1\r\n">>, <<"Via: via2\r\n">>]] = build_header_binary( keylist:from_list([{"Via", ["via1", "via2"]}]) ),
+    <<"Via: via1\r\nVia: via2\r\n">> = build_header_binary( keylist:from_list([{"Via", ["via1", "via2"]}]) ),
 
     autotest:mark(?LINE, "build_header_binary/1 - 3"),
     %% test more complex case
@@ -1627,16 +1671,32 @@ test() ->
 					   {"Date", ["Thu, 10 Feb 2005 14:41:04 GMT"]}
 					  ]),
 
-    [[<<"Via: via1\r\n">>,
-      <<"Via: via2\r\n">>],
-     [<<"Call-Id: call-id-test\r\n">>],
-     <<"Accept: accept1, accept2\r\n">>,
-     [<<"Date: Thu, 10 Feb 2005 14:41:04 GMT\r\n">>]] = build_header_binary(BuildHeaderBin_H1),
+    <<"Via: via1\r\n"
+     "Via: via2\r\n"
+     "Call-Id: call-id-test\r\n"
+     "Date: Thu, 10 Feb 2005 14:41:04 GMT\r\n"
+     "Accept: accept1, accept2\r\n">> = build_header_binary(BuildHeaderBin_H1),
 
     autotest:mark(?LINE, "build_header_binary/1 - 4"),
     %% test Reason-header without value
-    [<<"Reason: ", 13, 10>>] = build_header_binary( keylist:from_list([{"Reason", []}]) ),
+    <<"Reason: ", 13, 10>> = build_header_binary( keylist:from_list([{"Reason", []}]) ),
 
+    autotest:mark(?LINE, "build_header_binary/1 - 5"),
+    %% test the sorting of headers
+    BuildHeaderBin_H2 = keylist:from_list([{"Call-Id", ["call-id-test2"]},
+					   {"Via", ["via1", "via2"]},
+					   {"Route", ["<sip:example.org;lr>"]},
+                                           {"Accept", ["accept1", "accept2"]},
+                                           {"Date", ["Thu, 10 Feb 2005 14:41:04 GMT"]},
+					   {"From", ["Fredrik <sip:testing@example.org>"]}
+                                          ]),
+    <<"Via: via1\r\n"
+     "Via: via2\r\n"
+     "From: Fredrik <sip:testing@example.org>\r\n"
+     "Call-Id: call-id-test2\r\n"
+     "Route: <sip:example.org;lr>\r\n"
+     "Date: Thu, 10 Feb 2005 14:41:04 GMT\r\n"
+     "Accept: accept1, accept2\r\n">> = build_header_binary(BuildHeaderBin_H2),
 
     %% test get_tag([String])
     %%--------------------------------------------------------------------
