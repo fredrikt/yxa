@@ -266,25 +266,15 @@ handle_call({send, {"[" ++ HostT, Port, Message}}, _From, State) when is_list(Ho
 		{error, "Unknown format of destination"};
 	    Index when is_integer(Index) ->
 		Addr = string:substr(HostT, 1, Index - 1),
-		case State#state.inet6_socketlist of
-		    [] ->
-			{error, no_inet6_socket};
-		    [{Socket, _SipSocket} | _] ->
-			{ok, AddrT} = inet_parse:ipv6_address(Addr),
-			gen_udp:send(Socket, AddrT, Port, Message)
-		end
+		{ok, AddrT} = inet_parse:ipv6_address(Addr),
+		do_send(State#state.inet6_socketlist, AddrT, Port, Message)
 	end,
     {reply, {send_result, SendRes}, State};
 %%
 %% Host is not IPv6 reference (inside brackets)
 %%
 handle_call({send, {Host, Port, Message}}, _From, State) when is_list(Host), is_integer(Port) ->
-    SendRes = case State#state.inet_socketlist of
-		  [] ->
-		      {error, no_inet_socket};
-		  [{Socket, _SipSocket} | _] ->
-		      gen_udp:send(Socket, Host, Port, Message)
-	      end,
+    SendRes = do_send(State#state.inet_socketlist, Host, Port, Message),
     {reply, {send_result, SendRes}, State}.
 
 
@@ -653,3 +643,25 @@ get_sipsocket_id_match(Id, [_H | T]) ->
     get_sipsocket_id_match(Id, T);
 get_sipsocket_id_match(_Id, []) ->
     {error, "No socket found"}.
+
+
+%%--------------------------------------------------------------------
+%% Function: do_send(SocketList, Host, Port, Message)
+%%           SocketList = list() of {Socket, SipSocket} tuple()
+%%           Host      = string()
+%%           Port      = integer()
+%%           Message   = term()
+%% Descrip.: Try sockets in SocketList until we find one that can send
+%%           to this destination, or they are all exhausted.
+%% Returns : {error, no_socket} | term(), send result
+%%--------------------------------------------------------------------
+do_send([{Socket, _SipSocket} | T], Host, Port, Message) ->
+    case gen_udp:send(Socket, Host, Port, Message) of
+	{error, einval} ->
+	    %% destination address not valid for this socket, try next
+	    do_send(T, Host, Port, Message);
+	Res ->
+	    Res
+    end;
+do_send([], _Host, _Port, _Message) ->
+    {error, no_socket}.
