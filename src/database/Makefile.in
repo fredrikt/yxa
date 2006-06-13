@@ -30,6 +30,7 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 erl_FILES = \
 	database_call.erl \
+	database_eventdata.erl \
 	database_forward.erl \
 	database_gruu.erl \
 	database_regexproute.erl \

@@ -9,7 +9,8 @@
 		     database_forward,
 		     database_call,
 		     cpl_db,
-		     database_gruu
+		     database_gruu,
+		     database_eventdata
 		    ]).
 
 -define(MNESIA_TABLES, [user,
@@ -19,7 +20,8 @@
 			forward,
 			%% call
 			cpl_script_graph,
-			gruu
+			gruu,
+			eventdata
 		       ]).
 
 
