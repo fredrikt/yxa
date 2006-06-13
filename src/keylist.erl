@@ -330,6 +330,8 @@ normalize("f") -> normalize2("from");
 normalize("s") -> normalize2("subject");
 normalize("k") -> normalize2("supported");
 normalize("t") -> normalize2("to");
+normalize("o") -> normalize2("event");			%% RFC3265
+normalize("u") -> normalize2("allow-events");		%% RFC3265
 normalize("v") -> normalize2("via");
 %% RFC3515 #7
 normalize("r") -> "refer-to";
@@ -355,6 +357,7 @@ normalize2("content-length") ->		'content-length';
 normalize2("content-type") ->		'content-type';
 normalize2("cseq") ->			'cseq';
 normalize2("date") ->			'date';
+normalize2("event") ->			'event';
 normalize2("expires") ->		'expires';
 normalize2("from") ->			'from';
 normalize2("max-forwards") ->		'max-forwards';
