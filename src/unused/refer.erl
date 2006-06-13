@@ -381,7 +381,8 @@ handle_info({new_request, FromPid, Ref, NewRequest, _Origin, _LogStr}, State) wh
     {Action, NewDialog} =
 	case sipdialog:update_dialog_recv_request(NewRequest, State#state.dialog) of
 	    {error, old_cseq} ->
-		transactionlayer:send_response_handler(THandler, 500, "CSeq not higher than last requests");
+		transactionlayer:send_response_handler(THandler, 500, "CSeq not higher than last requests"),
+		{noreply, State#state.dialog};
 	    {ok, NewDialog1} ->
 		case NewRequest#request.method of
 		    "NOTIFY" ->
@@ -485,7 +486,8 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: start_generate_request(Method, Referer, Referee, ExtraHeaders, Body)
+%% Function: start_generate_request(Method, Referer, Referee,
+%%                                  ExtraHeaders, Body)
 %%           Method       = string(), SIP method
 %%           Referer      = contact record()
 %%           Referee      = contact record()
@@ -506,12 +508,14 @@ start_generate_request(Method, Referer, Referee, ExtraHeaders, Body) ->
 			   "@", siprequest:myhostname()
 			  ]),
     CSeq = 1,
+    {ok, MaxForwards} = yxa_config:get_env(default_max_forwards),
 
     FromContact = contact:add_param(Referer, "tag", FromTag),
     Header = keylist:from_list([{"From",	[contact:print(FromContact)]},
 				{"To",		[contact:print(Referee)]},
 				{"Call-Id",	[CallId]},
-				{"CSeq",	[lists:concat([CSeq, " ", Method])]}
+				{"CSeq",	[lists:concat([CSeq, " ", Method])]},
+				{"Max-Forwards", [integer_to_list(MaxForwards)]}
 			       ] ++ ExtraHeaders),
 
     RefereeURL = sipurl:parse(Referee#contact.urlstr),
