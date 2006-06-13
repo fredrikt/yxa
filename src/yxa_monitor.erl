@@ -97,6 +97,11 @@ init([AppModule, MnesiaTables]) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
+handle_call({add_mnesia_tables, Tables}, _From, State) when is_list(Tables) ->
+    NewL = lists:usort(Tables ++ State#state.mnesia_tables),
+    {reply, ok, State#state{mnesia_tables = NewL}, ?TIMEOUT};
+
+
 handle_call(Msg, _From, State) ->
     logger:log(error, "YXA monitor: Received unknown gen_server call : ~p", [Msg]),
     {noreply, State, ?TIMEOUT}.

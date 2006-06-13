@@ -76,11 +76,11 @@ start(normal, [AppModule]) ->
 	      io_lib:format("~p", [now()])
 	     ]),
     mnesia:start(),
-    [MnesiaTables, stateful, AppSupdata] = AppModule:init(),
     ok = init_statistics(),
-    case sipserver_sup:start_link(AppModule, MnesiaTables) of
+    case sipserver_sup:start_link(AppModule, []) of
 	{ok, Supervisor} ->
 	    local:init(),
+	    [MnesiaTables, stateful, AppSupdata] = AppModule:init(),
 	    logger:log(debug, "starting, supervisor is ~p", [Supervisor]),
 	    case siphost:myip() of
 		"127.0.0.1" ->
@@ -90,6 +90,7 @@ start(normal, [AppModule]) ->
 		    true
 	    end,
 	    ok = init_mnesia(MnesiaTables),
+	    ok = gen_server:call(yxa_monitor, {add_mnesia_tables, MnesiaTables}),
 	    {ok, Supervisor} = sipserver_sup:start_extras(Supervisor, AppModule, AppSupdata),
 	    %% now that everything is started, seed ssl with more stuff
 	    ssl:seed([
