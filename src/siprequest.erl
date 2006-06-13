@@ -826,7 +826,7 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
        is_list(ViaParameters), is_atom(Proto), is_record(Request, request) ->
     ReqHeader = Request#request.header,
     AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, [via, from, to, 'call-id', cseq,
-								'record-route', "Timestamp", 'content-type']),
+								'record-route', timestamp, 'content-type']),
 				       ExtraHeaders),
     %% PlaceHolderVia is an EXTRA Via with our hostname. We could do without this if
     %% we sent it with send_response() instead of send_proxy_response() but it is easier
@@ -844,7 +844,7 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
     %% The preservation of Timestamp headers into 100 Trying response is mandated by RFC 3261 8.2.6.1
     AnswerHeader5 = case Status of
 			100 -> AnswerHeader4;
-			_ -> keylist:delete("Timestamp", AnswerHeader4)
+			_ -> keylist:delete(timestamp, AnswerHeader4)
 		    end,
     set_response_body(#response{status=Status, reason=Reason, header=AnswerHeader5}, Body).
 
@@ -1091,7 +1091,7 @@ test() ->
 
     %% Timestamp still present in 100 Trying check
     autotest:mark(?LINE, "make_response/7 - 1.3"),
-    ["1234"] = keylist:fetch("Timestamp", Response1#response.header),
+    ["1234"] = keylist:fetch(timestamp, Response1#response.header),
 
     %% correct Content-Length added
     autotest:mark(?LINE, "make_response/7 - 1.4"),
@@ -1112,7 +1112,7 @@ test() ->
 
     %% Timestamp NOT present in 486 Busy Here
     autotest:mark(?LINE, "make_response/7 - 2.3"),
-    [] = keylist:fetch("Timestamp", Response2#response.header),
+    [] = keylist:fetch(timestamp, Response2#response.header),
 
     %% Content-Type NOT present in 486 Busy Here with empty body
     autotest:mark(?LINE, "make_response/7 - 2.4"),
