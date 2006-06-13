@@ -90,16 +90,24 @@
 
 %% incomginproxy
 -export([
-	 incomingproxy_challenge_before_relay/3
+	 incomingproxy_challenge_before_relay/3,
+	 incomingproxy_request_homedomain_event/2
 	]).
 
 %% pstnproxy
 -export([
 	 pstnproxy_route_pstn_not_e164/4
 	]).
+
 %% outgoingproxy
 -export([
 	 outgoingproxy_challenge_before_relay/3
+	]).
+
+%% eventserver
+-export([
+	 get_event_package_module/3,
+	 get_all_event_packages/0
 	]).
 
 %% sippipe
@@ -140,6 +148,11 @@
 -export([
 	 check_config_type/3,
 	 config_is_soft_reloadable/2
+	]).
+
+%% sipdialog
+-export([
+	 create_dialog_state_uas/4
 	]).
 
 %%--------------------------------------------------------------------
@@ -731,7 +744,7 @@ gruu_make_url(User, InstanceId, GRUU, To) ->
 		   ).
 
 %% Returns : {true, GRUU} | false
-is_gruu_url(URL) ->    
+is_gruu_url(URL) ->
     ?CHECK_EXPORTED({is_gruu_url, 1},
                     ?LOCAL_MODULE:is_gruu_url(URL),
                     gruu:is_gruu_url(URL)
@@ -837,6 +850,14 @@ incomingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin
 		    true
 		   ).
 
+incomingproxy_request_homedomain_event(Request, Origin) when is_record(Request, request),
+							     is_record(Origin, siporigin) ->
+    ?CHECK_EXPORTED({incomingproxy_request_homedomain_event, 2},
+		    ?LOCAL_MODULE:incomingproxy_request_homedomain_event(Request, Origin),
+		    undefined
+		   ).
+
+
 %% pstnproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%%
 
@@ -881,6 +902,50 @@ outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin
 		    ?LOCAL_MODULE:outgoingproxy_challenge_before_relay(Origin, Request, Dst),
 		    true
 		   ).
+
+% eventserver hooks
+%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%--------------------------------------------------------------------
+%% Function: get_event_package_module(EventPackage, Request, Origin)
+%%           EventPackage = string() ("presence" | "ua-config" | ...)
+%%           Request      = request record()
+%%           Origin       = siporigin record()
+%% Descrip.: Decide which event package should handle a request
+%%           (SUBSCRIBE or PUBLISH) in the eventserver. You can use
+%%           this to make only certain SUBSCRIBE/PUBLISH requests go
+%%           to a custom event package. Remember to make
+%%           get_all_event_packages return any additions too.
+%% Returns : {ok, PackageModule} |
+%%           undefined
+%%           PackageModule = atom()
+%%--------------------------------------------------------------------
+get_event_package_module(EventPackage, Request, Origin) when is_list(EventPackage), is_record(Request, request),
+							     is_record(Origin, siporigin) ->
+    ?CHECK_EXPORTED({get_event_package_module, 3},
+		    ?LOCAL_MODULE:get_event_package_module(EventPackage, Request, Origin),
+		    undefined
+		   ).
+
+%%--------------------------------------------------------------------
+%% Function: get_all_event_packages()
+%% Descrip.: Get list of all event packages. Duplicate Package is
+%%           allowed (and has a purpose, if you want to have more than
+%%           one possible Module for a Package (decided using
+%%           get_event_package_module/3 above).
+%% Returns : {ok, PackageDefs}
+%%           PackageDefs = list() of {Package, Module} tuple()
+%%           Package     = string()
+%%           Module      = atom()
+%%--------------------------------------------------------------------
+get_all_event_packages() ->
+    ?CHECK_EXPORTED({get_all_event_packages, 0},
+		    ?LOCAL_MODULE:get_all_event_packages(),
+		    yxa_config:get_env(eventserver_package_handlers)
+		   ).
+
+
 
 % sippipe hooks
 %%%%%%%%%%%%%%%%
@@ -1193,4 +1258,26 @@ config_is_soft_reloadable(Key, Value) ->
     ?CHECK_EXPORTED({config_is_soft_reloadable, 2},
 		    ?LOCAL_MODULE:config_is_soft_reloadable(Key, Value),
 		    true
+		   ).
+
+%% sipdialog hooks
+%%%%%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: create_dialog_state_uas(Caller, Request, ToTag, Contact)
+%%           Caller  = term(), who is calling us?
+%%           Request = request record(), received request that causes
+%%                                       us to create a dialog
+%%           ToTag   = string(), the To-tag our server transaction for
+%%                               this request has generated
+%%           Contact = string(), our Contact header value
+%% Descrip.: Create a dialog record out of a received request and some
+%%           other parameters.
+%% Returns : {ok, Dialog}
+%%           Dialog = dialog record()
+%%--------------------------------------------------------------------
+create_dialog_state_uas(Caller, Request, ToTag, Contact) ->
+    ?CHECK_EXPORTED({create_dialog_state_uas, 4},
+		    ?LOCAL_MODULE:create_dialog_state_uas(Caller, Request, ToTag, Contact),
+		    sipdialog:create_dialog_state_uas(Request, ToTag, Contact)
 		   ).
