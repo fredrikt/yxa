@@ -13,6 +13,7 @@ AC_CONFIG_FILES(
 		src/Makefile \
 		src/config/Makefile \
 		src/cpl/Makefile \
+		src/event/Makefile \
 		src/event_handler/Makefile \
 		src/include/Makefile \
 		src/local/Makefile \
