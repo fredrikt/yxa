@@ -322,6 +322,10 @@ is_same_outbound_client_without_path2([#siplocationdb_e{instance = PrevInst, sip
 	    false
     end;
 
+is_same_outbound_client_without_path2([#siplocationdb_e{} | _T], _PrevInst, _PrevUser, _Me) ->
+    %% Not same instance ID or user
+    false;
+
 is_same_outbound_client_without_path2([], _Instance, _User, _Me) ->
     %% Instance ID was not empty, and all matched.
     true.
