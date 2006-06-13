@@ -55,6 +55,7 @@
 	 via_is_equal/3,
 	 is_supported/2,
 	 is_required/2,
+	 event_package/1,
 
 	 test/0
 	]).
@@ -972,6 +973,21 @@ is_supported(Extension, Header) when is_list(Extension), is_record(Header, keyli
 is_required(Extension, Header) when is_list(Extension), is_record(Header, keylist) ->
     Supported = keylist:fetch('require', Header),
     lists:member(Extension, Supported).
+
+%%--------------------------------------------------------------------
+%% Function: event_package(Header)
+%%           Header = keylist record()
+%% Descrip.: Get the Event package name from Header.
+%% Returns : EventPackage = string()
+%%--------------------------------------------------------------------
+event_package(Header) when is_record(Header, keylist) ->
+    case keylist:fetch('event', Header) of
+	[] ->
+	    [];
+	[Event] ->
+	    EP = string:sub_word(Event, 1, $\;),
+	    http_util:to_lower(EP)
+    end.
 
 %%====================================================================
 %% Behaviour functions
