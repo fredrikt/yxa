@@ -93,33 +93,40 @@ request("presence", #request{method = "PUBLISH"} = Request, _Origin, _LogStr, Lo
 		{error, "ETag/Expires problem"};
 
 	    {ok, none, Expires} when is_integer(Expires) ->
-		%% No ETag in requet (SIP-If-Match header)
-		[ContentType] = keylist:fetch('content-type', Request#request.header),
-		XML = binary_to_list(Request#request.body),
-		ETag = generate_etag(),
-		case presence_pidf:set_pidf_for_user(SIPuser, ETag, Expires, ContentType, XML, Ctx) of
-		    ok ->
-			EH = [{"SIP-ETag", [ETag]},
-			      {"Expires", [integer_to_list(Expires)]}
-			     ],
-			{ok, EH};
-		    {error, unsupported_content_type} ->
-			AcceptL = presence_pidf:get_supported_content_types(set),
-			ExtraHeaders1 = [{"Accept", AcceptL}],
-			transactionlayer:send_response_handler(THandler, 406, "Not Acceptable", ExtraHeaders1);
-		    {error, unknown_content_type} ->
-			AcceptL = presence_pidf:get_supported_content_types(set),
-			ExtraHeaders1 = [{"Accept", AcceptL}],
-			transactionlayer:send_response_handler(THandler, 406, "Not Acceptable", ExtraHeaders1);
-		    {error, bad_xml} ->
-			logger:log(error, "~s: presence event package: Failed storing presence for user ~p (bad XML)",
-				   [LogTag, SIPuser]),
-			AcceptL = presence_pidf:get_supported_content_types(set),
-			ExtraHeaders1 = [{"Accept", AcceptL}],
-			transactionlayer:send_response_handler(THandler, 400, "Could not parse XML body", ExtraHeaders1),
-			{error, "Could not parse XML body"}
+		%% No ETag in request (SIP-If-Match header)
+		case keylist:fetch('content-type', Request#request.header) of
+		    [ContentType] ->
+			XML = binary_to_list(Request#request.body),
+			ETag = generate_etag(),
+			case presence_pidf:set_pidf_for_user(SIPuser, ETag, Expires, ContentType, XML, Ctx) of
+			    ok ->
+				EH = [{"SIP-ETag", [ETag]},
+				      {"Expires", [integer_to_list(Expires)]}
+				     ],
+				{ok, EH};
+			    {error, unsupported_content_type} ->
+				AcceptL = presence_pidf:get_supported_content_types(set),
+				ExtraHeaders1 = [{"Accept", AcceptL}],
+				transactionlayer:send_response_handler(THandler, 406, "Not Acceptable", ExtraHeaders1);
+			    {error, unknown_content_type} ->
+				AcceptL = presence_pidf:get_supported_content_types(set),
+				ExtraHeaders1 = [{"Accept", AcceptL}],
+				transactionlayer:send_response_handler(THandler, 406, "Not Acceptable", ExtraHeaders1);
+			    {error, bad_xml} ->
+				logger:log(error, "~s: presence event package: Failed storing presence for user ~p "
+					   "(bad XML)", [LogTag, SIPuser]),
+				AcceptL = presence_pidf:get_supported_content_types(set),
+				ExtraHeaders1 = [{"Accept", AcceptL}],
+				transactionlayer:send_response_handler(THandler, 400, "Could not parse XML body",
+								       ExtraHeaders1),
+				{error, "Could not parse XML body"}
+			end;
+		    _ ->
+			logger:log(error, "~s: presence event package: Failed storing presence for user ~p "
+				   "(bad or missing Content-Type)", [LogTag, SIPuser]),
+			transactionlayer:send_response_handler(THandler, 400, "Bad or missing Content-Type"),
+			{error, "Bad or missing Content-Type"}
 		end;
-
 	    {ok, ETag, Expires} when is_list(ETag), is_integer(Expires) ->
 		%% ETag found, this is a request to refresh an existing publication
 		NewETag = generate_etag(),
@@ -429,7 +436,7 @@ get_accept(Header) ->
 %%--------------------------------------------------------------------
 get_publish_etag_expires(Request, SIPuser, THandler) ->
     ETag =
-	case keylist:fetch("SIP-If-Matches", Request#request.header) of
+	case keylist:fetch("SIP-If-Match", Request#request.header) of
 	    [ETag1] ->
 		case presence_pidf:check_if_user_etag_exists(SIPuser, ETag1) of
 		    true ->
@@ -439,7 +446,7 @@ get_publish_etag_expires(Request, SIPuser, THandler) ->
 			    _ ->
 				%% "a PUBLISH request that refreshes event state MUST NOT have a body."
 				transactionlayer:send_response_handler(THandler, 400, "Request with "
-								       "SIP-If-Matches can't have body"),
+								       "SIP-If-Match can't have body"),
 				error
 			end;
 		    false ->
@@ -474,7 +481,7 @@ publish_get_expires(Header, THandler) ->
 	    try list_to_integer(E_Str) of
 		Expires when is_integer(Expires) ->
 		    {ok, Min} = yxa_config:get_env(presence_min_publish_time),
-		    case (Expires < Min) of
+		    case (Expires > 0 andalso Expires < Min) of
 			true ->
 			    transactionlayer:send_response_handler(THandler, 423, "Interval Too Brief",
 								   [{"Min-Expires", [integer_to_list(Min)]}]
