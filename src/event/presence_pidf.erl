@@ -486,7 +486,7 @@ parse_pidf_xml(ContentType, XML) ->
 %%           PIDF_Doc = pidf_doc record()
 %%           Reason   = atom()
 parse_pidf(pidf, XML) when is_list(XML) ->
-    try xmerl_scan:string(XML) of
+    try xmerl_scan:string(XML, [{namespace_conformant, true}]) of
 	{XMLtag, []} ->
 	    try parse_pidf_xml(XMLtag) of
 		{ok, PIDF_Doc} ->
@@ -495,6 +495,11 @@ parse_pidf(pidf, XML) when is_list(XML) ->
 				    data = PIDF_Doc
 				   }}
 	    catch
+		error : Y ->
+		    ST = erlang:get_stacktrace(),
+		    logger:log(error, "Presence PIDF: Could not parse pidf-xml data,~ncaught error : "
+			       "~p ~p", [Y, ST]),
+		    {error, bad_xml};
 		X : Y ->
 		    logger:log(error, "Presence PIDF: Could not parse pidf-xml data, caught ~p ~p", [X, Y]),
 		    {error, bad_xml}
@@ -513,6 +518,11 @@ parse_pidf(pidf, XML) when is_list(XML) ->
 %%           PIDF_Doc = pidf_doc record()
 %%           Reason   = atom()
 parse_pidf_xml(#xmlElement{name = presence} = XML) ->
+    parse_pidf_xml2(XML);
+parse_pidf_xml(#xmlElement{expanded_name = {_URI, presence}} = XML) ->
+    parse_pidf_xml2(XML).
+
+parse_pidf_xml2(XML) ->
     [Entity] = get_xml_attributes(entity, XML#xmlElement.attributes),
 
     Comment =
@@ -566,6 +576,8 @@ get_xml_elements(Name, In) when is_atom(Name), is_list(In) ->
     get_xml_elements2(Name, In, []).
 
 get_xml_elements2(Name, [#xmlElement{name = Name} = H | T], Res) ->
+    get_xml_elements2(Name, T, [H | Res]);
+get_xml_elements2(Name, [#xmlElement{expanded_name = {_URI, Name}} = H | T], Res) ->
     get_xml_elements2(Name, T, [H | Res]);
 get_xml_elements2(Name, [_H | T], Res) ->
     get_xml_elements2(Name, T, Res);
@@ -687,6 +699,41 @@ test_mnesia_dependant_functions() ->
     autotest:mark(?LINE, "parse_pidf_xml/2 - 1.1"),
     %% verify tuples
     test_verify_tuples([PIDF_XML1_Tuple1], ParseCT_Tuples1),
+
+
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.0"),
+    %% test XML like the one produced by X-Lite 3.0
+    PIDF_XML2 =
+	"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>"
+	"<pr:presence xmlns:pr=\"urn:ietf:params:xml:ns:pidf\" entity=\"sip:ft22@example.net\""
+	"	xmlns:caps=\"urn:ietf:params:xml:ns:pidf:caps\""
+	"	xmlns:cipid=\"urn:ietf:params:xml:ns:pidf:cipid\""
+	"	xmlns:counterpath=\"www.counterpath.com/presence/ext\""
+	"	xmlns:dm=\"urn:ietf:params:xml:ns:pidf:data-model\""
+	"	xmlns:rpid=\"urn:ietf:params:xml:ns:pidf:rpid\">"
+	"  <pr:tuple id=\"sd04cf079\">"
+	"    <pr:status><pr:basic>open</pr:basic></pr:status>"
+	"    <pr:note>Idle</pr:note>"
+	"    <rpid:user-input last-input=\"2006-06-13T21:40:17Z\">idle</rpid:user-input>"
+	"    <pr:timestamp>2006-06-13T21:40:17Z</pr:timestamp>"
+	"  </pr:tuple>"
+	"  <dm:person id=\"p8652f666\">"
+	"    <dm:note>Idle</dm:note>"
+	"  </dm:person>"
+	"</pr:presence>",
+    
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.1"),
+    {ok, #pidf_data{type = ParseCT1,
+		    xml  = PIDF_XML2,
+		    data = #pidf_doc{'PRESENTITY_URL' = "sip:ft@example.net",
+				     'PRESENCE_TUPLES' = ParseCT_Tuples2
+				    }
+		   }}
+	= parse_pidf_xml(ParseCT_Str, PIDF_XML2),
+
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.2"),
+    %% verify tuples
+    test_verify_tuples(["FIXME"], "FOO"),
 
 
     %% set_pidf_for_user(User, ETag, Expires, {ContentType, XML})
