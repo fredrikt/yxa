@@ -89,7 +89,7 @@ init() ->
 %%           User        = string(), presentity username
 %%           ETag        = string(), presence ETag
 %%           Expires     = integer(), how many seconds this data is
-%%                         valid
+%%                         valid (NOT util:timestamp/0 format)
 %%           ContentType = string(), "application/pidf+xml" | ...
 %%           XML         = string(), XML data
 %%           Ctx         = event_ctx record()
@@ -121,10 +121,29 @@ set_pidf_for_user(User, ETag, Expires, ContentType, XML, Ctx) when is_list(User)
 	    {error, Reason}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: refresh_pidf_user_etag(User, ETag, NewExpires, NewETag)
+%%           User       = string(), presentity username
+%%           ETag       = string(), presence ETag
+%%           NewExpires = integer(), how many more seconds this record
+%%                        is now valid (NOT util:timestamp/0 format)
+%%           NewETag    = string(), new ETag for this record
+%% Descrip.: Update the expiration time of the record for User with
+%%           etag ETag. Also changes the ETag to a new value, because
+%%           of how the RFC is written. I don't know why the ETag has
+%%           to change. As a validiator of sequentiality perhaps.
 %% Returns : ok | nomatch | error
+%%--------------------------------------------------------------------
 refresh_pidf_user_etag(User, ETag, NewExpires, NewETag) when is_list(User) ->
-    database_eventdata:update_presentity_etag({user, User}, ETag, NewExpires, NewETag).
-
+    UseExpires =
+	if
+	    is_integer(NewExpires) ->
+		Now = util:timestamp(),
+		Now + NewExpires;
+	    NewExpires == never ->
+		never
+	end,
+    database_eventdata:update_presentity_etag({user, User}, ETag, UseExpires, NewETag).
 
 %%--------------------------------------------------------------------
 %% Function: get_pidf_xml_for_user(User, AcceptL)
