@@ -41,7 +41,8 @@ erl_FILES = \
 	notifylist.erl \
 	presence_package.erl \
 	presence_pidf.erl \
-	subscription.erl
+	subscription.erl \
+	presence_xmerl_xml.erl
 
 
 imported_hrl_FILES = \

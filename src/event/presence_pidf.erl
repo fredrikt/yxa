@@ -89,7 +89,7 @@ init() ->
 %%           User        = string(), presentity username
 %%           ETag        = string(), presence ETag
 %%           Expires     = integer(), how many seconds this data is
-%%                         valid (NOT util:timestamp/0 format)
+%%                         valid
 %%           ContentType = string(), "application/pidf+xml" | ...
 %%           XML         = string(), XML data
 %%           Ctx         = event_ctx record()
@@ -552,7 +552,7 @@ parse_pidf_xml2(XML) ->
 
     Tuples = get_xml_elements(tuple, XML#xmlElement.content),
 
-    XMLTuples = [lists:flatten(E) || E <- xmerl:export_simple_content(Tuples, xmerl_xml)],
+    XMLTuples = [lists:flatten(E) || E <- xmerl:export_simple_content(Tuples, presence_xmerl_xml)],
 
     This = #pidf_doc{'PRESENTITY_URL'     = Entity,
 		     'PRESENCE_TUPLES'    = XMLTuples,
@@ -704,56 +704,7 @@ test_mnesia_dependant_functions() ->
 
     %% parse_xml(Type, XML)
     %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "parse_pidf_xml/2 - 1.0"),
-    ParseCT_Str = "application/pidf+xml",
-    ParseCT1 = content_type(ParseCT_Str),
-    {ok, #pidf_data{type = ParseCT1,
-		    xml  = PIDF_XML1,
-		    data = #pidf_doc{'PRESENTITY_URL' = "pres:user@example.org",
-				     'PRESENCE_TUPLES' = ParseCT_Tuples1
-				    }
-		   }}
-	= parse_pidf_xml(ParseCT_Str, PIDF_XML1),
-
-    autotest:mark(?LINE, "parse_pidf_xml/2 - 1.1"),
-    %% verify tuples
-    test_verify_tuples([PIDF_XML1_Tuple1], ParseCT_Tuples1),
-
-
-    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.0"),
-    %% test XML like the one produced by X-Lite 3.0
-    PIDF_XML2 =
-	"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>"
-	"<pr:presence xmlns:pr=\"urn:ietf:params:xml:ns:pidf\" entity=\"sip:ft22@example.net\""
-	"	xmlns:caps=\"urn:ietf:params:xml:ns:pidf:caps\""
-	"	xmlns:cipid=\"urn:ietf:params:xml:ns:pidf:cipid\""
-	"	xmlns:counterpath=\"www.counterpath.com/presence/ext\""
-	"	xmlns:dm=\"urn:ietf:params:xml:ns:pidf:data-model\""
-	"	xmlns:rpid=\"urn:ietf:params:xml:ns:pidf:rpid\">"
-	"  <pr:tuple id=\"sd04cf079\">"
-	"    <pr:status><pr:basic>open</pr:basic></pr:status>"
-	"    <pr:note>Idle</pr:note>"
-	"    <rpid:user-input last-input=\"2006-06-13T21:40:17Z\">idle</rpid:user-input>"
-	"    <pr:timestamp>2006-06-13T21:40:17Z</pr:timestamp>"
-	"  </pr:tuple>"
-	"  <dm:person id=\"p8652f666\">"
-	"    <dm:note>Idle</dm:note>"
-	"  </dm:person>"
-	"</pr:presence>",
-    
-    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.1"),
-    {ok, #pidf_data{type = ParseCT1,
-		    xml  = PIDF_XML2,
-		    data = #pidf_doc{'PRESENTITY_URL' = "sip:ft@example.net",
-				     'PRESENCE_TUPLES' = ParseCT_Tuples2
-				    }
-		   }}
-	= parse_pidf_xml(ParseCT_Str, PIDF_XML2),
-
-    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.2"),
-    %% verify tuples
-    test_verify_tuples(["FIXME"], "FOO"),
-
+    {ok, ParseCT_Tuples1} = test_parse_xml(PIDF_XML1, PIDF_XML1_Tuple1),
 
     %% set_pidf_for_user(User, ETag, Expires, {ContentType, XML})
     %%--------------------------------------------------------------------
@@ -1043,6 +994,79 @@ test_mnesia_dependant_functions() ->
 
     mnesia:abort(ok).
 
+test_parse_xml(PIDF_XML1, PIDF_XML1_Tuple1) ->
+    %% parse_xml(Type, XML)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 1.0"),
+    ParseCT_Str = "application/pidf+xml",
+    ParseCT1 = content_type(ParseCT_Str),
+    {ok, #pidf_data{type = ParseCT1,
+		    xml  = PIDF_XML1,
+		    data = #pidf_doc{'PRESENTITY_URL' = "pres:user@example.org",
+				     'PRESENCE_TUPLES' = ParseCT_Tuples1
+				    }
+		   }}
+	= parse_pidf_xml(ParseCT_Str, PIDF_XML1),
+
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 1.1"),
+    %% verify tuples
+    test_verify_tuples([PIDF_XML1_Tuple1], ParseCT_Tuples1),
+
+
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.0"),
+    %% test XML like the one produced by X-Lite 3.0
+
+    PIDF_XML2_Tuple1 =
+	"  <pr:tuple id=\"sd04cf079\">"
+	"    <pr:status><pr:basic>open</pr:basic></pr:status>"
+	"    <pr:note>Idle</pr:note>"
+	"    <rpid:user-input last-input=\"2006-06-13T21:40:17Z\">idle</rpid:user-input>"
+	"    <pr:timestamp>2006-06-13T21:40:17Z</pr:timestamp>"
+	"  </pr:tuple>",
+
+    PIDF_XML2_Tuple1_with_NS =
+	"  <pr:tuple xmlns:pr=\"urn:ietf:params:xml:ns:pidf\" "
+	"xmlns:caps=\"urn:ietf:params:xml:ns:pidf:caps\" "
+	"xmlns:cipid=\"urn:ietf:params:xml:ns:pidf:cipid\" "
+	"xmlns:counterpath=\"www.counterpath.com/presence/ext\" "
+	"xmlns:dm=\"urn:ietf:params:xml:ns:pidf:data-model\" "
+	"xmlns:rpid=\"urn:ietf:params:xml:ns:pidf:rpid\" id=\"sd04cf079\" >"
+	"    <pr:status><pr:basic>open</pr:basic></pr:status>"
+	"    <pr:note>Idle</pr:note>"
+	"    <rpid:user-input last-input=\"2006-06-13T21:40:17Z\">idle</rpid:user-input>"
+	"    <pr:timestamp>2006-06-13T21:40:17Z</pr:timestamp>"
+	"  </pr:tuple>",
+
+    PIDF_XML2 =
+	"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>"
+	"<pr:presence xmlns:pr=\"urn:ietf:params:xml:ns:pidf\" entity=\"sip:ft@example.net\""
+	"	xmlns:caps=\"urn:ietf:params:xml:ns:pidf:caps\""
+	"	xmlns:cipid=\"urn:ietf:params:xml:ns:pidf:cipid\""
+	"	xmlns:counterpath=\"www.counterpath.com/presence/ext\""
+	"	xmlns:dm=\"urn:ietf:params:xml:ns:pidf:data-model\""
+	"	xmlns:rpid=\"urn:ietf:params:xml:ns:pidf:rpid\">" ++
+	PIDF_XML2_Tuple1 ++
+	"  <dm:person id=\"p8652f666\">"
+	"    <dm:note>Idle</dm:note>"
+	"  </dm:person>"
+	"</pr:presence>",
+    
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.1"),
+    {ok, #pidf_data{type = ParseCT1,
+		    xml  = PIDF_XML2,
+		    data = #pidf_doc{'PRESENTITY_URL' = "sip:ft@example.net",
+				     'PRESENCE_TUPLES' = ParseCT_Tuples2
+				    }
+		   }}
+	= parse_pidf_xml(ParseCT_Str, PIDF_XML2),
+
+    autotest:mark(?LINE, "parse_pidf_xml/2 - 2.2"),
+    %% verify tuples
+    test_verify_tuples([PIDF_XML2_Tuple1_with_NS], ParseCT_Tuples2),
+    
+    {ok, ParseCT_Tuples1}.
+
+
 test_verify_tuples(L1, L2) when length(L1) /= length(L2) ->
     Msg = io_lib:format("Wrong number of XML presence tuples, expected ~p got ~p", [length(L1), length(L2)]),
     throw({error, lists:flatten(Msg)});
@@ -1052,8 +1076,8 @@ test_verify_tuples(L1, L2) ->
 test_verify_tuples2([H1 | T1], [H2 | T2], Pos) ->
     {X1, []} = xmerl_scan:string(H1),
     {X2, []} = xmerl_scan:string(H2),
-    XC1 = lists:flatten( xmerl:export_simple_content([X1], xmerl_xml) ),
-    XC2 = lists:flatten( xmerl:export_simple_content([X2], xmerl_xml) ),
+    XC1 = lists:flatten( xmerl:export_simple_content([X1], presence_xmerl_xml) ),
+    XC2 = lists:flatten( xmerl:export_simple_content([X2], presence_xmerl_xml) ),
     case (XC1 == XC2) of
 	true ->
 	    test_verify_tuples2(T1, T2, Pos + 1);
@@ -1063,9 +1087,8 @@ test_verify_tuples2([H1 | T1], [H2 | T2], Pos) ->
 				"~s~n"
 				"Expected :~n"
 				"~s~n",
-				[Pos, XC1, XC2]),
+				[Pos, XC2, XC1]),
 	    throw({error, lists:flatten(Msg)})
     end;
 test_verify_tuples2([], [], _Pos) ->
     ok.
-
