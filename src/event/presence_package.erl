@@ -137,6 +137,8 @@ request("presence", #request{method = "PUBLISH"} = Request, _Origin, _LogStr, Lo
 			     ],
 			{ok, EH};
 		    nomatch ->
+			logger:log(debug, "~s: presence event package: No entry with ETag ~p found in the event "
+				   "database, answering '412 Conditional Request Failed'", [ETag]),
 			transactionlayer:send_response_handler(THandler, 412, "Conditional Request Failed"),
 			{error, "Request has invalid SIP-If-Match"}
 		end

@@ -850,8 +850,9 @@ process_timer_signal(send_notify, _Timer, State) when is_record(State, state) ->
     NewState = prepare_and_send_notify(State#state{last_notify_content = undefined}),
     case NewState#state.subscription_state of
 	terminated ->
-	    logger:log(normal, "~s: Subscription for event package ~p expired",
-		       [State#state.logtag, State#state.package_string]),
+	    logger:log(normal, "~s: Subscription for event package ~p expired (subscriber: ~p, presentity ~p)",
+		       [State#state.logtag, State#state.package_string, State#state.subscriber,
+			State#state.presentity]),
 	    logger:log(debug, "Subscription: Exiting after sending NOTIFY when Subscription-State is 'terminated'"),
 	    %% XXX should we hang around until the NOTIFY client transaction finishes?
 	    {stop, normal, NewState};
