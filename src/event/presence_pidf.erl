@@ -778,7 +778,7 @@ test_mnesia_dependant_functions() ->
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 1.1"),
     %% update first entry from previous test with new expires-time
     RPUE_ETag1 = "test-" ++ "-" ++ integer_to_list(Now) ++ "::" ++ integer_to_list(?LINE),
-    ok = refresh_pidf_user_etag(SPFU_User1, SPFU_ETag1, Now + 10, RPUE_ETag1),
+    ok = refresh_pidf_user_etag(SPFU_User1, SPFU_ETag1, 10, RPUE_ETag1),
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 1.2"),
     %% verify
