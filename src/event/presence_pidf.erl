@@ -148,10 +148,6 @@ refresh_pidf_user_etag(_User, _ETag, NewExpires, _NewETag) when is_integer(NewEx
                                                                  NewExpires > ?EXPIRES_UPPER_LIMIT) ->
     {error, expires_out_of_bounds};
 refresh_pidf_user_etag(User, ETag, NewExpires, NewETag) when is_list(User) ->
-    io:format("EXPIRES ~p > ~p == ~p, < ~p == ~p~n", [NewExpires, ?EXPIRES_UPPER_LIMIT,
-						      NewExpires > ?EXPIRES_UPPER_LIMIT,
-						      ?EXPIRES_LOWER_LIMIT,
-						      NewExpires < ?EXPIRES_LOWER_LIMIT]),
     UseExpires =
 	if
 	    is_integer(NewExpires) ->
