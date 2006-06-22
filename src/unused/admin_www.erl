@@ -206,7 +206,7 @@ print_phones([H | List]) when is_record(H, regexproute) ->
     [print_one_regexp(H) | print_phones(List)];
 
 print_phones([H | List]) when is_record(H, phone) ->
-    print_one_phone(H#phone.number, H#phone.flags, H#phone.class,
+    print_one_phone(H#phone.user, H#phone.flags, H#phone.class,
 		    H#phone.expire, H#phone.address) ++ print_phones(List).
 
 print_phones_list([]) -> [];
@@ -488,7 +488,7 @@ list_numbers(Env, _Input) ->
 	    List = phone:list_numbers(),
 	    PhoneList = phone:list_phones(),
 	    List2 = lists:map(fun (Elem) ->
-					  #numbers{number = Elem#phone.number, user="*"}
+					  #numbers{number = Elem#phone.user, user = Elem#phone.user}
 				  end, PhoneList),
 	    [header(ok),
 	     "<h1>Alla allokerade nummer</h1>\n",
@@ -521,7 +521,7 @@ list_phones(Env, _Input) ->
 	     "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
 	     print_phones(lists:sort(fun (Elem1, Elem2) -> 
 					     if
-						 Elem1#phone.number < Elem2#phone.number ->
+						 Elem1#phone.user < Elem2#phone.user ->
 						     true;
 						 true ->
 						     false
