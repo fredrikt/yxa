@@ -70,6 +70,10 @@
 			       }
 		    ]).
 
+-define(EXPIRES_LOWER_LIMIT, -1).
+-define(EXPIRES_UPPER_LIMIT, 1150000000).
+
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -96,6 +100,10 @@ init() ->
 %% Descrip.: Parse and store an PIDF XML associated with a presentity.
 %% Returns : ok | {error, Reason}
 %%--------------------------------------------------------------------
+set_pidf_for_user(_User, _ETag, Expires, _ContentType, _XML, _Ctx) when is_integer(Expires) andalso
+								          (Expires < ?EXPIRES_LOWER_LIMIT orelse
+								           Expires > ?EXPIRES_UPPER_LIMIT) ->
+    {error, expires_out_of_bounds};
 set_pidf_for_user(User, ETag, Expires, ContentType, XML, Ctx) when is_list(User), is_list(XML),
 								   is_record(Ctx, event_ctx) ->
     case parse_pidf_xml(ContentType, XML) of
@@ -132,9 +140,18 @@ set_pidf_for_user(User, ETag, Expires, ContentType, XML, Ctx) when is_list(User)
 %%           etag ETag. Also changes the ETag to a new value, because
 %%           of how the RFC is written. I don't know why the ETag has
 %%           to change. As a validiator of sequentiality perhaps.
-%% Returns : ok | nomatch | error
+%% Returns : ok | nomatch | {error, Reason}
+%%           Reason = atom
 %%--------------------------------------------------------------------
+refresh_pidf_user_etag(_User, _ETag, NewExpires, _NewETag) when is_integer(NewExpires) andalso 
+                                                                (NewExpires < ?EXPIRES_LOWER_LIMIT orelse
+                                                                 NewExpires > ?EXPIRES_UPPER_LIMIT) ->
+    {error, expires_out_of_bounds};
 refresh_pidf_user_etag(User, ETag, NewExpires, NewETag) when is_list(User) ->
+    io:format("EXPIRES ~p > ~p == ~p, < ~p == ~p~n", [NewExpires, ?EXPIRES_UPPER_LIMIT,
+						      NewExpires > ?EXPIRES_UPPER_LIMIT,
+						      ?EXPIRES_LOWER_LIMIT,
+						      NewExpires < ?EXPIRES_LOWER_LIMIT]),
     UseExpires =
 	if
 	    is_integer(NewExpires) ->
@@ -769,11 +786,25 @@ test_mnesia_dependant_functions() ->
     ok = test_verify_tuples([PIDF_XML2_Tuple1], ParseCT_Tuples2),
 
     autotest:mark(?LINE, "set_pidf_for_user/4 - 3"),
-    %% test same etag
-    {error, etag_already_exists} = set_pidf_for_user(SPFU_User1, SPFU_ETag2, 5, "application/pidf+xml", PIDF_XML2, #event_ctx{}),
+    %% test same etag, and also test max Expires value
+    {error, etag_already_exists} =
+	set_pidf_for_user(SPFU_User1, SPFU_ETag2, ?EXPIRES_UPPER_LIMIT, "application/pidf+xml",
+			  PIDF_XML2, #event_ctx{}),
+
+    autotest:mark(?LINE, "set_pidf_for_user/4 - 4.1"),
+    %% test out of bounds Expires
+    {error, expires_out_of_bounds} =
+	set_pidf_for_user(SPFU_User1, SPFU_ETag2, ?EXPIRES_LOWER_LIMIT - 1, "application/pidf+xml",
+			  PIDF_XML2, #event_ctx{}),
+
+    autotest:mark(?LINE, "set_pidf_for_user/4 - 4.2"),
+    %% test out of bounds Expires
+    {error, expires_out_of_bounds} =
+	set_pidf_for_user(SPFU_User1, SPFU_ETag2, ?EXPIRES_UPPER_LIMIT + 1, "application/pidf+xml",
+			  PIDF_XML2, #event_ctx{}),
 
 
-    %% refresh_pidf_user_etag(User, ETag, Expires, NewETag)
+    %% refresh_pidf_user_etag(User, ETag, NewExpires, NewETag)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 1.1"),
     %% update first entry from previous test with new expires-time
@@ -805,11 +836,21 @@ test_mnesia_dependant_functions() ->
 
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 3"),
-    %% verify that we can't refresh non-existing entrys
+    %% verify that we can't refresh non-existing entrys, and also test max NewExpires value
     RPUE_ETag3 = "test-" ++ "-" ++ integer_to_list(Now) ++ "::" ++ integer_to_list(?LINE),
-    nomatch = refresh_pidf_user_etag(SPFU_User1, RPUE_ETag3, 10, RPUE_ETag3),
+    nomatch = refresh_pidf_user_etag(SPFU_User1, RPUE_ETag3, ?EXPIRES_UPPER_LIMIT, RPUE_ETag3),
 
-    autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 4"),
+    autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 4.1"),
+    %% test out of bounds NewExpires
+    {error, expires_out_of_bounds} =
+	refresh_pidf_user_etag(SPFU_User1, RPUE_ETag3, ?EXPIRES_LOWER_LIMIT - 1, RPUE_ETag3),
+
+    autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 4.2"),
+    %% test out of bounds NewExpires
+    {error, expires_out_of_bounds} =
+	refresh_pidf_user_etag(SPFU_User1, RPUE_ETag3, ?EXPIRES_UPPER_LIMIT + 10, RPUE_ETag3),
+
+    autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 5"),
     %% clean up
     ok = delete_pidf_for_user(SPFU_User1),
 
@@ -821,9 +862,11 @@ test_mnesia_dependant_functions() ->
 
     DE_User1 = "__test_expired_user1__",
     DE_ETag1 = "test-" ++ "-" ++ integer_to_list(ExpiredNow) ++ "::" ++ integer_to_list(?LINE),
+    %% not-expired entry
     ok = set_pidf_for_user(DE_User1, DE_ETag1, 5, "application/pidf+xml", PIDF_XML2, #event_ctx{}),
 
     DE_ETag2 = "test-" ++ "-" ++ integer_to_list(ExpiredNow) ++ "::" ++ integer_to_list(?LINE),
+    %% expired entry
     ok = set_pidf_for_user(DE_User1, DE_ETag2, -1, "application/pidf+xml", PIDF_XML2, #event_ctx{}),
 
     autotest:mark(?LINE, "delete_expired/0 - 1"),
