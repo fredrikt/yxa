@@ -745,10 +745,10 @@ test() ->
     ["\"J Rosenberg \\\"\"       <sip:jdrosen@example.com> ; tag = 98asjd8"]
 	= keylist:fetch('from', Header6),
 
-    autotest:mark(?LINE, "parse/2 request - 6.2.2.2 (From: full parsing, disabled)"),
-    %% From: - parsing check disabled since we fail to handle the escaped quote in the display name
-    %% {"J Rosenberg \\\"", Test6_FromURL} = sipheader:from(Header6),
-    %% "sip:jdrosen@example.com" = sipurl:print(Test6_FromURL),
+    autotest:mark(?LINE, "parse/2 request - 6.2.2.2"),
+    %% From: header with trailing spaces and quoted quotes
+    {"J Rosenberg \\\"", Test6_FromURL} = sipheader:from(Header6),
+    "sip:jdrosen@example.com" = sipurl:print(Test6_FromURL),
 
     autotest:mark(?LINE, "parse/2 request - 6.2.3"),
     %% Max-Forwards:
@@ -795,15 +795,15 @@ test() ->
     ["\"Quoted string \\\"\\\"\" <sip:jdrosen@example.com> ; newparam =     newvalue ; secondparam ; q = 0.33"]
 	= keylist:fetch('contact', Header6),
 
-    autotest:mark(?LINE, "parse/2 request - 6.2.13.2 (Contact: full parse, disabled)"),
-    %% Contact: - disabled since we remove a quote too much from the Display name when we parse it in contact.
-%%    Parse13C = #contact{display_name = "Quoted string \\\"\\\"",
-%%			urlstr = "sip:jdrosen@example.com",
-%%			contact_param = contact_param:to_norm([{"newparam", "newvalue"},
-%%							       {"secondparam", none},
-%%							       {"q", "0.33"}])
-%%			},
-%%    [Parse13C] = contact:parse( keylist:fetch('contact', Header6) ),    
+    autotest:mark(?LINE, "parse/2 request - 6.2.13.2 (Contact: full parse)"),
+    %% Contact:
+    Parse13C = #contact{display_name = "Quoted string \\\"\\\"",
+			urlstr = "sip:jdrosen@example.com",
+			contact_param = contact_param:to_norm([{"newparam", "newvalue"},
+							       {"secondparam", none},
+							       {"q", "0.330"}])
+			},
+    [Parse13C] = contact:parse( keylist:fetch('contact', Header6) ),    
 
 
     Message7 =
