@@ -1046,7 +1046,7 @@ event_package(Header) when is_record(Header, keylist) ->
 %%           String = string(), a sip URI string or sip URI inside "<"
 %%           and ">" quotes, preceded by a displayname
 %% Descrip.: used to parse the contents in a To, From or Contact header
-%% Returns : {Displayname, URI}
+%% Returns : {Displayname, URI} | {unparseable, String}
 %%           Displayname = none | string()
 %%           URI = sipurl record()
 %%--------------------------------------------------------------------
@@ -1060,23 +1060,27 @@ name_header(String) ->
 	_ ->
 	    Index2 = string:rchr(String, $>),
 	    URL = string:substr(String, Index1 + 1, Index2 - Index1 - 1),
-	    URI = sipurl:parse(URL),
-	    Displayname = parse_displayname(string:substr(String, 1, Index1 - 1)),
-	    {Displayname, URI}
+	    case sipurl:parse(URL) of
+		URI when is_record(URI, sipurl) ->
+		    Displayname = parse_displayname(string:substr(String, 1, Index1 - 1)),
+		    {Displayname, URI};
+		E ->
+		    E
+	    end
     end.
 
-%% part of name_header/1. XXX this function fails on escaped quotes inside String
-%% XXX there is a similar function in the module contact. Merge them.
+%% part of name_header/1.
+%% Returns : none | string()
 parse_displayname(String) ->
-    LeftQuoteIndex = string:chr(String, $\"),
-    case LeftQuoteIndex of
-	0 ->
-	    empty_displayname(string:strip(String));
-	_ ->
-	    TempString = string:substr(String, LeftQuoteIndex + 1),
-	    RightQuoteIndex = string:chr(TempString, $\"),
-	    empty_displayname(string:substr(TempString, 1, RightQuoteIndex - 1))
-					 end.
+    StrippedStr = sipparse_util:strip(String, both, [?SP, ?HTAB]),
+    %% look for quoted display-name
+    try sipparse_util:split_quoted_string(StrippedStr) of
+	{ok, DisplayNameStr, [] = _Rest} ->
+	    empty_displayname(DisplayNameStr)
+    catch
+	error: does_not_start_with_quote ->
+	    empty_displayname(StrippedStr)
+    end.
 
 empty_displayname([]) ->
     none;
