@@ -82,6 +82,9 @@ install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) $(start_FILES)
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
+distclean: clean
+	rm -f Makefile
+
 clean:
 	rm -f core *.core *~
 	rm -f *.beam *.script *.start *.boot *.app

@@ -40,7 +40,7 @@ SUBDIRS = \
 	src \
 	yaws/src
 
-RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive
 
 erl_FILES = \
 	version.erl
@@ -75,6 +75,12 @@ install: $(beam_FILES) $(start_FILES) install-recursive
 	for p in $(start_FILES) yxa-bootstrap ; do \
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
+
+distclean: clean distclean-recursive
+	rm -f Makefile
+	rm -f config.status
+	rm -f config.log
+	rm -f version.erl
 
 clean: clean-recursive
 	rm -f core *.core *~

@@ -59,6 +59,9 @@ install: $(beam_FILES) syslog_c-port
 	  $(install_PROGRAM) $$p $(DESTDIR)$(privdir)/$$f ; \
 	done
 
+distclean: clean
+	rm -f Makefile
+
 clean:
 	rm -f core *.core *~
 	rm -f syslog_c-port *.beam *.script *.start *.boot *.rel *.app *.script

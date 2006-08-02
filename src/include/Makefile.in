@@ -53,6 +53,9 @@ install: $(hrl_FILES)
 	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
 	done
 
+distclean: clean
+	rm -f Makefile
+
 clean:
 	rm -f core *.core *~
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script

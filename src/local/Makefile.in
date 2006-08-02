@@ -44,6 +44,9 @@ all: $(beam_FILES)
 
 install: $(beam_FILES) $(hrl_FILES)
 
+distclean: clean
+	rm -f Makefile
+
 clean:
 	rm -f core *.core *~
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script

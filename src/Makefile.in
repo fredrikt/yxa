@@ -121,7 +121,7 @@ SUBDIRS = \
 	transactionlayer \
 	transportlayer
 
-RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive
 
 all: $(beam_FILES) all-recursive $(boot_FILES) start_ssl.boot
 
@@ -141,6 +141,9 @@ install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) start_ssl.boot install-recursi
 	for p in $(hrl_FILES); do \
 	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
 	done
+
+distclean: clean distclean-recursive
+	rm -f Makefile
 
 clean: clean-recursive
 	rm -f core *.core *~
