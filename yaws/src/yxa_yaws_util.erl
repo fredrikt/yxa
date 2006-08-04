@@ -43,6 +43,7 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("phone.hrl").
+-include_lib("kernel/include/inet.hrl").
 
 
 %%====================================================================
@@ -373,15 +374,37 @@ get_yxa_application_node() ->
     {ok, MyHostname} = my_hostname(),
     "incomingproxy@" ++ MyHostname.
 
-%% part of get_incomingproxy_nodename/0, inet:gethostname/0 without the
+%% part of get_yxa_application_node/0, inet:gethostname/0 without the
 %% domain-name removing part.
 %% Returns : {ok, Hostname}, Hostname = string()
 my_hostname() ->
     case inet_udp:open(0, []) of
         {ok, Socket} ->
-            {ok, Res} = inet:gethostname(Socket),
+            {ok, Hostname} = inet:gethostname(Socket),
             inet_udp:close(Socket),
-            {ok, Res};
+	    case get_fqdn(Hostname) of
+		{ok, FQDN} ->
+		    {ok, FQDN};
+		error ->
+		    {ok, Hostname}
+	    end;
         _ ->
             {ok, "nohost.nodomain"}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_fqdn(H)
+%%           H = string(), hostname
+%% Descrip.: Get the FQDN (Fully Qualified Domain Name) for a
+%%           (possibly) not fully qualified hostname.
+%% Returns : {ok, FQDN} | error
+%%           FQDN = string()
+%%--------------------------------------------------------------------
+get_fqdn(Hostname) ->
+    case inet:gethostbyname(Hostname) of
+	{ok, HostEnt} when is_record(HostEnt, hostent) ->
+	    {ok, HostEnt#hostent.h_name};
+	{error, What} ->
+	    logger:log(debug, "Resolver: Error ~p when resolving local hostname (~s)", [What, Hostname]),
+	    error
     end.
