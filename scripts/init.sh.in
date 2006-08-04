@@ -242,9 +242,22 @@ fi
 if [ "x$mnesiadir" = "x" ]; then
     mnesiaparameters=""
 else
-    if [ ! -d "$mnesiadir" -a $is_bootstrap -ne 1 ]; then
-	echo "$0: Mnesia directory '$mnesiadir' does not exist!"
-	exit 1
+    if [ ! -d "$mnesiadir" ]; then
+	if [ $is_bootstrap -ne 1 -a "x$name" = "xincomingproxy" ]; then
+	    echo "$0: Mnesia directory '$mnesiadir' does not exist!"
+	    echo ""
+	    echo "You should probably bootstrap YXA before starting the 'incomingproxy' application,"
+	    echo "see the README file. If 'incomingproxy' is not your database server node,"
+	    echo "just create the directory manually."
+	    echo ""
+	    exit 1
+	else
+	    mkdir "$mnesiadir"
+	    if [ ! -d "$mnesiadir" ]; then
+		echo "$0: Could not create Mnesia directory '$mnesiadir'"
+		exit 1
+	    fi
+	fi
     fi
     mnesiaparameters="-mnesia dir '"$mnesiadir"'"
 fi
