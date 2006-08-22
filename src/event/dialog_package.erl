@@ -224,7 +224,7 @@ notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgSt
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("presence", notification_rate_limit)
+%% Function: package_parameters("dialog", notification_rate_limit)
 %% Descrip.: The minimum amount of time that should pass between
 %%           NOTIFYs we send about this event packages events.
 %% Returns : MilliSeconds = integer()
@@ -234,7 +234,7 @@ package_parameters("dialog", notification_rate_limit) ->
     1000;  %% 1000 milliseconds, 1 second
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("presence", request_methods)
+%% Function: package_parameters("dialog", request_methods)
 %% Descrip.: What SIP methods this event packages request/7 function
 %%           can handle.
 %% Returns : Methods = list() of string()
@@ -243,7 +243,7 @@ package_parameters("dialog", request_methods) ->
     ["PUBLISH"];
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("presence",
+%% Function: package_parameters("dialog",
 %%                              subscribe_accept_content_types)
 %% Descrip.: What Content-Type encodings we should list as acceptable
 %%           in the SUBSCRIBEs we send.
