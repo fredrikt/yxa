@@ -226,7 +226,8 @@ request("presence", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
 %%           Status       = integer(), SIP status code to respond with
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = list() of {Key, ValueList} to include in
-%%                          the response to the SUBSCRIBE
+%%                          the response to the SUBSCRIBE,
+%%           Body         = binary() | list()
 %%           PkgState     = my_state record()
 %%--------------------------------------------------------------------
 %%
@@ -260,7 +261,8 @@ is_allowed_subscribe2(Header, SubState, Status, Reason, ExtraHeaders, PkgState) 
 		    undefined ->
 			#my_state{}
 		end,
-	    {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState};
+	    Body = <<>>,
+	    {ok, SubState, Status, Reason, ExtraHeaders, Body, NewPkgState};
 	false ->
 	    {siperror, 406, "Not Acceptable", []}
     end.

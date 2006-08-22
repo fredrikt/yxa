@@ -151,9 +151,11 @@ start(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandler
 
     case PackageM:is_allowed_subscribe(PackageS, SubscribeNum, Request, Origin, LogStr, LogTag, THandler,
 				       Subscriber, Presentity, undefined) of
-	{ok, SubscrState, Status, Reason, ExtraHeaders, PkgState} when SubscrState == active; SubscrState == pending,
-								       is_integer(Status), is_list(Reason),
-								       is_list(ExtraHeaders) ->
+	{ok, SubscrState, Status, Reason, ExtraHeaders, Body, PkgState} when SubscrState == active orelse
+									     SubscrState == pending,
+									     is_integer(Status), is_list(Reason),
+									     is_list(ExtraHeaders),
+									     is_binary(Body) orelse is_list(Body) ->
 	    case check_subscribe_expires(Request, THandler) of
 		{ok, Expires} ->
 		    Now = util:timestamp(),
@@ -201,7 +203,8 @@ start(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandler
 				    bidirectional_sub   = Bidirectional,
 				    subscribe_interval	= SubscribeInterval
 				   },
-		    gen_server:start(?MODULE, [Request, LogTag, THandler, State1, Status, Reason, ExtraHeaders],
+		    gen_server:start(?MODULE, [Request, LogTag, THandler, State1, Status, Reason,
+					       ExtraHeaders, Body],
 				     []);
 		_ ->
 		    {error, unacceptable}
@@ -234,7 +237,7 @@ send_notify(Pid) ->
 
 %%--------------------------------------------------------------------
 %% Function: init([Request, LogTag, THandler, State1, Status, Reason,
-%%                 ExtraHeaders])
+%%                 ExtraHeaders, Body])
 %%           Request      = request record(), SUBSCRIBE request
 %%           LogTag       = string(), log prefix
 %%           THandler     = term(), server transaction handler
@@ -244,13 +247,14 @@ send_notify(Pid) ->
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = list() of {Key, Value} tuple(), extra
 %%                          headers to include in response
+%%           Body         = binary() | list(), body of response
 %% Descrip.: Initiates the server when eventserver has received a
 %%           SUBSCRIBE request.
 %% Returns : {ok, State}    |
 %%           ignore         |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, LogTag, THandler, State1, Status, Reason, ExtraHeaders]) ->
+init([Request, LogTag, THandler, State1, Status, Reason, ExtraHeaders, Body]) ->
 
     BranchBase = siprequest:generate_branch(),
     BranchSeq = 1,
@@ -325,7 +329,7 @@ init([Request, LogTag, THandler, State1, Status, Reason, ExtraHeaders]) ->
 	       [LogTag, Status, State#state.subscriber, State#state.presentity]),
 
     ExtraHeaders1 = headers_for_response("SUBSCRIBE", Status, ExtraHeaders, State),
-    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders1),
+    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders1, Body),
 
     NewTimerL2 = siptimer:add_timer(1, "NOTIFY after SUBSCRIBE", send_notify, State#state.timerlist),
 
@@ -678,8 +682,8 @@ received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, O
 	    case PackageM:is_allowed_subscribe(PackageS, SubNum + 1, NewRequest, Origin,
 					       LogStr, LogTag, THandler, Subscriber, Presentity,
 					       PkgState) of
-		{ok, SubState1, Status, Reason, ExtraHeaders, NewPkgState}
-		when SubState1 == active; SubState1 == pending; SubState1 == terminated,
+		{ok, SubState1, Status, Reason, ExtraHeaders, Body, NewPkgState}
+		when SubState1 == active orelse SubState1 == pending orelse SubState1 == terminated,
 		     is_integer(Status), is_list(Reason), is_list(ExtraHeaders) ->
 		    case Expires of
 			0 ->
@@ -710,7 +714,7 @@ received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, O
 			end,
 
 		    ExtraHeaders1 = headers_for_response("SUBSCRIBE", Status, ExtraHeaders, State),
-		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders1),
+		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders1, Body),
 
 		    SetLastAccept =
 			case keylist:fetch('accept', NewRequest#request.header) of

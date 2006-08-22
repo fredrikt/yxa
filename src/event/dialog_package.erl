@@ -115,6 +115,7 @@ request("dialog", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = list() of {Key, ValueList} to include in
 %%                          the response to the SUBSCRIBE
+%%           Body         = binary() | list(), body of response
 %%           NewPkgState  = my_state record()
 %%--------------------------------------------------------------------
 %%
@@ -158,7 +159,8 @@ is_allowed_subscribe2(Request, SubState, Status, Reason, ExtraHeaders, PkgState)
 		    undefined ->
 			#my_state{entity = sipurl:print(Request#request.uri)}
 		end,
-	    {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState};
+	    Body = <<>>,
+	    {ok, SubState, Status, Reason, ExtraHeaders, Body, NewPkgState};
 	false ->
 	    {siperror, 406, "Not Acceptable", []}
     end.
