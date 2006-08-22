@@ -949,7 +949,13 @@ send_notify_request(State, Body, ExtraHeaders) when is_list(Body); is_binary(Bod
 
     %% "NOTIFY requests are matched to such SUBSCRIBE requests if they ...
     %%  and the same "Event" header field" RFC3265 #3.3.4
-    ExtraHeaders3 = [{"Event", State#state.last_event} | ExtraHeaders2],
+    ExtraHeaders3 =
+	case lists:keysearch("Event", 1, ExtraHeaders) of
+	    {value, _} ->
+		ExtraHeaders2;
+	    false ->
+		[{"Event", State#state.last_event} | ExtraHeaders2]
+	end,
 
     Timeout = 5,
     {ok, NotifyPid, NewState} = start_client_transaction("NOTIFY", ExtraHeaders3, Body, Timeout, State),
