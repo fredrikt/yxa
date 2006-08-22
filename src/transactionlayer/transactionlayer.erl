@@ -26,6 +26,7 @@
 	 adopt_st_and_get_branchbase/1,
 	 send_response_handler/3,
 	 send_response_handler/4,
+	 send_response_handler/5,
 	 send_proxy_response_handler/2,
 	 is_good_transaction/1,
 	 get_pid_from_handler/1,
@@ -576,7 +577,7 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_reco
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = keylist record()
-%%           RBody        = string(), response body
+%%           RBody        = binary(), response body
 %% Descrip.: Ask a server transaction handler to send a response.
 %% Returns : ok    |
 %%           {error, E}
