@@ -289,12 +289,14 @@ get_classes_for_user(User) ->
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(User) ->
     case phone:get_numbers_for_user(User) of
-	{atomic, []} ->
-	    logger:log(debug, "userdb-mnesia: No numbers for user ~p", [User]),
-	    nomatch;
-	{atomic, [FirstNumber | _]} when is_list(FirstNumber) ->
-	    %% XXX what says that the first entry was a telephone number and not some other address?
-	    FirstNumber;
+	{atomic, NumberL} ->
+	    case find_first_telephonenumber(NumberL) of
+		FirstNumber when is_list(FirstNumber) ->
+		    FirstNumber;
+		nomatch ->
+		    logger:log(debug, "userdb-mnesia: No numbers for user ~p", [User]),
+		    nomatch
+	    end;
 	Unknown ->
 	    logger:log(error, "userdb-mnesia: Unexpected result from phone:get_numbers_for_user(), user ~p result : ~p",
 		       [User, Unknown]),
@@ -346,3 +348,49 @@ get_forward_for_user(User) ->
 		       [User, Unknown]),
 	    error
     end.
+
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: find_first_telephonenumber(In)
+%%           In = list() of string()
+%% Descrip.: Look through a list of addresses (numbers) for a user and
+%%           return the first one that is a valid phone number.
+%% Returns : Number |
+%%           nomatch
+%%           Number = string()
+%%--------------------------------------------------------------------
+find_first_telephonenumber([]) ->
+    nomatch;
+find_first_telephonenumber(["tel:+" ++ Rest | T]) ->
+    case util:is_numeric(Rest) of
+	true ->
+	    "+" ++ Rest;
+	false ->
+	    find_first_telephonenumber(T)
+    end;
+find_first_telephonenumber([H | T]) when is_list(H) ->
+    case sipurl:parse(H) of
+	#sipurl{user = User} ->
+	    IsNumericUser = util:isnumeric(User),
+	    IsE164User =
+		case User of
+		    "+" ++ Rest ->
+			util:isnumeric(Rest);
+		    _ ->
+			false
+		end,
+	    if
+		IsNumericUser == true -> User;
+		IsE164User == true -> User;
+		true ->
+		    find_first_telephonenumber(T)
+	    end;
+	_ ->
+	    %% unparsable URL
+	    find_first_telephonenumber(T)
+    end.
+
