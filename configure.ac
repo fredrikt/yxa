@@ -2,6 +2,7 @@ dnl Process this file with autoconf to produce a configure script.
 AC_REVISION($Revision$)
 AC_PREREQ(2.53)
 AC_INIT(YXA, 0.91-current, yxa-devel@lists.su.se)
+REQUIRE_ERLANG="5.5 (Erlang/OTP R11B-0)"
 AC_CONFIG_SRCDIR([src/incomingproxy.erl])
 AC_CONFIG_AUX_DIR([scripts])
 
@@ -32,11 +33,53 @@ AC_ARG_WITH(erlang,
 [if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_erlang" = "X"; then
     extra_erl_path=""
 else
-    extra_erl_path="$with_erlang:"
+    extra_erl_path="$with_erlang:$with_erlang/bin:"
 fi
 ])
-AC_PATH_PROG(ERL, erl, erl, [${extra_erl_path}$PATH])
-AC_PATH_PROG(ERLC, erlc, erlc, [${extra_erl_path}$PATH])
+
+AC_PATH_TOOL(ERL, erl, , [${extra_erl_path}$PATH])
+AC_PATH_TOOL(ERLC, erlc, , [${extra_erl_path}$PATH])
+
+dnl check that we found 'erl' and 'erlc'
+if test "x$ERL" = "x" -o "x$ERLC" = "x"; then
+   AC_MSG_ERROR(["Erlang programs 'erl' or 'erlc' not found"])
+fi
+
+dnl check that the installed Erlang/OTP version is the right one for this version of YXA
+AC_MSG_CHECKING([Erlang/OTP version])
+cat > conftest.erl <<EOF
+-module(conftest).
+-export([[start/0]]).
+
+start() ->
+    ERTS = erlang:system_info(version),
+    Required = "$REQUIRE_ERLANG",
+    Status =
+        case string:tokens(Required, " ") of
+	    [[ERTS | _]] ->
+	        <<"ok">>;
+	    _ ->
+	        list_to_binary([[ERTS, " found, ", Required, " required"]])
+	end,
+    file:write_file("conftest.out", Status),
+    halt().
+
+EOF
+
+$ERLC conftest.erl || AC_MSG_ERROR(["Could not compile Erlang/OTP version check program using '$ERLC'"])
+
+if ! $ERL -s conftest -noshell -o ! -f conftest.out ; then
+   AC_MSG_ERROR(["Could not run Erlang/OTP version check program using '$ERL'"])
+fi
+
+if test "x`cat conftest.out`" != "xok"; then
+   AC_MSG_RESULT([failed])
+   X="`cat conftest.out`"
+   AC_MSG_FAILURE([$X])
+else
+   AC_MSG_RESULT([ok])
+fi
+
 
 AC_ARG_WITH(mnesiadir,
 	AC_HELP_STRING([--with-mnesiadir=dir],
