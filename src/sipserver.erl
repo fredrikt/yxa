@@ -114,6 +114,13 @@ start(normal, [AppModule]) ->
 %%--------------------------------------------------------------------
 stop() ->
     logger:log(normal, "Sipserver: shutting down"),
+    {ok, AppModule} = yxa_config:get_env(yxa_appmodule),
+    case (catch AppModule:terminate(shutdown)) of
+	ok ->
+	    ok;
+	Res ->
+	    logger:log(debug, "Sipserver: ~p:terminate/1 terminated with reason other than 'ok' : ~p", [AppModule, Res])
+    end,
     init:stop().
 
 %%--------------------------------------------------------------------
