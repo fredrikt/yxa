@@ -99,7 +99,7 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .app .app-in
 
 .erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -W +debug_info $<
+	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -pz ../ -W +debug_info $<
 
 .app-in.app:
 	cp $(srcdir)/$*.app-in $*.app
