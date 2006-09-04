@@ -79,6 +79,7 @@
 		       transportlayer,
 		       sipsocket,
 		       sipsocket_tcp,
+		       sipsocket_udp,
 		       tcp_connection,
 		       ssl_util,
 		       siphost,
