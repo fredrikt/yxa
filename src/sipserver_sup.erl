@@ -98,7 +98,7 @@ init([AppModule, MnesiaTables]) ->
     DialogServer = {dialog_server, {dialog_server, start_link, []},
 		    permanent, 2000, worker, [dialog_server]},
     TransactionLayer = {transactionlayer,
-			{transactionlayer, start_link, [AppModule]},
+			{transactionlayer, start_link, []},
 			permanent, 2000, worker, [transactionlayer]},
     Monitor = {yxa_monitor, {yxa_monitor, start_link, [AppModule, MnesiaTables]},
 	       permanent, 2000, worker, [yxa_monitor]},
@@ -133,15 +133,19 @@ start_transportlayer(Supervisor) ->
 %% tell Supervisor to start a list of children, one by one.
 my_start_children(Supervisor, []) ->
     {ok, Supervisor};
-my_start_children(Supervisor, [H|T]) ->
+my_start_children(Supervisor, [H | T]) ->
+    Subsystem = element(1, H),
+    %%logger:log(debug, "Sipserver supervisor: Starting subsystem ~p", [Subsystem]),
     case supervisor:start_child(Supervisor, H) of
 	{error, E} ->
-	    logger:log(error, "Sipserver supervisor: Failed starting child '~p': ~p",
-		       [element(1, H), E]),
+	    logger:log(error, "Sipserver supervisor: Failed starting subsystem '~p': ~p",
+		       [Subsystem, E]),
     	    throw('Failed starting subsystem, see logfiles for more details');
-	{ok, _Child} ->
+	{ok, Child} ->
+	    logger:log(debug, "Sipserver supervisor: Started subsystem ~p (~p)", [Subsystem, Child]),
 	    my_start_children(Supervisor, T);
-	{ok, _Child, _Info} ->
+	{ok, Child, _Info} ->
+	    logger:log(debug, "Sipserver supervisor: Started subsystem ~p (~p)", [Subsystem, Child]),
 	    my_start_children(Supervisor, T)
     end.
 

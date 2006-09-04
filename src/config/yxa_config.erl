@@ -52,6 +52,7 @@
 %% Macros
 %%--------------------------------------------------------------------
 -define(SERVER, yxa_config).
+-define(YXA_CONFIG, yxa_config_t).
 -define(BACKENDS, [
 		   yxa_config_default,
 		   yxa_config_erlang
@@ -88,7 +89,7 @@ start_link(AppModule) when is_atom(AppModule) ->
 %%           State = state record()
 %%--------------------------------------------------------------------
 init([AppModule, ExtraCfg]) when is_atom(AppModule) ->
-    ets:new(yxa_config_t, [protected, set, named_table]),
+    ets:new(?YXA_CONFIG, [protected, set, named_table]),
 
     %% Figure out which backends to activate
     Backends = init_get_backends(?BACKENDS, AppModule),
@@ -101,7 +102,7 @@ init([AppModule, ExtraCfg]) when is_atom(AppModule) ->
 	{ok, Cfg} when is_record(Cfg, yxa_cfg) ->
 	    case validate(Cfg, AppModule, hard) of
 		{ok, Normalized} when is_record(Normalized, yxa_cfg) ->
-		    ok = load(Normalized, hard);
+		    ok = load(Normalized, AppModule, hard);
 		{error, Msg} when is_list(Msg) ->
 		    %% output error message to console first, since logger is probably not running
 		    io:format("ERROR: Config validation failed : ~p~n", [Msg]),
@@ -176,7 +177,7 @@ behaviour_info(_Other) ->
 %%           none		parameter known, but no value set
 %%--------------------------------------------------------------------
 get_env(Key) when is_atom(Key) ->
-    try ets:lookup(yxa_config_t, Key) of
+    try ets:lookup(?YXA_CONFIG, Key) of
 	[{Key, undefined, yxa_config_default}] ->
 	    %% Parameter known, but not set.
 	    none;
@@ -198,7 +199,7 @@ get_env(Key, Default) when is_atom(Key) ->
     end.
 
 list() ->
-    lists:keysort(1, ets:tab2list(yxa_config_t)).
+    lists:keysort(1, ets:tab2list(?YXA_CONFIG)).
 
 %%====================================================================
 %% Behaviour functions
@@ -230,7 +231,8 @@ handle_call(reload, _From, State) ->
     Reply =
 	case parse(#yxa_cfg{}, State) of
 	    {ok, Cfg} when is_record(Cfg, yxa_cfg) ->
-		case validate(Cfg, State#state.appmodule, soft) of
+		AppModule = State#state.appmodule,
+		case validate(Cfg, AppModule, soft) of
 		    {ok, Normalized} when is_record(Normalized, yxa_cfg) ->
 			%% load() should never fail and if it does then our ets table is
 			%% probably half way updated, so we might as well crash so that
@@ -238,7 +240,7 @@ handle_call(reload, _From, State) ->
 			%% XXX what about configuration changes activated by such a restart?
 			%% Shold we perhaps restart the whole application if this process dies?
 			logger:log(debug, "Config server: Loading checked configuration"),
-			ok = load(Normalized, soft),
+			ok = load(Normalized, AppModule, soft),
 			logger:log(normal, "Config server: Finished reloading configuration"),
 			ok;
 		    {error, Msg} when is_list(Msg) ->
@@ -350,14 +352,15 @@ validate(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModule),
     %% record with all the values normalized according to the type declarations.
     yxa_config_check:check_config(Cfg, AppModule, Mode).
 
-load(Cfg, Mode) when is_record(Cfg, yxa_cfg), Mode == soft; Mode == hard ->
+load(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), Mode == soft; Mode == hard ->
     ok = load_set(Cfg#yxa_cfg.entrys, Mode),
     ok = delete_not_present(Cfg, Mode),
+    ok = insert_implicit(AppModule),
     ok.
 
-%% part of load/2
+%% part of load/3
 load_set([{Key, Value, Src} | T], Mode) ->
-    case ets:lookup(yxa_config_t, Key) of
+    case ets:lookup(?YXA_CONFIG, Key) of
 	[{Key, OldValue, _OldSrc}] when OldValue == Value ->
 	    %% not changed
 	    ok;
@@ -366,7 +369,7 @@ load_set([{Key, Value, Src} | T], Mode) ->
 	    ok = update(Key, Value, Src, OldValue, Mode);
 	[] ->
 	    %% new value
-    	    true = ets:insert_new(yxa_config_t, {Key, Value, Src}),
+    	    true = ets:insert_new(?YXA_CONFIG, {Key, Value, Src}),
 	    case Mode of
 		soft ->
 		    %% don't disclose sensitive information in log files
@@ -389,7 +392,7 @@ load_set([], _Mode) ->
 
 %% part of load_set/2, Return  : ok
 update(Key, undefined, yxa_config_default, OldValue, soft) ->
-    true = ets:insert(yxa_config_t, {Key, undefined, yxa_config_default}),
+    true = ets:insert(?YXA_CONFIG, {Key, undefined, yxa_config_default}),
     case lists:member(Key, ?NO_DISCLOSURE) of
 	true ->
 	    logger:log(debug, "Config server: Deleting parameter '~p' (value not shown)",
@@ -400,7 +403,7 @@ update(Key, undefined, yxa_config_default, OldValue, soft) ->
     end,
     ok;
 update(Key, Value, Src, OldValue, Mode) ->
-    true = ets:insert(yxa_config_t, {Key, Value, Src}),
+    true = ets:insert(?YXA_CONFIG, {Key, Value, Src}),
     case Mode of
 	soft ->
 	    %% don't disclose sensitive information in log files
@@ -418,7 +421,7 @@ update(Key, Value, Src, OldValue, Mode) ->
     end,
     ok.
 
-%% part of load/2, delete keys from ets table not present in Cfg. Happens if a code change/other
+%% part of load/3, delete keys from ets table not present in Cfg. Happens if a code change/other
 %% makes our config definitions change.
 delete_not_present(Cfg, _Mode) ->
     L = list(),
@@ -437,9 +440,13 @@ delete_not_present(Cfg, _Mode) ->
 				logger:log(debug, "Config server: Purging parameter 'p' (old value: ~p)",
 					   [Key, OldValue])
 			end,
-			true = ets:delete(yxa_config_t, Key)
+			true = ets:delete(?YXA_CONFIG, Key)
 		end
 	end,
     lists:map(CheckPurge, L),
     ok.
 
+%% part of load/3 - forces certain values for certain applications
+insert_implicit(AppModule) when is_atom(AppModule) ->
+    true = ets:insert(?YXA_CONFIG, {yxa_appmodule, AppModule, yxa_config_default}),
+    ok.

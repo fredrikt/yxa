@@ -12,7 +12,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/1,
+	 start_link/0,
 	 send_response_request/3,
 	 send_response_request/4,
 	 send_response_request/5,
@@ -106,37 +106,31 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(AppModule)
-%%           AppModule = atom(), name of YXA application
+%% Function: start_link()
 %% Descrip.: start the transactionlayer gen_server.
 %%           The transactionlayer is only registered localy (on the
 %%           current node)
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
-start_link(AppModule) ->
-    gen_server:start_link({local, transactionlayer}, ?MODULE, [AppModule], []).
+start_link() ->
+    gen_server:start_link({local, transactionlayer}, ?MODULE, [], []).
 
 %%====================================================================
 %% Server functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule])
-%%           AppModule = atom(), name of YXA application
+%% Function: init([])
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}          |
 %%           {ok, State, Timeout} |
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([AppModule]) ->
+init([]) ->
     process_flag(trap_exit, true),
 
     transactionstatelist:empty(), %% create ets tables
-    %% Create a tiny ets table to remember some state. Don't use server
-    %% process for this since it is bad for parallelism
-    Settings = ets:new(transactionlayer_settings, [protected, set, named_table]),
-    true = ets:insert_new(Settings, {appmodule, AppModule}),
 
     %% create statistics ets-entrys
     lists:map(fun(Key) ->
@@ -971,7 +965,7 @@ from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
 						  is_list(LogStr) ->
     case get_server_transaction_pid(Request) of
 	none ->
-	    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
+	    {ok, AppModule} = yxa_config:get_env(yxa_appmodule),
 	    case received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule) of
 		{pass_to_core, NewAppModule, STPid} ->
 		    case get_dialog_handler(Request) of
@@ -1032,7 +1026,7 @@ from_transportlayer_response_no_transaction(Method, Response, _Origin, _LogStr) 
     continue;
 from_transportlayer_response_no_transaction("INVITE", Response, Origin, LogStr) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
-    [{appmodule, AppModule}] = ets:lookup(transactionlayer_settings, appmodule),
+    {ok, AppModule} = yxa_config:get_env(yxa_appmodule),
     case get_dialog_handler(Response) of
 	nomatch ->
 	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', "
