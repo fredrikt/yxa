@@ -8,6 +8,8 @@
 %%%-------------------------------------------------------------------
 -module(appserver).
 
+-behaviour(yxa_app).
+
 %%--------------------------------------------------------------------
 %%% Standard YXA SIP-application callback functions
 %%--------------------------------------------------------------------
@@ -15,6 +17,7 @@
 	 init/0,
 	 request/3,
 	 response/3,
+	 terminate/1,
 
 	 test/0
 	]).
@@ -166,6 +169,16 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
     logger:log(normal, "incomingproxy: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
 	       [LogStr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
+    ok.
+
+
+%%--------------------------------------------------------------------
+%% Function: terminate(Mode)
+%%           Mode = atom(), shutdown | graceful | ...
+%% Descrip.: YXA applications must export a terminate/1 function.
+%% Returns : Yet to be specified. Return 'ok' for now.
+%%--------------------------------------------------------------------
+terminate(Mode) when is_atom(Mode) ->
     ok.
 
 

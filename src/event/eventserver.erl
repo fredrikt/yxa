@@ -7,13 +7,16 @@
 %%%-------------------------------------------------------------------
 -module(eventserver).
 
+-behaviour(yxa_app).
+
 %%--------------------------------------------------------------------
 %%% Standard YXA SIP-application callback functions
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
 	 request/3,
-	 response/3
+	 response/3,
+	 terminate/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -146,6 +149,15 @@ response(Response, _Origin, LogStr) when is_record(Response, response) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(normal, "event server: Response to ~s: '~p ~s', no matching transaction - ignoring",
 	       [LogStr, Status, Reason]),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: terminate(Mode)
+%%           Mode = atom(), shutdown | graceful | ...
+%% Descrip.: YXA applications must export a terminate/1 function.
+%% Returns : Yet to be specified. Return 'ok' for now.
+%%--------------------------------------------------------------------
+terminate(Mode) when is_atom(Mode) ->
     ok.
 
 

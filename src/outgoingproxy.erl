@@ -1,4 +1,16 @@
+%%%-------------------------------------------------------------------
+%%% File    : outgoingproxy.erl
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: YXA application to manage client connections from your
+%%%           user agents. Keeps TCP connections open virtually
+%%%           forever, and implements draft-Outbound to helt clients
+%%%           behind NATs etc.
+%%%
+%%% Created : 16 Mar 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
 -module(outgoingproxy).
+
+-behaviour(yxa_app).
 
 %%--------------------------------------------------------------------
 %%% Standard YXA SIP-application callback functions
@@ -6,7 +18,8 @@
 -export([
 	 init/0,
 	 request/3,
-	 response/3
+	 response/3,
+	 terminate/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -148,6 +161,16 @@ response(Response, Origin, LogStr) when is_record(Response, response), is_record
     logger:log(normal, "outgoingproxy: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
 	       [LogStr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
+    ok.
+
+
+%%--------------------------------------------------------------------
+%% Function: terminate(Mode)
+%%           Mode = atom(), shutdown | graceful | ...
+%% Descrip.: YXA applications must export a terminate/1 function.
+%% Returns : Yet to be specified. Return 'ok' for now.
+%%--------------------------------------------------------------------
+terminate(Mode) when is_atom(Mode) ->
     ok.
 
 
