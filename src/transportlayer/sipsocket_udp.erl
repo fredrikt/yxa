@@ -32,7 +32,9 @@
 	 is_reliable_transport/1,
 	 get_socket/1,
 	 get_specific_socket/1,
-	 get_raw_socket/1
+	 get_raw_socket/1,
+
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -56,8 +58,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
--record(state, {inet_socketlist  = [],	%% list() of {Socket, SipSocket} - the first one is the one we send using
-		inet6_socketlist = [],	%% list() of {Socket, SipSocket} - the first one is the one we send using
+-record(state, {inet_socketlist  = [],	%% list() of {Socket, SipSocket}
+		inet6_socketlist = [],	%% list() of {Socket, SipSocket}
 		socketlist
 	       }).
 
@@ -124,7 +126,7 @@ init([]) ->
 %%--------------------------------------------------------------------
 start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(State, state) ->
     SocketOpts = [{ip, IP} | ?SOCKETOPTS],
-    case gen_udp:open(Port, SocketOpts) of
+    case (catch gen_udp:open(Port, SocketOpts)) of
 	{ok, Socket} ->
 	    Local = get_localaddr(Socket, "0.0.0.0"),
 	    SipSocket = #sipsocket{module = sipsocket_udp,
@@ -144,6 +146,10 @@ start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(S
 	{error, Reason} ->
 	    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~s",
 		       [SocketOpts, Port, inet:format_error(Reason)]),
+	    {stop, "Could not open UDP socket"};
+	Error ->
+	    logger:log(error, "Could not open UDP socket (options ~p), port ~p : ~p",
+		       [SocketOpts, Port, Error]),
 	    {stop, "Could not open UDP socket"}
     end;
 start_listening([{udp6, IP, Port} | T], State) when is_integer(Port), is_record(State, state) ->
@@ -245,10 +251,11 @@ handle_call({get_raw_socket, _Proto}, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({send, {Host, Port, Message}}, From, State)
-%%           Host    = string()
-%%           Port    = integer()
-%%           Message = term()
+%% Function: handle_call({send, SipSocket, Host, Port, Message}, ...)
+%%           SipSocket = sipsocket record(), prefered socket to use
+%%           Host      = string()
+%%           Port      = integer()
+%%           Message   = term()
 %% Descrip.: Send Message to Host:Port.
 %% Returns : {reply, Reply, State}
 %%           Reply = {send_result, Res}
@@ -259,7 +266,8 @@ handle_call({get_raw_socket, _Proto}, _From, State) ->
 %%
 %% Host = IPv6 address (e.g. [2001:6b0:5:987::1])
 %%
-handle_call({send, {"[" ++ HostT, Port, Message}}, _From, State) when is_list(HostT), is_integer(Port) ->
+handle_call({send, SipSocket, "[" ++ HostT, Port, Message}, _From, State) when is_record(SipSocket, sipsocket),
+									       is_integer(Port) ->
     SendRes =
 	case string:rchr(HostT, 93) of	%% 93 is ]
 	    0 ->
@@ -267,14 +275,15 @@ handle_call({send, {"[" ++ HostT, Port, Message}}, _From, State) when is_list(Ho
 	    Index when is_integer(Index) ->
 		Addr = string:substr(HostT, 1, Index - 1),
 		{ok, AddrT} = inet_parse:ipv6_address(Addr),
-		do_send(State#state.inet6_socketlist, AddrT, Port, Message)
+		do_send(State#state.inet6_socketlist, SipSocket, AddrT, Port, Message)
 	end,
     {reply, {send_result, SendRes}, State};
 %%
 %% Host is not IPv6 reference (inside brackets)
 %%
-handle_call({send, {Host, Port, Message}}, _From, State) when is_list(Host), is_integer(Port) ->
-    SendRes = do_send(State#state.inet_socketlist, Host, Port, Message),
+handle_call({send, SipSocket, Host, Port, Message}, _From, State) when is_record(SipSocket, sipsocket),
+								       is_list(Host), is_integer(Port) ->
+    SendRes = do_send(State#state.inet_socketlist, SipSocket, Host, Port, Message),
     {reply, {send_result, SendRes}, State}.
 
 
@@ -383,7 +392,7 @@ send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket)
 						 is_integer(Port), is_atom(Proto),
 						 Proto == udp; Proto == udp6 ->
     Pid = SipSocket#sipsocket.pid,
-    case catch gen_server:call(Pid, {send, {Host, Port, Message}}) of
+    case catch gen_server:call(Pid, {send, SipSocket, Host, Port, Message}) of
 	{send_result, Res} ->
 	    Res;
 	Unknown ->
@@ -646,22 +655,123 @@ get_sipsocket_id_match(_Id, []) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_send(SocketList, Host, Port, Message)
+%% Function: do_send(SocketList, SipSocket, Host, Port, Message)
 %%           SocketList = list() of {Socket, SipSocket} tuple()
-%%           Host      = string()
-%%           Port      = integer()
-%%           Message   = term()
+%%           SipSocket  = sipsocket record(), prefered socket to use
+%%           Host       = string()
+%%           Port       = integer()
+%%           Message    = term()
 %% Descrip.: Try sockets in SocketList until we find one that can send
 %%           to this destination, or they are all exhausted.
 %% Returns : {error, no_socket} | term(), send result
 %%--------------------------------------------------------------------
-do_send([{Socket, _SipSocket} | T], Host, Port, Message) ->
-    case gen_udp:send(Socket, Host, Port, Message) of
+do_send(Sockets, SipSocket, Host, Port, Message) ->
+    %% look for SipSocket in Sockets, if it is found we place that socket first
+    %% in the list to always first try the exact socket requested, but otherwise
+    %% fall back to the "try all" method
+    NewSockets = do_send_sort_sockets(Sockets, SipSocket),
+    do_send2(NewSockets, Host, Port, Message).
+
+do_send2([{Socket, _SipSocket} | T], Host, Port, Message) ->
+    Res = gen_udp:send(Socket, Host, Port, Message),
+    case Res of
 	{error, einval} ->
 	    %% destination address not valid for this socket, try next
-	    do_send(T, Host, Port, Message);
+	    do_send2(T, Host, Port, Message);
 	Res ->
 	    Res
     end;
-do_send([], _Host, _Port, _Message) ->
+do_send2([], _Host, _Port, _Message) ->
     {error, no_socket}.
+
+%%--------------------------------------------------------------------
+%% Function: do_send_sort_sockets(Sockets, SipSocket)
+%%           Sockets   = list() of {Socket, SipSocket} tuple()
+%%              Socket = term(), gen_udp socket
+%%           SipSocket = sipsocket record(), prefered socket to use
+%% Descrip.: Sort sockets to try and send a message using. First, we
+%%           look for a socket that matches the requested SipSocket
+%%           exactly, and second we look for one with the same local
+%%           host and port. The best socket found is returned first
+%%           in a new list, but all sockets in Sockets will always be
+%%           returned in NewSockets.
+%% Returns : NewSockets = list() of {Socket, SipSocket} tuple()
+%%               Socket = term(), gen_udp socket
+%%            SipSocket = sipsocket record()
+%%--------------------------------------------------------------------
+do_send_sort_sockets(Sockets, SipSocket) ->
+    case sort_sockets_id(Sockets, SipSocket#sipsocket.id, []) of
+	Res when is_list(Res) ->
+	    Res;
+	none ->
+	    {LAddr, _} = SipSocket#sipsocket.data,
+	    case sort_sockets_laddr(Sockets, LAddr, []) of
+		none ->
+		    Sockets;
+		Res when is_list(Res) ->
+		    Res
+	    end
+    end.
+
+%% part of do_send_sort_sockets/4
+%% Returns : list() of sipsocket record() | none
+sort_sockets_id([{_Socket, #sipsocket{id = Id}} = H | T], Id, Res) ->
+    %% exact match found - this is the normal case so we don't log it
+    [H | lists:reverse(Res)] ++ T;
+sort_sockets_id([H | T], Id, Res) ->
+    %% no match
+    sort_sockets_id(T, Id, [H | Res]);
+sort_sockets_id([], Id, _Res) ->
+    logger:log(debug, "Sipsocket UDP: Found no exact match for socket with id ~p", [Id]),
+    none.
+
+%% part of do_send_sort_sockets/4
+%% Returns : list() of sipsocket record() | none
+sort_sockets_laddr([{_Socket, #sipsocket{data = {LAddr, _}}} = H | T], LAddr, Res) ->
+    logger:log(debug, "Sipsocket UDP: Found socket matching local address+port ~p", [LAddr]),
+    [H | lists:reverse(Res)] ++ T;
+sort_sockets_laddr([H | T], LAddr, Res) ->
+    %% no match
+    sort_sockets_laddr(T, LAddr, [H | Res]);
+sort_sockets_laddr([], LAddr, _Res) ->
+    logger:log(debug, "Sipsocket UDP: Found no match for local address+port ~p", [LAddr]),
+    none.
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+
+    %% test do_send_sort_sockets(Sockets, SipSocket)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "do_send_sort_sockets/2 - 1"),
+    %% test with exact match possible
+    SortSocketsL1 = [{2, #sipsocket{id = 2}},
+		     {1, #sipsocket{id = 1}}
+		    ],
+    SortSockets1_expect = lists:reverse(SortSocketsL1),
+    SortSockets1_expect = do_send_sort_sockets(SortSocketsL1, #sipsocket{id = 1}),
+
+    autotest:mark(?LINE, "do_send_sort_sockets/2 - 2"),
+    %% test with no exact match possible, but local address found (order should be preserved except
+    %% the matching socket which is inserted at the head of the list)
+    SortSocketsL2 = [{3, #sipsocket{id = 3, data = {{"192.0.2.1", 5003}, none}}},
+		     {2, #sipsocket{id = 2, data = {{"192.0.2.1", 5002}, none}}},
+		     {1, #sipsocket{id = 1, data = {{"192.0.2.1", 5001}, none}}}
+		    ],
+    SortSockets2_SS = #sipsocket{id = 99, data = {{"192.0.2.1", 5002}, test}},
+    [{2, _}, {3, _}, {1, _}] = do_send_sort_sockets(SortSocketsL2, SortSockets2_SS),
+
+    autotest:mark(?LINE, "do_send_sort_sockets/2 - 3"),
+    %% test with no match at all
+    SortSockets3_SS = #sipsocket{id = 99, data = {{"192.0.2.1", 5099}, test}},
+    SortSocketsL2 = do_send_sort_sockets(SortSocketsL2, SortSockets3_SS),
+
+    ok.
