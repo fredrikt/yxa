@@ -92,7 +92,7 @@
 		my_contact,		%% string(), the Contact: header value we use
 
 		notify_pids = [],	%% list() of pid(), active NOTIFY client transactions
-		subscription_state,	%% active | pending | terminated
+		subscription_state,	%% active | pending | deactivated | terminated
 		last_notify_content,	%% undefined | {Body, ExtraHeaders} - parameters of the last NOTIFY we sent
 		subscr_num,		%% integer(), number of SUBSCRIBEs we have accepted
 		notification_rate,	%% integer(), milliseconds required between NOTIFYs for the current event package
@@ -375,6 +375,24 @@ handle_cast({notify, Source}, State) ->
 	false ->
 	    process_timer_signal(send_notify, undefined, State)
     end;
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast({terminate, Mode}, State)
+%%           Mode = atom(), shutdown | graceful | ...
+%% Descrip.: Terminate the subscription since the eventserver is
+%%           shutting down.
+%% Returns :    {stop, Reason, State}
+%%--------------------------------------------------------------------
+handle_cast({terminate, Mode}, State) when is_atom(Mode) ->
+    NewState =
+	case State#state.subscription_state of
+	    S when S == active; S == pending ->
+		logger:log(debug, "Subscription: Deactivating subscription"),
+		prepare_and_send_notify(State#state{subscription_state = deactivated});
+	    _ ->
+		State
+	end,
+    {stop, normal, NewState};
 
 handle_cast(Msg, State) ->
     logger:log(error, "Subscription: Received unknown gen_server cast : ~p", [Msg]),
@@ -902,14 +920,15 @@ prepare_and_send_notify(State) when is_record(State, state) ->
 	    %% supposed to send as a result of the initial SUBSCRIBE? Subsequent SUBSCRIBE?
 	    State;
 	{ok, Body, ExtraHeaders, NewPkgState} when is_list(Body); is_binary(Body), is_list(ExtraHeaders) ->
-	    case ({Body, ExtraHeaders} == State#state.last_notify_content) of
+	    CompareWith = {Body, ExtraHeaders, State#state.subscription_state},
+	    case (CompareWith == State#state.last_notify_content) of
 		true ->
 		    logger:log(debug, "Subscription: Supressed sending of NOTIFY identical (essentially) "
 			       "to the last one we sent."),
 		    State;
 		false ->
 		    NewState1 = send_notify_request(State, Body, ExtraHeaders),
-		    NewState1#state{last_notify_content = {Body, ExtraHeaders},
+		    NewState1#state{last_notify_content = CompareWith,
 				    event_pkg_state     = NewPkgState
 				   }
 	    end
@@ -927,14 +946,19 @@ send_notify_request(State, Body, ExtraHeaders) when is_list(Body); is_binary(Bod
     Now = util:timestamp(),
 
     {NewSubState, SubscriptionState} =
-	case (State#state.expires =< Now) of
-	    true ->
-		%% "A subscription is destroyed when a notifier sends a NOTIFY request
-		%%  with a "Subscription-State" of "terminated"." RFC3265 #3.3.4
-		{terminated, "terminated;reason=timeout"};
-	    false ->
-		SubStr = lists:concat([State#state.subscription_state, ";expires=", State#state.expires - Now]),
-		{State#state.subscription_state, lists:flatten(SubStr)}
+	case State#state.subscription_state of
+	    deactivated ->
+		{terminated, "terminated;reason=deactivated"};
+	    _ ->
+		case (State#state.expires =< Now) of
+		    true ->
+			%% "A subscription is destroyed when a notifier sends a NOTIFY request
+			%%  with a "Subscription-State" of "terminated"." RFC3265 #3.3.4
+			{terminated, "terminated;reason=timeout"};
+		    false ->
+			SubStr = lists:concat([State#state.subscription_state, ";expires=", State#state.expires - Now]),
+			{State#state.subscription_state, lists:flatten(SubStr)}
+		end
 	end,
 
     ExtraHeaders1 =
