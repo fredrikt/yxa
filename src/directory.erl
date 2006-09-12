@@ -486,8 +486,22 @@ get_ldapres([{eldap_entry, Dn, RAttributes} | T], Res) ->
 %%           Handle = ldaphandle record()
 %%--------------------------------------------------------------------
 ldap_connect(Server) when is_list(Server) ->
-    {ok, UseSSL} = yxa_config:get_env(ldap_use_ssl),
-    case eldap:open([Server], [{use_ssl, UseSSL}]) of
+    {Host, Port} = sipparse_util:parse_hostport(Server),
+    Options =
+	case yxa_config:get_env(ldap_use_ssl) of
+	    {ok, true} ->
+		case Port of
+		    none -> [{ssl, true}, {port, 636}];
+		    _ -> [{ssl, true}, {port, Port}]
+		end;
+	    {ok, false} ->
+		case Port of
+		    none -> [];
+		    _ -> [{port, Port}]
+		end
+	end,
+
+    case eldap:open([Host], Options) of
 	{ok, Handle} ->
 	    Username = case yxa_config:get_env(ldap_username) of
 			   {ok, Username1} -> Username1;
@@ -506,12 +520,12 @@ ldap_connect(Server) when is_list(Server) ->
 		    {error, "eldap:simple_bind failed"}
 	    end;
 	{error, E} ->
-	    logger:log(error, "LDAP client: ldap_connect: eldap:open() failed. Server ~p, UseSSL ~p : ~p",
-		       [Server, UseSSL, E]),
+	    logger:log(error, "LDAP client: ldap_connect: eldap:open() failed. Server ~p, options ~p : ~p",
+		       [Server, Options, E]),
 	    {error, "eldap:open failed"};
 	Unknown ->
-	    logger:log(error, "LDAP client: ldap_connect: eldap:open() Server ~p, UseSSL ~p failed - unknown data returned: ~p",
-		       [Server, UseSSL, Unknown]),
+	    logger:log(error, "LDAP client: ldap_connect: eldap:open() Server ~p, options ~p failed - unknown data returned: ~p",
+		       [Server, Options, Unknown]),
 	    {error, "eldap:open failed"}
     end.
 

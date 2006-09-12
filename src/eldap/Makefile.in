@@ -29,13 +29,13 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 
 erl_FILES = \
-	LDAPv3.erl \
+	ELDAPv3.erl \
 	eldap.erl
 
 imported_hrl_FILES = \
 
 hrl_FILES = \
-	LDAPv3.hrl \
+	ELDAPv3.hrl \
 	eldap.hrl
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
@@ -61,6 +61,9 @@ clean:
 	rm -f core *.core *~
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out erl_crash.dump
+
+ELDAPv3.erl: ELDAPv3.asn
+	$(ERLC) $(srcdir)/ELDAPv3.asn
 
 $(beam_FILES): $(yxa_hrl_FILES)
 
