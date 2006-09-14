@@ -209,7 +209,7 @@ start_make_request(Dst, Method, Body, ExtraHeaders) when is_record(Dst, sipdst) 
 				{"Max-Forwards",	["1"]}
 			       ] ++ ExtraHeaders),
 
-    URI = sipurl:set([{user, none}, {pass, none}], Dst#sipdst.uri),
+    URI = sipurl:set([{user, none}, {pass, none}, {param, []}], Dst#sipdst.uri),
 
     Request1 = #request{method = Method, uri = URI, header = Header},
     Request = siprequest:set_request_body(Request1, Body),
