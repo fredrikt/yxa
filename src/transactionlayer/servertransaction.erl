@@ -179,7 +179,7 @@ init([Request, Socket, LogStr, Parent]) ->
 	    %% a resend (us) and then exit. XXX implement the notifying, for now
 	    %% just log.
 	    logger:log(normal, "~s: Early resend, exiting.", [LogStr]),
-	    {stop, resend}
+	    {stop, normal}
     end.
 
 init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request) ->
