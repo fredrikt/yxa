@@ -275,9 +275,15 @@ naptr_to_srvlist2([#naptrrecord{regexp = ""} = H | T], Res) ->
 	    end,
     %% Regexp should be empty for domain NAPTR - RFC3263 #4.1. The interesting thing is
     %% the replacement. (We make sure the regexp is empty in the function declaration)
-    This = srvlookup(Proto, H#naptrrecord.replacement),
-    Sorted = sort_srvlist(This),
-    naptr_to_srvlist2(T, lists:flatten([Res, Sorted]));
+    case srvlookup(Proto, H#naptrrecord.replacement) of
+	This when is_list(This) ->
+	    Sorted = sort_srvlist(This),
+	    naptr_to_srvlist2(T, lists:flatten([Res, Sorted]));
+	{error, Reason} ->
+	    logger:log(debug, "Resolver: Lookup of SRV records for ~p failed : ~p",
+		       [H#naptrrecord.replacement, Reason]),
+	    naptr_to_srvlist2(T, Res)
+    end;
 %%
 %% Non-empty regexp, or not a domain NAPTR - skip
 %%
