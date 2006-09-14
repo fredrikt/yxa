@@ -1389,22 +1389,20 @@ start_cancel_transaction(State) when is_record(State, state) ->
 	    end
     end.
 
-%% part of start_cancel_transaction/1
+%% part of start_cancel_transaction/1. Create CANCEL request based on an INVITE,
+%% according to the procedure described in RFC3261 #9.1 (Client Behaviour).
 create_cancel_request(Request) ->
-    {URI, Header} = {Request#request.uri, Request#request.header},
-    {CSeqNum, _} = sipheader:cseq(Header),
+    {URI, ReqHeader} = {Request#request.uri, Request#request.header},
+    CancelHeader1 = keylist:copy(ReqHeader, ['from', 'to', 'call-id']),
+    {CSeqNum, _} = sipheader:cseq(ReqHeader),
     CancelId = {CSeqNum, "CANCEL"},
-    %% Delete all Via headers. The new client transaction will use send_proxy_request() which
-    %% will add one for this proxy, and that is the only one that should be in a CANCEL.
-    %% Set CSeq method to CANCEL and delete all Require and Proxy-Require headers. All this
-    %% according to RFC3261 #9.1 (Client Behaviour).
-    CancelHeader1 = keylist:set("CSeq", [sipheader:cseq_print(CancelId)],
-				Header),
-    CancelHeader2 = keylist:delete('via', CancelHeader1),
-    CancelHeader3 = keylist:delete('require', CancelHeader2),
-    CancelHeader4 = keylist:delete('proxy-require', CancelHeader3),
-    CancelHeader5 = keylist:delete('content-type', CancelHeader4),
-    siprequest:set_request_body(#request{method="CANCEL", uri=URI, header=CancelHeader5}, <<>>).
+    CancelHeader2 = keylist:set("CSeq", [sipheader:cseq_print(CancelId)],
+				CancelHeader1),
+    CancelRequest = #request{method = "CANCEL",
+			     uri    = URI,
+			     header = CancelHeader2
+			    },
+    siprequest:set_request_body(CancelRequest, <<>>).
 
 %%--------------------------------------------------------------------
 %% Function: update_invite_expire(Status, State)
