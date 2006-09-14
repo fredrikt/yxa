@@ -104,7 +104,6 @@
 %%           Branch   = string()
 %%           Timeout  = integer(), timeout for INVITE transactions
 %%           ReportTo = pid() | none, where we should report events
-%%           Parent   = pid(), the process that initiated this client
 %% Descrip.: Starts a client transaction process, linked to the
 %%           process that executed this function.
 %% Returns : gen_server:start() return value
@@ -143,7 +142,7 @@ start_link(Request, Dst, Branch, Timeout, ReportTo) ->
 %%--------------------------------------------------------------------
 init([Request, Dst, Branch, Timeout, ReportTo, Parent])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
-       is_integer(Timeout), is_pid(Parent); Parent == none ->
+       is_integer(Timeout), is_pid(Parent) ->
     RegBranch = sipheader:remove_loop_cookie(Branch),
     {Method, URI} = {Request#request.method, Request#request.uri},
     Desc = lists:flatten(
@@ -180,16 +179,22 @@ init([Request, Dst, Branch, Timeout, ReportTo, Parent])
 
 init2([Request, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
-       is_integer(Timeout), is_pid(Parent); Parent == none ->
+       is_integer(Timeout), is_pid(Parent) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     SipState = case Method of
 		   "INVITE" -> calling;
 		   _ -> trying
 	       end,
-    State = #state{branch=Branch, logtag=LogTag, request=Request,
-		   sipstate=SipState, timerlist=siptimer:empty(),
-		   dst=Dst, timeout=Timeout,
-		   parent=Parent, report_to=ReportTo},
+    State = #state{branch	= Branch,
+		   logtag	= LogTag,
+		   request	= Request,
+		   sipstate	= SipState,
+		   timerlist	= siptimer:empty(),
+		   dst		= Dst,
+		   timeout	= Timeout,
+		   parent	= Parent,
+		   report_to	= ReportTo
+		  },
     logger:log(debug, "~s: Started new client transaction for request ~s ~s~n(dst ~s).",
 	       [LogTag, Method, sipurl:print(URI), sipdst:dst2str(Dst)]),
     %% Timeout 0 so that the spawned process immediately gets a timeout signal
@@ -209,10 +214,45 @@ init2([Request, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
 %%           {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call(Request, From, State) ->
+
+%%--------------------------------------------------------------------
+%% Function: handle_call(change_parent, FromPid, ToPid}, From, State)
+%%           FromPid = pid()
+%%           ToPid   = pid()
+%% Descrip.: Change our parent. Internal to the transaction layer -
+%%           used when a dialog controller is handed the request
+%%           instead of the YXA application's request/3 function being
+%%           invoked.
+%% Returns : {reply, Reply, State, ?TIMEOUT} |
+%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
+%%           Reply  = {ok, ToTag}
+%%           ToTag = string()
+%%--------------------------------------------------------------------
+handle_call({change_parent, FromPid, ToPid}, From, #state{parent = FromPid} = State) when is_pid(FromPid), is_pid(ToPid)
+											  orelse ToPid == none ->
+    LogTag = State#state.logtag,
+    logger:log(debug, "~s: Changing parent from ~p to ~p", [LogTag, FromPid, ToPid]),
+    true =
+	case ToPid of
+	    none ->
+		true;
+	    _ ->
+		link(ToPid)
+	end,
+    true = unlink(FromPid),
+    Reply = {reply, ok, State#state{parent = ToPid}},
+    check_quit(Reply, From);
+
+%%--------------------------------------------------------------------
+%% Function: handle_call(Msg, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+handle_call(Msg, From, State) ->
     LogTag = State#state.logtag,
     logger:log(error, "~s: Client transaction received unknown gen_server call :~n~p",
-	       [LogTag, Request]),
+	       [LogTag, Msg]),
     check_quit({reply, {error, "unknown gen_server call"}, State}, From).
 
 
@@ -359,7 +399,7 @@ handle_info(timeout, #state{initialized = false}=State) ->
 %%           haven't completed yet.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_info({'EXIT', Pid, Reason}, #state{parent=Parent}=State) when Pid == Parent ->
+handle_info({'EXIT', Pid, Reason}, #state{parent = Parent} = State) when is_pid(Pid), Parent == Pid ->
     LogTag = State#state.logtag,
     Request = State#state.request,
     Method = Request#request.method,

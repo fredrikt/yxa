@@ -34,6 +34,7 @@
 	 send_challenge/4,
 	 store_appdata/2,
 	 get_my_to_tag/1,
+	 change_transaction_parent/3,
 	 debug_show_transactions/0,
 
 	 test_get_thandler_self/0
@@ -1063,7 +1064,7 @@ pass_to_dialog_controller(DCPid, STPid, Request, Origin, LogStr) when is_record(
 		    %% parent from this process to the dialog controller. Server transactions
 		    %% are not started for ACKs since they are not real requests.
 		    case is_pid(STPid) of
-			true -> ok = gen_server:call(STPid, {change_parent, self(), DCPid});
+			true -> ok = change_transaction_parent(STPid, self(), DCPid);
 			false -> ok
 		    end,
 		    true = unlink(DCPid),
@@ -1107,6 +1108,25 @@ get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
 	R -> R
     end.
 
+%%--------------------------------------------------------------------
+%% Function: change_transaction_parent(Entity, From, To)
+%%           Entity = thandler record() for server transaction | 
+%%                    pid() for client transaction
+%%           From   = pid()
+%%           To     = pid() | none ('none' only applicable to client
+%%                                  transactions)
+%% Descrip.: Change parent of a client or server transaction.
+%% Returns : ok              |
+%%           {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+change_transaction_parent(TH, From, To) when is_record(TH, thandler), is_pid(From), is_pid(To) ->
+    %% server transaction
+    gen_server:call(TH#thandler.pid, {change_parent, From, To}, ?STORE_TIMEOUT);
+change_transaction_parent(Pid, From, To) when is_pid(Pid), is_pid(From), is_pid(To) orelse To == none ->
+    %% client transaction, or server transaction if called from within the transaction layer
+    gen_server:call(Pid, {change_parent, From, To}, ?STORE_TIMEOUT).
+    
 
 %%====================================================================
 %% Test functions
