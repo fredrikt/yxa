@@ -82,7 +82,7 @@ start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_record(Reques
 		    case start_get_servertransaction(ServerHandler, Request) of
 			{ok, STHandler, Branch} ->
 			    guarded_start2(Branch, STHandler, ClientPid, Request, DstList, Timeout, ApproxMsgSize);
-			ok ->
+			ignore ->
 			    ok
 		    end;
 		error ->
@@ -520,7 +520,7 @@ start_get_dstlist(_ServerHandler, Request, _ApproxMsgSize, [Dst | _] = DstList) 
 %%           find one using the transaction layer. If the server
 %%           transaction has already been cancelled, we return 'ok'.
 %% Returns : {ok, STHandler, Branch} |
-%%           ok
+%%           ignore
 %%           STHandler = term()
 %%           Branch    = string()
 %%--------------------------------------------------------------------
@@ -536,7 +536,7 @@ start_get_servertransaction(TH, Request) when is_record(Request, request) ->
 	    {ok, STHandler, BranchBase ++ "-UAC"};
 	ignore ->
 	    %% Request has already been cancelled, completed or something
-	    ok;
+	    ignore;
 	error ->
 	    logger:log(error, "sippipe: Failed adopting server transaction, exiting"),
 	    erlang:exit(failed_adopting_server_transaction)
