@@ -29,6 +29,9 @@
 %% Macros
 %%--------------------------------------------------------------------
 -define(ALLOW_METHODS, ["SUBSCRIBE", "PUBLISH", "OPTIONS"]).
+-define(EVENTSERVER_T, eventserver_t).
+-define(SHUTDOWN_TIMEOUT, 10).
+
 
 %%====================================================================
 %% Behaviour functions
@@ -67,6 +70,9 @@ init() ->
 			    end
 		    end, MySpecs, get_event_modules()),
 
+    %% create ets table where we store application specific information
+    ets:new(?EVENTSERVER_T, [public, set, named_table]),
+
     Tables = [user, numbers],
     [Tables, stateful, {append, Specs}].
 
@@ -82,16 +88,36 @@ request(Request, Origin, LogStr) ->
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branchbase_from_handler(THandler),
 
-    %% Check if request has To-tag, if so we reject it since we obviously lost the dialog state
-    case sipheader:get_tag( keylist:fetch('to', Request#request.header) ) of
-	none ->
-	    request2(Request, Origin, LogStr, THandler, LogTag);
-	_ ->
-	    logger:log(normal, "~s: event server: Request has To-tag, answering '481 Call/Transaction Does Not Exist'",
-		       [LogTag]),
-	    ExtraHeaders = make_extraheaders(481, []),
-	    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist", ExtraHeaders),
-	    ok
+    %% check if we are shutting down
+    case is_shutting_down(THandler, LogTag) of
+	true ->
+	    ok;
+	false ->
+	    %% Check if request has To-tag, if so we reject it since we obviously lost the dialog state
+	    case sipheader:get_tag( keylist:fetch('to', Request#request.header) ) of
+		none ->
+		    request2(Request, Origin, LogStr, THandler, LogTag);
+		_ ->
+		    logger:log(normal, "~s: event server: Request has To-tag, answering '481 Call/Transaction Does Not Exist'",
+			       [LogTag]),
+		    ExtraHeaders = make_extraheaders(481, []),
+		    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist", ExtraHeaders),
+		    ok
+	    end
+    end.
+
+is_shutting_down(THandler, LogTag) ->
+    case ets:lookup(?EVENTSERVER_T, terminating) of
+	[{terminating, Start}] when is_integer(Start) ->
+	    logger:log(normal, "~s: event server: Performing shutdown, answering "
+		       "'503 Service Unavailable (shutting down)'", [LogTag]),
+	    Now = util:timestamp(),
+	    RetryAfter = 1 + ?SHUTDOWN_TIMEOUT - (Now - Start),
+	    transactionlayer:send_response_handler(THandler, 503, "Service Unavailable (shutting down)",
+						   [{"Retry-After", [integer_to_list(RetryAfter)]}]),
+	    true;
+	[] ->
+	    false
     end.
 
 %%
@@ -153,12 +179,33 @@ response(Response, _Origin, LogStr) when is_record(Response, response) ->
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Mode)
-%%           Mode = atom(), shutdown | graceful | ...
+%%           Mode = shutdown | graceful | ...
 %% Descrip.: YXA applications must export a terminate/1 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 terminate(Mode) when is_atom(Mode) ->
+    Now = util:timestamp(),
+    true = ets:insert(?EVENTSERVER_T, {terminating, Now}),
+    case notifylist:get_all_pids() of
+	[] ->
+	    ok;
+	NotifyL ->
+	    logger:log(normal, "event server: Telling ~p ongoing subscriptions to stop", [length(NotifyL)]),
+	    _ = [gen_server:cast(Pid, {terminate, Mode}) || Pid <- NotifyL],
+	    terminate_wait(?SHUTDOWN_TIMEOUT)
+    end,
     ok.
+
+terminate_wait(0) ->
+    ok;
+terminate_wait(N) ->
+    case notifylist:get_all_pids() of
+        [] ->
+	    ok;
+	_ ->
+	    timer:sleep(1000),
+	    terminate_wait(N - 1)
+    end.
 
 
 %%====================================================================
