@@ -78,7 +78,7 @@ out2(_A, _) ->
 %%           A       = term(), Yaws request data
 %%           Node    = atom(), node we are to talk with
 %% Descrip.: Update (add) a regexp-route based on data POSTed.
-%% Returns : HTML = term(), Yaws html data
+%% Returns : ok | HTML = term(), Yaws html data
 %%--------------------------------------------------------------------
 write_regexp(A, Node) when is_atom(Node) ->
     %%
@@ -94,14 +94,10 @@ write_regexp(A, Node) when is_atom(Node) ->
 
     Address = case ?GET_VAR("address") of
 		  {ok, AddressValue} when is_list(AddressValue) ->
-		      case sipurl:parse(AddressValue) of
-			  URL when is_record(URL, sipurl) ->
-			      AddressValue;
-			  ParseE ->
-			      Msg = io_lib:format("Supplied address (~p) could not be parsed : ~p",
-						  [AddressValue, ParseE]),
-			      throw({error, Msg})
-		      end;
+		      %% The Address probably looks like a SIP URL, but might not be parseable.
+		      %% For example, the regexp could be '^sip:prefix;(.*)@example\.org$' and
+		      %% the regexp 'sip:\1@sip\.example\.org'
+		      AddressValue;
 		  _ ->
 		      throw({error, "Can't write regexproute without address"})
 	      end,
