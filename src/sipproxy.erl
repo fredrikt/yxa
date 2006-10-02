@@ -697,10 +697,9 @@ process_signal(Msg, State) when is_record(State, state) ->
     {error, State}.
 
 %%--------------------------------------------------------------------
-%% Function: try_next_destination(Response, Target, Targets, State)
+%% Function: try_next_destination(Response, Target, State)
 %%           Response = response record()
-%%           Target   =
-%%           Targets  =
+%%           Target   = term(), targetlist target
 %%           State    = state record()
 %% Descrip.: Examine a response we have received, and if it is a 503
 %%           (we fake receiving 503's when the transport layer
@@ -710,7 +709,7 @@ process_signal(Msg, State) when is_record(State, state) ->
 %%           destinations derived from a URI.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-try_next_destination(Status, Target, Targets, State) when is_integer(Status), is_record(State, state) ->
+try_next_destination(Status, Target, State) when is_integer(Status), is_record(State, state) ->
     case {Status, State#state.mystate} of
 	{410, calling} ->
 	    case targetlist:extract([user_instance], Target) of
@@ -763,7 +762,7 @@ try_next_destination(Status, Target, Targets, State) when is_integer(Status), is
 		    case local:start_client_transaction(Request, FirstDst, NewBranch, Timeout) of
 			BranchPid when is_pid(BranchPid) ->
 			    NT = targetlist:add(NewBranch, Request, BranchPid, calling, Timeout, NewDstList,
-						UserInstance, Targets),
+						UserInstance, State#state.targets),
 			    State#state{targets = NT};
 			{error, E} ->
 			    logger:log(error, "sipproxy: Failed starting client transaction : ~p", [E]),
@@ -961,6 +960,20 @@ report_upstreams(true, #state{final_response_sent = false, mystate = MyState} = 
 report_upstreams(_AllTerminated, State) when is_record(State, state) ->
     State.
 
+%%--------------------------------------------------------------------
+%% Function: process_branch_result(ClientPid, Branch, NewTState,
+%%                                 SPResponse, State)
+%%           ClientPid  = pid()
+%%           Branch     = string()
+%%           NewTState  = term(), new client transaction state
+%%           SPResponse = sp_response record()
+%%             Status  = integer(), SIP status code
+%%             Reason  = string(), SIP reason phrase
+%%           State     = state record()
+%% Descrip.: A branch has reported a result to us. Check what we need
+%%           to do with it, and do it.
+%% Returns : NewState = state record()
+%%--------------------------------------------------------------------
 process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_pid(ClientPid), is_list(Branch),
 									    is_record(SPResponse, sp_response),
 									    is_record(State, state) ->
@@ -985,7 +998,8 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
 	    NewTarget1 = targetlist:set_state(ThisTarget, NewTState),
 	    NewTarget2 = targetlist:set_endresult(NewTarget1, SPResponse),	% XXX only do this for final responses?
 	    NewTargets1 = targetlist:update_target(NewTarget2, Targets),
-	    NewState2 = try_next_destination(Status, ThisTarget, NewTargets1, State),
+	    NewState1 = State#state{targets = NewTargets1},
+	    NewState2 = try_next_destination(Status, ThisTarget, NewState1),
 	    case (OldTState == NewTState) of
 		true ->
 		    ok;	%% No change, don't have to log verbose things
@@ -1782,7 +1796,63 @@ test() ->
 
 
 
+    %% test process_branch_result(ClientPid, Branch, NewTState, SPResponse, State)
+    %%--------------------------------------------------------------------
+
+    autotest:mark(?LINE, "process_branch_result/5 - 1"),
+    %% test unknown target
+    PBR_State1 = #state{targets = targetlist:empty()},
+    PBR_SPresponse1 = #sp_response{status  = 599,
+				   reason  = "test",
+				   created = true
+				  },
+    PBR_State1 = process_branch_result(self(), "testbranch", test, PBR_SPresponse1, PBR_State1),
+
+
+    autotest:mark(?LINE, "process_branch_result/5 - 2.1"),
+    %% test provisional response
+    PBR_Targets2 = targetlist:add("branch1", #request{method = "TEST",
+						      uri    = sipurl:parse("sip:ft@192.0.2.222")
+						     },
+				  self(), calling, 1, [], none, targetlist:empty()),
+    PBR_SPresponse2 = #sp_response{status  = 183,
+				   reason  = "test",
+				   created = false
+				  },
+    PBR_State2 = #state{final_response_sent = false,
+			mystate = calling,
+			targets = PBR_Targets2,
+			parent  = self(),
+			request = #request{method = "TEST",
+					   uri    = sipurl:parse("sip:ft@autotest.example.org")
+					  }
+		       },
+
+    PBR_State2_branchstate = newbranchstate,
+    PBR_State2_Res = process_branch_result(self(), "branch1", PBR_State2_branchstate, PBR_SPresponse2, PBR_State2),
+
+    autotest:mark(?LINE, "process_branch_result/5 - 2.2"),
+    %% verify that state isn't changed except for the targetlist
+    PBR_State2 = PBR_State2_Res#state{targets = PBR_State2#state.targets},
+
+    autotest:mark(?LINE, "process_branch_result/5 - 2.3"),
+    %% verify that the target in the targetlist got updated with the new info
+    PBR_Target2_1 = targetlist:get_using_branch("branch1", PBR_Targets2),
+    %% update branch state and 'final' response
+    PBR_Target2_2 = targetlist:set_state(PBR_Target2_1, PBR_State2_branchstate),
+    PBR_Target2_3 = targetlist:set_endresult(PBR_Target2_2, PBR_SPresponse2),
+    PBR_Target2_3 = targetlist:get_using_branch("branch1", PBR_State2_Res#state.targets),
+
+    autotest:mark(?LINE, "process_branch_result/5 - 2.4"),
+    %% check that the 183 was forwarded to parent (us)
+    check_we_got_signal({sipproxy_response, Self, "branch1", #response{status = 183, reason = "test"}}),
+
+
     %% test check_forward_immediately(Request, SPResponse, Branch, State)
+    %%--------------------------------------------------------------------
+
+
+
     %% Spawn pids that collects signals and relays them to us in a way that allows
     %% us to differentiate to which pid the signal was sent
 
