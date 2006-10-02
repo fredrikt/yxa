@@ -52,7 +52,7 @@
 %% Internal exports
 %%--------------------------------------------------------------------
 -export([
-	 signal_collector/3
+	 signal_collector/4
 	 ]).
 
 %%--------------------------------------------------------------------
@@ -366,7 +366,6 @@ make_new_target_request(Request, ApproxMsgSize, Action)
 		    } = Action,
 
     %% Create a Route header if there was a RFC3327 path associated with the location db entry
-    {ok, PeerAuthL} = yxa_config:get_env(x_yxa_peer_auth, []),
     {NewHeader1, DstURI} =
 	case Path of
 	    [] ->
@@ -379,6 +378,7 @@ make_new_target_request(Request, ApproxMsgSize, Action)
 	end,
 
     %% Add X-YXA-Peer-Auth header if User is specified and we have configured entry for our peer
+    {ok, PeerAuthL} = yxa_config:get_env(x_yxa_peer_auth, []),
     NewHeader =
 	case is_list(User) of
 	    true ->
@@ -1373,7 +1373,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "start/5 - 0"),
     StartRef = make_ref(),
-    StartSigCol = spawn_link(?MODULE, signal_collector, [self(), StartRef, passive]),
+    StartSigCol = spawn_link(?MODULE, signal_collector, [self(), StartRef, passive, ?LINE]),
 
     autotest:mark(?LINE, "start/5 - 1"),
     %% Test with Route header
@@ -1415,7 +1415,7 @@ test() ->
 			    header = keylist:from_list([]), body = <<>>},
     %% start a signal collector
     ForkRef1 = make_ref(),
-    ForkSigCollect1 = spawn_link(?MODULE, signal_collector, [self(), ForkRef1, passive]),
+    ForkSigCollect1 = spawn_link(?MODULE, signal_collector, [self(), ForkRef1, passive, ?LINE]),
     ForkList1_1 = targetlist:add("branch1", ForkRequest1, ForkSigCollect1, calling,
 			       1, [], none, ForkList0),
     ForkList1 = targetlist:add("branch2", ForkRequest1, ForkSigCollect1, terminated,
@@ -1789,8 +1789,8 @@ test() ->
     %% test cancel_pending_if_invite_2xx_or_6xx(Method, Status, Reason, State)
     %%--------------------------------------------------------------------
     CancelPendingRef = make_ref(),
-    CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active]),
-    CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active]),
+    CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active, ?LINE]),
+    CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active, ?LINE]),
 
     autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 0"),
 
@@ -1916,8 +1916,8 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 0"),
     PSCancelPendingRef = make_ref(),
-    PSCancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive]),
-    PSCancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive]),
+    PSCancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive, ?LINE]),
+    PSCancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive, ?LINE]),
 
     %% one pending and one already completed target
     PSCancelPendingReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
@@ -1964,7 +1964,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 0"),
     PSClientTermRef = make_ref(),
-    PSClientTermPid1 = spawn_link(?MODULE, signal_collector, [self(), PSClientTermRef, passive]),
+    PSClientTermPid1 = spawn_link(?MODULE, signal_collector, [self(), PSClientTermRef, passive, ?LINE]),
 
     PSClientTermReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
     PSClientTermTargets1 = targetlist:add("branch1", PSClientTermReq1, PSClientTermPid1, calling,
@@ -1990,6 +1990,9 @@ test() ->
     {ok, PSClientTermState1} =
 	process_signal({clienttransaction_terminating, self(), "unknownbranch"}, PSClientTermState1),
 
+    %% clean up
+    PSClientTermPid1 ! {quit, self()},
+
     ok.
 
 test_report_upstreams(Num, State, Expected) when is_record(State, state) ->
@@ -2008,18 +2011,18 @@ test_report_upstreams(Num, State, Expected) when is_record(State, state) ->
     end.
 
 %% signal collector
-signal_collector(Parent, Ref, Mode) ->
+signal_collector(Parent, Ref, Mode, Id) ->
     erlang:monitor(process, Parent),
-    signal_collector(Parent, Ref, Mode, []).
+    signal_collector(Parent, Ref, Mode, Id, []).
 
-signal_collector(Parent, Ref, Mode, Buf) ->
+signal_collector(Parent, Ref, Mode, Id, Buf) ->
     receive
 	{quit, Parent} ->
 	    ok;
 	{flush, Parent} when Mode == passive ->
 	    %% send stored messages to parent
 	    Parent ! {Ref, self(), flush, lists:reverse(Buf)},
-	    signal_collector(Parent, Ref, Mode, []);
+	    signal_collector(Parent, Ref, Mode, Id, []);
 	{'DOWN', _MRef, process, Parent, _Info} ->
 	    ok;
 	Msg ->
@@ -2027,13 +2030,14 @@ signal_collector(Parent, Ref, Mode, Buf) ->
 		active ->
 		    %% Relay message to parent, with a reference and our pid as tags
 		    Parent ! {Ref, self(), Msg},
-		    signal_collector(Parent, Ref, Mode, []);
+		    signal_collector(Parent, Ref, Mode, Id, []);
 		passive ->
 		    %% store message
-		    signal_collector(Parent, Ref, Mode, [Msg | Buf])
+		    signal_collector(Parent, Ref, Mode, Id, [Msg | Buf])
 	    end
     after 10000 ->
-	    erlang:error("signal collector timed out")
+	    Msg = io_lib:format("signal collector (id ~p) timed out", [Id]),
+	    erlang:error(lists:flatten(Msg))
     end.
 
 poll_signal_collector(Ref, Pid, Expected) ->
