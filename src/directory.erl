@@ -44,6 +44,7 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("directory.hrl").
+-include("eldap.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -432,14 +433,14 @@ exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when is_record(LHandle, ld
 					 {filter, Filter},
 					 {attributes, Attributes}]),
     case SearchResult of
-	{ok, {eldap_search_result, List, _}} ->
+	{ok, #eldap_search_result{entries = List}} ->
 	    case List of
 		[] ->
 		    none;
 		[{error, Msg}] ->
 		    logger:log(normal, "LDAP client: Search using handle ~p failed: ~p", [Handle, Msg]),
 		    error;
-		[{eldap_entry, _Dn, _RAttributes} | _] = Results ->
+		[#eldap_entry{} | _] = Results ->
 		    get_ldapres(Results);
 		Unknown ->
 		    logger:log(error, "LDAP client: Search using handle ~p returned unknown data (2) : ~p",
@@ -461,9 +462,7 @@ exec_ldapsearch_unsafe(Handle, Type, In, Arguments) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_ldapres(In)
-%%           In          = list() of {eldap_entry, Dn, RAttributes}
-%%           Dn          = string()
-%%           RAttributes = list() of string()
+%%           In          = list() of eldap_entry record()
 %% Descrip.: Turn a list of eldap module query results into our own
 %%           result format (ldapres records).
 %% Returns : Res = list() of ldapres record()
@@ -473,8 +472,10 @@ get_ldapres(In) ->
 
 get_ldapres([], Res) ->
     lists:reverse(Res);
-get_ldapres([{eldap_entry, Dn, RAttributes} | T], Res) ->
-    This = #ldapres{dn=Dn, attributes=RAttributes},
+get_ldapres([#eldap_entry{object_name = Dn, attributes = RAttributes} | T], Res) ->
+    This = #ldapres{dn         = Dn,
+		    attributes = RAttributes
+		   },
     get_ldapres(T, [This | Res]).
 
 %%--------------------------------------------------------------------

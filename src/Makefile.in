@@ -86,6 +86,7 @@ imported_hrl_FILES = \
 	include/database_gruu.hrl \
 	include/directory.hrl \
 	include/phone.hrl \
+	include/pstnproxy.hrl \
 	include/sipproxy.hrl \
 	include/siprecords.hrl \
 	include/sipsocket.hrl \
@@ -163,6 +164,9 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
 
 local.beam: $(srcdir)/local.erl ../config.status
 	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info -DLOCAL_MODULE=$(local_module) $(srcdir)/local.erl
+
+directory.beam: $(srcdir)/directory.erl ../config.status $(srcdir)/eldap/eldap.hrl
+	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -I$(srcdir)/eldap -W +debug_info $(srcdir)/directory.erl
 
 .app-in.app:
 	cp $(srcdir)/$*.app-in $*.app
