@@ -677,15 +677,24 @@ update_dialog_recv_request(Request, Dialog) when is_record(Request, request), is
 %%           Dialog       = dialog record()
 %% Descrip.: Generate a new request based on Method, supplied Extra-
 %%           Headers, body and dialog info found in Dialog.
-%% Returns : {ok, Request, NewDialog, DstList}
-%%           Request = request record()
+%% Returns : {ok, Request, NewDialog, Dst}
+%%           Request   = request record()
 %%           NewDialog = dialog record()
-%%           DstList   = list() of sipdst record()
+%%           Dst       = sipdst record()
 %%--------------------------------------------------------------------
 generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), is_list(ExtraHeaders),
 							      is_binary(Body); is_list(Body),
 							      is_record(Dialog, dialog) ->
-    {ok, CSeqNum, NewDialog} = get_next_local_cseq(Dialog),
+    {CSeqL, NewDialog} =
+	case lists:keysearch("CSeq", 1, ExtraHeaders) of
+	    {value, _} ->
+		%% CSeq tuple present in ExtraHeaders, don't add another one
+		{[], Dialog};
+	    false ->
+		{ok, CSeqNum, CSeqDialog} = get_next_local_cseq(Dialog),
+		CSeqVal = lists:concat([CSeqNum, " ", Method]),
+		{[{"CSeq", [CSeqVal]}], CSeqDialog}
+	end,
 
     CallId = NewDialog#dialog.callid,
 
@@ -704,9 +713,11 @@ generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), i
     {Route, Dst} =
 	case NewDialog#dialog.route_set of
 	    [] ->
+		%% XXX calculate approximate SIP message size instead of using static '500'!
 		[Dst1_1 | _] = sipdst:url_to_dstlist(TargetURI, 500, TargetURI),
 		{[], Dst1_1};
 	    [FirstRoute | _] = RouteL1 ->
+		%% XXX calculate approximate SIP message size instead of using static '500'!
 		[FRC] = contact:parse([FirstRoute]),
 		FRURL = sipurl:parse(FRC#contact.urlstr),
 		[Dst1_1 | _] = sipdst:url_to_dstlist(FRURL, 500, TargetURI),
@@ -715,9 +726,8 @@ generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), i
 
     Header = keylist:from_list([{"From",	[From]},
 				{"To",		[To]},
-				{"Call-Id",	[CallId]},
-				{"CSeq",	[lists:concat([CSeqNum, " ", Method])]}
-			       ] ++ Route ++ ExtraHeaders),
+				{"Call-Id",	[CallId]}
+			       ] ++ CSeqL ++ Route ++ ExtraHeaders),
 
     Request1 = #request{method = Method,
 			uri    = TargetURI,
@@ -1078,6 +1088,80 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_next_local_cseq/1 - 1"),
     {ok, 1001, #dialog{local_cseq = 1001}} = get_next_local_cseq(#dialog{local_cseq = 1000}),
+
+    %% generate_new_request(Method, ExtraHeaders, Body, Dialog)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "generate_new_request/4 - 1.0"),
+    GNR_Dialog1_From = sipurl:parse("sip:ft@f.example.net"),
+    GNR_Dialog1_To = sipurl:parse("sip:ft@t.example.net"),
+    GNR_Dialog1_CallId = lists:concat([?LINE, "-", util:timestamp(), "@autotest.example.com"]),
+    GNR_Dialog1 =
+	#dialog{callid        = GNR_Dialog1_CallId,
+		local_cseq    = 122,
+		remote_cseq   = undefined,
+		local_tag     = "yxa-testfromtag",
+		remote_tag    = "yxa-testtotag",
+		secure        = false,
+		route_set     = [],
+		local_uri     = GNR_Dialog1_From,
+		remote_uri    = GNR_Dialog1_To,
+		remote_target = "<sip:gnr-0@192.0.2.233>",
+		state         = undefined
+	       },
+
+    autotest:mark(?LINE, "generate_new_request/4 - 1.1"),
+    {ok, GNR_Request1, GNR_Dialog1_1, GNR_Dst1} = generate_new_request("TEST", [], <<>>, GNR_Dialog1),
+
+    autotest:mark(?LINE, "generate_new_request/4 - 1.2"),
+    %% verify the request record
+    GNR_Request1_URI = sipurl:parse("sip:gnr-0@192.0.2.233"),
+    #request{method = "TEST", uri = GNR_Request1_URI, body = <<>>} = GNR_Request1,
+
+    {none, GNR_Dialog1_From} = sipheader:from(GNR_Request1#request.header),
+    {none, GNR_Dialog1_To} = sipheader:to(GNR_Request1#request.header),
+    {"123", "TEST"} = sipheader:cseq(GNR_Request1#request.header),
+    GNR_Dialog1_CallId = sipheader:callid(GNR_Request1#request.header),
+    ["0"] = keylist:fetch('content-length', GNR_Request1#request.header),
+
+    autotest:mark(?LINE, "generate_new_request/4 - 1.3"),
+    %% verify dialog got updated like it should
+    GNR_Dialog1_1 = GNR_Dialog1#dialog{local_cseq = 123},
+
+    autotest:mark(?LINE, "generate_new_request/4 - 1.4"),
+    %% verify dst-list
+    "udp:192.0.2.233:5060 (sip:gnr-0@192.0.2.233)" = sipdst:dst2str(GNR_Dst1),
+
+    autotest:mark(?LINE, "generate_new_request/4 - 2.0"),
+    GNR_Dialog2_CallId = lists:concat([?LINE, "-", util:timestamp(), "@autotest.example.com"]),
+    GNR_Dialog2 =
+	GNR_Dialog1#dialog{callid         = GNR_Dialog2_CallId,
+			   route_set      = ["<sip:192.0.2.111>"],
+			   remote_uri_str = ["Test <" ++ sipurl:print(GNR_Dialog1_To) ++ ">"]
+			  },
+
+    autotest:mark(?LINE, "generate_new_request/4 - 2.1"),
+    GNR_ExtraHeaders2 = [{"CSeq", ["122 ACK"]}],
+    {ok, GNR_Request2, GNR_Dialog2_1, GNR_Dst2} =
+	generate_new_request("ACK", GNR_ExtraHeaders2, <<"test">>, GNR_Dialog2),
+
+    autotest:mark(?LINE, "generate_new_request/4 - 2.2"),
+    %% verify the request record
+    #request{method = "ACK", uri = GNR_Request1_URI, body = <<"test">>} = GNR_Request2,
+
+    {none, GNR_Dialog1_From} = sipheader:from(GNR_Request2#request.header),
+    {"Test", GNR_Dialog1_To} = sipheader:to(GNR_Request2#request.header),
+    {"122", "ACK"} = sipheader:cseq(GNR_Request2#request.header),
+    GNR_Dialog2_CallId = sipheader:callid(GNR_Request2#request.header),
+    ["4"] = keylist:fetch('content-length', GNR_Request2#request.header),
+
+    autotest:mark(?LINE, "generate_new_request/4 - 2.3"),
+    %% verify dialog did NOT get updated since we provided the CSeq in ExtraHeaders
+    GNR_Dialog2_1 = GNR_Dialog2,
+
+    autotest:mark(?LINE, "generate_new_request/4 - 2.4"),
+    %% verify dst-list (this dialog has a route set)
+    "udp:192.0.2.111:5060 (sip:gnr-0@192.0.2.233)" = sipdst:dst2str(GNR_Dst2),
+
 
     ok.
 
