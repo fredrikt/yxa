@@ -1026,7 +1026,8 @@ start_client_transaction(Method, ExtraHeaders, Body, Timeout, State) ->
     BranchSeq = State#state.branch_seq,
     Branch = lists:concat([State#state.branch_base, "-UAC-", BranchSeq]),
 
-    Pid = transactionlayer:start_client_transaction(Request, Dst, Branch, Timeout, self()),
+    [FirstDst | _] = Dst,      %% XXX don't just throw away the other destinations!
+    Pid = transactionlayer:start_client_transaction(Request, FirstyDst, Branch, Timeout, self()),
 
     NewState =
 	State#state{dialog     = NewDialog,

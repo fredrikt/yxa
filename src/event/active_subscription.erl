@@ -3,7 +3,7 @@
 %%% Author  : Fredrik Thulin <ft@it.su.se>
 %%% Descrip.: Handle a single SUBSCRIBE dialog. Refreshes the sub-
 %%%           scription and sends all NOTIFYs we receive to our
-%%%           parent process (the active_subscriber) using 
+%%%           parent process (the active_subscriber) using
 %%%           gen_server:cast({received_notify, ...})
 %%%
 %%% NOTE    : This module isn't used by the event server for now, it
@@ -483,7 +483,8 @@ send_subscribe(Expires, State) when is_integer(Expires), State#state.subscribe_p
     BranchSeq = State#state.branch_seq,
     Branch = lists:concat([State#state.branch_base, BranchSeq]),
 
-    Pid = transactionlayer:start_client_transaction(Request, Dst, Branch, Timeout, self()),
+    [FirstDst | _] = Dst,	%% XXX don't just throw away the other destinations!
+    Pid = transactionlayer:start_client_transaction(Request, FirstDst, Branch, Timeout, self()),
 
     NewMyState =
 	case Expires of
@@ -563,11 +564,11 @@ process_received_notify(Request, Origin, LogStr, THandler, State) when is_record
 		    %% process the body
 		    Dialog = State#state.dialog,
 		    DialogId = {Dialog#dialog.callid, Dialog#dialog.local_tag, Dialog#dialog.remote_tag},
-		    
+
                     Ctx = #event_ctx{dialog_id = DialogId},
 		    gen_server:cast(State#state.parent, {received_notify, self(), Request, Origin, LogStr,
 							 THandler, Ctx}),
-	    
+
 		    {noreply, NewState1}
 	    end;
 	{siperror, Status, Reason, EH} ->

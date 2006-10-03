@@ -677,10 +677,10 @@ update_dialog_recv_request(Request, Dialog) when is_record(Request, request), is
 %%           Dialog       = dialog record()
 %% Descrip.: Generate a new request based on Method, supplied Extra-
 %%           Headers, body and dialog info found in Dialog.
-%% Returns : {ok, Request, NewDialog, Dst}
+%% Returns : {ok, Request, NewDialog, DstList}
 %%           Request   = request record()
 %%           NewDialog = dialog record()
-%%           Dst       = sipdst record()
+%%           DstList   = list() of sipdst record()
 %%--------------------------------------------------------------------
 generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), is_list(ExtraHeaders),
 							      is_binary(Body); is_list(Body),
@@ -710,18 +710,12 @@ generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), i
 		RemoteURI_str
 	end,
 
-    {Route, Dst} =
+    Route =
 	case NewDialog#dialog.route_set of
 	    [] ->
-		%% XXX calculate approximate SIP message size instead of using static '500'!
-		[Dst1_1 | _] = sipdst:url_to_dstlist(TargetURI, 500, TargetURI),
-		{[], Dst1_1};
-	    [FirstRoute | _] = RouteL1 ->
-		%% XXX calculate approximate SIP message size instead of using static '500'!
-		[FRC] = contact:parse([FirstRoute]),
-		FRURL = sipurl:parse(FRC#contact.urlstr),
-		[Dst1_1 | _] = sipdst:url_to_dstlist(FRURL, 500, TargetURI),
-		{[{"Route", RouteL1}], Dst1_1}
+		[];
+	    RouteL1 when is_list(RouteL1) ->
+		[{"Route", RouteL1}]
 	end,
 
     Header = keylist:from_list([{"From",	[From]},
@@ -735,7 +729,19 @@ generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), i
 		       },
     Request = siprequest:set_request_body(Request1, Body),
 
-    {ok, Request, NewDialog, Dst}.
+    ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
+
+    DstList =
+	case NewDialog#dialog.route_set of
+	    [] ->
+		sipdst:url_to_dstlist(TargetURI, ApproxMsgSize, TargetURI);
+	    [FirstRoute | _] ->
+		[FRC] = contact:parse([FirstRoute]),
+		FRURL = sipurl:parse(FRC#contact.urlstr),
+		sipdst:url_to_dstlist(FRURL, ApproxMsgSize, TargetURI)
+	end,
+
+    {ok, Request, NewDialog, DstList}.
 
 
 %%--------------------------------------------------------------------
@@ -1110,7 +1116,7 @@ test() ->
 	       },
 
     autotest:mark(?LINE, "generate_new_request/4 - 1.1"),
-    {ok, GNR_Request1, GNR_Dialog1_1, GNR_Dst1} = generate_new_request("TEST", [], <<>>, GNR_Dialog1),
+    {ok, GNR_Request1, GNR_Dialog1_1, [GNR_Dst1 | _]} = generate_new_request("TEST", [], <<>>, GNR_Dialog1),
 
     autotest:mark(?LINE, "generate_new_request/4 - 1.2"),
     %% verify the request record
@@ -1141,7 +1147,7 @@ test() ->
 
     autotest:mark(?LINE, "generate_new_request/4 - 2.1"),
     GNR_ExtraHeaders2 = [{"CSeq", ["122 ACK"]}],
-    {ok, GNR_Request2, GNR_Dialog2_1, GNR_Dst2} =
+    {ok, GNR_Request2, GNR_Dialog2_1, [GNR_Dst2 | _]} =
 	generate_new_request("ACK", GNR_ExtraHeaders2, <<"test">>, GNR_Dialog2),
 
     autotest:mark(?LINE, "generate_new_request/4 - 2.2"),
@@ -1161,7 +1167,6 @@ test() ->
     autotest:mark(?LINE, "generate_new_request/4 - 2.4"),
     %% verify dst-list (this dialog has a route set)
     "udp:192.0.2.111:5060 (sip:gnr-0@192.0.2.233)" = sipdst:dst2str(GNR_Dst2),
-
 
     ok.
 
