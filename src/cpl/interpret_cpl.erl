@@ -699,11 +699,8 @@ outgoing(Index, State) ->
 %%--------------------------------------------------------------------
 location({#location__attrs{url = URI, priority = Prio, clear = Clear}, Dest}, State) ->
     Locations = State#state.locations,
-    This = #location{url = sipurl:parse(URI), priority = Prio},
-    NewLocations = case Clear of
-		       yes -> [This];
-		       no -> [This | Locations]
-		   end,
+    Backend = State#state.backend,
+    NewLocations = Backend:add_location(Locations, URI, Prio, Clear),
     NewState = State#state{locations = NewLocations},
     {Dest, NewState}.
 

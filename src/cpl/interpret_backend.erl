@@ -34,6 +34,9 @@
 	 %% lookup
 	 lookup/4,
 
+	 %% location
+	 add_location/4,
+
 	 %% remove-location
 	 rm_location/2,
 
@@ -572,12 +575,34 @@ prio(Prio) ->
 %% get all (registered) locations used by User
 lookup("registration", User, URI, _Timeout) ->
     try local:lookupuser_locations([User], URI) of
-	[] -> {notfound, []};
+	[] ->
+	    logger:log(debug, "CPL: Found no registered locations for user ~p", [User]),
+	    {notfound, []};
 	Locations ->
+	    logger:log(debug, "CPL: Found ~p registered locations for user ~p", [length(Locations), User]),
 	    {success, Locations}
     catch
 	throw: _ ->
 	    {failure, []}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: add_location(Locations, URIstr, Prio, Clear)
+%%           Locations = list() of location record()
+%%           URIstr    = string()
+%%           Prio      = float()
+%%           Clear     = bool()
+%% Descrip.: Add a location, or if Clear is true replace all previous
+%%           locations with this one.
+%% Returns : list() of location record()
+%% Note    : this version only supports SIP URIs
+%%--------------------------------------------------------------------
+add_location(Locations, URIstr, Prio, Clear) ->
+    logger:log(debug, "CPL: Adding location ~p (prio ~p, clear: ~p)", [URIstr, Prio, Clear]),
+    This = #location{url = sipurl:parse(URIstr), priority = Prio},
+    case Clear of
+	yes -> [This];
+	no -> [This | Locations]
     end.
 
 %%--------------------------------------------------------------------
@@ -593,7 +618,9 @@ rm_location(Locations, URIStr) ->
     F = fun(Location, Acc) ->
 		LocationURI = Location#location.url,
 		case sipurl:url_is_equal(LocationURI, URI) of
-		    true -> Acc;
+		    true ->
+			logger:log(debug, "CPL: Removed location ~p", [sipurl:print(LocationURI)]),
+			Acc;
 		    false -> [Location | Acc]
 		end
 	end,
