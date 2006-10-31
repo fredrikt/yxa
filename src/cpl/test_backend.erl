@@ -34,6 +34,9 @@
 	 %% lookup
 	 lookup/4,
 
+	 %% location
+	 add_location/4,
+
 	 %% remove-location
 	 rm_location/2,
 
@@ -191,6 +194,14 @@ lookup(_Source, _User, _UserURI, _Timeout) ->
 	{success, Locations} -> {success, Locations};
 	failure -> {failure, []}
     end.
+
+%%--------------------------------------------------------------------
+%% Function: 
+%% Descrip.: 
+%% Returns : 
+%%--------------------------------------------------------------------
+add_location(Locations, URI, Prio, Clear) ->
+    interpret_backend:add_location(Locations, URI, Prio, Clear).
 
 %%--------------------------------------------------------------------
 %% Function: 
