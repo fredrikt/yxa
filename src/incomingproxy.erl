@@ -73,7 +73,7 @@ init() ->
 request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
     THandler = transactionlayer:get_handler_for_request(Request),
     LogTag = get_branchbase_from_handler(THandler),
-    case siplocation:process_register_request(Request, Origin#siporigin.sipsocket,
+    case siplocation:process_register_request(Request, Origin,
 					      THandler, LogTag, LogStr, incomingproxy) of
 	not_homedomain ->
 	    do_request(Request, Origin, THandler, LogTag);

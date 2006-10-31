@@ -216,10 +216,10 @@ lookupuser_single_location(Location, URL) when is_record(Location, siplocationdb
     ThisNode = node(),
     Dst =
 	case lists:keysearch(socket_id, 1, Location#siplocationdb_e.flags) of
-	    {value, {socket_id, {ThisNode, SocketId}}} ->
+	    {value, {socket_id, #locationdb_socketid{node = ThisNode} = SocketId}} ->
 		%% We have a stored socket_id, meaning the client did Outbound. We must now
 		%% check if that socket is still available.
-		case sipsocket:get_specific_socket(SocketId) of
+		case sipsocket:get_specific_socket(SocketId#locationdb_socketid.id) of
 		    {error, _Reason} ->
 			%% The socket the user registered using is no longer available - reject
 			%% request with a '410 Gone' response (draft-Outbound #5.3 (Forwarding Requests))
@@ -227,12 +227,15 @@ lookupuser_single_location(Location, URL) when is_record(Location, siplocationdb
 			%% proxy SHOULD send a 410 response to the request."
 			{response, 410, "Gone (used Outbound)"};
 		    SipSocket ->
-			[#sipdst{uri	= siplocation:to_url(Location),
+			[#sipdst{proto  = SocketId#locationdb_socketid.proto,
+				 addr   = SocketId#locationdb_socketid.addr,
+				 port   = SocketId#locationdb_socketid.port,
+				 uri	= siplocation:to_url(Location),
 				 socket	= SipSocket
 				}
 			]
 		end;
-	    {value, {socket_id, {OtherNode, _SocketId}}} ->
+	    {value, {socket_id, #locationdb_socketid{node = OtherNode}}} ->
 		logger:log(debug, "Lookup: User has Outbound flow to other node (~p)", [OtherNode]),
 		none;
 	    false ->
@@ -338,15 +341,19 @@ make_dstlist(In) ->
 
 make_dstlist2([H | T], ThisNode, Res) when is_record(H, siplocationdb_e) ->
     case lists:keysearch(socket_id, 1, H#siplocationdb_e.flags) of
-	{value, {socket_id, {ThisNode, SocketId}}} ->
-	    case sipsocket:get_specific_socket(SocketId) of
+	{value, {socket_id, #locationdb_socketid{node = ThisNode} = SocketId}} ->
+	    case sipsocket:get_specific_socket(SocketId#locationdb_socketid.id) of
 		{error, _Reason} ->
 		    %% Flow not avaliable anymore, skip this one
 		    make_dstlist2(T, ThisNode, Res);
 		SipSocket ->
-		    This = #sipdst{uri		= siplocation:to_url(H),
-				   socket	= SipSocket
-				  },
+		    This =
+			#sipdst{proto  = SocketId#locationdb_socketid.proto,
+				addr   = SocketId#locationdb_socketid.addr,
+				port   = SocketId#locationdb_socketid.port,
+				uri	= siplocation:to_url(H),
+				socket	= SipSocket
+			       },
 		    make_dstlist2(T, ThisNode, [This | Res])
 	    end;
 	_ ->
@@ -1249,22 +1256,35 @@ test() ->
     %% lookupuser_multiple_locations(Locations, URL)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 0"),
+    LMult_LDBE_SocketId1 = #locationdb_socketid{node  = node(),
+						id    = {yxa_test, erlang:now()},
+						proto = udp,
+						addr  = "192.0.2.1",
+						port  = 1
+					       },
+    LMult_LDBE_SocketId2 = #locationdb_socketid{node  = node(),
+						id    = {yxa_test, erlang:now()},
+						proto = tcp,
+						addr  = "192.0.2.2",
+						port  = 2
+					       },
     LMult_Locations1 = [#siplocationdb_e{instance = "<urn:test:17>",
-					 flags    = [{socket_id, {node(),
-								  {yxa_test, erlang:now()}
-								 }}]
+					 flags    = [{socket_id, LMult_LDBE_SocketId1}]
 					},
 			#siplocationdb_e{instance = "<urn:test:17>",
-					 flags    = [{socket_id, {node(),
-								  {yxa_test, erlang:now()}
-								 }}]
+					 flags    = [{socket_id, LMult_LDBE_SocketId2}]
 					}
 		       ],
     LMult_URL1 = sipurl:parse("sip:ft@example.org"),
 
-    autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 1"),
+    autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 1.1"),
     %% test with valid local Outbound sockets
-    {proxy, [_, _]} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
+    {proxy, [LMult_Dst1, LMult_Dst2]} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
+
+    autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 1.2"),
+    %% verify
+    #sipdst{proto = udp, addr = "192.0.2.1", port = 1} = LMult_Dst1,
+    #sipdst{proto = tcp, addr = "192.0.2.2", port = 2} = LMult_Dst2,
 
     autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 2"),
     %% test with invalid local Outbound socket
@@ -1399,8 +1419,11 @@ test_mnesia_dependant_functions() ->
     %% test with Outbound socket on other node
     LGL_Contact10_URL = sipurl:parse("sip:ft@192.0.2.212"),
     LGL_Username10 = "__test_user_LGL_10__",
+    LGL_LDBSocketId10 = #locationdb_socketid{node = 'othernode@nowhere',
+					     id   = 1
+					    },
 
-    {atomic, ok} = phone:insert_purge_phone(LGL_Username10, [{socket_id, {'othernode@nowhere', 1}}],
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username10, [{socket_id, LGL_LDBSocketId10}],
 					    static, never, LGL_Contact10_URL, [], 1, []),
 
     autotest:mark(?LINE, "lookupuser_get_locations/2 - 10.1"),
@@ -1412,9 +1435,12 @@ test_mnesia_dependant_functions() ->
     LGL_Contact11_URL = sipurl:parse("sip:ft@192.0.2.212"),
     LGL_Username11 = "__test_user_LGL_11__",
     LGL_SocketId11 = {yxa_test, 1},
+    LGL_LDBSocketId11 = #locationdb_socketid{node = node(),
+					     id   = LGL_SocketId11
+					    },
     put({sipsocket_test, get_specific_socket}, {error, "testing"}),
 
-    {atomic, ok} = phone:insert_purge_phone(LGL_Username11, [{socket_id, {node(), LGL_SocketId11}}],
+    {atomic, ok} = phone:insert_purge_phone(LGL_Username11, [{socket_id, LGL_LDBSocketId11}],
 					    static, never, LGL_Contact11_URL, [], 1, []),
 
     autotest:mark(?LINE, "lookupuser_get_locations/2 - 11.1"),

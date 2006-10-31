@@ -395,8 +395,20 @@ get_next_target_branch(In) ->
 %%--------------------------------------------------------------------
 get_next_sipdst([], _ApproxMsgSize) ->
     [];
-get_next_sipdst([#sipdst{proto=Proto, addr=Addr, port=Port}=Dst | T], ApproxMsgSize)
-  when Proto == undefined, Addr == undefined, Port == undefined ->
+
+get_next_sipdst([#sipdst{proto = undefined, addr = undefined, port = undefined, socket = Socket} = Dst | T],
+		ApproxMsgSize) when is_record(Socket, sipsocket) ->
+    %% specific socket specified, fill in proto, addr and port
+    {ok, Proto, Addr, Port} = sipsocket:get_remote_peer(Socket),
+
+    NewDst = Dst#sipdst{proto = Proto,
+			addr  = Addr,
+			port  = Port
+		       },
+    get_next_sipdst([NewDst | T], ApproxMsgSize);
+
+get_next_sipdst([#sipdst{proto = undefined, addr = undefined, port = undefined, socket = Socket} = Dst | T],
+		ApproxMsgSize) when is_record(Socket, sipsocket) ->
     URI = Dst#sipdst.uri,
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
     case is_record(URI, sipurl)  of

@@ -134,8 +134,9 @@
 		      do_gruu,			%% bool(), GRUU enabled or not?
 		      path_ignsup,		%% bool(), allow Path without Supported: path?
 		      path_vector,		%% list() of string()
-		      socket,			%% sipsocket record(), socket REGISTER was received on
-		      do_outbound		%% bool(), SIP Outbound enabled or not?
+		      origin,			%% siporigin record(), info about origin of REGISTER request
+		      do_outbound,		%% bool(), SIP Outbound enabled or not?
+		      user_agent		%% string(), User-Agent header value
 		     }).
 
 
@@ -149,11 +150,10 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: process_register_request(Request, Socket, THandler,
+%% Function: process_register_request(Request, Origin, THandler,
 %%                                    LogTag, LogStr, AppName)
 %%           Request  = response record()
-%%           Socket   = sipsocket record(), socket the REGISTER was
-%%                      received on (used with Outbound)
+%%           Origin   = siporigin record() (used with Outbound)
 %%           THandler = term(), server transaction handler
 %%           LogTag   = string(), tag for log messages
 %%           LogStr   = string(), description of request
@@ -166,8 +166,8 @@
 %%           Contact headers and update the location database.
 %% Returns : not_homedomain | void()
 %%--------------------------------------------------------------------
-process_register_request(Request, Socket, THandler, LogTag, LogStr, AppName) when is_record(Request, request),
-										  is_record(Socket, sipsocket),
+process_register_request(Request, Origin, THandler, LogTag, LogStr, AppName) when is_record(Request, request),
+										  is_record(Origin, siporigin),
 										  is_list(LogStr), is_list(LogTag),
 										  is_atom(AppName) ->
     URL = Request#request.uri,
@@ -179,7 +179,7 @@ process_register_request(Request, Socket, THandler, LogTag, LogStr, AppName) whe
 	true ->
 	    RegReq = #reg_request{uri		= URL,
 				  header	= Request#request.header,
-				  socket	= Socket,
+				  origin	= Origin,
 				  logtag	= LogPrefix,
 				  logstr	= LogStr,
 				  thandler	= THandler,
@@ -790,9 +790,12 @@ process_non_wildcard_contacts(RegReq, Contacts) ->
     %% parse_register_contact_expire/2 that are done for each Locations entry
     ExpireHeader = sipheader:expires(Header),
 
-    NewRegReq = RegReq#reg_request{callid = CallId,
-				   cseq   = CSeq,
-				   expire_h = ExpireHeader
+    UserAgent = keylist:fetch('user-agent', Header),
+
+    NewRegReq = RegReq#reg_request{callid     = CallId,
+				   cseq       = CSeq,
+				   expire_h   = ExpireHeader,
+				   user_agent = UserAgent
 				  },
 
     process_non_wildcard_contacts2(NewRegReq, Contacts).
@@ -1045,15 +1048,30 @@ register_contact_params2(RegReq, Contact) ->
 
     Instance = get_contact_instance_id(Contact),
 
+    UA =
+	case RegReq#reg_request.user_agent of
+	    [UAgent] when is_list(UAgent) ->
+		[{user_agent, UAgent}];
+	    _ ->
+		[]
+	end,
+
     OutboundFlags =
 	case Instance /= [] of
 	    true ->
 		case get_contact_reg_id(Contact) of
 		    RegId when is_integer(RegId) ->
 			%% draft Outbound 03 #6.1 (Processing Register Requests)
-			SocketId = (RegReq#reg_request.socket)#sipsocket.id,
+			Origin = RegReq#reg_request.origin,
+			Id1 = (Origin#siporigin.sipsocket)#sipsocket.id,
+			SocketId = #locationdb_socketid{node  = node(),
+							id    = Id1,
+							proto = Origin#siporigin.proto,
+							addr  = Origin#siporigin.addr,
+							port  = Origin#siporigin.port
+						       },
 			[{reg_id, RegId},
-			 {socket_id, {node(), SocketId}}
+			 {socket_id, SocketId}
 			];
 		    none ->
 			%% Instance, but no reg-id
@@ -1070,7 +1088,7 @@ register_contact_params2(RegReq, Contact) ->
 
     Flags = lists:sort([{priority, Priority},
 			{registration_time, util:timestamp()}
-		       ] ++ OutboundFlags
+		       ] ++ OutboundFlags ++ UA
 		      ),
 
     {ok, Flags, Instance}.
@@ -1426,17 +1444,17 @@ test() ->
     ThisNode = node(),
     RCF_RegReq5 = #reg_request{priority		= 100,
 			       path_vector	= [],
-			       socket		= #sipsocket{id = "socketidRCF5"}
+			       origin		= #siporigin{sipsocket = #sipsocket{id = "socketidRCF5"}}
 			      },
     {ok, [{priority, 100}, {reg_id, 1}, {registration_time, _},
-	  {socket_id, {ThisNode, "socketidRCF5"}}], "<test-instance>"} =
+	  {socket_id, #locationdb_socketid{node = ThisNode, id = "socketidRCF5"}}], "<test-instance>"} =
 	register_contact_params(RCF_RegReq5, RCF_Contact5),
 
     autotest:mark(?LINE, "register_contact_params/3 - 6"),
     %% test same thing but with old draft-Outbound semantics (flow-id instead of reg-id)
     [RCF_Contact6] = contact:parse(["<sip:ft@192.0.2.123>;+sip.instance=\"<test-instance>\";flow-id=12"]),
     {ok, [{priority, 100}, {reg_id, 12}, {registration_time, _},
-	  {socket_id, {ThisNode, "socketidRCF5"}}], "<test-instance>"} =
+	  {socket_id, #locationdb_socketid{node = ThisNode, id = "socketidRCF5"}}], "<test-instance>"} =
 	register_contact_params(RCF_RegReq5, RCF_Contact6),
 
 
@@ -1597,7 +1615,7 @@ test_mnesia_dependant_functions() ->
 		     callid  = "call-id123",
 		     cseq    = 1,
 		     path_vector = [],
-		     socket = #sipsocket{}
+		     origin = #siporigin{sipsocket = #sipsocket{}}
 		    },
 
     autotest:mark(?LINE, "register_contact/3 - 1.1"),
@@ -1701,13 +1719,13 @@ test_mnesia_dependant_functions() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_register_request/5 - 1"),
     Test_THandler = transactionlayer:test_get_thandler_self(),
-    S = #sipsocket{},
+    O = #siporigin{sipsocket = #sipsocket{}},
     %% test non-homedomain
     PRR_Request1 = #request{method = "REGISTER",
 			    uri    = sipurl:parse("sip:ft@something.not-local.test.example.org"),
 			    header = keylist:from_list([{"To", ["<sip:ft@example.org>"]}])
 			   },
-    not_homedomain = process_register_request(PRR_Request1, S, Test_THandler, "test logtag", "test logstring", test),
+    not_homedomain = process_register_request(PRR_Request1, O, Test_THandler, "test logtag", "test logstring", test),
 
 
     %% register_require_supported(RegReq, OrigLogTag)
@@ -1748,7 +1766,7 @@ test_mnesia_dependant_functions() ->
 			      do_gruu	= false,
 			      do_outbound = true,
 			      path_ignsup = false,
-			      socket	= #sipsocket{}
+			      origin	= #siporigin{sipsocket = #sipsocket{}}
 			     },
     PU_Contact1Str = "<sip:ft@192.0.2.10;up=foo>",
 
@@ -2060,7 +2078,7 @@ test_mnesia_dependant_functions() ->
 					 do_gruu	= false,
 					 path_ignsup	= true,
 					 do_outbound	= true,
-					 socket		= #sipsocket{id = "PU_test26_socketid"},
+					 origin		= #siporigin{sipsocket = #sipsocket{id = "PU_test26_socketid"}},
 					 sipuser	= TestUser1
 					},
     {ok, {200, "OK", [{"Contact",       PU_Contacts26_CRes},
@@ -2078,7 +2096,7 @@ test_mnesia_dependant_functions() ->
     #siplocationdb_e{instance = PU_Contacts26_Instance} = PU_Contacts26_Loc,
     {value, {reg_id, 4711}} =
 	lists:keysearch(reg_id, 1, PU_Contacts26_Loc#siplocationdb_e.flags),
-    {value, {socket_id, {ThisNode, "PU_test26_socketid"}}} =
+    {value, {socket_id, #locationdb_socketid{node = ThisNode, id = "PU_test26_socketid"}}} =
 	lists:keysearch(socket_id, 1, PU_Contacts26_Loc#siplocationdb_e.flags),
 
     autotest:mark(?LINE, "process_updates/2 - 27.1"),
@@ -2088,7 +2106,7 @@ test_mnesia_dependant_functions() ->
 				   "\";reg-id=4711;expires=30"]),
     PU_Header27 = keylist:set("CSeq", ["2701 REGISTER"], PU_RegReq1#reg_request.header),
     PU_RegReq27 = PU_RegReq26#reg_request{header	= PU_Header27,
-					  socket	= #sipsocket{id = "PU_test27_socketid"}
+					  origin	= #siporigin{sipsocket = #sipsocket{id = "PU_test27_socketid"}}
 					},
     {ok, {200, "OK", [{"Contact",       PU_Contacts27_CRes},
                       {"Date",          _},
@@ -2105,7 +2123,7 @@ test_mnesia_dependant_functions() ->
     #siplocationdb_e{instance = PU_Contacts26_Instance} = PU_Contacts27_Loc,
     {value, {reg_id, 4711}} =
 	lists:keysearch(reg_id, 1, PU_Contacts27_Loc#siplocationdb_e.flags),
-    {value, {socket_id, {ThisNode, "PU_test27_socketid"}}} =
+    {value, {socket_id, #locationdb_socketid{node = ThisNode, id = "PU_test27_socketid"}}} =
 	lists:keysearch(socket_id, 1, PU_Contacts27_Loc#siplocationdb_e.flags),
 
 
@@ -2117,7 +2135,7 @@ test_mnesia_dependant_functions() ->
     PU_Header28_1 = keylist:set("CSeq", ["2701 REGISTER"], PU_RegReq1#reg_request.header),
     PU_Header28 = keylist:set("Call-Id", ["2345-some-other-call-id"], PU_Header28_1),
     PU_RegReq28 = PU_RegReq27#reg_request{header	= PU_Header28,
-					    socket	= #sipsocket{id = "PU_test28_socketid_backup"}
+					  origin	= #siporigin{sipsocket = #sipsocket{id = "PU_test28_socketid_backup"}}
 					},
 
     {ok, {200, "OK", [{"Contact",       PU_Contacts28_CRes},
@@ -2135,7 +2153,7 @@ test_mnesia_dependant_functions() ->
     #siplocationdb_e{instance = PU_Contacts26_Instance} = PU_Contacts28_Loc,
     {value, {reg_id, 4712}} =
 	lists:keysearch(reg_id, 1, PU_Contacts28_Loc#siplocationdb_e.flags),
-    {value, {socket_id, {ThisNode, "PU_test28_socketid_backup"}}} =
+    {value, {socket_id, #locationdb_socketid{node = ThisNode, id = "PU_test28_socketid_backup"}}} =
 	lists:keysearch(socket_id, 1, PU_Contacts28_Loc#siplocationdb_e.flags),
 
 
@@ -2187,7 +2205,7 @@ test_mnesia_dependant_functions() ->
 					 do_gruu	= false,
 					 path_ignsup	= true,
 					 do_outbound	= true,
-					 socket		= #sipsocket{id = "PU_test31_socketid"},
+					 origin		= #siporigin{sipsocket = #sipsocket{id = "PU_test31_socketid"}},
 					 sipuser	= TestUser2
 					},
     {ok, {200, "OK", [{"Contact",       PU_Contacts31_CRes},

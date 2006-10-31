@@ -142,6 +142,13 @@
 	  expire	%% integer(), util:timestamp/0 time when this record expires
 	  }).
 
+-record(locationdb_socketid, {
+	  node,		%% atom(), node identifier
+	  id,		%% term(), sipsocket socket id
+	  proto,	%% atom(), origin proto
+	  addr,		%% string(), origin address (IP)
+	  port		%% integer(), origin port number
+	 }).
 
 %%--------------------------------------------------------------------
 %% sipdialog.erl records
