@@ -632,9 +632,12 @@ stun_process(Packet, Proto, IPtuple, IP, Port, Socket) ->
 %% Descrip.: Check if a binary packet is only NULL bytes or not.
 %% Returns : true | false
 %%--------------------------------------------------------------------
-is_only_nulls(Packet) when is_binary(Packet) ->
-    ZeroList = lists:duplicate(size(Packet), 0),
-    (Packet == list_to_binary(ZeroList)).
+is_only_nulls(<<0, Rest/binary>>) ->
+    is_only_nulls(Rest);
+is_only_nulls(<<>>) ->
+    true;
+is_only_nulls(_) ->
+    false.
 
 %%--------------------------------------------------------------------
 %% Function: get_sipsocket_id_match(Id, L)
@@ -773,5 +776,17 @@ test() ->
     %% test with no match at all
     SortSockets3_SS = #sipsocket{id = 99, data = {{"192.0.2.1", 5099}, test}},
     SortSocketsL2 = do_send_sort_sockets(SortSocketsL2, SortSockets3_SS),
+
+
+    %% test is_only_nulls(Packet)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "is_only_nulls/1 - 1"),
+    true = is_only_nulls(<<>>),
+
+    autotest:mark(?LINE, "is_only_nulls/1 - 2"),
+    true = is_only_nulls(<<0, 0, 0>>),
+
+    autotest:mark(?LINE, "is_only_nulls/1 - 3"),
+    false = is_only_nulls(<<0, 0, 0, 1>>),
 
     ok.
