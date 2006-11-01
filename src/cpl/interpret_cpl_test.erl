@@ -162,6 +162,9 @@ test() ->
     autotest:mark(?LINE, "process_cpl_script/7 - 28"),
     test28(),
     clean_up(),
+    autotest:mark(?LINE, "process_cpl_script/7 - 28b"),
+    test28b(),
+    clean_up(),
     autotest:mark(?LINE, "process_cpl_script/7 - 29"),
     test29(),
     clean_up(),
@@ -2250,6 +2253,97 @@ test28() ->
     LSa = lists:sort([URI1,URI3]),
     LSb = lists:sort(Locs),
     LSa = LSb.
+
+%% test "proxy" tag - ordering="first-only", locations from location db (with instance)
+test28b() ->
+    %% create cpl graph
+    ScriptStr = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+   <cpl xmlns=\"urn:ietf:params:xml:ns:cpl\"
+     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
+     xsi:schemaLocation=\"urn:ietf:params:xml:ns:cpl cpl.xsd \">
+     <incoming>
+       <lookup source=\"registration\">
+          <success>
+            <proxy recurse=\"no\" timeout=\"30\" ordering=\"first-only\">
+              <busy>
+                <redirect/>
+              </busy>
+            </proxy>
+          </success>
+       </lookup>
+     </incoming>
+   </cpl>",
+    Graph = xml_parse:cpl_script_to_graph(ScriptStr),
+
+    %% create request
+    RequestStr1 =
+	"INVITE sip:test@example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/TCP two.example.org\r\n"
+	"From: <sip:test@example.org>;tag=abc\r\n"
+	"To: <sip:to@example.org>\n"
+	"via: SIP/2.0/UDP one.example.org\r\n"
+	"\r\n",
+    Request1 = sippacket:parse(RequestStr1, none),
+    %% io:format("Request1 = ~p~n",[Request1]),
+
+    %% additional process_cpl_script values
+    BranchBase = "foobar",
+    User = "foobar@su.se",
+    Backend = test_backend,
+    STHandler = dummy_sthandler,
+    Direction = incoming,
+
+    %% io:format("1. ~n",[]),
+    %% process cpl script
+    %% test that ordering="first-only" only removes the highest priority location
+    CreateLoc =
+	fun(URL, Id, Instance, RegId) ->
+		Flags =
+		    [{registration_time, Id},
+		     {priority, Id}
+		    ] ++
+		    case Instance of
+			[] ->
+			    [];
+			_ ->
+			    Path = lists:concat(["<sip:flow", RegId, "@edge.example.org>"]),
+			    [{path, [Path]},
+			     {reg_id, RegId},
+			     {socket_id, {test, Id}}
+			    ]
+		    end,
+		#siplocationdb_e{address	= URL,
+				 instance	= Instance,
+				 sipuser	= User,
+				 flags		= Flags
+				}
+	end,
+
+    %% do successful lookup and proxy
+    %% last one of these has highest priority, so we expect that one to be tried. When that one fails,
+    %% the other one with the same instance-id should be discarded as well, and left should be the
+    %% two first ones (prio 28 and 29)
+    URL28 = sipurl:parse("sip:test28-28@foo.org"),
+    URL29 = sipurl:parse("sip:test28-29@bar.org"),
+    URL30 = sipurl:parse("sip:test28-30@foo.org"),
+    URL31 = sipurl:parse("sip:test28-31@bar.org"),
+    put(1, {success, [CreateLoc(URL28, 28, "<urn:test:other-instance-test28b>", 1),
+		      CreateLoc(URL29, 29, "", foo),
+		      CreateLoc(URL30, 30, "<urn:test:instance-test28b>", 1),
+		      CreateLoc(URL31, 31, "<urn:test:instance-test28b>", 2)
+		     ]}),
+    %% proxy return val
+    put(2, busy),
+
+    Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
+    %%io:format("Res1 = ~p~n",[Res1]),
+    {redirect, no, Locs} = Res1,
+
+    %% sort to ensure that matching works (there is no specific order required in Locs)
+    LSa = lists:sort([URL28, URL29]),
+    LSb = lists:sort(Locs),
+    LSa = LSb.
+    
 
 
 %% test "proxy" tag - ordering="sequential"

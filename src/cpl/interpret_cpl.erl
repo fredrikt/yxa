@@ -839,11 +839,10 @@ proxy({#proxy__attrs{timeout = TimeoutIn, recurse = Recurse, ordering = Ordering
 
     User = State#state.user,
 
-    {ProxyActions, SurplusActions, RemainingLocations}
-	= case Ordering of
+    {ProxyActions, SurplusActions, RemainingLocations} =
+	case Ordering of
 	      %% check all locations at once
 	      parallel ->
-%%		  {ok, Actions, Surplus} = appserver:locations_to_actions(Locations, Timeout),
 		  {ok, Actions, Surplus} = cpl_locations_to_call_action(Locations, Timeout, User),
 		  NewActions = Actions ++ [#sipproxy_action{action = wait, timeout = Timeout}],
 		  {NewActions, Surplus, []};
@@ -876,10 +875,10 @@ proxy({#proxy__attrs{timeout = TimeoutIn, recurse = Recurse, ordering = Ordering
 						timeout	= Timeout}
 			      ],
 			  {FirstSPA, [], Rest1};
-		      Instance when is_list(Instance) ->
+		      _ when is_list(Instance) ->
 			  LDBEUser = (FirstLoc#location.ldbe)#siplocationdb_e.sipuser,
-			  process_instance(Instance, LDBEUser, Timeout, PrioOrderLocs2)
-		      end
+			  process_user_instance(Instance, LDBEUser, Timeout, PrioOrderLocs2)
+		  end
 	  end,
     Request = State#state.request,
     BranchBase = State#state.branch_base,
@@ -925,9 +924,9 @@ cpl_locations_to_call_action2([#location{ldbe = LDBE} = H | _] = Locations, Time
     #siplocationdb_e{sipuser  = User,
 		     instance = Instance
 		    } = LDBE,
-    {FirstSPA, SurplusSPA, RestLocations} = process_instance(Instance, User, Timeout, Locations),
-    NewActions = FirstSPA ++ Actions,
-    NewSurplus = [SurplusSPA | Surplus],
+    {FirstSPA_L, SurplusSPA_L, RestLocations} = process_user_instance(Instance, User, Timeout, Locations),
+    NewActions = FirstSPA_L ++ Actions,
+    NewSurplus = SurplusSPA_L ++ Surplus,
     cpl_locations_to_call_action2(RestLocations -- [H], Timeout, User, NewActions, NewSurplus);
 %% entry NOT from location database
 cpl_locations_to_call_action2([H | T], Timeout, User, Actions, Surplus) when is_record(H, location) ->
@@ -953,16 +952,21 @@ cpl_locations_to_call_action2([], _Timeout, _User, Actions, Surplus) ->
 %%          Rest    = list() of location record(), all entrys from Locations
 %%                    _not_ matching this user and instance (or not coming from the location
 %%                    database at all)
-process_instance(Instance, User, Timeout, PrioLocations) ->
+process_user_instance(Instance, User, Timeout, PrioLocations) when is_list(Instance), is_list(User), is_integer(Timeout),
+								   is_list(PrioLocations) ->
     {ok, Same, Other} = process_instance_divide(Instance, User, PrioLocations),
 
-    %% extract the siplocatiodb_e records from the location records in SameInstance
-    SameInstanceLDBE = [E1#location.ldbe || E1 <- Same],
-    {ok, FirstSPA, SurplusSPA} = appserver:locations_to_actions(SameInstanceLDBE, Timeout),
+    %% extract the siplocatiodb_e records from the location records in Same (the ones having
+    %% matching User and Instance)
+    SameLDBE = [E1#location.ldbe || E1 <- Same],
+    {ok, FirstSPA, SurplusSPA} = appserver:locations_to_actions(SameLDBE, Timeout),
 
     {FirstSPA, SurplusSPA, Other}.
 
-
+%% part of process_instance/4
+%% Returns : {ok, Same, Other}
+%%           Same  = list() of siplocationdb_e record(), with the same sipuser and instance
+%%           Other = list() of siplocationdb_e record(), with different sipuser and/or instance
 process_instance_divide(Instance, User, PrioLocations) ->
     process_instance_divide2(Instance, User, PrioLocations, [], []).
 
@@ -1028,7 +1032,11 @@ find_result(Cond, [ _ | R]) ->
 %%           User         = string(), SIP username of CPL script owner
 %% Descrip.: return a list of sipproxy_action record() that defines
 %%           how the the sip proxy in yxa is supposed to check the
-%%           locations in PrioOrderLocs.
+%%           locations in PrioOrderLocs. If a UA has registered more
+%%           than once for a SIP-user, with the same instance-id
+%%           and different reg-id's then the most recently registered
+%%           binding will be in Actions, and the rest in Surplus (this
+%%           is draft-Outbound processing).
 %% Returns : {ok, Actions, Surplus}
 %%           Actions = list of sipproxy_action record()
 %%           Surplus = list of sipproxy_action record()
@@ -1068,25 +1076,17 @@ group_on_user_instance(In) ->
 
 group_on_user_instance([#location{ldbe = LDBE} | T] = Locations, Res) when is_record(LDBE, siplocationdb_e) ->
     Timeout = 10, %% arbitrary timeout, fixed later (in call_{all,count}_proxyaction_list)
-    #siplocationdb_e{sipuser  = User,
-		     instance = Instance
-		    } = LDBE,
-    case Instance == [] of
-	true ->
+    case LDBE#siplocationdb_e.instance of
+	[] ->
 	    This = appserver:location_to_call_action(LDBE, Timeout),
-	    group_on_user_instance(T, [{This, []} | Res]);
-	false ->
-	    case process_instance(Instance, User, Timeout, Locations) of
-		{[FirstSPA], SurplusSPA, RestLocations} when is_record(FirstSPA, sipproxy_action) ->
-		    group_on_user_instance(RestLocations, [{FirstSPA, SurplusSPA} | Res]);
-		{FirstSPA_L, [], RestLocations} when is_list(FirstSPA_L) ->
-		    %% add a {SPA, []} tuple for each entry in FirstSPA_L to Res
-		    NewRes =
-			lists:foldl(fun(SPA, Acc) when is_record(SPA, sipproxy_action) ->
-					    [{SPA, []} | Acc]
-				    end, Res),
-		    group_on_user_instance(RestLocations, NewRes)
-	    end
+	    SurplusSPA = [],	%% no surplus when there is no instance-id
+	    group_on_user_instance(T, [{This, SurplusSPA} | Res]);
+	Instance when is_list(Instance) ->
+	    User = LDBE#siplocationdb_e.sipuser,
+	    %% Since we call process_user_instance/4 with a User and Instance that we know exists in Locations,
+	    %% we know for sure that the FirstSPA return value will have a single element in it
+	    {[FirstSPA], SurplusSPA, RestLocations} = process_user_instance(Instance, User, Timeout, Locations),
+	    group_on_user_instance(RestLocations, [{FirstSPA, SurplusSPA} | Res])
     end;
 group_on_user_instance([H | T], Res) when is_record(H, location) ->
     group_on_user_instance(T, [{H, []} | Res]);
@@ -1254,32 +1254,21 @@ test27() ->
     autotest:mark(?LINE, "process_cpl_script/7 - 27.4"),
     %% test with location records containing siplocationdb_e records
 
-    PrioOrderLocs4 = [#location{url = URI1, priority = 1.0,
-				ldbe = #siplocationdb_e{address = URI1,
-							sipuser = "same-user-instance",
-							instance = "<urn:test:instance1>",
-							flags = [{registration_time, 100}]
-						       }
-			       },
-		      #location{url = URI3, priority = 0.9,
-				ldbe = #siplocationdb_e{address = URI3,
-							sipuser = "other-user-same-instance",
-							instance = "<urn:test:instance1>",
-							flags = [{registration_time, 300}]
-						       }
-			       },
+    CreateLoc4 =
+	fun(URL, Prio, User, Instance, RegTime) ->
+		#location{url = URL, priority = Prio,
+			  ldbe = #siplocationdb_e{address = URL,
+						  sipuser = User,
+						  instance = Instance,
+						  flags = [{registration_time, RegTime}]
+						 }
+			 }
+	end,
 
-
-		      #location{url = URI2, priority = 0.8,
-				ldbe = #siplocationdb_e{address = URI2,
-							sipuser = "same-user-instance",
-							instance = "<urn:test:instance1>",
-							flags = [{registration_time, 200}]
-						       }
-			       },
-
+    PrioOrderLocs4 = [CreateLoc4(URI1, 1.0, "same-user-instance",	"<urn:test:instance1>", 100),
+		      CreateLoc4(URI3, 0.9, "other-user-same-instance",	"<urn:test:instance1>", 300),
+		      CreateLoc4(URI2, 0.8, "same-user-instance",	"<urn:test:instance1>", 200),
 		      #location{url = URI4, priority = 0.5}
-
 		     ],
     
     Timeout4 = 40,
@@ -1297,5 +1286,149 @@ test27() ->
     [
      #sipproxy_action{action = call, timeout = 13, requri = URI1, user = "same-user-instance"}
     ] = Surplus4,
+
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.5"),
+    %% test with location records containing siplocationdb_e records
+
+    CreateLoc5 =
+	fun(User, RegTime, RegId) ->
+		Addr = sipurl:parse("sip:reg" ++ integer_to_list(RegTime) ++ "@ua.example.org"),
+		#location{url = Addr,
+			  priority = 0.9,
+			  ldbe = #siplocationdb_e{address = Addr,
+						  sipuser = User,
+						  instance = "<urn:test:instance1>",
+						  flags = [{registration_time, RegTime},
+							   {reg_id, RegId}
+							  ]
+						 }
+			 }
+	end,
+    
+    PrioOrderLocs5 = [CreateLoc5("same-user", 100, 1),
+		      CreateLoc5("same-user", 200, 2),
+		      CreateLoc5("same-user", 300, 3),
+		      CreateLoc5("same-user", 305, 4)
+		     ],
+        
+    Timeout5 = 40,
+    {ok, First5, Surplus5} = create_sequential_proxyaction_list(PrioOrderLocs5, Backend, Timeout5, "cpl-user"),
+
+    CSPL_URL305 = sipurl:parse("sip:reg305@ua.example.org"),
+    [
+     #sipproxy_action{action = call, timeout = 40, requri = CSPL_URL305, user = "same-user"},
+     #sipproxy_action{action = wait, timeout = 40}
+    ] = First5,
+
+
+    CSPL_URL300 = sipurl:parse("sip:reg300@ua.example.org"),
+    CSPL_URL200 = sipurl:parse("sip:reg200@ua.example.org"),
+    CSPL_URL100 = sipurl:parse("sip:reg100@ua.example.org"),
+    [
+     #sipproxy_action{action = call, timeout = 40, requri = CSPL_URL300, user = "same-user"},
+     #sipproxy_action{action = call, timeout = 40, requri = CSPL_URL200, user = "same-user"},
+     #sipproxy_action{action = call, timeout = 40, requri = CSPL_URL100, user = "same-user"}
+    ] = Surplus5,
+
+
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.6"),
+    %% test with location records containing siplocationdb_e records
+
+    PrioOrderLocs6 = [CreateLoc5("user1", 100, 1),
+		      CreateLoc5("user1", 200, 2),
+		      CreateLoc5("user1", 300, 3),
+		      CreateLoc5("user1", 306, 4),
+		      CreateLoc5("user2", 306, 1),
+		      CreateLoc5("user2", 400, 2)
+		     ],
+        
+    Timeout6 = 40,
+    {ok, First6, Surplus6} = create_sequential_proxyaction_list(PrioOrderLocs6, Backend, Timeout6, "cpl-user"),
+
+    CSPL_URL306 = sipurl:parse("sip:reg306@ua.example.org"),
+    CSPL_URL400 = sipurl:parse("sip:reg400@ua.example.org"),
+    [
+     #sipproxy_action{action = call, timeout = 20, requri = CSPL_URL306, user = "user1"},
+     #sipproxy_action{action = wait, timeout = 20},
+     #sipproxy_action{action = call, timeout = 20, requri = CSPL_URL400, user = "user2"},
+     #sipproxy_action{action = wait, timeout = 20}
+    ] = First6,
+
+    [
+     #sipproxy_action{action = call, timeout = 20, requri = CSPL_URL300, user = "user1"},
+     #sipproxy_action{action = call, timeout = 20, requri = CSPL_URL200, user = "user1"},
+     #sipproxy_action{action = call, timeout = 20, requri = CSPL_URL100, user = "user1"},
+     #sipproxy_action{action = call, timeout = 20, requri = CSPL_URL306, user = "user2"}
+    ] = Surplus6,
+
+
+    autotest:mark(?LINE, "process_cpl_script/7 - 27.7"),
+    %% test with location records containing siplocationdb_e records
+
+    CreateLoc7a =
+	fun(URL, Prio, User, RegTime) ->
+		#location{url = URL, priority = Prio,
+			  ldbe = #siplocationdb_e{address = URL,
+						  sipuser = User,
+						  instance = [],
+						  flags = [{registration_time, RegTime}]
+						 }
+			 }
+	end,
+
+    OB_URI7 = sipurl:parse("sip:ob-user@ua.example.org"),
+    CreateLoc7b =
+	fun(RegId, RegTime, Flow) ->
+		Path = [lists:concat(["<sip:", Flow, "@edgeproxy.example.org;ob>"])],
+		#location{url = OB_URI7, priority = 0.8,
+			  ldbe = #siplocationdb_e{address = OB_URI7,
+						  sipuser = "ob-user",
+						  instance = "<urn:test:instance1>",
+						  flags = [{registration_time, RegTime},
+							   {reg_id, RegId},
+							   {socket_id, {test, Flow}},
+							   {path, Path}
+							  ]
+						 }
+			 }
+	end,
+
+    StaticURL7 = sipurl:parse("sip:static@ua.example.org"),
+    PrioOrderLocs7 = [CreateLoc7a(URI1, 1.0, "user1", 100),
+		      CreateLoc7a(URI3, 0.9, "user1", 300),
+		      CreateLoc7b(1, 100, "flow1"),
+		      CreateLoc7b(2, 200, "flow2"),
+		      #location{url = StaticURL7, priority = 0.5}
+		     ],
+    
+    Timeout7 = 70,
+    {ok, Res7, Surplus7} = create_sequential_proxyaction_list(PrioOrderLocs7, Backend, Timeout7, "cpl-user"),
+
+    [
+     #sipproxy_action{action = call, timeout = 17, requri = URI1, user = "user1",
+		      path = []
+		     },
+     #sipproxy_action{action = wait, timeout = 17},
+     #sipproxy_action{action = call, timeout = 17, requri = URI3, user = "user1",
+		      path = []
+		     },
+     #sipproxy_action{action = wait, timeout = 17},
+     #sipproxy_action{action = call, timeout = 17, requri = OB_URI7, user = "ob-user",
+		      path = ["<sip:flow2@edgeproxy.example.org;ob>"]
+		     },
+     #sipproxy_action{action = wait, timeout = 17},
+     #sipproxy_action{action = call, timeout = 19, requri = StaticURL7, user = "cpl-user",
+		      path = []
+		     },
+     #sipproxy_action{action = wait, timeout = 19}
+    ] = Res7,
+
+    [
+      #sipproxy_action{action = call, timeout = 17, requri = OB_URI7, user = "ob-user",
+		      path = ["<sip:flow1@edgeproxy.example.org;ob>"]
+		     }
+    ] = Surplus7,
+
+
     
     ok.
