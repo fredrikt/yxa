@@ -9,6 +9,14 @@
 %%% Note    : You have to give the server name to every query to make
 %%%           it possible for the server process to have cached
 %%%           connections to multiple servers in the future.
+%%%
+%%% Note    : If a server name is given, but we can't connect to it,
+%%%           or we loose our connection to a server, we will try to
+%%%           reconnect to it once for every query someone asks us to
+%%%           send, and also using an exponential backoff timer. The
+%%%           reason for the timer is to always try and have a
+%%%           connection ready to use when we need it, since SSL
+%%%           connects can take a long time (for a SIP transaction).
 %%%-------------------------------------------------------------------
 -module(directory).
 
@@ -32,11 +40,11 @@
 %% Internal exports - gen_server callbacks
 %%--------------------------------------------------------------------
 -export([
-	 init/1, 
-	 handle_call/3, 
-	 handle_cast/2, 
-	 handle_info/2, 
-	 terminate/2, 
+	 init/1,
+	 handle_call/3,
+	 handle_cast/2,
+	 handle_info/2,
+	 terminate/2,
 	 code_change/3
 	]).
 
@@ -50,18 +58,20 @@
 %% Records
 %%--------------------------------------------------------------------
 -record(state, {
-	  handle,
-	  server,
-	  querycount
+	  handle,	%% not_connected | none | ldaphandle record()
+	  server,	%% string(), server name
+	  querycount,	%% integer(), number of queries we have used the current handle for
+	  timeout       %% integer(), exponential backoff for reconnect attempts
 	 }).
 -record(ldaphandle, {
-	  ref
+	  ref		%% term(), eldap handle
 	 }).
 
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
--define(TIMEOUT, 2 * 1000).
+-define(TIMEOUT, 2 * 1000).		%% check connection timeout
+-define(TIMEOUT_MAX, 60 * 1000).
 
 %%====================================================================
 %% External functions
@@ -78,7 +88,7 @@ start_link() ->
 	none ->
 	    logger:log(debug, "Directory: No LDAP server configured"),
 	    start_link(none)
-    end.    
+    end.
 
 start_link(Server) ->
     gen_server:start_link({local, ldap_client}, ?MODULE, [Server], []).
@@ -91,24 +101,38 @@ start_link(Server) ->
 %% Function: init([Server])
 %%           Server = string()
 %% Descrip.: Initiates the server
-%% Returns : {ok, State}
-%% Note    : XXX we don't do timeout here. Accident, or to not produce
-%%           work load if noone ever asks us anything?
+%% Returns : {ok, State}           |
+%%           {ok, State, ?TIMEOUT}
 %%--------------------------------------------------------------------
 init([Server]) ->
-    Handle = case Server of
-		 none -> none;
-		 H when is_record(H, ldaphandle) -> H;
-		 _ ->
-		     case ldap_connect(Server) of
-			 H2 when is_record(H2, ldaphandle) -> H2;
-			 {error, E} ->
-			     logger:log(error, "LDAP client: Could not connect to LDAP server ~p " ++
-					"at the moment : ~p", [Server, E]),
-			     error
-		     end
-	     end,
-    {ok, #state{handle=Handle, server=Server, querycount=0}}.
+    Handle =
+	case Server of
+	    none ->
+		none;
+	    H when is_record(H, ldaphandle) ->
+		H;
+	    _ when is_list(Server) ->
+		case ldap_connect(Server) of
+		    H2 when is_record(H2, ldaphandle) ->
+			H2;
+		    {error, E} ->
+			logger:log(error, "LDAP client: Could not connect to LDAP server ~p "
+				   "at the moment : ~p", [Server, E]),
+			not_connected
+		end
+	end,
+    State =
+	#state{handle     = Handle,
+	       server     = Server,
+	       querycount = 0,
+	       timeout    = ?TIMEOUT
+	      },
+
+    case Handle of
+	none -> {ok, State};
+	_ ->    {ok, State, ?TIMEOUT}
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Msg, From, State)
@@ -141,16 +165,14 @@ init([Server]) ->
 handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
     case State#state.server of
 	Server ->
-	    {NewHandle, Res} = ldapsearch_wrapper(simple, [Type, In, Attribute], State),
-	    NewQC = State#state.querycount + 1,
-	    NewState = State#state{handle=NewHandle, querycount=NewQC},
-	    {reply, {ok, Res}, NewState, ?TIMEOUT};
+	    {ok, NewState, Res} = ldapsearch_wrapper(simple, [Type, In, Attribute], State),
+	    {reply, Res, NewState, ?TIMEOUT};
 	_ ->
 	    {reply, {error, "Different LDAP server"}, State, ?TIMEOUT}
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({simple_search, Server, Type, In, Attribute},
+%% Function: handle_call({search, Server, Type, In, Attribute},
 %%                       From, State)
 %%           Server    = string()
 %%           Type      = string()
@@ -169,10 +191,8 @@ handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
 handle_call({search, Server, Type, In, Attributes}, _From, State) ->
     case State#state.server of
 	Server ->
-	    {NewHandle, Res} = ldapsearch_wrapper(full, [Type, In, Attributes], State),
-	    NewQC = State#state.querycount + 1,
-	    NewState = State#state{handle=NewHandle, querycount=NewQC},
-	    {reply, {ok, Res}, NewState, ?TIMEOUT};
+	    {ok, NewState, Res} = ldapsearch_wrapper(full, [Type, In, Attributes], State),
+	    {reply, Res, NewState, ?TIMEOUT};
 	_ ->
 	    {reply, {error, "Different LDAP server"}, State, ?TIMEOUT}
     end.
@@ -210,21 +230,33 @@ handle_cast({ping_of_death, Pid}, State) ->
 %%           time we have been idle for 2 seconds
 %% Returns : {noreply, NewState, ?TIMEOUT}
 %%--------------------------------------------------------------------
+handle_info(timeout, #state{handle = none} = State) ->
+    %% short-circuit the reconnection-on-timeout when no LDAP server has been configured
+    {noreply, State};
 handle_info(timeout, State) ->
     Server = State#state.server,
     case should_reopen_connection(State) of
 	true ->
 	    case catch ldap_connect(Server) of
-		H when is_record(H, ldaphandle) ->
+		NewHandle when is_record(NewHandle, ldaphandle) ->
 		    logger:log(debug, "LDAP client: Opened new connection to server ~s, closing old", [Server]),
 		    ldap_close(State#state.handle),
-		    {noreply, State#state{handle=H, querycount=0}, ?TIMEOUT};
+		    NewState =
+			State#state{handle     = NewHandle,
+				    querycount = 0,
+				    timeout    = ?TIMEOUT
+				   },
+		    {noreply, NewState, ?TIMEOUT};
 		E ->
-		    logger:log(error, "LDAP client: Could not reconnect to LDAP server ~p : ~p", [Server, E]),
+		    OldTimeout = State#state.timeout,
+		    NewTimeout = lists:min([?TIMEOUT_MAX, OldTimeout * 2]),	%% exponential backoff
+		    logger:log(error, "LDAP client: Could not reconnect to LDAP server ~p : ~p",
+			       [Server, E]),
 		    %% Keep using old handle in hope that it is still working.
-		    {noreply, State, ?TIMEOUT}
+		    NewState = State#state{timeout = NewTimeout},
+		    {noreply, NewState, NewTimeout}
 	    end;
-	_ ->
+	false ->
 	    {noreply, State, ?TIMEOUT}
     end.
 
@@ -281,7 +313,7 @@ should_reopen_connection(State) when is_record(State, state) ->
 		    end
 	    end;
 	H ->
-	    logger:log(debug, "LDAP client: Trying to open new connection to server ~p since current " ++
+	    logger:log(debug, "LDAP client: Trying to open new connection to server ~p since current "
 		       "handle is broken (handle ~p, query count ~p)",
 		       [Server, H, QueryCount]),
 	    true
@@ -295,32 +327,72 @@ should_reopen_connection(State) when is_record(State, state) ->
 %% Descrip.: Perform an LDAP search (using exec_ldapsearch()) and, if
 %%           the search results in 'error', close the connection, try
 %%           to open a new one and repeat the search.
-%% Returns : {NewHandle, Res}
+%% Returns : {ok, NewState, Res}
 %%           NewHandle = ldaphandle record()
-%%           Res       = term(), result of exec_ldapsearch()
+%%           Res       = {ok, SearchRes} |
+%%                       {error, Reason}
 %%--------------------------------------------------------------------
-ldapsearch_wrapper(Mode, Args, State) when Mode == simple; Mode == full, is_record(State, state) ->
-    Handle = State#state.handle,
-    Server = State#state.server,
-    case exec_ldapsearch(Mode, Handle, Args) of
-	error ->
-	    logger:log(error, "LDAP client: Error returned from exec_ldapsearch (~p), " ++
-		       "closing LDAP handle '~p', opening new handle and retrying query", [Mode, Handle]),
-	    ldap_close(Handle),
-	    case catch ldap_connect(Server) of
-		NewHandle when is_record(NewHandle, ldaphandle) ->
-		    logger:log(debug, "LDAP client: Retrying query using new LDAP handle ~p", [NewHandle]),
-		    %% New handle returned, retry query and return new handle plus result of retry
-		    Res = exec_ldapsearch(Mode, NewHandle, Args),
-		    {NewHandle, Res};
-		Unknown ->
-		    logger:log(error, "LDAP client: Could not connect to LDAP server ~p, ldap_connect() returned ~p",
-			       [Server, Unknown]),
-		    %% This is bad. We have closed our old handle and could not get a new one...
-		    {error, error}
+ldapsearch_wrapper(Mode, Args, State) when Mode == simple orelse Mode == full, is_record(State, state) ->
+    case ensure_connected(State) of
+	{ok, NewState1} ->
+	    case exec_ldapsearch(Mode, NewState1#state.handle, Args) of
+		error ->
+		    ldap_close(NewState1#state.handle),
+		    NewState2 = NewState1#state{handle = not_connected},
+		    ldapsearch_wrapper_retry(Mode, Args, NewState2);
+		Res ->
+		    QC = NewState1#state.querycount,
+		    NewState = NewState1#state{querycount = QC + 1},
+		    {ok, NewState, {ok, Res}}
 	    end;
-	Res ->
-	    {Handle, Res}
+	{error, Reason} ->
+	    {ok, State, {error, Reason}}
+    end.
+
+%% part of ldapsearch_wrapper/3, retry a failed query once
+%% Returns : same as ldapsearch_wrapper/3
+ldapsearch_wrapper_retry(Mode, Args, State) ->
+    case ensure_connected(State) of
+	{ok, NewState1} ->
+	    logger:log(debug, "LDAP client: Retrying query using new LDAP handle ~p",
+		       [NewState1#state.handle]),
+	    Res = exec_ldapsearch(Mode, NewState1#state.handle, Args),
+	    NewState = NewState1#state{querycount = 1},
+	    case Res of
+		error ->
+		    %% if the same query fails twice, it might be a problem with the
+		    %% query and not the server
+		    {ok, NewState, {error, "query failed"}};
+		_ ->
+		    {ok, NewState, {ok, Res}}
+	    end;
+	{error, Reason} ->
+	    {ok, State, {error, Reason}}
+    end.
+
+%% part of ldapsearch_wrapper/3
+%% Returns : {ok, NewState} | {error, Reason}
+ensure_connected(State) when is_record(State, state) ->
+    case State#state.handle of
+	H when is_record(H, ldaphandle) ->
+	    {ok, State};
+	none ->
+	    {error, "LDAP client disabled"};
+	not_connected ->
+	    case catch ldap_connect(State#state.server) of
+		NewHandle when is_record(NewHandle, ldaphandle) ->
+		    NewState =
+			State#state{handle     = NewHandle,
+				    querycount = 0
+				   },
+		    {ok, NewState};
+		{error, "eldap:open failed"} ->
+		    {error, "server unavailable"};
+		Unknown ->
+		    logger:log(debug, "LDAP client: Could not connect to LDAP server ~p, ldap_connect() returned ~p",
+			       [State#state.server, Unknown]),
+		    {error, "server unavailable"}
+	    end
     end.
 
 %%--------------------------------------------------------------------
@@ -365,9 +437,9 @@ exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) when is_record(Handle, ldaphan
 		simple ->
 		    [FindAttr] = Attr,
 		    case lists:sort(get_valuelist(SearchRes, FindAttr)) of
-			[] -> 
+			[] ->
 			    none;
-			Res when is_list(Res) -> 
+			Res when is_list(Res) ->
 			    Res
 		    end;
 		full ->
@@ -398,7 +470,7 @@ exec_ldapsearch(_Mode, Handle, [Type, In, _AttrIn]) ->
 %%--------------------------------------------------------------------
 get_valuelist(L, Attribute) ->
     get_valuelist2(L, Attribute, []).
-    
+
 get_valuelist2([], _Attribute, Res) ->
     Res;
 get_valuelist2([H | T], Attribute, Res) ->
@@ -429,10 +501,9 @@ exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when is_record(LHandle, ld
 		     {ok, SearchBase1} -> SearchBase1;
 		     none -> ""
 		 end,
-    SearchResult = eldap:search(Handle, [{base, SearchBase},
-					 {filter, Filter},
-					 {attributes, Attributes}]),
-    case SearchResult of
+    case eldap:search(Handle, [{base, SearchBase},
+			       {filter, Filter},
+			       {attributes, Attributes}]) of
 	{ok, #eldap_search_result{entries = List}} ->
 	    case List of
 		[] ->
@@ -447,6 +518,9 @@ exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when is_record(LHandle, ld
 			       [Handle, Unknown]),
 		    error
 	    end;
+	{error, {gen_tcp_error, closed}} ->
+	    logger:log(debug, "LDAP client: Handle ~p could not be used (socket closed)", [Handle]),
+	    error;
 	Unknown ->
 	    logger:log(error, "LDAP client: Search using handle ~p returned unknown data (1) : ~p",
 		       [Handle, Unknown]),
@@ -515,17 +589,17 @@ ldap_connect(Server) when is_list(Server) ->
 	    case eldap:simple_bind(Handle, Username, Password) of
 		ok ->
 		    logger:log(debug, "LDAP client: Opened LDAP handle ~p (server ~s)", [Handle, Server]),
-		    #ldaphandle{ref=Handle};
+		    #ldaphandle{ref = Handle};
 		E ->
-		    logger:log(error, "LDAP client: ldap_connect: eldap:simple_bind failed : ~p", [E]),
+		    logger:log(debug, "LDAP client: ldap_connect: eldap:simple_bind failed : ~p", [E]),
 		    {error, "eldap:simple_bind failed"}
 	    end;
 	{error, E} ->
-	    logger:log(error, "LDAP client: ldap_connect: eldap:open() failed. Server ~p, options ~p : ~p",
+	    logger:log(debug, "LDAP client: ldap_connect: eldap:open() failed. Server ~p, options ~p : ~p",
 		       [Server, Options, E]),
 	    {error, "eldap:open failed"};
 	Unknown ->
-	    logger:log(error, "LDAP client: ldap_connect: eldap:open() Server ~p, options ~p failed - unknown data returned: ~p",
+	    logger:log(debug, "LDAP client: ldap_connect: eldap:open() Server ~p, options ~p failed - unknown data returned: ~p",
 		       [Server, Options, Unknown]),
 	    {error, "eldap:open failed"}
     end.
