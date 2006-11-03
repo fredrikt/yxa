@@ -434,10 +434,10 @@ delete_not_present(Cfg, _Mode) ->
 		    false ->
 			case lists:member(Key, ?NO_DISCLOSURE) of
 			    true ->
-				logger:log(debug, "Config server: Purging parameter 'p' (value not shown)",
+				logger:log(debug, "Config server: Purging parameter '~p' (value not shown)",
 					   [Key]);
 			    false ->
-				logger:log(debug, "Config server: Purging parameter 'p' (old value: ~p)",
+				logger:log(debug, "Config server: Purging parameter '~p' (old value: ~p)",
 					   [Key, OldValue])
 			end,
 			true = ets:delete(?YXA_CONFIG, Key)
