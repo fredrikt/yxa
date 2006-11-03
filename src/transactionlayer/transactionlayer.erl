@@ -966,9 +966,14 @@ from_transportlayer(Request, YxaCtx) when is_record(Request, request), is_record
 	none ->
 	    {ok, AppModule} = yxa_config:get_env(yxa_appmodule),
 	    case received_new_request(Request, YxaCtx, AppModule) of
-		{pass_to_core, NewAppModule, STPid} when is_atom(NewAppModule), is_pid(STPid) ->
-		    NewYxaCtx = YxaCtx#yxa_ctx{thandler = #thandler{pid = STPid}
-					      },
+		{pass_to_core, NewAppModule, STPid} when is_atom(NewAppModule) ->
+		    NewYxaCtx =
+			case STPid of
+			    _ when is_pid(STPid) ->
+				YxaCtx#yxa_ctx{thandler = #thandler{pid = STPid}};
+			    undefined ->
+				YxaCtx#yxa_ctx{thandler = undefined}
+			end,
 		    case get_dialog_handler(Request) of
 			nomatch ->
 			    {pass_to_core, NewAppModule, NewYxaCtx};
