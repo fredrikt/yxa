@@ -70,7 +70,8 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     timer:apply_interval(?TIMEOUT, database_eventdata, delete_expired, []),
-    case subscribe_to_table(eventdata) of
+    Tables = [eventdata, phone],
+    case subscribe_to_tables(Tables) of
 	ok ->
 	    logger:log(debug, "SIP Event server Mnesia monitor started"),
 	    {ok, #state{}};
@@ -78,10 +79,19 @@ init([]) ->
 	    logger:log(error, "SIP Event server Mnesia monitor: Failed subscribing to Mnesia events"),
 	    {stop, "Failed subscribing to Mnesia table events"}
     end.
-	
-subscribe_to_table(Tab) ->
-    subscribe_to_table(Tab, 2).
 
+%% part of init/1	
+subscribe_to_tables([Tab | T]) ->
+    case subscribe_to_table(Tab, 2) of
+	ok ->
+	    subscribe_to_tables(T);
+	E ->
+	    E
+    end;
+subscribe_to_tables([]) ->
+    ok.
+
+%% part of subscribe_to_tables/1
 subscribe_to_table(_Tab, 0) ->
     logger:log(debug, "SIP Event server Mnesia monitor: Mnesia subscribe retrys exceeded"),
     error;
@@ -133,14 +143,35 @@ handle_cast(Msg, State) ->
 %%           {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({mnesia_table_event, Event}, State) ->
+handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when element(1, Rec) == eventdata ->
     case database_eventdata:decode_mnesia_change_event(Event) of
 	{ok, PackageS, EventL} when is_list(PackageS), is_list(EventL) ->
 	    do_notify(PackageS, EventL);
 	error ->
-	    logger:log(error, "SIP Event server Mnesia monitor: Could not decode presentitys from mnesia table event"),
-	    logger:log(debug, "SIP Event server Mnesia monitor: Event : ~p", [Event]),
-	    ok;
+	    logger:log(error, "SIP Event server Mnesia monitor: Could not decode presentitys from mnesia table "
+		       "'eventdata' event"),
+	    logger:log(debug, "SIP Event server Mnesia monitor: Event : ~p", [Event]);
+	none ->
+	    %% an event about something not referring to a change of information
+	    ok
+	end,
+    {noreply, State};
+
+handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when element(1, Rec) == phone ->
+    case phone:decode_mnesia_change_event(Event) of
+	{ok, Action, User, Location} when is_list(User) ->
+	    logger:log(debug, "SIP Event server Mnesia monitor: Detected location db '~p' for SIP user ~p, location ~p",
+		       [Action, User, sipurl:print(siplocation:to_url(Location))]),
+	    case local:eventserver_locationdb_action(Action, User, Location) of
+		undefined ->
+		    ok;
+		Res when is_list(Res) ->
+		    registration_event_actions(Res)
+	    end;
+	error ->
+	    logger:log(error, "SIP Event server Mnesia monitor: Could not decode locations from mnesia table "
+		       "'phone' event"),
+	    logger:log(debug, "SIP Event server Mnesia monitor: Event : ~p", [Event]);
 	none ->
 	    %% an event about something not referring to a change of information
 	    ok
@@ -218,4 +249,21 @@ do_notify(PackageS, [Eventdata | T]) when is_record(Eventdata, eventdata_dbe) ->
     _ = [gen_server:cast(Pid, {notify, Source}) || Pid <- NotifyL],
     do_notify(PackageS, T);
 do_notify(_PackageS, []) ->
+    ok.
+
+
+%%--------------------------------------------------------------------
+%% Function: registration_event_actions(Actions)
+%%           Actions = list() of tuple()
+%% Descrip.: Perform any actions that
+%%           local:eventserver_locationdb_action/3 said we should when
+%%           some user registered.
+%% Returns : ok
+%%--------------------------------------------------------------------
+registration_event_actions([{shared_line, Resource, User, URL, Params} | T]) ->
+    logger:log(normal, "SIP Event server Mnesia monitor: Starting shared line ~p for user ~p (~s)",
+	       [Resource, User, sipurl:print(URL)]),
+    active_subscriber:shared_line(Resource, User, URL, Params),
+    registration_event_actions(T);
+registration_event_actions([]) ->
     ok.

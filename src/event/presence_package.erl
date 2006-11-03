@@ -92,18 +92,31 @@ request("presence", #request{method = "PUBLISH"} = Request, _Origin, _LogStr, Lo
 	    error ->
 		{error, "ETag/Expires problem"};
 
-	    {ok, none, Expires} when is_integer(Expires) ->
+	    {ok, Action, OldETag, Expires} when Action == insert orelse Action == update,
+						is_integer(Expires) ->
 		%% No ETag in request (SIP-If-Match header)
 		case keylist:fetch('content-type', Request#request.header) of
 		    [ContentType] ->
 			XML = binary_to_list(Request#request.body),
 			ETag = generate_etag(),
-			case presence_pidf:set_pidf_for_user(SIPuser, ETag, Expires, ContentType, XML, Ctx) of
+			Res2 =
+			    case Action of
+				insert ->
+				    presence_pidf:set_pidf_for_user(SIPuser, ETag, Expires, ContentType, XML, Ctx);
+				update ->
+				    presence_pidf:set_pidf_for_user(SIPuser, OldETag, ETag, Expires, ContentType,
+								    XML, Ctx)
+			    end,
+			
+			case Res2 of
 			    ok ->
 				EH = [{"SIP-ETag", [ETag]},
 				      {"Expires", [integer_to_list(Expires)]}
 				     ],
 				{ok, EH};
+			    nomatch when Action == update ->
+				%% Entry with this ETag must have expired between get_publish_etag_expires/3 and now
+				transactionlayer:send_response_handler(THandler, 412, "Conditional Request Failed");
 			    {error, unsupported_content_type} ->
 				AcceptL = presence_pidf:get_supported_content_types(set),
 				ExtraHeaders1 = [{"Accept", AcceptL}],
@@ -432,33 +445,33 @@ get_accept(Header) ->
 %%           SIPuser = string()
 %%           THandler = term(), server transaction handle
 %% Descrip.: Get ETag and Expires values from a PUBLISH request.
-%% Returns : {ok, ETag, Expires} | error
+%% Returns : {ok, Action, ETag, Expires} | error
+%%           Action  = insert | update | refresh
 %%           ETag    = none | string()
 %%           Expires = integer()
 %% Note    : Functionality is specified in RFC3903 #6 (Processing
 %%           PUBLISH Requests), steps 2-3
 %%--------------------------------------------------------------------
 get_publish_etag_expires(Request, SIPuser, THandler) ->
-    ETag =
+    {Action, ETag} =
 	case keylist:fetch("SIP-If-Match", Request#request.header) of
 	    [ETag1] ->
 		case presence_pidf:check_if_user_etag_exists(SIPuser, ETag1) of
 		    true ->
 			case Request#request.body of
 			    <<>> ->
-				ETag1;
+				%% Has body, is not a refresh but rather an update
+				{update, ETag1};
 			    _ ->
-				%% "a PUBLISH request that refreshes event state MUST NOT have a body."
-				transactionlayer:send_response_handler(THandler, 400, "Request with "
-								       "SIP-If-Match can't have body"),
-				error
+				%%% "a PUBLISH request that refreshes event state MUST NOT have a body."
+				{refresh, ETag1}
 			end;
 		    false ->
 			transactionlayer:send_response_handler(THandler, 412, "Conditional Request Failed"),
 			error
 		end;
 	    [] ->
-		none;
+		{insert, none};
 	    _ ->
 		%% more than one value, reject request
 		transactionlayer:send_response_handler(THandler, 400, "More than one SIP-If-Match header value"),
@@ -473,7 +486,7 @@ get_publish_etag_expires(Request, SIPuser, THandler) ->
 		error ->
 		    error;
 		Expires when is_integer(Expires) ->
-		    {ok, ETag, Expires}
+		    {ok, Action, ETag, Expires}
 	    end
     end.
 

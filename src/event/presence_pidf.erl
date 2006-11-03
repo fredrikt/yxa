@@ -13,6 +13,7 @@
 -export([init/0,
 
 	 set_pidf_for_user/6,
+	 update_pidf_for_user/7,
 	 refresh_pidf_user_etag/4,
 
 	 get_pidf_xml_for_user/2,
@@ -33,6 +34,7 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("event.hrl").
+-include("siprecords.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 %%--------------------------------------------------------------------
@@ -89,7 +91,8 @@ init() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: set_pidf_for_user(User, ETag, Expires, ContentType, XML)
+%% Function: set_pidf_for_user(User, ETag, Expires, ContentType, XML,
+%%                             Ctx)
 %%           User        = string(), presentity username
 %%           ETag        = string(), presence ETag
 %%           Expires     = integer(), how many seconds this data is
@@ -128,6 +131,49 @@ set_pidf_for_user(User, ETag, Expires, ContentType, XML, Ctx) when is_list(User)
 	{error, Reason} ->
 	    {error, Reason}
     end.
+
+%%--------------------------------------------------------------------
+%% Function: update_pidf_for_user(User, ETag, NewEtag, Expires,
+%%                                ContentType, XML, Ctx)
+%%           User        = string(), presentity username
+%%           ETag        = string(), current ETag
+%%           NewETag     = string(), new ETag
+%%           Expires     = integer(), how many seconds this data is
+%%                         valid
+%%           ContentType = string(), "application/pidf+xml" | ...
+%%           XML         = string(), XML data
+%%           Ctx         = event_ctx record()
+%% Descrip.: Parse and update an PIDF XML associated with a presentity.
+%% Returns : ok | nomatch | {error, Reason}
+%%--------------------------------------------------------------------
+update_pidf_for_user(_User, _ETag, _NewEtag, Expires, _ContentType, _XML, _Ctx) when is_integer(Expires) andalso
+								                (Expires < ?EXPIRES_LOWER_LIMIT orelse
+								                 Expires > ?EXPIRES_UPPER_LIMIT) ->
+    {error, expires_out_of_bounds};
+update_pidf_for_user(User, ETag, NewETag, Expires, ContentType, XML, Ctx) when is_list(User), is_list(XML),
+									       is_record(Ctx, event_ctx) ->
+    case parse_pidf_xml(ContentType, XML) of
+	{ok, Data1} when is_record(Data1, pidf_data) ->
+	    UseExpires =
+		if
+		    is_integer(Expires) ->
+			Now = util:timestamp(),
+			Now + Expires;
+		    Expires == never ->
+			never
+		end,
+
+	    Flags = [{source, Ctx#event_ctx.dialog_id}],
+	    case database_eventdata:update("presence", {user, User}, ETag, NewETag, UseExpires, Flags, Data1) of
+		nomatch ->
+		    nomatch;
+		ok ->
+		    ok
+	    end;
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Function: refresh_pidf_user_etag(User, ETag, NewExpires, NewETag)
@@ -177,13 +223,7 @@ get_pidf_xml_for_user({fake_offline, AddrStr}, AcceptL) when is_list(AddrStr), i
         {error, Reason} ->
             {error, Reason};
         ContentType when is_list(ContentType) ->
-	    Presentity =
-		case AddrStr of
-		    "sip:" ++ PresRest ->
-			"pres:" ++ PresRest;
-		    "pres:" ++ _ ->
-			AddrStr
-		end,
+	    Presentity = normalize_entity(AddrStr),
 	    Type = content_type(ContentType),
 	    case Type == pidf orelse Type == xpidf of
 		true ->
@@ -221,6 +261,7 @@ get_pidf_xml_for_user(User, AcceptL) when is_list(User), is_list(AcceptL) ->
 			"";
 		    [#eventdata_dbe{data = First} | _] ->
 			Presentity = (First#pidf_data.data)#pidf_doc.'PRESENTITY_URL',
+
 			try output_pidf_xml(content_type(ContentType), Presentity, User, Tuples_as_XML) of
 			    Res ->
 				Res
@@ -567,12 +608,39 @@ parse_pidf_xml2(XML) ->
 
     XMLTuples = [lists:flatten(E) || E <- xmerl:export_simple_content(Tuples, presence_xmerl_xml)],
 
-    This = #pidf_doc{'PRESENTITY_URL'     = Entity,
+    This = #pidf_doc{'PRESENTITY_URL'     = normalize_entity(Entity),
 		     'PRESENCE_TUPLES'    = XMLTuples,
 		     'PRESENTITY_COMMENT' = Comment
 		    },
 
     {ok, This}.
+
+
+%%--------------------------------------------------------------------
+%% Function: normalize_entity(Entity)
+%%           Entity = string(), from presence entity attr in PIDFs
+%% Descrip.: Change sip: into pres: in presence entitys and normalize
+%%           some things people have gotten wrong at SIPits.
+%% Returns : Presentity = string() (starting with "pres:")
+%%--------------------------------------------------------------------
+normalize_entity(Entity) ->
+    Presentity1 =
+	case Entity of
+	    "sip:" ++ PresRest ->
+		"pres:" ++ PresRest;
+	    "pres:" ++ _ ->
+		Entity;
+	    "<" ++ _ ->
+		%% use concact-parse to normalize "<sip:...>" into "sip:..."
+		[C] = contact:parse([Entity]),
+		case C#contact.urlstr of
+		    "sip:" ++ PresRest2 ->
+			"pres:" ++ PresRest2;
+		    "pres:" ++ _ ->
+			C#contact.urlstr
+		end
+	end,
+    lists:flatten(Presentity1).
 
 
 %%--------------------------------------------------------------------
@@ -681,6 +749,21 @@ get_tuple_id(Tuple) ->
 %% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
+
+    %% normalize_entity(Entity)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "normalize_entity/1 - 1"),
+    "pres:test@foo" = normalize_entity("sip:test@foo"),
+
+    autotest:mark(?LINE, "normalize_entity/1 - 2"),
+    "pres:test@foo" = normalize_entity("pres:test@foo"),
+
+    autotest:mark(?LINE, "normalize_entity/1 - 3"),
+    "pres:test@foo" = normalize_entity("<sip:test@foo>"),
+
+    autotest:mark(?LINE, "normalize_entity/1 - 4"),
+    "pres:test@foo" = normalize_entity("<pres:test@foo>"),
+
 
     %% Mnesia dependant tests
     %%--------------------------------------------------------------------
@@ -1093,7 +1176,7 @@ test_parse_xml(PIDF_XML1, PIDF_XML1_Tuple1) ->
     autotest:mark(?LINE, "parse_pidf_xml/2 - 2.1"),
     {ok, #pidf_data{type = ParseCT1,
 		    xml  = PIDF_XML2,
-		    data = #pidf_doc{'PRESENTITY_URL' = "sip:ft@example.net",
+		    data = #pidf_doc{'PRESENTITY_URL' = "pres:ft@example.net",
 				     'PRESENCE_TUPLES' = ParseCT_Tuples2
 				    }
 		   }}

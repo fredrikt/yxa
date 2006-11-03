@@ -78,15 +78,21 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start(PackageS, Presenter, SInterval, Accept, ExtraH,
-%%                 EventSuffix, LogTag, Parent)
-
-%% XXX COMPLETE
-%%           SInterval   = integer(), SUBSCRIBE expire time in seconds
-%%           ExtraH      = list() of {Key, ValueL}, extra headers to
-%%                         set in our SUBSCRIBEs
+%% Function: start_link(Request, Origin, LogStr, THandler, BranchBase,
+%%                      Parent, ParentState, Interval, ExtraH,
+%%                      FirstCSeq)
+%%           Request     = request record()
+%%           Origin      = siporigin record()
+%%           LogStr      = string(), describes request
+%%           THandler    = term(), server transaction handler
+%%           BranchBase  = string(), base of branch we should use
 %%           Parent      = pid()
-
+%%           ParentState = atom(), stop | ???
+%%           Interval    = integer(), what we should request as
+%%                         subscription expiration time
+%%           ExtraH      = list() of {Key, Value} tuples with stuff
+%%                         we should put in our SUBSCRIBEs.
+%%           FirstCSeq   = integer(), first CSeq number we should use
 %% Descrip.: Starts the active_subscriber gen_server.
 %%
 %% NOTE    : ExtraH MUST include one (and only one) of the following :
@@ -131,16 +137,22 @@ start_link(#request{method = "NOTIFY"} = Request, Origin, LogStr, THandler, Bran
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([State1, Request, ParentState])
-%%           State1 = state record(), state in
-%%           XXX
+%% Function: init([State1, Request, Origin, LogStr, THandler,
+%%                 ParentState, FirstCSeq])
+%%           State1      = state record(), state in
+%%           Request     = request record()
+%%           Origin      = siporigin record()
+%%           LogStr      = string(), describes request
+%%           THandler    = term(), server transaction handler
+%%           ParentState = atom(), stop | ???
+%%           FirstCSeq   = integer(), first CSeq number we should use
 %% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           ignore               |
+%% Returns : {ok, State}    |
+%%           ignore         |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
 init([State1, Request, Origin, LogStr, THandler, ParentState, FirstCSeq]) ->
-    Expires = get_subscription_state_expires(Request#request.header, State1#state.interval),
+    {ok, Expires} = get_subscription_state_expires(Request#request.header, State1#state.interval),
 
     {ok, ToTag} = transactionlayer:get_my_to_tag(THandler),
     {ok, Dialog1} = local:create_dialog_state_uas(?MODULE, Request, ToTag, State1#state.my_contact),
@@ -547,45 +559,41 @@ process_received_notify(Request, Origin, LogStr, THandler, State) when is_record
 			logger:log(normal, "Active subscription: Other side deactivated subscription. "
 				   "We should retry after ~p seconds, but that is not implemented yet!",
 				   [RetryAfter]),
+			transactionlayer:send_response_handler(THandler, 200, "Ok", State#state.res_extra_h),
 			terminate;
 		    terminate ->
 			logger:log(normal, "Active subscription: Other side terminated subscription (~s)",
 				  [SubscriptionState]),
+			transactionlayer:send_response_handler(THandler, 200, "Ok", State#state.res_extra_h),
 			terminate
 		end
 	end,
 
-    case check_is_acceptable(Request, State#state.my_accept) of
-	ok ->
-	    case Request#request.body of
-		<<>> ->
-		    ok;
-		_ ->
-		    %% process the body
-		    Dialog = State#state.dialog,
-		    DialogId = {Dialog#dialog.callid, Dialog#dialog.local_tag, Dialog#dialog.remote_tag},
-
-                    Ctx = #event_ctx{dialog_id = DialogId},
-		    gen_server:cast(State#state.parent, {received_notify, self(), Request, Origin, LogStr,
-							 THandler, Ctx}),
-
-		    {noreply, NewState1}
-	    end;
-	{siperror, Status, Reason, EH} ->
-	    transactionlayer:send_response_handler(THandler, Status, Reason, EH ++ State#state.res_extra_h),
-	    {noreply, NewState1}
-    end,
-
     case SubState of
-	ok ->
-	    {noreply, State};
 	terminate ->
 	    {stop, normal, State#state{mystate = stopped}};
-	_ ->
-	    SubState
+	ok ->
+	    case check_is_acceptable(Request, State#state.my_accept) of
+		ok ->
+		    case Request#request.body of
+			<<>> ->
+			    ok;
+			_ ->
+			    %% process the body
+			    Dialog = State#state.dialog,
+			    DialogId = {Dialog#dialog.callid, Dialog#dialog.local_tag, Dialog#dialog.remote_tag},
+			    
+			    Ctx = #event_ctx{dialog_id = DialogId},
+			    gen_server:cast(State#state.parent, {received_notify, self(), Request, Origin, LogStr,
+								 THandler, Ctx}),
+			    
+			    {noreply, NewState1}
+		    end;
+		{siperror, Status, Reason, EH} ->
+		    transactionlayer:send_response_handler(THandler, Status, Reason, EH ++ State#state.res_extra_h),
+		    {noreply, NewState1}
+	    end
     end.
-
-
 
 
 %%--------------------------------------------------------------------
@@ -618,7 +626,7 @@ check_is_acceptable(Request, AcceptL) ->
 %% Descrip.: Check for an Subscription-State header with an expires
 %%           parameter, or return Default if no expires parameter is
 %%           found, or it does not contain an integer.
-%% Returns : Seconds = integer()
+%% Returns : {ok, Seconds} = integer()
 %%--------------------------------------------------------------------
 get_subscription_state_expires(Header, Default) when is_integer(Default) ->
     case keylist:fetch("Subscription-State", Header) of
@@ -629,7 +637,7 @@ get_subscription_state_expires(Header, Default) when is_integer(Default) ->
 		{ok, L} ->
 		    get_subscription_state_expires2(L, Default);
 		_ ->
-		    Default
+		    {ok, Default}
 	    end
     end.
 
@@ -647,7 +655,7 @@ get_subscription_state_expires2([H | T], Default) ->
 	    get_subscription_state_expires2(T, Default)
     end;
 get_subscription_state_expires2([], Default) ->
-    Default.
+    {ok, Default}.
 
 
 %%--------------------------------------------------------------------

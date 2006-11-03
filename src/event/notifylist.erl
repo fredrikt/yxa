@@ -24,18 +24,18 @@
 
 
 
-%% Returs : ok
+%% Returns : ok
 init() ->
     ets:new(?ETS_SUBSCRIPTIONS_TABLE, [public, bag, named_table]),
     ok.
 
-%% Returs : ok
+%% Returns : ok
 add(Presentity, PackageS, Pid) when is_tuple(Presentity), is_list(PackageS), is_pid(Pid) ->
     Entry = {Presentity, {PackageS, Pid}},
     true = ets:insert(?ETS_SUBSCRIPTIONS_TABLE, Entry),
     ok.
 
-%% Returs : ok
+%% Returns : ok
 delete(Presentity, PackageS, Pid) when is_tuple(Presentity), is_list(PackageS), is_pid(Pid) ->
     Entry = {Presentity, {PackageS, Pid}},
     true = ets:delete_object(?ETS_SUBSCRIPTIONS_TABLE, Entry),
@@ -49,4 +49,4 @@ lookup(Presentity, PackageFilter) when is_tuple(Presentity), is_list(PackageFilt
 %% Returns : list() of pid()
 get_all_pids() ->
     L = ets:tab2list(?ETS_SUBSCRIPTIONS_TABLE),
-    [Pid || {_Id, {PackageS, Pid}} <- L].
+    [Pid || {_Id, {_PackageS, Pid}} <- L].

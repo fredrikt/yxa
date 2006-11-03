@@ -48,8 +48,9 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start/13,
+-export([start/14,
 	 stop/1,
+	 shared_line/4,
 
 	 ft/1
 	]).
@@ -93,7 +94,8 @@
 		sent_subscr_ts,		%% integer(), util:timestamp() notion of when we last sent a SUBSCRIBE
 		mystate = init,		%% init | active | stop | stopped
 		callid,
-		localtag
+		localtag,
+		presentity		%% undefined | {address, AddressStr} | {user, User}
 	       }).
 
 
@@ -122,9 +124,14 @@
 %% Descrip.: Starts the active_subscriber gen_server.
 %% Returns : Pid = pid()
 %%--------------------------------------------------------------------
-start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent)
+start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent) ->
+      start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst,
+	    SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent, undefined).
+
+start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent,
+      Presentity)
   when is_list(PackageS), is_tuple(Presenter), is_record(RequestURI, sipurl),
-       is_record(From, contact); From == undefined, is_record(To, contact); To == undefined,
+       is_record(From, contact) orelse From == undefined, is_record(To, contact) orelse To == undefined,
        is_integer(SInterval), is_list(Accept), is_list(ExtraH), is_list(EventSuffix),
        is_list(LogTag), is_pid(Parent) ->
     %% Now = util:timestamp(),
@@ -133,7 +140,8 @@ start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accep
 
     State1 = #state{package_module	= PackageM,
 		    package_string    	= PackageS,
-		    presenter		= Presenter,
+		    presenter		= Presenter,	%% remote party identifier
+		    presentity		= Presentity,	%% local resource identifier
 		    uri			= RequestURI,
 		    event		= Event,
 		    interval		= SInterval,
@@ -148,6 +156,78 @@ start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accep
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
+
+shared_line(Resource, SIPuser, URI, Params) when is_list(Resource), is_record(URI, sipurl), is_list(Params) ->
+    Contact = generate_contact_str(Resource),
+    [ParsedContact] = contact:parse([Contact]),
+    {Presenter, To} =
+	case is_list(SIPuser) of
+	    true ->
+		ToC =
+		    case sipuserdb:get_addresses_for_user(SIPuser) of
+			[FirstAddr | _] when is_list(FirstAddr) ->
+			    contact:new(FirstAddr);
+			_ ->
+			    contact:new(URI)
+		    end,
+		{{user, SIPuser},
+		 ToC
+		};
+	    false ->
+		{{address, ParsedContact#contact.urlstr},
+		 contact:new(URI)
+		}
+	end,
+
+    Presentity = {address, ParsedContact#contact.urlstr},
+    From = undefined,
+
+    Interval =
+	case lists:keysearch(interval, 1, Params) of
+	    {value, {interval, IntervalV}} when is_integer(IntervalV) ->
+		IntervalV;
+	    false ->
+		600
+	end,
+
+    %% XXX really figure out message size
+    ApproxMsgSize = 500,
+
+    {PathL, Dst} =
+	case lists:keysearch(path, 1, Params) of
+	    {value, {path, [FirstPath | _] = PathV}} ->
+		[PathC] = contact:parse([FirstPath]),
+		PathURL = sipurl:parse(PathC#contact.urlstr),
+		[Dst1 | _] = sipdst:url_to_dstlist(PathURL, ApproxMsgSize, URI),
+		{[{"Route", PathV}], Dst1};
+	    false ->
+		[Dst1 | _] = sipdst:url_to_dstlist(URI, ApproxMsgSize, URI),
+		{[], Dst1}
+	end,
+
+    Accept = ["application/dialog-info+xml"],
+    ExtraHeaders = [{"Contact", [Contact]}] ++ PathL,
+
+    LogTag = lists:flatten( lists:concat(["Shared line (", Resource, ")"]) ),
+
+    start(dialog_package, "dialog", Presenter, URI, From, To, Dst, Interval, Accept,
+	  ExtraHeaders, ";sla;include-session-description", LogTag, self(), Presentity).
+
+ft(sipit) ->
+    URI = sipurl:parse("sip:line225@132.177.126.87:5074"),
+    From = undefined,
+    [To] = contact:parse(["<sip:ft@example.org>"]),
+
+    Presenter = {user, "sharedline"},
+    Interval = 600,
+    Accept = ["application/dialog-info+xml"],
+    Contact = "<sip:shared@eventserver.yxa.sipit.net:5010>",
+    ExtraHeaders = [{"Contact", [Contact]}],
+
+    [Dst | _] = sipdst:url_to_dstlist(URI, 500, URI),
+
+    start(dialog_package, "dialog", Presenter, URI, From, To, Dst, Interval, Accept,
+	  ExtraHeaders, ";sla", "test logtag", self());
 
 ft(hemma) ->
     URI = sipurl:parse("sip:ft@192.168.123.15:5062;transport=udp"),
@@ -280,15 +360,21 @@ init([State1, From, To, Dst]) ->
     BranchBase = siprequest:generate_branch(),
     Branch = lists:concat([BranchBase, "-UAC"]),
 
-    Contact = generate_contact_str(),
+    {Contact, ContactL} =
+	case lists:keysearch("Contact", 1, State1#state.extra_headers) of
+	    {value, {"Contact", [Contact1]}} -> {Contact1, []};
+	    false ->
+		Contact1 = generate_contact_str(),
+		{Contact1, [{"Contact", [Contact1]}]}
+	end,
+
     UserAgent = get_useragent_or_server("User-Agent"),
     {ok, MaxForwards} = yxa_config:get_env(default_max_forwards),
     ExtraHeaders1 =
-	[{"Contact", [Contact]},
-	 {"Event",   State1#state.event},
+	[{"Event",   State1#state.event},
 	 {"Accept",  State1#state.my_accept},
 	 {"Max-Forwards", [integer_to_list(MaxForwards)]}
-	] ++ UserAgent ++ State1#state.extra_headers,
+	] ++ ContactL ++ UserAgent ++ State1#state.extra_headers,
 
     State =
 	State1#state{branch_base	= BranchBase,
@@ -400,17 +486,30 @@ handle_cast({received_notify, FromPid, Request, Origin, LogStr, THandler, Ctx}, 
 	   logtag         = LogTag
 	  } = State,
 
-    Ctx1 =
+    Ctx1_1 =
 	case State#state.presenter of
-	    {user, SIPuser} -> Ctx#event_ctx{sipuser = SIPuser};
-	    _ -> Ctx
+	    {user, SIPuser} ->
+		Ctx#event_ctx{sipuser = SIPuser};
+	    _ ->
+		Ctx
 	end,
+    Ctx1 = Ctx1_1#event_ctx{presentity = State#state.presentity},
+
     case PackageM:request(PackageS, Request, Origin, LogStr, LogTag, THandler, Ctx1) of
 	{error, need_auth} ->
-	    logger:log(error, "Active subscriber: Authorization of in-dialog requests not implemented "
-		       "(presentity: ~p), answering '500 Server Internal Error'", [Ctx#event_ctx.sipuser]),
-	    ExtraHeaders = get_useragent_or_server("Server"),
-	    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error", ExtraHeaders);
+	    case eventserver:authenticate_subscriber(Request, LogTag, LogStr) of
+		{true, AuthSIPuser} ->
+		    Ctx2 = Ctx1#event_ctx{sipuser = AuthSIPuser},
+		    PackageM_Res = PackageM:request(PackageS, Request, Origin, LogStr, LogTag, THandler, Ctx2),
+		    logger:log(debug, "Active subscriber: Extra debug: Result of ~p:request/7 was : ~p",
+			       [PackageM, PackageM_Res]);
+		false ->
+		    logger:log(normal, "~s: Active subscriber: ~s -> '403 Forbidden'",
+			       [LogTag, LogStr]),
+		    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
+		drop ->
+		    ok
+	    end;
 	PackageM_Res ->
 	    logger:log(debug, "Active subscriber: Extra debug: Result of ~p:request/7 was : ~p",
 		       [PackageM, PackageM_Res])
@@ -719,6 +818,8 @@ start_generate_request(URI, From, To, ExtraHeaders) when is_record(URI, sipurl),
 
 %%--------------------------------------------------------------------
 %% Function: generate_contact_str()
+%%           generate_contact_str(User)
+%%           User = string(), user part of contact URL produced
 %% Descrip.: Generate a Contact header value for our requests. The
 %%           registration as a dialog controller will get all requests
 %%           on the dialog sent to us, so the user part of the contact
@@ -735,7 +836,9 @@ generate_contact_str() ->
 				 [C | Acc]
 			 end, [], PidStr)
 	     ),
+    generate_contact_str(User).
 
+generate_contact_str(User) ->
     %% Figure out if we have to explicitly set the port number in the URL we create -
     %% we do like when we create Record-Route headers and always set it if it is not
     %% the default port for the protocol used, even though myhostname might resolve

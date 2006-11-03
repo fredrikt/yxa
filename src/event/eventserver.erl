@@ -19,6 +19,9 @@
 	 terminate/1
 	]).
 
+-export([authenticate_subscriber/3
+	]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -143,9 +146,7 @@ request2(#request{method = "OPTIONS"} = Request, _Origin, _LogStr, THandler, Log
 	true ->
 	    AllowMethods = [{"Allow", ?ALLOW_METHODS}],
 	    ExtraHeaders = make_extraheaders(200, AllowMethods),
-	    logger:log(normal, "~s: event server: OPTIONS ~s (to me) -> '200 OK'",
-		       [LogTag, sipurl:print(Request#request.uri)]),
-	    transactionlayer:send_response_handler(THandler, 200, "OK", ExtraHeaders);
+	    siprequest:options_to_proxy(THandler, Request, LogTag, ExtraHeaders);
 	false ->
 	    logger:log(normal, "~s: event server: OPTIONS ~s (not to me) -> '403 Forbidden'",
 		       [LogTag, sipurl:print(Request#request.uri)]),
@@ -275,7 +276,9 @@ event2(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandle
     end;
 
 event2(Request, Origin, LogStr, LogTag, THandler, Module, EventPackage) ->
-    Ctx = #event_ctx{sipuser = undefined},
+    Ctx = #event_ctx{sipuser   = undefined,
+		     dialog_id = sipheader:dialogid(Request#request.header)
+		    },
     case Module:request(EventPackage, Request, Origin, LogStr, LogTag, THandler, Ctx) of
 	{error, need_auth} ->
 	    case authenticate_subscriber(Request, LogTag, LogStr) of

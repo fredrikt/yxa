@@ -48,7 +48,9 @@
 %%--------------------------------------------------------------------
 -export([start/8,
 
-	 send_notify/1
+	 send_notify/1,
+
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -328,8 +330,9 @@ init([Request, LogTag, THandler, State1, Status, Reason, ExtraHeaders, Body]) ->
     logger:log(debug, "~s: Subscription: Answering SUBSCRIBE with ~p (from user: ~p, to: ~p)",
 	       [LogTag, Status, State#state.subscriber, State#state.presentity]),
 
-    ExtraHeaders1 = headers_for_response("SUBSCRIBE", Status, ExtraHeaders, State),
-    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders1, Body),
+    ExtraHeaders2 = [{"Expires", [integer_to_list(ExpSeconds)]} | ExtraHeaders],
+    ExtraHeaders3 = headers_for_response("SUBSCRIBE", Status, ExtraHeaders2, State),
+    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders3, Body),
 
     NewTimerL2 = siptimer:add_timer(1, "NOTIFY after SUBSCRIBE", send_notify, State#state.timerlist),
 
@@ -448,14 +451,11 @@ handle_info({branch_result, FromPid, _Branch, _SipState, Response}, #state{subsc
 	Status >= 200, Status =< 299 ->
 	    %% Get the Expire time the server granted us
 	    Expires = get_subscribe_2xx_expires(Response#response.header, ?DEFAULT_SUBSCRIBE_INTERVAL),
-	    %% Use Expires - 32 seconds (non-INVITE timeout) if Expires is big enough, otherwise Expires * 0.8.
-	    Refresh = lists:max([Expires - 32, Expires * 0.8]) * 1000,
+	    Refresh = get_subscribe_refresh_timeout(Expires),
 
 	    NewTL = siptimer:add_timer(Refresh, "Refresh outgoing SUBSCRIBE", subscribe_refresh, State#state.timerlist),
 	    NewState = State#state{timerlist = NewTL},
 	    {noreply, NewState};
-
-	    ok;
 
 	Status >= 400, Status =< 499 ->
 	    %% turn bidirectional SUBSCRIBE off if we receive a 4xx response
@@ -731,8 +731,9 @@ received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, O
 				end
 			end,
 
-		    ExtraHeaders1 = headers_for_response("SUBSCRIBE", Status, ExtraHeaders, State),
-		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders1, Body),
+		    ExtraHeaders1 = [{"Expires", [integer_to_list(Expires)]} | ExtraHeaders],
+		    ExtraHeaders2 = headers_for_response("SUBSCRIBE", Status, ExtraHeaders1, State),
+		    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders2, Body),
 
 		    SetLastAccept =
 			case keylist:fetch('accept', NewRequest#request.header) of
@@ -801,11 +802,13 @@ received_request(State, THandler, NewRequest, Origin, LogStr) ->
 		   package_string = PackageS,
 		   logtag         = LogTag,
 		   subscriber     = Subscriber,
+		   presentity     = Presentity,
 		   dialog_id      = DialogId
 		  } = State1,
 	    Ctx =
-		#event_ctx{sipuser   = Subscriber,
-			   dialog_id = DialogId
+		#event_ctx{sipuser    = Subscriber,
+			   presentity = Presentity,
+			   dialog_id  = DialogId
 			  },
 	    case PackageM:request(PackageS, NewRequest, Origin, LogStr, LogTag, THandler, Ctx) of
 		{error, need_auth} ->
@@ -1047,6 +1050,9 @@ start_client_transaction(Method, ExtraHeaders, Body, Timeout, State) ->
 %% Returns : Contact = string(), SIP URL inside "<" and ">"
 %%--------------------------------------------------------------------
 generate_contact_str() ->
+    generate_contact_str("sip").
+
+generate_contact_str(Proto) ->
     PidStr = pid_to_list(self()),
     User = lists:reverse(
 	     lists:foldl(fun($<, Acc) -> Acc;
@@ -1055,7 +1061,25 @@ generate_contact_str() ->
 				 [C | Acc]
 			 end, [], PidStr)
 	     ),
-    URL = sipurl:new([{user, User}, {host, siprequest:myhostname()}]),
+    MyPort =
+	case Proto of
+	    "sips" -> sipsocket:get_listenport(tls);
+	    _ ->      sipsocket:get_listenport(udp)
+	end,
+
+    %% Add {port, MyPort} if we are not listening on the standard port for Proto, for interoperability
+    PortL =
+	case sipsocket:default_port(Proto, none) of
+	    MyPort -> [];
+	    _ ->      [{port, MyPort}]
+	end,
+
+    Params = [{proto, Proto},
+	      {user, User},
+	      {host, siprequest:myhostname()}
+	     ] ++ PortL,
+
+    URL = sipurl:new(Params),
     "<" ++ sipurl:print(URL) ++ ">".
 
 %%--------------------------------------------------------------------
@@ -1116,6 +1140,15 @@ headers_for_response("SUBSCRIBE", Status, ExtraHeaders, State) when is_integer(S
     EH2 =
 	case Status >= 200 andalso Status =< 299 of
 	    true ->
+		case lists:keysearch("Expires", 1, EH1) of
+		    {value, _} ->
+			ok;
+		    false ->
+			logger:log(error, "Subscription: 2xx response to SUBSCRIBE MUST contain an Expires header : ~p",
+				  [ExtraHeaders]),
+			error
+		end,
+
 		case lists:keysearch("Contact", 1, EH1) of
 		    {value, _} ->
 			EH1;
@@ -1179,3 +1212,50 @@ get_useragent_or_server(Key) ->
 	{ok, false} ->
 	    []
     end.
+
+%%--------------------------------------------------------------------
+%% Function: get_subscribe_refresh_timeout(Expires)
+%%           Expires = integer()
+%% Descrip.: Figure out what we should use as refresh timer for a
+%%           subscription of ours. We must refresh _before_ the other
+%%           end times out, and the other end might be 32 seconds
+%%           ahead of us if we only received the last 200 OK response
+%%           to SUBSCRIBE resend. We must also re-subscribe at least
+%%           32 seconds before the remote end might terminate the
+%%           subscription in case our (re-)SUBSCRIBE only gets to the
+%%           other side at it's last resend. Hence we try to set up
+%%           a refresh 64 seconds before the expires-time, unless it
+%%           is very low.
+%% Returns : Refresh = integer()
+%%--------------------------------------------------------------------
+get_subscribe_refresh_timeout(Expires) when is_integer(Expires) ->
+    if
+	Expires >= 64 + 60 ->
+	    (Expires - 64) * 1000;
+	true ->
+	    round(Expires * 0.8) * 1000
+    end.
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+    %% get_subscribe_refresh_timeout(Expires)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_subscribe_refresh_timeout/1 - 1"),
+    60 * 1000 = get_subscribe_refresh_timeout(124),
+
+    autotest:mark(?LINE, "get_subscribe_refresh_timeout/1 - 2"),
+    (60 + 30) * 1000 = get_subscribe_refresh_timeout(124 + 30),
+
+    autotest:mark(?LINE, "get_subscribe_refresh_timeout/1 - 3"),
+    4 * 1000 = get_subscribe_refresh_timeout(5),
+    
+    ok.

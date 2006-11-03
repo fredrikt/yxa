@@ -18,7 +18,9 @@
 	 is_allowed_subscribe/10,
 	 notify_content/4,
 	 package_parameters/2,
-	 subscription_behaviour/3
+	 subscription_behaviour/3,
+
+	 test/0
 	]).
 
 
@@ -27,6 +29,7 @@
 %%--------------------------------------------------------------------
 -include("siprecords.hrl").
 -include("event.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 
 %%--------------------------------------------------------------------
 %% Records
@@ -35,9 +38,9 @@
 		   version = 1	%% integer(), dialog-info version
 		  }).
 
--record(dialog_data, {xml	%% string(), XML data from a dialog XML element in a NOTIFY we have received
-		     }).
-
+-record(dialog_entry, {id,	%% string()
+		       xml	%% string()
+		      }).
 
 
 %%====================================================================
@@ -75,6 +78,37 @@ request("dialog", _Request, _Origin, _LogStr, LogTag, _THandler, #event_ctx{sipu
     logger:log(debug, "~s: dialog event package: Requesting authorization (only local users allowed)",
 	       [LogTag]),
     {error, need_auth};
+
+request("dialog", #request{method = "NOTIFY"} = Request, _Origin, _LogStr, LogTag, THandler, Ctx) ->
+    %% non-empty SIP user
+
+    #event_ctx{sipuser    = User,
+	       presentity = Presentity
+	      } = Ctx,
+
+    logger:log(normal, "~s: dialog event package: Processing NOTIFY ~s ({user, ~p}, presentity : ~p)",
+	       [LogTag, sipurl:print(Request#request.uri), User, Presentity]),
+
+    XML = binary_to_list(Request#request.body),
+
+    UseExpires = util:timestamp() + 1000,	%% XXX FIX THIS, USES STATIC EXPIRATION TIME
+    Flags = [],
+
+    {ok, _Version, _Entity, Dialogs} = parse_xml(XML),
+
+    F =
+	fun(DE) when is_record(DE, dialog_entry) ->
+		ETag = DE#dialog_entry.id,
+		%% XXX DO THIS IN ONE TRANSACTION TO NOT GET TWO NOTIFYS SENT
+		{atomic, ok}, database_eventdata:delete_using_presentity_etag(Presentity, ETag),
+		{atomic, ok} = database_eventdata:insert("dialog", Presentity, ETag, UseExpires, Flags, DE)
+	end,
+
+    [F(E) || E <- Dialogs], 
+		
+    transactionlayer:send_response_handler(THandler, 200, "Ok"),
+
+    ok;
 
 request("dialog", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
     logger:log(normal, "~s: dialog event package: ~s -> '501 Not Implemented'",
@@ -188,6 +222,9 @@ is_allowed_subscribe2(Request, SubState, Status, Reason, ExtraHeaders, PkgState)
 %%           Reason       = string() | atom()
 %%           NewPkgState  = my_state record()
 %%--------------------------------------------------------------------
+notify_content("dialog", {address, "sip:shared@eventserver.yxa.sipit.net:5010"}, LastAccept, PkgState) when is_record(PkgState, my_state) ->
+    notify_content("dialog", {address, "sip:shared@yxa.sipit.net"}, LastAccept, PkgState);
+
 notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgState, my_state) ->
     #my_state{entity  = Entity,
 	      version = Version
@@ -195,8 +232,8 @@ notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgSt
 
     DialogsXML =
 	case database_eventdata:fetch_using_presentity(Presentity) of
-	    {ok, Dialogs} ->
-		[(E#eventdata_dbe.data)#dialog_data.xml || E <- Dialogs];
+	    {ok, Dialogs} when is_list(Dialogs) ->
+		[(E#eventdata_dbe.data)#dialog_entry.xml || E <- Dialogs];
 	    nomatch ->
 		""
 	end,
@@ -211,6 +248,7 @@ notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgSt
 
     ExtraHeaders = [{"Content-Type", ["application/dialog-info+xml"]}],
 
+    %% XXX PERHAPS WE SHOULD ONLY INCREMENT VERSION ON CHANGED OUTPUT, CHECK SPEC
     NewPkgState = PkgState#my_state{version = Version + 1},
     {ok, XML, ExtraHeaders, NewPkgState}.
 
@@ -303,3 +341,183 @@ get_accept(Header) ->
 	    [http_util:to_lower(Elem) || Elem <- AcceptV]
     end.
 
+
+parse_xml(XML) ->
+    try xmerl_scan:string(XML, [{namespace_conformant, true}]) of
+	{XMLtag, []} ->
+	    try parse_dialog_xml(XMLtag) of
+		{ok, Version, Entity, Dialogs} ->
+		    {ok, Version, Entity, Dialogs}
+	    catch
+		error : Y ->
+		    ST = erlang:get_stacktrace(),
+		    logger:log(error, "dialog event package: Could not parse dialog-xml data,~ncaught error : "
+			       "~p ~p", [Y, ST]),
+		    {error, bad_xml};
+		X : Y ->
+		    logger:log(error, "dialog event package: Could not parse dialog-xml data, caught ~p ~p", [X, Y]),
+		    {error, bad_xml}
+	    end;
+	Unknown ->
+	    logger:log(error, "dialog event package: Could not parse dialog XML document : ~p", [Unknown]),
+	    {error, bad_xml}
+    catch
+	X: Y ->
+	    logger:log(error, "dialog event package: Could not parse dialog XML document, caught ~p ~p",
+		       [X, Y]),
+	    {error, bad_xml}
+    end.
+
+%% Returns : {ok, PIDF_Doc} | {error, Reason}
+%%           PIDF_Doc = pidf_doc record()
+%%           Reason   = atom()
+parse_dialog_xml(#xmlElement{name = 'dialog-info'} = XML) ->
+    parse_dialog_xml2(XML);
+parse_dialog_xml(#xmlElement{expanded_name = {_URI, 'dialog-info'}} = XML) ->
+    parse_dialog_xml2(XML).
+
+parse_dialog_xml2(XML) ->
+    [Entity] = get_xml_attributes(entity, XML#xmlElement.attributes),
+    [Version] = get_xml_attributes(version, XML#xmlElement.attributes),
+
+    Dialogs = get_xml_elements(dialog, XML#xmlElement.content),
+
+    PidStr = pid_to_list(self()),
+    IdPrefix = lists:reverse(
+		 lists:foldl(fun($<, Acc) -> Acc;
+				($>, Acc) -> Acc;
+				(C, Acc) ->
+				     [C | Acc]
+			     end, [], PidStr)
+		),
+    
+    
+    F = fun(E) when is_record(E, xmlElement) ->
+		Id = get_xml_attributes(id, E#xmlElement.attributes),
+		NewId = lists:flatten( lists:concat([IdPrefix, "-", Id]) ),
+
+		%% replace dialog id value in xml record
+		NewAttrs = [case A#xmlAttribute.name of
+				id ->
+				    A#xmlAttribute{value = NewId};
+				_  ->
+				    A
+			    end || A <- E#xmlElement.attributes],
+		E2 = E#xmlElement{attributes = NewAttrs},
+
+		XML_Str = xmerl:export_simple_content([E2], presence_xmerl_xml),
+
+		#dialog_entry{id  = NewId,
+			      xml = lists:flatten(XML_Str)
+			     }
+	end,
+
+    XMLDialogs = [F(E) || E <- Dialogs],
+
+    {ok, Version, Entity, XMLDialogs}.
+
+
+%%--------------------------------------------------------------------
+%% Function: get_xml_attributes(Name, In)
+%%           Name = atom()
+%%           In   = list() of term()
+%% Descrip.: Look for xmlAttribute record() with name matching Name.
+%%           Extract the value elements of the xmlAttribute records
+%%           matching.
+%% Returns : Values = list() of string()
+%%--------------------------------------------------------------------
+get_xml_attributes(Name, In) when is_atom(Name), is_list(In) ->
+    get_xml_attributes2(Name, In, []).
+
+get_xml_attributes2(Name, [#xmlAttribute{name = Name} = H | T], Res) ->
+    This = H#xmlAttribute.value,
+    get_xml_attributes2(Name, T, [This | Res]);
+get_xml_attributes2(Name, [_H | T], Res) ->
+    get_xml_attributes2(Name, T, Res);
+get_xml_attributes2(_Name, [], Res) ->
+    lists:reverse(Res).
+
+
+%%--------------------------------------------------------------------
+%% Function: get_xml_elements(Name, In)
+%%           Name = atom()
+%%           In   = list() of term()
+%% Descrip.: Look for xmlElement record() with name matching Name.
+%%           Return all matching xmlElement records.
+%% Returns : Elements = list() of xmlElement record()
+%%--------------------------------------------------------------------
+get_xml_elements(Name, In) when is_atom(Name), is_list(In) ->
+    get_xml_elements2(Name, In, []).
+
+get_xml_elements2(Name, [#xmlElement{name = Name} = H | T], Res) ->
+    get_xml_elements2(Name, T, [H | Res]);
+get_xml_elements2(Name, [#xmlElement{expanded_name = {_URI, Name}} = H | T], Res) ->
+    get_xml_elements2(Name, T, [H | Res]);
+get_xml_elements2(Name, [_H | T], Res) ->
+    get_xml_elements2(Name, T, Res);
+get_xml_elements2(_Name, [], Res) ->
+    lists:reverse(Res).
+
+
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+
+    %% parse_xml/1
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "parse_xml/1 - 1"),
+    ParseXML1 = 
+	"<?xml version=\"1.0\"?>"
+	"<dialog-info xmlns=\"urn:ietf:params:xml:ns:dialog-info\""
+	"  version=\"0\""
+	"  state=\"full\""
+	"  entity=\"sip:dialog1@yxa.sipit.net\">"
+	"</dialog-info>",
+
+    {ok, "0", "sip:dialog1@yxa.sipit.net", []} = parse_xml(ParseXML1),
+
+
+    autotest:mark(?LINE, "parse_xml/1 - 2"),
+    ParseXML2 =
+	"<?xml version=\"1.0\"?>"
+	"<dialog-info xmlns=\"urn:ietf:params:xml:ns:dialog-info\" version=\"0\" state=\"full\" "
+	"  entity=\"sip:dialog1@yxa.sipit.net\">"
+	"  <dialog id=\"(null)\""
+	"          call-id=\"M2RhNTcxZTFkYjMwZmE1ZjMwY2E4MmU2OGI2NzdmYzE.\""
+	"          local-tag=\"22175\""
+	"          remote-tag=\"d5353f75\""
+	"          direction=\"recipient\">"
+	"    <state>terminated</state>"
+	"    <local>"
+	"      <identity>sip:dialog1@yxa.sipit.net</identity>"
+	"      <target uri=\"sip:line0@132.177.126.87:5065\">"
+	"        <param pname=\"x-line-id\" pvalue=\"0\" />"
+	"      </target>"
+	"    </local>"
+	"    <remote>"
+	"      <identity>sip:ft@yxa.sipit.net</identity>"
+	"      <target uri=\"sip:ft@132.177.127.231:1237;transport=TCP\">"
+	"      </target>"
+	"    </remote>"
+	"  </dialog>"
+	"</dialog-info>",
+
+    ParseXML2_Dialogs =
+	["<dialog id=\"(null)\" call-id=\"M2RhNTcxZTFkYjMwZmE1ZjMwY2E4MmU2OGI2NzdmYzE.\" local-tag=\"22175\""
+	 " remote-tag=\"d5353f75\" direction=\"recipient\">    <state>terminated</state>    <local>      <id"
+	 "entity>sip:dialog1@yxa.sipit.net</identity>      <target uri=\"sip:line0@132.177.126.87:5065\">   "
+	 "     <param pname=\"x-line-id\" pvalue=\"0\"/>      </target>    </local>    <remote>      <identi"
+	 "ty>sip:ft@yxa.sipit.net</identity>      <target uri=\"sip:ft@132.177.127.231:1237;transport=TCP\">"
+	 "      </target>    </remote>  </dialog>"],
+    {ok, "0", "sip:dialog1@yxa.sipit.net", ParseXML2_Dialogs} = parse_xml(ParseXML2),
+    
+    ok.
