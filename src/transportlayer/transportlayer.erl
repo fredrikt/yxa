@@ -255,7 +255,11 @@ stateless_proxy_request2(LogTag, Request, [Dst | Rest]) when is_record(Dst, sipd
 		       [LogTag, Request#request.method, sipurl:print(Request#request.uri),
 			Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port, Reason]),
 	    stateless_proxy_request2(LogTag, Request, Rest)
-    end.
+    end;
+stateless_proxy_request2(LogTag, Request, []) ->
+    logger:log(normal, "~s: FAILED proxying stateless request '~s ~s' : All destinations unreachable",
+	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
+    {error, "No reachable destination"}.
 
 %%--------------------------------------------------------------------
 %% Function: send_response(Socket, Response)
