@@ -46,7 +46,7 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start/8,
+-export([start/5,
 
 	 send_notify/1,
 
@@ -121,13 +121,9 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start(Request, Origin, LogStr, LogTag, THandler,
-%%                 PackageM, PackageS, Subscriber)
+%% Function: start(Request, YxaCtx, PackageM, PackageS, Subscriber)
 %%           Request    = request record()
-%%           Origin     = siporigin record()
-%%           LogStr     = string(), describes the SUBSCRIBE request
-%%           LogTag     = string(), log prefix
-%%           THandler   = term(), server transaction handler
+%%           YxaCtx     = yxa_ctx record()
 %%           PackageM   = atom(), event package module name
 %%           PackageS   = string(), event package
 %%           Subscriber = undefined | string(), subscribing user
@@ -139,7 +135,7 @@
 %%           ignore
 %%           Reason = need_auth | unacceptable
 %%--------------------------------------------------------------------
-start(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandler, PackageM, PackageS, Subscriber) ->
+start(#request{method = "SUBSCRIBE"} = Request, YxaCtx, PackageM, PackageS, Subscriber) ->
     SubscribeNum = 1,
 
     URIstr = sipurl:print(Request#request.uri),
@@ -151,14 +147,14 @@ start(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandler
 		{users, Users}
 	end,
 
-    case PackageM:is_allowed_subscribe(PackageS, SubscribeNum, Request, Origin, LogStr, LogTag, THandler,
+    case PackageM:is_allowed_subscribe(PackageS, SubscribeNum, Request, YxaCtx,
 				       Subscriber, Presentity, undefined) of
 	{ok, SubscrState, Status, Reason, ExtraHeaders, Body, PkgState} when SubscrState == active orelse
 									     SubscrState == pending,
 									     is_integer(Status), is_list(Reason),
 									     is_list(ExtraHeaders),
 									     is_binary(Body) orelse is_list(Body) ->
-	    case check_subscribe_expires(Request, THandler) of
+	    case check_subscribe_expires(Request, YxaCtx#yxa_ctx.thandler) of
 		{ok, Expires} ->
 		    Now = util:timestamp(),
 
@@ -205,7 +201,7 @@ start(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandler
 				    bidirectional_sub   = Bidirectional,
 				    subscribe_interval	= SubscribeInterval
 				   },
-		    gen_server:start(?MODULE, [Request, LogTag, THandler, State1, Status, Reason,
+		    gen_server:start(?MODULE, [Request, YxaCtx, State1, Status, Reason,
 					       ExtraHeaders, Body],
 				     []);
 		_ ->
@@ -217,6 +213,7 @@ start(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandler
 
 	{siperror, Status, Reason, ExtraHeaders} ->
 	    Server = get_useragent_or_server("Server"),
+	    THandler = YxaCtx#yxa_ctx.thandler,
 	    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders ++ Server),
 	    ignore
     end.
@@ -238,11 +235,10 @@ send_notify(Pid) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, LogTag, THandler, State1, Status, Reason,
+%% Function: init([Request, YxaCtx, State1, Status, Reason,
 %%                 ExtraHeaders, Body])
 %%           Request      = request record(), SUBSCRIBE request
-%%           LogTag       = string(), log prefix
-%%           THandler     = term(), server transaction handler
+%%           YxaCtx       = yxa_ctx record()
 %%           State1       = state record(), state in
 %%           Status       = integer() (200 or 202), SIP status code
 %%                          to send in response to this SUBSCRIBE
@@ -256,7 +252,10 @@ send_notify(Pid) ->
 %%           ignore         |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, LogTag, THandler, State1, Status, Reason, ExtraHeaders, Body]) ->
+init([Request, YxaCtx, State1, Status, Reason, ExtraHeaders, Body]) ->
+    #yxa_ctx{app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
 
     BranchBase = siprequest:generate_branch(),
     BranchSeq = 1,
@@ -307,7 +306,7 @@ init([Request, LogTag, THandler, State1, Status, Reason, ExtraHeaders, Body]) ->
 	end,
 
     State =
-	State1#state{logtag		= LogTag,
+	State1#state{logtag		= YxaCtx#yxa_ctx.app_logtag,
 		     branch_base	= BranchBase,
 		     branch_seq		= BranchSeq,
 		     my_contact		= Contact,
@@ -562,20 +561,20 @@ handle_info({servertransaction_terminating, _FromPid}, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({new_request, FromPid, Ref, NewRequest,
-%%                       Origin, LogStr}, ...)
+%%                       YxaCtx}, ...)
 %%           FromPid    = pid(), transaction layer
 %%           Ref        = ref(), unique reference to ack this message
 %%                               with (signal back to transaction
 %%                               layer)
 %%           NewRequest = request record()
-%%           Origin     = siporigin record(),
-%%           LogStr     = string(), textual description of request
+%%           YxaCtx     = yxa_ctx record()
 %% Descrip.: Handle incoming requests on our dialog.
 %% Returns : {noreply, State, Timeout}      |
 %%           {stop, normal, State}
 %%--------------------------------------------------------------------
-handle_info({new_request, FromPid, Ref, NewRequest, Origin, LogStr}, State) when is_record(NewRequest, request) ->
-    THandler = transactionlayer:get_handler_for_request(NewRequest),
+handle_info({new_request, FromPid, Ref, NewRequest, YxaCtx}, State) when is_record(NewRequest, request),
+									 is_record(YxaCtx, yxa_ctx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
     transactionlayer:adopt_server_transaction_handler(THandler),
     FromPid ! {ok, self(), Ref},
 
@@ -586,7 +585,7 @@ handle_info({new_request, FromPid, Ref, NewRequest, Origin, LogStr}, State) when
 		transactionlayer:send_response_handler(THandler, 500, "CSeq not higher than last requests", EH),
 		{noreply, State};
 	    {ok, NewDialog} ->
-		received_request(State#state{dialog = NewDialog}, THandler, NewRequest, Origin, LogStr)
+		received_request(State#state{dialog = NewDialog}, THandler, NewRequest, YxaCtx)
 	end,
 
     case is_record(NewState_Res, state) of
@@ -660,13 +659,11 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: received_request(State, THandler, NewRequest, Origin,
-%%                              LogStr)
+%% Function: received_request(State, THandler, NewRequest, YxaCtx)
 %%           State      = state record()
 %%           THandler   = term(), server transaction handle
 %%           NewRequest = request record()
-%%           Origin     = siporigin record(),
-%%           LogStr     = string(), textual description of request
+%%           YxaCtx     = yxa_ctx record()
 %% Descrip.: We have received a request on our dialog.
 %%           Figure out what we should respond to it with and tell the
 %%           THandler to send that response. If it is a SUBSCRIBE, we
@@ -680,7 +677,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %% SUBSCRIBE
 %%
-received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, Origin, LogStr) ->
+received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, YxaCtx) ->
     case check_subscribe_expires(NewRequest, THandler) of
 	{ok, Expires} ->
 	    Now = util:timestamp(),
@@ -697,8 +694,8 @@ received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, O
 	    logger:log(debug, "Subscription: Checking with event package ~p module ~p if "
 		       "~p is allowed to re-subscribe to presentity ~p",
 		       [PackageS, PackageM, Subscriber, Presentity]),
-	    case PackageM:is_allowed_subscribe(PackageS, SubNum + 1, NewRequest, Origin,
-					       LogStr, LogTag, THandler, Subscriber, Presentity,
+	    case PackageM:is_allowed_subscribe(PackageS, SubNum + 1, NewRequest, YxaCtx,
+					       LogTag, THandler, Subscriber, Presentity,
 					       PkgState) of
 		{ok, SubState1, Status, Reason, ExtraHeaders, Body, NewPkgState}
 		when SubState1 == active orelse SubState1 == pending orelse SubState1 == terminated,
@@ -783,7 +780,7 @@ received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, O
 %%
 %% Anything but SUBSCRIBE
 %%
-received_request(State, THandler, NewRequest, Origin, LogStr) ->
+received_request(State, THandler, NewRequest, YxaCtx) ->
     %% Count NOTIFYs we receive when bidirectional
     State1 =
 	case State#state.bidirectional_sub == started andalso
@@ -810,14 +807,18 @@ received_request(State, THandler, NewRequest, Origin, LogStr) ->
 			   presentity = Presentity,
 			   dialog_id  = DialogId
 			  },
-	    case PackageM:request(PackageS, NewRequest, Origin, LogStr, LogTag, THandler, Ctx) of
+	    YxaCtx1 =
+		YxaCtx#yxa_ctx{app_logtag   = LogTag,
+			       thandler = THandler
+			      },
+	    case PackageM:request(PackageS, NewRequest, YxaCtx1, Ctx) of
 		{error, need_auth} ->
 		    logger:log(error, "Subscription: Authorization of in-dialog requests not implemented "
 			       "(subscriber: ~p), answering '500 Server Internal Error'", [Subscriber]),
 		    ExtraHeaders = headers_for_response("SUBSCRIBE", 500, [], State),
 		    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error", ExtraHeaders);
 		PackageM_Res ->
-		    logger:log(debug, "Subscription: Extra debug: Result of ~p:request/7 was : ~p",
+		    logger:log(debug, "Subscription: Extra debug: Result of ~p:request/4 was : ~p",
 			       [PackageM, PackageM_Res])
 	    end,
 	    State1;

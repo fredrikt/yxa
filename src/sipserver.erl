@@ -435,9 +435,9 @@ internal_error(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
 process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
     SipSocket = Origin#siporigin.sipsocket,
     case parse_packet(Packet, Origin) of
-	{Request, LogStr} when is_record(Request, request) ->
+	{ok, Request, YxaCtx} when is_record(Request, request) ->
 	    %% Ok, the parsing and checking of the request is done now
-	    try	my_apply(Dst, Request, Origin, LogStr) of
+	    try	my_apply(Dst, Request, YxaCtx) of
 		_ -> true
 	    catch
 		error:
@@ -456,30 +456,31 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 		    erlang:exit(E);
 		throw:
 		  {siperror, Status, Reason} ->
-		    logger:log(error, "FAILED processing request: ~s -> ~p ~s", [LogStr, Status, Reason]),
+		    logger:log(error, "FAILED processing request: ~s -> ~p ~s",
+			       [YxaCtx#yxa_ctx.logstr, Status, Reason]),
 		    internal_error(Request, SipSocket, Status, Reason),
 		    %% throw a new error, but not the same since we have handled the SIP error sending
 		    throw({error, application_failed_processing_request});
 		  {siperror, Status, Reason, ExtraHeaders} ->
-		    logger:log(error, "FAILED processing request: ~s -> ~p ~s", [LogStr, Status, Reason]),
+		    logger:log(error, "FAILED processing request: ~s -> ~p ~s",
+			       [YxaCtx#yxa_ctx.logstr, Status, Reason]),
 		    internal_error(Request, SipSocket, Status, Reason, ExtraHeaders),
 		    %% throw a new error, but not the same since we have handled the SIP error sending
 		    throw({error, application_failed_processing_request})
 	    end;
-	{Response, LogStr} when is_record(Response, response) ->
-	    my_apply(Dst, Response, Origin, LogStr);
+	{ok, Response, YxaCtx} when is_record(Response, response) ->
+	    my_apply(Dst, Response, YxaCtx);
 	Unspecified ->
 	    Unspecified
     end.
 
 %%--------------------------------------------------------------------
-%% Function: my_apply(Dst, Request, Origin, LogStr)
+%% Function: my_apply(Dst, Request, YxaCtx)
 %%           Dst = transactionlayer | Module, Module is the name of a
-%%                 module that exports a request/3 and a response/3
+%%                 module that exports a request/2 and a response/2
 %%                 function
 %%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string(), textual description of request/resp.
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: If Dst is transactionlayer, gen_server call the
 %%           transaction layer and let it decide our next action. If
 %%           Dst is the name of a module, apply() that modules
@@ -493,15 +494,15 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 %%           ApplyResult = result of applications request/3 or
 %%                         response/3 function.
 %%--------------------------------------------------------------------
-my_apply(transactionlayer, R, Origin, LogStr) when is_record(R, request); is_record(R, response),
-						    is_record(Origin, siporigin) ->
+my_apply(transactionlayer, R, YxaCtx) when is_record(R, request) orelse is_record(R, response),
+					   is_record(YxaCtx, yxa_ctx) ->
     %% Dst is the transaction layer.
-    case transactionlayer:from_transportlayer(R, Origin, LogStr) of
+    case transactionlayer:from_transportlayer(R, YxaCtx) of
 	continue ->
 	    %% terminate silently, the transaction layer found an existing transaction
 	    %% for this request/response
 	    ignore;
-	{pass_to_core, AppModule} ->
+	{pass_to_core, AppModule, NewYxaCtx1} ->
 	    %% Dst (the transaction layer presumably) wants us to apply a function with this
 	    %% request/response as argument. This is common when the transaction layer has started
 	    %% a new server transaction for this request and wants it passed to the core (or TU)
@@ -509,26 +510,26 @@ my_apply(transactionlayer, R, Origin, LogStr) when is_record(R, request); is_rec
 	    Action =
 		if
 		    is_record(R, request) ->
-			local:new_request(AppModule, R, Origin, LogStr);
+			local:new_request(AppModule, R, NewYxaCtx1);
 		    is_record(R, response) ->
-			local:new_response(AppModule, R, Origin, LogStr)
+			local:new_response(AppModule, R, NewYxaCtx1)
 		end,
 	    case Action of
 		undefined ->
-		    my_apply(AppModule, R, Origin, LogStr);
-		{modified, NewAppModule, NewR, NewOrigin, NewLogStr} ->
+		    my_apply(AppModule, R, NewYxaCtx1);
+		{modified, NewAppModule, NewR, NewYxaCtx} ->
 		    logger:log(debug, "Sipserver: Passing possibly modified request/response to application"),
-		    my_apply(NewAppModule, NewR, NewOrigin, NewLogStr);
+		    my_apply(NewAppModule, NewR, NewYxaCtx);
 		ignore ->
 		    ignore
 	    end
     end;
-my_apply(AppModule, Request, Origin, LogStr) when is_atom(AppModule), is_record(Request, request),
-						  is_record(Origin, siporigin) ->
-    AppModule:request(Request, Origin, LogStr);
-my_apply(AppModule, Response, Origin, LogStr) when is_atom(AppModule), is_record(Response, response),
-						   is_record(Origin, siporigin) ->
-    AppModule:response(Response, Origin, LogStr).
+my_apply(AppModule, Request, YxaCtx) when is_atom(AppModule), is_record(Request, request),
+					  is_record(YxaCtx, yxa_ctx) ->
+    AppModule:request(Request, YxaCtx);
+my_apply(AppModule, Response, YxaCtx) when is_atom(AppModule), is_record(Response, response),
+					   is_record(YxaCtx, yxa_ctx) ->
+    AppModule:response(Response, YxaCtx).
 
 %%--------------------------------------------------------------------
 %% Function: parse_packet(Packet, Origin)
@@ -539,11 +540,11 @@ my_apply(AppModule, Response, Origin, LogStr) when is_atom(AppModule), is_record
 %%           request/response that has been checked for loops, correct
 %%           top-Via etc. together with a logging string that descr-
 %%           ibes this request/response.
-%% Returns : {Msg, LogStr}           |
+%% Returns : {ok, R, YxaCtx}       |
 %%           void(), unspecified
-%%           Msg = request record()  |
-%%                 response record()
-%%           LogStr = string(), description of request/response
+%%           R = request record()  |
+%%               response record()
+%%           YxaCtx = yxa_ctx record()
 %%--------------------------------------------------------------------
 parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
     Socket = Origin#siporigin.sipsocket,
@@ -555,8 +556,9 @@ parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
 	    %% From here on, we can generate responses to the UAC on error since we have parsed
 	    %% enough of the packet to have a SIP request or response with headers.
 	    try process_parsed_packet(Parsed, Origin) of
-		{R, LogStr} when is_record(R, request); is_record(R, response), is_list(LogStr) ->
-		    {R, LogStr};
+		{ok, R, YxaCtx} when is_record(R, request) orelse is_record(R, response),
+				     is_record(YxaCtx, yxa_ctx) ->
+		    {ok, R, YxaCtx};
 		invalid ->
 		    invalid
 	    catch
@@ -677,11 +679,11 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
 %%           concluded was parseable. For example, do RFC3581 handling
 %%           of rport parameter on top via, check for loops, check if
 %%           we received a request from a strict router etc.
-%% Returns : {NewRequest, LogStr}
+%% Returns : {ok, NewRequest, YxaCtx}
 %%--------------------------------------------------------------------
 process_parsed_packet(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     NewHeader2 = fix_topvia_received_rport(Request#request.header, Origin),
-    check_packet(Request#request{header=NewHeader2}, Origin),
+    check_packet(Request#request{header = NewHeader2}, Origin),
     {NewURI1, NewHeader3} =
 	case received_from_strict_router(Request#request.uri, NewHeader2) of
 	    true ->
@@ -706,9 +708,14 @@ process_parsed_packet(Request, Origin) when is_record(Request, request), is_reco
 	end,
     NewURI = remove_maddr_matching_me(NewURI1, Origin),
     NewHeader4 = remove_route_matching_me(NewHeader3),
-    NewRequest = Request#request{uri=NewURI, header=NewHeader4},
+    NewRequest = Request#request{uri    = NewURI,
+				 header = NewHeader4
+				},
     LogStr = make_logstr(NewRequest, Origin),
-    {NewRequest, LogStr};
+    YxaCtx = #yxa_ctx{origin = Origin,
+		      logstr = LogStr
+		     },
+    {ok, NewRequest, YxaCtx};
 
 %%--------------------------------------------------------------------
 %% Function: process_parsed_packet(Response, Origin)
@@ -729,7 +736,10 @@ process_parsed_packet(Response, Origin) when is_record(Response, response), is_r
     case check_response_via(Origin, TopVia) of
 	ok ->
 	    LogStr = make_logstr(Response, Origin),
-	    {Response, LogStr};
+	    YxaCtx = #yxa_ctx{origin = Origin,
+			      logstr = LogStr
+			     },
+	    {ok, Response, YxaCtx};
 	error ->
 	    %% Silently drop packet
 	    invalid
@@ -1391,7 +1401,7 @@ test() ->
 
     autotest:mark(?LINE, "process_parsed_packet/2 response - 1"),
     %% straight forward
-    {#response{}=_Response, _LogStr} = process_parsed_packet(CheckResponse1, #siporigin{proto=tcp}),
+    {ok, #response{}, #yxa_ctx{}} = process_parsed_packet(CheckResponse1, #siporigin{proto=tcp}),
 
     autotest:mark(?LINE, "process_parsed_packet/2 response - 2"),
     CRHeader2 = keylist:delete("Via", CRHeader1),
@@ -1876,7 +1886,7 @@ test() ->
 
     autotest:mark(?LINE, "process_parsed_packet/2 - 2.1"),
     %% test that received= and rport= is set correctly in top Via
-    {PPPRequest1_res, LogStrResult1} = process_parsed_packet(PPPRequest1, Origin2Str1),
+    {ok, PPPRequest1_res, #yxa_ctx{logstr = LogStrResult1}} = process_parsed_packet(PPPRequest1, Origin2Str1),
     autotest:mark(?LINE, "process_parsed_packet/2 - 2.2"),
     %% check result
     ["SIP/2.0/TLS example.org:1234;received=192.0.2.123;rport=10", "SIP/2.0/TCP foo"] =
@@ -1899,7 +1909,7 @@ test() ->
 	"from=<sip:test@it.su.se>, to=<sip:test@it.su.se>]",
     PPPH4 = keylist:append({"Route", ["<" ++ PPPH4_urlstr ++ ">"]}, PPPH1),
     PPPRequest4 = PPPRequest1#request{uri=PPPURL4, header=PPPH4},
-    {PPPRequest4_res, PPPH4_logstr} = process_parsed_packet(PPPRequest4, Origin2Str1),
+    {ok, PPPRequest4_res, #yxa_ctx{logstr = PPPH4_logstr}} = process_parsed_packet(PPPRequest4, Origin2Str1),
     autotest:mark(?LINE, "process_parsed_packet/2 - 4.2"),
     %% check resulting URI
     PPPH4_url = PPPRequest4_res#request.uri,
@@ -1911,7 +1921,7 @@ test() ->
     %% now check that Route is empty if it contained only the real Request-URI
     PPPH5 = keylist:set("Route", ["<" ++ PPPH4_urlstr ++ ">"], PPPH1),
     PPPRequest5 = PPPRequest1#request{uri=PPPURL4, header=PPPH5},
-    {PPPRequest5_res, PPPH4_logstr} = process_parsed_packet(PPPRequest5, Origin2Str1),
+    {ok, PPPRequest5_res, #yxa_ctx{logstr = PPPH4_logstr}} = process_parsed_packet(PPPRequest5, Origin2Str1),
     %% check resulting URI
     PPPH4_url = PPPRequest5_res#request.uri,
     %% check resulting Route-header (should be empty)
@@ -1923,7 +1933,7 @@ test() ->
     %% includes remove_route_matching_me()
     PPPH6 = keylist:set("Route", ["<" ++ PPPURL4_str ++ ">"], PPPH1),
     PPPRequest6 = PPPRequest1#request{uri=PPPH4_url, header=PPPH6},
-    {PPPRequest6_res, PPPH4_logstr} = process_parsed_packet(PPPRequest6, Origin2Str1),
+    {ok, PPPRequest6_res, #yxa_ctx{logstr = PPPH4_logstr}} = process_parsed_packet(PPPRequest6, Origin2Str1),
     %% check resulting URI, should be the same as input URI
     %% the compiler (R9C-0..R10B-2) barks at this :
     %%     PPPRequest6#request.uri = PPPRequest6_res#request.uri,

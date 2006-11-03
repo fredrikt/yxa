@@ -15,8 +15,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
-	 request/3,
-	 response/3,
+	 request/2,
+	 response/2,
 	 terminate/1,
 
 	 test/0
@@ -69,18 +69,18 @@ init() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, Origin, LogStr)
+%% Function: request(Request, YxaCtx)
 %%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string()
-%% Descrip.: YXA applications must export an request/3 function.
+%%           YxaCtx  = yxa_ctx record()
+%% Descrip.: YXA applications must export a request/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 
 %%
 %% REGISTER
 %%
-request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "REGISTER"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    LogStr = YxaCtx#yxa_ctx.logstr,
     logger:log(normal, "Appserver: ~s Method not applicable here -> 403 Forbidden", [LogStr]),
     transactionlayer:send_response_request(Request, 403, "Forbidden"),
     ok;
@@ -88,33 +88,35 @@ request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(
 %%
 %% ACK
 %%
-request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    LogStr = YxaCtx#yxa_ctx.logstr,
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding ACK statelessly (to unknown SIP user)",
 		       [LogStr]),
-	    transportlayer:stateless_proxy_ack("appserver", Request, LogStr);
+	    transportlayer:stateless_proxy_ack("appserver", Request, YxaCtx);
 	SIPuser ->
 	    logger:log(normal, "Appserver: ~s -> Forwarding ACK statelessly (to SIP user ~p)",
 		       [LogStr, SIPuser]),
-	    transportlayer:stateless_proxy_ack("appserver", Request, LogStr)
+	    transportlayer:stateless_proxy_ack("appserver", Request, YxaCtx)
     end,
     ok;
 
 %%
 %% CANCEL
 %%
-request(#request{method = "CANCEL"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "CANCEL"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    LogStr = YxaCtx#yxa_ctx.logstr,
     logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, "
 	       "answer 481 Call/Transaction Does Not Exist", [LogStr]),
     transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist");
 
 %%
 %% Anything but REGISTER, ACK and CANCEL
-request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
+request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case local:is_request_to_this_proxy(Request) of
 	true ->
-	    request_to_me(Request, LogStr);
+	    request_to_me(Request, YxaCtx);
 	false ->
 	    %% Ok, request was not for this proxy itself - now just make sure we are supposed to fork it.
 	    {ShouldFork, NoForkReason, PipeDst} =
@@ -143,11 +145,13 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 		end,
 	    case ShouldFork of
 		true ->
-		    create_session(Request, Origin, LogStr, true);
+		    create_session(Request, YxaCtx, true);
 		false ->
 		    %% XXX check credentials here - our appserver is currently an open relay!
+		    #yxa_ctx{thandler = THandler,
+			     logstr   = LogStr
+			    } = YxaCtx,
 		    logger:log(normal, "Appserver: ~s -> Not forking, just forwarding (~s)", [LogStr, NoForkReason]),
-		    THandler = transactionlayer:get_handler_for_request(Request),
 		    sippipe:start(THandler, none, Request, PipeDst, ?SIPPIPE_TIMEOUT)
 	    end
     end,
@@ -155,19 +159,18 @@ request(Request, Origin, LogStr) when is_record(Request, request), is_record(Ori
 
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, Origin, LogStr)
+%% Function: response(Response, YxaCtx)
 %%           Response = response record()
-%%           Origin   = siporigin record()
-%%           LogStr   = string()
-%% Descrip.: YXA applications must export an response/3 function.
+%%           YxaCtx   = yxa_ctx record()
+%% Descrip.: YXA applications must export a response/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
+response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     %% RFC 3261 16.7 says we MUST act like a stateless proxy when no
     %% transaction can be found
     #response{status = Status, reason = Reason} = Response,
-    logger:log(normal, "incomingproxy: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
-	       [LogStr, Status, Reason]),
+    logger:log(normal, "appserver: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
+	       [YxaCtx#yxa_ctx.logstr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
     ok.
 
@@ -188,28 +191,32 @@ terminate(Mode) when is_atom(Mode) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request_to_me(Request, LogTag)
+%% Function: request_to_me(Request, YxaCtx)
 %%           Request = request record()
-%%           LogTag  = string()
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: Request is meant for this proxy, if it is OPTIONS we
 %%           respond 200 Ok, otherwise we respond 481 Call/
 %%           transaction does not exist.
 %% Returns : Does not matter.
 %%--------------------------------------------------------------------
-request_to_me(#request{method = "OPTIONS"} = Request, LogTag) ->
+request_to_me(#request{method = "OPTIONS"}, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
+    LogTag = transactionlayer:get_branch_from_handler(THandler),
     logger:log(normal, "~s: appserver: OPTIONS to me -> 200 OK", [LogTag]),
     logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
 	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
-    transactionlayer:send_response_request(Request, 200, "OK");
+    transactionlayer:send_response_handler(THandler, 200, "OK");
 
-request_to_me(Request, LogTag) when is_record(Request, request) ->
+request_to_me(_Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
+    LogTag = transactionlayer:get_branch_from_handler(THandler),
     logger:log(normal, "~s: appserver: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
 	       [LogTag]),
-    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist").
+    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 
 %%--------------------------------------------------------------------
-%% Function: create_session(Request, Origin, LogStr, DoCPL)
+%% Function: create_session(Request, YxaCtx, DoCPL)
 %%           Request = request record()
 %%           Origin  = siporigin record()
 %%           LogStr  = string()
@@ -219,12 +226,12 @@ request_to_me(Request, LogTag) when is_record(Request, request) ->
 %%           what actions to perform for the request.
 %% Returns : void() | throw({siperror, ...})
 %%--------------------------------------------------------------------
-create_session(Request, Origin, LogStr, DoCPL) when is_record(Request, request), is_record(Origin, siporigin) ->
+create_session(Request, YxaCtx, DoCPL) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get_actions(Request#request.uri, DoCPL) of
 	nomatch ->
-	    create_session_nomatch(Request, LogStr);
+	    create_session_nomatch(Request, YxaCtx);
 	{cpl, User, Graph} ->
-	    create_session_cpl(Request, Origin, LogStr, User, Graph);
+	    create_session_cpl(Request, YxaCtx, User, Graph);
 	{ok, Users, Actions, Surplus} ->
 	    create_session_actions(Request, Users, Actions, Surplus)
     end.
@@ -268,14 +275,14 @@ create_session_actions(Request, Users, Actions, Surplus) when is_record(Request,
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_session_nomatch(Request, Logstr)
+%% Function: create_session_nomatch(Request, YxaCtx)
 %%           Request = request record()
-%%           LogStr  = string(), describes the request
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: No actions found for this request. Check if we should
 %%           forward it anyways, or respond '404 Not Found'.
 %% Returns : void() | throw({siperror, ...})
 %%--------------------------------------------------------------------
-create_session_nomatch(Request, LogStr) when is_record(Request, request), is_list(LogStr) ->
+create_session_nomatch(Request, #yxa_ctx{logstr = LogStr}) when is_record(Request, request) ->
     %% Check if the Request-URI is the registered location of one of our users. If we added
     %% a Record-Route to an earlier request, this might be an in-dialog request destined
     %% for one of our users. Such in-dialog requests will have the users Contact (registered
@@ -295,10 +302,9 @@ create_session_nomatch(Request, LogStr) when is_record(Request, request), is_lis
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_session_cpl(Request, Origin, LogStr, User, Graph)
+%% Function: create_session_cpl(Request, YxaCtx, User, Graph)
 %%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string()
+%%           YxaCtx  = yxa_ctx record()
 %%           User    = string(), SIP username of CPL script owner
 %%           Graph   = term(), CPL graph
 %% Descrip.: We found a CPL script that should be applied to this
@@ -309,13 +315,13 @@ create_session_nomatch(Request, LogStr) when is_record(Request, request), is_lis
 %%           to 'false' to not end up here again.
 %% Returns : void() | throw({siperror, ...})
 %%--------------------------------------------------------------------
-create_session_cpl(Request, Origin, LogStr, User, Graph)
-  when is_record(Request, request), is_record(Origin, siporigin), is_list(LogStr), is_list(User) ->
+create_session_cpl(Request, YxaCtx, User, Graph)
+  when is_record(Request, request), is_record(YxaCtx, yxa_ctx), is_list(User) ->
     Res = interpret_cpl:process_cpl_script(Request, User, Graph, incoming),
     case Res of
 	{server_default_action} ->
 	    %% Loop back to create_session, but tell it to not do CPL again
-	    create_session(Request, Origin, LogStr, false);
+	    create_session(Request, YxaCtx, false);
 	ok ->
 	    ok;
 	Unknown ->

@@ -20,8 +20,8 @@
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
     [{init, 0},
-     {request, 3},
-     {response, 3},
+     {request, 2},
+     {response, 2},
      {terminate, 1}
     ];
 behaviour_info(_Other) ->

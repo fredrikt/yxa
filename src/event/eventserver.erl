@@ -14,12 +14,12 @@
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
-	 request/3,
-	 response/3,
+	 request/2,
+	 response/2,
 	 terminate/1
 	]).
 
--export([authenticate_subscriber/3
+-export([authenticate_subscriber/2
 	]).
 
 %%--------------------------------------------------------------------
@@ -84,22 +84,25 @@ init() ->
 %%           Request = request record()
 %%           _Origin  = siporigin record()
 %%           LogStr  = string() describing request
-%% Descrip.: YXA applications must export an request/3 function.
+%% Descrip.: YXA applications must export a request/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
-request(Request, Origin, LogStr) ->
-    THandler = transactionlayer:get_handler_for_request(Request),
+request(Request, YxaCtx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
     LogTag = get_branchbase_from_handler(THandler),
+    YxaCtx1 =
+	YxaCtx#yxa_ctx{app_logtag = LogTag
+		      },
 
     %% check if we are shutting down
-    case is_shutting_down(THandler, LogTag) of
+    case is_shutting_down(YxaCtx) of
 	true ->
 	    ok;
 	false ->
 	    %% Check if request has To-tag, if so we reject it since we obviously lost the dialog state
 	    case sipheader:get_tag( keylist:fetch('to', Request#request.header) ) of
 		none ->
-		    request2(Request, Origin, LogStr, THandler, LogTag);
+		    request2(Request, YxaCtx1);
 		_ ->
 		    logger:log(normal, "~s: event server: Request has To-tag, answering '481 Call/Transaction Does Not Exist'",
 			       [LogTag]),
@@ -109,9 +112,13 @@ request(Request, Origin, LogStr) ->
 	    end
     end.
 
-is_shutting_down(THandler, LogTag) ->
+is_shutting_down(YxaCtx) ->
     case ets:lookup(?EVENTSERVER_T, terminating) of
 	[{terminating, Start}] when is_integer(Start) ->
+	    #yxa_ctx{app_logtag   = LogTag,
+		     thandler = THandler
+		    } = YxaCtx,
+
 	    logger:log(normal, "~s: event server: Performing shutdown, answering "
 		       "'503 Service Unavailable (shutting down)'", [LogTag]),
 	    Now = util:timestamp(),
@@ -126,22 +133,30 @@ is_shutting_down(THandler, LogTag) ->
 %%
 %% PUBLISH or SUBSCRIBE
 %%
-request2(#request{method = Method} = Request, Origin, LogStr, THandler, LogTag) when Method == "SUBSCRIBE";
-										     Method == "PUBLISH" ->
+request2(#request{method = Method} = Request, YxaCtx) when Method == "SUBSCRIBE"; Method == "PUBLISH" ->
     case sipheader:event_package(Request#request.header) of
 	[] ->
 	    %% No Event: header in request
+	    #yxa_ctx{logstr       = LogStr,
+		     app_logtag   = LogTag,
+		     thandler = THandler
+		    } = YxaCtx,
+
 	    logger:log(normal, "~s: event server: ~s -> '489 Bad Event'", [LogTag, LogStr]),
 	    ExtraHeaders = make_extraheaders(489, []),
 	    transactionlayer:send_response_handler(THandler, 489, "Bad Event", ExtraHeaders);
 	EventPackage when is_list(EventPackage) ->
-	    event(EventPackage, Request, Origin, LogStr, LogTag, THandler)
+	    event(EventPackage, Request, YxaCtx)
     end;
 
 %%
 %% OPTIONS
 %%
-request2(#request{method = "OPTIONS"} = Request, _Origin, _LogStr, THandler, LogTag) ->
+request2(#request{method = "OPTIONS"} = Request, YxaCtx) ->
+    #yxa_ctx{app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
+
     case local:is_request_to_this_proxy(Request) of
 	true ->
 	    AllowMethods = [{"Allow", ?ALLOW_METHODS}],
@@ -158,24 +173,28 @@ request2(#request{method = "OPTIONS"} = Request, _Origin, _LogStr, THandler, Log
 %%
 %% Request other than SUBSCRIBE/PUBLISH/OPTIONS, should not end up on the event server
 %%
-request2(Request, _Origin, LogStr, THandler, LogTag) when is_record(Request, request) ->
+request2(Request, YxaCtx) when is_record(Request, request) ->
+    #yxa_ctx{logstr       = LogStr,
+	     app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
+
     logger:log(normal, "~s: event server: ~s -> '403 Forbidden'", [LogTag, LogStr]),
     ExtraHeaders = make_extraheaders(403, []),
     transactionlayer:send_response_handler(THandler, 403, "Forbidden", ExtraHeaders),
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, _Origin, LogStr)
+%% Function: response(Response, YxaCtx)
 %%           Request = response record()
-%%           _Origin  = siporigin record()
-%%           LogStr  = string(), description of response
-%% Descrip.: YXA applications must export an response/3 function.
+%%           YxaCtx  = yxa_ctx record()
+%% Descrip.: YXA applications must export a response/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
-response(Response, _Origin, LogStr) when is_record(Response, response) ->
+response(Response, YxaCtx) when is_record(Response, response) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(normal, "event server: Response to ~s: '~p ~s', no matching transaction - ignoring",
-	       [LogStr, Status, Reason]),
+	       [YxaCtx#yxa_ctx.logstr, Status, Reason]),
     ok.
 
 %%--------------------------------------------------------------------
@@ -215,23 +234,23 @@ terminate_wait(N) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: event(EventPackage, Request, Origin, LogStr, LogTag,
-%%                 THandler)
+%% Function: event(EventPackage, Request, YxaCtx)
 %%           EventPackage = string()
 %%           Request      = request record()
-%%           Origin       = siporigin record()
-%%           LogStr       = string() describing request
-%%           LogTag       = string(), prefix for logging
-%%           Thandler     = term(), server transaction handle
+%%           YxaCtx       = yxa_ctx record()
 %% Descrip.: Eventserver has received a new request from the transact-
 %%           ion layer (on a new dialog). It is either a SUBSCRIBE or
 %%           a PUBLISH for which we could figure out an event package.
 %% Returns : void()
 %%--------------------------------------------------------------------
-event(EventPackage, Request, Origin, LogStr, LogTag, THandler) ->
-    case get_event_package_module(EventPackage, Request, Origin) of
-	{ok, Module} ->
-	    Res = event2(Request, Origin, LogStr, LogTag, THandler, Module, EventPackage),
+event(EventPackage, Request, YxaCtx) ->
+    #yxa_ctx{app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
+
+    case get_event_package_module(EventPackage, Request, YxaCtx) of
+	{ok, Module} when is_atom(Module) ->
+	    Res = event2(Request, YxaCtx, Module, EventPackage),
 	    logger:log(debug, "~s: event server: Terminating after processing a ~p request for package ~p "
 		       "(module ~p), result : ~p", [LogTag, Request#request.method, EventPackage, Module, Res]),
 	    Res;
@@ -243,27 +262,28 @@ event(EventPackage, Request, Origin, LogStr, LogTag, THandler) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: event2(EventPackage, Request, Origin, LogStr, LogTag,
-%%                 THandler)
-%%           EventPackage = string()
+%% Function: event2(Request, YxaCtx, Module, EventPackage)
 %%           Request      = request record()
-%%           Origin       = siporigin record()
-%%           LogStr       = string() describing request
-%%           LogTag       = string(), prefix for logging
-%%           Thandler     = term(), server transaction handle
+%%           YxaCtx       = yxa_ctx record()
+%%           Module       = atom()
+%%           EventPackage = string()
 %% Descrip.: If the request we received was a SUBSCRIBE, we start an
 %%           subscription domain controller process to handle the new
 %%           dialog. If it was something else (read: PUBLISH) we pass
 %%           it to the package modules request function.
 %% Returns : void()
 %%--------------------------------------------------------------------
-event2(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandler, Module, EventPackage) ->
-    case subscription:start(Request, Origin, LogStr, LogTag, THandler, Module, EventPackage, undefined) of
+event2(#request{method = "SUBSCRIBE"} = Request, YxaCtx, Module, EventPackage) ->
+    case subscription:start(Request, YxaCtx, Module, EventPackage, undefined) of
 	{error, need_auth} ->
-	    case authenticate_subscriber(Request, LogTag, LogStr) of
+	    case authenticate_subscriber(Request, YxaCtx) of
 		{true, SIPuser} ->
-		    subscription:start(Request, Origin, LogStr, LogTag, THandler, Module, EventPackage, SIPuser);
+		    subscription:start(Request, YxaCtx, Module, EventPackage, SIPuser);
 		false ->
+		    #yxa_ctx{logstr       = LogStr,
+			     app_logtag   = LogTag,
+			     thandler = THandler
+			    } = YxaCtx,
 		    logger:log(normal, "~s: event server: ~s -> '403 Forbidden'",
 			       [LogTag, LogStr]),
 		    ExtraHeaders = make_extraheaders(403, []),
@@ -275,17 +295,24 @@ event2(#request{method = "SUBSCRIBE"} = Request, Origin, LogStr, LogTag, THandle
 	    Res
     end;
 
-event2(Request, Origin, LogStr, LogTag, THandler, Module, EventPackage) ->
+event2(Request, YxaCtx, Module, EventPackage) ->
     Ctx = #event_ctx{sipuser   = undefined,
 		     dialog_id = sipheader:dialogid(Request#request.header)
 		    },
-    case Module:request(EventPackage, Request, Origin, LogStr, LogTag, THandler, Ctx) of
+    case Module:request(EventPackage, Request, YxaCtx, Ctx) of
 	{error, need_auth} ->
-	    case authenticate_subscriber(Request, LogTag, LogStr) of
+	    case authenticate_subscriber(Request, YxaCtx) of
 		{true, SIPuser} ->
 		    Ctx1 = Ctx#event_ctx{sipuser = SIPuser},
-		    Module:request(EventPackage, Request, Origin, LogStr, LogTag, THandler, Ctx1);
+		    PackageM_Res = Module:request(EventPackage, Request, YxaCtx, Ctx1),
+		    logger:log(debug, "event server: Extra debug: Result of ~p:request/4 was : ~p",
+			       [Module, PackageM_Res]);
+
 		false ->
+		    #yxa_ctx{logstr       = LogStr,
+			     app_logtag   = LogTag,
+			     thandler = THandler
+			    } = YxaCtx,
 		    logger:log(normal, "~s: event server: ~s -> '403 Forbidden'",
 			       [LogTag, LogStr]),
 		    ExtraHeaders = make_extraheaders(403, []),
@@ -317,9 +344,9 @@ get_branchbase_from_handler(TH) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: authenticate_subscriber(Request, LogTag)
+%% Function: authenticate_subscriber(Request, YxaCtx)
 %%           Request = request record()
-%%           LogTag  = string(), prefix for logging
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: The event package has requested that we authenticate the
 %%           user who sent us this request. Do WWW _OR_ Proxy-
 %%           authentication since there has been cases where a client
@@ -331,7 +358,10 @@ get_branchbase_from_handler(TH) ->
 %% Returns : {true, AuthUser} | false | drop
 %%           AuthUser = string()
 %%--------------------------------------------------------------------
-authenticate_subscriber(Request, LogTag, LogStr) when is_record(Request, request), is_list(LogTag), is_list(LogStr) ->
+authenticate_subscriber(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    #yxa_ctx{app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
     #request{method = Method,
 	     header = Header
 	    } = Request,
@@ -354,13 +384,13 @@ authenticate_subscriber(Request, LogTag, LogStr) when is_record(Request, request
 		    {stale, ProxySIPuser} ->
 			logger:log(normal, "~s: event server: From: address requires authentication "
 				   "(stale, user ~p)", [LogTag, ProxySIPuser]),
-			transactionlayer:send_challenge_request(Request, proxy, true, none),
+			transactionlayer:send_challenge(THandler, proxy, true, none),
 			drop;
 		    false ->
 			case keylist:fetch('www-authenticate', Header) of
 			    [] ->
 				logger:log(normal, "~s: event server: From: address requires authentication", [LogTag]),
-				transactionlayer:send_challenge_request(Request, www, false, none),
+				transactionlayer:send_challenge(THandler, www, false, none),
 				drop;
 			    _ ->
 				false
@@ -386,15 +416,17 @@ authenticate_subscriber(Request, LogTag, LogStr) when is_record(Request, request
 
 
 %%--------------------------------------------------------------------
-%% Function: get_branchbase_from_handler(TH)
-%%           TH = term(), server transaction handle
+%% Function: get_event_package_module(EventPackage, Request, YxaCtx)
+%%           EventPackage = string()
+%%           Request      = request record()
+%%           YxaCtx       = yxa_ctx record()
 %% Descrip.: Get branch from server transaction handler and then
 %%           remove the -UAS suffix. The result is used as a tag
 %%           when logging actions.
 %% Returns : BranchBase = string()
 %%--------------------------------------------------------------------
-get_event_package_module(EventPackage, Request, Origin) ->
-    case local:get_event_package_module(EventPackage, Request, Origin) of
+get_event_package_module(EventPackage, Request, YxaCtx) ->
+    case local:get_event_package_module(EventPackage, Request, YxaCtx) of
 	undefined ->
 	    {ok, L} = yxa_config:get_env(eventserver_package_handlers),
 	    case lists:keysearch(EventPackage, 1, L) of

@@ -14,8 +14,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
-	 request/7,
-	 is_allowed_subscribe/10,
+	 request/4,
+	 is_allowed_subscribe/7,
 	 notify_content/4,
 	 package_parameters/2,
 	 subscription_behaviour/3,
@@ -60,8 +60,7 @@ init() ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: request("dialog", Request, Origin, LogStr, LogTag,
-%%                   THandler, SIPuser)
+%% Function: request("dialog", Request, YxaCtx, SIPuser)
 %%           Request  = request record(), the SUBSCRIBE request
 %%           Origin   = siporigin record()
 %%           LogStr   = string(), describes the request
@@ -74,13 +73,16 @@ init() ->
 %%           information about when this function is invoked.
 %% Returns : void(), but return 'ok' or {error, Reason} for now
 %%--------------------------------------------------------------------
-request("dialog", _Request, _Origin, _LogStr, LogTag, _THandler, #event_ctx{sipuser = undefined}) ->
+request("dialog", _Request, YxaCtx, #event_ctx{sipuser = undefined}) ->
     logger:log(debug, "~s: dialog event package: Requesting authorization (only local users allowed)",
-	       [LogTag]),
+	       [YxaCtx#yxa_ctx.app_logtag]),
     {error, need_auth};
 
-request("dialog", #request{method = "NOTIFY"} = Request, _Origin, _LogStr, LogTag, THandler, Ctx) ->
+request("dialog", #request{method = "NOTIFY"} = Request, YxaCtx, Ctx) ->
     %% non-empty SIP user
+    #yxa_ctx{app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
 
     #event_ctx{sipuser    = User,
 	       presentity = Presentity
@@ -110,7 +112,12 @@ request("dialog", #request{method = "NOTIFY"} = Request, _Origin, _LogStr, LogTa
 
     ok;
 
-request("dialog", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
+request("dialog", _Request, YxaCtx, _Ctx) ->
+    #yxa_ctx{logstr       = LogStr,
+	     app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
+
     logger:log(normal, "~s: dialog event package: ~s -> '501 Not Implemented'",
 	       [LogTag, LogStr]),
     transactionlayer:send_response_handler(THandler, 501, "Not Implemented"),
@@ -118,16 +125,12 @@ request("dialog", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_allowed_subscribe("dialog", Num, Request, Origin,
-%%                                LogStr, LogTag, THandler, SIPuser,
-%%                                PkgState)
+%% Function: is_allowed_subscribe("dialog", Num, Request, YxaCtx.
+%%                                SIPuser, PkgState)
 %%           Num      = integer(), the number of subscribes we have
 %%                      received on this dialog, starts at 1
 %%           Request  = request record(), the SUBSCRIBE request
-%%           Origin   = siporigin record()
-%%           LogStr   = string(), describes the request
-%%           LogTag   = string(), log prefix
-%%           THandler = term(), server transaction handler
+%%           YxaCtx   = yxa_ctx record()
 %%           SIPuser  = undefined | string(), undefined if request
 %%                      originator is not not authenticated, and
 %%                      string() if the user is authenticated (empty
@@ -155,15 +158,14 @@ request("dialog", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
 %%
 %% SIPuser = undefined
 %%
-is_allowed_subscribe("dialog", _Num, _Request, _Origin, _LogStr, _LogTag, _THandler, _SIPuser = undefined, _Presentity,
+is_allowed_subscribe("dialog", _Num, _Request, _YxaCtx, _SIPuser = undefined, _Presentity,
 		     _PkgState) ->
     {error, need_auth};
 %%
 %% Presentity is {users, UserList}
 %%
-is_allowed_subscribe("dialog", _Num, _Request, _Origin, _LogStr, LogTag, _THandler, SIPuser,
-		     {users, ToUsers} = _Presentity, _PkgState) when is_list(LogTag), is_list(SIPuser),
-								     is_list(ToUsers) ->
+is_allowed_subscribe("dialog", _Num, YxaCtx, _THandler, SIPuser, {users, ToUsers} = _Presentity,
+		     _PkgState) when is_list(SIPuser), is_list(ToUsers) ->
     %% For the dialog package to work when the presentity is one or more users,
     %% we have to implement the following :
     %%
@@ -171,12 +173,12 @@ is_allowed_subscribe("dialog", _Num, _Request, _Origin, _LogStr, LogTag, _THandl
     %%   Monitor the location database for changes to the user(s), and monitor all new contacts registered
     %%
     logger:log(normal, "~s: dialog event package: User presentitys not supported (yet), answering '403 Forbidden'",
-	       [LogTag]),
+	       [YxaCtx#yxa_ctx.app_logtag]),
     {siperror, 403, "Forbidden", []};
 %%
 %% Presentity is {address, AddressStr}
 %%
-is_allowed_subscribe("dialog", _Num, Request, _Origin, _LogStr, _LogTag, _THandler, SIPuser,
+is_allowed_subscribe("dialog", _Num, Request, _YxaCtx, SIPuser,
 		     {address, AddressStr} = _Presentity, PkgState) when is_list(SIPuser), is_list(AddressStr) ->
     is_allowed_subscribe2(Request, pending, 202, "Ok", [], PkgState).
 
@@ -222,9 +224,6 @@ is_allowed_subscribe2(Request, SubState, Status, Reason, ExtraHeaders, PkgState)
 %%           Reason       = string() | atom()
 %%           NewPkgState  = my_state record()
 %%--------------------------------------------------------------------
-notify_content("dialog", {address, "sip:shared@eventserver.yxa.sipit.net:5010"}, LastAccept, PkgState) when is_record(PkgState, my_state) ->
-    notify_content("dialog", {address, "sip:shared@yxa.sipit.net"}, LastAccept, PkgState);
-
 notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgState, my_state) ->
     #my_state{entity  = Entity,
 	      version = Version

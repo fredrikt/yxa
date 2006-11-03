@@ -49,7 +49,7 @@
 %% invoked from the transport layer).
 %%--------------------------------------------------------------------
 -export([
-	 from_transportlayer/3
+	 from_transportlayer/2
 	]).
 
 %%--------------------------------------------------------------------
@@ -336,12 +336,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%           of this Request and no further action should be taken by
 %%           the caller of this function.
 %%
-%%           {pass_to_core, AppModule} means that the caller should
-%%           apply() AppModule:request/3 with this Request as argument.
+%%           {pass_to_core, AppModule, STPid} means that the caller
+%%           should apply() AppModule:request/2 with this Request as
+%%           argument.
 %%           We can't do it here since we can't block the
 %%           transacton_layer process, and asking the caller to do it
-%%           saves us a spawn(). AppModule is the module name passed to
-%%           our init/1.
+%%           saves us a spawn(). AppModule is the module name passed
+%%           to our init/1.
 %%
 %%
 %%           It might be worthwile to insert a dummy-entry in the
@@ -356,14 +357,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %% ACK
 %%
-received_new_request(#request{method="ACK"}=Request, _Socket, _LogStr, AppModule) ->
-    logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, passing to core.",
-	       [sipurl:print(Request#request.uri)]),
+received_new_request(#request{method = "ACK"} = Request, _YxaCtx, AppModule) ->
+    logger:log(debug, "Transaction layer: Received ACK ~s that does not match any existing transaction, "
+	       "passing to core.", [sipurl:print(Request#request.uri)]),
     {pass_to_core, AppModule, undefined};
 
-received_new_request(Request, Socket, LogStr, AppModule) when is_record(Request, request) ->
+received_new_request(Request, YxaCtx, AppModule) when is_record(Request, request) ->
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
-    case servertransaction:start_link(Request, Socket, LogStr) of
+    case servertransaction:start_link(Request, YxaCtx) of
 	{ok, STPid} when is_pid(STPid) ->
 	    %% returns true if it is a CANCEL and we find a transaction to cancel, otherwise false
 	    case cancel_corresponding_transaction(Request, STPid) of
@@ -624,12 +625,12 @@ send_proxy_response_handler(TH, Response) when is_record(TH, thandler), is_recor
 %%           THandler = thandler record()
 %%           E = string(), describes the error
 %%--------------------------------------------------------------------
-get_handler_for_request(Request) ->
+get_handler_for_request(Request) when is_record(Request, request) ->
     case get_server_transaction_pid(Request) of
         none ->
             {error, "No state found"};
         TPid when is_pid(TPid) ->
-            #thandler{pid=TPid}
+            #thandler{pid = TPid}
     end.
 
 %%--------------------------------------------------------------------
@@ -725,8 +726,7 @@ adopt_st_and_get_branchbase(TH) when is_record(TH, thandler) ->
 %%           error
 %%           Branch = string()
 %%--------------------------------------------------------------------
-get_branch_from_handler(TH) when is_record(TH, thandler) ->
-    TPid = TH#thandler.pid,
+get_branch_from_handler(#thandler{pid = TPid}) when is_pid(TPid) ->
     case catch gen_server:call(TPid, {get_branch}, ?STORE_TIMEOUT) of
 	{ok, Branch} ->
 	    Branch;
@@ -951,68 +951,68 @@ debug_show_transactions() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: from_transportlayer(Request, Origin, LogStr)
+%% Function: from_transportlayer(Request, YxaCtx)
 %%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string()
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: The transport layer passes us a request it has just
 %%           received.
-%% Returns : {pass_to_core, AppModule} |
+%% Returns : {pass_to_core, AppModule, NewYxaCtx} |
 %%           continue
 %%           AppModule = atom(), YXA application module name
+%%           NewYxaCtx = yxa_ctx record()
 %%--------------------------------------------------------------------
-from_transportlayer(Request, Origin, LogStr) when is_record(Request, request),
-						  is_record(Origin, siporigin),
-						  is_list(LogStr) ->
+from_transportlayer(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get_server_transaction_pid(Request) of
 	none ->
 	    {ok, AppModule} = yxa_config:get_env(yxa_appmodule),
-	    case received_new_request(Request, Origin#siporigin.sipsocket, LogStr, AppModule) of
-		{pass_to_core, NewAppModule, STPid} ->
+	    case received_new_request(Request, YxaCtx, AppModule) of
+		{pass_to_core, NewAppModule, STPid} when is_atom(NewAppModule), is_pid(STPid) ->
+		    NewYxaCtx = YxaCtx#yxa_ctx{thandler = #thandler{pid = STPid}
+					      },
 		    case get_dialog_handler(Request) of
 			nomatch ->
-			    {pass_to_core, NewAppModule};
+			    {pass_to_core, NewAppModule, NewYxaCtx};
 			DCPid when is_pid(DCPid) ->
-			    pass_to_dialog_controller(DCPid, STPid, Request, Origin, LogStr),
+			    pass_to_dialog_controller(DCPid, STPid, Request, NewYxaCtx),
 			    continue
 		    end;
 		continue ->
 		    continue
 	    end;
 	STPid when is_pid(STPid) ->
+	    Origin = YxaCtx#yxa_ctx.origin,
 	    gen_server:cast(STPid, {siprequest, Request, Origin}),
 	    continue
     end;
 
 %%--------------------------------------------------------------------
-%% Function: from_transportlayer(Response, Origin, LogStr)
+%% Function: from_transportlayer(Response, YxaCtx)
 %%           Response = response record()
-%%           Origin   = siporigin record()
-%%           LogStr   = string()
+%%           YxaCtx   = yxa_ctx record()
 %% Descrip.: The transport layer passes us a response it has just
 %%           received.
 %% Returns : {pass_to_core, AppModule} |
 %%           continue
 %%           AppModule = atom(), YXA application module name
 %%--------------------------------------------------------------------
-from_transportlayer(Response, Origin, LogStr) when is_record(Response, response),
-						   is_record(Origin, siporigin),
-						   is_list(LogStr) ->
+from_transportlayer(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     case get_client_transaction_pid(Response) of
 	none ->
 	    {_CSeqNum, Method} = sipheader:cseq(Response#response.header),
-	    from_transportlayer_response_no_transaction(Method, Response, Origin, LogStr);
+	    from_transportlayer_response_no_transaction(Method, Response, YxaCtx);
 	CTPid when is_pid(CTPid) ->
-	    logger:log(debug, "Transaction layer: Passing response '~p ~s' to registered handler ~p",
+	    logger:log(debug, "Transaction layer: Passing response '~p ~s' to client transaction (~p)",
 		       [Response#response.status, Response#response.reason, CTPid]),
+	    #yxa_ctx{origin = Origin,
+		     logstr = LogStr
+		    } = YxaCtx,
 	    gen_server:cast(CTPid, {sipmessage, Response, Origin, LogStr}),
 	    continue
     end.
 
 %% part of from_transportlayer/1
 %% Returns : continue | {pass_to_core, AppModule}
-from_transportlayer_response_no_transaction(Method, Response, _Origin, _LogStr) when is_list(Method),
-										     Method /= "INVITE" ->
+from_transportlayer_response_no_transaction(Method, Response, _YxaCtx) when is_list(Method), Method /= "INVITE" ->
     %% RFC4320 #4.2 (Action 2)
     %% A transaction-stateful SIP proxy MUST NOT send any response to a
     %% non-INVITE request unless it has a matching server transaction that
@@ -1025,7 +1025,7 @@ from_transportlayer_response_no_transaction(Method, Response, _Origin, _LogStr) 
 	       "'~p ~s', dropping response (RFC4320 #4.2)",
 	      [Method, Response#response.status, Response#response.reason]),
     continue;
-from_transportlayer_response_no_transaction("INVITE", Response, Origin, LogStr) ->
+from_transportlayer_response_no_transaction("INVITE", Response, YxaCtx) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
     {ok, AppModule} = yxa_config:get_env(yxa_appmodule),
     case get_dialog_handler(Response) of
@@ -1038,7 +1038,7 @@ from_transportlayer_response_no_transaction("INVITE", Response, Origin, LogStr) 
 		true ->
 		    logger:log(debug, "Transaction layer: Passing response '~p ~s' to dialog controller ~p",
 			       [Status, Reason, DCPid]),
-		    DCPid ! {new_response, Response, Origin, LogStr};
+		    DCPid ! {new_response, Response, YxaCtx};
 		false ->
 		    logger:log(debug, "Transaction layer: Dialog controller ~p dead, ignoring response '~p ~s'",
 			       [DCPid, Status, Reason])
@@ -1048,7 +1048,7 @@ from_transportlayer_response_no_transaction("INVITE", Response, Origin, LogStr) 
 
 %% part of from_transportlayer (request).
 %% Returns : void()
-pass_to_dialog_controller(DCPid, STPid, Request, Origin, LogStr) when is_record(Request, request) ->
+pass_to_dialog_controller(DCPid, STPid, Request, YxaCtx) when is_record(Request, request) ->
     logger:log(debug, "Transaction layer: Passing request to dialog controller ~p", [DCPid]),
     case is_process_alive(DCPid) of
 	true ->
@@ -1066,7 +1066,7 @@ pass_to_dialog_controller(DCPid, STPid, Request, Origin, LogStr) when is_record(
 	    %% over to the dialog controller
 	    true = link(STPid),
 	    true = link(DCPid),
-	    DCPid ! {new_request, self(), Ref, Request, Origin, LogStr},
+	    DCPid ! {new_request, self(), Ref, Request, YxaCtx},
 	    receive
 		{ok, DCPid, Ref} ->
 		    true = unlink(DCPid),
@@ -1113,7 +1113,7 @@ get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
 
 %%--------------------------------------------------------------------
 %% Function: change_transaction_parent(Entity, From, To)
-%%           Entity = thandler record() for server transaction | 
+%%           Entity = thandler record() for server transaction |
 %%                    pid() for client transaction
 %%           From   = pid()
 %%           To     = pid() | none ('none' only applicable to client
@@ -1129,7 +1129,7 @@ change_transaction_parent(TH, From, To) when is_record(TH, thandler), is_pid(Fro
 change_transaction_parent(Pid, From, To) when is_pid(Pid), is_pid(From), is_pid(To) orelse To == none ->
     %% client transaction, or server transaction if called from within the transaction layer
     gen_server:call(Pid, {change_parent, From, To}, ?STORE_TIMEOUT).
-    
+
 
 %%====================================================================
 %% Test functions

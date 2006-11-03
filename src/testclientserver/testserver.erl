@@ -1,7 +1,10 @@
 -module(testserver).
 
 %% Standard YXA SIP-application exports
--export([init/0, request/3, response/3]).
+-export([init/0,
+	 request/2,
+	 response/2
+	]).
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
@@ -20,12 +23,12 @@ init() ->
     [none, stateful, {append, []}].
 
 
-%% Function: request/3
-%% Description: YXA applications must export an request/3 function.
+%% Function: request(Request, YxaCtx)
+%% Description: YXA applications must export a request/2 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
-request(Request, Origin, _LogStr) when record(Request, request), record(Origin, siporigin) ->
-    THandler = transactionlayer:get_handler_for_request(Request),
+request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
     LogTag = get_branch_from_handler(THandler),
     case Request#request.method of
         "REGISTER" ->
@@ -44,11 +47,11 @@ request(Request, Origin, _LogStr) when record(Request, request), record(Origin, 
 	    transactionlayer:send_response_handler(THandler, 501, "Not Implemented")
     end.
 
-%% Function: response/3
-%% Description: YXA applications must export an response/3 function.
+%% Function: response/2
+%% Description: YXA applications must export a response/2 function.
 %% Returns: See XXX
 %%--------------------------------------------------------------------
-response(Response, Origin, _LogStr) when record(Response, response), record(Origin, siporigin) ->
+response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     logger:log(normal, "~p ~p - dropping", [Response#response.status, Response#response.reason]),
     true.
 

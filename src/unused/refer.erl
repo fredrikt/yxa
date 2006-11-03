@@ -360,20 +360,19 @@ handle_info({servertransaction_terminating, _Pid}, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({new_request, FromPid, Ref, NewRequest,
-%%                       Origin, LogStr}, ...)
+%%                       YxaCtx}, ...)
 %%           FromPid = pid(), transaction layer
 %%           Ref     = ref(), unique reference to ack this message
 %%                            with (signal back to transaction layer)
 %%           NewRequest = request record()
-%%           Origin  = siporigin record(),
-%%           LogStr  = string(), textual description of request
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: Handle incoming requests on our dialog. Answer all
 %%           NOFITYs with '200 Ok', handle BYE and reject all other
 %%           methods with '501 Not Implemented'.
 %% Returns : {noreply, State}      |
 %%           {stop, normal, State}
 %%--------------------------------------------------------------------
-handle_info({new_request, FromPid, Ref, NewRequest, _Origin, _LogStr}, State) when is_record(NewRequest, request) ->
+handle_info({new_request, FromPid, Ref, NewRequest, _YxaCtx}, State) when is_record(NewRequest, request) ->
     THandler = transactionlayer:get_handler_for_request(NewRequest),
     transactionlayer:adopt_server_transaction_handler(THandler),
     FromPid ! {ok, self(), Ref},
@@ -438,18 +437,15 @@ handle_info({new_request, FromPid, Ref, NewRequest, _Origin, _LogStr}, State) wh
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({new_response, Response,
-%%                       Origin, LogStr}, ...)
+%% Function: handle_info({new_response, Response, YxaCtx}, ...)
 %%           Response = response record()
-%%           Origin   = siporigin record(),
-%%           LogStr   = string(), textual description of request
-%% Descrip.: Handle incoming requests on our dialog. Answer all
-%%           NOFITYs with '200 Ok', handle BYE and reject all other
-%%           methods with '501 Not Implemented'.
+%%           YxaCtx   = yxa_ctx record(),
+%% Descrip.: Handle incoming responses not matching any client
+%%           transaction, but matching our dialog.
 %% Returns : {noreply, State}      |
 %%           {stop, normal, State}
 %%--------------------------------------------------------------------
-handle_info({new_response, #response{status = Status} = Response, _Origin, _LogStr},
+handle_info({new_response, #response{status = Status} = Response, _YxaCtx},
 	    State) when Status >= 200, Status =< 299 ->
     case sipheader:cseq(Response#response.header) of
 	{_CSeqNum, "INVITE"} ->

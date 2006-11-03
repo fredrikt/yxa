@@ -17,8 +17,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
-	 request/3,
-	 response/3,
+	 request/2,
+	 response/2,
 	 terminate/1
 	]).
 
@@ -55,11 +55,10 @@ init() ->
     [[user, numbers, phone], stateful, none].
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, Origin, LogStr)
+%% Function: request(Request, YxaCtx)
 %%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string() describing request
-%% Descrip.: YXA applications must export an request/3 function.
+%%           YxaCtx  = yxa_ctx record()
+%% Descrip.: YXA applications must export a request/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 
@@ -67,15 +66,17 @@ init() ->
 %%
 %% REGISTER
 %%
-request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
-    THandler = transactionlayer:get_handler_for_request(Request),
+request(#request{method = "REGISTER"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
     LogTag = get_branch_from_handler(THandler),
-    case siplocation:process_register_request(Request, Origin, THandler,
-					      LogTag, LogStr, outgoingproxy) of
+    YxaCtx1 =
+	YxaCtx#yxa_ctx{app_logtag = LogTag
+		      },
+    case siplocation:process_register_request(Request, YxaCtx1, outgoingproxy) of
 	not_homedomain ->
 	    case yxa_config:get_env(allow_foreign_registers) of
 		{ok, true} ->
-		    do_foreign_register(Request, Origin);
+		    do_foreign_register(Request, YxaCtx1);
 		{ok, false} ->
 		    transactionlayer:send_response_handler(THandler, 403, "Domain not handled by this proxy")
 	    end;
@@ -87,18 +88,18 @@ request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(
 %%
 %% ACK
 %%
-request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
-    transportlayer:stateless_proxy_ack("outgoingproxy", Request, LogStr),
+request(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    transportlayer:stateless_proxy_ack("outgoingproxy", Request, YxaCtx),
     ok;
 
 %%
 %% Anything but REGISTER and ACK
 %%
-request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
-    do_request(Request, Origin).
+request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    do_request(Request, YxaCtx).
 
 %% Note: All the RFC quotes in this function are from RFC3327 #5.2 (Procedures at Intermediate Proxies)
-do_foreign_register(Request, Origin) ->
+do_foreign_register(Request, YxaCtx) ->
     #request{uri    = URI,
 	     header = Header
 	    } = Request,
@@ -143,30 +144,29 @@ do_foreign_register(Request, Origin) ->
 			%% must get all incoming requests through an existing network flow.
 			keylist:append({"Require", ["path"]}, NewHeader1)
 		end,
-	    do_request(Request#request{header = NewHeader}, Origin);
+	    do_request(Request#request{header = NewHeader}, YxaCtx);
 	false ->
 	    %% "If the UA has not indicated support for the extension and
 	    %% the proxy requires support for it in the registrar, the proxy SHOULD
 	    %% reject the request with a 421 response indicating a requirement for
 	    %% the extension."
-	    THandler = transactionlayer:get_handler_for_request(Request),
+	    THandler = YxaCtx#yxa_ctx.thandler,
 	    transactionlayer:send_response_handler(THandler, 421, "Extension Required",
 						  [{"Require", ["path"]}])
     end.
 
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, Origin, LogStr)
+%% Function: response(Response, YxaCtx)
 %%           Request = response record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string(), description of response
-%% Descrip.: YXA applications must export an response/3 function.
+%%           YxaCtx  = yxa_ctx record()
+%% Descrip.: YXA applications must export a response/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
+response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(normal, "outgoingproxy: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
-	       [LogStr, Status, Reason]),
+	       [YxaCtx#yxa_ctx.logstr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
     ok.
 
@@ -185,7 +185,7 @@ terminate(Mode) when is_atom(Mode) ->
 %% Internal functions
 %%====================================================================
 
-do_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
+do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     #request{method = Method,
 	     uri    = URI
 	    } = Request,
@@ -195,7 +195,7 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 
     Location = route_request(Request),
     logger:log(debug, "outgoingproxy: Location: ~p", [Location]),
-    THandler = transactionlayer:get_handler_for_request(Request),
+    THandler = YxaCtx#yxa_ctx.thandler,
     LogTag = get_branch_from_handler(THandler),
     case Location of
 	none ->
@@ -248,7 +248,10 @@ do_request(Request, Origin) when is_record(Request, request), is_record(Origin, 
 	    proxy_request(THandler, NewRequest, route);
 
 	{relay, Loc} ->
-	    relay_request(THandler, Request, Loc, Origin, LogTag);
+	    YxaCtx1 =
+		YxaCtx#yxa_ctx{app_logtag = LogTag
+			      },
+	    relay_request(Request, Loc, YxaCtx1);
 
 	me ->
 	    request_to_me(THandler, Request, LogTag);
@@ -484,12 +487,10 @@ proxy_request(THandler, Request, Dst) when is_record(Request, request), is_list(
     sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT).
 
 %%--------------------------------------------------------------------
-%% Function: relay_request(THandler, Request, Dst, Origin, LogTag)
-%%           THandler = term(), server transaction handle
+%% Function: relay_request(Request, Dst, YxaCtx)
 %%           Request  = request record()
 %%           Dst      = sipdst record() | sipurl record() | route
-%%           Origin   = siporigin record()
-%%           LogTag   = string(), prefix for logging
+%%           YxaCtx   = yxa_ctx record()
 %% Descrip.: Relay request to remote host. If there is not valid
 %%           credentials present in the request, challenge user
 %%           unless local policy says not to. Never challenge
@@ -501,8 +502,10 @@ proxy_request(THandler, Request, Dst) when is_record(Request, request), is_list(
 %%
 %% CANCEL or BYE
 %%
-relay_request(THandler, #request{method=Method}=Request, Dst, _Origin, LogTag)
-  when Method == "CANCEL"; Method == "BYE" ->
+relay_request( #request{method = Method} = Request, Dst, YxaCtx) when Method == "CANCEL"; Method == "BYE" ->
+    #yxa_ctx{thandler   = THandler,
+	     app_logtag = LogTag
+	    } = YxaCtx,
     logger:log(normal, "~s: outgoingproxy: Relay ~s ~s (unauthenticated)",
 	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
     sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
@@ -510,7 +513,11 @@ relay_request(THandler, #request{method=Method}=Request, Dst, _Origin, LogTag)
 %%
 %% Anything but CANCEL or BYE
 %%
-relay_request(THandler, Request, Dst, Origin, LogTag) when is_record(Request, request) ->
+relay_request(Request, Dst, YxaCtx) when is_record(Request, request) ->
+    #yxa_ctx{thandler   = THandler,
+	     origin     = Origin,
+	     app_logtag = LogTag
+	    } = YxaCtx,
     {Method, Header} = {Request#request.method, Request#request.header},
     case sipauth:get_user_verified_proxy(Header, Method) of
 	{authenticated, User} ->

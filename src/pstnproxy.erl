@@ -18,8 +18,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
-	 request/3,
-	 response/3,
+	 request/2,
+	 response/2,
 	 terminate/1
 	]).
 
@@ -58,30 +58,31 @@ init() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, Origin, LogStr)
+%% Function: request(Request, YxaCtl)
 %%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string(), description of response
-%% Descrip.: YXA applications must export an request/3 function.
+%%           YxaCtl  = yxa_ctl record()
+%% Descrip.: YXA applications must export a request/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
 
 %%
 %% ACK
 %%
-request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
+request(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
     %% ACK requests that end up here could not be matched to a server transaction,
     %% most probably they are ACK to 2xx of INVITE (or we have crashed) - proxy
     %% statelessly.
-    transportlayer:stateless_proxy_ack("pstnproxy", Request, LogStr),
+    transportlayer:stateless_proxy_ack("pstnproxy", Request, YxaCtx),
     ok;
 
 %%
 %% Anything except ACK
 %%
-request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
+request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     Method = Request#request.method,
-    THandler = transactionlayer:get_handler_for_request(Request),
+    #yxa_ctx{origin   = Origin,
+	     thandler = THandler
+	    } = YxaCtx,
     LogTag = get_branch_from_handler(THandler),
     case route_request(Request, Origin, THandler, LogTag) of
 	pstn ->
@@ -108,17 +109,16 @@ request(Request, Origin, _LogStr) when is_record(Request, request), is_record(Or
 
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, Origin, LogStr)
+%% Function: response(Response, YxaCtx)
 %%           Response = response record()
-%%           Origin   = siporigin record()
-%%           LogStr   = string(), description of response
-%% Descrip.: YXA applications must export an response/3 function.
+%%           YxaCtx   = yxa_ctx record()
+%% Descrip.: YXA applications must export a response/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
+response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(normal, "pstnproxy: Response to ~s: ~p ~s, no matching transaction - proxying statelessly",
-	       [LogStr, Status, Reason]),
+	       [YxaCtx#yxa_ctx.logstr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
     ok.
 

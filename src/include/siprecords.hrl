@@ -1,10 +1,13 @@
-%%
-%% XXX #sipurl.port and #via.port are currently being used confusingly
-%% by allowing both string() and integer() as input. YXA code should 
-%% use either string() or integer() - preferably integer().
-%% - This is currently solved by requiring users to call 
-%% sipurl:get_port/1 to get a well defined return value.
-%%--------------------------------------------------------------------
+%% YXA application context record, containing information passed from the YXA stack
+%% to the application, for example when a new request is received.
+-record(yxa_ctx, {
+	  origin,	%% siporigin record, information about where a request/response was received from
+	  logstr,	%% string(), describes request/response
+	  thandler,	%% undefined | term(), server transaction handler when processing requests
+
+	  %% Application responsibilities - MIGHT NOT BE SET :
+	  app_logtag	%% undefined | string(), log prefix to use
+	 }).
 
 %% XXX can we assume that fields with the same names have the same possible types ?
 

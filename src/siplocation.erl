@@ -94,7 +94,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 process_register_request/6,
+	 process_register_request/3,
 	 prioritize_locations/1,
 	 get_locations_for_users/1,
 	 get_user_with_contact/1,
@@ -150,14 +150,10 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: process_register_request(Request, Origin, THandler,
-%%                                    LogTag, LogStr, AppName)
-%%           Request  = response record()
-%%           Origin   = siporigin record() (used with Outbound)
-%%           THandler = term(), server transaction handler
-%%           LogTag   = string(), tag for log messages
-%%           LogStr   = string(), description of request
-%%           AppName  = atom(), application name
+%% Function: process_register_request(Request, YxaCtx, AppName)
+%%           Request = response record()
+%%           YxaCtx  = yxa_ctx record()
+%%           AppName = atom(), application name
 %% Descrip.: Process a received REGISTER. First check if it is for
 %%           one of our domains (homedomain), then check that it
 %%           contains proper authentication and that the authenticated
@@ -166,10 +162,13 @@
 %%           Contact headers and update the location database.
 %% Returns : not_homedomain | void()
 %%--------------------------------------------------------------------
-process_register_request(Request, Origin, THandler, LogTag, LogStr, AppName) when is_record(Request, request),
-										  is_record(Origin, siporigin),
-										  is_list(LogStr), is_list(LogTag),
-										  is_atom(AppName) ->
+process_register_request(Request, YxaCtx, AppName) when is_record(Request, request), is_record(YxaCtx, yxa_ctx),
+							is_atom(AppName) ->
+    #yxa_ctx{logstr     = LogStr,
+	     origin     = Origin,
+	     thandler   = THandler,
+	     app_logtag = LogTag
+	    } = YxaCtx,
     URL = Request#request.uri,
     LogPrefix = lists:concat([LogTag, ": ", AppName]),
     logger:log(debug, "~p: REGISTER ~p", [LogPrefix, sipurl:print(URL)]),
@@ -1717,15 +1716,19 @@ test_mnesia_dependant_functions() ->
 
     %% process_register_request(Request, THandler, LogTag, LogStr, AppName)
     %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "process_register_request/5 - 1"),
+    autotest:mark(?LINE, "process_register_request/3 - 1"),
     Test_THandler = transactionlayer:test_get_thandler_self(),
-    O = #siporigin{sipsocket = #sipsocket{}},
     %% test non-homedomain
     PRR_Request1 = #request{method = "REGISTER",
 			    uri    = sipurl:parse("sip:ft@something.not-local.test.example.org"),
 			    header = keylist:from_list([{"To", ["<sip:ft@example.org>"]}])
 			   },
-    not_homedomain = process_register_request(PRR_Request1, O, Test_THandler, "test logtag", "test logstring", test),
+    PRR_YxaCtx1 = #yxa_ctx{origin	= #siporigin{sipsocket = #sipsocket{}},
+			   thandler	= Test_THandler,
+			   logstr	= "test logstring",
+			   app_logtag	= "test logtag"
+			  },
+    not_homedomain = process_register_request(PRR_Request1, PRR_YxaCtx1, test),
 
 
     %% register_require_supported(RegReq, OrigLogTag)

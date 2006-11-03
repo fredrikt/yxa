@@ -156,10 +156,10 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
     send_response(Socket, Response).
 
 %%--------------------------------------------------------------------
-%% Function: stateless_proxy_ack(LogTag, Request, LogStr)
+%% Function: stateless_proxy_ack(LogTag, Request, YxaCtx)
 %%           LogTag  = string(), only used on error
 %%           Request = request record()
-%%           LogStr  = string(), describes request
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: Proxy a request statelessly. We do that sometimes, for
 %%           example ACK 'requests' of to 2xx response to INVITE.
 %% Returns : Res = term()    |
@@ -168,8 +168,8 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
 %%           Res    = result of transportlayer:send_proxy_request()
 %%           Reason = string()
 %%--------------------------------------------------------------------
-stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, LogStr) when is_list(LogTag),
-									     is_record(Request, request) ->
+stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, YxaCtx) when is_list(LogTag),
+									     is_record(YxaCtx, yxa_ctx) ->
     logger:log(debug, "~s: Checking if Request-URI of ACK received in core is a GRUU",
 	       [LogTag]),
 
@@ -198,7 +198,7 @@ stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, LogStr) when is_
     case Res of
 	NewRequest when is_record(NewRequest, request) ->
 	    logger:log(normal, "~s: ~s -> Forwarding ACK received in core statelessly",
-		       [LogTag, LogStr]),
+		       [LogTag, YxaCtx#yxa_ctx.logstr]),
 	    stateless_proxy_request(LogTag, NewRequest);
 	{response, Status, Reason} ->
 	    logger:log(normal, "~s: ~s -> Dropping ACK to GRUU '~s' : '~p ~s'",

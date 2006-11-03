@@ -20,8 +20,8 @@
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
     [{init, 0},
-     {request, 7},
-     {is_allowed_subscribe, 10},
+     {request, 4},
+     {is_allowed_subscribe, 7},
      {notify_content, 4},
      {package_parameters, 2},
      {subscription_behaviour, 3}

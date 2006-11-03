@@ -469,16 +469,17 @@ handle_call(Msg, _From, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({received_notify, FromPid, Request,
-%%                        THandler}, State)
+%%                        YxaCtx, THandler, Ctx}, State)
 %%           FromPid  = pid()
 %%           Request  = request record()
+%%           YxaCtx   = yxa_ctx record()
 %%           THandler = term(), server transaction handler
 %%           Ctx      = event_ctx record()
 %% Descrip.: One of our active_subscription pids have received a
 %%           NOTIFY request with a body.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_cast({received_notify, FromPid, Request, Origin, LogStr, THandler, Ctx}, State)
+handle_cast({received_notify, FromPid, Request, YxaCtx, THandler, Ctx}, State)
   when is_pid(FromPid), is_record(Request, request) ->
 
     #state{package_module = PackageM,
@@ -493,25 +494,31 @@ handle_cast({received_notify, FromPid, Request, Origin, LogStr, THandler, Ctx}, 
 	    _ ->
 		Ctx
 	end,
-    Ctx1 = Ctx1_1#event_ctx{presentity = State#state.presentity},
+    Ctx1 =
+	Ctx1_1#event_ctx{presentity = State#state.presentity
+			},
 
-    case PackageM:request(PackageS, Request, Origin, LogStr, LogTag, THandler, Ctx1) of
+    YxaCtx1 =
+	YxaCtx#yxa_ctx{app_logtag   = LogTag,
+		       thandler = THandler
+		      },
+    case PackageM:request(PackageS, Request, YxaCtx1, Ctx1) of
 	{error, need_auth} ->
-	    case eventserver:authenticate_subscriber(Request, LogTag, LogStr) of
+	    case eventserver:authenticate_subscriber(Request, YxaCtx1) of
 		{true, AuthSIPuser} ->
 		    Ctx2 = Ctx1#event_ctx{sipuser = AuthSIPuser},
-		    PackageM_Res = PackageM:request(PackageS, Request, Origin, LogStr, LogTag, THandler, Ctx2),
-		    logger:log(debug, "Active subscriber: Extra debug: Result of ~p:request/7 was : ~p",
+		    PackageM_Res = PackageM:request(PackageS, Request, YxaCtx1, Ctx2),
+		    logger:log(debug, "Active subscriber: Extra debug: Result of ~p:request/4 was : ~p",
 			       [PackageM, PackageM_Res]);
 		false ->
 		    logger:log(normal, "~s: Active subscriber: ~s -> '403 Forbidden'",
-			       [LogTag, LogStr]),
+			       [LogTag, YxaCtx#yxa_ctx.logstr]),
 		    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
 		drop ->
 		    ok
 	    end;
 	PackageM_Res ->
-	    logger:log(debug, "Active subscriber: Extra debug: Result of ~p:request/7 was : ~p",
+	    logger:log(debug, "Active subscriber: Extra debug: Result of ~p:request/4 was : ~p",
 		       [PackageM, PackageM_Res])
     end,
 
@@ -601,20 +608,20 @@ handle_info({servertransaction_terminating, _FromPid}, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({new_request, FromPid, Ref, NewRequest,
-%%                       Origin, LogStr}, ...)
+%%                       YxaCtx}, ...)
 %%           FromPid    = pid(), transaction layer
 %%           Ref        = ref(), unique reference to ack this message
 %%                               with (signal back to transaction
 %%                               layer)
 %%           NewRequest = request record()
-%%           Origin     = siporigin record(),
-%%           LogStr     = string(), textual description of request
+%%           YxaCtx     = yxa_ctx record()
 %% Descrip.: Handle incoming requests on our dialog.
 %% Returns : {noreply, State, Timeout}      |
 %%           {stop, normal, State}
 %%--------------------------------------------------------------------
-handle_info({new_request, FromPid, Ref, NewRequest, Origin, LogStr}, State) when is_record(NewRequest, request) ->
-    THandler = transactionlayer:get_handler_for_request(NewRequest),
+handle_info({new_request, FromPid, Ref, NewRequest, YxaCtx}, State) when is_record(NewRequest, request),
+									 is_record(YxaCtx, yxa_ctx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
     AdoptRes = transactionlayer:adopt_server_transaction_handler(THandler),
     FromPid ! {ok, self(), Ref},
 
@@ -628,9 +635,7 @@ handle_info({new_request, FromPid, Ref, NewRequest, Origin, LogStr}, State) when
 								  length(State#state.subscription_pids) + 1, "."])
 						   ),
 		    case active_subscription:start_link(NewRequest,
-							Origin,
-							LogStr,
-							THandler,
+							YxaCtx,
 							ChildBranchBase,
 							self(),
 							State#state.mystate,

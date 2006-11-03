@@ -17,8 +17,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
-	 request/7,
-	 is_allowed_subscribe/10,
+	 request/4,
+	 is_allowed_subscribe/7,
 	 notify_content/4,
 	 package_parameters/2,
 	 subscription_behaviour/3
@@ -54,32 +54,38 @@ init() ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: request("presence", Request, Origin, LogStr, LogTag, Ctx)
+%% Function: request("presence", Request, YxaCtx, Ctx)
 %%           Request  = request record(), the SUBSCRIBE request
-%%           Origin   = siporigin record()
-%%           LogStr   = string(), describes the request
+%%           YxaCtx   = yxa_ctx record()
 %%           LogTag   = string(), log prefix
 %%           THandler = term(), server transaction handler
 %%           Ctx      = event_ctx record(), context information for
 %%                      request.
-%% Descrip.: YXA event packages must export a request/7 function.
+%% Descrip.: YXA event packages must export a request/6 function.
 %%           See the eventserver.erl module description for more
 %%           information about when this function is invoked.
 %% Returns : void(), but return 'ok' or {error, Reason} for now
 %%--------------------------------------------------------------------
-request("presence", _Request, _Origin, _LogStr, LogTag, _THandler, #event_ctx{sipuser = undefined}) ->
+request("presence", _Request, YxaCtx, #event_ctx{sipuser = undefined}) ->
     logger:log(debug, "~s: presence event package: Requesting authorization (only local users allowed)",
-	       [LogTag]),
+	       [YxaCtx#yxa_ctx.app_logtag]),
     {error, need_auth};
 
-request("presence", #request{method = "PUBLISH"}, _Origin, LogStr, LogTag, THandler, #event_ctx{sipuser = []}) ->
+request("presence", #request{method = "PUBLISH"}, YxaCtx, #event_ctx{sipuser = []}) ->
     %% empty SIP user
+    #yxa_ctx{logstr       = LogStr,
+	     app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
     logger:log(normal, "~s: presence event package: ~s -> '404 Not Found'", [LogTag, LogStr]),
     transactionlayer:send_response_handler(THandler, 404, "Not Found"),
     ok;
 
-request("presence", #request{method = "PUBLISH"} = Request, _Origin, _LogStr, LogTag, THandler, Ctx) ->
+request("presence", #request{method = "PUBLISH"} = Request, YxaCtx, Ctx) ->
     %% non-empty SIP user
+    #yxa_ctx{app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
 
     #event_ctx{sipuser = SIPuser
 	      } = Ctx,
@@ -107,7 +113,7 @@ request("presence", #request{method = "PUBLISH"} = Request, _Origin, _LogStr, Lo
 				    presence_pidf:set_pidf_for_user(SIPuser, OldETag, ETag, Expires, ContentType,
 								    XML, Ctx)
 			    end,
-			
+
 			case Res2 of
 			    ok ->
 				EH = [{"SIP-ETag", [ETag]},
@@ -165,12 +171,15 @@ request("presence", #request{method = "PUBLISH"} = Request, _Origin, _LogStr, Lo
 	    {error, Reason}
     end;
 
-request("presence", #request{method = "NOTIFY"} = Request, _Origin, _LogStr, LogTag, THandler, Ctx) ->
+request("presence", #request{method = "NOTIFY"} = Request, YxaCtx, Ctx) ->
     %% non-empty SIP user
+    #yxa_ctx{app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
 
     #event_ctx{sipuser = Presentity
 	      } = Ctx,
-    
+
     logger:log(normal, "~s: presence event package: Processing NOTIFY ~s (presentity: {user, ~p})",
 	       [LogTag, sipurl:print(Request#request.uri), Presentity]),
 
@@ -201,7 +210,12 @@ request("presence", #request{method = "NOTIFY"} = Request, _Origin, _LogStr, Log
     end;
 
 
-request("presence", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
+request("presence", _Request, YxaCtx, _Ctx) ->
+    #yxa_ctx{logstr       = LogStr,
+	     app_logtag   = LogTag,
+	     thandler = THandler
+	    } = YxaCtx,
+
     logger:log(normal, "~s: presence event package: ~s -> '501 Not Implemented'",
 	       [LogTag, LogStr]),
     transactionlayer:send_response_handler(THandler, 501, "Not Implemented"),
@@ -209,22 +223,18 @@ request("presence", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_allowed_subscribe("presence", Num, Request, Origin,
-%%                                LogStr, LogTag, THandler, SIPuser,
-%%                                PkgState)
+%% Function: is_allowed_subscribe("presence", Num, Request, YxaCtx,
+%%                                SIPuser, PkgState)
 %%           Num      = integer(), the number of subscribes we have
 %%                      received on this dialog, starts at 1
 %%           Request  = request record(), the SUBSCRIBE request
-%%           Origin   = siporigin record()
-%%           LogStr   = string(), describes the request
-%%           LogTag   = string(), log prefix
-%%           THandler = term(), server transaction handler
+%%           YxaCtx   = yxa_ctx record()
 %%           SIPuser  = undefined | string(), undefined if request
 %%                      originator is not not authenticated, and
 %%                      string() if the user is authenticated (empty
 %%                      string if user could not be authenticated)
 %%           PkgState = undefined | my_state record()
-%% Descrip.: YXA event packages must export an is_allowed_subscribe/8
+%% Descrip.: YXA event packages must export an is_allowed_subscribe/6
 %%           function. This function is called when the event server
 %%           receives a subscription request for this event package,
 %%           and is the event packages chance to decide wether the
@@ -246,19 +256,19 @@ request("presence", _Request, _Origin, LogStr, LogTag, THandler, _Ctx) ->
 %%
 %% SIPuser = undefined
 %%
-is_allowed_subscribe("presence", _Num, _Request, _Origin, _LogStr, _LogTag, _THandler, _SIPuser = undefined,
+is_allowed_subscribe("presence", _Num, _Request, _YxaCtx, _SIPuser = undefined,
 		     _Presentity, _PkgState) ->
     {error, need_auth};
 %%
 %% Presentity is {users, UserList}
 %%
-is_allowed_subscribe("presence", _Num, Request, _Origin, _LogStr, _LogTag, _THandler, SIPuser,
-		     {users, ToUsers} = _Presentity, PkgState) when is_list(SIPuser), is_list(ToUsers) ->
+is_allowed_subscribe("presence", _Num, Request, _YxaCtx, SIPuser, {users, ToUsers} = _Presentity, PkgState)
+  when is_list(SIPuser), is_list(ToUsers) ->
     is_allowed_subscribe2(Request#request.header, active, 200, "Ok", [], PkgState);
 %%
 %% Presentity is {address, AddressStr}
 %%
-is_allowed_subscribe("presence", _Num, Request, _Origin, _LogStr, _LogTag, _THandler, SIPuser,
+is_allowed_subscribe("presence", _Num, Request, _YxaCtx, SIPuser,
 		     {address, AddressStr} = _Presentity, PkgState) when is_list(SIPuser), is_list(AddressStr) ->
     is_allowed_subscribe2(Request#request.header, pending, 202, "Ok", [], PkgState).
 

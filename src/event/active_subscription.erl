@@ -20,7 +20,7 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start_link/10
+-export([start_link/8
 	]).
 
 %%--------------------------------------------------------------------
@@ -78,13 +78,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, Origin, LogStr, THandler, BranchBase,
+%% Function: start_link(Request, YxaCtx, BranchBase,
 %%                      Parent, ParentState, Interval, ExtraH,
 %%                      FirstCSeq)
 %%           Request     = request record()
-%%           Origin      = siporigin record()
-%%           LogStr      = string(), describes request
-%%           THandler    = term(), server transaction handler
+%%           YxaCtx      = yxa_ctx record()
 %%           BranchBase  = string(), base of branch we should use
 %%           Parent      = pid()
 %%           ParentState = atom(), stop | ???
@@ -93,17 +91,19 @@
 %%           ExtraH      = list() of {Key, Value} tuples with stuff
 %%                         we should put in our SUBSCRIBEs.
 %%           FirstCSeq   = integer(), first CSeq number we should use
-%% Descrip.: Starts the active_subscriber gen_server.
+%% Descrip.: Starts the active_subscriber ge5An_server.
 %%
 %% NOTE    : ExtraH MUST include one (and only one) of the following :
 %%           "Contact", "Event" and "Accept"
 %%
-%% Returns : Pid = pid() | {error, Reason}
+%% Returns : Pid = pid() | {error, Reason}5A
 %%           Reason = {siperror, Status, Reason, EH} |
 %%           term()
 %%--------------------------------------------------------------------
-start_link(#request{method = "NOTIFY"} = Request, Origin, LogStr, THandler, BranchBase, Parent, ParentState,
-	   Interval, ExtraH, FirstCSeq) ->
+start_link(#request{method = "NOTIFY"} = Request, YxaCtx, BranchBase, Parent, ParentState,
+	   Interval, ExtraH, FirstCSeq) when is_record(YxaCtx, yxa_ctx), is_list(BranchBase), is_pid(Parent),
+					     is_atom(ParentState), is_integer(Interval), is_list(ExtraH),
+					     is_integer(FirstCSeq) ->
 
     %% verify that mandatory values are present in ExtraH
     {value, {_, [MyContact]}} = lists:keysearch("Contact", 1, ExtraH),
@@ -129,7 +129,7 @@ start_link(#request{method = "NOTIFY"} = Request, Origin, LogStr, THandler, Bran
 		    sent_subscr_ts	= util:timestamp() %% well, not really but...
 		   },
 
-    gen_server:start_link(?MODULE, [State1, Request, Origin, LogStr, THandler, ParentState, FirstCSeq], []).
+    gen_server:start_link(?MODULE, [State1, Request, YxaCtx, ParentState, FirstCSeq], []).
 
 
 %%====================================================================
@@ -137,13 +137,10 @@ start_link(#request{method = "NOTIFY"} = Request, Origin, LogStr, THandler, Bran
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([State1, Request, Origin, LogStr, THandler,
-%%                 ParentState, FirstCSeq])
+%% Function: init([State1, Request, YxaCtx, ParentState, FirstCSeq])
 %%           State1      = state record(), state in
 %%           Request     = request record()
-%%           Origin      = siporigin record()
-%%           LogStr      = string(), describes request
-%%           THandler    = term(), server transaction handler
+%%           YxaCtx      = yxa_ctx record()
 %%           ParentState = atom(), stop | ???
 %%           FirstCSeq   = integer(), first CSeq number we should use
 %% Descrip.: Initiates the server
@@ -151,7 +148,9 @@ start_link(#request{method = "NOTIFY"} = Request, Origin, LogStr, THandler, Bran
 %%           ignore         |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([State1, Request, Origin, LogStr, THandler, ParentState, FirstCSeq]) ->
+init([State1, Request, YxaCtx, ParentState, FirstCSeq]) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
+
     {ok, Expires} = get_subscription_state_expires(Request#request.header, State1#state.interval),
 
     {ok, ToTag} = transactionlayer:get_my_to_tag(THandler),
@@ -180,7 +179,7 @@ init([State1, Request, Origin, LogStr, THandler, ParentState, FirstCSeq]) ->
 
 	    logger:log(debug, "Active subscription: Started (NOTIFY ~s)", [sipurl:print(Request#request.uri)]),
 
-	    case process_received_notify(Request, Origin, LogStr, THandler, State2) of
+	    case process_received_notify(Request, YxaCtx, State2) of
 		{noreply, State} ->
 		    {ok, State};
 		{stop, normal, _State} ->
@@ -348,20 +347,20 @@ handle_info({servertransaction_terminating, _FromPid}, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({new_request, FromPid, Ref, NewRequest,
-%%                       Origin, LogStr}, ...)
+%%                       YxaCtx}, ...)
 %%           FromPid    = pid(), transaction layer
 %%           Ref        = ref(), unique reference to ack this message
 %%                               with (signal back to transaction
 %%                               layer)
 %%           NewRequest = request record()
-%%           Origin     = siporigin record(),
-%%           LogStr     = string(), textual description of request
+%%           YxaCtx     = yxa_ctx record(),
 %% Descrip.: Handle incoming requests on our dialog.
 %% Returns : {noreply, State, Timeout}      |
 %%           {stop, normal, State}
 %%--------------------------------------------------------------------
-handle_info({new_request, FromPid, Ref, NewRequest, Origin, LogStr}, State) when is_record(NewRequest, request) ->
-    THandler = transactionlayer:get_handler_for_request(NewRequest),
+handle_info({new_request, FromPid, Ref, NewRequest, YxaCtx}, State) when is_record(NewRequest, request),
+									 is_record(YxaCtx, yxa_ctx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
     transactionlayer:adopt_server_transaction_handler(THandler),
     FromPid ! {ok, self(), Ref},
 
@@ -373,7 +372,7 @@ handle_info({new_request, FromPid, Ref, NewRequest, Origin, LogStr}, State) when
 	{ok, NewDialog} ->
 	    case NewRequest#request.method of
 		"NOTIFY" ->
-		    process_received_notify(NewRequest, Origin, LogStr, THandler, State);
+		    process_received_notify(NewRequest, YxaCtx, State);
 		_ ->
 		    transactionlayer:send_response_handler(THandler, 501, "Not Implemented (inside dialog)",
 							   State#state.res_extra_h),
@@ -514,20 +513,19 @@ send_subscribe(Expires, State) when is_integer(Expires), State#state.subscribe_p
 
 
 %%--------------------------------------------------------------------
-%% Function: process_received_notify(Request, Origin, LogStr,
-%%                                   THandler, State)
+%% Function: process_received_notify(Request, YxaCtx, State)
 %%           Request  = request record()
-%%           Origin   = siporigin record()
-%%           LogStr   = string(), describes Request
-%%           THandler = term(), server transaction handler
+%%           YxaCtx   = yxa_ctx record()
 %%           State    = state record()
 %% Descrip.: Process a NOTIFY request we have received.
 %% Returns : {noreply, NewState}      |
 %%           {stop, normal, NewState}
 %%           NewState = state record()
 %%--------------------------------------------------------------------
-process_received_notify(Request, Origin, LogStr, THandler, State) when is_record(Request, request),
-								       is_record(State, state) ->
+process_received_notify(Request, YxaCtx, State) when is_record(Request, request), is_record(YxaCtx, yxa_ctx),
+						     is_record(State, state) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
+    
     Now = util:timestamp(),
     NewState1 = State#state{last_notify_ts = Now},
 
@@ -584,7 +582,7 @@ process_received_notify(Request, Origin, LogStr, THandler, State) when is_record
 			    DialogId = {Dialog#dialog.callid, Dialog#dialog.local_tag, Dialog#dialog.remote_tag},
 			    
 			    Ctx = #event_ctx{dialog_id = DialogId},
-			    gen_server:cast(State#state.parent, {received_notify, self(), Request, Origin, LogStr,
+			    gen_server:cast(State#state.parent, {received_notify, self(), Request, YxaCtx,
 								 THandler, Ctx}),
 			    
 			    {noreply, NewState1}

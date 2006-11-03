@@ -125,8 +125,8 @@
 %% transaction layer
 -export([
 	 start_client_transaction/4,
-	 new_request/4,
-	 new_response/4
+	 new_request/3,
+	 new_response/3
 	]).
 
 %% transport layer
@@ -908,10 +908,10 @@ outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin
 
 
 %%--------------------------------------------------------------------
-%% Function: get_event_package_module(EventPackage, Request, Origin)
+%% Function: get_event_package_module(EventPackage, Request, YxaCtx)
 %%           EventPackage = string() ("presence" | "ua-config" | ...)
 %%           Request      = request record()
-%%           Origin       = siporigin record()
+%%           YxaCtx       = yxa_ctx record()
 %% Descrip.: Decide which event package should handle a request
 %%           (SUBSCRIBE or PUBLISH) in the eventserver. You can use
 %%           this to make only certain SUBSCRIBE/PUBLISH requests go
@@ -921,10 +921,10 @@ outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin
 %%           undefined
 %%           PackageModule = atom()
 %%--------------------------------------------------------------------
-get_event_package_module(EventPackage, Request, Origin) when is_list(EventPackage), is_record(Request, request),
-							     is_record(Origin, siporigin) ->
+get_event_package_module(EventPackage, Request, YxaCtx) when is_list(EventPackage), is_record(Request, request),
+							     is_record(YxaCtx, yxa_ctx) ->
     ?CHECK_EXPORTED({get_event_package_module, 3},
-		    ?LOCAL_MODULE:get_event_package_module(EventPackage, Request, Origin),
+		    ?LOCAL_MODULE:get_event_package_module(EventPackage, Request, YxaCtx),
 		    undefined
 		   ).
 
@@ -1077,18 +1077,17 @@ start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, 
 		   ).
 
 %%--------------------------------------------------------------------
-%% Function: new_request(AppModule, Request, Origin, LogStr)
+%% Function: new_request(AppModule, Request, YxaCtx)
 %%           AppModule = atom(), YXA application module the
 %%                       transaction layer thought this request should
 %%                       be passed to
 %%           Request   = request record()
-%%           Origin    = siporigin record()
-%%           LogStr    = string(), textual description of request
+%%           YxaCtx    = yxa_ctx record()
 %% Descrip.: This function gets called when the transaction layer has
 %%           decided that a new request has arrived, and figured it
 %%           should be passed to the YXA application (proxy core/
 %%           transaction user). Depending on what this function
-%%           returns, the AppModule:request/3 function will either not
+%%           returns, the AppModule:request/2 function will either not
 %%           be called at all, called with the parameters unchanged or
 %%           called with a modified set of parameters.
 %% Returns : undefined | Continue processing with default arguments
@@ -1101,26 +1100,25 @@ start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, 
 %%           server transaction since the URI of the ACK doesn't match
 %%           the URI of the original INVITE (since you changed it).
 %%--------------------------------------------------------------------
-new_request(AppModule, Request, Origin, LogStr) ->
-    ?CHECK_EXPORTED({new_request, 4},
-		    ?LOCAL_MODULE:new_request(AppModule, Request, Origin, LogStr),
+new_request(AppModule, Request, YxaCtx) ->
+    ?CHECK_EXPORTED({new_request, 3},
+		    ?LOCAL_MODULE:new_request(AppModule, Request, YxaCtx),
 		    undefined
 		   ).
 
 %%--------------------------------------------------------------------
-%% Function: new_response(AppModule, Response, Origin, LogStr)
+%% Function: new_response(AppModule, Response, YxaCtx)
 %%           AppModule = atom(), YXA application module the
 %%                       transaction layer thought this request should
 %%                       be passed to
 %%           Response  = response record()
-%%           Origin    = siporigin record()
-%%           LogStr    = string(), textual description of response
+%%           YxaCtx    = yxa_ctx record()
 %% Descrip.: This function gets called when the transaction layer has
 %%           decided that a response not assoicated with a running
 %%           client transaction has arrived. Such responses should be
 %%           passed to the YXA application (proxy core/transaction
 %%           user). Depending on what this function returns, the
-%%           AppModule:response/3 function will either not be called
+%%           AppModule:response/2 function will either not be called
 %%           at all, called with the parameters unchanged or called
 %%           with a modified set of parameters.
 %% Returns : undefined | Continue processing with default arguments
@@ -1129,9 +1127,9 @@ new_request(AppModule, Request, Origin, LogStr) ->
 %%           {modified, NewAppModule, NewResponse,
 %%                      NewOrigin, NewLogStr}
 %%--------------------------------------------------------------------
-new_response(AppModule, Response, Origin, LogStr) ->
-    ?CHECK_EXPORTED({new_response, 4},
-		    ?LOCAL_MODULE:new_response(AppModule, Response, Origin, LogStr),
+new_response(AppModule, Response, YxaCtx) ->
+    ?CHECK_EXPORTED({new_response, 3},
+		    ?LOCAL_MODULE:new_response(AppModule, Response, YxaCtx),
 		    undefined
 		   ).
 

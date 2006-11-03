@@ -15,8 +15,8 @@
 %%--------------------------------------------------------------------
 -export([
 	 init/0,
-	 request/3,
-	 response/3,
+	 request/2,
+	 response/2,
 	 terminate/1
 	]).
 
@@ -55,13 +55,19 @@ init() ->
     [Tables, stateful, {append, [Registrar]}].
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, Origin, LogStr)
+%% Function: request(Request, YxaCtx)
 %%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string() describing request
-%% Descrip.: YXA applications must export an request/3 function.
+%%           YxaCtx  = yxa_ctx record()
+%% Descrip.: YXA applications must export a request/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
+
+request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    LogTag = get_branchbase_from_handler(YxaCtx#yxa_ctx.thandler),
+    YxaCtx1 =
+	YxaCtx#yxa_ctx{app_logtag = LogTag
+		      },
+    request2(Request, YxaCtx1).
 
 %%
 %% REGISTER
@@ -70,13 +76,10 @@ init() ->
 %% (step 2) compared to the RFC (RFC 3261 chapter 10.3) specification.
 %% This could theoreticaly result in unexpected, but legal, error
 %% responses.
-request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
-    THandler = transactionlayer:get_handler_for_request(Request),
-    LogTag = get_branchbase_from_handler(THandler),
-    case siplocation:process_register_request(Request, Origin,
-					      THandler, LogTag, LogStr, incomingproxy) of
+request2(#request{method = "REGISTER"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    case siplocation:process_register_request(Request, YxaCtx, incomingproxy) of
 	not_homedomain ->
-	    do_request(Request, Origin, THandler, LogTag);
+	    do_request(Request, YxaCtx);
 	_ ->
 	    true
     end,
@@ -85,8 +88,8 @@ request(#request{method = "REGISTER"} = Request, Origin, LogStr) when is_record(
 %%
 %% ACK
 %%
-request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origin, siporigin) ->
-    transportlayer:stateless_proxy_ack("incomingproxy", Request, LogStr),
+request2(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    transportlayer:stateless_proxy_ack("incomingproxy", Request, YxaCtx),
     ok;
 
 %%
@@ -94,50 +97,47 @@ request(#request{method = "ACK"} = Request, Origin, LogStr) when is_record(Origi
 %%
 %% These requests cannot be challenged. CANCEL because it can't be resubmitted (RFC3261 #22.1),
 %% and ACK because it is illegal to send responses to ACK. Bypass check of authorized From: address.
-request(#request{method=Method}=Request, Origin, _LogStr) when is_record(Origin, siporigin),
-							       Method == "CANCEL"; Method == "BYE" ->
-    do_request(Request, Origin),
+request2(#request{method = Method} = Request, YxaCtx) when Method == "CANCEL" orelse Method == "BYE",
+							  is_record(YxaCtx, yxa_ctx) ->
+    do_request(Request, YxaCtx),
     ok;
 
 %%
 %% Request other than REGISTER, ACK, CANCEL or BYE
 %%
-request(Request, Origin, LogStr) when is_record(Request, request), is_record(Origin, siporigin) ->
+request2(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     {_, FromURI} = sipheader:from(Request#request.header),
-    THandler = transactionlayer:get_handler_for_request(Request),
-    LogTag = get_branchbase_from_handler(THandler),
     %% Check if the From: address matches our homedomains, and if so
     %% call verify_homedomain_user() to make sure the user is
     %% authorized and authenticated to use this From: address
     case local:homedomain(FromURI#sipurl.host) of
 	true ->
-	    case verify_homedomain_user(Request, LogTag, Origin, LogStr) of
+	    case verify_homedomain_user(Request, YxaCtx) of
 		true ->
-		    do_request(Request, Origin, THandler, LogTag);
+		    do_request(Request, YxaCtx);
 		false ->
 		    logger:log(normal, "~s: incomingproxy: Not authorized to use this From: -> 403 Forbidden",
-			       [LogTag]),
-		    transactionlayer:send_response_handler(THandler, 403, "Forbidden");
+			       [YxaCtx#yxa_ctx.app_logtag]),
+		    transactionlayer:send_response_handler(YxaCtx#yxa_ctx.thandler, 403, "Forbidden");
 		drop ->
 		    ok
 	    end;
 	_ ->
-	    do_request(Request, Origin, THandler, LogTag)
+	    do_request(Request, YxaCtx)
     end,
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, Origin, LogStr)
+%% Function: response(Response, YxaCtx)
 %%           Request = response record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string(), description of response
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: YXA applications must export an response/3 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
-response(Response, Origin, LogStr) when is_record(Response, response), is_record(Origin, siporigin) ->
+response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
     logger:log(normal, "incomingproxy: Response to ~s: '~p ~s', no matching transaction - proxying statelessly",
-	       [LogStr, Status, Reason]),
+	       [YxaCtx#yxa_ctx.logstr, Status, Reason]),
     transportlayer:send_proxy_response(none, Response),
     ok.
 
@@ -156,17 +156,16 @@ terminate(Mode) when is_atom(Mode) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: verify_homedomain_user(Request, LogTag)
+%% Function: verify_homedomain_user(Request, YxaCtx)
 %%           Request = request record()
-%%           LogTag  = string(), prefix for logging
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: If a request has a From: matching our homedomains,
 %%           this function is called to make sure the user really
 %%           is who it says it is, and not someone else forging
 %%           our users identity.
 %% Returns : true | false | drop
 %%--------------------------------------------------------------------
-verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, request), is_list(LogTag),
-							     is_record(Origin, siporigin), is_list(LogStr) ->
+verify_homedomain_user(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case yxa_config:get_env(always_verify_homedomain_user) of
 	{ok, true} ->
 	    ToTag = sipheader:get_tag( keylist:fetch('to', Request#request.header) ),
@@ -177,13 +176,14 @@ verify_homedomain_user(Request, LogTag, Origin, LogStr) when is_record(Request, 
 		    logger:log(debug, "incomingproxy: NOT authenticating in-dialog request"),
 		    true;
 		true ->
-		    verify_homedomain_user2(Request, LogTag, Origin, LogStr)
+		    verify_homedomain_user2(Request, YxaCtx)
 	    end;
 	{ok, false} ->
 	    true
     end.
 
-verify_homedomain_user2(Request, LogTag, Origin, LogStr) ->
+verify_homedomain_user2(Request, YxaCtx) ->
+    LogTag = YxaCtx#yxa_ctx.app_logtag,
     {Method, Header} = {Request#request.method, Request#request.header},
     {_, FromURI} = sipheader:from(Header),
     %% Request has a From: address matching one of my domains.
@@ -215,7 +215,8 @@ verify_homedomain_user2(Request, LogTag, Origin, LogStr) ->
 		    transactionlayer:send_challenge_request(Request, proxy, false, none),
 		    drop;
 		_ ->
-		    OStr = sipserver:origin2str(Origin),
+		    OStr = sipserver:origin2str(YxaCtx#yxa_ctx.origin),
+		    LogStr = YxaCtx#yxa_ctx.logstr,
 		    Msg = io_lib:format("Request from ~s failed authentication : ~s", [OStr, LogStr]),
 		    event_handler:generic_event(normal, auth, LogTag, Msg),
 		    false
@@ -224,8 +225,7 @@ verify_homedomain_user2(Request, LogTag, Origin, LogStr) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_request(RequestIn, Origin)
-%%           do_request(RequestIn, Origin, THandler, LogTag)
+%% Function: do_request(RequestIn, Origin, THandler, LogTag)
 %%           RequestIn = request record()
 %%           Origin    = siporigin record()
 %%           THandler  = term(), server transaction handle
@@ -235,12 +235,11 @@ verify_homedomain_user2(Request, LogTag, Origin, LogStr) ->
 %%           supposed to.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-do_request(Request, Origin) ->
-    THandler = transactionlayer:get_handler_for_request(Request),
-    LogTag = get_branchbase_from_handler(THandler),
-    do_request(Request, Origin, THandler, LogTag).
-do_request(Request, Origin, THandler, LogTag) when is_record(Request, request), is_record(Origin, siporigin),
-						   is_list(LogTag) ->
+do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    #yxa_ctx{origin     = Origin,
+	     thandler   = THandler,
+	     app_logtag = LogTag
+	    } = YxaCtx,
     {Method, URI} = {Request#request.method, Request#request.uri},
     logger:log(debug, "incomingproxy: Processing request ~s ~s~n", [Method, sipurl:print(URI)]),
     Location = route_request(Request, Origin, LogTag),

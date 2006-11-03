@@ -44,7 +44,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start_link/3,
+	 start_link/2,
 	 test/0
 	]).
 
@@ -100,16 +100,13 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, Socket, LogStr)
-%%           start(Request, Socket, LogStr)
-%%           Request   = request record()
-%%           Socket    = sipsocket record(), the socket this request
-%%                                         was received on
-%%           LogStr    = string(), description of request
+%% Function: start_link(Request, YxaCtx)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: Starts the server
 %% Returns : gen_server:start_link/4
 %%--------------------------------------------------------------------
-start_link(Request, Socket, LogStr) ->
+start_link(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     %% It is intentional to call gen_server:start(...) here even though
     %% this function is called start_link. That is because of a 'problem'
     %% with gen_servers in Erlang/OTP (at least R10B-2). If you use
@@ -118,7 +115,7 @@ start_link(Request, Socket, LogStr) ->
     %% set process_flag(trap_exit, true)! We set up a link to this process
     %% in the init/1 callback to achieve the same effect (although with
     %% a bitter taste).
-    gen_server:start(?MODULE, [Request, Socket, LogStr, self()], []).
+    gen_server:start(?MODULE, [Request, YxaCtx, self()], []).
 
 
 %%====================================================================
@@ -126,11 +123,9 @@ start_link(Request, Socket, LogStr) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, Socket, LogStr])
+%% Function: init([Request, YxaCtx, Parent])
 %%           Request   = request record()
-%%           Socket    = sipsocket record(), the socket this request
-%%                                         was received on
-%%           LogStr    = string(), description of request
+%%           YxaCtx    = yxa_ctx record()
 %% Descrip.: Initiates the server transaction gen_server
 %% Returns : {ok, State, Timeout} |
 %%           ignore               |
@@ -140,7 +135,7 @@ start_link(Request, Socket, LogStr) ->
 %%
 %% ACK - no go
 %%
-init([#request{method="ACK"}=Request, _Socket, _LogStr, _Parent]) ->
+init([#request{method="ACK"} = Request, _YxaCtx, _Parent]) ->
     %% Although a bit vague, RFC3261 section 17 (Transactions) do say that
     %% it is not allowed to send responses to ACK requests, so we simply
     %% deny to start a server transaction here. The transcation_layer will
@@ -152,7 +147,7 @@ init([#request{method="ACK"}=Request, _Socket, _LogStr, _Parent]) ->
 %%
 %% Anything but ACK
 %%
-init([Request, Socket, LogStr, Parent]) ->
+init([Request, YxaCtx, Parent]) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
     Desc = lists:concat([Branch, ": ", Method, " ", sipurl:print(URI)]),
@@ -168,7 +163,7 @@ init([Request, Socket, LogStr, Parent]) ->
 	    %% above for more details.
 	    true = link(Parent),
 	    process_flag(trap_exit, true),
-	    case init2([Request, Socket, LogStr, Branch, Parent]) of
+	    case init2([Request, YxaCtx, Branch, Parent]) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
 		Reply ->
@@ -178,11 +173,11 @@ init([Request, Socket, LogStr, Parent]) ->
 	    %% We are the losing party of a race. Notify the winner that there was
 	    %% a resend (us) and then exit. XXX implement the notifying, for now
 	    %% just log.
-	    logger:log(normal, "~s: Early resend, exiting.", [LogStr]),
+	    logger:log(normal, "~s: Early resend, exiting.", [YxaCtx#yxa_ctx.logstr]),
 	    {stop, normal}
     end.
 
-init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request) ->
+init2([Request, YxaCtx, Branch, Parent]) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
 
     %% LogTag is essentially Branch + Method, LogStr is a string that
@@ -197,6 +192,7 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
 		Tag
 	end,
 
+    Socket = (YxaCtx#yxa_ctx.origin)#siporigin.sipsocket,
     IsRel = sipsocket:is_reliable_transport(Socket),
 
     State = #state{branch	= Branch,
@@ -212,7 +208,7 @@ init2([Request, Socket, LogStr, Branch, Parent]) when is_record(Request, request
 
     logger:log(debug, "~s: Started new server transaction for request ~s ~s.",
 	       [LogTag, Method, sipurl:print(URI)]),
-    logger:log(normal, "~s: ~s", [LogTag, LogStr]),
+    logger:log(normal, "~s: ~s", [LogTag, YxaCtx#yxa_ctx.logstr]),
 
     %% Create event about new request received
     {CallId, FromTag, ToTag} = sipheader:dialogid(Request#request.header),
