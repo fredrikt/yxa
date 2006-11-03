@@ -20,6 +20,9 @@
 -include("stun.hrl").
 
 
+%% RFC3489bis-03 #6 (STUN Message Structure)
+-define(STUN_MAGIC_COOKIE, 16#2112A442).
+
 
 %%--------------------------------------------------------------------
 %% Function:
@@ -48,36 +51,69 @@ send2(Proto, Host, Port, Count) when is_atom(Proto), is_list(Host), is_integer(P
 	    tcp6 ->
 		[{reuseaddr, true}, {active, true}, binary, inet6];
 	    tcp ->
+		[{reuseaddr, true}, {active, true}, binary];
+	    udp6 ->
+		[{reuseaddr, true}, {active, true}, binary];
+	    udp ->
 		[{reuseaddr, true}, {active, true}, binary]
 	end,
 
     io:format("*** Connecting to ~p:~s:~p...~n", [Proto, Host, Port]),
 
-    {ok, Socket} = gen_tcp:connect(Host, Port, SocketOpts),
+    {ok, Socket} =
+	if
+	    Proto == tcp ; Proto == tcp6 ->
+		gen_tcp:connect(Host, Port, SocketOpts);
+	    Proto == udp ; Proto == udp6 ->
+		gen_udp:open(0, SocketOpts)
+	end,
 
-    send3(Socket, Count).
+    send3(Proto, Socket, Host, Port, Count).
 
-send3(Socket, 0) ->
+send3(udp, _Socket, _Host, _Port, 0) ->
+    ok;
+send3(tcp, Socket, _Host, _Port, 0) ->
     ok = gen_tcp:close(Socket);
-send3(Socket, Count) ->
+send3(Proto, Socket, Host, Port, Count) ->
     Timestamp = util:timestamp(),
 
-    STUN = <<16#0001:16/big-unsigned,
+    STUN_OLD = <<16#0001:16/big-unsigned,
 	    0:16/big-unsigned,
 	    Timestamp:128/big-unsigned
 	    >>,
 
+    STUN = <<16#0001:16/big-unsigned,
+	    0:16/big-unsigned,
+	    ?STUN_MAGIC_COOKIE:32/big-unsigned,
+	    Timestamp:96/big-unsigned
+	    >>,
+
     io:format("*** Sending...~n"),
-    gen_tcp:send(Socket, STUN),
+    case Proto of
+	tcp -> gen_tcp:send(Socket, STUN);
+	udp -> gen_udp:send(Socket, Host, Port, STUN)
+    end,
     
     receive
-	{tcp, Socket, Packet} ->
+	{tcp, Socket, Packet} when Proto == tcp ->
 	    io:format("*** Received : ~p~n", [Packet]),
+	    io:format("~p~n", [stun:decode_attributes(Packet, 20)]),
 	    timer:sleep(1100),
-	    send3(Socket, Count - 1);
-	{tcp_closed, Socket} ->
+	    send3(Proto, Socket, Host, Port, Count - 1);
+	{tcp_closed, Socket} when Proto == tcp ->
 	    io:format("*** Socket closed!~n"),
-	    error
+	    error;
+
+	{udp, Socket, _RecvHost, _RecvPort, Packet} when Proto == udp ->
+	    io:format("*** Received : ~p~n", [Packet]),
+	    io:format("~p~n", [stun:decode_attributes(Packet, 20)]),
+	    timer:sleep(1100),
+	    send3(Proto, Socket, Host, Port, Count - 1);
+
+	Unknown ->
+	    io:format("*** UNKNOWN SIGNAL : ~p~n~n", [Unknown]),
+	    send3(Proto, Socket, Host, Port, Count - 1)
+	    
     after 1000 ->
 	    io:format("*** Timed out!~n"),
 	    error
