@@ -39,6 +39,7 @@
 	 delete_phone_for_user/2,
 	 get_sipusers_using_contact/1,
 	 get_locations_using_contact/1,
+	 decode_mnesia_change_event/1,
 
 	 test/0,
 	 test_create_table/0
@@ -391,22 +392,8 @@ get_sipuser_locations(SipUser) when is_list(SipUser) ->
 	end,
     {atomic, L} = mnesia:transaction(F),
 
-    Now = util:timestamp(),
-
-    %% Remove expired entrys and convert into siplocationdb_e record().
-    %% Convert the location strings stored in the database to sipurl record format.
-    %% We can't store the locations as sipurl records in the database in case we
-    %% have to change something in the sipurl record.
-    Rewrite =
-	[ #siplocationdb_e{address	= sipurl:parse(E#phone.address),
-			   sipuser	= E#phone.user,
-			   instance	= E#phone.instance,
-			   flags	= E#phone.flags,
-			   class	= E#phone.class,
-			   expire	= E#phone.expire
-			  }
-	  || E <- L, E#phone.expire > Now orelse E#phone.expire == never],
-     {ok, Rewrite}.
+    Rewrite = non_expired_phones_to_ldbe(L),
+    {ok, Rewrite}.
 
 %%--------------------------------------------------------------------
 %% Function: get_phone(SipUser)
@@ -498,21 +485,7 @@ get_locations_using_contact(URI) when is_record(URI, sipurl) ->
 	end,
     {atomic, L} = mnesia:transaction(F),
 
-    Now = util:timestamp(),
-
-    %% Remove expired entrys and convert into siplocationdb_e record().
-    %% Convert the location strings stored in the database to sipurl record format.
-    %% We can't store the locations as sipurl records in the database in case we
-    %% have to change something in the sipurl record.
-    Rewrite =
-	[ #siplocationdb_e{address	= sipurl:parse(E#phone.address),
-			   sipuser	= E#phone.user,
-			   instance	= E#phone.instance,
-			   flags	= E#phone.flags,
-			   class	= E#phone.class,
-			   expire	= E#phone.expire
-			  }
-	  || E <- L, E#phone.expire > Now orelse E#phone.expire == never],
+    Rewrite = non_expired_phones_to_ldbe(L),
      {ok, Rewrite}.
 
 %%--------------------------------------------------------------------
@@ -704,6 +677,29 @@ delete_with_key(Db, Key) ->
     Rec = mnesia:transaction(F),
     Rec.
 
+%%--------------------------------------------------------------------
+%% Function: decode_mnesia_change_event(MnesiaEvent)
+%%           MnesiaEvent = tuple(), Mnesia 'subscribe' event data
+%% Descrip.: Return location records from Mnesia write or
+%%           delete_object events.
+%% Returns : {ok, Action, User, Locations} |
+%%           none
+%%           Action    = insert | delete
+%%           User      = string()
+%%           Locations = list() of siploctiondb_e record()
+%%--------------------------------------------------------------------
+decode_mnesia_change_event({Type, Data, _TId}) when (Type == write orelse Type == delete_object),
+						    is_record(Data, phone) ->
+    [Entry] = phones_to_ldbe([Data]),
+    Action =
+	case Type of
+	    write         -> insert;
+	    delete_object -> delete
+	end,
+    {ok, Action, Entry#siplocationdb_e.sipuser, Entry};
+decode_mnesia_change_event(_Unknown) ->
+    none.
+
 
 %%====================================================================
 %% Internal functions
@@ -726,6 +722,28 @@ url_to_requristr(URL) when is_record(URL, sipurl) ->
     %% sipurl:print/1 is used to create a consistent and therefore
     %% easily matchable string
     sipurl:print(sipurl:new([{proto, "sip"}, {user, User}, {host, Host}, {port, Port}])).
+
+
+non_expired_phones_to_ldbe(L) ->
+    Now = util:timestamp(),
+
+    %% Remove expired entrys and convert into siplocationdb_e record().
+    %% Convert the location strings stored in the database to sipurl record format.
+    %% We can't store the locations as sipurl records in the database in case we
+    %% have to change something in the sipurl record.
+    L1 = [E || E <- L, E#phone.expire > Now orelse E#phone.expire == never],
+
+    phones_to_ldbe(L1).
+
+phones_to_ldbe(L) ->
+    [ #siplocationdb_e{address	= sipurl:parse(E#phone.address),
+		       sipuser	= E#phone.user,
+		       instance	= E#phone.instance,
+		       flags	= E#phone.flags,
+		       class	= E#phone.class,
+		       expire	= E#phone.expire
+		      }
+      || E <- L].
 
 
 %%====================================================================
