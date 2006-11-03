@@ -367,7 +367,7 @@ do_connect(Host, Data, Opts) when Data#eldap.use_tls == true ->
     %% 	    ssl:seed("bkrlnateqqo" ++ integer_to_list(X));
     %%        true -> true
     %% end,
-    {ok, Fd} = ssl:connect(Host, Data#eldap.port, [{verify,0}|Opts]),
+    ssl:connect(Host, Data#eldap.port, [{verify,0}|Opts]).
     %% YXA don't want stuff written to the console, and also thinks the Erlang/OTP ssl:peercert/2
     %% is error prone (crashes if certificates contain for example the attribute
     %%                 2.16.840.1.113730.1.1 - Netscape certificate type)
@@ -378,7 +378,7 @@ do_connect(Host, Data, Opts) when Data#eldap.use_tls == true ->
     %%        true ->
     %% 	    io:fwrite("ssl-connect succeded~n", [])
     %%     end,
-    {ok, Fd}.
+    %% {ok, Fd}.
 
 
 loop(Cpid, Data) ->
