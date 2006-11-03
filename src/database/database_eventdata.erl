@@ -15,7 +15,8 @@
 	 create/1,
 
 	 insert/6,
-	 update_presentity_etag/4,
+	 update/7,
+	 refresh_presentity_etag/4,
 
 	 fetch_using_presentity/1,
 	 fetch_using_presentity_etag/2,
@@ -41,6 +42,7 @@
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
+-define(MIN_ABSOLUTE_TIME, 1161388800).  %% refuse expiration times that would be before this
 
 %% private Mnesia record
 -record(eventdata, {
@@ -80,14 +82,17 @@ create(Servers) ->
 %%           PackageS   = string(), event package
 %%           Presentity = tuple(), {user, User} | {address, AddrStr}
 %%           ETag       = term(), event package record reference
-%%           Expires    = integer()
+%%           Expires    = integer() | never
 %%           Flags      = list() of {Key, Value} (for future use)
 %%           Data       = term(), event package data
 %% Descrip.: Create a new entry in the database.
 %% Returns : mnesia transaction()
 %%--------------------------------------------------------------------
+insert(Package, Presentity, ETag, Expires, Flags, Data) when is_integer(Expires), Expires < ?MIN_ABSOLUTE_TIME ->
+    erlang:error("time supplied to insert/6 should be absolute, not relative",
+		 [Package, Presentity, ETag, Expires, Flags, Data]);
 insert(Package, Presentity, ETag, Expires, Flags, Data) when is_list(Package), is_tuple(Presentity),
-							     is_integer(Expires); Expires == never,
+							     is_integer(Expires) orelse Expires == never,
 							     is_list(Flags) ->
     db_util:insert_record(#eventdata{presentity	= Presentity,
 				     entity_tag	= ETag,
@@ -98,7 +103,58 @@ insert(Package, Presentity, ETag, Expires, Flags, Data) when is_list(Package), i
 			       }).
 
 %%--------------------------------------------------------------------
-%% Function: update_presentity_etag(Presentity, ETag, NewExpires,
+%% Function: update(Package, Presentity, ETag, NewETag, Expires,
+%%                  Flags, Data)
+%%           PackageS   = string(), event package
+%%           Presentity = tuple(), {user, User} | {address, AddrStr}
+%%           ETag       = term(), event package record reference
+%%           NewETag    = term(), NEW event package record reference
+%%           Expires    = integer() | never
+%%           Flags      = list() of {Key, Value} (for future use)
+%%           Data       = term(), event package data
+%% Descrip.: Update an existing element that matches Package,
+%%           Presentity and ETag.
+%% Returns : ok | nomatch | error
+%%--------------------------------------------------------------------
+update(Package, Presentity, ETag, NewETag, Expires, Flags, Data) when is_integer(Expires),
+								      Expires < ?MIN_ABSOLUTE_TIME ->
+    erlang:error("time supplied to update/7 should be absolute, not relative",
+		 [Package, Presentity, ETag, NewETag, Expires, Flags, Data]);
+update(Package, Presentity, ETag, NewETag, Expires, Flags, Data) when is_list(Package), is_tuple(Presentity),
+								      is_integer(Expires) orelse
+								      Expires == never, is_list(Flags) ->
+    Now = util:timestamp(),
+
+    F = fun() ->
+		L = mnesia:read({eventdata, Presentity}),
+		L2 = [E1 || E1 <- L, E1#eventdata.entity_tag == ETag
+				andalso E1#eventdata.package == Package
+				andalso (E1#eventdata.expires >= Now orelse
+					 E1#eventdata.expires == never)],
+		case L2 of
+		    [E] ->
+			%% Exactly one entry found, delete it and then write a new entry
+			ok = mnesia:delete_object(E),
+			NewE = E#eventdata{entity_tag = NewETag,
+					   expires    = Expires,
+					   flags      = Flags,
+					   data       = Data
+					  },
+			ok = mnesia:write(NewE);
+		    [] ->
+			mnesia:abort(nomatch);
+		    _ ->
+			mnesia:abort(error)
+		end
+	end,
+    case mnesia:transaction(F) of
+	{atomic, ok} ->   ok;
+	{aborted, Res} -> Res
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: refresh_presentity_etag(Presentity, ETag, NewExpires,
 %%                                  NewETag)
 %%           Presentity = tuple(), {user, User} | {address, AddrStr}
 %%           ETag       = term(), event package record reference
@@ -109,8 +165,12 @@ insert(Package, Presentity, ETag, Expires, Flags, Data) when is_list(Package), i
 %%           of a database record.
 %% Returns : ok | nomatch | error
 %%--------------------------------------------------------------------
-update_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_tuple(Presentity), is_integer(NewExpires);
-								   NewExpires == never ->
+refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_integer(NewExpires),
+								    NewExpires < ?MIN_ABSOLUTE_TIME ->
+    erlang:error("time supplied to refresh_presentity_etag/4 should be absolute, not relative",
+		 [Presentity, ETag, NewExpires, NewETag]);
+refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_tuple(Presentity), is_integer(NewExpires) orelse
+								    NewExpires == never ->
     Now = util:timestamp(),
 
     F = fun() ->
@@ -208,7 +268,7 @@ delete_using_presentity(Presentity) when is_tuple(Presentity) ->
 %%           ETag.
 %% Returns : mnesia:transaction()
 %%--------------------------------------------------------------------
-delete_using_presentity_etag(Presentity, ETag) ->
+delete_using_presentity_etag(Presentity, ETag) when is_tuple(Presentity) ->
     F = fun() ->
 		L = mnesia:read({eventdata, Presentity}),
 		[mnesia:delete_object(E) || E <- L, E#eventdata.entity_tag == ETag]

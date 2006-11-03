@@ -156,7 +156,7 @@ refresh_pidf_user_etag(User, ETag, NewExpires, NewETag) when is_list(User) ->
 	    NewExpires == never ->
 		never
 	end,
-    database_eventdata:update_presentity_etag({user, User}, ETag, UseExpires, NewETag).
+    database_eventdata:refresh_presentity_etag({user, User}, ETag, UseExpires, NewETag).
 
 %%--------------------------------------------------------------------
 %% Function: get_pidf_xml_for_user(User, AcceptL)
