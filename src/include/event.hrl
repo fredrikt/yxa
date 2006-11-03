@@ -12,5 +12,6 @@
 %% Record for passing context information to event packages request/7 function
 -record(event_ctx, {
 	  sipuser,	%% undefined | string(), authenticated SIP user
+	  presentity,	%% term(), presentity for subscription
 	  dialog_id	%% undefined | tuple() of arity 3, dialog identifier
 	 }).
