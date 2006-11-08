@@ -925,7 +925,7 @@ report_upstreams(true, #state{final_response_sent = false, mystate = MyState} = 
 			%% RFC3261 16.7 (Choosing the best response) bullet 6 says that if
 			%% we only have a 503, we should send a 500 instead
 			logger:log(normal, "sipproxy: Turning best response '503 ~s' into a "
-				   "'500 Only response to fork was 503'", [R503#response.reason]),
+				   "'500 Only response to fork was 503'", [R503#sp_response.reason]),
 			{500, "Only response to fork was 503"};
 		    #sp_response{created = false} = SP_FR ->
 			#sp_response{status = Status,
