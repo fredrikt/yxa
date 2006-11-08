@@ -946,7 +946,7 @@ test() ->
     autotest:mark(?LINE, "create_dialog_state_uac/2 - 3"),
     %% test without From-tag in request
     CDS_UAC_Req3 = CDS_UAC_Req1#request{header = keylist:set("From", ["<sip:ft@f.example.net>;no-tag"],
-							     CDS_UAC_Req1#response.header)},
+							     CDS_UAC_Req1#request.header)},
     {error, "No From: tag in request"} = (catch create_dialog_state_uac(CDS_UAC_Req3, CDS_UAC_Res2)),
 
     autotest:mark(?LINE, "create_dialog_state_uac/2 - 4"),
