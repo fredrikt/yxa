@@ -366,7 +366,7 @@ get_forward_for_user(User) ->
 find_first_telephonenumber([]) ->
     nomatch;
 find_first_telephonenumber(["tel:+" ++ Rest | T]) ->
-    case util:is_numeric(Rest) of
+    case util:isnumeric(Rest) of
 	true ->
 	    "+" ++ Rest;
 	false ->
