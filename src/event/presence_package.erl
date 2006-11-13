@@ -110,8 +110,8 @@ request("presence", #request{method = "PUBLISH"} = Request, YxaCtx, Ctx) ->
 				insert ->
 				    presence_pidf:set_pidf_for_user(SIPuser, ETag, Expires, ContentType, XML, Ctx);
 				update ->
-				    presence_pidf:set_pidf_for_user(SIPuser, OldETag, ETag, Expires, ContentType,
-								    XML, Ctx)
+				    presence_pidf:update_pidf_for_user(SIPuser, OldETag, ETag, Expires, ContentType,
+								       XML, Ctx)
 			    end,
 
 			case Res2 of
