@@ -61,7 +61,16 @@ init() ->
 %% Descrip.: YXA applications must export a request/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
+%%
+%% ACK
+%%
+request(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+    transportlayer:stateless_proxy_ack("incomingproxy", Request, YxaCtx),
+    ok;
 
+%%
+%% non-ACK
+%%
 request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     LogTag = get_branchbase_from_handler(YxaCtx#yxa_ctx.thandler),
     YxaCtx1 =
@@ -83,13 +92,6 @@ request2(#request{method = "REGISTER"} = Request, YxaCtx) when is_record(YxaCtx,
 	_ ->
 	    true
     end,
-    ok;
-
-%%
-%% ACK
-%%
-request2(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
-    transportlayer:stateless_proxy_ack("incomingproxy", Request, YxaCtx),
     ok;
 
 %%
