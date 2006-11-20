@@ -107,7 +107,8 @@
 %% eventserver
 -export([
 	 get_event_package_module/3,
-	 get_all_event_packages/0
+	 get_all_event_packages/0,
+	 eventserver_locationdb_action/3
 	]).
 
 %% sippipe
@@ -945,7 +946,11 @@ get_all_event_packages() ->
 		    yxa_config:get_env(eventserver_package_handlers)
 		   ).
 
-
+eventserver_locationdb_action(Type, User, Location) when is_atom(Type), is_list(User) ->
+    ?CHECK_EXPORTED({eventserver_locationdb_action, 3},
+		    ?LOCAL_MODULE:eventserver_locationdb_action(Type, User, Location),
+		    undefined
+		   ).
 
 % sippipe hooks
 %%%%%%%%%%%%%%%%
