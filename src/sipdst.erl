@@ -257,7 +257,7 @@ url_to_dstlist_not_ip2(URL, ApproxMsgSize, ReqURI, Port = none, Test)
     %% a numeric IP address, the client SHOULD perform a NAPTR query for the domain in the URI.".
     case dnsutil_siplookup(URL#sipurl.host, Test) of
 	{error, nxdomain} ->
-	    %% A SRV-lookup of the Host part of the URL returned NXDOMAIN, this is
+	    %% A NAPTR/SRV-lookup of the Host part of the URL returned NXDOMAIN, this is
 	    %% not an error and we will now try to resolve the Host-part directly
 	    %% (look for A or AAAA record)
 	    {UseProto, UsePort} =
@@ -268,21 +268,8 @@ url_to_dstlist_not_ip2(URL, ApproxMsgSize, ReqURI, Port = none, Test)
 				   "Resolving hostname and trying TLS only.", [URL#sipurl.host]),
 			{tls, SipsPort};
 		    false ->
-			Proto1 =
-			    case get_transport_param(URL) of
-				tcp -> tcp;
-				tls -> tls;
-				udp -> udp;
-				none ->
-				    R = case ApproxMsgSize > 1200 of
-					    true  -> tcp;
-					    false -> udp
-					end,
-				    logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS, and the "
-					       "message size is ~p bytes. Resolving hostname and trying "
-					       "'~p' only.", [ApproxMsgSize, URL#sipurl.host, R]),
-				    R
-			    end,
+			logger:log(debug, "Warning: ~p has no NAPTR/SRV records in DNS", [URL#sipurl.host]),
+			Proto1 = decide_transport(URL, ApproxMsgSize),
 			SipPort = sipsocket:default_port(Proto1, Port),
 			{Proto1, SipPort}
 		end,
@@ -1417,9 +1404,9 @@ test() ->
 	= url_to_dstlist(sipurl:parse("sip:test.example.com;transport=tcp"), 400, UTD_URL1, Testing),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 42"),
-    %% test with transport parameter set, UDP
+    %% test with transport parameter set, UDP (size forces us to use TCP though)
     put(dnsutil_test_res, UTD_DNS40_1),
-    [#sipdst{proto = udp, port = 5060}]
+    [#sipdst{proto = tcp, port = 5060}]
 	= url_to_dstlist(sipurl:parse("sip:test.example.com;transport=udp"), 14000, UTD_URL1, Testing),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 43"),
