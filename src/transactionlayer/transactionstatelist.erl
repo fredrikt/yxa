@@ -26,7 +26,6 @@
 	 monitor_format/1,
 	 get_client_transaction/2,
 	 get_server_transaction_using_request/1,
-	 get_server_transaction_using_response/1,
 	 get_elem_using_pid/2,
 	 get_entrylist_using_pid/1,
 	 get_expired/0,
@@ -193,23 +192,6 @@ get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
 		Res when is_record(Res, transactionstate) ->
 		    Res
 	    end
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: get_server_transaction_using_response(Response)
-%%           Response   = response record()
-%% Descrip.: Look for a server transaction given a (newly received)
-%%           response.
-%% Returns : Entry |
-%%           none
-%%           Entry = transactionstate record()
-%%--------------------------------------------------------------------
-get_server_transaction_using_response(Response) when is_record(Response, response) ->
-    case sipheader:get_client_transaction_id(Response) of
-	error ->
-	    none;
-	Id ->
-	    get_elem(server, Id)
     end.
 
 %%--------------------------------------------------------------------
