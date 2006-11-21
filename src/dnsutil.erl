@@ -153,9 +153,9 @@ enumlookup("+" ++ Number, DomainList) ->
 %%           Host = string(), hostname or IP address
 %%           Port = integer() | none, port number
 %% Descrip.: Simply look up the hostname supplied and return a list
-%%           of IP addresses and the port. Port may be a list when
-%%           supplied to us, but we will turn it into an integer.
-%%           Port may also be 'none'.
+%%           of #sipdns_hostport records with the IP addresses the
+%%           Host resolved to, together with the IP address as
+%%           supplied to this function.
 %% Returns : AddrList        |
 %%           {error, Reason}
 %%           AddrList = list() of sipdns_hostport record()
@@ -184,7 +184,7 @@ get_ip_port(Host, Port) when is_integer(Port) ; Port == none ->
 		    V6List
 	    end;
 	V4List when is_list(V4List) ->
-	    lists:append(V6List, V4List)
+	    V6List ++ V4List
     end.
 
 %% part of get_ip_port/2.
@@ -206,8 +206,10 @@ get_ip_port2(Family, Host, Port) when Family == inet ; Family == inet6 ->
 					    %% IPv4 addresses separately
 					    [];
 					{_Addr, Family} ->
-					    #sipdns_hostport{family=Family, addr=siphost:makeip(Addr),
-							     port=Port};
+					    #sipdns_hostport{family = Family,
+							     addr   = siphost:makeip(Addr),
+							     port   = Port
+							    };
 					{_Addr, _OtherFamily} ->
 					    %% HFam is not the same as Family, ignore (if we
 					    %% call gethostbyname() on an IPv4 address, but
