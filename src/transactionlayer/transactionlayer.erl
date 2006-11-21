@@ -22,6 +22,7 @@
 	 get_branchbase_from_handler/1,
 	 start_client_transaction/5,
 	 start_client_transaction/6,
+	 cancel_client_transaction/3,
 	 adopt_server_transaction/1,
 	 adopt_server_transaction_handler/1,
 	 adopt_st_and_get_branchbase/1,
@@ -793,6 +794,23 @@ start_client_transaction(Request, Dst, Branch, Timeout, ReportTo)
 	    logger:log(error, "Transaction layer: Failed starting client transaction : ~p", [E]),
 	    {error, "Failed starting client transaction"}
     end.
+
+%%--------------------------------------------------------------------
+%% Function: cancel_client_transaction(Pid, Reason, ExtraHeaders)
+%%           Pid          = pid(), client transaction pid
+%%           Reason       = string(), will be logged by client
+%%                          transaction
+%%           ExtraHeaders = list() of {Key, Value} headers to put in
+%%                          any CANCELs we send
+%% Descrip.: Store the to-tag we use when sending non-2xx responses in
+%%           INVITE server transactions. We need to do this to
+%%           correctly match ACK to the server transaction.
+%% Returns : ok         |
+%%           {error, E}
+%%           E = string(), description of error
+%%--------------------------------------------------------------------
+cancel_client_transaction(Pid, Reason, ExtraHeaders) when is_pid(Pid), is_list(Reason), is_list(ExtraHeaders) ->
+    gen_server:cast(Pid, {cancel, Reason, ExtraHeaders}).
 
 %%--------------------------------------------------------------------
 %% Function: store_to_tag(Request, ToTag)

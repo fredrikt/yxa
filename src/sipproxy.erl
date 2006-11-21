@@ -409,7 +409,7 @@ make_new_target_request(Request, ApproxMsgSize, Action)
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
 cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
-    %% send {cancel, ...} to all PIDs in states other than completed and terminated
+    %% cancel all PIDs in states other than completed and terminated
     NewTargets1 = cancel_targets_state(Targets, calling, ExtraHeaders),
     cancel_targets_state(NewTargets1, proceeding, ExtraHeaders).
 
@@ -422,11 +422,11 @@ cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
 cancel_targets_state(Targets, TargetState, ExtraHeaders) when is_atom(TargetState), is_list(ExtraHeaders) ->
-    %% send {cancel, Reason, ExtraHeaders} to all PIDs in a specific state, return updated TargetList
+    %% cancel all PIDs in a specific state, return updated TargetList
     TargetsInState = targetlist:get_targets_in_state(TargetState, Targets),
     lists:map(fun(ThisTarget) ->
 		      [Pid] = targetlist:extract([pid], ThisTarget),
-		      gen_server:cast(Pid, {cancel, "cancel_targets_state", ExtraHeaders})
+		      transactionlayer:cancel_client_transaction(Pid, "cancel_targets_state", ExtraHeaders)
 	      end, TargetsInState),
     NewTargets = mark_cancelled(TargetsInState, Targets),
     NewTargets.

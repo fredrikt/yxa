@@ -440,15 +440,15 @@ get_next_sipdst([H | T] = DstList, ApproxMsgSize) when is_record(H, sipdst) ->
 %%           client transaction.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-cancel_transaction(#state{cancelled=false}=State, Reason, ExtraHeaders) when is_list(Reason) ->
+cancel_transaction(#state{cancelled = false} = State, Reason, ExtraHeaders) when is_list(Reason) ->
     logger:log(debug, "sippipe: Original request has been cancelled, asking current "
 	       "client transaction handler (~p) to cancel, and answering "
 	       "'487 Request Cancelled' to original request",
 	       [State#state.clienttransaction_pid]),
-    gen_server:cast(State#state.clienttransaction_pid, {cancel, Reason, ExtraHeaders}),
+    transactionlayer:cancel_client_transaction(State#state.clienttransaction_pid, Reason, ExtraHeaders),
     transactionlayer:send_response_handler(State#state.serverhandler, 487, "Request Cancelled"),
-    State#state{cancelled=true};
-cancel_transaction(#state{cancelled=true}=State, Reason, _ExtraHeaders) when is_list(Reason) ->
+    State#state{cancelled = true};
+cancel_transaction(#state{cancelled = true}=State, Reason, _ExtraHeaders) when is_list(Reason) ->
     %% already cancelled
     State.
 
