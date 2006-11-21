@@ -72,7 +72,7 @@ request(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_c
 %% non-ACK
 %%
 request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
-    LogTag = get_branchbase_from_handler(YxaCtx#yxa_ctx.thandler),
+    LogTag = transactionlayer:get_branchbase_from_handler(YxaCtx#yxa_ctx.thandler),
     YxaCtx1 =
 	YxaCtx#yxa_ctx{app_logtag = LogTag
 		      },
@@ -545,24 +545,6 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
     logger:log(normal, "~s: incomingproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
 	       [LogTag]),
     transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
-
-%%--------------------------------------------------------------------
-%% Function: get_branchbase_from_handler(TH)
-%%           TH = term(), server transaction handle
-%% Descrip.: Get branch from server transaction handler and then
-%%           remove the -UAS suffix. The result is used as a tag
-%%           when logging actions.
-%% Returns : BranchBase = string()
-%%--------------------------------------------------------------------
-get_branchbase_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
-    case string:rstr(CallBranch, "-UAS") of
-	0 ->
-	    CallBranch;
-	Index when is_integer(Index) ->
-	    BranchBase = string:substr(CallBranch, 1, Index - 1),
-	    BranchBase
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: forward_request(THandler, Request, FwdURL)

@@ -89,7 +89,7 @@ init() ->
 %%--------------------------------------------------------------------
 request(Request, YxaCtx) ->
     THandler = YxaCtx#yxa_ctx.thandler,
-    LogTag = get_branchbase_from_handler(THandler),
+    LogTag = transactionlayer:get_branchbase_from_handler(THandler),
     YxaCtx1 =
 	YxaCtx#yxa_ctx{app_logtag = LogTag
 		      },
@@ -324,24 +324,6 @@ event2(Request, YxaCtx, Module, EventPackage) ->
 	    Res
     end.
 
-
-%%--------------------------------------------------------------------
-%% Function: get_branchbase_from_handler(TH)
-%%           TH = term(), server transaction handle
-%% Descrip.: Get branch from server transaction handler and then
-%%           remove the -UAS suffix. The result is used as a tag
-%%           when logging actions.
-%% Returns : BranchBase = string()
-%%--------------------------------------------------------------------
-get_branchbase_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
-    case string:rstr(CallBranch, "-UAS") of
-	0 ->
-	    CallBranch;
-	Index when is_integer(Index) ->
-	    BranchBase = string:substr(CallBranch, 1, Index - 1),
-	    BranchBase
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: authenticate_subscriber(Request, YxaCtx)

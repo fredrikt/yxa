@@ -83,7 +83,7 @@ request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa
     #yxa_ctx{origin   = Origin,
 	     thandler = THandler
 	    } = YxaCtx,
-    LogTag = get_branch_from_handler(THandler),
+    LogTag = transactionlayer:get_branchbase_from_handler(THandler),
     case route_request(Request, Origin, THandler, LogTag) of
 	pstn ->
 	    logger:log(debug, "~s: pstnproxy: Route request to PSTN gateway", [LogTag]),
@@ -494,25 +494,6 @@ add_caller_identity_for_sip("INVITE", Header) ->
 add_caller_identity_for_sip(_Method, Header) ->
     %% non-INVITE request, don't add Remote-Party-Id
     Header.
-
-
-%%--------------------------------------------------------------------
-%% Function: get_branch_from_handler(TH)
-%%           TH = term(), server transaction handle
-%% Descrip.: Get branch from server transaction handler and then
-%%           remove the -UAS suffix. The result is used as a tag
-%%           when logging actions.
-%% Returns : Branch, string()
-%%--------------------------------------------------------------------
-get_branch_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
-    case string:rstr(CallBranch, "-UAS") of
-	0 ->
-	    CallBranch;
-	Index when is_integer(Index) ->
-	    BranchBase = string:substr(CallBranch, 1, Index - 1),
-	    BranchBase
-    end.
 
 
 %%--------------------------------------------------------------------

@@ -19,6 +19,7 @@
 	 transaction_terminating/1,
 	 get_handler_for_request/1,
 	 get_branch_from_handler/1,
+	 get_branchbase_from_handler/1,
 	 start_client_transaction/5,
 	 start_client_transaction/6,
 	 adopt_server_transaction/1,
@@ -701,18 +702,35 @@ adopt_st_and_get_branchbase(TH) when is_record(TH, thandler) ->
 	    logger:log(error, "Transaction layer: Could not adopt server transaction handler ~p : ~p", [TH, E]),
 	    error;
 	TH ->
-	    case get_branch_from_handler(TH) of
-		error ->
-		    error;
-		Branch when is_list(Branch) ->
-		    case string:rstr(Branch, "-UAS") of
-			0 ->
-			    {ok, TH, Branch};
-			Index when is_integer(Index) ->
-			    BranchBase = string:substr(Branch, 1, Index - 1),
-			    {ok, TH, BranchBase}
-		    end
-	    end
+	    get_branchbase_from_handler(TH)
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_branchbase_from_handler(TH)
+%%           TH = thandler record(), the transaction handler to query
+%% Descrip.: Get the branch from a server transaction, and then remove
+%%           the "-UAS" suffix to get the base of the branch. The base
+%%           can for example be used to generate unique branches that
+%%           can be visually correlated to each other, by appending a
+%%           sequence number.
+%% Returns : BranchBase |
+%%           error
+%%           BranchBase = string(), the server transactions branch,
+%%                        minus the "-UAS" suffix
+%%--------------------------------------------------------------------
+get_branchbase_from_handler(TH) when is_record(TH, thandler) ->
+    case get_branch_from_handler(TH) of
+	Branch when is_list(Branch) ->
+	    case string:rstr(Branch, "-UAS") of
+		0 ->
+		    %% XXX is this an error condition?
+		    Branch;
+		Index when is_integer(Index) ->
+		    BranchBase = string:substr(Branch, 1, Index - 1),
+		    BranchBase
+	    end;
+	error ->
+	    error
     end.
 
 %%--------------------------------------------------------------------

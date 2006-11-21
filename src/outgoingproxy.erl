@@ -68,7 +68,7 @@ init() ->
 %%
 request(#request{method = "REGISTER"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
     THandler = YxaCtx#yxa_ctx.thandler,
-    LogTag = get_branch_from_handler(THandler),
+    LogTag = transactionlayer:get_branchbase_from_handler(THandler),
     YxaCtx1 =
 	YxaCtx#yxa_ctx{app_logtag = LogTag
 		      },
@@ -196,7 +196,7 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
     Location = route_request(Request),
     logger:log(debug, "outgoingproxy: Location: ~p", [Location]),
     THandler = YxaCtx#yxa_ctx.thandler,
-    LogTag = get_branch_from_handler(THandler),
+    LogTag = transactionlayer:get_branchbase_from_handler(THandler),
     case Location of
 	none ->
 	    logger:log(normal, "~s: outgoingproxy: 403 Forbidden", [LogTag]),
@@ -453,25 +453,6 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
     logger:log(normal, "~s: incomingproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
 	       [LogTag]),
     transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
-
-%%--------------------------------------------------------------------
-%% Function: get_branch_from_handler(TH)
-%%           TH = term(), server transaction handle
-%% Descrip.: Get branch from server transaction handler and then
-%%           remove the -UAS suffix. The result is used as a tag
-%%           when logging actions.
-%% Returns : Branch
-%%--------------------------------------------------------------------
-get_branch_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
-    case string:rstr(CallBranch, "-UAS") of
-	0 ->
-	    CallBranch;
-	Index when is_integer(Index) ->
-	    BranchBase = string:substr(CallBranch, 1, Index - 1),
-	    BranchBase
-    end.
-
 
 %%--------------------------------------------------------------------
 %% Function: proxy_request(THandler, Request, Dst)
