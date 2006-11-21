@@ -679,9 +679,10 @@ adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
 %%           typically what they do anyways. If you want to know for
 %%           example the real reason it returns 'ignore', use the more
 %%           articulate adopt_server_transaction_handler/1.
-%% Returns : BranchBase |
-%%           error      |
+%% Returns : {ok, THandler, BranchBase} |
+%%           error                      |
 %%           ignore
+%%           THandler   = thandler record()
 %%           BranchBase = string(), the server transactions branch,
 %%                        minus the "-UAS" suffix
 %%--------------------------------------------------------------------
@@ -702,7 +703,8 @@ adopt_st_and_get_branchbase(TH) when is_record(TH, thandler) ->
 	    logger:log(error, "Transaction layer: Could not adopt server transaction handler ~p : ~p", [TH, E]),
 	    error;
 	TH ->
-	    get_branchbase_from_handler(TH)
+	    BranchBase = get_branchbase_from_handler(TH),
+	    {ok, TH, BranchBase}
     end.
 
 %%--------------------------------------------------------------------
