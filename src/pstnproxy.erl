@@ -426,7 +426,7 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
 %%           Method  = string()
 %%           Headers = keylist record()
 %%           URI     = sipurl record(), Request URI of outgoing req.
-%%           User    = string(), SIP authentication username
+%%           User    = unknown | string(), SIP authentication username
 %%           Gateway = string()
 %% Descrip.: If configured to, add Remote-Party-Id information
 %%           about caller to this request before it is sent to a
@@ -434,10 +434,9 @@ request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
 %% Returns : NewHeader, keylist record()
 %%--------------------------------------------------------------------
 add_caller_identity_for_pstn("INVITE", Header, URI, User, Gateway) when is_record(Header, keylist),
-									is_record(URI, sipurl),
-									is_list(User) ->
+									is_record(URI, sipurl) ->
     case yxa_config:get_env(remote_party_id) of
-	{ok, true} ->
+	{ok, true} when is_list(User) ->
 	    case local:get_remote_party_number(User, Header, URI, Gateway) of
 		{ok, RPI, Number} when is_record(RPI, contact), is_list(Number) ->
 		    RemotePartyId = contact:print(RPI),
@@ -448,13 +447,15 @@ add_caller_identity_for_pstn("INVITE", Header, URI, User, Gateway) when is_recor
 		none ->
 		    %% Add RPI information saying to not show any caller id, in case the From:
 		    %% contains something the gateway interprets as a phone number when it shouldn't
-		    logger:log(debug, "Remote-Party-Id: Blocking Caller-Id for third party user "
-			       "or user without number to avoid incorrect/spoofed A-number in PSTN"),
-		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "on"}],
-		    RPURI = sipurl:new([{host, siprequest:myhostname()}, {param, []}]),
-		    RPI = contact:print( contact:new("Anonymous", RPURI, Parameters) ),
-		    keylist:set("Remote-Party-Id", [RPI], Header)
+		    logger:log(debug, "Remote-Party-Id: Blocking Caller-Id for user without number "
+			       "to avoid incorrect/spoofed A-number in PSTN"),
+		    block_remote_party_id(Header)
 	    end;
+	{ok, true} ->
+	    %% non-list User, we should remove any present Remote-Party-Id headers etc.
+	    logger:log(debug, "Remote-Party-Id: Blocking Caller-Id for third party user "
+		       "to avoid incorrect/spoofed A-number in PSTN"),
+	    block_remote_party_id(Header);
 	{ok, false} ->
 	    Header
     end;
@@ -495,6 +496,19 @@ add_caller_identity_for_sip(_Method, Header) ->
     %% non-INVITE request, don't add Remote-Party-Id
     Header.
 
+%%--------------------------------------------------------------------
+%% Function: block_remote_party_id(Header)
+%%           Header = keylist record()
+%% Descrip.: Remove any present P-Preferred-Identity header, and add
+%%           an Anonymous Remote-Party-Id.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
+block_remote_party_id(Header) ->
+    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "on"}],
+    RPURI = sipurl:new([{host, siprequest:myhostname()}, {param, []}]),
+    RPI = contact:print( contact:new("Anonymous", RPURI, Parameters) ),
+    Header1 = keylist:set("Remote-Party-Id", [RPI], Header),
+    keylist:delete("P-Preferred-Identity", Header1).
 
 %%--------------------------------------------------------------------
 %% Function: proxy_request(THandler, Request, DstURI)
