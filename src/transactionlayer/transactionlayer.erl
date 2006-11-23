@@ -447,31 +447,16 @@ cancel_corresponding_transaction(Request, STPid) when is_record(Request, request
     true.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction(R)
-%%           R           = request record() | response record()
-%% Descrip.: Find a server transaction in our list given either a
-%%           request or a response record().
-%% Returns : THandler |
-%%           error    |
-%%           none
-%%           THandler    = transactionstate record()
-%%--------------------------------------------------------------------
-get_server_transaction(Request) when is_record(Request, request) ->
-    transactionstatelist:get_server_transaction_using_request(Request);
-get_server_transaction(Response) when is_record(Response, response) ->
-    transactionstatelist:get_server_transaction_using_response(Response).
-
-%%--------------------------------------------------------------------
-%% Function: get_server_transaction_pid(R)
-%%           R           = request record() | response record()
-%% Descrip.: Find a server transaction given either a request or a
-%%           response record(). Return it's pid.
+%% Function: get_server_transaction_pid(Request)
+%%           Request = request record()
+%% Descrip.: Find a server transaction given a request. Return it's
+%%           pid.
 %% Returns : Pid |
 %%           none
 %%           Pid         = pid()
 %%--------------------------------------------------------------------
-get_server_transaction_pid(Re) when is_record(Re, request); is_record(Re, response) ->
-    case get_server_transaction(Re) of
+get_server_transaction_pid(Request) when is_record(Request, request) ->
+    case get_server_transaction(Request) of
 	none ->
 	    none;
 	TState when is_record(TState, transactionstate) ->
@@ -482,6 +467,19 @@ get_server_transaction_pid(Re) when is_record(Re, request); is_record(Re, respon
 		    none
 	    end
     end.
+
+%%--------------------------------------------------------------------
+%% Function: get_server_transaction(Request)
+%%           Request = request record()
+%% Descrip.: Find a server transaction in our list given either a
+%%           request or a response record().
+%% Returns : THandler |
+%%           error    |
+%%           none
+%%           THandler    = transactionstate record()
+%%--------------------------------------------------------------------
+get_server_transaction(Request) when is_record(Request, request) ->
+    transactionstatelist:get_server_transaction_using_request(Request).
 
 %%--------------------------------------------------------------------
 %% Function: get_client_transaction(Response)
