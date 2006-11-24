@@ -532,7 +532,7 @@ monitor_format2([H|T], Res) when record(H, transactionstate) ->
 %%           Type       = atom(), client | server
 %%           Id         = term()
 %%           AckId      = term() | none
-%%           Pid        = pid() | none
+%%           Pid        = pid()
 %%           Desc       = string(),
 %% Descrip.: Add a new transaction state entry to TStateList.
 %% Returns : ok               |
@@ -540,8 +540,8 @@ monitor_format2([H|T], Res) when record(H, transactionstate) ->
 %%           {duplicate, Dup}
 %%           Dup = transactionstate record()
 %%--------------------------------------------------------------------
-add(Type, Id, AckId, Pid, Desc) when is_pid(Pid); Pid == none, is_atom(Type),
-				     Type == client; Type == server ->
+add(Type, Id, AckId, Pid, Desc) when is_pid(Pid), is_atom(Type),
+				     (Type == client orelse Type == server) ->
     Ref = make_ref(),
     TId = {Type, Id},
     case ets:insert_new(transactionstate_typeid_to_ref, {TId, Ref}) of
@@ -554,11 +554,7 @@ add(Type, Id, AckId, Pid, Desc) when is_pid(Pid); Pid == none, is_atom(Type),
 				     expire = util:timestamp() + ?TRANSACTION_EXPIRE,
 	    			     description = Desc},
 	    true = ets_insert_new(transactionstate_ref_to_t, {Ref, NewT}),
-	    case Pid of
-		none -> true;
-		_ ->
-		    true = ets:insert(transactionstate_pid_to_ref, {Pid, Ref})
-	    end,
+	    true = ets:insert(transactionstate_pid_to_ref, {Pid, Ref}),
 	    case AckId of
 		none -> true;
 		_ -> true = ets_insert_new(transactionstate_ack_to_ref, {AckId, Ref})
