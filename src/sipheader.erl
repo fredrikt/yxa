@@ -225,15 +225,16 @@ from([String]) ->
 %% they may benefit from their own record type.
 %%--------------------------------------------------------------------
 contact(Header) when is_record(Header, keylist) ->
-    contact(Header, contact).
+    contact2(Header, 'contact').
 
 route(Header) when is_record(Header, keylist) ->
-    contact(Header, route).
+    contact2(Header, 'route').
 
 record_route(Header) when is_record(Header, keylist) ->
-    contact(Header, 'record-route').
+    contact2(Header, 'record-route').
 
-contact(Header, Name) when is_record(Header, keylist), is_atom(Name); is_list(Name) ->
+%% part of contact/1, route/1 and record_route/1
+contact2(Header, Name) when is_record(Header, keylist), is_atom(Name) ->
     V = keylist:fetch(Name, Header),
     contact:parse(V).
 
@@ -1534,11 +1535,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "contact/2 - 1"),
     %% test using atom key
-    [#contact{urlstr="sip:alice@example.org"}] = contact(ContactHeader1, 'from'),
-
-    autotest:mark(?LINE, "contact/2 - 2"),
-    %% test using list key
-    [#contact{urlstr="sip:alice@example.org"}] = contact(ContactHeader1, "From"),
+    [#contact{urlstr="sip:alice@example.org"}] = contact2(ContactHeader1, 'from'),
 
 
     %% test via_sentby(Via)
