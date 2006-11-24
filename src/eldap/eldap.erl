@@ -472,7 +472,7 @@ exec_simple_bind_reply(Data, {ok,Msg}) when
   Msg#'LDAPMessage'.messageID == Data#eldap.id ->
     case Msg#'LDAPMessage'.protocolOp of
 	{bindResponse, Result} ->
-	    case Result#'LDAPResult'.resultCode of
+	    case Result#'BindResponse'.resultCode of
 		success -> {ok,Data};
 		Error   -> {error, Error}
 	    end;
