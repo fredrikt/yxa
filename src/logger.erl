@@ -502,8 +502,7 @@ rotate_file(Filename, Suffix) ->
 
 %% do_log is executed in caller pid (by log/2 or log/3), not in
 %% persistent logger process.
-do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format); is_binary(Format),
-				      is_list(Arguments) ->
+do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format), is_list(Arguments) ->
     %%				      Level == debug; Level == normal; Level == error ->
     LogTS = get_ts(now()),
     Data = format_msg(LogTS, Level, self(), Format, Arguments),
