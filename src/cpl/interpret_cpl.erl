@@ -395,8 +395,6 @@ finish_execution(State) ->
 
     end.
 
-is_last_node_proxy(_Graph, []) ->
-    false;
 is_last_node_proxy(Graph, [Index | _Visited]) ->
     case (get_node(Graph, Index))#node_code.type of
 	proxy ->
