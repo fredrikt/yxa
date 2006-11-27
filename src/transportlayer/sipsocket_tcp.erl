@@ -21,6 +21,7 @@
 	 get_socket/1,
 	 get_specific_socket/1,
 	 get_raw_socket/1,
+	 get_remote_peer/1,
 
 	 test/0
 	]).
@@ -146,7 +147,7 @@ get_socket2(Dst, true) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_specific_socket(Id) when is_tuple(Id), size(Id) == 2 ->
+get_specific_socket({Proto, _} = Id) when Proto == tcp orelse Proto == tcp6 ->
     case catch gen_server:call(tcp_dispatcher, {get_specific_socket, Id}) of
 	{ok, Socket} ->
 	    Socket;
@@ -178,6 +179,30 @@ get_raw_socket(SipSocket) when is_record(SipSocket, sipsocket) ->
 	    Msg = io_lib:format("sipsocket_tcp failed getting raw socket from pid ~p : ~p",
 				[SPid, Reason]),
 	    {error, lists:flatten(Msg)}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_remote_peer(Id)
+%%           Id = ob_id record()
+%% Descrip.: Get the remote IP and port of a specific socket.
+%% Returns : {ok, Proto, IP, Port} |
+%%           {error, Reason}
+%%           Proto  = tcp | tcp6 | tls | tls6
+%%           IP     = string()
+%%           Port   = integer()
+%%           Reason = string()
+%%--------------------------------------------------------------------
+get_remote_peer(Id) when is_record(Id, ob_id) ->
+    case get_specific_socket(Id) of
+	{ok, SipSocket} when is_record(SipSocket, sipsocket) ->
+	    #sipsocket{proto	= Proto,
+		       hostport = #hp{r_ip   = IP,
+				      r_port = Port
+				     }
+		      } = SipSocket,
+	    {ok, Proto, IP, Port};
+	E ->
+	    E
     end.
 
 %%--------------------------------------------------------------------

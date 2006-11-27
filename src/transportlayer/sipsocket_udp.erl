@@ -33,6 +33,7 @@
 	 get_socket/1,
 	 get_specific_socket/1,
 	 get_raw_socket/1,
+	 get_remote_peer/1,
 
 	 test/0
 	]).
@@ -103,7 +104,8 @@ init([]) ->
 				_ ->
 				    Acc
 			    end
-		    end, [], lists:reverse(siphost:myip_list())),
+		    end, [], lists:reverse(siphost:myip_list() ++ ["127.0.0.1"])),
+%%		    end, [], lists:reverse(siphost:myip_list())),
     Spec =
 	case yxa_config:get_env(enable_v6) of
 	    {ok, true} ->
@@ -128,17 +130,19 @@ start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(S
     SocketOpts = [{ip, IP} | ?SOCKETOPTS],
     case (catch gen_udp:open(Port, SocketOpts)) of
 	{ok, Socket} ->
-	    Local = get_localaddr(Socket, "0.0.0.0"),
-	    SipSocket = #sipsocket{module = sipsocket_udp,
-				   proto  = udp,
-				   pid    = self(),
-				   data   = {Local, none},
-				   id     = {udp, erlang:now()}	%% unique ID for Outbound
-				  },
-	    NewSocketList = socketlist:add({listener, udp, Port}, self(), udp, Local, none, SipSocket,
-					   0, State#state.socketlist),
-	    {LocalIP, _} = Local,
-	    sipsocket:add_listener_info(udp, LocalIP, Port),
+	    HostPort1 = get_localaddr(Socket, "0.0.0.0"),
+	    HostPort = HostPort1#hp{l_port = Port},
+	    SipSocket =
+		#sipsocket{module	= sipsocket_udp,
+			   proto	= udp,
+			   pid		= self(),
+			   hostport	= HostPort,
+			   id		= #ob_id{proto = udp6,
+						 id    = erlang:now()	%% unique ID for Outbound
+						}
+			  },
+	    {ok, NewSocketList} = socketlist:add(listener, self(), SipSocket, 0, State#state.socketlist),
+	    sipsocket:add_listener_info(udp, HostPort#hp.l_ip, HostPort#hp.l_port),
 	    NewInetSocketL = [{Socket, SipSocket} | State#state.inet_socketlist],
 	    start_listening(T, State#state{inet_socketlist = NewInetSocketL,
 					   socketlist      = NewSocketList
@@ -156,17 +160,19 @@ start_listening([{udp6, IP, Port} | T], State) when is_integer(Port), is_record(
     SocketOpts = [{ip, IP} | ?SOCKETOPTSv6],
     case gen_udp:open(Port, SocketOpts) of
 	{ok, Socket} ->
-	    Local = get_localaddr(Socket, "[::]"),
-	    SipSocket = #sipsocket{module = sipsocket_udp,
-				   proto  = udp6,
-				   pid    = self(),
-				   data   = {Local, none},
-				   id     = {udp6, erlang:now()}	%% unique ID for Outbound
-				  },
-	    NewSocketList = socketlist:add({listener, udp6, Port}, self(), udp6, Local, none, SipSocket,
-					   0, State#state.socketlist),
-	    {LocalIP, _} = Local,
-	    sipsocket:add_listener_info(udp6, LocalIP, Port),
+	    HostPort1 = get_localaddr(Socket, "[::]"),
+	    HostPort = HostPort1#hp{l_port = Port},
+	    SipSocket =
+		#sipsocket{module	= sipsocket_udp,
+			   proto	= udp6,
+			   pid		= self(),
+			   hostport	= HostPort,
+			   id		= #ob_id{proto = udp6,
+						 id    = erlang:now()	%% unique ID for Outbound
+						}
+			  },
+	    {ok, NewSocketList} = socketlist:add(listener, self(), SipSocket, 0, State#state.socketlist),
+	    sipsocket:add_listener_info(udp6, HostPort#hp.l_ip, Port),
 	    NewInet6SocketL = [{Socket, SipSocket} | State#state.inet6_socketlist],
 	    start_listening(T, State#state{inet6_socketlist = NewInet6SocketL,
 					   socketlist	    = NewSocketList
@@ -463,6 +469,14 @@ get_raw_socket(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     end.
 
 %%--------------------------------------------------------------------
+%% Function: get_remote_peer(SipSocket)
+%% Descrip.: UDP sockets don't have a remote peer.
+%% Returns : not_applicable
+%%--------------------------------------------------------------------
+get_remote_peer(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
+    not_applicable.
+
+%%--------------------------------------------------------------------
 %% Function: is_reliable_transport(_)
 %% Descrip.: No UDP protocol is reliable transport. Return false.
 %% Returns : false
@@ -480,20 +494,22 @@ is_reliable_transport(_) ->
 %%           Socket      = term(), gen_udp socket
 %%           DefaultAddr = list(), default if we fail
 %% Descrip.: Return the listening IP and port for a socket.
-%% Returns : {IP, Port}
-%%           IP   = string()
-%%           Port = integer()
+%% Returns : HP = hostport record()
 %%--------------------------------------------------------------------
 get_localaddr(Socket, DefaultAddr) ->
     case inet:sockname(Socket) of
 	{ok, {IPlist, LocalPort}} ->
 	    IP = siphost:makeip(IPlist),
 	    logger:log(debug, "Listening on UDP ~s:~p (socket ~p)", [IP, LocalPort, Socket]),
-	    {IP, LocalPort};
+	    #hp{l_ip   = IP,
+		l_port = LocalPort
+	       };
 	{error, E} ->
 	    %% XXX maybe we don't have a good socket after all?
 	    logger:log(error, "UDP listener: sockname() on socket ~p returned error ~p", [Socket, E]),
-	    {DefaultAddr, 0}
+	    #hp{l_ip   = DefaultAddr,
+		l_port = 0
+	       }
     end.
 
 %%--------------------------------------------------------------------
@@ -707,8 +723,7 @@ do_send_sort_sockets(Sockets, SipSocket) ->
 	Res when is_list(Res) ->
 	    Res;
 	none ->
-	    {LAddr, _} = SipSocket#sipsocket.data,
-	    case sort_sockets_laddr(Sockets, LAddr, []) of
+	    case sort_sockets_laddr(Sockets, SipSocket#sipsocket.hostport, []) of
 		none ->
 		    Sockets;
 		Res when is_list(Res) ->
@@ -730,14 +745,20 @@ sort_sockets_id([], Id, _Res) ->
 
 %% part of do_send_sort_sockets/4
 %% Returns : list() of sipsocket record() | none
-sort_sockets_laddr([{_Socket, #sipsocket{data = {LAddr, _}}} = H | T], LAddr, Res) ->
-    logger:log(debug, "Sipsocket UDP: Found socket matching local address+port ~p", [LAddr]),
-    [H | lists:reverse(Res)] ++ T;
-sort_sockets_laddr([H | T], LAddr, Res) ->
-    %% no match
-    sort_sockets_laddr(T, LAddr, [H | Res]);
-sort_sockets_laddr([], LAddr, _Res) ->
-    logger:log(debug, "Sipsocket UDP: Found no match for local address+port ~p", [LAddr]),
+sort_sockets_laddr([{_Socket, SipSocket} = H | T], HP, Res) ->
+    SS_HP = SipSocket#sipsocket.hostport,
+    case (SS_HP#hp.l_ip == HP#hp.l_ip andalso
+	  SS_HP#hp.l_port == HP#hp.l_port) of
+	true ->
+	    logger:log(debug, "Sipsocket UDP: Found socket matching local address+port ~s:~p",
+		       [HP#hp.l_ip, HP#hp.l_port]),
+	    [H | lists:reverse(Res)] ++ T;
+	false ->
+	    %% no match
+	    sort_sockets_laddr(T, HP, [H | Res])
+    end;
+sort_sockets_laddr([], HP, _Res) ->
+    logger:log(debug, "Sipsocket UDP: Found no match for local address+port ~s:~p", [HP#hp.l_ip, HP#hp.l_port]),
     none.
 
 
@@ -765,16 +786,16 @@ test() ->
     autotest:mark(?LINE, "do_send_sort_sockets/2 - 2"),
     %% test with no exact match possible, but local address found (order should be preserved except
     %% the matching socket which is inserted at the head of the list)
-    SortSocketsL2 = [{3, #sipsocket{id = 3, data = {{"192.0.2.1", 5003}, none}}},
-		     {2, #sipsocket{id = 2, data = {{"192.0.2.1", 5002}, none}}},
-		     {1, #sipsocket{id = 1, data = {{"192.0.2.1", 5001}, none}}}
+    SortSocketsL2 = [{3, #sipsocket{id = 3, hostport = #hp{l_ip = "192.0.2.1", l_port = 5003}}},
+		     {2, #sipsocket{id = 2, hostport = #hp{l_ip = "192.0.2.1", l_port = 5002}}},
+		     {1, #sipsocket{id = 1, hostport = #hp{l_ip = "192.0.2.1", l_port = 5001}}}
 		    ],
-    SortSockets2_SS = #sipsocket{id = 99, data = {{"192.0.2.1", 5002}, test}},
+    SortSockets2_SS = #sipsocket{id = 99, hostport = #hp{l_ip = "192.0.2.1", l_port = 5002}},
     [{2, _}, {3, _}, {1, _}] = do_send_sort_sockets(SortSocketsL2, SortSockets2_SS),
 
     autotest:mark(?LINE, "do_send_sort_sockets/2 - 3"),
     %% test with no match at all
-    SortSockets3_SS = #sipsocket{id = 99, data = {{"192.0.2.1", 5099}, test}},
+    SortSockets3_SS = #sipsocket{id = 99, hostport = #hp{l_ip = "192.0.2.1", l_port = 5099}},
     SortSocketsL2 = do_send_sort_sockets(SortSocketsL2, SortSockets3_SS),
 
 

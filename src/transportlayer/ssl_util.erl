@@ -24,16 +24,7 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include_lib("ssl/include/SSL-PKIX.hrl").
-
-%%--------------------------------------------------------------------
-%% Macros
-%%--------------------------------------------------------------------
--record(ssl_conn_subject, {
-	  countryName,		%% string()
-	  organizationName,	%% string()
-	  commonName,		%% string()
-	  description		%% string()
-	 }).
+-include("sipsocket.hrl").
 
 
 %%====================================================================

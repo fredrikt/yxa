@@ -20,7 +20,8 @@
 	 is_reliable_transport/1,
 	 get_socket/1,
 	 get_specific_socket/1,
-	 get_raw_socket/1
+	 get_raw_socket/1,
+	 get_remote_peer/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -115,6 +116,20 @@ get_raw_socket(#sipsocket{proto = yxa_test}) ->
     case get({sipsocket_test, get_raw_socket}) of
 	undefined ->
 	    {sipsocket_test, fake_raw_socket};
+	Res ->
+	    Res
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_remote_peer(SipSocket)
+%%           Dst = sipdst record()
+%% Descrip.: Return fake remote peer info based on process dictionary.
+%% Returns : {ok, Proto, Addr, Port} | term()
+%%--------------------------------------------------------------------
+get_remote_peer(#sipsocket{proto = yxa_test}) ->
+    case get({sipsocket_test, get_remote_peer}) of
+	undefined ->
+	    {ok, yxa_test, "192.0.2.242", sipsocket:get_listenport(yxa_test)};
 	Res ->
 	    Res
     end.

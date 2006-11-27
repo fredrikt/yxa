@@ -39,7 +39,7 @@
 	  proto,	%% atom(), tcp | tcp6 | tls | tls6
 	  port,		%% integer(), the port this tcp_listener instance listen on
 	  socket,	%% term(), our listening socket
-	  local		%% tuple(), {LocalIP, LocalPort}
+	  hostport	%% hp record(), listening socket IP/port
 	 }).
 
 
@@ -116,26 +116,33 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
 			erlang:error({"Could not open socket", {error, E1}},
 				    [Proto, Port, InetModule, SocketModule, Options])
 		end,
-    Local = case catch InetModule:sockname(TCPsocket) of
-		{ok, {IPlist, LocalPort}} ->
-		    {siphost:makeip(IPlist), LocalPort};
-		{error, E2} ->
-		    logger:log(error, "TCP listener: ~p:sockname() returned error ~p", [InetModule, E2]),
-		    {get_defaultaddr(Proto), Port}
-	    end,
+    HP =
+	case catch InetModule:sockname(TCPsocket) of
+	    {ok, {IPlist, LocalPort}} ->
+		#hp{l_ip   = siphost:makeip(IPlist),
+		    l_port = LocalPort
+		   };
+	    {error, E2} ->
+		logger:log(error, "TCP listener: ~p:sockname() returned error ~p", [InetModule, E2]),
+		#hp{l_ip   = get_defaultaddr(Proto),
+		    l_port = Port
+		   }
+	end,
     State = #state{socketmodule = SocketModule,
 		   inetmodule   = InetModule,
 		   proto        = Proto,
 		   port         = Port,
 		   socket       = TCPsocket,
-		   local        = Local
+		   hostport     = HP
 		  },
     %% Now register with the tcp_dispatcher
-    Remote = none,
-    SipSocket = #sipsocket{module=sipsocket_tcp, proto=Proto, pid=self(), data={Local, Remote}},
+    SipSocket = #sipsocket{module	= sipsocket_tcp,
+			   proto	= Proto,
+			   pid		= self(),
+			   hostport	= HP
+			  },
     ok = gen_server:call(tcp_dispatcher, {register_sipsocket, listener, SipSocket}),
-    {LocalIP, _} = Local,
-    sipsocket:add_listener_info(Proto, LocalIP, Port),
+    sipsocket:add_listener_info(Proto, HP#hp.l_ip, HP#hp.l_port),
     accept_loop_start(State).
 
 
@@ -150,7 +157,9 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
 %% Returns : does not return
 %%--------------------------------------------------------------------
 accept_loop_start(State) when is_record(State, state) ->
-    {IP, Port} = State#state.local,
+    #hp{l_ip   = IP,
+	l_port = Port
+       } = State#state.hostport,
     Desc = case State#state.proto of
 	       tcp -> "TCP";
 	       tcp6 -> "TCP";
@@ -179,10 +188,12 @@ accept_loop(State) when is_record(State, state) ->
 	    case InetModule:peername(NewSocket) of
 		{ok, {IPlist, InPortNo}} ->
 		    IP = siphost:makeip(IPlist),
-		    Remote = {IP, InPortNo},
-		    Local = State#state.local,
+		    HP =
+			(State#state.hostport)#hp{r_ip = IP,
+						  r_port = InPortNo
+						 },
 		    Proto = State#state.proto,
-		    start_tcp_connection(SocketModule, Proto, NewSocket, Local, Remote),
+		    start_tcp_connection(SocketModule, Proto, NewSocket, HP),
 		    accept_loop(State);
 		{error, E} ->
 		    logger:log(error, "TCP listener: Could not get peername after accept() : ~p", [E]),
@@ -218,14 +229,12 @@ accept_loop(State) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: start_tcp_connection(SocketModule, Proto, Socket, Local,
-%%                                Remote)
+%% Function: start_tcp_connection(SocketModule, Proto, Socket, HP)
 %%           SocketModule = atom(), the name of the sipsocket module
 %%                          this socket uses (gen_tcp | ssl)
 %%           Proto  = term() (atom(), tcp | tcp6 | tls | tls6)
 %%           Socket = term()
-%%           Local  = term() ({Host, Port} tuple())
-%%           Remote = term() ({Host, Port} tuple())
+%%           HP     = hp record(), local/remote IP/port info
 %% Descrip.: Someone has just connected to our listening socket,
 %%           resulting in the connection socket Socket. Start a
 %%           tcp_connection process to handle this Socket, and in
@@ -241,11 +250,11 @@ accept_loop(State) when is_record(State, state) ->
 %%
 %% SSL socket
 %%
-start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
+start_tcp_connection(ssl, Proto, Socket, HP) when is_atom(Proto), is_record(HP, hp) ->
     {ok, {Protocol, Cipher}} = ssl:connection_info(Socket),
     logger:log(debug, "Extra debug: TCP listener : SSL socket info for ~p : "
 	       "Protocol = ~p, Cipher = ~p", [Socket, Protocol, Cipher]),
-    case tcp_connection:connection_from(ssl, Proto, Socket, Local, Remote) of
+    case tcp_connection:connection_from(ssl, Proto, Socket, HP) of
 	{ok, ConnPid} ->
 	    {ok, RecvPid} = gen_server:call(ConnPid, {get_receiver}),
 	    case ssl:controlling_process(Socket, RecvPid) of
@@ -254,7 +263,7 @@ start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
 		    logger:log(error, "TCP listener: Could not change controlling process of "
 			       "SSL socket ~p to ~p : ~p", [Socket, RecvPid, Reason]),
 		    erlang:error({"Failed changing controlling process for SSL socket", {error, Reason}},
-				 [ssl, Proto, Socket, Local, Remote])
+				 [ssl, Proto, Socket, HP])
 	    end;
 	{error, Reason} ->
 	    logger:log(debug, "TCP listener: Failed starting a tcp_connection handler for socket ~p : ~p",
@@ -267,8 +276,9 @@ start_tcp_connection(ssl, Proto, Socket, Local, Remote) ->
 %%
 %% Non-SSL socket
 %%
-start_tcp_connection(SocketModule, Proto, Socket, Local, Remote) ->
-    case tcp_connection:connection_from(SocketModule, Proto, Socket, Local, Remote) of
+start_tcp_connection(SocketModule, Proto, Socket, HP) when is_atom(SocketModule), is_atom(Proto),
+							   is_record(HP, hp) ->
+    case tcp_connection:connection_from(SocketModule, Proto, Socket, HP) of
 	{ok, _ConnPid} ->
 	    ok;
 	{error, Reason} ->
@@ -288,7 +298,7 @@ get_defaultaddr(tcp6) -> "[::]".
 
 %%--------------------------------------------------------------------
 %% Function: get_settings(Proto, IPtuple)
-%%           IPtuple = {A,B,C,D} | {A,B,C,D,E,F,G,H} 
+%%           IPtuple = {A,B,C,D} | {A,B,C,D,E,F,G,H}
 %%           Proto   = tcp | tcp6 | tls | tls6
 %% Descrip.: Get the variable things depending on protocol.
 %% Returns : {ok, InetModule, SocketModule, Options}

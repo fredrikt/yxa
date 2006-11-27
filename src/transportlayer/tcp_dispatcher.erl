@@ -123,6 +123,7 @@ get_listenerspecs() ->
 				end,
 			    This = [{tcp, IP, Port} | TLS],
 			    This ++ Acc
+%%		    end, [], lists:reverse(siphost:myip_list() ++ ["127.0.0.1"])),
 		    end, [], lists:reverse(siphost:myip_list())),
 
     IPv6Specs =
@@ -242,7 +243,7 @@ handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_call({get_specific_socket, Id}, From, State)
-%%           Id = tuple() ({Proto, Id})
+%%           Id = ob_id record()
 %% Descrip.: Return a specific socket. Used by draft-Outbound implem-
 %%           entation to send requests using an existing flow, or not
 %%           at all.
@@ -251,7 +252,7 @@ handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({get_specific_socket, Id}, _From, State) when is_tuple(Id), size(Id) == 2 ->
+handle_call({get_specific_socket, Id}, _From, State) when is_record(Id, ob_id) ->
     case get_specific_socket_from_list(Id, State#state.socketlist) of
 	none ->
 	    {reply, {error, "Specific socket not available"}, State, ?TIMEOUT};
@@ -278,31 +279,19 @@ handle_call({get_specific_socket, Id}, _From, State) when is_tuple(Id), size(Id)
 %%--------------------------------------------------------------------
 handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Type), is_record(SipSocket, sipsocket) ->
     CPid = SipSocket#sipsocket.pid,
-    {Local, Remote} = SipSocket#sipsocket.data,
-    Proto = SipSocket#sipsocket.proto,
-    Ident = case Type of
-		listener ->
-		    {IP, Port} = Local,
-		    {listener, Proto, IP, Port};
-		in ->
-		    {from, Proto, Remote};
-		out ->
-		    {to, Proto, Remote}
-	    end,
     %% Socket expiration not implemented. Perhaps not even needed. If you are thinking of
     %% implementing it remember that listening sockets should always have timeout 0.
     Timeout = 0,
     case link(CPid) of
 	true ->
-	    case socketlist:add(Ident, CPid, Proto, Local, Remote, SipSocket, Timeout, State#state.socketlist) of
+	    case socketlist:add(Type, CPid, SipSocket, Timeout, State#state.socketlist) of
+		{ok, NewSocketList1} ->
+		    {reply, ok, State#state{socketlist = NewSocketList1}, ?TIMEOUT};
 		{error, E} ->
-		    logger:log(error, "TCP dispatcher: Failed adding ~p to socketlist", [Ident]),
-		    {reply, {error, E}, State, ?TIMEOUT};
-		NewSocketList1 ->
-		    {reply, ok, State#state{socketlist=NewSocketList1}, ?TIMEOUT}
+		    {reply, {error, E}, State, ?TIMEOUT}
 	    end;
 	_ ->
-	    logger:log(error, "TCP dispatcher: Failed linking to ~p (pid ~p)", [Ident, CPid]),
+	    logger:log(error, "TCP dispatcher: Failed linking to socket handler (pid ~p)", [CPid]),
 	    {reply, {error, "Link failed"}, State, ?TIMEOUT}
     end;
 
@@ -451,10 +440,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%           none
 %%           SipSocket = sipsocket record()
 %%--------------------------------------------------------------------
-get_socket_from_list(#sipdst{proto=Proto}=Dst, SocketList) when Proto == tcp; Proto == tcp6;
-								Proto == tls; Proto == tls6 ->
-    {Host, Port} = {Dst#sipdst.addr, Dst#sipdst.port},
-    case socketlist:get_using_remote(Proto, {Host, Port}, SocketList) of
+get_socket_from_list(#sipdst{proto = Proto} = Dst, SocketList) when Proto == tcp; Proto == tcp6;
+								    Proto == tls; Proto == tls6 ->
+    case socketlist:get_using_remote(Proto, Dst#sipdst.addr, Dst#sipdst.port, SocketList) of
 	SListElem when is_record(SListElem, socketlistelem) ->
 	    case (Proto == tls) or (Proto == tls6) of
 		true ->
@@ -470,7 +458,7 @@ get_socket_from_list(#sipdst{proto=Proto}=Dst, SocketList) when Proto == tcp; Pr
 	    logger:log(debug, "Sipsocket TCP: Reusing existing connection to ~s (~p)",
 		       [sipdst:dst2str(Dst), CPid]),
 	    SipSocket;
-	_ ->
+	none ->
 	    none
     end.
 
@@ -486,3 +474,4 @@ get_specific_socket_from_list(Id, SocketList) when is_tuple(Id), size(Id) == 2, 
 	none ->
 	    none
     end.
+

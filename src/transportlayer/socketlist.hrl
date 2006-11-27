@@ -2,16 +2,15 @@
 %% -------------------------------------------------------------------
 
 -record(socketlist, {
-	  list
+	  list		%% list() of socketlistelem record()
 	 }).
 
 -record(socketlistelem, {
 	  ref,		%% unique reference
-	  id,		%% {listener, Proto, Port} | {in, Proto, Remote} | {out, Proto, Remote}
+	  id,		%% yxa_socket_ident record()
 	  pid,		%% pid() of connection handler process
 	  proto,	%% atom()
-	  local,	%% {IP, Port} tuple()
-	  remote,	%% {IP, Port} tuple()
+	  hostport,	%% hp record(), local/remote IP/port info
 	  sipsocket,	%% term(), socket
 	  expire	%% integer(), when this socket expires or 0 for never expire
 	 }).

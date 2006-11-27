@@ -18,6 +18,7 @@
 	 get_socket/1,
 	 get_specific_socket/1,
 	 get_raw_socket/1,
+	 get_remote_peer/1,
 
 	 viastr2proto/1,
 	 proto2viastr/1,
@@ -83,7 +84,8 @@ behaviour_info(callbacks) ->
      {is_reliable_transport, 1},
      {get_socket, 1},
      {get_specific_socket, 1},
-     {get_raw_socket, 1}
+     {get_raw_socket, 1},
+     {get_remote_peer, 1}
     ];
 behaviour_info(_Other) ->
     undefined.
@@ -195,6 +197,21 @@ get_specific_socket(Unknown) ->
 get_raw_socket(Socket) when is_record(Socket, sipsocket) ->
     SipSocketM = Socket#sipsocket.module,
     SipSocketM:get_raw_socket(Socket).
+
+%%--------------------------------------------------------------------
+%% Function: get_remote_peer(Socket)
+%%           Socket  = sipsocket record()
+%% Descrip.: Get informaion about 'who' is on the other side of a
+%%           specific socket.
+%% Returns : {ok, Proto, Addr, Port} |
+%%           not_applicable
+%%           Proto = atom(), tcp | tcp6 | ...
+%%           Addr  = string(), IP/IPv6 address of peer
+%%           Port  = integer()
+%%--------------------------------------------------------------------
+get_remote_peer(Socket) when is_record(Socket, sipsocket) ->
+    SipSocketM = Socket#sipsocket.module,
+    SipSocketM:get_remote_peer(Socket).
 
 %%--------------------------------------------------------------------
 %% Function: is_reliable_transport(Socket)

@@ -16,7 +16,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([connect_to/2,
-	 connection_from/5,
+	 connection_from/4,
 
 	 test/0
 	]).
@@ -42,11 +42,8 @@
 %%--------------------------------------------------------------------
 -record(state, {
 	  socketmodule,
-	  proto,
 	  socket,
 	  receiver,
-	  local,
-	  remote,
 	  starttime,
 	  sipsocket,
 	  timeout,
@@ -65,22 +62,21 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: connection_from(SocketModule, Proto, Socket, Local,
-%%                           Remote)
+%% Function: connection_from(SocketModule, Proto, Socket, HostPort)
 %%           SocketModule = atom(), socket module (gen_tcp | ssl)
 %%           Proto        = atom(), tcp | tcp6 | tls | tls6
 %%           Socket       = term()
-%%           Local        = term() ({Host, Port} tuple())
-%%           Remote       = term() ({Host, Port} tuple())
+%%           HostPort     = hp record(), local/remote IP/port info
 %% Descrip.: Incoming connection. Starts a tcp_connection gen_server
 %%           to handle this socket.
 %% Returns : {ok, Pid} | ignore
 %% Note    : 'ignore' is returned if the socket is not acceptable for
 %%           some reason (e.g. SSL certificate validation failed)
 %%--------------------------------------------------------------------
-connection_from(SocketModule, Proto, Socket, Local, Remote) ->
-    {Validation, _RPort} = Remote,
-    gen_server:start(?MODULE, [in, SocketModule, Proto, Socket, Local, Remote, Validation], []).
+connection_from(SocketModule, Proto, Socket, HostPort) when is_atom(SocketModule), is_atom(Proto),
+							    is_record(HostPort, hp) ->
+    SSLNames = HostPort#hp.r_ip,
+    gen_server:start(?MODULE, [in, SocketModule, Proto, Socket, HostPort, SSLNames], []).
 
 %%--------------------------------------------------------------------
 %% Function: connect_to(Dst, GenServerFrom)
@@ -149,16 +145,15 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: init([Direction, SocketModule, Proto, Socket, Local,
-%%                 Remote, SSLNames])
+%% Function: init([Direction, SocketModule, Proto, Socket, HostPort,
+%%                 SSLNames])
 %%           Direction    = in | out
 %%           SocketModule = atom(), the name of the socket module
 %%                          this socket uses (gen_tcp | ssl)
 %%           Proto        = atom(), tcp | tcp6 | tls | tls6
 %%           Socket       = term()
-%%           Local        = term() ({Host, Port} tuple())
-%%           Remote       = term() ({Host, Port} tuple())
-%%           Validation   = list() of string(), certificate names to
+%%           HP           = hp record(), local/remote IP/port info
+%%           SSLNames     = list() of string(), certificate names to
 %%                          verify a SSL certificate against, or a
 %%                          list containing a single string() with the
 %%			    IP of the remote host if this is an
@@ -172,11 +167,12 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
 %% Returns : {ok, State, Timeout} |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Direction, SocketModule, Proto, Socket, Local, Remote, Validation]) ->
+init([Direction, SocketModule, Proto, Socket, HP, SSLNames]) when is_record(HP, hp) ->
     %% First check if socket is acceptable
-    case is_acceptable_socket(Socket, Direction, Proto, Remote, Validation) of
+    Remote = {HP#hp.r_ip, HP#hp.r_port},
+    case is_acceptable_socket(Socket, Direction, Proto, Remote, SSLNames) of
 	true ->
-	    init2([Direction, SocketModule, Proto, Socket, Local, Remote]);
+	    init2([Direction, SocketModule, Proto, Socket, HP]);
 	false ->
 	    {Res, DirStr} =
 		case Direction of
@@ -191,13 +187,16 @@ init([Direction, SocketModule, Proto, Socket, Local, Remote, Validation]) ->
 	    Res
     end.
 
-init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
-    %% construct unique ID for this sipsocket, used by Outbound for example
+init2([Direction, SocketModule, Proto, Socket, HP]) when Direction == in; Direction == out ->
+    %% create unique ID for Outbound
+    Id =  #ob_id{proto	= Proto,
+		 id	= erlang:now()
+		},
     SipSocket = #sipsocket{module	= sipsocket_tcp,
 			   proto	= Proto,
 			   pid		= self(),
-			   data		= {Local, Remote},
-			   id		= {Proto, erlang:now()}	%% unique ID for Outbound
+			   hostport	= HP,
+			   id		= Id
 			  },
     %% Register this connection with the TCP listener process before we proceed
     case gen_server:call(tcp_dispatcher, {register_sipsocket, Direction, SipSocket}) of
@@ -207,11 +206,8 @@ init2([Direction, SocketModule, Proto, Socket, Local, Remote]) ->
 	    Timeout = TimeoutSec * 1000,
 	    Now = util:timestamp(),
 	    State = #state{socketmodule	= SocketModule,
-			   proto	= Proto,
 			   socket	= Socket,
 			   receiver	= Receiver,
-			   local	= Local,
-			   remote	= Remote,
 			   starttime	= Now,
 			   sipsocket	= SipSocket,
 			   timeout	= Timeout,
@@ -302,8 +298,9 @@ handle_call(get_raw_socket, _From, State) when State#state.on == true ->
 %%           Reason = normal   |
 %%                    string()
 %%--------------------------------------------------------------------
-handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, GenServerFrom}, #state{on=false}=State)
-  when Proto == tcp; Proto == tcp6; Proto == tls; Proto == tls6, is_list(Host), is_integer(Port) ->
+handle_cast({connect_to_remote, #sipdst{proto = Proto, addr = Host, port = Port} = Dst, GenServerFrom},
+	    #state{on = false} = State) when (Proto == tcp orelse Proto == tcp6 orelse
+					      Proto == tls orelse Proto == tls6), is_list(Host), is_integer(Port) ->
 
     DstStr = sipdst:dst2str(Dst),
     {ok, ConnectTimeoutSec} = yxa_config:get_env(tcp_connect_timeout),
@@ -325,11 +322,16 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 			       "Protocol = ~p, Cipher = ~p", [NewSocket, Protocol, Cipher]);
 		_ -> ok
 	    end,
-	    Local = get_local_ip_port(NewSocket, InetModule, Proto),
-	    Remote = {Host, Port},
+	    {L_IP, L_Port} = get_local_ip_port(NewSocket, InetModule, Proto),
+	    HP =
+		#hp{l_ip   = L_IP,
+		    l_port = L_Port,
+		    r_ip   = Host,
+		    r_port = Port
+		   },
 
 	    %% Call init() to get the connection properly initialized before we do our gen_server:reply()
-	    case init([out, SocketModule, Proto, NewSocket, Local, Remote, Dst#sipdst.ssl_names]) of
+	    case init([out, SocketModule, Proto, NewSocket, HP, Dst#sipdst.ssl_names]) of
 		{ok, NewState, Timeout} ->
 		    SipSocket = NewState#state.sipsocket,
 		    logger:log(debug, "TCP connection: Extra debug: Connected to ~s, socket ~p",
@@ -372,8 +374,12 @@ handle_cast({connect_to_remote, #sipdst{proto=Proto, addr=Host, port=Port}=Dst, 
 %% Returns : {noreply, State, Timeout}
 %%--------------------------------------------------------------------
 handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
-    {IP, Port} = State#state.remote,
-    Origin = #siporigin{proto		= State#state.proto,
+    #sipsocket{proto	= Proto,
+	       hostport	= #hp{r_ip   = IP,
+			      r_port = Port
+			     }
+	      } = State#state.sipsocket,
+    Origin = #siporigin{proto		= Proto,
 			addr		= IP,
 			port		= Port,
 			receiver	= self(),
@@ -389,9 +395,13 @@ handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
 %% Returns : {noreply, State, Timeout}
 %%--------------------------------------------------------------------
 handle_cast({send_stun_response, STUNresponse}, State) when State#state.on == true ->
-    {IP, Port} = State#state.remote,
+    #sipsocket{proto	= Proto,
+	       hostport	= #hp{r_ip   = IP,
+			      r_port = Port
+			     }
+	      } = State#state.sipsocket,
     logger:log(debug, "TCP connection: Extra debug: Sending STUN response to ~p:~s:~p",
-	      [State#state.proto, IP, Port]),
+	      [Proto, IP, Port]),
     SocketModule = State#state.socketmodule,
     (catch SocketModule:send(State#state.socket, STUNresponse)),
     {noreply, State, State#state.timeout};
@@ -404,9 +414,13 @@ handle_cast({send_stun_response, STUNresponse}, State) when State#state.on == tr
 handle_cast({close, FromPid}, State) ->
     %% XXX check that FromPid is someone sensible?
     Duration = util:timestamp() - State#state.starttime,
-    {IP, Port} = State#state.remote,
+    #sipsocket{proto	= Proto,
+	       hostport	= #hp{r_ip   = IP,
+			      r_port = Port
+			     }
+	      } = State#state.sipsocket,
     logger:log(debug, "TCP connection: Closing connection with ~p:~s:~p (duration: ~p seconds)",
-	       [State#state.proto, IP, Port, Duration]),
+	       [Proto, IP, Port, Duration]),
     SocketModule = State#state.socketmodule,
     Receiver = State#state.receiver,
     %% If the receiver tells us to close a SSL socket, the receiver will actually
@@ -422,7 +436,7 @@ handle_cast({close, FromPid}, State) ->
 			       "failed : ~p", [SocketModule, E])
 	    end
     end,
-    {stop, normal, State#state{socket=undefined}};
+    {stop, normal, State#state{socket = undefined}};
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({connection_closed, From}, State)
@@ -432,16 +446,20 @@ handle_cast({close, FromPid}, State) ->
 %%--------------------------------------------------------------------
 handle_cast({connection_closed, FromPid}, #state{receiver=FromPid}=State) when is_pid(FromPid) ->
     Duration = util:timestamp() - State#state.starttime,
-    {IP, Port} = State#state.remote,
+    #sipsocket{proto	= Proto,
+	       hostport	= #hp{r_ip   = IP,
+			      r_port = Port
+			     }
+	      } = State#state.sipsocket,
     logger:log(debug, "TCP connection: Connection with ~p:~s:~p closed by foreign host (duration: ~p seconds)",
-	       [State#state.proto, IP, Port, Duration]),
+	       [Proto, IP, Port, Duration]),
     %% Call close() on the socket just to make sure. For SSL, the TCP receiver will have done this for us.
     case State#state.socketmodule of
 	ssl -> true;
 	SocketModule ->
 	    SocketModule:close(State#state.socket)
     end,
-    {stop, normal, State#state{socket=undefined}};
+    {stop, normal, State#state{socket = undefined}};
 
 handle_cast(Msg, State) ->
     logger:log(error, "TCP connection: Received unknown gen_server cast : ~p", [Msg]),
@@ -464,10 +482,14 @@ handle_cast(Msg, State) ->
 %% Returns : {stop, normal, NewState}          (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_info(timeout, State) when State#state.on == true ->
-    {IP, Port} = State#state.remote,
+    #sipsocket{proto	= Proto,
+	       hostport	= #hp{r_ip   = IP,
+			      r_port = Port
+			     }
+	      } = State#state.sipsocket,
     Timeout = State#state.timeout,
     logger:log(debug, "Sipsocket TCP: Connection with ~p:~s:~p timed out after ~p seconds, "
-	       "connection handler terminating.", [State#state.proto, IP, Port, Timeout div 1000]),
+	       "connection handler terminating.", [Proto, IP, Port, Timeout div 1000]),
     case State#state.socketmodule of
 	ssl ->
 	    %% For SSL, we signal the receiver and let it close the connection
@@ -478,7 +500,7 @@ handle_info(timeout, State) when State#state.on == true ->
 	    logger:log(debug, "Sipsocket TCP: Closing socket ~p", [State#state.socket]),
 	    SocketModule:close(State#state.socket)
     end,
-    {stop, normal, State#state{socket=undefined}};
+    {stop, normal, State#state{socket = undefined}};
 
 %%--------------------------------------------------------------------
 %% Function: handle_info({also_notify, GenServerFrom}, State)
@@ -536,7 +558,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%           does not return
 %%--------------------------------------------------------------------
 start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModule), is_record(SipSocket, sipsocket),
-							      Dir == in; Dir == out ->
+							      (Dir == in orelse Dir == out) ->
     Receiver = tcp_receiver:start_link(SocketModule, Socket, SipSocket),
     S = case Dir of
 	    in -> "Connection from";
@@ -563,10 +585,10 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
 	    ok
     end,
     #sipsocket{proto	= Proto,
-	       data	= {_Local, {IP, Port}}
+	       hostport	= HP
 	      } = SipSocket,
     logger:log(debug, "TCP connection: ~s ~p:~s:~p (socket ~p, started receiver ~p)",
-	       [S, Proto, IP, Port, Socket, Receiver]),
+	       [S, Proto, HP#hp.r_ip, HP#hp.r_port, Socket, Receiver]),
     {ok, Receiver}.
 
 %%--------------------------------------------------------------------
@@ -588,7 +610,7 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
 %%
 %% SSL socket
 %%
-is_acceptable_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls; Proto == tls6, is_list(Names) ->
+is_acceptable_socket(Socket, Dir, Proto, Remote, Names) when (Proto == tls orelse Proto == tls6), is_list(Names) ->
     ssl_util:is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names);
 %%
 %% Non-SSL socket

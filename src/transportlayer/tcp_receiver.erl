@@ -101,14 +101,18 @@
 %% Function: start_link(SocketModule, Socket, SipSocket)
 %%           SocketModule = atom(), ssl | gen_tcp
 %%           Socket       = term(), socket to read from
-%%           SipSocket    = sipsocket record() 
+%%           SipSocket    = sipsocket record()
 %% Descrip.: Spawn a tcp_receiver process into it's recv_loop().
 %% Returns : Receiver = pid()
 %%--------------------------------------------------------------------
 start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModule == gen_tcp,
 						 is_record(SipSocket, sipsocket) ->
     #sipsocket{proto	= Proto,
-	       data	= {{LocalIP, LocalPort}, {RemoteIP, RemotePort}}
+	       hostport	= #hp{l_ip	= LocalIP,
+			      l_port	= LocalPort,
+			      r_ip	= RemoteIP,
+			      r_port	= RemotePort
+			     }
 	      } = SipSocket,
     StunEnv =
 	case yxa_config:get_env(stun_demuxing_on_sip_ports) of
@@ -137,7 +141,7 @@ start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModu
 	    {ok, false} ->
 		undefined
 	end,
-    
+
     State = #state{socketmodule	= SocketModule,
 		   socket	= Socket,
 		   parent	= self(),
@@ -195,7 +199,14 @@ recv_loop(#state{socketmodule = ssl} = State, Recv) when is_record(Recv, recv) -
 		handle_received_data(B, Recv, State);
 
 	    {ssl_closed, Socket} ->
-		{Local, Remote} = (State#state.sipsocket)#sipsocket.data,
+		HP = (State#state.sipsocket)#sipsocket.hostport,
+		Local = io_lib:format("~s:~p", [HP#hp.l_ip, HP#hp.l_port]),
+		Remote =
+		    case HP#hp.r_ip of
+			undefined -> "undefined";
+			_ ->
+			    io_lib:format("~s:~p", [HP#hp.r_ip, HP#hp.r_port])
+		    end,
 		logger:log(debug, "TCP receiver: Extra debug: Socket closed (Socket: ~p, local ~p, remote ~p)",
 			   [Socket, Local, Remote]),
 		connection_closed;
@@ -307,15 +318,17 @@ handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, re
     catch
 	throw:
 	  {error, parse_failed, E} ->
-	    {_Local, Remote} = (State#state.sipsocket)#sipsocket.data,
-	    {IP, Port} = Remote,
+	    #sipsocket{hostport = #hp{r_ip   = R_IP,
+				      r_port = R_Port
+				     }
+		      } = State#state.sipsocket,
 	    Msg = binary_to_list( list_to_binary([Recv#recv.frame, Data]) ),
 	    ProtoStr = case State#state.socketmodule of
 			   ssl ->	"tls";
 			   gen_tcp ->	"tcp"
 		       end,
 	    logger:log(error, "TCP receiver: Failed parsing data received from ~s:~s:~p, "
-		       "discarding and closing socket.", [ProtoStr, IP, Port]),
+		       "discarding and closing socket.", [ProtoStr, R_IP, R_Port]),
 	    logger:log(debug, "TCP receiver: Data : ~n~p~nError : ~p", [Msg, E]),
 	    close
     end.
@@ -385,7 +398,7 @@ handle_received_data2(Data, #recv{body_offset = undefined, is_stun = false} = Re
 	    Recv#recv{frame = NewFrame}
     end;
 
-	 
+
 %%--------------------------------------------------------------------
 %% Function: handle_received_data2(Data, Recv)
 %%           Data = binary(), the data we have just received
@@ -872,8 +885,8 @@ test() ->
 	  is_stun	= true,
 	  bytes_left	= 8
 	 } = handle_received_data2(<<0, 1 , 2, 4>>, HRD_19_4_Recv),
-	  
-    
+
+
 
     %% handle_received_data(Data, Recv, State)
     %% we can't test much of this function since it is not side-effect free
@@ -881,9 +894,12 @@ test() ->
     autotest:mark(?LINE, "handle_received_data/2 - 1"),
     %% minimal state
     HRD_State1 = #state{socketmodule	= ssl,
-			sipsocket	= #sipsocket{data = {{"0.0.0.0", 0},
-							     {"192.0.2.1", 5060}
-							    }},
+			sipsocket	= #sipsocket{hostport = #hp{l_ip = "0.0.0.0",
+								    l_port = 0,
+								    r_ip = "192.0.2.1",
+								    r_port = 5060
+								   }
+						    },
 			parent		= self()
 		       },
     close = handle_received_data(<<"broken\n\n">>, EmptyRecv, HRD_State1),
@@ -899,7 +915,7 @@ test() ->
 
     HRD_Full_3_Data =
 	<<%% CRLF between requests (should be ignored)
-	 "\r\n" 
+	 "\r\n"
 	 "INVITE sip:ft@example.org SIP/2.0\n"
 	 "Foo: bar\n"
 	 "Content-Length: 3\n"

@@ -5,10 +5,17 @@
 	  module,	%% atom(), sipsocket module name to use for this socket
 	  proto,	%% atom(), tcp | tcp6 | udp | udp6 | tls | tls6
 	  pid,		%% pid(), socket connection handler
-	  data,		%% term(), information about local and remote endpoints
-	  		%%         or just local if this is a listener socket
+	  hostport,	%% hp record(), local/remote IP and port info
 	  id		%% string(), unique id for this sipsocket instance - used in Outbound
 	  %% XXX add SSL valid names here
+	 }).
+
+%% host+port record, used when we need to pass around local+remote IP+port
+-record(hp, {
+	  l_ip,		%% string(), local IP address
+	  l_port,	%% integer(), local port number
+	  r_ip,		%% string() | undefined (for listening sockets)
+	  r_port	%% integer() | undefined (for listening sockets)
 	 }).
 
 %% sipdst is the Transport Layer destination record.
@@ -35,4 +42,18 @@
 	  proto,	% tcp | tcp6 | udp | udp6 | tls | tls6
 	  addr,		% string(), local address we have bound to
 	  port		% integer(), port number we are listening on
+	 }).
+
+% decoded SSL information
+-record(ssl_conn_subject, {
+	  countryName,		%% string()
+	  organizationName,	%% string()
+	  commonName,		%% string()
+	  description		%% string()
+	 }).
+
+%% draft-outbound specific socket identifier
+-record(ob_id, {
+	  proto,	%% udp | ...
+	  id		%% term()
 	 }).
