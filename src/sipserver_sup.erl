@@ -60,7 +60,7 @@ get_pids() ->
     sup_get_pids(?MODULE).
 
 %% part of get_pids()
-sup_get_pids(M) when is_pid(M); is_atom(M) ->
+sup_get_pids(M) when is_atom(M) ->
     List = supervisor:which_children(M),
     extract_pids(List, []).
 
