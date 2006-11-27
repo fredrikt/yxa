@@ -39,6 +39,7 @@
 	 format_number_for_remote_party_id/3,
 	 get_remote_party_name/2,
 	 remove_unsuitable_locations/2,
+	 lookup_result_to_str/1,
 
 	 test/0
 	]).
@@ -939,7 +940,7 @@ homedomain(Domain) when is_list(Domain) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_party_number(User, Header, DstHost)
+%% Function: get_remote_party_number(User, Header, URI, DstHost)
 %%           User    = string(), SIP authentication username
 %%           Header  = keylist record()
 %%           URI     = sipurl record(), outgoing Request-URI
@@ -1019,6 +1020,20 @@ get_remote_party_name(Key, URI) when is_list(Key), is_record(URI, sipurl) ->
 	    none
     end.
 
+%%--------------------------------------------------------------------
+%% Function: lookup_result_to_str(In)
+%%           In = term()
+%% Descrip.: Pretty-print our various used lookup result values.
+%% Returns : string()
+%%--------------------------------------------------------------------
+lookup_result_to_str(In) ->
+    lists:flatten(lookup_result_to_str2(In)).
+
+lookup_result_to_str2({Type, URL}) when is_atom(Type), is_record(URL, sipurl) ->
+    URLstr = lists:flatten( io_lib:format("(sipurl) ~s", [sipurl:print(URL)]) ),
+    io_lib:format("~p", [{Type, URLstr}]);
+lookup_result_to_str2(Unknown) ->
+    io_lib:format("~p", [Unknown]).
 
 %%====================================================================
 %%% Internal functions
@@ -1290,6 +1305,21 @@ test() ->
     %% test with invalid local Outbound socket
     put({sipsocket_test, get_specific_socket}, {error, "testing"}),
     {response, 410, "Gone (used Outbound)"} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
+
+
+    %% lookup_result_to_str(In)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "lookup_result_to_str/1 - 1"),
+    %% test tuple with URL
+    "{relay,\"(sipurl) sip:ft@example.net\"}" = lookup_result_to_str({relay, sipurl:parse("sip:ft@example.net")}),
+
+    autotest:mark(?LINE, "lookup_result_to_str/1 - 2"),
+    %% test tuple with atom
+    "{proxy,route}" = lookup_result_to_str({proxy, route}),
+
+    autotest:mark(?LINE, "lookup_result_to_str/1 - 3"),
+    %% test unknown
+    "[test]" = lookup_result_to_str([test]),
 
 
     %% Mnesia dependant tests
