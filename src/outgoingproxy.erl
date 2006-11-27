@@ -197,6 +197,9 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
     logger:log(debug, "outgoingproxy: Location: ~p", [Location]),
     THandler = YxaCtx#yxa_ctx.thandler,
     LogTag = transactionlayer:get_branchbase_from_handler(THandler),
+    YxaCtx1 =
+	YxaCtx#yxa_ctx{app_logtag = LogTag
+		      },
     case Location of
 	none ->
 	    logger:log(normal, "~s: outgoingproxy: 403 Forbidden", [LogTag]),
@@ -253,9 +256,6 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 	    proxy_request(THandler, NewRequest, route);
 
 	{relay, Loc} ->
-	    YxaCtx1 =
-		YxaCtx#yxa_ctx{app_logtag = LogTag
-			      },
 	    relay_request(Request, Loc, YxaCtx1);
 
 	me ->
@@ -350,7 +350,8 @@ route_request_check_host(Request) when is_record(Request, request) ->
 		    end;
 		{ok, [#siplocationdb_e{sipuser = SIPuser} | _] = Locations} ->
 		    logger:log(debug, "outgoingproxy: Request destination ~p is a registered "
-			       "contact of user ~p - proxying (~p location(s))", [URI, SIPuser, length(Locations)]),
+			       "contact of user ~p - proxying (~p location(s))",
+			       [sipurl:print(URI), SIPuser, length(Locations)]),
 		    route_request_to_user_contact(Locations)
 	    end
     end.
