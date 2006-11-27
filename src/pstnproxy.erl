@@ -58,7 +58,7 @@ init() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, YxaCtl)
+%% Function: request(Request, YxaCtx)
 %%           Request = request record()
 %%           YxaCtl  = yxa_ctl record()
 %% Descrip.: YXA applications must export a request/2 function.
