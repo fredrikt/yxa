@@ -1907,7 +1907,7 @@ test() ->
     %% test with truncated packet
     {error, not_stun} = process(<<?STUN_TYPE_BINDING_REQUEST:16/big-unsigned,
 				 0:16/big-unsigned>>, Process_ReqEnv),
-    
+
 
 
 

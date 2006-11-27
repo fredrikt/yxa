@@ -151,7 +151,7 @@ remove_blacklisting(SipDst, EtsRef) when is_record(SipDst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function:
 %% Descrip.:
 %% Returns : true | false
 %%--------------------------------------------------------------------
@@ -162,7 +162,7 @@ is_blacklisted(SipDst) when is_record(SipDst, sipdst) ->
 	{ok, false} ->
 	    false
     end.
-    
+
 
 %%--------------------------------------------------------------------
 %% Function: lookup_sipsocket_blacklist(Dst)
@@ -692,7 +692,7 @@ test() ->
     after 0 ->
 	    ok
     end,
-    
+
     autotest:mark(?LINE, "do_is_blacklisted/3 - 2.1"),
     %% blacklisted, but no probe for one more second
     true = do_is_blacklisted(TestSipDst2, TestISBL_ProbeT - 1, TestEtsRef),
