@@ -232,6 +232,11 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> socket ~p",
 		       [LogTag, Method, sipurl:print(URI), Socket#sipsocket.id]),
 	    proxy_request(THandler, Request, DstList);
+	
+	{proxy, route} ->
+	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> Route header",
+		       [LogTag, Method, sipurl:print(URI)]),
+	    proxy_request(THandler, Request, route);
 
 	{proxy, {with_path, Path}} when is_list(Path) ->
 	    %% RFC3327
