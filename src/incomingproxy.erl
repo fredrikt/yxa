@@ -26,10 +26,6 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
-%%--------------------------------------------------------------------
-%% Macros
-%%--------------------------------------------------------------------
--define(SIPPIPE_TIMEOUT, 900).
 
 %%====================================================================
 %% Behaviour functions
@@ -245,7 +241,7 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
     {Method, URI} = {Request#request.method, Request#request.uri},
     logger:log(debug, "incomingproxy: Processing request ~s ~s~n", [Method, sipurl:print(URI)]),
     Location = route_request(Request, Origin, LogTag),
-    logger:log(debug, "incomingproxy: Location: ~p", [Location]),
+    logger:log(debug, "incomingproxy: Routing desicion: ~s", [lookup:lookup_result_to_str(Location)]),
     case Location of
 	none ->
 	    logger:log(normal, "~s: incomingproxy: 404 Not found", [LogTag]),
@@ -260,22 +256,22 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 
 	{proxy, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
-	    proxy_request(THandler, Request, Loc);
+	    proxy_request(Request, YxaCtx, Loc);
 	{proxy, [H | _] = DstList} when is_record(H, sipdst) ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s to list of destinations", [LogTag, Method]),
 	    logger:log(debug, "~s: incomingproxy: Proxy ~s -> ~s", [LogTag, Method, DstList]),
-	    proxy_request(THandler, Request, DstList);
+	    proxy_request(Request, YxaCtx, DstList);
 	{proxy, route} ->
 	    logger:log(normal, "~s: incomingproxy: Proxy ~s according to Route header", [LogTag, Method]),
-	    proxy_request(THandler, Request, route);
+	    proxy_request(Request, YxaCtx, route);
 	{proxy, {with_path, URL, Path}} when is_record(URL, sipurl), is_list(Path) ->
             %% RFC3327
             logger:log(normal, "~s: incomingproxy: Proxy ~s -> ~s (with path: ~p)",
                        [LogTag, Method, sipurl:print(URL), Path]),
             NewHeader = keylist:prepend({"Route", Path}, Request#request.header),
-            proxy_request(THandler, Request#request{uri = URL,
-						    header = NewHeader
-						   }, route);
+            proxy_request(Request#request{uri = URL,
+					  header = NewHeader
+					 }, YxaCtx, route);
 
 	{redirect, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: incomingproxy: Redirect to ~s", [LogTag, sipurl:print(Loc)]),
@@ -283,13 +279,13 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 	    ExtraHeaders = [{"Contact", sipheader:contact_print(Contact)}],
 	    transactionlayer:send_response_handler(THandler, 302, "Moved Temporarily", ExtraHeaders);
 
-	{relay, Loc} when is_record(Loc, sipurl); Loc == route; is_list(Loc) ->
-	    relay_request(THandler, Request, Loc, Origin, LogTag);
+	{relay, Loc} when (is_record(Loc, sipurl) orelse Loc == route orelse is_list(Loc)) ->
+	    relay_request(Request, YxaCtx, Loc);
 
 	{forward, #sipurl{user = none, pass = none} = FwdURL} ->
 	    logger:log(normal, "~s: incomingproxy: Forward ~s ~s to ~s",
 		       [LogTag, Method, sipurl:print(URI), sipurl:print(FwdURL)]),
-	    forward_request(THandler, Request, FwdURL);
+	    forward_request(Request, YxaCtx, FwdURL);
 
 	to_this_proxy ->
 	    siprequest:request_to_me(Request, YxaCtx, _ExtraHeaders = []);
@@ -526,9 +522,9 @@ request_to_remote(Request, Origin) when is_record(Request, request), is_record(O
     end.
 
 %%--------------------------------------------------------------------
-%% Function: forward_request(THandler, Request, FwdURL)
-%%           THandler = term(), server transaction handle
+%% Function: forward_request(Request, YxaCtx, FwdURL)
 %%           Request  = request record()
+%%           YxaCtx   = yxa_ctx record()
 %%           FwdURL   = sipurl record()
 %% Descrip.: Forward a request somewhere without authentication. This
 %%           function is used when forwarding requests to another
@@ -536,7 +532,8 @@ request_to_remote(Request, Origin) when is_record(Request, request), is_record(O
 %%           the Request-URI.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-forward_request(THandler, Request, FwdURL) ->
+forward_request(Request, YxaCtx, FwdURL) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
     URI = Request#request.uri,
     ApproxMsgSize = siprequest:get_approximate_msgsize(Request#request{uri=FwdURL}),
     case sipdst:url_to_dstlist(FwdURL, ApproxMsgSize, URI) of
@@ -550,28 +547,27 @@ forward_request(THandler, Request, FwdURL) ->
 	    transactionlayer:send_response_handler(THandler, 500, "Failed resolving forward destination"),
 	    error;
 	DstList when is_list(DstList) ->
-	    proxy_request(THandler, Request, DstList)
+	    proxy_request(Request, YxaCtx, DstList)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: proxy_request(THandler, Request, DstList)
-%%           THandler = term(), server transaction handle
+%% Function: proxy_request(Request, YxaCtx, Dst)
 %%           Request  = request record()
-%%           DstList  = list() of sipdst record() | sipurl record() |
-%%                      route
+%%           YxaCtx   = yxa_ctx record()
+%%           Dst      = sipdst record() | sipurl record() | route |
+%%                      list() of sipdst record()
 %% Descrip.: Proxy a request somewhere without authentication.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-proxy_request(THandler, Request, Dst) when is_record(Request, request) ->
-    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT).
+proxy_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
+    local:start_sippipe(Request, YxaCtx, Dst).
 
 %%--------------------------------------------------------------------
-%% Function: relay_request(THandler, Request, Dst, Origin, LogTag)
-%%           THandler = term(), server transaction handle
+%% Function: relay_request(Request, YxaCtx, Dst)
 %%           Request  = request record()
-%%           Dst      = sipdst record() | sipurl record() | route
-%%           Origin   = siporigin record()
-%%           LogTag   = string(), prefix for logging
+%%           YxaCtx   = yxa_ctx record()
+%%           Dst      = sipdst record() | sipurl record() | route |
+%%                      list() of sipdst record()
 %% Descrip.: Relay request to remote host. If there is not valid
 %%           credentials present in the request, challenge user
 %%           unless local policy says not to. Never challenge
@@ -583,28 +579,31 @@ proxy_request(THandler, Request, Dst) when is_record(Request, request) ->
 %%
 %% CANCEL or BYE
 %%
-relay_request(THandler, #request{method = Method} = Request, Dst, _Origin, LogTag)
-  when Method == "CANCEL"; Method == "BYE" ->
+relay_request(#request{method = Method} = Request, YxaCtx, Dst) when Method == "CANCEL"; Method == "BYE" ->
     logger:log(normal, "~s: incomingproxy: Relay ~s ~s (unauthenticated)",
-	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
-    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+	       [YxaCtx#yxa_ctx.app_logtag, Method, sipurl:print(Request#request.uri)]),
+    local:start_sippipe(Request, YxaCtx, Dst);
 
 %%
 %% Anything but CANCEL or BYE
 %%
-relay_request(THandler, Request, Dst, Origin, LogTag) when is_record(Request, request) ->
+relay_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
     {Method, Header} = {Request#request.method, Request#request.header},
+    #yxa_ctx{origin	= Origin,
+	     thandler	= THandler,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
     case local:get_user_verified_proxy(Header, Method) of
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, relay_dst2str(Dst)]),
-	    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+	    local:start_sippipe(Request, YxaCtx, Dst);
 	{stale, User} ->
 	    case local:incomingproxy_challenge_before_relay(Origin, Request, Dst) of
 		false ->
 		    logger:log(debug, "Relay: STALE authentication (user ~p), but local policy says we "
 			       "should not challenge", [User]),
-		    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+		    local:start_sippipe(Request, YxaCtx, Dst);
 		true ->
 		    logger:log(debug, "Relay: STALE authentication, sending challenge"),
 		    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication (user ~p) ->"
@@ -616,7 +615,7 @@ relay_request(THandler, Request, Dst, Origin, LogTag) when is_record(Request, re
             case local:incomingproxy_challenge_before_relay(Origin, Request, Dst) of
                 false ->
                     logger:log(debug, "Relay: Failed authentication, but local policy says we should not challenge"),
-                    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+		    local:start_sippipe(Request, YxaCtx, Dst);
                 _ ->
 		    logger:log(debug, "Relay: Failed authentication, sending challenge"),
 		    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required",

@@ -113,6 +113,7 @@
 
 %% sippipe
 -export([
+	 start_sippipe/3,
 	 sippipe_received_response/3
 	]).
 
@@ -174,6 +175,10 @@
 	    false ->
 		LocalMacroOtherwise
 	end).
+
+
+-define(SIPPIPE_TIMEOUT, 900).
+
 
 %%====================================================================
 %% External functions
@@ -954,6 +959,27 @@ eventserver_locationdb_action(Type, User, Location) when is_atom(Type), is_list(
 
 % sippipe hooks
 %%%%%%%%%%%%%%%%
+
+%%--------------------------------------------------------------------
+%% Function: start_sippipe(Request, YxaCtx, Dst)
+%%           Request  = request record()
+%%           YxaCtx   = yxa_ctx record()
+%%           Dst      = sipurl record() | route |
+%%                      list() of sipdst record()
+%% Descrip.: Start a sippipe for one of the YXA applications
+%%           incomingproxy, outgoingproxy or pstnproxy. This is a very
+%%           suitable place to for example add/delete headers.
+%% Returns : term(), result of sipppipe:start/5
+%%--------------------------------------------------------------------
+start_sippipe(Request, YxaCtx, Dst) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    ?CHECK_EXPORTED({start_sippipe, 3},
+		    ?LOCAL_MODULE:start_sippipe(Request, YxaCtx, Dst),
+		    begin
+			THandler = YxaCtx#yxa_ctx.thandler,
+			ClientTransaction = none,
+			sippipe:start(THandler, ClientTransaction, Request, Dst, ?SIPPIPE_TIMEOUT)
+		    end
+		   ).
 
 %%--------------------------------------------------------------------
 %% Function: sippipe_received_response(Request, Response, DstList)

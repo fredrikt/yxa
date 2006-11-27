@@ -28,11 +28,6 @@
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
 
-%%--------------------------------------------------------------------
-%% Macros
-%%--------------------------------------------------------------------
--define(SIPPIPE_TIMEOUT, 900).
-
 %%====================================================================
 %% Behaviour functions
 %% Standard YXA SIP-application callback functions
@@ -194,7 +189,7 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
     %% through the proxy.
 
     Location = route_request(Request),
-    logger:log(debug, "outgoingproxy: Location: ~p", [Location]),
+    logger:log(debug, "outgoingproxy: Location: ~p", [lookup:lookup_result_to_str(Location)]),
     THandler = YxaCtx#yxa_ctx.thandler,
     LogTag = transactionlayer:get_branchbase_from_handler(THandler),
     YxaCtx1 =
@@ -224,22 +219,22 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
                     transactionlayer:send_response_handler(THandler, 500, "Failed resolving forward destination"),
                     error;
 		DstList when is_list(DstList) ->
-		    proxy_request(THandler, Request, DstList)
+		    proxy_request(Request, YxaCtx1, DstList)
 	    end;
 
 	{proxy, Loc} when is_record(Loc, sipurl) ->
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s -> ~s", [LogTag, Method, sipurl:print(Loc)]),
-	    proxy_request(THandler, Request, Loc);
+	    proxy_request(Request, YxaCtx1, Loc);
 
 	{proxy, [#sipdst{socket = Socket}] = DstList} when Socket /= undefined ->
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> socket ~p",
 		       [LogTag, Method, sipurl:print(URI), Socket#sipsocket.id]),
-	    proxy_request(THandler, Request, DstList);
+	    proxy_request(Request, YxaCtx1, DstList);
 	
 	{proxy, route} ->
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> Route header",
 		       [LogTag, Method, sipurl:print(URI)]),
-	    proxy_request(THandler, Request, route);
+	    proxy_request(Request, YxaCtx1, route);
 
 	{proxy, {with_path, Path}} when is_list(Path) ->
 	    %% RFC3327
@@ -253,10 +248,10 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 		       [LogTag, Method, sipurl:print(URI), PathStr]),
 	    NewHeader = keylist:prepend({"Route", Path}, Request#request.header),
 	    NewRequest = Request#request{header = NewHeader},
-	    proxy_request(THandler, NewRequest, route);
+	    proxy_request(NewRequest, YxaCtx1, route);
 
 	{relay, Loc} ->
-	    relay_request(Request, Loc, YxaCtx1);
+	    relay_request(Request, YxaCtx1, Loc);
 
 	me ->
 	    siprequest:request_to_me(Request, YxaCtx1, _ExtraHeaders = []);
@@ -365,7 +360,7 @@ route_request_to_user_contact(Locations) ->
 	    {proxy, siplocation:to_url(First)};
 	nomatch ->
 	    %% Outbound registration found, but none with this node (or all inactive)
-	    {response, 410, "Gone (used Outbound)"};
+	    {response, 480, "Temporarily Unavailable (used Outbound)"};
         {ok, Loc, SipSocket, LDB_SocketId} when is_record(LDB_SocketId, locationdb_socketid) ->
 	    #locationdb_socketid{id    = SocketId,
 				 proto = Proto,
@@ -441,23 +436,23 @@ route_request_host_is_this_proxy(Request) when is_record(Request, request) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: proxy_request(THandler, Request, Dst)
-%%           THandler = term(), server transaction handle
+%% Function: proxy_request(Request, YxaCtx, Dst)
 %%           Request  = request record()
-%%           Dst      = list() of sipdst record() | sipurl record() |
-%%                      route
+%%           YxaCtx   = yxa_ctx record()
+%%           Dst      = sipdst record() | sipurl record() | route |
+%%                      list() of sipdst record()
 %% Descrip.: Proxy a request somewhere without authentication.
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
-proxy_request(THandler, Request, Dst) when is_record(Request, request), is_list(Dst) orelse
-					       is_record(Dst, sipurl) orelse Dst == route ->
-    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT).
+proxy_request(Request, YxaCtx, Dst) when is_record(Request, request),
+					 (is_list(Dst) orelse is_record(Dst, sipurl) orelse Dst == route) ->
+    local:start_sippipe(Request, YxaCtx, Dst).
 
 %%--------------------------------------------------------------------
-%% Function: relay_request(Request, Dst, YxaCtx)
+%% Function: relay_request(Request, YxaCtx, Dst)
 %%           Request  = request record()
-%%           Dst      = sipdst record() | sipurl record() | route
 %%           YxaCtx   = yxa_ctx record()
+%%           Dst      = sipdst record() | sipurl record() | route
 %% Descrip.: Relay request to remote host. If there is not valid
 %%           credentials present in the request, challenge user
 %%           unless local policy says not to. Never challenge
@@ -469,18 +464,16 @@ proxy_request(THandler, Request, Dst) when is_record(Request, request), is_list(
 %%
 %% CANCEL or BYE
 %%
-relay_request( #request{method = Method} = Request, Dst, YxaCtx) when Method == "CANCEL"; Method == "BYE" ->
-    #yxa_ctx{thandler   = THandler,
-	     app_logtag = LogTag
-	    } = YxaCtx,
+relay_request(#request{method = Method} = Request, YxaCtx, Dst) when Method == "CANCEL"; Method == "BYE" ->
+    LogTag = YxaCtx#yxa_ctx.app_logtag,
     logger:log(normal, "~s: outgoingproxy: Relay ~s ~s (unauthenticated)",
 	       [LogTag, Request#request.method, sipurl:print(Request#request.uri)]),
-    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+    local:start_sippipe(Request, YxaCtx, Dst);
 
 %%
 %% Anything but CANCEL or BYE
 %%
-relay_request(Request, Dst, YxaCtx) when is_record(Request, request) ->
+relay_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
     #yxa_ctx{thandler   = THandler,
 	     origin     = Origin,
 	     app_logtag = LogTag
@@ -490,13 +483,13 @@ relay_request(Request, Dst, YxaCtx) when is_record(Request, request) ->
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: outgoingproxy: Relay ~s (authenticated)", [LogTag, relay_dst2str(Dst)]),
-	    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+	    local:start_sippipe(Request, YxaCtx, Dst);
 	{stale, User} ->
 	    case local:outgoingproxy_challenge_before_relay(Origin, Request, Dst) of
 		false ->
 		    logger:log(debug, "Relay: STALE authentication (user ~p), but local policy says we "
 			       "should not challenge", [User]),
-		    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+		    local:start_sippipe(Request, YxaCtx, Dst);
 		true ->
 		    logger:log(debug, "Relay: STALE authentication, sending challenge"),
 		    logger:log(normal, "~s: outgoingproxy: Relay ~s -> STALE authentication (user ~p) ->"
@@ -508,7 +501,7 @@ relay_request(Request, Dst, YxaCtx) when is_record(Request, request) ->
             case local:outgoingproxy_challenge_before_relay(Origin, Request, Dst) of
                 false ->
                     logger:log(debug, "Relay: Failed authentication, but local policy says we should not challenge"),
-                    sippipe:start(THandler, none, Request, Dst, ?SIPPIPE_TIMEOUT);
+		    local:start_sippipe(Request, YxaCtx, Dst);
                 true ->
 		    logger:log(debug, "Relay: Failed authentication, sending challenge"),
 		    logger:log(normal, "~s: outgoingproxy: Relay ~s -> 407 Proxy Authorization Required",
