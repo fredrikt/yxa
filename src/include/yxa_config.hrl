@@ -58,6 +58,12 @@
 		    default	= 250 * 1024 * 1024,
 		    type	= integer
 		   },
+	 #cfg_entry{key		= logger_status,
+		    default	= [{all, true}],
+		    list_of	= true,
+		    type	= {tuple, 2},
+		    soft_reload	= false
+		   },
 	 #cfg_entry{key		= event_handler_handlers,
 		    list_of	= true,
 		    type	= term

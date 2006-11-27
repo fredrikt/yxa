@@ -25,7 +25,9 @@
 	 log/2,
 	 log/3,
 	 log_iolist/2,
-	 quit/1
+	 quit/1,
+	 enable/1,
+	 disable/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -54,12 +56,19 @@
 %% file type of file is keept for each type of log (debug, normal,
 %% error)
 -record(state, {
-	  debug_iodev,  % file descriptor
-	  debug_fn,     % file name
-	  normal_iodev, % file descriptor
-	  normal_fn,    % file name
-	  error_iodev,  % file descriptor
-	  error_fn      % file name
+	  debug_iodev,		% term(), file descriptor
+	  debug_fn,		% string(), file name
+	  debug_enabled,	% bool()
+
+	  normal_iodev,		% term(), file descriptor
+	  normal_fn,		% string(), file name
+	  normal_enabled,	% bool()
+
+	  error_iodev,		% term(), file descriptor
+	  error_fn,		% string(), file name
+	  error_enabled,	% bool()
+
+	  console_enabled	% bool()
 	 }).
 
 %%--------------------------------------------------------------------
@@ -162,6 +171,51 @@ quit(Msg) ->
 	    {error, "logger error"}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: enable(Which)
+%%           Which = atom() | list() of atom() (valid ones:
+%%                   all, debug, normal, error, console)
+%% Descrip.: Enables logging on one or more outputs.
+%% Returns : {ok, Status}    |
+%%           {error, Reason}
+%%           Status    = list() of {Output, Enabled}
+%%             Output  = atom(), debug | normal | error | console
+%%             Enabled = bool()
+%%           Reason    = term() 
+%%--------------------------------------------------------------------
+enable(Status) when is_list(Status) ->
+    enable_disable_list(Status, true);
+enable(Which) when is_atom(Which) ->
+    gen_server:call(logger, {update_logger_status, [{Which, true}]}).
+
+%%--------------------------------------------------------------------
+%% Function: disable(Which)
+%%           Which = atom() | list() of atom() (valid ones:
+%%                   all, debug, normal, error, console)
+%% Descrip.: Disables logging on one or more outputs.
+%% Returns : {ok, Status}    |
+%%           {error, Reason}
+%%           Status    = list() of {Output, Enabled}
+%%             Output  = atom(), debug | normal | error | console
+%%             Enabled = bool()
+%%           Reason    = term() 
+%%--------------------------------------------------------------------
+disable(Status) when is_list(Status) ->
+    enable_disable_list(Status, false);
+disable(Which) when is_atom(Which) ->
+    gen_server:call(logger, {update_logger_status, [{Which, false}]}).
+
+%% part of enable/1 and disable/1
+enable_disable_list(Status, Val) ->
+    %% turn Status [foo, bar] into [{foo, Val}, {bar, Val}]
+    L = [{Which, Val} || Which <- Status, is_atom(Which)],
+    case length(L) == length(Status) of
+	true ->
+	    gen_server:call(logger, {update_logger_status, L});
+	false ->
+	    {error, non_atom_in_list}
+    end.
+
 %%====================================================================
 %% Behaviour functions
 %%====================================================================
@@ -173,16 +227,9 @@ quit(Msg) ->
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
 init([Basename]) ->
-    %% Check if we should rotate log files when they reach a upper
-    %% limit in size (bytes).
-    case yxa_config:get_env(max_logfile_size) of
-	{ok, 0} ->
-	    %% max_logfile_size = 0, don't rotate logs
-	    ok;
-	{ok, Size} when Size > 0 ->
-	    %% Set up a timer to do the size checking every 60 seconds
-	    {ok, _T} = timer:send_interval(60 * 1000, logger, {check_logfile_size, Size})
-    end,
+    %% Set up a timer to check if log files needs rotating every 60 seconds
+    {ok, _T} = timer:send_interval(60 * 1000, logger, check_logfile_size),
+
     %% Construct log filenames and open/create them
     DebugFn = lists:concat([Basename, ".debug"]),
     NormalFn = lists:concat([Basename, ".log"]),
@@ -199,9 +246,20 @@ init([Basename]) ->
 	    X:Y ->
 		io:format("ERROR: Failed opening logfiles : ~p ~p~n", [X, Y])
 	end,
-    {ok, #state{debug_iodev=DebugIoDevice, debug_fn=DebugFn,
-		normal_iodev=NormalIoDevice, normal_fn=NormalFn,
-		error_iodev=ErrorIoDevice, error_fn=ErrorFn}}.
+
+    NewState1 =
+	#state{debug_iodev	= DebugIoDevice,
+	       debug_fn		= DebugFn,
+
+	       normal_iodev	= NormalIoDevice,
+	       normal_fn	= NormalFn,
+
+	       error_iodev	= ErrorIoDevice,
+	       error_fn		= ErrorFn
+	      },
+
+    {ok, Status} = yxa_config:get_env(logger_status),
+    update_logger_status(Status, NewState1).
 
 
 %%--------------------------------------------------------------------
@@ -251,6 +309,19 @@ handle_call({rotate_logs, Suffix, Logs}, _From, State) when list(Logs) ->
 handle_call({quit}, _From, State) ->
     {stop, normal, {ok}, State};
 
+handle_call({update_logger_status, Status}, _From, State) when is_list(Status) ->
+    case update_logger_status(Status, State) of
+	{ok, NewState} ->
+	    Result = [{debug,   NewState#state.debug_enabled},
+		      {normal,  NewState#state.normal_enabled},
+		      {error,   NewState#state.error_enabled},
+		      {console, NewState#state.console_enabled}
+		     ],
+	    {reply, {ok, Result}, NewState};
+	{error, Reason} ->
+	    {reply, {error, Reason}, State}
+    end;
+
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Logger: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "unknown gen_server call in logger"}, State}.
@@ -277,16 +348,16 @@ handle_call(Unknown, _From, State) ->
 handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data); is_list(Data) ->
     case Level of
 	error ->
-	    log_to_device(State#state.error_iodev, Data),
-	    log_to_device(State#state.normal_iodev, Data),
-	    log_to_device(State#state.debug_iodev, Data),
-	    log_to_stdout(Data);
+	    log_to_device(State#state.error_enabled, State#state.error_iodev, Data),
+	    log_to_device(State#state.normal_enabled, State#state.normal_iodev, Data),
+	    log_to_device(State#state.debug_enabled, State#state.debug_iodev, Data),
+	    log_to_stdout(State#state.console_enabled, Data);
 	normal ->
-	    log_to_device(State#state.normal_iodev, Data),
-	    log_to_device(State#state.debug_iodev, Data),
-	    log_to_stdout(Data);
+	    log_to_device(State#state.normal_enabled, State#state.normal_iodev, Data),
+	    log_to_device(State#state.debug_enabled, State#state.debug_iodev, Data),
+	    log_to_stdout(State#state.console_enabled, Data);
 	debug ->
-	    log_to_device(State#state.debug_iodev, Data)
+	    log_to_device(State#state.debug_enabled, State#state.debug_iodev, Data)
     end,
     {noreply, State};
 
@@ -304,25 +375,29 @@ handle_cast(Unknown, State) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({check_logfile_size, Size}, State)
-%%           Size = integer(), max logfile size tolerated
+%% Function: handle_info(check_logfile_size, State)
 %% Descrip.: Periodically gets invoked by timer. Check if any of our
 %%           logfiles are greater than our configured limit, if so -
 %%           call rotate() on them.
 %% Returns : {noreply, NewState}
 %%--------------------------------------------------------------------
-handle_info({check_logfile_size, Size}, State) ->
+handle_info(check_logfile_size, State) ->
     %% If not configured not to, we get a check_logfile_size signal
     %% every now and then. Check if any of our logfiles are over the
     %% limit and if so, rotate it.
-    case needs_rotating([debug, normal, error], Size, State) of
-	[] ->
+    case yxa_config:get_env(max_logfile_size) of
+	{ok, 0} ->
 	    {noreply, State};
-	L ->
-	    %% Create rotation filename suffix from current time
-	    Suffix = create_filename_time_suffix(),
-	    {_, NewState} = rotate(L, Suffix, State),
-	    {noreply, NewState}
+	{ok, Size} ->
+	    case needs_rotating([debug, normal, error], Size, State) of
+		[] ->
+		    {noreply, State};
+		L ->
+		    %% Create rotation filename suffix from current time
+		    Suffix = create_filename_time_suffix(),
+		    {_, NewState} = rotate(L, Suffix, State),
+		    {noreply, NewState}
+	    end
     end;
 
 handle_info(Info, State) ->
@@ -364,13 +439,12 @@ safe_open(Filename, Args) when is_list(Filename) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: log_to_device(IoDevice, Level, TimeStamp, Format,
-%%                         Arguments, Pid)
-%%           log_to_stdout(Level, TimeStamp, Format, Arguments, Pid)
-%%           Level, TimeStamp, Pid = used to identify the message
-%%           Format, Arguments = used by io:format()
+%% Function: log_to_device(Enabled, IoDevice, Data)
+%%           log_to_stdout(Enabled, Data)
+%%           Enabled  = true | false
 %%           IoDevice = where to send io:format() output (a file
 %%                      descriptor)
+%%           Data     = binary()
 %% Descrip.: log a message
 %% Returns : -
 %% Note    : catch is used to ensure that formating error in io:format
@@ -378,10 +452,14 @@ safe_open(Filename, Args) when is_list(Filename) ->
 %%           logger without feedback, if the logger is run without
 %%           a erlang shell to look at
 %%--------------------------------------------------------------------
-log_to_device(IoDevice, Data) ->
+log_to_device(false, _IoDevice, _Data) ->
+    ok;
+log_to_device(true, IoDevice, Data) ->
     file:write(IoDevice, Data).
 
-log_to_stdout(Data) ->
+log_to_stdout(false, _Data) ->
+    ok;
+log_to_stdout(true, Data) ->
     try
 	io:put_chars(Data)
     catch
@@ -544,3 +622,48 @@ format_msg(TimeStamp, Level, Pid, Format, Arguments) ->
     Tag = io_lib:format("~p~p:", [Level, Pid]),
     %% The 10 is the trailing linefeed
     list_to_binary([TimeStamp, 32, Tag, Msg, 10]).
+
+%%--------------------------------------------------------------------
+%% Function: update_logger_status(Status, State)
+%%           Status = list() of {Type, Enabled}
+%%             Type    = all | debug | normal | error | console
+%%             Enabled = bool()
+%%           State     = state record()
+%% Descrip.: Update what logging facilities are enabled/disabled.
+%% Returns : {ok, NewState}  |
+%%           {error, Reason}
+%%           NewState = state record()
+%%           Reason   = term()
+%%--------------------------------------------------------------------
+update_logger_status(Status, State) ->
+    case update_logger_status2(Status, State) of
+	NewState when is_record(NewState, state) ->
+	    {ok, NewState};
+	E ->
+	    E
+    end.
+
+update_logger_status2([{all, V} | T], State) when is_boolean(V) ->
+    update_logger_status2(T, State#state{debug_enabled   = V,
+					 normal_enabled  = V,
+					 error_enabled   = V,
+					 console_enabled = V
+					});
+
+update_logger_status2([{debug, V} | T], State) when is_boolean(V) ->
+    update_logger_status2(T, State#state{debug_enabled = V});
+
+update_logger_status2([{normal, V} | T], State) when is_boolean(V) ->
+    update_logger_status2(T, State#state{normal_enabled = V});
+
+update_logger_status2([{error, V} | T], State) when is_boolean(V) ->
+    update_logger_status2(T, State#state{error_enabled = V});
+
+update_logger_status2([{console, V} | T], State) when is_boolean(V) ->
+    update_logger_status2(T, State#state{console_enabled = V});
+
+update_logger_status2([H | _T], _State) ->
+    {error, {invalid, H}};
+
+update_logger_status2([], State) ->
+    State.
