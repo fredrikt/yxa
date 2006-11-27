@@ -404,10 +404,10 @@ get_next_sipdst([#sipdst{proto = undefined, socket = #sipsocket{} = Socket} = Ds
 				addr  = Addr,
 				port  = Port
 			       },
-	    get_next_sipdst([NewDst | T], State);
+	    get_next_sipdst([NewDst | T], ApproxMsgSize);
 	not_applicable ->
 	    logger:log(error, "sippipe: Can't get remote peer address for sipsocket ~p", [Socket]),
-	    get_next_sipdst(T, State)
+	    get_next_sipdst(T, ApproxMsgSize)
     end;
 get_next_sipdst([#sipdst{proto = undefined} = Dst | T], ApproxMsgSize) ->
     URI = Dst#sipdst.uri,
