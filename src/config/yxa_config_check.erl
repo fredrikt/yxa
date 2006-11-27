@@ -375,7 +375,9 @@ type_check(Key, Value, #cfg_entry{list_of = true} = Def) ->
 %%           Values = list() of term()
 %%           Type   = atom | integer | bool | term | string |
 %%                    regexp_rewrite | regexp_match | sipurl |
-%%                    sip_sipurl | sips_sipurl
+%%                    sip_sipurl | sips_sipurl | tuple |
+%%                    {tuple, Arity}
+%%            Arity = integer()
 %%           Def    = cfg_entry record()
 %% Descrip.: Check Values to make sure they match Type. The tests and
 %%           normalization done is depending on Type and Def.
@@ -398,8 +400,20 @@ type_check_elements([H | T], integer, Def, Res) when is_integer(H) ->
 %%
 %% bool
 %%
-type_check_elements([H | T], bool, Def, Res) when H == true; H == false ->
+type_check_elements([H | T], bool, Def, Res) when is_boolean(H) ->
     type_check_elements(T, bool, Def, [H | Res]);
+
+%%
+%% tuple
+%%
+type_check_elements([H | T], tuple, Def, Res) when is_tuple(H) ->
+    type_check_elements(T, tuple, Def, [H | Res]);
+
+%%
+%% tuple with arity
+%%
+type_check_elements([H | T], {tuple, Arity}, Def, Res) when is_integer(Arity), is_tuple(H), size(H) == Arity ->
+    type_check_elements(T, {tuple, Arity}, Def, [H | Res]);
 
 %%
 %% term
