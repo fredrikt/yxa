@@ -116,7 +116,7 @@ request(#request{method = "CANCEL"} = Request, YxaCtx) when is_record(YxaCtx, yx
 request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case local:is_request_to_this_proxy(Request) of
 	true ->
-	    request_to_me(Request, YxaCtx);
+	    siprequest:request_to_me(Request, YxaCtx, _ExtraHeaders = []);
 	false ->
 	    %% Ok, request was not for this proxy itself - now just make sure we are supposed to fork it.
 	    {ShouldFork, NoForkReason, PipeDst} =
@@ -191,32 +191,7 @@ terminate(Mode) when is_atom(Mode) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request_to_me(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: Request is meant for this proxy, if it is OPTIONS we
-%%           respond 200 Ok, otherwise we respond 481 Call/
-%%           transaction does not exist.
-%% Returns : Does not matter.
-%%--------------------------------------------------------------------
-request_to_me(#request{method = "OPTIONS"}, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
-    THandler = YxaCtx#yxa_ctx.thandler,
-    LogTag = transactionlayer:get_branch_from_handler(THandler),
-    logger:log(normal, "~s: appserver: OPTIONS to me -> 200 OK", [LogTag]),
-    logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
-	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
-    transactionlayer:send_response_handler(THandler, 200, "OK");
-
-request_to_me(_Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
-    THandler = YxaCtx#yxa_ctx.thandler,
-    LogTag = transactionlayer:get_branch_from_handler(THandler),
-    logger:log(normal, "~s: appserver: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
-	       [LogTag]),
-    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
-
-
-%%--------------------------------------------------------------------
-%% Function: create_session(Request, YxaCtx, DoCPL)
+%% Function: create_session(Request, YxaCtx, CPL)
 %%           Request = request record()
 %%           Origin  = siporigin record()
 %%           LogStr  = string()
@@ -453,8 +428,7 @@ locations_to_actions2([H | T] = In, CallTimeout, Res, Surplus) when is_record(H,
 	    [First | Rest] = Group = get_locations_with_instance(Instance, H#siplocationdb_e.sipuser, In),
 	    CallAction = location_to_call_action(First, CallTimeout),
 	    MoreSurplus = [location_to_call_action(E, CallTimeout) || E <- Rest],
-	    %% Remove all entrys we separated into the surplus list from the ones we are going
-	    %% to process next.
+	    %% Remove all entrys for this sipuser and instance from the ones we have left to process
 	    NewTail = T -- Group,
 	    %% put action made out of First in Res, all locations matching Firsts user and instance
 	    %% into our Surplus list and recurse upon the NewTail we created

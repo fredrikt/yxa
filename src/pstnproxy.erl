@@ -101,7 +101,9 @@ request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa
 	    logger:log(normal, "~s: pstnproxy: Route request to SIP server", [LogTag]),
 	    request_to_sip(Request, THandler);
 	me ->
-	    request_to_me(THandler, Request, LogTag);
+	    %% XXX it would be nice to include an Allow: header with the allowed methods, but
+	    %% that is complicated since it can vary depending on PstnCtx
+	    siprequest:request_to_me(Request, YxaCtx, _ExtraHeaders = []);
 	drop ->
 	    ok
     end,
@@ -397,27 +399,6 @@ request_to_pstn_non_e164(DstNumber, Request, Origin, THandler) ->
 	Res ->
 	    Res
     end.
-
-%%--------------------------------------------------------------------
-%% Function: request_to_me(THandler, Request, LogTag)
-%%           THandler = term(), server transaction handle
-%%           Request  = request record()
-%%           LogTag   = string()
-%% Descrip.: Request is meant for this proxy, if it is OPTIONS we
-%%           respond 200 Ok, otherwise we respond 481 Call/
-%%           transaction does not exist.
-%% Returns : Does not matter.
-%%--------------------------------------------------------------------
-request_to_me(THandler, #request{method="OPTIONS"}=Request, LogTag) when is_record(Request, request) ->
-    logger:log(normal, "~s: pstnproxy: OPTIONS to me -> 200 OK", [LogTag]),
-    logger:log(debug, "XXX The OPTIONS response SHOULD include Accept, Accept-Encoding,"
-	       " Accept-Language, and Supported headers. RFC 3261 section 11"),
-    transactionlayer:send_response_handler(THandler, 200, "OK");
-
-request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
-    logger:log(normal, "~s: pstnproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
-	       [LogTag]),
-    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 
 %%--------------------------------------------------------------------

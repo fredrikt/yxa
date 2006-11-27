@@ -259,7 +259,7 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 	    relay_request(Request, Loc, YxaCtx1);
 
 	me ->
-	    request_to_me(THandler, Request, LogTag);
+	    siprequest:request_to_me(Request, YxaCtx1, _ExtraHeaders = []);
 
 	_ ->
 	    logger:log(error, "~s: outgoingproxy: Invalid Location ~p", [LogTag, Location]),
@@ -438,26 +438,6 @@ route_request_host_is_this_proxy(Request) when is_record(Request, request) ->
 	    me
     end.
 
-%%--------------------------------------------------------------------
-%% Function: request_to_me(THandler, Request, LogTag)
-%%           THandler = term(), server transaction handle
-%%           Request  = request record()
-%%           LogTag   = string()
-%% Descrip.: Request is meant for this proxy, if it is OPTIONS we
-%%           respond 200 Ok, otherwise we respond 481 Call/
-%%           transaction does not exist.
-%% Returns : Does not matter.
-%%--------------------------------------------------------------------
-request_to_me(THandler, Request, LogTag) when is_record(Request, request), Request#request.method == "OPTIONS" ->
-    logger:log(normal, "~s: incomingproxy: OPTIONS to me -> 200 OK", [LogTag]),
-    %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and
-    %% Supported headers. RFC 3261 section 11.
-    transactionlayer:send_response_handler(THandler, 200, "OK");
-
-request_to_me(THandler, Request, LogTag) when is_record(Request, request) ->
-    logger:log(normal, "~s: incomingproxy: non-OPTIONS request to me -> 481 Call/Transaction Does Not Exist",
-	       [LogTag]),
-    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 %%--------------------------------------------------------------------
 %% Function: proxy_request(THandler, Request, Dst)

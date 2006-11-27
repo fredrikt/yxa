@@ -47,7 +47,8 @@
 	 send_proxyauth_req/4,
 	 send_answer/3,
 	 send_notavail/2,
-	 send_notfound/2
+	 send_notfound/2,
+	 request_to_me/3
 	]).
 
 %%--------------------------------------------------------------------
@@ -798,6 +799,56 @@ send_answer(Header, Socket, Body) ->
 			  header=standardcopy(Header, ExtraHeaders)},
     Response = set_response_body(Response1, Body),
     transportlayer:send_response(Socket, Response).
+
+%%--------------------------------------------------------------------
+%% Function: request_to_me(Request, YxaCtx, ExtraHeaders)
+%%           Request      = request record()
+%%           YxaCtx       = yxa_ctx record()
+%%           ExtraHeaders = list() of {Key, Value} tuple()
+%% Descrip.: Produce a standard 200 OK response to an OPTIONS request
+%%           an YXA application received.
+%% Returns : term(), result of
+%%                   transactionlayer:send_response_handler/4
+%%--------------------------------------------------------------------
+request_to_me(#request{method = "OPTIONS"} = Request, YxaCtx, ExtraHeaders) when is_record(YxaCtx, yxa_ctx),
+										    is_list(ExtraHeaders) ->
+    #yxa_ctx{thandler   = THandler,
+	     app_logtag = LogTag
+	    } = YxaCtx,
+
+    {ok, AppName} = yxa_config:get_env(yxa_appmodule),
+    logger:log(normal, "~s: ~p: 'OPTIONS ~s '(to me) -> 200 OK",
+	       [LogTag, AppName, sipurl:print(Request#request.uri)]),
+
+    %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and
+    %% Supported headers. RFC 3261 section 11.
+    ExtraHeaders1 =
+	case lists:keysearch("Supported", 1, ExtraHeaders) of
+	    {value, {"Supported", _}} ->
+		%% If we are given a Supported header, we don't modify it
+		ExtraHeaders;
+	    false ->
+		This =
+		    case yxa_config:get_env(stun_demuxing_on_sip_ports) of
+			{ok, true}  -> [{"Supported", ["sip-stun"]}];
+			{ok, false} -> []
+		    end,
+		ExtraHeaders ++ This
+	end,
+
+    transactionlayer:send_response_handler(THandler, 200, "OK", ExtraHeaders1);
+
+request_to_me(Request, YxaCtx, ExtraHeaders) when is_record(Request, request), is_record(YxaCtx, yxa_ctx),
+						     is_list(ExtraHeaders) ->
+    #yxa_ctx{thandler   = THandler,
+	     app_logtag = LogTag
+	    } = YxaCtx,
+
+    {ok, AppName} = yxa_config:get_env(yxa_appmodule),
+
+    logger:log(normal, "~s: ~p: '~s ~s' (to me) -> 481 Call/Transaction Does Not Exist",
+	       [LogTag, AppName, Request#request.method, sipurl:print(Request#request.uri)]),
+    transactionlayer:send_response_handler(THandler, 481, "Call/Transaction Does Not Exist").
 
 %%--------------------------------------------------------------------
 %% Function: make_response(Status, Reason, Body, ExtraHeaders,
