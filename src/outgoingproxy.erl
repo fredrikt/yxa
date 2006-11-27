@@ -109,7 +109,7 @@ do_foreign_register(Request, YxaCtx) ->
 
     DoPath =
 	case sipheader:is_supported("path", Header) of
-	    true -> {ok, true};
+	    true -> true;
 	    false ->
 		case yxa_config:get_env(always_do_path_for_foreign_registers) of
 		    {ok, true} ->
