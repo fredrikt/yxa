@@ -1,4 +1,4 @@
-%%--------------------------------------------------------------------
+%%%--------------------------------------------------------------------
 %%% File    : sippipe.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
 %%% Descrip.: Try a given set of destinations sequentially until we
@@ -398,14 +398,17 @@ get_next_sipdst([], _ApproxMsgSize) ->
 
 get_next_sipdst([#sipdst{proto = undefined, socket = #sipsocket{} = Socket} = Dst | T], ApproxMsgSize) ->
     %% specific socket specified, fill in proto, addr and port
-    {ok, Proto, Addr, Port} = sipsocket:get_remote_peer(Socket),
-
-    NewDst = Dst#sipdst{proto = Proto,
-			addr  = Addr,
-			port  = Port
-		       },
-    get_next_sipdst([NewDst | T], ApproxMsgSize);
-
+    case sipsocket:get_remote_peer(Socket) of
+	{ok, Proto, Addr, Port} ->
+	    NewDst = Dst#sipdst{proto = Proto,
+				addr  = Addr,
+				port  = Port
+			       },
+	    get_next_sipdst([NewDst | T], State);
+	not_applicable ->
+	    logger:log(error, "sippipe: Can't get remote peer address for sipsocket ~p", [Socket]),
+	    get_next_sipdst(T, State)
+    end;
 get_next_sipdst([#sipdst{proto = undefined} = Dst | T], ApproxMsgSize) ->
     URI = Dst#sipdst.uri,
     %% This is an incomplete sipdst, it should have it's URI set so we resolve the rest from here
