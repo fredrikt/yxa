@@ -173,7 +173,7 @@ init_mnesia(Tables) when is_list(Tables) ->
 	    end
     end.
 
-%% part of init_mnesia/1
+%% part of init_mnesia/1 - make sure that we have a connection to at least one of DbNodes
 %% Returns : true | throw()
 ensure_mnesia_nodes_running([]) ->
     true;
@@ -182,8 +182,12 @@ ensure_mnesia_nodes_running(DbNodes) when is_list(DbNodes) ->
     ensure_mnesia_nodes_running(DbNodes, Running).
 
 ensure_mnesia_nodes_running([H | T], RunningNodes) when is_atom(H), is_list(RunningNodes) ->
-    lists:member(H, RunningNodes)
-	orelse ensure_mnesia_nodes_running(T, RunningNodes);
+    case lists:member(H, RunningNodes) of
+	true ->
+	    true;
+	false ->
+	    ensure_mnesia_nodes_running(T, RunningNodes)
+    end;
 ensure_mnesia_nodes_running([], _RunningNodes) ->
     logger:log(error, "Startup problem: Could not establish a connection to any of the configured databaseservers"),
     throw('Could not establish a connection to any of the configured databaseservers').
