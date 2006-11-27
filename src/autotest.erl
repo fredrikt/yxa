@@ -88,7 +88,8 @@
 		       sipsocket_blacklist,
 		       stun,
 		       appserver,
-		       presence_pidf
+		       presence_pidf,
+		       subscription
 		      ]).
 
 %%====================================================================
