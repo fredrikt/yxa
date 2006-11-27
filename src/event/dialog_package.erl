@@ -96,20 +96,22 @@ request("dialog", #request{method = "NOTIFY"} = Request, YxaCtx, Ctx) ->
     UseExpires = util:timestamp() + 1000,	%% XXX FIX THIS, USES STATIC EXPIRATION TIME
     Flags = [],
 
-    {ok, _Version, _Entity, Dialogs} = parse_xml(XML),
-
-    F =
-	fun(DE) when is_record(DE, dialog_entry) ->
-		ETag = DE#dialog_entry.id,
-		%% XXX DO THIS IN ONE TRANSACTION TO NOT GET TWO NOTIFYS SENT
-		{atomic, ok}, database_eventdata:delete_using_presentity_etag(Presentity, ETag),
-		{atomic, ok} = database_eventdata:insert("dialog", Presentity, ETag, UseExpires, Flags, DE)
-	end,
-
-    [F(E) || E <- Dialogs], 
-		
-    transactionlayer:send_response_handler(THandler, 200, "Ok"),
-
+    case parse_xml(XML) of
+	{ok, _Version, _Entity, Dialogs} ->
+	    F =
+		fun(DE) when is_record(DE, dialog_entry) ->
+			ETag = DE#dialog_entry.id,
+			%% XXX DO THIS IN ONE TRANSACTION TO NOT GET TWO NOTIFYS SENT
+			{atomic, ok}, database_eventdata:delete_using_presentity_etag(Presentity, ETag),
+			{atomic, ok} = database_eventdata:insert("dialog", Presentity, ETag, UseExpires, Flags, DE)
+		end,
+	    
+	    [F(E) || E <- Dialogs], 
+	    
+	    transactionlayer:send_response_handler(THandler, 200, "Ok");
+	{error, bad_xml} ->
+	    transactionlayer:send_response_handler(THandler, 400, "Invalid PIDF XML")
+    end,
     ok;
 
 request("dialog", _Request, YxaCtx, _Ctx) ->
@@ -381,15 +383,7 @@ parse_dialog_xml2(XML) ->
 
     Dialogs = get_xml_elements(dialog, XML#xmlElement.content),
 
-    PidStr = pid_to_list(self()),
-    IdPrefix = lists:reverse(
-		 lists:foldl(fun($<, Acc) -> Acc;
-				($>, Acc) -> Acc;
-				(C, Acc) ->
-				     [C | Acc]
-			     end, [], PidStr)
-		),
-    
+    IdPrefix = pidstr(self()),
     
     F = fun(E) when is_record(E, xmlElement) ->
 		Id = get_xml_attributes(id, E#xmlElement.attributes),
@@ -415,6 +409,17 @@ parse_dialog_xml2(XML) ->
 
     {ok, Version, Entity, XMLDialogs}.
 
+%% part of parse_dialog_xml
+%% Returns: PidAsString = string() (e.g. "0.123.0")
+pidstr(Pid) when is_pid(Pid) ->
+    PidStr = pid_to_list(self()),
+    lists:reverse(
+      lists:foldl(fun($<, Acc) -> Acc;
+		     ($>, Acc) -> Acc;
+		     (C, Acc) ->
+			  [C | Acc]
+		  end, [], PidStr)
+     ).
 
 %%--------------------------------------------------------------------
 %% Function: get_xml_attributes(Name, In)
@@ -485,7 +490,7 @@ test() ->
     {ok, "0", "sip:dialog1@yxa.sipit.net", []} = parse_xml(ParseXML1),
 
 
-    autotest:mark(?LINE, "parse_xml/1 - 2"),
+    autotest:mark(?LINE, "parse_xml/1 - 2.0"),
     ParseXML2 =
 	"<?xml version=\"1.0\"?>"
 	"<dialog-info xmlns=\"urn:ietf:params:xml:ns:dialog-info\" version=\"0\" state=\"full\" "
@@ -510,13 +515,28 @@ test() ->
 	"  </dialog>"
 	"</dialog-info>",
 
-    ParseXML2_Dialogs =
-	["<dialog id=\"(null)\" call-id=\"M2RhNTcxZTFkYjMwZmE1ZjMwY2E4MmU2OGI2NzdmYzE.\" local-tag=\"22175\""
-	 " remote-tag=\"d5353f75\" direction=\"recipient\">    <state>terminated</state>    <local>      <id"
-	 "entity>sip:dialog1@yxa.sipit.net</identity>      <target uri=\"sip:line0@132.177.126.87:5065\">   "
-	 "     <param pname=\"x-line-id\" pvalue=\"0\"/>      </target>    </local>    <remote>      <identi"
-	 "ty>sip:ft@yxa.sipit.net</identity>      <target uri=\"sip:ft@132.177.127.231:1237;transport=TCP\">"
-	 "      </target>    </remote>  </dialog>"],
     {ok, "0", "sip:dialog1@yxa.sipit.net", ParseXML2_Dialogs} = parse_xml(ParseXML2),
     
+    autotest:mark(?LINE, "parse_xml/1 - 2.1"),
+    ParseXML2_Entry_Id = lists:flatten( io_lib:format("~s-(null)", [pidstr(self())]) ),
+    ParseXML2_Entry_XML =
+	lists:flatten(
+	  io_lib:format(
+	    "<dialog id=\"~s\" call-id=\"M2RhNTcxZTFkYjMwZmE1ZjMwY2E4MmU2OGI2NzdmYzE.\" local-tag=\"22175\""
+	    " remote-tag=\"d5353f75\" direction=\"recipient\">    <state>terminated</state>    <local>      <id"
+	    "entity>sip:dialog1@yxa.sipit.net</identity>      <target uri=\"sip:line0@132.177.126.87:5065\">   "
+	    "     <param pname=\"x-line-id\" pvalue=\"0\"/>      </target>    </local>    <remote>      <identi"
+	    "ty>sip:ft@yxa.sipit.net</identity>      <target uri=\"sip:ft@132.177.127.231:1237;transport=TCP\">"
+	    "      </target>    </remote>  </dialog>",
+	    [ParseXML2_Entry_Id]
+	   )),
+
+    autotest:mark(?LINE, "parse_xml/1 - 2.2"),
+    %% compare id
+    [#dialog_entry{id = ParseXML2_Entry_Id}] = ParseXML2_Dialogs,
+
+    autotest:mark(?LINE, "parse_xml/1 - 2.3"),
+    %% compare xml
+    [#dialog_entry{xml = ParseXML2_Entry_XML}] = ParseXML2_Dialogs,
+
     ok.

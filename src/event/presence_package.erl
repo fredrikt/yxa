@@ -98,7 +98,7 @@ request("presence", #request{method = "PUBLISH"} = Request, YxaCtx, Ctx) ->
 	    error ->
 		{error, "ETag/Expires problem"};
 
-	    {ok, Action, OldETag, Expires} when Action == insert orelse Action == update,
+	    {ok, Action, OldETag, Expires} when (Action == insert orelse Action == update),
 						is_integer(Expires) ->
 		%% No ETag in request (SIP-If-Match header)
 		case keylist:fetch('content-type', Request#request.header) of
@@ -146,8 +146,8 @@ request("presence", #request{method = "PUBLISH"} = Request, YxaCtx, Ctx) ->
 			transactionlayer:send_response_handler(THandler, 400, "Bad or missing Content-Type"),
 			{error, "Bad or missing Content-Type"}
 		end;
-	    {ok, ETag, Expires} when is_list(ETag), is_integer(Expires) ->
-		%% ETag found, this is a request to refresh an existing publication
+	    {ok, refresh, ETag, Expires} when is_list(ETag), is_integer(Expires) ->
+		%% This is a request to refresh the validity period of an existing publication
 		NewETag = generate_etag(),
 		case presence_pidf:refresh_pidf_user_etag(SIPuser, ETag, Expires, NewETag) of
 		    ok ->

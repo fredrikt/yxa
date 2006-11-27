@@ -153,16 +153,15 @@ request2(#request{method = Method} = Request, YxaCtx) when Method == "SUBSCRIBE"
 %% OPTIONS
 %%
 request2(#request{method = "OPTIONS"} = Request, YxaCtx) ->
-    #yxa_ctx{app_logtag   = LogTag,
-	     thandler = THandler
-	    } = YxaCtx,
-
     case local:is_request_to_this_proxy(Request) of
 	true ->
 	    AllowMethods = [{"Allow", ?ALLOW_METHODS}],
 	    ExtraHeaders = make_extraheaders(200, AllowMethods),
-	    siprequest:options_to_proxy(THandler, Request, LogTag, ExtraHeaders);
+	    siprequest:request_to_me(Request, YxaCtx, ExtraHeaders);
 	false ->
+	    #yxa_ctx{app_logtag	= LogTag,
+		     thandler	= THandler
+		    } = YxaCtx,
 	    logger:log(normal, "~s: event server: OPTIONS ~s (not to me) -> '403 Forbidden'",
 		       [LogTag, sipurl:print(Request#request.uri)]),
 	    ExtraHeaders = make_extraheaders(403, []),
@@ -341,8 +340,8 @@ event2(Request, YxaCtx, Module, EventPackage) ->
 %%           AuthUser = string()
 %%--------------------------------------------------------------------
 authenticate_subscriber(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
-    #yxa_ctx{app_logtag   = LogTag,
-	     thandler = THandler
+    #yxa_ctx{app_logtag	= LogTag,
+	     thandler	= THandler
 	    } = YxaCtx,
     #request{method = Method,
 	     header = Header
