@@ -169,8 +169,8 @@ refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_integer(N
 								    NewExpires < ?MIN_ABSOLUTE_TIME ->
     erlang:error("time supplied to refresh_presentity_etag/4 should be absolute, not relative",
 		 [Presentity, ETag, NewExpires, NewETag]);
-refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_tuple(Presentity), is_integer(NewExpires) orelse
-								    NewExpires == never ->
+refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_tuple(Presentity), (is_integer(NewExpires) orelse
+								    NewExpires == never) ->
     Now = util:timestamp(),
 
     F = fun() ->
@@ -187,9 +187,7 @@ refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_tuple(Pre
 					  },
 			ok = mnesia:write(NewE);
 		    [] ->
-			mnesia:abort(nomatch);
-		    _ ->
-			mnesia:abort(error)
+			mnesia:abort(nomatch)
 		end
 	end,
     case mnesia:transaction(F) of
@@ -310,7 +308,8 @@ delete_expired() ->
 %% Descrip.: Return eventdata_dbe records from Mnesia write or
 %%           delete_object events.
 %% Returns : {ok, PackageS, List} |
-%%           none
+%%           none                 |
+%%           error
 %%           PackageS = string()
 %%           List     = list() of evendata_dbe record()
 %%--------------------------------------------------------------------
@@ -323,8 +322,11 @@ decode_mnesia_change_event({Type, Data, _TId}) when (Type == write orelse Type =
 	nomatch ->
 	    none
     end;
+decode_mnesia_change_event({_Type, Data, _Tid}) when is_record(Data, eventdata) ->
+    %% not 'write' or 'delete_object' - we don't care
+    none;
 decode_mnesia_change_event(_Unknown) ->
-    none.
+    error.
 
 
 get_transform_fun() ->

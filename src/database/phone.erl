@@ -697,8 +697,11 @@ decode_mnesia_change_event({Type, Data, _TId}) when (Type == write orelse Type =
 	    delete_object -> delete
 	end,
     {ok, Action, Entry#siplocationdb_e.sipuser, Entry};
+decode_mnesia_change_event({_Type, Data, _Tid}) when is_record(Data, phone) ->
+    %% not 'write' or 'delete_object' - we don't care
+    none;
 decode_mnesia_change_event(_Unknown) ->
-    none.
+    error.
 
 
 %%====================================================================
