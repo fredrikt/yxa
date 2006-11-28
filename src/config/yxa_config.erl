@@ -70,15 +70,12 @@
 %%           Pid = pid() of yxa_config persistent gen_server
 %%--------------------------------------------------------------------
 start_link({autotest, Pretend}) ->
-    %% build some extra config for autotest
-    Cfg =
-	#yxa_cfg{entrys = [
-			   {homedomain, ["example.org"], test}
-			  ]},
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [Pretend, Cfg], []);
+    ExtraCfg = #yxa_cfg{},
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Pretend, ExtraCfg], []);
 
 start_link(AppModule) when is_atom(AppModule) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [AppModule, #yxa_cfg{}], []).
+    ExtraCfg = #yxa_cfg{},
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [AppModule, ExtraCfg], []).
 
 %%--------------------------------------------------------------------
 %% Function: init([AppModule, ExtraCfg])
@@ -324,7 +321,7 @@ parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
 	continue ->
 	    parse2(T, Entrys);
 	{ok, This} when is_record(This, yxa_cfg) ->
-	    NewEntrys = merge_entrys(Entrys, This#yxa_cfg.entrys),
+	    NewEntrys = merge_entrys(This#yxa_cfg.entrys, Entrys),
 	    parse2(T, NewEntrys)
     catch
 	throw:
@@ -334,6 +331,13 @@ parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
 parse2([], Entrys) ->
     {ok, lists:keysort(1, Entrys)}.
 
+%%--------------------------------------------------------------------
+%% Function: merge_entrys(Left, Right)
+%%           Left  = list() of {Key, Value, Src}
+%%           Right = list() of {Key, Value, Src}
+%% Descrip.: Merge entrys from Right to Left
+%% Returns : NewEntrys = list() of {Key, Value, Src}
+%%--------------------------------------------------------------------
 merge_entrys(Entrys, [{Key, Value, Src} | T]) ->
     NewL =
 	case lists:keyreplace(Key, 1, Entrys, {Key, Value, Src}) of
