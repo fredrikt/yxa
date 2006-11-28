@@ -34,7 +34,8 @@ erl_FILES = \
 	sipuserdb_file_backend.erl \
 	sipuserdb_ldap.erl \
 	sipuserdb_mnesia.erl \
-	sipuserdb_mysql.erl
+	sipuserdb_mysql.erl \
+	sipuserdb_test.erl
 
 imported_hrl_FILES = \
 	../include/yxa_config.hrl
