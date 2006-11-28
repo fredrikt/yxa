@@ -353,7 +353,7 @@ parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
 	continue ->
 	    parse2(T, Entrys);
 	{ok, This} when is_record(This, yxa_cfg) ->
-	    NewEntrys = merge_entrys(This#yxa_cfg.entrys, Entrys),
+	    NewEntrys = merge_entrys(Entrys, This#yxa_cfg.entrys),
 	    parse2(T, NewEntrys)
     catch
 	throw:
