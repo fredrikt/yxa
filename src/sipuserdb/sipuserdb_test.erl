@@ -4,7 +4,7 @@
 %%% Descrip.: A sipuserdb backend to be used in unit tests. Reads all
 %%%           userdata from a per-process ets table.
 %%%
-%%% Created : 11 Aug 2004 by Fredrik Thulin <ft@it.su.se>
+%%% Created : 28 Nov 2006 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(sipuserdb_test).
 %%-compile(export_all).
