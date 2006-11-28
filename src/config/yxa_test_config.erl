@@ -28,14 +28,13 @@
 %%           L   = list() of {Key, Value}
 %%                 Key   = atom()
 %%                 Value = term()
-%%           App = atom(), YXA application module
+%%	     App = atom(), YXA application module
 %% Descrip.: Initiates a per-process configuration with the defaults
 %%           for App
 %% Returns : ok | {error, Msg}
 %%           Msg = string() | atom()
 %%--------------------------------------------------------------------
 init(L) when is_list(L) ->
-    erase(?YXA_CONFIG_SOURCE_PTR),
     {ok, App} = yxa_config:get_env(yxa_appmodule),
     init(App, L).
 
@@ -49,7 +48,12 @@ init(App, L) when is_atom(App), is_list(L) ->
 
     try yxa_config:init_config(Backends, App, ExtraCfg, Ets) of
 	{ok, _PrivateState} ->
-	    put(?YXA_CONFIG_SOURCE_PTR, Ets),
+	    Old =
+		case get(?YXA_CONFIG_SOURCE_PTR) of
+		    undefined -> [];
+		    Old1 -> Old1
+		end,
+	    put(?YXA_CONFIG_SOURCE_PTR, [Ets | Old]),
 	    ok
     catch
 	throw: E ->
@@ -90,11 +94,15 @@ set(Key, Value) when is_atom(Key) ->
 %% Returns : ok
 %%--------------------------------------------------------------------
 stop() ->
-    case erase(?YXA_CONFIG_SOURCE_PTR) of
+    case get(?YXA_CONFIG_SOURCE_PTR) of
 	undefined ->
 	    ok;
-	EtsRef ->
+	[EtsRef | T] ->
 	    ets:delete(EtsRef),
+	    %% pop the first element from the process dictionary, erase if none left
+	    case T of
+		[] -> erase(?YXA_CONFIG_SOURCE_PTR);
+		_  -> put(?YXA_CONFIG_SOURCE_PTR, T)
+	    end,
 	    ok
     end.
-

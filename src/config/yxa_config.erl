@@ -183,7 +183,7 @@ get_env(Key) when is_atom(Key) ->
     case get(?YXA_CONFIG_SOURCE_PTR) of
 	undefined ->
 	    get_env2(Key, ?YXA_CONFIG);
-	Tab ->
+	[Tab | _Rest] ->
 	    get_env2(Key, Tab)
     end.
 
@@ -193,7 +193,7 @@ get_env(Key, Default) when is_atom(Key) ->
     case get(?YXA_CONFIG_SOURCE_PTR) of
 	undefined ->
 	    get_env2(Key, Default, ?YXA_CONFIG);
-	Tab ->
+	[Tab | _Rest] ->
 	    get_env2(Key, Default, Tab)
     end.
 
@@ -223,7 +223,7 @@ list() ->
     case get(?YXA_CONFIG_SOURCE_PTR) of
 	undefined ->
 	    list(?YXA_CONFIG);
-	Tab ->
+	[Tab | _Rest] ->
 	    list(Tab)
     end.
 
