@@ -166,7 +166,7 @@ get_socket(Dst) when is_record(Dst, sipdst) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_specific_socket(Id)
-%%           Dst = sipdst record()
+%%           Id = ob_id record()
 %% Descrip.: Get a specific socket. Don't try to open a new connection
 %%           if the requested one does not exist.
 %% Returns : SipSocket       |
@@ -174,7 +174,7 @@ get_socket(Dst) when is_record(Dst, sipdst) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_specific_socket({Proto, _} = Id) when is_atom(Proto) ->
+get_specific_socket(#ob_id{proto = Proto} = Id) when is_atom(Proto) ->
     Module = proto2module(Proto),
     Module:get_specific_socket(Id);
 get_specific_socket(Unknown) ->

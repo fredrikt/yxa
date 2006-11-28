@@ -464,7 +464,7 @@ get_socket_from_list(#sipdst{proto = Proto} = Dst, SocketList) when Proto == tcp
 
 
 
-get_specific_socket_from_list(Id, SocketList) when is_tuple(Id), size(Id) == 2, is_record(SocketList, socketlist) ->
+get_specific_socket_from_list(Id, SocketList) when is_record(Id, ob_id), is_record(SocketList, socketlist) ->
     case socketlist:get_using_socketid(Id, SocketList) of
 	SListElem when is_record(SListElem, socketlistelem) ->
 	    [CPid, SipSocket] = socketlist:extract([pid, sipsocket], SListElem),

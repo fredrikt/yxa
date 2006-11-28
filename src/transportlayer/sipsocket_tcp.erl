@@ -138,7 +138,7 @@ get_socket2(Dst, true) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_specific_socket(Id)
-%%           Id = tuple() ({Proto, Id})
+%%           Id = ob_id record()
 %% Descrip.: Return a specific socket. Used by draft-Outbound implem-
 %%           entation to send requests using an existing flow, or not
 %%           at all.
@@ -147,7 +147,7 @@ get_socket2(Dst, true) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_specific_socket({Proto, _} = Id) when Proto == tcp orelse Proto == tcp6 ->
+get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == tcp orelse Proto == tcp6 ->
     case catch gen_server:call(tcp_dispatcher, {get_specific_socket, Id}) of
 	{ok, Socket} ->
 	    Socket;
