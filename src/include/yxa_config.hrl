@@ -39,6 +39,9 @@
 			x_yxa_peer_auth_secret,
 			x_yxa_peer_auth]).
 
+%% this is used to override where we read config from during unit tests
+-define(YXA_CONFIG_SOURCE_PTR, yxa_config_source).
+
 -define(COMMON_DEFAULTS,
 	[
 	 %% General

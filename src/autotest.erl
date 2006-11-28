@@ -119,7 +119,7 @@ run([Mode]) ->
 	    Logger = spawn(?MODULE, fake_logger_loop, [false]),
 	    register(logger, Logger),
 
-	    {ok, _CfgPid} = yxa_config:start_link({autotest, incomingproxy}),
+	    {ok, _CfgPid} = yxa_config:start_link(incomingproxy),
 
 	    ets:new(yxa_sipsocket_info, [public, bag, named_table]),
 	    ets:new(yxa_sipsocket_blacklist, [public, bag, named_table]),

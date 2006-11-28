@@ -32,7 +32,8 @@ erl_FILES = \
 	yxa_config.erl \
 	yxa_config_check.erl \
 	yxa_config_default.erl \
-	yxa_config_erlang.erl
+	yxa_config_erlang.erl \
+	yxa_test_config.erl
 
 imported_hrl_FILES = \
 	../include/yxa_config.hrl
