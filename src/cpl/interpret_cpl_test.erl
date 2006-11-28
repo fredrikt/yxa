@@ -58,6 +58,8 @@
 %% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
+    autotest:mark(?LINE, "interpret_cpl_test init - 0"),
+    yxa_test_config:init(appserver, []),
 
     %% process_cpl_script/7
     %%--------------------------------------------------------------------
@@ -191,8 +193,8 @@ test() ->
 %% that none remain when calling later test cases (those test may
 %% otherwise act strange).
 clean_up() ->
-    %% clean up process dict
-    erase().
+    %% clean up process dict, erase all entries with numeric key
+    [erase(Key) || Key <- get(), is_integer(Key)].
 
 %% test a minimal script with <incoming>, <location> and <redirect>
 test1() ->
