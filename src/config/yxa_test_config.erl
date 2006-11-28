@@ -83,7 +83,7 @@ set(Key, Value) when is_atom(Key) ->
     case get(?YXA_CONFIG_SOURCE_PTR) of
 	undefined ->
 	    {error, 'No per-process configuration active'};
-	EtsRef ->
+	[EtsRef | _Rest] ->
 	    true = ets:insert(EtsRef, {Key, Value, ?MODULE}),
 	    ok
     end.
