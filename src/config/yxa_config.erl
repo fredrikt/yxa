@@ -37,6 +37,7 @@
 	 code_change/3
 	]).
 
+-export([test/0]).
 
 %%--------------------------------------------------------------------
 %% Include files
@@ -94,7 +95,7 @@ init_config(Backends, AppModule, ExtraCfg, EtsRef) when is_list(Backends), is_at
 							is_record(ExtraCfg, yxa_cfg) ->
     %% Figure out which backends to activate
     yxa_config_util:startup_log(?MODULE, debug, "Initializing backends : ~p", [Backends]),
-    BackendData = init_get_backends(Backends, AppModule),
+    BackendData = init_backends(Backends, AppModule),
 
     State = #state{backends	= BackendData,
 		   appmodule	= AppModule,
@@ -127,22 +128,32 @@ init_config(Backends, AppModule, ExtraCfg, EtsRef) when is_list(Backends), is_at
 
     {ok, State}.
 
-%% part of init/1
-init_get_backends(In, AppModule) when is_list(In), is_atom(AppModule) ->
-    R =
-	lists:foldl(fun(M, Acc) ->
-			    case M:init(AppModule) of
-				{ok, Opaque} ->
-				    [{M, Opaque} | Acc];
-				{error, E} ->
-				    logger:log(error, "Config server: Failed initializing config backend ~p : ~p",
-					       [M, E]),
-				    throw('Config backend initialization failed');
-				ignore ->
-				    Acc
-			    end
-		    end, [], In),
-    lists:reverse(R).
+%%--------------------------------------------------------------------
+%% Function: init([AppModule])
+%%	     AppModule = atom(), YXA application module
+%% Descrip.: Calls the init/1 function in each backend, and returns
+%%           the backends opaque data structures that will later be
+%%           passed to their parse/1 functions.
+%% Returns : Res = list() of {Backend, Opaque}
+%%           Backend = atom()
+%%           Opaque  = term()
+%%--------------------------------------------------------------------
+init_backends(In, AppModule) when is_list(In), is_atom(AppModule) ->
+    F = fun(M, Acc) ->
+		case M:init(AppModule) of
+		    {ok, Opaque} ->
+			[{M, Opaque} | Acc];
+		    {error, E} ->
+			logger:log(error, "Config server: Failed initializing config backend ~p : ~p",
+				   [M, E]),
+			throw('Config backend initialization failed');
+		    ignore ->
+			Acc
+		end
+	end,
+
+    Res = lists:foldl(F, [], In),
+    lists:reverse(Res).
 
 
 %%--------------------------------------------------------------------
@@ -339,11 +350,31 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 
-parse(CfgL, State) when is_record(CfgL, yxa_cfg), is_record(State, state) ->
+%%--------------------------------------------------------------------
+%% Function: parse(ExtraCfg, State)
+%%           ExtraCfg = yxa_cfg record()
+%%           State    = state record()
+%% Descrip.: Let all our backends parse their config and then merge
+%%           it together into our final configuration. Merge ExtraCfg
+%%           in last of all. The merging is from right to left, so the
+%%           order of the backends in State is crucial - last backend
+%%           wins if there is a merge conflict.
+%% Returns : {ok, NewCfg}          |
+%%           {error, Backend, Msg}
+%%           NewCfg  = yxa_cfg record()
+%%           Backend = atom(), module name
+%%           Msg     = term()
+%%--------------------------------------------------------------------
+parse(ExtraCfg, State) when is_record(ExtraCfg, yxa_cfg), is_record(State, state) ->
     Backends = State#state.backends,
-    case parse2(Backends, CfgL#yxa_cfg.entrys) of
-	{ok, NewEntrys} ->
-	    {ok, CfgL#yxa_cfg{entrys = NewEntrys}};
+    case parse2(Backends, []) of
+	{ok, Parsed} when is_list(Parsed) ->
+	    %% now merge in entrys from ExtraCfg
+	    ExtraEntrys = ExtraCfg#yxa_cfg.entrys,
+	    yxa_config_util:startup_log(?MODULE, debug, "Merging in ~p entrys from ExtraCfg",
+					[length(ExtraEntrys)]),
+	    NewEntrys = merge_entrys(Parsed, ExtraEntrys),
+	    {ok, ExtraCfg#yxa_cfg{entrys = NewEntrys}};
 	{error, Module, Msg} ->
 	    {error, Module, Msg}
     end.
@@ -388,11 +419,32 @@ merge_entrys(Entrys, [{Key, Value, Src} | T]) ->
 merge_entrys(Entrys, []) ->
     Entrys.
 
-validate(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModule), Mode == soft; Mode == hard ->
-    %% check_config returns {ok, NewCfg} or {error, Msg}. NewCfg is an yxa_cfg
-    %% record with all the values normalized according to the type declarations.
+%%--------------------------------------------------------------------
+%% Function: validate(Cfg, AppModule, Mode)
+%%           Cfg       = yxa_cfg record()
+%%           AppModule = atom(), YXA application name
+%%           Mode      = soft | hard, fail soft (for reloads) or
+%%                       hard (for initial startup)?
+%% Descrip.: Validate and normalize (according to the type
+%%           declarations) all configuration entrys in Cfg.
+%% Returns : {ok, NewCfg} |
+%%           {error, Msg}
+%%           NewCfg = yxa_cfg record()
+%%           Msg    = string()
+%%--------------------------------------------------------------------
+validate(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModule), (Mode == soft orelse Mode == hard) ->
     yxa_config_check:check_config(Cfg, AppModule, Mode).
 
+%%--------------------------------------------------------------------
+%% Function: load(Cfg, Mode, State)
+%%           Cfg   = yxa_cfg record()
+%%           Mode  = soft | hard, fail soft (for reloads) or
+%%                   hard (for initial startup)?
+%%           State = state record()
+%% Descrip.: Load a parsed and validated config into our configuration
+%%           storage.
+%% Returns : ok
+%%--------------------------------------------------------------------
 load(Cfg, Mode, State) when is_record(Cfg, yxa_cfg), (Mode == soft orelse Mode == hard) ->
     ok = load_set(Cfg#yxa_cfg.entrys, Mode, State#state.etsref),
     ok = delete_not_present(Cfg, Mode, State#state.etsref),
@@ -493,4 +545,32 @@ insert_implicit(State) when is_record(State, state) ->
 	   etsref    = EtsRef
 	  } = State,
     true = ets:insert(EtsRef, {yxa_appmodule, AppModule, yxa_config_default}),
+    ok.
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+    %% merge_entrys(Left, Right)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "merge_entrys/2 - 1"),
+    [{a,b,c}] = merge_entrys([], [{a,b,c}]),
+
+    autotest:mark(?LINE, "merge_entrys/2 - 2"),
+    [{a,b,c}] = merge_entrys([{a,a,a}], [{a,b,c}]),
+
+    autotest:mark(?LINE, "merge_entrys/2 - 3"),
+    [{a,b,c}] = merge_entrys([], [{a,b,c}]),
+
+    autotest:mark(?LINE, "merge_entrys/2 - 4"),
+    [{a,b,c},
+     {b,2,2}] = merge_entrys([{b,2,2}], [{a,b,c}]),
+
     ok.
