@@ -58,6 +58,7 @@ init(AppModule) ->
 	end,
     case is_readable_file(FileName) of
 	true ->
+	    yxa_config_util:startup_log(?MODULE, debug, "Will read config from file ~p", [FileName]),
 	    State = #yxa_config_erlang_state{
 	      filename  = FileName,
 	      appmodule = AppModule,
@@ -139,6 +140,7 @@ parse(State) when is_record(State, yxa_config_erlang_state) ->
 %% parse2 parses the configuration file and recurses into included files
 parse2(State) when is_record(State, yxa_config_erlang_state) ->
     File = State#yxa_config_erlang_state.filename,
+    yxa_config_util:startup_log(?MODULE, debug, "Consulting file ~p", [File]),
     case file:consult(File) of
 	{ok, [TermL]} when is_list(TermL) ->
 	    parse_includes(State, TermL);
@@ -159,7 +161,7 @@ parse2(State) when is_record(State, yxa_config_erlang_state) ->
 %% parse_includes/2, part of parse2/1
 parse_includes(State, TermL) when is_record(State, yxa_config_erlang_state), is_list(TermL) ->
     parse_includes2(State, TermL, []).
-    
+
 parse_includes2(State, [{include, Inc} | T], Res) when is_record(State, yxa_config_erlang_state), is_list(Inc) ->
     CurrentFile = State#yxa_config_erlang_state.filename,
     case State#yxa_config_erlang_state.recursing of
@@ -171,7 +173,7 @@ parse_includes2(State, [{include, Inc} | T], Res) when is_record(State, yxa_conf
 		    _ ->
 			filename:absname_join(filename:dirname(CurrentFile), Inc)
 		end,
-	    
+
 	    case parse2(State#yxa_config_erlang_state{recursing = true, filename = IncFile}) of
 		{ok, This} ->
 		    parse_includes2(State, T, This ++ Res);

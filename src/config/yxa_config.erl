@@ -84,6 +84,7 @@ start_link(AppModule) when is_atom(AppModule) ->
 %%           State = state record()
 %%--------------------------------------------------------------------
 init([AppModule]) when is_atom(AppModule) ->
+    yxa_config_util:startup_log(?MODULE, debug, "Starting configuration subsystem for '~p'", [AppModule]),
     EtsRef = ets:new(?YXA_CONFIG, [protected, set, named_table]),
     ExtraCfg = #yxa_cfg{},
     init_config(?BACKENDS, AppModule, ExtraCfg, EtsRef).
@@ -92,6 +93,7 @@ init([AppModule]) when is_atom(AppModule) ->
 init_config(Backends, AppModule, ExtraCfg, EtsRef) when is_list(Backends), is_atom(AppModule),
 							is_record(ExtraCfg, yxa_cfg) ->
     %% Figure out which backends to activate
+    yxa_config_util:startup_log(?MODULE, debug, "Initializing backends : ~p", [Backends]),
     BackendData = init_get_backends(Backends, AppModule),
 
     State = #state{backends	= BackendData,
@@ -347,12 +349,15 @@ parse(CfgL, State) when is_record(CfgL, yxa_cfg), is_record(State, state) ->
     end.
 
 parse2([{Module, Opaque} | T], Entrys) when is_list(Entrys) ->
+    yxa_config_util:startup_log(?MODULE, debug, "Calling the parse/1 function of backend '~p'", [Module]),
     try Module:parse(Opaque) of
 	{error, Msg} ->
 	    {error, Module, Msg};
 	continue ->
 	    parse2(T, Entrys);
 	{ok, This} when is_record(This, yxa_cfg) ->
+	    yxa_config_util:startup_log(?MODULE, debug, "Backend '~p' returned ~p entrys",
+					[Module, length(This#yxa_cfg.entrys)]),
 	    NewEntrys = merge_entrys(Entrys, This#yxa_cfg.entrys),
 	    parse2(T, NewEntrys)
     catch
