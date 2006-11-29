@@ -96,7 +96,12 @@
 
 %% pstnproxy
 -export([
-	 pstnproxy_route_pstn_not_e164/4
+	 pstnproxy_route_pstn_not_e164/3,
+	 pstnproxy_auth_and_tag/4,
+	 pstnproxy_allowed_methods/2,
+	 pstnproxy_verify_from/4,
+	 pstnproxy_number_based_routing/4,
+	 pstnproxy_lookup_action/2
 	]).
 
 %% outgoingproxy
@@ -162,6 +167,7 @@
 %%--------------------------------------------------------------------
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
+-include("pstnproxy.hrl").
 
 %%--------------------------------------------------------------------
 %% Macros
@@ -868,8 +874,8 @@ incomingproxy_request_homedomain_event(Request, Origin) when is_record(Request, 
 %%%%%%%%%%%%%%%%%%%%%%%
 
 %%--------------------------------------------------------------------
-%% Function: pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin,
-%%                                         THandler)
+%% Function: pstnproxy_route_pstn_not_e164(DstNumber, Request,
+%%                                         PstnCtx)
 %%           DstNumber = string(), typically user-part of Request-URI
 %%           Request   = request record()
 %%           Origin    = siporigin record()
@@ -879,31 +885,68 @@ incomingproxy_request_homedomain_event(Request, Origin) when is_record(Request, 
 %%           local:lookuppstn(), this function is called. The return
 %%           values have the following meaning :
 %%
-%%             undefined - proceed with default behavior (currently
-%%                         to try and use a destination indicated by
-%%                         the configuration parameter
-%%                         default_pstngateway)
+%%             undefined - proceed with default behavior
 %%             nomatch   - there is no destination for DstNumber,
 %%                         reject request with a '404 Not Found'
 %%             ignore    - pstnproxy should do nothing further (this
-%%                         function should have told THandler to send
-%%                         a final response)
-%%             Relay     - send NewRequest to DstURI
+%%                         function must generate a final response)
+%%             Response  - send a response
+%%             Relay     - send Request to DstURI
 %%
 %% Returns : undefined | nomatch | ignore | Relay
-%%           Relay = {relay, DstURI, NewRequest}
+%%           Relay = {relay, DstURI}
+%%           Response = {response, Status, Reason, ExtraHeaders}
 %%--------------------------------------------------------------------
-pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin, THandler) ->
-    ?CHECK_EXPORTED({pstnproxy_route_pstn_not_e164, 4},
-		    ?LOCAL_MODULE:pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin, THandler),
+pstnproxy_route_pstn_not_e164(DstNumber, Request, PstnCtx) ->
+    ?CHECK_EXPORTED({pstnproxy_route_pstn_not_e164, 3},
+		    ?LOCAL_MODULE:pstnproxy_route_pstn_not_e164(DstNumber, Request, PstnCtx),
 		    undefined
 		   ).
+
+%% Returns: pstn_ctx record()
+pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx) when is_record(Request, request),
+								is_record(Origin, siporigin),
+								is_record(PstnCtx, pstn_ctx) ->
+    ?CHECK_EXPORTED({pstnproxy_auth_and_tag, 4},
+		    ?LOCAL_MODULE:pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx),
+		    PstnCtx
+		   ).
+
+%% Returns : {ok, AllowedMethods}
+%%           AllowedMethods = list() of string()
+pstnproxy_allowed_methods(Request, PstnCtx) when is_record(Request, request),
+						 is_record(PstnCtx, pstn_ctx) ->
+    ?CHECK_EXPORTED({pstnproxy_allowed_methods, 2},
+		    ?LOCAL_MODULE:pstnproxy_allowed_methods(Request, PstnCtx),
+		    yxa_config:get_env(allowed_request_methods)
+		   ).
+
+pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx) when is_record(Request, request),
+								    is_boolean(YXAPeerAuth),
+								    is_record(PstnCtx, pstn_ctx) ->
+    ?CHECK_EXPORTED({pstnproxy_verify_from, 4},
+		    ?LOCAL_MODULE:pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx),
+		    undefined
+		   ).
+
+pstnproxy_number_based_routing(Request, THandler, LogTag, PstnCtx) ->
+    ?CHECK_EXPORTED({pstnproxy_number_based_routing, 4},
+		    ?LOCAL_MODULE:pstnproxy_number_based_routing(Request, THandler, LogTag, PstnCtx),
+		    undefined
+		   ).
+
+pstnproxy_lookup_action(Request, PstnCtx) when is_record(Request, request), is_record(PstnCtx, pstn_ctx) ->
+    ?CHECK_EXPORTED({pstnproxy_lookup_action, 2},
+		    ?LOCAL_MODULE:pstnproxy_lookup_action(Request, PstnCtx),
+		    undefined
+		   ).
+
 
 % outgoingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
 outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
-								 is_record(Request, request) ->
+								is_record(Request, request) ->
     ?CHECK_EXPORTED({outgoingproxy_challenge_before_relay, 3},
 		    ?LOCAL_MODULE:outgoingproxy_challenge_before_relay(Origin, Request, Dst),
 		    true
@@ -950,6 +993,7 @@ get_all_event_packages() ->
 		    ?LOCAL_MODULE:get_all_event_packages(),
 		    yxa_config:get_env(eventserver_package_handlers)
 		   ).
+
 
 eventserver_locationdb_action(Type, User, Location) when is_atom(Type), is_list(User) ->
     ?CHECK_EXPORTED({eventserver_locationdb_action, 3},

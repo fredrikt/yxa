@@ -15,12 +15,13 @@
 	 get_user_verified_proxy/2,
 	 get_challenge/0,
 	 can_register/2,
-	 pstn_call_check_auth/5,
+	 pstn_get_user_verified/2,
 	 is_allowed_pstn_dst/4,
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 realm/0,
 	 add_x_yxa_peer_auth/5,
+	 classify_number/2,
 
 	 test/0
 	]).
@@ -372,79 +373,6 @@ pstn_get_user_verified(Header, Method) ->
 	    {peer_authenticated, User}
     end.
 
-
-%%--------------------------------------------------------------------
-%% Function: pstn_call_check_auth(Method, Header, URL, ToNumberIn,
-%%                                Classdefs)
-%%           Method     = string()
-%%           Header     = keylist record()
-%%           URL        = sipurl record(), From-address in request
-%%           ToNumberIn = string(), destination, local or E.164 number
-%%           Classdefs  = term()
-%% Descrip.: Check if the destination is allowed for this user, and
-%%           check if this user may use this Address.
-%% Returns : {Allowed, User, Class}
-%%           Allowed = true | false
-%%           User    = unknown | none | string(), SIP authentication
-%%                     username
-%%           Class   = atom(), the class that this ToNumberIn matched
-%%--------------------------------------------------------------------
-pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
-  when is_list(Method), is_record(Header, keylist), is_record(URL, sipurl), is_list(ToNumberIn) ->
-    ToNumber = case local:rewrite_potn_to_e164(ToNumberIn) of
-		   error -> ToNumberIn;
-		   N -> N
-	       end,
-    {ok, Class} = classify_number(ToNumber, Classdefs),
-    {ok, UnauthClasses} = yxa_config:get_env(sipauth_unauth_classlist),
-    case lists:member(Class, UnauthClasses) of
-	true ->
-	    %% This is a class that anyone should be allowed to call,
-	    %% just check that if this is one of our SIP users, they
-	    %% are permitted to use the From: address
-	    logger:log(debug, "Auth: ~p is of class ~p which does not require authorization", [ToNumber, Class]),
-	    Address = sipurl:print(URL),
-	    case local:get_user_with_address(Address) of
-		nomatch ->
-		    logger:log(debug, "Auth: Address ~p does not match any of my users, no need to verify.",
-			       [Address]),
-		    {true, unknown, Class};
-		User when is_list(User) ->
-		    Allowed = local:can_use_address(User, URL),
-		    {Allowed, User, Class}
-	    end;
-	false ->
-	    case pstn_get_user_verified(Header, Method) of
-		false ->
-		    {false, none, Class};
-		{stale, User} ->
-		    {stale, User, Class};
-		{peer_authenticated, User} ->
-		    %% For Peer-authenticated User, we don't check to see if User might use From: address or not
-		    case local:is_allowed_pstn_dst(User, ToNumber, Header, Class) of
-			true ->
-			    {true, User, Class};
-			false ->
-			    {false, User, Class}
-		    end;
-		{authenticated, User} ->
-		    UserAllowedToUseAddress = local:can_use_address(User, URL),
-		    AllowedCallToNumber = local:is_allowed_pstn_dst(User, ToNumber, Header, Class),
-		    if
-			UserAllowedToUseAddress /= true ->
-			    logger:log(normal, "Auth: User ~p is not allowed to use address ~p (when placing PSTN "
-				       "call to ~s (class ~p))", [User, sipurl:print(URL), ToNumber, Class]),
-			    {false, User, Class};
-			AllowedCallToNumber /= true ->
-			    logger:log(normal, "Auth: User ~p not allowed to call ~p in class ~p",
-				       [User, ToNumber, Class]),
-			    {false, User, Class};
-			true ->
-			    {true, User, Class}
-		    end
-	    end
-    end.
-
 %%--------------------------------------------------------------------
 %% Function: is_allowed_pstn_dst(User, ToNumber, Header, Class)
 %%           User     = string()
@@ -595,6 +523,10 @@ print_auth_response(AuthMethod, User, Realm, URIstr, Response, Nonce, Opaque, Al
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
+    autotest:mark(?LINE, "sipauth - 0"),
+
+    TestConfig = [{sipauth_password, "autotest.secret"}],
+    ok = yxa_test_config:init(TestConfig),
 
     %% test classify_number(Number, RegexpList)
     %%--------------------------------------------------------------------
@@ -670,13 +602,13 @@ test() ->
     %% test get_nonce(Timestamp)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_nonce/1 - 1"),
-    "22d10c95a33616d16599317751534c4d" = get_nonce(hex:to(0, 8)),
+    "b190a506349b48fc21d42d4c1022295e" = get_nonce(hex:to(0, 8)),
 
     autotest:mark(?LINE, "get_nonce/1 - 2"),
-    "2b9d0abeef571102304778343b31a5e1" = get_nonce(hex:to(11000000, 8)),
+    "00ade0f6f93a185c19c358c943c6ba5c" = get_nonce(hex:to(11000000, 8)),
 
     autotest:mark(?LINE, "get_nonce/1 - 3"),
-    "be7ef379132a226876b70668ee46dc8f" = get_nonce(hex:to(22000000, 8)),
+    "d9d49f6dbd47739e9780ed7a267b184f" = get_nonce(hex:to(22000000, 8)),
 
 
     %% test do_get_user_verified2(Method, User, UAuser, Password, Realm, Now, AuthDict)
@@ -757,15 +689,6 @@ test() ->
     false = get_user_verified(keylist:from_list([]), "INVITE"),
 
 
-    %% test pstn_call_check_auth(Method, Header, URL, ToNumberIn, Classdefs)
-    %% Not much can be tested in this function, but some is better than nothing
-    %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "pstn_call_check_auth/5 - 1"),
-    {false, none, testclass} = pstn_call_check_auth("INVITE", keylist:from_list([]),
-						    sipurl:parse("sip:ft@example.org"),
-						    "123456789", [{"^123", testclass}]),
-
-
     %% test is_allowed_pstn_dst(User, ToNumber, Header, Class)
     %% Not much can be tested in this function, but some is better than nothing
     %%--------------------------------------------------------------------
@@ -812,5 +735,7 @@ test() ->
     %% verify the usernames in the dicts
     {ok, "test1"} = dict:find("username", RealmFilterDict1),
     {ok, "test2"} = dict:find("username", RealmFilterDict2),
+    
+    ok = yxa_test_config:stop(),
 
     ok.

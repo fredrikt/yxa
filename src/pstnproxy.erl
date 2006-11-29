@@ -30,6 +30,7 @@
 %%--------------------------------------------------------------------
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
+-include("pstnproxy.hrl").
 
 
 %%====================================================================
@@ -76,36 +77,14 @@ request(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_c
 %% Anything except ACK
 %%
 request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
-    Method = Request#request.method,
-    #yxa_ctx{origin   = Origin,
-	     thandler = THandler
-	    } = YxaCtx,
-    LogTag = transactionlayer:get_branchbase_from_handler(THandler),
+    LogTag = transactionlayer:get_branchbase_from_handler(YxaCtx#yxa_ctx.thandler),
     YxaCtx1 = YxaCtx#yxa_ctx{app_logtag = LogTag},
-    case route_request(Request, YxaCtx1) of
-	pstn ->
-	    logger:log(debug, "~s: pstnproxy: Route request to PSTN gateway", [LogTag]),
-	    {ok, AllowedMethods} = yxa_config:get_env(allowed_request_methods),
-	    case lists:member(Method, AllowedMethods) of
-		true ->
-		    request_to_pstn(Request, YxaCtx1);
-		_ ->
-		    logger:log(normal, "~s: pstnproxy: Method ~s not allowed for PSTN destination",
-			       [LogTag, Method]),
-		    ExtraHeaders = [{"Allow", AllowedMethods}],
-		    transactionlayer:send_response_handler(THandler, 405, "Method Not Allowed", ExtraHeaders)
-	    end;
-	sip ->
-	    logger:log(normal, "~s: pstnproxy: Route request to SIP server", [LogTag]),
-	    request_to_sip(Request, YxaCtx);
-	me ->
-	    %% XXX it would be nice to include an Allow: header with the allowed methods, but
-	    %% that is complicated since it can vary depending on PstnCtx
-	    siprequest:request_to_me(Request, YxaCtx1, _ExtraHeaders = []);
-	drop ->
+    case auth_and_tag(Request, YxaCtx1) of
+	{ok, PstnCtx} ->
+	    handle_request(Request, YxaCtx1, PstnCtx);
+	ignore ->
 	    ok
-    end,
-    ok.
+    end.
 
 
 %%--------------------------------------------------------------------
@@ -137,58 +116,805 @@ terminate(Mode) when is_atom(Mode) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-
 %%--------------------------------------------------------------------
-%% Function: route_request(Request, YxaCtx)
+%% Function: auth_and_tag(Request, YxaCtx)
 %%           Request = request record()
 %%           YxaCtx  = yxa_ctx record()
-%% Descrip.: Determines if we should route this request to one of
-%%           our PSTN gateways or not.
-%% Returns : pstn |
-%%           sip  |
-%%           me   |
-%%           drop
+%% Descrip.: Create a pstn_ctx record for this request. The pstn_ctx
+%%           record holds information that we can conclude right away
+%%           about the request :
+%%
+%%           tags         : list of atom() :
+%%              from_gateway : Request was received from one of
+%%                             our gateways.
+%%              has_route    : Request has a Route header.
+%%              route_to_gw  : Included if the Route header points
+%%                             at one of our gateways.
+%%
+%%           ip           : string(), the IP address we received the
+%%                          request from.
+%%
+%%           cert_subject : ssl_conn_subject record() describing TLS
+%%                          certificate used by client to send us
+%%                          this request.
+%%
+%%           user         : string(), the SIP user corresponding to
+%%                          the From: URI in this request, or
+%%                          undefined.
+%%
+%%           stale_auth   : true  - authentication provided, but it is
+%%                                  stale
+%%                          false - authentication provided, not stale
+%%                          undefined - no authentication provided
+%%
+%%           orig_uri     : sipurl record(), the Request-URI of the
+%%                          request we received.
+%%
+%%           If the From: address of the request is listed for one of
+%%           our users, we know that we will require confirmation of
+%%           this so then we challenge the request if valid authenti-
+%%           cation is not already provided. Gateways are excepted
+%%           from this, they are allowed to provide us with any name.
+%% Returns : {ok, PstnCtx} |
+%%           ignore          - caller should just exit
+%%           PstnCtx = pstn_ctx record()
 %%--------------------------------------------------------------------
-route_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
-    case local:is_request_to_this_proxy(Request) of
-	true ->
-	    me;
-	false ->
-	    route_request2(Request, YxaCtx)
+auth_and_tag(Request, YxaCtx) ->
+    #yxa_ctx{thandler	= THandler,
+	     origin	= Origin,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
+    IP = Origin#siporigin.addr,
+    CertSubject = auth_and_tag_get_cert(Origin, LogTag),
+    {ok, Stale, YXAPeerAuth, User} = auth_and_tag_get_user(Request),
+
+    PstnCtx1 =
+	#pstn_ctx{ip		= IP,
+		  cert_subject	= CertSubject,
+		  user		= User,
+		  stale_auth	= Stale,
+		  orig_uri	= Request#request.uri
+		 },
+
+    Tags = auth_and_tag_get_tags(Request, PstnCtx1),
+    PstnCtx2 = PstnCtx1#pstn_ctx{tags = Tags},
+
+    PstnCtx = local:pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx2),
+
+    case auth_and_tag_verify_from(Request, YxaCtx, YXAPeerAuth, PstnCtx) of
+	ok ->
+	    {ok, PstnCtx};
+	_ ->
+	    ignore
     end.
 
-route_request2(Request, YxaCtx) ->
-    FromIP = (YxaCtx#yxa_ctx.origin)#siporigin.addr,
-    ToHost = (Request#request.uri)#sipurl.host,
-    case is_pstngateway(FromIP) of
-	true ->
-	    logger:log(debug, "Routing: Source IP ~s is PSTN gateway, route to SIP proxy", [FromIP]),
-	    sip;
-	false ->
-	    IsLocalHostname = is_localhostname(ToHost),
-	    IsPstnGatewayHostname = is_pstngateway(ToHost),
-	    FirstRouteIsPstnGateway = first_route_is_pstngateway(Request#request.header),
+
+%%--------------------------------------------------------------------
+%% Function: auth_and_tag_get_cert(Origin, LogTag)
+%%           Origin = siporigin record()
+%%           LogTag = string(), log prefix
+%% Descrip.: If the request was received over TLS, try to construct
+%%           a string describing the certificate. Returns 'undefined'
+%%           if such a string could not be created, for example
+%%           because the connecting party did not use a client
+%%           certificate.
+%% Returns : Subject   |
+%%           undefined
+%%           Subject = string()
+%%--------------------------------------------------------------------
+auth_and_tag_get_cert(#siporigin{proto = Proto} = Origin, LogTag) when Proto == tls; Proto == tls6 ->
+    #siporigin{sipsocket = SipSocket,
+	       addr      = IP,
+	       port      = Port
+	      } = Origin,
+    case sipsocket:get_raw_socket(SipSocket) of
+	{ok, Socket} ->
+	    case ssl_util:get_ssl_peer_info(Socket, Proto, IP, Port) of
+		{ok, Subject, _AltNames} when is_record(Subject, ssl_conn_subject) ->
+		    Subject;
+		_ ->
+		    undefined
+	    end;
+	{error, Reason} ->
+	    logger:log(error, "~s: pstnproxy: Failed fetching SSL certificate info : ~p",
+		       [LogTag, Reason]),
+	    undefined
+    end;
+auth_and_tag_get_cert(_Origin, _LogTag) ->
+    undefined.
+
+
+%%--------------------------------------------------------------------
+%% Function: auth_and_tag_get_user(Request)
+%%           Request = request record()
+%% Descrip.: Try to get a username for this request, and also check
+%%           to see if there are authentication information present.
+%% Returns : {ok, Stale, YXAPeerAuth, User}
+%%           Stale       = undefined | bool(), was the provided
+%%                         authentication information stale?
+%%           YXAPeerAuth = bool(), user information vouched for by a
+%%                         peer of ours, through X-Yxa-Peer-Auth?
+%%           User        = undefined | string(), username
+%%--------------------------------------------------------------------
+auth_and_tag_get_user(Request) ->
+    {Stale, YXAPeerAuth, UserRes} =
+	case sipauth:pstn_get_user_verified(Request#request.header, Request#request.method) of
+	    false ->
+		{undefined, false, undefined};
+	    {stale, User} ->
+		{true, false, User};
+	    {authenticated, User} ->
+		{false, false, User};
+	    {peer_authenticated, User} ->
+		{false, true, User}
+	end,
+    {ok, Stale, YXAPeerAuth, UserRes}.
+
+
+%%--------------------------------------------------------------------
+%% Function: auth_and_tag_get_tags(Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
+%% Descrip.: Create a list of tags for this request.
+%% Returns : Tags = list() of term()
+%%--------------------------------------------------------------------
+auth_and_tag_get_tags(Request, PstnCtx) ->
+    FromGw =
+	case is_pstngateway(PstnCtx#pstn_ctx.ip) of
+	    true ->  [from_gateway];
+	    false -> []
+	end,
+
+    HasRoute =
+	case keylist:fetch('route', Request#request.header) of
+	    [FirstRoute | _] ->
+		[FirstRouteParsed] = contact:parse([FirstRoute]),
+		RouteURL = sipurl:parse(FirstRouteParsed#contact.urlstr),
+		case is_pstngateway(RouteURL#sipurl.host) of
+		    true ->
+			[has_route, route_to_gw];
+		    false ->
+			[has_route]
+		end;
+	    _ ->
+		[]
+	end,
+
+    FromGw ++ HasRoute.
+
+
+%%--------------------------------------------------------------------
+%% Function: auth_and_tag_verify_from(Request, YxaCtx, YXAPeerAuth,
+%%                                    PstnCtx)
+%%           Request     = request record()
+%%           YxaCtx      = yxa_ctx record()
+%%           YXAPeerAuth = bool(), user authenticated by peer of ours?
+%%           PstnCtx     = pstn_ctx record()
+%% Descrip.: If the From: has an address belonging to one of our
+%%           users, verify that the sender is authorized to use it.
+%%           This requires digest-authenticating a user, or determin-
+%%           ing that the request was received from one of our
+%%           gateways or was vouched for by a peer of ours.
+%% Returns : ignore |      drop request
+%%           ok            continue processing request
+%%--------------------------------------------------------------------
+auth_and_tag_verify_from(Request, YxaCtx, YXAPeerAuth, PstnCtx) ->
+    #yxa_ctx{thandler	= THandler,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
+    case local:pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx) of
+	ignore    -> ignore;
+	ok        -> ok;
+	undefined ->
+	    FromGateway = is_tagged(from_gateway, PstnCtx),
 	    if
-		IsLocalHostname ->
-		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway",
-			       [FromIP, ToHost]),
-		    pstn;
-		IsPstnGatewayHostname  ->
-		    logger:log(debug, "Routing: Source IP ~s is not PSTN gateway and ~p is me, route to PSTN gateway",
-			       [FromIP, ToHost]),
-		    pstn;
-		FirstRouteIsPstnGateway ->
-		    logger:log(debug, "Routing: First Route-header is PSTN gateway, route to PSTN gateway"),
-		    pstn;
+		YXAPeerAuth ->
+		    logger:log(debug, "~s: pstnproxy: Request was received from one of our peers "
+                               "(X-Yxa-Peer-Auth), allowing any From: address", [LogTag]),
+		    ok;
+		FromGateway ->
+		    logger:log(debug, "~s: pstnproxy: Request was received from one of our gateways, "
+			       "allowing any From: address", [LogTag]),
+		    ok;
 		true ->
-		    logger:log(normal, "~s: pstnproxy: Denied request from ~s to ~s - not my problem",
-			       [YxaCtx#yxa_ctx.app_logtag, FromIP, ToHost]),
-		    THandler = YxaCtx#yxa_ctx.thandler,
-		    transactionlayer:send_response_handler(THandler, 403, "Forbidden"),
-		    drop
+		    auth_and_tag_verify_from2(Request, YxaCtx, PstnCtx)
 	    end
     end.
 
+%% part of auth_and_tag_verify_from/5
+%% Returns : ignore | ok
+auth_and_tag_verify_from2(Request, YxaCtx, PstnCtx) ->
+    THandler = YxaCtx#yxa_ctx.thandler,
+    {_DisplayName, FromURL} = sipheader:from(Request#request.header),
+    Address = sipurl:print(FromURL),
+    case local:get_user_with_address(Address) of
+	nomatch ->
+	    logger:log(debug, "Auth: Address ~p does not match any of my users, no need to verify.",
+		       [Address]),
+	    ok;
+
+	User when is_list(User), is_list(PstnCtx#pstn_ctx.user) ->
+	    case local:can_use_address(PstnCtx#pstn_ctx.user, FromURL) of
+		true ->
+		    %% don't allow stale authentication for this check
+		    case PstnCtx#pstn_ctx.stale_auth of
+			true ->
+			    transactionlayer:send_challenge(THandler, proxy, _Stale = true, _RetryAfter = none),
+			    ignore;
+			false ->
+			    ok
+		    end;
+		false ->
+		    logger:log(normal, "Auth: User ~p is not allowed to use From: address ~p",
+			       [User, Address]),
+		    transactionlayer:send_response_handler(THandler, 403, "Forbidden"),
+		    ignore
+	    end;
+
+	User when is_list(User) ->
+	    Stale =
+		case PstnCtx#pstn_ctx.user of
+		    {stale, _} -> true;
+		    _ -> false
+		end,
+
+	    %% PstnCtx did not contain a SIP username, or the authentication was stale. Send challenge.
+	    transactionlayer:send_challenge(THandler, proxy, Stale, _RetryAfter = none),
+	    ignore
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: handle_request(Request, YxaCtx, PstnCtx)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           PstnCtx = pstn_ctx record(), context for this request
+%% Descrip.: Handle any non-ACK requests we receive, after the request
+%%           has been tagged, and potentially authenticated.
+%% Returns : ok
+%%--------------------------------------------------------------------
+handle_request(Request, YxaCtx, PstnCtx) ->
+    Actions =
+	case is_tagged(has_route, PstnCtx) of
+	    true ->
+		route_request_with_route(Request, YxaCtx, PstnCtx);
+	    false ->
+		%% no Route header
+		case local:is_request_to_this_proxy(Request) of
+		    true ->
+			%% XXX it would be nice to include an Allow: header with the allowed methods, but
+			%% that is complicated since it can vary depending on PstnCtx
+			siprequest:request_to_me(Request, YxaCtx, _ExtraHeaders = []),
+			[ignore];
+		    false ->
+			%% no Route, and not destined for the proxy itself
+			ToHost = (Request#request.uri)#sipurl.host,
+			logger:log(debug, "FREDRIK: ToHost ~p, is_localhostname ~p is_pstngateway ~p",
+				   [ToHost, is_localhostname(ToHost), is_pstngateway(ToHost)]),
+			case is_localhostname(ToHost) orelse
+			    is_pstngateway(ToHost) of
+			    true ->
+				number_based_routing(Request, YxaCtx, PstnCtx);
+			    false ->
+				handle_request_unknown_destination(Request, YxaCtx, PstnCtx)
+			end
+		end
+	end,
+
+    logger:log(debug, "~s: pstnproxy: Actions for this request : ~p", [YxaCtx#yxa_ctx.app_logtag, Actions]),
+
+    perform_actions(Actions, Request, YxaCtx, PstnCtx),
+    ok.
+
+%% part of handle_request/3
+handle_request_unknown_destination(Request, YxaCtx, PstnCtx) ->
+    LogTag = YxaCtx#yxa_ctx.app_logtag,
+    case is_tagged(from_gateway, PstnCtx) andalso
+	Request#request.method == "BYE" of
+	true ->
+	    %% BYE from gateways can't be challenged, and can be addresses at
+	    %% arbitrary URI's
+	    logger:log(debug, "~s: pstnproxy: Proxying BYE request from gateway", [LogTag]),
+	    [{proxy, Request#request.uri}];
+	false ->
+	    logger:log(normal, "~s: pstnproxy: Denied request to ~s - not my problem "
+		       "(no Route header, and not addressed to me)",
+		       [LogTag, sipurl:print(Request#request.uri)]),
+	    [{response, 403, "Forbidden", []}]
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: route_request_with_route(Request, YxaCtx, PstnCtx)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           PstnCtx = pstn_ctx record(), context for this request
+%% Descrip.: Figure out what to do with a request with a Route header.
+%% Returns : [{proxy, route}]                 |
+%%           [{response, Status, Reason, EH}] |
+%%           [{challenge, proxy, IsStale}]
+%%--------------------------------------------------------------------
+route_request_with_route(Request, YxaCtx, PstnCtx) ->
+    %% we relay any request with a Route header, as long as it is authenticated
+    %% or is from one of our gateways, and it is not an INVITE
+    case Request#request.method of
+	"INVITE" ->
+	    case is_tagged(from_gateway, PstnCtx) of
+		true ->
+		    %% XXX double-check that INVITE is an allowed method?
+		    [{proxy, route}];
+		false ->
+		    [{response, 403, "Forbidden (INVITE with Route)", []}]
+	    end;
+	_ ->
+	    %% non-INVITE, allow if authenticated (not stale), or from one of our gateways
+	    case (PstnCtx#pstn_ctx.user /= undefined) andalso
+		(PstnCtx#pstn_ctx.stale_auth == false) of
+		true ->
+		    logger:log(debug, "~s: pstnproxy: Proxying authenticated request with Route header",
+			       [YxaCtx#yxa_ctx.app_logtag]),
+		    [{proxy, route}];
+		false ->
+		    [{challenge, proxy, (PstnCtx#pstn_ctx.stale_auth == true)}]
+	    end
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: number_based_routing(Request, YxaCtx, PstnCtx)
+%%           Request  = request record()
+%%           YxaCtx   = yxa_ctx record()
+%%           PstnCtx  = pstn_ctx record(), context for this request
+%% Descrip.: Figure out what to do with a request that is destined
+%%           for one of our hostnames, or one of our gateways names.
+%% Returns : ActionList = list() of term()
+%%--------------------------------------------------------------------
+number_based_routing(Request, YxaCtx, PstnCtx) ->
+    #yxa_ctx{thandler	= THandler,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
+    case local:pstnproxy_number_based_routing(Request, THandler, LogTag, PstnCtx) of
+	undefined ->
+	    Base =
+		case is_tagged(from_gateway, PstnCtx) of
+		    true ->
+			[{lookup, local},
+			 {lookup, enum},
+			 {lookup, sipproxy}
+			];
+		    false ->
+			%% not from one of our PSTN gateways
+			[{lookup, local},
+			 {lookup, pstn},
+			 {lookup, not_e164},
+			 {lookup, default_pstngateway}
+			]
+		end,
+	    Base ++ [{response, 404, "Not Found", []}];
+	Res when is_list(Res) ->
+	    Res
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: perform_actions(Actions, Request, YxaCtx, PstnCtx)
+%%           Actions = list() of (tuple() | atom())
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           PstnCtx = pstn_ctx record(), context for this request
+%% Descrip.: Process the Request through performing a set of actions,
+%%           that include trying to find a destination, proxying the
+%%           request to a found destination, challenging the sender of
+%%           the request or sending a response of some sort.
+%% Returns : void()
+%%--------------------------------------------------------------------
+
+
+%%--------------------------------------------------------------------
+%% Function: perform_actions({response, Status, Reason, ExtraHeaders},
+%%                           ...)
+%%           Status       = integer(), SIP status code
+%%           Reason       = string(), SIP reason phrase
+%%           ExtraHeaders = list() of {Key, Value} tuples, extra
+%%                          headers to put in the response
+%% Descrip.: Send a response.
+%% Returns : void()
+%%--------------------------------------------------------------------
+perform_actions([{response, Status, Reason, ExtraHeaders} | _], _Request, YxaCtx, _PstnCtx) ->
+    #yxa_ctx{thandler	= THandler,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
+    logger:log(debug, "~s: pstnproxy: Action 'response' : '~p ~s'", [LogTag, Status, Reason]),
+    transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
+
+%%--------------------------------------------------------------------
+%% Function: perform_actions({proxy, Dst}, ...)
+%%           Dst = sipurl record() | route
+%% Descrip.: Proxy the request to a destination, if permitted.
+%% Returns : void()
+%%--------------------------------------------------------------------
+perform_actions([{proxy, Dst} | _], Request, YxaCtx, PstnCtx) when is_record(Dst, sipurl); Dst == route ->
+    #yxa_ctx{thandler	= THandler,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
+    logger:log(debug, "~s: pstnproxy: Action 'proxy' : ~p", [LogTag, Dst]),
+    {ok, AllowedMethods} = local:pstnproxy_allowed_methods(Request, PstnCtx),
+    case lists:member(Request#request.method, AllowedMethods) of
+	true ->
+	    case authorize_proxying(Request, THandler, LogTag, PstnCtx) of
+		true ->
+		    NewHeader = add_caller_identity(PstnCtx#pstn_ctx.destination, Request#request.method,
+						    Request#request.header, Dst, PstnCtx),
+		    NewURI = restore_sips_proto(PstnCtx#pstn_ctx.orig_uri, Request#request.uri),
+		    NewRequest = Request#request{uri    = NewURI,
+						 header = NewHeader
+						},
+		    start_sippipe(NewRequest, YxaCtx, Dst, [PstnCtx]);
+		false ->
+		    ok
+	    end;
+	false ->
+	    logger:log(normal, "~s: pstnproxy: Method ~s not allowed for this destination",
+		       [LogTag, Request#request.method]),
+	    ExtraHeaders = [{"Allow", AllowedMethods}],
+	    transactionlayer:send_response_handler(THandler, 405, "Method Not Allowed", ExtraHeaders)
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: perform_actions({challenge, Type, Stale}, ...)
+%%           Type  = proxy | www
+%%           Stale = bool()
+%% Descrip.: Send a challenge to the sender of a request.
+%% Returns : void()
+%%--------------------------------------------------------------------
+perform_actions([{challenge, Type, Stale} | _], _Request, YxaCtx, _PstnCtx) when is_atom(Type),
+										 is_boolean(Stale) ->
+    #yxa_ctx{thandler	= THandler,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
+    logger:log(debug, "~s: pstnproxy: Action 'challenge' : type ~p, stale : ~p", [LogTag, Type, Stale]),
+    transactionlayer:send_challenge(THandler, Type, Stale, _RetryAfter = none);
+
+%%--------------------------------------------------------------------
+%% Function: perform_actions({lookup, Type}, ...)
+%%           Type  = enum | pstn | not_e164 | ...
+%% Descrip.: Perform a lookup of some sort, and then either continue
+%%           to the next action (if nomatch was returned), or go
+%%           process the result of the lookup as the next action.
+%% Returns : void()
+%%--------------------------------------------------------------------
+perform_actions([{lookup, Type} | T], Request, YxaCtx, PstnCtx) ->
+    LogTag = YxaCtx#yxa_ctx.app_logtag,
+    logger:log(debug, "~s: pstnproxy: Action 'lookup' type '~p'", [LogTag, Type]),
+    case perform_lookup(Type, Request, PstnCtx) of
+	{ok, Substitute, NewPstnCtx} when is_tuple(Substitute) ->
+	    logger:log(debug, "~s: pstnproxy: Lookup result : ~p", [LogTag, Substitute]),
+	    perform_actions([Substitute | T], Request, YxaCtx, NewPstnCtx);
+	{ok, Substitute, NewPstnCtx} when is_list(Substitute) ->
+	    logger:log(debug, "~s: pstnproxy: Lookup result : ~p", [LogTag, Substitute]),
+	    perform_actions(Substitute ++ T, Request, YxaCtx, NewPstnCtx);
+	nomatch ->
+	    perform_actions(T, Request, YxaCtx, PstnCtx)
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: perform_actions(ignore, ...)
+%%           Type  = enum | pstn | not_e164 | ...
+%% Descrip.: Perform a lookup of some sort, and then either continue
+%%           to the next action (if nomatch was returned), or go
+%%           process the result of the lookup as the next action.
+%% Returns : void()
+%%--------------------------------------------------------------------
+perform_actions([ignore | _], _Request, YxaCtx, _PstnCtx) ->
+    logger:log(debug, "~s: pstnproxy: Action 'ignore'", [YxaCtx#yxa_ctx.app_logtag]),
+    ok;
+
+%%--------------------------------------------------------------------
+%% Function: perform_actions([], ...)
+%% Descrip.: No actions left, send a '500 Server Internal Error'.
+%% Returns : void()
+%%--------------------------------------------------------------------
+perform_actions([], _Request, YxaCtx, _PstnCtx) ->
+    #yxa_ctx{thandler	= THandler,
+	     app_logtag	= LogTag
+	    } = YxaCtx,
+    logger:log(normal, "~s: pstnproxy: No more actions, responding '500 Server Internal Error'", [LogTag]),
+    transactionlayer:send_response_handler(THandler, 500, "Server Internal Error", []),
+    ok.
+
+
+%%--------------------------------------------------------------------
+%% Function: perform_lookup(Type, Request, PstnCtx)
+%%           Type    = atom()
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
+%% Descrip.: Perform a lookup of some sort, which may or may not
+%%           result in a new action of the type that perform_actions
+%%           process.
+%% Returns : {ok, LookupSubstitute, NewPstnCtx} |
+%%           nomatch
+%%           LookupSubstitute = tuple() | atom()
+%%           NewPstnCtx       = pstn_ctx record()
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: perform_lookup(enum, ...)
+%% Descrip.: Perform an ENUM lookup. ENUM resolves E.164 numbers
+%%           through DNS (RFC3761).
+%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
+%%           nomatch
+%%           Dst        = sipurl record()
+%%           NewPstnCtx = pstn_ctx record()
+%%--------------------------------------------------------------------
+perform_lookup(enum, Request, PstnCtx) ->
+    User = (Request#request.uri)#sipurl.user,
+    logger:log(debug, "pstnproxy: ENUM lookup : user-part ~p", [User]),
+    case local:lookupenum(User) of
+	{relay, Loc} when is_record(Loc, sipurl) ->
+	    NewH =
+		case yxa_config:get_env(pstnproxy_redirect_on_enum) of
+		    {ok, true} ->
+			%% Redirect caller to the destination we found in ENUM instead of
+			%% proxying the request.
+			Contact = contact:new(none, Loc, []),
+			ExtraHeaders = [{"Contact", sipheader:contact_print([Contact])}],
+			{response, 302, "Moved Temporarily", ExtraHeaders};
+		{ok, false} ->
+			%% proxy request (need for authentication is performed later)
+			{proxy, Loc}
+		end,
+	    NewPstnCtx =
+		PstnCtx#pstn_ctx{called_number = User,
+				 destination   = sip
+				},
+	    {ok, NewH, NewPstnCtx};
+	{proxy, ProxyURL} when is_record(ProxyURL, sipurl) ->
+	    %% Proxy instead of relay means that the ENUM result points at a 'homedomain'.
+	    %% Since pstnproxy can't be configured with homedomains, it means the result
+	    %% matched one of our hostnames. This is probably not a good thing, but should
+	    %% be investigated. What if a PSTN gateway sends a request to us, and we have
+	    %% 'forwarding' information for that number in ENUM? XXX
+	    logger:log(normal, "pstnproxy: ENUM for number ~p points back at me (~p) - ignoring",
+		       [User, sipurl:print(ProxyURL)]),
+	    nomatch;
+	none ->
+	    nomatch
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: perform_lookup(sipproxy, ...)
+%% Descrip.: Look up our default SIP proxy.
+%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
+%%           nomatch
+%%           Dst        = sipurl record()
+%%           NewPstnCtx = pstn_ctx record()
+%%--------------------------------------------------------------------
+perform_lookup(sipproxy, Request, PstnCtx) ->
+    case yxa_config:get_env(sipproxy) of
+	{ok, ProxyURL1} when is_record(ProxyURL1, sipurl) ->
+	    %% Use configured sipproxy but exchange user with user from Request-URI
+	    User = (Request#request.uri)#sipurl.user,
+	    ProxyURL = sipurl:set([{user, User},
+				   {pass, none}
+				  ], ProxyURL1),
+	    NewPstnCtx =
+		PstnCtx#pstn_ctx{called_number = User,
+				 destination   = sip
+				},
+	    {ok, {proxy, ProxyURL}, NewPstnCtx};
+	none ->
+	    logger:log(debug, "pstnproxy: No sipproxy configured"),
+	    nomatch
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: perform_lookup(pstn, ...)
+%% Descrip.: Look for a PSTN destination based on the user part of the
+%%           Request-URI of our Request. Only works if the user part
+%%           can be turned into an E.164 number.
+%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
+%%           nomatch
+%%           Dst        = sipurl record()
+%%           NewPstnCtx = pstn_ctx record()
+%%--------------------------------------------------------------------
+perform_lookup(pstn, Request, PstnCtx) ->
+    User = (Request#request.uri)#sipurl.user,
+    case local:lookuppstn(User) of
+	{Type, Dst} when Type == proxy orelse Type == relay, is_record(Dst, sipurl) ->
+	    NewPstnCtx =
+		PstnCtx#pstn_ctx{called_number = User,
+				 destination   = pstn
+				},
+	    {ok, {proxy, Dst}, NewPstnCtx};
+	none ->
+	    nomatch
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: perform_lookup(not_e164, ...)
+%% Descrip.: Look for a PSTN destination for a number that could not
+%%           be resolved into an E.164 number.
+%% Returns : {ok, Res, NewPstnCtx} |
+%%           nomatch
+%%           Res = term()
+%%--------------------------------------------------------------------
+perform_lookup(not_e164, Request, PstnCtx) ->
+    User = (Request#request.uri)#sipurl.user,
+    case local:pstnproxy_route_pstn_not_e164(User, Request, PstnCtx) of
+	undefined ->
+	    nomatch;
+	nomatch ->
+	    logger:log(debug, "pstnproxy: local:pstnproxy_route_pstn_not_e164(...) says there is no "
+		       "destination for request to PSTN, number ~p.", [User]),
+	    nomatch;
+	Res ->
+	    NewPstnCtx =
+		PstnCtx#pstn_ctx{called_number = User,
+				 destination   = pstn
+				},
+	    {ok, Res, NewPstnCtx}
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: perform_lookup(default_pstngateway, ...)
+%% Descrip.: Look up our default PSTN gateway.
+%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
+%%           nomatch
+%%           Dst        = sipurl record()
+%%           NewPstnCtx = pstn_ctx record()
+%%--------------------------------------------------------------------
+perform_lookup(default_pstngateway, Request, PstnCtx) ->
+    %% Route to default PSTN gateway
+    case yxa_config:get_env(default_pstngateway) of
+	{ok, GwURL} when is_record(GwURL, sipurl) ->
+	    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [sipurl:print(GwURL)]),
+	    User = (Request#request.uri)#sipurl.user,
+	    NewURI = sipurl:set([{user, User},
+				 {pass, none}
+				], GwURL),
+	    NewPstnCtx =
+		PstnCtx#pstn_ctx{called_number = User,
+				 destination   = pstn
+				},
+	    {ok, {proxy, NewURI}, NewPstnCtx};
+	none ->
+	    nomatch
+    end;
+
+%%--------------------------------------------------------------------
+%% Function: perform_lookup(local, ...)
+%% Descrip.: Call a local.erl hook.
+%% Returns : {ok, Action, NewPstnCtx} |
+%%           nomatch
+%%           Action     = atom() | tuple()
+%%           NewPstnCtx = pstn_ctx record()
+%%--------------------------------------------------------------------
+perform_lookup(local, Request, PstnCtx) ->
+    case local:pstnproxy_lookup_action(Request, PstnCtx) of
+	{ok, Action, NewPstnCtx} when is_tuple(Action) orelse is_atom(Action), is_record(NewPstnCtx, pstn_ctx) ->
+	    {ok, Action, NewPstnCtx};
+	undefined ->
+	    nomatch
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: authorize_proxying(Request, THandler, LogTag, PstnCtx)
+%%           Request  = request record()
+%%           THandler = term(), server transaction handle
+%%           LogTag   = string(), log prefix
+%%           PstnCtx  = pstn_ctx record(), context for this request
+%% Descrip.: Before we proxy a request somewhere, make sure that it
+%%           is not against our policy.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+authorize_proxying(Request, THandler, LogTag, PstnCtx) ->
+    case is_tagged(from_gateway, PstnCtx) of
+	true ->
+	    logger:log(normal, "~s: pstnproxy: Allowing request to destination '~p' from PSTN gateway",
+		       [LogTag, PstnCtx#pstn_ctx.destination]),
+	    true;
+	false ->
+	    case PstnCtx#pstn_ctx.destination of
+		pstn ->
+		    authorize_user_call_to_pstn(Request, THandler, LogTag, PstnCtx);
+		sip ->
+		    case PstnCtx#pstn_ctx.stale_auth of
+			true ->
+			    transactionlayer:send_challenge(THandler, proxy, _Stale = true, _RetryAfter = none),
+			    false;
+			false ->
+			    true
+		    end
+	    end
+    end.
+
+
+%%--------------------------------------------------------------------
+%% Function: authorize_user_call_to_pstn(Request, THandler, LogTag,
+%%                                       PstnCtx)
+%%           Request  = request record()
+%%           THandler = term(), server transaction handle
+%%           LogTag   = string(), log prefix
+%%           PstnCtx  = pstn_ctx record(), context for this request
+%% Descrip.: Part of authorize_proxying/4 - the destination is PSTN
+%%           and we need to make sure the number is permissible for
+%%           the originating user.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+authorize_user_call_to_pstn(Request, THandler, LogTag, PstnCtx) ->
+    ToNumber = case local:rewrite_potn_to_e164(PstnCtx#pstn_ctx.called_number) of
+		   error -> PstnCtx#pstn_ctx.called_number;
+		   N when is_list(N) -> N
+	       end,
+    {ok, Classdefs} = yxa_config:get_env(classdefs),
+    {ok, Class} = sipauth:classify_number(ToNumber, Classdefs),
+    {ok, UnauthClasses} = yxa_config:get_env(sipauth_unauth_classlist),
+    User = PstnCtx#pstn_ctx.user,
+    case lists:member(Class, UnauthClasses) of
+	true ->
+	    logger:log(normal, "~s: pstnproxy: Allowing request from user ~p to number available to anyone "
+		       "(~s, class '~p')", [LogTag, User, ToNumber, Class]),
+	    true;
+	false when is_list(User) ->
+	    case local:is_allowed_pstn_dst(User, ToNumber, Request#request.header, Class) of
+		true ->
+		    check_auth_for_allowed_pstn_dst(User, ToNumber, Request, Class, THandler, LogTag, PstnCtx);
+		false ->
+		    logger:log(normal, "~s: pstnproxy: User ~p NOT allowed request to number ~s, class '~p'",
+			       [LogTag, User, ToNumber, Class]),
+		    transactionlayer:send_response_handler(THandler, 403, "Forbidden", []),
+		    false
+	    end;
+	false when User == undefined ->
+	    check_unauth_request_to_pstn_dst(ToNumber, Request, Class, THandler, LogTag, PstnCtx)
+    end.
+
+check_auth_for_allowed_pstn_dst(User, ToNumber, Request, Class, THandler, LogTag, PstnCtx) ->
+    Method = Request#request.method,
+
+    StaleOK = (Method /= "INVITE"),
+    IsStale = PstnCtx#pstn_ctx.stale_auth,
+
+    if
+	IsStale, StaleOK ->
+	    logger:log(normal, "~s: pstnproxy: Allowing ~s request from user ~p to number ~s, class '~p' "
+		       "(stale auth)", [LogTag, Method, User, ToNumber, Class]),
+	    true;
+	IsStale ->
+	    logger:log(normal, "~s: pstnproxy: Disallowing ~s request from user ~p to number ~s, class '~p' "
+		       "(stale auth)", [LogTag, Method, User, ToNumber, Class]),
+	    transactionlayer:send_challenge(THandler, proxy, _Stale = true, _RetryAfter = none),
+	    false;
+	true ->
+	    logger:log(normal, "~s: pstnproxy: Allowing request from user ~p to number ~s, class '~p'",
+		       [LogTag, User, ToNumber, Class]),
+	    true
+    end.
+
+check_unauth_request_to_pstn_dst(ToNumber, Request, Class, THandler, LogTag, PstnCtx) ->
+    Method = Request#request.method,
+    {ok, ChallengeBYE} = yxa_config:get_env(pstnproxy_challenge_bye_to_pstn_dst),
+    Allow = (Method == "BYE") andalso (ChallengeBYE == false),
+
+    case Allow of
+	true ->
+	    logger:log(normal, "~s: pstnproxy: Allowing unauthenticated ~s request to number ~s, class '~p'",
+		       [LogTag, Method, ToNumber, Class]),
+	    true;
+	false ->
+	    logger:log(normal, "~s: pstnproxy: Requesting authorization for destination number ~s, class '~p'",
+		       [LogTag, ToNumber, Class]),
+	    Stale =
+		case PstnCtx#pstn_ctx.stale_auth of
+		    Stale1 when is_boolean(Stale1) ->
+			Stale1;
+		    undefined ->
+			false
+		end,
+	    transactionlayer:send_challenge(THandler, proxy, Stale, _RetryAfter = none),
+	    false
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: is_localhostname(Hostname)
@@ -224,256 +950,78 @@ is_pstngateway(Hostname) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: first_route_is_pstngateway(Header)
-%%           Header = keylist record()
-%% Descrip.: Check if there is a Route-header in Header, and if it is
-%%           then check if the first Route matches one of our PSTN
-%%           gateways hostnames.
-%% Returns : true  |
-%%           false
-%%--------------------------------------------------------------------
-first_route_is_pstngateway(Header) ->
-    case keylist:fetch('route', Header) of
-	[FirstRoute | _] ->
-	    [FirstRouteParsed] = contact:parse([FirstRoute]),
-	    RouteURL = sipurl:parse(FirstRouteParsed#contact.urlstr),
-	    is_pstngateway(RouteURL#sipurl.host);
-	_ ->
-	    false
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: request_to_sip(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: It has been determined that we should send this
-%%           request to a VoIP destination (i.e. anything else than
-%%           one of our PSTN gateways). If the host part of the
-%%           request URI matches this proxy, then do an ENUM lookup
-%%           on the user part of the request URI, if it looks like
-%%           a phone number.
-%% Returns : Does not matter
-%%--------------------------------------------------------------------
-request_to_sip(Request, YxaCtx) when is_record(Request, request) ->
-    {Method, URI} = {Request#request.method, Request#request.uri},
-    Dest = case is_localhostname(URI#sipurl.host) of
-	       true ->
-		   %% Hostname matches me
-		   determine_sip_location(URI);
-	       false ->
-		   {proxy, URI}
-	   end,
-    case Dest of
-	{proxy, NewURI} when is_record(NewURI, sipurl) ->
-	    NewHeader = add_caller_identity_for_sip(Method, Request#request.header),
-	    NewRequest = Request#request{header = NewHeader},
-	    proxy_request(NewRequest, YxaCtx, restore_sips_proto(URI, NewURI));
-	{reply, Status, Reason} ->
-	    transactionlayer:send_response_handler(YxaCtx#yxa_ctx.thandler, Status, Reason);
-	{reply, Status, Reason, ExtraHeaders} ->
-	    transactionlayer:send_response_handler(YxaCtx#yxa_ctx.thandler, Status, Reason, ExtraHeaders);
-	none ->
-	    none
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: determine_sip_location(URI)
-%%           URI = sipurl record()
-%% Descrip.: Find out how to act on a request from PSTN to SIP.
-%% Returns : {reply, Status, Reason}               |
-%%           {reply, Status, Reason, ExtraHeaders} |
-%%           {proxy, NewURI}                       |
-%%           none
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, Value} tuple()
-%%           NewURI = sipurl record()
-%%--------------------------------------------------------------------
-determine_sip_location(URI) when is_record(URI, sipurl) ->
-    User = URI#sipurl.user,
-    logger:log(debug, "pstnproxy: Performing ENUM lookup on ~p", [User]),
-    %% XXX handle {proxy, Loc} return from lookupenum? Should never happen in pstnproxy...
-    case local:lookupenum(User) of
-	{relay, Loc} when is_record(Loc, sipurl) ->
-	    case yxa_config:get_env(pstnproxy_redirect_on_enum) of
-		{ok, true} ->
-		    %% Redirect caller to the destination we found in ENUM instead of
-		    %% proxying the request.
-		    Contact = contact:new(none, Loc, []),
-		    ExtraHeaders = [{"Contact", sipheader:contact_print([Contact])}],
-		    {reply, 302, "Moved Temporarily", ExtraHeaders};
-		{ok, false} ->
-		    {proxy, Loc}
-	    end;
-	none ->
-	    case yxa_config:get_env(sipproxy) of
-		{ok, ProxyURL1} when is_record(ProxyURL1, sipurl) ->
-		    %% Use configured sipproxy but exchange user with user from Request-URI
-		    ProxyURL = sipurl:set([{user, User},
-					   {pass, none}
-					  ], ProxyURL1),
-		    {proxy, ProxyURL};
-		none ->
-		    %% No ENUM and no SIP-proxy configured, return failure so that the PBX
-		    %% on the other side of the gateway can fall back to PSTN or something
-		    {ok, Status} = yxa_config:get_env(pstnproxy_no_sip_dst_code),
-		    {reply, Status, "No destination found for number " ++ User}
-	    end
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: request_to_pstn(Request, YxaCtx)
-%%           Request  = request record()
-%%           Origin   = siporigin record()
-%%           THandler = term(), server transaction handle
-%%           LogTag   = string(), prefix for logging
-%% Descrip.: It has been determined that we should send this
-%%           request to one of our PSTN gateways. Figure out which
-%%           one and make it so.
-%% Returns : Does not matter
-%%--------------------------------------------------------------------
-request_to_pstn(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
-    URI = Request#request.uri,
-    {DstNumber, ToHost} = {URI#sipurl.user, URI#sipurl.host},
-
-    Decision =
-	case is_localhostname(ToHost) of
-	    true ->
-		%% XXX check port too, not just hostname? Maybe not since pstnproxy by definition
-		%% should be running alone on a host.
-		case local:lookuppstn(DstNumber) of
-		    {proxy, Dst} when is_record(Dst, sipurl) ->
-			{relay, Dst, Request};
-		    {relay, Dst} when is_record(Dst, sipurl) ->
-			{relay, Dst, Request};
-		    none ->
-			request_to_pstn_non_e164(DstNumber, Request, YxaCtx)
-		end;
-	    false ->
-		{relay, URI, Request}
-	end,
-
-    case Decision of
-	{relay, DstURI, NewRequest} when is_record(DstURI, sipurl), is_record(NewRequest, request) ->
-	    relay_request_to_pstn(NewRequest, YxaCtx, restore_sips_proto(URI, DstURI), DstNumber);
-	ignore ->
-	    ok
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: request_to_pstn_non_e164(DstNumber, Request, YxaCtx)
-%%           DstNumber = string(), PSTN phone number
-%%           Request   = request record()
-%%           YxaCtx    = yxa_ctx record()
-%% Descrip.: Part of request_to_pstn/4. Determine what to do with a
-%%           request which was not recognized by local:lookuppstn/1.
-%% Returns : Relay | ignore
-%%           Relay = {relay, DstURI, NewRequest}
-%%--------------------------------------------------------------------r
-request_to_pstn_non_e164(DstNumber, Request, YxaCtx) ->
-    #yxa_ctx{origin	= Origin,
-	     thandler	= THandler
-	    } = YxaCtx,
-    case local:pstnproxy_route_pstn_not_e164(DstNumber, Request, Origin, THandler) of
-	undefined ->
-	    %% Route to default PSTN gateway
-	    case yxa_config:get_env(default_pstngateway) of
-		{ok, GwURL} when is_record(GwURL, sipurl) ->
-		    logger:log(debug, "pstnproxy: Routing request to default PSTN gateway ~p", [sipurl:print(GwURL)]),
-		    NewURI = sipurl:set([{user, DstNumber},
-					 {pass, none}
-					], GwURL),
-		    {relay, NewURI, Request};
-		none ->
-		    logger:log(debug, "pstnproxy: Found no destination for request to PSTN, number ~p. "
-			       "Answering '404 Not Found'.", [DstNumber]),
-		    transactionlayer:send_response_handler(THandler, 404, "Not Found"),
-		    ignore
-	    end;
-	nomatch ->
-	    logger:log(debug, "pstnproxy: local:pstnproxy_route_pstn_not_e164(...) says there is no "
-		       "destination for request to PSTN, number ~p. Answering '404 Not Found'.", [DstNumber]),
-	    transactionlayer:send_response_handler(THandler, 404, "Not Found"),
-	    ignore;
-	Res ->
-	    Res
-    end.
-
-
-%%--------------------------------------------------------------------
-%% Function: add_caller_identity_for_pstn(Method, Headers, URI,
-%%                                        Gateway)
-%%           Method  = string()
-%%           Headers = keylist record()
-%%           URI     = sipurl record(), Request URI of outgoing req.
-%%           User    = unknown | string(), SIP authentication username
-%%           Gateway = string()
+%% Function: add_caller_identity(Type, Method, Header, Dst, PstnCtx)
+%%           Type    = sip | pstn
+%%           Method  = string(), SIP method of Request
+%%                               (for easy matching)
+%%           Header  = keylist record()
+%%           Dst     = sipurl record()
+%%           PstnCtx = pstn_ctx record(), context for this request
 %% Descrip.: If configured to, add Remote-Party-Id information
 %%           about caller to this request before it is sent to a
 %%           PSTN gateway. Useful to get proper caller-id.
 %% Returns : NewHeader, keylist record()
 %%--------------------------------------------------------------------
-add_caller_identity_for_pstn("INVITE", Header, URI, User, Gateway) when is_record(Header, keylist),
-									is_record(URI, sipurl) ->
+add_caller_identity(pstn, "INVITE", Header, Dst, PstnCtx) when is_record(Dst, sipurl) ->
     case yxa_config:get_env(remote_party_id) of
-	{ok, true} when is_list(User) ->
-	    case local:get_remote_party_number(User, Header, URI, Gateway) of
-		{ok, RPI, Number} when is_record(RPI, contact), is_list(Number) ->
-		    RemotePartyId = contact:print(RPI),
-		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
-		    NewHeader1 = keylist:set("Remote-Party-Id", [RemotePartyId], Header),
-		    logger:log(debug, "P-Preferred-Identity: ~s", ["tel:" ++ Number]),
-		    keylist:set("P-Preferred-Identity", ["tel:" ++ Number], NewHeader1);
-		none ->
-		    %% Add RPI information saying to not show any caller id, in case the From:
-		    %% contains something the gateway interprets as a phone number when it shouldn't
-		    logger:log(debug, "Remote-Party-Id: Blocking Caller-Id for user without number "
-			       "to avoid incorrect/spoofed A-number in PSTN"),
-		    block_remote_party_id(Header)
-	    end;
 	{ok, true} ->
-	    %% non-list User, we should remove any present Remote-Party-Id headers etc.
-	    logger:log(debug, "Remote-Party-Id: Blocking Caller-Id for third party user "
-		       "to avoid incorrect/spoofed A-number in PSTN"),
-	    block_remote_party_id(Header);
+	    case is_list(PstnCtx#pstn_ctx.user) of
+		true ->
+		    case local:get_remote_party_number(PstnCtx#pstn_ctx.user, Header,
+						       Dst, Dst#sipurl.host) of
+			{ok, RPI, Number} when is_record(RPI, contact), is_list(Number) ->
+			    RemotePartyId = contact:print(RPI),
+			    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
+			    NewHeader1 = keylist:set("Remote-Party-Id", [RemotePartyId], Header),
+			    logger:log(debug, "P-Preferred-Identity: ~s", ["tel:" ++ Number]),
+			    keylist:set("P-Preferred-Identity", ["tel:" ++ Number], NewHeader1);
+			none ->
+			    %% Add RPI information saying to not show any caller id, in case the From:
+			    %% contains something the gateway interprets as a phone number when it shouldn't
+			    logger:log(debug, "Remote-Party-Id: Blocking Caller-Id for third party user "
+				       "or user without number to avoid incorrect/spoofed A-number in PSTN"),
+			    block_remote_party_id(Header)
+		    end;
+		false ->
+		    case is_tagged(from_gateway, PstnCtx) of
+			true ->
+			    %% trust our gateways, XXX should be local hook?
+			    Header;
+			false ->
+			    block_remote_party_id(Header)
+		    end
+	    end;
 	{ok, false} ->
 	    Header
     end;
-add_caller_identity_for_pstn(_Method, Header, _URI, _User, _Gateway) when is_record(Header, keylist) ->
-    %% non-INVITE request, don't add Remote-Party-Id
-    Header.
 
-
-%%--------------------------------------------------------------------
-%% Function: add_caller_identity_for_sip(Method, Header)
-%%           Method  = string()
-%%           Header = keylist record()
-%% Descrip.: If configured to, add Remote-Party-Id information
-%%           about caller to this request received from one of our
-%%           PSTN gateways. Useful to get the name of the person
-%%           calling in your phones display - if you have the name
-%%           available in some database.
-%% Returns : NewHeader, keylist record()
-%%--------------------------------------------------------------------
-add_caller_identity_for_sip("INVITE", Header) ->
+add_caller_identity(sip, "INVITE", Header, _Dst, PstnCtx) ->
     case yxa_config:get_env(remote_party_id) of
 	{ok, true} ->
-	    {_, FromURL} = sipheader:from(Header),
-	    case local:get_remote_party_name(FromURL#sipurl.user, FromURL) of
-		{ok, DisplayName} when is_list(DisplayName) ->
-		    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
-		    RPI = contact:new(DisplayName, FromURL, Parameters),
-		    RemotePartyId = contact:print(RPI),
-		    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
-		    keylist:set("Remote-Party-Id", [RemotePartyId], Header);
-		none ->
+	    case is_tagged(from_gateway, PstnCtx) of
+		true ->
+		    {_, FromURL} = sipheader:from(Header),
+		    case local:get_remote_party_name(FromURL#sipurl.user, FromURL) of
+			{ok, DisplayName} when is_list(DisplayName) ->
+			    Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "off"}],
+			    RPI = contact:new(DisplayName, FromURL, Parameters),
+			    RemotePartyId = contact:print(RPI),
+			    logger:log(debug, "Remote-Party-Id: ~s", [RemotePartyId]),
+			    keylist:set("Remote-Party-Id", [RemotePartyId], Header);
+			none ->
+			    Header
+		    end;
+		false ->
+		    %% XXX perhaps it would be wise to remove any RPI headers for requests
+		    %% going from SIP to SIP?
 		    Header
 	    end;
 	{ok, false} ->
 	    Header
     end;
-add_caller_identity_for_sip(_Method, Header) ->
-    %% non-INVITE request, don't add Remote-Party-Id
+
+add_caller_identity(_Type, _Method, Header, _Dst, _PstnCtx) when is_record(Header, keylist) ->
+    %% non-INVITE probably
     Header.
 
 %%--------------------------------------------------------------------
@@ -490,107 +1038,6 @@ block_remote_party_id(Header) ->
     Header1 = keylist:set("Remote-Party-Id", [RPI], Header),
     keylist:delete("P-Preferred-Identity", Header1).
 
-%%--------------------------------------------------------------------
-%% Function: proxy_request(Request, YxaCtx, DstURI)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           DstURI   = sipurl record()
-%% Descrip.: Proxy a request somewhere without authentication. This is
-%%           typically a request _from_ one of our PSTN gateways.
-%% Returns : void(), Does not matter
-%%--------------------------------------------------------------------
-proxy_request(Request, YxaCtx, DstURI) when is_record(Request, request), is_record(YxaCtx, yxa_ctx),
-					    is_record(DstURI, sipurl) ->
-    case keylist:fetch('route', Request#request.header) of
-	[] ->
-	    local:start_sippipe(Request, YxaCtx, DstURI, []);
-	Route ->
-	    %% XXX this is a configurable option only because in SU's setup it
-	    %% might break calls through the gateway when PRACKs it sends gets
-	    %% challenged elsewhere. Don't set this to true!
-	    case yxa_config:get_env(pstnproxy_ignore_route_header_bad_idea) of
-		{ok, true} ->
-		    logger:log(debug, "Warning: Routing of request according to "
-			       "Route header disabled  : ~p - BAD IDEA", [Route]),
-		    local:start_sippipe(Request, YxaCtx, DstURI, []);
-		{ok, false} ->
-		    local:start_sippipe(Request, YxaCtx, route, [])
-	    end
-    end.
-
-
-%%--------------------------------------------------------------------
-%% Function: relay_request_to_pstn(Request, YxaCtx, DstURI, DstNumber)
-%%           Request   = request record()
-%%           YxaCtx    = yxa_ctx record()
-%%           DstURI    = sipurl record()
-%%           DstNumber = string(), destination number in unspecified
-%%                       format (as entered, not E.164)
-%% Descrip.: Relay request to one of our PSTN gateways. If there is
-%%           not valid credentials present in the request,
-%%           challenge user unless the number is in a class which
-%%           does not require authentication. Never challenge
-%%           CANCEL or BYE since they can't be resubmitted and
-%%           therefor cannot be challenged.
-%% Returns : void(), Does not matter
-%%--------------------------------------------------------------------
-
-%%
-%% CANCEL or BYE
-%%
-relay_request_to_pstn(#request{method = Method} = Request, YxaCtx, DstURI, DstNumber) when Method == "CANCEL";
-											   Method == "BYE" ->
-    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) (unauthenticated)",
-	       [YxaCtx#yxa_ctx.app_logtag, Request#request.method, DstNumber, sipurl:print(DstURI)]),
-    relay_request_to_pstn_isauth(Request, YxaCtx, DstURI);
-
-%%
-%% Anything except CANCEL or BYE
-%%
-relay_request_to_pstn(Request, YxaCtx, DstURI, DstNumber) when is_record(Request, request) ->
-    #yxa_ctx{thandler	= THandler,
-	     app_logtag	= LogTag
-	    } = YxaCtx,
-    {Method, Header} = {Request#request.method, Request#request.header},
-    {_, FromURI} = sipheader:from(Header),
-    {ok, Classdefs} = yxa_config:get_env(classdefs),
-    logger:log(debug, "~s: pstnproxy: Relay ~s to PSTN ~s (~s)", [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
-    case sipauth:pstn_call_check_auth(Method, Header, FromURI, DstNumber, Classdefs) of
-	{true, User, Class} ->
-	    logger:log(debug, "Auth: User ~p is allowed to call dst ~s (class ~s)", [User, DstNumber, Class]),
-	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (authenticated, user ~p, class ~p) (~s)",
-		       [LogTag, Method, DstNumber, User, Class, sipurl:print(DstURI)]),
-	    %% Now that we know which user this request is authorized as, add Caller-ID information to it
-	    PSTNgateway = DstURI#sipurl.host,
-	    NewHeader = add_caller_identity_for_pstn(Method, Header, DstURI, User, PSTNgateway),
-
-	    relay_request_to_pstn_isauth(Request#request{header = NewHeader}, YxaCtx, DstURI);
-	{stale, User, Class} ->
-	    logger:log(debug, "Auth: User ~p must authenticate (stale) for dst ~s (class ~s)",
-		       [User, DstNumber, Class]),
-	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> STALE authentication, sending challenge",
-		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
-	    transactionlayer:send_challenge(THandler, proxy, true, none);
-	{false, none, Class} ->
-	    logger:log(debug, "Auth: Need authentication for dst ~s (class ~s)", [DstNumber, Class]),
-	    logger:log(normal, "~s: pstnproxy: Relay ~s to PSTN ~s (~s) -> needs authentication, sending challenge",
-		       [LogTag, Method, DstNumber, sipurl:print(DstURI)]),
-	    transactionlayer:send_challenge(THandler, proxy, false, none);
-	{false, User, Class} ->
-	    logger:log(debug, "Auth: User ~p not allowed dst ~s in class unknown - answer 403 Forbidden",
-		       [User, DstNumber]),
-	    logger:log(normal, "~s: pstnproxy: User ~p not allowed relay ~s to PSTN ~s class ~p -> 403 Forbidden",
-		       [LogTag, User, Method, DstNumber, Class]),
-	    transactionlayer:send_response_handler(THandler, 403, "Forbidden")
-    end.
-
-relay_request_to_pstn_isauth(Request, YxaCtx, DstURI) ->
-    case keylist:fetch('route', Request#request.header) of
-	[] ->
-	    local:start_sippipe(Request, YxaCtx, DstURI, []);
-	_Route ->
-	    local:start_sippipe(Request, YxaCtx, route, [])
-    end.
 
 %%--------------------------------------------------------------------
 %% Function: restore_sips_proto(OldURL, NewURL)
@@ -609,6 +1056,39 @@ restore_sips_proto(OldURL, NewURL) when is_record(OldURL, sipurl), is_record(New
 	    NewURL
     end.
 
+
+%%--------------------------------------------------------------------
+%% Function: is_tagged(Label, PstnCtx)
+%%           Label   = term()
+%%           PstnCtx = pstn_ctx record(), context for this request
+%% Descrip.: Check if Label is one of the tags in PstnCtx.
+%% Returns : true | false
+%%--------------------------------------------------------------------
+is_tagged(Label, PstnCtx) when is_atom(Label), is_record(PstnCtx, pstn_ctx) ->
+    lists:member(Label, PstnCtx#pstn_ctx.tags).
+
+
+%%--------------------------------------------------------------------
+%% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           Dst     = term() (sipurl, route, sipdst, ...)
+%%           PstnCtx = pstn_ctx record(), context for this request
+%% Descrip.: Start a sippipe unless we are currently unit testing.
+%% Returns : term() = result of local:start_sippipe/4
+%%--------------------------------------------------------------------
+start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    case get({?MODULE, testing_sippipe}) of
+	{true, Res, none} ->
+	    Res;
+	{true, Res, Pid} when is_pid(Pid) ->
+	    Pid ! {start_sippipe, {Request, YxaCtx, Dst, AppData}},
+	    Res;
+	_ ->
+	    local:start_sippipe(Request, YxaCtx, Dst, AppData)
+    end.
+	    
+
 %%====================================================================
 %% Test functions
 %%====================================================================
@@ -619,5 +1099,157 @@ restore_sips_proto(OldURL, NewURL) when is_record(OldURL, sipurl), is_record(New
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
 test() ->
-    ok = pstnproxy_test:test(),
+    UserDb =
+	[{user, [
+		 {name, "autotest1"},
+		 {password, "secret"},
+		 {classes, [internal,national,mobile]},
+		 {addresses, ["sip:autotest1@example.org", "sip:234599@example.org"]}
+		]},
+	 {user, [
+		 {name, "autotest2"},
+		 {addresses, ["sip:autotest2@example.org"]}
+		]}
+
+	],
+    ok = sipuserdb_test:init(UserDb),
+
+    ExtraCfg = [
+		{userdb_modules,	[sipuserdb_test]},
+		{myhostnames,		["autotest.example.org"]},
+		{internal_to_e164,	[{"234599", "+46234599"}]}
+	       ],
+    yxa_test_config:init(pstnproxy, ExtraCfg),
+
+
+    %% add_caller_identity(pstn, Method, Request, Dst, PstnCtx)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 1.0"),
+    ACI_Dst1 = sipurl:parse("sip:some.gw.test.example.org"),
+    yxa_test_config:set(remote_party_id, true),
+    ACI_Ctx1 = #pstn_ctx{user = "autotest1"},
+    ACI_Header1 = keylist:from_list([{"Remote-Party-Id", ["untrusted"]}]),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 1.1"),
+    %% test normal case
+    ACI_Header1_Res = add_caller_identity(pstn, "INVITE", ACI_Header1, ACI_Dst1, ACI_Ctx1),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 1.2"),
+    %% verify
+    ["<sip:+46234599@some.gw.test.example.org>;party=calling;screen=yes;privacy=off"] =
+	keylist:fetch("Remote-Party-Id", ACI_Header1_Res),
+
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 2.0"),
+    ACI_Ctx2 = #pstn_ctx{user = "autotest2"},
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 2.1"),
+    %% test with user that has no number
+    ACI_Header2_Res = add_caller_identity(pstn, "INVITE", ACI_Header1, ACI_Dst1, ACI_Ctx2),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 2.2"),
+    %% verify
+    ["\"Anonymous\" <sip:autotest.example.org>;party=calling;screen=yes;privacy=on"] =
+	keylist:fetch("Remote-Party-Id", ACI_Header2_Res),
+
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 3.0"),
+    ACI_Ctx3 = #pstn_ctx{user = undefined,
+			 tags = [from_gateway]
+			},
+    ACI_Header3 = keylist:from_list([{"Remote-Party-Id", ["already-set"]},
+				     {"P-Preferred-Identity", ["already-set-too"]}
+				    ]),
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 3.1"),
+    %% test with INVITE from gateway
+    ACI_Header3_Res = add_caller_identity(pstn, "INVITE", ACI_Header3, ACI_Dst1, ACI_Ctx3),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 3.2"),
+    %% verify
+    ["already-set"] = keylist:fetch("Remote-Party-Id", ACI_Header3_Res),
+
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 4.0"),
+    ACI_Ctx4 = #pstn_ctx{user = unknown},
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 4.1"),
+    %% test not from gateway, no username
+    ACI_Header4_Res = add_caller_identity(pstn, "INVITE", ACI_Header3, ACI_Dst1, ACI_Ctx4),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 4.2"),
+    %% verify
+    ["\"Anonymous\" <sip:autotest.example.org>;party=calling;screen=yes;privacy=on"] =
+	keylist:fetch("Remote-Party-Id", ACI_Header4_Res),
+    [] = keylist:fetch("P-Preferred-Identity", ACI_Header4_Res),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 5.1"),
+    %% test with Remote-Party-Id disabled
+    yxa_test_config:set(remote_party_id, false),
+    ACI_Header5 = keylist:from_list([]),
+    ACI_Header5_Res = add_caller_identity(pstn, "INVITE", ACI_Header5, ACI_Dst1, ACI_Ctx4),
+    
+    autotest:mark(?LINE, "add_caller_identity/5 - pstn 5.2"),
+    %% verify
+    [] = keylist:fetch("Remote-Party-Id", ACI_Header5_Res),
+
+
+    %% add_caller_identity(sip, Method, Request, Dst, PstnCtx)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "add_caller_identity/5 - sip 1.0"),
+    ACI_SIP_Dst1 = sipurl:parse(siprequest:myhostname()),
+    yxa_test_config:set(remote_party_id, true),
+    ACI_SIP_Ctx1 = #pstn_ctx{user = undefined,
+			     tags = [from_gateway]},
+    ACI_SIP_Header1 = keylist:from_list([{"Remote-Party-Id", ["from-gateway"]},
+					 {"From", ["Gateway <sip:foo@pstn.example.org>"]}
+					]),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - sip 1.1"),
+    %% test normal case
+    ACI_SIP_Header1_Res = add_caller_identity(sip, "INVITE", ACI_SIP_Header1, ACI_SIP_Dst1, ACI_SIP_Ctx1),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - sip 1.2"),
+    %% verify
+    ["from-gateway"] = keylist:fetch("Remote-Party-Id", ACI_SIP_Header1_Res),
+
+
+    autotest:mark(?LINE, "add_caller_identity/5 - sip 2.0"),
+    ACI_SIP_Dst2 = sipurl:parse(siprequest:myhostname()),
+    yxa_test_config:set(remote_party_id, true),
+    ACI_SIP_Ctx2 = #pstn_ctx{user = undefined,
+			     tags = []},
+    ACI_SIP_Header2 = keylist:from_list([{"Remote-Party-Id", ["from-SIP-to-SIP"]},
+					 {"From", ["Sipper <sip:foo@example.org>"]}
+					]),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - sip 2.2"),
+    %% test to SIP not from PSTN gateway
+    ACI_SIP_Header2_Res = add_caller_identity(sip, "INVITE", ACI_SIP_Header2, ACI_SIP_Dst2, ACI_SIP_Ctx2),
+
+    autotest:mark(?LINE, "add_caller_identity/5 - sip 2.2"),
+    %% verify
+    ["from-SIP-to-SIP"] = keylist:fetch("Remote-Party-Id", ACI_SIP_Header2_Res),
+
+    autotest:mark(?LINE, "add_caller_identity/3 - sip 3"),
+    %% test with Remote-Party-Id disabled, header should be untouched
+    yxa_test_config:set(remote_party_id, false),
+    ACI_SIP_Header3 = keylist:from_list([{"Remote-Party-Id", ["set"]},
+					 {"Autotest", ["true"]}
+					]),
+    ACI_SIP_Header3 = add_caller_identity(sip, "INVITE", ACI_SIP_Header3, ACI_SIP_Dst1, ACI_SIP_Ctx2),
+    
+
+
+    autotest:mark(?LINE, "add_caller_identity/3 - other 1"),
+    %% test with Remote-Party-Id disabled, header should be untouched
+    yxa_test_config:set(remote_party_id, true),
+    ACI_Other_Header3 = keylist:from_list([{"Remote-Party-Id", ["set"]},
+					 {"Autotest", ["true"]}
+					]),
+    ACI_Other_Header3 = add_caller_identity(sip, "non-INVITE", ACI_Other_Header3, ACI_SIP_Dst1, ACI_SIP_Ctx2),
+    
+
+
+    pstnproxy_test:test(),
+
     ok.

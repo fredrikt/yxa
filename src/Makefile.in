@@ -90,6 +90,7 @@ imported_hrl_FILES = \
 	include/database_gruu.hrl \
 	include/directory.hrl \
 	include/phone.hrl \
+	include/pstnproxy.hrl \
 	include/sipproxy.hrl \
 	include/siprecords.hrl \
 	include/sipsocket.hrl \

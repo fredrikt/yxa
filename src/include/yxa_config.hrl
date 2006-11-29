@@ -474,6 +474,12 @@
 		      type	= string,
 		      normalize	= false
 		     },
+	   #cfg_entry{key	= pstnproxy_challenge_bye_to_pstn_dst,
+		      default	= false,
+		      type	= bool,
+		      required	= true
+		     },
+
 
 	   %% undocumented, don't use unless you really know you should!
 	   #cfg_entry{key	= pstnproxy_ignore_route_header_bad_idea,
