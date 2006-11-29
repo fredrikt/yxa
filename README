@@ -288,6 +288,11 @@ tcp_connect_timeout		(default: 20) Number of seconds before we time
 				out trying to establish a TCP connection to a
 				remote host.
 
+udp_max_datagram_size		(default: 1200) Max size of messages before we
+				switch from TCP to UDP. If you have phones that
+				only do UDP (and therefor suck), set this to
+				for example 3000.
+
 userdb_modules			(default: [sipuserdb_mnesia]) User database
 				backend(s) to use. See "User database" section
 				below.

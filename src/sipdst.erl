@@ -342,9 +342,11 @@ decide_transport(URI, ApproxMsgSize) ->
 	    tls;
 
 	_ ->
-	    case ApproxMsgSize > 1200 of
+	    {ok, MaxUDP} = yxa_config:get_env(udp_max_datagram_size),
+	    case ApproxMsgSize > MaxUDP of
 		true  ->
-		    logger:log(debug, "url_to_dstlist: Was going to use UDP, but size requires TCP"),
+		    logger:log(debug, "url_to_dstlist: Was going to use UDP, but size requires TCP (~p > ~p)",
+			      [ApproxMsgSize, MaxUDP]),
 		    tcp;
 		false ->
 		    udp

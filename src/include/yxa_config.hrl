@@ -253,11 +253,16 @@
 		   },
 	 #cfg_entry{key		= tcp_connect_timeout,
 		    default	= 20,
-		    type	= integer},
+		    type	= integer
+		   },
 	 #cfg_entry{key		= enable_v6,
 		    default	= false,
 		    type	= bool
 		   },
+	 #cfg_entry{key		= udp_max_datagram_size,
+		    default	= 1200,
+		    type	= integer
+		    },
 
 	 %% TLS settings
 	 #cfg_entry{key		= ssl_server_certfile,
