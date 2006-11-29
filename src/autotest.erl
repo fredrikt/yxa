@@ -89,7 +89,16 @@
 		       stun,
 		       appserver,
 		       presence_pidf,
-		       subscription
+		       subscription,
+		       sipuserdb_test,
+		       yxa_config,
+
+		       %% YXA applications
+		       incomingproxy,
+		       outgoingproxy,
+		       pstnproxy,
+		       appserver,
+		       eventserver
 		      ]).
 
 %%====================================================================

@@ -35,6 +35,7 @@ erl_FILES = \
 	yxa_app.erl \
 	appserver.erl \
 	appserver_glue.erl \
+	appserver_test.erl \
 	autotest.erl \
 	bootstrap.erl \
 	contact.erl \
@@ -46,13 +47,16 @@ erl_FILES = \
 	gruu.erl \
 	hex.erl \
 	incomingproxy.erl \
+	incomingproxy_test.erl \
 	key_val_db.erl \
 	keylist.erl \
 	local.erl \
 	logger.erl \
 	lookup.erl \
 	outgoingproxy.erl \
+	outgoingproxy_test.erl \
 	pstnproxy.erl \
+	pstnproxy_test.erl \
 	registrar.erl \
 	sipauth.erl \
 	sipdialog.erl \

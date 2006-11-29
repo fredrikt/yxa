@@ -17,12 +17,14 @@
 	 init/0,
 	 request/2,
 	 response/2,
-	 terminate/1,
-
-	 test/0
+	 terminate/1
 	]).
 
-%% exported for CPL subsystem
+-export([test/0]).
+
+%%--------------------------------------------------------------------
+%%% Application specific exports, exported for CPL subsystem
+%%--------------------------------------------------------------------
 -export([locations_to_actions/2,
 	 location_to_call_action/2
 	]).
@@ -651,5 +653,7 @@ test() ->
 			  ],
 
     {ok, LToActions_Actions3, []} = locations_to_actions2(LToActions_Locations3, 30, [], []),
+
+    ok = appserver_test:test(),
 
     ok.

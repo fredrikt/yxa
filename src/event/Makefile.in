@@ -37,6 +37,7 @@ erl_FILES = \
 	active_subscription.erl \
 	dialog_package.erl \
 	eventserver.erl \
+	eventserver_test.erl \
 	event_mnesia_monitor.erl \
 	notifylist.erl \
 	presence_package.erl \

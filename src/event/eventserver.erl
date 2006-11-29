@@ -19,6 +19,11 @@
 	 terminate/1
 	]).
 
+-export([test/0]).
+
+%%--------------------------------------------------------------------
+%%% Application specific exports
+%%--------------------------------------------------------------------
 -export([authenticate_subscriber/2
 	]).
 
@@ -470,3 +475,16 @@ make_extraheaders(Status, ExtraHeaders_In) ->
 		[]
 	end,
     ExtraHeaders_In ++ AllowEvents ++ Server.
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+    ok = eventserver_test:test(),
+    ok.
