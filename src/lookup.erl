@@ -966,7 +966,7 @@ get_remote_party_number(User, _Header, URI, DstHost) when is_list(User), is_list
 		    RPURI = sipurl:set([{user, FormattedNumber}, {pass, none}, {param, []}], URI),
 		    {ok, contact:new(none, RPURI, Parameters), FormattedNumber};
 		none ->
-		    logger:log(error, "Lookup: Failed to format telephone number for Remote-Party-Id", [Number]),
+		    logger:log(error, "Lookup: Failed to format telephone number '~p' for Remote-Party-Id", [Number]),
 		    none
 	    end;
 	nomatch ->
