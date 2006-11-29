@@ -560,7 +560,7 @@ forward_request(Request, YxaCtx, FwdURL) ->
 %% Returns : Does not matter
 %%--------------------------------------------------------------------
 proxy_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
-    local:start_sippipe(Request, YxaCtx, Dst).
+    start_sippipe(Request, YxaCtx, Dst, []).
 
 %%--------------------------------------------------------------------
 %% Function: relay_request(Request, YxaCtx, Dst)
@@ -582,7 +582,7 @@ proxy_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
 relay_request(#request{method = Method} = Request, YxaCtx, Dst) when Method == "CANCEL"; Method == "BYE" ->
     logger:log(normal, "~s: incomingproxy: Relay ~s ~s (unauthenticated)",
 	       [YxaCtx#yxa_ctx.app_logtag, Method, sipurl:print(Request#request.uri)]),
-    local:start_sippipe(Request, YxaCtx, Dst);
+    start_sippipe(Request, YxaCtx, Dst, []);
 
 %%
 %% Anything but CANCEL or BYE
@@ -597,13 +597,13 @@ relay_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
 	{authenticated, User} ->
 	    logger:log(debug, "Relay: User ~p is authenticated", [User]),
 	    logger:log(normal, "~s: incomingproxy: Relay ~s (authenticated)", [LogTag, relay_dst2str(Dst)]),
-	    local:start_sippipe(Request, YxaCtx, Dst);
+	    start_sippipe(Request, YxaCtx, Dst, []);
 	{stale, User} ->
 	    case local:incomingproxy_challenge_before_relay(Origin, Request, Dst) of
 		false ->
 		    logger:log(debug, "Relay: STALE authentication (user ~p), but local policy says we "
 			       "should not challenge", [User]),
-		    local:start_sippipe(Request, YxaCtx, Dst);
+		    start_sippipe(Request, YxaCtx, Dst, []);
 		true ->
 		    logger:log(debug, "Relay: STALE authentication, sending challenge"),
 		    logger:log(normal, "~s: incomingproxy: Relay ~s -> STALE authentication (user ~p) ->"
@@ -615,7 +615,7 @@ relay_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
             case local:incomingproxy_challenge_before_relay(Origin, Request, Dst) of
                 false ->
                     logger:log(debug, "Relay: Failed authentication, but local policy says we should not challenge"),
-		    local:start_sippipe(Request, YxaCtx, Dst);
+		    start_sippipe(Request, YxaCtx, Dst, []);
                 _ ->
 		    logger:log(debug, "Relay: Failed authentication, sending challenge"),
 		    logger:log(normal, "~s: incomingproxy: Relay ~s -> 407 Proxy Authorization Required",
@@ -630,3 +630,23 @@ relay_dst2str(route) ->
     "according to Route header";
 relay_dst2str(_) ->
     "unknown dst".
+
+%%--------------------------------------------------------------------
+%% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           Dst     = term() (sipurl, route, sipdst, ...)
+%%           PstnCtx = pstn_ctx record(), context for this request
+%% Descrip.: Start a sippipe unless we are currently unit testing.
+%% Returns : term() = result of local:start_sippipe/4
+%%--------------------------------------------------------------------
+start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
+    case get({?MODULE, testing_sippipe}) of
+	{true, Res, none} ->
+	    Res;
+	{true, Res, Pid} when is_pid(Pid) ->
+	    Pid ! {start_sippipe, {Request, YxaCtx, Dst, AppData}},
+	    Res;
+	_ ->
+	    local:start_sippipe(Request, YxaCtx, Dst, AppData)
+    end.

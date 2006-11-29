@@ -501,7 +501,7 @@ proxy_request(Request, YxaCtx, DstURI) when is_record(Request, request), is_reco
 					    is_record(DstURI, sipurl) ->
     case keylist:fetch('route', Request#request.header) of
 	[] ->
-	    local:start_sippipe(Request, YxaCtx, DstURI);
+	    local:start_sippipe(Request, YxaCtx, DstURI, []);
 	Route ->
 	    %% XXX this is a configurable option only because in SU's setup it
 	    %% might break calls through the gateway when PRACKs it sends gets
@@ -510,9 +510,9 @@ proxy_request(Request, YxaCtx, DstURI) when is_record(Request, request), is_reco
 		{ok, true} ->
 		    logger:log(debug, "Warning: Routing of request according to "
 			       "Route header disabled  : ~p - BAD IDEA", [Route]),
-		    local:start_sippipe(Request, YxaCtx, DstURI);
+		    local:start_sippipe(Request, YxaCtx, DstURI, []);
 		{ok, false} ->
-		    local:start_sippipe(Request, YxaCtx, route)
+		    local:start_sippipe(Request, YxaCtx, route, [])
 	    end
     end.
 
@@ -585,9 +585,9 @@ relay_request_to_pstn(Request, YxaCtx, DstURI, DstNumber) when is_record(Request
 relay_request_to_pstn_isauth(Request, YxaCtx, DstURI) ->
     case keylist:fetch('route', Request#request.header) of
 	[] ->
-	    local:start_sippipe(Request, YxaCtx, DstURI);
+	    local:start_sippipe(Request, YxaCtx, DstURI, []);
 	_Route ->
-	    local:start_sippipe(Request, YxaCtx, route)
+	    local:start_sippipe(Request, YxaCtx, route, [])
     end.
 
 %%--------------------------------------------------------------------
