@@ -264,6 +264,7 @@ test_module(Module) ->
 %% test_module2 - part of test_module but runs in a separate pid and
 %% reports result to parent (test_module)
 test_module2(Parent, Module) ->
+    yxa_test_config:init(incomingproxy, []),
     Res =
 	case catch Module:test() of
 	    ok ->
