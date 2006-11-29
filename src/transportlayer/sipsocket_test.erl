@@ -95,7 +95,7 @@ get_socket(#sipdst{proto = yxa_test}) ->
 %% Descrip.: Return a fake socket or a term based on process dict.
 %% Returns : sipsocket record() | term()
 %%--------------------------------------------------------------------
-get_specific_socket({yxa_test, _Id}) ->
+get_specific_socket(#ob_id{proto = yxa_test}) ->
     case get({sipsocket_test, get_specific_socket}) of
 	undefined ->
 	    #sipsocket{module = ?MODULE,

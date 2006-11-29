@@ -1125,6 +1125,8 @@ test() ->
     %% test lookupnumber2(Number, RegExps)
     %%--------------------------------------------------------------------
 
+    yxa_test_config:init([{homedomain, ["homedomain.example.org"]}]),
+
     autotest:mark(?LINE, "lookupnumber2/2 - 1"),
     %% test empty result
     error = lookupnumber2("123", [{"123", ""}]),
@@ -1156,6 +1158,11 @@ test() ->
     %% test valid rewrite, with default protocol and homedomain result
     LNURL7 = sipurl:parse("sip:ft@" ++ MyHostname),
     {proxy, LNURL7} = lookupnumber2("123", [{"123", "ft@" ++ MyHostname}]),
+
+    autotest:mark(?LINE, "lookupnumber2/2 - 8"),
+    %% test that we get 'proxy' with homedomain
+    LNURL8 = sipurl:parse("sips:ft@homedomain.example.org"),
+    {proxy, LNURL8} = lookupnumber2("123", [{"123", "sips:ft@homedomain.example.org"}]),
 
 
     %% test lookupregexproute2(Input, Routes)
@@ -1272,13 +1279,17 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 0"),
     LMult_LDBE_SocketId1 = #locationdb_socketid{node  = node(),
-						id    = {yxa_test, erlang:now()},
+						id    = #ob_id{proto = yxa_test,
+							       id    = erlang:now()
+							      },
 						proto = udp,
 						addr  = "192.0.2.1",
 						port  = 1
 					       },
     LMult_LDBE_SocketId2 = #locationdb_socketid{node  = node(),
-						id    = {yxa_test, erlang:now()},
+						id    = #ob_id{proto = yxa_test,
+							       id    = erlang:now()
+							      },
 						proto = tcp,
 						addr  = "192.0.2.2",
 						port  = 2
@@ -1464,7 +1475,9 @@ test_mnesia_dependant_functions() ->
     %% test with Outbound socket to this node but no longer available
     LGL_Contact11_URL = sipurl:parse("sip:ft@192.0.2.212"),
     LGL_Username11 = "__test_user_LGL_11__",
-    LGL_SocketId11 = {yxa_test, 1},
+    LGL_SocketId11 = #ob_id{proto = yxa_test,
+			    id = 1
+			   },
     LGL_LDBSocketId11 = #locationdb_socketid{node = node(),
 					     id   = LGL_SocketId11
 					    },
