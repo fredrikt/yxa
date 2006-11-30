@@ -176,12 +176,12 @@ auth_and_tag(Request, YxaCtx) ->
 		  orig_uri	= Request#request.uri
 		 },
 
-    Tags = auth_and_tag_get_tags(Request, PstnCtx1),
+    Tags = auth_and_tag_get_tags(Request, YXAPeerAuth, PstnCtx1),
     PstnCtx2 = PstnCtx1#pstn_ctx{tags = Tags},
 
     PstnCtx = local:pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx2),
 
-    case auth_and_tag_verify_from(Request, YxaCtx, YXAPeerAuth, PstnCtx) of
+    case auth_and_tag_verify_from(Request, YxaCtx, PstnCtx) of
 	ok ->
 	    {ok, PstnCtx};
 	_ ->
@@ -252,13 +252,15 @@ auth_and_tag_get_user(Request) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: auth_and_tag_get_tags(Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
+%% Function: auth_and_tag_get_tags(Request, IsPeerAuth, PstnCtx)
+%%           Request    = request record()
+%%           IsPeerAuth = boolean(), X-Yxa-Peer-Auth authenticated?
+%%           PstnCtx    = pstn_ctx record()
 %% Descrip.: Create a list of tags for this request.
 %% Returns : Tags = list() of term()
 %%--------------------------------------------------------------------
-auth_and_tag_get_tags(Request, PstnCtx) ->
+auth_and_tag_get_tags(Request, IsPeerAuth, PstnCtx) when is_record(Request, request), is_boolean(IsPeerAuth),
+							 is_record(PstnCtx, pstn_ctx) ->
     FromGw =
 	case is_pstngateway(PstnCtx#pstn_ctx.ip) of
 	    true ->  [from_gateway];
@@ -280,15 +282,19 @@ auth_and_tag_get_tags(Request, PstnCtx) ->
 		[]
 	end,
 
-    FromGw ++ HasRoute.
+    AuthFlags =
+	case IsPeerAuth of
+	    true ->  [peer_auth];
+	    false -> []
+	end,
+
+    FromGw ++ HasRoute ++ AuthFlags.
 
 
 %%--------------------------------------------------------------------
-%% Function: auth_and_tag_verify_from(Request, YxaCtx, YXAPeerAuth,
-%%                                    PstnCtx)
+%% Function: auth_and_tag_verify_from(Request, YxaCtx, PstnCtx)
 %%           Request     = request record()
 %%           YxaCtx      = yxa_ctx record()
-%%           YXAPeerAuth = bool(), user authenticated by peer of ours?
 %%           PstnCtx     = pstn_ctx record()
 %% Descrip.: If the From: has an address belonging to one of our
 %%           users, verify that the sender is authorized to use it.
@@ -298,10 +304,11 @@ auth_and_tag_get_tags(Request, PstnCtx) ->
 %% Returns : ignore |      drop request
 %%           ok            continue processing request
 %%--------------------------------------------------------------------
-auth_and_tag_verify_from(Request, YxaCtx, YXAPeerAuth, PstnCtx) ->
+auth_and_tag_verify_from(Request, YxaCtx, PstnCtx) ->
     #yxa_ctx{thandler	= THandler,
 	     app_logtag	= LogTag
 	    } = YxaCtx,
+    YXAPeerAuth = is_tagged(peer_auth, PstnCtx),
     case local:pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx) of
 	ignore    -> ignore;
 	ok        -> ok;
@@ -545,11 +552,24 @@ perform_actions([{proxy, Dst} | _], Request, YxaCtx, PstnCtx) when is_record(Dst
 		true ->
 		    NewHeader = add_caller_identity(PstnCtx#pstn_ctx.destination, Request#request.method,
 						    Request#request.header, Dst, PstnCtx),
+
+		    %% make sure we don't downgrade SIPS to SIP
 		    NewURI = restore_sips_proto(PstnCtx#pstn_ctx.orig_uri, Request#request.uri),
-		    NewRequest = Request#request{uri    = NewURI,
-						 header = NewHeader
-						},
-		    start_sippipe(NewRequest, YxaCtx, Dst, [PstnCtx]);
+		    NewRequest1 =
+			Request#request{uri = NewURI,
+					header = NewHeader
+				       },
+		    {NewDst, NewRequest} =
+			case Dst of
+			    _ when is_record(Dst, sipurl) ->
+				NewDst1 = restore_sips_proto(PstnCtx#pstn_ctx.orig_uri, Dst),
+				{NewDst1, NewRequest1};
+			    route ->
+				%% XXX do we need to ensure first Route header is SIPS, if Request-URI was?
+				{Dst, NewRequest1}
+			end,
+
+		    start_sippipe(NewRequest, YxaCtx, NewDst, [PstnCtx]);
 		false ->
 		    ok
 	    end;
