@@ -21,6 +21,7 @@
 	 can_use_address_detail/2,
 	 realm/0,
 	 add_x_yxa_peer_auth/5,
+	 add_credentials/7,
 	 classify_number/2,
 
 	 test/0
@@ -482,14 +483,44 @@ can_register(Header, ToURL) ->
 	    {false, none}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: add_x_yxa_peer_auth(Method, URI, Header, User, Secret)
+%%           Method = string(), SIP method
+%%           URI    = sipurl record()
+%%           Header = keylist record()
+%%           User   = string()
+%%           Secret = string()
+%% Descrip.: Compute and add an X-YXA-Peer-Auth header to Header.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
 add_x_yxa_peer_auth(Method, URI, Header, User, Secret) when is_list(Method), is_record(URI, sipurl),
-						    is_record(Header, keylist), is_list(User), is_list(Secret) ->
+							    is_record(Header, keylist), is_list(User),
+							    is_list(Secret) ->
+    add_credentials(digest, "X-YXA-Peer-Auth", Method, URI, Header, User, Secret).
+
+%%--------------------------------------------------------------------
+%% Function: add_credentials(Type, HeaderName, Method, URI, Header,
+%%                           User, Secret)
+%%           Type       = atom(), only 'digest' supported so far!
+%%           HeaderName = string(), SIP header name
+%%           Method     = string(), SIP method
+%%           URI        = sipurl record()
+%%           Header     = keylist record()
+%%           User       = string()
+%%           Secret     = string()
+%% Descrip.: Compute and add a MD5 digest response header (HeaderName)
+%%           to a header.
+%% Returns : NewHeader = keylist record()
+%%--------------------------------------------------------------------
+add_credentials(digest, HeaderName, Method, URI, Header, User, Secret)
+  when is_list(HeaderName), is_list(Method), is_record(URI, sipurl), is_record(Header, keylist), is_list(User),
+       is_list(Secret) ->
     {Realm, Nonce, Opaque} = get_challenge(),
     URIstr = sipurl:print(URI),
     Response = get_response(Nonce, Method, URIstr, User, Secret, Realm),
     AuthStr = print_auth_response("Digest", User, Realm, URIstr,
 				  Response, Nonce, Opaque, "md5"),
-    keylist:set("X-YXA-Peer-Auth", [AuthStr], Header).
+    keylist:set(HeaderName, [AuthStr], Header).
     
 %%--------------------------------------------------------------------
 %% Function: print_auth_response(AuthMethod, User, Realm, URIstr,
