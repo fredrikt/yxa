@@ -309,6 +309,7 @@ do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
     logger:log(debug, "Auth: timestamp: ~p now: ~p", [Timestamp, Now]),
     Response2 = get_response(Nonce2, Method, AuthURI,
 			     OrigUser, Password, Realm),
+    {ok, AuthTimeValid} = yxa_config:get_env(sipauth_challenge_expiration),
     if
 	Password == nomatch ->
 	    logger:log(normal, "Auth: Authentication failed for non-existing user ~p", [User]),
@@ -320,9 +321,13 @@ do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
 	Nonce /= Nonce2 ->
 	    logger:log(normal, "Auth: Nonce ~p /= ~p, authentication failed for user ~p", [Nonce, Nonce2, User]),
 	    false;
-	Timestamp < Now - 30 ->
+	AuthTimeValid > 0 andalso Timestamp < (Now - AuthTimeValid) ->
 	    logger:log(normal, "Auth: Timestamp ~p too old. Now: ~p, authentication failed for user ~p",
 		       [Timestamp, Now, User]),
+	    {stale, User};
+	AuthTimeValid < 0 ->
+	    %% In unit test cases, we need a way to get 'stale' authentication
+	    logger:log(normal, "Auth: 'sipauth_challenge_expiration' less than zero, treating as stale"),
 	    {stale, User};
 	Timestamp > Now ->
 	    logger:log(normal, "Auth: Timestamp ~p too new. Now: ~p, authentication failed for user ~p",

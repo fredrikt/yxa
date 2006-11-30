@@ -94,6 +94,11 @@
 		    list_of	= true,
 		    type	= atom
 		   },
+	 #cfg_entry{key		= sipauth_challenge_expiration,
+		    default	= 30,
+		    type	= integer
+		   },
+
 
 	 %% Userdb
 	 #cfg_entry{key		= userdb_modules,

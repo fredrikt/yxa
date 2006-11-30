@@ -200,6 +200,10 @@ sipauth_password		(default: "") HTTP Auth internal cookie
 
 sipauth_unauth_classlist	(default: []) Classes that anyone can call
 
+sipauth_challenge_expiration	(default: 30) How many seconds a challenge is
+                                valid. Set to 0 to disable check for stale
+                                authentication.
+
 databaseservers			(required if using remote databases)
 				Erlang node specification of the database
 				servers
@@ -481,6 +485,12 @@ x_yxa_peer_auth_secret		(no default, not required) Shared secret for this
 allowed_request_methods		(default: ["INVITE", "ACK", "PRACK", "CANCEL",
 					   "BYE", "OPTIONS"]) What SIP requests
 				we should allow to reach our PSTN gateways.
+
+pstnproxy_challenge_bye_to_pstn_dst (default: true) Should we challenge BYEs sent
+				towards a PSTN gateway? NOTE: This does NOT work
+                                if you have 'free' classes, since we are not
+                                dialog stateful and therefor can't know that the
+                                BYE is sent to a 'free' destination.
 
 incomingproxy:
 --------------
