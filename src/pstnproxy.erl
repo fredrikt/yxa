@@ -138,14 +138,13 @@ terminate(Mode) when is_atom(Mode) ->
 %%                          certificate used by client to send us
 %%                          this request.
 %%
-%%           user         : string(), the SIP user corresponding to
-%%                          the From: URI in this request, or
-%%                          undefined.
+%%           user         : undefined | string(), the SIP user for
+%%                          which valid credentials has been provided
 %%
 %%           stale_auth   : true  - authentication provided, but it is
 %%                                  stale
-%%                          false - authentication provided, not stale
-%%                          undefined - no authentication provided
+%%                          false - authentication not stale, but not
+%%                                  necessary provided
 %%
 %%           orig_uri     : sipurl record(), the Request-URI of the
 %%                          request we received.
@@ -230,8 +229,8 @@ auth_and_tag_get_cert(_Origin, _LogTag) ->
 %% Descrip.: Try to get a username for this request, and also check
 %%           to see if there are authentication information present.
 %% Returns : {ok, Stale, YXAPeerAuth, User}
-%%           Stale       = undefined | bool(), was the provided
-%%                         authentication information stale?
+%%           Stale       = was the provided authentication
+%%                         information stale? false if none provided.
 %%           YXAPeerAuth = bool(), user information vouched for by a
 %%                         peer of ours, through X-Yxa-Peer-Auth?
 %%           User        = undefined | string(), username
@@ -240,12 +239,13 @@ auth_and_tag_get_user(Request) ->
     {Stale, YXAPeerAuth, UserRes} =
 	case sipauth:pstn_get_user_verified(Request#request.header, Request#request.method) of
 	    false ->
-		{undefined, false, undefined};
+		{false, false, undefined};
 	    {stale, User} ->
 		{true, false, User};
 	    {authenticated, User} ->
 		{false, false, User};
 	    {peer_authenticated, User} ->
+		%% this implies that the peer authentication provided wasn't stale
 		{false, true, User}
 	end,
     {ok, Stale, YXAPeerAuth, UserRes}.
@@ -359,13 +359,8 @@ auth_and_tag_verify_from2(Request, YxaCtx, PstnCtx) ->
 	    end;
 
 	User when is_list(User) ->
-	    Stale =
-		case PstnCtx#pstn_ctx.user of
-		    {stale, _} -> true;
-		    _ -> false
-		end,
-
 	    %% PstnCtx did not contain a SIP username, or the authentication was stale. Send challenge.
+	    Stale = PstnCtx#pstn_ctx.stale_auth,
 	    transactionlayer:send_challenge(THandler, proxy, Stale, _RetryAfter = none),
 	    ignore
     end.
@@ -396,8 +391,6 @@ handle_request(Request, YxaCtx, PstnCtx) ->
 		    false ->
 			%% no Route, and not destined for the proxy itself
 			ToHost = (Request#request.uri)#sipurl.host,
-			logger:log(debug, "FREDRIK: ToHost ~p, is_localhostname ~p is_pstngateway ~p",
-				   [ToHost, is_localhostname(ToHost), is_pstngateway(ToHost)]),
 			case is_localhostname(ToHost) orelse
 			    is_pstngateway(ToHost) of
 			    true ->
@@ -455,14 +448,14 @@ route_request_with_route(Request, YxaCtx, PstnCtx) ->
 	    end;
 	_ ->
 	    %% non-INVITE, allow if authenticated (not stale), or from one of our gateways
-	    case (PstnCtx#pstn_ctx.user /= undefined) andalso
-		(PstnCtx#pstn_ctx.stale_auth == false) of
+	    case is_list(PstnCtx#pstn_ctx.user) andalso
+		(PstnCtx#pstn_ctx.stale_auth /= false) of
 		true ->
 		    logger:log(debug, "~s: pstnproxy: Proxying authenticated request with Route header",
 			       [YxaCtx#yxa_ctx.app_logtag]),
 		    [{proxy, route}];
 		false ->
-		    [{challenge, proxy, (PstnCtx#pstn_ctx.stale_auth == true)}]
+		    [{challenge, proxy, PstnCtx#pstn_ctx.stale_auth}]
 	    end
     end.
 
@@ -548,13 +541,13 @@ perform_actions([{proxy, Dst} | _], Request, YxaCtx, PstnCtx) when is_record(Dst
     {ok, AllowedMethods} = local:pstnproxy_allowed_methods(Request, PstnCtx),
     case lists:member(Request#request.method, AllowedMethods) of
 	true ->
-	    case authorize_proxying(Request, THandler, LogTag, PstnCtx) of
-		true ->
+	    case authorize_proxying(Request, YxaCtx, PstnCtx) of
+		{ok, true, NewPstnCtx} ->
 		    NewHeader = add_caller_identity(PstnCtx#pstn_ctx.destination, Request#request.method,
-						    Request#request.header, Dst, PstnCtx),
+						    Request#request.header, Dst, NewPstnCtx),
 
 		    %% make sure we don't downgrade SIPS to SIP
-		    NewURI = restore_sips_proto(PstnCtx#pstn_ctx.orig_uri, Request#request.uri),
+		    NewURI = restore_sips_proto(NewPstnCtx#pstn_ctx.orig_uri, Request#request.uri),
 		    NewRequest1 =
 			Request#request{uri = NewURI,
 					header = NewHeader
@@ -562,15 +555,15 @@ perform_actions([{proxy, Dst} | _], Request, YxaCtx, PstnCtx) when is_record(Dst
 		    {NewDst, NewRequest} =
 			case Dst of
 			    _ when is_record(Dst, sipurl) ->
-				NewDst1 = restore_sips_proto(PstnCtx#pstn_ctx.orig_uri, Dst),
+				NewDst1 = restore_sips_proto(NewPstnCtx#pstn_ctx.orig_uri, Dst),
 				{NewDst1, NewRequest1};
 			    route ->
 				%% XXX do we need to ensure first Route header is SIPS, if Request-URI was?
 				{Dst, NewRequest1}
 			end,
 
-		    start_sippipe(NewRequest, YxaCtx, NewDst, [PstnCtx]);
-		false ->
+		    start_sippipe(NewRequest, YxaCtx, NewDst, [NewPstnCtx]);
+		{ok, false, _NewPstnCtx} ->
 		    ok
 	    end;
 	false ->
@@ -819,120 +812,132 @@ perform_lookup(local, Request, PstnCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: authorize_proxying(Request, THandler, LogTag, PstnCtx)
-%%           Request  = request record()
-%%           THandler = term(), server transaction handle
-%%           LogTag   = string(), log prefix
-%%           PstnCtx  = pstn_ctx record(), context for this request
+%% Function: authorize_proxying(Request, YxaCtx, PstnCtx)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           PstnCtx = pstn_ctx record(), context for this request
 %% Descrip.: Before we proxy a request somewhere, make sure that it
 %%           is not against our policy.
-%% Returns : true | false
+%% Returns : {ok, Verdict, NewPstnCtx}
+%%           Verdict = true | false
 %%--------------------------------------------------------------------
-authorize_proxying(Request, THandler, LogTag, PstnCtx) ->
+authorize_proxying(Request, YxaCtx, PstnCtx) ->
     case is_tagged(from_gateway, PstnCtx) of
 	true ->
 	    logger:log(normal, "~s: pstnproxy: Allowing request to destination '~p' from PSTN gateway",
-		       [LogTag, PstnCtx#pstn_ctx.destination]),
-	    true;
+		       [YxaCtx#yxa_ctx.app_logtag, PstnCtx#pstn_ctx.destination]),
+	    {ok, true, PstnCtx};
 	false ->
 	    case PstnCtx#pstn_ctx.destination of
 		pstn ->
-		    authorize_user_call_to_pstn(Request, THandler, LogTag, PstnCtx);
+		    authorize_user_call_to_pstn(Request, YxaCtx, PstnCtx);
 		sip ->
 		    case PstnCtx#pstn_ctx.stale_auth of
 			true ->
+			    THandler = YxaCtx#yxa_ctx.thandler,
 			    transactionlayer:send_challenge(THandler, proxy, _Stale = true, _RetryAfter = none),
-			    false;
+			    {ok, false, PstnCtx};
 			false ->
-			    true
+			    {ok, true, PstnCtx}
 		    end
 	    end
     end.
 
 
 %%--------------------------------------------------------------------
-%% Function: authorize_user_call_to_pstn(Request, THandler, LogTag,
-%%                                       PstnCtx)
-%%           Request  = request record()
-%%           THandler = term(), server transaction handle
-%%           LogTag   = string(), log prefix
-%%           PstnCtx  = pstn_ctx record(), context for this request
+%% Function: authorize_user_call_to_pstn(Request, YxaCtx, PstnCtx)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           PstnCtx = pstn_ctx record(), context for this request
 %% Descrip.: Part of authorize_proxying/4 - the destination is PSTN
 %%           and we need to make sure the number is permissible for
 %%           the originating user.
-%% Returns : true | false
+%% Returns : {ok, Verdict, NewPstnCtx}
+%%           Verdict = true | false
 %%--------------------------------------------------------------------
-authorize_user_call_to_pstn(Request, THandler, LogTag, PstnCtx) ->
-    ToNumber = case local:rewrite_potn_to_e164(PstnCtx#pstn_ctx.called_number) of
-		   error -> PstnCtx#pstn_ctx.called_number;
-		   N when is_list(N) -> N
-	       end,
+authorize_user_call_to_pstn(Request, YxaCtx, PstnCtx) ->
+    DstNumber =
+	case local:rewrite_potn_to_e164(PstnCtx#pstn_ctx.called_number) of
+	    error -> PstnCtx#pstn_ctx.called_number;
+	    N when is_list(N) -> N
+	end,
     {ok, Classdefs} = yxa_config:get_env(classdefs),
-    {ok, Class} = sipauth:classify_number(ToNumber, Classdefs),
+    {ok, Class} = sipauth:classify_number(DstNumber, Classdefs),
     {ok, UnauthClasses} = yxa_config:get_env(sipauth_unauth_classlist),
     User = PstnCtx#pstn_ctx.user,
+    PstnCtx1 =
+	PstnCtx#pstn_ctx{dst_number = DstNumber,
+			 dst_class  = Class
+			},
     case lists:member(Class, UnauthClasses) of
 	true ->
 	    logger:log(normal, "~s: pstnproxy: Allowing request from user ~p to number available to anyone "
-		       "(~s, class '~p')", [LogTag, User, ToNumber, Class]),
-	    true;
+		       "(~s, class '~p')", [YxaCtx#yxa_ctx.app_logtag, User, DstNumber, Class]),
+	    {ok, true, PstnCtx1};
 	false when is_list(User) ->
-	    case local:is_allowed_pstn_dst(User, ToNumber, Request#request.header, Class) of
+	    case local:is_allowed_pstn_dst(User, DstNumber, Request#request.header, Class) of
 		true ->
-		    check_auth_for_allowed_pstn_dst(User, ToNumber, Request, Class, THandler, LogTag, PstnCtx);
+		    Verdict = check_auth_for_allowed_pstn_dst(Request, YxaCtx, PstnCtx1),
+		    {ok, Verdict, PstnCtx1};
 		false ->
 		    logger:log(normal, "~s: pstnproxy: User ~p NOT allowed request to number ~s, class '~p'",
-			       [LogTag, User, ToNumber, Class]),
-		    transactionlayer:send_response_handler(THandler, 403, "Forbidden", []),
-		    false
+			       [YxaCtx#yxa_ctx.app_logtag, User, DstNumber, Class]),
+		    transactionlayer:send_response_handler(YxaCtx#yxa_ctx.thandler, 403, "Forbidden", []),
+		    {ok, false, PstnCtx1}
 	    end;
 	false when User == undefined ->
-	    check_unauth_request_to_pstn_dst(ToNumber, Request, Class, THandler, LogTag, PstnCtx)
+	    Verdict = check_unauth_request_to_pstn_dst(Request, YxaCtx, PstnCtx1),
+	    {ok, Verdict, PstnCtx1}
     end.
 
-check_auth_for_allowed_pstn_dst(User, ToNumber, Request, Class, THandler, LogTag, PstnCtx) ->
+%% part of authorize_user_call_to_pstn/3
+%% Returns: true | false
+check_auth_for_allowed_pstn_dst(Request, YxaCtx, PstnCtx) ->
     Method = Request#request.method,
 
     StaleOK = (Method /= "INVITE"),
-    IsStale = PstnCtx#pstn_ctx.stale_auth,
-
+    #pstn_ctx{user       = User,
+	      stale_auth = IsStale,
+	      dst_number = DstNumber,
+	      dst_class  = DstClass
+	     } = PstnCtx,
     if
 	IsStale, StaleOK ->
 	    logger:log(normal, "~s: pstnproxy: Allowing ~s request from user ~p to number ~s, class '~p' "
-		       "(stale auth)", [LogTag, Method, User, ToNumber, Class]),
+		       "(stale auth)", [YxaCtx#yxa_ctx.app_logtag, Method, User, DstNumber, DstClass]),
 	    true;
 	IsStale ->
 	    logger:log(normal, "~s: pstnproxy: Disallowing ~s request from user ~p to number ~s, class '~p' "
-		       "(stale auth)", [LogTag, Method, User, ToNumber, Class]),
-	    transactionlayer:send_challenge(THandler, proxy, _Stale = true, _RetryAfter = none),
+		       "(stale auth)", [YxaCtx#yxa_ctx.app_logtag, Method, User, DstNumber, DstClass]),
+	    transactionlayer:send_challenge(YxaCtx#yxa_ctx.thandler, proxy, _Stale = true, _RetryAfter = none),
 	    false;
 	true ->
 	    logger:log(normal, "~s: pstnproxy: Allowing request from user ~p to number ~s, class '~p'",
-		       [LogTag, User, ToNumber, Class]),
+		       [YxaCtx#yxa_ctx.app_logtag, User, DstNumber, DstClass]),
 	    true
     end.
 
-check_unauth_request_to_pstn_dst(ToNumber, Request, Class, THandler, LogTag, PstnCtx) ->
+%% part of authorize_user_call_to_pstn/3
+%% Returns: true | false
+check_unauth_request_to_pstn_dst(Request, YxaCtx, PstnCtx) ->
+    #pstn_ctx{dst_number = DstNumber,
+	      dst_class  = DstClass
+	     } = PstnCtx,
+
     Method = Request#request.method,
     {ok, ChallengeBYE} = yxa_config:get_env(pstnproxy_challenge_bye_to_pstn_dst),
     Allow = (Method == "BYE") andalso (ChallengeBYE == false),
 
     case Allow of
 	true ->
-	    logger:log(normal, "~s: pstnproxy: Allowing unauthenticated ~s request to number ~s, class '~p'",
-		       [LogTag, Method, ToNumber, Class]),
+	    logger:log(normal, "~s: pstnproxy: Allowing unauthenticated ~s request to number ~p, class '~p'",
+		       [YxaCtx#yxa_ctx.app_logtag, Method, DstNumber, DstClass]),
 	    true;
 	false ->
-	    logger:log(normal, "~s: pstnproxy: Requesting authorization for destination number ~s, class '~p'",
-		       [LogTag, ToNumber, Class]),
-	    Stale =
-		case PstnCtx#pstn_ctx.stale_auth of
-		    Stale1 when is_boolean(Stale1) ->
-			Stale1;
-		    undefined ->
-			false
-		end,
-	    transactionlayer:send_challenge(THandler, proxy, Stale, _RetryAfter = none),
+	    logger:log(normal, "~s: pstnproxy: Requesting authorization for destination number ~p, class '~p'",
+		       [YxaCtx#yxa_ctx.app_logtag, DstNumber, DstClass]),
+	    Stale = PstnCtx#pstn_ctx.stale_auth,
+	    transactionlayer:send_challenge(YxaCtx#yxa_ctx.thandler, proxy, Stale, _RetryAfter = none),
 	    false
     end.
 
