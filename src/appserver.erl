@@ -81,10 +81,10 @@ init() ->
 %%
 %% REGISTER
 %%
-request(#request{method = "REGISTER"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+request(#request{method = "REGISTER"}, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
     LogStr = YxaCtx#yxa_ctx.logstr,
     logger:log(normal, "Appserver: ~s Method not applicable here -> 403 Forbidden", [LogStr]),
-    transactionlayer:send_response_request(Request, 403, "Forbidden"),
+    transactionlayer:send_response_handler(YxaCtx#yxa_ctx.thandler, 403, "Forbidden"),
     ok;
 
 %%
@@ -107,11 +107,12 @@ request(#request{method = "ACK"} = Request, YxaCtx) when is_record(YxaCtx, yxa_c
 %%
 %% CANCEL
 %%
-request(#request{method = "CANCEL"} = Request, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
+request(#request{method = "CANCEL"}, YxaCtx) when is_record(YxaCtx, yxa_ctx) ->
     LogStr = YxaCtx#yxa_ctx.logstr,
     logger:log(debug, "Appserver: ~s -> CANCEL not matching any existing transaction received, "
 	       "answer 481 Call/Transaction Does Not Exist", [LogStr]),
-    transactionlayer:send_response_request(Request, 481, "Call/Transaction Does Not Exist");
+    transactionlayer:send_response_handler(YxaCtx#yxa_ctx.thandler, 481, "Call/Transaction Does Not Exist"),
+    ok;
 
 %%
 %% Anything but REGISTER, ACK and CANCEL
@@ -259,22 +260,24 @@ create_session_actions(Request, Users, Actions, Surplus) when is_record(Request,
 %%           forward it anyways, or respond '404 Not Found'.
 %% Returns : void() | throw({siperror, ...})
 %%--------------------------------------------------------------------
-create_session_nomatch(Request, #yxa_ctx{logstr = LogStr}) when is_record(Request, request) ->
+create_session_nomatch(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     %% Check if the Request-URI is the registered location of one of our users. If we added
     %% a Record-Route to an earlier request, this might be an in-dialog request destined
     %% for one of our users. Such in-dialog requests will have the users Contact (registered
     %% location hopefully) as Request-URI.
+    #yxa_ctx{thandler = THandler,
+	     logstr   = LogStr
+	    } = YxaCtx,
     case local:get_user_with_contact(Request#request.uri) of
 	none ->
 	    logger:log(normal, "Appserver: ~s -> 404 Not Found (no actions, unknown user)",
 		       [LogStr]),
-	    transactionlayer:send_response_request(Request, 404, "Not Found");
+	    transactionlayer:send_response_handler(THandler, 404, "Not Found");
 	SIPuser when is_list(SIPuser) ->
 	    logger:log(normal, "Appserver: ~s -> Not forking, just forwarding (no actions found, SIP user ~p)",
 		       [LogStr, SIPuser]),
 	    ApproxMsgSize = siprequest:get_approximate_msgsize(Request),
 	    DstList = sipdst:url_to_dstlist(Request#request.uri, ApproxMsgSize, Request#request.uri),
-	    THandler = transactionlayer:get_handler_for_request(Request),
 	    sippipe:start(THandler, none, Request, DstList, ?SIPPIPE_TIMEOUT)
     end.
 
