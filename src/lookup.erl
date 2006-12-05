@@ -1314,7 +1314,7 @@ test() ->
 
     autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 2"),
     %% test with invalid local Outbound socket
-    put({sipsocket_test, get_specific_socket}, {error, "testing"}),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_specific_socket}, {error, "testing"}),
     {response, 410, "Gone (used Outbound)"} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
 
 
@@ -1481,7 +1481,7 @@ test_mnesia_dependant_functions() ->
     LGL_LDBSocketId11 = #locationdb_socketid{node = node(),
 					     id   = LGL_SocketId11
 					    },
-    put({sipsocket_test, get_specific_socket}, {error, "testing"}),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_specific_socket}, {error, "testing"}),
 
     {atomic, ok} = phone:insert_purge_phone(LGL_Username11, [{socket_id, LGL_LDBSocketId11}],
 					    static, never, LGL_Contact11_URL, [], 1, []),
@@ -1491,7 +1491,7 @@ test_mnesia_dependant_functions() ->
 
     autotest:mark(?LINE, "lookupuser_get_locations/2 - 11.2"),
     %% now test with socket available
-    erase({sipsocket_test, get_specific_socket}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_specific_socket}),
     LGL_SipSocket11 = sipsocket:get_specific_socket(LGL_SocketId11),
     {proxy, [#sipdst{proto = undefined,
 		     addr = undefined,

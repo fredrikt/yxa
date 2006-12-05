@@ -65,11 +65,11 @@ send(SipSocket, Proto, _Host, _Port, _Message)
 send(SipSocket, yxa_test, Host, Port, Message) when is_record(SipSocket, sipsocket) ->
     Proto = SipSocket#sipsocket.proto,
     self() ! {sipsocket_test, send, {Proto, Host, Port}, Message},
-    case get({sipsocket_test, send_result}) of
-	undefined ->
-	    ok;
-	{error, Reason} ->
-	    {error, Reason}
+    case autotest:is_unit_testing(?MODULE, {sipsocket_test, send_result}) of
+	{true, {error, Reason}} ->
+	    {error, Reason};
+	false ->
+	    ok
     end.
 
 %%--------------------------------------------------------------------
@@ -79,14 +79,14 @@ send(SipSocket, yxa_test, Host, Port, Message) when is_record(SipSocket, sipsock
 %% Returns : sipsocket record() | term()
 %%--------------------------------------------------------------------
 get_socket(#sipdst{proto = yxa_test}) ->
-    case get({sipsocket_test, get_socket}) of
-	undefined ->
+    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_socket}) of
+	{true, Res} ->
+	    Res;
+	false ->
 	    #sipsocket{module = ?MODULE,
 		       proto  = yxa_test,
 		       pid    = self()
-		      };
-	Res ->
-	    Res
+		      }
     end.
 
 %%--------------------------------------------------------------------
@@ -96,14 +96,14 @@ get_socket(#sipdst{proto = yxa_test}) ->
 %% Returns : sipsocket record() | term()
 %%--------------------------------------------------------------------
 get_specific_socket(#ob_id{proto = yxa_test}) ->
-    case get({sipsocket_test, get_specific_socket}) of
-	undefined ->
+    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_specific_socket}) of
+	{true, Res} ->
+	    Res;
+	false ->
 	    #sipsocket{module = ?MODULE,
 		       proto  = yxa_test,
 		       pid    = self()
-		      };
-	Res ->
-	    Res
+		      }
     end.
 
 %%--------------------------------------------------------------------
@@ -113,11 +113,11 @@ get_specific_socket(#ob_id{proto = yxa_test}) ->
 %% Returns : sipsocket record() | term()
 %%--------------------------------------------------------------------
 get_raw_socket(#sipsocket{proto = yxa_test}) ->
-    case get({sipsocket_test, get_raw_socket}) of
-	undefined ->
-	    {sipsocket_test, fake_raw_socket};
-	Res ->
-	    Res
+    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_raw_socket}) of
+	{true, Res} ->
+	    Res;
+	false ->
+	    {sipsocket_test, fake_raw_socket}
     end.
 
 %%--------------------------------------------------------------------
@@ -127,11 +127,11 @@ get_raw_socket(#sipsocket{proto = yxa_test}) ->
 %% Returns : {ok, Proto, Addr, Port} | term()
 %%--------------------------------------------------------------------
 get_remote_peer(#sipsocket{proto = yxa_test}) ->
-    case get({sipsocket_test, get_remote_peer}) of
-	undefined ->
-	    {ok, yxa_test, "192.0.2.242", sipsocket:get_listenport(yxa_test)};
-	Res ->
-	    Res
+    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_remote_peer}) of
+	{true, Res} ->
+	    Res;
+	false ->
+	    {ok, yxa_test, "192.0.2.242", sipsocket:get_listenport(yxa_test)}
     end.
 
 %%--------------------------------------------------------------------
@@ -140,11 +140,11 @@ get_remote_peer(#sipsocket{proto = yxa_test}) ->
 %% Returns : true | false
 %%--------------------------------------------------------------------
 is_reliable_transport(_) ->
-    case get({sipsocket_test, is_reliable_transport}) of
-	undefined ->
-	    false;
-	X ->
-	    X
+    case autotest:is_unit_testing(?MODULE, {sipsocket_test, is_reliable_transport}) of
+	{true, Res} ->
+	    Res;
+	false ->
+	    false
     end.
 
 

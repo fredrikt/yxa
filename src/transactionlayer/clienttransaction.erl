@@ -1710,9 +1710,9 @@ test() ->
 
     autotest:mark(?LINE, "gen_server signal 'timeout' - 1.0"),
     %% test that we terminate immediately if this attempt to send the request fails
-    put({sipsocket_test, send_result}, {error, "testing"}),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, {error, "testing"}),
     {stop, normal, _TimeoutSignal_State_out} = handle_info(timeout, TimeoutSignal_State),
-    erase({sipsocket_test, send_result}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
 
     %% clear fake-sent-request message from process mailbox
     test_verify_request_was_sent(Test_Request, "gen_server signal 'timeout'", 1, 1),
@@ -2105,7 +2105,7 @@ test() ->
     %% process_received_response(Response, State)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_received_response/2 - 1.0"),
-    put({sipsocket_test, is_reliable_transport}, false),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, false),
     PRRes_State1 = #state{logtag    = "testing",
 			  socket    = #sipsocket{proto = yxa_test,
 						 module = sipsocket_test
@@ -2250,7 +2250,7 @@ test() ->
     [] = siptimer:test_get_appsignals(PRRes_State3_out#state.timerlist),
     proceeding = PRRes_State3_out#state.sipstate,
 
-    erase({sipsocket_test, is_reliable_transport}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
 
 
     %% act_on_new_sipstate2(SipState, BranchAction, State)
@@ -2295,7 +2295,7 @@ test() ->
 
 
     autotest:mark(?LINE, "act_on_new_sipstate2/3 completed - 4.0"),
-    put({sipsocket_test, is_reliable_transport}, true),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, true),
     ActOnNewSS_State4 = #state{logtag    = "testing",
 			       request   = Test_Request,
 			       sipstate  = confirmed,
@@ -2311,11 +2311,11 @@ test() ->
     %% verify new state
     siptimer:cancel_all_timers(ActOnNewSS_State4_out#state.timerlist),
     [{terminate_transaction}] = siptimer:test_get_appsignals(ActOnNewSS_State4_out#state.timerlist),
-    erase({sipsocket_test, is_reliable_transport}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
 
     autotest:mark(?LINE, "act_on_new_sipstate2/3 completed - 5.1"),
     %% test non-INVITE with unreliable transport
-    put({sipsocket_test, is_reliable_transport}, false),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, false),
     ActOnNewSS_State5 = ActOnNewSS_State4#state{request = Test_Request#request{method = "OPTIONS"}},
     {ActOnNewSS_State5_out, ignore} = act_on_new_sipstate2(completed, ignore, ActOnNewSS_State5),
 
@@ -2643,10 +2643,10 @@ test() ->
 				timeout      = 40
 			       },
 
-    put({sipsocket_test, is_reliable_transport}, true),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, true),
     autotest:mark(?LINE, "initiate_request/1 non-INVITE - 2.1"),
     InitiateReq_State2_out = initiate_request(InitiateReq_State2),
-    erase({sipsocket_test, is_reliable_transport}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
 
     autotest:mark(?LINE, "initiate_request/1 non-INVITE - 2.2"),
     %% verify new state
@@ -2674,10 +2674,10 @@ test() ->
 				testing      = true
 			       },
 
-    put({sipsocket_test, send_result}, {error, "testing"}),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, {error, "testing"}),
     autotest:mark(?LINE, "initiate_request/1 - 3.1"),
     InitiateReq_State3_out = initiate_request(InitiateReq_State3),
-    erase({sipsocket_test, send_result}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
 
     autotest:mark(?LINE, "initiate_request/1 - 3.2"),
     %% verify new state

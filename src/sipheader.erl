@@ -404,7 +404,7 @@ contact_print2([], Res) ->
 auth_print(Auth) when is_tuple(Auth) ->
     auth_print(Auth, false).
 
-auth_print(Auth, Stale) when is_tuple(Auth), is_atom(Stale) ->
+auth_print(Auth, Stale) when is_tuple(Auth), is_boolean(Stale) ->
     {Realm, Nonce, Opaque} = Auth,
     ["Digest realm=\"" ++ Realm ++ "\", nonce=\"" ++ Nonce ++ "\", opaque=\"" ++ Opaque ++ "\"" ++
      case Stale of

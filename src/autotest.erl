@@ -17,6 +17,10 @@
 	 mark/2,
 	 mark/3,
 
+	 is_unit_testing/2,
+	 store_unit_test_result/3,
+	 clear_unit_test_result/2,
+
 	 aggregate_coverage/1
 	]).
 
@@ -391,6 +395,47 @@ mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
     io:put_chars(["test: ", Name, "\n"]),
     put({autotest, position}, {Line, Name}),
     ok.
+
+%%--------------------------------------------------------------------
+%% Function: is_unit_testing(Module, Key)
+%%           Module = atom(), calling module (currently unused)
+%%           Key    = term()
+%% Descrip.: Check if we are currently unit testing and have a result
+%%           stored for the user of this specific Key.
+%% Returns : {true, Result} |
+%%           false
+%%           Result = term()
+%%--------------------------------------------------------------------
+is_unit_testing(Module, Key) when is_atom(Module) ->
+    case get({autotest, Key}) of
+	undefined ->
+	    false;
+	Res ->
+	    {true, Res}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: store_unit_test_result(Module, Key, Value)
+%%           Module = atom(), calling module (currently unused)
+%%           Key    = term()
+%%           Value  = term()
+%% Descrip.: Store a value to be returned for this Key.
+%% Returns : term()
+%%--------------------------------------------------------------------
+store_unit_test_result(Module, Key, Value) when is_atom(Module) ->
+    put({autotest, Key}, Value).
+
+%%--------------------------------------------------------------------
+%% Function: store_unit_test_result(Module, Key, Value)
+%%           Module = atom(), calling module (currently unused)
+%%           Key    = term()
+%%           Value  = term()
+%% Descrip.: Clear any stored value for this Key.
+%% Returns : term()
+%%--------------------------------------------------------------------
+clear_unit_test_result(Module, Key) when is_atom(Module) ->
+    erase({autotest, Key}).
+
 
 %%====================================================================
 %% Internal functions

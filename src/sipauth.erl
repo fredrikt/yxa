@@ -368,8 +368,20 @@ parse_auth_filter_realm([H | T], Realm, Name, Res) when is_list(H) ->
 parse_auth_filter_realm([], _Realm, _Name, Res) ->
     lists:reverse(Res).
     
-%% Authenticate through X-YXA-Peer-Auth or, if that does not exist, through Proxy-Authentication
-pstn_get_user_verified(Header, Method) ->
+%%--------------------------------------------------------------------
+%% Function: pstn_get_user_verified(Header, Method)
+%%           Header = keylist record()
+%%           Method = string()
+%% Descrip.: Authenticate through X-YXA-Peer-Auth or, if that does not
+%%           exist, through Proxy-Authentication.
+%% Returns : false                      |
+%%           {stale, User}              |
+%%           {authenticated, User}      |
+%%           {peer_authenticated, User} |
+%%           throw({siperror, ...})
+%%           User = string(), SIP authentication username
+%%--------------------------------------------------------------------
+pstn_get_user_verified(Header, Method) when is_record(Header, keylist), is_list(Method) ->
     case get_user_verified_yxa_peer(Header, Method) of
 	false ->
 	    get_user_verified_proxy(Header, Method);

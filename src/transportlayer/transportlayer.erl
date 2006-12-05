@@ -611,11 +611,11 @@ test() ->
     autotest:mark(?LINE, "send_proxy_request/4 - 2.1"),
     %% test send error
     SPRequest_2_Res = {error, {test, make_ref()}},
-    put({sipsocket_test, send_result}, SPRequest_2_Res),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, SPRequest_2_Res),
     SPRequest_2_Res = send_proxy_request(none, SPRequest_Req1, SPRequest_Dst1, []),
     autotest:mark(?LINE, "send_proxy_request/4 - 2.2"),
     %% clean up
-    erase({sipsocket_test, send_result}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
     receive
 	{sipsocket_test, send, {yxa_test, "192.0.2.1", 6050}, _SPRequest_Msg2} ->
 	    ok
@@ -627,11 +627,11 @@ test() ->
     autotest:mark(?LINE, "send_proxy_request/4 - 3.1"),
     %% test get socket error
     SPRequest_3_Res = {error, {test, make_ref()}},
-    put({sipsocket_test, get_socket}, SPRequest_3_Res),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_socket}, SPRequest_3_Res),
     SPRequest_3_Res = send_proxy_request(none, SPRequest_Req1, SPRequest_Dst1, []),
     autotest:mark(?LINE, "send_proxy_request/4 - 3.2"),
     %% clean up
-    erase({sipsocket_test, get_socket}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_socket}),
 
 
     %% send_result(RequestHeader, Socket, Body, Status, Reason)
@@ -748,11 +748,11 @@ test() ->
     autotest:mark(?LINE, "send_response_to/3 - 1.1"),
     %% test send error
     SendResponseTo_1_Ref = {test, make_ref()},
-    put({sipsocket_test, send_result}, {error, SendResponseTo_1_Ref}),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, {error, SendResponseTo_1_Ref}),
     {senderror, SendResponseTo_1_Ref} = send_response_to(none, SendResponseTo_Response1, SendResponseTo_Via1),
     autotest:mark(?LINE, "send_response_to/3 - 1.2"),
     %% clean up
-    erase({sipsocket_test, send_result}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
     receive
 	{sipsocket_test, send, {yxa_test, "192.0.2.9", 6050}, _SendResponseTo_Msg1} ->
 	    ok
@@ -763,11 +763,11 @@ test() ->
 
     autotest:mark(?LINE, "send_response_to/3 - 2.1"),
     %% test get socket error
-    put({sipsocket_test, get_socket}, {error, "testing get_socket error"}),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_socket}, {error, "testing get_socket error"}),
     {senderror, "Could not get socket"} = send_response_to(none, SendResponseTo_Response1, SendResponseTo_Via1),
     autotest:mark(?LINE, "send_response_to/3 - 2.2"),
     %% clean up
-    erase({sipsocket_test, get_socket}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_socket}),
 
 
     autotest:mark(?LINE, "send_response_to/3 - 3.0"),
@@ -801,16 +801,16 @@ test() ->
 
     %% test get socket error
     autotest:mark(?LINE, "get_good_socket/2 - 3"),
-    put({sipsocket_test, get_socket}, {error, "testing get_socket error"}),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_socket}, {error, "testing get_socket error"}),
     {error, "testing get_socket error"} = get_good_socket(none, GGSocket_Dst1),
     %% clean up
-    erase({sipsocket_test, get_socket}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_socket}),
 
     %% test get socket failure
     autotest:mark(?LINE, "get_good_socket/2 - 4"),
-    put({sipsocket_test, get_socket}, none),
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_socket}, none),
     {error, "Failed getting a socket"} = get_good_socket(none, GGSocket_Dst1),
     %% clean up
-    erase({sipsocket_test, get_socket}),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_socket}),
 
     ok.
