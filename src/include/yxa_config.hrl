@@ -247,6 +247,10 @@
 		    type	= integer,
 		    soft_reload	= false
 		   },
+	 #cfg_entry{key		= myips,
+		    list_of	= true,
+		    type	= string
+		   },
 	 #cfg_entry{key		= myhostnames,
 		    required	= true,
 		    list_of	= true,

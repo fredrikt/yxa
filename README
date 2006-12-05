@@ -238,6 +238,11 @@ myhostnames			(required) List of IP addresses and/or
 				at the real host. It doesn't hurt if there is also
 				NAPTR/SRV records for the real hostname though.
 
+myips				(no default) For some platforms autodetection of
+				the IP addresses of the network interfaces doesn't
+				work. If you have that problem, list your IP
+				addresses in this configuration parameter.
+
 record_route			(default: false, except for pstnproxy and outgoing-
 				proxy where default is true) Enable or disable
 				adding of Record-Route header to requests.

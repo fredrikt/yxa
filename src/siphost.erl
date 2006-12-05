@@ -81,13 +81,18 @@ makeip({A1, A2, A3, A4, A5, A6, A7, A8}) ->
 %% Returns : Addresses = list() of string()
 %%--------------------------------------------------------------------
 get_iplist() ->
-    {ok, IfList} = inet:getiflist(),
-    F = fun(If) ->
-		{ok, B} = inet:ifget(If, [addr, flags]),
-		B
-	end,
-    IfData = [F(If) || If <- IfList],
-    get_ifaddrs(IfData).
+    case yxa_config:get_env(myips) of
+	{ok, List} ->
+	    List;
+	none ->
+	    {ok, IfList} = inet:getiflist(),
+	    F = fun(If) ->
+			{ok, B} = inet:ifget(If, [addr, flags]),
+			B
+		end,
+	    IfData = [F(If) || If <- IfList],
+	    get_ifaddrs(IfData)
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: get_ifaddrs(IfData)
