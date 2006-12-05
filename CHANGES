@@ -1,5 +1,15 @@
+ - Updated RFC3263 (SIP DNS) implementation to work just like
+   the RFC says.
+ - Made what log levels should be written to files configurable.
+ - Rewrote most of the pstnproxy YXA application to allow more
+   configurations than before (for example gateway to gateway
+   communication).
+ - Improved test framework greatly to the point where whole YXA
+   applications can be tested with a constructed configuration and
+   user database environment.
+ - Implemented GRUU (draft-ietf-sip-gruu-06).
  - Implemented generic SIP Event (RFC3265) server, with plugins for
-   the following packages : presence, dialog
+   the following packages : presence, dialog (experimental)
  - Implemented Outbound (draft-ietf-sip-outbound-03). Not very
    tested since there are virtually no other implementations of
    Outbound yet.
