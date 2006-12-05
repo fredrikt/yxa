@@ -19,6 +19,8 @@
 	 start/5
 	]).
 
+-export([test/0]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -317,17 +319,34 @@ default_process_received_response(Status, Reason, Response, State) when is_recor
 %%           send a 500 response in case we have no destinations left.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-start_next_client_transaction(#state{cancelled=false}=State) ->
+start_next_client_transaction(#state{cancelled = false} = State) ->
+    case get_next_client_transaction_params(State) of
+	{ok, NewRequest, FirstDst, BranchTimeout, NewState} ->
+	    case local:start_client_transaction(NewRequest, FirstDst, NewState#state.branch, BranchTimeout) of
+		BranchPid when is_pid(BranchPid) ->
+		    State#state{clienttransaction_pid = BranchPid};
+		{error, E} ->
+		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
+		    erlang:exit(failed_starting_client_transaction)
+	    end;
+	{siperror, Status, Reason, ExtraHeaders} ->
+	    transactionlayer:send_response_handler(State#state.serverhandler, Status, Reason, ExtraHeaders),
+	    State#state{clienttransaction_pid	= none,
+			branch			= none,
+			dstlist			= []
+		       }
+    end.
+
+%% part of start_next_client_transaction/1
+%% Returns : {ok, NewRequest, FirstDst, BranchTimeout, NewState} |
+%%           {siperror, Status, Reason, ExtraHeaders}
+get_next_client_transaction_params(State) when is_record(State, state) ->
     case State#state.dstlist of
 	[_LastDst] ->
 	    logger:log(debug, "sippipe: There are no more destinations to try for this target - " ++
 		       "telling server transaction to answer 500 No reachable destination"),
 	    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
-	    transactionlayer:send_response_handler(State#state.serverhandler, 500, "No reachable destination"),
-	    State#state{clienttransaction_pid	= none,
-			branch			= none,
-			dstlist			= []
-		       };
+	    {siperror, 500, "No reachable destination", []};
 	[_FailedDst | DstList] ->
 	    case get_next_sipdst(DstList, State#state.approxmsgsize) of
 		[FirstDst | _] = NewDstList when is_record(FirstDst, sipdst) ->
@@ -351,11 +370,7 @@ start_next_client_transaction(#state{cancelled=false}=State) ->
 		    logger:log(debug, "sippipe: There are no more destinations to try for this target - " ++
 			       "telling server transaction to answer '500 No reachable destination'"),
 		    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
-		    transactionlayer:send_response_handler(State#state.serverhandler, 500, "No reachable destination"),
-		    State#state{clienttransaction_pid  	= none,
-				branch			= none,
-				dstlist			= []
-			       }
+		    {siperror, 500, "No reachable destination", []}
 	    end
     end.
 
@@ -548,3 +563,218 @@ start_get_servertransaction(TH, Request) when is_record(Request, request) ->
 	    logger:log(error, "sippipe: Failed adopting server transaction, exiting"),
 	    erlang:exit(failed_adopting_server_transaction)
     end.
+
+
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok | throw()
+%%--------------------------------------------------------------------
+test() ->
+    yxa_test_config:init(incomingproxy, [{sipsocket_blacklisting, false}]),
+
+    %% get_next_target_branch(In)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_next_target_branch/1 - 1"),
+    "foo.1" = get_next_target_branch("foo"),
+
+    autotest:mark(?LINE, "get_next_target_branch/1 - 2"),
+    "foo.2" = get_next_target_branch("foo.1"),
+
+    autotest:mark(?LINE, "get_next_target_branch/1 - 3"),
+    "foo.bar.1" = get_next_target_branch("foo.bar"),
+
+
+    %% get_next_sipdst(DstList, ApproxMsgSize)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_next_sipdst/2 - 1"),
+    %% test normal case with sipsocket
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
+				    {ok, yxa_test, "192.0.2.1", 4999}),
+    GNSipDst1 = [#sipdst{socket = #sipsocket{proto = yxa_test,
+					     module = sipsocket_test
+					    }}],
+    [#sipdst{proto = yxa_test,
+	     addr  = "192.0.2.1",
+	     port  = 4999
+	    }] = get_next_sipdst(GNSipDst1, 500),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
+
+    autotest:mark(?LINE, "get_next_sipdst/2 - 2"),
+    %% test with transport not supporting remote peer
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
+				    not_applicable),
+    [] = get_next_sipdst(GNSipDst1, 500),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
+
+
+    autotest:mark(?LINE, "get_next_sipdst/2 - 3"),
+    %% test with transport not supporting remote peer, and another one
+    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
+				    not_applicable),
+    GNSipURI3 = sipurl:parse("sip:user@192.0.2.3"),
+    GNSipDst3 = GNSipDst1 ++ [#sipdst{uri = GNSipURI3}],
+    [#sipdst{proto = udp,
+	     addr  = "192.0.2.3",
+	     uri   = GNSipURI3
+	    }] = get_next_sipdst(GNSipDst3, 500),
+    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
+
+
+    autotest:mark(?LINE, "get_next_sipdst/2 - 4"),
+    %% test all kinds of brokenness, only the second last entry is valid
+    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+				    [{{get_ip_port, "unresolvable.example.org", 4999},
+				      {error, "testing unresolvable things"}}
+				    ]),
+    GNSipDst4_1 =
+	[#sipdst{uri = foo},
+	 #sipdst{uri = sipurl:parse("sip:unresolvable.example.org:4999")}
+	],
+    GNSipDst4_Tail =
+	[#sipdst{proto = udp,
+		 addr  = "192.0.2.4",
+		 port  = 4998
+		},
+	 #sipdst{addr = "last entry"}],
+    GNSipDst4 = GNSipDst4_1 ++ GNSipDst4_Tail,
+    GNSipDst4_Tail = get_next_sipdst(GNSipDst4, 500),
+    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+
+
+    %% get_next_client_transaction_params(State)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 1"),
+    {siperror, 500, _, []} = get_next_client_transaction_params(#state{dstlist = [#sipdst{}]}),
+
+    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 2"),
+    %% test with only an unresolvable destination left
+    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+				    [{{get_ip_port, "unresolvable.example.org", 4999},
+				      {error, "testing unresolvable things"}}
+				    ]),
+    GNCTP_DstL_2 =
+	[#sipdst{proto = yxa_test, addr = "failed dst"},
+	 #sipdst{uri = sipurl:parse("sip:unresolvable.example.org:4999")}
+	],
+    GNCTP_State2 =
+	#state{dstlist = GNCTP_DstL_2,
+	       approxmsgsize = 500
+	      },
+    {siperror, 500, _, []} = get_next_client_transaction_params(GNCTP_State2),
+    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+
+    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 3.0"),
+    %% test working case
+    GNCTP_NewURL3 = sipurl:parse("sip:new.example.org"),
+    GNCTP_DstL_3 =
+	[#sipdst{proto = yxa_test, addr = "failed dst"},
+	 #sipdst{proto = yxa_test,
+		 addr  = "192.0.2.3",
+		 port  = 4997,
+		 uri   = GNCTP_NewURL3
+		}
+	],
+    GNCTP_State3 =
+	#state{dstlist		= GNCTP_DstL_3,
+	       approxmsgsize	= 500,
+	       branch		= "foo.1",
+	       request		= #request{method = "TEST",
+					   uri    = sipurl:parse("sip:old.example.org")
+					  },
+	       endtime		= util:timestamp() + 10
+	      },
+
+    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 3.1"),
+    GNCTP_Res3 = get_next_client_transaction_params(GNCTP_State3),
+
+    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 3.2"),
+    {ok, #request{uri = GNCTP_NewURL3}, #sipdst{addr = "192.0.2.3", port = 4997}, 10, GNCTP_State3_Res} = GNCTP_Res3,
+    "foo.2" = GNCTP_State3_Res#state.branch,
+
+
+    %% start_get_dstlist(ServerHandler, Request, ApproxMsgSize, Dst)
+    %%--------------------------------------------------------------------
+    %% dst 'route', no Route header - programmer error
+    THandler = transactionlayer:test_get_thandler_self(),
+    SGD_Request0 = #request{method = "TEST",
+			    uri    = sipurl:parse("sip:test.example.org"),
+			    header = keylist:from_list([]),
+			    body   = <<>>
+			   },
+
+    autotest:mark(?LINE, "start_get_dstlist/4 - 1"),
+    {'EXIT', {"no destination " ++ _, _}} = (catch start_get_dstlist(THandler, SGD_Request0, 500, route)),
+
+
+    autotest:mark(?LINE, "start_get_dstlist/4 - 2"),
+    SGD_Dst_URL2 = sipurl:parse("sip:foo.example.org:2990"),
+    {ok, [#sipdst{uri = SGD_Dst_URL2}], SGD_Request0} = start_get_dstlist(THandler, SGD_Request0, 500, SGD_Dst_URL2),
+
+    autotest:mark(?LINE, "start_get_dstlist/4 - 3"),
+    %% test working case
+    SGD_RouteURL3 = sipurl:parse("sip:route.example.org:99;lr"),
+    SGD_Header3 = keylist:from_list([{"Route", ["<" ++ sipurl:print(SGD_RouteURL3) ++ ">"]}]),
+    SGD_Request3 = SGD_Request0#request{header = SGD_Header3},
+    SGD_DNS_3 = [{{get_ip_port, "route.example.org", 99},
+		  [#sipdns_hostport{family = inet,
+				    addr   = "192.0.2.2",
+				    port   = 99
+				   }]
+		 }],
+    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_3),
+
+    {ok, SGD_Dst3_Res, SGD_Request3_Res} = start_get_dstlist(THandler, SGD_Request3, 500, route),
+    SGD_Request3_URI = SGD_Request3#request.uri,
+    [#sipdst{addr = "192.0.2.2",
+	     uri = SGD_Request3_URI
+	    }] = SGD_Dst3_Res,
+    SGD_Request3 = SGD_Request3_Res,
+    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+
+    autotest:mark(?LINE, "start_get_dstlist/4 - 4"),
+    %% test nxdomain
+    SGD_Header4 = keylist:from_list([{"Route", ["<sip:route.example.org:99>"]}]),
+    SGD_Request4 = SGD_Request0#request{header = SGD_Header4},
+    SGD_DNS_4 = [{{get_ip_port, "route.example.org", 99},
+		  {error, nxdomain}
+		 }],
+    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_4),
+    error = start_get_dstlist(THandler, SGD_Request4, 500, route),
+
+    {604, "Does Not Exist Anywhere", [], <<>>} = get_created_response(),
+    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+
+    autotest:mark(?LINE, "start_get_dstlist/4 - 5"),
+    %% test other DNS error (timeout)
+    SGD_Header5 = keylist:from_list([{"Route", ["<sip:route.example.org:99>"]}]),
+    SGD_Request5 = SGD_Request0#request{header = SGD_Header5},
+    SGD_DNS_5 = [{{get_ip_port, "route.example.org", 99},
+		  {error, timeout}
+		 }],
+    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_5),
+    error = start_get_dstlist(THandler, SGD_Request5, 500, route),
+
+    {500, "Failed resolving Route destination", [], <<>>} = get_created_response(),
+    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+
+    ok.
+
+
+get_created_response() ->
+    receive
+	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
+	    {Status, Reason, EH, Body};
+	M ->
+	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
+	    {error, lists:flatten(Msg)}
+    after 0 ->
+	    {error, "no created response in my mailbox"}
+    end.
+
