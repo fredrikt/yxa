@@ -253,7 +253,7 @@ process_received_response({Status, Reason}=Response, State) when is_integer(Stat
     process_received_response2(Status, Reason, Response, State).
 
 %% part of process_received_response/2
-final_response_event(Status, Reason, Origin, State) ->
+final_response_event(Status, Reason, Origin, State) when Status >= 200 ->
     %% Make event out of final response
     [CurDst | _] = State#state.dstlist,
     L = [{method, (State#state.request)#request.method},
@@ -261,7 +261,9 @@ final_response_event(Status, Reason, Origin, State) ->
 	 {response, lists:concat([Status, " ", Reason])},
 	 {origin, Origin},
 	 {peer, sipdst:dst2str(CurDst)}],
-    event_handler:request_info(normal, State#state.branch, L).
+    event_handler:request_info(normal, State#state.branch, L);
+final_response_event(_Status, _Reason, _Origin, _State) ->
+    ok.
 
 process_received_response2(Status, Reason, Response, State) when Status >= 200, is_record(State, state) ->
     logger:log(debug, "sippipe: Received final response '~p ~s'", [Status, Reason]),
