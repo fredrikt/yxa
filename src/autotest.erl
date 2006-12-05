@@ -96,6 +96,7 @@
 		       subscription,
 		       sipuserdb_test,
 		       yxa_config,
+		       sippipe,
 
 		       %% YXA applications
 		       incomingproxy,
