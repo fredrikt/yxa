@@ -398,8 +398,15 @@ process_updates(RegReq, Contacts) when is_record(RegReq, reg_request), is_list(C
 	    SipError
     end.
 
+%%--------------------------------------------------------------------
+%% Function: process_updates_get_path_vector(RegReq)
+%%           RegReq    = reg_request record()
+%% Descrip.: Examine Path: header in request, and possibly add
+%%           ourselves to the path vector. Create a path vector if
+%%           there were none.
 %% Returns : PathVector = list() of string() |
 %%           {siperror, Status, Reason, ExtraHeaders}
+%%--------------------------------------------------------------------
 process_updates_get_path_vector(RegReq) when is_record(RegReq, reg_request) ->
     #reg_request{uri		= URL,
 		 header		= Header,
@@ -409,6 +416,9 @@ process_updates_get_path_vector(RegReq) when is_record(RegReq, reg_request) ->
     Proto = URL#sipurl.proto,
     process_updates_get_path_vector2(Proto, Header, AppName, IgnoreSupported).
 
+%% part of process_updates_get_path_vector/1, to make things easily testable
+%% Returns : PathVector = list() of string() |
+%%           {siperror, Status, Reason, ExtraHeaders}
 process_updates_get_path_vector2(Proto, Header, AppName, IgnoreSupported) ->
     case keylist:fetch('path', Header) of
 	[] ->
@@ -431,8 +441,17 @@ process_updates_get_path_vector2(Proto, Header, AppName, IgnoreSupported) ->
 	    end
     end.
 
+%% part of process_updates_get_path_vector2/4, this is where we actually add ourselves to the path vector
+%% Returns : list() of string()
 process_updates_get_path_vector3(Proto, Path, outgoingproxy) ->
-    RouteStr = siprequest:construct_record_route(Proto),
+    RouteStr1 = siprequest:construct_record_route(Proto),
+    %% add an ;ob URI parameter, draft-Outbound 5.1 (Processing Register Requests)
+    %% "if it adds a Path header field value, it MUST include the 'ob' parameter in its Path URI"
+    [C] = contact:parse([RouteStr1]),
+    URL = sipurl:parse(C#contact.urlstr),
+    NewParams = url_param:add(URL#sipurl.param_pairs, "ob"),
+    NewURL = sipurl:set([{param, NewParams}], URL),
+    RouteStr = contact:print( contact:new(NewURL) ),
     [RouteStr | Path];
 process_updates_get_path_vector3(_Proto, Path, _AppName) ->
     Path.
@@ -1497,9 +1516,13 @@ test() ->
     %% test with no Path, not outgoingproxy
     [] = process_updates_get_path_vector2("sip", PUGPV_NoPathHeader, incomingproxy, false),
 
-    autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 2"),
+    autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 2.1"),
     %% test with no Path, outgoingproxy. Means this proxy should add itself.
-    [PUGPV_RRStr1] = process_updates_get_path_vector2("sip", PUGPV_NoPathHeader, outgoingproxy, false),
+    [PUGPV_RRStr1_res] = process_updates_get_path_vector2("sip", PUGPV_NoPathHeader, outgoingproxy, false),
+
+    autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 2.2"),
+    %% verify
+    PUGPV_RRStr1 = test_remove_outbound_params(PUGPV_RRStr1_res),
 
     autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 3"),
     %% test with path, Supported required
@@ -1511,7 +1534,7 @@ test() ->
 
     autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 5"),
     %% test with path, Supported NOT required, outgoingproxy
-    [PUGPV_RRStr1, "<sip:edge-proxy.example.com;lr>"] =
+    [PUGPV_RRStr1_res, "<sip:edge-proxy.example.com;lr>"] =
 	process_updates_get_path_vector2("sip", PUGPV_PathHeader, outgoingproxy, true),
 
     autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 6"),
@@ -1519,11 +1542,14 @@ test() ->
     ["<sip:edge-proxy.example.com;lr>"] =
 	process_updates_get_path_vector2("sip", PUGPV_PathSupportedHeader, incomingproxy, false),
 
-    autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 6"),
+    autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 7.1"),
     %% test with path, Supported required, outgoingproxy
-    [PUGPV_RRStr2, "<sip:edge-proxy.example.com;lr>"] =
+    [PUGPV_RRStr2_res, "<sip:edge-proxy.example.com;lr>"] =
 	process_updates_get_path_vector2("sips", PUGPV_PathSupportedHeader, outgoingproxy, false),
 
+    autotest:mark(?LINE, "process_updates_get_path_vector2/4 - 7.2"),
+    %% verify
+    PUGPV_RRStr2 = test_remove_outbound_params(PUGPV_RRStr2_res),
 
     %% process_updates_get_path_vector(RegReq)
     %%--------------------------------------------------------------------
@@ -1575,7 +1601,6 @@ test() ->
 	{aborted, Res} ->
 	    {error, Res}
     end.
-
 
 test_mnesia_dependant_functions() ->
 
@@ -1986,7 +2011,7 @@ test_mnesia_dependant_functions() ->
 
     autotest:mark(?LINE, "process_updates/2 - 17.3"),
     %% verify the record in the location database
-    PU_17_me = siprequest:construct_record_route("sips"),
+    [PU_17_me] = process_updates_get_path_vector3("sips", [], outgoingproxy),
     [PU_Contacts17_Loc] = get_locations_for_users([TestUser1]),
     {value, {path, [PU_17_me, "<sip:edge.example.org>"]}} =
 	lists:keysearch(path, 1, PU_Contacts17_Loc#siplocationdb_e.flags),
@@ -2306,3 +2331,19 @@ test_verify_contacts2(_ExpiresMin, _ExpiresMax, [], []) ->
 
 %% XXX make test case where we register the _same requristr_ from two different proxys.
 %% Might happen with outbound.
+
+test_remove_outbound_params(In) ->
+    [C] = contact:parse([In]),
+    URL1 = sipurl:parse(C#contact.urlstr),
+    case url_param:find(URL1#sipurl.param_pairs, "ob") of
+	[none] -> ok;
+	[] ->
+	    Msg = io_lib:format("No ;ob parameter in Path header value '~s'", [In]),
+	    throw(lists:flatten(Msg));
+	_ ->
+	    Msg = io_lib:format("Unknown ;ob parameter in Path header value '~s'", [In]),
+	    throw(lists:flatten(Msg))
+    end,
+    NewParams = url_param:remove(URL1#sipurl.param_pairs, "ob"),
+    NewURL = sipurl:set([{param, NewParams}], URL1),
+    contact:print( contact:new(NewURL) ).

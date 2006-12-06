@@ -223,16 +223,17 @@ lookupuser_single_location(Location, URL) when is_record(Location, siplocationdb
 		case sipsocket:get_specific_socket(SocketId#locationdb_socketid.id) of
 		    {error, _Reason} ->
 			%% The socket the user registered using is no longer available - reject
-			%% request with a '410 Gone' response (draft-Outbound #5.3 (Forwarding Requests))
+			%% request with a '430 Flow Failed' response (draft-Outbound #5.3 (Forwarding Requests))
 			%% "For connection-oriented transports, if the flow no longer exists the
-			%% proxy SHOULD send a 410 response to the request."
-			{response, 410, "Gone (used Outbound)"};
+			%% proxy SHOULD send a 430 (Flow Failed) response to the request."
+			{response, 430, "Flow Failed"};
 		    SipSocket ->
-			[#sipdst{proto  = SocketId#locationdb_socketid.proto,
-				 addr   = SocketId#locationdb_socketid.addr,
-				 port   = SocketId#locationdb_socketid.port,
-				 uri	= siplocation:to_url(Location),
-				 socket	= SipSocket
+			[#sipdst{proto		= SocketId#locationdb_socketid.proto,
+				 addr		= SocketId#locationdb_socketid.addr,
+				 port		= SocketId#locationdb_socketid.port,
+				 uri		= siplocation:to_url(Location),
+				 socket		= SipSocket,
+				 instance	= Location#siplocationdb_e.instance
 				}
 			]
 		end;
@@ -283,7 +284,7 @@ lookupuser_multiple_locations(Locations, URL) when is_list(Locations), is_record
 		[] ->
 		    %% All locations were removed by make_dstlist. This means they all used
 		    %% Outbound and the flows all terminated at this host, and are gone.
-		    {response, 410, "Gone (used Outbound)"};
+		    {response, 430, "Flow Failed"};
 		DstList when is_list(DstList) ->
 		    {proxy, DstList}
 	    end;
@@ -349,11 +350,12 @@ make_dstlist2([H | T], ThisNode, Res) when is_record(H, siplocationdb_e) ->
 		    make_dstlist2(T, ThisNode, Res);
 		SipSocket ->
 		    This =
-			#sipdst{proto  = SocketId#locationdb_socketid.proto,
-				addr   = SocketId#locationdb_socketid.addr,
-				port   = SocketId#locationdb_socketid.port,
-				uri	= siplocation:to_url(H),
-				socket	= SipSocket
+			#sipdst{proto		= SocketId#locationdb_socketid.proto,
+				addr		= SocketId#locationdb_socketid.addr,
+				port		= SocketId#locationdb_socketid.port,
+				uri		= siplocation:to_url(H),
+				socket		= SipSocket,
+				instance	= H#siplocationdb_e.instance
 			       },
 		    make_dstlist2(T, ThisNode, [This | Res])
 	    end;
@@ -361,7 +363,10 @@ make_dstlist2([H | T], ThisNode, Res) when is_record(H, siplocationdb_e) ->
 	    %% Not using Outbound, or connected to some other node - use as is.
 	    %% We already know we don't need to care about Path (checked by
 	    %% is_same_outbound_client_without_path).
-	    This = #sipdst{uri = siplocation:to_url(H)},
+	    This =
+		#sipdst{uri = siplocation:to_url(H),
+			instance = H#siplocationdb_e.instance
+		       },
 	    make_dstlist2(T, ThisNode, [This | Res])
     end;
 make_dstlist2([], _ThisNode, Res) ->
@@ -1315,7 +1320,7 @@ test() ->
     autotest:mark(?LINE, "lookupuser_multiple_locations/2 - 2"),
     %% test with invalid local Outbound socket
     autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_specific_socket}, {error, "testing"}),
-    {response, 410, "Gone (used Outbound)"} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
+    {response, 430, "Flow Failed"} = lookupuser_multiple_locations(LMult_Locations1, LMult_URL1),
 
 
     %% lookup_result_to_str(In)
@@ -1487,7 +1492,7 @@ test_mnesia_dependant_functions() ->
 					    static, never, LGL_Contact11_URL, [], 1, []),
 
     autotest:mark(?LINE, "lookupuser_get_locations/2 - 11.1"),
-    {response, 410, _} = lookupuser_get_locations([LGL_Username11], LookupURL1),
+    {response, 430, _} = lookupuser_get_locations([LGL_Username11], LookupURL1),
 
     autotest:mark(?LINE, "lookupuser_get_locations/2 - 11.2"),
     %% now test with socket available
