@@ -324,7 +324,7 @@ start_next_client_transaction(#state{cancelled = false} = State) ->
 	{ok, NewRequest, FirstDst, BranchTimeout, NewState} ->
 	    case local:start_client_transaction(NewRequest, FirstDst, NewState#state.branch, BranchTimeout) of
 		BranchPid when is_pid(BranchPid) ->
-		    State#state{clienttransaction_pid = BranchPid};
+		    NewState#state{clienttransaction_pid = BranchPid};
 		{error, E} ->
 		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
 		    erlang:exit(failed_starting_client_transaction)
