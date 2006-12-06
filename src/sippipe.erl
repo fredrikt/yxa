@@ -39,7 +39,8 @@
 		endtime,		%% integer(), point in time when we terminate
 		warntime,		%% integer(), point in time when we should warn about still being alive
 		approxmsgsize,		%% integer(), approximate size of the SIP requests when we send them
-		cancelled = false	%% true | false, have we been cancelled or not?
+		cancelled = false,	%% true | false, have we been cancelled or not?
+		testing = false		%% true | false, are we currently unit testing? used to avoid some side effects
 	       }).
 
 %%--------------------------------------------------------------------
@@ -159,47 +160,50 @@ final_start(Branch, ServerHandler, ClientPid, Request, [Dst | _] = DstList, Time
 %% Returns : Does not matter - does not return until we are finished.
 %%--------------------------------------------------------------------
 loop(State) when is_record(State, state) ->
-
-    ClientPid = State#state.clienttransaction_pid,
-    ServerHandlerPid = transactionlayer:get_pid_from_handler(State#state.serverhandler),
-
     WarnOrEnd = lists:min([State#state.warntime, State#state.endtime]) - util:timestamp(),
-    {Res, NewState} =
-	receive
-	    {servertransaction_cancelled, ServerHandlerPid, ExtraHeaders} ->
-		NewState1 = cancel_transaction(State, "server transaction cancelled", ExtraHeaders),
-		{ok, NewState1};
+    {Res, NewState} = loop_receive_once(State, WarnOrEnd),
 
-	    {branch_result, _ClientPid, _Branch, _BranchSipState, Response} ->
-		NewState1 = process_received_response(Response, State),
-		{ok, NewState1};
-
-	    {servertransaction_terminating, ServerHandlerPid} ->
-		NewState1 = State#state{serverhandler = none},
-		{quit, NewState1};
-
-	    {clienttransaction_terminating, ClientPid, _Branch} ->
-		NewState1 = State#state{clienttransaction_pid = none},
-		{quit, NewState1};
-
-	    {clienttransaction_terminating, _ClientPid, _Branch} ->
-		%% An (at this time) unknown client transaction signals us that it
-		%% has terminated. This is probably one of our previously started
-		%% client transactions that is now finishing - just ignore the signal.
-		{ok, State};
-
-	    Msg ->
-		logger:log(error, "sippipe: Received unknown message ~p, ignoring", [Msg]),
-		{error, State}
-	after
-	    WarnOrEnd * 1000 ->
-		warn_or_end(State, util:timestamp())
-	end,
     case Res of
 	quit ->
 	    ok;
 	_ ->
 	    loop(NewState)
+    end.
+
+%% part of loop/1, to make it more testable
+loop_receive_once(State, WarnOrEnd) when is_record(State, state), is_integer(WarnOrEnd) ->
+    ClientPid = State#state.clienttransaction_pid,
+    ServerHandlerPid = transactionlayer:get_pid_from_handler(State#state.serverhandler),
+
+    receive
+	{servertransaction_cancelled, ServerHandlerPid, ExtraHeaders} ->
+	    NewState1 = cancel_transaction(State, "server transaction cancelled", ExtraHeaders),
+	    {ok, NewState1};
+
+	{branch_result, _AnyClientPid, _Branch, _BranchSipState, Response} ->
+	    NewState1 = process_received_response(Response, State),
+	    {ok, NewState1};
+
+	{servertransaction_terminating, ServerHandlerPid} ->
+	    NewState1 = State#state{serverhandler = none},
+	    {quit, NewState1};
+
+	{clienttransaction_terminating, ClientPid, _Branch} ->
+	    NewState1 = State#state{clienttransaction_pid = none},
+	    {quit, NewState1};
+
+	{clienttransaction_terminating, _ClientPid, _Branch} ->
+	    %% An (at this time) unknown client transaction signals us that it
+	    %% has terminated. This is probably one of our previously started
+	    %% client transactions that is now finishing - just ignore the signal.
+	    {ok, State};
+
+	Msg ->
+	    logger:log(error, "sippipe: Received unknown message ~p, ignoring", [Msg]),
+	    {error, State}
+    after
+	WarnOrEnd * 1000 ->
+	    warn_or_end(State, util:timestamp())
     end.
 
 %%--------------------------------------------------------------------
@@ -238,7 +242,7 @@ warn_or_end(State, Now) when is_record(State, state), Now >= State#state.warntim
 %%
 %% We are already cancelled
 %%
-process_received_response(_Response, #state{cancelled=true}=State) ->
+process_received_response(_Response, #state{cancelled = true} = State) ->
     logger:log(debug, "sippipe: Ignoring response received when cancelled"),
     State;
 %%
@@ -251,22 +255,28 @@ process_received_response(Response, State) when is_record(Response, response), i
 %%
 %% Response = {Status, Reason}
 %%
-process_received_response({Status, Reason}=Response, State) when is_integer(Status), is_list(Reason),
-								 is_record(State, state) ->
+process_received_response({Status, Reason} = Response, State) when is_integer(Status), is_list(Reason),
+								   is_record(State, state) ->
     final_response_event(Status, Reason, created, State),
     process_received_response2(Status, Reason, Response, State).
 
 %% part of process_received_response/2
-final_response_event(Status, Reason, Origin, State) when Status >= 200 ->
+final_response_event(Status, Reason, Type, State) when is_atom(Type), Status >= 200 ->
     %% Make event out of final response
+    %% XXX should we do this for every final response we receive, or just the one we choose to 'pipe'?
     [CurDst | _] = State#state.dstlist,
     L = [{method, (State#state.request)#request.method},
 	 {uri, sipurl:print((State#state.request)#request.uri)},
 	 {response, lists:concat([Status, " ", Reason])},
-	 {origin, Origin},
+	 {origin, Type},
 	 {peer, sipdst:dst2str(CurDst)}],
-    event_handler:request_info(normal, State#state.branch, L);
-final_response_event(_Status, _Reason, _Origin, _State) ->
+    case State#state.testing of
+	true ->
+	    self() ! {final_response_event, L};
+	false ->
+	    event_handler:request_info(normal, State#state.branch, L)
+    end;
+final_response_event(_Status, _Reason, _Type, _State) ->
     %% non-final response
     ok.
 
@@ -278,14 +288,14 @@ process_received_response2(Status, Reason, Response, State) when Status >= 200, 
 	{huntstop, SendStatus, SendReason} ->
 	    %% Don't continue searching, respond something
 	    transactionlayer:send_response_handler(State#state.serverhandler, SendStatus, SendReason),
-	    %% XXX cancel client handler?
+	    %% XXX cancel client transaction?
 	    State#state{clienttransaction_pid	= none,
 			branch			= none,
 			dstlist			= []
 		       };
 	{next, NewDstList} ->
 	    %% Continue, possibly with an altered DstList
-	    start_next_client_transaction(State#state{dstlist = NewDstList});
+	    start_next_client_transaction(Status, State#state{dstlist = NewDstList});
 	undefined ->
 	    %% Use sippipe defaults
 	    default_process_received_response(Status, Reason, Response, State)
@@ -297,8 +307,11 @@ process_received_response2(Status, Reason, Response, State) when is_record(Respo
     transactionlayer:send_proxy_response_handler(State#state.serverhandler, Response),
     State.
 
+default_process_received_response(430, _Reason, _Response, State) when is_record(State, state) ->
+    %% Outbound, flow gone. Try next destination with the same Instance-ID.
+    start_next_client_transaction(430, State);
 default_process_received_response(503, _Reason, _Response, State) when is_record(State, state) ->
-    start_next_client_transaction(State);
+    start_next_client_transaction(503, State);
 default_process_received_response(Status, Reason, Response, State) when is_record(State, state) ->
     logger:log(debug, "sippipe: Piping final response '~p ~s' to server transaction ~p",
 	       [Status, Reason, State#state.serverhandler]),
@@ -312,43 +325,51 @@ default_process_received_response(Status, Reason, Response, State) when is_recor
     State.
 
 %%--------------------------------------------------------------------
-%% Function: start_next_client_transaction(State)
+%% Function: start_next_client_transaction(Status, State)
+%%           Status = integer(), SIP status code of last branch result
+%%           State  = state record()
 %% Descrip.: When this function is called, any previous client
 %%           transactions will have received a final response. Start
 %%           the next client transaction from State#state.dstlist, or
 %%           send a 500 response in case we have no destinations left.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-start_next_client_transaction(#state{cancelled = false} = State) ->
-    case get_next_client_transaction_params(State) of
+start_next_client_transaction(Status, #state{cancelled = false} = State) ->
+    case get_next_client_transaction_params(Status, State) of
 	{ok, NewRequest, FirstDst, BranchTimeout, NewState} ->
-	    case local:start_client_transaction(NewRequest, FirstDst, NewState#state.branch, BranchTimeout) of
-		BranchPid when is_pid(BranchPid) ->
-		    NewState#state{clienttransaction_pid = BranchPid};
-		{error, E} ->
-		    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
-		    erlang:exit(failed_starting_client_transaction)
+	    case State#state.testing of
+		true ->
+		    self() ! {start_client_transaction, NewRequest, FirstDst, BranchTimeout, NewState},
+		    NewState;
+		false ->
+		    case local:start_client_transaction(NewRequest, FirstDst, NewState#state.branch, BranchTimeout) of
+			BranchPid when is_pid(BranchPid) ->
+			    NewState#state{clienttransaction_pid = BranchPid};
+			{error, E} ->
+			    logger:log(error, "sippipe: Failed starting client transaction : ~p", [E]),
+			    erlang:exit(failed_starting_client_transaction)
+		    end
 	    end;
-	{siperror, Status, Reason, ExtraHeaders} ->
-	    transactionlayer:send_response_handler(State#state.serverhandler, Status, Reason, ExtraHeaders),
+	{siperror, Status1, Reason1, ExtraHeaders} ->
+	    transactionlayer:send_response_handler(State#state.serverhandler, Status1, Reason1, ExtraHeaders),
 	    State#state{clienttransaction_pid	= none,
 			branch			= none,
 			dstlist			= []
 		       }
     end.
 
-%% part of start_next_client_transaction/1
+%% part of start_next_client_transaction/2
 %% Returns : {ok, NewRequest, FirstDst, BranchTimeout, NewState} |
 %%           {siperror, Status, Reason, ExtraHeaders}
-get_next_client_transaction_params(State) when is_record(State, state) ->
+get_next_client_transaction_params(Status, State) when is_record(State, state) ->
     case State#state.dstlist of
 	[_LastDst] ->
-	    logger:log(debug, "sippipe: There are no more destinations to try for this target - " ++
+	    logger:log(debug, "sippipe: There are no more destinations to try for this target - "
 		       "telling server transaction to answer 500 No reachable destination"),
 	    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
 	    {siperror, 500, "No reachable destination", []};
 	[_FailedDst | DstList] ->
-	    case get_next_sipdst(DstList, State#state.approxmsgsize) of
+	    case get_next_client_transaction_sipdst(DstList, State#state.approxmsgsize, Status) of
 		[FirstDst | _] = NewDstList when is_record(FirstDst, sipdst) ->
 		    NewBranch = get_next_target_branch(State#state.branch),
 		    Request = State#state.request,
@@ -367,12 +388,52 @@ get_next_client_transaction_params(State) when is_record(State, state) ->
 				   },
 		    {ok, NewRequest, FirstDst, BranchTimeout, NewState};
 		[] ->
-		    logger:log(debug, "sippipe: There are no more destinations to try for this target - " ++
+		    logger:log(debug, "sippipe: There are no more destinations to try for this target - "
 			       "telling server transaction to answer '500 No reachable destination'"),
 		    %% RFC3261 #16.7 bullet 6 says we SHOULD generate a 500 if a 503 is the best we've got
 		    {siperror, 500, "No reachable destination", []}
 	    end
     end.
+
+%% part of get_next_client_transaction_params/2
+%% Returns : DstList = list() of sipdst record()
+get_next_client_transaction_sipdst(DstList, ApproxMsgSize, 430) ->
+    %% Outbound 'Flow Failed' received, look for next destination with same instance id
+    case DstList of
+	[#sipdst{instance = Instance} | Rest] when is_list(Instance) ->
+	    case get_next_sipdst_with_instance(Instance, ApproxMsgSize, Rest) of
+		DstL when is_list(DstL) ->
+		    DstL;
+		none ->
+		    %% found no more sipdst with this instance, fall back to regular get_next_sipdst
+		    get_next_sipdst(DstList, ApproxMsgSize)
+	    end;
+	_ ->
+	    %% non-string instance in failed branch dst
+	    get_next_sipdst(DstList, ApproxMsgSize)
+    end;
+get_next_client_transaction_sipdst(DstList, ApproxMsgSize, _Status) ->
+    get_next_sipdst(DstList, ApproxMsgSize).
+
+%% part of get_next_client_transaction_sipdst/3
+%% Returns : Dst | none
+%%           Dst = sipdst record()
+get_next_sipdst_with_instance(Instance, ApproxMsgSize, DstL) ->
+    get_next_sipdst_with_instance(Instance, ApproxMsgSize, DstL, []).
+
+get_next_sipdst_with_instance(Instance, ApproxMsgSize, [#sipdst{instance = Instance} = H | T], NoMatch) ->
+    %% match - now check if this matching sipdst is eligible
+    case get_next_sipdst([H], ApproxMsgSize) of
+	[NewH] when is_record(NewH, sipdst) ->
+	    [NewH | NoMatch];
+	[] ->
+	    %% H was no good, keep looking without including H in NoMatch
+	    get_next_sipdst_with_instance(Instance, ApproxMsgSize, T, NoMatch)
+    end;
+get_next_sipdst_with_instance(Instance, ApproxMsgSize, [H | T], NoMatch) when is_record(H, sipdst) ->
+    get_next_sipdst_with_instance(Instance, ApproxMsgSize, T, [H | NoMatch]);
+get_next_sipdst_with_instance(_Instance, _ApproxMsgSize, [], _NoMatch) ->
+    none.
 
 %%--------------------------------------------------------------------
 %% Function: get_next_target_branch(In)
@@ -579,6 +640,7 @@ start_get_servertransaction(TH, Request) when is_record(Request, request) ->
 test() ->
     yxa_test_config:init(incomingproxy, [{sipsocket_blacklisting, false}]),
 
+
     %% get_next_target_branch(In)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_next_target_branch/1 - 1"),
@@ -648,12 +710,12 @@ test() ->
     autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
 
-    %% get_next_client_transaction_params(State)
+    %% get_next_client_transaction_params(Status, State)
     %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 1"),
-    {siperror, 500, _, []} = get_next_client_transaction_params(#state{dstlist = [#sipdst{}]}),
+    autotest:mark(?LINE, "get_next_client_transaction_params/2 - 1"),
+    {siperror, 500, _, []} = get_next_client_transaction_params(400, #state{dstlist = [#sipdst{}]}),
 
-    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 2"),
+    autotest:mark(?LINE, "get_next_client_transaction_params/2 - 2"),
     %% test with only an unresolvable destination left
     autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "unresolvable.example.org", 4999},
@@ -667,10 +729,10 @@ test() ->
 	#state{dstlist = GNCTP_DstL_2,
 	       approxmsgsize = 500
 	      },
-    {siperror, 500, _, []} = get_next_client_transaction_params(GNCTP_State2),
+    {siperror, 500, _, []} = get_next_client_transaction_params(400, GNCTP_State2),
     autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
-    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 3.0"),
+    autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.0"),
     %% test working case
     GNCTP_NewURL3 = sipurl:parse("sip:new.example.org"),
     GNCTP_DstL_3 =
@@ -691,10 +753,10 @@ test() ->
 	       endtime		= util:timestamp() + 10
 	      },
 
-    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 3.1"),
-    GNCTP_Res3 = get_next_client_transaction_params(GNCTP_State3),
+    autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.1"),
+    GNCTP_Res3 = get_next_client_transaction_params(400, GNCTP_State3),
 
-    autotest:mark(?LINE, "get_next_client_transaction_params/1 - 3.2"),
+    autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.2"),
     {ok, #request{uri = GNCTP_NewURL3}, #sipdst{addr = "192.0.2.3", port = 4997}, 10, GNCTP_State3_Res} = GNCTP_Res3,
     "foo.2" = GNCTP_State3_Res#state.branch,
 
@@ -748,7 +810,7 @@ test() ->
     autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_4),
     error = start_get_dstlist(THandler, SGD_Request4, 500, route),
 
-    {604, "Does Not Exist Anywhere", [], <<>>} = get_created_response(),
+    {604, "Does Not Exist Anywhere", [], <<>>} = test_get_created_response(),
     autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
     autotest:mark(?LINE, "start_get_dstlist/4 - 5"),
@@ -761,13 +823,216 @@ test() ->
     autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_5),
     error = start_get_dstlist(THandler, SGD_Request5, 500, route),
 
-    {500, "Failed resolving Route destination", [], <<>>} = get_created_response(),
+    {500, "Failed resolving Route destination", [], <<>>} = test_get_created_response(),
     autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+
+
+    %% get_next_sipdst_with_instance(Instance, ApproxMsgSize, DstL)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_next_sipdst_with_instance/3 - 1"),
+    %% test normal case, easy match
+    GNSWI_Dst1 =
+	#sipdst{proto      = yxa_test,
+		port       = 1,
+		instance   = "foo"
+	       },
+    [GNSWI_Dst1] = get_next_sipdst_with_instance("foo", 500, [GNSWI_Dst1]),
+
+    autotest:mark(?LINE, "get_next_sipdst_with_instance/3 - 2"),
+    %% test normal case, almost as easy match
+    GNSWI_Dst2 =
+	#sipdst{proto      = yxa_test,
+		port       = 2,
+		instance   = "bar"
+	       },
+    [GNSWI_Dst1, GNSWI_Dst2] = get_next_sipdst_with_instance("foo", 500, [GNSWI_Dst2, GNSWI_Dst1]),
+
+    autotest:mark(?LINE, "get_next_sipdst_with_instance/3 - 2"),
+    %% test no match
+    none = get_next_sipdst_with_instance("nomatch", 500, [GNSWI_Dst2, GNSWI_Dst1]),
+
+    autotest:mark(?LINE, "get_next_sipdst_with_instance/3 - 4"),
+    %% test matching, but not eligible sipdst
+    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+				    [{{get_ip_port, "unresolvable.example.org", 4999},
+				      {error, "testing unresolvable things"}}
+				    ]),
+    GNSWI_Dst4 =
+	#sipdst{proto      = undefined,
+		uri        = sipurl:parse("sip:unresolvable.example.org:4999"),
+		instance   = "foo"
+	       },
+    GNSWI_DstL4 = [GNSWI_Dst4, GNSWI_Dst2, GNSWI_Dst1],
+    [GNSWI_Dst1, GNSWI_Dst2] = get_next_sipdst_with_instance("foo", 500, GNSWI_DstL4),
+    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+
+    ok = test_loop_receive_once(),
+
+    yxa_test_config:stop(),
+    ok.
+
+test_loop_receive_once() ->
+    %% loop_receive_once(State, WarnOrEnd)
+    %%--------------------------------------------------------------------
+
+    ok = test_cancel_received(),
+    ok = test_branch_result_received(),
 
     ok.
 
+test_cancel_received() ->
+    %% test loop receiving {servertransaction_cancelled, ServerHandlerPid, ExtraHeaders}
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 1.0"),
+    State1 = #state{clienttransaction_pid	= self(),
+		    serverhandler		= transactionlayer:test_get_thandler_self(),
+		    cancelled			= false
+		   },
 
-get_created_response() ->
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 1.1"),
+    self() ! {servertransaction_cancelled, self(), [{"Reason", ["unit test"]}]},
+    {ok, State1_Res} = loop_receive_once(State1, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 1.2"),
+    %% check returned state
+    true = State1_Res#state.cancelled,
+    State1_Res = State1#state{cancelled = true},
+
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 1.3"),
+    %% check signals received
+    test_receive_exact_cast({cancel, "server transaction cancelled", [{"Reason", ["unit test"]}]}),
+
+    {487, "Request Cancelled", [], <<>>} = test_get_created_response(),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 2.1"),
+    %% check cancel when already cancelled
+    self() ! {servertransaction_cancelled, self(), [{"Reason", ["unit test"]}]},
+    {ok, State1_Res} = loop_receive_once(State1_Res, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 2.2"),
+    %% check that we don't receive any signals in this case
+    test_no_more_messages(),
+
+    ok.
+
+test_branch_result_received() ->
+    %% test loop receiving {branch_result, _AnyClientPid, _Branch, _BranchSipState, Response}
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 1.0"),
+    %% test provisional response
+    State1 = #state{clienttransaction_pid	= self(),
+		    serverhandler		= transactionlayer:test_get_thandler_self(),
+		    cancelled			= false,
+		    testing			= true
+		   },
+    Response1 = #response{status = 199,
+			  reason = "Testing"
+			 },
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 1.1"),
+    self() ! {branch_result, self(), "testing", proceeding, Response1},
+    {ok, State1_Res} = loop_receive_once(State1, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 1.2"),
+    %% check returned state
+    State1_Res = State1,
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 1.3"),
+    %% check signals received
+    test_receive_exact_cast({forwardresponse, Response1}),
+    test_no_more_messages(),
+
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 2.0"),
+    %% test final response (400, created)
+    State2 = #state{clienttransaction_pid	= self(),
+		    serverhandler		= transactionlayer:test_get_thandler_self(),
+		    cancelled			= false,
+		    testing			= true,
+		    request			= #request{method = "TEST",
+							   uri    = sipurl:parse("sip:test.example.com")
+							  },
+		    dstlist			= [#sipdst{proto = yxa_test}]
+		   },
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 2.1"),
+    self() ! {branch_result, self(), "testing", completed, {400, "Testing"}},
+    {ok, State2_Res} = loop_receive_once(State2, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 2.2"),
+    %% check returned state
+    State2_Res = State2,
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 2.3"),
+    %% check signals received
+    test_receive_exact_cast({create_response, 400, "Testing", [], <<>>}),
+    {final_response_event, FRE_L2} = test_receive_tuple(final_response_event),
+    true = is_list(FRE_L2),
+    test_no_more_messages(),
+
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 3.0"),
+    %% test final response (503, created), test that we turn 503 into 500
+    State3 = State2,
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 3.1"),
+    self() ! {branch_result, self(), "testing", completed, {503, "Testing"}},
+    {ok, State3_Res} = loop_receive_once(State3, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 3.2"),
+    %% check returned state
+    State3_Res = State3#state{clienttransaction_pid	= none,
+			      branch			= none,
+			      dstlist			= []
+			     },
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 3.3"),
+    %% check signals received
+    test_receive_exact_cast({create_response, 500, "No reachable destination", [], <<>>}),
+    {final_response_event, FRE_L3} = test_receive_tuple(final_response_event),
+    true = is_list(FRE_L3),
+    true = lists:member({response, "503 Testing"}, FRE_L3),
+    true = lists:member({origin, created}, FRE_L3),
+    test_no_more_messages(),
+
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 4.0"),
+    %% test final response (430 Flow Failed), test that we proceed to next dst
+    BRR_Dst41 = #sipdst{proto = yxa_test,
+			port  = 41,
+			instance = "test-instance4"
+		       },
+    BRR_Dst42 = BRR_Dst41#sipdst{port = 42},
+
+    State4 = State2#state{dstlist	= [BRR_Dst41, BRR_Dst42],
+			  branch	= "testbranch-UAC.1",
+			  endtime	= util:timestamp() + 25
+			 },
+    Response4 = #response{status = 430, reason = "Test Flow Failed"},
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 4.1"),
+    self() ! {branch_result, self(), "testing", completed, Response4},
+    {ok, State4_Res} = loop_receive_once(State4, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 4.2"),
+    %% check returned state
+    State4_Res = State4#state{branch	= "testbranch-UAC.2",
+			      dstlist	= [BRR_Dst42]
+			     },
+
+    autotest:mark(?LINE, "loop_receive_once/2 - branch result received 4.3"),
+    %% check signals received
+    {start_client_transaction, #request{}, BRR_Dst42, 25, State4_Res} =
+	test_receive_tuple(start_client_transaction),
+    {final_response_event, FRE_L4} = test_receive_tuple(final_response_event),
+    true = is_list(FRE_L4),
+    true = lists:member({response, "430 Test Flow Failed"}, FRE_L4),
+    true = lists:member({origin, forwarded}, FRE_L4),
+    test_no_more_messages(),
+
+    ok.
+
+test_get_created_response() ->
     receive
 	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
 	    {Status, Reason, EH, Body};
@@ -778,3 +1043,38 @@ get_created_response() ->
 	    {error, "no created response in my mailbox"}
     end.
 
+test_receive_exact_cast(Match) ->
+    test_receive_exact_signal({'$gen_cast', Match}).
+
+test_receive_exact_signal(Match) ->
+    receive
+	Match ->
+	    ok
+    after
+	0 ->
+	    io:format("ERROR: Expected message not received. Current messages for pid ~p :~n~p~n",
+		      [self(), process_info(self(), messages)]),
+	    Msg = io_lib:format("Did not receive the expected signal :~n~p", [Match]),
+	    erlang:error(lists:flatten(Msg))
+    end.
+
+test_no_more_messages() ->
+    receive
+        M ->
+	    Msg = io_lib:format("Received signal when none was expected : ~p", [M]),
+	    erlang:error(lists:flatten(Msg))
+    after 0 ->
+	    ok
+    end.
+
+test_receive_tuple(Key) ->
+    receive
+	M when is_tuple(M), element(1, M) == Key ->
+	    M
+    after
+	0 ->
+	    io:format("ERROR: Expected message not received. Current messages for pid ~p :~n~p~n",
+		      [self(), process_info(self(), messages)]),
+	    Msg = io_lib:format("Did not receive the expected signal : tuple ~p", [Key]),
+	    erlang:error(lists:flatten(Msg))
+    end.
