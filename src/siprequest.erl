@@ -692,7 +692,7 @@ construct_record_route(Proto) when is_list(Proto) ->
     construct_record_route(Proto, undefined, undefined).
 
 construct_record_route(Proto, undefined, undefined) when is_list(Proto) ->
-    {RRProto, MyPort} = 
+    {RRProto, MyPort} =
 	case Proto of
 	    "sips" ->
 		{"sips", sipsocket:get_listenport(tls)};
@@ -712,7 +712,7 @@ construct_record_route(Proto, undefined, undefined) when is_list(Proto) ->
 		   MyPort
 	   end,
     construct_record_route(RRProto, myhostname(), Port);
-    
+
 %% Returns : RRStr = string(), URL enclosed in "<>"
 construct_record_route(Proto, Hostname, Port) ->
     URL =
@@ -817,7 +817,7 @@ request_to_me(#request{method = "OPTIONS"} = Request, YxaCtx, ExtraHeaders) when
 	    } = YxaCtx,
 
     {ok, AppName} = yxa_config:get_env(yxa_appmodule),
-    logger:log(normal, "~s: ~p: 'OPTIONS ~s '(to me) -> 200 OK",
+    logger:log(normal, "~s: ~p: 'OPTIONS ~s' (to me) -> 200 OK",
 	       [LogTag, AppName, sipurl:print(Request#request.uri)]),
 
     %% XXX The OPTIONS response SHOULD include Accept, Accept-Encoding, Accept-Language, and
