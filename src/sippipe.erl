@@ -161,12 +161,10 @@ final_start(Branch, ServerHandler, ClientPid, Request, [Dst | _] = DstList, Time
 %%--------------------------------------------------------------------
 loop(State) when is_record(State, state) ->
     WarnOrEnd = lists:min([State#state.warntime, State#state.endtime]) - util:timestamp(),
-    {Res, NewState} = loop_receive_once(State, WarnOrEnd),
-
-    case Res of
-	quit ->
+    case loop_receive_once(State, WarnOrEnd) of
+	{quit, _NewState} ->
 	    ok;
-	_ ->
+	{_Result, NewState} ->
 	    loop(NewState)
     end.
 
@@ -877,6 +875,7 @@ test_loop_receive_once() ->
 
     ok = test_cancel_received(),
     ok = test_branch_result_received(),
+    ok = test_processes_terminating(),
 
     ok.
 
@@ -1031,6 +1030,62 @@ test_branch_result_received() ->
     test_no_more_messages(),
 
     ok.
+
+test_processes_terminating() ->
+    DeadPid = spawn(fun() -> ok end),
+
+    %% test loop receiving {servertransaction_terminating, ServerHandlerPid}
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 1.0"),
+    %% test normal case
+    State1 = #state{clienttransaction_pid	= self(),
+		    serverhandler		= transactionlayer:test_get_thandler_self()
+		   },
+
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 1.1"),
+    self() ! {servertransaction_terminating, self()},
+    {quit, State1_Res} = loop_receive_once(State1, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 1.2"),
+    %% verify result
+    State1_Res = State1#state{serverhandler = none},
+
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 2.0"),
+    %% test with wrong server transaction pid
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 2.1"),
+    self() ! {servertransaction_terminating, DeadPid},
+    {error, State1} = loop_receive_once(State1, util:timestamp() + 10),
+
+
+    %% test loop receiving {clienttransaction_terminating, ClientPid, _Branch}
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 3.0"),
+    %% test normal case
+    State3 = #state{clienttransaction_pid	= self(),
+		    serverhandler		= transactionlayer:test_get_thandler_self()
+		   },
+
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 3.1"),
+    self() ! {clienttransaction_terminating, self(), "unit testing"},
+    {quit, State3_Res} = loop_receive_once(State1, util:timestamp() + 10),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 3.2"),
+    %% verify result
+    State3_Res = State3#state{clienttransaction_pid = none},
+
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 2.0"),
+    %% test with unknown client transaction pid, should just be ignored
+    autotest:mark(?LINE, "loop_receive_once/2 - UAS/UAC terminating received 2.1"),
+    self() ! {clienttransaction_terminating, DeadPid, "unit testing"},
+    {ok, State3} = loop_receive_once(State3, util:timestamp() + 10),
+
+    ok.
+
+
+
+%%--------------------------------------------------------------------
+%%% Test helper functions
+%%--------------------------------------------------------------------
 
 test_get_created_response() ->
     receive
