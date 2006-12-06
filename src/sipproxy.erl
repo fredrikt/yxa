@@ -711,7 +711,7 @@ process_signal(Msg, State) when is_record(State, state) ->
 %%--------------------------------------------------------------------
 try_next_destination(Status, Target, State) when is_integer(Status), is_record(State, state) ->
     case {Status, State#state.mystate} of
-	{410, calling} ->
+	{430, calling} ->
 	    case targetlist:extract([user_instance], Target) of
 		[{User, Instance}] when is_list(User), is_list(Instance) ->
 		    SameUserInstance = [E || E <- State#state.surplus,
@@ -719,22 +719,22 @@ try_next_destination(Status, Target, State) when is_integer(Status), is_record(S
 					     E#sipproxy_action.instance == Instance],
 		    case SameUserInstance of
 			[] ->
-			    logger:log(debug, "sipproxy: Received 410 response, but I have no surplus actions for "
+			    logger:log(debug, "sipproxy: Received 430 response, but I have no surplus actions for "
 				       "user ~p, instance ~p", [User, Instance]),
 			    State;
 			[NextAction | _] ->
 			    NewSurplus = State#state.surplus -- [NextAction],
-			    try_next_destination_410(NextAction, Target, {User, Instance},
+			    try_next_destination_430(NextAction, Target, {User, Instance},
 						     State#state{surplus = NewSurplus})
 		    end;
 		_ ->
 		    State
 	    end;
-	{410, S} ->
+	{430, S} ->
 	    case targetlist:extract([user_instance], Target) of
 		[{User, Instance}] when is_list(User), is_list(Instance) ->
-		    logger:log(debug, "sipproxy: Received response 410 but not trying next destination when I'm in state ~p",
-			       [S]);
+		    logger:log(debug, "sipproxy: Received response 430 but not trying next destination "
+			       "when I'm in state ~p", [S]);
 		_ ->
 		    ok
 	    end,
@@ -777,10 +777,10 @@ try_next_destination(Status, Target, State) when is_integer(Status), is_record(S
 	    State
     end.
 
-try_next_destination_410(NextAction, Target, UserInstance, State) when is_record(NextAction, sipproxy_action) ->
+try_next_destination_430(NextAction, Target, UserInstance, State) when is_record(NextAction, sipproxy_action) ->
     [Branch, CallTimeout] = targetlist:extract([branch, timeout], Target),
     NewBranch = get_next_target_branch(Branch),
-    logger:log(debug, "sipproxy: Received 410 response, starting new branch ~p from surplus supply",
+    logger:log(debug, "sipproxy: Received 430 response, starting new branch ~p from surplus supply",
 	       [NewBranch]),
 
     #state{request	  = OrigRequest,
