@@ -1043,9 +1043,10 @@ from_transportlayer(Request, YxaCtx) when is_record(Request, request), is_record
 %%           YxaCtx   = yxa_ctx record()
 %% Descrip.: The transport layer passes us a response it has just
 %%           received.
-%% Returns : {pass_to_core, AppModule} |
+%% Returns : {pass_to_core, AppModule, NewYxaCtx} |
 %%           continue
 %%           AppModule = atom(), YXA application module name
+%%           NewYxaCtx = yxa_ctx record()
 %%--------------------------------------------------------------------
 from_transportlayer(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     case get_client_transaction_pid(Response) of
@@ -1063,7 +1064,7 @@ from_transportlayer(Response, YxaCtx) when is_record(Response, response), is_rec
     end.
 
 %% part of from_transportlayer/1
-%% Returns : continue | {pass_to_core, AppModule}
+%% Returns : continue | {pass_to_core, AppModule, NewYxaCtx}
 from_transportlayer_response_no_transaction(Method, Response, _YxaCtx) when is_list(Method), Method /= "INVITE" ->
     %% RFC4320 #4.2 (Action 2)
     %% A transaction-stateful SIP proxy MUST NOT send any response to a
@@ -1084,7 +1085,7 @@ from_transportlayer_response_no_transaction("INVITE", Response, YxaCtx) ->
 	nomatch ->
 	    logger:log(debug, "Transaction layer: No state for received response '~p ~s', "
 		       "passing to ~p:response(...).", [Status, Reason, AppModule]),
-	    {pass_to_core, AppModule};
+	    {pass_to_core, AppModule, YxaCtx};
 	DCPid when is_pid(DCPid) ->
 	    case is_process_alive(DCPid) of
 		true ->
