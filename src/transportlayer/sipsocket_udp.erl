@@ -221,7 +221,7 @@ handle_call({get_socket, _Proto}, _From, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_call({get_specific_socket, Id}, From, State)
-%%           Id = tuple() ({Proto, Id})
+%%           Id = ob_id record()
 %% Descrip.: Get a specific socket.
 %% Returns : {reply, Reply, State}
 %%           Reply = {ok, SipSocket} |
@@ -229,11 +229,11 @@ handle_call({get_socket, _Proto}, _From, State) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-handle_call({get_specific_socket, {udp, _} = Id}, _From, State) ->
+handle_call({get_specific_socket, #ob_id{proto = udp} = Id}, _From, State) ->
     Res = get_sipsocket_id_match(Id, State#state.inet_socketlist),
     {reply, Res, State};
 
-handle_call({get_specific_socket, {udp6, _} = Id}, _From, State) ->
+handle_call({get_specific_socket, #ob_id{proto = udp6} = Id}, _From, State) ->
     Res = get_sipsocket_id_match(Id, State#state.inet6_socketlist),
     {reply, Res, State};
 
@@ -427,7 +427,7 @@ get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
 
 %%--------------------------------------------------------------------
 %% Function: get_specific_socket(Id)
-%%           Id = tuple() ({Proto, Id})
+%%           Id = ob_id record()
 %% Descrip.: Return a specific socket. Used by draft-Outbound implem-
 %%           entation to send requests using an existing flow, or not
 %%           at all.
@@ -436,7 +436,7 @@ get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_specific_socket({Proto, _} = Id) when Proto == udp; Proto == udp6 ->
+get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == udp; Proto == udp6 ->
     case catch gen_server:call(sipsocket_udp, {get_specific_socket, Id}) of
 	{ok, SipSocket} ->
 	    SipSocket;
