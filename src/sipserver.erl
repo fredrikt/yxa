@@ -80,7 +80,9 @@ start(normal, [AppModule]) ->
     case sipserver_sup:start_link(AppModule, []) of
 	{ok, Supervisor} ->
 	    local:init(),
-	    [MnesiaTables, stateful, AppSupdata] = AppModule:init(),
+	    #yxa_app_init{sup_spec	= AppSupdata,
+			  mnesia_tables	= MnesiaTables
+			 } = AppModule:init(),
 	    logger:log(debug, "starting, supervisor is ~p", [Supervisor]),
 	    case siphost:myip() of
 		"127.0.0.1" ->

@@ -37,20 +37,14 @@
 %%--------------------------------------------------------------------
 %% Function: init()
 %% Descrip.: YXA applications must export an init/0 function.
-%% Returns : [Tables, Mode, SupData]
-%%           Tables  = list() of atom(), remote mnesia tables the YXA
-%%                     startup sequence should make sure are available
-%%           Mode    = stateful
-%%           SupData = {append, SupSpec} |
-%%                     none
-%%           SupSpec = OTP supervisor child specification. Extra
-%%                     processes this application want the
-%%                     sipserver_sup to start and maintain.
+%% Returns : yxa_app_init record()
 %%--------------------------------------------------------------------
 init() ->
     Registrar = {registrar, {registrar, start_link, []}, permanent, 2000, worker, [registrar]},
     Tables = [user, numbers, phone, cpl_script_graph, regexproute, gruu],
-    [Tables, stateful, {append, [Registrar]}].
+    #yxa_app_init{sup_spec	= {append, [Registrar]},
+		  mnesia_tables	= Tables
+		 }.
 
 %%--------------------------------------------------------------------
 %% Function: request(Request, YxaCtx)

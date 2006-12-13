@@ -20,7 +20,7 @@
 %%--------------------------------------------------------------------
 init() ->
     database_call:create([node()]),
-    [none, stateful, {append, []}].
+    #yxa_app_init{}.
 
 
 %% Function: request(Request, YxaCtx)

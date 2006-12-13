@@ -9,6 +9,12 @@
 	  app_logtag	%% undefined | string(), log prefix to use
 	 }).
 
+%% record returned by YXA applications init/0 functions
+-record(yxa_app_init, {
+	  sup_spec	= none,	%% none | {append, SupSpec}
+	  mnesia_tables	= []	%% list() of atom(), mnesia tables required online before starting
+	 }).
+	  
 %% XXX can we assume that fields with the same names have the same possible types ?
 
 -record(request, {
