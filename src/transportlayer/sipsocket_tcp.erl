@@ -147,7 +147,8 @@ get_socket2(Dst, true) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == tcp orelse Proto == tcp6 ->
+get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == tcp orelse Proto == tcp6 orelse
+						     Proto == tls orelse Proto == tls6 ->
     case catch gen_server:call(tcp_dispatcher, {get_specific_socket, Id}) of
 	{ok, Socket} ->
 	    Socket;
