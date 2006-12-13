@@ -166,7 +166,7 @@ is_allowed_subscribe("dialog", _Num, _Request, _YxaCtx, _SIPuser = undefined, _P
 %%
 %% Presentity is {users, UserList}
 %%
-is_allowed_subscribe("dialog", _Num, YxaCtx, _THandler, SIPuser, {users, ToUsers} = _Presentity,
+is_allowed_subscribe("dialog", _Num, _Request, YxaCtx, SIPuser, {users, ToUsers} = _Presentity,
 		     _PkgState) when is_list(SIPuser), is_list(ToUsers) ->
     %% For the dialog package to work when the presentity is one or more users,
     %% we have to implement the following :
