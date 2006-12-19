@@ -156,8 +156,7 @@ init([Server]) ->
 %% Descrip.: Perform an LDAP search for a single attribute. Type is
 %%           the attribute name of In.
 %% Returns:  {reply, Reply, State, ?TIMEOUT}
-%%           Reply = {ok, Res}       |
-%%                   {error, Reason}
+%%           Reply = {ok, Res} | {error, Reason}
 %%           Res = string() |
 %%                 none     |
 %%                 error
@@ -165,7 +164,7 @@ init([Server]) ->
 handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
     case State#state.server of
 	Server ->
-	    {ok, NewState, Res} = ldapsearch_wrapper(simple, [Type, In, Attribute], State),
+	    {ok, NewState, Res} = ldapsearch_wrapper(simple, {Type, In, Attribute}, State),
 	    {reply, Res, NewState, ?TIMEOUT};
 	_ ->
 	    {reply, {error, "Different LDAP server"}, State, ?TIMEOUT}
@@ -181,8 +180,7 @@ handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
 %% Descrip.: Perform an LDAP search for a single attribute. Type is
 %%           the attribute name of In.
 %% Returns:  {reply, Reply, State, ?TIMEOUT}
-%%           Reply = {ok, Res}       |
-%%                   {error, Reason}
+%%           Reply = {ok, Res} | {error, Reason}
 %%           Res = list() of SearchRes |
 %%                 none                |
 %%                 error
@@ -191,7 +189,7 @@ handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
 handle_call({search, Server, Type, In, Attributes}, _From, State) ->
     case State#state.server of
 	Server ->
-	    {ok, NewState, Res} = ldapsearch_wrapper(full, [Type, In, Attributes], State),
+	    {ok, NewState, Res} = ldapsearch_wrapper(full, {Type, In, Attributes}, State),
 	    {reply, Res, NewState, ?TIMEOUT};
 	_ ->
 	    {reply, {error, "Different LDAP server"}, State, ?TIMEOUT}
@@ -217,7 +215,7 @@ handle_cast({ping_of_death, Pid}, State) ->
     {stop, normal, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Info, State)
+%% Function: handle_info(Msg, State)
 %% Descrip.: Handling all non call/cast messages
 %% Returns : {noreply, State}          |
 %%           {noreply, State, Timeout} |
@@ -396,7 +394,7 @@ ensure_connected(State) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: exec_ldapsearch(Mode, Handle, [Type, In, AttrIn])
+%% Function: exec_ldapsearch(Mode, Handle, {Type, In, AttrIn})
 %%           Mode   = simple | full
 %%           Handle = ldaphandle record()
 %%           Type   = string()
@@ -406,15 +404,13 @@ ensure_connected(State) when is_record(State, state) ->
 %% Descrip.: Perform an LDAP search, and depending on Mode return
 %%           either just the result values or the whole set of
 %%           results, complete with DN information and all.
-%% Returns : Res = list() of SearchRes |
-%%           none                      |
-%%           error
+%% Returns : [SearchRes] | none | error
 %%           SearchRes  = ldapres record() | string()
 %% Note    : If you make a simple query with AttrIn being a
 %%           [string()], then the subsequent query will fail
 %%           mysteriously. Seems to be a bug in eldap module.
 %%--------------------------------------------------------------------
-exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) when is_record(Handle, ldaphandle) ->
+exec_ldapsearch(Mode, Handle, {Type, In, AttrIn}) when is_record(Handle, ldaphandle) ->
     Attr = case {Mode, AttrIn} of
 	       {simple, [Attr1]} when is_list(Attr1) ->
 		   [Attr1];
@@ -450,13 +446,13 @@ exec_ldapsearch(Mode, Handle, [Type, In, AttrIn]) when is_record(Handle, ldaphan
 		       [Handle, Type, In, Unknown]),
 	    error
     end;
-exec_ldapsearch(_Mode, Handle, [Type, In, _AttrIn]) ->
+exec_ldapsearch(_Mode, Handle, {Type, In, _AttrIn}) ->
     logger:log(error, "LDAP client: Returning 'error' on query ~p ~p because handle '~p' is not valid", [Type, In, Handle]),
     error.
 
 %%--------------------------------------------------------------------
 %% Function: get_valuelist(L, Attribute)
-%%           L         = list() of {Key, Value} tuples
+%%           L         = list() of {Key, Value}
 %%           Attribute = string()
 %%           Key       = string()
 %%           Value     = string()
@@ -489,9 +485,7 @@ get_valuelist2([H | T], Attribute, Res) ->
 %%           Attributes = list() of string()
 %% Descrip.: Perform an LDAP search in a catch context, since we might
 %%           crash.
-%% Returns : list() of ldapres record() |
-%%           none                       |
-%%           error
+%% Returns : [#ldapres{}] | none | error
 %%--------------------------------------------------------------------
 exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when is_record(LHandle, ldaphandle), is_list(Type),
 							   is_list(In), is_list(Attributes) ->

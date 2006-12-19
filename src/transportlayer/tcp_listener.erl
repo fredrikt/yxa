@@ -95,7 +95,9 @@ start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
 %%           SocketModule = atom(), gen_tcp | ssl
 %%           Options      = term(), socket options
 %% Descrip.: Starts listening on a port, then enters accept_loop.
-%% Returns : does not return
+%%
+%%           NOTE : Does not return.
+%% Returns : any()
 %%--------------------------------------------------------------------
 start_listening(Proto, Port, InetModule, SocketModule, Options)
   when is_atom(Proto), is_integer(Port), is_atom(InetModule), is_atom(SocketModule), is_list(Options) ->
@@ -154,7 +156,9 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
 %% Function: accept_loop_start(State)
 %%           State = state record()
 %% Descrip.: Log a small message before starting the real accept_loop.
-%% Returns : does not return
+%%
+%%           NOTE : Does not return.
+%% Returns : any()
 %%--------------------------------------------------------------------
 accept_loop_start(State) when is_record(State, state) ->
     #hp{l_ip   = IP,
@@ -176,8 +180,9 @@ accept_loop_start(State) when is_record(State, state) ->
 %%           are listening on. When someone does, spawn a
 %%           tcp_connection process that handles this connection and
 %%           then loop back to ourselves and do accept() again.
-%% Returns : Should never return, if the listening socket gets closed
-%%           for some reason we terminate with erlang:error/2.
+%%
+%%           NOTE : does not return.
+%% Returns : any()
 %%--------------------------------------------------------------------
 accept_loop(State) when is_record(State, state) ->
     SocketModule = State#state.socketmodule,
@@ -230,9 +235,9 @@ accept_loop(State) when is_record(State, state) ->
 
 %%--------------------------------------------------------------------
 %% Function: start_tcp_connection(SocketModule, Proto, Socket, HP)
-%%           SocketModule = atom(), the name of the sipsocket module
-%%                          this socket uses (gen_tcp | ssl)
-%%           Proto  = term() (atom(), tcp | tcp6 | tls | tls6)
+%%           SocketModule = gen_tcp | ssl, the name of the sipsocket
+%%                          module this socket uses
+%%           Proto  = tcp | tcp6 | tls | tls6
 %%           Socket = term()
 %%           HP     = hp record(), local/remote IP/port info
 %% Descrip.: Someone has just connected to our listening socket,
@@ -245,7 +250,7 @@ accept_loop(State) when is_record(State, state) ->
 %%           This must be done from here since the SSL socket handler
 %%           only allows the current controlling process to change who
 %%           is it's controlling process.
-%% Returns : ok | throw(...)
+%% Returns : ok
 %%--------------------------------------------------------------------
 %%
 %% SSL socket

@@ -71,6 +71,15 @@ clean:
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out erl_crash.dump
 
+doc:
+	mkdir -p ../../doc/html/src/database
+	cp $(srcdir)/overview.edoc ../../doc/html/src/database/
+	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
+		-yxa_edoc_dir ../../doc/html/src/database \
+		-yxa_edoc_srcpath $(srcdir) \
+		-run yxa_edoc run "$(erl_FILES)" \
+		-run init stop
+
 $(beam_FILES): $(yxa_hrl_FILES)
 
 SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in

@@ -1,4 +1,4 @@
-# $Id$
+# $Id: Makefile.in 3031 2006-02-14 13:17:09Z ft $
 #
 
 srcdir = @srcdir@

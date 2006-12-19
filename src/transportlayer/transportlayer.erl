@@ -42,6 +42,11 @@
 %% External functions
 %%====================================================================
 
+%%--------------------------------------------------------------------
+%% Function: start_link()
+%% @equiv    sipsocket:start_link()
+%% Returns : term()
+%%--------------------------------------------------------------------
 start_link() ->
     sipsocket:start_link().
 
@@ -75,12 +80,11 @@ send_proxy_response(Socket, Response)
 %%                           for sending this request
 %%           Request       = request record()
 %%           Dst           = sipdst record()
-%%           ViaParameters = list() of {key, value} tuple()
+%%           ViaParameters = list() of {Key, Value}
 %% Descrip.: Prepare for proxying a request. The preparation process
 %%           is basically to get us a list() of sipdst records and
 %%           then calling send_to_available_dst().
-%% Returns : throw()                     |
-%%           {error, Reason}             |
+%% Returns : {error, Reason}             |
 %%           {ok, SipSocket, UsedBranch} |
 %%           Reason     = timeout | string() | term()
 %%           SipSocket  = sipsocket record(), the socket used
@@ -137,17 +141,52 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: send_result(RequestHeader, Socket, Body, Status, Reason)
+%%           RequestHeader = keylist record(), header of SIP request
+%%                           we should respond to
+%%           Socket   = none | sipsocket record()
+%%           Body     = string() | binary()
+%%           Status   = integer(), SIP status code
+%%           Reason   = string(), SIP reason phrase
+%% Descrip.: Create a response (with minimal headers) to a request
+%%           and send it.
+%% Returns : Res                 |
+%%           {senderror, Reason}
+%%           Res = term(), result of send_response_to(...)
+%%           Reason = string()
+%%--------------------------------------------------------------------
 send_result(RequestHeader, Socket, Body, Status, Reason)
-  when is_record(RequestHeader, keylist), is_record(Socket, sipsocket); Socket == none,
-       is_binary(Body); is_list(Body), is_integer(Status), is_list(Reason) ->
+  when is_record(RequestHeader, keylist), (is_record(Socket, sipsocket) orelse Socket == none),
+       (is_binary(Body) orelse is_list(Body)), is_integer(Status), is_list(Reason) ->
     Response1 = #response{status=Status, reason=Reason,
 			  header=siprequest:standardcopy(RequestHeader, [])},
     Response = siprequest:set_response_body(Response1, Body),
     send_response(Socket, Response).
 
+%%--------------------------------------------------------------------
+%% Function: send_result(RequestHeader, Socket, Body, Status, Reason,
+%%                       ExtraHeaders)
+%%           RequestHeader = keylist record(), header of SIP request
+%%                           we should respond to
+%%           Socket   = none | sipsocket record()
+%%           Body     = string() | binary()
+%%           Status   = integer(), SIP status code
+%%           Reason   = string(), SIP reason phrase
+%%           ExtraHeaders  = list() of {Key, Value}
+%%             Key    = string(), SIP header name
+%%             Value  = list() of string(), header content
+%% Descrip.: Create a response (with minimal headers) to a request
+%%           and send it. Include one or more extra headers specified
+%%           by the caller.
+%% Returns : Res                 |
+%%           {senderror, Reason}
+%%           Res = term(), result of send_response_to(...)
+%%           Reason = string()
+%%--------------------------------------------------------------------
 send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
-  when is_record(RequestHeader, keylist), is_record(Socket, sipsocket); Socket == none,
-       is_binary(Body); is_list(Body), is_integer(Status), is_list(Reason), is_record(ExtraHeaders, keylist) ->
+  when is_record(RequestHeader, keylist), (is_record(Socket, sipsocket) orelse Socket == none),
+       (is_binary(Body) orelse is_list(Body)), is_integer(Status), is_list(Reason), is_list(ExtraHeaders) ->
     Response1 = #response{status = Status,
 			  reason = Reason,
 			  header = siprequest:standardcopy(RequestHeader, ExtraHeaders)
@@ -165,7 +204,7 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
 %% Returns : Res = term()    |
 %%           ignore          |
 %%           {error, Reason}
-%%           Res    = result of transportlayer:send_proxy_request()
+%%           Res    = term(), result of transportlayer:send_proxy_request()
 %%           Reason = string()
 %%--------------------------------------------------------------------
 stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, YxaCtx) when is_list(LogTag),
@@ -214,7 +253,7 @@ stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, YxaCtx) when is_
 %%           example ACK 'requests' of to 2xx response to INVITE.
 %% Returns : Res = term() |
 %%           {error, Reason}
-%%           Res    = result of transportlayer:send_proxy_request()
+%%           Res    = term(), result of transportlayer:send_proxy_request()
 %%           Reason = string()
 %%--------------------------------------------------------------------
 stateless_proxy_request(LogTag, Request) when is_list(LogTag), is_record(Request, request) ->
@@ -263,11 +302,12 @@ stateless_proxy_request2(LogTag, Request, []) ->
 
 %%--------------------------------------------------------------------
 %% Function: send_response(Socket, Response)
-%%           Socket   = sipsocket record()
+%%           Socket   = sipsocket record() | none
 %%           Response = response record()
 %% Descrip.: Prepare to send a response out on a socket.
-%% Returns : Res = term(), result of send_response_to(...) |
+%% Returns : Res                 |
 %%           {senderror, Reason}
+%%           Res = term(), result of send_response_to(...)
 %%           Reason = string()
 %%--------------------------------------------------------------------
 send_response(Socket, Response) when is_record(Response, response) ->
@@ -348,11 +388,9 @@ remove_blacklisting(Dst) ->
     sipsocket_blacklist:remove_blacklisting(Dst).
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(Dst)
-%%           report_unreachable(Dst, Msg, RetryAfter)
+%% Function: report_unreachable(Dst, Msg)
 %%           Dst = sipdst record()
 %%           Msg = string(), reason for report
-%%           RetryAfter = undefined | integer(), seconds to blacklist
 %% Descrip.: Interface function to sipsocket_blacklist.
 %% Returns : ok
 %%--------------------------------------------------------------------
@@ -362,6 +400,14 @@ report_unreachable(#sipdst{proto = yxa_test} = Dst, Msg) ->
 report_unreachable(Dst, Msg) ->
     sipsocket_blacklist:report_unreachable(Dst, Msg).
 
+%%--------------------------------------------------------------------
+%% Function: report_unreachable(Dst, Msg, RetryAfter)
+%%           Dst = sipdst record()
+%%           Msg = string(), reason for report
+%%           RetryAfter = undefined | integer(), seconds to blacklist
+%% Descrip.: Interface function to sipsocket_blacklist.
+%% Returns : ok
+%%--------------------------------------------------------------------
 report_unreachable(#sipdst{proto = yxa_test} = Dst, Msg, RetryAfter) ->
     self() ! {transportlayer, report_unreachable, Dst, lists:flatten(Msg), RetryAfter},
     ok;
@@ -468,7 +514,7 @@ get_good_socket(none, Dst) when is_record(Dst, sipdst) ->
 %%--------------------------------------------------------------------
 %% Function: test()
 %% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
     MyHostname = siprequest:myhostname(),

@@ -1,9 +1,13 @@
-%% test code for xml_parse.erl module
-%%
-%% Note: the code could be made less verbose, but test code should be
-%%       kept simple to reduce the risk of bugs.
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : xml_parse_test.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: Test code for xml_parse.erl module.
+%%%
+%%% Note: the code could be made less verbose, but test code should be
+%%%       kept simple to reduce the risk of bugs.
+%%%
+%%% Created : 01 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(xml_parse_test).
 
 %%--------------------------------------------------------------------
@@ -48,9 +52,9 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: test()
 %% Descrip.: autotest callback
-%% Returns :
+%% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
 

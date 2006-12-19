@@ -41,7 +41,7 @@
 
 
 %%--------------------------------------------------------------------
-%% Macros
+%% Records
 %%--------------------------------------------------------------------
 
 %% private Mnesia record, the interface record is called gruu_dbe
@@ -54,6 +54,12 @@
 	  flags			%% list() of {Key, Value} tuple(), for future use
 	 }).
 
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+
+%% @type  transaction_result() = {atomic, Result} | {aborted, Reason}.
+%%             The result of a Mnesia transaction. Result is a term().
 
 %%====================================================================
 %% External functions
@@ -62,14 +68,22 @@
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: create()
+%% Descrip.: Invoke create/1 with the list of servers indicated by
+%%           the configuration parameter 'databaseservers'.
+%% Returns : term(), result of mnesia:create_table/2.
 %%--------------------------------------------------------------------
 create() ->
-    create([node()]).
+    {ok, S} = yxa_config:get_env(databaseservers),
+    create(S).
 
-create(Servers) ->
+%%--------------------------------------------------------------------
+%% Function: create(Servers)
+%%           Servers = list() of atom(), list of nodes
+%% Descrip.: Create the table 'gruu' on Servers.
+%% Returns : term(), result of mnesia:create_table/2.
+%%--------------------------------------------------------------------
+create(Servers) when is_list(Servers) ->
     mnesia:create_table(gruu, [{attributes, record_info(fields, gruu)},
 			       {disc_copies, Servers},
 			       {index, [sipuser, instance_id]}
@@ -84,10 +98,9 @@ create(Servers) ->
 %%           SIPuser    = string(), SIP authentication username (key
 %%                        in our location database)
 %%           InstanceId = string(), +sip.instance from Contact
-%%           Flags      = list() of {Key, Value} tuple()
+%%           Flags      = list() of {Key, Value}
 %% Descrip.: Create a new GRUU entry in the database.
-%% Returns : mnesia transaction()   |
-%%           error(non_unique_gruu)
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 insert(GRUU, SIPuser, InstanceId, Flags) when is_list(GRUU), is_list(SIPuser), is_list(InstanceId),
 					      is_list(Flags) ->
@@ -111,7 +124,7 @@ insert(GRUU, SIPuser, InstanceId, Flags) when is_list(GRUU), is_list(SIPuser), i
 %%           GRUU = string()
 %% Descrip.: Update the 'last_registered' on the GRUU database entry
 %%           matching GRUU.
-%% Returns : mnesia transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 update_last_registered(GRUU) when is_list(GRUU) ->
     Now = util:timestamp(),
@@ -177,8 +190,7 @@ fetch_using_user_instance(SipUser, InstanceId) when is_list(SipUser), is_list(In
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_using_user_instance(SipUser, InstanceId)
-%%           SipUser    = string()
+%% Function: fetch_using_user_instance(InstanceId)
 %%           InstanceId = string()
 %% Descrip.: Fetch all GRUU database entrys matching an Instance ID.
 %%           There might be more than one if a UA uses a single
@@ -211,7 +223,7 @@ fetch_all() ->
 %% Function: delete(GRUU)
 %%           GRUU = string()
 %% Descrip.: Delete all GRUUs matching a GRUU string.
-%% Returns : mnesia:transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 delete(GRUU) when is_list(GRUU) ->
     db_util:delete_with_key(gruu, GRUU).
@@ -221,7 +233,7 @@ delete(GRUU) when is_list(GRUU) ->
 %% Function: delete_gruus_for_user(SipUser)
 %%           SipUser = string()
 %% Descrip.: Delete all GRUUs matching a SIP user.
-%% Returns : mnesia:transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 delete_gruus_for_user(SipUser) ->
     F = fun() ->
@@ -238,7 +250,7 @@ delete_gruus_for_user(SipUser) ->
 %% Function: delete_gruus_for_instance(InstanceId)
 %%           InstanceId = string()
 %% Descrip.: Delete all GRUUs matching an Instance ID.
-%% Returns : mnesia:transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 delete_gruus_for_instance(InstanceId) ->
     F = fun() ->
@@ -318,6 +330,11 @@ test() ->
 
     ok.
 
+%%--------------------------------------------------------------------
+%% Function: test_create_table()
+%% Descrip.: Create a table in RAM only, for use in unit tests.
+%% Returns : ok
+%%--------------------------------------------------------------------
 test_create_table() ->
     case catch mnesia:table_info(gruu, attributes) of
 	Attrs when is_list(Attrs) ->

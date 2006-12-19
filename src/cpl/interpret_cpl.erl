@@ -173,15 +173,15 @@ process_cpl_script_res(Unmatched, _STHandler) ->
 %%           BranchBase = string(), prefix to use when generating
 %%                        branches for client transactions
 %%           Request    = request record()
-%%           User       = owner of cpl script
-%%           Graph      = cpl script graph
-%%           Backend    = callback module
-%%           STHandler  =
+%%           User       = string(), owner of cpl script
+%%           Graph      = term(), cpl script graph
+%%           Backend    = atom(), callback module
+%%           STHandler  = term(), server transaction handler
 %%           Direction  = incoming | outgoing
 %% Descrip.: execute the the cpl script and return a {Action, ....}
 %%           tuple to specify what to do with the request, the Action
 %%           parameter indicates the action to do
-%% Returns : There are a number of possible return values of the
+%%           There are a number of possible return values of the
 %%           format {ExitType, ....}:
 %%
 %%           {redirect, Permanent, Locations}
@@ -236,6 +236,13 @@ process_cpl_script_res(Unmatched, _STHandler) ->
 %% Note    : CPL processing should be done in a spawned process - cpl
 %%           processing can take a long time (waiting for timeouts)
 %%           and many scripts may needed to be run at the same time
+%% Returns : {ExitType, Param} | {ExitType, Param1, Param2} |
+%%           throw({error, Reason})
+%%           ExitType = atom()
+%%           Param    = term()
+%%           Param1   = term()
+%%           Param2   = term()
+%%           Reason   = string() | atom()
 %%--------------------------------------------------------------------
 process_cpl_script(BranchBase, Request, User, Graph, Backend, STHandler, Direction) ->
     StartNodeIndex = get_start_node(Direction),
@@ -268,8 +275,9 @@ get_start_node(outgoing) ->
 %% Function: execute_node(StartIndex, State)
 %%           StartIndex = node index
 %%           State      = state record()
-%% Descrip.: this functions handles walking the node graph
-%% Returns : see process_cpl_script/4
+%% Descrip.: this functions handles walking the node graph. See
+%%           @{link process_cpl_script/4} for possible return values.
+%% Returns : term(), see process_cpl_script/4
 %% Note    : There are three ways a node can terminate:
 %%           It can be a terminator node, terminator nodes are created
 %%           by the parser, for single destination nodes, when the tag
@@ -330,7 +338,7 @@ add_node_to_visited(State, Index) ->
     State#state{visited_nodes = [Index | Visited]}.
 
 %%--------------------------------------------------------------------
-%% Function: finish(...)
+%% Function: finish_redirect(Permanent, State)
 %% Descrip.: create return result - from running a cpl script
 %% Returns : {Action, Response}
 %%--------------------------------------------------------------------
@@ -338,6 +346,11 @@ finish_redirect(Permanent, State) ->
     Locations = State#state.locations,
     {redirect, Permanent, location_to_uri(Locations)}.
 
+%%--------------------------------------------------------------------
+%% Function: finish_reject(RejectAttrs, State)
+%% Descrip.: create return result - from running a cpl script
+%% Returns : {reject, Status} | {reject, Status, Reason}
+%%--------------------------------------------------------------------
 finish_reject(#reject__attrs{status = Status, reason = Reason}, _State) ->
     case Reason of
 	"" -> {reject, Status};
@@ -411,9 +424,8 @@ location_to_uri(Locations) when is_list(Locations) ->
 
 %%--------------------------------------------------------------------
 %% Function: location_mod_performed(Graph, VisitedNodeIndexList)
-%%           signalling_performed(Graph, VisitedNodeIndexList)
-%% Descrip.: determine if a location modifier or signaling node has
-%%           been visited during script execution
+%% Descrip.: determine if a location modifier has been visited during
+%%           script execution
 %% Returns : true | false
 %%--------------------------------------------------------------------
 location_mod_performed(_Graph, []) ->
@@ -430,6 +442,12 @@ location_mod_performed(Graph, [Index | Visited]) ->
 	    location_mod_performed(Graph, Visited)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: signalling_performed(Graph, VisitedNodeIndexList)
+%% Descrip.: determine if a signaling node has been visited during
+%%           script execution
+%% Returns : true | false
+%%--------------------------------------------------------------------
 signalling_performed(_Graph, []) ->
     false;
 signalling_performed(Graph, [Index | Visited]) ->
@@ -474,9 +492,7 @@ terminator(_Code, State) ->
     {terminated, State}.
 
 %%--------------------------------------------------------------------
-%% Function: incoming(Code, State)
-%%           outgoing(Code, State)
-%%           Code  = Index
+%% Function: incoming(Index, State)
 %%           State = state record()
 %% Descrip.: process a start node
 %% Returns : {NextId, NewState}
@@ -484,6 +500,12 @@ terminator(_Code, State) ->
 incoming(Index, State) ->
     {Index, State}.
 
+%%--------------------------------------------------------------------
+%% Function: outgoing(Index, State)
+%%           State = state record()
+%% Descrip.: process a start node
+%% Returns : {NextId, NewState}
+%%--------------------------------------------------------------------
 %% "For the outgoing action, it [#state.locations] is initialized to
 %%  the destination address of the call." - RFC 3880 chapter 2.3
 outgoing(Index, State) ->
@@ -796,7 +818,7 @@ mail({Mail, Dest}, State) ->
     {Dest, State}.
 
 %%--------------------------------------------------------------------
-%% Function: proxy(Code, State)
+%% Function: proxy(Code, Count, State)
 %%           Code  = {ProxyAttrs, Conds}
 %%           State = state record()
 %% Descrip.:
@@ -1154,7 +1176,7 @@ redirect({Permanent, terminate}, State) ->
     {{terminated, redirect, Permanent}, State}.
 
 %%--------------------------------------------------------------------
-%% Function: reject({RejectAttrs, terminate}, State) ->
+%% Function: reject({RejectAttrs, terminate}, State)
 %%           RejectAttrs = reject__attrs record()
 %%           State       = state record()
 %% Descrip.: process a reject tag - terminate cpl script whit a reject
@@ -1182,9 +1204,14 @@ test() ->
 
     ok.
 
-%% Called from interpret_cpl_test.erl to ensure calling order of tests.
-%% The test is done here so that create_sequential_proxyaction_list/4 doesn't
-%% need to be exported
+%%--------------------------------------------------------------------
+%% Function: test27()
+%% Descrip.: Called from interpret_cpl_test.erl to ensure calling
+%%           order of tests. The test is done here so that
+%%           create_sequential_proxyaction_list/4 doesn't need to be
+%%           exported
+%% Returns : ok
+%%--------------------------------------------------------------------
 test27() ->
     autotest:mark(?LINE, "process_cpl_script/7 - 27.0"),
 

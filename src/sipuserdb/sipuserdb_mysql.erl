@@ -52,7 +52,7 @@
 %%           is started by the supervisor.
 %% Returns : Spec |
 %%           []
-%%           Spec = OTP supervisor child specification
+%%           Spec = term(), OTP supervisor child specification
 %%--------------------------------------------------------------------
 yxa_init() ->
     {ok, [Host, User, Password, Db]} =
@@ -104,7 +104,7 @@ get_mysql_params([], Res) ->
 %%           example in REGISTER. If there are multiple users with
 %%           this address in our database, this function returns
 %%           'error'.
-%% Returns:  Username |
+%% Returns : Username |
 %%           nomatch  |
 %%           error
 %%           Username = string()
@@ -159,7 +159,7 @@ get_users_for_address_of_record(Address) ->
 %% Descrip.: Iterate over a list of addresses of record, return
 %%           all users matching one or more of the addresses,
 %%           without duplicates.
-%% Returns : Users, list() of string()
+%% Returns : Users = list() of string()
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(AddressList) ->
     Query1 = make_sql_statement(sipuserdb_mysql_get_user_for_address,
@@ -180,7 +180,7 @@ get_users_for_addresses_of_record(AddressList) ->
 %% Descrip.: Iterate over a list of users, return all their
 %%           addresses without duplicates by using the next
 %%           function, get_addresses_for_user/1.
-%% Returns : Addresses, list() of string()
+%% Returns : Addresses = list() of string()
 %%--------------------------------------------------------------------
 get_addresses_for_users(In) when is_list(In) ->
     Addresses = 
@@ -246,7 +246,7 @@ get_addresses_for_user(User) ->
 %%           of these addresses. This is located in here since
 %%           user database backends can have their own way of
 %%           deriving addresses from a Request-URI.
-%% Returns : Usernames, list() of string()
+%% Returns : Usernames = list() of string()
 %%--------------------------------------------------------------------
 get_users_for_url(URL) when record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_mysql, URL),
@@ -358,11 +358,11 @@ get_forward_for_user(_User) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: make_sql_statement(CfgKey, Args)
-%%           make_sql_statement(Template, Args)
+%% Function: make_sql_statement(In, Args)
+%%           In       = CfgKey | Template
 %%           CfgKey   = atom()
-%%           Args     = list() of term(), SQL query key(s)
 %%           Template = string()
+%%           Args     = list() of term(), SQL query key(s)
 %% Descrip.: Construct an SQL query statement given a configuration
 %%           parameter name or a string template. If Args consists of
 %%           more than one element, SQL ' or ' will be used.
@@ -388,7 +388,7 @@ make_sql_statement(Template, Args) when is_list(Template), is_list(Args) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: make_sql_statement(Template, Args)
+%% Function: make_sql_statement(Template, Args, [])
 %%           Template = string()
 %%           Args     = list() of term(), SQL query key(s)
 %% Descrip.: Construct an SQL query statement given a template,

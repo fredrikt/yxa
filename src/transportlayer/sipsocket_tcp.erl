@@ -33,12 +33,10 @@
 -include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
-%% Macros
+%% Types
 %%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
-%% Records
-%%--------------------------------------------------------------------
+%% @type tcp_proto() = tcp | tcp6 | tls | tls6.
+%%	               Transport layer TCP/TLS protocol.
 
 
 %%====================================================================
@@ -51,17 +49,18 @@ start_link() ->
 %%--------------------------------------------------------------------
 %% Function: send(SipSocket, Proto, Host, Port, Message)
 %%           SipSocket = sipsocket record()
-%%           Proto     = atom(), tcp | tcp6 | tls | tls6
+%%           Proto     = tcp_proto()
 %%           Host      = string()
 %%           Port      = integer()
 %%           Message   = term(), I/O list to send
 %% Descrip.: Send a SIP message. Get the tcp_connection process from
 %%           the sipsocket, and request it to send the message.
+%%           Returns whatever the socket module (gen_tcp or ssl) send-
+%%           function returns. Typically 'ok' or {error, Something}.
 %% Returns : SendRes         |
-%%           {error, Reason}
-%%           SendRes = term(), whatever the socket module (gen_tcp or
-%%                     ssl) send-function returns. Typically 'ok' or
-%%                     {error, _Something}
+%%           {error, Reason} |
+%%           term()
+%%           SendRes = term(), socket module send() result
 %%           Reason = string()
 %%--------------------------------------------------------------------
 send(#sipsocket{proto=SProto}, Proto, _Host, Port, _Message) when is_integer(Port), SProto /= Proto ->
@@ -147,8 +146,7 @@ get_socket2(Dst, true) ->
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
-get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == tcp orelse Proto == tcp6 orelse
-						     Proto == tls orelse Proto == tls6 ->
+get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == tcp orelse Proto == tcp6 ->
     case catch gen_server:call(tcp_dispatcher, {get_specific_socket, Id}) of
 	{ok, Socket} ->
 	    Socket;
@@ -188,7 +186,7 @@ get_raw_socket(SipSocket) when is_record(SipSocket, sipsocket) ->
 %% Descrip.: Get the remote IP and port of a specific socket.
 %% Returns : {ok, Proto, IP, Port} |
 %%           {error, Reason}
-%%           Proto  = tcp | tcp6 | tls | tls6
+%%           Proto  = tcp_proto()
 %%           IP     = string()
 %%           Port   = integer()
 %%           Reason = string()

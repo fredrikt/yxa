@@ -1,3 +1,12 @@
+%%%-------------------------------------------------------------------
+%%% File    : bootstrap.erl
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Initialize Mnesia databases needed for an YXA
+%%%           installation. Run through the 'yxa-bootstrap' shell
+%%%           script.
+%%%
+%%% Created : 07 Oct 2003 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
 -module(bootstrap).
 
 -export([start/0,
@@ -29,7 +38,7 @@
 %% Function: start()
 %% Descrip.: Create a first Mnesia database server at the node where
 %%           this is run (through the execution of "yxa-bootstrap").
-%% Returns : ok | does not return
+%% Returns : ok
 %%--------------------------------------------------------------------
 start() ->
     io:format("Bootstrapping YXA on node ~p :~n", [node()]),
@@ -72,7 +81,7 @@ init_db_module([], _Node) ->
 %%           Master = string()
 %% Descrip.: Create a second Mnesia database server at the node where
 %%           this is run (through the execution of "yxa-bootstrap").
-%% Returns : ok | does not return
+%% Returns : ok
 %%--------------------------------------------------------------------
 replica([Master]) ->
     MasterNode = list_to_atom(Master),

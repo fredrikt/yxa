@@ -57,17 +57,22 @@
 %%           FieldStr = string()
 %%           Sep      = char()
 %% Descrip.: split FieldStr into two parts where Sep is encountered
-%% Returns : {First, Second} | {First} | throw()
 %%
-%% Example, if Sep = @ then:
-%% "foo@bar"  = {"foo", "bar"}
-%% "foo"      = {"foo"}
-%% "foo@"     = throw()
-%% "@bar"     = throw()
-%% "foo@@bar" = throw()
-%% "@"        = throw()
-%% ""         = {""}          XXX is this ok ? nothing currently
-%%                            depends on this behaviour.
+%%           Example, if Sep = @ then:
+%%            ``
+%%             "foo@bar"  = {"foo", "bar"}
+%%             "foo"      = {"foo"}
+%%             "foo@"     = throw()
+%%             "@bar"     = throw()
+%%             "foo@@bar" = throw()
+%%             "@"        = throw()
+%%             ""         = {""}     XXX is this ok ? nothing currently
+%%                                   depends on this behaviour.
+%%            ''
+%%
+%% Returns : {First, Second} | {First} |
+%%           throw({error, Reason})
+%%           Reason = no_first_part | no_second_part | more_than_one_separator
 %%--------------------------------------------------------------------
 split_fields(FieldStr, Sep) ->
     split_fields(FieldStr, Sep, []).
@@ -98,8 +103,9 @@ split_fields([Char | FieldStrRest], Sep, FirstSegmentAcc) ->
 %%           In = string()
 %% Descrip.: Parse out a quoted string from In and return the quoted
 %%           part as First and the rest as Second.
-%% Returns : {ok, First, Second} | throw()
-%%           First = Second = string()
+%% Returns : {ok, First, Second}
+%%           First  = string()
+%%           Second = string()
 %%--------------------------------------------------------------------
 split_quoted_string([34 | Rest]) ->	%% 34 is '"'
     split_quoted_string2(Rest, false, []);
@@ -176,15 +182,19 @@ split_non_quoted2(_Delim, [], _This, _Res, _InQuote = true) ->
 %%--------------------------------------------------------------------
 %% Function: parse_host(Host)
 %%           Host = string()
-%% the host rule alows for a varity of formats:
-%%
-%% hostname
-%% ipv4address
-%% ipv6reference
 %%
 %% Descrip.: return Host if it is wellformed, a exception is
 %%           thrown if the Host is malformed
-%% Returns : Host | throw() if parse fails
+%%
+%%           the host rule alows for a varity of formats:
+%%
+%%              hostname
+%%              ipv4address
+%%              ipv6reference
+%%
+%% Returns : Host                    |
+%%           throw({error, Reason})  |
+%%           throw({'EXIT', Reason})
 %%           Host = string()
 %%           throw() = {error, Reason} | {'EXIT',Reason}
 %%--------------------------------------------------------------------
@@ -196,22 +206,24 @@ parse_host(Host) ->
 %%--------------------------------------------------------------------
 %% Function: parse_hostport(HostPort)
 %%           HostPort = string()
-%% the host:port section of the sip url can be formated in a varity of
-%% ways:
-%%
-%% hostname:port
-%% hostname
-%% ipv4address:port
-%% ipv4address
-%% [ipv6reference]:port
-%% ipv6reference
-%%
 %% Descrip.: splits the string into it's two parts, a exception is
 %%           thrown if the Host or Port is malformed
-%% Returns : {Host, Port} | throw() if parse fails
+%%
+%%           the host:port section of the sip url can be formated in
+%%           a varity of ways:
+%%
+%%              hostname:port
+%%              hostname
+%%              ipv4address:port
+%%              ipv4address
+%%              [ipv6reference]:port
+%%              ipv6reference
+%%
+%% Returns : {Host, Port}            |
+%%           throw({error, Reason})  |
+%%           throw({'EXIT', Reason})
 %%           Host = string()
 %%           Port = integer() | none
-%%           throw() = {error, Reason} | {'EXIT', Reason}
 %%--------------------------------------------------------------------
 parse_hostport(HostPort) ->
     H = hd(HostPort),
@@ -315,6 +327,15 @@ rm_trailing_dot_from_hostname(H) ->
 %%--------------------------------------------------------------------
 %% BNF checking functions, based on RFC3261 chapter 25
 %%--------------------------------------------------------------------
+
+
+%%--------------------------------------------------------------------
+%% Function: is_alpha(Char)
+%%           Char = integer()
+%% Descrip.: Check if Char is alphanumeric. Based on RFC3261 BNF,
+%%           chapter 25.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 is_alpha(Char) ->
     if
 	(Char >= $A) and (Char =< $Z) ->
@@ -325,6 +346,13 @@ is_alpha(Char) ->
 	    false
     end.
 
+%%--------------------------------------------------------------------
+%% Function: is_digit(Char)
+%%           Char = integer()
+%% Descrip.: Check if Char is a digit. Based on RFC3261 BNF,
+%%           chapter 25.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 is_digit(Char) ->
     if
 	(Char >= $0) and (Char =< $9) ->
@@ -333,10 +361,23 @@ is_digit(Char) ->
 	    false
     end.
 
+%%--------------------------------------------------------------------
+%% Function: is_alphanum(Char)
+%%           Char = integer()
+%% Descrip.: Check if Char is alphanumeric or a digit. Based on
+%%           RFC3261 BNF, chapter 25.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 is_alphanum(Char) ->
     is_alpha(Char) or is_digit(Char).
 
-%% return: true | false
+%%--------------------------------------------------------------------
+%% Function: is_token(Str)
+%%           Str = string()
+%% Descrip.: Check if Str is a 'token'. Based on RFC3261 BNF,
+%%           chapter 25.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 is_token(Str) ->
     F = fun
 	    ($-, Acc) -> Acc;
@@ -360,8 +401,9 @@ is_token(Str) ->
 %%           Str = string(), the host string
 %% Descrip.: parse host string, throw an exception if it doesn't
 %%           conform to the format specified in RFC3261 chapter 25.1
-%%           p218
-%% Returns : true | throw()
+%%           p218. Fails hard (with a badmatch or error
+%%           'invalid_hostname' on errors).
+%% Returns : true
 %% Note    : this function only matches symbolic hostnames
 %%
 %% These rules are the same:
@@ -405,8 +447,8 @@ is_hostname_throw(Host) ->
 %%           Str = string(), the host string
 %% Descrip.: parse host string, throw an exception if it doesn't
 %%           conform to the format specified in RFC3261 chapter 25.1
-%%           page 218
-%% Returns : Str | throw()
+%%           page 218.
+%% Returns : Str
 %% Note    : this function only matches IPv4 hostnames
 %%--------------------------------------------------------------------
 is_IPv4address(Host) ->
@@ -428,7 +470,7 @@ is_IPv4address_throw(Host) ->
 %%           IPv6Str = string(), the host string
 %% Descrip.: parse host string, throw an exception if it doesn't
 %%           conform to the format specified in RFC3261 chapter 25.1
-%%           page 218
+%%           page 218.
 %% Returns : true | false
 %% Note    : this function only matches IPv6 hostnames
 %%--------------------------------------------------------------------
@@ -451,7 +493,7 @@ is_IPv6reference_throw(IPv6Str) ->
 %% Descrip.: convert Str containing float() or integer() value, to a
 %%           float().
 %% Returns : float() |
-%%           throw() (if Str can't be interpreted as a float)
+%%           throw({error, string_not_float_or_integer})
 %% Note    : user need to strip any preceding or trailing spaces (or
 %%           other chars themselves)            XXX q_value(...) in contact.erl uses similar code
 %%                                              XXX this should be in a utility module
@@ -474,7 +516,10 @@ str_to_float(Str) ->
 %% Descrip.: parse a qvalue string
 %%           qvalue  = ( "0" [ "." 0*3DIGIT ] )
 %%                   / ( "1" [ "." 0*3("0") ] )    - RFC 3261
-%% Returns : float()
+%% Returns : float() |
+%%           throw({error, malformed_beging_of_qvalue})       |
+%%           throw({error, wrong_number_of_chars_in_q_value}) |
+%%           throw({error, q_value_out_of_range})
 %%--------------------------------------------------------------------
 %% extra clauses to ensure proper qvalue formating
 str_to_qval("0") -> 0.0;

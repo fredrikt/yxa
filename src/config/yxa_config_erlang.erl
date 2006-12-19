@@ -196,8 +196,8 @@ parse_includes2(_State, [], Res) when is_list(Res) ->
 %%           TermL     = list() of term()
 %%           AppModule = atom(), application for which to load config
 %% Descrip.: Get the 'common' and the application specific sections of
-%%           TermL, and merge them.
-%% Returns : Cfg = sorted list() of {Key, Value} tuples
+%%           TermL, and merge them. Returns a sorted list.
+%% Returns : Cfg = list() of {Key, Value}
 %%--------------------------------------------------------------------
 extract_config(TermL, AppModule) when is_list(TermL), is_atom(AppModule) ->
     {common, CommonConfig} = get_section(common, TermL),

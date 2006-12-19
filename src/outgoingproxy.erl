@@ -4,7 +4,8 @@
 %%% Descrip.: YXA application to manage client connections from your
 %%%           user agents. Keeps TCP connections open virtually
 %%%           forever, and implements draft-Outbound to helt clients
-%%%           behind NATs etc.
+%%%           behind NATs etc. See the README file for more
+%%%           information.
 %%%
 %%% Created : 16 Mar 2005 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -163,7 +164,7 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Mode)
-%%           Mode = atom(), shutdown | graceful | ...
+%%           Mode = shutdown | graceful | atom()
 %% Descrip.: YXA applications must export a terminate/1 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
@@ -434,10 +435,9 @@ route_request_host_is_this_proxy(Request) when is_record(Request, request) ->
 %% Function: proxy_request(Request, YxaCtx, Dst)
 %%           Request  = request record()
 %%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipdst record() | sipurl record() | route |
-%%                      list() of sipdst record()
+%%           Dst      = sipdst record() | sipurl record() | route | list() of sipdst record()
 %% Descrip.: Proxy a request somewhere without authentication.
-%% Returns : Does not matter
+%% Returns : term(), Does not matter
 %%--------------------------------------------------------------------
 proxy_request(Request, YxaCtx, Dst) when is_record(Request, request),
 					 (is_list(Dst) orelse is_record(Dst, sipurl) orelse Dst == route) ->
@@ -453,7 +453,7 @@ proxy_request(Request, YxaCtx, Dst) when is_record(Request, request),
 %%           unless local policy says not to. Never challenge
 %%           CANCEL or BYE since they can't be resubmitted and
 %%           therefor cannot be challenged.
-%% Returns : Does not matter
+%% Returns : term(), Does not matter
 %%--------------------------------------------------------------------
 
 %%
@@ -515,10 +515,11 @@ relay_dst2str(_) ->
 %% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
 %%           Request = request record()
 %%           YxaCtx  = yxa_ctx record()
-%%           Dst     = term() (sipurl, route, sipdst, ...)
-%%           PstnCtx = pstn_ctx record(), context for this request
+%%           Dst     = list() of sipdst record() | route | sipurl record()
+%%           AppData = term(), data from this application passed to
+%%                     local:start_sippipe/4.
 %% Descrip.: Start a sippipe unless we are currently unit testing.
-%% Returns : term() = result of local:start_sippipe/4
+%% Returns : term(), result of local:start_sippipe/4
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get({?MODULE, testing_sippipe}) of

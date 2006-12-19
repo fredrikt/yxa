@@ -201,8 +201,8 @@ start(#request{method = "SUBSCRIBE"} = Request, YxaCtx, PackageM, PackageS, Subs
 				    bidirectional_sub   = Bidirectional,
 				    subscribe_interval	= SubscribeInterval
 				   },
-		    gen_server:start(?MODULE, [Request, YxaCtx, State1, Status, Reason,
-					       ExtraHeaders, Body],
+		    gen_server:start(?MODULE, {Request, YxaCtx, State1, Status, Reason,
+					       ExtraHeaders, Body},
 				     []);
 		_ ->
 		    {error, unacceptable}
@@ -235,16 +235,16 @@ send_notify(Pid) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, YxaCtx, State1, Status, Reason,
-%%                 ExtraHeaders, Body])
+%% Function: init({Request, YxaCtx, State1, Status, Reason,
+%%                 ExtraHeaders, Body})
 %%           Request      = request record(), SUBSCRIBE request
 %%           YxaCtx       = yxa_ctx record()
 %%           State1       = state record(), state in
-%%           Status       = integer() (200 or 202), SIP status code
+%%           Status       = integer(), (200 or 202), SIP status code
 %%                          to send in response to this SUBSCRIBE
 %%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, Value} tuple(), extra
-%%                          headers to include in response
+%%           ExtraHeaders = list() of {Key, Value}, extra headers to
+%%                          include in response
 %%           Body         = binary() | list(), body of response
 %% Descrip.: Initiates the server when eventserver has received a
 %%           SUBSCRIBE request.
@@ -252,7 +252,7 @@ send_notify(Pid) ->
 %%           ignore         |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, YxaCtx, State1, Status, Reason, ExtraHeaders, Body]) ->
+init({Request, YxaCtx, State1, Status, Reason, ExtraHeaders, Body}) ->
     #yxa_ctx{app_logtag   = LogTag,
 	     thandler = THandler
 	    } = YxaCtx,
@@ -380,7 +380,7 @@ handle_cast({notify, Source}, State) ->
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast({terminate, Mode}, State)
-%%           Mode = atom(), shutdown | graceful | ...
+%%           Mode = shutdown | graceful | atom()
 %% Descrip.: Terminate the subscription since the eventserver is
 %%           shutting down.
 %% Returns :    {stop, Reason, State}
@@ -431,7 +431,8 @@ handle_info({siptimer, TRef, TDesc}, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({branch_result, ...}, State)
+%% Function: handle_info({branch_result, FromPid, Branch, SipState,
+%%                       Response}, State)
 %% Descrip.: A NOTIFY client transaction we started resulted in a
 %%           response. Check if that response was a (received) 481 and
 %%           terminate if it was.
@@ -532,7 +533,8 @@ handle_info({branch_result, FromPid, Branch, SipState, Response}, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({clienttransaction_terminating, ...}, State)
+%% Function: handle_info({clienttransaction_terminating, FromPid,
+%%                       Branch}, State)
 %% Descrip.: A NOTIFY client transaction has terminated. Remove it
 %%           from our list of active NOTIFY client transactions.
 %% Returns : {noreply, State, Timeout}
@@ -903,7 +905,7 @@ process_timer_signal(Unknown, _Timer, State) when is_record(State, state) ->
 
 %%--------------------------------------------------------------------
 %% Function: prepare_and_send_notify(State)
-%%           State      = state record()
+%%           State = state record()
 %% Descrip.: Create a NOTIFY request for this event package, and send
 %%           it on our dialog unless it happens to exactly match the
 %%           last NOTIFY we sent.
@@ -942,7 +944,7 @@ prepare_and_send_notify(State) when is_record(State, state) ->
 %% Function: send_notify_request(State, Body, ExtraHeaders)
 %%           State        = state record()
 %%           Body         = list() | binary()
-%%           ExtraHeaders = list() of {Key, ValueL} tuple()
+%%           ExtraHeaders = list() of {Key, ValueL}
 %% Descrip.: Part of prepare_and_send_notify/1.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
@@ -1047,8 +1049,8 @@ start_client_transaction(Method, ExtraHeaders, Body, Timeout, State) ->
 %%           registration as a dialog controller will get all requests
 %%           on the dialog sent to us, so the user part of the contact
 %%           is not important. We use the Erlang pid, without
-%%           "<" and ">".
-%% Returns : Contact = string(), SIP URL inside "<" and ">"
+%%           ``<'' and ``>''.
+%% Returns : Contact = string(), SIP URL inside ``<'' and ``>''
 %%--------------------------------------------------------------------
 generate_contact_str() ->
     generate_contact_str("sip").

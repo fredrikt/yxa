@@ -1,6 +1,10 @@
-%% 
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : cpl_test_util.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: Test utility functions.
+%%%
+%%% Created : 23 Mar 2005 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(cpl_test_util).
 
 %% -behaviour().
@@ -68,7 +72,8 @@ timezone_offset() ->
 %%--------------------------------------------------------------------
 %% Function: dst_offset()
 %% Descrip.: determine the DST offset used in the current _local_  
-%% Returns : 0 (DST not used) | 1 (DST used) 
+%%           Returns '0' if DST is not used or '1' if it is.
+%% Returns : 0 | 1
 %%--------------------------------------------------------------------
 %% "DST commonly begins in the Northern Hemisphere at 2:00 AM on 
 %%  either the first Sunday in April or the last Sunday in March, and 

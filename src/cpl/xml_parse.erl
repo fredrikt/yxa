@@ -89,12 +89,15 @@
 %%           are no cycles, return a graph that models the flow of the
 %%           script - the graph will be used as a FSM by a interpreter
 %%           (and possibly to generate FSM .erl code)
-%% Returns : list() of {VertexId, Label} |
+%% Returns : list() of {VertexId, Label}
 %%           throw({error, Error})
 %%
 %%           VertexId = list() of integer(), a unique node id
-%%           Lable = the "code" of the node
-%%           Error = bad_xml (xmerl_scan:string failed) |
+%%           Lable = term(), the "code" of the node
+%%           Error = bad_xml | cycle_detected_in_graph |
+%%                   unreachable_nodes_detected | atom()
+%%
+%% Note    : Error = bad_xml (xmerl_scan:string failed) |
 %%                   cycle_detected_in_graph (add_edge/3 failed) |
 %%                   unreachable_nodes_detected |
 %%                   .... and various other parse error
@@ -131,8 +134,7 @@ cpl_script_to_graph(CPLscript) ->
 %%           G  = digraph(), the graph for the CPL script
 %% Descrip.: verify that there are no unreachable nodes in the final
 %%           graph.
-%% Returns : ok | throw({error, unreachable_nodes_detected}) if there
-%%           are nodes that can't be called
+%% Returns : ok | throw({error, unreachable_nodes_detected})
 %% Note    : this code only checks if all CPL script nodes (tags) are
 %%           reachable through graph edges, it doesn't check if switch
 %%           conditions may be ordered in such a way that certain
@@ -165,10 +167,13 @@ check_for_unreachable_nodes(Vs, G) ->
 
 %%--------------------------------------------------------------------
 %% Function: parse_xml_main(CPLscript)
-%%           CPLscript = xmlElement, the toplevel tag of the xml code
+%%           CPLscript = xmlElement record(), the toplevel tag of the
+%%                       xml code
 %% Descrip.: the cpl tag can contain subaction tags and a incoming
 %%           and/or outgoing tag
-%% Returns : throw() | parse_state record()
+%% Returns : parse_state record() |
+%%           throw({error, Reason})
+%%           Reason = no_incoming_or_outgoing_tag | atom()
 %% Note    : CPL expects tags in order: ancillary, subaction,
 %%           incoming, outgoing - the order of incoming/outgoing isn't
 %%           clearly defined in RFC 3880 and not enforced in the code
@@ -212,8 +217,8 @@ initial_parse_state() ->
 %%           to store the currently accumulated graph
 %% Returns : parse_state record()
 %%
-%% On the subject of allowing 'sub' tags to only reference already
-%% defined subactions (see RFC 3880):
+%% Note    : On the subject of allowing 'sub' tags to only reference
+%%           already defined subactions (see RFC 3880):
 %% - This ensured by two parser features, the
 %%   #parse_state.subaction_name_id_mapping (see below) only contains
 %%   the subaction names of currently parsed subactions, so lookup of
@@ -570,7 +575,9 @@ parse_xml(_E, _ParseState) ->
 %%           impractical to support as script input, this function is
 %%           therefor used to reject any time values containing leap
 %%           seconds.
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 validate_no_leap_second_in_datetime_values(Conds) ->
     F = fun({Cond, _Dest}) ->
@@ -655,14 +662,16 @@ no_leap_sec_datetime(DateTime) when is_record(DateTime, date_time) ->
 
 %%--------------------------------------------------------------------
 %% Function: validate_dtstart_dtend(TimeZone, Conds)
-%%           TimeZone = currently not supported
+%%           TimeZone = term(), currently not supported
 %%           Conds    = list() of {Cond, Dest}, from CondVal in
 %%                      {CondVal, Targets} return value of get_cond/4
 %% Descrip.: examine all "time" elements in a "time-witch" with
 %%           ts_datetime:dtstart_lt_dtend/3, to see if all
-%%           dtstart - dtend pairs have the property; dtstart < dtend.
+%%           dtstart - dtend pairs have the property; dtstart `<' dtend.
 %%           Throw a exception if they don't conform.
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %% Note    : see cpl/README about date-time format limitations, in
 %%           regard to floating date-time values without time zone
 %%           settings.
@@ -717,7 +726,9 @@ get_dtstart_and_dtend(Conds) ->
 %%                      {CondVal, Targets} return value of get_cond/4
 %% Descrip.: checks that all durations / "dtend - dtstart" periods are
 %%           short enough to never overlap
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 validate_duration(Conds) ->
     F = fun({Cond, _Dest}) when is_record(Cond, time_switch__cond_2) ->
@@ -753,7 +764,9 @@ validate_duration(Conds) ->
 %%           as the byxxx parameters processes floating (local) wall
 %%           clock time and use dtstart date-time to initiate
 %%           undefined time values in their reoccurrence calculations
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %% Note    : iCalendar require this for _all_ reoccurrences and for
 %%           both dtstart and dtend, but this implementation only
 %%           requires this for dtstart used with byxxx parameters
@@ -789,7 +802,9 @@ all_floating(TimeSwitchCond) ->
 %%           Conds    = list() of {Cond, Dest}, from CondVal in
 %%                      {CondVal, Targets} return value of get_cond/4
 %% Descrip.:
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 validate_usage_of_bysetpos(Conds) ->
      F = fun({Cond, _Dest}) when is_record(Cond, time_switch__cond_8) ->
@@ -807,7 +822,7 @@ validate_usage_of_bysetpos(Conds) ->
 
 %%--------------------------------------------------------------------
 %% Function: preprocess_count_in_timeswitch(TimeZone, Conds)
-%%           TimeZone = currently not supported
+%%           TimeZone = term(), currently not supported
 %%           Conds    = list() of {Cond, Dest}, from CondVal in
 %%                      {CondVal, Targets} return value of get_cond/4
 %% Descrip.: check if a "time-switch" tag contains the "count"
@@ -818,7 +833,9 @@ validate_usage_of_bysetpos(Conds) ->
 %%           processed by the interpreter which is a O(N) procedure -
 %%           all possible intervals between dtstart - current need to
 %%           be checked.
-%% Returns : a updated version of Conds
+%% Returns : NewList
+%%           NewList = list() of {Cond, Dest}, an updated version of
+%%                     Conds
 %%--------------------------------------------------------------------
 preprocess_count_in_timeswitch(TimeZone, Conds) ->
     F = fun({Cond, Dest}) when is_record(Cond, time_switch__cond_5) ->
@@ -855,10 +872,11 @@ preprocess_count_in_timeswitch(TimeZone, Conds) ->
     lists:map(F, Conds).
 
 %%--------------------------------------------------------------------
-%% Function: process_targets(Targets, ParseState)
-%%           Targets    = a list of xml elements (xmlElement record())
-%%                        contained inside a switch tag
-%%           ParseState = parse_state record()
+%% Function: process_targets(ParentSwitchName, Targets, ParseState)
+%%           ParentSwitchName = term()
+%%           Targets          = term(), a list of xmlElement record()
+%%                              contained inside a switch tag
+%%           ParseState       = parse_state record()
 %% Descrip.: This function takes Targets - the xml code for the
 %%           possible action a certain xml rule (graph node) can take,
 %%           and parses them into nodes.
@@ -879,16 +897,19 @@ process_targets(ParentSwitchName, Targets, ParseState) ->
     FinalParseState.
 
 %%--------------------------------------------------------------------
-%% Function: get_next_element(ParentTagName, ParentContent)
-%%           get_next_element(ParentTagName, SubTagContent)
+%% Function: get_next_element(ParentTagName, Content)
 %%           ParentTagName = atom()
-%%           ParentContent = xml parse tree inside parent
-%%           SubTagContent = xml parse tree inside parents (switch)
-%%                           sub tag
+%%           Content       = ParentContent | SubTagContent
+%%           ParentContent = term(), xml parse tree inside parent
+%%           SubTagContent = term(), xml parse tree inside parents
+%%                           (switch) sub tag
 %% Descrip.: return the next node (tag) for a tag type that has a
 %%           single destination - SubTagContent of sub tags of switches
 %%           are also handled by this function
-%% Returns : xmlElement record() | empty (if there is no next node)
+%% Returns : xmlElement record() |
+%%           empty               | (if there is no next node)
+%%           throw({error, Reason})
+%%           Reason = atom()
 %% Note    : ParentTagName are listed one by one, to simplify handling
 %%           them individually - there could be cases where extension
 %%           tags don't support the same destination node (tag) set
@@ -1000,9 +1021,9 @@ attribute_to_atom('#no_value') -> '#no_value'.
 
 %%--------------------------------------------------------------------
 %% Function: get_elements(Element, SubElementName)
-%%           Element = xmlElement record()
+%%           Element        = xmlElement record()
 %%           SubElementName = atom(), name of the tag/s contained in
-%%           Element
+%%                            Element
 %% Descrip.: retrieve all xml elements named SubElementName from the
 %%           contents of Element (for example a switch condition for a
 %%           address-switch tag)
@@ -1016,9 +1037,12 @@ get_elements(Element, SubElementName) when is_record(Element, xmlElement), is_at
 %% Function: get_subaction_id(ParseState, Ref)
 %%           ParseState = parse_state record()
 %%           Ref = string(), the symbolic name of a subaction used in
-%%           a <sub ref="..."> tag
+%%                           a ``<sub ref ...>'' tag
 %% Descrip.: find the node id of the subaction named Ref
-%% Returns : Node id | throw()
+%% Returns : NodeId |
+%%           throw({error, Reason})
+%%           NodeId = term()
+%%           Reason = integer()
 %%--------------------------------------------------------------------
 get_subaction_id(ParseState, Ref) ->
     Mapping = ParseState#parse_state.subaction_name_id_mapping,
@@ -1032,19 +1056,17 @@ get_subaction_id(ParseState, Ref) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_cond(Conditions, SwitchName, ExtraArgs, ParseState)
-%%           Conditions = #xmlElement.content
-%%           SwitchName = 'address-switch' | 'language-switch' |
-%%                        'priority-switch' | 'string-switch' |
-%%                        'time-switch' | lookup | proxy
-%%           ExtraArgs  = includes any other switch specific arguments
+%%           Conditions = term(), #xmlElement.content
+%%           SwitchName = 'address-switch' | 'language-switch' | 'priority-switch' | 'string-switch' | 'time-switch' | lookup | proxy
+%%           ExtraArgs  = term(), includes any other switch specific arguments
 %%           ParseState = parse_state record()
 %% Descrip.: retrieve the match operator and value (to compare request
 %%           against), as well as the destination of a successful
-%%           match
+%%           match.
 %% Returns : {CondVal, Targets}
-%%           Targets = #xmlElement from Conditions - the process_targets/2 call does the checking of
-%%           CondVal = value returned, depends on the switch type
-%%           (SwitchName), as seen below:
+%%           Targets = #xmlElement{}, from Conditions - the process_targets/2 call does the checking of
+%%           CondVal = term(), value returned
+%% Note    : CondVal depends on the switch type (SwitchName), as seen below:
 %%
 %% * address-switch
 %%           CondVal = list() of
@@ -1441,7 +1463,9 @@ get_cond([_Cond | R], SwitchName, ExtraArgs, ParseState, Count, CT) ->
 %%           done to guard against limitations in the (OTP) calender
 %%           module - "Date must refer to a local date after Jan 1,
 %%           1970"
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 bound_dtstart(Start) when is_record(Start, date_time)->
     %% 1970-01-03 is used to ensure that Start will always be a legal
@@ -1460,7 +1484,9 @@ bound_dtstart(Start) when is_record(Start, date_time)->
 %%           sip request with interpret_time.erl - this functions
 %%           limits the maximum value for the "count" attribute in the
 %%           "time" subtag used with "time-switch"
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 bound_count(CountVal) ->
     {ok, ConfiguredMax} = yxa_config:get_env(cpl_time_switch_count_max),
@@ -1565,7 +1591,7 @@ freq_str_to_atom2(_Freq) -> throw({error, freq_attribute_value_not_legal}).
 
 %%--------------------------------------------------------------------
 %% Function: parse_bysetpos(BysetposStr)
-%%           BysetposStr = string of comma separated integers
+%%           BysetposStr = string(), comma separated integers
 %% Descrip.: ensure that all bysetpos values are in the [1,366] or
 %%           [-1,-366] range (days in year)
 %% Returns : list() of integer()
@@ -1605,7 +1631,9 @@ check_prio_value(PrioStr) ->
 %% Function: normalize_string_switch__field(FieldStr)
 %% Descrip.: convert field value used by string-switch in the
 %%           attribute field, to a standard atom() format
-%% Returns : subject | organization | 'user-agent' | display | throw()
+%% Returns : subject | organization | 'user-agent' | display |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 normalize_string_switch__field(FieldStr) ->
     case FieldStr of
@@ -1623,7 +1651,9 @@ normalize_string_switch__field(FieldStr) ->
 %%           the script server SHOULD detect this and report it to
 %%           the user at the time the script is submitted." - RFC 3880
 %%           chapter 5.1 p22
-%% Returns : URL | throw()
+%% Returns : URL |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %% Note    : the current yxa implementation only handles sip urls,
 %%           when this changes there may be a need to update this
 %%           function.
@@ -1642,7 +1672,7 @@ check_url(URL) ->
 %%           destination, e.g. location and remove-location
 %% Returns : {NewParseState, NextId}
 %%           NewParseState = parse_state record(), the updated one
-%%           NextId = the id of the next node
+%%           NextId        = term(), the id of the next node
 %%--------------------------------------------------------------------
 next_id(ParseState) ->
     CurrentId = ParseState#parse_state.current_id,
@@ -1655,7 +1685,9 @@ next_id(ParseState) ->
 %%           LogName = default | string()
 %% Descrip.: check if the name attribute in the log tag, refers to a
 %%           log that can be used by cpl.
-%% Returns : LogName | throw()
+%% Returns : LogName |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 is_log_dest(LogName) ->
     case local:cpl_is_log_dest(LogName) of
@@ -1689,9 +1721,9 @@ is_subaction_name_unqiue(SubactionName, ParseState) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: test()
 %% Descrip.: autotest callback
-%% Returns :
+%% Returns : ok
 %% Note    : moved test cases to xml_parse_test, to keep file size
 %%           manageable
 %%--------------------------------------------------------------------

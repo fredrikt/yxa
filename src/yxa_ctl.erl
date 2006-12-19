@@ -45,7 +45,7 @@
 %%--------------------------------------------------------------------
 %% Function: start()
 %% Descrip.: Fetch the command line arguments and start processing.
-%% Returns : does not return, does erlang:halt().
+%% Returns : term(), does not return - does erlang:halt().
 %%--------------------------------------------------------------------
 start() ->
     case init:get_plain_arguments() of
@@ -81,10 +81,9 @@ start() ->
 %%--------------------------------------------------------------------
 %% Function: process(Node, [Action])
 %%           Node   = atom()
-%%           Action = string(), "status" | "stop" | "restart" |
-%%				"reload"
+%%           Action = string(), "status" | "stop" | "restart" | "reload"
 %% Descrip.: Do something to Node.
-%% Returns : ok | result of rpc:call(...)
+%% Returns : ok | term(), result of rpc:call(...)
 %%--------------------------------------------------------------------
 process(Node, ["status"]) ->
     case rpc:call(Node, yxa_ctl, status, []) of
@@ -158,8 +157,8 @@ status() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: info([])
-%%           info(["all"])
+%% Function: info(Flags)
+%%           Flags = list() of string(), "all"
 %% Descrip.: Check status of running SIP server
 %% Returns : {ok, Output}
 %%           Output = list() of {Topic, Indent, Width, [{Key, Value}]}
@@ -185,7 +184,7 @@ info(["all"]) ->
      info_tcp_connections() ++
      info_transactions()
     }.
-    
+
 info_transport() ->
     %% Transport layer information
     YXASipsocketInfo = lists:sort(ets:tab2list(yxa_sipsocket_info)),
@@ -205,7 +204,7 @@ info_tcp_connections() ->
     {ok, Connections} = tcp_dispatcher:get_socketlist(),
     MonitorFmtd1 = socketlist:monitor_format(Connections),
     %% remove listening-on lines
-    MonitorFmtd2 = 
+    MonitorFmtd2 =
 	lists:foldl(fun("Listening" ++ _, Acc) ->
 			    Acc;
 		       (H, Acc) ->
@@ -239,14 +238,15 @@ info_transactions() ->
      },
      blank
     ].
-    
+
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: format_status()
+%% Function: format_status(Starttime)
+%%           Starttime = integer(), absolute timestamp
 %% Descrip.: Given the start-time returned from status(), construct
 %%           information about start-time and current uptime and
 %%           format it for printing.

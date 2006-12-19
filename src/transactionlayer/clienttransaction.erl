@@ -64,6 +64,13 @@
 -include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+%% @type    sipstate() = trying | calling | proceeding | completed | terminated.
+%%		Client transaction SIP states.
+
+
+%%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
 -record(state, {
@@ -77,7 +84,7 @@
 	  response,		%% response record(), the last response we have received that caused a sipstate change
 	  res_count = 0,	%% integer(), response count - for knowing whether to report a destination as
 	  			%% unreachable on timeout or not
-	  sipstate,		%% atom(), trying|calling|proceeding|completed|terminated
+	  sipstate,		%% sipstate()
 	  timerlist,		%% siptimerlist record(), list of timers managed by siptimer module
 	  dst,			%% sipdst record(), the destination for our request
 	  timeout,		%% integer(), our definite timeout before ending an INVITE - NB: only applies to INVITE
@@ -117,14 +124,14 @@ start_link(Request, Dst, Branch, Timeout, ReportTo) ->
     %% set process_flag(trap_exit, true)! We set up a link to this process
     %% in the init/1 callback to achieve the same effect (although with
     %% a bitter taste).
-    gen_server:start(?MODULE, [Request, Dst, Branch, Timeout, ReportTo, self()], []).
+    gen_server:start(?MODULE, {Request, Dst, Branch, Timeout, ReportTo, self()}, []).
 
 %%====================================================================
 %% Server functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, Dst, Branch, Timeout, ReportTo, Parent])
+%% Function: init({Request, Dst, Branch, Timeout, ReportTo, Parent})
 %%           Request  = request record()
 %%           Dst      = sipdst record(), the destination for this
 %%                                       client transaction
@@ -140,7 +147,7 @@ start_link(Request, Dst, Branch, Timeout, ReportTo) ->
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Request, Dst, Branch, Timeout, ReportTo, Parent])
+init({Request, Dst, Branch, Timeout, ReportTo, Parent})
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch),
        is_integer(Timeout), is_pid(Parent) ->
     RegBranch = sipheader:remove_loop_cookie(Branch),
@@ -216,7 +223,7 @@ init2([Request, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(change_parent, FromPid, ToPid}, From, State)
+%% Function: handle_call({change_parent, FromPid, ToPid}, From, State)
 %%           FromPid = pid()
 %%           ToPid   = pid()
 %% Descrip.: Change our parent. Internal to the transaction layer -
@@ -224,7 +231,7 @@ init2([Request, Dst, Branch, Timeout, ReportTo, Parent, LogTag])
 %%           instead of the YXA application's request/3 function being
 %%           invoked.
 %% Returns : {reply, Reply, State, ?TIMEOUT} |
-%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
+%%           {stop, Reason, Reply, State}      (terminate/2 is called)
 %%           Reply  = {ok, ToTag}
 %%           ToTag = string()
 %%--------------------------------------------------------------------
@@ -244,15 +251,15 @@ handle_call({change_parent, FromPid, ToPid}, From, #state{parent = FromPid} = St
     check_quit(Reply, From);
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
+%% Function: handle_call(Unknown, From, State)
 %% Descrip.: Unknown call.
 %% Returns : {error, Reason}
 %%           Reason = string()
 %%--------------------------------------------------------------------
-handle_call(Msg, From, State) ->
+handle_call(Unknown, From, State) ->
     LogTag = State#state.logtag,
     logger:log(error, "~s: Client transaction received unknown gen_server call :~n~p",
-	       [LogTag, Msg]),
+	       [LogTag, Unknown]),
     check_quit({reply, {error, "unknown gen_server call"}, State}, From).
 
 
@@ -290,9 +297,9 @@ handle_cast({sipmessage, Response, Origin, _LogStr}, State) when is_record(Respo
 %%--------------------------------------------------------------------
 %% Function: handle_cast({cancel, Msg, ExtraHeaders}, State)
 %%           Msg          = string()
-%%           ExtraHeaders = list() of {key, value} tuple() with extra
-%%                          headers that should be included in the
-%%                          CANCEL we send (if we send one).
+%%           ExtraHeaders = list() of {Key, Value}, extra headers that
+%%                          should be included in the CANCEL we send
+%%                          (if we send one).
 %% Descrip.: We have been asked to cancel. Do so if we are not already
 %%           cancelled. 'Doing so' means start an independent CANCEL
 %%           client transaction, and mark ourselves as cancelled.
@@ -331,14 +338,14 @@ handle_cast({quit}, State) ->
     check_quit({stop, normal, State});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
+%% Function: handle_cast(Unknown, State)
 %% Descrip.: Unknown cast.
 %% Returns : {noreply, State}
 %%--------------------------------------------------------------------
-handle_cast(Msg, State) ->
+handle_cast(Unknown, State) ->
     LogTag = State#state.logtag,
     logger:log(error, "~s: Client transaction received unknown gen_server cast :~n~p",
-	       [LogTag, Msg]),
+	       [LogTag, Unknown]),
     check_quit({noreply, State}).
 
 
@@ -476,7 +483,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%--------------------------------------------------------------------
 %% Function: check_quit(Res)
-%%           check_quit(Res, From)
+%%           Res  = term(), gen_server:call/cast/info() return value
+%% @equiv    check_quit(Res, none)
+%%--------------------------------------------------------------------
+check_quit(Res) ->
+    check_quit(Res, none).
+
+%%--------------------------------------------------------------------
+%% Function: check_quit(Res, From)
 %%           Res  = term(), gen_server:call/cast/info() return value
 %%           From = term(), gen_server from-value | none
 %% Descrip.: Extract the state record() from Res, and check if it's
@@ -489,8 +503,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%           values are covered in these functions - only the ones we
 %%           actually use!
 %%--------------------------------------------------------------------
-check_quit(Res) ->
-    check_quit(Res, none).
 
 %% Before returing a cast() reply, check if the SIP-state is terminated and
 %% if so return {stop ...}
@@ -698,7 +710,7 @@ process_timer2(Signal, Timer, State) when is_record(State, state) ->
 %% Function: get_request_resend_timeout(Method, OldTimeout, State)
 %%           Method     = string()
 %%           OldTimeout = integer()
-%%           State      = atom(), trying | proceeding | ...
+%%           State      = sipstate()
 %% Descrip.: Figure out how long the next resend timeout for this
 %%           particular method and state should be, according to the
 %%           RFC3261.
@@ -757,8 +769,7 @@ process_received_response(Response, State) when is_record(State, state), is_reco
 %% Function: update_transaction_state(Response, NewSipState,
 %%                                    BranchAction, State)
 %%           Response     = response record()
-%%           NewSipState  = atom(), trying | calling | proceeding |
-%%                          completed | terminated
+%%           NewSipState  = sipstate()
 %%           BranchAction = ignore | tell_parent
 %%           State        = state record()
 %% Descrip.: Update State with the received response and new SIP state
@@ -786,10 +797,8 @@ update_transaction_state(Response, NewSipState, BranchAction, State) when is_rec
 
 %%--------------------------------------------------------------------
 %% Function: act_on_new_sipstate(S, S, BranchAction, State)
-%%           OldSipState  = atom(), trying | calling | proceeding |
-%%                                  completed | terminated
-%%           NewSipState  = atom(), trying | calling | proceeding |
-%%                                  completed | terminated
+%%           OldSipState  = sipstate()
+%%           NewSipState  = sipstate()
 %%           BranchAction = atom(),
 %%           State        = state record()
 %% Descrip.: Check if the SIP state has really changed, if so - invoke
@@ -922,7 +931,7 @@ act_on_new_sipstate2(terminated, BranchAction, State) when is_record(State, stat
 %%--------------------------------------------------------------------
 act_on_new_sipstate2(SipState, BranchAction, State)
   when is_record(State, state), is_atom(SipState),
-       SipState == trying; SipState == calling ->
+       (SipState == trying orelse SipState == calling) ->
     {State, BranchAction}.
 
 %%--------------------------------------------------------------------
@@ -1040,14 +1049,12 @@ blacklist_report_if_unreachable(_State) ->
 %% Function: received_response_state_machine(Method, Status, State)
 %%           Method = string(), SIP request method
 %%           Status = integer(), SIP status code (received response)
-%%           State  = atom(), trying | calling | proceeding |
-%%                            completed | terminated
+%%           State  = sipstate()
 %% Descrip.: State machine to decide what to do with a received
 %%           response, and what we should set our SIP state to.
-%% Returns : {Action, State}
-%%           Action = atom(), ignore | tell_parent
-%%           State  = trying | calling | proceeding | completed |
-%%                    terminated
+%% Returns : {Action, NewState}
+%%           Action   = atom(), ignore | tell_parent
+%%           NewState = sipstate()
 %%--------------------------------------------------------------------
 received_response_state_machine("INVITE", Status, calling) when Status == 100 ->
     logger:log(debug, "UAC decision: Received 100 in response to INVITE, going from 'calling' to 'proceeding'"),
@@ -1258,9 +1265,7 @@ fake_request_response(Status, Reason, State) when is_record(State, state) ->
     perform_branchaction(tell_parent, NewState2).
 
 %%--------------------------------------------------------------------
-%% Function: fake_request_timeout(Status, Reason, State)
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
+%% Function: fake_request_timeout(State)
 %%           State  = state record()
 %% Descrip.: Fake receiving an '408 Request Timeout' response. See
 %%           comments for fake_request_response/3 above for more info.
@@ -1319,11 +1324,18 @@ terminate_transaction(State) when is_record(State, state) ->
 
 %%--------------------------------------------------------------------
 %% Function: cancel_request(State)
-%%           cancel_request(State, ExtraHeaders)
+%%           State = state record()
+%% @equiv    cancel_request(State, [])
+%%--------------------------------------------------------------------
+cancel_request(State) when is_record(State, state) ->
+    cancel_request(State, []).
+
+%%--------------------------------------------------------------------
+%% Function: cancel_request(State, ExtraHeaders)
 %%           State        = state record()
-%%           ExtraHeaders = list() of {key, value} tuple() with extra
-%%                          headers that should be included in the
-%%                          CANCEL we send (if we send one).
+%%           ExtraHeaders = list() of {Key, Value}, extra headers that
+%%                          should be included in the CANCEL we send
+%%                          (if we send one).
 %% Descrip.: We have been asked to cancel. Cancel is tricky business,
 %%           if we are still in state 'calling' we have to just mark
 %%           ourselves as cancelled and then wait for a 1xx to arrive
@@ -1331,9 +1343,6 @@ terminate_transaction(State) when is_record(State, state) ->
 %%           can do it at this time.
 %% Returns : NewState = state record()
 %%--------------------------------------------------------------------
-cancel_request(State) when is_record(State, state) ->
-    cancel_request(State, []).
-
 cancel_request(#state{cancelled=true}=State, _ExtraHeaders) ->
     LogTag = State#state.logtag,
     Request = State#state.request,
@@ -1396,7 +1405,7 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 %%           transaction has finished because _this_ transaction will
 %%           then receive a '487 Request Cancelled' response.
 %% Returns : NewState = state record() |
-%%           {ok, testing, ...}          this is for unit testing only
+%%           {ok, testing, NewState}
 %%--------------------------------------------------------------------
 start_cancel_transaction(State) when is_record(State, state) ->
     LogTag = State#state.logtag,
@@ -1473,8 +1482,7 @@ update_invite_expire(Status, State) when is_record(State, state), Status >= 101,
     end.
 
 %%--------------------------------------------------------------------
-%% Function: ack_response_to_invite(Method, Response, State)
-%%           Method   = string()
+%% Function: ack_response_to_invite(Response, State)
 %%           Response = response record()
 %%           State    = state record()
 %% Descrip.: Send an ACK if this is an INVITE transaction and the

@@ -35,8 +35,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link/0
-%% Descrip.: Starts the server
+%% Function: start_link()
+%% Descrip.: Would've done some useful initialization if this was not
+%%           merely a test module.
+%% Returns : ignore
 %%--------------------------------------------------------------------
 start_link() ->
     ignore.
@@ -91,7 +93,7 @@ get_socket(#sipdst{proto = yxa_test}) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_specific_socket(Id)
-%%           Id = tuple() ({Proto, Id})
+%%           Id = ob_id record()
 %% Descrip.: Return a fake socket or a term based on process dict.
 %% Returns : sipsocket record() | term()
 %%--------------------------------------------------------------------
@@ -108,7 +110,7 @@ get_specific_socket(#ob_id{proto = yxa_test}) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_raw_socket(SipSocket)
-%%           Dst = sipdst record()
+%%           SipSocket = sipsocket record()
 %% Descrip.: Return a fake raw socket or a term based on process dict.
 %% Returns : sipsocket record() | term()
 %%--------------------------------------------------------------------
@@ -122,9 +124,12 @@ get_raw_socket(#sipsocket{proto = yxa_test}) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_remote_peer(SipSocket)
-%%           Dst = sipdst record()
+%%           SipSocket = sipsocket record()
 %% Descrip.: Return fake remote peer info based on process dictionary.
 %% Returns : {ok, Proto, Addr, Port} | term()
+%%           Proto = yxa_test
+%%           Addr  = string(), "192.0.2.242"
+%%           Port  = integer()
 %%--------------------------------------------------------------------
 get_remote_peer(#sipsocket{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_remote_peer}) of
@@ -135,11 +140,12 @@ get_remote_peer(#sipsocket{proto = yxa_test}) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_reliable_transport(_)
+%% Function: is_reliable_transport(SipSocket)
+%%           SipSocket = sipsocket record()
 %% Descrip.: Fake response based on process dictionary.
 %% Returns : true | false
 %%--------------------------------------------------------------------
-is_reliable_transport(_) ->
+is_reliable_transport(#sipsocket{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, is_reliable_transport}) of
 	{true, Res} ->
 	    Res;

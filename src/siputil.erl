@@ -64,6 +64,13 @@ printvalue([A]) ->
 printvalue([A | B]) ->
     A ++ "," ++ printvalue(B).
 
+%%--------------------------------------------------------------------
+%% Function: concat_strings(In)
+%%           In = list() of string()
+%% Descrip.: Insanely ineffective concatenation of strings, with
+%%           CRLFs in between. Please, don't use this function!
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
 concat_strings([]) ->
     [];
 

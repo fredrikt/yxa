@@ -96,12 +96,16 @@ gregorian_weekno(Date, Wkst) ->
 
 %%--------------------------------------------------------------------
 %% Function: date_to_weekno(Date, Wkst)
-%%           DateTime = {Y,M,D}, Y,M,D = integer()
-%%           Wkst     = mo | tu | we | th | fr | sa | su (weekday)
+%%           DateTime = {Year,Month,Day}
+%%           Year     = integer()
+%%           Month    = integer()
+%%           Day      = integer()
+%%           Wkst     = mo | tu | we | th | fr | sa | su, (weekday)
 %%                      first working day of the week
 %% Descrip.: determine which week DateTime belongs to 
 %% Returns : {Year, WeekNo}
-%%           Year, WeekNo = integer()
+%%           Year = integer()
+%%           WeekNo = integer()
 %% Note    : see RFC 3880 chapter 4.4 page 17 for details - this code
 %%           uses Wkst as the starting date of the week.
 %%           Count weeks as belonging to the year where the week has
@@ -146,12 +150,13 @@ date_to_weekno({Year,_Month,_Day} = Date, Wkst) ->
 
 %%--------------------------------------------------------------------
 %% Function: days_in_range(Start, End)
-%%           Start, End = {Y,M, D} | {Y,M}
+%%           Start = {Y,M,D} | {Y,M}
+%%           End   = {Y,M,D} | {Y,M}
 %%           Y = integer(), year
 %%           M = integer(), month
 %%           D = integer(), day
 %% Descrip.: determine the number of days in the (inclusive) time 
-%%           range Start-End, where Start =< End
+%%           range Start-End, where Start `=<' End
 %% Returns : integer()
 %% Note    : CPU cost = O(N), N = length of time range in months 
 %%--------------------------------------------------------------------
@@ -183,12 +188,13 @@ days_in_range({YStart, MStart}, {YEnd, MEnd}, DayCount) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: nth_bymonthday(Year,Month,N)                             XXX unused function
-%%           Year, Month = integer()
-%%           N           = integer(), N >= 1 or N =< -1
+%% Function: nth_bymonthday(Year, Month, N)
+%%           Year  = integer()
+%%           Month = integer()
+%%           N     = integer(), N >= 1 or N =< -1
+%% Descrip.: find date of Nth day in selected Year-Month. XXX unused.
 %%                         -1 = last day, -2 = day before last day ...
-%% Descrip.: find date of Nth day in selected Year-Month
-%% Returns : {Year,Month,Day} (matching date) | nth_day_does_not_exist
+%% Returns : {Year,Month,Day} | nth_day_does_not_exist
 %%--------------------------------------------------------------------
 nth_bymonthday(Year,Month,N) when N >= 1 ->
     MonthLength = calendar:last_day_of_the_month(Year, Month),
@@ -205,13 +211,14 @@ nth_bymonthday(Year,Month,N) when N =< -1 ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: nth_bymonthday(Year,Month,N)       
-%%           Year, Month = integer()
-%%           N           = integer(), N >= 1 or N =< -1
-%%                         -1 = last day, -2 = day before last day ...
+%% Function: normalize_monthday(Year,Month,N)       
+%%           Year  = integer()
+%%           Month = integer()
+%%           N     = integer(), N >= 1 or N =< -1
 %% Descrip.: find date of Nth day in selected Year-Month
-%% Returns : integer() >= 1 (monthday) if N is valid
-%%           integer() < 1 if monthday is invalid 
+%%                    -1 = last day, -2 = day before last day ...
+%% Returns : integer(), >= 1 (monthday) if N is valid
+%%                      < 1 if monthday is invalid 
 %%--------------------------------------------------------------------
 normalize_monthday(_Year, _Month, N) when N >= 1 ->
     N;
@@ -222,11 +229,12 @@ normalize_monthday(Year, Month, N) when N =< -1 ->
 
 %%--------------------------------------------------------------------
 %% Function: nth_byday_in_month(Year,Month,N,DayType)
-%%           Year, Month = integer()
-%%           N           = integer(), N >= 1 or N =< -1
-%%           DayType     = mo | tu | we | th | fr | sa | su (weekday)
+%%           Year    = integer()
+%%           Month   = integer()
+%%           N       = integer(), N >= 1 or N =< -1
+%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
 %% Descrip.: get date of Nth occurrence of day DayType in month
-%% Returns : {Year,Month,Day} (matching date) | nth_day_does_not_exist
+%% Returns : {Year,Month,Day} | nth_day_does_not_exist
 %%--------------------------------------------------------------------
 nth_byday_in_month(Year,Month,N,DayType) when N >= 1 ->
     NoOfDays = calendar:last_day_of_the_month(Year, Month),
@@ -269,8 +277,9 @@ get_last_occurence_of_weekday(Year, Month, DayTypeNo, N) ->
 	    
 %%--------------------------------------------------------------------
 %% Function: all_byday_in_month(Year,Month,DayType)
-%%           Year, Month = integer()
-%%           DayType     = mo | tu | we | th | fr | sa | su (weekday)
+%%           Year    = integer()
+%%           Month   = integer()
+%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
 %% Descrip.: get all occurrences of DayType in the indicated month
 %% Returns : list() of {Year,Month,Day}
 %%--------------------------------------------------------------------
@@ -289,7 +298,7 @@ all_byday_in_month(Year,Month,DayType,N,Acc) ->
 
 %%--------------------------------------------------------------------
 %% Function: day_type_to_no(DayType)
-%%           DayType = mo | tu | we | th | fr | sa | su (weekday)
+%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
 %% Descrip.: maps DayType codes to numerical weekday numbers (mo -> 1,
 %%           tu -> 2 ....)
 %% Returns : integer()
@@ -312,8 +321,10 @@ dayno_to_daytype(7) -> su.
 
 %%--------------------------------------------------------------------
 %% Function: date_to_weekday(Date)
-%%           Date = {Year, Month, Day}
-%%           Year, Month, Day = integer()
+%%           Date  = {Year, Month, Day}
+%%           Year  = integer()
+%%           Month = integer()
+%%           Day   = integer()
 %% Descrip.: determine weekday of Date
 %% Returns : mo | tu | we | th | fr | sa | su
 %%--------------------------------------------------------------------
@@ -325,9 +336,9 @@ date_to_weekday(Date) ->
 %% Function: nth_byday_in_year(Year,N,DayType)
 %%           Year    = integer()
 %%           N       = integer(), N >= 1 or N =< -1
-%%           DayType = mo | tu | we | th | fr | sa | su (weekday)
+%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
 %% Descrip.: get date of Nth occurrence of weekday DayType in year Year
-%% Returns : {Year,Month,Day} (matching date) | nth_day_does_not_exist
+%% Returns : {Year,Month,Day} | nth_day_does_not_exist
 %%--------------------------------------------------------------------
 nth_byday_in_year(Year,N,DayType) when N >= 1 ->
     FirstMatchPos = get_first_occurence_of_weekday(Year, DayType),
@@ -357,7 +368,7 @@ is_leap_year(Year) ->
 %%--------------------------------------------------------------------
 %% Function: days_in_year(Year)
 %% Descrip.: return number of days in year Year
-%% Returns : integer() (365 | 366)
+%% Returns : 365 | 366
 %%--------------------------------------------------------------------
 days_in_year(Year) ->
     case calendar:is_leap_year(Year) of
@@ -396,10 +407,10 @@ feb(Year) ->
 %%           Year   = integer() 
 %%           Nthday = integer(), 1-365 (366 if Year is a leap year) 
 %% Descrip.: determine which month the NthDay occurs (in year Year)
-%% Returns : {Year2,Month2,Day2} |
-%%           nth_day_does_not_exist (if NthDay doesn't exist in year 
-%%                                   Year)
-%%           Year2, Month2, Day2 = integer()  
+%% Returns : {Year2,Month2,Day2} | nth_day_does_not_exist
+%%           Year2  = integer()
+%%           Month2 = integer()
+%%           Day2   = integer()  
 %%--------------------------------------------------------------------
 dayno_to_date(Year, NthDay) ->
     DaysInYear = days_in_year(Year),
@@ -414,8 +425,10 @@ dayno_to_date(Year, NthDay) ->
 
 %%--------------------------------------------------------------------
 %% Function: date_to_dayno(Date)
-%%           Date = {Year,Month,Day}
-%%           Year, Month, Day = integer()
+%%           Date  = {Year,Month,Day}
+%%           Year  = integer()
+%%           Month = integer()
+%%           Day   = integer()
 %% Descrip.: convert date to day count
 %% Returns : integer()
 %%--------------------------------------------------------------------
@@ -454,7 +467,7 @@ get_month(Year, CurrentMonth, NthDay) ->
 %%--------------------------------------------------------------------
 %% Function: weeks_in_year(Year, Wkst)
 %%           Year = integer()
-%%           Wkst = mo | tu | we | th | fr | sa | su (weekday)
+%%           Wkst = mo | tu | we | th | fr | sa | su, (weekday)
 %%                  first working day of the week
 %% Descrip.: determine how many weeks belong to the year Year, some 
 %%           may overlap into the next and previous year - ISO 8601
@@ -495,10 +508,10 @@ last_week_length(Year, WkstNo, LastDay, Count) ->
       
 %%--------------------------------------------------------------------
 %% Function: get_week_no(Year, Wkst, WeekNo) 
-%%           Year      = integer()
-%%           Wkst      = mo | tu | we | th | fr | sa | su (weekday)
-%%                       first working day of the week
-%%           WeekNo    = integer() >= 1 or =< -1
+%%           Year   = integer()
+%%           Wkst   = mo | tu | we | th | fr | sa | su, (weekday)
+%%                    first working day of the week
+%%           WeekNo = integer(), >= 1 or =< -1
 %% Descrip.: map WeekNo to the week in Year to the regular nonnegative
 %%           week no. representation 
 %%           WeekNo
@@ -522,10 +535,10 @@ get_week_no(Year, Wkst, WeekNo) when WeekNo =< -1 ->
 
 %%--------------------------------------------------------------------
 %% Function: weekno_to_date(Year, Wkst, WeekNo)
-%%           Year   = current year
-%%           Wkst   = mo | tu | we | th | fr | sa | su (weekday)
+%%           Year   = integer(), current year
+%%           Wkst   = mo | tu | we | th | fr | sa | su, (weekday)
 %%                    first working day of the week
-%%           WeekNo = no. of week thats part of Year
+%%           WeekNo = integer(), no. of week thats part of Year
 %% Descrip.: return date of first day in week WeekNo 
 %% Returns : {Year,Month,Day} | week_does_not_exist
 %%--------------------------------------------------------------------
@@ -560,9 +573,9 @@ weekno_to_date(Year, Wkst, WeekNo) ->
 %% Function: byyearday_to_date(Year,N)
 %%           Year = integer()
 %%           N    = integer(), N >= 1 or N =< -1
+%% Descrip.: get date of Nth day.
 %%                  -1 = last day, -2 = day before last day ...
-%% Descrip.: get date of Nth day
-%% Returns : {Year,Month,Day} (matching date) | nth_day_does_not_exist
+%% Returns : {Year,Month,Day} | nth_day_does_not_exist
 %%--------------------------------------------------------------------
 byyearday_to_date(Year,N) when N >= 1 ->
     NthDay = normalize_yearday(Year, N), 
@@ -573,12 +586,13 @@ byyearday_to_date(Year,N) when N =< -1 ->
 
 %%--------------------------------------------------------------------
 %% Function: normalize_yearday(Year, N)    
-%%           Year, Month = integer()
-%%           N           = integer(), N >= 1 or N =< -1
+%%           Year  = integer()
+%%           Month = integer()
+%%           N     = integer(), N >= 1 or N =< -1
+%% Descrip.: find day number of Nth day in selected Year.
 %%                         -1 = last day, -2 = day before last day ...
-%% Descrip.: find day number of Nth day in selected Year
-%% Returns : integer() >= 1 (yearday) if N is valid
-%%           integer() < 1 if yearday is invalid 
+%% Returns : integer(), >= 1 (yearday) if N is valid
+%%                      < 1 if yearday is invalid 
 %%--------------------------------------------------------------------
 normalize_yearday(_Year, N)  when N >= 1 ->
     N;
@@ -612,6 +626,11 @@ normalize_yearday(Year, N)  when N =< -1 ->
 %% Test functions
 %%====================================================================
 
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest
+%% Returns : ok
+%%--------------------------------------------------------------------
 test() ->
     
 

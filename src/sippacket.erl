@@ -1,3 +1,11 @@
+%%%-------------------------------------------------------------------
+%%% File    : sippacket.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Parses a SIP message received from the network.
+%%%
+%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 -module(sippacket).
 %%-compile(export_all).
 
@@ -54,7 +62,7 @@
 %% Returns : Request   |
 %%           Response  |
 %%           keepalive |
-%%           throw()
+%%           throw({siperror, ...})
 %%           Request  = request record()
 %%           Response = response record()
 %%           Status   = integer(), SIP status code
@@ -124,17 +132,15 @@ extract_body(_Bin, _BodyOffset, CL) ->
     
 
 %%--------------------------------------------------------------------
-%% Function: parse_packet(Packet, Origin) ->
+%% Function: parse_packet(Packet, Origin)
 %%           Packet = binary()
 %%           Origin = siporigin record() | none
 %% Descrip.: Parse a request/response. Extract the first line
 %%           contents, build a Header keylist, and return the offset
 %%           to the body.
-%% Returns : {FirstLine, Header, BodyOffset} |
-%%           keepalive                       |
-%%           throw()
-%%           FirstLine  = {request, {Method, URIstr}} |
-%%                        {response, {Status, Reason}
+%% Returns : {FirstLine, Header, BodyOffset} | keepalive |
+%%           throw({siperror, ...})
+%%           FirstLine  = {request, {Method, URIstr}} | {response, {Status, Reason}}
 %%           Header     = keylist record()
 %%           BodyOffset = integer()
 %%--------------------------------------------------------------------
@@ -154,7 +160,7 @@ parse_packet(Packet, Origin) when is_binary(Packet) ->
 	    %% Extract receiver pid if present
 	    RStr = if
 		       is_record(Origin, siporigin) ->
-			   "(connection handler: " ++ pid_to_list(Origin#siporigin.receiver) ++ ") ";
+			   ["(connection handler: ", pid_to_list(Origin#siporigin.receiver), ") "];
 		       true ->
 			   ""
 		   end,
@@ -366,7 +372,7 @@ make_keylist2(_Bin, [], Res) ->
 %%           see if there is a comma in the values at all. If it is,
 %%           then do the expensive sipheader:comma() on the values,
 %%           otherwise just return it as [Value].
-%% Returns : ValueList, list() of string() or just [Value]
+%% Returns : ValueList = list() of string()
 %%--------------------------------------------------------------------
 %% Except the headers listed in RFC3261 7.3.1 and in the RFC3261 BNF
 %% to be excepted from standard header comma splitting
@@ -455,10 +461,11 @@ extract_value2([], _Bin, Res) ->
     binary_to_list(All).
 
 %%--------------------------------------------------------------------
-%% Function: parse_firstline(FirstLine)
+%% Function: parse_firstline(Bin, Offset)
+%%           Bin    = binary()
+%%           Offset = integer(), where in Bin the first line starts
 %% Descrip.: Figure out if this is a request or response.
-%% Returns : {request, {Method, URIstr}} |
-%%           {response, {Status, Reason}
+%% Returns : {request, {Method, URIstr}} | {response, {Status, Reason}}
 %%           Method = string(), e.g. "INVITE"
 %%           URIstr = string(), e.g. "sip:user@example.org"
 %%           Status = integer(), e.g. 100

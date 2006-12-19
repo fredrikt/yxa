@@ -34,8 +34,20 @@
 
 
 %%--------------------------------------------------------------------
+%% Function: url_to_dstlist(URL, ApproxMsgSize)
+%%           URL           = sipurl record(), the destination we
+%%                           should resolve
+%%           ApproxMsgSize = integer()
+%% @equiv    url_to_dstlist(URL, ApproxMsgSize, URL)
+%% Descrip.: Just a helper function for when manually creating dst
+%%           lists during development/problem solving.
+%% Returns : list() of sipdst record() | {error, Reason}
+%%--------------------------------------------------------------------
+url_to_dstlist(URL, ApproxMsgSize) when is_record(URL, sipurl), is_integer(ApproxMsgSize) ->
+    url_to_dstlist(URL, ApproxMsgSize, URL).
+
+%%--------------------------------------------------------------------
 %% Function: url_to_dstlist(URL, ApproxMsgSize, ReqURI)
-%%           url_to_dstlist(URL, ApproxMsgSize)
 %%           URL           = sipurl record(), the destination we
 %%                           should resolve
 %%           ApproxMsgSize = integer()
@@ -47,9 +59,6 @@
 %%           UDP or have to do TCP only.
 %% Returns : list() of sipdst record() | {error, Reason}
 %%--------------------------------------------------------------------
-url_to_dstlist(URL, ApproxMsgSize) when is_record(URL, sipurl), is_integer(ApproxMsgSize) ->
-    url_to_dstlist(URL, ApproxMsgSize, URL).
-
 url_to_dstlist(URL, ApproxMsgSize, ReqURI) when is_record(URL, sipurl), is_integer(ApproxMsgSize),
 						is_record(ReqURI, sipurl) ->
     case url_param:find(URL#sipurl.param_pairs, "maddr") of
@@ -174,7 +183,7 @@ get_response_destination(TopVia) when is_record(TopVia, via) ->
 %% Function: dst2str(Dst)
 %%           Dst = sipdst record()
 %% Descrip.: Turn a sipdst into something printable (for debugging)
-%% Returns : DstString, Dst as string()
+%% Returns : string(), Dst as string()
 %%--------------------------------------------------------------------
 dst2str(Dst) when is_record(Dst, sipdst) ->
     Proto = Dst#sipdst.proto,
@@ -195,6 +204,13 @@ dst2str(Dst) when is_record(Dst, sipdst) ->
 	end,
     lists:flatten(Str).
 
+%%--------------------------------------------------------------------
+%% Function: debugfriendly(In)
+%%           In = sipdst record() | list() of sipdst record()
+%% Descrip.: Format a single sipdst or a list of them into a format
+%%           suitable for debug logging.
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
 debugfriendly(Dst) when is_record(Dst, sipdst) ->
     debugfriendly2([Dst], []);
 debugfriendly(L) ->
@@ -385,12 +401,11 @@ get_transport_param(URL) when is_record(URL, sipurl) ->
 
 %%--------------------------------------------------------------------
 %% Function: combine_host_portres(In)
-%%           In = list() of sipdst record() | {error, Reason} tuple()
+%%           In = list() of sipdst record() | {error, Reason}
 %% Descrip.: Weed out the sipdst records (if any) from In, preserving
 %%           order. If there are only {error, Reason} tuples, return
 %%           the first one.
-%% Returns : list() of sipdst record() |
-%%           {error, Reason}
+%% Returns : [#sipdst{}] | {error, Reason}
 %%           Reason = term()
 %%--------------------------------------------------------------------
 combine_host_portres(In) when is_list(In) ->
@@ -416,7 +431,7 @@ combine_host_portres2([], Res, _ERes) ->
 %%           SRVList = list() of sipdns_srv record()
 %% Descrip.: Remove all records having proto 'tls' | tls6 from In, and
 %%           return a new list() of sipdns_srv record().
-%% Returns : DstList = list() of sipdns_srv record().
+%% Returns : DstList = list() of sipdns_srv record()
 %%--------------------------------------------------------------------
 remove_tls_destinations(SRVList) ->
     remove_tls_destinations2(SRVList, []).
@@ -471,13 +486,20 @@ remove_non_tls_destinations2([H | T], RCount, Res) when is_record(H, sipdst) ->
 
 %%--------------------------------------------------------------------
 %% Function: host_port_to_dstlist(Proto, InHost, InPort, URI)
-%%           host_port_to_dstlist(Proto, InHost, InPort, URI,
+%% @equiv    host_port_to_dstlist(Proto, Host, Port, URI, [Host])
+%% Returns : term()
+%%--------------------------------------------------------------------
+host_port_to_dstlist(Proto, Host, Port, URI) ->
+    host_port_to_dstlist(Proto, Host, Port, URI, [Host]).
+
+%%--------------------------------------------------------------------
+%% Function: host_port_to_dstlist(Proto, InHost, InPort, URI,
 %%                                SSLNames)
 %%           Proto    = atom(), tcp | udp | tls | yxa_test
 %%           Host     = string()
 %%           Port     = integer() | none
-%%           URI      = sipurl record() to put in the created sipdst
-%%                      records
+%%           URI      = sipurl record(), the Request-URI to put in
+%%                      the created sipdst records
 %%           SSLNames = list() of string(), SSL certname(s) to expect
 %% Descrip.: Resolves a hostname and returns a list of sipdst
 %%           records of the protocol requested.
@@ -487,9 +509,6 @@ remove_non_tls_destinations2([H | T], RCount, Res) when is_record(H, sipdst) ->
 %%           {error, Reason}
 %%           DstList = list() of sipdst record()
 %%--------------------------------------------------------------------
-host_port_to_dstlist(Proto, Host, Port, URI) ->
-    host_port_to_dstlist(Proto, Host, Port, URI, [Host]).
-
 host_port_to_dstlist(Proto, Host, Port, URI, SSLNames) when (is_integer(Port) orelse Port == none),
 							    is_record(URI, sipurl), is_list(SSLNames) ->
     case dnsutil_get_ip_port(Host, Port) of
@@ -507,7 +526,7 @@ host_port_to_dstlist(Proto, Host, Port, URI, SSLNames) when (is_integer(Port) or
 %%                      resulting sipdst records
 %%           SSLNames = list() of string(), hostnames to validate SSL
 %%                      certificate subjectAltName/CN against
-%%           In       = list() of sipdns_hostport record() - typically
+%%           In       = list() of sipdns_hostport record(), typically
 %%                      the result of a call to dnsutil:get_ip_port()
 %% Descrip.: Turns the result of a dnsutil:get_ip_port() into a list
 %%           of sipdst records. get_ip_port() return a list of
@@ -576,7 +595,7 @@ make_sipdst_from_hostport2(_Proto, _URI, _SSLNames, [], Res) ->
 %%           SrvList = list() of sipdns_srv record()
 %% Descrip.: Turns the result of a dnsutil:siplookup() into a list
 %%           of sipdst records. The ordering is preserved.
-%% Returns : DstList, list() of sipdst record()
+%% Returns : DstList = list() of sipdst record()
 %%--------------------------------------------------------------------
 format_siplookup_result(InPort, ReqURI, HostIn, SrvList)
   when (is_integer(InPort) orelse InPort == none), is_record(ReqURI, sipurl),
@@ -625,7 +644,7 @@ format_siplookup_result2(InPort, ReqURI, SSLNames, SSL_AddHost, [H | T], Res) wh
 %%--------------------------------------------------------------------
 %% Function: format_siplookup_result2_sslnames(Proto, SSLNames,
 %%                                             AddHost, Host)
-%%           Proto    = tls | tls6 | ...
+%%           Proto    = tls | tls6 | atom()
 %%           SSLNames = list() of string(), extra SSL names to allow
 %%           AddHost  = bool()
 %%           Host     = string(), hostname we are resolving
@@ -658,10 +677,10 @@ format_siplookup_result2_sslnames(_Proto, _SSLNames, _AddHost, _Host) ->
 %%           should use.
 %% Returns : {ok, Address, Proto} |
 %%           error
-%%           Address = string() that might be IPv4 address (from
-%%                     received=), IPv6 address (from received=), or
+%%           Address = string(), might be IPv4 address (from
+%%                     'received'), IPv6 address (from 'received'), or
 %%                     whatever was in the host part of the Via.
-%%           Proto   = atom(), tcp | udp | tcp6 | udp6 | tls | tls6
+%%           Proto   = tcp | udp | tls | yxa_test
 %%--------------------------------------------------------------------
 get_response_host_proto(TopVia) when is_record(TopVia, via) ->
     {Protocol, Host, Parameters} = {TopVia#via.proto, TopVia#via.host, TopVia#via.param},
@@ -712,8 +731,7 @@ get_response_host_proto(TopVia) when is_record(TopVia, via) ->
 %% Returns : {ok, Address, Proto} |
 %%           {error, Reason}
 %%           Address = term(), parsed version of Addr
-%%           Proto   = atom(), tcp | udp | tcp6 | udp6 | tls | tls6 |
-%%                             yxa_test | yxa_test6
+%%           Proto   = tcp | udp | tls | yxa_test
 %%           Reason  = string()
 %% Note    : yxa_test and yxa_test6 are just for YXA unit tests.
 %%--------------------------------------------------------------------

@@ -209,8 +209,7 @@ get_timers_appsignal_matching2(_Value, [], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: extract(Values, SipTimer)
-%%           Values = list() of atom(), ref | timeout | description |
-%%                    starttime | appsignal
+%%           Values = [ref | timeout | description | starttime | appsignal]
 %%           TimerList  = siptimerlist record()
 %% Descrip.: Extract elements from a siptimer record().
 %% Returns : list() of term()
@@ -287,6 +286,13 @@ cancel_timers_with_appsignal(AppSignal, TimerList) when is_record(TimerList, sip
 	    cancel_timers(CancelTimers, TimerList)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: debugfriendly(TimerList)
+%%           TimerList = siptimerlist record() | none
+%% Descrip.: Format all timers in TimerList into strings suitable for
+%%           debug logging.
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
 debugfriendly(TimerList) when is_record(TimerList, siptimerlist) ->
     debugfriendly2(TimerList#siptimerlist.list, []).
 

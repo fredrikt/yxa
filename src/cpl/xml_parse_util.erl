@@ -1,5 +1,5 @@
-%% This module contains all CPL script parsing functions that can 
-%% easily be tested independently of the main parse function in 
+%% This module contains all CPL script parsing functions that can
+%% easily be tested independently of the main parse function in
 %% xml_parse.erl
 %%--------------------------------------------------------------------
 
@@ -48,20 +48,21 @@
 %%====================================================================
 %% External functions
 %%====================================================================
-           
+
 %%--------------------------------------------------------------------
 %% Function: date(DateString)
 %% Descrip.: parse a CPL DATE string
-%% Returns : {Year, Month, Day} | throw()
-%%
-%% Function: time(DateTimeString)
-%% Descrip.: parse a CPL DATE-TIME string
-%% Returns : date_time record() | throw()
-%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%% Returns : {Year, Month, Day} |
+%%           throw({error, Reason})
+%%           Year   = integer()
+%%           Month  = integer()
+%%           Day    = integer()
+%%           Reason = atom()
+%%--------------------------------------------------------------------
 %% BNF     :
 %%
 %% RFC 2445 chapter 4.3.4
-%% 
+%%
 %% date               = date-value
 %%
 %% date-value         = date-fullyear date-month date-mday
@@ -85,7 +86,7 @@
 %%                            ;value definitions
 %%--------------------------------------------------------------------
 date([Y1,Y2,Y3,Y4,M1,M2,D1,D2]) ->
-    try 
+    try
 	begin
 	    Year = list_to_integer([Y1,Y2,Y3,Y4]),
 	    Month = list_to_integer([M1,M2]),
@@ -101,12 +102,18 @@ date([Y1,Y2,Y3,Y4,M1,M2,D1,D2]) ->
 	error: _ ->
 	    throw({error, non_numerical_date_value_used})
     end;
-    
+
 date(_) ->
     throw({error, malformed_date_attribute_value}).
 
 
-
+%%--------------------------------------------------------------------
+%% Function: time(DateTimeString)
+%% Descrip.: parse a CPL DATE-TIME string
+%% Returns : date_time record() |
+%%           throw({error, Reason})
+%%           Reason = atom()
+%%--------------------------------------------------------------------
 time([_Y1,_Y2,_Y3,_Y4,_M1,_M2,_D1,_D2,$t,_H1,_H2,_Min1,_Min2,_S1,_S2 | R] = Time) ->
     time2(Time, time_type(R));
 
@@ -130,9 +137,9 @@ time2([Y1,Y2,Y3,Y4,M1,M2,D1,D2,_,H1,H2,Min1,Min2,S1,S2 | _], Type) ->
 	    Hour = list_to_integer([H1,H2]),
 	    Minute = list_to_integer([Min1,Min2]),
 	    Second = list_to_integer([S1,S2]),
-	    
-	    %% check that time is legal 
-	    %% Note: leap seconds need to be handled or set to 59 by 
+
+	    %% check that time is legal
+	    %% Note: leap seconds need to be handled or set to 59 by
 	    %%       other cpl modules that use date_time record()
 	    case calendar:valid_date(Year, Month, Day) and
 		(Hour >= 0) and (Hour =< 23) and
@@ -152,37 +159,39 @@ time2([Y1,Y2,Y3,Y4,M1,M2,D1,D2,_,H1,H2,Min1,Min2,S1,S2 | _], Type) ->
 %%--------------------------------------------------------------------
 %% Function: parse_until(UntilStr)
 %%           UntilStr = string(), the value of a until attribute in a
-%%           time tag in a time-switch
-%% Descrip.: "The "until" parameter defines an iCalendar COS DATE or 
+%%                      time tag in a time-switch
+%% Descrip.: "The "until" parameter defines an iCalendar COS DATE or
 %%           DATE-TIME [COS DATE or COS DATE-TIME] value which bounds
 %%           the recurrence rule in an inclusive manner.
-%%           [.....] If specified as a date-time value, then it MUST 
+%%           [.....] If specified as a date-time value, then it MUST
 %%           be specified in UTC time format."
-%%           - RFC 3880 chapter 4.4 p16 
-%%           This function parses the until value in time tag in a 
+%%           - RFC 3880 chapter 4.4 p16
+%%           This function parses the until value in time tag in a
 %%           time-switch tag
-%% Returns : {Year, Month, Date} | date_time record() | throw()    
+%% Returns : {Year, Month, Date} | date_time record() |
+%%           throw({error, Reason})
+%%           Reason = string()
 %%--------------------------------------------------------------------
 parse_until(UntilStr) ->
     try time(UntilStr) of
-	#date_time{type = utc} = DateTime -> 
+	#date_time{type = utc} = DateTime ->
 	    DateTime;
-	_ -> 
+	_ ->
 	    throw({error, data_time_must_be_in_utc_format})
     catch
-	throw: _ -> 
+	throw: _ ->
 	    date(UntilStr)
     end.
 
 %%--------------------------------------------------------------------
 %% Function: parse_byday(Str)
 %%           Str = string(), content of a byday attribute
-%% Descrip.: process the content of the byday attribute in the time 
+%% Descrip.: process the content of the byday attribute in the time
 %%           tag used by the time-switch tag
-%% Returns : list() of {N, Day} 
+%% Returns : list() of {N, Day}
 %%           Day = mo | tu | we | th | fr | sa | su
-%%           N = -1 or less | 1 or greater | 
-%%               all (default, if no +N or -N is used) 
+%%           N = integer(), -1 or less | 1 or greater |
+%%                   all (default, if no +N or -N is used)
 %%--------------------------------------------------------------------
 parse_byday(Str) ->
     Days = string:tokens(httpd_util:to_lower(Str), ","),
@@ -204,7 +213,7 @@ parse_byday(Str) ->
 	    ("7" ++ ND) -> get_day("7" ++ ND);
 	    ("8" ++ ND) -> get_day("8" ++ ND);
 	    ("9" ++ ND) -> get_day("9" ++ ND);
-	    ("-" ++ ND) -> 
+	    ("-" ++ ND) ->
 		{DayNo, Day} = get_day(ND),
 		{-DayNo, Day};
 	    (_) -> throw({error, byday_attribute_value_not_a_day})
@@ -212,7 +221,7 @@ parse_byday(Str) ->
     %% lists:sort([F(E) || E <- Days]).
     [F(E) || E <- Days].
 
-%% descrip.: 
+%% descrip.:
 %% return  : {DayNumber, Day}
 %%           Number = integer()
 %%           Day = mo | tu | we | th | fr | sa | su
@@ -222,12 +231,12 @@ get_day(Str) ->
 %% accumulate number of days
 get_day([C | R], Acc) when C >= $0, C =< $9 ->
     get_day(R, [C | Acc]);
-%% last two chars must be the day code 
+%% last two chars must be the day code
 get_day([D1,D2], Acc) ->
     DayNo = list_to_integer(lists:reverse(Acc)),
     Day = [D1,D2],
     case Day of
-	"mo" -> {DayNo, mo}; 
+	"mo" -> {DayNo, mo};
 	"tu" -> {DayNo, tu};
 	"we" -> {DayNo, we};
 	"th" -> {DayNo, th};
@@ -243,13 +252,13 @@ get_day(_, _Acc) ->
 %% Function: duration(DurationString)
 %% Descrip.: parse a CPL DURATION string
 %% Returns : duration record()
-%% Note    : is there a range limit on the time value, e.g. 
+%% Note    : is there a range limit on the time value, e.g.
 %%           dur-second = range "00S" - "59S" ?
 %%           probably - but cpl handles unlimited ranges
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% RFC 2445 chapter 4.3.6 p36
-%% 
-%% Duration: 
+%%
+%% Duration:
 %%
 %% dur-value  = (["+"] / "-") "P" (dur-date / dur-time / dur-week)
 %%
@@ -283,7 +292,7 @@ duration(Str) ->
 	Duration ->
 	    Duration
     end.
-    
+
 duration2("p" ++ R, D) -> duration3(R, D);
 duration2("+p" ++ R, D) -> duration3(R, D);
 duration2("-p" ++ _R, _D) -> throw({error, duration_value_may_not_be_negativ}).
@@ -292,7 +301,7 @@ duration2("-p" ++ _R, _D) -> throw({error, duration_value_may_not_be_negativ}).
 duration3("t" ++ _R = Str, D) ->
     duration_t(Str, D);
 %% "..PxxxDT..." or "..PxxxW"
-duration3(R, D) -> 
+duration3(R, D) ->
     {Type, Num, Rest} = get_digit(R),
     case Type of
 	$w -> case Rest of
@@ -308,21 +317,21 @@ duration3(R, D) ->
 	_ -> throw({error, duration_expected_PxxxDTyyy_or_PxxxW_format})
     end.
 
-duration_t("t" ++ R, D) -> 
+duration_t("t" ++ R, D) ->
     {Type, Num, Rest} = get_digit(R),
     case {Type, Rest} of
 	{$h,[]} -> D#duration{hours = Num};
 	{$m,[]} -> D#duration{minutes = Num};
 	{$s,[]} -> D#duration{seconds = Num};
-	{$h,_} -> D2 = D#duration{hours = Num}, 
+	{$h,_} -> D2 = D#duration{hours = Num},
 		  duration_m(Rest, D2);
-	{$m,_} -> D2 = D#duration{minutes = Num}, 
+	{$m,_} -> D2 = D#duration{minutes = Num},
 		  duration_s(Rest, D2);
 	{$s,_} -> throw({error, duration_has_trailing_chars_after_second_entry});
 	_ -> throw({error, duration_expected_M_H_or_S_after_the_T})
     end.
 
-duration_m(R, D) -> 
+duration_m(R, D) ->
     {Type, Num, Rest} = get_digit(R),
     case {Type, Rest} of
 	{$m, []} -> D#duration{minutes = Num};
@@ -331,7 +340,7 @@ duration_m(R, D) ->
 	_ -> throw({error, duration_expected_M_after_the_H})
     end.
 
-duration_s(R, D) -> 
+duration_s(R, D) ->
     {Type, Num, Rest} = get_digit(R),
     case {Type, Rest} of
 	{$s, []} -> D#duration{seconds = Num};
@@ -339,11 +348,11 @@ duration_s(R, D) ->
 	_ -> throw({error, duration_expected_S_after_the_M})
     end.
 
-%% descrip.: 
+%% descrip.:
 %% return  : {Type, Number, StrRest}
 %%           Type = $h | $m | $s | $w | $d
 %%           Number = integer()
-%%           StrRest = string() the rest of Str after Number-Type chars 
+%%           StrRest = string() the rest of Str after Number-Type chars
 get_digit(Str) ->
     get_digit(Str, []).
 
@@ -359,13 +368,15 @@ get_digit([Type | R], Acc) ->
 %% Function: iolist_to_str(IOlist)
 %% Descrip.: "An I/O list is a deep list of binaries, integers in the
 %%           range 0 through 255, and other I/O lists. In an I/O list,
-%%           a binary is allowed as the tail of a list." - erlang 
+%%           a binary is allowed as the tail of a list." - erlang
 %%           module documentation (R10B)
 %%           This function converts a iolist to a flat list (string())
-%%           so that they are easier to handle when doing various 
-%%           forms of parsing on the text
-%% Returns : string()                                                   XXX put this in a utility module
-%% Note    : binaries are assumed to be "strings" i.e. each byte = a 
+%%           so that they are easier to handle when doing various
+%%           forms of parsing on the text.
+%%
+%%           XXX put this in a utility module
+%% Returns : string()
+%% Note    : binaries are assumed to be "strings" i.e. each byte = a
 %%           char value.
 %%--------------------------------------------------------------------
 iolist_to_str(IOList) when list(IOList) ->
@@ -376,15 +387,16 @@ iolist_to_str(IOList) when list(IOList) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: check_range(Val, {L1, L2})
-%%           check_range(Val, L)
-%%           Val        = integer()
-%%           L, L1, L2  = [Val1, Val2], specifies a range (order of 
-%%                        start and end doesn't matter)
-%%           Val1, Val2 = integer()
-%% Descrip.: check if Val is part of range LN, either one or two 
-%%           ranges are checked 
-%% Returns : Val | throw()
+%% Function: check_range(Val, In)
+%%           Val = integer()
+%%           In  = {L1, L2} | InL
+%%           L1  = integer()
+%%           L2  = integer()
+%%           InL = list() of integer(), exactly two integers
+%% Descrip.: check if Val is part of range LN, either one or two
+%%           ranges are checked
+%% Returns : Val |
+%%           throw({error, value_out_of_range})
 %%--------------------------------------------------------------------
 check_range(Val, {L1, L2}) ->
     case check_range(Val, L1) or check_range(Val, L2) of
@@ -400,9 +412,10 @@ check_range(Val, L) when is_list(L) ->
 %%--------------------------------------------------------------------
 %% Function: legal_value(Value, LegalValues)
 %%           Value       = term()
-%%           legalValues = term()
+%%           LegalValues = term()
 %% Descrip.: throw a exception if Value isn't part of LegalValues
-%% Returns : ok | throw()
+%% Returns : ok |
+%%           throw({error, attribute_value_is_not_legal})
 %%--------------------------------------------------------------------
 legal_value(Value, LegalValues) ->
     case lists:member(Value, LegalValues) of
@@ -415,13 +428,16 @@ legal_value(Value, LegalValues) ->
 %%--------------------------------------------------------------------
 %% Function: status_code_to_sip_error_code(Status)
 %%           Status = string(), the value of the status attribute in
-%%           a reject tag
-%% Descrip.: return the numerical error code of Status
-%% Returns : integer() | throw(), if numerical error code out of range
-%%           or unkown symbolic name is used
-%% Note    : other protocols than sip/sips may require additional 
+%%                    a reject tag
+%% Descrip.: return the numerical error code of Status. Throws an
+%%           error if numerical error code out of range or unkown
+%%           symbolic name is used
+%% Returns : integer() |
+%%           throw({error, Reason})
+%%           Reason = atom()
+%% Note    : other protocols than sip/sips may require additional
 %%           error codes
-%% XXX should return be integer(), this may pose problems for protocols with non-numeric error codes ? 
+%% XXX should return be integer(), this may pose problems for protocols with non-numeric error codes ?
 %%--------------------------------------------------------------------
 status_code_to_sip_error_code(Status) ->
     case util:isnumeric(Status) of
@@ -440,18 +456,19 @@ status_code_to_sip_error_code(Status) ->
 		"error" -> 500;    % Internal Server Error
 		_ -> throw({error, reject_tag_status_attribute_value_not_recognised_as_status_code})
 	    end
-    end.    
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: normalize_prio(PrioStr)
-%% Descrip.: convert priority values used by priority-switch in the 
-%%           attributes (less, greater, equal) of priority, to a 
+%% Descrip.: convert priority values used by priority-switch in the
+%%           attributes (less, greater, equal) of priority, to a
 %%           standard atom() format
-%% Returns : emrengency | urgent | normal | 'non-urgent' | 
-%%           {unkown, PrioStr}    - RFC 3880 chapter 4.5 p21 and 
-%%           RFC 3261 chapter 20.26 p173 allow for additional priority 
-%%           values beyond "non-urgent", "normal", "urgent", and 
-%%           "emergency"
+%% Returns : emrengency | urgent | normal | 'non-urgent' |
+%%           {unkown, PrioStr}
+%%                 RFC 3880 chapter 4.5 p21 and
+%%                 RFC 3261 chapter 20.26 p173 allow for additional
+%%                 priority values beyond "non-urgent", "normal",
+%%                 "urgent", and "emergency"
 %%--------------------------------------------------------------------
 normalize_prio(PrioStr) ->
     case httpd_util:to_lower(PrioStr) of
@@ -470,11 +487,12 @@ normalize_prio(PrioStr) ->
 %%
 %% language-range  = language-tag / "*"
 %%--------------------------------------------------------------------
-%% Function: is_language_range(Str) 
-%%           is_language_tag(Str)
-%%           Str = string() 
+%% Function: is_language_range(Str)
+%%           Str = string()
 %% Descrip.: determine if Str is a language-range (or language-tag)
-%% Returns : string() | throw()
+%% Returns : string() |
+%%           throw({error, Reason})
+%%           Reason = integer()
 %%--------------------------------------------------------------------
 %% throw() if language is malformed, otherwise return Str
 is_language_range("*") ->
@@ -482,10 +500,18 @@ is_language_range("*") ->
 is_language_range(Str) ->
     is_language_tag(Str, range).
 
+%%--------------------------------------------------------------------
+%% Function: is_language_tag(Str)
+%%           Str = string()
+%% Descrip.: determine if Str is a language-range (or language-tag)
+%% Returns : string() |
+%%           throw({error, Reason})
+%%           Reason = integer()
+%%--------------------------------------------------------------------
 is_language_tag(Str) ->
     is_language_tag(Str, tag).
 is_language_tag(Str, Type) ->
-    Pattern = 
+    Pattern =
 	"^([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?)"
 	"(-[a-zA-Z1-9][a-zA-Z1-9]?[a-zA-Z1-9]?[a-zA-Z1-9]?"
 	"[a-zA-Z1-9]?[a-zA-Z1-9]?[a-zA-Z1-9]?[a-zA-Z1-9]?)*$",
@@ -493,7 +519,7 @@ is_language_tag(Str, Type) ->
 	{match, _, _} ->
 	    Str;
 	_ ->case Type of
-		tag -> 
+		tag ->
 		    throw({error, malformed_language_tag});
 		range ->
 		    throw({error, malformed_language_range})
@@ -563,7 +589,7 @@ test() ->
     %% out of range date or time - second
     autotest:mark(?LINE, "time/1  - 3.5"),
     autotest:fail(fun() -> time("19531224t125363Z") end),
-    
+
     %% non-existent date
     autotest:mark(?LINE, "time/1  - 4.1"),
     autotest:fail(fun() -> time("20040230t125343Z") end),
@@ -622,7 +648,7 @@ test() ->
     autotest:mark(?LINE, "parse_byday/1  - 3"),
     L3 = [{1,mo}, {-2, we}, {2, fr}],
     L3 = parse_byday("+1mo,-2we,2fr"),
-    
+
     %% test empty byday
     autotest:mark(?LINE, "parse_byday/1  - 4"),
     [] = parse_byday(""),
@@ -649,22 +675,22 @@ test() ->
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 20} = duration("P15DT5H2M20S"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 2, seconds = 0} = duration("P15DT5H2M"),
     #duration{weeks = 0, days = 15, hours = 5, minutes = 0, seconds = 0} = duration("P15DT5H"),
-    
+
     %% test week
     autotest:mark(?LINE, "duration/1  - 2"),
     #duration{weeks = 7, days = 0, hours = 0, minutes = 0, seconds = 0}  = duration("P7W"),
-						
+
     %% test hour-min-sec
     autotest:mark(?LINE, "duration/1  - 3"),
     #duration{weeks = 0, days = 0, hours = 5, minutes = 2, seconds = 20}  = duration("PT5H2M20S"),
     #duration{weeks = 0, days = 0, hours = 5, minutes = 2, seconds = 0}  = duration("PT5H2M"),
     #duration{weeks = 0, days = 0, hours = 5, minutes = 0, seconds = 0} = duration("PT5H"),
 
-    %% usage of week disallows all other duration values 
+    %% usage of week disallows all other duration values
     autotest:mark(?LINE, "duration/1  - 4"),
     autotest:fail(fun() -> duration("P7W15D") end),
     autotest:fail(fun() -> duration("P7W15DT5H") end),
-    
+
     %% negative or zero duration
     autotest:mark(?LINE, "duration/1  - 5"),
     autotest:fail(fun() -> duration("-P15DT5H2M20S") end),
@@ -688,7 +714,7 @@ test() ->
     %% test only day
     autotest:mark(?LINE, "duration/1  - 9"),
     #duration{weeks = 0, days = 19, hours = 0, minutes = 0, seconds = 0}  = duration("P19D"),
-						
+
 
 
     %% iolist_to_str/1
@@ -696,11 +722,11 @@ test() ->
     %% regular string
     autotest:mark(?LINE, "iolist_to_str/1  - 1"),
     "hello world !" = iolist_to_str("hello world !"),
-    
+
     %% binary
     autotest:mark(?LINE, "iolist_to_str/1  - 2"),
     "hello world !" = iolist_to_str([<<"hello world !">>]),
-				     
+
     %% char + binary
     autotest:mark(?LINE, "iolist_to_str/1  - 3"),
     "hello world !" = iolist_to_str([$h, $e, $l, <<"lo world !">>]),
@@ -709,14 +735,14 @@ test() ->
     autotest:mark(?LINE, "iolist_to_str/1  - 4"),
     "hello world !" = iolist_to_str([<< <<"hello">>/binary, <<" world !">>/binary >>]),
 
-    %% nesting binary, chars and lists 
+    %% nesting binary, chars and lists
     autotest:mark(?LINE, "iolist_to_str/1  - 5"),
     "hello world !" = iolist_to_str([[[$h],[$e],[$l],[$l],[$o],[$ ]], [$w,$o,$r], <<"ld !">>]),
     "hello world !" = iolist_to_str([[[$h],[$e],[<<"ll">>],[[[$o]]],[$ ]], $w, [$o,$r], <<"ld !">>]),
 
     %% check_range/2
     %%--------------------------------------------------------------------
-    %% 
+    %%
     autotest:mark(?LINE, "check_range/1  - 1"),
     true = check_range(42, [23,52]),
     true = check_range(42, [52,23]),
@@ -734,7 +760,7 @@ test() ->
     %%
     autotest:mark(?LINE, "is_language_tag  - 1"),
     is_language_tag("f"),
-    
+
     autotest:mark(?LINE, "is_language_tag  - 2"),
     is_language_tag("fr"),
 
@@ -762,7 +788,7 @@ test() ->
     %%
     autotest:mark(?LINE, "is_language_range  - 1"),
     is_language_range("f"),
-    
+
     autotest:mark(?LINE, "is_language_range  - 2"),
     is_language_range("fr"),
 

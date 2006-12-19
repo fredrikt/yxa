@@ -68,6 +68,7 @@
 		    soft_reload	= false
 		   },
 	 #cfg_entry{key		= event_handler_handlers,
+		    default	= [],
 		    list_of	= true,
 		    type	= term
 		   },

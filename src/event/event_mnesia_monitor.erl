@@ -120,8 +120,13 @@ subscribe_to_table(Tab, C) when is_integer(C) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_call(Request, _From, State) ->
-    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server call : ~p", [Request]),
+%%--------------------------------------------------------------------
+%% Function: handle_call(Unknown, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_call(Unknown, _From, State) ->
+    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "Unknown gen_server call", State}}.
 
 %%--------------------------------------------------------------------
@@ -132,8 +137,13 @@ handle_call(Request, _From, State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_cast(Msg, State) ->
-    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server cast : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_cast(Unknown, State) ->
+    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -142,6 +152,15 @@ handle_cast(Msg, State) ->
 %% Returns : {noreply, State}          |
 %%           {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: handle_info(Info, State)
+%%           Info  = {mnesia_table_event, Event}
+%%           Event = tuple()
+%%           State = state record()
+%% Descrip.: Handle a mnesia_table_event for table 'eventdata'.
+%% Returns : {noreply, State}
 %%--------------------------------------------------------------------
 handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when element(1, Rec) == eventdata ->
     case database_eventdata:decode_mnesia_change_event(Event) of
@@ -157,6 +176,14 @@ handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when elemen
 	end,
     {noreply, State};
 
+%%--------------------------------------------------------------------
+%% Function: handle_info(Info, State)
+%%           Info  = {mnesia_table_event, Event}
+%%           Event = tuple()
+%%           State = state record()
+%% Descrip.: Handle a mnesia_table_event for table 'phone'.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
 handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when element(1, Rec) == phone ->
     case phone:decode_mnesia_change_event(Event) of
 	{ok, Action, User, Location} when is_list(User) ->
@@ -178,8 +205,15 @@ handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when elemen
 	end,
     {noreply, State};
 
-handle_info(Info, State) when is_tuple(Info) ->
-    case element(1, Info) of
+%%--------------------------------------------------------------------
+%% Function: handle_info(MnesiaInfo, State)
+%%           MnesiaInfo = tuple()
+%%           State      = state record()
+%% Descrip.: Handle a mnesia info tuple.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_info(MnesiaInfo, State) when is_tuple(MnesiaInfo) ->
+    case element(1, MnesiaInfo) of
 	mnesia_up -> ok;
 	mnesia_down -> ok;
 	mnesia_checkpoint_activated -> ok;
@@ -191,12 +225,17 @@ handle_info(Info, State) when is_tuple(Info) ->
 	mnesia_error -> ok;
 	mnesia_user -> ok;
 	_ ->
-	    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server info : ~p", [Info])
+	    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server info : ~p", [MnesiaInfo])
     end,
     {noreply, State};
 
-handle_info(Info, State) ->
-    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server info : ~p", [Info]),
+%%--------------------------------------------------------------------
+%% Function: handle_info(Unknown, State)
+%% Descrip.: Unknown info.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_info(Unknown, State) ->
+    logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------

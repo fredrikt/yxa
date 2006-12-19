@@ -104,8 +104,8 @@ init([]) ->
 %% Descrip.: Get an OTP supservisor child specification for all TCP
 %%           listeners.
 %% Returns : SupSpec
-%%           SupSpec = OTP supervisor child specification. Extra
-%%                     processes this application want the
+%%           SupSpec = term(), OTP supervisor child specification.
+%%                     Extra processes this application want the
 %%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 get_listenerspecs() ->
@@ -148,14 +148,14 @@ get_listenerspecs() ->
 
 %%--------------------------------------------------------------------
 %% Function: format_listener_specs(L)
-%%           L     = list() of {Proto, Port} tuple()
+%%           L     = list() of {Proto, Port}
 %%           Proto = atom()
 %%           Port  = integer()
 %% Descrip.: Format a OTP supservisor child specification for each
 %%           entry in L.
 %% Returns : SupSpec
-%%           SupSpec = OTP supervisor child specification. Extra
-%%                     processes this application want the
+%%           SupSpec = term(), OTP supervisor child specification.
+%%                     Extra processes this application want the
 %%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 format_listener_specs(L) ->
@@ -211,8 +211,7 @@ format_listener_specs([{Proto, IP, Port} | T], Res)
 %%           should be OK.
 %% Returns : {reply, Reply, NewState, ?TIMEOUT} |
 %%           {noreply, NewState, ?TIMEOUT}
-%%           Reply = {ok, SipSocket} |
-%%                   {error, Reason}
+%%           Reply = {ok, SipSocket} | {error, Reason}
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
@@ -320,8 +319,13 @@ handle_call(Msg, _From, State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_cast(Msg, State) ->
-    logger:log(error, "TCP dispatcher: Received unknown gen_server cast : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State, ?TIMEOUT}
+%%--------------------------------------------------------------------
+handle_cast(Unknown, State) ->
+    logger:log(error, "TCP dispatcher: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 
@@ -338,8 +342,7 @@ handle_cast(Msg, State) ->
 %% Function: handle_info(timeout, State)
 %% Descrip.: Wake up and delete expired sockets from our list.
 %% Returns : {reply, Reply, NewState, ?TIMEOUT} |
-%%           Reply = ok              |
-%%                   {error, Reason}
+%%           Reply = ok | {error, Reason}
 %%           Reason    = string()
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->

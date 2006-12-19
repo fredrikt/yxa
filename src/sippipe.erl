@@ -6,7 +6,8 @@
 %%%           destinations left to try.
 %%%
 %%% Note    : We should erlang:monitor() our client transactions to
-%%%           be alerted when they die.
+%%%           be alerted when they die. We are currently linked to
+%%%           them, and will die too if they die.
 %%%
 %%% Created :  20 Feb 2004 by Fredrik Thulin <ft@it.su.se>
 %%--------------------------------------------------------------------
@@ -59,18 +60,18 @@
 %%                           client transaction that we should connect
 %%                           with the server transaction
 %%           Request       = request record(), original request
-%%           Dst           = sipurl record() | route |
-%%                           list() of sipdst record()
+%%           Dst           = sipurl record() | route | list() of sipdst record()
 %%           Timeout       = integer(), seconds given for this sippipe
 %%                           to finish. Our client transactions
 %%                           timeouts will be adjusted to not exceed
 %%                           this value in total.
-%% Descrip.: Try to be flexible. If we are provided with a URI as
-%%           DstList, we resolve it into a list of sipdst records.
+%% Descrip.: Start a sippipe. We try to be flexible with the input
+%%           arguments. If we are provided with a URL as DstList, we
+%%           resolve it into a list of sipdst records.
 %%           If we are given a client transaction handle, we start out
 %%           with that one. Otherwise we start a client transaction
 %%           and then enter loop/1.
-%% Returns : Does not matter
+%% Returns : term(), Does not matter
 %%--------------------------------------------------------------------
 start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_record(RequestIn, request) ->
     %% call check_proxy_request to get sanity of proxying this request verified (Max-Forwards checked etc)
@@ -157,7 +158,7 @@ final_start(Branch, ServerHandler, ClientPid, Request, [Dst | _] = DstList, Time
 %%--------------------------------------------------------------------
 %% Function: loop(State)
 %% Descrip.: Main loop.
-%% Returns : Does not matter - does not return until we are finished.
+%% Returns : term(), does not return until we are finished.
 %%--------------------------------------------------------------------
 loop(State) when is_record(State, state) ->
     WarnOrEnd = lists:min([State#state.warntime, State#state.endtime]) - util:timestamp(),
@@ -510,7 +511,7 @@ get_next_sipdst([H | T] = DstList, ApproxMsgSize) when is_record(H, sipdst) ->
 %% Function: cancel_transaction(State, Reason, ExtraHeaders)
 %%           State        = state record()
 %%           Reason       = string()
-%%           ExtraHeaders = list() of {Key, ValueList} tuples
+%%           ExtraHeaders = list() of {Key, ValueList}
 %% Descrip.: Our server transaction has been cancelled. Signal the
 %%           client transaction.
 %% Returns : NewState = state record()
@@ -539,14 +540,13 @@ cancel_transaction(#state{cancelled = true} = State, Reason, _ExtraHeaders) when
 %%           Request       = request record()
 %%           ApproxMsgSize = integer(), approximate size of formatted
 %%                                      request
-%%           Dst           = sipurl record() | route |
-%%                           list() of sipdst record()
+%%           Dst           = sipurl record() | route | list() of sipdst record()
 %% Descrip.: Get an initial list of destinations for this request.
 %%           This might mean we pop the destination from a Route
 %%           header, in which case we return a new request.
 %% Returns : {ok, DstList, NewRequest} |
 %%           error
-%%           DstList    = list of sipdst record()
+%%           DstList    = list() of sipdst record()
 %%           NewRequest = request record()
 %%--------------------------------------------------------------------
 

@@ -1,23 +1,23 @@
 %% A support module of xml_parse.erl. This module is used to create a
-%% graph representation of the CPL script, this allows checking for 
-%% cycles, unreachable vertexes and the like. 
+%% graph representation of the CPL script, this allows checking for
+%% cycles, unreachable vertexes and the like.
 %% Each CPL "expression" - switch and sub conditions or single action
 %% is represented by one digraph vertex, where all information about
-%% the expression is stored in the vertex label. 
+%% the expression is stored in the vertex label.
 %%
-%% There are two types of vertexes, switches (switch tags) where 
+%% There are two types of vertexes, switches (switch tags) where
 %% several vertexes can be reached and action vertexes - tags that do
 %% something and then continue on to the next tag.
-%% Both of these kind of vertexes may also have 0 destination tags 
-%% (no tags in content of current tag), this is represented in a few 
+%% Both of these kind of vertexes may also have 0 destination tags
+%% (no tags in content of current tag), this is represented in a few
 %% different ways:
-%% * switches: contain a empty Cond in the vertex and has no outgoing 
+%% * switches: contain a empty Cond in the vertex and has no outgoing
 %%             edges.
-%% * actions : some are known to always terminate a CPL script and 
-%%             therefore never have outgoing edges, actions on the 
-%%             other hand that do usually have a destination, use 
-%%             add_node(ParseState, terminator) to add a extra 
-%%             termination vertex - this isn't strictly needed but 
+%% * actions : some are known to always terminate a CPL script and
+%%             therefore never have outgoing edges, actions on the
+%%             other hand that do usually have a destination, use
+%%             add_node(ParseState, terminator) to add a extra
+%%             termination vertex - this isn't strictly needed but
 %%             simplifies the parser code.
 %%--------------------------------------------------------------------
 
@@ -60,47 +60,33 @@
 
 %%--------------------------------------------------------------------
 %% Function: new_graph()
-%% Descrip.: return a digraph that checks that graph remains acyclical  
-%% Returns : digraph
-%% Note    : the digraph graph, returned is implemented (in digraph) 
-%%           with a ets table so the returned graph acts as a 
-%%           reference (pointer), rather than a single assignment 
+%% Descrip.: return a digraph that checks that graph remains acyclical
+%% Returns : term(), digraph
+%% Note    : the digraph graph, returned is implemented (in digraph)
+%%           with a ets table so the returned graph acts as a
+%%           reference (pointer), rather than a single assignment
 %%           variable value.
 %%--------------------------------------------------------------------
 new_graph() ->
-    digraph:new([acyclic]). 
+    digraph:new([acyclic]).
 
 %%--------------------------------------------------------------------
 %% Function: add_node(ParseState, TagType )
-%%           add_node(ParseState, TagType, DestCond )
-%%           add_node(ParseState, TagType, Index, DestCond )
 %%           ParseState = parse_state record(), is used by the parser
-%%                        to store the currently accumulated parse 
-%%                        data 
+%%                        to store the currently accumulated parse
+%%                        data
 %%           TagType    = atom(), the name of CPL vertex to store
-%%           Index      = a index value to allow lookup in the SIP 
-%%                        request[1]
-%%           DestCond   = switches use a list of {Cond, Dest} pairs, 
-%%                        this field is used to store action and 
-%%                        destination vertex[1]
-%%
-%% [1]: the content of these fields is TagType dependent
-%%
 %% Descrip.: adds a node of TagType to the ParseState.
-%% Returns : parse_state record(), containing the new graph (due to 
-%%           the implementation of digraph this will be the same 
-%%           value - therefore ParseState is simply returned)
+%% Returns : parse_state record(), containing the new graph (due to
+%%                 the implementation of digraph this will be the same
+%%                 value - therefore ParseState is simply returned)
 %%--------------------------------------------------------------------
 %% Node add algorithm:
 %%
 %% * add / update current node
-%% * add target nodes, not yet visited - will contain dummy labels, 
+%% * add target nodes, not yet visited - will contain dummy labels,
 %%   need to be set so that edges can have a destination
 %% * add edges from current node to target nodes
-
-
-
-%% ----------------------------- add_node/2
 
 %% a kind of dummy state used when cpl doesn't specifiy any destination node
 add_node(ParseState, terminator) ->
@@ -122,7 +108,28 @@ add_node(ParseState, outgoing) ->
     add_edge(Graph, S, V1),
     ParseState.
 
-%% ----------------------------- add_node/3
+%%--------------------------------------------------------------------
+%% Function: add_node(ParseState, TagType, DestCond )
+%%           ParseState = parse_state record(), is used by the parser
+%%                        to store the currently accumulated parse
+%%                        data
+%%           TagType    = atom(), the name of CPL vertex to store
+%%           DestCond   = term(), switches use a list of {Cond, Dest}
+%%                        pairs, this field is used to store action
+%%                        and destination vertex. The content of these
+%%                        fields is TagType dependent
+%%
+%% Descrip.: adds a node of TagType to the ParseState.
+%% Returns : parse_state record(), containing the new graph (due to
+%%                 the implementation of digraph this will be the same
+%%                 value - therefore ParseState is simply returned)
+%%--------------------------------------------------------------------
+%% Node add algorithm:
+%%
+%% * add / update current node
+%% * add target nodes, not yet visited - will contain dummy labels,
+%%   need to be set so that edges can have a destination
+%% * add edges from current node to target nodes
 
 add_node(ParseState, 'language-switch', Conds) ->
     {CurrentNodeId, Graph} = add_init(ParseState),
@@ -179,7 +186,30 @@ add_node(ParseState, reject, {StatusReason, terminate}) ->
     add_current_node(Graph, CurrentNodeId, reject, {StatusReason, terminate}),
     ParseState.
 
-%% ----------------------------- add_node/4
+%%--------------------------------------------------------------------
+%% Function: add_node(ParseState, TagType, Index, DestCond )
+%%           ParseState = parse_state record(), is used by the parser
+%%                        to store the currently accumulated parse
+%%                        data
+%%           TagType    = atom(), the name of CPL vertex to store
+%%           Index      = term(), a index value to allow lookup in the
+%%                        SIP request. The content is TagType dependent.
+%%           DestCond   = term(), switches use a list of {Cond, Dest}
+%%                        pairs, this field is used to store action and
+%%                        destination vertex. The content is TagType
+%%                        dependent
+%%
+%% Descrip.: adds a node of TagType to the ParseState.
+%% Returns : parse_state record(), containing the new graph (due to
+%%                 the implementation of digraph this will be the same
+%%                 value - therefore ParseState is simply returned)
+%%--------------------------------------------------------------------
+%% Node add algorithm:
+%%
+%% * add / update current node
+%% * add target nodes, not yet visited - will contain dummy labels,
+%%   need to be set so that edges can have a destination
+%% * add edges from current node to target nodes
 
 add_node(ParseState, 'address-switch', {Field, SubField}, Conds) ->
     {CurrentNodeId, Graph} = add_init(ParseState),
@@ -222,7 +252,7 @@ add_node(ParseState, proxy, ProxyAttrs ,Conds) ->
 
 add_init(ParseState) ->
     CurrentNodeId = ParseState#parse_state.current_id,
-    Graph = ParseState#parse_state.current_graph,  
+    Graph = ParseState#parse_state.current_graph,
     {CurrentNodeId, Graph}.
 
 add_dests(CurrentNode, Graph, Cond) ->
@@ -236,9 +266,11 @@ add_single_dest(Graph, CurrentNode, NextId) ->
 
 %%--------------------------------------------------------------------
 %% Function: add_edge(Graph, Source, Dest)
-%% Descrip.: call digraph:add_edge/3, throw a error if cycles are 
-%%           detected 
-%% Returns : - | throw()
+%% Descrip.: call digraph:add_edge/3, throw a error if cycles are
+%%           detected
+%% Returns : ok |
+%%           throw({error, Reason})
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 add_edge(Graph, Source, Dest) ->
     case digraph:add_edge(Graph, Source, Dest) of
@@ -249,9 +281,12 @@ add_edge(Graph, Source, Dest) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function: add_current_node(Graph, CurrentNodeId, TagType, Statements)
 %% Descrip.: add a new node or replace a dummy node previously created
-%% Returns : 
+%% Returns : DiGraph |
+%%           throw({error, Reason})
+%%           DiGraph = term()
+%%           Reason = atom()
 %%--------------------------------------------------------------------
 add_current_node(Graph, CurrentNodeId, TagType, Statements) ->
     case digraph:vertex(Graph, CurrentNodeId) of

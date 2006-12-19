@@ -54,6 +54,13 @@
 	  data		%% term(), event package data
 	 }).
 
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+
+%% @type  transaction_result() = {atomic, Result} | {aborted, Reason}.
+%%             The result of a Mnesia transaction. Result is a term().
+
 
 %%====================================================================
 %% External functions
@@ -62,14 +69,22 @@
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: create()
+%% Descrip.: Invoke create/1 with the list of servers indicated by
+%%           the configuration parameter 'databaseservers'.
+%% Returns : term(), result of mnesia:create_table/2.
 %%--------------------------------------------------------------------
 create() ->
-    create([node()]).
+    {ok, S} = yxa_config:get_env(databaseservers),
+    create(S).
 
-create(Servers) ->
+%%--------------------------------------------------------------------
+%% Function: create(Servers)
+%%           Servers = list() of atom(), list of nodes
+%% Descrip.: Create the 'eventdata' table on Servers.
+%% Returns : term(), result of mnesia:create_table/2.
+%%--------------------------------------------------------------------
+create(Servers) when is_list(Servers) ->
     mnesia:create_table(eventdata, [{attributes, record_info(fields, eventdata)},
 				    {type, bag},
 				    {disc_copies, Servers},
@@ -83,10 +98,10 @@ create(Servers) ->
 %%           Presentity = tuple(), {user, User} | {address, AddrStr}
 %%           ETag       = term(), event package record reference
 %%           Expires    = integer() | never
-%%           Flags      = list() of {Key, Value} (for future use)
+%%           Flags      = list() of {Key, Value}, (for future use)
 %%           Data       = term(), event package data
 %% Descrip.: Create a new entry in the database.
-%% Returns : mnesia transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 insert(Package, Presentity, ETag, Expires, Flags, Data) when is_integer(Expires), Expires < ?MIN_ABSOLUTE_TIME ->
     erlang:error("time supplied to insert/6 should be absolute, not relative",
@@ -110,7 +125,7 @@ insert(Package, Presentity, ETag, Expires, Flags, Data) when is_list(Package), i
 %%           ETag       = term(), event package record reference
 %%           NewETag    = term(), NEW event package record reference
 %%           Expires    = integer() | never
-%%           Flags      = list() of {Key, Value} (for future use)
+%%           Flags      = list() of {Key, Value}, (for future use)
 %%           Data       = term(), event package data
 %% Descrip.: Update an existing element that matches Package,
 %%           Presentity and ETag.
@@ -159,7 +174,7 @@ update(Package, Presentity, ETag, NewETag, Expires, Flags, Data) when is_list(Pa
 %%           Presentity = tuple(), {user, User} | {address, AddrStr}
 %%           ETag       = term(), event package record reference
 %%           Expires    = integer()
-%%           Flags      = list() of {Key, Value} (for future use)
+%%           Flags      = list() of {Key, Value}, (for future use)
 %%           Data       = term(), event package data
 %% Descrip.: Update the expires (and optionally entity_tag) element(s)
 %%           of a database record.
@@ -252,7 +267,7 @@ fetch_using_presentity_etag(Presentity, ETag) when is_tuple(Presentity) ->
 %% Function: delete_using_presentity(Presentity)
 %%           Presentity = tuple(), {user, User} | {address, AddrStr}
 %% Descrip.: Delete all entrys for a presentity.
-%% Returns : mnesia:transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 delete_using_presentity(Presentity) when is_tuple(Presentity) ->
     db_util:delete_with_key(eventdata, Presentity).
@@ -264,7 +279,7 @@ delete_using_presentity(Presentity) when is_tuple(Presentity) ->
 %%           ETag       = term()
 %% Descrip.: Delete all eventdata entrys matching a Presentity and
 %%           ETag.
-%% Returns : mnesia:transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 delete_using_presentity_etag(Presentity, ETag) when is_tuple(Presentity) ->
     F = fun() ->
@@ -329,6 +344,15 @@ decode_mnesia_change_event(_Unknown) ->
     error.
 
 
+%%--------------------------------------------------------------------
+%% Function: get_transform_fun()
+%% Descrip.: Return a function that table_update uses to transform
+%%           this table. We do it this way to not have to export the
+%%           private record 'eventdata'.
+%% Returns : {ok, RecordInfo, Fun}
+%%           RecordInfo = list() of atom(), record field names
+%%           Fun        = function()
+%%--------------------------------------------------------------------
 get_transform_fun() ->
     %% Table = eventdata,
     %% On update, don't forget : put({Table, update}, true),
@@ -401,6 +425,11 @@ test() ->
 
     ok.
 
+%%--------------------------------------------------------------------
+%% Function: test_create_table()
+%% Descrip.: Create a table in RAM only, for use in unit tests.
+%% Returns : ok
+%%--------------------------------------------------------------------
 test_create_table() ->
     case catch mnesia:table_info(eventdata, attributes) of
 	Attrs when is_list(Attrs) ->

@@ -2,7 +2,8 @@
 %%% File    : incomingproxy.erl
 %%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
 %%% Descrip.: Server handling registrar functions and routing of SIP-
-%%%           requests/responses.
+%%%           requests/responses. See the README file for more
+%%            information.
 %%%
 %%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%-------------------------------------------------------------------
@@ -137,7 +138,7 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Mode)
-%%           Mode = atom(), shutdown | graceful | ...
+%%           Mode = shutdown | graceful | atom()
 %% Descrip.: YXA applications must export a terminate/1 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
@@ -219,15 +220,13 @@ verify_homedomain_user2(Request, YxaCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_request(RequestIn, Origin, THandler, LogTag)
-%%           RequestIn = request record()
-%%           Origin    = siporigin record()
-%%           THandler  = term(), server transaction handle
-%%           LogTag    = string() | undefined
+%% Function: do_request(Request, YxaCtx)
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: Calls route_request() to determine what to do with a
 %%           request, and then takes whatever action we are
 %%           supposed to.
-%% Returns : Does not matter
+%% Returns : term(), Does not matter
 %%--------------------------------------------------------------------
 do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     #yxa_ctx{origin     = Origin,
@@ -526,7 +525,7 @@ request_to_remote(Request, Origin) when is_record(Request, request), is_record(O
 %%           function is used when forwarding requests to another
 %%           proxy that should handle it instead of us. It preserves
 %%           the Request-URI.
-%% Returns : Does not matter
+%% Returns : term(), Does not matter
 %%--------------------------------------------------------------------
 forward_request(Request, YxaCtx, FwdURL) ->
     THandler = YxaCtx#yxa_ctx.thandler,
@@ -550,10 +549,9 @@ forward_request(Request, YxaCtx, FwdURL) ->
 %% Function: proxy_request(Request, YxaCtx, Dst)
 %%           Request  = request record()
 %%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipdst record() | sipurl record() | route |
-%%                      list() of sipdst record()
+%%           Dst      = sipdst record() | sipurl record() | route | list() of sipdst record()
 %% Descrip.: Proxy a request somewhere without authentication.
-%% Returns : Does not matter
+%% Returns : term(), Does not matter
 %%--------------------------------------------------------------------
 proxy_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
     start_sippipe(Request, YxaCtx, Dst, []).
@@ -562,14 +560,13 @@ proxy_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
 %% Function: relay_request(Request, YxaCtx, Dst)
 %%           Request  = request record()
 %%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipdst record() | sipurl record() | route |
-%%                      list() of sipdst record()
+%%           Dst      = sipdst record() | sipurl record() | route | list() of sipdst record()
 %% Descrip.: Relay request to remote host. If there is not valid
 %%           credentials present in the request, challenge user
 %%           unless local policy says not to. Never challenge
 %%           CANCEL or BYE since they can't be resubmitted and
 %%           therefor cannot be challenged.
-%% Returns : Does not matter
+%% Returns : term(), Does not matter
 %%--------------------------------------------------------------------
 
 %%
@@ -631,10 +628,11 @@ relay_dst2str(_) ->
 %% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
 %%           Request = request record()
 %%           YxaCtx  = yxa_ctx record()
-%%           Dst     = term() (sipurl, route, sipdst, ...)
-%%           PstnCtx = pstn_ctx record(), context for this request
+%%           Dst     = list() of sipdst record() | route | sipurl record()
+%%           AppData = term(), data from this application passed to
+%%                     local:start_sippipe/4.
 %% Descrip.: Start a sippipe unless we are currently unit testing.
-%% Returns : term() = result of local:start_sippipe/4
+%% Returns : term(), result of local:start_sippipe/4
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get({?MODULE, testing_sippipe}) of

@@ -1,17 +1,24 @@
-%%
-%% Note: some functions do several passes over the same string() to
-%% parse it, e.g. 1 pass to find start and end delimiter and one pass
-%% for reading the the elements from start to end index, and probably
-%% a additional scan to reach the remainder of the string.
-%% This performance can be improved, by using a accumulator equiped
-%% parser that returns the Match and Rest part of the string, in a
-%% single scan.
-%%
-%% Note: elements are often only partially parsed - this reduces the
-%% amount of parsing done on entries which will only be passed along,
-%% but while this improves performance it increases the need for later
-%% exception handling.
-%%--------------------------------------------------------------------
+%%%-------------------------------------------------------------------
+%%% File    : sipheader.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: Various functions for parsing headers or formatting
+%%%           headers for printing.
+%%%
+%%% Note: some functions do several passes over the same string() to
+%%% parse it, e.g. 1 pass to find start and end delimiter and one pass
+%%% for reading the the elements from start to end index, and probably
+%%% a additional scan to reach the remainder of the string.
+%%% This performance can be improved, by using a accumulator equiped
+%%% parser that returns the Match and Rest part of the string, in a
+%%% single scan.
+%%%
+%%% Note: elements are often only partially parsed - this reduces the
+%%% amount of parsing done on entries which will only be passed along,
+%%% but while this improves performance it increases the need for later
+%%% exception handling.
+%%%
+%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 
 -module(sipheader).
 %%-compile(export_all).
@@ -176,21 +183,20 @@ comma(Parsed, [], _InQuote = false, false) ->
 %%--------------------------------------------------------------------
 %% Function: expires(Header)
 %%           Header = keylist record()
-%% Descrip.: get the value of the "Expires" header
-%% Returns : [Expires] | []
-%%           Expires = numerical string()
+%% Descrip.: Get the value of the "Expires" header.
+%% Returns : Expires = list() of string()
 %%--------------------------------------------------------------------
 expires(Header) when is_record(Header, keylist) ->
     keylist:fetch('expires', Header).
 
 %%--------------------------------------------------------------------
-%% Function: to([String])
-%%           to(Header)
-%%           String = string(), the contents of a TO header (usually
-%%           the result of keylist:fetch(to, Header))
-%%           Header = keylist record()
-%% Descrip.: parse header data
-%% Returns : {Displayname, URI} (see name_header/1)
+%% Function: to(In)
+%%           In = [string()] | keylist record()
+%% Descrip.: Parse To: header data.
+%% @see      name_header/1.
+%% Returns : {DisplayName, URI}
+%%           DisplayName = none | string()
+%%           URI         = sipurl record()
 %%--------------------------------------------------------------------
 to(Header) when is_record(Header, keylist) ->
     to(keylist:fetch('to', Header));
@@ -199,13 +205,13 @@ to([String]) ->
     name_header(String).
 
 %%--------------------------------------------------------------------
-%% Function: from([String])
-%%           from(Header)
-%%           String = string(), the contents of a FROM header (usually
-%%           the result of keylist:fetch('from', Header))
-%%           Header = keylist record()
-%% Descrip.: parse header data
-%% Returns : {Displayname, URI} (see name_header/1)
+%% Function: from(In)
+%%           In = [string()] | keylist record()
+%% Descrip.: Parse From: header data.
+%% @see      name_header/1.
+%% Returns : {DisplayName, URI}
+%%           DisplayName = none | string()
+%%           URI         = sipurl record()
 %%--------------------------------------------------------------------
 from(Header) when is_record(Header, keylist) ->
     from(keylist:fetch('from', Header));
@@ -215,21 +221,28 @@ from([String]) ->
 
 %%--------------------------------------------------------------------
 %% Function: contact(Header)
-%%           route(Header)
-%%           record_route(Header)
 %%           Header = keylist record()
-%% Descrip.: return the contact/route/record-route/... entries
-%%           contained in Header
+%% Descrip.: Return the parsed Contact: header from Header.
 %% Returns : list() of contact record()
-%% XXX should we use contact record() for all of these headers ???
-%% they may benefit from their own record type.
 %%--------------------------------------------------------------------
 contact(Header) when is_record(Header, keylist) ->
     contact2(Header, 'contact').
 
+%%--------------------------------------------------------------------
+%% Function: route(Header)
+%%           Header = keylist record()
+%% Descrip.: Return the parsed Route: header from Header.
+%% Returns : list() of contact record()
+%%--------------------------------------------------------------------
 route(Header) when is_record(Header, keylist) ->
     contact2(Header, 'route').
 
+%%--------------------------------------------------------------------
+%% Function: record_route(Header)
+%%           Header = keylist record()
+%% Descrip.: Return the parsed Record-Route: header from Header.
+%% Returns : list() of contact record()
+%%--------------------------------------------------------------------
 record_route(Header) when is_record(Header, keylist) ->
     contact2(Header, 'record-route').
 
@@ -239,13 +252,9 @@ contact2(Header, Name) when is_record(Header, keylist), is_atom(Name) ->
     contact:parse(V).
 
 %%--------------------------------------------------------------------
-%% Function: via(ViaList)
-%%           via(Header)
-%%           ViaList = list() of string(), string() = the contents of
-%%                     Via: header. Usually the result of
-%%                     keylist:fetch('via', Header)
-%%           Header  = keylist record()
-%% Descrip.: parse header data
+%% Function: via(In)
+%%           In = keylist record() | list() of string()
+%% Descrip.: Parse Via: header data.
 %% Returns : list() of via record() | throw()
 %%--------------------------------------------------------------------
 via(Header) when is_record(Header, keylist) ->
@@ -323,7 +332,7 @@ via_proto_hostport(ProtoHostport) ->
 %%           Header = keylist record()
 %% Descrip.: get the first Via entry from Header
 %% Returns : via record() |
-%%           none - if not found in Header
+%%           none
 %%--------------------------------------------------------------------
 topvia(Header) when is_record(Header, keylist) ->
     case via(Header) of
@@ -374,7 +383,7 @@ via_params(Via) when is_record(Via, via) ->
 %%--------------------------------------------------------------------
 %% Function: contact_print(Contacts)
 %%           Contacts = list() of contact record(), containing contact
-%%           from contact/1
+%%                      from contact/1
 %% Descrip.: Take a list of contact records, and return a list of
 %%           those contacts as strings
 %% Returns : list() of string()
@@ -390,8 +399,15 @@ contact_print2([], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: auth_print(Auth)
-%%           auth_print(Auth, Stale)
-%%           Auth     = {Realm, Nonce, Opaque} tuple()
+%% @equiv    auth_print(Auth, false)
+%% Returns : [string()]
+%%--------------------------------------------------------------------
+auth_print(Auth) when is_tuple(Auth) ->
+    auth_print(Auth, false).
+
+%%--------------------------------------------------------------------
+%% Function: auth_print(Auth, Stale)
+%%           Auth     = {Realm, Nonce, Opaque}
 %%             Realm  = string()
 %%             Nonce  = string()
 %%             Opaque = string()
@@ -399,11 +415,8 @@ contact_print2([], Res) ->
 %% Descrip.: Generate the value of an WWW-Authenticate that we need
 %%           when challenging a REGISTER, or a Proxy-Authenticate that
 %%           we put in other challenges of a request.
-%% Returns :
+%% Returns : [string()]
 %%--------------------------------------------------------------------
-auth_print(Auth) when is_tuple(Auth) ->
-    auth_print(Auth, false).
-
 auth_print(Auth, Stale) when is_tuple(Auth), is_boolean(Stale) ->
     {Realm, Nonce, Opaque} = Auth,
     ["Digest realm=\"" ++ Realm ++ "\", nonce=\"" ++ Nonce ++ "\", opaque=\"" ++ Opaque ++ "\"" ++
@@ -419,7 +432,8 @@ auth_print(Auth, Stale) when is_tuple(Auth), is_boolean(Stale) ->
 %% Function: auth(In)
 %%           In = string(), one authentication header value
 %% Descrip.: Parse an authorization header.
-%% Returns : throw() | dict()
+%% Returns : dict() |
+%%           throw({siperror, ...})
 %% Note    : In is a string like
 %%           "Digest username=\"test\",realm=\"example.org\" ...",
 %%           a SIP message can have multiple of those header values
@@ -476,10 +490,10 @@ unquote(QString) ->
 %%--------------------------------------------------------------------
 %% Function: param_to_dict(Param)
 %%           Param = list() of string(), each string is a "key=value"
-%%           pair, that may have preceding or trailing spaces as well
-%%           as hex encoded values (e.g. chars of the format %hh,
-%%           h = hex number)
-%% Descrip.: convert sip parameter strings into dictionary
+%%                   pair, that may have preceding or trailing spaces
+%%                   as well as hex encoded values (e.g. chars of the
+%%                   format %hh (where hh is a hex number)
+%% Descrip.: Convert SIP parameter strings into a dictionary.
 %% Returns : dict()
 %%--------------------------------------------------------------------
 param_to_dict(Param) ->
@@ -511,8 +525,8 @@ unescape([C | Rest]) ->
 %% Descrip.: convert a dictionary containing parameters back into a
 %%           "name=value" format - the inverse of param_to_dict/1
 %% Returns : list() of string()
-%% XXX should certain chars in the "value" part be hex encoded ?
 %%--------------------------------------------------------------------
+%% XXX should certain chars in the "value" part be hex encoded ?
 dict_to_param(Dict) ->
     list_to_parameters2(lists:keysort(1, dict:to_list(Dict)), []).
 
@@ -529,7 +543,7 @@ list_to_parameters2([], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: httparg(String)
-%% Descrip.: Make dict out of parameters separated by ampersand (&).
+%% Descrip.: Make dict out of parameters separated by ampersand (`&').
 %% Returns : dict()
 %% Note    : Only used in admin_www. Perhaps move there?
 %%--------------------------------------------------------------------
@@ -539,12 +553,9 @@ httparg(String) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: cseq([String])
-%%           cseq(Header)
-%%           String = string(), the contents of a CSEQ header (usually
-%%           the result of keylist:fetch(cseq, Header))
-%%           Header = keylist record()
-%% Descrip.: parse header data
+%% Function: cseq(In)
+%%           In = keylist record() | list() of string()
+%% Descrip.: Parse CSeq: header data.
 %% Returns : {Seq, Method} | {unparseable, String}
 %%           Seq    = integer()
 %%           Method = string()
@@ -565,7 +576,7 @@ cseq([String]) ->
 %% Function: cseq_print({Seq, Method})
 %%           Seq    = integer()
 %%           Method = string()
-%% Descrip.: print data parsed with cseq/1
+%% Descrip.: Print data parsed with cseq/1.
 %% Returns : string()
 %%--------------------------------------------------------------------
 cseq_print({Seq, Method}) when is_list(Seq), is_list(Method) ->
@@ -575,12 +586,12 @@ cseq_print({Seq, Method}) when is_list(Seq), is_list(Method) ->
 %%--------------------------------------------------------------------
 %% Function: callid(Header)
 %%           Header = keylist record()
-%% Descrip.: get call-id from header
+%% Descrip.: Get Call-Id: from header.
 %% Returns : string()
+%%--------------------------------------------------------------------
 %% XXX does not handle non-existing Call-Id, but that means our
 %% callers might not either, so the right solution might not be to
 %% make us return [] or 'none' if there is no Call-Id.
-%%--------------------------------------------------------------------
 callid(Header) when is_record(Header, keylist) ->
     [CallId] = keylist:fetch('call-id', Header),
     CallId.
@@ -593,7 +604,8 @@ callid(Header) when is_record(Header, keylist) ->
 %%           to prioritize speed here, so we don't spend extra cycles
 %%           making the resulting data uniformed. We might return a
 %%           list of lists of binaries, or just binaries.
-%% Returns : binary() | throw()
+%% Returns : binary() |
+%%           throw({siperror, ...})
 %%--------------------------------------------------------------------
 build_header_binary(Header) when is_record(Header, keylist) ->
     case catch build_header_unsafe_binary(Header) of
@@ -718,7 +730,9 @@ get_tag([String]) ->
 %%           will be the same for all requests in a dialog. Note
 %%           though that the ToTag might be 'none' and later get set.
 %% Returns : {CallID, FromTag, ToTag}
-%%           the contents of "Call-ID", "From" and "To"
+%%           CallId  = string()
+%%           FromTag = string()
+%%           ToTag   = string()
 %%--------------------------------------------------------------------
 dialogid(Header) when is_record(Header, keylist) ->
     CallID = sipheader:callid(Header),
@@ -885,7 +899,8 @@ get_via_branch(TopVia) when is_record(TopVia, via) ->
 %%           Branch = string() | none
 %% Descrip.: Removes our special YXA loop cookie from a branch, if it
 %%           really is an YXA generated branch.
-%% Returns : Branch | NewBranch = string()
+%% Returns : Branch | NewBranch
+%%           NewBranch = string()
 %%--------------------------------------------------------------------
 remove_loop_cookie(Branch) ->
     case Branch of
@@ -925,7 +940,8 @@ get_via_branch_full(Via) when is_record(Via, via) ->
 
 %%--------------------------------------------------------------------
 %% Function: via_is_equal(A, B)
-%%           A, B = via record()
+%%           A = via record()
+%%           B = via record()
 %% Descrip.: Compare two Via records according to the rules in
 %%           RFC3261 20.42 (Via)
 %% Returns : true  |
@@ -937,8 +953,9 @@ via_is_equal(A, B) when is_record(A, via), is_record(B, via) ->
 
 %%--------------------------------------------------------------------
 %% Function: via_is_equal(A, B, CmpList)
-%%           A, B = via record()
-%%           CmpList = list() of proto|host|port|parameters - what to
+%%           A = via record()
+%%           B = via record()
+%%           CmpList = list() of proto|host|port|parameters, what to
 %%                     compare
 %% Descrip.: Compare one or more parts of two Via records according
 %%           to RFC3261 20.42.
@@ -1045,7 +1062,7 @@ event_package(Header) when is_record(Header, keylist) ->
 %%--------------------------------------------------------------------
 %% Function: name_header(String)
 %%           String = string(), a sip URI string or sip URI inside "<"
-%%           and ">" quotes, preceded by a displayname
+%%                           and ">" quotes, preceded by a displayname
 %% Descrip.: used to parse the contents in a To, From or Contact header
 %% Returns : {Displayname, URI} | {unparseable, String}
 %%           Displayname = none | string()

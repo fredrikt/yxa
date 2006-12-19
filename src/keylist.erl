@@ -75,8 +75,8 @@
 %%           List = keylist record()
 %% Descrip.: return the contents of the header that matches Key
 %% Returns : list() of string(), the value of Key - Key may have
-%%           several values associated with it (e.g. the "Via"
-%%           header in sip requests)
+%%                    several values associated with it (e.g. the "Via"
+%%                    header in sip requests)
 %%--------------------------------------------------------------------
 fetch(Key, List) when is_list(Key), is_record(List, keylist) ->
     fetchcase(normalize(Key), List#keylist.list);
@@ -95,7 +95,7 @@ fetchcase(Key, [Elem | List]) when is_record(Elem, keyelem) ->
 %%--------------------------------------------------------------------
 %% Function: appendlist(Keylist, List)
 %%           KeyList = keylist record()
-%%           List    = list() of {Name, Item} or {Key, Name, Item}
+%%           List    = list() of {Name, Item} | {Key, Name, Item}
 %% Descrip.: do one append/2 for each entry in List
 %% Returns : keylist record()
 %%--------------------------------------------------------------------
@@ -124,21 +124,26 @@ appendlist(Keylist, []) when is_record(Keylist, keylist) ->
 from_list(List) when is_list(List) ->
     appendlist(empty(), List).
 
+%%--------------------------------------------------------------------
 %% Function: empty()
 %% Descrip.: Return an empty keylist.
 %% Returns : keylist record()
+%%--------------------------------------------------------------------
 empty() ->
     #keylist{list=[]}.
 
 %%--------------------------------------------------------------------
-%% Function: append({Name, NewValueList}, List)
-%%           append({Name, Key, NewValueList}, List)
-%%           Name = string(), the name of a header in a sip message
-%%           Key  = atom() | list(), the key to use internally
-%%           NewValueList = new entries for keyelem identified by Key
-%%           List = keylist record()
-%% Descrip.: add NewValueList to tail of element (#keyelem.item) in
-%%           List (or create new entry if Key is unknown)
+%% Function: append(Data, List)
+%%           Data         = {Name, NewValueList} | {Name, Key, NewValueList}
+%%           Name         = string(), the name of a header in a sip
+%%                          message (e.g. "From")
+%%           Key          = atom() | list(), the key to use internally
+%%                          (e.g. 'from')
+%%           NewValueList = list(), new entries for keyelem identified
+%%                          by Key
+%%           List         = keylist record()
+%% Descrip.: Add NewValueList to tail of element (#keyelem.item) in
+%%           List (or create new entry if Key is unknown).
 %% Returns : keylist record()
 %%--------------------------------------------------------------------
 append({Name, NewValueList}, Keylist) when is_list(Name), is_list(NewValueList),
@@ -158,11 +163,13 @@ append({Key, Name, NewValueList}, Keylist) when is_atom(Key); is_list(Key),
 
 %%--------------------------------------------------------------------
 %% Function: prepend({Name, NewValueList}, List)
-%%           Name = string(), the name of a header in a sip message
-%%           NewValueList = new entries for keyelem identified by Key
-%%           List = keylist record()
-%% Descrip.: add NewValueList to head of element (#keyelem.item) in
-%%           List (or create new entry if Key is unknown)
+%%           Name         = string(), the name of a header in a sip
+%%                          message
+%%           NewValueList = list(), new entries for keyelem identified
+%%                          by Key
+%%           List         = keylist record()
+%% Descrip.: Add NewValueList to head of element (#keyelem.item) in
+%%           List (or create new entry if Key is unknown).
 %% Returns : keylist record()
 %% Note    : This function does not accept atom() form because if
 %%           there is no header, one will be created and then we have
@@ -176,14 +183,14 @@ prepend({Name, NewValueList}, List) when is_list(Name), is_list(NewValueList),
 
 %%--------------------------------------------------------------------
 %% Function: delete(Name, Keylist)
-%%           Name = string() | atom(), either the name of a header in
-%%                  a sip message (string) or the internal form of it
-%%                  (atom)
+%%           Name    = string() | atom(), either the name of a header
+%%                     in a sip message (string) or the internal form
+%%                     of it (atom)
 %%           Keylist = keylist record()
 %% Descrip.: remove an entry from keylist record() (#keylist.list)
 %% Returns : keylist record()
 %%--------------------------------------------------------------------
-delete(Name, Keylist) when is_list(Name); is_atom(Name), is_record(Keylist, keylist) ->
+delete(Name, Keylist) when (is_list(Name) orelse is_atom(Name)), is_record(Keylist, keylist) ->
     Key = normalize(Name),
     #keylist{list=del(Key, Keylist#keylist.list)}.
 
@@ -274,7 +281,7 @@ copy(Keylist, Names) when is_record(Keylist, keylist), is_list(Names) ->
 
 %%--------------------------------------------------------------------
 %% Function: filter(Func, Keylist)
-%%           Func = fun(E) -> bool(), predicate function
+%%           Func    = fun(), fun(E) -> bool() - predicate function
 %%           Keylist = list() of keyelem record()
 %% Descrip.: Return all keyelem elements from Keylist, for which the
 %%           predicate function returned 'true'.
@@ -289,7 +296,7 @@ filter(Func, Keylist) when is_record(Keylist, keylist) ->
 
 %%--------------------------------------------------------------------
 %% Function: map(Func, Keylist)
-%%           Func = fun(Key, Name, Item) -> term()
+%%           Func    = fun(), fun(Key, Name, Item) -> term()
 %%           Keylist = keylist record()
 %% Descrip.: apply Func to all elements in Keylist (#keylist.list)
 %% Returns : list() of term()

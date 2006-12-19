@@ -1,11 +1,17 @@
-%% This module handles parameters supplied in sip urls. They  must
-%% be unique - i.e. the same key can only occure once.
-%%
-%% Note: keys and values are currently stored as strings but pattern
-%% matching and list:keysearch will be faster if standard values are
-%% represented as atoms (but don't turn them all into atoms - as atoms
-%% aren't GCed)
-%%--------------------------------------------------------------------
+%%%-------------------------------------------------------------------
+%%% File    : autotest.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: This module handles parameters supplied in sip urls.
+%%%           They  must be unique - i.e. the same key can only occur
+%%%           once.
+%%%
+%%%           Note: keys and values are currently stored as strings
+%%%           but pattern matching and list:keysearch will be faster
+%%%           if standard values are represented as atoms (but don't
+%%%           turn them all into atoms - as atoms aren't GCed)
+%%%
+%%% Created : 25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 
 -module(url_param).
 
@@ -61,8 +67,7 @@
 %% Descrip.: convert a uri-parameter list to a normalized (a non case
 %%           sensitive form) form
 %% Returns : url_param record() |
-%%           throw({error, duplicate_key}) if a "name"
-%%           component in Params is duplicated
+%%           throw({error, duplicate_key})
 %% Note    : URL parameters may not contain quotes, and the = is
 %%           literal in the RFC3261 BNF, not EQUAL (which may be
 %%           surrounded with linear whitespace)
@@ -100,7 +105,7 @@ to_list(Norm) when is_record(Norm, url_param) ->
 %% Descrip.: return parameter data in the same format as input to
 %%           to_norm/1
 %% Returns : list() of string(), the strings are either "name=val" or
-%%           "name"
+%%                               "name"
 %%--------------------------------------------------------------------
 to_string_list(Norm) when is_record(Norm, url_param) ->
     F = fun(E) ->
@@ -129,8 +134,21 @@ to_string(Norm) when is_record(Norm, url_param) ->
 
 
 %%--------------------------------------------------------------------
+%% Function: add(UrlParam, Key)
+%%           UrlParam = url_param record(), the record to update
+%%           Key      = string(), treated as case insensitive
+%% Descrip.: add new entry or replace old entry in url_param. Key is
+%%           stored in a case insensitive manner, and Value is set
+%%           to 'none' - needed for parameters such as "lr" that have
+%%           no value.
+%% Returns : url_param record()
+%%--------------------------------------------------------------------
+add(UrlParam, Key) ->
+    NKey = httpd_util:to_lower(Key),
+    add2(UrlParam, {NKey, none}).
+
+%%--------------------------------------------------------------------
 %% Function: add(UrlParam, Key, Value)
-%%           add(UrlParam, Key)
 %%           UrlParam = url_param record(), the record to update
 %%           Key      = string(), treated as case insensitive
 %%           Value    = string(), treated as case insensitive
@@ -138,10 +156,6 @@ to_string(Norm) when is_record(Norm, url_param) ->
 %%           Value are stored in a case insensitive manner
 %% Returns : url_param record()
 %%--------------------------------------------------------------------
-add(UrlParam, Key) ->
-    NKey = httpd_util:to_lower(Key),
-    add2(UrlParam, {NKey, none}).
-
 add(UrlParam, Key, Value) when is_record(UrlParam, url_param), is_list(Key) ->
     NKey = httpd_util:to_lower(Key),
     NValue = httpd_util:to_lower(Value),
@@ -170,7 +184,7 @@ find(Param, Key) when is_record(Param, url_param), is_list(Key) ->
 %%           Param = url_param record()
 %%           Key   = string(), is treated as case insensitive
 %% Descrip.: find the Key-Val pair to remove from Param
-%% Returns : url_param record
+%% Returns : url_param record()
 %%--------------------------------------------------------------------
 remove(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     Data = Param#url_param.pairs,
@@ -184,9 +198,9 @@ remove(Param, Key) when is_record(Param, url_param), is_list(Key) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test/0
+%% Function: test()
 %% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
     %% test to_norm

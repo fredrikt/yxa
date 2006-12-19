@@ -70,7 +70,7 @@
 %% Function: init()
 %% Descrip.: Called when the YXA node starts up. Create any ETS tables
 %%           we need.
-%% Returns : ok
+%% Returns : ok |
 %%--------------------------------------------------------------------
 init() ->
     ets:new(?ETS_DIALOG_TABLE, [public, set, named_table]),
@@ -79,12 +79,11 @@ init() ->
 
 %%--------------------------------------------------------------------
 %% Function: register_dialog_controller(Dialog, Pid)
-%%           register_dialog_controller(Dialog, Pid, Expire)
 %%           Dialog = dialog record()
 %%           Pid    = pid(), dialog controller to be
-%%           Expire = integer(), expire time in seconds
 %% Descrip.: Register a dialog controller for a dialog record.
-%% Returns : ok | {error, Reason} exception
+%% Returns : ok |
+%%           throw({error, Reason})
 %%--------------------------------------------------------------------
 register_dialog_controller(Dialog, Pid) when is_record(Dialog, dialog), is_pid(Pid) ->
     register_dialog_controller(Dialog#dialog.callid,
@@ -92,6 +91,15 @@ register_dialog_controller(Dialog, Pid) when is_record(Dialog, dialog), is_pid(P
 			       Dialog#dialog.remote_tag,
 			       Pid).
 
+%%--------------------------------------------------------------------
+%% Function: register_dialog_controller(Dialog, Pid, Expire)
+%%           Dialog = dialog record()
+%%           Pid    = pid(), dialog controller to be
+%%           Expire = integer(), expire time in seconds
+%% Descrip.: Register a dialog controller for a dialog record.
+%% Returns : ok |
+%%           throw({error, Reason})
+%%--------------------------------------------------------------------
 register_dialog_controller(Dialog, Pid, Expire) when is_record(Dialog, dialog), is_pid(Pid), is_integer(Expire) ->
     register_dialog_controller(Dialog#dialog.callid,
 			       Dialog#dialog.local_tag,
@@ -101,7 +109,21 @@ register_dialog_controller(Dialog, Pid, Expire) when is_record(Dialog, dialog), 
 
 %%--------------------------------------------------------------------
 %% Function: register_dialog_controller(CallId, LocalTag, Pid)
-%%           register_dialog_controller(CallId, LocalTag, Pid, Expire)
+%%           CallId   = string()
+%%           LocalTag = string()
+%%           Pid      = pid(), dialog controller to be
+%% Descrip.: Register 'half a dialog'. A half dialog is one where we
+%%           do not yet know the remote tag, like when we send out a
+%%           request that, if answered, will establish one or more
+%%           dialogs.
+%% Returns : ok |
+%%           throw({error, Reason})
+%%--------------------------------------------------------------------
+register_dialog_controller(CallId, LocalTag, Pid) when is_list(CallId), is_list(LocalTag), is_pid(Pid) ->
+    register_dialog_controller(CallId, LocalTag, undefined, Pid).
+
+%%--------------------------------------------------------------------
+%% Function: register_dialog_controller(CallId, LocalTag, Pid, Expire)
 %%           CallId   = string()
 %%           LocalTag = string()
 %%           Pid      = pid(), dialog controller to be
@@ -110,11 +132,9 @@ register_dialog_controller(Dialog, Pid, Expire) when is_record(Dialog, dialog), 
 %%           do not yet know the remote tag, like when we send out a
 %%           request that, if answered, will establish one or more
 %%           dialogs.
-%% Returns : ok | {error, Reason} exception
+%% Returns : ok |
+%%           throw({error, Reason})
 %%--------------------------------------------------------------------
-register_dialog_controller(CallId, LocalTag, Pid) when is_list(CallId), is_list(LocalTag), is_pid(Pid) ->
-    register_dialog_controller(CallId, LocalTag, undefined, Pid).
-
 register_dialog_controller(CallId, LocalTag, Pid, Expire) when is_list(CallId), is_list(LocalTag), is_pid(Pid),
 							       is_integer(Expire) ->
     register_dialog_controller(CallId, LocalTag, undefined, Pid, Expire);
@@ -122,7 +142,21 @@ register_dialog_controller(CallId, LocalTag, Pid, Expire) when is_list(CallId), 
 %%--------------------------------------------------------------------
 %% Function: register_dialog_controller(CallId, LocalTag, RemoteTag,
 %%                                      Pid)
-%%           register_dialog_controller(CallId, LocalTag, RemoteTag,
+%%           CallId    = string()
+%%           LocalTag  = string()
+%%           RemoteTag = string() | undefined
+%%           Pid       = pid(), dialog controller to be
+%%           Expire    = integer(), expire time in seconds
+%% Descrip.: Register a dialog ('half dialog' if RemoteTag is
+%%           undefined).
+%% Returns : ok |
+%%           throw({error, Reason})
+%%--------------------------------------------------------------------
+register_dialog_controller(CallId, LocalTag, RemoteTag, Pid) when is_list(CallId), is_list(LocalTag), is_pid(Pid) ->
+    register_dialog_controller(CallId, LocalTag, RemoteTag, Pid, ?DEFAULT_EXPIRE).
+
+%%--------------------------------------------------------------------
+%% Function: register_dialog_controller(CallId, LocalTag, RemoteTag,
 %%                                      Pid, Expire)
 %%           CallId    = string()
 %%           LocalTag  = string()
@@ -131,11 +165,9 @@ register_dialog_controller(CallId, LocalTag, Pid, Expire) when is_list(CallId), 
 %%           Expire    = integer(), expire time in seconds
 %% Descrip.: Register a dialog ('half dialog' if RemoteTag is
 %%           undefined).
-%% Returns : ok | throw({error, Reason})
+%% Returns : ok |
+%%           throw({error, Reason})
 %%--------------------------------------------------------------------
-register_dialog_controller(CallId, LocalTag, RemoteTag, Pid) when is_list(CallId), is_list(LocalTag), is_pid(Pid) ->
-    register_dialog_controller(CallId, LocalTag, RemoteTag, Pid, ?DEFAULT_EXPIRE).
-
 register_dialog_controller(CallId, LocalTag, RemoteTag, Pid, Expire) when is_list(CallId), is_list(LocalTag),
 									  is_pid(Pid), is_integer(Expire),
 									  Expire >= 1 ->
@@ -177,10 +209,8 @@ register_dialog_controller(CallId, LocalTag, RemoteTag, Pid, Expire) when is_lis
 
 
 %%--------------------------------------------------------------------
-%% Function: get_dialog_controller(Request)
-%%           get_dialog_controller(Response)
-%%           Request  = request record()
-%%           Response = response record()
+%% Function: get_dialog_controller(In)
+%%           In = request record() | response record()
 %% Descrip.: Find the dialog controller for a received request or
 %%           response.
 %% Returns : {ok, DCPid} |
@@ -329,12 +359,9 @@ handle_expired_dialogs2(Interval, Entrys) when is_integer(Interval), is_list(Ent
 
 %%--------------------------------------------------------------------
 %% Function: set_dialog_expires(Dialog, Expires)
-%%           set_dialog_expires(CallId, LocalTag, RemoteTag, Expires)
-%%           CallId    = string()
-%%           LocalTag  = string()
-%%           RemoteTag = string() | undefined
-%%           Expires   = integer(), seconds from now the dialog should
-%%                       expire
+%%           Dialog  = dialog record()
+%%           Expires = integer(), seconds from now the dialog should
+%%                     expire
 %% Descrip.: Set a new expiration time on an existing dialog.
 %% Returns : ok | nomatch
 %%--------------------------------------------------------------------
@@ -346,6 +373,16 @@ set_dialog_expires(Dialog, Expires) when is_record(Dialog, dialog), is_integer(E
     
     set_dialog_expires(CallId, LocalTag, RemoteTag, Expires).
 
+%%--------------------------------------------------------------------
+%% Function: set_dialog_expires(CallId, LocalTag, RemoteTag, Expires)
+%%           CallId    = string()
+%%           LocalTag  = string()
+%%           RemoteTag = string() | undefined
+%%           Expires   = integer(), seconds from now the dialog should
+%%                       expire
+%% Descrip.: Set a new expiration time on an existing dialog.
+%% Returns : ok | nomatch
+%%--------------------------------------------------------------------
 set_dialog_expires(CallId, LocalTag, RemoteTag, Expires) when is_list(CallId), is_list(LocalTag),
 							      is_list(RemoteTag); RemoteTag == undefined,
 							      is_integer(Expires) ->
@@ -478,7 +515,30 @@ create_dialog_state_uac(Request, Response) when is_record(Request, request), is_
 
 %%--------------------------------------------------------------------
 %% Function: create_dialog_state_uas(Request, Response)
-%%           create_dialog_state_uas(Request, ResponseToTag,
+%%           Request  = request record()
+%%           Response = response record()
+%% Descrip.: Call this when a local UAS prepares to answer a request
+%%           and thereby establishes a dialog, if you want a dialog
+%%           record() with all the information about the dialog filled
+%%           in.
+%% Returns : {ok, Dialog} |
+%%           throw({error, Reason})
+%%           Dialog = dialog record()
+%%           Reason = string()
+%%--------------------------------------------------------------------
+create_dialog_state_uas(Request, Response) when is_record(Request, request), is_record(Response, response) ->
+    [ResponseContact] = keylist:fetch('contact', Response#response.header),
+    ResponseToTag =
+	case sipheader:get_tag(keylist:fetch('to', Response#response.header)) of
+	    none ->
+		throw({error, "No To: tag in response"});
+	    ToTag1 ->
+		ToTag1
+	end,
+    create_dialog_state_uas(Request, ResponseToTag, ResponseContact).
+
+%%--------------------------------------------------------------------
+%% Function: create_dialog_state_uas(Request, ResponseToTag,
 %%                                   ResponseContact)
 %%           Request  = request record()
 %%           Response = response record()
@@ -493,17 +553,6 @@ create_dialog_state_uac(Request, Response) when is_record(Request, request), is_
 %% NOTE    : all the comments in the code below are quotes from
 %%           RFC3261 #12.1.1 (UAS behavior).
 %%--------------------------------------------------------------------
-create_dialog_state_uas(Request, Response) when is_record(Request, request), is_record(Response, response) ->
-    [ResponseContact] = keylist:fetch('contact', Response#response.header),
-    ResponseToTag =
-	case sipheader:get_tag(keylist:fetch('to', Response#response.header)) of
-	    none ->
-		throw({error, "No To: tag in response"});
-	    ToTag1 ->
-		ToTag1
-	end,
-    create_dialog_state_uas(Request, ResponseToTag, ResponseContact).
-
 create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
   when is_record(Request, request), is_list(ResponseToTag), is_list(ResponseContact) ->
     Header = Request#request.header,
@@ -589,7 +638,8 @@ create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
 %% Descrip.: Figure out if the 'secure' flag should be set on a
 %%           dialog, and assert if the current request+contact
 %%           combination violates this rule.
-%% Returns : true | false | throw({error, Reason})
+%% Returns : true | false |
+%%           throw({error, Reason})
 %%           Reason = response_contact_must_be_secure |
 %%                    response_contact_missing
 %%--------------------------------------------------------------------

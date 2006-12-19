@@ -85,20 +85,19 @@
 %%           YxaCtx      = yxa_ctx record()
 %%           BranchBase  = string(), base of branch we should use
 %%           Parent      = pid()
-%%           ParentState = atom(), stop | ???
+%%           ParentState = init | active | stop | stopped
 %%           Interval    = integer(), what we should request as
 %%                         subscription expiration time
-%%           ExtraH      = list() of {Key, Value} tuples with stuff
-%%                         we should put in our SUBSCRIBEs.
+%%           ExtraH      = list() of {Key, Value}, stuff we should
+%%                         put in our SUBSCRIBEs.
 %%           FirstCSeq   = integer(), first CSeq number we should use
-%% Descrip.: Starts the active_subscriber ge5An_server.
+%% Descrip.: Starts the active_subscriber gen_server.
 %%
-%% NOTE    : ExtraH MUST include one (and only one) of the following :
-%%           "Contact", "Event" and "Accept"
+%% NOTE    : ExtraH MUST include one (and only one) of each of the
+%%           following : "Contact", "Event" and "Accept"
 %%
-%% Returns : Pid = pid() | {error, Reason}5A
-%%           Reason = {siperror, Status, Reason, EH} |
-%%           term()
+%% Returns : Pid = pid() | {error, Reason}
+%%           Reason = {siperror, Status, Reason, EH} | term()
 %%--------------------------------------------------------------------
 start_link(#request{method = "NOTIFY"} = Request, YxaCtx, BranchBase, Parent, ParentState,
 	   Interval, ExtraH, FirstCSeq) when is_record(YxaCtx, yxa_ctx), is_list(BranchBase), is_pid(Parent),
@@ -129,7 +128,7 @@ start_link(#request{method = "NOTIFY"} = Request, YxaCtx, BranchBase, Parent, Pa
 		    sent_subscr_ts	= util:timestamp() %% well, not really but...
 		   },
 
-    gen_server:start_link(?MODULE, [State1, Request, YxaCtx, ParentState, FirstCSeq], []).
+    gen_server:start_link(?MODULE, {State1, Request, YxaCtx, ParentState, FirstCSeq}, []).
 
 
 %%====================================================================
@@ -137,11 +136,11 @@ start_link(#request{method = "NOTIFY"} = Request, YxaCtx, BranchBase, Parent, Pa
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([State1, Request, YxaCtx, ParentState, FirstCSeq])
+%% Function: init({State1, Request, YxaCtx, ParentState, FirstCSeq})
 %%           State1      = state record(), state in
 %%           Request     = request record()
 %%           YxaCtx      = yxa_ctx record()
-%%           ParentState = atom(), stop | ???
+%%           ParentState = atom(), init | active | stop | stopped
 %%           FirstCSeq   = integer(), first CSeq number we should use
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}    |
@@ -199,12 +198,25 @@ init([State1, Request, YxaCtx, ParentState, FirstCSeq]) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({set_interval, NewInterval}, From, State)
+%%           NewInterval = integer()
+%% Descrip.: Change the SUBSCRIBE refresh interval.
+%% Returns : {reply, Reply, NewState}
+%%           NewState = state record()
+%%           Reply    = ok
+%%--------------------------------------------------------------------
 handle_call({set_interval, NewInterval}, _From, State) when is_integer(NewInterval) ->
     %% XXX send a new SUBSCRIBE? Only do it if interval is decreased?
     {reply, ok, State#state{interval = NewInterval}};
 
-handle_call(Msg, _From, State) ->
-    logger:log(error, "Active subscription: Received unknown gen_server call : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_call(Unknown, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_call(Unknown, _From, State) ->
+    logger:log(error, "Active subscription: Received unknown gen_server call : ~p", [Unknown]),
     {noreply, State}.
 
 
@@ -217,8 +229,13 @@ handle_call(Msg, _From, State) ->
 %%--------------------------------------------------------------------
 
 
-handle_cast(Msg, State) ->
-    logger:log(error, "Active subscription: Received unknown gen_server cast : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_cast(Unknown, State) ->
+    logger:log(error, "Active subscription: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
 
@@ -232,7 +249,8 @@ handle_cast(Msg, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({branch_result, ...}, State)
+%% Function: handle_info({branch_result, FromPid, Branch, SipState,
+%%                       Response}, State)
 %% Descrip.: A SUBSCRIBE client transaction we started resulted in a
 %%           response. Check if that response was a (received) 481 and
 %%           terminate if it was.
@@ -393,6 +411,11 @@ handle_info({dialog_expired, _DialogId}, State) ->
     logger:log(error, "Active subscription: Dialog expired, should not happen."),
     {stop, normal, State};
 
+%%--------------------------------------------------------------------
+%% Function: handle_info(Unknown, State)
+%% Descrip.: Unknown info.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Active subscription: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State}.
@@ -624,7 +647,8 @@ check_is_acceptable(Request, AcceptL) ->
 %% Descrip.: Check for an Subscription-State header with an expires
 %%           parameter, or return Default if no expires parameter is
 %%           found, or it does not contain an integer.
-%% Returns : {ok, Seconds} = integer()
+%% Returns : {ok, Seconds}
+%%           Seconds = integer()
 %%--------------------------------------------------------------------
 get_subscription_state_expires(Header, Default) when is_integer(Default) ->
     case keylist:fetch("Subscription-State", Header) of

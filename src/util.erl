@@ -61,9 +61,10 @@ timestamp() ->
 %% Function: sec_to_date(Seconds)
 %%           Seconds = integer(), seconds since start point used by
 %%                     now()
-%% Descrip.: Takes a Seconds value (e.g. from timestamp/0 above) and
-%%           returns a nicely formatted date-time string.
-%% Returns : string(), "yyyy-mm-dd hh:mm:ss"
+%% Descrip.: Takes a Seconds value (for example the result of
+%%           timestamp/0) and returns a nicely formatted
+%%           date-time string ("yyyy-mm-dd hh:mm:ss").
+%% Returns : string()
 %%--------------------------------------------------------------------
 sec_to_date(never) ->
     "never";
@@ -97,14 +98,13 @@ isnumeric(_) ->
 %%--------------------------------------------------------------------
 %% Function: regexp_rewrite(Input, RegexpList)
 %%           Input      = string()
-%%           RegexpList = list() of {Regexp, Rewrite} tuple()
+%%           RegexpList = list() of {Regexp, Rewrite}
 %%              Regexp  = string(), e.g. "foo(.+)"
 %%              Rewrite = string(), e.g. "\\1@example.com"
 %% Descrip.: Do regexp substitution. If Input is "foobar" and the
 %%           regexp tuple is {"foo(.+)", "\\1@example.com"} this
 %%           function will return "bar@example.com".
-%% Returns : Res = string() |
-%%           nomatch
+%% Returns : string() | nomatch
 %%--------------------------------------------------------------------
 regexp_rewrite(_Input, []) ->
     nomatch;
@@ -122,7 +122,8 @@ regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
 
 %%--------------------------------------------------------------------
 %% Function: casecompare(Str1, Str2)
-%%           Str1, Str2 = string() | none
+%%           Str1 = string() | none
+%%           Str2 = string() | none
 %% Descrip.: return true if Str1 and Str2 are either 'none' or the
 %%           same string (ignore case)
 %% Returns : true | false
@@ -144,9 +145,9 @@ casecompare(String1, String2) ->
 
 %%--------------------------------------------------------------------
 %% Function: casegrep(Str, StrList)
-%%           Str = string() | none
-%%           StrList = list of string()
-%% Descrip.: determine if Str is a memeber of StrList
+%%           Str     = string() | none
+%%           StrList = list() of string()
+%% Descrip.: determine if Str is a member of StrList
 %% Returns : true | false
 %%--------------------------------------------------------------------
 casegrep(_String1, []) ->
@@ -161,35 +162,32 @@ casegrep(String1, [String2 | Rest]) ->
 
 %%--------------------------------------------------------------------
 %% Function: join(Strings, Separator)
-%%           Strings = list of string()
+%%           Strings = list() of string()
 %%           Separator = string()
-%% Descrip.: create a single string from the Strings entries,
+%% Descrip.: Create a single string from the Strings entries.
 %%           Separator is placed between all entries (but not after
-%%           the last one)
+%%           the last one).
 %% Returns : string()
+%%--------------------------------------------------------------------
 %% XXX badly chosen function name - I mostly associate this name with
 %% functions like lists:append - hsten
-%%--------------------------------------------------------------------
 join([], _Separator) ->
     [];
-join([A], _Separator) ->
-    A;
-join([String | Rest], Separator) ->
-    String ++ Separator ++ join(Rest, Separator).
+join([H | T], Separator) ->
+    H ++ lists:concat([Separator ++ X || X <- T]).
 
 %%--------------------------------------------------------------------
 %% Function: concat(Strings, Separator)
-%%           Strings = list of string()
+%%           Strings = list() of string()
 %%           Separator = string()
 %% Descrip.: create a single string from the Strings entries, each
 %%           entry ends with the Separator.
 %% Returns : list()
-%%
+%%--------------------------------------------------------------------
 %% XXX badly chosen function name - I mostly associate this name with
 %% functions that add a element to a list - hsten
 %%
 %% XXX Function seems to be unused, and kind of useless (?).
-%%--------------------------------------------------------------------
 concat([], _Separator) ->
     [];
 concat([A | B], Separator) ->
@@ -220,8 +218,8 @@ safe_is_process_alive(Name) when is_atom(Name) ->
 
 %%--------------------------------------------------------------------
 %% Function: safe_signal(LogTag, PidIn, Message)
-%%           LogTag = string() - application name (???)
-%%           PidIn = pid() | atom()
+%%           LogTag = string(), log prefix when we fail
+%%           PidIn  = pid() | atom()
 %%           Message = string()
 %% Descrip.: Check if a process is alive before sending it a signal.
 %% Returns : ok | error
@@ -244,8 +242,8 @@ safe_signal(LogTag, PidIn, Message) ->
 %%           In = string()
 %% Descrip.: If In is "[IPv6Address]" then return "IPv6Address".
 %%           Otherwise, return whatever In was.
-%% Returns : Addr = string(), IPv6 address |
-%%           In
+%% Returns : In | V6addr
+%%           V6Addr = string()
 %%--------------------------------------------------------------------
 remove_v6_brackets([$[ | Rest] = In) ->
     %% Might be IPv6 formatted address, check if it ends with "]"
@@ -473,7 +471,7 @@ test() ->
     %% empty separator
     "hiworld" = join(["hi", "world"], ""),
 
-    autotest:mark(?LINE, "join/2 - 3"),
+    autotest:mark(?LINE, "join/2 - 4"),
     %% empty Strings
     [] = join([], "neverseen"),
 

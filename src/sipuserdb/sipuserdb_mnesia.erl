@@ -42,7 +42,7 @@
 %%           is started by the supervisor.
 %% Returns : Spec |
 %%           []
-%%           Spec = OTP supervisor child specification
+%%           Spec = term(), OTP supervisor child specification
 %%--------------------------------------------------------------------
 yxa_init() ->
     [].
@@ -129,8 +129,7 @@ get_users_for_address_of_record(Address) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_users_for_addresses_of_record(Addresses)
-%%           Addresses = list() of string(), addresses in string
-%%                       format.
+%%           Addresses = list() of string(), addresses in string format.
 %% Descrip.: Iterate over a list of addresses of record, return
 %%           all users matching one or more of the addresses,
 %%           without duplicates.
@@ -219,7 +218,7 @@ get_addresses_for_user(User) ->
 %%           of these addresses. This is located in here since
 %%           user database backends can have their own way of
 %%           deriving addresses from a Request-URI.
-%% Returns : Usernames, list() of string()
+%% Returns : Usernames = list() of string()
 %%--------------------------------------------------------------------
 get_users_for_url(URL) when record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_mnesia, URL),

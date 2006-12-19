@@ -95,7 +95,7 @@ fix_content_length(Header, Body) when is_record(Header, keylist), is_binary(Body
 %%           original Request-URI to the list of routes, to traverse
 %%           strict (RFC2543) proxys.
 %% Returns : {ok, NewHeader, NewDestURI, NewRequestURI}  |
-%%           nomatch, there was no Route: header
+%%           nomatch
 %%           NewHeader     = keylist record()
 %%           NewDestURI    = sipurl record(), this is what you should
 %%                                            use as destination
@@ -164,7 +164,7 @@ is_loose_router(Route) when is_record(Route, sipurl) ->
 %%           destination plus a new request (the headers might change
 %%           if we have popped a Route header).
 %% Returns : {ok, Dst, NewRequest} |
-%%           throw {siperror, ...}
+%%           throw({siperror, ...})
 %%           Dst        = sipdst record()
 %%           NewRequest = request record()
 %%--------------------------------------------------------------------
@@ -231,7 +231,7 @@ stateless_route_proxy_request2(Request, ApproxMsgSize) ->
 %%           etc. Not guaranteed to return, might throw a siperror if
 %%           the request should not be proxied.
 %% Returns : {ok, NewHeader, ApproxMsgSize} |
-%%           throw {siperror, ...}
+%%           throw({siperror, ...})
 %%--------------------------------------------------------------------
 check_proxy_request(Request) when is_record(Request, request) ->
     NewHeader1 = proxy_check_maxforwards(Request#request.header),
@@ -294,17 +294,15 @@ proxy_check_maxforwards(Header) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: proxy_add_via(Header, Method, OrigURI, Parameters, Proto)
+%% Function: proxy_add_via(Header, OrigURI, Parameters, Proto)
 %%           Header      = keylist record()
 %%           OrigURI     = sipurl record()
 %%           Parameters  = string()
-%%           Proto       = atom(), tcp|tcp6|udp|udp6|tls|tls6
+%%           Proto       = tcp | tcp6 | udp | udp6 | tls | tls6
 %% Descrip.: Generate a Via header for this proxy and add it to Header
-%% Returns : NewHeader, keylist record()
-%%
-%% XXX rework to only calculate LoopCookie if we are actually going to
-%% use it.
+%% Returns : NewHeader =  keylist record()
 %%--------------------------------------------------------------------
+%% XXX rework to only calculate LoopCookie if we are actually going to use it.
 proxy_add_via(Header, OrigURI, Parameters, Proto) when is_record(Header, keylist), is_record(OrigURI, sipurl),
 						       is_list(Parameters), is_atom(Proto) ->
     ParamDict = sipheader:param_to_dict(Parameters),
@@ -378,7 +376,7 @@ branch_contains_loopcookie(Branch) when is_list(Branch) ->
 %%           ParamDict   = dict()
 %% Descrip.: If LoopCookie is not 'none', add it to Branch. Return
 %%           a new Parameters construct.
-%% Returns : NewParameters, list() of string()
+%% Returns : NewParameters = list() of string()
 %%--------------------------------------------------------------------
 add_loopcookie_to_branch(none, _Branch, Parameters, _ParamDict) ->
     %% Request has a branch, and loop detection is off
@@ -399,7 +397,7 @@ add_loopcookie_to_branch(LoopCookie, Branch, _Parameters, ParamDict) ->
 %% Descrip.: If LoopCookie is not 'none', add it to the Branch if
 %%           Branch does not already contain a loop cookie. Return
 %%           a new Parameters construct.
-%% Returns : NewParameters, list() of string()
+%% Returns : NewParameters = list() of string()
 %%--------------------------------------------------------------------
 add_stateless_generated_branch(Header, OrigURI, LoopCookie, Parameters) ->
     add_stateless_generated_branch2(Header, OrigURI, LoopCookie, Parameters, node()).
@@ -479,7 +477,7 @@ stateless_generate_branch(OrigURI, Header, Nodename) ->
 %% Descrip.: Make md5 of input, base64 of that and RFC3261 token of
 %%           the result. Tokens are case-insensitive, so we lowercase
 %%           the ones we generate here to make them easier to read.
-%% Returns : Result of make_3261_token()
+%% Returns : term(), Result of make_3261_token()
 %%--------------------------------------------------------------------
 make_base64_md5_token(In) ->
     MD5 = binary_to_list(erlang:md5(In)),
@@ -538,7 +536,7 @@ make_answerheader(Header) ->
 %%           Header  = keylist record()
 %%           OrigURI = sipurl record(), original requests URI
 %%           Proto   = term(), the protocol the request was received
-%%           over
+%%                     over
 %% Descrip.: Generate a loop detection cookie, RFC3261 16.6 #8.
 %% Returns : Cookie = string()
 %%--------------------------------------------------------------------
@@ -574,7 +572,7 @@ get_loop_cookie(Header, OrigURI, Proto) ->
 %%           Header  = keylist record()
 %% Descrip.: Helper-function for get_loop_cookie(). Remove parts of
 %%           Proxy-Authorization header that change based on method.
-%% Returns : Result = list() of string() ???
+%% Returns : list() of string() | none
 %%--------------------------------------------------------------------
 proxyauth_without_response(Header) ->
     case keylist:fetch('proxy-authorization', Header) of
@@ -654,7 +652,7 @@ add_record_route(URL, Header) when is_record(URL, sipurl) ->
 
 %%--------------------------------------------------------------------
 %% Function: add_record_route(Proto, Hostname, Port, Header)
-%%           Proto      = "sips" | "sip" | string()
+%%           Proto      = string(), "sips" or "sip"
 %%           Hostname   = undefined | string()
 %%           Port       = undefined | none | integer()
 %%           Header     = keylist record()
@@ -687,10 +685,23 @@ add_record_route(Proto, Hostname, Port, Header) when is_list(Proto), is_list(Hos
 	    keylist:prepend({"Record-Route", [RouteStr]}, Header)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: construct_record_route(Proto)
+%%           Proto = string(), "sips" or "sip"
+%% @equiv    construct_record_route(Proto, undefined, undefined)
 %% Returns : RRStr = string(), URL enclosed in "<>"
+%%--------------------------------------------------------------------
 construct_record_route(Proto) when is_list(Proto) ->
     construct_record_route(Proto, undefined, undefined).
 
+%%--------------------------------------------------------------------
+%% Function: construct_record_route(Proto, Hostname, Port)
+%%           Proto      = string(), "sips" or "sip"
+%%           Hostname = string()
+%%           Port     = integer()
+%% Descrip.: Construct a Record-Route header value for this proxy.
+%% Returns : RRStr = string(), URL enclosed in "<>"
+%%--------------------------------------------------------------------
 construct_record_route(Proto, undefined, undefined) when is_list(Proto) ->
     {RRProto, MyPort} =
 	case Proto of
@@ -754,6 +765,18 @@ standardcopy(Header, ExtraHeaders) ->
 				    [via, from, to, 'call-id', cseq]),
 		       ExtraHeaders).
 
+%%--------------------------------------------------------------------
+%% Function: send_auth_req(Header, Socket, Auth, Stale)
+%%           Header = keylist record()
+%%           Socket = sipsocket record() | none
+%%           Auth     = {Realm, Nonce, Opaque}
+%%             Realm  = string()
+%%             Nonce  = string()
+%%             Opaque = string()
+%%           Stale    = true | false
+%% Descrip.: Send a '401 Authentication Required' response.
+%% Returns : term(), send result
+%%--------------------------------------------------------------------
 send_auth_req(Header, Socket, Auth, Stale) ->
     ExtraHeaders = [{"WWW-Authenticate",
 		     sipheader:auth_print(Auth, Stale)}],
@@ -762,6 +785,18 @@ send_auth_req(Header, Socket, Auth, Stale) ->
     Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
+%%--------------------------------------------------------------------
+%% Function: send_proxyauth_req(Header, Socket, Auth, Stale)
+%%           Header = keylist record()
+%%           Socket = sipsocket record() | none
+%%           Auth     = {Realm, Nonce, Opaque}
+%%             Realm  = string()
+%%             Nonce  = string()
+%%             Opaque = string()
+%%           Stale    = true | false
+%% Descrip.: Send a '407 Proxy Authentication Required' response.
+%% Returns : term(), send result
+%%--------------------------------------------------------------------
 send_proxyauth_req(Header, Socket, Auth, Stale) ->
     ExtraHeaders = [{"Proxy-Authenticate",
 		     sipheader:auth_print(Auth, Stale)}],
@@ -770,6 +805,14 @@ send_proxyauth_req(Header, Socket, Auth, Stale) ->
     Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
+%%--------------------------------------------------------------------
+%% Function: send_redirect(Location, Header, Socket)
+%%           Location = sipurl record() | string()
+%%           Header = keylist record()
+%%           Socket = sipsocket record() | none
+%% Descrip.: Send a '302 Moved Temporarily' response.
+%% Returns : term(), send result
+%%--------------------------------------------------------------------
 send_redirect(Location, Header, Socket) when is_record(Location, sipurl) ->
     Contact = contact:new(none, Location, []),
     ExtraHeaders = [{"Contact",
@@ -779,12 +822,27 @@ send_redirect(Location, Header, Socket) when is_record(Location, sipurl) ->
     Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
+%%--------------------------------------------------------------------
+%% Function: send_notfound(Header, Socket)
+%%           Header = keylist record()
+%%           Socket = sipsocket record() | none
+%% Descrip.: Send a '404 Not Found' response.
+%% Returns : term(), send result
+%%--------------------------------------------------------------------
 send_notfound(Header, Socket) ->
     Response1 = #response{status=404, reason="Not found",
 			  header=standardcopy(Header, [])},
     Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
+%%--------------------------------------------------------------------
+%% Function: send_notavail(Header, Socket)
+%%           Header = keylist record()
+%%           Socket = sipsocket record() | none
+%% Descrip.: Send a '480 Temporarily Unavailable' response with a
+%%           Retry-After: 180 header.
+%% Returns : term(), send result
+%%--------------------------------------------------------------------
 send_notavail(Header, Socket) ->
     ExtraHeaders = [{"Retry-After", ["180"]}],
     Response1 = #response{status=480, reason="Temporarily unavailable",
@@ -792,6 +850,15 @@ send_notavail(Header, Socket) ->
     Response = set_response_body(Response1, <<>>),
     transportlayer:send_response(Socket, Response).
 
+%%--------------------------------------------------------------------
+%% Function: send_answer(Header, Socket, Body)
+%%           Header = keylist record()
+%%           Socket = sipsocket record() | none
+%%           Body   = string() | binary()
+%% Descrip.: Produce a standard '200 OK' response with Content-Type set
+%%           to 'application/sdp' (so Body better be an SDP).
+%% Returns : term(), send result
+%%--------------------------------------------------------------------
 send_answer(Header, Socket, Body) ->
     %% Remember to add a linefeed (\n) to the end of Body that you pass to this function
     ExtraHeaders = [{"Content-Type", ["application/sdp"]}],
@@ -804,14 +871,14 @@ send_answer(Header, Socket, Body) ->
 %% Function: request_to_me(Request, YxaCtx, ExtraHeaders)
 %%           Request      = request record()
 %%           YxaCtx       = yxa_ctx record()
-%%           ExtraHeaders = list() of {Key, Value} tuple()
+%%           ExtraHeaders = list() of {Key, Value}
 %% Descrip.: Produce a standard 200 OK response to an OPTIONS request
 %%           an YXA application received.
 %% Returns : term(), result of
 %%                   transactionlayer:send_response_handler/4
 %%--------------------------------------------------------------------
 request_to_me(#request{method = "OPTIONS"} = Request, YxaCtx, ExtraHeaders) when is_record(YxaCtx, yxa_ctx),
-										    is_list(ExtraHeaders) ->
+										 is_list(ExtraHeaders) ->
     #yxa_ctx{thandler   = THandler,
 	     app_logtag = LogTag
 	    } = YxaCtx,
@@ -916,7 +983,7 @@ binary_make_message(BinLine1, Header, BinBody) when is_binary(BinLine1), is_reco
 %%--------------------------------------------------------------------
 %% Function: set_request_body(Request, Body)
 %%           Request = request record()
-%%           Body    = list() or binary()
+%%           Body    = string() | binary()
 %% Descrip.: Set the body of a request record.
 %% Returns : NewRequest = request record()
 %%--------------------------------------------------------------------
@@ -931,10 +998,10 @@ set_request_body(Request, Body) when is_record(Request, request), is_list(Body) 
 %%--------------------------------------------------------------------
 %% Function: set_response_body(Request, Body)
 %%           Request = request record()
-%%           Body    = list() or binary()
+%%           Body    = string() | binary()
 %% Descrip.: Set the body of a request record, and calculate
 %%           Content-Length.
-%% Returns : NewRequest = request record()
+%% Returns : NewResponse = response record()
 %%--------------------------------------------------------------------
 set_response_body(Response, Body) when is_record(Response, response), is_binary(Body) ->
     ILen = size(Body),

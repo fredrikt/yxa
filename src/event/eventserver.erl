@@ -80,10 +80,9 @@ init() ->
 		 }.
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, _Origin, LogStr)
+%% Function: request(Request, YxaCtx)
 %%           Request = request record()
-%%           _Origin  = siporigin record()
-%%           LogStr  = string() describing request
+%%           YxaCtx  = yxa_ctx record()
 %% Descrip.: YXA applications must export a request/2 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
@@ -198,7 +197,7 @@ response(Response, YxaCtx) when is_record(Response, response) ->
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Mode)
-%%           Mode = shutdown | graceful | ...
+%%           Mode = shutdown | graceful | atom()
 %% Descrip.: YXA applications must export a terminate/1 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
@@ -446,10 +445,10 @@ get_event_modules() ->
 %% Function: make_extraheaders(Status, ExtraHeaders_In)
 %%           Status          = integer(), SIP status code of response
 %%                                        we are creating
-%%           ExtraHeaders_In = list() of tuple() ({Key, ValueL})
+%%           ExtraHeaders_In = list() of {Key, ValueL}
 %% Descrip.: Create ExtraHeaders to use when sending responses.
 %%           Include Server: and Allow-Event: headers as appropriate.
-%% Returns : ExtraHeaders = list() of tuple() ({Key, ValueL})
+%% Returns : ExtraHeaders = list() of {Key, ValueL}
 %%--------------------------------------------------------------------
 make_extraheaders(Status, ExtraHeaders_In) ->
     Server =

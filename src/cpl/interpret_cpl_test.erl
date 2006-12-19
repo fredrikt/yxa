@@ -1,9 +1,16 @@
-%% This module tests interpret_cpl.erl but also a substantial part of
-%% interpret_backend.erl, as test_backend.erl mostly sends its calls
-%% onward to interpret_backend.erl - the exceptions are a few
-%% functions (mainly test_proxy_destinations(...)) which manipulate
-%% the state in YXA.
-%%--------------------------------------------------------------------
+%%%-------------------------------------------------------------------
+%%% File    : interpret_cpl_test.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: Test cases for interpret_cpl.
+%%%
+%%% This module tests interpret_cpl.erl but also a substantial part of
+%%% interpret_backend.erl, as test_backend.erl mostly sends its calls
+%%% onward to interpret_backend.erl - the exceptions are a few
+%%% functions (mainly test_proxy_destinations(...)) which manipulate
+%%% the state in YXA.
+%%%
+%%% Created : 21 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(interpret_cpl_test).
 
 %%--------------------------------------------------------------------

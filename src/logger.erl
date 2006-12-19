@@ -83,15 +83,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(LogBase)
-%%           start_link()
-%%           LogBase = string(), base name of logfiles to use
-%% Descrip.: Start the 'logger' server
-%%           start_link/0 uses the current application name, together
-%%           with any configured logger_logdir as LogBase.
-%%           The logger is only registered locally (on the current
-%%           node)
-%% Returns : gen_server:start_link/4
+%% Function: start_link()
+%% Descrip.: Start the 'logger' server, with a default logbase.
+%% @see      start_link/1.
+%% Returns : term()
 %%--------------------------------------------------------------------
 start_link() ->
     LogBase =
@@ -114,9 +109,29 @@ start_link() ->
 	end,
     start_link(LogBase).
 
+%%--------------------------------------------------------------------
+%% Function: start_link(LogBase)
+%%           LogBase = string(), base name of logfiles to use
+%% Descrip.: Start the 'logger' server
+%%           start_link/0 uses the current application name, together
+%%           with any configured logger_logdir as LogBase.
+%%           The logger is only registered locally (on the current
+%%           node)
+%% Returns : gen_server:start_link/4
+%%--------------------------------------------------------------------
 start_link(LogBase) when is_list(LogBase) ->
     gen_server:start_link({local, logger}, ?MODULE, [LogBase], []).
 
+
+%%--------------------------------------------------------------------
+%% Function: log(Level, Format)
+%%           Level     = normal | debug | error
+%%           Format    = string(), a io:format format string
+%% @equiv    log(Level, Format, [])
+%% Returns : ok
+%%--------------------------------------------------------------------
+log(Level, Format) when is_atom(Level), is_list(Format) ->
+    log(Level, Format, []).
 
 %%--------------------------------------------------------------------
 %% Function: log(Level, Format, Arguments)
@@ -126,9 +141,6 @@ start_link(LogBase) when is_list(LogBase) ->
 %% Descrip.: Log a log entry.
 %% Returns : ok
 %%--------------------------------------------------------------------
-log(Level, Format) when is_atom(Level), is_list(Format) ->
-    log(Level, Format, []).
-
 log(Level, Format, Arguments) when is_atom(Level), is_list(Format),
 				   is_list(Arguments) ->
     do_log(Level, Format, Arguments).
@@ -136,7 +148,7 @@ log(Level, Format, Arguments) when is_atom(Level), is_list(Format),
 %%--------------------------------------------------------------------
 %% Function: log_iolist(Level, IOlist)
 %%           Level  = normal | debug | error
-%%           IOlist = I/O list
+%%           IOlist = io_list()
 %% Descrip.: Log a log entry, without formatting the data in any way
 %%           (except adding the timestamp-pid-level prefix).
 %% Returns : ok
@@ -153,7 +165,8 @@ log_iolist(Level, IOlist) when is_atom(Level) ->
 %%           Msg = none | [] | term()
 %% Descrip.: Terminate the logger process. If Msg is term(), it will
 %%           be sent to the log before quitting "log(normal, Msg)".
-%% Returns : ok | {error, "logger error"}
+%% Returns : ok | {error, Reason}
+%%           Reason = string()
 %%--------------------------------------------------------------------
 quit(Msg) ->
     case Msg of
@@ -173,13 +186,13 @@ quit(Msg) ->
 
 %%--------------------------------------------------------------------
 %% Function: enable(Which)
-%%           Which = atom() | list() of atom() (valid ones:
-%%                   all, debug, normal, error, console)
+%%           Which = Id | list() of Id
+%%           Id    = all | debug | normal | error | console
 %% Descrip.: Enables logging on one or more outputs.
 %% Returns : {ok, Status}    |
 %%           {error, Reason}
 %%           Status    = list() of {Output, Enabled}
-%%             Output  = atom(), debug | normal | error | console
+%%             Output  = debug | normal | error | console
 %%             Enabled = bool()
 %%           Reason    = term() 
 %%--------------------------------------------------------------------
@@ -190,13 +203,13 @@ enable(Which) when is_atom(Which) ->
 
 %%--------------------------------------------------------------------
 %% Function: disable(Which)
-%%           Which = atom() | list() of atom() (valid ones:
-%%                   all, debug, normal, error, console)
+%%           Which = Id | list() of Id
+%%           Id    = all | debug | normal | error | console
 %% Descrip.: Disables logging on one or more outputs.
 %% Returns : {ok, Status}    |
 %%           {error, Reason}
 %%           Status    = list() of {Output, Enabled}
-%%             Output  = atom(), debug | normal | error | console
+%%             Output  = debug | normal | error | console
 %%             Enabled = bool()
 %%           Reason    = term() 
 %%--------------------------------------------------------------------
@@ -274,15 +287,8 @@ init([Basename]) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%%           Msg = {rotate_logs}               |
-%%                 {rotate_logs, Suffix}       |
-%%                 {rotate_logs, Suffix, Logs} |
-%%                 {quit}                           quit logger
-%%           Suffix = string(), log date suffix to use,
-%%                              default = current time
-%%           Logs = atom(), logs to update, default = all logs
-%% Descrip.: Handling call messages
+%% Function: handle_call({rotate_logs}, From, State)
+%% Descrip.: Rotate all logs with a default suffix.
 %% Returns : {reply, Reply, State}
 %%           Reply  = ok | {error, Reason}
 %%           Reason = string()
@@ -298,17 +304,50 @@ handle_call({rotate_logs}, _From, State) ->
     {Res, NewState} = rotate([debug, normal, error], Suffix, State),
     {reply, Res, NewState};
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({rotate_logs, Suffix}, From, State)
+%% Descrip.: Rotate all logs with a specific Suffix.
+%% @see      rotate/3.
+%% Returns : {reply, Reply, NewState}
+%%           Reply = ok | {error, Reason}
+%%           NewState = state record()
+%%--------------------------------------------------------------------
 handle_call({rotate_logs, Suffix}, _From, State) ->
     {Res, NewState} = rotate([debug, normal, error], Suffix, State),
     {reply, Res, NewState};
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({rotate_logs, Suffix, Logs}, From, State)
+%% Descrip.: Rotate the outputs indicated in Logs with a specific
+%%           Suffix.
+%% @see      rotate/3.
+%% Returns : {reply, Reply, NewState}
+%%           Reply = ok | {error, Reason}
+%%           NewState = state record()
+%%--------------------------------------------------------------------
 handle_call({rotate_logs, Suffix, Logs}, _From, State) when list(Logs) ->
     {Res, NewState} = rotate(Logs, Suffix, State),
     {reply, Res, NewState};
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({quit}, From, State)
+%% Descrip.: Stop the logger.
+%% Returns : {stop, normal, {ok}, State}
+%%--------------------------------------------------------------------
 handle_call({quit}, _From, State) ->
     {stop, normal, {ok}, State};
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({update_logger_status, Status}, From, State)
+%% Descrip.: Enable or disable different outputs.
+%% Returns : {reply, Reply, NewState}
+%%           Reply = {ok, Result} | {error, Reason}
+%%           Result = list() of {Level, Status}
+%%           Level  = debug | normal | error | console
+%%           Status = true | false
+%%           Reason = term()
+%%           NewState = state record()
+%%--------------------------------------------------------------------
 handle_call({update_logger_status, Status}, _From, State) when is_list(Status) ->
     case update_logger_status(Status, State) of
 	{ok, NewState} ->
@@ -322,6 +361,12 @@ handle_call({update_logger_status, Status}, _From, State) when is_list(Status) -
 	    {reply, {error, Reason}, State}
     end;
 
+%%--------------------------------------------------------------------
+%% Function: handle_call(Unknown, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {reply, {error, Reason}, State}
+%%           Reason = string()
+%%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Logger: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "unknown gen_server call in logger"}, State}.
@@ -336,8 +381,7 @@ handle_call(Unknown, _From, State) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%%           Msg   = {log, Level, Data}
+%% Function: handle_cast({log, Level, Data}, State)
 %%           Level = debug | normal | error
 %%           Data  = binary(), what we should write to the log file
 %% Descrip.: Write a log message to one or more of our log files (and
@@ -361,6 +405,11 @@ handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data); is_
     end,
     {noreply, State};
 
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Logger: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
@@ -400,8 +449,13 @@ handle_info(check_logfile_size, State) ->
 	    end
     end;
 
-handle_info(Info, State) ->
-    logger:log(error, "Logger: Received unknown signal :~n~p", [Info]),
+%%--------------------------------------------------------------------
+%% Function: handle_info(Unknown, State)
+%% Descrip.: Unknown info.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_info(Unknown, State) ->
+    logger:log(error, "Logger: Received unknown signal :~n~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -440,13 +494,12 @@ safe_open(Filename, Args) when is_list(Filename) ->
 
 %%--------------------------------------------------------------------
 %% Function: log_to_device(Enabled, IoDevice, Data)
-%%           log_to_stdout(Enabled, Data)
 %%           Enabled  = true | false
-%%           IoDevice = where to send io:format() output (a file
-%%                      descriptor)
+%%           IoDevice = term(), where to send io:format() output (a file
+%%                              descriptor)
 %%           Data     = binary()
-%% Descrip.: log a message
-%% Returns : -
+%% Descrip.: Log a message to an IO device (file).
+%% Returns : ok | term()
 %% Note    : catch is used to ensure that formating error in io:format
 %%           calls are logged - they may otherwise simply crash the
 %%           logger without feedback, if the logger is run without
@@ -457,6 +510,17 @@ log_to_device(false, _IoDevice, _Data) ->
 log_to_device(true, IoDevice, Data) ->
     file:write(IoDevice, Data).
 
+%%--------------------------------------------------------------------
+%% Function: log_to_stdout(Enabled, Data)
+%%           Enabled  = true | false
+%%           Data     = binary()
+%% Descrip.: Log a message to console.
+%% Returns : ok | term()
+%% Note    : catch is used to ensure that formating error in io:format
+%%           calls are logged - they may otherwise simply crash the
+%%           logger without feedback, if the logger is run without
+%%           a erlang shell to look at
+%%--------------------------------------------------------------------
 log_to_stdout(false, _Data) ->
     ok;
 log_to_stdout(true, Data) ->
@@ -488,9 +552,9 @@ create_filename_time_suffix() ->
 
 %%--------------------------------------------------------------------
 %% Function: needs_rotating(In, Size, State)
-%%           In    = list() of atom(), debug | normal | error
+%%           In    = [debug | normal | error]
 %%           Size  = integer(), max size before rotating
-%%           State = gen_server handle_xxx function state
+%%           State = state record()
 %% Descrip.: Check a list of log files to see if any of
 %%           them are larger than Size bytes. Return a list of all
 %%           'level' atoms whose logfiles exceeds the limit.

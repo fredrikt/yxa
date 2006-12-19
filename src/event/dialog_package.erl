@@ -42,6 +42,12 @@
 		       xml	%% string()
 		      }).
 
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+
+%% @type event_pkg() = string().
+%%           Event package string - "dialog" for this package.
 
 %%====================================================================
 %% Behaviour functions
@@ -52,22 +58,19 @@
 %% Function: init()
 %% Descrip.: YXA event packages export an init/0 function.
 %% Returns : none | {append, SupSpec}
-%%           SupSpec = OTP supervisor child specification. Extra
-%%                     processes this event package want the
+%%           SupSpec = term(), OTP supervisor child specification.
+%%                     Extra processes this event package want the
 %%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 init() ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: request("dialog", Request, YxaCtx, SIPuser)
-%%           Request  = request record(), the SUBSCRIBE request
-%%           Origin   = siporigin record()
-%%           LogStr   = string(), describes the request
-%%           LogTag   = string(), log prefix
-%%           THandler = term(), server transaction handler
-%%           Ctx      = event_ctx record(), context information for
-%%                      request.
+%% Function: request(PkgS::event_pkg(), Request, YxaCtx, SIPuser)
+%%           Request = request record(), the SUBSCRIBE request
+%%           YxaCtx  = yxa_ctx record()
+%%           Ctx     = event_ctx record(), context information for
+%%                     request.
 %% Descrip.: YXA event packages must export a request/7 function.
 %%           See the eventserver.erl module description for more
 %%           information about when this function is invoked.
@@ -127,8 +130,9 @@ request("dialog", _Request, YxaCtx, _Ctx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_allowed_subscribe("dialog", Num, Request, YxaCtx.
-%%                                SIPuser, PkgState)
+%% Function: is_allowed_subscribe(PkgS::event_pkg(), Num, Request,
+%%                                YxaCtx, SIPuser, Presentity,
+%%                                PkgState)
 %%           Num      = integer(), the number of subscribes we have
 %%                      received on this dialog, starts at 1
 %%           Request  = request record(), the SUBSCRIBE request
@@ -137,6 +141,7 @@ request("dialog", _Request, YxaCtx, _Ctx) ->
 %%                      originator is not not authenticated, and
 %%                      string() if the user is authenticated (empty
 %%                      string if user could not be authenticated)
+%%           Presentity = {user, User} | {address, Address} | undefined
 %%           PkgState = undefined | my_state record()
 %% Descrip.: YXA event packages must export an is_allowed_subscribe/8
 %%           function. This function is called when the event server
@@ -145,15 +150,14 @@ request("dialog", _Request, YxaCtx, _Ctx) ->
 %%           subscription should be accepted or not. It is also called
 %%           for every time the subscription is refreshed by the
 %%           subscriber.
-%% Returns : {error, need_auth} |       Request authentication
-%%           {ok, SubState, Status, Reason, ExtraHeaders,
-%%                NewPkgState}  |
+%% Returns : {error, need_auth} |
+%%           {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState}  |
 %%           {siperror, Status, Reason, ExtraHeaders}
 %%           SubState     = active | pending
 %%           Status       = integer(), SIP status code to respond with
 %%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, ValueList} to include in
-%%                          the response to the SUBSCRIBE
+%%           ExtraHeaders = list() of {Key, ValueList}, headers to
+%%                          include in the response to the SUBSCRIBE
 %%           Body         = binary() | list(), body of response
 %%           NewPkgState  = my_state record()
 %%--------------------------------------------------------------------
@@ -205,7 +209,7 @@ is_allowed_subscribe2(Request, SubState, Status, Reason, ExtraHeaders, PkgState)
 
 
 %%--------------------------------------------------------------------
-%% Function: notify_content("dialog", Presentity, LastAccept,
+%% Function: notify_content(PkgS::event_pkg(), Presentity, LastAccept,
 %%                          PkgState)
 %%           Presentity = {users, UserList} | {address, AddressStr}
 %%               UserList = list() of string(), SIP usernames
@@ -221,8 +225,8 @@ is_allowed_subscribe2(Request, SubState, Status, Reason, ExtraHeaders, PkgState)
 %% Returns : {ok, Body, ExtraHeaders, NewPkgState} |
 %%           {error, Reason}
 %%           Body         = io_list()
-%%           ExtraHeaders = list() of {Key, ValueList} to include in
-%%                          the NOTIFY request
+%%           ExtraHeaders = list() of {Key, ValueList}, headers
+%%                          to include in the NOTIFY request
 %%           Reason       = string() | atom()
 %%           NewPkgState  = my_state record()
 %%--------------------------------------------------------------------
@@ -255,7 +259,7 @@ notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgSt
 
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("dialog", Param)
+%% Function: package_parameters(PkgS::event_pkg(), Param)
 %%           Param = atom()
 %% Descrip.: YXA event packages must export a package_parameters/2
 %%           function. 'undefined' MUST be returned for all unknown
@@ -265,7 +269,7 @@ notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgSt
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("dialog", notification_rate_limit)
+%% Function: package_parameters(PkgS::event_pkg(), notification_rate_limit)
 %% Descrip.: The minimum amount of time that should pass between
 %%           NOTIFYs we send about this event packages events.
 %% Returns : MilliSeconds = integer()
@@ -275,7 +279,7 @@ package_parameters("dialog", notification_rate_limit) ->
     1000;  %% 1000 milliseconds, 1 second
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("dialog", request_methods)
+%% Function: package_parameters(PkgS::event_pkg(), request_methods)
 %% Descrip.: What SIP methods this event packages request/7 function
 %%           can handle.
 %% Returns : Methods = list() of string()
@@ -284,7 +288,7 @@ package_parameters("dialog", request_methods) ->
     ["PUBLISH"];
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("dialog",
+%% Function: package_parameters(PkgS::event_pkg(),
 %%                              subscribe_accept_content_types)
 %% Descrip.: What Content-Type encodings we should list as acceptable
 %%           in the SUBSCRIBEs we send.
@@ -298,7 +302,7 @@ package_parameters("dialog", _Param) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour("dialog", Param, Argument)
+%% Function: subscription_behaviour(PkgS::event_pkg(), Param, Argument)
 %%           Param = atom()
 %%           Argument = term(), depending on Param
 %% Descrip.: YXA event packages must export a sbuscription_behaviour/2
@@ -309,7 +313,7 @@ package_parameters("dialog", _Param) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour("dialog", bidirectional_subscribe,
+%% Function: subscription_behaviour(PkgS::event_pkg(), bidirectional_subscribe,
 %%                                  Request)
 %%           Request = request record()
 %% Descrip.: When we receive a SUBSCRIBE, should the subscription

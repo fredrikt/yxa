@@ -1,3 +1,13 @@
+%%%-------------------------------------------------------------------
+%%% File    : contact.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: Parsing and printing functions for SIP Contact headers.
+%%%           Also used for other headers containing the same sort of
+%%%           data : Record-Route, Route, Path for example.
+%%%
+%%% Created : 09 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
+
 %% A "quick and dirty" parser that should accept _most_ correct input
 %% (except for the absoluteURI rule and some odd cases) but which will
 %% also parse some malformed strings as if they where correctly
@@ -474,20 +484,25 @@ is_quoted(_Str) ->
 
 %%--------------------------------------------------------------------
 %% Function: print(Contact)
-%%           print(Contacts)
 %%           Contact = contact record()
-%%           Contacts = list() of contact record()
-%% Descrip.:
+%% Descrip.: Format a contact 
 %% Returns : string()
 %%--------------------------------------------------------------------
 print([]) ->
     "";
 
 print([Contact]) when is_record(Contact, contact) ->
-    contact:print(Contact);
+    print(Contact);
 
+%%--------------------------------------------------------------------
+%% Function: print(Contacts)
+%%           Contacts = list() of contact record()
+%% Descrip.: Format a list of contact records as a single string, with
+%%           commas separating the contacts.
+%% Returns : string()
+%%--------------------------------------------------------------------
 print([Contact | R]) when is_record(Contact, contact) ->
-    contact:print(Contact) ++ ", " ++ contact:print(R);
+    print(Contact) ++ ", " ++ print(R);
 
 %% print single contact record()
 print(Contact) when is_record(Contact, contact) ->
@@ -505,21 +520,39 @@ print(Contact) when is_record(Contact, contact) ->
     lists:flatten(DispName ++ SipURI ++ contact_param:to_string(ContactParams)).
 
 %%--------------------------------------------------------------------
-%% Function: new(DisplayName, SipURI, Params)
-%%           DisplayName = none | string()
-%%           SipURI = "*" | sipurl string() | sipurl record()
-%%           Params = list() of {Name, Val},
-%%           Name, Val = string()
-%% Descrip.: create a contact record(), should be used to ensure
-%%           proper handling of internal data
+%% Function: new(SipURI)
+%%           SipURI = sipurl record() | string()
+%% @equiv    new(none, SipURI, [])
 %% Returns : contact record()
 %%--------------------------------------------------------------------
 new(SipURI) when is_list(SipURI); is_record(SipURI, sipurl) ->
     new(none, SipURI, []).
 
-new(SipURI, Params) when is_list(SipURI); is_record(SipURI, sipurl), is_list(Params) ->
+%%--------------------------------------------------------------------
+%% Function: new(SipURI, Params)
+%%           SipURI = sipurl record() | string()
+%%           Params      = list() of {Name, Val}
+%%           Name        = string
+%%           Val         = string()
+%% @equiv    new(none, SipURI, Params)
+%% Returns : contact record()
+%%--------------------------------------------------------------------
+new(SipURI, Params) when (is_list(SipURI) orelse is_record(SipURI, sipurl)), is_list(Params) ->
     new(none, SipURI, Params).
 
+%%--------------------------------------------------------------------
+%% Function: new(DisplayName, SipURI, Params)
+%%           DisplayName = none | string()
+%%           SipURI      = sipurl record() | string()
+%%           Params      = list() of {Name, Val}
+%%           Name        = string
+%%           Val         = string()
+%% Descrip.: Create a contact record(), should be used to ensure
+%%           proper handling of internal data. Valid string values for
+%%           SipURI are "*" or a string that is parseable by
+%%           sipurl:parse/1.
+%% Returns : contact record()
+%%--------------------------------------------------------------------
 new(DisplayName, URL, Params) when is_record(URL, sipurl) ->
     new(DisplayName, sipurl:print(URL), Params);
 
@@ -538,9 +571,10 @@ new(DisplayName, UrlStr, Params) when is_list(DisplayName); DisplayName == none,
 
 %%--------------------------------------------------------------------
 %% Function: add_param(Contact, Key, Val)
-%%           Contact  = contact record()
-%%           Key, Val = string()
-%% Descrip.: add a contact-parameter entry
+%%           Contact = contact record()
+%%           Key     = string()
+%%           Val     = string()
+%% Descrip.: Add a contact-parameter entry
 %% Returns : contact record()
 %%--------------------------------------------------------------------
 add_param(Contact, Key, Val) ->
@@ -552,7 +586,7 @@ add_param(Contact, Key, Val) ->
 %% Function: rm_param(Contact, Key)
 %%           Contact = contact record()
 %%           Key     = string()
-%% Descrip.: remove a contact-parameter entry
+%% Descrip.: Remove a contact-parameter entry
 %% Returns : contact record()
 %%--------------------------------------------------------------------
 rm_param(Contact, Key) ->
@@ -564,19 +598,17 @@ rm_param(Contact, Key) ->
 %% Function: set_display_name(Contact, DispName)
 %%           Contact  = contact record()
 %%           DispName = none | string()
-%% Descrip.: change the display name of Contact
+%% Descrip.: Change the display name of Contact
 %% Returns : contact record()
 %%--------------------------------------------------------------------
 set_display_name(Contact, DispName) when is_record(Contact, contact), DispName == none; is_list(DispName) ->
     Contact#contact{display_name = DispName}.
 
 %%--------------------------------------------------------------------
-%% Function: set_urlstr(Contact, URLstr)
-%%           set_urlstr(Contact, URI)
+%% Function: set_urlstr(Contact, SipURL)
 %%           Contact = contact record()
-%%           URLstr  = string()
-%%           SipURL  = sipurl record()
-%% Descrip.: change the sipurl contained in Contact
+%%           SipURL  = sipurl record() | string()
+%% Descrip.: Change the sipurl contained in Contact
 %% Returns : contact record()
 %%--------------------------------------------------------------------
 set_urlstr(Contact, SipURL) when is_record(SipURL, sipurl) ->

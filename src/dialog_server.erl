@@ -86,8 +86,13 @@ init([]) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_call(Msg, _From, State) ->
-    logger:log(error, "Dialog server: Received unknown gen_server call : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_call(Unknown, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {noreply, State, ?TIMEOUT}
+%%--------------------------------------------------------------------
+handle_call(Unknown, _From, State) ->
+    logger:log(error, "Dialog server: Received unknown gen_server call : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
@@ -98,8 +103,13 @@ handle_call(Msg, _From, State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_cast(Msg, State) ->
-    logger:log(error, "Dialog server: Received unknown gen_server cast : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State, ?TIMEOUT}
+%%--------------------------------------------------------------------
+handle_cast(Unknown, State) ->
+    logger:log(error, "Dialog server: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 
@@ -109,6 +119,12 @@ handle_cast(Msg, State) ->
 %% Returns : {noreply, State}          |
 %%           {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
+%%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: handle_info(timeout, State)
+%% Descrip.: Check for expired dialogs.
+%% Returns : {noreply, State, ?TIMEOUT}
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     sipdialog:handle_expired_dialogs(?TIMEOUT div 1000),
@@ -147,6 +163,11 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end,
     {noreply, State, ?TIMEOUT};
 
+%%--------------------------------------------------------------------
+%% Function: handle_info(Unknown, State)
+%% Descrip.: Unknown info.
+%% Returns : {noreply, State, ?TIMEOUT}
+%%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Dialog server: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.

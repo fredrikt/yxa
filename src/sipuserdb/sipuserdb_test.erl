@@ -58,7 +58,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: init(Data)
-%%           Data = list() of user-address terms
+%%           Data = [#user{} | #address{}]
 %% Descrip.: Initialize a per-process test userdb. Accepts Data in the
 %%           same format as sipuserdb_file.
 %% Returns : ok | {error, Reason}
@@ -105,7 +105,7 @@ stop() ->
 %%           is started by the supervisor.
 %% Returns : Spec |
 %%           []
-%%           Spec = OTP supervisor child specification
+%%           Spec = term(), OTP supervisor child specification
 %%--------------------------------------------------------------------
 yxa_init() ->
     [].
@@ -155,7 +155,7 @@ get_users_for_address_of_record(Address) ->
 %% Descrip.: Iterate over a list of addresses of record, return
 %%           all users matching one or more of the addresses,
 %%           without duplicates.
-%% Returns : Users, list() of string()
+%% Returns : Users = list() of string()
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(In) ->
     get_users_for_addresses_of_record2(In, []).
@@ -177,7 +177,7 @@ get_users_for_addresses_of_record2([H | T], Res) ->
 %% Descrip.: Iterate over a list of users, return all their
 %%           addresses without duplicates by using the next
 %%           function, get_addresses_for_user/1.
-%% Returns : Addresses, list() of string()
+%% Returns : Addresses = list() of string()
 %%--------------------------------------------------------------------
 get_addresses_for_users(In) ->
     get_addresses_for_users2(In, []).
@@ -223,7 +223,7 @@ get_addresses_for_user(Username) ->
 %%           of these addresses. This is located in here since
 %%           user database backends can have their own way of
 %%           deriving addresses from a Request-URI.
-%% Returns : Usernames, list() of string()
+%% Returns : Usernames = list() of string()
 %%--------------------------------------------------------------------
 get_users_for_url(URL) when is_record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_file, URL),
@@ -391,9 +391,10 @@ get_user2(User, [H | T]) when is_record(H, user) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_addresses_using_user(Username)
-%%           User = string() or user record()
-%% Descrip.: Return all addresses for a username or a user record.
-%% Returns : Addresses, sorted list() of address record()
+%%           User = string() | user record()
+%% Descrip.: Return all addresses for a username or a user record,
+%%           sorted alphabetically.
+%% Returns : Addresses = list() of address record()
 %%--------------------------------------------------------------------
 get_addresses_using_user(Username) when is_list(Username) ->
     Addresses = get_addresses_using_user2(Username, fetch_addresses(), []),
@@ -421,7 +422,7 @@ get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address) ->
 %%           and return all address records in the userdb, fetched
 %%           from the persistent sipuserdb_file process, that matches
 %%           using URI address matching rules.
-%% Returns : Usernames, list() of string()
+%% Returns : Usernames = list() of string()
 %%--------------------------------------------------------------------
 get_users_using_address(Address) when is_list(Address) ->
     %% Check that Address is a parseable URL. It really does not have to
@@ -536,7 +537,7 @@ fetch_addresses() ->
 %%--------------------------------------------------------------------
 %% Function: test()
 %% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
     %% yxa_init()

@@ -1,23 +1,28 @@
-%% The follow DST policy is assumed for the test cases written:
-%%
-%% DST - Daylight Saving Time (EU countries): 
-%% * change to DST is done on last sunday of march
-%% * change back from DST is done on last sunday of october
-%% * change to DST: move clock forward e.g. 01:00 -> 02:00 (UTC time) 
-%% * back from DST: move clock back 2:00 -> 1:00 (in EU at 01:00 UTC
-%%   i.e. when DST adjusted wall clock time is = 02:00 + time-zone 
-%%   modifier)
-%%
-%% Test cases written that rely on this DST policy, print a 
-%% "WARNING: test assumes that local = EU" message.
-%% When the DST change is done differs from country to country (if
-%% DST is used at all) e.g the US changes based on the local time
-%% rather than a common UTC time point, which differs from the EU
-%% where all countries change at the same "real" time rather than the
-%% same wall clock time. 
-%%
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : interpret_time_test.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: Test cases for interpret_time.
+%%%
+%%% The follow DST policy is assumed for the test cases written:
+%%%
+%%% DST - Daylight Saving Time (EU countries): 
+%%% * change to DST is done on last sunday of march
+%%% * change back from DST is done on last sunday of october
+%%% * change to DST: move clock forward e.g. 01:00 -> 02:00 (UTC time) 
+%%% * back from DST: move clock back 2:00 -> 1:00 (in EU at 01:00 UTC
+%%%   i.e. when DST adjusted wall clock time is = 02:00 + time-zone 
+%%%   modifier)
+%%%
+%%% Test cases written that rely on this DST policy, print a 
+%%% "WARNING: test assumes that local = EU" message.
+%%% When the DST change is done differs from country to country (if
+%%% DST is used at all) e.g the US changes based on the local time
+%%% rather than a common UTC time point, which differs from the EU
+%%% where all countries change at the same "real" time rather than the
+%%% same wall clock time. 
+%%%
+%%% Created : 17 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(interpret_time_test).
 
 %%--------------------------------------------------------------------

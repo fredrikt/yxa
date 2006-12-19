@@ -206,8 +206,8 @@ refresh_pidf_user_etag(User, ETag, NewExpires, NewETag) when is_list(User) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_pidf_xml_for_user(User, AcceptL)
-%%           User   = {fake_offline, AddrStr} |
-%%                    string(), presentity username
+%%           User   = {fake_offline, AddrStr} | string(), presentity
+%%                    username
 %%             AddrStr = string(), presentity address string
 %%           Accept = list() of string(), content types the UA we are
 %%                    going to send the PIDF to accepts
@@ -291,15 +291,17 @@ get_pidf_xml_for_user(User, AcceptL) when is_list(User), is_list(AcceptL) ->
 %%           Type       = pidf | xpidf
 %%           Presentity = string(), "pres:" URL of presentity
 %%           User       = none | string(), presentity username
-%%           Tuples     = list() of string(), list of XML presence
-%%                        tuples (e.g. :
-%%                           "<tuple id=\"foo\">\n"
-%%                           "  <status>\n"
-%%                           "    <basic>open</basic>\n"
-%%                           "  </status>\n"
-%%                           "</tuple>\n"
+%%           Tuples     = list() of string()
 %% Descrip.: Merge a bunch of XML tuples into a PIDF document of the
-%%           requested type.
+%%           requested type. Tuples should be a list of XML presence
+%%           tuples, e.g. : [
+%%                         ```  "<tuple id=\"foo\">\n"
+%%                             "  <status>\n"
+%%                             "    <basic>open</basic>\n"
+%%                             "  </status>\n"
+%%                             "</tuple>\n"
+%%                         '''
+%%                          ]
 %% Returns : PIDF_XML = string(), PIDF document
 %%--------------------------------------------------------------------
 %%
@@ -458,7 +460,6 @@ delete_expired() ->
 
 %%--------------------------------------------------------------------
 %% Function: get_supported_content_types()
-%%           get_supported_content_types(set)
 %% Descrip.: Return a list of our supported content types as strings,
 %%           in the order of our preference (best first).
 %% Returns : list() of string()
@@ -466,6 +467,12 @@ delete_expired() ->
 get_supported_content_types() ->
     [E#pidf_type.name || E <- ?PIDF_TYPES].
 
+%%--------------------------------------------------------------------
+%% Function: get_supported_content_types(set)
+%% Descrip.: Return a list of the content types we allow a client to
+%%           PUBLISH/NOTIFY a PIDF document using.
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
 get_supported_content_types(set) ->
     %% We currently can't parse application/xpidf+xml, only output something that looks like it
     [E#pidf_type.name || E <- ?PIDF_TYPES] -- ["application/xpidf+xml"].
@@ -494,8 +501,9 @@ is_compatible_contenttype(PubOrSub, AcceptL) when is_atom(PubOrSub), is_list(Acc
 
 %%--------------------------------------------------------------------
 %% Function: content_type(ContentType)
-%%           ContentType = string() (must be lower cased)
-%% Descrip.: Turn Content-Type into atom representation.
+%%           ContentType = string(), must be lower cased
+%% Descrip.: Turn Content-Type into atom representation. ContentType
+%%           must be lower cased.
 %% Returns : Type = atom()
 %%--------------------------------------------------------------------
 content_type(Name) ->
@@ -536,7 +544,7 @@ get_best_accepted_content_type2([], _Accept) ->
 
 %%--------------------------------------------------------------------
 %% Function: parse_pidf_xml(ContentType, XML)
-%%           ContentType = string() ("application/pidf+xml" | ...)
+%%           ContentType = string(), ("application/pidf+xml" | ...)
 %%           XML         = string(), PIDF document
 %% Descrip.: Parse an XML document into our internal PIDF
 %%           representation (pidf_doc record()).
@@ -621,7 +629,7 @@ parse_pidf_xml2(XML) ->
 %%           Entity = string(), from presence entity attr in PIDFs
 %% Descrip.: Change sip: into pres: in presence entitys and normalize
 %%           some things people have gotten wrong at SIPits.
-%% Returns : Presentity = string() (starting with "pres:")
+%% Returns : Presentity = string()
 %%--------------------------------------------------------------------
 normalize_entity(Entity) ->
     Presentity1 =

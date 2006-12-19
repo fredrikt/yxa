@@ -1,6 +1,12 @@
-%%
-%%--------------------------------------------------------------------
-
+%%%--------------------------------------------------------------------
+%%% File    : database_forward.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: Access routines for a Mnesia table holding forwarding
+%%%           information for users. Only used at KTH, in
+%%%           'appserver' and maybe 'incomingproxy'.
+%%%
+%%% Created : 11 Sep 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%--------------------------------------------------------------------
 -module(database_forward).
 
 %%--------------------------------------------------------------------
@@ -15,9 +21,6 @@
 	 delete/1
 	]).
 
-%%--------------------------------------------------------------------
-%% Internal exports
-%%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
 %% Include files
@@ -26,13 +29,6 @@
 -include("siprecords.hrl").
 -include("sipproxy.hrl").
 
-%%--------------------------------------------------------------------
-%% Records
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
-%% Macros
-%%--------------------------------------------------------------------
 
 %%====================================================================
 %% External functions
@@ -41,14 +37,22 @@
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: create()
+%% Descrip.: Invoke create/1 with the list of servers indicated by
+%%           the configuration parameter 'databaseservers'.
+%% Returns : term(), result of mnesia:create_table/2.
 %%--------------------------------------------------------------------
 create() ->
-    create([node()]).
+    {ok, S} = yxa_config:get_env(databaseservers),
+    create(S).
 
-create(Servers) ->
+%%--------------------------------------------------------------------
+%% Function: create(Servers)
+%%           Servers = list() of atom(), list of nodes
+%% Descrip.: Create the table 'forward' on Servers.
+%% Returns : term(), result of mnesia:create_table/2.
+%%--------------------------------------------------------------------
+create(Servers) when is_list(Servers) ->
     mnesia:create_table(forward, [{attributes, record_info(fields, forward)},
 				  {disc_copies, Servers}
 				  %% key = number
@@ -62,9 +66,9 @@ create(Servers) ->
 %%           Timeout   = integer(), wait timeout - timeout for wait
 %%                       sipproxy_action placed after the call
 %%                       sipproxy_actions generated for Forwards
-%%           LocalRing = whether to ring on location database entrys
-%%                       at the same time as the forward destinations
-%%                       or not
+%%           LocalRing = bool(), whether to ring on location database
+%%                       entry at the same time as the forward
+%%                       destinations or not
 %% Descrip.: Store Forwards for Number.
 %% Returns : mnesia:transactions()
 %%--------------------------------------------------------------------

@@ -1,7 +1,12 @@
-%% A minimalistic autotest suite for YXA. Test granularity is on a
-%% module basis, rather than the prefered test cases basis.
-%%
-%%--------------------------------------------------------------------
+%%%-------------------------------------------------------------------
+%%% File    : autotest.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: A minimalistic autotest suite for YXA. Test granularity
+%%%           is on a module basis, rather than the prefered test
+%%%           cases basis.
+%%%
+%%% Created : 25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 
 -module(autotest).
 %%-compile(export_all).
@@ -24,13 +29,6 @@
 	 aggregate_coverage/1
 	]).
 
-%%--------------------------------------------------------------------
-%% Internal exports
-%%--------------------------------------------------------------------
--export([
-	 test_module2/2,
-	 fake_logger_loop/1
-	]).
 
 %%--------------------------------------------------------------------
 %% Include files
@@ -97,6 +95,7 @@
 		       sipuserdb_test,
 		       yxa_config,
 		       sippipe,
+		       socketlist,
 
 		       %% YXA applications
 		       incomingproxy,
@@ -112,25 +111,32 @@
 
 
 %%--------------------------------------------------------------------
+%% Function: run()
+%% @equiv    run([erl])
+%% Returns : ok | error
+%%--------------------------------------------------------------------
+run() ->
+    run([erl]).
+
+%%--------------------------------------------------------------------
 %% Function: run([Mode])
-%%           run()
 %%           Mode = erl | shell
 %% Descrip.: Test all modules listed in ModulesToAutoTest and print
 %%           the result. If Mode is 'shell' we end with halting the
 %%           erlang runtime system, with exit status 1 if any tests
 %%           fail and 0 if they are all successfull.
-%% Returns : -
+%% Returns : ok | error
 %%--------------------------------------------------------------------
-run() ->
-    run([erl]).
-
 run([Mode]) ->
     case erlang:whereis(logger) of
 	undefined ->
 	    io:format("Faking YXA runtime environment...~n"),
 	    %%mnesia:start(),
 	    %%directory:start_link(),
-	    Logger = spawn(?MODULE, fake_logger_loop, [false]),
+	    StartLogger = fun() ->
+				  fake_logger_loop(false)
+			  end,
+	    Logger = spawn(StartLogger),
 	    register(logger, Logger),
 
 	    {ok, _CfgPid} = yxa_config:start_link(incomingproxy),
@@ -224,24 +230,23 @@ run([Mode]) ->
 %%--------------------------------------------------------------------
 %% Function: test_module(Module)
 %%           Module = atom(), a module name
-%% Descrip.: test a single module
-%% Returns : ok | ERROR
+%% Descrip.: Test a single module. We do this by spawning a separate
+%%           process (to get a clean environment every time) that
+%%           invokes Module:test(). That function should return 'ok'
+%%           if all works as expected, and crash if it doesn't.
 %%
-%% The Module:test() function that must be supplied by the module
-%% Module:
-%%
-%% Function: test()
-%% Descrip.: test function for this module
-%% Returns : ok (if all works as expected) | throw() (if there is some
-%%           kind of error in the code or test code)
-%% Note    : each test in the test function should print a single line
-%%           "test: TestedFunction/Arity - TestNo_For_TestedFunction"
-%%           + "~n". It's mainly used to make it easier to find the
+%% Note    : each test in the test function should call
+%%           autotest:mark/2 which keeps track of in what part of the
+%%           test suite things fail, to make it easier to find the
 %%           failing sub test.
 %% Note    : individual subtest in test() should preferably be
 %%           independent of each other (test setup and execution
 %%           order) - both for readability and if more advanced
 %%           autotest systems are implemented
+%% Returns : ok | {Line, ModName, Error}
+%%           Line    = integer()
+%%           ModName = string(), module name
+%%           Error   = term()
 %%--------------------------------------------------------------------
 test_module(Module) ->
     io:format("~n"),
@@ -249,7 +254,11 @@ test_module(Module) ->
     io:format("----------------------------------------------------------------------~n"),
     %% run each module test in a new pid to avoid being affected by other tests (like
     %% having signals in the process mailbox, getting old timers firing upon us etc.)
-    TestPid = spawn_link(?MODULE, test_module2, [self(), Module]),
+    Me = self(),
+    TestFun = fun() ->
+		      test_module2(Me, Module)
+	      end,
+    TestPid = spawn_link(TestFun),
     receive
 	{test_result, TestPid, Res} ->
 	    case Res of
@@ -310,7 +319,7 @@ fail_on_leftover_messages(Res) when is_list(Res) ->
 %%           Mode = erl | shell
 %% Descrip.: Run our tests after cover-compiling the modules. Show
 %%           some numbers about the coverage ratio before exiting.
-%% Returns : -
+%% Returns : ok | error
 %%--------------------------------------------------------------------
 run_cover([Mode]) ->
     TestModules = get_test_modules(),
@@ -364,10 +373,11 @@ run_cover([Mode]) ->
 
 %%--------------------------------------------------------------------
 %% Function: fail(Fun)
-%%           Fun = fun()
+%%           Fun = function()
 %% Descrip.: test case support function, used to check if call Fun()
 %%           fails - as expected
-%% Returns : ok | throw() (if Fun did not generate a exception)
+%% Returns : ok |
+%%           throw({error, no_exception_thrown_by_test})
 %%--------------------------------------------------------------------
 fail(Fun) ->
     try Fun() of
@@ -376,10 +386,18 @@ fail(Fun) ->
 	_ -> ok %% catch user throw()
     end.
 
-
 %%--------------------------------------------------------------------
 %% Function: mark(Line, Msg)
-%%           mark(Line, Fmt, Args)
+%%           Line = integer() | undefined
+%%           Msg  = string()
+%% @equiv    mark(Line, Msg, [])
+%% Returns : ok
+%%--------------------------------------------------------------------
+mark(Line, Msg) ->
+    mark(Line, Msg, []).
+
+%%--------------------------------------------------------------------
+%% Function: mark(Line, Fmt, Args)
 %%           Line = integer() | undefined
 %%           Fmt  = string()
 %%           Args = list()
@@ -388,9 +406,6 @@ fail(Fun) ->
 %%           end result stage.
 %% Returns : ok
 %%--------------------------------------------------------------------
-mark(Line, Msg) ->
-    mark(Line, Msg, []).
-
 mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
     Name = io_lib:format(Fmt, Args),
     io:put_chars(["test: ", Name, "\n"]),
@@ -427,10 +442,9 @@ store_unit_test_result(Module, Key, Value) when is_atom(Module) ->
     put({autotest, Key}, Value).
 
 %%--------------------------------------------------------------------
-%% Function: store_unit_test_result(Module, Key, Value)
+%% Function: clear_unit_test_result(Module, Key)
 %%           Module = atom(), calling module (currently unused)
 %%           Key    = term()
-%%           Value  = term()
 %% Descrip.: Clear any stored value for this Key.
 %% Returns : term()
 %%--------------------------------------------------------------------
@@ -449,7 +463,8 @@ clear_unit_test_result(Module, Key) when is_atom(Module) ->
 %%           registers itself as 'logger'. This is needed when this
 %%           module is executed from a unix-shell, instead of from an
 %%           erlang prompt with an YXA application running.
-%% Returns : does not return.
+%%           NOTE : this function does not return.
+%% Returns : term(), does not return.
 %%--------------------------------------------------------------------
 fake_logger_loop(Enabled) ->
     receive
@@ -473,7 +488,9 @@ fake_logger_loop(Enabled) ->
 %% Returns : {ok, CoveredLines, TotalLines, ModuleStats}
 %%           CoveredLines = integer(), code lines covered in Modules
 %%           TotalLines   = integer(), total lines of code in Modules
-%%           ModuleStats  = list() of {Module, Percent} tuple()
+%%           ModuleStats  = list() of {Module, Percent}
+%%              Module    = atom()
+%%              Percent   = float()
 %%--------------------------------------------------------------------
 aggregate_coverage(Modules) ->
     aggregate_coverage2(Modules, 0, 0, []).

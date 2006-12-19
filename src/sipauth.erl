@@ -80,7 +80,15 @@ get_challenge() ->
 
 %%--------------------------------------------------------------------
 %% Function: get_response(Nonce, Method, URIstr, User, Password)
-%%           get_response(Nonce, Method, URIstr, User, Password,
+%% @equiv    get_response(Nonce, Method, URIstr, User, Password, realm())
+%% Returns : term()
+%%--------------------------------------------------------------------
+get_response(Nonce, Method, URIstr, User, Password) ->
+    Realm = realm(),
+    get_response(Nonce, Method, URIstr, User, Password, Realm).
+
+%%--------------------------------------------------------------------
+%% Function: get_response(Nonce, Method, URIstr, User, Password,
 %%                        Realm)
 %%           Nonce    = string()
 %%           Method   = string()
@@ -94,10 +102,6 @@ get_challenge() ->
 %%           none
 %%           Response = string()
 %%--------------------------------------------------------------------
-get_response(Nonce, Method, URIstr, User, Password) ->
-    Realm = realm(),
-    get_response(Nonce, Method, URIstr, User, Password, Realm).
-
 get_response(_Nonce, _Method, _URIstr, _User, nomatch, _Realm) ->
     %% Password is nomatch - return 'none'
     none;
@@ -109,7 +113,7 @@ get_response(Nonce, Method, URIstr, User, Password, Realm) ->
 %%--------------------------------------------------------------------
 %% Function: classify_number(Number, Regexps)
 %%           Number  = string() | none
-%%           Regexps = list() of {Regexp, Class} tuple()
+%%           Regexps = list() of {Regexp, Class}
 %%           Regexp  = string()
 %%           Class   = atom()
 %% Descrip.: Search a list of regexps until Number matches the Regexp
@@ -175,7 +179,7 @@ get_user_verified(Header, Method) ->
 %% Returns : false                 |
 %%           {stale, User}         |
 %%           {authenticated, User} |
-%%           throw()
+%%           throw({siperror, ...})
 %%           User = string(), SIP authentication username
 %% Notes   : XXX we should verify the URI too
 %%--------------------------------------------------------------------
@@ -200,7 +204,7 @@ get_user_verified_proxy(Header, Method) ->
 %% Returns : false                 |
 %%           {stale, User}         |
 %%           {authenticated, User} |
-%%           throw()
+%%           throw({siperror, ...})
 %%           User = string(), SIP authentication username
 %% Notes   : XXX we should verify the URI too
 %%--------------------------------------------------------------------
@@ -340,7 +344,7 @@ do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
 
 %%--------------------------------------------------------------------
 %% Function: parse_auth_filter_realm(In, Realm, Name)
-%%           In    = list() of string, auth header values
+%%           In    = list() of string(), auth header values
 %%           Realm = string(), this proxys realm
 %%           Name  = string(), description of header we are parsing
 %% Descrip.: Parse a number of auth-header values (auth headers are
@@ -542,7 +546,14 @@ add_credentials(digest, HeaderName, Method, URI, Header, User, Secret)
 %%--------------------------------------------------------------------
 %% Function: print_auth_response(AuthMethod, User, Realm, URIstr,
 %%                               Response, Nonce, Opaque, Algorithm)
-%%           All parameters are of type string()
+%%           AuthMethod = string()
+%%           User       = string()
+%%           Realm      = string()
+%%           URIstr     = string()
+%%           Response   = string()
+%%           Nonce      = string()
+%%           Opaque     = string()
+%%           Algorithm  = string()
 %% Descrip.: Construct a challenge response, given a bunch of in-
 %%           parameters.
 %% Returns : string()

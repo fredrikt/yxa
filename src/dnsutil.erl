@@ -73,7 +73,7 @@
 %% Returns : SRVList         |
 %%           {error, Reason}
 %%           SRVList = list() of sipdns_srv record()
-%%           Reason  = atom(), nxdomain | ...
+%%           Reason  = nxdomain | atom()
 %%--------------------------------------------------------------------
 siplookup([]) ->
     {error, invalid_domainname};
@@ -318,14 +318,14 @@ debugfriendly_srventry2([H|T], Res) when is_record(H, srventry) ->
 
 %%--------------------------------------------------------------------
 %% Function: combine_srvresults(In)
-%%           In = list() of srventry record() | {error, R} tuples
+%%           In = list() of srventry record() | {error, R}
 %% Descrip.: Walk through a list of srventry records or {error, R}
 %%           tuples and turn the srventry records into
 %%           {Proto, Host, Port} tuples.
 %% Returns : SRVList         |
 %%           {error, Reason}
 %%           SRVList = list() of sipdns_srv record()
-%%           Reason  = atom(), nxdomain | ...
+%%           Reason  = nxdomain | atom()
 %%--------------------------------------------------------------------
 combine_srvresults(In) ->
     combine_srvresults(In, [], []).
@@ -349,7 +349,7 @@ combine_srvresults([H | T], Res, Errors) when is_record(H, srventry) ->
 
 %%--------------------------------------------------------------------
 %% Function: sort_srvlist(In)
-%%           In = list() of srventry record() | {error, R} tuple()
+%%           In = list() of srventry record() | {error, R}
 %% Descrip.: Walk through a list of srventry records or {error, R}
 %%           tuples and sort them according to order and secondly by
 %%           weight. Sort errors last, but put nxdomain errors first
@@ -400,10 +400,11 @@ sortsrv({error, _}, {error, _}) ->
 
 %%--------------------------------------------------------------------
 %% Function: make_weight_proportional(In)
-%%           In = list() of srventry record() | {error, R} tuple()
+%%           In = list() of srventry record() | {error, R}
 %% Descrip.: First, separate out all entrys with the same priority.
 %%           Invoke order_proportional_weight once per priority.
-%% Returns : list() of ( srventry record() | {error, R} tuple() )
+%% Returns : list() of Res
+%%           Res = srventry record() | {error, R}
 %%--------------------------------------------------------------------
 make_weight_proportional(In) when is_list(In) ->
     make_weight_proportional2(In, undefined, [], []).
@@ -596,12 +597,12 @@ chooseenum([H | Rest], Type) when is_record(H, naptrrecord), H#naptrrecord.repla
 
 %%--------------------------------------------------------------------
 %% Function: sortenum(A, B)
-%%           A, B = naptrrecord record()
+%%           A = naptrrecord record()
+%%           B = naptrrecord record()
 %% Descrip.: lists:sort function for ENUM naptrrecord records. Return
 %%           true if A has lower order. If the order is the same,
 %%           return 'true' if A has the lowest preference.
-%% Returns : true  |
-%%           false
+%% Returns : true  | false
 %%--------------------------------------------------------------------
 sortenum(#naptrrecord{order=AOrder}, #naptrrecord{order=BOrder}) when AOrder < BOrder ->
     true;

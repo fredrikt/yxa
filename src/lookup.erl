@@ -113,17 +113,15 @@ lookupregexproute2(Input, Routes) ->
 %% Descrip.: The main 'give me a set of locations for one of our
 %%           users' function that incomingproxy uses, when it
 %%           determines that a request is for one of it's homedomains.
-%% Returns : {ok, Users, Res} |
-%%           nomatch              No such user
-%%           Users = list() of string() | none, usernames that matched
-%%                                              this URL
-%%           Res   = {proxy, URL}                    |
-%%                   {proxy, {with_path, URL, Path}} |
-%%                   {relay, URL}                    |
-%%                   {forward, URL}                  |
-%%                   {response, Status, Reason}      |
-%%                   none    - The user was found but has no locations
-%%                             registered
+%%           Returns 'nomatch' if no user was found, 'none' if the
+%%           user(s) associated with URL has no registered locations.
+%% Returns : {ok, Users, Res} | nomatch
+%%           Users  = list() of string() | none, usernames matching URL
+%%           Res    = {proxy, URL} | {proxy, {with_path, URL, Path}} | {relay, URL} | {forward, URL} | {response, Status, Reason} | none
+%%           URL    = sipurl record()
+%%           Path   = list() of string()
+%%           Status = integer(), SIP status code
+%%           Reason = string(), SIP reason phrase
 %%--------------------------------------------------------------------
 lookupuser(URL) when is_record(URL, sipurl) ->
     case local:is_gruu_url(URL) of
@@ -208,9 +206,9 @@ lookupuser_get_locations(Users, URL) ->
 	    lookupuser_multiple_locations(Locations, URL)
     end.
 
-%% Returns: {proxy, DstList}           |
-%%          {proxy, {with_path, Path}} |
-%%          {proxy, URL}               |
+%% Returns: {proxy, DstList}                |
+%%          {proxy, {with_path, URL, Path}} |
+%%          {proxy, URL}                    |
 %%          {response, Status, Reason}
 lookupuser_single_location(Location, URL) when is_record(Location, siplocationdb_e) ->
     %% A single location was found in the location database (after removing any unsuitable ones)
@@ -379,9 +377,7 @@ make_dstlist2([], _ThisNode, Res) ->
 %%           GRUU = string()
 %% Descrip.: Look up the 'best' contact of a GRUU.
 %% Returns : {ok, User, Res, Contact}
-%%           Res     = {proxy, URL}                    |
-%%                   = {proxy, {with_path, URL, Path}} |
-%%                     {response, Status, Reason}
+%%           Res     = {proxy, URL} | {proxy, {with_path, URL, Path}} | {response, Status, Reason}
 %%           User    = none | string(), SIP authentication user of GRUU
 %%           Contact = siplocationdb_e record(), used by outgoingproxy
 %%

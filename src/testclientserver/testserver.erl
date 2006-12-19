@@ -14,22 +14,24 @@
 %%--------------------------------------------------------------------
 
 
-%% Function: init/0
-%% Description: YXA applications must export an init/0 function.
-%% Returns: See XXX
+%%--------------------------------------------------------------------
+%% Function: init()
+%% Descrip.: YXA applications must export an init/0 function.
+%% Returns : term()
 %%--------------------------------------------------------------------
 init() ->
     database_call:create([node()]),
     #yxa_app_init{}.
 
 
+%%--------------------------------------------------------------------
 %% Function: request(Request, YxaCtx)
-%% Description: YXA applications must export a request/2 function.
-%% Returns: See XXX
+%% Descrip.: YXA applications must export a request/2 function.
+%% Returns : ok
 %%--------------------------------------------------------------------
 request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     THandler = YxaCtx#yxa_ctx.thandler,
-    LogTag = get_branch_from_handler(THandler),
+    LogTag = transactionlayer:get_branchbase_from_handler(THandler),
     case Request#request.method of
         "REGISTER" ->
             process_request(Request, LogTag);
@@ -45,15 +47,17 @@ request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa
 	_ ->
 	    logger:log(normal, "~s -- NOT IMPLEMENTED", [LogTag]),
 	    transactionlayer:send_response_handler(THandler, 501, "Not Implemented")
-    end.
+    end,
+    ok.
 
-%% Function: response/2
-%% Description: YXA applications must export a response/2 function.
-%% Returns: See XXX
+%%--------------------------------------------------------------------
+%% Function: response(Response, YxaCtx)
+%% Descrip.: YXA applications must export a response/2 function.
+%% Returns : ok
 %%--------------------------------------------------------------------
 response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     logger:log(normal, "~p ~p - dropping", [Response#response.status, Response#response.reason]),
-    true.
+    ok.
 
 
 %%--------------------------------------------------------------------
@@ -142,18 +146,6 @@ check_no_unsupported_extension(Header, LogTag) ->
 		       [LogTag, Require]),
 	    throw({siperror, 420, "Bad Extension", [{"Unsupported", Require}]})
     end.
-
-
-get_branch_from_handler(TH) ->
-    CallBranch = transactionlayer:get_branch_from_handler(TH),
-    case string:rstr(CallBranch, "-UAS") of
-	0 ->
-	    CallBranch;
-	Index when integer(Index) ->
-            BranchBase = string:substr(CallBranch, 1, Index - 1),
-	    BranchBase
-    end.
-
 
 localhostname(Hostname) ->
     LC = http_util:to_lower(Hostname),

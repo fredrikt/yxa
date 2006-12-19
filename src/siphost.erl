@@ -96,7 +96,8 @@ get_iplist() ->
 
 %%--------------------------------------------------------------------
 %% Function: get_ifaddrs(IfData)
-%%           IfList = list() of list(), list of interface data lists
+%%           IfList = list() of List
+%%           List   = list() of term(), interface data
 %% Descrip.: Get the addresses of all interfaces for which we have
 %%           been given data that have global addressses, and which
 %%           are 'up'.
@@ -122,7 +123,8 @@ get_ifaddrs([], Res) ->
 %%           If = list() of tuple(), result of inet:ifget/2
 %% Descrip.: Get IP address of an interface, unless the interface is
 %%           to be ignored.
-%% Returns : ignore | Address = string()
+%% Returns : ignore | Address
+%%           Address = string()
 %%--------------------------------------------------------------------
 get_ifaddrs2(IfData) when is_list(IfData) ->
     {value, {flags, Flags}} = lists:keysearch(flags, 1, IfData),
@@ -138,8 +140,9 @@ get_ifaddrs2(IfData) when is_list(IfData) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: usable_if(Flags)
+%% Function: usable_if(Flags, AddrT)
 %%           Flags = list() of atom()
+%%           AddrT = tuple() | none
 %% Descrip.: Interface must be up and not have an address known to
 %%           only work locally to be considered usable.
 %% Returns : true | false

@@ -41,35 +41,32 @@
 	]).
 
 %%--------------------------------------------------------------------
-%% Internal exports
+%% Types
 %%--------------------------------------------------------------------
 
-%%--------------------------------------------------------------------
-%% Include files
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
-%% Records
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
-%% Macros
-%%--------------------------------------------------------------------
+%% @type key_val_db() = [{Key, Val}].
+%%           Primitive format of 'internal' database.
 
 %%====================================================================
 %% External functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function:
-%%           KeyValList = list() of {Key, Val}
-%%           Key, Val = term()
-%% Descrip.:
-%% Returns :
+%% Function: new()
+%% Descrip.: Create a new key_val_db.
+%% Returns : key_val_db()
 %%--------------------------------------------------------------------
 new() ->
     [].
 
+%%--------------------------------------------------------------------
+%% Function: new(KeyValList)
+%%           KeyValList = [{Key, Val}]
+%%           Key        = term()
+%%           Val        = term()
+%% Descrip.: Create a new key_val_db with content.
+%% Returns : key_val_db()
+%%--------------------------------------------------------------------
 new(KeyValList) ->
     F = fun({Key, Val}, DB) ->
 		add(DB, Key, Val)
@@ -78,26 +75,37 @@ new(KeyValList) ->
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
+%% Function: to_key_val(DB)
+%%           DB = key_val_db()
+%% Descrip.: Turn one of our internal format databases into a list of
+%%           key-value tuples.
 %% Returns : KeyValList = list() of {Key, Val}
-%%           Key, Val = term()
+%%           Key = term()
+%%           Val = term()
 %%--------------------------------------------------------------------
 to_key_val(DB) ->
     DB.
 
 %%--------------------------------------------------------------------
-%% Function: add(DB, Key, Value)
-%%           add(DB, Key)
-%%           DB    =
+%% Function: add(DB, Key)
+%%           DB    = key_val_db()
 %%           Key   = term()
-%%           Value = term()
-%% Descrip.: add new entry to DB.
-%% Returns : DB | throw({error, duplicate_key})
+%% @equiv   add(DB, Key, none)
+%% Returns : DB
+%%           throw({error, duplicate_key})
 %%--------------------------------------------------------------------
 add(DB, Key) ->
     add3(DB, {Key, none}).
 
+%%--------------------------------------------------------------------
+%% Function: add(DB, Key, Value)
+%%           DB    = key_val_db()
+%%           Key   = term()
+%%           Value = term()
+%% Descrip.: Add new entry to DB.
+%% Returns : DB
+%%           throw({error, duplicate_key})
+%%--------------------------------------------------------------------
 add(DB, Key, Value) ->
     add3(DB, {Key, Value}).
 
@@ -110,9 +118,9 @@ add3([Pair1 | R], Pair2) ->
 
 %%--------------------------------------------------------------------
 %% Function: find(DB, Key)
-%%           DB  =
+%%           DB  = key_val_db()
 %%           Key = term()
-%% Descrip.: retrive the value of Key if it is contained in DB
+%% Descrip.: Retrive the value of Key if it is contained in DB.
 %% Returns : [term()] | []
 %%--------------------------------------------------------------------
 find(DB, Key) ->
@@ -125,38 +133,23 @@ find(DB, Key) ->
 
 %%--------------------------------------------------------------------
 %% Function: remove(DB, Key)
-%%           ContactParam = contact_param record()
-%%           Key          = term(), is treated as case insensitive
-%% Descrip.: find the Key-Val pair to remove from DB
-%% Returns :
+%%           DB  = key_val_db()
+%%           Key = term()
+%% Descrip.: Delete a Key-Val pair from DB.
+%% Returns : key_val_db()
 %%--------------------------------------------------------------------
 rm(DB, Key) ->
     lists:keydelete(Key, 1, DB).
 
 
-
-%%====================================================================
-%% Behaviour functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
-
-%%====================================================================
-%% Internal functions
-%%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%%--------------------------------------------------------------------
-
 %%====================================================================
 %% Test functions
 %%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
 test() ->
     ok.

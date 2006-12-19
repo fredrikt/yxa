@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config_check.erl
-%%% Author  : Fredrik <ft@barbar.it.su.se>
+%%% Author  : Fredrik Thulin <ft@it.su.se>
 %%% Descrip.: Checking and normalization of config.
 %%%
-%%% Created : 20 Jun 2005 by Fredrik <ft@barbar.it.su.se>
+%%% Created : 20 Jun 2005 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(yxa_config_check).
 
@@ -37,10 +37,10 @@
 %% Function: check_config(Cfg, AppModule, Mode)
 %%           Cfg       = yxa_cfg record()
 %%           AppModule = atom(), YXA application module
-%%           Mode      = soft | hard, are we checking config for a
-%%                       soft or hard reload?
+%%           Mode      = soft | hard
 %% Descrip.: Check Cfg and return a new yxa_cfg record with all the
-%%           values normalized, or an error.
+%%           values normalized, or an error. Mode is failure mode -
+%%           soft for config reloads and hard for initial startup.
 %% Returns : {ok, NewCfg} |
 %%           {error, Msg}
 %%           NewCfg = yxa_cfg record()
@@ -81,8 +81,9 @@ check_config(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModu
 %%           AppModule = atom(), YXA application module
 %% Descrip.: Start sanity checks of parameters in the background to
 %%           warn about things.
+%% NOTE    : Not yet implemented.
 %% Returns : {ok, Pid}
-%%           Pid = pid() of config checker started
+%%           Pid = pid(), config checker started
 %%--------------------------------------------------------------------
 start_bg_check(Cfg, AppModule) when is_record(Cfg, yxa_cfg), is_atom(AppModule) ->
     %% warn if detect_loops is not 'true'
@@ -148,7 +149,8 @@ replace_or_append([H | T], This, Seen) ->
 
 %%--------------------------------------------------------------------
 %% Function: cfg_entry_sort(A, B)
-%%           A = B = cfg_entry record()
+%%           A = cfg_entry record()
+%%           B = cfg_entry record()
 %% Descrip.: lists:sort/2 function for sorting a list of cfg_entry
 %%           records (sort on cfg_entry.key).
 %% Returns : NewEntrys = list() of cfg_entry record()
@@ -180,8 +182,8 @@ check_types(Cfg, Definitions) when is_record(Cfg, yxa_cfg), is_list(Definitions)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_types2(Entrys, Definitions)
-%%           Entrys      = list() of {Key, Value, Src} tuple()
+%% Function: check_types2(Entrys, Definitions, [])
+%%           Entrys      = list() of {Key, Value, Src}
 %%             Key       = atom()
 %%             Value     = term()
 %%             Src       = atom(), 'source module' of this entry
@@ -190,7 +192,7 @@ check_types(Cfg, Definitions) when is_record(Cfg, yxa_cfg), is_list(Definitions)
 %%           specification (found in Definitions).
 %% Returns : {ok, NewEntrys} |
 %%           {error, Msg}
-%%           NewEntrys = list() of {Key, NewValue, Src} tuple()
+%%           NewEntrys = list() of {Key, NewValue, Src}
 %%           Msg    = string()
 %%--------------------------------------------------------------------
 check_types2([{Key, Value, Src} | T], Definitions, Res) when is_atom(Key), is_atom(Src) ->
@@ -332,7 +334,7 @@ check_local_cfg_entry_type(Key, Value, Src) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: type_check(Key, Value, Def) ->
+%% Function: type_check(Key, Value, Def)
 %%           Key   = atom()
 %%           Value = term()
 %%           Def   = cfg_entry record()
@@ -371,12 +373,9 @@ type_check(Key, Value, #cfg_entry{list_of = true} = Def) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: type_check_elements(Values, Type, Def, []) ->
+%% Function: type_check_elements(Values, Type, Def, [])
 %%           Values = list() of term()
-%%           Type   = atom | integer | bool | term | string |
-%%                    regexp_rewrite | regexp_match | sipurl |
-%%                    sip_sipurl | sips_sipurl | tuple |
-%%                    {tuple, Arity}
+%%           Type   = atom | integer | bool | term | string | regexp_rewrite | regexp_match | sipurl | sip_sipurl | sips_sipurl | tuple | {tuple, Arity}
 %%            Arity = integer()
 %%           Def    = cfg_entry record()
 %% Descrip.: Check Values to make sure they match Type. The tests and

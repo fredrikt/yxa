@@ -45,7 +45,7 @@
 %% Returns : {ok, Subject, AltNames} |
 %%           {error, Reason}
 %%           Subject  = term(), ssl:peercert() subject data
-%%           AltNames = list of string(), subjectAltName:s in cert
+%%           AltNames = list() of string(), subjectAltName:s in cert
 %%           Reason   = string()
 %%--------------------------------------------------------------------
 get_ssl_peer_info(Socket, Proto, IP, Port) when is_atom(Proto), is_list(IP), is_integer(Port) ->
@@ -88,10 +88,10 @@ get_ssl_peer_info2(Proto, IP, Port, PeerCertRes) ->
 %%--------------------------------------------------------------------
 %% Function: is_acceptable_ssl_socket(Socket, Dir, Proto, Remote,
 %%                                    Names)
-%%           Socket = term() (sslsocket, NOT sipsocket)
+%%           Socket = term(), (sslsocket, NOT sipsocket)
 %%           Dir    = in | out
 %%           Proto  = tls | tcp
-%%           Remote = {IP, Port} tuple()
+%%           Remote = {IP, Port}
 %%             IP   = string()
 %%             Port = integer()
 %%           Names  = list() of string(), list of names for the
@@ -99,10 +99,9 @@ get_ssl_peer_info2(Proto, IP, Port, PeerCertRes) ->
 %%                    accept
 %% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
 %%           verify that the subjectAltName/CN is included in Names.
-%% Returns : true
-%%           false
+%% Returns : true | false
 %%--------------------------------------------------------------------
-is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls; Proto == tls6, is_list(Names) ->
+is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls orelse Proto == tls6, is_list(Names) ->
     {IP, Port} = Remote,
     case get_ssl_peer_info(Socket, Proto, IP, Port) of
 	{ok, Subject, AltNames} when is_record(Subject, ssl_conn_subject), is_list(AltNames) ->
@@ -152,7 +151,7 @@ is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls; P
 
 %%--------------------------------------------------------------------
 %% Function: decode_ssl_rdnseq(RdnSequence)
-%%           RdnSequence = term() ({rdnSequence, AttrList}). SSL
+%%           RdnSequence = term(), ({rdnSequence, AttrList}). SSL
 %%                         PKIX formatted data from a certificate
 %%                         parsed using ssl:peercert or
 %%                         ssl_pkix:decode_cert*.
@@ -221,7 +220,7 @@ decode_ssl_rdnseq2([], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_ssl_peer_info_subject(Cert)
-%%           Cert = 'Certificate' record, SSL PKIX parsed
+%%           Cert = 'Certificate' record(), SSL PKIX parsed
 %% Descrip.: Extracts subject information from an SSL PKIX certificate
 %% Returns : {ok, Subject} |
 %%           error
@@ -258,7 +257,7 @@ ssl_decoded_rdn_get(Key, L) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_ssl_peer_info_host_altnames(Cert)
-%%           Cert = 'Certificate' record, SSL PKIX parsed
+%%           Cert = 'Certificate' record(), SSL PKIX parsed
 %% Descrip.: Extracts subjectAltName's of type dNSName or iPAddress
 %%           from an SSL PKIX certificate.
 %% Returns : {ok, AltNames}

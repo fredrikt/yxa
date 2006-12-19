@@ -103,16 +103,22 @@
 %% External functions
 %%====================================================================
 
+start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accept, ExtraH,
+      EventSuffix, LogTag, Parent) ->
+    start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst,
+	  SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent, undefined).
+
 %%--------------------------------------------------------------------
 %% Function: start(PackageM, PackageS, Presenter, RequestURI, From,
-%%                 To, SInterval, Accept, ExtraH, EventSuffix, LogTag,
-%%                 Parent)
+%%                 To, Dst, SInterval, Accept, ExtraH, EventSuffix,
+%%                 LogTag, Parent, Presentity)
 %%           PackageM    = atom(), event package module
 %%           PackageS    = string(), event package name
 %%           Presenter   = {user, SIPuser} | {address, AddressStr}
 %%           RequestURI  = sipurl record(), where to send SUBSCRIBE
 %%           From        = undefined | contact record(), From: to use
 %%           To          = undefiend | contact record(), To: to use
+%%           Dst         = sipdst record(), where to send requests
 %%           SInterval   = integer(), SUBSCRIBE expire time in seconds
 %%           Accept      = list() of string(), Accept: header value
 %%           ExtraH      = list() of {Key, ValueL}, extra headers to
@@ -121,13 +127,10 @@
 %%                         this suffix
 %%           LogTag      = string(), log prefix
 %%           Parent      = pid()
+%%           Presentity  = undefined | {user, User} | {address, Address}
 %% Descrip.: Starts the active_subscriber gen_server.
 %% Returns : Pid = pid()
 %%--------------------------------------------------------------------
-start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent) ->
-      start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst,
-	    SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent, undefined).
-
 start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accept, ExtraH, EventSuffix, LogTag, Parent,
       Presentity)
   when is_list(PackageS), is_tuple(Presenter), is_record(RequestURI, sipurl),
@@ -151,12 +154,29 @@ start(PackageM, PackageS, Presenter, RequestURI, From, To, Dst, SInterval, Accep
 		    parent		= Parent
 		   },
 
-    gen_server:start(?MODULE, [State1, From, To, Dst], []).
+    gen_server:start(?MODULE, {State1, From, To, Dst}, []).
 
+%%--------------------------------------------------------------------
+%% Function: stop(Pid)
+%%           Pid = pid()
+%% Descrip.: Shuts down an active subscription.
+%% Returns : ok | {error, already_stopped}
+%%--------------------------------------------------------------------
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
 
+%%--------------------------------------------------------------------
+%% Function: shared_line(Resource, SIPuser, URI, Params)
+%%           Resource = string(), session identifier
+%%           SIPuser  = string(), username of presenter
+%%           URI      = sipurl record(), other side
+%%           Params   = list() of {Key, Value}
+%%             Key    = term()
+%%             Value  = term()
+%% Descrip.: Initiates a shared line (bridged line appearance).
+%% Returns : term(), return value of start()
+%%--------------------------------------------------------------------
 shared_line(Resource, SIPuser, URI, Params) when is_list(Resource), is_record(URI, sipurl), is_list(Params) ->
     Contact = generate_contact_str(Resource),
     [ParsedContact] = contact:parse([Contact]),
@@ -213,6 +233,12 @@ shared_line(Resource, SIPuser, URI, Params) when is_list(Resource), is_record(UR
     start(dialog_package, "dialog", Presenter, URI, From, To, Dst, Interval, Accept,
 	  ExtraHeaders, ";sla;include-session-description", LogTag, self(), Presentity).
 
+%%--------------------------------------------------------------------
+%% Function: ft(Type)
+%%           Type = atom()
+%% Descrip.: Fredriks development testing code.
+%% Returns : term()
+%%--------------------------------------------------------------------
 ft(sipit) ->
     URI = sipurl:parse("sip:line225@132.177.126.87:5074"),
     From = undefined,
@@ -344,7 +370,7 @@ ft(e60) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([State1, From, To, Dst])
+%% Function: init({State1, From, To, Dst})
 %%           State1 = state record(), state in
 %%           From   = undefined | contact record(), From: to use
 %%           To     = undefiend | contact record(), To: to use
@@ -354,7 +380,7 @@ ft(e60) ->
 %%           ignore               |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([State1, From, To, Dst]) ->
+init({State1, From, To, Dst}) ->
     process_flag(trap_exit, true),
 
     BranchBase = siprequest:generate_branch(),
@@ -436,6 +462,14 @@ init([State1, From, To, Dst]) ->
 %%           {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Function: handle_call(stop, From, State)
+%% Descrip.: Shuts down the active subscription.
+%% Returns : {reply, Reply, NewState}
+%%           NewState = state record()
+%%           Reply    = ok | {error, already_stopped}
+%%--------------------------------------------------------------------
 handle_call(stop, _From, State) ->
     logger:log(debug, "Active subscriber: Extra debug: Requested to stop when in state '~p'", [State#state.mystate]),
     case State#state.mystate of
@@ -450,12 +484,25 @@ handle_call(stop, _From, State) ->
 	    {reply, {error, already_stopped}, State}
     end;
 
+%%--------------------------------------------------------------------
+%% Function: handle_call({set_interval, NewInterval}, From, State)
+%%           NewInterval = integer()
+%% Descrip.: Change the SUBSCRIBE refresh interval.
+%% Returns : {reply, Reply, NewState}
+%%           NewState = state record()
+%%           Reply    = ok
+%%--------------------------------------------------------------------
 handle_call({set_interval, NewInterval}, _From, State) when is_integer(NewInterval) ->
     %% XXX send a new SUBSCRIBE? Only do it if interval is decreased?
     {reply, ok, State#state{interval = NewInterval}};
 
-handle_call(Msg, _From, State) ->
-    logger:log(error, "Active subscriber: Received unknown gen_server call : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_call(Unknown, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_call(Unknown, _From, State) ->
+    logger:log(error, "Active subscriber: Received unknown gen_server call : ~p", [Unknown]),
     {noreply, State}.
 
 
@@ -539,7 +586,8 @@ handle_cast(Msg, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({branch_result, ...}, State)
+%% Function: handle_info({branch_result, FromPid, Branch, SipState,
+%%                        Response}, State)
 %% Descrip.: A NOTIFY client transaction we started resulted in a
 %%           response. Check if that response was a (received) 481 and
 %%           terminate if it was.
@@ -823,14 +871,12 @@ start_generate_request(URI, From, To, ExtraHeaders) when is_record(URI, sipurl),
 
 %%--------------------------------------------------------------------
 %% Function: generate_contact_str()
-%%           generate_contact_str(User)
-%%           User = string(), user part of contact URL produced
 %% Descrip.: Generate a Contact header value for our requests. The
 %%           registration as a dialog controller will get all requests
 %%           on the dialog sent to us, so the user part of the contact
 %%           is not important. We use the Erlang pid, without
-%%           "<" and ">".
-%% Returns : Contact = string(), SIP URL inside "<" and ">"
+%%           ``<'' and ``>''.
+%% Returns : Contact = string(), SIP URL within ``<'' and ``>''.
 %%--------------------------------------------------------------------
 generate_contact_str() ->
     PidStr = pid_to_list(self()),
@@ -843,6 +889,13 @@ generate_contact_str() ->
 	     ),
     generate_contact_str(User).
 
+%%--------------------------------------------------------------------
+%% Function: generate_contact_str(User)
+%%           User = string(), user part of contact URL produced
+%% Descrip.: Generate a Contact header value for our requests, with a
+%%           specific user-part.
+%% Returns : Contact = string(), SIP URL within ``<'' and ``>''.
+%%--------------------------------------------------------------------
 generate_contact_str(User) ->
     %% Figure out if we have to explicitly set the port number in the URL we create -
     %% we do like when we create Record-Route headers and always set it if it is not

@@ -1,4 +1,11 @@
-%% Functions to used to handle "duration" values in time-switch
+%%%-------------------------------------------------------------------
+%%% File    : ts_duration.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: Functions to used to handle "duration" values in
+%%%           time-switch
+%%%
+%%% Created : 21 Feb 2005 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 %%--------------------------------------------------------------------
 
 -module(ts_duration).
@@ -45,8 +52,7 @@
 
 %%--------------------------------------------------------------------
 %% Function: duration(TimeSwitchCond)
-%%           TimeSwitchCond = time_switch__cond_x record() 
-%%                            (x = 2|5|7|8)
+%%           TimeSwitchCond = time_switch__cond_2 record() | time_switch__cond_5 record() | time_switch__cond_7 record() | time_switch__cond_8 record()
 %% Descrip.: calculate duration based on time-switch parameters, if 
 %%           "duration" is not supplied, "dtstend - dtstart" is used
 %% Returns : duration record()
@@ -82,8 +88,7 @@ duration_to_seconds(Duration) when is_record(Duration, duration) ->
 
 %%--------------------------------------------------------------------
 %% Function: valid_duration(TimeSwitchCond)
-%%           TimeSwitchCond = time_switch__cond_x record() 
-%%                            (x = 2|5|7|8)
+%%           TimeSwitchCond = time_switch__cond_2 record() | time_switch__cond_5 record() | time_switch__cond_7 record() | time_switch__cond_8 record()
 %% Descrip.: determine if duration of a reoccurrence will always be 
 %%           short enough so that no overlap can occur between
 %%           reoccurrences 
@@ -419,6 +424,11 @@ sub_second(Duration) when is_record(Duration, duration) ->
 %% Test functions
 %%====================================================================
 
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
 test() ->
 
     test1(),

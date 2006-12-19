@@ -32,7 +32,7 @@
 	]).
 
 %%--------------------------------------------------------------------
-%% Internal exports - for sipsocket supervisor only
+%% Internal exports - for local.erl use only
 %%--------------------------------------------------------------------
 -export([lookup_sipsocket_blacklist/1
 	]).
@@ -100,19 +100,25 @@ start_link() ->
 %% External interface functions
 %%====================================================================
 
-
 %%--------------------------------------------------------------------
 %% Function: report_unreachable(SipDst, Msg)
-%%           report_unreachable(SipDst, Msg, RetryAfter)
 %%           SipDst     = sipdst record()
 %%           Msg        = string(), reason for blacklisting
-%%           RetryAfter = undefined | integer() (seconds)
+%% @equiv    report_unreachable(SipDst, Msg, undefined)
 %% Descrip.: Blacklist a destination.
 %% Returns : ok
 %%--------------------------------------------------------------------
 report_unreachable(SipDst, Msg) when is_record(SipDst, sipdst), is_list(Msg) ->
     report_unreachable(SipDst, Msg, undefined).
 
+%%--------------------------------------------------------------------
+%% Function: report_unreachable(SipDst, Msg, RetryAfter)
+%%           SipDst     = sipdst record()
+%%           Msg        = string(), reason for blacklisting
+%%           RetryAfter = undefined | integer(), seconds to blacklist
+%% Descrip.: Blacklist a destination.
+%% Returns : ok
+%%--------------------------------------------------------------------
 report_unreachable(SipDst, Msg, RetryAfter) when is_record(SipDst, sipdst), is_list(Msg), is_integer(RetryAfter);
                                                  RetryAfter == undefined ->
     case yxa_config:get_env(sipsocket_blacklisting) of
@@ -151,8 +157,9 @@ remove_blacklisting(SipDst, EtsRef) when is_record(SipDst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
+%% Function: is_blacklisted(SipDst)
+%%           SipDst = sipdst record()
+%% Descrip.: Check if a destination is currently blacklisted.
 %% Returns : true | false
 %%--------------------------------------------------------------------
 is_blacklisted(SipDst) when is_record(SipDst, sipdst) ->
@@ -166,9 +173,12 @@ is_blacklisted(SipDst) when is_record(SipDst, sipdst) ->
 
 %%--------------------------------------------------------------------
 %% Function: lookup_sipsocket_blacklist(Dst)
-%%           Dst = {Proto, Addr, Port} tuple
+%%           Dst   = {Proto, Addr, Port}, ets table lookup key
+%%           Proto = term()
+%%           Addr  = term()
+%%           Port  = term()
 %% Descrip.: Part of lookup_dst, unless 'local' had an opinion about
-%%           a destination.
+%%           a destination. NOTE: Not implemented yet.
 %% Returns : {ok, Entry}       |
 %%           {ok, whitelisted} |
 %%           {ok, blacklisted} |
@@ -181,6 +191,14 @@ lookup_sipsocket_blacklist({_Proto, _Addr, _Port} = _Dst) ->
 %%====================================================================
 %% External functions - for sipsocket supervisor only
 %%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: get_blacklist_name()
+%% Descrip.: Return the name of the blacklisting ets table. For use
+%%           from sipsocket supervisor only!
+%% Returns : EtsRef = term()
+%% @hidden
+%%--------------------------------------------------------------------
 get_blacklist_name() ->
     ?SIPSOCKET_BLACKLIST.
 
@@ -213,8 +231,13 @@ init([TableName]) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_call(Msg, _From, State) ->
-    logger:log(error, "Sipsocket blacklist: Received unknown gen_server call : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_call(Unknown, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {reply, {error, not_implemented}, State, ?TIMEOUT}
+%%--------------------------------------------------------------------
+handle_call(Unknown, _From, State) ->
+    logger:log(error, "Sipsocket blacklist: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, not_implemented}, State, ?TIMEOUT}.
 
 
@@ -226,8 +249,13 @@ handle_call(Msg, _From, State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_cast(Msg, State) ->
-    logger:log(error, "Sipsocket blacklist: Received unknown gen_server cast : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State, ?TIMEOUT}
+%%--------------------------------------------------------------------
+handle_cast(Unknown, State) ->
+    logger:log(error, "Sipsocket blacklist: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 
@@ -391,13 +419,10 @@ do_remove_blacklisting(SipDst, EtsRef) when is_record(SipDst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_blacklist_filter_dstlist(In, Now, ProbeDelay, EtsRef)
-%%           In         = list() of sipdst record()
+%% Function: do_blacklist_filter_dstlist(SipDst, Now, EtsRef)
+%%           SipDst     = sipdst record()
 %%           Now        = integer(), util:timestamp() notion of
 %%                        present time
-%%           ProbeDelay = integer(), after how many seconds do we
-%%                        start a probe when we notice a blacklisted
-%%                        hosts popularity?
 %%           EtsRef     = term(), ETS table reference
 %% Descrip.: Filter out all currently blacklisted destinations from a
 %%           list of sipdst records. Starts background probes where
@@ -493,8 +518,8 @@ lookup_dst({_Proto, _Addr, _Port} = Dst, EtsRef) ->
 
 %%--------------------------------------------------------------------
 %% Function: delete_expired_entrys(In, Now, EtsRef)
-%%           In    = list() of {Dst, Entry} tuple()
-%%                   Dst   = ETS table key ({proto, addr, port} tuple)
+%%           In    = list() of {Dst, Entry}
+%%                   Dst   = term(), lookup key ({Proto, Addr, Port})
 %%                   Entry = blacklist_entry record()
 %%           Now    = integer(), util:timestamp() value of present
 %%                    time

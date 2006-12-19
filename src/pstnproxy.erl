@@ -6,6 +6,7 @@
 %%%           authorized to make calls to different 'classes' of
 %%%           numbers (configured through regular expressions). Also
 %%%           perform ENUM lookups on requests _from_ the PSTN gw.
+%%%           See the README file for more information.
 %%%
 %%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%%-------------------------------------------------------------------
@@ -97,7 +98,7 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Mode)
-%%           Mode = atom(), shutdown | graceful | ...
+%%           Mode = shutdown | graceful | atom()
 %% Descrip.: YXA applications must export a terminate/1 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
@@ -148,7 +149,7 @@ terminate(Mode) when is_atom(Mode) ->
 %%           cation is not already provided. Gateways are excepted
 %%           from this, they are allowed to provide us with any name.
 %% Returns : {ok, PstnCtx} |
-%%           ignore          - caller should just exit
+%%           ignore
 %%           PstnCtx = pstn_ctx record()
 %%--------------------------------------------------------------------
 auth_and_tag(Request, YxaCtx) ->
@@ -222,7 +223,7 @@ auth_and_tag_get_cert(_Origin, _LogTag) ->
 %% Descrip.: Try to get a username for this request, and also check
 %%           to see if there are authentication information present.
 %% Returns : {ok, Stale, YXAPeerAuth, User}
-%%           Stale       = was the provided authentication
+%%           Stale       = bool(), was the provided authentication
 %%                         information stale? false if none provided.
 %%           YXAPeerAuth = bool(), user information vouched for by a
 %%                         peer of ours, through X-Yxa-Peer-Auth?
@@ -294,8 +295,8 @@ auth_and_tag_get_tags(Request, IsPeerAuth, PstnCtx) when is_record(Request, requ
 %%           This requires digest-authenticating a user, or determin-
 %%           ing that the request was received from one of our
 %%           gateways or was vouched for by a peer of ours.
-%% Returns : ignore |      drop request
-%%           ok            continue processing request
+%% Returns : ignore |      (drop request)
+%%           ok
 %%--------------------------------------------------------------------
 auth_and_tag_verify_from(Request, YxaCtx, PstnCtx) ->
     #yxa_ctx{thandler	= THandler,
@@ -502,14 +503,16 @@ number_based_routing(Request, YxaCtx, PstnCtx) ->
 %% Returns : void()
 %%--------------------------------------------------------------------
 
+%% @clear
 
 %%--------------------------------------------------------------------
 %% Function: perform_actions({response, Status, Reason, ExtraHeaders},
-%%                           ...)
+%%                           Request, YxaCtx, PstnCtx)
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, Value} tuples, extra
-%%                          headers to put in the response
+%%           ExtraHeaders = list() of {Key, Value}, extra headers to
+%%                          put in the response
+%%           YxaCtx       = yxa_ctx record()
 %% Descrip.: Send a response.
 %% Returns : void()
 %%--------------------------------------------------------------------
@@ -521,8 +524,11 @@ perform_actions([{response, Status, Reason, ExtraHeaders} | _], _Request, YxaCtx
     transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions({proxy, Dst}, ...)
-%%           Dst = sipurl record() | route
+%% Function: perform_actions({proxy, Dst}, Request, YxaCtx, PstnCtx)
+%%           Dst     = sipurl record() | route
+%%           Request = request record()
+%%           YxaCtx  = yxa_ctx record()
+%%           PstnCtx = pstn_ctx record()
 %% Descrip.: Proxy the request to a destination, if permitted.
 %% Returns : void()
 %%--------------------------------------------------------------------
@@ -643,8 +649,12 @@ perform_actions([], _Request, YxaCtx, _PstnCtx) ->
 %%           NewPstnCtx       = pstn_ctx record()
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(enum, ...)
+%% Function: perform_lookup(enum, Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
 %% Descrip.: Perform an ENUM lookup. ENUM resolves E.164 numbers
 %%           through DNS (RFC3761).
 %% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
@@ -688,7 +698,9 @@ perform_lookup(enum, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(sipproxy, ...)
+%% Function: perform_lookup(sipproxy, Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
 %% Descrip.: Look up our default SIP proxy.
 %% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
 %%           nomatch
@@ -714,7 +726,9 @@ perform_lookup(sipproxy, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(pstn, ...)
+%% Function: perform_lookup(pstn, Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
 %% Descrip.: Look for a PSTN destination based on the user part of the
 %%           Request-URI of our Request. Only works if the user part
 %%           can be turned into an E.164 number.
@@ -737,7 +751,9 @@ perform_lookup(pstn, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(not_e164, ...)
+%% Function: perform_lookup(not_e164, Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
 %% Descrip.: Look for a PSTN destination for a number that could not
 %%           be resolved into an E.164 number.
 %% Returns : {ok, Res, NewPstnCtx} |
@@ -762,7 +778,9 @@ perform_lookup(not_e164, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(default_pstngateway, ...)
+%% Function: perform_lookup(default_pstngateway, Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
 %% Descrip.: Look up our default PSTN gateway.
 %% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
 %%           nomatch
@@ -788,7 +806,9 @@ perform_lookup(default_pstngateway, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(local, ...)
+%% Function: perform_lookup(local, Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
 %% Descrip.: Call a local.erl hook.
 %% Returns : {ok, Action, NewPstnCtx} |
 %%           nomatch
@@ -978,7 +998,7 @@ is_pstngateway(Hostname) ->
 %% Descrip.: If configured to, add Remote-Party-Id information
 %%           about caller to this request before it is sent to a
 %%           PSTN gateway. Useful to get proper caller-id.
-%% Returns : NewHeader, keylist record()
+%% Returns : NewHeader = keylist record()
 %%--------------------------------------------------------------------
 add_caller_identity(pstn, "INVITE", Header, Dst, PstnCtx) when is_record(Dst, sipurl) ->
     case yxa_config:get_env(remote_party_id) of
@@ -1090,10 +1110,10 @@ is_tagged(Label, PstnCtx) when is_atom(Label), is_record(PstnCtx, pstn_ctx) ->
 %% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
 %%           Request = request record()
 %%           YxaCtx  = yxa_ctx record()
-%%           Dst     = term() (sipurl, route, sipdst, ...)
+%%           Dst     = list() of sipdst record() | route | sipurl record()
 %%           PstnCtx = pstn_ctx record(), context for this request
 %% Descrip.: Start a sippipe unless we are currently unit testing.
-%% Returns : term() = result of local:start_sippipe/4
+%% Returns : term(), result of local:start_sippipe/4
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get({?MODULE, testing_sippipe}) of

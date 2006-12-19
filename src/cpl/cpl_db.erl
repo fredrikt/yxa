@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : cpl_db.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Author  : HÃ¥kan Stenholm <hsten@it.su.se>
 %%% Descrip.: This module handles storage and loading of cpl scripts.
 %%%           to disk (and erlang shell).
 %%%
-%%% Created : 17 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% Created : 17 Dec 2004 by HÃ¥kan Stenholm <hsten@it.su.se>
 %%%-------------------------------------------------------------------
 -module(cpl_db).
 
@@ -54,29 +54,34 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function: create()
+%% Descrip.: Invoke create/1 with the list of servers indicated by
+%%           the configuration parameter 'databaseservers'.
+%% Returns : term(), result of mnesia:create_table/2.
 %%--------------------------------------------------------------------
 create() ->
-    create(servers()).
+    {ok, S} = yxa_config:get_env(databaseservers),
+    create(S).
 
+%%--------------------------------------------------------------------
+%% Function: create(Servers)
+%%           Servers = list() of atom(), list of nodes
+%% Descrip.: Put cpl_script_graph table as disc_copies on Servers
+%% Returns : term(), result of mnesia:create_table/2.
+%%--------------------------------------------------------------------
 create(Servers) ->
     mnesia:create_table(cpl_script_graph, [{attributes, record_info(fields, cpl_script_graph)},
 					   {disc_copies, Servers}
 					   %% type = set, mnesia default
 					  ]).
 
-servers() ->
-    {ok, S} = yxa_config:get_env(databaseservers),
-    S.
 
 %%--------------------------------------------------------------------
-%% Function: get_cpl_for_user(User) 
+%% Function: get_cpl_for_user(User)
 %% Descrip.: get the cpl script graph for a certain user
 %% Returns : nomatch | {ok, CPLGraph}
-%%           CPLGraph = a cpl graph for use in 
-%%           interpret_cpl:process_cpl_script(...)
+%%           CPLGraph = term(), a cpl graph for use in
+%%                              interpret_cpl:process_cpl_script(...)
 %%--------------------------------------------------------------------
 get_cpl_for_user(User) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
@@ -85,11 +90,11 @@ get_cpl_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_cpl_text_for_user(User) 
+%% Function: get_cpl_text_for_user(User)
 %% Descrip.: Get the CPL script for User as text.
 %% Returns : nomatch | {ok, CPLText}
-%%           CPLGraph = a cpl graph for use in 
-%%           interpret_cpl:process_cpl_script(...)
+%%           CPLGraph = term(), a cpl graph for use in
+%%                              interpret_cpl:process_cpl_script(...)
 %%--------------------------------------------------------------------
 get_cpl_text_for_user(User) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
@@ -98,10 +103,11 @@ get_cpl_text_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: load_cpl_for_user(User, FilePath) 
+%% Function: load_cpl_for_user(User, FilePath)
 %%           FilePath = string(), a full file path (no .|..|~)
 %% Descrip.: store the cpl script file at FilePath in mnesia
-%% Returns : -
+%% Returns : {atomic, Result}
+%%           Result = ok | term()
 %%--------------------------------------------------------------------
 load_cpl_for_user(User, FilePath) ->
     Str = load_file(FilePath),
@@ -109,11 +115,12 @@ load_cpl_for_user(User, FilePath) ->
     store_graph(User, Graph, Str).
 
 %%--------------------------------------------------------------------
-%% Function: set_cpl_for_user(User, CPLXML) 
+%% Function: set_cpl_for_user(User, CPLXML)
 %%           User   = string()
 %%           CPLXML = string(), CPL XML
 %% Descrip.: store the cpl script CPLXML in mnesia
-%% Returns : -
+%% Returns : {atomic, Result}
+%%           Result = ok | term()
 %%--------------------------------------------------------------------
 set_cpl_for_user(User, CPLXML) when is_list(User), is_list(CPLXML) ->
     Graph = xml_parse:cpl_script_to_graph(CPLXML),
@@ -131,7 +138,7 @@ store_graph(User, Graph, Text) ->
 %%--------------------------------------------------------------------
 %% Function: rm_cpl_for_user(User)
 %% Descrip.: remove the cpl script associated with user User
-%% Returns : -
+%% Returns : {atomic, ok} | term()
 %%--------------------------------------------------------------------
 rm_cpl_for_user(User) ->
     F = fun() ->
@@ -141,14 +148,13 @@ rm_cpl_for_user(User) ->
 
 %%--------------------------------------------------------------------
 %% Function: user_has_cpl_script(User)
-%%           user_has_cpl_script(User, Type)
-%%           Type = incoming | outgoing
-%% Descrip.: determine if a cpl script has been loaded for the user 
-%%           User. Type is used to determine if script can handle 
+%%           User = string(), username
+%% Descrip.: determine if a cpl script has been loaded for the user
+%%           User. Type is used to determine if script can handle
 %%           incoming or outgoing traffic - it may be able to do both
 %% Returns : true | false
 %%--------------------------------------------------------------------
-user_has_cpl_script(User) -> 
+user_has_cpl_script(User) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
 	[] ->
 	     false;
@@ -156,7 +162,16 @@ user_has_cpl_script(User) ->
 	    true
     end.
 
-user_has_cpl_script(User, Type) -> 
+%%--------------------------------------------------------------------
+%% Function: user_has_cpl_script(User, Type)
+%%           User = string(), username
+%%           Type = incoming | outgoing
+%% Descrip.: determine if a cpl script has been loaded for the user
+%%           User. Type is used to determine if script can handle
+%%           incoming or outgoing traffic - it may be able to do both
+%% Returns : true | false
+%%--------------------------------------------------------------------
+user_has_cpl_script(User, Type) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
 	[] ->
 	     false;
@@ -180,7 +195,7 @@ user_has_cpl_script(User, Type) ->
 %%           Mnesia table.
 %% Returns : {ok, Fun}
 %%--------------------------------------------------------------------
-get_transform_fun() ->	
+get_transform_fun() ->
     Table = cpl_script_graph,
     F = fun
 	    %% check for old cpl_script_graph lacking text element
@@ -214,10 +229,3 @@ load_file(FilePath) ->
 	{error, Reason} ->
 	    throw({error, Reason})
     end.
-
-%%====================================================================
-%% Test functions
-%%====================================================================
-
-
-

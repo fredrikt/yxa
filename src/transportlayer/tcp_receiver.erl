@@ -26,9 +26,12 @@
 %%%           {recv_sipmsg, R} - we have received a complete SIP
 %%%                              message and parsed it into a request
 %%%                              or response record()
+%%%
 %%%           {send_stun_response, Data} - request to send a STUN
 %%%                                        response packet to the peer
+%%%
 %%%           {close, self()}  - close the socket, please
+%%%
 %%%           {connection_closed, self()} - the other end has closed
 %%%                                         the socket
 %%%
@@ -468,8 +471,8 @@ handle_received_data2_stun(Frame, #recv{stun_env = StunEnv, frame = <<>>} = Recv
 %%           must parse the headers for that - to find the Content-
 %%           Length header). This function caches the parse results
 %%           in recv.parsed to avoid having to do that again later.
-%% Returns : NewRecv = recv record() |
-%%           throw(...)
+%% Returns : NewRecv = recv record()
+%%           throw({error, parse_failed, Reason::string()})
 %%--------------------------------------------------------------------
 init_frame(Frame, BodyOffset, Recv) when is_binary(Frame), is_integer(BodyOffset), is_record(Recv, recv) ->
     case catch sippacket:parse(Frame, none) of
@@ -574,8 +577,7 @@ has_header_body_separator2(Data, Offset) when is_binary(Data), is_integer(Offset
 
 %%--------------------------------------------------------------------
 %% Function: process_msg_stack(MsgList, Parent)
-%%           MsgList = list() of request record() or response record()
-%%                     or stun_result record()
+%%           MsgList = [#request{} | #response{} | #stun_result{}]
 %%           Parent  = term(), pid() or atom()
 %% Descrip.: Send received frames to parent (tcp_connection pid), and
 %%           respond to STUN requests.
@@ -600,8 +602,8 @@ process_msg_stack([], _Parent) ->
 %%           Type   = request | response
 %%           Header = keylist record()
 %% Descrip.: Get Content-Length and return it as an integer value.
-%% Returns : Length = integer() |
-%%           throw(...)
+%% Returns : Length = integer()
+%%           throw({error, Type, invalid_content_length, Header})
 %%--------------------------------------------------------------------
 get_content_length(Type, Header) ->
     case keylist:fetch('content-length', Header) of

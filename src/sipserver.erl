@@ -16,23 +16,13 @@
 	 start/2,
 	 stop/0,
 	 restart/0,
-	 process/3,
+	 process/2,
 
 	 %% XXX should move these to some utility module
-	 safe_spawn_fun/2,
 	 safe_spawn/3,
 	 origin2str/1,
 
 	 test/0
-	]).
-
-%%--------------------------------------------------------------------
-%% Internal exports
-%%--------------------------------------------------------------------
-
--export([
-	 safe_spawn_child_fun/2,
-	 safe_spawn_child/3
 	]).
 
 %%--------------------------------------------------------------------
@@ -60,10 +50,9 @@
 %%           function to make the sun go up, and tell it the name of
 %%           your YXA application (AppModule) to have the stack invoke
 %%           the correct init/0, request/3 and response/3 methods.
-%% Returns : {ok, Sup}              |
-%%           does not return at all
-%%           Sup = pid of the YXA OTP supervisor (module
-%%                 sipserver_sup)
+%% Returns : {ok, Pid}
+%%           Pid = pid(),  the YXA OTP supervisor
+%%                         (module sipserver_sup)
 %%--------------------------------------------------------------------
 start(normal, [AppModule]) ->
     %% First of all, we add a custom error_logger module. This is the only
@@ -111,8 +100,9 @@ start(normal, [AppModule]) ->
 
 %%--------------------------------------------------------------------
 %% Function: stop()
-%% Descrip.: Log and then shut down application.
-%% Returns : does not return
+%% Descrip.: Log and then shut down application. Shuts down the whole
+%%           Erlang virtual machine, so never really returns.
+%% Returns : term(), does not return
 %%--------------------------------------------------------------------
 stop() ->
     logger:log(normal, "Sipserver: shutting down"),
@@ -127,8 +117,9 @@ stop() ->
 
 %%--------------------------------------------------------------------
 %% Function: restart()
-%% Descrip.: Log and then restart application.
-%% Returns : does not return
+%% Descrip.: Log and then restart application. Will never really
+%%           return.
+%% Returns : term(), does not return
 %%--------------------------------------------------------------------
 restart() ->
     logger:log(normal, "Sipserver: restarting"),
@@ -141,7 +132,11 @@ restart() ->
 %% Descrip.: Initiate Mnesia on this node. If there are no remote
 %%           mnesia-tables, we conclude that we are a mnesia master
 %%           and check if any of the tables needs to be updated.
-%% Returns : ok | throw(...)
+%% Returns : ok |
+%%           throw(DescriptiveAtom)
+%%           DescriptiveAtom = atom(), reason converted to atom since
+%%                             atoms are displayed best when an
+%%                             application fails to start
 %%--------------------------------------------------------------------
 init_mnesia(none) ->
     init_mnesia_update();
@@ -230,11 +225,15 @@ get_remote_tables([], Res) ->
     {ok, Res}.
 
 %%--------------------------------------------------------------------
-%% Function: check_for_tables(Tables) ->
+%% Function: check_for_tables(Tables)
 %%           Tables = list() of atom(), list of table names
 %% Descrip.: Make sure the tables listed in Tables exist, otherwise
 %%           halt the Erlang runtime system.
-%% Returns : ok | doesn't return
+%% Returns : ok |
+%%           throw(DescriptiveAtom)
+%%           DescriptiveAtom = atom(), reason converted to atom since
+%%                             atoms are displayed best when an
+%%                             application fails to start
 %%--------------------------------------------------------------------
 check_for_tables([H | T]) ->
     %% check if table exists
@@ -253,20 +252,17 @@ check_for_tables([]) ->
 
 %%--------------------------------------------------------------------
 %% Function: find_mnesia_tables(Descr, Tables)
-%%           Descr  = "local" | "remote"
+%%           Descr  = string(), "local" or "remote"
 %%           Tables = list() of atom(), names of local/remote Mnesia
 %%                    tables needed by this YXA application.
 %% Descrip.: Do mnesia:wait_for_tables() for RemoteTables, with a
-%%           timeout since we (Stockholm university) have had
-%%           intermittent problems with mnesia startups. Try a mnesia
-%%           stop/start after 30 seconds, and stop trying by using
-%%           throw() after another 30 seconds.
-%% Returns : ok | does not return at all
-%%
-%% XXX are the problems asociated with the somewhat random startup
-%% order of the nodes/applications? mnesia:start() is asynchronous
-%% or is it the usage of ctrl-c to terminate node when debugging
-%% which mnesia might perceive as a network error? - hsten
+%%           timeout since Mnesia doesn't always start correctly due
+%%           to network issues, fast restarts or other reasons.
+%% Returns : ok |
+%%           throw(DescriptiveAtom)
+%%           DescriptiveAtom = atom(), reason converted to atom since
+%%                             atoms are displayed best when an
+%%                             application fails to start
 %%--------------------------------------------------------------------
 find_mnesia_tables(Descr, Tables) ->
     logger:log(debug, "Initializing ~s Mnesia tables ~p", [Descr, Tables]),
@@ -307,44 +303,18 @@ init_statistics() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: safe_spawn_fun(Module, Fun)
-%%           safe_spawn(Module, Function, Arguments)
-%%           Fun = fun() | {Module, Function}
-%%           Module, Function = atom() - names of module and function
-%%           Arguments = list(), arguments for Function and
-%%           Module:Function
-%% Descrip.: run Function or Module:Function with Arguments as
-%%           arguments, in a separate thread. Return true if no
-%%           exception occured.
-%% Returns : true  |
-%%           error
+%% Function: safe_spawn(Module, Function, Arguments)
+%%           Module    = atom()
+%%           Function  = atom()
+%%           Arguments = list()
+%% Descrip.: Run Module:Function(Arguments), in a separate process.
+%%           Log errors, but otherwise just ignore them. Relies on
+%%           Erlang process links elsewhere to 'fix' errors.
+%% Returns : Pid = pid(), spawned process pid
 %%--------------------------------------------------------------------
-safe_spawn_fun(Function, Arguments) ->
-    spawn(?MODULE, safe_spawn_child_fun, [Function, Arguments]).
-
 safe_spawn(Module, Function, Arguments) ->
-    spawn(?MODULE, safe_spawn_child, [Module, Function, Arguments]).
+    spawn(fun() -> safe_spawn_child(Module, Function, Arguments) end).
 
-
-%%
-safe_spawn_child_fun(Function, Arguments) ->
-    case catch apply(Function, Arguments) of
-	{'EXIT', E} ->
-	    logger:log(error, "=ERROR REPORT==== from ~p :~n~p", [Function, E]),
-	    error;
-	{siperror, Status, Reason} ->
-	    logger:log(error, "Spawned function ~p generated a SIP-error (ignoring) : ~p ~s",
-		       [Function, Status, Reason]),
-	    error;
-	{siperror, Status, Reason, _} ->
-	    logger:log(error, "Spawned function ~p generated a SIP-error (ignoring) : ~p ~s",
-		       [Function, Status, Reason]),
-	    error;
-	_ ->
-	    true1
-    end.
-
-%%
 safe_spawn_child(Module, Function, Arguments) ->
     try apply(Module, Function, Arguments) of
 	Res -> Res
@@ -425,11 +395,9 @@ internal_error(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
     my_send_result(Request, Socket, Status, Reason, ExtraHeaders).
 
 %%--------------------------------------------------------------------
-%% Function: process(Packet, Origin, Dst)
+%% Function: process(Packet, Origin)
 %%           Packet = string()
 %%           Origin = siporigin record()
-%%           Dst = transactionlayer | Module (always transactionlayer
-%%                                            in modern YXA)
 %% Descrip.: Check if something we received from a socket (Packet) is
 %%           a valid SIP request/response by calling parse_packet() on
 %%           it. Then, use my_apply to either send it on to the
@@ -438,12 +406,12 @@ internal_error(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
 %%           Dst.
 %% Returns : void(), does not matter.
 %%--------------------------------------------------------------------
-process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
+process(Packet, Origin) when is_record(Origin, siporigin) ->
     SipSocket = Origin#siporigin.sipsocket,
     case parse_packet(Packet, Origin) of
 	{ok, Request, YxaCtx} when is_record(Request, request) ->
 	    %% Ok, the parsing and checking of the request is done now
-	    try	my_apply(Dst, Request, YxaCtx) of
+	    try	my_apply(transactionlayer, Request, YxaCtx) of
 		_ -> true
 	    catch
 		error:
@@ -475,29 +443,28 @@ process(Packet, Origin, Dst) when is_record(Origin, siporigin) ->
 		    throw({error, application_failed_processing_request})
 	    end;
 	{ok, Response, YxaCtx} when is_record(Response, response) ->
-	    my_apply(Dst, Response, YxaCtx);
+	    my_apply(transactionlayer, Response, YxaCtx);
 	Unspecified ->
 	    Unspecified
     end.
 
 %%--------------------------------------------------------------------
 %% Function: my_apply(Dst, Request, YxaCtx)
-%%           Dst = transactionlayer | Module, Module is the name of a
-%%                 module that exports a request/2 and a response/2
-%%                 function
+%%           Dst     = transactionlayer | Module
+%%           Module  = atom(), YXA application module name
 %%           Request = request record()
 %%           YxaCtx  = yxa_ctx record()
 %% Descrip.: If Dst is transactionlayer, gen_server call the
 %%           transaction layer and let it decide our next action. If
 %%           Dst is the name of a module, apply() that modules
-%%           request/3 function.
+%%           request/2 or response/2 function.
 %% Returns : ignore      |
 %%           SIPerror    |
 %%           ApplyResult
 %%           SIPerror = {siperror, Status, Reason}
 %%             Status = integer()
 %%             Reason = string()
-%%           ApplyResult = result of applications request/3 or
+%%           ApplyResult = term(), result of applications request/3 or
 %%                         response/3 function.
 %%--------------------------------------------------------------------
 my_apply(transactionlayer, R, YxaCtx) when is_record(R, request) orelse is_record(R, response),
@@ -1071,7 +1038,7 @@ route_matches_me(Route) when is_record(Route, contact) ->
 %%           of CSeq and (unless configured not to) check for a
 %%           looping request.
 %% Returns : ok |
-%%           throw(), {sipparseerror, request, Header, Status, Reason}
+%%           throw({sipparseerror, request, Header, Status, Reason})
 %%--------------------------------------------------------------------
 %%
 %% Packet is request record()
@@ -1134,7 +1101,7 @@ check_packet(Response, Origin) when is_record(Response, response), is_record(Ori
 %% Descrip.: Inspect Header's Via: record(s) to make sure this is not
 %%           a looping request.
 %% Returns : ok |
-%%           throw(), {sipparseerror, request, Header, Status, Reason}
+%%           throw({sipparseerror, request, Header, Status, Reason})
 %%--------------------------------------------------------------------
 check_for_loop(Header, URI, Origin) when is_record(Origin, siporigin) ->
     LoopCookie = siprequest:get_loop_cookie(Header, URI, Origin#siporigin.proto),
@@ -1273,7 +1240,7 @@ url2str({unparseable, URLstr}) when is_list(URLstr) ->
 %% Descrip.: Check if the header Name (from Header) is parsable.
 %%           Currently we define parsable as parsable by
 %%           sipheader:from().
-%% Returns : ok | throw({sipparseerror, ...})
+%% Returns : ok | throw({sipparseerror, Type, Header, Status, Reason})
 %%--------------------------------------------------------------------
 sanity_check_contact(Type, Name, Header) when Type == request; Type == response; is_list(Name),
 					      is_record(Header, keylist) ->
@@ -1306,7 +1273,7 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
 %% Descrip.: Check if we supported the URI scheme of a request. If
 %%           we didn't support the URI scheme, sipurl:parse(...) will
 %%           have failed, and we just format the 416 error response.
-%% Returns : true | throw({sipparseerror, ...})
+%% Returns : true | throw({sipparseerror, Type, Header, Status, Reason})
 %%--------------------------------------------------------------------
 check_supported_uri_scheme({unparseable, URIstr}, Header) when is_list(URIstr), is_record(Header, keylist) ->
     case string:chr(URIstr, $:) of
@@ -1324,14 +1291,10 @@ check_supported_uri_scheme(URI, Header) when is_record(URI, sipurl), is_record(H
     true.
 
 %%--------------------------------------------------------------------
-%% Function: origin2str(Origin, Default)
-%%           origin2str(Origin)
-%%           Origin = siporigin record() | string()
+%% Function: origin2str(Origin)
+%%           Origin = siporigin record()
 %%           Default = term()
-%% Descrip.: Turn a siporigin record into a string. For backwards
-%%           compatibility, we have origin2str which accepts a default
-%%           value to return in case Origin is not a siporigin record.
-%%           Don't use it - it will go away.
+%% Descrip.: Turn a siporigin record into a string.
 %% Returns : OriginStr = string()
 %%--------------------------------------------------------------------
 origin2str(Origin) when is_record(Origin, siporigin) ->

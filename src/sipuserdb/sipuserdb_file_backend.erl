@@ -253,7 +253,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Function: read_userdb(State, MTime, Caller)
 %%           State  = state record()
 %%           MTime  = integer(), file modification time
-%%           Caller = atom(), who is calling us (init | cast | info)
+%%           Caller = init | cast | info
 %% Descrip.: (Re-)load the user database.
 %% Returns : State           |
 %%           {error, Reason}
@@ -286,8 +286,7 @@ read_userdb(State, MTime, Caller) when is_record(State, state) ->
 %% Function: read_userdb_error(E, State, Caller)
 %%           E      = string(), the error reason
 %%           State  = state record()
-%%           Caller = atom(), who we are formatting the error for
-%%                    (init | cast | info)
+%%           Caller = init | cast | info
 %% Descrip.: Create error return-value for read_userdb/3. Different
 %%           depending on who it is that called read_userdb/3 - for
 %%           'init' (startup), we have no good database in memory to
@@ -357,7 +356,6 @@ parse_db([TermList]) ->
 %%--------------------------------------------------------------------
 %% Function: parse_term(In, UserList, AddrList)
 %%           In       = list() of {user, Params} | {address, Params}
-%%                      record()
 %%           UserList = list() of user record()
 %%           AddrList = list() of addr record()
 %% Descrip.: Parse terms read from the userdb file.
@@ -409,9 +407,9 @@ parse_addresses(_Username, [], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: parse_user(Params, U, Addrs)
-%%           Params = list() of {Key, Value} tuple()
+%%           Params = list() of {Key, Value}
 %%           U      = user record()
-%%           Addrs  = list() of string() - just accumulator
+%%           Addrs  = list() of string(), just accumulator
 %% Descrip.: Parse a user entry.
 %% Returns : {ok, User, AddrList} |
 %%           {error, Reason}
@@ -444,7 +442,7 @@ parse_user([H | _T], U, _Addrs) when is_record(U, user) ->
 
 %%--------------------------------------------------------------------
 %% Function: parse_address(Params, A)
-%%           Params = list() of {Key, Value} tuple()
+%%           Params = list() of {Key, Value}
 %%           A      = address record()
 %% Descrip.: Parse an address entry.
 %% Returns : Address         |
@@ -559,7 +557,7 @@ get_no_user_addresses2(_Username, []) ->
 %%--------------------------------------------------------------------
 %% Function: test()
 %% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
 

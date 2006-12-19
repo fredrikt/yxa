@@ -1,12 +1,16 @@
-%% This module handles contact-params for a single contact header
-%% entry (sip/sips uri).
-%%
-%% Note: keys and values are currently stored as strings but pattern
-%% matching and list:keysearch will be faster if standard values are
-%% represented as atoms (but don't turn them all into atoms - as atoms
-%% aren't GCed)
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : contact.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: This module handles contact-params for a single contact
+%%%           header entry (sip/sips uri).
+%%%
+%%%           Note: keys and values are currently stored as strings
+%%%           but pattern matching and list:keysearch will be faster
+%%%           if standard values are represented as atoms (but don't
+%%%           turn them all into atoms - as atoms aren't GCed)
+%%%
+%%% Created : 09 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(contact_param).
 
 %%--------------------------------------------------------------------
@@ -55,14 +59,14 @@
 %%           Name = string(), treated as case insensitive
 %%           Val  = string() | none, treated as case insensitive
 %%                                   unless it starts with a quote
-%% Descrip.: convert a contact-parameter list to a normalized (a case
-%%           insensitive form) form
-%% Returns : contact_param record() |
-%%           throw({error, duplicate_key}) if Name
-%%           component is already present in Params
+%% Descrip.: Convert a contact-parameter list to a normalized (a case
+%%           insensitive form) form. Throws an error if Name component
+%%           is already present in Params.
+%% Returns : contact_param record()
+%%           throw({error, duplicate_key})
 %%--------------------------------------------------------------------
 to_norm(Params) when is_list(Params) ->
-    F = fun({Name, ValIn}) when is_list(Name), is_list(ValIn); ValIn == none ->
+    F = fun({Name, ValIn}) when is_list(Name), (is_list(ValIn) orelse ValIn == none) ->
 		Val =
 		    case ValIn of
 			none ->
@@ -83,7 +87,7 @@ to_norm(Params) when is_list(Params) ->
 %%--------------------------------------------------------------------
 %% Function: to_list(Norm)
 %%           Norm = contact_param record()
-%% Descrip.: returns a normalized form of the parameters
+%% Descrip.: Returns a normalized form of the parameters.
 %% Returns : list() of {Key, Val}
 %%           Key = string()
 %%           Val = string()
@@ -95,7 +99,7 @@ to_list(Norm) when is_record(Norm, contact_param) ->
 %%--------------------------------------------------------------------
 %% Function: to_string(Norm)
 %%           Norm = contact_param record()
-%% Descrip.: return a raw contact-parameter string
+%% Descrip.: Return a raw contact-parameter string.
 %% Returns : string(), in the ";name=val;..." format
 %%--------------------------------------------------------------------
 to_string(Norm) when is_record(Norm, contact_param) ->
@@ -115,8 +119,8 @@ format_param({Name, none}) when is_list(Name) ->
 %%                          update
 %%           Key          = string(), treated as case insensitive
 %%           Value        = string(), treated as case insensitive
-%% Descrip.: add new entry or replace old entry in contact_param. Key
-%%           and Value are stored in a case insensitive manner
+%% Descrip.: Add new entry or replace old entry in contact_param. Key
+%%           and Value are stored in a case insensitive manner.
 %% Returns : contact_param record()
 %%--------------------------------------------------------------------
 add(ContactParam, Key, Value) when is_record(ContactParam, contact_param), is_list(Key), is_list(Value) ->
@@ -125,8 +129,7 @@ add(ContactParam, Key, Value) when is_record(ContactParam, contact_param), is_li
     add2(ContactParam, {NKey, NValue}).
 
 add2(ContactParam, {Key, Value}) ->
-    L = ContactParam#contact_param.pairs,
-    #contact_param{ pairs = key_val_db:add(L, Key, Value)}.
+    L = ContactParam#contact_param.pairs,    #contact_param{ pairs = key_val_db:add(L, Key, Value)}.
 
 
 %%--------------------------------------------------------------------
@@ -134,8 +137,8 @@ add2(ContactParam, {Key, Value}) ->
 %%           ContactParam = contact_param record(), the record to
 %%                          update
 %%           Key          = string(), is treated as case insensitive
-%% Descrip.: retrieve the value of Key if it is present in
-%%           ContactParam
+%% Descrip.: Retrieve the value of Key if it is present in
+%%           ContactParam.
 %% Returns : [string()] | []
 %%--------------------------------------------------------------------
 find(ContactParam, Key) when is_record(ContactParam, contact_param), is_list(Key) ->
@@ -147,8 +150,8 @@ find(ContactParam, Key) when is_record(ContactParam, contact_param), is_list(Key
 %% Function: remove(ContactParam, Key)
 %%           ContactParam = contact_param record()
 %%           Key          = string(), is treated as case insensitive
-%% Descrip.: find the Key-Val pair to remove from ContactParam
-%% Returns : contact_param record
+%% Descrip.: Find the Key-Val pair to remove from ContactParam.
+%% Returns : contact_param record()
 %%--------------------------------------------------------------------
 remove(ContactParam, Key) ->
     Data = ContactParam#contact_param.pairs,
@@ -157,9 +160,9 @@ remove(ContactParam, Key) ->
     ContactParam#contact_param{pairs = Res}.
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: test()
 %% Descrip.: autotest callback
-%% Returns :
+%% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
     %% test to_norm(Params)

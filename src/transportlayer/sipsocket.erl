@@ -23,8 +23,6 @@
 	 viastr2proto/1,
 	 proto2viastr/1,
 
-	 proto2module/1,
-
 	 is_good_socket/1,
 	 is_reliable_transport/1,
 	 default_port/2,
@@ -56,8 +54,10 @@
 -define(SERVER, transportlayer).
 
 %%--------------------------------------------------------------------
-%% Records
+%% Types
 %%--------------------------------------------------------------------
+%% @type proto() = tcp | tcp6 | udp | udp6 | tls | tls6 | yxa_test | yxa_test6.
+%%	           Transport layer protocol.
 
 
 %%====================================================================
@@ -65,7 +65,7 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link/0
+%% Function: start_link()
 %% Descrip.: Starts the supervisor
 %%--------------------------------------------------------------------
 start_link() ->
@@ -131,7 +131,7 @@ init([]) ->
 %%--------------------------------------------------------------------
 %% Function: send(Socket, Proto, Host, Port, Message)
 %%           Socket  = sipsocket record()
-%%           Proto   = atom(), tcp|tcp6|udp|udp6|tls|tls6|...
+%%           Proto   = proto()
 %%           Host    = string()
 %%           Port    = integer()
 %%           Message = term(), I/O list to send
@@ -140,9 +140,7 @@ init([]) ->
 %%           Host, port Port using protocol Proto. Currently, none of
 %%           our sipsocket modules accept different protocol in the
 %%           Socket record() and Proto.
-%% Returns : Res
-%%           Res = term(), result of apply() but typically
-%%                         ok | {error, E}
+%% Returns : Res = ok | {error, E} | term()
 %%--------------------------------------------------------------------
 send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_atom(Proto),
 					      is_list(Host), is_integer(Port) ->
@@ -205,7 +203,7 @@ get_raw_socket(Socket) when is_record(Socket, sipsocket) ->
 %%           specific socket.
 %% Returns : {ok, Proto, Addr, Port} |
 %%           not_applicable
-%%           Proto = atom(), tcp | tcp6 | ...
+%%           Proto = proto()
 %%           Addr  = string(), IP/IPv6 address of peer
 %%           Port  = integer()
 %%--------------------------------------------------------------------
@@ -222,6 +220,12 @@ get_remote_peer(Socket) when is_record(Socket, sipsocket) ->
 is_reliable_transport(#sipsocket{module=Module} = Socket) ->
     Module:is_reliable_transport(Socket).
 
+%%--------------------------------------------------------------------
+%% Function: proto2module(Proto)
+%%           Proto = proto()
+%% Descrip.: Get the sipsocket module for Proto.
+%% Returns : Module = atom()
+%%--------------------------------------------------------------------
 proto2module(tcp)  -> sipsocket_tcp;
 proto2module(tcp6) -> sipsocket_tcp;
 proto2module(tls)  -> sipsocket_tcp;
@@ -231,8 +235,23 @@ proto2module(udp6) -> sipsocket_udp;
 proto2module(yxa_test)  -> sipsocket_test;
 proto2module(yxa_test6)  -> sipsocket_test.
 
+%%--------------------------------------------------------------------
+%% Function: proto2viastr(Socket)
+%%           Socket = sipsocket record()
+%% Descrip.: Get the Via string (e.g. "SIP/2.0/TCP") for a transport
+%%           layer protocol.
+%% Returns : ViaStr = string()
+%%--------------------------------------------------------------------
 proto2viastr(Socket) when is_record(Socket, sipsocket) ->
     proto2viastr(Socket#sipsocket.proto);
+
+%%--------------------------------------------------------------------
+%% Function: proto2viastr(Proto)
+%%           Proto = proto()
+%% Descrip.: Get the Via string (e.g. "SIP/2.0/TCP") for a transport
+%%           layer protocol.
+%% Returns : ViaStr = string()
+%%--------------------------------------------------------------------
 proto2viastr(tcp)  -> "SIP/2.0/TCP";
 proto2viastr(tcp6) -> "SIP/2.0/TCP";
 proto2viastr(tls)  -> "SIP/2.0/TLS";
@@ -242,11 +261,28 @@ proto2viastr(udp6) -> "SIP/2.0/UDP";
 proto2viastr(yxa_test) -> "SIP/2.0/YXA-TEST";
 proto2viastr(yxa_test6) -> "SIP/2.0/YXA-TEST".
 
+%%--------------------------------------------------------------------
+%% Function: viastr2proto(Str)
+%%           Str = string(), "SIP/2.0/TCP" or other
+%% Descrip.: Turn a SIP/2.0/TCP or similar string into an atom
+%%           corresponding to our internal representation of that
+%%           protocol.
+%% Returns : Proto = proto()
+%%--------------------------------------------------------------------
 viastr2proto("SIP/2.0/TCP") -> tcp;
 viastr2proto("SIP/2.0/TLS") -> tls;
 viastr2proto("SIP/2.0/UDP") -> udp;
 viastr2proto("SIP/2.0/YXA-TEST") -> yxa_test.
 
+%%--------------------------------------------------------------------
+%% Function: is_good_socket(Socket)
+%%           Socket = sipsocket record()
+%% Descrip.: Check if a socket is still potentially useable. Does not
+%%           guarantee that sending using the socket in question will
+%%           be successfull, but indicates if it is worth trying to
+%%           use the socket at all or not.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 is_good_socket(Socket) when is_record(Socket, sipsocket) ->
     case util:safe_is_process_alive(Socket#sipsocket.pid) of
 	{true, _} ->
@@ -259,7 +295,7 @@ is_good_socket(_) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_listenport(Proto)
-%%           Proto = atom(), tcp | tcp6 | tls | tls6 | udp | udp6
+%%           Proto = proto()
 %% Descrip.: Return the port we would listen on for a Proto,
 %%           regardless of if we in fact are listening on the port or
 %%           not.
@@ -307,7 +343,7 @@ get_all_listenports2([], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: add_listener_info(Proto, Addr, Port)
-%%           Proto = atom(), udp | udp6 | tcp | tcp6 | tls | tls6
+%%           Proto = proto()
 %%           Addr  = string(), listening IP address
 %%           Port  = integer()
 %% Descrip.: Add an entry to ETS table yxa_sipsocket_info and sweep it
@@ -343,8 +379,8 @@ add_listener_info(Proto, Addr, Port) when is_atom(Proto), is_list(Addr), is_inte
 
 %%--------------------------------------------------------------------
 %% Function: default_port(Proto, Port)
-%%           Proto = atom(), udp | udp6 | tcp | tcp6 | tls | tls6 |
-%%                   string(), "sip" | "sips"
+%%           Proto = proto() | ProtoStr
+%%           ProtoStr = string(), "sip" | "sips"
 %%           Port  = integer() | none
 %% Descrip.: Yucky function returning a "default port number" as an
 %%           integer, based on input Proto and Port.
@@ -368,7 +404,7 @@ default_port(_, Port) when is_integer(Port) ->
 %%--------------------------------------------------------------------
 %% Function: test()
 %% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% Returns : ok
 %%--------------------------------------------------------------------
 test() ->
 

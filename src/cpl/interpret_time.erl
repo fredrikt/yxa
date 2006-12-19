@@ -192,6 +192,14 @@
 %% Macros
 %%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+
+%% @time_spec() = integer() | {pseudo_usec, Time}.
+%%                  Time spec.
+
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -199,8 +207,8 @@
 
 %%--------------------------------------------------------------------
 %% Function: in_time_range(Timezone, TimeSwitchCond)
-%%           Timezone       =
-%%           TimeSwitchCond =
+%%           Timezone       = term()
+%%           TimeSwitchCond = term()
 %% Descrip.: determine if the time period specified by the 
 %%           TimeSwitchCond is currently occurring
 %% Returns : true | false
@@ -310,13 +318,13 @@ in_time_range(Timezone, TimeSwitchCond, Current, InTimeRangeFun) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_count_ranges_5(Timezone, TimeSwitchCond)
-%%           Timezone = currently unused
+%%           Timezone       = term(), currently unused
 %%           TimeSwitchCond = time_switch__cond_5 record()
 %% Descrip.: get all ranges specified by the "count" attribute in a 
 %%           "time-switch"
 %% Returns : list() of {Start, Stop}
-%%           Start, Stop = integer() (gregorian seconds) | 
-%%                         {pseudo_usec, Time}
+%%           Start = time_spec()
+%%           Stop  = time_spec()
 %%--------------------------------------------------------------------
 get_count_ranges_5(Timezone, TimeSwitchCond) when is_record(TimeSwitchCond, time_switch__cond_5) ->
     Start = time_switch:get_dtstart(TimeSwitchCond),
@@ -342,13 +350,13 @@ get_count_range_5(Timezone, Count, Iter, Start, Duration, TimeSwitchCond, Ranges
 
 %%--------------------------------------------------------------------
 %% Function: get_count_ranges_7(Timezone, TimeSwitchCond)
-%%           Timezone = currently unused
-%%           TimeSwitchCond = time_switch__cond_N record() (N = 7|8)
+%%           Timezone       = term(), currently unused
+%%           TimeSwitchCond = time_switch__cond_7 record() | time_switch__cond_8 record()
 %% Descrip.: get all ranges specified by the "count" attribute in a 
 %%           "time-switch"
 %% Returns : list() of {Start, Stop}
-%%           Start, Stop = integer() (gregorian seconds) | 
-%%                         {pseudo_usec, Time}
+%%           Start = time_spec()
+%%           Stop  = time_spec()
 %%--------------------------------------------------------------------
 get_count_ranges_7(Timezone, TimeSwitchCond) when is_record(TimeSwitchCond, time_switch__cond_7); 
 						  is_record(TimeSwitchCond, time_switch__cond_8) ->
@@ -373,13 +381,13 @@ generate_counts(TimeSwitchCond, TabId) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_count_ranges_8(Timezone, TimeSwitchCond)
-%%           Timezone = currently unused
+%%           Timezone       = term(), currently unused
 %%           TimeSwitchCond = time_switch__cond_8 record()
 %% Descrip.: get all ranges specified by the "count" attribute in a 
 %%           "time-switch"
 %% Returns : list() of {Start, Stop}
-%%           Start, Stop = integer() (gregorian seconds) | 
-%%                         {pseudo_usec, Time}
+%%           Start = time_spec()
+%%           Stop  = time_spec()
 %%--------------------------------------------------------------------
 get_count_ranges_8(Timezone, TimeSwitchCond) when is_record(TimeSwitchCond, time_switch__cond_8) ->
     get_count_ranges_7(Timezone, TimeSwitchCond).
@@ -536,10 +544,10 @@ is_bysetpos_usable(TimeSwitchCond) ->
 
 %%--------------------------------------------------------------------
 %% Function: is_current_time_valid_bysetpos(TimeSwitchCond, Current)
-%%           TimeSwitchCond = time_switch__cond_N record() (N = 8)
-%%           Current        = gregorian seconds (UTC), system utc time
-%%                            from functions like local_usec/0, which 
-%%                            will always be valid
+%%           TimeSwitchCond = time_switch__cond_7 record() | time_switch__cond_8 record()
+%%           Current        = integer(), gregorian seconds (UTC),
+%%                            system utc time from functions like
+%%                            local_usec/0, which will always be valid
 %% Descrip.: determine if Current is a time that is part of the 
 %%           [StartPoint, StartPoint + Duration] range where 
 %%           StartPoint is a start point selected by the "bysetpos" 
@@ -582,7 +590,7 @@ is_current_time_valid_bysetpos(TimeSwitchCond, Current) ->
 	    
 %%--------------------------------------------------------------------
 %% Function: is_start_time_valid_bysetpos(TimeSwitchCond, StartTime)
-%%           TimeSwitchCond = time_switch__cond_N record() (N = 8)
+%%           TimeSwitchCond = time_switch__cond_7 record() | time_switch__cond_8 record()
 %%           StartTime      = date_time record(), dates are assumed to
 %%                            be valid dates (start points)
 %% Descrip.: takes a start time generated by "count" preprocessing 
@@ -596,7 +604,7 @@ is_current_time_valid_bysetpos(TimeSwitchCond, Current) ->
 %%           bysetpos selects start points
 %% Note    : the handling of bysetpos for "count" preprocessing is 
 %%           currently O(N*S), N = number of counts, S = size of 
-%%           bysetpos set (=< 366)
+%%           bysetpos set (`=<' 366)
 %%--------------------------------------------------------------------
 is_start_time_valid_bysetpos(TimeSwitchCond, StartTime) ->
     case get_bysetpos(TimeSwitchCond, StartTime) of
@@ -613,7 +621,7 @@ is_start_time_valid_bysetpos(TimeSwitchCond, StartTime) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_bysetpos(TimeSwitchCond, Time)
-%%           TimeSwitchCond = time_switch__cond_N record() (N = 8)
+%%           TimeSwitchCond = time_switch__cond_8 record()
 %%           Time           = date_time record(), valid date is 
 %%                            assumed
 %% Descrip.: get all start points specified by "bysetpos" in certain
@@ -638,7 +646,7 @@ get_bysetpos(TimeSwitchCond, Time) ->
 %%--------------------------------------------------------------------
 %% Function: get_set(DT, TimeSwitchCond)
 %%           DT             = date_time record()
-%%           TimeSwitchCond = time_switch_cond_N (N = 7|8) 
+%%           TimeSwitchCond = time_switch__cond_7 record() | time_switch__cond_8 record()
 %% Descrip.: get the freq reoccurrence set of start points, this is 
 %%           achived by jumping into the middle of generate_counts/7
 %%           based on freq (supplied by TimeSwitchCond), DT determines
@@ -713,8 +721,9 @@ dt_to_partial_init(DT, secondly) ->
 %% Descrip.: get elemenet N in list L. N = 1 is the index of the first
 %%           element, N = 2 the second and so on. Negative indexes 
 %%           are count from the end rather than the front of L. 
-%% Returns : term() | '#not_found' (if N refers to position beyond 
-%%                                  the elemets in L) 
+%% Returns : term() | '#not_found'
+%%                   ('#not_found' if N refers to position beyond 
+%%                                  the elements in L) 
 %%--------------------------------------------------------------------
 nth(L,N) when N > 0 ->
     nth2(L,N);
@@ -738,22 +747,26 @@ nth2([_|List], N) ->
 %%--------------------------------------------------------------------
 %%--------------------------------------------------------------------
 %% Function: generate_counts(Level, LowestLevel, TimeSwitchCond, 
-%%                           ByParams, Year, MaxCount, TabId)
+%%                           ByParams, TimeYear, MaxCount, TabId)
 %%           Level          = atom(), the current byxxx / freq level, 
 %%           LowestLevel    = atom(), the lowest byxxx / freq level
 %%                            supplied in TimeSwitchCond - the level
 %%                            to stop the tree search at
-%%           TimeSwitchCond = time_switch__cond_N record() (N = 7|8)
-%%           ByParams       = by_values from TimeSwitchCond, stores 
+%%           TimeSwitchCond = time_switch__cond_7 record() | time_switch__cond_8 record()
+%%           ByParams       = term(), by_values from TimeSwitchCond, stores 
 %%                            the currently unprocessed ones 
-%%                            ones byxxx =< Level 
-%%           Time | Year    = date_time record(), partialy initiated
+%%                            ones byxxx less than or equal to Level 
+%%           TimeYear       = Time | Year
+%%           Time           = date_time record(), partialy initiated
 %%                            time value - a path through the search
 %%                            tree
-%%           MaxCount       = integer() (number of start points to
-%%                            retrieve from time dtstart) | 
-%%                            get_set (retrieve a search tree 
-%%                            branch - used by get_set/2) 
+%%           Year           = date_time record(), partialy initiated
+%%                            time value - a path through the search
+%%                            tree
+%%           MaxCount       = integer() | get_set, number of start
+%%                            points to retrieve from time dtstart)
+%%                            or get_set to retrieve a search tree 
+%%                            branch - used by get_set/2
 %%           TabId          = term(), from count_create/0 
 %% Descrip.: get the MaxCount first start point occurrences in 
 %%           TimeSwitchCond
@@ -1018,14 +1031,14 @@ count_filter(MatchFilter, Level, LowestLevel, TimeSwitchCond, ByParams, Time, Ma
 
 %%--------------------------------------------------------------------
 %% Function: valid_level_byparam(MatchFilter, CurrentLevelParams)
-%%           MatchFilter  = fun(ByParam), returns true | false
+%%           MatchFilter  = function(), fun(ByParam) - returns true | false
 %%                          test a certain value of a certain level
 %%                          against a single ByParam of the same level 
-%%               ByParam  = a time_switch__cond_N.by_values 
-%%                          element (N = 7|8) 
-%%           CurrentLevelParams = a list of ByParam, should be of the
-%%                          same level as the value tested by 
-%%                          MatchFilter  
+%%               ByParam  = term(), a time_switch__cond_N.by_values 
+%%                          element (where N is 7|8) 
+%%           CurrentLevelParams = [ByParam]
+%%                          should be of the same level as the value
+%%                          tested by MatchFilter  
 %% Descrip.: check that all (if any) byxxx values for a certain xxx
 %%           level match a start time candidate tested with 
 %%           MatchFilter
@@ -1118,9 +1131,9 @@ step_in_time(secondly, ST, Time) ->
 
 %%--------------------------------------------------------------------
 %% Function: full_step(Level, Diff, Interval)
-%%           Level    =
-%%           Diff     = distance to dtstart
-%%           Interval = 
+%%           Level    = weekly | term()
+%%           Diff     = integer(), distance to dtstart
+%%           Interval = integer()
 %% Descrip.: determine step length (in Level type units) to first 
 %%           possible occurence of a start point, after Diff amount 
 %%           of time after dtstart
@@ -1142,9 +1155,9 @@ full_step(_, Diff, Interval) ->
 
 %--------------------------------------------------------------------
 %% Function: get_diff(Level, DtStart, Time) 
-%%           Level   =
-%%           DtStart =
-%%           Time    = 
+%%           Level   = monthly | weekly | daily | hourly | minutely | secondly
+%%           DtStart = term()
+%%           Time    = date_time record()
 %% Descrip.: 
 %% Returns : {FirstTime, integer()}
 %%--------------------------------------------------------------------
@@ -1189,7 +1202,7 @@ get_diff(secondly, DtStart, Time) ->
 
 %%--------------------------------------------------------------------
 %% Function: add_steps(Level, DtStart, Steps) 
-%%           Level   = atom(), generator level in generate_counts(...)
+%%           Level   = monthly | weekly | daily | hourly | minutely | secondly
 %%           DtStart = date_time record()
 %%           Steps   = integer()
 %% Descrip.: add Level * Steps amount of time to dtstart 
@@ -1214,13 +1227,12 @@ add_steps(secondly, DtStart, Steps) ->
 
 %%--------------------------------------------------------------------
 %% Function: dtstart_based_time(Level, DtStart)
-%%           Level     = atom(), generator level in 
-%%                       generate_counts(...)
-%%           DtStart   = date_time record()
+%%           Level   = monthly | weekly | daily | hourly | minutely | secondly
+%%           DtStart = date_time record()
 %% Descrip.: return a partially initialized date-time value based on 
-%%           dtstart, where time fields (D,H,M,S) that are < than 
+%%           dtstart, where time fields (D,H,M,S) that are less than 
 %%           Level are left uninitialized (set to undefined)
-%% Returns : date_time record() (partially initialized)
+%% Returns : date_time record(), (partially initialized)
 %%--------------------------------------------------------------------
 dtstart_based_time(Level, DtStart) ->
     U = undefined,
@@ -1250,15 +1262,14 @@ dtstart_based_time(Level, DtStart) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_new_times(Level, TimeSwitchCond, Time)
-%%           Level          = atom(), generator level in 
-%%                            generate_counts(...)
-%%           TimeSwitchCond = time_switch__cond_N (N = 7|8)
+%%           Level   = monthly | weekly | daily | hourly | minutely | secondly
+%%           TimeSwitchCond = time_switch__cond_7 record() | time_switch__cond_8 record()
 %%           Time           = date_time record(), search tree position
 %%                            in generate_counts(...) 
 %% Descrip.: takes Time and creates N date_time records with an 
 %%           additional time unit (month, day, hour, minute or second) 
 %%           set. Level specifies this. 
-%% Returns : list() of date_time record() (partially initiated)
+%% Returns : list() of date_time record(), (partially initiated)
 %% Note    : get_new_times/3 is expected to be used to initialize time
 %%           units in order (month -> second) 
 %%--------------------------------------------------------------------
@@ -1362,6 +1373,9 @@ get_new_times(Level, TimeSwitchCond, Time) ->
 %%           {CountNo, DateTimeRec} pairs in a ets table
 %% Returns : ...
 %%--------------------------------------------------------------------
+
+%% @clear
+
 %% return: table id
 count_create() ->
     %% ets:new(count_res, [ordered_set, {keypos, 1}, protected]). %DDD
@@ -1479,9 +1493,8 @@ limited_df2(Fun, [Dest | RDests], MaxCount, TimeSwitchCond) ->
 %%--------------------------------------------------------------------
 %% Function: range_clip(DtStart, Times)
 %%           DtStart = date_time record()
-%%           Times   = list() of date_time record() (partialy 
-%%                     initiated)
-%%           Level   = current filter/generator level, used to 
+%%           Times   = list() of date_time record(), partialy initiated
+%%           Level   = atom(), current filter/generator level, used to 
 %%                     determine how much of the Times elements 
 %%                     date-time to use in checks against Start
 %% Descrip.: only keep elements in Times that are >= DtStart
@@ -1503,8 +1516,8 @@ range_clip(DtStart, Times) ->
 %%--------------------------------------------------------------------
 %% Function: count_time_range(Current, Timezone, TimeSwitchCond)
 %%           Current  = integer(), gregorian seconds in utc
-%%           Timezone = currently unused
-%%           TimeSwitchCond = time_switch__cond_N record() (N >= 5)
+%%           Timezone = term(), currently unused
+%%           TimeSwitchCond = term(), time_switch__cond_N record() (N >= 5)
 %% Descrip.: determine if Current falls inside any of the time ranges
 %%           in #time_switch__cond_N.time_ranges
 %% Returns : true | false
@@ -1520,7 +1533,7 @@ count_time_range(Current, _Timezone, TimeSwitchCond) ->
 
 %%--------------------------------------------------------------------
 %% Function: valid_range(Timezone, Start, Duration) 
-%%           Timezone = currently unused
+%%           Timezone = term(), currently unused
 %%           Start    = date_time record()
 %%           Duration = duration record()
 %% Descrip.: transform a date-time start point and duration to a 
@@ -1529,9 +1542,8 @@ count_time_range(Current, _Timezone, TimeSwitchCond) ->
 %%           [Start, Start + Duration] range (in floating time) is 
 %%           entirely inside a non-existing DST transition period 
 %% Returns : {Start, Stop} | no_range
-%%           Start, Stop = integer() (gregorian seconds) | 
-%%                         {pseudo_usec, Time}
-%%           Time        = integer(), gregorian seconds
+%%           Start = time_spec()
+%%           Stop  = time_spec()
 %% Note    : while RFC 3880 does not explicitly say what to do with
 %%           invalid dates, the _non-normative_ time-switch resolving
 %%           algorithm in RFC 3880, Appendix A, page 51-52, chooses to
@@ -1572,7 +1584,7 @@ valid_range(Timezone, Start, Duration) ->
 %%--------------------------------------------------------------------
 %% Function: in_time_range_5(Current, Timezone, TimeSwitchCond)
 %%           Current  = integer(), gregorian seconds in utc
-%%           Timezone = currently unused
+%%           Timezone = term(), currently unused
 %%           TimeSwitchCond = time_switch__cond_5 record()
 %% Descrip.: determine if current time Current, falls inside a time 
 %%           period specified by TimeSwitchCond 
@@ -1625,7 +1637,7 @@ gsec_to_datetime(GSec, Type, _Timezone) ->
 
 %%--------------------------------------------------------------------
 %% Function: add_freq_step(TimeSwitchCond, DateTime, Steps) 
-%%           TimeSwitchCond = time_switch__cond_N (N = 5 | 7 | 8)
+%%           TimeSwitchCond = time_switch__cond_5 record() | time_switch__cond_7 record() | time_switch__cond_8 record()
 %%           DateTime       = date_time record()
 %%           Steps          = integer()
 %% Descrip.: do DateTime + (Steps * Freq Interval in TimeSwitchCond)
@@ -1664,6 +1676,7 @@ add_freq_step(TimeSwitchCond, DateTime, Steps) ->
 %% 
 %% Setup: MacOSX 10.3.6 / Erlang/OTP R10B-1 
 %% Error:
+%% ```
 %% > catch calendar:local_time_to_universal_time_dst({{2004,3,28},{2,0,1}}).
 %% {'EXIT',{badarg,[{erlang,universaltime_to_localtime,
 %%                          [{{1969,12,31},{23,59,59}}]},
@@ -1672,8 +1685,8 @@ add_freq_step(TimeSwitchCond, DateTime, Steps) ->
 %%                  {erl_eval,expr,5},
 %%                  {shell,exprs,6},
 %%                  {shell,eval_loop,3}]}}
-%%
-%% Returns : as calendar:local_time_to_universal_time_dst(DateTime) 
+%% '''
+%% Returns : term(), as calendar:local_time_to_universal_time_dst(DateTime) 
 %%--------------------------------------------------------------------
 safe_local_time_to_universal_time_dst(LDateTime) ->
     try 
@@ -1728,12 +1741,12 @@ bound_leap_second({Date, {H,M,S}}) ->
 
 %%--------------------------------------------------------------------
 %% Function: in_usec_range(Start, End, Current)
-%%           Start, End = integer() | {pseudo_usec, Time}
-%%           Time, Current = integer(), time in UTC gregorian 
-%%           seconds
+%%           Start = time_spec()
+%%           End   = time_spec()
+%%           Current = integer(), time in UTC gregorian seconds
+%% Descrip.: determine if Start `=<' Current `=<' End
 %%           Start, End and Current are retrieved with local_usec/0 or
 %%           datetime_to_usec/2 (these functions MUST be used)
-%% Descrip.: determine if Start =< Current =< End
 %% Returns : true | false
 %%--------------------------------------------------------------------
 in_usec_range(Start, End, Current) ->
@@ -1751,10 +1764,10 @@ in_usec_range(Start, End, Current) ->
 
 %%--------------------------------------------------------------------
 %% Function: lt_usec(V1, V2)
-%%           V1, V2 = integer(), time in UTC gregorian 
-%%           seconds, returned by local_usec/0 or datetime_to_usec/2 
-%%           (these functions MUST be used)
-%% Descrip.: determine if V1 < V2
+%%           V1 = time_spec()
+%%           V2 = time_spec()
+%% Descrip.: determine if V1 `<' V2. local_usec/0 or datetime_to_usec/2
+%%           MUST be used to construct V1 and V2.
 %% Returns : true | false
 %%--------------------------------------------------------------------
 lt_usec(V1, V2) ->
@@ -1769,11 +1782,11 @@ lt_usec(V1, V2) ->
 
 %%--------------------------------------------------------------------
 %% Function: sort_byparam(ByParams)
-%%           ByParams = list() of byxxx elements (see 
+%%           ByParams = list() of term(), byxxx elements (see 
 %%                      #time_switch__cond_N.by_values)
 %% Descrip.: sort list of byxxx parameters in order as specified by 
 %%           RFC 3880 chapter 4.4 page 18
-%% Returns : list() of byxxx elements
+%% Returns : list() of term(), byxxx elements
 %%--------------------------------------------------------------------
 sort_byparam(ByParams) ->
     lists:sort(fun lt_byparam/2, ByParams).
@@ -1795,7 +1808,7 @@ lt_byparam(P1, P2) ->
 %%--------------------------------------------------------------------
 %% Function: in_time_range_7(Current, Timezone, TimeSwitchCond)
 %%           Current        = integer(), gregorian seconds in utc
-%%           Timezone       = currently unused
+%%           Timezone       = term(), currently unused
 %%           TimeSwitchCond = time_switch__cond_7 record()
 %% Descrip.: determine if current time Current, falls inside a time 
 %%           period specified by TimeSwitchCond 
@@ -1895,9 +1908,9 @@ in_time_range_7(Current, Timezone, TimeSwitchCond) ->
 %% * -Nth requires the occurrence set to be finite 
 %%--------------------------------------------------------------------
 
-%%
+%%--------------------------------------------------------------------
 %% Function: byxxx_match(TimeSwitchCond, CurrentDateTime)
-%%           TimeSwitchCond  = time_switch_cond_N (N >= 7)
+%%           TimeSwitchCond  = term(), time_switch_cond_N (N >= 7)
 %%           CurrentDateTime = date_time record()
 %% Descrip.: determine if CurrentDateTime is part of any of the 
 %%           intervals specified by the time-switch
@@ -1993,30 +2006,31 @@ rank_to_level(Rank) ->
 	1 -> bysecond
     end.
 
-%%--------------------------------------------------------------------
-%% Function: get_next_level(CurrentLevel, ByParams, TimeSwitchCond)
-%%           CurrentLevel = atom()
-%%           ByParams     = list() of {Level,Val}, ordered on Level, 
-%%                          contains all tuples where 
-%%                          Level =< CurrentLevel
-%%           TimeSwitchCond = time_switch__cond_n record() (n >= 7)
-%% Descrip.: get the next supplied level and it's ByParams where 
-%%           Level =< NextLevel
-%% Returns : {NextLevel, NextProcessLevel, NextLevelByParams}, 
-%%           NextLevel         = the next supplied level, this may be 
-%%                               either a filter or a generator 
-%%                               ("freq") 
-%%           NextProcessLevel  = next filter / generator not yet 
-%%                               processed in ByParams
-%%           NextLevelByParams = ByParams striped of the initial 
-%%                               elements that match CurrentLevel
-%% Note    : CurrentLevel must be > bysecond
-%%--------------------------------------------------------------------
 %% get next level 
 get_next_level(CurrentLevel) ->
     CRank = get_rank(CurrentLevel),
     rank_to_level(CRank - 1).
 
+%%--------------------------------------------------------------------
+%% Function: get_next_level(CurrentLevel, ByParams, TimeSwitchCond)
+%%           CurrentLevel = atom()
+%%           ByParams     = list() of {Level,Val}, ordered on Level, 
+%%                          contains all tuples where 
+%%                          Level less than or equal to CurrentLevel
+%%           TimeSwitchCond = term(), time_switch__cond_n record() (n >= 7)
+%% Descrip.: get the next supplied level and it's ByParams where 
+%%           Level `=<' NextLevel
+%% Returns : {NextLevel, NextProcessLevel, NextLevelByParams}
+%%           NextLevel         = term(), the next supplied level, this
+%%                               may be either a filter or a generator 
+%%                               ("freq") 
+%%           NextProcessLevel  = term(), next filter / generator
+%%                               not yet processed in ByParams
+%%           NextLevelByParams = term(), ByParams stripped of the 
+%%                               initial elements that match
+%%                               CurrentLevel
+%% Note    : CurrentLevel must be `>' bysecond
+%%--------------------------------------------------------------------
 get_next_level(CurrentLevel, ByParams, TimeSwitchCond) ->
     Res = case get_rank(CurrentLevel) > get_rank(bysecond) of
 	      false -> 
@@ -2050,14 +2064,15 @@ get_next_process_level(Level, ByParams, TimeSwitchCond) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_level_params(Level, ByParams)
-%%           Level    = the level of a ByParams elements {Level,Val}
-%%           ByParams = time_switch__cond_x.by_values 
-%%                      sorted on Level
+%%           Level    = term(), the level of a ByParams elements
+%%                                  {Level,Val}
+%%           ByParams = term(), time_switch__cond_x.by_values sorted
+%%                              on Level
 %% Descrip.: get the {Level, Val} entries from ByParam (the N first 
 %%           elements), also return the remaining lower level elements
 %% Returns : {LevelParams, LowerLevelParams}
-%%           LevelParams, LowerLevelParams = list() of {Level,Val} 
-%%           tuples
+%%           LevelParams      = list() of {Level, Val} 
+%%           LowerLevelParams = list() of {Level, Val} 
 %% Note    : Level must be the highest level in ByParams
 %%--------------------------------------------------------------------
 get_level_params(Level, ByParams) ->
@@ -2168,22 +2183,24 @@ is_reoccurrence(TimeSwitchCond, DateTime) ->
 %%--------------------------------------------------------------------
 %% Function: byxxx_match(Level, CurrentLevel, LowestLevel, StartTime, 
 %%                       ByParams, CurrentDateTime, TimeSwitchCond)
-%%           Level           = acts as a generator/filter index used
-%%                             to send the current call on to the next
-%%                             check (start with yearly)
-%%           NextLevel       = next byxxx / freq to process (set to
-%%                             next byxxx/freq still remaining)
-%%           LowestLevel     = the last filter/generator to process 
-%%           StartTime       = accumulator of date and time values,
-%%                             used as offset when applying dtstart
-%%                             modifiers when reaching LowestLevel
-%%                             where rang checking is needed 
-%%           ByParams        = the remaining unprocessed byxxx values
-%%                             ( must be sorted with 
+%%           Level           = term(), acts as a generator/filter
+%%                             index used to send the current call on
+%%                             to the next check (start with yearly)
+%%           NextLevel       = term(), next byxxx / freq to process
+%%                             (set to next byxxx/freq still remaining)
+%%           LowestLevel     = term(), the last filter/generator to
+%%                              process 
+%%           StartTime       = term(), accumulator of date and time
+%%                             values, used as offset when applying
+%%                             dtstart modifiers when reaching
+%%                             LowestLevel where rang checking is
+%%                             needed 
+%%           ByParams        = term(), the remaining unprocessed
+%%                             byxxx values ( must be sorted with 
 %%                               sort_byparam(ByParams) )
-%%           CurrentDateTime = the time to check against 
+%%           CurrentDateTime = term(), the time to check against 
 %%                             TimeSwitchCond
-%%           TimeSwitchCond  = a time_switch__cond_n (N >= 7) 
+%%           TimeSwitchCond  = term(), a time_switch__cond_n (N >= 7) 
 %%                             record()
 %% Descrip.: determine if CurrentDateTime is part of any time interval
 %%           defined by ByParams (from TimeSwitchCond)
@@ -2491,18 +2508,17 @@ add_dtstart_modifiers(StartTime, DtStart) when is_record(StartTime, date_time) -
 %%--------------------------------------------------------------------
 %% Function: create_startpoints(Start, Freq, TimeSwitchCond)
 %%           Start     = date_time record()
-%%           ByType    = yearly | monthly | weekly | daily | hourly |
-%%                       minutely | secondly
-%%           TimeSwitchCond = time_switch__cond_N (N >= 7)
+%%           ByType    = yearly | monthly | weekly | daily | hourly | minutely | secondly
+%%           TimeSwitchCond = term(), time_switch__cond_N (N >= 7)
 %% Descrip.: get the starting points in the range specified by Start 
 %%           according to Freq and interval in time-switch
 %% Returns : list() of date_time record()
 %% Note    : invalid dates may be created as well as date-time values 
 %%           beyond "until" - this should not be a problem as 
 %%           valid_range/3 in check_intervals/3 will handle the 
-%%           invalid dates and as "dtstart" =< current time =< "until"
-%%           is check previously in_time_range/4 there should be no 
-%%           chance for date-times beyond "until" to match
+%%           invalid dates and as "dtstart" `=<' current time `=<'
+%%           "until" is check previously in_time_range/4 there should
+%%           be no chance for date-times beyond "until" to match
 %%--------------------------------------------------------------------
 create_startpoints(Start, yearly, _TimeSwitchCond) ->
     [Start];
@@ -2569,10 +2585,9 @@ create_startpoints_in_range(RangeStart, RangeEnd, TimeSwitchCond, _Start) ->
 %% Function: create_startpoints(Start, ByxxxVals, ByType, Wkst)
 %%           Start     = date_time record()
 %%           ByxxxVals = list() of {ByType, Val} 
-%%           ByType    = bysecond | byminute | byhour | byday | 
-%%                       bymonthday | byyearday | byweekno | bymonth
-%%           Wkst      = mo | tu | we | th | fr | sa | su (weekday)
-%%                       first working day of the week
+%%           ByType    = bysecond | byminute | byhour | byday | bymonthday | byyearday | byweekno | bymonth
+%%           Wkst      = mo | tu | we | th | fr | sa | su
+%%                       (weekday) first working day of the week
 %% Descrip.: create all the time (starting) points defined by 
 %%           ByxxxVals - ByType associated with the time Start
 %% Returns : list() of date_time record()
@@ -2689,7 +2704,7 @@ check_intervals(StartPoints, TimeSwitchCond, CurrentDateTime) ->
 %% Function: level_lt_freq(Level, Freq)
 %%           Level = atom()
 %%           Freq  = atom(), time_switch__cond_x.freq
-%% Descrip.: is Level < freq, 
+%% Descrip.: is Level `<' freq, 
 %% Returns : true | false
 %%--------------------------------------------------------------------
 level_lt_freq(Level, Freq) ->

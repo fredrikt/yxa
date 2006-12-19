@@ -173,7 +173,7 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Mode)
-%%           Mode = atom(), shutdown | graceful | ...
+%%           Mode = shutdown | graceful | atom()
 %% Descrip.: YXA applications must export a terminate/1 function.
 %% Returns : Yet to be specified. Return 'ok' for now.
 %%--------------------------------------------------------------------
@@ -208,10 +208,13 @@ create_session(Request, YxaCtx, DoCPL) when is_record(Request, request), is_reco
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_session_actions(Request, Users, Actions)
+%% Function: create_session_actions(Request, Users, Actions, Surplus)
 %%           Request = request record()
 %%           Users   = list() of string(), list of SIP usernames
 %%           Actions = list() of sipproxy_action record()
+%%           Surplus = list() of sipproxy_action record(), surplus
+%%                     actions for user agents with multiple active
+%%                     bindings (draft-Outbound)
 %% Descrip.: The request was turned into a set of Actions (derived
 %%           from it's URI matching a set of Users).
 %% Returns : void() | throw({siperror, ...})
@@ -312,9 +315,8 @@ create_session_cpl(Request, YxaCtx, User, Graph)
 %%           user(s).
 %% Returns : {UserList, ActionsList} |
 %%           {cpl, User, Graph}      |
-%%           nomatch                 |
-%%           throw()
-%%           UserList    = list() of SIP usernames (strings)
+%%           nomatch
+%%           UserList    = list() of string(), SIP usernames
 %%           ActionsList = list() of sipproxy_action record()
 %%--------------------------------------------------------------------
 get_actions(URI, DoCPL) when is_record(URI, sipurl) ->
@@ -388,15 +390,12 @@ fetch_users_locations_as_actions(Users, Proto) ->
 
 %%--------------------------------------------------------------------
 %% Function: locations_to_actions(Locations)
-%%           locations_to_actions(Locations, Timeout)
 %%           Locations = list() of Loc
-%%                 Loc = siplocationdb_e record() |
-%%                       {URL, Timeout}           |
-%%                       {wait, Timeout}
-%%                 URL = sipurl record()
-%%             Timeout = integer()
+%%             Loc = siplocationdb_e record() | {URL, Timeout} | {wait, Timeout}
+%%             URL = sipurl record()
 %% Descrip.: Turn a list of location database entrys/pseudo-actions
 %%           into a list of sipproxy_action record()s.
+%% @equiv    locations_to_actions(Locations, CallTimeout)
 %% Returns : {ok, Actions, Surplus}
 %%           Actions = list() of sipproxy_action record()
 %%           Surplus = list() of sipproxy_action record(), extra
@@ -407,6 +406,22 @@ locations_to_actions(L) when is_list(L) ->
     {ok, CallTimeout} = yxa_config:get_env(appserver_call_timeout),
     locations_to_actions2(L, CallTimeout, [], []).
 
+%%--------------------------------------------------------------------
+%% Function: locations_to_actions(Locations, Timeout)
+%%           Locations = list() of Loc
+%%             Loc = siplocationdb_e record() | {URL, Timeout} | {wait, Timeout}
+%%             URL = sipurl record()
+%%           Timeout   = integer()
+%% Descrip.: Turn a list of location database entrys/pseudo-actions
+%%           into a list of sipproxy_action record()s.
+%%
+%%           NOTE : Exported only for the CPL subsystem.
+%% Returns : {ok, Actions, Surplus}
+%%           Actions = list() of sipproxy_action record()
+%%           Surplus = list() of sipproxy_action record(), extra
+%%                     contacts for instances with more than one
+%%                     location binding (draft-Outbound)
+%%--------------------------------------------------------------------
 locations_to_actions(L, Timeout) when is_list(L), is_integer(Timeout) ->
     %% Exported for CPL subsystem
     locations_to_actions2(L, Timeout, [], []).
@@ -447,6 +462,15 @@ locations_to_actions2([{wait, Timeout} | T], CallTimeout, Res, Surplus) ->
 				 },
     locations_to_actions2(T, CallTimeout, [WaitAction | Res], Surplus).
 
+%%--------------------------------------------------------------------
+%% Function: location_to_call_action(H, Timeout)
+%%           H       = sipurl record()
+%%           Timeout = term()
+%% Descrip.: Create a sipproxy_action call record out of the input.
+%%
+%%           NOTE : Exported only for the CPL subsystem.
+%% Returns : sipproxy_action record()
+%%--------------------------------------------------------------------
 location_to_call_action(H, Timeout) ->
     URL = siplocation:to_url(H),
     %% RFC3327
@@ -472,9 +496,10 @@ get_locations_with_instance(Instance, SipUser, In) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: forward_call_actions(ForwardList, Actions)
+%% Function: forward_call_actions(ForwardList, Actions, Proto)
 %%           ForwardList = list() of sipproxy_forward record()
-%%           DoCPL = true | false, do CPL or not
+%%           Actions     = list() of sipproxy_action record()
+%%           Proto       = string(), "sips" or other
 %% Descrip.: This is something Magnus at KTH developed to suit their
 %%           needs of forwarding calls. He hasn't to this date
 %%           committed all of the implementation - so don't use it.
@@ -507,8 +532,7 @@ forward_call_actions([Fwd], Actions, Proto) when is_record(Fwd, sipproxy_forward
     end.
 
 %% part of forward_call_actions/3 - turn a list of forward URIs into a list of sipproxy_action call records
-forward_call_actions_create_calls(Forwards, Localring, User, Proto) when is_list(Forwards),
-									 Localring == true ; Localring == false,
+forward_call_actions_create_calls(Forwards, Localring, User, Proto) when is_list(Forwards), is_boolean(Localring),
 									 is_list(Proto), is_list(User) ->
     {ok, FwdTimeout} = yxa_config:get_env(appserver_forward_timeout),
     forward_call_actions_create_calls2(Forwards, FwdTimeout, Localring, User, Proto, []).

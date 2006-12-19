@@ -32,6 +32,13 @@
 
 -define(GRUU_LENGTH, 10).
 
+%%--------------------------------------------------------------------
+%% Function: generate_gruu(SipUser, InstanceId)
+%%           SipUser    = string(), username
+%%           InstanceId = string(), Instance ID the users device uses.
+%% Descrip.: Generate a new GRUU.
+%% Returns : GRUU = string()
+%%--------------------------------------------------------------------
 generate_gruu(SipUser, InstanceId) when is_list(SipUser), is_list(InstanceId) ->
     {MegaSec, Sec, MicroSec} = now(),
     Token = siprequest:make_base64_md5_token([hex:to_hex_string(MicroSec),
@@ -44,12 +51,22 @@ generate_gruu(SipUser, InstanceId) when is_list(SipUser), is_list(InstanceId) ->
     %% that and not lowercase all GRUUs
     http_util:to_lower( string:substr(Token, 1, ?GRUU_LENGTH) ).
 
+%%--------------------------------------------------------------------
+%% Function: create_if_not_exists(SipUser, InstanceId)
+%%           SipUser    = string(), username
+%%           InstanceId = string(), Instance ID the users device uses.
+%% Descrip.: Update last registration time on an existing
+%%           User+Instance combination, or create a new GRUU for the
+%%           User+Instance combination if it hasn't been registered
+%%           before.
+%% Returns : {ok, GRUU}
+%%           GRUU = string()
+%%--------------------------------------------------------------------
 create_if_not_exists(SipUser, InstanceId) ->
     case database_gruu:fetch_using_user_instance(SipUser, InstanceId) of
 	nomatch ->
 	    GRUU = generate_unique_gruu(SipUser, InstanceId),
 	    {atomic, ok} = database_gruu:insert(GRUU, SipUser, InstanceId, []),
-	    %% XXX DEBUG LOG LEVEL
 	    logger:log(debug, "Registrar: Stored new GRUU ~p for SIP user ~p, instance id ~p",
 		       [GRUU, SipUser, InstanceId]),
 	    {ok, GRUU};
@@ -57,12 +74,19 @@ create_if_not_exists(SipUser, InstanceId) ->
 	    %% Update gruu last_registered, so that we have something to go on if someone ever
 	    %% wants to clean away old GRUUs
 	    database_gruu:update_last_registered(GRUU),
-	    %% XXX DEBUG LOG LEVEL
 	    logger:log(debug, "Registrar: SIP user ~p instance ~p already has a GRUU : ~p (updated)",
 		       [SipUser, InstanceId, GRUU]),
 	    {ok, GRUU}
     end.
 
+%%--------------------------------------------------------------------
+%% Function: generate_unique_gruu(SipUser, InstanceId)
+%%           SipUser    = string(), username
+%%           InstanceId = string(), Instance ID the users device uses.
+%% Descrip.: Generate a new GRUU, and make sure it is unique. If it
+%%           wasn't, we generate a new GRUU and check again and so on.
+%% Returns : UniqueGRUU = string()
+%%--------------------------------------------------------------------
 generate_unique_gruu(SipUser, InstanceId) ->
     GRUU = generate_gruu(SipUser, InstanceId),
     case database_gruu:fetch_using_gruu(GRUU) of
@@ -74,10 +98,15 @@ generate_unique_gruu(SipUser, InstanceId) ->
 	    generate_unique_gruu(SipUser, InstanceId)
     end.
 
-
-%% Returns: nomatch          |    No such GRUU in database
-%%          {ok, User, none} | User has no active contacts
-%%          {ok, User, SingleContact}
+%%--------------------------------------------------------------------
+%% Function: get_contact_for_gruu(GRUUstr)
+%%           GRUUstr = string()
+%% Descrip.: Fetch the contact for a GRUU from the location database
+%% Returns : nomatch          | (No such GRUU in database)
+%%           {ok, User, none} | (User has no active contacts)
+%%           {ok, User, SingleContact}
+%%           SingleContact = siplocationdb_e record()
+%%--------------------------------------------------------------------
 get_contact_for_gruu(GRUUstr) when is_list(GRUUstr) ->
     case database_gruu:fetch_using_gruu(GRUUstr) of
 	{ok, GRUU} when is_record(GRUU, gruu_dbe) ->
@@ -147,6 +176,15 @@ newest_contact_first(#siplocationdb_e{flags = AFlags} = A,
 	    false
     end.
 
+%%--------------------------------------------------------------------
+%% Function: make_url(SipUser, InstanceId, GRUU, ToHeader)
+%%           SipUser = string(), username
+%%           InstanceId = string()
+%%           GRUU = string() | gruu record()
+%%           ToHeader = string()
+%% Descrip.: Make a SIP/SIPS URL out of a GRUU.
+%% Returns : URL = sipurl record()
+%%--------------------------------------------------------------------
 make_url(SipUser, InstanceId, GRUU, ToHeader) when is_record(GRUU, gruu_dbe) ->
     make_url(SipUser, InstanceId, GRUU#gruu_dbe.gruu, ToHeader);
 
@@ -184,9 +222,15 @@ make_url(SipUser, InstanceId, GRUU, ToHeader) when is_list(SipUser), is_list(Ins
 	    end
     end.
 
-%% only call on homedomain URLs
-%% Returns: {true, GRUU} | false
-%%          GRUU = string()
+%%--------------------------------------------------------------------
+%% Function: is_gruu_url(URL)
+%%           URL = sipurl record()
+%% Descrip.: Check if a URL could be a GRUU we have generated. Does
+%%           NOT check in the database to see if there is such a GRUU.
+%%           NOTE : Only call this on a URL matching 'homedomain'.
+%% Returns : {true, GRUU} | false
+%%           GRUU = string()
+%%--------------------------------------------------------------------
 is_gruu_url(URL) when is_record(URL, sipurl) ->
     case url_param:find(URL#sipurl.param_pairs, "gruu") of
 	[_GRUUvalue] ->
@@ -209,6 +253,13 @@ is_gruu_prefix([], Rest) ->
 is_gruu_prefix(_In, _NoMatch) ->
     false.
 
+%%--------------------------------------------------------------------
+%% Function: extract(Field, GRUU_DBE)
+%%           Field = gruu|sipuser|instance_id|created|last_registered|flags
+%%           GRUU_DBE = gruu_dbe record()
+%% Descrip.: Extract data from our private gruu_dbe record.
+%% Returns : term()
+%%--------------------------------------------------------------------
 extract(gruu,		E) when is_record(E, gruu_dbe) -> E#gruu_dbe.gruu;
 extract(sipuser,	E) when is_record(E, gruu_dbe) -> E#gruu_dbe.sipuser;
 extract(instance_id,	E) when is_record(E, gruu_dbe) -> E#gruu_dbe.instance_id;
@@ -217,7 +268,12 @@ extract(last_registered,E) when is_record(E, gruu_dbe) -> E#gruu_dbe.last_regist
 extract(flags,		E) when is_record(E, gruu_dbe) -> E#gruu_dbe.flags.
 
 
-%% debug code
+%%--------------------------------------------------------------------
+%% Function: show_all()
+%% Descrip.: Displays all currently registered GRUUs on the system
+%%           console. For debugging use only.
+%% Returns : ok
+%%--------------------------------------------------------------------
 show_all() ->
     {ok, GRUUs} = database_gruu:fetch_all(),
     Fmt = "~15s   ~10s   ~40s   ~s~n",
@@ -245,10 +301,13 @@ dump_loc(GRUU) when is_list(GRUU) ->
 	    "no active registration"
     end.
 
-%%   Contact = siplocationdb_e record()
-%%   URI     = sipurl record(), GRUU Request-URI
+%%--------------------------------------------------------------------
+%% Function: prepare_contact(Contact, URI)
+%%           Contact = contact record()
+%%           URI     = sipurl record()
 %% Descrip.: Copy any 'grid' parameter from Request-URI to contact URI
-		
+%% Returns : NewURI = sipurl record()
+%%--------------------------------------------------------------------
 prepare_contact(Contact, URI) ->
     %% "The server MUST copy the "grid" parameter from the Request URI (if
     %% present) into the new target URI obtained from the registered

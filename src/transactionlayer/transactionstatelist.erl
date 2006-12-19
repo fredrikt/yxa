@@ -215,7 +215,6 @@ get_client_transaction(Method, Branch) ->
 %%--------------------------------------------------------------------
 %% Function: get_entrylist_using_pid(Pid)
 %%           Pid        = pid()
-%%           TStateList = transactionstatelist record()
 %% Descrip.: Find all elements in a transactionstatelist who have a
 %%           matching pid. Return a plain list of those. Use with
 %%           care.
@@ -239,7 +238,7 @@ get_entrylist_using_pid(Pid) when is_pid(Pid) ->
 %%           returns {error, Reason} if more than one record has
 %%           a matching pid.
 %% Returns : TransactionState |
-%%           {error, Reason}
+%%           {error, Reason}  |
 %%           none
 %%           TransactionState = transactionstate record()
 %%           Reason           = string()
@@ -273,7 +272,7 @@ get_using_pid2(Pid) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_elem(Type, Id)
-%%           Type       = atom() (client | server)
+%%           Type       = client | server
 %%           Id         = term()
 %% Descrip.: Find a single element from a transactionstatelist which
 %%           has a matching type and id.
@@ -405,11 +404,9 @@ set_result(TState, Value) when is_record(TState, transactionstate), is_list(Valu
     TState#transactionstate{result = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: delete_using_entrylist(Pid, TStateList)
+%% Function: delete_using_entrylist(EntryList)
 %%           EntryList  = list() of transactionstate record()
-%%           TStateList = transactionstatelist record()
-%% Descrip.: Delete entrys from a transactionstatelist record() that
-%%           has a pid matching the supplied Pid.
+%% Descrip.: Delete all entrys in EntryList.
 %% Returns : {ok, NumDeleted}
 %%           NumDeleted = integer(), number of records deleted
 %%--------------------------------------------------------------------
@@ -441,6 +438,11 @@ update_transactionstate(TState) when is_record(TState, transactionstate) ->
 get_length() ->
     ets:info(transactionstate_ref_to_t, size).
 
+debugfriendly() ->
+    %% no list supplied, request full dump
+    L = get_all_entries(),
+    debugfriendly2(L, []).
+
 %%--------------------------------------------------------------------
 %% Function: debugfriendly(TStateList)
 %%           TStateList = transactionstatelist record()
@@ -449,11 +451,6 @@ get_length() ->
 %%           for logging using ~p.
 %% Returns : Data = term()
 %%--------------------------------------------------------------------
-debugfriendly() ->
-    %% no list supplied, request full dump
-    L = get_all_entries(),
-    debugfriendly2(L, []).
-
 debugfriendly([]) ->
     [];
 debugfriendly(TStateList) when is_record(TStateList, transactionstatelist) ->
@@ -528,13 +525,13 @@ monitor_format2([H|T], Res) when record(H, transactionstate) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: add(Type, Id, AckId, Pid, Desc, TStateList)
+%% Function: add(Type, Id, AckId, Pid, Desc)
 %%           Type       = atom(), client | server
 %%           Id         = term()
 %%           AckId      = term() | none
 %%           Pid        = pid()
 %%           Desc       = string(),
-%% Descrip.: Add a new transaction state entry to TStateList.
+%% Descrip.: Add a new transaction state entry to the ets tables.
 %% Returns : ok               |
 %%           error            |
 %%           {duplicate, Dup}

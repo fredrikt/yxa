@@ -1,6 +1,12 @@
-%%
-%%--------------------------------------------------------------------
-
+%%%--------------------------------------------------------------------
+%%% File    : database_regexproute.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: Access routines for a Mnesia table holding regular
+%%%           expression rewrites of input addresses, used in
+%%%           'incomingproxy'.
+%%%
+%%% Created : 02 Jan 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%--------------------------------------------------------------------
 -module(database_regexproute).
 
 %%--------------------------------------------------------------------
@@ -19,23 +25,17 @@
 	]).
 
 %%--------------------------------------------------------------------
-%% Internal exports
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
-
 -include("database_regexproute.hrl").
 -include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
-%% Records
+%% Types
 %%--------------------------------------------------------------------
 
-%%--------------------------------------------------------------------
-%% Macros
-%%--------------------------------------------------------------------
+%% @type  transaction_result() = {atomic, Result} | {aborted, Reason}.
+%%             The result of a Mnesia transaction. Result is a term().
 
 %%====================================================================
 %% External functions
@@ -43,21 +43,25 @@
 
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
+%% Function: create()
+%% Descrip.: Invoke create/1 with the list of servers indicated by
+%%           the configuration parameter 'databaseservers'.
+%% Returns : term(), result of mnesia:create_table/2.
 %%--------------------------------------------------------------------
 create() ->
-    create(servers()).
+    {ok, S} = yxa_config:get_env(databaseservers),
+    create(S).
 
+%%--------------------------------------------------------------------
+%% Function: create(Servers)
+%%           Servers = list() of atom(), list of nodes
+%% Descrip.: Create the table 'regexproute' on Servers.
+%% Returns : term(), result of mnesia:create_table/2.
+%%--------------------------------------------------------------------
 create(Servers) ->
     mnesia:create_table(regexproute, [{attributes, record_info(fields, regexproute)},
 				      {disc_copies, Servers},
 				      {type, bag}]).
-
-servers() ->
-    {ok, S} = yxa_config:get_env(databaseservers),
-    S.
 
 %%--------------------------------------------------------------------
 %% Function: insert(Regexp, Flags, Class, Expire, Address)
@@ -67,7 +71,7 @@ servers() ->
 %%           Expire  = integer() | never
 %%           Address = string(), must be parseable with sipurl:parse/1
 %% Descrip.: Insert a new regexproute entry into the database.
-%% Returns : result of the Mnesia transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flags), is_atom(Class),
 						   is_integer(Expire); Expire == never, is_list(Address) ->
@@ -82,7 +86,7 @@ insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flag
 %%           Expire  = integer() | never
 %%           Address = string(), must be parseable with sipurl:parse/1
 %% Descrip.: Insert a new regexproute entry into the database.
-%% Returns : result of the Mnesia transaction()
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 delete(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flags), is_atom(Class),
                                                    is_integer(Expire); Expire == never, is_list(Address) ->
@@ -115,7 +119,7 @@ list() ->
 %%           Class  = atom()
 %% Descrip.: Delete all regexproutes in database that matches the
 %%           regexp and class.
-%% Returns : Result of the Mnesia transaction
+%% Returns : transaction_result()
 %%--------------------------------------------------------------------
 purge_class(Regexp, Class) ->
     Fun = fun() ->
@@ -149,6 +153,11 @@ test() ->
 
     ok.
 
+%%--------------------------------------------------------------------
+%% Function: test_create_table()
+%% Descrip.: Create a table in RAM only, for use in unit tests.
+%% Returns : ok
+%%--------------------------------------------------------------------
 test_create_table() ->
     case catch mnesia:table_info(regexproute, attributes) of
 	Attrs when is_list(Attrs) ->

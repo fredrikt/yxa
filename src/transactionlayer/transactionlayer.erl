@@ -37,9 +37,11 @@
 	 store_appdata/2,
 	 get_my_to_tag/1,
 	 change_transaction_parent/3,
-	 debug_show_transactions/0,
+	 debug_show_transactions/0
+	]).
 
-	 test_get_thandler_self/0
+-export([test_get_thandler_self/0,
+	 test/0
 	]).
 
 -deprecated([
@@ -160,7 +162,7 @@ init([]) ->
 %%--------------------------------------------------------------------
 %% Function: handle_call({monitor_get_transactionlist}, From, State)
 %% Descrip.: The stack monitor is requesting our list of transactions.
-%% Returns : {reply, {ok, List} State, ?TIMEOUT}
+%% Returns : {reply, {ok, List}, State, ?TIMEOUT}
 %%           List = transactionstatelist record()
 %% Note    : Returning all entrys from an ets table is a relatively
 %%           expensive operation. You might not want to run the
@@ -315,11 +317,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: received_new_request(Request, Socket, LogStr, AppModule)
+%% Function: received_new_request(Request, YxaCtx, AppModule)
 %%           Request   = request record()
-%%           Socket    = sipsocket record(), the socket this request
-%%                                           was received on
-%%           LogStr    = string(), describes the request
+%%           YxaCtx    = yxa_ctx record()
 %%           AppModule = atom(), YXA application module
 %% Descrip.: Act on a new request that has just been delivered to the
 %%           transaction layer from the transport layer, where the
@@ -390,7 +390,7 @@ received_new_request(Request, YxaCtx, AppModule) when is_record(Request, request
 %%--------------------------------------------------------------------
 %% Function: cancel_corresponding_transaction(Request, STPid)
 %%           Request = request record()
-%%           STPid   = pid of CANCEL server transaction.
+%%           STPid   = pid(), CANCEL server transaction.
 %% Descrip.: Part of received_new_request/4. We have received a CANCEL
 %%           and here we try to find the corresponding INVITE and tell
 %%           it that it has been cancelled. If we find an INVITE, we
@@ -524,6 +524,32 @@ get_client_transaction_pid(Response) when is_record(Response, response) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
+%% Function: send_response_request(Request, Status, Reason)
+%%           Request      = request record()
+%%           Status       = integer(), SIP status code
+%%           Reason       = string(), SIP reason phrase
+%% Descrip.: Sends a response with an empty body and no extra headers.
+%%	     @see send_response_request/5.
+%% Returns : term()
+%%--------------------------------------------------------------------
+send_response_request(Request, Status, Reason) when is_record(Request, request) ->
+    send_response_request(Request, Status, Reason, []).
+
+%%--------------------------------------------------------------------
+%% Function: send_response_request(Request, Status, Reason,
+%%                                 ExtraHeaders)
+%%           Request      = request record()
+%%           Status       = integer(), SIP status code
+%%           Reason       = string(), SIP reason phrase
+%%           ExtraHeaders = keylist record()
+%% Descrip.: Sends a response with an empty body.
+%%	     @see send_response_request/5.
+%% Returns : term()
+%%--------------------------------------------------------------------
+send_response_request(Request, Status, Reason, ExtraHeaders) when is_record(Request, request) ->
+    send_response_request(Request, Status, Reason, ExtraHeaders, <<>>).
+
+%%--------------------------------------------------------------------
 %% Function: send_response_request(Request, Status, Reason,
 %%                                 ExtraHeaders, RBody)
 %%           Request      = request record()
@@ -543,12 +569,6 @@ get_client_transaction_pid(Response) when is_record(Response, response) ->
 %%           transasction. Should probably be changed to
 %%           {error, "No server transaction found"} or similar.
 %%--------------------------------------------------------------------
-send_response_request(Request, Status, Reason) when is_record(Request, request) ->
-    send_response_request(Request, Status, Reason, []).
-
-send_response_request(Request, Status, Reason, ExtraHeaders) when is_record(Request, request) ->
-    send_response_request(Request, Status, Reason, ExtraHeaders, <<>>).
-
 send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     case get_handler_for_request(Request) of
@@ -566,10 +586,34 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_reco
     end.
 
 %%--------------------------------------------------------------------
+%% Function: send_response_handler(TH, Status, Reason)
+%%           TH     = thandler record(), transaction handler
+%%           Status = integer(), SIP status code
+%%           Reason = string(), SIP reason phrase
+%% Descrip.: Send a response with an empty body and no extra headers.
+%%           @see send_response_handler/5.
+%% Returns : term()
+%%--------------------------------------------------------------------
+send_response_handler(TH, Status, Reason) when is_record(TH, thandler) ->
+    send_response_handler(TH, Status, Reason, []).
+
+%%--------------------------------------------------------------------
+%% Function: send_response_handler(TH, Status, Reason, ExtraHeaders)
+%%           TH           = thandler record(), transaction handler
+%%           Status       = integer(), SIP status code
+%%           Reason       = string(), SIP reason phrase
+%%           ExtraHeaders = keylist record()
+%% Descrip.: Send a response with an empty body.
+%%           @see send_response_handler/5.
+%% Returns : term()
+%%--------------------------------------------------------------------
+send_response_handler(TH, Status, Reason, ExtraHeaders) when is_record(TH, thandler) ->
+    send_response_handler(TH, Status, Reason, ExtraHeaders, <<>>).
+
+%%--------------------------------------------------------------------
 %% Function: send_response_handler(TH, Status, Reason, ExtraHeaders,
 %%                                 RBody)
 %%           TH           = thandler record(), transaction handler
-%%           Request      = request record()
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
 %%           ExtraHeaders = keylist record()
@@ -579,12 +623,6 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_reco
 %%           {error, E}
 %%           E = string(), describes the error
 %%--------------------------------------------------------------------
-send_response_handler(TH, Status, Reason) when is_record(TH, thandler) ->
-    send_response_handler(TH, Status, Reason, []).
-
-send_response_handler(TH, Status, Reason, ExtraHeaders) when is_record(TH, thandler) ->
-    send_response_handler(TH, Status, Reason, ExtraHeaders, <<>>).
-
 send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
   when is_record(TH, thandler), is_integer(Status), is_list(Reason), is_list(ExtraHeaders), is_binary(RBody) ->
     case catch gen_server:cast(TH#thandler.pid, {create_response, Status, Reason, ExtraHeaders, RBody}) of
@@ -669,10 +707,8 @@ adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: adopt_st_and_get_branchbase(TH)
-%% Function: adopt_st_and_get_branchbase(Request)
-%%           TH      = thandler record()
-%%           Request = request record()
+%% Function: adopt_st_and_get_branchbase(In)
+%%           In = thandler record() | request record()
 %% Descrip.: Adopt a server transaction, and get it's branch. This is
 %%           just a helper function for applications, since this is
 %%           typically what they do anyways. If you want to know for
@@ -682,8 +718,7 @@ adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
 %%           error                      |
 %%           ignore
 %%           THandler   = thandler record()
-%%           BranchBase = string(), the server transactions branch,
-%%                        minus the "-UAS" suffix
+%%           BranchBase = string(), branch minus the "-UAS" suffix
 %%--------------------------------------------------------------------
 adopt_st_and_get_branchbase(Request) when is_record(Request, request) ->
     case get_handler_for_request(Request) of
@@ -716,8 +751,7 @@ adopt_st_and_get_branchbase(TH) when is_record(TH, thandler) ->
 %%           sequence number.
 %% Returns : BranchBase |
 %%           error
-%%           BranchBase = string(), the server transactions branch,
-%%                        minus the "-UAS" suffix
+%%           BranchBase = string(), branch minus the "-UAS" suffix
 %%--------------------------------------------------------------------
 get_branchbase_from_handler(TH) when is_record(TH, thandler) ->
     case get_branch_from_handler(TH) of
@@ -771,6 +805,18 @@ transaction_terminating(TransactionPid) ->
     ok.
 
 %%--------------------------------------------------------------------
+%% Function: start_client_transaction(Request, SocketIn, Dst, Branch,
+%%                                    Timeout, ReportTo)
+%% Descrip.: OBSOLETE   There is no need to pass in a socket anymore.
+%%           @see start_client_transaction/5.
+%%--------------------------------------------------------------------
+start_client_transaction(Request, _SocketIn, Dst, Branch, Timeout, ReportTo) ->
+    %% OBSOLETE - there is no reason to pass sockets to client transactions anymore
+    logger:log(normal, "Warning: transactionlayer:start_client_transaction/6 is obsolete, "
+	       "use transactionlayer:start_client_transaction/5 instead"),
+    start_client_transaction(Request, Dst, Branch, Timeout, ReportTo).
+
+%%--------------------------------------------------------------------
 %% Function: start_client_transaction(Request, Dst, Branch, Timeout,
 %%                                    ReportTo)
 %%           Request  = request record()
@@ -787,12 +833,6 @@ transaction_terminating(TransactionPid) ->
 %%           Pid = pid()
 %%           E   = string()
 %%--------------------------------------------------------------------
-start_client_transaction(Request, _SocketIn, Dst, Branch, Timeout, ReportTo) ->
-    %% OBSOLETE - there is no reason to pass sockets to client transactions anymore
-    logger:log(normal, "Warning: transactionlayer:start_client_transaction/6 is obsolete, "
-	       "use transactionlayer:start_client_transaction/5 instead"),
-    start_client_transaction(Request, Dst, Branch, Timeout, ReportTo).
-
 start_client_transaction(Request, Dst, Branch, Timeout, ReportTo)
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch), is_integer(Timeout),
        is_pid(ReportTo); ReportTo == none ->
@@ -809,7 +849,7 @@ start_client_transaction(Request, Dst, Branch, Timeout, ReportTo)
 %%           Pid          = pid(), client transaction pid
 %%           Reason       = string(), will be logged by client
 %%                          transaction
-%%           ExtraHeaders = list() of {Key, Value} headers to put in
+%%           ExtraHeaders = list() of {Key, Value}, headers to put in
 %%                          any CANCELs we send
 %% Descrip.: Store the to-tag we use when sending non-2xx responses in
 %%           INVITE server transactions. We need to do this to
@@ -1166,12 +1206,13 @@ get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
 
 %%--------------------------------------------------------------------
 %% Function: change_transaction_parent(Entity, From, To)
-%%           Entity = thandler record() for server transaction |
-%%                    pid() for client transaction
+%%           Entity = thandler record() | pid()
 %%           From   = pid()
-%%           To     = pid() | none ('none' only applicable to client
-%%                                  transactions)
-%% Descrip.: Change parent of a client or server transaction.
+%%           To     = pid() | none
+%% Descrip.: Change parent of a client or server transaction. Entity
+%%           should be a thandler record for a server transaction,
+%%           and a pid for a client transaction. A 'To' of 'none' is
+%%           only applicable to client transactions.
 %% Returns : ok              |
 %%           {error, Reason}
 %%           Reason = string()
@@ -1193,8 +1234,8 @@ change_transaction_parent(Pid, From, To) when is_pid(Pid), is_pid(From), is_pid(
 %% Descrip.: autotest callback
 %% Returns : ok | throw()
 %%--------------------------------------------------------------------
-%%test() ->
-%%    ok.
+test() ->
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: test_get_thandler_self()

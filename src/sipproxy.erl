@@ -42,18 +42,10 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-	 start/6,
 	 start_actions/5,
 
 	 test/0
 	]).
-
-%%--------------------------------------------------------------------
-%% Internal exports
-%%--------------------------------------------------------------------
--export([
-	 signal_collector/4
-	 ]).
 
 %%--------------------------------------------------------------------
 %% Include files
@@ -102,8 +94,10 @@
 %%           OrigRequest = request record()
 %%           Actions = list() of sipproxy_action record()
 %%           Surplus = list() of sipproxy_action record()
-%% Descrip.: This function is spawned by the appserver glue process
-%%           and executes sipproxy:start() in this new thread.
+%% Descrip.: Start the processing, currently forking (in parallell or
+%%           sequentially) of Request according to Actions.
+%%           This function is typically executed by a spawn in the
+%%           appserver glue process.
 %% Returns : ok | error
 %%--------------------------------------------------------------------
 start_actions(BranchBase, Parent, OrigRequest, Actions, Surplus) when is_record(OrigRequest, request) ->
@@ -229,7 +223,8 @@ start_check_actions2([], Calls, Waits) ->
     {ok, Calls, Waits}.
 
 %%--------------------------------------------------------------------
-%% Function: fork(State)
+%% Function: fork(EndTime, State)
+%%           EndTime = integer(), absolute timestamp we should end
 %%           State = state record()
 %% Descrip.: Main loop. Process actions until there are none left.
 %% Returns : ok
@@ -404,7 +399,7 @@ make_new_target_request(Request, ApproxMsgSize, Action)
 %%--------------------------------------------------------------------
 %% Function: cancel_pending_targets(Targets, ExtraHeaders)
 %%           Targets      = targetlist record()
-%%           ExtraHeaders = list() of {Key, ValueList} tuples
+%%           ExtraHeaders = list() of {Key, ValueList}
 %% Descrip.: Cancel all targets in state 'calling' or 'proceeding'.
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
@@ -417,7 +412,7 @@ cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
 %% Function: cancel_targets_state(Targets, TargetState, ExtraHeaders)
 %%           Targets      = targetlist record()
 %%           TargetState  = atom()
-%%           ExtraHeaders = list() of {Key, ValueList} tuples
+%%           ExtraHeaders = list() of {Key, ValueList}
 %% Descrip.: Cancel all targets in state TargetState.
 %% Returns : NewTargets = targetlist record()
 %%--------------------------------------------------------------------
@@ -853,16 +848,19 @@ get_next_target_branch(In) ->
 
 %%--------------------------------------------------------------------
 %% Function: allterminated(State)
-%%           allterminated(TargetList)
-%%           State      = state record()
-%%           TargetList = targetlist record()
-%% Descrip.: Determine if all targets are terminated (that is, no
-%%           targets are in the states calling, trying or proceeding).
+%% @equiv    allterminated(State#state.targets)
 %% Returns : true | false
 %%--------------------------------------------------------------------
 allterminated(State) when is_record(State, state) ->
     allterminated(State#state.targets);
 
+%%--------------------------------------------------------------------
+%% Function: allterminated(TargetList)
+%%           TargetList = targetlist record()
+%% Descrip.: Determine if all targets are terminated (that is, no
+%%           targets are in the states calling, trying or proceeding).
+%% Returns : true | false
+%%--------------------------------------------------------------------
 allterminated(TargetList) ->
     TargetsCalling = targetlist:get_targets_in_state(calling, TargetList),
     TargetsTrying = targetlist:get_targets_in_state(trying, TargetList),
@@ -875,8 +873,9 @@ allterminated(TargetList) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: end_processing(State)
-%%           State = state record()
+%% Function: end_processing(EndTime, State)
+%%           EndTime = integer(), absulute time we should end
+%%           State   = state record()
 %% Descrip.: Determine if we should end processing or not (by looking
 %%           at the endtime element of our State record).
 %% Returns : true | false
@@ -1157,8 +1156,8 @@ printable_responses2([H | T], Res) when is_record(H, sp_response) ->
 
 %%--------------------------------------------------------------------
 %% Function: make_final_response(Responses)
-%%           Responses = list() of ( response record() |
-%%                                   {Status, Reason} tuple() )
+%%           Responses = list() of Res
+%%           Res = response record() | {Status, Reason}
 %%              Status = integer(), SIP status code
 %%              Reason = string(), SIP reason phrase
 %% Descrip.: Determine which response is the best response in a
@@ -1387,7 +1386,9 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "start/5 - 0"),
     StartRef = make_ref(),
-    StartSigCol = spawn_link(?MODULE, signal_collector, [self(), StartRef, passive, ?LINE]),
+    Me = self(),
+    Line5 = ?LINE + 1,
+    StartSigCol = spawn_link(fun() -> signal_collector(Me, StartRef, passive, Line5) end),
 
     autotest:mark(?LINE, "start/5 - 1"),
     %% Test with Route header
@@ -1429,7 +1430,8 @@ test() ->
 			    header = keylist:from_list([]), body = <<>>},
     %% start a signal collector
     ForkRef1 = make_ref(),
-    ForkSigCollect1 = spawn_link(?MODULE, signal_collector, [self(), ForkRef1, passive, ?LINE]),
+    Line_Fork2 = ?LINE,
+    ForkSigCollect1 = spawn_link(fun() -> signal_collector(Me, ForkRef1, passive, Line_Fork2 + 1) end),
     ForkList1_1 = targetlist:add("branch1", ForkRequest1, ForkSigCollect1, calling,
 			       1, [], none, ForkList0),
     ForkList1 = targetlist:add("branch2", ForkRequest1, ForkSigCollect1, terminated,
@@ -1859,8 +1861,9 @@ test() ->
     %% test cancel_pending_if_invite_2xx_or_6xx(Method, Status, Reason, State)
     %%--------------------------------------------------------------------
     CancelPendingRef = make_ref(),
-    CancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active, ?LINE]),
-    CancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), CancelPendingRef, active, ?LINE]),
+    CancelLine = ?LINE,
+    CancelPendingPid1 = spawn_link(fun() -> signal_collector(Me, CancelPendingRef, active, CancelLine + 1) end),
+    CancelPendingPid2 = spawn_link(fun() -> signal_collector(Me, CancelPendingRef, active, CancelLine + 2) end),
 
     autotest:mark(?LINE, "cancel_pending_if_invite_2xx_or_6xx/4 - 0"),
 
@@ -1986,8 +1989,12 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_signal/2 {cancel_pending,...} - 0"),
     PSCancelPendingRef = make_ref(),
-    PSCancelPendingPid1 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive, ?LINE]),
-    PSCancelPendingPid2 = spawn_link(?MODULE, signal_collector, [self(), PSCancelPendingRef, passive, ?LINE]),
+    PSCancelLine = ?LINE,
+    PSSigFun = fun() ->
+		       signal_collector(Me, PSCancelPendingRef, passive, PSCancelLine)
+	       end,
+    PSCancelPendingPid1 = spawn_link(PSSigFun),
+    PSCancelPendingPid2 = spawn_link(PSSigFun),
 
     %% one pending and one already completed target
     PSCancelPendingReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
@@ -2034,7 +2041,8 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_signal/2 {clienttransaction_terminating,...} - 0"),
     PSClientTermRef = make_ref(),
-    PSClientTermPid1 = spawn_link(?MODULE, signal_collector, [self(), PSClientTermRef, passive, ?LINE]),
+    PSClientCancelLine = ?LINE,
+    PSClientTermPid1 = spawn_link(fun() -> signal_collector(Me, PSClientTermRef, passive, PSClientCancelLine + 1) end),
 
     PSClientTermReq1 = #request{method = "INVITE", uri = sipurl:parse("sip:ft@test.example.org")},
     PSClientTermTargets1 = targetlist:add("branch1", PSClientTermReq1, PSClientTermPid1, calling,

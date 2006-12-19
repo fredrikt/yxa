@@ -54,19 +54,19 @@
 %%           Error = term(), error_logger:add_report_handler/2 result
 %%--------------------------------------------------------------------
 start() ->
-    error_logger:add_report_handler(?MODULE, [self()]).
+    error_logger:add_report_handler(?MODULE, {self()}).
 
 %%====================================================================
 %% Behaviour functions - gen_event callbacks
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Args) -> {ok, State}
+%% Function: init({Parent})
 %% Descrip.: Initialize this event handler. Called by the event
 %%           manager that has been told to add this event handler.
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
-init([Parent]) ->
+init({Parent}) ->
     {ok, #state{parent = Parent,
 		stack = []
 	       }}.
@@ -81,7 +81,10 @@ init([Parent]) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: handle_event({info_report, ...}, State)
+%% Function: handle_event({info_report, SomePid, Event}, State)
+%%           Event  = {Parent, progress, Args}
+%%           Parent = pid(), matching our parents pid from State
+%%           Args   = list() of {Key, Value} 
 %% Descrip.: Handle informational reports from the error_logger. We
 %%           maintain a list of the last five process reports we see
 %%           from our parent supervisor, to help narrow down where
@@ -109,7 +112,7 @@ handle_event({info_report, _SomePid, {Parent, progress, Args}}, #state{parent = 
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_event({error_report, ...}, State)
+%% Function: handle_event({error_report, SomePid, ReportArgs}, State)
 %% Descrip.: Try to make sure the user sees all error information when
 %%           errors occur. First print it to stdout and then, if the
 %%           logger process is running, log it using the logger too.
@@ -130,11 +133,11 @@ handle_event({error_report, _SomePid, _ReportArgs} = Report, State) ->
     {ok, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_event(_, State)
+%% Function: handle_event(Unknown, State)
 %% Descrip.: Ignore any other events.
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
-handle_event(_Event, State) ->
+handle_event(_Unknown, State) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -146,13 +149,15 @@ handle_event(_Event, State) ->
 %%           {remove_handler, Reply}
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call(_, State)
+%% Function: handle_call(Unknown, State)
 %% Descrip.: This event handler does not handle calls.
-%% Returns : {ok, Reply, State}                                |
+%% Returns : {ok, Reply, State}
 %%           Reply = {error, bad_request}
 %%--------------------------------------------------------------------
-handle_call(_Request, State) ->
+handle_call(_Unknown, State) ->
     {ok, {error, bad_request}, State}.
 
 %%--------------------------------------------------------------------
@@ -165,12 +170,14 @@ handle_call(_Request, State) ->
 %%           remove_handler
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(_, State)
+%% Function: handle_info(Unknown, State)
 %% Descrip.: This event handler does not handle info.
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
-handle_info(_Info, State) ->
+handle_info(_Unknown, State) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------

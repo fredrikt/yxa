@@ -1,5 +1,11 @@
-%% This module contains various usefull functions used to handle
-%% mnesia tables
+%%%-------------------------------------------------------------------
+%%% File    : db_util.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: This module contains various usefull functions used to
+%%%           handle mnesia tables
+%%%
+%%% Created : 22 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 %%--------------------------------------------------------------------
 
 -module(db_util).
@@ -72,9 +78,12 @@ delete_all_entries(MnesiaTab) ->
 
 %%--------------------------------------------------------------------
 %% Function: insert_record(Record)
-%%           Record = record(), the record MUST have the same name as
-%%           the table it is inserted into
-%% Descrip.: wraps mnesia:write in a transaction context
+%%           Record = term()
+%% Descrip.: wraps mnesia:write in a transaction context.
+%%
+%%           NOTE: Record MUST have the same name as the table it is
+%%                 inserted into
+%%
 %% Returns : mnesia:transaction()
 %%--------------------------------------------------------------------
 insert_record(Record) ->
@@ -84,15 +93,18 @@ insert_record(Record) ->
     mnesia:transaction(Fun).
 
 %%--------------------------------------------------------------------
-%% Function: delete_record(Rec)
-%%           Rec = record(), the record MUST have the same name as
-%%           the table it is deleted from
+%% Function: delete_record(Record)
+%%           Record = term()
 %% Descrip.: wraps mnesia:delete_object in a transaction context
-%% Returns : mnesia:transaction()
+%%
+%%           NOTE: Record MUST have the same name as the table it is
+%%                 inserted into
+%%
+%%%% Returns : mnesia:transaction()
 %%--------------------------------------------------------------------
-delete_record(Rec) ->
+delete_record(Record) ->
     F = fun() ->
-		mnesia:delete_object(Rec)
+		mnesia:delete_object(Record)
 	end,
     mnesia:transaction(F).
 
@@ -112,18 +124,21 @@ delete_with_key(Db, Key) ->
 
 %%--------------------------------------------------------------------
 %% Function: match_object(Pattern)
-%%           Pattern = a tuple as used by mnesia:match_object/1,
-%%           usually something like:
-%%           #rec_name{f1 = V1, f2 = V2, ..., _ = '_'} where '_' acts
-%%           as a wildcard value
+%%           Pattern = term(), a tuple as used by mnesia:match_object/1
 %% Descrip.: alternative match_object based on mnesia:select/2 it
 %%           should be faster than mnesia:match_object/1. Finds the
 %%           records that match the pattern Pattern.
-%% Returns : list() of records
-%% Note    : the record name must be = table name. '$<number>'
+%%
+%%           Pattern is usually something like:
+%%               #rec_name{f1 = V1, f2 = V2, ..., _ = '_'} where
+%%               '_' acts as a wildcard value
+%%
+%% NOTE    : the record name must be = table name. '$number'
 %%           (e.g. '$1', '$2', .... ) can not be used in Pattern (it
 %%           has special meaning in the match specification used by
 %%           mnesia:select/1)
+%%
+%% Returns : Records = list() of term()
 %%--------------------------------------------------------------------
 match_object(Pattern) ->
     mnesia:select(element(1,Pattern),

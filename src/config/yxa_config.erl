@@ -58,8 +58,7 @@
 %%--------------------------------------------------------------------
 -define(SERVER, yxa_config).
 -define(YXA_CONFIG, yxa_config_t).
--define(BACKENDS, [
-		   yxa_config_default,
+-define(BACKENDS, [yxa_config_default,
 		   yxa_config_erlang
 		  ]).
 
@@ -72,24 +71,34 @@
 %%           AppModule = atom(), YXA application module
 %% Descrip.: start the server.
 %% Returns : {ok, Pid}
-%%           Pid = pid() of yxa_config persistent gen_server
+%%           Pid = pid(), yxa_config persistent gen_server pid
 %%--------------------------------------------------------------------
 start_link(AppModule) when is_atom(AppModule) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [AppModule], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, {AppModule}, []).
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule])
+%% Function: init({AppModule})
 %%	     AppModule = atom(), YXA application module
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}
 %%           State = state record()
 %%--------------------------------------------------------------------
-init([AppModule]) when is_atom(AppModule) ->
+init({AppModule}) when is_atom(AppModule) ->
     yxa_config_util:startup_log(?MODULE, debug, "Starting configuration subsystem for '~p'", [AppModule]),
     EtsRef = ets:new(?YXA_CONFIG, [protected, set, named_table]),
     ExtraCfg = #yxa_cfg{},
     init_config(?BACKENDS, AppModule, ExtraCfg, EtsRef).
 
+%%--------------------------------------------------------------------
+%% Function: init_config(Backends, AppModule, ExtraCfg, EtsRef)
+%%           Backends  = list() of atom(), backend module names
+%%	     AppModule = atom(), YXA application module
+%%           ExtraCfg  = yxa_cfg record(), config to append
+%%           EtsRef    = term(), ets table to load config into
+%% Descrip.: Part of init/1 and exported for yxa_test_config.
+%% Returns : {ok, State}
+%%           State = state record()
+%%--------------------------------------------------------------------
 %% part of init/1 and exported for yxa_test_config
 init_config(Backends, AppModule, ExtraCfg, EtsRef) when is_list(Backends), is_atom(AppModule),
 							is_record(ExtraCfg, yxa_cfg) ->
@@ -129,7 +138,8 @@ init_config(Backends, AppModule, ExtraCfg, EtsRef) when is_list(Backends), is_at
     {ok, State}.
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule])
+%% Function: init_backends(In, AppModule)
+%%           In        = list() of atom(), list of module names
 %%	     AppModule = atom(), YXA application module
 %% Descrip.: Calls the init/1 function in each backend, and returns
 %%           the backends opaque data structures that will later be
@@ -182,13 +192,13 @@ behaviour_info(_Other) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_env(Key)
-%%           get_env(Key, Default)
-%%           Key     = atom()
-%%           Default = term(), returned if no value is present
-%% Descrip.: Fetch parameter value.
+%%           Key = atom()
+%% Descrip.: Fetch parameter value. Return 'none' if parameter is
+%%           known but not set. throw() if unknown parameter is
+%%           requested.
 %% Returns : {ok, Value} |
 %%           Value       |
-%%           none		parameter known, but no value set
+%%           none
 %%--------------------------------------------------------------------
 get_env(Key) when is_atom(Key) ->
     %% check if the configuration source for this process is overridden -
@@ -200,6 +210,16 @@ get_env(Key) when is_atom(Key) ->
 	    get_env2(Key, Tab)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_env(Key, Default)
+%%           Key     = atom()
+%%           Default = term(), returned if no value is present
+%% Descrip.: Fetch parameter value, with a default specified by the
+%%           caller. throw() if unknown parameter is requested.
+%% Returns : {ok, Value} |
+%%           Value       |
+%%           none
+%%--------------------------------------------------------------------
 get_env(Key, Default) when is_atom(Key) ->
     %% check if the configuration source for this process is overridden -
     %% for example because we are executing unit tests
@@ -232,6 +252,15 @@ get_env2(Key, Default, Tab) when is_atom(Key) ->
 	Res -> Res
     end.
 
+%%--------------------------------------------------------------------
+%% Function: list()
+%% Descrip.: Return a list of tuples with the current configuration.
+%% Returns : list() of ConfigTuple
+%%           ConfigTuple = {Key, Value, Source}
+%%             Key       = atom()
+%%             Value     = term()
+%%             Source    = atom(), backend module this entry came from
+%%--------------------------------------------------------------------
 list() ->
     case get(?YXA_CONFIG_SOURCE_PTR) of
 	undefined ->
@@ -264,9 +293,8 @@ list(Tab) ->
 %% Function: handle_call(reload, From, State)
 %% Descrip.: Reload configuration.
 %% Returns : {reply, Reply, State}
-%%           Reply = ok                  |
-%%                   {error, Where, Msg}
-%%                   Where = parse | validation | load
+%%           Reply = ok | {error, Where, Msg}
+%%           Where = parse | validation | load
 %%--------------------------------------------------------------------
 handle_call(reload, _From, State) ->
     logger:log(normal, "Config server: Reloading configuration"),
@@ -309,6 +337,12 @@ handle_call(Unknown, _From, State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Log unknown casts we receive.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Config server: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
@@ -322,8 +356,13 @@ handle_cast(Unknown, State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_info(Info, State) ->
-    logger:log(error, "Config server: Received unknown signal :~n~p", [Info]),
+%%--------------------------------------------------------------------
+%% Function: handle_info(Unknown, State)
+%% Descrip.: Log unknown signals we receive.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_info(Unknown, State) ->
+    logger:log(error, "Config server: Received unknown signal :~n~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -423,10 +462,11 @@ merge_entrys(Entrys, []) ->
 %% Function: validate(Cfg, AppModule, Mode)
 %%           Cfg       = yxa_cfg record()
 %%           AppModule = atom(), YXA application name
-%%           Mode      = soft | hard, fail soft (for reloads) or
-%%                       hard (for initial startup)?
+%%           Mode      = soft | hard
 %% Descrip.: Validate and normalize (according to the type
-%%           declarations) all configuration entrys in Cfg.
+%%           declarations) all configuration entrys in Cfg. Mode is
+%%           our fail mode - soft (for reloads) or hard (for initial
+%%           startup).
 %% Returns : {ok, NewCfg} |
 %%           {error, Msg}
 %%           NewCfg = yxa_cfg record()
@@ -438,11 +478,11 @@ validate(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModule),
 %%--------------------------------------------------------------------
 %% Function: load(Cfg, Mode, State)
 %%           Cfg   = yxa_cfg record()
-%%           Mode  = soft | hard, fail soft (for reloads) or
-%%                   hard (for initial startup)?
+%%           Mode  = soft | hard
 %%           State = state record()
 %% Descrip.: Load a parsed and validated config into our configuration
-%%           storage.
+%%           storage. Mode is our fail mode - soft (for reloads) or
+%%           hard (for initial startup).
 %% Returns : ok
 %%--------------------------------------------------------------------
 load(Cfg, Mode, State) when is_record(Cfg, yxa_cfg), (Mode == soft orelse Mode == hard) ->

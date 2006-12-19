@@ -109,8 +109,7 @@ get_users_for_address_of_record(Address) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_users_for_addresses_of_record(Addresses)
-%%           Addresses = list() of string(), addresses in string
-%%                       format.
+%%           Addresses = list() of string(), addresses in string format
 %% Descrip.: Iterate over a list of addresses of record, return
 %%           all users matching one or more of the addresses,
 %%           without duplicates.

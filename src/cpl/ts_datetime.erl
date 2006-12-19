@@ -58,8 +58,8 @@
 %%--------------------------------------------------------------------
 %% Function: datetime_to_usec(Type, Timezone, DateTime)
 %%           Type     = start | stop
-%%           Timezone = currently unsupported
-%%           DateTime = date_time record() (must be a valid date-time, 
+%%           Timezone = term(), currently unsupported
+%%           DateTime = date_time record(), (must be a valid date-time, 
 %%                      but may be a value skipped during change to
 %%                      DST)
 %% Descrip.: converts date_time time to a universal format 
@@ -67,10 +67,9 @@
 %%           determine which time to use when DateTime ends a DST 
 %%           period - use 'start' if the DateTime is the first time in
 %%           a range and 'end' if it is the end of a time range
-%% Returns : integer(), gregorian seconds in UTC format |
-%%           {pseudo_usec, Time}
+%% Returns : integer() | {pseudo_usec, Time}
 %%           Time = integer()
-%%           {pseudo_usec, Time} is returned when a non-existent time 
+%% Note    : {pseudo_usec, Time} is returned when a non-existent time 
 %%           in a date-time is supplied, this occurs only when a 
 %%           floating time is changed to DST, e.g. a 02:xx:xx value is
 %%           set to 03:00:00 (assuming DST change occurs at 02:00:00).
@@ -129,12 +128,13 @@ datetime_to_usec(Type, _Timezone, #date_time{date = Date, time = Time, type = fl
 
 %%--------------------------------------------------------------------
 %% Function: dtstart_lt_dtend(Timezone, S, E)
-%%           Timezone = currently unsupported
-%%           S, E     = date_time record(), E and S are assumed to 
-%%                      have valid date and time values, they may only
-%%                      be invalid due to transition to DST
-%% Descrip.: ensure that dtstart < dtend in a time_switch__cond_x 
-%%           record()
+%%           Timezone = term(), currently unsupported
+%%           S        = date_time record()
+%%           E        = date_time record()
+%% Descrip.: ensure that dtstart `<' dtend in a time_switch__cond_x 
+%%           record(). E and S are assumed to have valid date and time
+%%           values, they may only be invalid due to transition to DST
+
 %% Returns : true | false
 %% Note    : see cpl/README about date-time format limitations, in 
 %%           regard to floating date-time values without time-zone 
@@ -196,6 +196,9 @@ add_datetime_and_duration(DateTime, Duration) ->
 %% Descrip.: add xxxTime number of xxx time units to DateTime
 %% Returns : date_time record()
 %%--------------------------------------------------------------------
+
+%% @clear
+
 add_seconds(#date_time{time = Time} = DT, Sec) ->
     {H, M, PossibleLeapSec} = Time,
     %% ignore possible leap seconds
@@ -246,12 +249,11 @@ add_weeks(DT, Week) ->
 
 %%--------------------------------------------------------------------
 %% Function: unsafe_add_months(DT, Month)
-%%           unsafe_add_years(DT, Year) 
-%%           DT = date_time record()
-%%           Month, Year = integer(), number of months / years
+%%           DT    = date_time record()
+%%           Month = integer(), number of months
 %% Descrip.: needed for adding longer periods 
 %% Returns : date_time record(), values may be illegal 
-%%           i.e. 2005-03-31 + 1 month -> 2005-04-31
+%%                  i.e. 2005-03-31 + 1 month -> 2005-04-31
 %%--------------------------------------------------------------------
 unsafe_add_months(#date_time{date = Date} = DT, Month) ->
     {Y, M, D} = Date,
@@ -260,6 +262,14 @@ unsafe_add_months(#date_time{date = Date} = DT, Month) ->
     NewDate = {Y + ExtraY, NewM, D},
     DT#date_time{date = NewDate}.
 
+%%--------------------------------------------------------------------
+%% Function: unsafe_add_years(DT, Year) 
+%%           DT   = date_time record()
+%%           Year = integer(), number of years
+%% Descrip.: needed for adding longer periods 
+%% Returns : date_time record(), values may be illegal 
+%%                  i.e. 2005-03-31 + 1 month -> 2005-04-31
+%%--------------------------------------------------------------------
 unsafe_add_years(#date_time{date = Date} = DT, Year) ->
     {Y, M, D} = Date,
     NewDate = {Y+Year, M, D},
@@ -267,10 +277,11 @@ unsafe_add_years(#date_time{date = Date} = DT, Year) ->
 
 %%--------------------------------------------------------------------
 %% Function: diff_datetime(Timezone, DT1, DT2, Freq)
-%%           Timezone = currently unused
-%%           DT1, DT2 = date_time record()
-%%           Freq     = see time_switch__cond_8 record() comments in 
-%%                      cpl.hrl
+%%           Timezone = term(), currently unused
+%%           DT1      = date_time record()
+%%           DT2      = date_time record()
+%%           Freq     = term(), see time_switch__cond_8 record()
+%%                      comments in cpl.hrl
 %% Descrip.: get difference between DT1 and DT2  ~ abs(DT1 - DT2), for
 %%           a certain time unit (supplied by Freq)
 %% Returns : integer()
@@ -383,7 +394,7 @@ sub_days(DateTime, Days) ->
 %% Function: datetime_to_type(DateTime, Type, Timezone) 
 %%           DateTime = date_time record() 
 %%           Type     = utc | floating
-%%           Timezone = currently unsupported
+%%           Timezone = term(), currently unsupported
 %% Descrip.: Convert DateTime between various time representations 
 %%           Timezone is currently unsupported and should when 
 %%           supported, only be used when Type = floating
@@ -413,9 +424,10 @@ datetime_to_type(DateTime, Type, _Timezone) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lt_datetime(Timezone, DT1, DT2)
-%%           Timezone = currently not supported
-%%           DT1, DT2 = date_time record()
+%% Function: gt_datetime(Timezone, DT1, DT2)
+%%           Timezone = term(), currently not supported
+%%           DT1      = date_time record()
+%%           DT2      = date_time record()
 %% Descrip.: determine if DT1 > DT2
 %% Returns : true | false                         
 %%--------------------------------------------------------------------
@@ -426,9 +438,10 @@ gt_datetime(_Timezone, DT1, DT2) ->
 
 %%--------------------------------------------------------------------
 %% Function: le_datetime(Timezone, DT1, DT2)
-%%           Timezone = currently not supported
-%%           DT1, DT2 = date_time record()
-%% Descrip.: determine if DT1 =< DT2
+%%           Timezone = term(), currently not supported
+%%           DT1      = date_time record()
+%%           DT2      = date_time record()
+%% Descrip.: determine if DT1 `=<' DT2
 %% Returns : true | false                         
 %%--------------------------------------------------------------------
 le_datetime(_Timezone, DT1, DT2) ->
@@ -438,9 +451,10 @@ le_datetime(_Timezone, DT1, DT2) ->
 
 %%--------------------------------------------------------------------
 %% Function: ge_datetime(Timezone, DT1, DT2)
-%%           Timezone = currently not supported
-%%           DT1, DT2 = date_time record()
-%% Descrip.: determine if DT1 >= DT2
+%%           Timezone = term(), currently not supported
+%%           DT1      = date_time record()
+%%           DT2      = date_time record()
+%% Descrip.: determine if DT1 `>=' DT2
 %% Returns : true | false                         
 %%--------------------------------------------------------------------
 ge_datetime(_Timezone, DT1, DT2) ->

@@ -35,6 +35,12 @@
 %%--------------------------------------------------------------------
 -record(my_state, {}).
 
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+
+%% @type event_pkg() = string().
+%%           Event package string - "dialog" for this package.
 
 %%====================================================================
 %% Behaviour functions
@@ -45,8 +51,8 @@
 %% Function: init()
 %% Descrip.: YXA event packages must export an init/0 function.
 %% Returns : none | {append, SupSpec}
-%%           SupSpec = OTP supervisor child specification. Extra
-%%                     processes this event package want the
+%%           SupSpec = term(), OTP supervisor child specification.
+%%                     Extra processes this event package want the
 %%                     sipserver_sup to start and maintain.
 %%--------------------------------------------------------------------
 init() ->
@@ -54,7 +60,7 @@ init() ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: request("presence", Request, YxaCtx, Ctx)
+%% Function: request(PkgS::event_pkg(), Request, YxaCtx, Ctx)
 %%           Request  = request record(), the SUBSCRIBE request
 %%           YxaCtx   = yxa_ctx record()
 %%           LogTag   = string(), log prefix
@@ -223,8 +229,8 @@ request("presence", _Request, YxaCtx, _Ctx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_allowed_subscribe("presence", Num, Request, YxaCtx,
-%%                                SIPuser, PkgState)
+%% Function: is_allowed_subscribe(PkgS::event_pkg(), Num, Request, YxaCtx,
+%%                                SIPuser, Presentity, PkgState)
 %%           Num      = integer(), the number of subscribes we have
 %%                      received on this dialog, starts at 1
 %%           Request  = request record(), the SUBSCRIBE request
@@ -233,6 +239,7 @@ request("presence", _Request, YxaCtx, _Ctx) ->
 %%                      originator is not not authenticated, and
 %%                      string() if the user is authenticated (empty
 %%                      string if user could not be authenticated)
+%%           Presentity = undefined | {user, User} | {address, Address}
 %%           PkgState = undefined | my_state record()
 %% Descrip.: YXA event packages must export an is_allowed_subscribe/6
 %%           function. This function is called when the event server
@@ -241,15 +248,14 @@ request("presence", _Request, YxaCtx, _Ctx) ->
 %%           subscription should be accepted or not. It is also called
 %%           for every time the subscription is refreshed by the
 %%           subscriber.
-%% Returns : {error, need_auth} |       Request authentication
-%%           {ok, SubState, Status, Reason, ExtraHeaders,
-%%                NewPkgState}  |
+%% Returns : {error, need_auth} |
+%%           {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState}  |
 %%           {siperror, Status, Reason, ExtraHeaders}
 %%           SubState     = active | pending
 %%           Status       = integer(), SIP status code to respond with
 %%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, ValueList} to include in
-%%                          the response to the SUBSCRIBE,
+%%           ExtraHeaders = list() of {Key, ValueList}, headers to
+%%                          include in the response to the SUBSCRIBE,
 %%           Body         = binary() | list()
 %%           PkgState     = my_state record()
 %%--------------------------------------------------------------------
@@ -291,7 +297,7 @@ is_allowed_subscribe2(Header, SubState, Status, Reason, ExtraHeaders, PkgState) 
     end.
 
 %%--------------------------------------------------------------------
-%% Function: notify_content("presence", Presentity, LastAccept,
+%% Function: notify_content(PkgS::event_pkg(), Presentity, LastAccept,
 %%                          PkgState)
 %%           Presentity   = {users, UserList} | {address, AddressStr}
 %%               UserList = list() of string(), SIP usernames
@@ -307,8 +313,8 @@ is_allowed_subscribe2(Header, SubState, Status, Reason, ExtraHeaders, PkgState) 
 %% Returns : {ok, Body, ExtraHeaders, NewPkgState} |
 %%           {error, Reason}
 %%           Body         = io_list()
-%%           ExtraHeaders = list() of {Key, ValueList} to include in
-%%                          the NOTIFY request
+%%           ExtraHeaders = list() of {Key, ValueList}, headers to
+%%                          include in the NOTIFY request
 %%           Reason       = string() | atom()
 %%           NewPkgState  = my_state record()
 %%--------------------------------------------------------------------
@@ -347,7 +353,7 @@ notify_content2(ToUser, LastAccept, PkgState) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("presence", Param)
+%% Function: package_parameters(PkgS::event_pkg(), Param)
 %%           Param = atom()
 %% Descrip.: YXA event packages must export a package_parameters/2
 %%           function. 'undefined' MUST be returned for all unknown
@@ -357,7 +363,7 @@ notify_content2(ToUser, LastAccept, PkgState) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("presence", notification_rate_limit)
+%% Function: package_parameters(PkgS::event_pkg(), notification_rate_limit)
 %% Descrip.: The minimum amount of time that should pass between
 %%           NOTIFYs we send about this event packages events.
 %% Returns : MilliSeconds = integer()
@@ -368,7 +374,7 @@ package_parameters("presence", notification_rate_limit) ->
     5000;
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("presence", request_methods)
+%% Function: package_parameters(PkgS::event_pkg(), request_methods)
 %% Descrip.: What SIP methods this event packages request/7 function
 %%           can handle.
 %% Returns : Methods = list() of string()
@@ -377,7 +383,7 @@ package_parameters("presence", request_methods) ->
     ["PUBLISH", "NOTIFY"];
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters("presence",
+%% Function: package_parameters(PkgS::event_pkg(),
 %%                              subscribe_accept_content_types)
 %% Descrip.: What Content-Type encodings we should list as acceptable
 %%           in SUBSCRIBEs we send.
@@ -391,7 +397,7 @@ package_parameters("presence", _Param) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour("presence", Param, Argument)
+%% Function: subscription_behaviour(PkgS::event_pkg(), Param, Argument)
 %%           Param = atom()
 %%           Argument = term(), depending on Param
 %% Descrip.: YXA event packages must export a sbuscription_behaviour/2
@@ -402,7 +408,7 @@ package_parameters("presence", _Param) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour("presence",
+%% Function: subscription_behaviour(PkgS::event_pkg(),
 %%                                  bidirectional_subscribe,
 %%                                  Request)
 %%           Request = request record()

@@ -241,27 +241,50 @@ format_overridden([], Res) ->
 %% Hooks
 %%====================================================================
 
+%%--------------------------------------------------------------------
+%% Function: url2mnesia_userlist(URL)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 url2mnesia_userlist(URL) when is_record(URL, sipurl) ->
     ?CHECK_EXPORTED({url2mnesia_userlist, 1},
 		    ?LOCAL_MODULE:url2mnesia_userlist(URL),
 		    default_url2mnesia_userlist(URL)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: default_url2mnesia_userlist(URL)
+%%           URL = sipurl record()
+%% Descrip.: Return "user@host" from URL.
+%% Returns : term()
+%%--------------------------------------------------------------------
 default_url2mnesia_userlist(URL) when is_list(URL#sipurl.user) ->
     [URL#sipurl.user ++ "@" ++ URL#sipurl.host];
 default_url2mnesia_userlist(_URL) ->
     [].
 
-% Turn a SIP username into an address which can be reached from anywhere.
-% Used for example from the Mnesia userdb-module. It should be possible
-% to call Mnesia users based on their username, but the username might
-% need sip: prepended to it, or a default domain name appended to it.
+%%--------------------------------------------------------------------
+%% Function: canonify_user(User)
+%%           User = string()
+%% Descrip.: Turn a SIP username into an address which can be reached
+%%           from anywhere. Used for example from the Mnesia
+%%           userdb-module. It should be possible to call Mnesia users
+%%           based on their username, but the username might need sip:
+%%           prepended to it, or a default domain name appended to it.
+%% Returns : string()
+%%--------------------------------------------------------------------
 canonify_user(User) when is_list(User) ->
     ?CHECK_EXPORTED({canonify_user, 1},
 		    ?LOCAL_MODULE:canonfiy_user(User),
 		    default_canonify_user(User)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: default_canonify_user(User)
+%%           User = string()
+%% Descrip.:
+%% Returns : string()
+%%--------------------------------------------------------------------
 default_canonify_user("sip:" ++ User) ->
     "sip:" ++ User;
 default_canonify_user(Fulluser) ->
@@ -272,16 +295,28 @@ default_canonify_user(Fulluser) ->
 	    "sip:" ++ User ++ "@" ++ sipauth:realm()
     end.
 
-%% Canonify a list of addresses. Turn anything numeric into it's E.164
-%% canonical representation. Used from some userdb-modules which potentially
-%% get non-fully qualified phone numbers (like local extension numbers)
-%% back from the database.
+%%--------------------------------------------------------------------
+%% Function: canonify_addresses(In)
+%%           In = list() of string()
+%% Descrip.: Canonify a list of addresses. Turn anything numeric into
+%%           it's E.164 canonical representation. Used from some
+%%           userdb-modules which potentially get non-fully qualified
+%%           phone numbers (like local extension numbers) back from
+%%           the database.
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
 canonify_addresses(In) when is_list(In) ->
     ?CHECK_EXPORTED({canonify_addresses, 1},
 		    ?LOCAL_MODULE:canonfiy_addresses(In),
 		    default_canonify_addresses(In)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: default_canonify_addresses(In)
+%%           In = list() of string()
+%% Descrip.:
+%% Returns : list() of string()
+%%--------------------------------------------------------------------
 default_canonify_addresses(In) when is_list(In) ->
     default_canonify_addresses2(In, []).
 
@@ -321,20 +356,19 @@ default_canonify_addresses2([], Res) ->
 %%           'incomingproxy' application, destined for a local domain
 %%           when it has been determined that the request was not
 %%           addressed to one of our users (see local:lookupuser/1).
-%% Returns : {proxy, PDst}	| proxy unauthenticated
-%%           {relay, RDst}	| relay requiring Proxy-Authentication
-%%           {error, S}		| reject request with SIP status S
-%%           {response, S, R}	| reject request with 'S R'
-%%           {forward, Fwd}	| forward request to another server
-%%           none		  perform default routing
-%%           PDst = sipurl record() | list() of sipdst record() |
-%%                  route
-%%           RDst = sipurl record() | list() of sipdst record() |
-%%                  route
+%%           Return 'none' for default routing.
+%% Returns : {proxy, PDst}    | (proxy unauthenticated)
+%%           {relay, RDst}    | (relay requiring Proxy-Authentication)
+%%           {error, S}       | (reject request with SIP status S)
+%%           {response, S, R} | (reject request with 'S R')
+%%           {forward, Fwd}   | (forward request to another server)
+%%           none
+%%           PDst = sipurl record() | list() of sipdst record() | route
+%%           RDst = sipurl record() | list() of sipdst record() | route
 %%           S    = integer(), SIP status code
 %%           R    = string(), SIP reason phrase
-%%           Fwd  = sipurl record() that MUST have 'user' and 'pass'
-%%                  set to 'none'
+%%           Fwd  = sipurl record(), MUST have 'user' and 'pass' set
+%%                  to 'none'
 %%--------------------------------------------------------------------
 lookup_homedomain_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     ?CHECK_EXPORTED({lookup_homedomain_request, 2},
@@ -348,21 +382,19 @@ lookup_homedomain_request(Request, Origin) when is_record(Request, request), is_
 %%           Origin  = request record()
 %% Descrip.: Determine where to route a request that arrived to the
 %%           'incomingproxy' application, destined for a remote
-%%           domain.
-%% Returns : {proxy, PDst}	| proxy unauthenticated
-%%           {relay, RDst}	| relay requiring Proxy-Authentication
-%%           {error, S}		| reject request with SIP status S
-%%           {response, S, R}	| reject request with 'S R'
-%%           {forward, Fwd}	| forward request to another server
-%%           none		  perform default routing
-%%           PDst = sipurl record() | list() of sipdst record() |
-%%                  route
-%%           RDst = sipurl record() | list() of sipdst record() |
-%%                  route
+%%           domain. Return 'none' to perform default routing.
+%% Returns : {proxy, PDst}	| (proxy unauthenticated)
+%%           {relay, RDst}	| (relay requiring Proxy-Authentication)
+%%           {error, S}		| (reject request with SIP status S)
+%%           {response, S, R}	| (reject request with 'S R')
+%%           {forward, Fwd}	| (forward request to another server)
+%%           none
+%%           PDst = sipurl record() | list() of sipdst record() | route
+%%           RDst = sipurl record() | list() of sipdst record() | route
 %%           S    = integer(), SIP status code
 %%           R    = string(), SIP reason phrase
-%%           Fwd  = sipurl record() that MUST have 'user' and 'pass'
-%%                  set to 'none'
+%%           Fwd  = sipurl record(), MUST have 'user' and 'pass' set
+%%                  to 'none'
 %%--------------------------------------------------------------------
 lookup_remote_request(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     ?CHECK_EXPORTED({lookup_remote_request, 2},
@@ -375,6 +407,7 @@ lookup_remote_request(Request, Origin) when is_record(Request, request), is_reco
 %%           Request = request record()
 %% Descrip.: Determine if a request is meant for this proxy itself, as
 %%           opposed to say a user of the system.
+%% @see      lookup:is_request_to_this_proxy/1.
 %% Returns : true | false
 %%--------------------------------------------------------------------
 is_request_to_this_proxy(Request) when is_record(Request, request) ->
@@ -387,6 +420,12 @@ is_request_to_this_proxy(Request) when is_record(Request, request) ->
 % lookup.erl hooks
 %%%%%%%%%%%%%%%%%%%
 
+%%--------------------------------------------------------------------
+%% Function: lookupregexproute(User)
+%% Descrip.:
+%% @see      lookup:lookupregexproute/1
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookupregexproute(User) ->
     ?CHECK_EXPORTED({lookupregexproute, 1},
 		    ?LOCAL_MODULE:lookupregexproute(User),
@@ -399,12 +438,13 @@ lookupregexproute(User) ->
 %% Descrip.: The main 'give me a set of locations for one of our
 %%           users' function that incomingproxy uses, when it
 %%           determines that a request is for one of it's homedomains.
+%% @see      lookup:lookupuser/1.
 %% Returns : {proxy, URL}               |
 %%           {relay, URL}               |
 %%           {forward, URL}             |
 %%           {response, Status, Reason} |
-%%           none    |   The user was found but has no locations registered
-%%           nomatch     No such user
+%%           none    | (The user was found but has no locations registered)
+%%           nomatch
 %%--------------------------------------------------------------------
 lookupuser(URL) ->
     ?CHECK_EXPORTED({lookupuser, 1},
@@ -416,13 +456,14 @@ lookupuser(URL) ->
 %% Function: lookupuser_gruu(URL, GRUU)
 %%           URL  = sipurl record(), Request-URI
 %%           GRUU = string()
-%% Descrip.:
+%% Descrip.: Look up a GRUU. Used by incomingproxy and outgouingproxy.
+%% @see      lookup:lookupuser_gruu/2.
 %% Returns : {proxy, URL}               |
 %%           {relay, URL}               |
 %%           {forward, URL}             |
 %%           {response, Status, Reason} |
-%%           none    |   The user was found but has no locations registered
-%%           nomatch     No such user
+%%           none    | (The user was found but has no locations registered)
+%%           nomatch
 %%--------------------------------------------------------------------
 lookupuser_gruu(URL, GRUU) ->
     ?CHECK_EXPORTED({lookupuser_gruu, 2},
@@ -439,6 +480,7 @@ lookupuser_gruu(URL, GRUU) ->
 %%           given a Request-URI. By suitable, we mean that we filter
 %%           out SIP locations if Request-URI was SIPS, unless this
 %%           proxy is configured not to.
+%% @see      lookup:lookupuser_locations/2.
 %% Returns : Locations = list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 lookupuser_locations(Users, URL) ->
@@ -453,7 +495,8 @@ lookupuser_locations(Users, URL) ->
 %%           Location = list() of sipurl record()
 %% Descrip.: Apply local policy for what locations are good to use for
 %%           a particular Request-URI.
-%% Returns : list() of sipurl()
+%% @see      lookup:remove_unsuitable_locations/2.
+%% Returns : list() of sipurl record()
 %%--------------------------------------------------------------------
 remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list(Locations) ->
     ?CHECK_EXPORTED({remove_unsuitable_locations, 2},
@@ -461,78 +504,158 @@ remove_unsuitable_locations(URL, Locations) when is_record(URL, sipurl), is_list
 		    lookup:remove_unsuitable_locations(URL, Locations)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookup_url_to_locations(URL)
+%% Descrip.:
+%% @see      lookup:lookup_url_to_locations/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookup_url_to_locations(URL) ->
     ?CHECK_EXPORTED({lookup_url_to_locations, 1},
 		    ?LOCAL_MODULE:lookup_url_to_locations(URL),
 		    lookup:lookup_url_to_locations(URL)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookup_url_to_addresses(Src, URL)
+%% Descrip.:
+%% @see      lookup:lookup_url_to_addresses/2.
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookup_url_to_addresses(Src, URL) ->
     ?CHECK_EXPORTED({lookup_url_to_addresses, 2},
 		    ?LOCAL_MODULE:lookup_url_to_addresses(Src, URL),
 		    lookup:lookup_url_to_addresses(Src, URL)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookup_addresses_to_users(Addresses)
+%% Descrip.:
+%% @see      lookup:lookup_addresses_to_users/1
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookup_addresses_to_users(Addresses) ->
     ?CHECK_EXPORTED({lookup_addresses_to_users, 1},
 		    ?LOCAL_MODULE:lookup_addresses_to_users(Addresses),
 		    lookup:lookup_addresses_to_users(Addresses)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookup_address_to_users(Address)
+%% Descrip.:
+%% @see      lookup:lookup_address_to_users/1
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookup_address_to_users(Address) ->
     ?CHECK_EXPORTED({lookup_address_to_users, 1},
 		    ?LOCAL_MODULE:lookup_address_to_users(Address),
 		    lookup:lookup_address_to_users(Address)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookupappserver(Key)
+%% Descrip.:
+%% @see      lookup:lookupappserver/1
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookupappserver(Key) ->
     ?CHECK_EXPORTED({lookupappserver, 1},
 		    ?LOCAL_MODULE:lookupappserver(Key),
 		    lookup:lookupappserver(Key)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: prioritize_locations(Key, Locations)
+%% Descrip.:
+%% @see      siplocation:prioritize_locations/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 prioritize_locations(Key, Locations) ->
     ?CHECK_EXPORTED({prioritize_locations, 2},
 		    ?LOCAL_MODULE:prioritize_locations(Key, Locations),
 		    siplocation:prioritize_locations(Locations)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookupdefault(URL)
+%% Descrip.:
+%% @see      lookup:lookupdefault/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookupdefault(URL) ->
     ?CHECK_EXPORTED({lookupdefault, 1},
 		    ?LOCAL_MODULE:lookupdefault(URL),
 		    lookup:lookupdefault(URL)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookuppotn(Number)
+%% Descrip.:
+%% @see      lookup:lookuppotn/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookuppotn(Number) ->
     ?CHECK_EXPORTED({lookuppotn, 1},
 		    ?LOCAL_MODULE:lookuppotn(Number),
 		    lookup:lookuppotn(Number)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookupnumber(Number)
+%% Descrip.:
+%% @see      lookup:lookupnumber/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookupnumber(Number) ->
     ?CHECK_EXPORTED({lookupnumber, 1},
 		    ?LOCAL_MODULE:lookupnumber(Number),
 		    lookup:lookupnumber(Number)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookupenum(Number)
+%% Descrip.:
+%% @see      lookup:lookupenum/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookupenum(Number) ->
     ?CHECK_EXPORTED({lookupenum, 1},
 		    ?LOCAL_MODULE:lookupenum(Number),
 		    lookup:lookupenum(Number)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: lookuppstn(Number)
+%% Descrip.:
+%% @see      lookup:lookuppstn/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 lookuppstn(Number) ->
     ?CHECK_EXPORTED({lookuppstn, 1},
 		    ?LOCAL_MODULE:lookuppstn(Number),
 		    lookup:lookuppstn(Number)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: isours(URL)
+%% Descrip.: lookup:isours/1.
+%% @see      foo
+%% Returns : term()
+%%--------------------------------------------------------------------
 isours(URL) ->
     ?CHECK_EXPORTED({isours, 1},
 		    ?LOCAL_MODULE:isours(URL),
 		    lookup:isours(URL)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: homedomain(Domain)
+%%           Domain = string()
+%% Descrip.: Check if something is one of our 'homedomains' - a domain
+%%           we are the final destination for.
+%% @see      lookup:homedomain/1.
+%% Returns : true | false
+%%--------------------------------------------------------------------
 homedomain(Domain) ->
     ?CHECK_EXPORTED({homedomain, 1},
 		    ?LOCAL_MODULE:homedomain(Domain),
@@ -540,7 +663,7 @@ homedomain(Domain) ->
 		   ).
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_party_number(User, Header, DstHost)
+%% Function: get_remote_party_number(User, Header, URI, DstHost)
 %%           User    = string(), SIP authentication username
 %%           Header  = keylist record()
 %%           URI     = sipurl record(), outgoing Request-URI
@@ -552,6 +675,7 @@ homedomain(Domain) ->
 %%           formatted differently, thus the DstHost parameter (a TSP
 %%           gateway to PSTN might only handle E.164 numbers, while a
 %%           PBX might be expecting only a 4-digit extension number).
+%% @see      lookup:get_remote_party_number/4.
 %% Returns : {ok, Number} |
 %%           none
 %%           Number = string()
@@ -570,6 +694,7 @@ get_remote_party_number(User, Header, URI, DstHost) when is_list(User) ->
 %% Descrip.: Hook for the actual formatting once
 %%           get_remote_party_number/2 has found a number to be
 %%           formatted.
+%% @see      lookup:format_number_for_remote_party_id/3.
 %% Returns : {ok, Number}
 %%           Number = string()
 %%--------------------------------------------------------------------
@@ -588,6 +713,7 @@ format_number_for_remote_party_id(Number, Header, DstHost) when is_list(Number) 
 %%           Display Name for the calling party. By default, we only
 %%           do the actual lookup if we can rewrite Key into a E.164
 %%           number.
+%% @see      lookup:get_remote_party_name/2.
 %% Returns : {ok, DisplayName} |
 %%           none
 %%           DisplayName = string()
@@ -602,6 +728,12 @@ get_remote_party_name(Key, DstHost) ->
 		    end
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: rewrite_potn_to_e164(Key)
+%% Descrip.:
+%% @see      lookup:rewrite_potn_to_e164/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 rewrite_potn_to_e164(Key) ->
     ?CHECK_EXPORTED({rewrite_potn_to_e164, 1},
 		    ?LOCAL_MODULE:rewrite_potn_to_e164(Key),
@@ -612,68 +744,124 @@ rewrite_potn_to_e164(Key) ->
 % userdb hooks
 %%%%%%%%%%%%%%%
 
-% Looks up exactly one user with an Address. Used
-% for example in REGISTER. If there are multiple
-% users with an address, this function returns {error}.
+%%--------------------------------------------------------------------
+%% Function: get_user_with_address(Address)
+%% Descrip.: Looks up exactly one user with an Address. Used for
+%%           example in REGISTER. If there are multiple users with an
+%%           address, this function returns {error}.
+%% @see      sipuserdb:get_user_with_address/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_user_with_address(Address) ->
     ?CHECK_EXPORTED({get_user_with_address, 1},
 		    ?LOCAL_MODULE:get_user_with_address(Address),
 		    sipuserdb:get_user_with_address(Address)
 		   ).
 
-% Looks up all users with a given address. Used
-% to find out to which users we should send a request.
+%%--------------------------------------------------------------------
+%% Function: get_user_with_address(Address)
+%% Descrip.: Looks up all users with a given address. Used to find out
+%%           to which users we should send a request.
+%% @see      sipuserdb:get_users_for_address_of_record/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_users_for_address_of_record(Address) ->
     ?CHECK_EXPORTED({get_users_for_address_of_record, 1},
 		    ?LOCAL_MODULE:get_users_for_address_of_record(Address),
 		    sipuserdb:get_users_for_address_of_record(Address)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_users_for_addresses_of_record(Addresses)
+%% Descrip.:
+%% @see      sipuserdb:get_users_for_addresses_of_record/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_users_for_addresses_of_record(Addresses) ->
     ?CHECK_EXPORTED({get_users_for_addresses_of_record, 1},
 		    ?LOCAL_MODULE:get_users_for_addresses_of_record(Addresses),
 		    sipuserdb:get_users_for_addresses_of_record(Addresses)
 		   ).
 
-% Gets all addresses for a user. Used for example
-% to check if a request from a user has an acceptable
-% From: header.
+%%--------------------------------------------------------------------
+%% Function: get_addresses_for_user(User)
+%% Descrip.: Gets all addresses for a user. Used for example to check
+%%           if a request from a user has an acceptable From: header.
+%% @see      sipuserdb:get_addresses_for_user/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_addresses_for_user(User) ->
     ?CHECK_EXPORTED({get_addresses_for_user, 1},
 		    ?LOCAL_MODULE:get_addresses_for_user(User),
 		    sipuserdb:get_addresses_for_user(User)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_addresses_for_users(Users)
+%% Descrip.:
+%% @see      sipuserdb:get_addresses_for_users/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_addresses_for_users(Users) ->
     ?CHECK_EXPORTED({get_addresses_for_users, 1},
 		    ?LOCAL_MODULE:get_addresses_for_users(Users),
 		    sipuserdb:get_addresses_for_users(Users)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_users_for_url(URL)
+%% Descrip.:
+%% @see      sipuserdb:get_users_for_url/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_users_for_url(URL) ->
     ?CHECK_EXPORTED({get_users_for_url, 1},
 		    ?LOCAL_MODULE:get_users_for_url(URL),
 		    sipuserdb:get_users_for_url(URL)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_password_for_user(User)
+%% Descrip.:
+%% @see      sipuserdb:get_password_for_user/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_password_for_user(User) ->
     ?CHECK_EXPORTED({get_password_for_user, 1},
 		    ?LOCAL_MODULE:get_password_for_user(User),
 		    sipuserdb:get_password_for_user(User)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_classes_for_user(User)
+%% Descrip.:
+%% @see      sipuserdb:get_classes_for_user/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_classes_for_user(User) ->
     ?CHECK_EXPORTED({get_classes_for_user, 1},
 		    ?LOCAL_MODULE:get_classes_for_user(User),
 		    sipuserdb:get_classes_for_user(User)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_telephonenumber_for_user(User)
+%% Descrip.:
+%% @see      sipuserdb:get_telephonenumber_for_user/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_telephonenumber_for_user(User) ->
     ?CHECK_EXPORTED({get_telephonenumber_for_user, 1},
 		    ?LOCAL_MODULE:get_telephonenumber_for_user(User),
 		    sipuserdb:get_telephonenumber_for_user(User)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_forwards_for_users(Users)
+%% Descrip.:
+%% @see      sipuserdb:get_forwards_for_users/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_forwards_for_users(Users) ->
     ?CHECK_EXPORTED({get_forwards_for_user, 1},
 		    ?LOCAL_MODULE:get_forwards_for_users(Users),
@@ -723,24 +911,41 @@ sipuserdb_mysql_make_sql_statement(CfgKey, Args) ->
 % Location lookup hooks
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-% Looks up all contacts for a list of users. Used
-% to find out where a set of users are to see where
-% we should route a request.
+%%--------------------------------------------------------------------
+%% Function: get_locations_for_users(Users)
+%% Descrip.: Looks up all contacts for a list of users. Used to find
+%%           out where a set of users are to see where we should route
+%%           a request.
+%% @see      siplocation:get_locations_for_users/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_locations_for_users(Users) ->
     ?CHECK_EXPORTED({get_locations_for_users, 1},
 		    ?LOCAL_MODULE:get_locations_for_users(Users),
 		    siplocation:get_locations_for_users(Users)
 		   ).
 
-% Checks if any of our users are registered at the
-% location specified. Used to determine if we should
-% proxy requests to a URI without authorization.
+%%--------------------------------------------------------------------
+%% Function: get_user_with_contact(URI)
+%% Descrip.: Checks if any of our users are registered at the location
+%%           specified. Used to determine if we should proxy requests
+%%           to a URI without authorization.
+%% @see      siplocation:get_user_with_contact/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_user_with_contact(URI) ->
     ?CHECK_EXPORTED({get_user_with_contact, 1},
 		    ?LOCAL_MODULE:get_user_with_contact(URI),
 		    siplocation:get_user_with_contact(URI)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_locations_with_contact(URI)
+%% Descrip.: like get_user_with_contact but returns a list of
+%%           siplocationdb_e records instead
+%% @see      siplocation:get_locations_with_contact/1.
+%% Returns : term()
+%%--------------------------------------------------------------------
 %% like get_user_with_contact but returns a list of siplocationdb_e records instead
 get_locations_with_contact(URI) ->
     ?CHECK_EXPORTED({get_locations_with_contact, 1},
@@ -748,14 +953,27 @@ get_locations_with_contact(URI) ->
 		    siplocation:get_locations_with_contact(URI)
 		   ).
 
-%% Returns: URL | undefined
+%%--------------------------------------------------------------------
+%% Function: gruu_make_url(User, InstanceId, GRUU, To)
+%% Descrip.: Make an URL out of a GRUU. Return 'undefined' for default
+%%           algorithm.
+%% @see      foo
+%% Returns : URL | undefined
+%%           URL = sipurl record()
+%%--------------------------------------------------------------------
 gruu_make_url(User, InstanceId, GRUU, To) ->
     ?CHECK_EXPORTED({gruu_make_url, 4},
 		    ?LOCAL_MODULE:gruu_make_url(User, InstanceId, GRUU, To),
 		    undefined
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: is_gruu_url(URL)
+%% Descrip.: Check if an URL possibly is a GRUU we've created.
+%% @see      gruu:is_gruu_url/1.
 %% Returns : {true, GRUU} | false
+%%           GRUU = string()
+%%--------------------------------------------------------------------
 is_gruu_url(URL) ->
     ?CHECK_EXPORTED({is_gruu_url, 1},
                     ?LOCAL_MODULE:is_gruu_url(URL),
@@ -766,12 +984,24 @@ is_gruu_url(URL) ->
 % AAA hooks
 %%%%%%%%%%%%
 
+%%--------------------------------------------------------------------
+%% Function: get_user_verified(Header, Method)
+%% Descrip.:
+%% @see      sipauth:get_user_verified/2.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_user_verified(Header, Method) ->
     ?CHECK_EXPORTED({get_user_verified, 2},
 		    ?LOCAL_MODULE:get_user_verified(Header, Method),
 		    sipauth:get_user_verified(Header, Method)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: get_user_verified_proxy(Header, Method)
+%% Descrip.:
+%% @see      sipauth:get_user_verified_proxy/2.
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_user_verified_proxy(Header, Method) ->
     ?CHECK_EXPORTED({get_user_verified_proxy, 2},
 		    ?LOCAL_MODULE:get_user_verified_proxy(Header, Method),
@@ -784,8 +1014,8 @@ get_user_verified_proxy(Header, Method) ->
 %%           URL  = sipurl record()
 %% Descrip.: Check if a user (authenticated elsewhere) may use an
 %%           address. See sipauth module for more information.
-%% Returns : true  |
-%%           false
+%% @see      sipauth:can_use_address/2.
+%% Returns : true | false
 %%--------------------------------------------------------------------
 can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
     ?CHECK_EXPORTED({can_use_address, 2},
@@ -799,6 +1029,7 @@ can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
 %%           URL  = sipurl record()
 %% Descrip.: Check if a user (authenticated elsewhere) may use an
 %%           address. See sipauth module for more information.
+%% @see      sipauth:can_use_address_detail/2.
 %% Returns : {Verdict, Reason}
 %%           Verdict = true | false
 %%           Reason  = ok | eperm | nomatch | error
@@ -815,6 +1046,7 @@ can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
 %%           ToURL   = sipurl record()
 %% Descrip.: Check if a REGISTER message authenticates OK etc. See
 %%           sipauth module for more information.
+%% @see      sipauth:can_register/2.
 %% Returns : {{Verdict, Reason}, User} |
 %%           {stale, User}             |
 %%           {false, none}
@@ -827,6 +1059,12 @@ can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, si
 		    sipauth:can_register(Header, ToURL)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: is_allowed_pstn_dst(User, ToNumber, Header, Class)
+%% Descrip.:
+%% @see      sipauth:is_allowed_pstn_dst/4.
+%% Returns : term()
+%%--------------------------------------------------------------------
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     ?CHECK_EXPORTED({is_allowed_pstn_dst, 4},
 		    ?LOCAL_MODULE:is_allowed_pstn_dst(User, ToNumber, Header, Class),
@@ -855,6 +1093,14 @@ canonify_authusername(Username, Header) when is_list(Username), is_record(Header
 % incomingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
+%%--------------------------------------------------------------------
+%% Function: incomingproxy_challenge_before_relay(Origin, Request,
+%%                                                Dst)
+%% Descrip.: Check if 'incomingproxy' should challenge a request that
+%%           it has determined it should relay, or if it should proxy
+%%           the request without authorization instead.
+%% Returns : term()
+%%--------------------------------------------------------------------
 incomingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
 								is_record(Request, request) ->
     ?CHECK_EXPORTED({incomingproxy_challenge_before_relay, 3},
@@ -862,6 +1108,11 @@ incomingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin
 		    true
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: incomingproxy_request_homedomain_event(Request, Origin)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 incomingproxy_request_homedomain_event(Request, Origin) when is_record(Request, request),
 							     is_record(Origin, siporigin) ->
     ?CHECK_EXPORTED({incomingproxy_request_homedomain_event, 2},
@@ -903,6 +1154,12 @@ pstnproxy_route_pstn_not_e164(DstNumber, Request, PstnCtx) ->
 		    undefined
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: pstnproxy_auth_and_tag(Request, Origin, THandler,
+%%                                  PstnCtx)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 %% Returns: pstn_ctx record()
 pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx) when is_record(Request, request),
 								is_record(Origin, siporigin),
@@ -912,6 +1169,11 @@ pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx) when is_record(Reques
 		    PstnCtx
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: pstnproxy_allowed_methods(Request, PstnCtx)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 %% Returns : {ok, AllowedMethods}
 %%           AllowedMethods = list() of string()
 pstnproxy_allowed_methods(Request, PstnCtx) when is_record(Request, request),
@@ -921,6 +1183,12 @@ pstnproxy_allowed_methods(Request, PstnCtx) when is_record(Request, request),
 		    yxa_config:get_env(allowed_request_methods)
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: pstnproxy_verify_from(Request, THandler, YXAPeerAuth,
+%%                                 PstnCtx)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx) when is_record(Request, request),
 								    is_boolean(YXAPeerAuth),
 								    is_record(PstnCtx, pstn_ctx) ->
@@ -929,12 +1197,23 @@ pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx) when is_record(Re
 		    undefined
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: pstnproxy_number_based_routing(Request, THandler, LogTag,
+%%                                          PstnCtx)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 pstnproxy_number_based_routing(Request, THandler, LogTag, PstnCtx) ->
     ?CHECK_EXPORTED({pstnproxy_number_based_routing, 4},
 		    ?LOCAL_MODULE:pstnproxy_number_based_routing(Request, THandler, LogTag, PstnCtx),
 		    undefined
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: pstnproxy_lookup_action(Request, PstnCtx)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 pstnproxy_lookup_action(Request, PstnCtx) when is_record(Request, request), is_record(PstnCtx, pstn_ctx) ->
     ?CHECK_EXPORTED({pstnproxy_lookup_action, 2},
 		    ?LOCAL_MODULE:pstnproxy_lookup_action(Request, PstnCtx),
@@ -945,6 +1224,14 @@ pstnproxy_lookup_action(Request, PstnCtx) when is_record(Request, request), is_r
 % outgoingproxy hooks
 %%%%%%%%%%%%%%%%%%%%%%
 
+%%--------------------------------------------------------------------
+%% Function: outgoingproxy_challenge_before_relay(Origin, Request,
+%%                                                Dst)
+%% Descrip.: Check if 'outgoingproxy' should challenge a request that
+%%           it has determined it should relay, or if it should proxy
+%%           the request without authorization instead.
+%% Returns : term()
+%%--------------------------------------------------------------------
 outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin, siporigin),
 								is_record(Request, request) ->
     ?CHECK_EXPORTED({outgoingproxy_challenge_before_relay, 3},
@@ -958,7 +1245,7 @@ outgoingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin
 
 %%--------------------------------------------------------------------
 %% Function: get_event_package_module(EventPackage, Request, YxaCtx)
-%%           EventPackage = string() ("presence" | "ua-config" | ...)
+%%           EventPackage = string(), "presence" or "ua-config" etc.
 %%           Request      = request record()
 %%           YxaCtx       = yxa_ctx record()
 %% Descrip.: Decide which event package should handle a request
@@ -984,7 +1271,7 @@ get_event_package_module(EventPackage, Request, YxaCtx) when is_list(EventPackag
 %%           one possible Module for a Package (decided using
 %%           get_event_package_module/3 above).
 %% Returns : {ok, PackageDefs}
-%%           PackageDefs = list() of {Package, Module} tuple()
+%%           PackageDefs = list() of {Package, Module}
 %%           Package     = string()
 %%           Module      = atom()
 %%--------------------------------------------------------------------
@@ -995,6 +1282,11 @@ get_all_event_packages() ->
 		   ).
 
 
+%%--------------------------------------------------------------------
+%% Function: eventserver_locationdb_action(Type, User, Location)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 eventserver_locationdb_action(Type, User, Location) when is_atom(Type), is_list(User) ->
     ?CHECK_EXPORTED({eventserver_locationdb_action, 3},
 		    ?LOCAL_MODULE:eventserver_locationdb_action(Type, User, Location),
@@ -1008,14 +1300,14 @@ eventserver_locationdb_action(Type, User, Location) when is_atom(Type), is_list(
 %% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
 %%           Request  = request record()
 %%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipurl record() | route |
-%%                      list() of sipdst record()
+%%           Dst      = sipurl record() | route | list() of sipdst record()
 %%           AppData  = list() of term(), application specific data
 %%                      passed to the start_sippipe/4 function in your
 %%                      'local' module.
 %% Descrip.: Start a sippipe for one of the YXA applications
 %%           incomingproxy, outgoingproxy or pstnproxy. This is a very
 %%           suitable place to for example add/delete headers.
+%% @see      sippipe:start/5.
 %% Returns : term(), result of sipppipe:start/5
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx),
@@ -1072,6 +1364,7 @@ sippipe_received_response(Request, {Status, Reason}, DstList) when is_record(Req
 %%           User = string()
 %% Descrip.: determine if a cpl script has been loaded for the user
 %%           User
+%% @see      cpl_db:user_has_cpl_script/1.
 %% Returns : true | false
 %%--------------------------------------------------------------------
 user_has_cpl_script(User) ->
@@ -1081,11 +1374,12 @@ user_has_cpl_script(User) ->
 		   ).
 
 %%--------------------------------------------------------------------
-%% Function: user_has_cpl_script(User)
+%% Function: user_has_cpl_script(User, Direction)
 %%           User      = string()
 %%           Direction = incoming | outgoing
 %% Descrip.: determine if a cpl script has been loaded for the user
 %%           User
+%% @see      cpl_db:user_has_cpl_script/1.
 %% Returns : true | false
 %%--------------------------------------------------------------------
 user_has_cpl_script(User, Direction) ->
@@ -1098,8 +1392,9 @@ user_has_cpl_script(User, Direction) ->
 %% Function: get_cpl_for_user(User)
 %%           User = string()
 %% Descrip.: get the cpl script graph for a certain user
+%% @see      cpl_db:get_cpl_for_user/1.
 %% Returns : nomatch | {ok, CPLGraph}
-%%           CPLGraph = a cpl graph for use in
+%%           CPLGraph = term(), a cpl graph for use in
 %%                      interpret_cpl:process_cpl_script(...)
 %%--------------------------------------------------------------------
 get_cpl_for_user(User) ->
@@ -1112,18 +1407,33 @@ get_cpl_for_user(User) ->
 %%--------------------------------------------------------------------
 %% See cpl/README
 %%--------------------------------------------------------------------
+%%--------------------------------------------------------------------
+%% Function: cpl_log(LogName, Comment, User, Request)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 cpl_log(LogName, Comment, User, Request) ->
     ?CHECK_EXPORTED({cpl_log, 4},
 		    ?LOCAL_MODULE:cpl_log(LogName, Comment, User, Request),
 		    undefined
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: cpl_is_log_dest(LogName)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 cpl_is_log_dest(LogName) ->
     ?CHECK_EXPORTED({cpl_is_log_dest, 1},
 		    ?LOCAL_MODULE:cpl_is_log_dest(LogName),
 		    undefined
 		   ).
 
+%%--------------------------------------------------------------------
+%% Function: cpl_mail(Mail, User)
+%% Descrip.:
+%% Returns : term()
+%%--------------------------------------------------------------------
 cpl_mail(Mail, User) ->
     ?CHECK_EXPORTED({cpl_mail, 2},
 		    ?LOCAL_MODULE:cpl_mail(Mail, User),
@@ -1143,9 +1453,10 @@ cpl_mail(Mail, User) ->
 %%           Timeout  = integer(), timeout for INVITE transactions
 %% Descrip.: Start a client transaction, possibly after altering the
 %%           request to be sent.
+%% @see      transactionlayer:start_client_transaction/5.
 %% Returns : Pid |
 %%           {error, Reason}
-%%           Pid    = pid() of started client transaction handler
+%%           Pid    = pid(), started client transaction handler
 %%           Reason = string()
 %%--------------------------------------------------------------------
 start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, request), is_record(Dst, sipdst),
@@ -1169,11 +1480,9 @@ start_client_transaction(Request, Dst, Branch, Timeout) when is_record(Request, 
 %%           returns, the AppModule:request/2 function will either not
 %%           be called at all, called with the parameters unchanged or
 %%           called with a modified set of parameters.
-%% Returns : undefined | Continue processing with default arguments
-%%           ignore    | Don't continue at all (your code assumes
-%%                       responsibility to handle the request)
-%%           {modified, NewAppModule, NewRequest,
-%%                      NewOrigin, NewLogStr}
+%% Returns : undefined | (Continue processing with default arguments)
+%%           ignore    | (Don't continue at all - your code assumes responsibility to handle the request)
+%%           {modified, NewAppModule, NewRequest, NewOrigin, NewLogStr}
 %% Note    : DON'T ALTER THE URI OF INVITE REQUESTS HERE! If you do,
 %%           the ACKs of non-2xx responses will be disqualified by the
 %%           server transaction since the URI of the ACK doesn't match
@@ -1200,11 +1509,9 @@ new_request(AppModule, Request, YxaCtx) ->
 %%           AppModule:response/2 function will either not be called
 %%           at all, called with the parameters unchanged or called
 %%           with a modified set of parameters.
-%% Returns : undefined | Continue processing with default arguments
-%%           ignore    | Don't continue at all (your code assumes
-%%                       responsibility to handle the response)
-%%           {modified, NewAppModule, NewResponse,
-%%                      NewOrigin, NewLogStr}
+%% Returns : undefined | (Continue processing with default arguments)
+%%           ignore    | (Don't continue at all - your code assumes responsibility to handle the response)
+%%           {modified, NewAppModule, NewResponse, NewOrigin, NewLogStr}
 %%--------------------------------------------------------------------
 new_response(AppModule, Response, YxaCtx) ->
     ?CHECK_EXPORTED({new_response, 3},
@@ -1219,8 +1526,8 @@ new_response(AppModule, Response, YxaCtx) ->
 %% Function: is_acceptable_socket(Socket, Dir, Proto, Host, Port,
 %%                                Module, Subject)
 %%           Socket  = term(), the socket
-%%           Dir     = atom(), in | out - direction of connection
-%%           Proto   = atom(), tcp | tcp6 | tls | tls6
+%%           Dir     = in | out, direction of connection
+%%           Proto   = tcp | tcp6 | tls | tls6
 %%           Host    = string(), IP address or hostname of remote end
 %%           Port    = integer()
 %%           Module  = atom(), SIP-socket module name (sipsocket_tcp)
@@ -1254,11 +1561,11 @@ is_tls_equivalent(Proto, Host, Port) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_valid_altnames(Names, Subject, AltNames)
-%%           Names  = list() of string(), list of names for the
-%%                    certificate that the upper layer is willing to
-%%                    accept
+%%           Names    = list() of string(), list of names for the
+%%                      certificate that the upper layer is willing to
+%%                      accept
 %%           Subject  = term(), ssl:peercert() subject data
-%%           AltNames = list of string(), subjectAltName:s in cert
+%%           AltNames = list() of string(), subjectAltName:s in cert
 %% Descrip.: Hook that lets you manipulate what names are considered
 %%           valid for a SSL certificate presented by a host. If, for
 %%           example, the host p1.example.org returns a certificate
@@ -1277,15 +1584,17 @@ get_valid_altnames(Names, Subject, AltNames) ->
 
 %%--------------------------------------------------------------------
 %% Function: lookup_sipsocket_blacklist(Dst)
-%%           Dst = {Proto, Addr, Port} tuple()
-%%                 Proto = tcp | tcp6 | udp | udp6 | tls | tls6 ...
-%%                 Addr  = string(), typically IPv4/IPv6 address
-%%                 Port  = integer()
+%%           Dst = {Proto, Addr, Port}
+%%             Proto = tcp | tcp6 | udp | udp6 | tls | tls6 | atom()
+%%             Addr  = string(), typically IPv4/IPv6 address
+%%             Port  = integer()
 %% Descrip.: Check if a destination is blacklisted/whitelisted.
+%%           Return 'undefined' for default processing.
+%% @see      sipsocket_blacklist:lookup_sipsocket_blacklist/1.
 %% Returns : {ok, Entry}       |
 %%           {ok, blacklisted} |
 %%           {ok, whitelisted} |
-%%           undefined		  continue with default processing
+%%           undefined
 %%           Entry = blacklist_entry record()
 %%--------------------------------------------------------------------
 lookup_sipsocket_blacklist(Dst) ->
@@ -1350,6 +1659,7 @@ config_is_soft_reloadable(Key, Value) ->
 %%           Contact = string(), our Contact header value
 %% Descrip.: Create a dialog record out of a received request and some
 %%           other parameters.
+%% @see      sipdialog:create_dialog_state_uas/3.
 %% Returns : {ok, Dialog}
 %%           Dialog = dialog record()
 %%--------------------------------------------------------------------

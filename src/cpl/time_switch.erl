@@ -58,6 +58,15 @@
 %% Descrip.: get field xxx in a time_switch__cond_x record()
 %% Returns : TimeSwitchCond#time_switch__cond_x.xxx content
 %%--------------------------------------------------------------------
+
+%% @clear
+
+
+%%--------------------------------------------------------------------
+%% Function: get_dtstart(TimeSwitchCond) 
+%% Descrip.: get dtstart from a time_switch__cond_{2,5,7,8} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_dtstart(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_2) ->
@@ -70,6 +79,11 @@ get_dtstart(TimeSwitchCond) ->
 	    TimeSwitchCond#time_switch__cond_8.dtstart
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_dtend_duration(TimeSwitchCond) 
+%% Descrip.: get dtend_duration from a time_switch__cond_{2,5,7,8} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_dtend_duration(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_2) ->
@@ -82,6 +96,11 @@ get_dtend_duration(TimeSwitchCond) ->
 	    TimeSwitchCond#time_switch__cond_8.dtend_duration
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_freq(TimeSwitchCond) 
+%% Descrip.: get freq from a time_switch__cond_{5,7,8} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_freq(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_5) ->
@@ -92,6 +111,11 @@ get_freq(TimeSwitchCond) ->
 	    TimeSwitchCond#time_switch__cond_8.freq
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_interval(TimeSwitchCond) 
+%% Descrip.: get interval from a time_switch__cond_{5,7,8} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_interval(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_5) ->
@@ -102,6 +126,11 @@ get_interval(TimeSwitchCond) ->
 	    TimeSwitchCond#time_switch__cond_8.interval
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_until_count(TimeSwitchCond) 
+%% Descrip.: get until_count from a time_switch__cond_{5,7,8} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_until_count(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_5) ->
@@ -112,6 +141,11 @@ get_until_count(TimeSwitchCond) ->
 	    TimeSwitchCond#time_switch__cond_8.until_count
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_until_count(TimeSwitchCond) 
+%% Descrip.: get by_values from a time_switch__cond_{7,8} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_by_values(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_7) ->
@@ -120,6 +154,11 @@ get_by_values(TimeSwitchCond) ->
 	    TimeSwitchCond#time_switch__cond_8.by_values
     end.
 	    
+%%--------------------------------------------------------------------
+%% Function: get_wkst(TimeSwitchCond) 
+%% Descrip.: get wkst from a time_switch__cond_{7,8} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_wkst(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_7) ->
@@ -128,12 +167,22 @@ get_wkst(TimeSwitchCond) ->
 	    TimeSwitchCond#time_switch__cond_8.wkst
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_bysetpos(TimeSwitchCond) 
+%% Descrip.: get bysetpos from a time_switch__cond_8 record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_bysetpos(TimeSwitchCond) -> 
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_8) ->
 	    TimeSwitchCond#time_switch__cond_8.bysetpos
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_time_ranges(TimeSwitchCond) 
+%% Descrip.: get time_ranges from a time_switch__cond_{5,7} record
+%% Returns : term()
+%%--------------------------------------------------------------------
 get_time_ranges(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_5) ->

@@ -1,5 +1,12 @@
-%% This file is regexp.erl from Erlang/OTP with a few small modifications
-%% by Magnus Ahltorp to allow the extraction of groups (added export: groups/2)
+%%%-------------------------------------------------------------------
+%%% File    : group_regexp.erl
+%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% Descrip.: This file is regexp.erl from Erlang/OTP with a few small
+%%%           modifications by Magnus Ahltorp to allow the extraction
+%%%           of groups (added export: groups/2)
+%%%
+%%% Created : 19 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%%-------------------------------------------------------------------
 
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in

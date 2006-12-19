@@ -41,11 +41,14 @@
 %% External functions
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: start_link/3
-%% Description: Starts the supervisor
+%% Function: start_link(AppModule, MnesiaTables)
+%%           AppModule    = atom(), name of YXA application module
+%%           MnesiaTables = list() of atom()
+%% Descrip.: Starts the supervisor of all supervisors.
+%% Returns : term(), result of supervisor:start_link/3.
 %%--------------------------------------------------------------------
 start_link(AppModule, MnesiaTables) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, [AppModule, MnesiaTables]).
+    supervisor:start_link({local, ?SERVER}, ?MODULE, {AppModule, MnesiaTables}).
 
 %%--------------------------------------------------------------------
 %% Function: get_pids()
@@ -82,13 +85,14 @@ extract_pids([], Res) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule, MnesiaTables])
-%%           AppModule = atom(), name of YXA application module
-%% Returns : {ok,  {SupFlags,  [ChildSpec]}} |
-%%           ignore                          |
-%%           {error, Reason}   
+%% Function: init({AppModule, MnesiaTables})
+%%           AppModule    = atom(), name of YXA application module
+%%           MnesiaTables = list() of atom()
+%% Returns : {ok,  {SupFlags, [ChildSpec]}} |
+%%           ignore                         |
+%%           {error, Reason}
 %%--------------------------------------------------------------------
-init([AppModule, MnesiaTables]) ->
+init({AppModule, MnesiaTables}) ->
     CfgServer = {yxa_config, {yxa_config, start_link, [AppModule]},
 		 permanent, 2000, worker, [yxa_config]},
     Logger = {logger, {logger, start_link, []},

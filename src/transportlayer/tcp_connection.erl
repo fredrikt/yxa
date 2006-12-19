@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : tcp_connection.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Handles a single TCP connection - executes sen and gets
+%%% Descrip.: Handles a single TCP connection - executes send and gets
 %%%           complete received SIP messages from a single TCP
 %%%           receiver associated with this TCP connection.
 %%%
@@ -63,12 +63,12 @@
 
 %%--------------------------------------------------------------------
 %% Function: connection_from(SocketModule, Proto, Socket, HostPort)
-%%           SocketModule = atom(), socket module (gen_tcp | ssl)
+%%           SocketModule = gen_tcp | ssl, socket module
 %%           Proto        = atom(), tcp | tcp6 | tls | tls6
 %%           Socket       = term()
 %%           HostPort     = hp record(), local/remote IP/port info
-%% Descrip.: Incoming connection. Starts a tcp_connection gen_server
-%%           to handle this socket.
+%% Descrip.: Handle an incoming connection. Starts a tcp_connection
+%%           gen_server to handle this socket.
 %% Returns : {ok, Pid} | ignore
 %% Note    : 'ignore' is returned if the socket is not acceptable for
 %%           some reason (e.g. SSL certificate validation failed)
@@ -76,7 +76,7 @@
 connection_from(SocketModule, Proto, Socket, HostPort) when is_atom(SocketModule), is_atom(Proto),
 							    is_record(HostPort, hp) ->
     SSLNames = HostPort#hp.r_ip,
-    gen_server:start(?MODULE, [in, SocketModule, Proto, Socket, HostPort, SSLNames], []).
+    gen_server:start(?MODULE, {in, SocketModule, Proto, Socket, HostPort, SSLNames}, []).
 
 %%--------------------------------------------------------------------
 %% Function: connect_to(Dst, GenServerFrom)
@@ -91,14 +91,14 @@ connection_from(SocketModule, Proto, Socket, HostPort) when is_atom(SocketModule
 %%           Error = term(), result of gen_server:start()
 %%--------------------------------------------------------------------
 connect_to(Dst, GenServerFrom) when is_record(Dst, sipdst) ->
-    gen_server:start_link(?MODULE, [connect, Dst, GenServerFrom], []).
+    gen_server:start_link(?MODULE, {connect, Dst, GenServerFrom}, []).
 
 %%====================================================================
 %% Server functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(L)
+%% Function: init(Arg)
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}          |
 %%           {ok, State, Timeout} |
@@ -107,7 +107,7 @@ connect_to(Dst, GenServerFrom) when is_record(Dst, sipdst) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: init([connect, Dst, GenServerFrom])
+%% Function: init({connect, Dst, GenServerFrom})
 %%           Dst           = sipdst record()
 %%           GenServerFrom = term(), gen_server:call From - used to
 %%                           reply with the new socket to the process
@@ -115,7 +115,7 @@ connect_to(Dst, GenServerFrom) when is_record(Dst, sipdst) ->
 %% Descrip.: Try to connect to a remote host, and answer GenServerFrom
 %% Returns : {ok, State} | ignore
 %%--------------------------------------------------------------------
-init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
+init({connect, Dst, GenServerFrom}) when is_record(Dst, sipdst) ->
     %% to avoid trying to connect to a destination more than once at the same time,
     %% we insert Dst and our own pid into the ets table transportlayer_tcp_conn_queue.
     QKey = {Dst#sipdst.proto, Dst#sipdst.addr, Dst#sipdst.port},
@@ -145,11 +145,11 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: init([Direction, SocketModule, Proto, Socket, HostPort,
-%%                 SSLNames])
+%% Function: init({Direction, SocketModule, Proto, Socket, HostPort,
+%%                 SSLNames})
 %%           Direction    = in | out
-%%           SocketModule = atom(), the name of the socket module
-%%                          this socket uses (gen_tcp | ssl)
+%%           SocketModule = gen_tcp | ssl, the name of the socket
+%%                          module this socket uses
 %%           Proto        = atom(), tcp | tcp6 | tls | tls6
 %%           Socket       = term()
 %%           HP           = hp record(), local/remote IP/port info
@@ -167,7 +167,7 @@ init([connect, Dst, GenServerFrom]) when is_record(Dst, sipdst) ->
 %% Returns : {ok, State, Timeout} |
 %%           {stop, Reason}
 %%--------------------------------------------------------------------
-init([Direction, SocketModule, Proto, Socket, HP, SSLNames]) when is_record(HP, hp) ->
+init({Direction, SocketModule, Proto, Socket, HP, SSLNames}) when is_record(HP, hp) ->
     %% First check if socket is acceptable
     Remote = {HP#hp.r_ip, HP#hp.r_port},
     case is_acceptable_socket(Socket, Direction, Proto, Remote, SSLNames) of
@@ -295,8 +295,7 @@ handle_call(get_raw_socket, _From, State) when State#state.on == true ->
 %%           this operation to GenServerFrom using gen_server:reply().
 %% Returns : {noreply, NewState, Timeout} |
 %%           {stop, Reason, State}
-%%           Reason = normal   |
-%%                    string()
+%%           Reason = normal | string()
 %%--------------------------------------------------------------------
 handle_cast({connect_to_remote, #sipdst{proto = Proto, addr = Host, port = Port} = Dst, GenServerFrom},
 	    #state{on = false} = State) when (Proto == tcp orelse Proto == tcp6 orelse
@@ -331,7 +330,7 @@ handle_cast({connect_to_remote, #sipdst{proto = Proto, addr = Host, port = Port}
 		   },
 
 	    %% Call init() to get the connection properly initialized before we do our gen_server:reply()
-	    case init([out, SocketModule, Proto, NewSocket, HP, Dst#sipdst.ssl_names]) of
+	    case init({out, SocketModule, Proto, NewSocket, HP, Dst#sipdst.ssl_names}) of
 		{ok, NewState, Timeout} ->
 		    SipSocket = NewState#state.sipsocket,
 		    logger:log(debug, "TCP connection: Extra debug: Connected to ~s, socket ~p",
@@ -385,7 +384,7 @@ handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
 			receiver	= self(),
 			sipsocket	= State#state.sipsocket
 		       },
-    sipserver:safe_spawn(sipserver, process, [Msg, Origin, transactionlayer]),
+    sipserver:safe_spawn(sipserver, process, [Msg, Origin]),
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
@@ -549,13 +548,12 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%--------------------------------------------------------------------
 %% Function: start_tcp_receiver(SocketModule, Socket, SipSocket, Dir)
-%%           SocketModule = atom(), gen_tcp | ssl
+%%           SocketModule = gen_tcp | ssl
 %%           Socket       = term(), the socket
 %%           SipSocket    = sipsocket record()
 %%           Direction    = atom(), in | out
 %% Descrip.: Start a receiver that does blocking read on the socket.
-%% Returns : {ok, Receiver} |
-%%           does not return
+%% Returns : {ok, Receiver}
 %%--------------------------------------------------------------------
 start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModule), is_record(SipSocket, sipsocket),
 							      (Dir == in orelse Dir == out) ->
@@ -594,9 +592,9 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
 %%--------------------------------------------------------------------
 %% Function: is_acceptable_socket(Socket, Dir, Proto, Remote, Names)
 %%           Socket = term()
-%%           Dir    = atom(), in | out
+%%           Dir    = in | out
 %%           Proto  = tls | tcp
-%%           Remote = {IP, Port} tuple()
+%%           Remote = {IP, Port}
 %%             IP   = string()
 %%             Port = integer()
 %%           Names  = list() of string(), list of names for the
@@ -604,8 +602,7 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
 %%                    accept
 %% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
 %%           verify that the subjectAltName/CN is included in Names.
-%% Returns : true
-%%           false
+%% Returns : true | false
 %%--------------------------------------------------------------------
 %%
 %% SSL socket
@@ -632,7 +629,7 @@ is_acceptable_socket(Socket, Dir, Proto, Names, Port) ->
 %% Descrip.: Get the variable things depending on protocol.
 %% Returns : {ok, InetModule, SocketModule, Options}
 %%           InetModule   = atom(), inet | ssl
-%%           SocketModule = atom(), gen_tcp | ssl
+%%           SocketModule = gen_tcp | ssl
 %%           Options      = list(), socket options
 %%--------------------------------------------------------------------
 get_settings(tcp) ->

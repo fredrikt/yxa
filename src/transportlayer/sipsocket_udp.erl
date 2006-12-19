@@ -77,7 +77,7 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link/1
+%% Function: start_link()
 %% Descrip.: Starts the server
 %%--------------------------------------------------------------------
 start_link() ->
@@ -204,8 +204,7 @@ start_listening([], State) ->
 %% Descrip.: Get a socket for a certain protocol (Proto). Always
 %%           return the first socket for the requested Proto for now.
 %% Returns : {reply, Reply, State}
-%%           Reply = {ok, SipSocket} |
-%%                   {error, Reason}
+%%           Reply = {ok, SipSocket} | {error, Reason}
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
@@ -224,8 +223,7 @@ handle_call({get_socket, _Proto}, _From, State) ->
 %%           Id = ob_id record()
 %% Descrip.: Get a specific socket.
 %% Returns : {reply, Reply, State}
-%%           Reply = {ok, SipSocket} |
-%%                   {error, Reason}
+%%           Reply = {ok, SipSocket} | {error, Reason}
 %%           SipSocket = sipsocket record()
 %%           Reason    = string()
 %%--------------------------------------------------------------------
@@ -300,8 +298,14 @@ handle_call({send, SipSocket, Host, Port, Message}, _From, State) when is_record
 %%           {noreply, State, Timeout} |
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_cast(Msg, State) ->
-    logger:log(error, "Sipsocket UDP: Received unknown gen_server cast : ~p", [Msg]),
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_cast(Unknown, State) ->
+    logger:log(error, "Sipsocket UDP: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -477,11 +481,12 @@ get_remote_peer(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     not_applicable.
 
 %%--------------------------------------------------------------------
-%% Function: is_reliable_transport(_)
+%% Function: is_reliable_transport(SipSocket)
+%%           SipSocket = sipsocket record()
 %% Descrip.: No UDP protocol is reliable transport. Return false.
 %% Returns : false
 %%--------------------------------------------------------------------
-is_reliable_transport(_) ->
+is_reliable_transport(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     false.
 
 
@@ -573,7 +578,7 @@ received_packet(Packet, IPtuple, IP, Port, Proto, Socket, SipSocket)
 				receiver	= self(),
 				sipsocket	= SipSocket
 			       },
-	    sipserver:safe_spawn(sipserver, process, [Packet, Origin, transactionlayer]),
+	    sipserver:safe_spawn(sipserver, process, [Packet, Origin]),
 	    ok
     end.
 
@@ -675,7 +680,8 @@ get_sipsocket_id_match(_Id, []) ->
 
 %%--------------------------------------------------------------------
 %% Function: do_send(SocketList, SipSocket, Host, Port, Message)
-%%           SocketList = list() of {Socket, SipSocket} tuple()
+%%           SocketList = list() of {Socket, SipSocket}
+%%           Socket     = term(), gen_udp socket
 %%           SipSocket  = sipsocket record(), prefered socket to use
 %%           Host       = string()
 %%           Port       = integer()
@@ -705,8 +711,8 @@ do_send2([], _Host, _Port, _Message) ->
 
 %%--------------------------------------------------------------------
 %% Function: do_send_sort_sockets(Sockets, SipSocket)
-%%           Sockets   = list() of {Socket, SipSocket} tuple()
-%%              Socket = term(), gen_udp socket
+%%           Sockets   = list() of {Socket, SipSocket}
+%%           Socket    = term(), gen_udp socket
 %%           SipSocket = sipsocket record(), prefered socket to use
 %% Descrip.: Sort sockets to try and send a message using. First, we
 %%           look for a socket that matches the requested SipSocket
@@ -714,9 +720,7 @@ do_send2([], _Host, _Port, _Message) ->
 %%           host and port. The best socket found is returned first
 %%           in a new list, but all sockets in Sockets will always be
 %%           returned in NewSockets.
-%% Returns : NewSockets = list() of {Socket, SipSocket} tuple()
-%%               Socket = term(), gen_udp socket
-%%            SipSocket = sipsocket record()
+%% Returns : NewSockets = list() of {Socket, SipSocket}
 %%--------------------------------------------------------------------
 do_send_sort_sockets(Sockets, SipSocket) ->
     case sort_sockets_id(Sockets, SipSocket#sipsocket.id, []) of

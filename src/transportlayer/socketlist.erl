@@ -26,6 +26,8 @@
 	 debugfriendly/1
 	]).
 
+-export([test/0]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -46,6 +48,13 @@
 %%--------------------------------------------------------------------
 -define(DEFAULT_SOCKET_EXPIRE, 300).
 
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+
+%% @type  slist_field() = id | pid | proto | local | remote | sipsocket | expire.
+%%           Extractable #socketlistelem{} fields.
+
 
 %%====================================================================
 %% External functions
@@ -53,16 +62,15 @@
 
 %%--------------------------------------------------------------------
 %% Function: add(Type, Pid, SipSocket, SocketList)
-%%           Type       = listener | from | to
+%%           Type       = listener | in | out
 %%           Pid        = pid(), pid of connection handler
 %%           SipSocket  = sipsocket record()
-%%           Expire     = integer() (0 for never expire)
 %%           SocketList = socketlist record()
-%% Descrip.: Add a new sipsocket entry to SocketList.
-%% Returns : {ok, NewSocketList} |
-%%           {error, Reason}
-%%           NewSocketList = socketlist record()
-%%           Reason        = string()
+%% @equiv    add(Type, Pid, SipSocket, DefaultExpire, SocketList)
+%% Descrip.: Add a new sipsocket entry to SocketList with a default
+%%           expiration time. The DefaultExpire is current time plus
+%%           300 seconds.
+%% Returns : term()
 %%--------------------------------------------------------------------
 add(Type, Pid, SipSocket, SocketList) when is_atom(Type), is_pid(Pid), is_record(SipSocket, sipsocket),
 					   is_record(SocketList, socketlist) ->
@@ -70,6 +78,20 @@ add(Type, Pid, SipSocket, SocketList) when is_atom(Type), is_pid(Pid), is_record
     Expire = util:timestamp() + ?DEFAULT_SOCKET_EXPIRE,
     add(Type, Pid, SipSocket, Expire, SocketList).
 
+%%--------------------------------------------------------------------
+%% Function: add(Type, Pid, SipSocket, Expire, SocketList)
+%%           Type       = listener | in | out
+%%           Pid        = pid(), pid of connection handler
+%%           SipSocket  = sipsocket record()
+%%           Expire     = integer(), absolute expiration time in
+%%                        util:timestamp() format - 0 for never expire.
+%%           SocketList = socketlist record()
+%% Descrip.: Add a new sipsocket entry to SocketList.
+%% Returns : {ok, NewSocketList} |
+%%           {error, Reason}
+%%           NewSocketList = socketlist record()
+%%           Reason        = string()
+%%--------------------------------------------------------------------
 add(Type, Pid, SipSocket, Expire, SocketList) when is_pid(Pid), is_record(SipSocket, sipsocket), is_integer(Expire),
 						   is_record(SocketList, socketlist) ->
     Id = make_yxa_socket_ident(Type, SipSocket),
@@ -117,14 +139,11 @@ empty() ->
 
 %%--------------------------------------------------------------------
 %% Function: extract(Fields, SListElem)
-%%           Fields = list() of atom(), id | pid | proto | local |
-%%                                      remote | sipsocket | expire
+%%           Fields = list() of slist_field()
 %%           SListElem = socketlistelem record()
 %% Descrip.: Return one or more values from a socketlistelem record.
 %% Returns : Values = list()
 %%--------------------------------------------------------------------
-extract(Values, []) ->
-    erlang:fault(Values, []);
 extract(Values, SListElem) when is_record(SListElem, socketlistelem) ->
     extract(Values, SListElem, []).
 
@@ -186,7 +205,7 @@ get_using_id1(Id, [H | T]) when is_record(H, socketlistelem) ->
     get_using_id1(Id, T).
 
 %%--------------------------------------------------------------------
-%% Function: get_using_pid(Id, SocketList)
+%% Function: get_using_pid(Pid, SocketList)
 %%           Pid        = pid()
 %%           SocketList = socketlist record()
 %% Descrip.: Return all elements of SocketList that has a pid matching
@@ -240,20 +259,26 @@ get_using_remote1(_Proto, _IP, _Port, []) ->
     none.
 
 
+%%--------------------------------------------------------------------
+%% Function: get_using_socketid(Id, SocketList)
+%%           Id         = ob_id record()
+%%           SocketList = socketlist record()
+%% Descrip.: Return the first element of SocketList that has a socket
+%%           with id matching the supplied Id.
+%% Returns : Elem |
+%%           none
+%%           Elem = socketlistelem record()
+%%--------------------------------------------------------------------
 get_using_socketid(Id, SocketList) when is_record(SocketList, socketlist), is_record(Id, ob_id) ->
-    case get_using_socketid1(Id, SocketList#socketlist.list, []) of
-	[] ->
-	    none;
-	[Elem] ->
-	    Elem
-    end.
+    get_using_socketid1(Id, SocketList#socketlist.list).
 
-get_using_socketid1(_Id, [], Res) ->
-    Res;
-get_using_socketid1(Id, [#socketlistelem{sipsocket = #sipsocket{id = Id}} = H | T], Res) ->
-    get_using_socketid1(Id, T, [H | Res]);
-get_using_socketid1(Id, [H | T], Res) when is_record(H, socketlistelem) ->
-    get_using_socketid1(Id, T, Res).
+get_using_socketid1(_Id, []) ->
+    none;
+get_using_socketid1(Id, [#socketlistelem{sipsocket = #sipsocket{id = Id}} = H | _T]) ->
+    %% match
+    H;
+get_using_socketid1(Id, [H | T]) when is_record(H, socketlistelem) ->
+    get_using_socketid1(Id, T).
 
 
 %%--------------------------------------------------------------------
@@ -275,6 +300,15 @@ get_length(SList) when is_record(SList, socketlist) ->
 debugfriendly(SList) when is_record(SList, socketlist) ->
     debugfriendly2(debug, SList#socketlist.list).
 
+%%--------------------------------------------------------------------
+%% Function: monitor_format(SList)
+%%           SList = socketlist record()
+%% Descrip.: Return information about the elements in a socketlist
+%%           record in a format that is usable by the monitor program
+%%           once written. The monitor program is NOT maintained.
+%% Returns : Data = term()
+%% @hidden
+%%--------------------------------------------------------------------
 monitor_format(SList) when is_record(SList, socketlist) ->
     debugfriendly2(monitor, SList#socketlist.list).
 
@@ -312,12 +346,15 @@ debugfriendly2(Output, [H | Rest]) when is_record(H, socketlistelem) ->
 			      ", R=", RemoteStr, ", Expire=", ExpireIn]);
 	    monitor ->
 		case Id of
-		    {listener, LProto, LPort} ->
+		    #yxa_socket_ident{type	= listener,
+				      proto	= LProto,
+				      hostport	= #hp{l_port = LPort}
+				     } ->
 			lists:concat(["Listening on: ", LProto, " port ", LPort]);
-		    {from, _Host, _Port} ->
+		    #yxa_socket_ident{type = in} ->
 			lists:concat(["From: ", RemoteStr, " to ", LocalStr,
 				      " (", Proto, ") (expires: ", ExpireIn, ")"]);
-		    {to, _Host, _Port} ->
+		    #yxa_socket_ident{type = out} ->
 			lists:concat(["To: ", RemoteStr, " from ", LocalStr,
 				      " (", Proto, ") (expires: ", ExpireIn, ")"])
 		end
@@ -357,7 +394,7 @@ del_time(Time, []) when is_integer(Time) ->
     [];
 del_time(Time, [H | T]) when is_record(H, socketlistelem), is_integer(Time), H#socketlistelem.expire < Time, H#socketlistelem.expire > 0 ->
     %% XXX signal expired socket pid so that it can exit?
-    logger:log(debug, "socketlist: Extra debug : Record expired :~n~p", [debugfriendly([H])]),
+    logger:log(debug, "socketlist: Extra debug : Record expired :~n~p", [debugfriendly2(debug, [H])]),
     del_time(Time, T);
 del_time(Time, [H | T]) when is_record(H, socketlistelem), is_integer(Time) ->
     [H | del_time(Time, T)].
@@ -383,9 +420,236 @@ make_yxa_socket_ident(in, Proto, HP) when is_atom(Proto), is_record(HP, hp) ->
 					       }
 		     };
 make_yxa_socket_ident(out, Proto, HP) when is_atom(Proto), is_record(HP, hp) ->
-    #yxa_socket_ident{type		= from,
+    #yxa_socket_ident{type		= to,
 		      proto		= Proto,
 		      hostport		= HP#hp{l_ip	= undefined,
 						l_port	= undefined
 					       }
 		     }.
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+    DeadPid1 = spawn(fun() -> ok end),
+    Empty = empty(),
+    
+    %% add(Type, Pid, SipSocket, Expire, SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "add/5 - 1.1"),
+
+    {ok, Add_L1} =
+	add(listener, self(), #sipsocket{proto		= yxa_test,
+					 hostport	= #hp{l_ip = "192.0.2.1",
+							      l_port = 1
+							     },
+					 id		= #ob_id{id = 1}
+					}, 0, Empty),
+    
+    autotest:mark(?LINE, "add/5 - 1.2"),
+    #socketlist{list = [Add_L1_1]} = Add_L1,
+    
+    autotest:mark(?LINE, "add/5 - 1.3"),
+    #socketlistelem{id = #yxa_socket_ident{type		= listener,
+					   proto	= yxa_test,
+					   hostport	= #hp{l_ip = "192.0.2.1",
+							      l_port = 1
+							     }
+					  }
+		    } = Add_L1_1,
+
+    autotest:mark(?LINE, "add/5 - 2.1"),
+    %% add an expired entry
+    Add_L2_2_SipSocket = #sipsocket{proto        = yxa_test,
+				    hostport     = #hp{l_ip = "192.0.2.1",
+						       l_port = 1,
+						       r_ip = "192.0.2.2",
+						       r_port = 2
+						      },
+				    id           = #ob_id{id = 2}
+				   },
+    {ok, Add_L2} =
+	add(in, self(), Add_L2_2_SipSocket, util:timestamp() - 10, Add_L1),
+    
+    autotest:mark(?LINE, "add/5 - 2.2"),
+    #socketlist{list = [Add_L1_2, Add_L1_1]} = Add_L2,
+
+    autotest:mark(?LINE, "add/5 - 2.3"),
+    #yxa_socket_ident{type	= from,
+		      proto	= yxa_test,
+		      hostport	= #hp{l_ip = undefined,
+				      l_port = undefined,
+				      r_ip = "192.0.2.2",
+				      r_port = 2
+				    }
+		      } = Add_L1_2_Id = Add_L1_2#socketlistelem.id,
+
+
+    autotest:mark(?LINE, "add/5 - 3.1"),
+    %% test adding newer entry (should replace old one)
+    {ok, Add_L3_L1} = add(in, self(), Add_L2_2_SipSocket, 10, Empty),
+    {ok, Add_L3_L2} = add(in, self(), Add_L2_2_SipSocket, 20, Add_L3_L1),
+    
+    autotest:mark(?LINE, "add/5 - 3.2"),
+    %% check result
+    #socketlist{list = [Add_L3_L1_Elem1]} = Add_L3_L1,
+    #socketlist{list = [Add_L3_L2_Elem1]} = Add_L3_L2,
+
+    10 = Add_L3_L1_Elem1#socketlistelem.expire,
+    20 = Add_L3_L2_Elem1#socketlistelem.expire,
+
+    false = (Add_L3_L1_Elem1#socketlistelem.ref == Add_L3_L2_Elem1#socketlistelem.ref),
+
+    autotest:mark(?LINE, "add/5 - 3.2"),
+    %% verify our new element
+    #socketlistelem{proto	= yxa_test,
+		    id		= #yxa_socket_ident{type	= from,
+						    proto	= yxa_test,
+						    hostport	= #hp{l_ip = undefined,
+								      l_port = undefined,
+								      r_ip = "192.0.2.2",
+								      r_port = 2
+								     }
+						   },
+		    sipsocket	= Add_L2_2_SipSocket
+		   } = Add_L3_L2_Elem1,
+
+
+    autotest:mark(?LINE, "add/5 - 4"),
+    %% test duplicate id, other pid
+    {error, "Duplicate Id, new Pid"} = add(in, DeadPid1, Add_L2_2_SipSocket, 30, Add_L3_L2),
+
+
+    %% add(Type, Pid, SipSocket, SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "add/4 - 1.1"),
+    Add4_L1_1_HP = #hp{l_ip = "192.0.2.1",
+		       l_port = 1,
+		       r_ip = "192.0.2.2",
+		       r_port = 2
+		      },
+    {ok, Add4_L1} =
+	add(out, self(), #sipsocket{proto	= yxa_test,
+				   hostport	= Add4_L1_1_HP,
+				   id		= #ob_id{id = 2}
+				  }, Empty),
+    
+    autotest:mark(?LINE, "add/4 - 1.2"),
+    #socketlist{list = [#socketlistelem{id		= #yxa_socket_ident{type = to},
+					hostport	= Add4_L1_1_HP
+				       }
+		       ]} = Add4_L1,
+
+
+    %% delete_expired(SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "delete_expired/1 - 1"),
+    Add_L1 = delete_expired(Add_L2),
+
+
+    %% delete_using_pid(Pid, SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "delete_using_pid/2 - 1"),
+    Empty = delete_using_pid(self(), Add_L2),
+
+    autotest:mark(?LINE, "delete_using_pid/2 - 2"),
+    Add_L2 = delete_using_pid(DeadPid1, Add_L2),
+
+
+    %% get_length(SList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_length/1 - 1"),
+    0 = get_length(Empty),
+
+    autotest:mark(?LINE, "get_length/1 - 2"),
+    2 = get_length(Add_L2),
+    
+
+    %% get_using_id(Id, SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_using_id/2 - 1"),
+    GetUsingId1 = get_using_id(Add_L1_2_Id, Add_L2),
+    Add_L1_2_Id = GetUsingId1#socketlistelem.id,
+
+    autotest:mark(?LINE, "get_using_id/2 - 2"),
+    [] = get_using_id(1, Add_L2),
+
+
+    %% get_using_pid(Pid, SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_using_pid/2 - 1"),
+    Add_L2 = get_using_pid(self(), Add_L2),
+
+    autotest:mark(?LINE, "get_using_pid/2 - 2"),
+    none = get_using_pid(DeadPid1, Add_L2),
+
+
+    %% get_using_remote(Proto, IP, Port, SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_using_remote/4 - 1"),
+    Add_L1_2 = get_using_remote(yxa_test, "192.0.2.2", 2, Add_L2),
+
+    autotest:mark(?LINE, "get_using_remote/2 - 2"),
+    none = get_using_remote(yxa_test, "192.0.2.123", 5, Add_L2),
+
+
+    %% get_using_socketid(Id, SocketList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_using_socketid/2 - 1"),
+    Add_L1_2 = get_using_socketid(#ob_id{id = 2}, Add_L2),
+
+    autotest:mark(?LINE, "get_using_socketid/2 - 2"),
+    none = get_using_socketid(#ob_id{id = foo}, Add_L2),
+
+
+    %% extract(Fields, SListElem)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "extract/2 - 1"),
+    Extract_Id1 = Add_L1_2#socketlistelem.id,
+    [Extract_Id1] = extract([id], Add_L1_2),
+
+    autotest:mark(?LINE, "extract/2 - 2"),
+    Extract_Pid1 = Add_L1_2#socketlistelem.pid,
+    [Extract_Pid1] = extract([pid], Add_L1_2),
+
+    autotest:mark(?LINE, "extract/2 - 3"),
+    Extract_Proto1 = Add_L1_2#socketlistelem.proto,
+    [Extract_Proto1] = extract([proto], Add_L1_2),
+
+    autotest:mark(?LINE, "extract/2 - 4"),
+    Extract_HostPort1 = Add_L1_2#socketlistelem.hostport,
+    [Extract_HostPort1] = extract([hostport], Add_L1_2),
+
+    autotest:mark(?LINE, "extract/2 - 5"),
+    Extract_Sipsocket1 = Add_L1_2#socketlistelem.sipsocket,
+    [Extract_Sipsocket1] = extract([sipsocket], Add_L1_2),
+
+    autotest:mark(?LINE, "extract/2 - 6"),
+    Extract_Expire1 = Add_L1_2#socketlistelem.expire,    
+    [Extract_Expire1] = extract([expire], Add_L1_2),
+
+    autotest:mark(?LINE, "extract/2 - 7"),
+    [Extract_Id1, Extract_Pid1] = extract([id, pid], Add_L1_2),
+
+
+    %% debugfriendly(SList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "debugfriendly/1 - 1"),
+    [] = debugfriendly(Empty),
+
+    autotest:mark(?LINE, "debugfriendly/1 - 2"),
+    ["id=" ++ _] = debugfriendly(Add_L1),
+
+
+    %% monitor_format(SList)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "monitor_format/1 - 1"),
+    ["Listening on" ++ _] = monitor_format(Add_L1),
+
+    ok.

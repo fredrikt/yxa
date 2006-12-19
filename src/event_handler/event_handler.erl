@@ -43,10 +43,10 @@
 %% Function: start_link(AppName)
 %%           AppName  = string(), name of YXA application
 %% Descrip.: start the server.
-%% Returns : Result of gen_server:start_link/4
+%% Returns : term(), Result of gen_server:start_link/4
 %%--------------------------------------------------------------------
 start_link(AppName) ->
-    {ok, Handlers} = yxa_config:get_env(event_handler_handlers, []),
+    {ok, Handlers} = yxa_config:get_env(event_handler_handlers),
     case gen_event:start_link({local, ?SERVER}) of
 	{ok, Pid} ->
 	    lists:map(fun(M) when is_atom(M) ->

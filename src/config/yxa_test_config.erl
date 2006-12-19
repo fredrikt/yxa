@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_test_config.erl
-%%% Author  : Fredrik <ft@it.su.se>
+%%% Author  : Fredrik Thulin <ft@it.su.se>
 %%% Descrip.: Module to init/modify a per-process configuration, for
 %%%           use in unit tests.
 %%%
-%%% Created : 28 Nov 2006 by Fredrik <ft@it.su.se>
+%%% Created : 28 Nov 2006 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
 -module(yxa_test_config).
 
@@ -24,7 +24,20 @@
 
 %%--------------------------------------------------------------------
 %% Function: init(L)
-%%           init(App, L)
+%%           L   = list() of {Key, Value}
+%%                 Key   = atom()
+%%                 Value = term()
+%% Descrip.: Initiates a per-process configuration with the defaults
+%%           for App. Fetches the App name from the configuration.
+%% Returns : ok | {error, Msg}
+%%           Msg = string() | atom()
+%%--------------------------------------------------------------------
+init(L) when is_list(L) ->
+    {ok, App} = yxa_config:get_env(yxa_appmodule),
+    init(App, L).
+
+%%--------------------------------------------------------------------
+%% Function: init(App, L)
 %%           L   = list() of {Key, Value}
 %%                 Key   = atom()
 %%                 Value = term()
@@ -34,10 +47,6 @@
 %% Returns : ok | {error, Msg}
 %%           Msg = string() | atom()
 %%--------------------------------------------------------------------
-init(L) when is_list(L) ->
-    {ok, App} = yxa_config:get_env(yxa_appmodule),
-    init(App, L).
-
 init(App, L) when is_atom(App), is_list(L) ->
     Ets = ets:new(?MODULE, [protected, set]),
 
@@ -62,7 +71,6 @@ init(App, L) when is_atom(App), is_list(L) ->
 
 %%--------------------------------------------------------------------
 %% Function: set(L)
-%%           set(Key, Value)
 %%           L     = list() of {Key, Value}
 %%           Key   = atom()
 %%           Value = term()
@@ -79,6 +87,15 @@ set([{Key, Value} | T]) ->
 set([]) ->
     ok.
 
+%%--------------------------------------------------------------------
+%% Function: set(Key, Value)
+%%           Key   = atom()
+%%           Value = term()
+%% Descrip.: Update a per-process configuration. Returns an error-
+%%           tuple if no per-process config is in use.
+%% Returns : ok | {error, Msg}
+%%           Msg = atom()
+%%--------------------------------------------------------------------
 set(Key, Value) when is_atom(Key) ->
     case get(?YXA_CONFIG_SOURCE_PTR) of
 	undefined ->

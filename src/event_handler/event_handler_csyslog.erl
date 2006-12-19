@@ -64,7 +64,7 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Args) -> {ok, State}
+%% Function: init(Args)
 %% Descrip.: Initialize this event handler.
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
@@ -101,7 +101,7 @@ init([AppName, PortName]) when is_atom(AppName), is_list(PortName) ->
 %%                        State)
 %%           Pid   = pid(), process generating the event
 %%           Prio  = atom(), debug | normal | error
-%%           Class = atom(), class of message (call | proxy | ...)
+%%           Class = call | proxy | atom(), class of message
 %%           Id    = string()
 %%           L     = list() of term(), the data to be logged
 %% Descrip.: Log event using our syslog port driver.

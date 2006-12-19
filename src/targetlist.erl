@@ -65,14 +65,14 @@
 
 %%--------------------------------------------------------------------
 %% Function: add(Branch, Request, Pid, State, Timeout, DstList,
-%%               User, Instance, TargetList)
+%%               UserInst, TargetList)
 %%           Branch     = string()
 %%           Request    = request record()
 %%           Pid        = pid()
 %%           State      = atom()
 %%           Timeout    = integer()
 %%           DstList    = list() of sipdst record()
-%%           UserInst   = none | tuple() ({User, Instance})
+%%           UserInst   = none | {User, Instance}
 %%           TargetList = targetlist record()
 %% Descrip.: Add a new entry to TargetList, after verifying that a
 %%           target with this branch is not already in the list.
@@ -80,7 +80,7 @@
 %%--------------------------------------------------------------------
 add(Branch, Request, Pid, State, Timeout, DstList, UserInst, TargetList) 
   when is_list(Branch), is_record(Request, request), is_pid(Pid), is_atom(State), is_integer(Timeout),
-       is_list(DstList), is_record(TargetList, targetlist), is_tuple(UserInst); UserInst == none ->
+       is_list(DstList), is_record(TargetList, targetlist), (is_tuple(UserInst) orelse UserInst == none) ->
     case get_using_branch(Branch, TargetList) of
 	none ->
 	    NewTarget = #target{ref		= make_ref(),
@@ -123,7 +123,9 @@ get_length(TargetList) when is_record(TargetList, targetlist) ->
 %%           TargetList = targetlist record()
 %% Descrip.: Locate the old instance of the target Target in
 %%           the TargetList and exchange it with Target.
-%% Returns : NewTargetList = list() of target record() | throw(...)
+%% Returns : NewTargetList |
+%%           throw({error, update_of_non_existin_target})
+%%           NewTargetList = list() of target record()
 %%--------------------------------------------------------------------
 update_target(Target, TargetList) when is_record(Target, target), is_record(TargetList, targetlist) ->
     Ref = Target#target.ref,
@@ -231,7 +233,10 @@ get_targets_in_state2(State, [H | T], Res) when is_record(H, target) ->
 %% Function: get_repsonses(TargetList)
 %%           TargetList = targetlist record()
 %% Descrip.: Get all responses that has been set (i.e. not undefined).
-%% Returns : list() of response record() | {Status, Reason} tuple()
+%% Returns : list() of Response
+%%           Response = sp_response record() | {Status, Reason}
+%%           Status   = integer(), SIP status code
+%%           Reason   = string(), SIP reason phrase
 %%--------------------------------------------------------------------
 get_responses(TargetList) when is_record(TargetList, targetlist) ->
     get_responses2(TargetList#targetlist.list, []).
@@ -247,8 +252,7 @@ get_responses2([#target{endresult = none} | T], Res) ->
 
 %%--------------------------------------------------------------------
 %% Function: extract(Keys, Target)
-%%           Keys = list() of atom(), pid | branch | request | state |
-%%                  timeout | dstlist | endresult | cancelled
+%%           Keys   = [pid | branch | request | state | timeout | dstlist | endresult | cancelled]
 %%           Target = target record()
 %% Descrip.: Extract one or more values from a target record. Return
 %%           the values in a list of the same order as Keys.
@@ -270,24 +274,52 @@ extract([],			#target{},				Res) -> lists:reverse(Res).
 
 %%--------------------------------------------------------------------
 %% Function: set_pid(Target, Value)
-%%           set_state(Target, Value)
-%%           set_endresult(Target, Value)
-%%           set_dstlist(Target, Value)
-%%           set_cancelled(Target, Value)
 %%           Target = target record()
-%%           Value  = term(), new value
-%% Descrip.: Set functions.
+%%           Value  = pid()
+%% Descrip.: Update an element in a target.
 %% Returns : NewTarget = target record()
 %%--------------------------------------------------------------------
 set_pid(Target, Value) when is_record(Target, target), is_pid(Value) ->
     Target#target{pid = Value}.
+
+%%--------------------------------------------------------------------
+%% Function: set_state(Target, Value)
+%%           Target = target record()
+%%           Value  = atom()
+%% Descrip.: Update an element in a target.
+%% Returns : NewTarget = target record()
+%%--------------------------------------------------------------------
 set_state(Target, Value) when is_record(Target, target), is_atom(Value) ->
     Target#target{state = Value}.
+
+%%--------------------------------------------------------------------
+%% Function: set_endresult(Target, Value)
+%%           Target = target record()
+%%           Value  = sp_response record()
+%% Descrip.: Update an element in a target.
+%% Returns : NewTarget = target record()
+%%--------------------------------------------------------------------
 set_endresult(Target, Value) when is_record(Target, target), is_record(Value, sp_response) ->
     Target#target{endresult = Value}.
+
+%%--------------------------------------------------------------------
+%% Function: set_dstlist(Target, Value)
+%%           Target = target record()
+%%           Value  = list() of term()
+%% Descrip.: Update an element in a target.
+%% Returns : NewTarget = target record()
+%%--------------------------------------------------------------------
 set_dstlist(Target, Value) when is_record(Target, target), is_list(Value) ->
     Target#target{dstlist = Value}.
-set_cancelled(Target, Value) when is_record(Target, target), Value == true; Value == false ->
+
+%%--------------------------------------------------------------------
+%% Function: set_cancelled(Target, Value)
+%%           Target = target record()
+%%           Value  = true | false
+%% Descrip.: Update an element in a target.
+%% Returns : NewTarget = target record()
+%%--------------------------------------------------------------------
+set_cancelled(Target, Value) when is_record(Target, target), is_boolean(Value) ->
     Target#target{cancelled = Value}.
 
 

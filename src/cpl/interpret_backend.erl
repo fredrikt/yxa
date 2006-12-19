@@ -1,6 +1,10 @@
-%%
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : interpret_backend.erl
+%%% Author  : Håkan Stenholm <hsten@it.su.se>
+%%% Descrip.: 
+%%%
+%%% Created : 03 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%%-------------------------------------------------------------------
 -module(interpret_backend).
 
 %%--------------------------------------------------------------------
@@ -105,12 +109,12 @@ get_outgoing_destination(Request) when is_record(Request, request) ->
 %% Descrip.: retrieves the value from a request that address-switch
 %%           wants to switch on
 %% Returns : sipurl record() | {Field, Val} | '#no_value' 
-%%           Field = subfield name, attribute name in address-switch
-%%                   tag
+%%           Field = term(), subfield name, attribute name in
+%%                   address-switch tag
 %% Note    : only SIP URIs are supported
+%%--------------------------------------------------------------------
 %% XXX URI can supposedly always be retrieved ?
 %% XXX DisplayName handling ?
-%%--------------------------------------------------------------------
 'get_address-switch_field'(Request, Field, '#no_value') when is_record(Request, request) ->
     {_DisplayName, URI} = get_address_switch_uri(Request, Field),
     URI;
@@ -148,8 +152,7 @@ none_to_no_value_atom(SubField, Val) ->
 
 %%--------------------------------------------------------------------
 %% Function: compare_address_or_address_part(ReqVal, Val)
-%%           ReqVal = sipurl record() |
-%%                    {SubField, RVal}
+%%           ReqVal = sipurl record() | {SubField, RVal}
 %%                    both are return values from
 %%                    'get_address-switch_field'/3
 %%           Val    = string(), cpl script supplied value
@@ -219,8 +222,8 @@ compare_address_or_address_part({password, ReqVal}, Val) ->
 %% Descrip.: determine if Val from CPL script was part of value
 %%           (ReqVal) in Request
 %% Returns : true | false
-%% XXX see compare_address_or_address_part({display, ReqVal}, Val) about lacking unicode support !
 %%--------------------------------------------------------------------
+%% XXX see compare_address_or_address_part({display, ReqVal}, Val) about lacking unicode support !
 address_or_address_part_contains({display, ReqVal}, Val) ->
     %% non-zero index is returned if Val is a part of ReqVal
     case string:str(httpd_util:to_lower(ReqVal), httpd_util:to_lower(Val)) of
@@ -230,8 +233,8 @@ address_or_address_part_contains({display, ReqVal}, Val) ->
 
 %%--------------------------------------------------------------------
 %% Function: is_subdomain(ReqHostVal, ScriptVal)
-%%           ReqHostVal, ScriptVal = string(), a domain name or IP4/6
-%%           value
+%%           ReqHostVal = string(), a domain name or IP4/6 value
+%%           ScriptVal = string(), a domain name or IP4/6 value
 %% Descrip.: check that ScriptVal matches the tail of ReqHostVal e.g. 
 %%           that "bar.com" is part of "foo.bar.com".
 %%           is_subdomain/2 checks that SubStr is well formed i.e.
@@ -337,8 +340,7 @@ is_subdomain3([_C1 | _], [_C2 | _]) ->
 
 %%--------------------------------------------------------------------
 %% Function: string_is(ReqVal, Val)
-%%           string_contains(ReqVal, Val)
-%% Descrip.: check if Val is same / sub string of ReqVal
+%% Descrip.: Check if Val is same as ReqVal.
 %% Returns : true | false
 %% Note    :
 %% "Strings are matched as case-insensitive Unicode strings, in the
@@ -351,6 +353,18 @@ is_subdomain3([_C1 | _], [_C2 | _]) ->
 string_is(ReqVal, Val) ->
     httpd_util:to_lower(ReqVal) == httpd_util:to_lower(Val).
 
+%%--------------------------------------------------------------------
+%% Function: string_contains(ReqVal, Val)
+%% Descrip.: Check if Val is a string of ReqVal.
+%% Returns : true | false
+%% Note    :
+%% "Strings are matched as case-insensitive Unicode strings, in the
+%%  following manner.  First, strings are canonicalized to the
+%%  "Compatibility Composition" (KC) form, as specified in Unicode
+%%  Standard Annex #15 [5].  Then, strings are compared using locale-
+%%  insensitive caseless mapping, as specified in Unicode Standard Annex
+%%  #21 [6]." - RFC 3880 chapter 4.2 p12      XXX this code only does a byte by byte compare with latin-1 chars
+%%--------------------------------------------------------------------
 string_contains(ReqVal, Val) ->
     case string:str(httpd_util:to_lower(ReqVal), httpd_util:to_lower(Val)) of
 	0 -> false;
@@ -362,7 +376,7 @@ string_contains(ReqVal, Val) ->
 %%           Request = request record()
 %% Descrip.: retrieve the languages supplied in the request sorted in 
 %%           q order
-%% Returns : '#no_value | 'list() of string() - the language codes
+%% Returns : '#no_value' | list() of string(), the language codes
 %% Note    : RFC 3066 handles language codes
 %% Note    : sorting on q-value is mainly done here to support CPL
 %%           extensions that can use q-values in a sensible manner
@@ -405,8 +419,8 @@ sort_languages_in_q_order(AcceptLanguageStrs) ->
 %% Function: language_matches(ReqLangRanges, ScriptLangTag)
 %%           ReqLangs = list() of LanguageRange
 %%           LanguageRange = string()
-%%           ScriptLangTag = a language tag
-%% Descrip.: implements a single <Language matches = "..."> match 
+%%           ScriptLangTag = term(), a language tag
+%% Descrip.: implements a single `` <Language matches = "..."> '' match 
 %%           according to RFC 3880 chapter 4.3 (see cpl/README for more
 %%           details)
 %% Returns : true | false
@@ -464,13 +478,16 @@ prefix_match2(_, _) ->
 %%--------------------------------------------------------------------
 %% Function: parse_accept_language(Str)
 %%           Str = string(), a single language entry from a 
-%%           Accept-Language header
-%% Descrip.: parse a language entry with possible q-value
-%% Returns : {QVal, Language} | 
-%%           throw() (if Str is a malformed member of a 
-%%                    Accept-Language header in a request)
-%%           Language = string() | "*"
-%%           QVal = float() in range = 0-1
+%%                           Accept-Language header
+%% Descrip.: Parse a language entry with possible q-value. Throws an
+%%           error if Str is a malformed member of a Accept-Language
+%%           header in a request.
+%% Returns : {QVal, Language} |
+%%           throw({error, malformed_accept_language_element})
+%%           Language = string() | Asterisk
+%%           Asterisk = [42]
+%%                             silly because of edoc limitation
+%%           QVal     = float(), in range = 0-1
 %%--------------------------------------------------------------------
 parse_accept_language(Str) ->
     %% try is used, so that a consistent exception can be returned for 
@@ -501,10 +518,12 @@ parse_accept_language(Str) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function:
-%% Descrip.:
-%% Returns :
-%% Note    :
+%% Function: 'get_priority-switch_value'(Request)
+%%           Request = request record()
+%% Descrip.: Get priority from initial INVITE "Priority" header.
+%% Returns : normal | emergency | urgent | 'non-urgent' |
+%%           {unknown, PrioStr}
+%%           PrioStr = string()
 %%--------------------------------------------------------------------
 %% "The priority of a SIP message corresponds to the "Priority" header in
 %%  the initial "INVITE" message." - RFC 3880 chapter 4.5.1 p21
@@ -555,10 +574,11 @@ prio(Prio) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookup(Source, UserURI, Timeout)
+%% Function: lookup(Source, User, URI, Timeout)
 %%           Source  = string(), a URI or a non-URI source (only
 %%                     "registration" is defined in RFC 3880)
-%%           User    = SIP username of user whose CPL script this is
+%%           User    = string(), SIP username of user whose CPL script
+%%                     this is
 %%           URI     = sipurl record()
 %%           Timeout = integer(), seconds to try lookup
 %% Descrip.:
@@ -633,7 +653,7 @@ rm_location(Locations, URIStr) ->
 %%           Request  = request record()
 %% Descrip.: log to some kind of storage (refered to as 
 %%           #log__attrs.name)
-%% Returns : -
+%% Returns : term()
 %%--------------------------------------------------------------------
 %% "Servers SHOULD also include other information in the log, such as
 %%  the time of the logged event, information that triggered the call
@@ -643,13 +663,15 @@ rm_location(Locations, URIStr) ->
 log(#log__attrs{name = LogName, comment = Comment}, User, Request) ->
     log(LogName, Comment, User, Request).
 
+%%--------------------------------------------------------------------
 %% Function: log(LogName, Comment, User, Request)
-%%           LogName  = default (no name parameter supplied by cpl) | 
-%%                      string(), cpl parameter
+%%           LogName  = default | string(), cpl parameter
 %%           Comment  = string(), cpl parameter
 %%           User     = string(), user id
 %%           Request  = request record()
 %% Descrip.: log to some kind of storage refereed to as LogName
+%% Returns : ok
+%%--------------------------------------------------------------------
 log(LogName, Comment, User, Request) ->
     case local:cpl_log(LogName, Comment, User, Request) of
 	undefined ->
@@ -668,7 +690,7 @@ log(LogName, Comment, User, Request) ->
 %%           nothing.
 %%           The callback function CallBackModule:mail/2 takes the 
 %%           same arguments as this function 
-%% Returns : -
+%% Returns : term()
 %%--------------------------------------------------------------------
 %% "The "mail" node takes one argument: a "mailto" URL giving the
 %%  address, and any additional desired parameters, of the mail to be
@@ -692,7 +714,7 @@ mail(Mail, User) ->
 
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: in_time_range(Timezone, TimeSwitchCond)
 %% Descrip.: determine if the time period specified by the
 %%           TimeSwitchCond is currently occurring
 %% Returns : true | false
@@ -720,7 +742,8 @@ get_server_max() ->
     M.
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: test_proxy_destinations(Count, BranchBase, Request,
+%%           Actions, Surplus, Timeout, Recurse, STHandler)
 %% Descrip.:
 %% Returns : {Result, BestLocation, BestResponse}
 %%--------------------------------------------------------------------
@@ -742,7 +765,8 @@ test_proxy_destinations(Count, BranchBase, Request, Actions, Surplus, _Timeout, 
     Res.
 
 %%--------------------------------------------------------------------
-%% Function: test_proxy_destinations_loop(STHandlerPid, AppGluePid)
+%% Function: test_proxy_destinations_loop(STHandlerPid, AppGluePid,
+%%                                        STAlive)
 %%           STHandlerPid = pid(), server transaction handler pid
 %%           AppGluePid   = pid(), appserver_glue process pid
 %%           STAlive      = true | false, server transaction status
@@ -812,7 +836,7 @@ test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive) ->
 %%--------------------------------------------------------------------
 %% Function: make_proxy_destinations_response(Status, Response)
 %%           Status   = integer(), SIP status code
-%%           Response = response record() | {Status, Reason} tuple()
+%%           Response = response record() | {Status, Reason}
 %%             Reason = string(), SIP reason phrase
 %% Descrip.: Make a test_proxy_destinations() return tuple out of what
 %%           appserver_glue resulted in.
@@ -860,7 +884,7 @@ make_proxy_destinations_response(Status, Response)
 %% Function: get_address_switch_uri(Request, Field)
 %% Descrip.: retrieves a address as specified by the field attribute 
 %%           in the address-switch tag
-%% Returns : {DisplayName, URI},
+%% Returns : {DisplayName, URI}
 %%           DisplayName = none | string()
 %%           URI = sipurl record()
 %%--------------------------------------------------------------------
@@ -881,9 +905,9 @@ get_address_switch_uri(Request, Field) when is_record(Request, request) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function:
+%% Function: test()
 %% Descrip.: autotest callback
-%% Returns :
+%% Returns : ok
 %% Note    : moved test cases to xml_parse_test, to keep file size
 %%           manageable
 %%--------------------------------------------------------------------

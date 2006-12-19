@@ -1,7 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_blacklist_probe.erl
 %%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Blacklist probe process.
+%%% Descrip.: Blacklist probe process. When started, sends an OPTIONS
+%%%           request to the (currently blacklisted) destination. If
+%%%           we get a response, the blacklist entry is removed. If we
+%%%           don't, the blacklisting is prolonged.
 %%%
 %%% Created : 23 Feb 2006 by Fredrik Thulin <ft@it.su.se>
 %%%-------------------------------------------------------------------
@@ -55,9 +58,10 @@
 %%--------------------------------------------------------------------
 %% Function: start(Dst, EtsRef, ProbeId, Timeout)
 %% Descrip.: Starts the server
+%% Returns : term()
 %%--------------------------------------------------------------------
 start(Dst, EtsRef, ProbeId, Timeout) ->
-    gen_server:start(?MODULE, [Dst, EtsRef, ProbeId, Timeout], []).
+    gen_server:start(?MODULE, {Dst, EtsRef, ProbeId, Timeout}, []).
 
 
 %%====================================================================
@@ -65,7 +69,7 @@ start(Dst, EtsRef, ProbeId, Timeout) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Dst, EtsRef, ProbeId, Timeout])
+%% Function: init({Dst, EtsRef, ProbeId, Timeout})
 %%           Dst     = sipdst record()
 %%           EtsRef  = term(), ETS table name/reference
 %%           ProbeId = term(), id of probe in the ETS table
@@ -73,7 +77,7 @@ start(Dst, EtsRef, ProbeId, Timeout) ->
 %% Descrip.: Initiates the server
 %% Returns : {ok, State}
 %%--------------------------------------------------------------------
-init([Dst, EtsRef, ProbeId, Timeout]) ->
+init({Dst, EtsRef, ProbeId, Timeout}) ->
     %% Send myself a signal to start, and then return immediately to
     %% not block the caller
     self() ! start,
@@ -96,8 +100,13 @@ init([Dst, EtsRef, ProbeId, Timeout]) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_call(Msg, _From, State) ->
-    logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server call : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_call(Unknown, From, State)
+%% Descrip.: Unknown call.
+%% Returns : {reply, {error, not_implemented}, State, ?TIMEOUT}
+%%--------------------------------------------------------------------
+handle_call(Unknown, _From, State) ->
+    logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, not_implemented}, State}.
 
 
@@ -109,8 +118,13 @@ handle_call(Msg, _From, State) ->
 %%           {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_cast(Msg, State) ->
-    logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server cast : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Unknown, State)
+%% Descrip.: Unknown cast.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_cast(Unknown, State) ->
+    logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
 
@@ -150,8 +164,13 @@ handle_info({clienttransaction_terminating, Pid, _Branch}, #state{probe_pid = Pi
     logger:log(debug, "Sipsocket blacklist probe: Terminating probe for dst ~s", [sipdst:dst2str(State#state.dst)]),
     {stop, normal, State};
 
-handle_info(Msg, State) ->
-    logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server info : ~p", [Msg]),
+%%--------------------------------------------------------------------
+%% Function: handle_info(Unknown, State)
+%% Descrip.: Unknown info.
+%% Returns : {noreply, State}
+%%--------------------------------------------------------------------
+handle_info(Unknown, State) ->
+    logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------

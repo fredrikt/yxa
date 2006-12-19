@@ -115,7 +115,7 @@ start_link(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
     %% set process_flag(trap_exit, true)! We set up a link to this process
     %% in the init/1 callback to achieve the same effect (although with
     %% a bitter taste).
-    gen_server:start(?MODULE, [Request, YxaCtx, self()], []).
+    gen_server:start(?MODULE, {Request, YxaCtx, self()}, []).
 
 
 %%====================================================================
@@ -123,7 +123,7 @@ start_link(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, YxaCtx, Parent])
+%% Function: init({Request, YxaCtx, Parent})
 %%           Request   = request record()
 %%           YxaCtx    = yxa_ctx record()
 %% Descrip.: Initiates the server transaction gen_server
@@ -135,7 +135,7 @@ start_link(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 %%
 %% ACK - no go
 %%
-init([#request{method="ACK"} = Request, _YxaCtx, _Parent]) ->
+init({#request{method="ACK"} = Request, _YxaCtx, _Parent}) ->
     %% Although a bit vague, RFC3261 section 17 (Transactions) do say that
     %% it is not allowed to send responses to ACK requests, so we simply
     %% deny to start a server transaction here. The transcation_layer will
@@ -147,7 +147,7 @@ init([#request{method="ACK"} = Request, _YxaCtx, _Parent]) ->
 %%
 %% Anything but ACK
 %%
-init([Request, YxaCtx, Parent]) ->
+init({Request, YxaCtx, Parent}) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
     Branch = siprequest:generate_branch() ++ "-UAS",
     Desc = lists:concat([Branch, ": ", Method, " ", sipurl:print(URI)]),
@@ -163,7 +163,7 @@ init([Request, YxaCtx, Parent]) ->
 	    %% above for more details.
 	    true = link(Parent),
 	    process_flag(trap_exit, true),
-	    case init2([Request, YxaCtx, Branch, Parent]) of
+	    case init2({Request, YxaCtx, Branch, Parent}) of
 		{ok, State, Timeout} when is_record(State, state) ->
 		    {ok, State, Timeout};
 		Reply ->
@@ -177,7 +177,7 @@ init([Request, YxaCtx, Parent]) ->
 	    {stop, normal}
     end.
 
-init2([Request, YxaCtx, Branch, Parent]) when is_record(Request, request) ->
+init2({Request, YxaCtx, Branch, Parent}) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
 
     %% LogTag is essentially Branch + Method, LogStr is a string that
@@ -252,7 +252,7 @@ init2([Request, YxaCtx, Branch, Parent]) when is_record(Request, request) ->
 %% Function: handle_call({get_branch}, From, State)
 %% Descrip.: This is a request to get our generated branch.
 %% Returns : {reply, Reply, State, ?TIMEOUT} |
-%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
+%%           {stop, Reason, Reply, State}      (terminate/2 is called)
 %%           Reply  = {ok, Branch}
 %%           Branch = string()
 %%--------------------------------------------------------------------
@@ -698,7 +698,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%--------------------------------------------------------------------
 %% Function: check_quit(Res)
-%%           check_quit(Res, From)
+%%           Res  = term(), gen_server:call/cast/info() return value
+%% @equiv    check_quit(Res, none)
+%%--------------------------------------------------------------------
+check_quit(Res) ->
+    check_quit(Res, none).
+
+%%--------------------------------------------------------------------
+%% Function: check_quit(Res, From)
 %%           Res  = term(), gen_server:call/cast/info() return value
 %%           From = term(), gen_server from-value | none
 %% Descrip.: Extract the state record() from Res, and check if it's
@@ -711,9 +718,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%           values are covered in these functions - only the ones we
 %%           actually use!
 %%--------------------------------------------------------------------
-check_quit(Res) ->
-    check_quit(Res, none).
-
 check_quit(Res, From) ->
     case Res of
 	{reply, _Reply, State, _Timeout} when is_record(State, state) ->
@@ -952,7 +956,12 @@ event_final_response(_Created, _State, _Status) ->
 
 %%--------------------------------------------------------------------
 %% Function: store_transaction_result(SipState, Request, Status,
-%%                                    Reason)
+%%                                    Reason, LogTag)
+%%           SipState = completed | atom()
+%%           Request  = requets record()
+%%           Status   = integer(), SIP status code
+%%           Reason   = string(), SIP reason phrase
+%%           LogTag   = string(), log prefix if we fail 
 %% Descrip.: If SipState == completed, store this response with the
 %%           transaction layer. This information is only used for
 %%           debugging/informational purposes.
@@ -971,18 +980,16 @@ store_transaction_result(_SipState, _Request, _Status, _Reason, _LogTag) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: send_response_statemachine(Method, Status, State)
-%%           Method = string(), SIP request method
-%%           Status = integer(), SIP status code (received response)
-%%           State  = atom(), trying | proceeding | completed |
-%%                            terminated
+%% Function: send_response_statemachine(Method, Status, SipState)
+%%           Method   = string(), SIP request method
+%%           Status   = integer(), SIP status code (received response)
+%%           SipState = trying | proceeding | completed | terminated
 %% Descrip.: State machine to decide what to do with a response we are
 %%           going to send. Might choose not to send the response, and
 %%           tells whether or not we should set up retransmission
 %%           timers. Also says what we should set our SIP state to.
-%% Returns : {send, Reliably, State} | ignore
-%%           Reliably = atom(), true | false (send response reliably
-%%                                            or not)
+%% Returns : {send, Reliably, SipState} | ignore
+%%           Reliably = true | false, send response reliably or not
 %%           State    = trying | proceeding | completed | terminated
 %%--------------------------------------------------------------------
 send_response_statemachine(Method, Status, trying) when Status == 100 ->
@@ -1188,7 +1195,7 @@ del_timer(AppSignal, State) ->
     
 %%--------------------------------------------------------------------
 %% Function: enter_sip_state(SipState, State)
-%%           SipState = atom(), trying | proceeding | ...
+%%           SipState = trying | proceeding | completed | confirmed | terminated
 %%           State    = state record()
 %% Descrip.: We are already in SIP state SipState, just return.
 %% Returns : State = state record()
@@ -1325,7 +1332,7 @@ process_received_ack(State) when is_record(State, state) ->
 %%           Status        = integer(), SIP status code
 %%           Reason        = string(), SIP reason phrase
 %%           RBody         = integer(), body of response
-%%           ExtraHeaders  = list() of {Key, ValueList} tuples
+%%           ExtraHeaders  = list() of {Key, ValueList}
 %%           ViaParameters = term()
 %%           State         = state record()
 %% Descrip.: If there is no To-tag in our requests header, put ours
