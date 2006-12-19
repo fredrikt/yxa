@@ -137,7 +137,7 @@ start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(S
 			   proto	= udp,
 			   pid		= self(),
 			   hostport	= HostPort,
-			   id		= #ob_id{proto = udp6,
+			   id		= #ob_id{proto = udp,
 						 id    = erlang:now()	%% unique ID for Outbound
 						}
 			  },
