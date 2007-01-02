@@ -169,7 +169,8 @@ remove_phones(ExpiredPhones) ->
 %% Returns : {atomic, term()}, The result of the mnesia:transaction()
 %%--------------------------------------------------------------------
 insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq, Instance)
-  when is_list(SipUser), is_list(Flags), Class == static; Class == dynamic, is_integer(Expire); Expire == never,
+  when is_list(SipUser), is_list(Flags), (Class == static orelse Class == dynamic),
+       (is_integer(Expire) orelse Expire == never),
        is_record(Address, sipurl), is_list(CallId), is_integer(CSeq), is_list(Instance) ->
 
     %% We store locations as strings in the location database, since any

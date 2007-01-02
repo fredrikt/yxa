@@ -1678,7 +1678,8 @@ test_mnesia_dependant_functions() ->
 		      expire  = Register_Contact1_Expire1
 		     }] = get_locations_for_users([TestUser1]),
 
-    Register_Contact1_Expire1 = Register_Contact1_Expire,
+    {expire, true} = {expire, (Register_Contact1_Expire1 >= Register_Contact1_Expire -1 andalso
+			       Register_Contact1_Expire1 =< Register_Contact1_Expire +1)},
 
     autotest:mark(?LINE, "register_contact/3 - 1.3"),
     [{priority, 100}, {registration_time, _}] = lists:sort(Register_Contact1_Flags),
@@ -2061,10 +2062,10 @@ test_mnesia_dependant_functions() ->
     PU_20_Expire = util:timestamp() + 20,
     %% record with no priority
     {atomic, ok} = phone:insert_purge_phone(TestUser1, [], dynamic, PU_20_Expire,
-					    sipurl:parse("sip:dynamic@192.0.2.12"), PU_20_CSeq, "2000", ""),
+					    sipurl:parse("sip:dynamic@192.0.2.12"), PU_20_CSeq, 2000, ""),
     %% static registration
     {atomic, ok} = phone:insert_purge_phone(TestUser1, [], static, never,
-					    sipurl:parse("sip:static@example.org"), "", "", ""),
+					    sipurl:parse("sip:static@example.org"), "", 0, ""),
 
     autotest:mark(?LINE, "process_updates/2 - 20.1"),
     %% verify that the static registration isn't included in REGISTER responses
@@ -2209,15 +2210,18 @@ test_mnesia_dependant_functions() ->
 	lists:keysearch(socket_id, 1, PU_Contacts28_Loc#siplocationdb_e.flags),
 
 
-    autotest:mark(?LINE, "process_updates/2 - 29"),
+    autotest:mark(?LINE, "process_updates/2 - 29.1"),
     %% test client making the next subsequent re-register
     PU_Header29 = keylist:set("CSeq", ["2801 REGISTER"], PU_RegReq28#reg_request.header),
     PU_RegReq29 = PU_RegReq28#reg_request{header = PU_Header29},
-    {ok, {200, "OK", [{"Contact",       PU_Contacts28_CRes},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts29_CRes},
                       {"Date",          _},
 		      {"Supported",	["outbound"]}
                      ]}} = process_updates(PU_RegReq29, PU_Contacts28),
 
+    autotest:mark(?LINE, "process_updates/2 - 29.2"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(25, 30, [PU_Contact27Str, PU_Contact27Str], PU_Contacts29_CRes),
 
     %% XXX and test non-Outbound client registering when there are Outbound entrys involved -
     %% can't have same Contact URI as the Outbound registrations though. Bug in draft? Naah.

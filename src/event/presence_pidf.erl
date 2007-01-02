@@ -894,8 +894,9 @@ test_mnesia_dependant_functions() ->
     %% refresh_pidf_user_etag(User, ETag, NewExpires, NewETag)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 1.1"),
+    RPUE_Now = util:timestamp(),
     %% update first entry from previous test with new expires-time
-    RPUE_ETag1 = "test-" ++ "-" ++ integer_to_list(Now) ++ "::" ++ integer_to_list(?LINE),
+    RPUE_ETag1 = "test-" ++ "-" ++ integer_to_list(RPUE_Now) ++ "::" ++ integer_to_list(?LINE),
     ok = refresh_pidf_user_etag(SPFU_User1, SPFU_ETag1, 10, RPUE_ETag1),
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 1.2"),
@@ -908,13 +909,13 @@ test_mnesia_dependant_functions() ->
     RPUE_Entry1 = SPFU_Entry1,
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 1.4"),
-    %% check that expires is between six and ten seconds, not five or lower
-    true = (RPUE_Expires1 =< Now + 10 andalso RPUE_Expires1 >= Now + 6),
-
+    %% check that expires is between six and ten seconds (eleven, Mnesia transactions are playful), not five or lower
+    RPUE_Expires1_verdict = (RPUE_Expires1 =< RPUE_Now + 11 andalso RPUE_Expires1 >= RPUE_Now + 6),
+    {expires, true} = {expires, RPUE_Expires1_verdict},
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 2.1"),
     %% expire record by setting expires = -1
-    RPUE_ETag2 = "test-" ++ "-" ++ integer_to_list(Now) ++ "::" ++ integer_to_list(?LINE),
+    RPUE_ETag2 = "test-" ++ "-" ++ integer_to_list(RPUE_Now) ++ "::" ++ integer_to_list(?LINE),
     ok = refresh_pidf_user_etag(SPFU_User1, RPUE_ETag1, -1, RPUE_ETag2),
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 2.2"),
@@ -924,7 +925,7 @@ test_mnesia_dependant_functions() ->
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 3"),
     %% verify that we can't refresh non-existing entrys, and also test max NewExpires value
-    RPUE_ETag3 = "test-" ++ "-" ++ integer_to_list(Now) ++ "::" ++ integer_to_list(?LINE),
+    RPUE_ETag3 = "test-" ++ "-" ++ integer_to_list(RPUE_Now) ++ "::" ++ integer_to_list(?LINE),
     nomatch = refresh_pidf_user_etag(SPFU_User1, RPUE_ETag3, ?EXPIRES_UPPER_LIMIT, RPUE_ETag3),
 
     autotest:mark(?LINE, "refresh_pidf_user_etag/4 - 4.1"),

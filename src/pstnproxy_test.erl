@@ -53,9 +53,7 @@ test() ->
 
 
 test_request() ->
-    put({transactionlayer, get_branch_from_handler}, "test-branch"),
-    put({pstnproxy, testing_sippipe}, {true, ok, self()}),
-
+    autotest:store_unit_test_result(pstnproxy, testing_sippipe, {ok, self()}),
 
     ok = test_OPTIONS(),
     ok = test_INVITE_from_gw(),

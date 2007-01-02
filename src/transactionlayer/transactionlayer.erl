@@ -781,13 +781,11 @@ get_branchbase_from_handler(TH) when is_record(TH, thandler) ->
 %%--------------------------------------------------------------------
 get_branch_from_handler(#thandler{pid = TPid}) when is_pid(TPid), TPid == self() ->
     %% for unit testing
-    case get({transactionlayer, get_branch_from_handler}) of
-	undefined ->
-	    logger:log(error, "Transaction layer: Failed getting branch from self!"),
-	    error;
-	Res when is_list(Res) ->
+    case autotest:is_unit_testing(transactionlayer, get_branch_from_handler) of
+	{true, Res} when (is_list(Res) orelse Res == error)->
 	    Res;
-	error ->
+	false ->
+	    logger:log(error, "Transaction layer: Failed getting branch from self!"),
 	    error
     end;
 get_branch_from_handler(#thandler{pid = TPid}) when is_pid(TPid) ->

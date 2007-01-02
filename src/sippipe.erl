@@ -755,8 +755,10 @@ test() ->
     GNCTP_Res3 = get_next_client_transaction_params(400, GNCTP_State3),
 
     autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.2"),
-    {ok, #request{uri = GNCTP_NewURL3}, #sipdst{addr = "192.0.2.3", port = 4997}, 10, GNCTP_State3_Res} = GNCTP_Res3,
+    {ok, #request{uri = GNCTP_NewURL3}, #sipdst{addr = "192.0.2.3", port = 4997}, 
+     GNCTP_Timeout3, GNCTP_State3_Res} = GNCTP_Res3,
     "foo.2" = GNCTP_State3_Res#state.branch,
+    {timeout, true} = {timeout, (GNCTP_Timeout3 >= 9 andalso GNCTP_Timeout3 =< 10)},
 
 
     %% start_get_dstlist(ServerHandler, Request, ApproxMsgSize, Dst)
@@ -1021,12 +1023,13 @@ test_branch_result_received() ->
 
     autotest:mark(?LINE, "loop_receive_once/2 - branch result received 4.3"),
     %% check signals received
-    {start_client_transaction, #request{}, BRR_Dst42, 25, State4_Res} =
+    {start_client_transaction, #request{}, BRR_Dst42, BRR_Timeout42, State4_Res} =
 	test_receive_tuple(start_client_transaction),
     {final_response_event, FRE_L4} = test_receive_tuple(final_response_event),
     true = is_list(FRE_L4),
     true = lists:member({response, "430 Test Flow Failed"}, FRE_L4),
     true = lists:member({origin, forwarded}, FRE_L4),
+    {timeout, true} = {timeout, (BRR_Timeout42 >= 24 andalso BRR_Timeout42 =< 26)},
     test_no_more_messages(),
 
     ok.
