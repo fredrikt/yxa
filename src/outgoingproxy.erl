@@ -302,7 +302,7 @@ route_request_check_route(Request) when is_record(Request, request) ->
 	    route_request_check_route2(Request#request.method, URI, URI_Locations, Route)
     end.
 
-route_request_check_route2(_Method, URI, [#siplocationdb_e{sipuser = SIPuser} | _] = LocL, _Route) ->
+route_request_check_route2(_Method, URI, [#siplocationdb_e{sipuser = SIPuser} | _], _Route) ->
     logger:log(debug, "outgoingproxy: Request destination ~p is a registered contact of user ~p - "
 	       "proxying according to Route header", [sipurl:print(URI), SIPuser]),
     %% Route header not pointing at us. This can happen if a domain has two outgoingproxys, user
