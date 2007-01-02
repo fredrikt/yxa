@@ -304,8 +304,12 @@ route_request_check_route(Request) when is_record(Request, request) ->
 
 route_request_check_route2(_Method, URI, [#siplocationdb_e{sipuser = SIPuser} | _] = LocL, _Route) ->
     logger:log(debug, "outgoingproxy: Request destination ~p is a registered contact of user ~p - "
-	       "proxying (~p location(s))", [sipurl:print(URI), SIPuser, length(LocL)]),
-    route_request_to_user_contact(LocL);
+	       "proxying according to Route header", [sipurl:print(URI), SIPuser]),
+    %% Route header not pointing at us. This can happen if a domain has two outgoingproxys, user
+    %% A is connected to outgoingproxy1 and calls user B connected to outgoingproxy2. For a mid-
+    %% dialog request (like REFER), the request will have user B's contact as Request-URI, and
+    %% a Route header pointing at outgoingproxy2.
+    {proxy, route};
 
 route_request_check_route2("BYE", _URI, [], _Route) ->
     %% BYE and ACK can't be challenged, but ACKs get special treatment in request/3
