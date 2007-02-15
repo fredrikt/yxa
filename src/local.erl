@@ -99,6 +99,7 @@
 	 pstnproxy_route_pstn_not_e164/3,
 	 pstnproxy_auth_and_tag/4,
 	 pstnproxy_allowed_methods/2,
+	 pstnproxy_allowed_proxy_request/2,
 	 pstnproxy_verify_from/4,
 	 pstnproxy_number_based_routing/4,
 	 pstnproxy_lookup_action/2
@@ -154,7 +155,8 @@
 %% configuration
 -export([
 	 check_config_type/3,
-	 config_is_soft_reloadable/2
+	 config_is_soft_reloadable/2,
+	 config_change_action/3
 	]).
 
 %% sipdialog
@@ -1157,6 +1159,10 @@ pstnproxy_route_pstn_not_e164(DstNumber, Request, PstnCtx) ->
 %%--------------------------------------------------------------------
 %% Function: pstnproxy_auth_and_tag(Request, Origin, THandler,
 %%                                  PstnCtx)
+%%           Request  = request record()
+%%           Origin   = siporigin record()
+%%           THandler = term(), server transaction handle
+%%           PstnCtx  = pstn_ctx record()
 %% Descrip.:
 %% Returns : term()
 %%--------------------------------------------------------------------
@@ -1171,11 +1177,12 @@ pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx) when is_record(Reques
 
 %%--------------------------------------------------------------------
 %% Function: pstnproxy_allowed_methods(Request, PstnCtx)
-%% Descrip.:
-%% Returns : term()
-%%--------------------------------------------------------------------
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
+%% Descrip.: Return list of allowed SIP methods. Must be upper-cased.
 %% Returns : {ok, AllowedMethods}
 %%           AllowedMethods = list() of string()
+%%--------------------------------------------------------------------
 pstnproxy_allowed_methods(Request, PstnCtx) when is_record(Request, request),
 						 is_record(PstnCtx, pstn_ctx) ->
     ?CHECK_EXPORTED({pstnproxy_allowed_methods, 2},
@@ -1184,8 +1191,28 @@ pstnproxy_allowed_methods(Request, PstnCtx) when is_record(Request, request),
 		   ).
 
 %%--------------------------------------------------------------------
+%% Function: pstnproxy_allowed_proxy_request(Request, PstnCtx)
+%%           Request = request record()
+%%           PstnCtx = pstn_ctx record()
+%% Descrip.: Decide if pstnproxy should proxy a request, or reject it
+%%           with a '403 Forbidden'. Return 'undefined' for default
+%%           processing.
+%% Returns : true | false | undefined
+%%--------------------------------------------------------------------
+pstnproxy_allowed_proxy_request(Request, PstnCtx) when is_record(Request, request),
+						       is_record(PstnCtx, pstn_ctx) ->
+    ?CHECK_EXPORTED({pstnproxy_allowed_proxy_request, 2},
+		    ?LOCAL_MODULE:pstnproxy_allowed_proxy_request(Request, PstnCtx),
+		    undefined
+		   ).
+
+%%--------------------------------------------------------------------
 %% Function: pstnproxy_verify_from(Request, THandler, YXAPeerAuth,
 %%                                 PstnCtx)
+%%           Request     = request record()
+%%           THandler    = term(), server transaction handle
+%%           YxaPeerAuth = true | false
+%%           PstnCtx     = pstn_ctx record()
 %% Descrip.:
 %% Returns : term()
 %%--------------------------------------------------------------------
@@ -1608,10 +1635,10 @@ lookup_sipsocket_blacklist(Dst) ->
 
 %%--------------------------------------------------------------------
 %% Function: check_config_type(Key, Value, Src)
-%%           Key     = atom()
-%%           Value   = term()
-%%           Src     = atom(), config backend module that found this
-%%                             configuration parameter
+%%           Key   = atom()
+%%           Value = term()
+%%           Src   = atom(), config backend module that found this
+%%                           configuration parameter
 %% Descrip.: Check a local configuration parameter. Local parameters
 %%           are local_*.
 %% Returns : {ok, NewValue} |
@@ -1633,8 +1660,8 @@ check_config_type(Key, Value, Src) ->
 
 %%--------------------------------------------------------------------
 %% Function: config_is_soft_reloadable(Key, Value)
-%%           Key     = atom()
-%%           Value   = term()
+%%           Key   = atom()
+%%           Value = term()
 %% Descrip.: Check if it is possible to change a local configuration
 %%           parameter with a soft reconfiguration (true), or if a
 %%           complete restart of the application is necessary (false).
@@ -1644,6 +1671,22 @@ config_is_soft_reloadable(Key, Value) ->
     ?CHECK_EXPORTED({config_is_soft_reloadable, 2},
 		    ?LOCAL_MODULE:config_is_soft_reloadable(Key, Value),
 		    true
+		   ).
+
+%%--------------------------------------------------------------------
+%% Function: config_change_action(Key, Value, Mode)
+%%           Key   = atom()
+%%           Value = term()
+%%           Mode  = soft | hard
+%% Descrip.: Perform any necessary actions when a configuration value
+%%           changes, like perhaps notifying a gen_server or similar.
+%% Returns : ok | {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+config_change_action(Key, Value, Mode) ->
+    ?CHECK_EXPORTED({config_change_action, 3},
+		    ?LOCAL_MODULE:config_change_action(Key, Value, Mode),
+		    ok
 		   ).
 
 %% sipdialog hooks

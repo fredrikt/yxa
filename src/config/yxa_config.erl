@@ -310,9 +310,15 @@ handle_call(reload, _From, State) ->
 			%% XXX what about configuration changes activated by such a restart?
 			%% Shold we perhaps restart the whole application if this process dies?
 			logger:log(debug, "Config server: Loading checked configuration"),
-			ok = load(Normalized, soft, State),
-			logger:log(normal, "Config server: Finished reloading configuration"),
-			ok;
+			try load(Normalized, soft, State) of
+			    ok ->
+				logger:log(normal, "Config server: Finished reloading configuration"),
+				ok
+			catch
+			    throw:
+			      {error, Reason} when is_list(Reason) ->
+				{error, load, Reason}
+			end;
 		    {error, Msg} when is_list(Msg) ->
 			logger:log(error, "Config server: Failed validating configuration : ~p",
 				   [Msg]),
@@ -493,66 +499,81 @@ load(Cfg, Mode, State) when is_record(Cfg, yxa_cfg), (Mode == soft orelse Mode =
 
 %% part of load/3
 load_set([{Key, Value, Src} | T], Mode, EtsRef) ->
-    case ets:lookup(EtsRef, Key) of
-	[{Key, OldValue, _OldSrc}] when OldValue == Value ->
-	    %% not changed
-	    ok;
-	[{Key, OldValue, _OldSrc}] ->
-	    %% changed
-	    ok = update(Key, Value, Src, OldValue, Mode, EtsRef);
-	[] ->
-	    %% new value
-    	    true = ets:insert_new(EtsRef, {Key, Value, Src}),
-	    case Mode of
-		soft ->
-		    %% don't disclose sensitive information in log files
-		    case lists:member(Key, ?NO_DISCLOSURE) of
-			true ->
-			    logger:log(debug, "Config server: Set configuration parameter '~p' (value not shown)",
-				       [Key]);
-			false ->
-			    logger:log(debug, "Config server: Set configuration parameter '~p' (value : ~p)",
-				       [Key, Value])
-		    end;
-		hard ->
-		    ok
-	    end,
-	    ok
-    end,
-    load_set(T, Mode, EtsRef);
+    Res =
+	case ets:lookup(EtsRef, Key) of
+	    [{Key, OldValue, _OldSrc}] when OldValue == Value ->
+		%% not changed
+		ok;
+	    [{Key, OldValue, _OldSrc}] ->
+		%% changed
+		update(Key, Value, Src, OldValue, Mode, EtsRef);
+	    [] ->
+		%% new value
+		insert_new(Key, Value, Src, Mode, EtsRef)
+	end,
+
+    case Res of
+	ok ->
+	    load_set(T, Mode, EtsRef);
+	{error, Reason} when is_list(Reason) ->
+	    logger:log(error, "Config server: Failed setting/updating configuration parameter '~p' "
+		       "(value: ~s) : ~p", [Key, value_for_logging(Key, Value), Reason]),
+	    %% XXX we might have loaded half of a configuration change if we end up here,
+	    %% but this is our only option besides shutting the whole node down which
+	    %% might be even worse if someone made a trivial error in the configuration
+	    Msg = io_lib:format("Failed setting/updating configuration parameter '~p'", [Key]),
+	    throw({error, lists:flatten(Msg)})
+    end;
 load_set([], _Mode, _EtsRef) ->
     ok.
 
-%% part of load_set/3, Return  : ok
+%% part of load_set/3, Return  : ok | {error, Reason}
 update(Key, undefined, yxa_config_default, OldValue, soft, EtsRef) ->
-    true = ets:insert(EtsRef, {Key, undefined, yxa_config_default}),
-    case lists:member(Key, ?NO_DISCLOSURE) of
-	true ->
-	    logger:log(debug, "Config server: Deleting parameter '~p' (value not shown)",
-		       [Key]);
-	false ->
-	    logger:log(debug, "Config server: Deleting parameter '~p' (old value: ~p)",
-		       [Key, OldValue])
-    end,
-    ok;
+    case change_action(Key, undefined, soft) of
+	ok ->
+	    true = ets:insert(EtsRef, {Key, undefined, yxa_config_default}),
+	    logger:log(debug, "Config server: Deleted configuration parameter '~p' (old value: ~s)",
+		       [Key, value_for_logging(Key, OldValue)]),
+	    ok;
+	{error, Reason} ->
+	    {error, Reason}
+    end;
 update(Key, Value, Src, OldValue, Mode, EtsRef) ->
-    true = ets:insert(EtsRef, {Key, Value, Src}),
-    case Mode of
-	soft ->
-	    %% don't disclose sensitive information in log files
-	    case lists:member(Key, ?NO_DISCLOSURE) of
-		true ->
-		    logger:log(debug, "Config server: Updated configuration parameter '~p' (value not shown)",
-			       [Key]);
-		false ->
+    case change_action(Key, Value, Mode) of
+	ok ->
+	    true = ets:insert(EtsRef, {Key, Value, Src}),
+	    case Mode of
+		soft ->
 		    logger:log(debug, "Config server: Updated configuration parameter '~p' "
-			       "(old value : ~p, new value ~p)", [Key, OldValue, Value])
-	    end;
-	hard ->
-	    %% don't log 'changes' on startup
-	    ok
-    end,
-    ok.
+			       "(old value : ~s, new value : ~s)",
+			       [Key, value_for_logging(Key, OldValue), value_for_logging(Key, Value)]);
+		hard ->
+		    %% don't log 'changes' on startup
+		    ok
+	    end,
+	    ok;
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+
+%% part of load_set/3, Return  : ok | {error, Reason}
+insert_new(Key, Value, Src, Mode, EtsRef) ->
+    case change_action(Key, Value, Mode) of
+	ok ->
+	    true = ets:insert_new(EtsRef, {Key, Value, Src}),
+	    case Mode of
+		soft ->
+		    %% only log for configuration reload requests, not initial startup
+		    logger:log(debug, "Config server: Set configuration parameter '~p' (value: ~s)",
+			       [Key, value_for_logging(Key, Value)]);
+		hard ->
+		    ok
+	    end,
+	    ok;
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+
 
 %% part of load/3, delete keys from ets table not present in Cfg. Happens if a code change/other
 %% makes our config definitions change.
@@ -564,15 +585,12 @@ delete_not_present(Cfg, _Mode, EtsRef) ->
 		    {value, {Key, _NewValue, _NewSrc}} ->
 			%% Key still valid, do nothing
 			ok;
+		    false when Key == yxa_appmodule ->
+			%% see insert_implicit/1
+			ok;
 		    false ->
-			case lists:member(Key, ?NO_DISCLOSURE) of
-			    true ->
-				logger:log(debug, "Config server: Purging parameter '~p' (value not shown)",
-					   [Key]);
-			    false ->
-				logger:log(debug, "Config server: Purging parameter '~p' (old value: ~p)",
-					   [Key, OldValue])
-			end,
+			logger:log(debug, "Config server: Purging configuration parameter '~p' (old value: ~s)",
+				   [Key, value_for_logging(Key, OldValue)]),
 			true = ets:delete(EtsRef, Key)
 		end
 	end,
@@ -587,6 +605,32 @@ insert_implicit(State) when is_record(State, state) ->
     true = ets:insert(EtsRef, {yxa_appmodule, AppModule, yxa_config_default}),
     ok.
 
+value_for_logging(Key, Value) ->
+    case lists:member(Key, ?NO_DISCLOSURE) of
+	true ->
+	    %% don't log sensitive information
+	    "not shown";
+	false ->
+	    io_lib:format("~p", [Value])
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: change_action(Key, Value, Mode)
+%%           Key   = atom()
+%%           Value = term()
+%%           Mode  = soft | hard
+%% Descrip.: Perform any necessary actions when a configuration value
+%%           changes, like perhaps notifying a gen_server or similar.
+%% Returns : ok | {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+change_action(Key, Value, Mode) ->
+    case atom_to_list(Key) of
+	"local_" ++ _ ->
+	    local:config_change_action(Key, Value, Mode);
+	_ ->
+	    ok
+    end.
 
 %%====================================================================
 %% Test functions
