@@ -21,7 +21,9 @@
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
--export([start_link/0]).
+-export([start_link/0,
+	 change_interval/1
+	]).
 
 %%--------------------------------------------------------------------
 %% Internal exports - gen_server callbacks
@@ -59,7 +61,8 @@
 	  file_mtime,	%% integer(), mtime of fn
 	  last_fail,	%% integer() | undefined, timestamp when we last warned about failure to interpret fn
 	  userlist,	%% list() of user record()
-	  addresslist	%% list() of address record()
+	  addresslist,	%% list() of address record()
+	  check_tref	%% undefined | term(), timer reference to check_file timer
 	 }).
 
 %%--------------------------------------------------------------------
@@ -77,9 +80,19 @@
 %%--------------------------------------------------------------------
 %% Function: start_link()
 %% Descrip.: Starts the persistent sipuserdb_file gen_server.
+%% Returns : term()
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+%%--------------------------------------------------------------------
+%% Function: change_interval(Interval)
+%%           Interval = integer(), number of seconds
+%% Descrip.: Change the time between checks for a changed userdb file.
+%% Returns : ok | {error, Reason}
+%%--------------------------------------------------------------------
+change_interval(Interval) when is_integer(Interval) ->
+    gen_server:call(?SERVER, {change_check_file_timeout, Interval}).
 
 %%====================================================================
 %% Server functions
@@ -97,17 +110,25 @@ init([]) ->
     case yxa_config:get_env(sipuserdb_file_filename) of
 	{ok, Fn} when is_list(Fn) ->
 	    %% Set up periodic checking for changes in the userdb file, default every 15 seconds
-	    case yxa_config:get_env(sipuserdb_file_refresh_interval) of
-		{ok, 0} ->
-		    %% periodic checking for new data disabled through configuration
-		    ok;
-		{ok, Interval} when is_integer(Interval) ->
-		    {ok, _T} = timer:send_interval(Interval * 1000, ?SERVER, {check_file})
-	    end,
+	    TRef =
+		case yxa_config:get_env(sipuserdb_file_refresh_interval) of
+		    {ok, 0} ->
+			%% periodic checking for new data disabled through configuration
+			ok;
+		    {ok, Interval} when is_integer(Interval) ->
+			{ok, TRef1} = timer:send_interval(Interval * 1000, ?SERVER, {check_file}),
+			TRef1
+		end,
 
 	    case get_mtime(Fn) of
 		{ok, MTime} ->
-		    case read_userdb(#state{fn=Fn}, MTime, init) of
+		    NewState1 = #state{fn = Fn,
+				       check_tref = case TRef of
+							ok -> undefined;
+							_ -> TRef
+						    end
+				      },
+		    case read_userdb(NewState1, MTime, init) of
 			NewState when is_record(NewState, state) ->
 			    {ok, NewState};
 			{error, Reason} ->
@@ -153,6 +174,31 @@ handle_call({fetch_users}, _From, State) ->
 %%--------------------------------------------------------------------
 handle_call({fetch_addresses}, _From, State) ->
     {reply, {ok, State#state.addresslist}, State};
+
+%%--------------------------------------------------------------------
+%% Function: handle_call({change_check_file_timeout, Interval}, From,
+%%                       State)
+%%           Interval = integer(), seconds between checks
+%% Descrip.: Set up a new timer for when to check if the userdb file
+%%           has changed.
+%% Returns : {reply, ok, State}
+%%--------------------------------------------------------------------
+handle_call({change_check_file_timeout, Interval}, _From, State) when is_integer(Interval) ->
+    case State#state.check_tref of
+	undefined -> ok;
+	OldTRef -> {ok, cancel} = timer:cancel(OldTRef)
+    end,
+    TRef =
+	case Interval of
+	    0 ->
+		logger:log(debug, "sipuserdb_file: Disabled check for changed file"),
+		undefined;
+	    _ ->
+		{ok, TRef1} = timer:send_interval(Interval * 1000, ?SERVER, {check_file}),
+		logger:log(debug, "sipuserdb_file: New file check interval : ~p", [Interval]),
+		TRef1
+	end,
+    {reply, ok, State#state{check_tref = TRef}};
 
 handle_call(Unknown, _From, State) ->
     logger:log(error, "sipuserdb_file: Received unknown gen_server call : ~p", [Unknown]),

@@ -624,6 +624,13 @@ value_for_logging(Key, Value) ->
 %% Returns : ok | {error, Reason}
 %%           Reason = string()
 %%--------------------------------------------------------------------
+change_action(sipuserdb_file_refresh_interval, Value, soft) ->
+    case sipuserdb_file_backend:change_interval(Value) of
+	ok ->
+	    ok;
+	Error ->
+	    {error, io_lib:format("~p", [Error])}
+    end;
 change_action(Key, Value, Mode) ->
     case atom_to_list(Key) of
 	"local_" ++ _ ->
