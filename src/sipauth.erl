@@ -402,23 +402,16 @@ pstn_get_user_verified(Header, Method) when is_record(Header, keylist), is_list(
 %%           Header   = keylist record()
 %%           Class    = atom()
 %% Descrip.: Check if a given User is explicitly allowed to call a
-%%           number in a given Class, or if there is a Route: header
-%%           present in Header.
+%%           number in a given Class.
 %% Returns : true  |
 %%           false
 %%--------------------------------------------------------------------
-is_allowed_pstn_dst(User, _ToNumber, Header, Class) ->
-    case keylist:fetch('route', Header) of
-	[] ->
-	    case local:get_classes_for_user(User) of
-		nomatch ->
-		    false;
-		UserAllowedClasses when is_list(UserAllowedClasses) ->
-		    lists:member(Class, UserAllowedClasses)
-	    end;
-	R when is_list(R) ->
-	    logger:log(debug, "Auth: Authenticated user ~p sends request with Route-header. Allow.", [User]),
-	    true
+is_allowed_pstn_dst(User, _ToNumber, _Header, Class) ->
+    case local:get_classes_for_user(User) of
+	nomatch ->
+	    false;
+	UserAllowedClasses when is_list(UserAllowedClasses) ->
+	    lists:member(Class, UserAllowedClasses)
     end.
 
 %%--------------------------------------------------------------------
@@ -746,20 +739,6 @@ test() ->
     %% Test without Authorization header - that is the only thing we can test
     %% here. The testable parts of this code is tested above (do_get_user_verified2).
     false = get_user_verified(keylist:from_list([]), "INVITE"),
-
-
-    %% test is_allowed_pstn_dst(User, ToNumber, Header, Class)
-    %% Not much can be tested in this function, but some is better than nothing
-    %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "is_allowed_pstn_dst/4 - 1"),
-    %% test request with Route header
-    true = is_allowed_pstn_dst("ft.testuser", "123456789", keylist:from_list([{"Route", "sip:example.org"}]),
-			       testclass),
-
-    %% This test depends on too much unspecified things in sipuserdb
-    %%autotest:mark(?LINE, "is_allowed_pstn_dst/4 - 2 (disabled)"),
-    %%%% test general unknown user/number/class
-    %%false = is_allowed_pstn_dst("ft.testuser", "123456789", keylist:from_list([]), testclass),
 
 
     %% test can_use_address(User, URL)
