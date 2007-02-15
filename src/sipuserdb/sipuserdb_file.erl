@@ -269,8 +269,8 @@ get_telephonenumber_for_user(Username) ->
 		    %% apparenlty had a user with this name in our database but
 		    %% that user did not have an address that looks like a phone
 		    %% number?
-		    logger:log(debug, "userdb-file: User ~p has no address that looks like a phone number (addresses : ~p)",
-			       [Username, collect_addresses(A)]),
+		    logger:log(debug, "userdb-file: User ~p has no address that looks like a phone number "
+			       "(addresses : ~p)", [Username, collect_addresses(A)]),
 		    nomatch;
 		Address when is_record(Address, address) ->
 		    (Address#address.url)#sipurl.user
@@ -382,6 +382,14 @@ get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address) ->
 %%           using URI address matching rules.
 %% Returns : Usernames = list() of string()
 %%--------------------------------------------------------------------
+get_users_using_address("tel:+" ++ Num) when is_list(Num) ->
+    case util:isnumeric(Num) of
+	true ->
+	    get_usernames_for_exact_address("tel:+" ++ Num, fetch_addresses());
+	false ->
+	    %% Invalid TEL URL
+	    []
+    end;
 get_users_using_address(Address) when is_list(Address) ->
     %% Check that Address is a parseable URL. It really does not have to
     %% be - it is often the result of canonization of a Request-URI, URL
@@ -411,14 +419,32 @@ get_usernames_for_url(_URL, [], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
 get_usernames_for_url(URL, [H | T], Res) when is_record(URL, sipurl), is_record(H, address) ->
-    case sipurl:url_is_equal(URL, H#address.url) of
-	true ->
-	    get_usernames_for_url(URL, T, [H#address.user | Res]);
-	false ->
-	    %% URL does NOT match this address record, try next (T)
+    case H#address.url of
+	AddrURL when is_record(AddrURL, sipurl) ->
+	    case sipurl:url_is_equal(URL, H#address.url) of
+		true ->
+		    get_usernames_for_url(URL, T, [H#address.user | Res]);
+		false ->
+		    %% URL does NOT match this address record, try next (T)
+		    get_usernames_for_url(URL, T, Res)
+	    end;
+	undefined ->
 	    get_usernames_for_url(URL, T, Res)
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_usernames_for_exact_address(Address, Addresses, [])
+%%           Address   = string()
+%%           Addresses = list() of address record()
+%% Descrip.: Get all address records having Addr#address.address
+%%           exactly matching Address. Used for example when the input
+%%           is a TEL URL.
+%% Returns : Users = list() of string()
+%%--------------------------------------------------------------------
+get_usernames_for_exact_address(Address, Addresses) ->
+    Match = [H#address.user || H <- Addresses, H#address.address == Address],
+    %% Make list sorted and remove duplicates
+    lists:usort(Match).
 
 %%--------------------------------------------------------------------
 %% Function: collect_addresses(In)
@@ -449,6 +475,14 @@ collect_addresses2([H | T], Res) when is_record(H, address) ->
 %%--------------------------------------------------------------------
 find_first_telephonenumber([]) ->
     nomatch;
+find_first_telephonenumber([H | T]) when is_record(H, address), H#address.url == undefined ->
+    case H#address.address of
+	"tel:+" ++ Num ->
+	    "+" ++ Num;
+	_ ->
+	    %% Not a tel: URL like we would have expected when H#address.url is undefined
+	    find_first_telephonenumber(T)
+    end;
 find_first_telephonenumber([H | T]) when is_record(H, address) ->
     URL = H#address.url,
     IsNumericUser = util:isnumeric(URL#sipurl.user),
@@ -546,6 +580,18 @@ test() ->
     ["test", "test2"] = get_usernames_for_url(sipurl:parse("sip:both@example.org"), Test_Addresses, []),
 
 
+    %% get_usernames_for_exact_address(Address, Addresses)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_usernames_for_exact_address/2 - 1"),
+    %% test simple case
+    Test_Addresses2 = Test_Addresses ++ [test_make_address("numberholder", "tel:+46123456789")],
+    ["numberholder"] = get_usernames_for_exact_address("tel:+46123456789", Test_Addresses2),
+
+    autotest:mark(?LINE, "get_usernames_for_exact_address/2 - 2"),
+    %% test wrong number
+    [] = get_usernames_for_exact_address("tel:+46123", Test_Addresses2),
+
+
     %% collect_addresses(In)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "collect_addresses/1 - 1"),
@@ -560,6 +606,9 @@ test() ->
 test_make_address(U, A) ->
     #address{user    = U,
 	     address = A,
-	     url     = sipurl:parse(A)
+	     url     = case sipurl:parse(A) of
+			   URL when is_record(URL, sipurl) -> URL;
+			   {unparseable, _} -> undefined
+		       end
 	    }.
 

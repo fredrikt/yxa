@@ -507,6 +507,15 @@ parse_address([], A) when is_record(A, address) ->
 
 parse_address([{user, V} | T], A) when is_record(A, address), is_list(V) ->
     parse_address(T, A#address{user=V});
+parse_address([{address, "tel:+" ++ Num} | T], A) when is_record(A, address), is_list(Num) ->
+    case util:isnumeric(Num) of
+	true ->
+	    parse_address(T, A#address{address = "tel:+" ++ Num});
+	false ->
+	    E = io_lib:format("unparsable tel: URL in address record (user ~p) : ~p",
+			      [A#address.user, "tel:+" ++ Num]),
+	    {error, lists:flatten(E)}
+    end;
 parse_address([{address, V} | T], A) when is_record(A, address), is_list(V) ->
     case sipurl:parse(V) of
 	URL when is_record(URL, sipurl) ->
@@ -645,6 +654,13 @@ test() ->
     %% unknown parameter
     {error, "bad data in address record " ++ _} = parse_address([{true, "x"}], #address{}),
 
+    autotest:mark(?LINE, "parse_address/2 - 8"),
+    %% tel: URL
+    #address{user    = "test",
+             address = "tel:+468123456789",
+             url     = undefined} =
+	parse_address([{user, "test"}, {address, "tel:+468123456789"}], #address{}),
+
 
     %% test parse_user(Params, U, Addrs)
     %%--------------------------------------------------------------------
@@ -684,7 +700,9 @@ test() ->
     ParseTermAddrL2 = [#address{user = "t1", address = "sip:1.1@example.net", url = sipurl:parse("sip:1.1@example.net")},
 		       #address{user = "t1", address = "sip:1.2@example.net", url = sipurl:parse("sip:1.2@example.net")},
 		       #address{user = "t2", address = "sip:2.1@example.net", url = sipurl:parse("sip:2.1@example.net")},
-		       #address{user = "t2", address = "sip:2.2@example.net", url = sipurl:parse("sip:2.2@example.net")}],
+		       #address{user = "t2", address = "sip:2.2@example.net", url = sipurl:parse("sip:2.2@example.net")},
+		       #address{user = "t2", address = "tel:+468123456789",   url = undefined}
+		      ],
 
     autotest:mark(?LINE, "parse_term/3 - 1"),
     %% uncomplicated case
@@ -701,10 +719,15 @@ test() ->
     %% addresses grouped with user
     {ok, ParseTermUserL1, ParseTermAddrL2} = parse_term([{user, [{name, "t1"},
 								 {addresses, ["sip:1.1@example.net",
-									      "sip:1.2@example.net"]}]},
+									      "sip:1.2@example.net"
+									     ]}
+								]},
 							 {user, [{name, "t2"},
 								 {addresses, ["sip:2.1@example.net",
-									      "sip:2.2@example.net"]}]}
+									      "sip:2.2@example.net",
+									      "tel:+468123456789"
+									     ]}
+								]}
 							], [], []),
 
     autotest:mark(?LINE, "parse_term/3 - 3"),
