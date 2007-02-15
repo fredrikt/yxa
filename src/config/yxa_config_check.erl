@@ -237,6 +237,7 @@ get_definition(_Key, []) ->
 %% Function: check_cfg_entry_type(Key, Value, Src, Def)
 %%           Key   = atom()
 %%           Value = term()
+%%           Src   = atom(), 'source module' of this entry
 %%           Def   = cfg_entry record()
 %% Descrip.: Check a single key-value against it's definition.
 %% Returns : {ok, NewValue} |
@@ -247,13 +248,6 @@ check_cfg_entry_type(Key, undefined, yxa_config_default, Def) when is_atom(Key),
 check_cfg_entry_type(Key, Value, Src, Def) when is_atom(Key), is_record(Def, cfg_entry) ->
     try case type_check(Key, Value, Def) of
 	    {ok, NewValue} when NewValue /= Value ->
-		%% just while testing
-		case lists:member(Key, ?NO_DISCLOSURE) of
-		    true ->
-			logger:log(debug, "Config: Normalized ~p (value not shown)", [Key]);
-		    false ->
-			logger:log(debug, "Config: Normalized ~p = ~p (orig ~p)", [Key, NewValue, Value])
-		end,
 		{ok, NewValue};
 	    {ok, NewValue} ->
 		%%case lists:member(Key, ?NO_DISCLOSURE) of
@@ -307,11 +301,8 @@ check_cfg_entry_type(Key, Value, Src, Def) when is_atom(Key), is_record(Def, cfg
 check_local_cfg_entry_type(Key, Value, Src) ->
     try case local:check_config_type(Key, Value, Src) of
 	    {ok, NewValue} when NewValue /= Value ->
-		%% just while testing
-		logger:log(debug, "Config: Normalized local parameter ~p = ~p (orig ~p)", [Key, NewValue, Value]),
 		{ok, NewValue};
 	    {ok, Value} ->
-		logger:log(debug, "Config: Kept local parameter ~p = ~p", [Key, Value]),
 		{ok, Value};
 	    {error, Msg} when is_list(Msg) ->
 		{error, Msg}
