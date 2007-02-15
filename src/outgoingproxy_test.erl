@@ -107,7 +107,7 @@ test_route2() ->
     autotest:mark(?LINE, "request/2 - Route - 1.1"),
     ok = outgoingproxy:request(Request1, YxaCtx1),
 
-    {Request1_Res, YxaCtx1_Res, Dst1_Res, []} = get_sippipe_result(),
+    {Request1_Res, _YxaCtx1_Res11, Dst1_Res, []} = get_sippipe_result(),
 
     autotest:mark(?LINE, "request/2 - Route - 1.2"),
     %% verify results
@@ -133,7 +133,7 @@ test_route2() ->
     autotest:mark(?LINE, "request/2 - Route - 2.1"),
     ok = outgoingproxy:request(Request2, YxaCtx1),
 
-    {Request2_Res, _YxaCtx2_Res, Dst2_Res, []} = get_sippipe_result(),
+    {Request2_Res, _YxaCtx1_Res21, Dst2_Res, []} = get_sippipe_result(),
 
     autotest:mark(?LINE, "request/2 - Route - 2.2"),
     %% verify results. the push-requri-to-Route for Route header without ;lr
