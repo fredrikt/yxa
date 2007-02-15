@@ -8,5 +8,6 @@
 -record(address, {
 	  user,		%% string(), username
 	  address,	%% string(), address
-	  url		%% sipurl record(), address parsed with sipurl:parse()
+	  url		%% sipurl record() | undefined, address parsed with sipurl:parse()
+	 		%%                              or undefined for tel: URL
 	 }).
