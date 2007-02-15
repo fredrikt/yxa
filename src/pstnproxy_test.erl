@@ -191,7 +191,6 @@ test_INVITE_to_pstn() ->
 
     {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = get_created_response(),
 
-
     autotest:mark(?LINE, "request/2 - INVITE to pstn 2.0"),
     %% test INVITE to free PSTN destination
     Message2 =
@@ -273,7 +272,7 @@ test_INVITE_to_pstn() ->
     {Request4_Res, _YxaCtx4_res, DstUrl4_Res, AppData} = get_sippipe_result(),
     Request4 = Request4_Res,
     DstUrl4_Res = sipurl:parse("sips:+1111@gw.example.org"),
-    
+
     autotest:mark(?LINE, "request/2 - INVITE to pstn 4.4"),
     [#pstn_ctx{user		= "autotest1",
 	       stale_auth	= false,
@@ -318,7 +317,7 @@ test_From_addr_verification() ->
 	    {sipauth_unauth_classlist,	[free]},
 	    {e164_to_pstn,		[{"(.+)",	"\\1@gw.example.org"}]}
 	   ],
-    
+
     ok = yxa_test_config:init(pstnproxy, Cfg1),
 
     %% request(Request, YxaCtx)
@@ -405,7 +404,7 @@ test_From_addr_verification() ->
     {ok, _} = dict:find("nonce", Dict4),
     {ok, _} = dict:find("opaque", Dict4),
     yxa_test_config:set(sipauth_challenge_expiration, 30),
-    
+
 
     autotest:mark(?LINE, "request/2 - From address verification - 5.0"),
     %% test with From: belonging to one of our users, but no credentials
@@ -506,6 +505,35 @@ test_BYE() ->
     yxa_test_config:set(sipauth_challenge_expiration, 30),
 
 
+    autotest:mark(?LINE, "request/2 - BYE 3.0"),
+    %% test BYE to non-numeric userpart @ gateway
+    yxa_test_config:set(sipauth_challenge_expiration, -1),
+    Message3 =
+	"BYE sip:foo@gw.example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST client.example.org\r\n"
+	"From: Test <sip:test@remote.example.org>\r\n"
+	"To: Number <sip:number@example.org>\r\n"
+	"\r\n",
+
+    Request3_1 = sippacket:parse(Message3, none),
+    Request3 = add_valid_credentials("Proxy-Authorization", Request3_1, "autotest1"),
+
+    autotest:mark(?LINE, "request/3 - BYE 3.1"),
+    ok = pstnproxy:request(Request3, YxaCtx1),
+
+    autotest:mark(?LINE, "request/3 - BYE 3.3"),
+    %% verify result (should be allowed, even with stale auth)
+    {Request3_Res, _YxaCtx3, DstURL3_Res, AppData3_Res} = get_sippipe_result(),
+    Request3_Res = Request3,
+    DstURL3_Res = sipurl:parse("sip:foo@gw.example.org"),
+    [#pstn_ctx{tags		= [],
+	       user		= "autotest1",
+	       stale_auth	= true,
+	       dst_number	= undefined,
+	       dst_class	= undefined,
+	       destination	= pstn
+	      }] = AppData3_Res,
+
     ok.
 
 
@@ -516,6 +544,7 @@ test_BYE() ->
 get_created_response() ->
     receive
 	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
+	    ok = assert_on_message(),
 	    {Status, Reason, EH, Body};
 	M ->
 	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
@@ -527,6 +556,7 @@ get_created_response() ->
 get_sippipe_result() ->
     receive
 	{start_sippipe, Res} ->
+	    ok = assert_on_message(),
 	    Res;
 	M ->
 	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
@@ -547,3 +577,12 @@ add_valid_credentials(MethodName, Request, User, Password) ->
 				Request#request.method, Request#request.uri,
 				Request#request.header, User, Password),
     Request#request{header = NewHeader}.
+
+assert_on_message() ->
+    receive
+	M ->
+	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
+	    {error, lists:flatten(Msg)}
+    after 0 ->
+	    ok
+    end.
