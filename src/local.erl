@@ -1684,10 +1684,16 @@ config_is_soft_reloadable(Key, Value) ->
 %%           Reason = string()
 %%--------------------------------------------------------------------
 config_change_action(Key, Value, Mode) ->
-    ?CHECK_EXPORTED({config_change_action, 3},
-		    ?LOCAL_MODULE:config_change_action(Key, Value, Mode),
-		    ok
-		   ).
+    %% We have to do this with try/catch instead of ?CHECK_EXPORTED since
+    %% this function is needed before 'local' has been initialized
+    try	?LOCAL_MODULE:config_change_action(Key, Value, Mode) of
+	Res ->
+	    Res
+    catch
+	error: undef ->
+	    %% the local module did not export config_change_action/3
+	    ok
+    end.
 
 %% sipdialog hooks
 %%%%%%%%%%%%%%%%%%%
