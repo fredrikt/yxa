@@ -231,10 +231,11 @@ get_pidf_xml_for_user({fake_offline, AddrStr}, AcceptL) when is_list(AddrStr), i
 			"<tuple id=\"1\">\n"
 			"    <status><basic>closed</basic></status>\n"
 			"</tuple>\n",
-		    case output_pidf_xml(Type, Presentity, "1", [TupleXML]) of
+		    try output_pidf_xml(Type, Presentity, "1", [TupleXML]) of
 			PIDF_XML when is_list(PIDF_XML) ->
-			    {ok, ContentType, PIDF_XML};
-			_ ->
+			    {ok, ContentType, PIDF_XML}
+		    catch
+			_:_ ->
 			    {error, failed_generating_xml}
 		    end;
 		false ->
