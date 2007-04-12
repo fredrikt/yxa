@@ -1130,35 +1130,7 @@ register_contact_params2(RegReq, Contact) ->
 		[]
 	end,
 
-    OutboundFlags =
-	case Instance /= [] of
-	    true ->
-		case get_contact_reg_id(Contact) of
-		    RegId when is_integer(RegId) ->
-			%% draft Outbound 03 #6.1 (Processing Register Requests)
-			Origin = RegReq#reg_request.origin,
-			Id1 = (Origin#siporigin.sipsocket)#sipsocket.id,
-			SocketId = #locationdb_socketid{node  = node(),
-							id    = Id1,
-							proto = Origin#siporigin.proto,
-							addr  = Origin#siporigin.addr,
-							port  = Origin#siporigin.port
-						       },
-			[{reg_id, RegId},
-			 {socket_id, SocketId}
-			];
-		    none ->
-			%% Instance, but no reg-id
-			[];
-		    {error, BadValue} ->
-			logger:log(debug, "Location: Ignoring bad (non-integer) reg-id/flow-id contact "
-				   "parameter value ~p", [BadValue]),
-			[]
-		end;
-	    false ->
-		%% no Instance ID, so don't store reg-id even if it exists
-		[]
-	end,
+    OutboundFlags = get_contact_outbound_flags(RegReq, Contact, Instance),
 
     Flags = lists:sort([{priority, Priority},
 			{registration_time, util:timestamp()}
@@ -1167,12 +1139,42 @@ register_contact_params2(RegReq, Contact) ->
 
     {ok, Flags, Instance}.
 
+get_contact_outbound_flags(#reg_request{do_outbound = false}, _Contact, _Instance) ->
+    %% outbound disabled
+    [];
+get_contact_outbound_flags(_RegReq, _Contact, _Instance = []) ->
+    %% no Instance ID, so don't store reg-id even if it exists
+    [];
+get_contact_outbound_flags(RegReq, Contact, Instance) when is_record(RegReq, reg_request), is_list(Instance) ->
+    case get_contact_reg_id(Contact) of
+	RegId when is_integer(RegId) ->
+	    %% draft Outbound 03 #6.1 (Processing Register Requests)
+	    Origin = RegReq#reg_request.origin,
+	    Id1 = (Origin#siporigin.sipsocket)#sipsocket.id,
+	    SocketId = #locationdb_socketid{node  = node(),
+					    id    = Id1,
+					    proto = Origin#siporigin.proto,
+					    addr  = Origin#siporigin.addr,
+					    port  = Origin#siporigin.port
+					   },
+	    [{reg_id, RegId},
+	     {socket_id, SocketId}
+	    ];
+	none ->
+	    %% Instance, but no reg-id
+	    [];
+	{error, BadValue} ->
+	    logger:log(debug, "Location: Ignoring bad (non-integer) reg-id/flow-id contact "
+		       "parameter value ~p", [BadValue]),
+	    []
+    end.
+
 %% Returns : RegId             |
 %%           none              |
 %%           {error, BadValue}
 %%           RegId = integer()
 %%           BadValue = string(), invalid value encountered
-get_contact_reg_id(Contact) ->
+get_contact_reg_id(Contact) when is_record(Contact, contact) ->
     Str =
 	case contact_param:find(Contact#contact.contact_param, "reg-id") of
 	    [] ->
@@ -2197,7 +2199,7 @@ test_mnesia_dependant_functions() ->
     %% verify the contacts in the response
     ok = test_verify_contacts(15, 20, [PU_Contact1Str ++ PU_Contacts26_OBstr], PU_Contacts26_CRes),
 
-    autotest:mark(?LINE, "process_updates/2 - 26.2"),
+    autotest:mark(?LINE, "process_updates/2 - 26.3"),
     %% verify the record in the location database
     [PU_Contacts26_Loc] = get_locations_for_users([TestUser1]),
     #siplocationdb_e{instance = PU_Contacts26_Instance} = PU_Contacts26_Loc,
@@ -2338,9 +2340,86 @@ test_mnesia_dependant_functions() ->
     false = lists:keysearch(socket_id, 1, PU_Contacts31_Loc#siplocationdb_e.flags),
 
     %% clean up
+    phone:delete_phone_for_user(TestUser1, dynamic),
     phone:delete_phone_for_user(TestUser2, dynamic),
 
 
+
+    autotest:mark(?LINE, "process_updates/2 - 32.1"),
+    %% test two user agents (different SIP users) having the same instance-id
+    %% SHOULD not happen, but I've seen it happen at it is important that a user
+    %% can't hijack another user's registration just because the evil user knows
+    %% the other user's instace-id
+    PU_Contacts32_Instance = "<test:__unit_testing_instance_id_PU32__>",
+    PU_Contacts32_OBstr = ";+sip.instance=\"" ++ PU_Contacts32_Instance ++ "\";reg-id=4711",
+    PU_Contacts32 = contact:parse([PU_Contact1Str ++ PU_Contacts32_OBstr ++ ";expires=20"]),
+    PU_Header32 = keylist:set("CSeq", ["3201 REGISTER"], PU_RegReq1#reg_request.header),
+    PU_RegReq32 = PU_RegReq1#reg_request{header		= PU_Header32,
+					 do_gruu	= false,
+					 path_ignsup	= true,
+					 do_outbound	= true,
+					 origin		= #siporigin{sipsocket = #sipsocket{id = "PU_test32_socketid"}},
+					 sipuser	= TestUser1
+					},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts32_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq32, PU_Contacts32),
+
+    autotest:mark(?LINE, "process_updates/2 - 32.2"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(15, 20, [PU_Contact1Str ++ PU_Contacts32_OBstr], PU_Contacts32_CRes),
+
+    autotest:mark(?LINE, "process_updates/2 - 32.3"),
+    %% verify the record in the location database
+    [PU_Contacts32_Loc] = get_locations_for_users([TestUser1]),
+    #siplocationdb_e{instance = PU_Contacts32_Instance} = PU_Contacts32_Loc,
+    {value, {reg_id, 4711}} =
+	lists:keysearch(reg_id, 1, PU_Contacts32_Loc#siplocationdb_e.flags),
+    {value, {socket_id, #locationdb_socketid{node = ThisNode, id = "PU_test32_socketid"}}} =
+	lists:keysearch(socket_id, 1, PU_Contacts32_Loc#siplocationdb_e.flags),
+    TestUser1 = PU_Contacts32_Loc#siplocationdb_e.sipuser,
+    PU_Contacts32_URL1 = sipurl:parse((hd(PU_Contacts32))#contact.urlstr),
+    PU_Contacts32_URL1 = PU_Contacts32_Loc#siplocationdb_e.address,
+
+    autotest:mark(?LINE, "process_updates/2 - 32.4"),
+    %% verify nothing in database for second user at this point
+    [] = get_locations_for_users([TestUser2]),
+
+    autotest:mark(?LINE, "process_updates/2 - 32.5"),
+    %% second user registers with same instance-id and reg-id
+    PU_Contact32bStr = "<sip:ft@192.0.2.32>",
+    PU_Contacts32b = contact:parse([PU_Contact32bStr ++ PU_Contacts32_OBstr ++ ";expires=20"]),
+    PU_RegReq32b = PU_RegReq32#reg_request{sipuser	= TestUser2},
+    {ok, {200, "OK", [{"Contact",       PU_Contacts32b_CRes},
+                      {"Date",          _},
+		      {"Supported",	["outbound"]}
+                     ]}} = process_updates(PU_RegReq32b, PU_Contacts32b),
+
+
+    autotest:mark(?LINE, "process_updates/2 - 32.6"),
+    %% verify the contacts in the response
+    ok = test_verify_contacts(15, 20, [PU_Contact32bStr ++ PU_Contacts32_OBstr], PU_Contacts32b_CRes),
+
+    autotest:mark(?LINE, "process_updates/2 - 32.7"),
+    %% verify the record in the location database - first the one present from before
+    [PU_Contacts32_Loc] = get_locations_for_users([TestUser1]),
+    %% and then this new one
+    [PU_Contacts32b_Loc] = get_locations_for_users([TestUser2]),
+    #siplocationdb_e{instance = PU_Contacts32_Instance} = PU_Contacts32b_Loc,
+    {value, {reg_id, 4711}} =
+	lists:keysearch(reg_id, 1, PU_Contacts32b_Loc#siplocationdb_e.flags),
+    {value, {socket_id, #locationdb_socketid{node = ThisNode, id = "PU_test32_socketid"}}} =
+	lists:keysearch(socket_id, 1, PU_Contacts32b_Loc#siplocationdb_e.flags),
+    TestUser2 = PU_Contacts32b_Loc#siplocationdb_e.sipuser,
+    PU_Contacts32b_URL1 = sipurl:parse((hd(PU_Contacts32b))#contact.urlstr),
+    PU_Contacts32b_URL1 = PU_Contacts32b_Loc#siplocationdb_e.address,
+
+
+
+    %% clean up
+    phone:delete_phone_for_user(TestUser1, dynamic),
+    phone:delete_phone_for_user(TestUser2, dynamic),
 
     %% END Outbound TESTS
 
