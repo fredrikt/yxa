@@ -1063,9 +1063,15 @@ can_register(Header, ToURL) when is_record(Header, keylist), is_record(ToURL, si
 
 %%--------------------------------------------------------------------
 %% Function: is_allowed_pstn_dst(User, ToNumber, Header, Class)
+%%           User     = string(), authenticated SIP username
+%%           ToNumber = string(), phone number - E.164 if conversion
+%%                      was possible, otherwise it is the number as
+%%                      entered by the caller
+%%           Header   = keylist record(), SIP header of request
+%%           Class    = undefined | atom()
 %% Descrip.:
 %% @see      sipauth:is_allowed_pstn_dst/4.
-%% Returns : term()
+%% Returns : bool()
 %%--------------------------------------------------------------------
 is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
     ?CHECK_EXPORTED({is_allowed_pstn_dst, 4},
