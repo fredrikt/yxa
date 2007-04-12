@@ -201,7 +201,7 @@ test() ->
 %% otherwise act strange).
 clean_up() ->
     %% clean up process dict, erase all entries with numeric key
-    [erase(Key) || Key <- get(), is_integer(Key)].
+    [erase(Key) || {Key, _Value} <- get(), is_integer(Key)].
 
 %% test a minimal script with <incoming>, <location> and <redirect>
 test1() ->
