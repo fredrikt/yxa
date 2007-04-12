@@ -1,8 +1,5 @@
 -- 1.0rc1	(2007-04-12)
 
- - Improved test framework to allow for special configuration
-   and a fake user database, thus allowing much more code to
-   be tested through the test framework.
  - Updated RFC3263 (SIP DNS) implementation to work just like
    the RFC says.
  - Made what log levels should be written to files configurable.
