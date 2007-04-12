@@ -30,6 +30,7 @@
 	 get_listenport/1,
 	 get_all_listenports/0,
 	 add_listener_info/3,
+	 close_socket/1,
 
 	 behaviour_info/1,
 
@@ -85,7 +86,8 @@ behaviour_info(callbacks) ->
      {get_socket, 1},
      {get_specific_socket, 1},
      {get_raw_socket, 1},
-     {get_remote_peer, 1}
+     {get_remote_peer, 1},
+     {close_socket, 1}
     ];
 behaviour_info(_Other) ->
     undefined.
@@ -396,6 +398,17 @@ default_port(yxa_test, none) ->
 default_port(_, Port) when is_integer(Port) ->
     Port.
 
+%%--------------------------------------------------------------------
+%% Function: close_socket(Socket)
+%%           Socket = sipsocket record()
+%% Descrip.: Close a socket.
+%% Returns : ok              |
+%%           {error, Reason}
+%%           Reason = not_applicable | term()
+%%--------------------------------------------------------------------
+close_socket(Socket) when is_record(Socket, sipsocket) ->
+    SipSocketM = Socket#sipsocket.module,
+    SipSocketM:close_socket(Socket).
 
 %%====================================================================
 %% Test functions

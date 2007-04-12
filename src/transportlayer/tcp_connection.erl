@@ -406,12 +406,12 @@ handle_cast({send_stun_response, STUNresponse}, State) when State#state.on == tr
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({close, From}, State)
+%% Function: handle_cast({close, FromPid}, State)
+%%           FromPid = pid()
 %% Descrip.: A request to close this connection.
 %% Returns : {stop, normal, NewState}
 %%--------------------------------------------------------------------
-handle_cast({close, FromPid}, State) ->
-    %% XXX check that FromPid is someone sensible?
+handle_cast({close, FromPid}, State) when is_pid(FromPid) ->
     Duration = util:timestamp() - State#state.starttime,
     #sipsocket{proto	= Proto,
 	       hostport	= #hp{r_ip   = IP,

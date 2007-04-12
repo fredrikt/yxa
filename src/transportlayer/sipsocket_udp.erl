@@ -34,6 +34,7 @@
 	 get_specific_socket/1,
 	 get_raw_socket/1,
 	 get_remote_peer/1,
+	 close_socket/1,
 
 	 test/0
 	]).
@@ -489,6 +490,16 @@ get_remote_peer(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
 is_reliable_transport(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     false.
 
+%%--------------------------------------------------------------------
+%% Function: close_socket(SipSocket)
+%%           SipSocket = sipsocket record()
+%% Descrip.: Close a socket.
+%% Returns : ok              |
+%%           {error, Reason}
+%%           Reason = string
+%%--------------------------------------------------------------------
+close_socket(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
+    {error, not_applicable}.
 
 %%====================================================================
 %% Internal functions

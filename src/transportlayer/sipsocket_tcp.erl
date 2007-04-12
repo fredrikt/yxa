@@ -22,6 +22,7 @@
 	 get_specific_socket/1,
 	 get_raw_socket/1,
 	 get_remote_peer/1,
+	 close_socket/1,
 
 	 test/0
 	]).
@@ -75,7 +76,7 @@ send(SipSocket, _Proto, Host, Port, Message) when is_record(SipSocket, sipsocket
 	    Res;
 	{'EXIT', {noproc, _}} ->
 	    %% catch some more common gen_server errors since the error tuples from
-	    %% gen_server call are _huge_
+	    %% gen_server calls are _huge_
 	    Msg = io_lib:format("sipsocket_tcp failed sending through pid ~p : no such process",
 				[SPid]),
 	    {error, lists:flatten(Msg)};
@@ -212,8 +213,32 @@ get_remote_peer(Id) when is_record(Id, ob_id) ->
 %%           have to set up timers to resend messages.
 %% Returns : true
 %%--------------------------------------------------------------------
-is_reliable_transport(_) -> true.
+is_reliable_transport(#sipsocket{proto = Proto}) when Proto == tcp; Proto == tcp6; Proto == tls; Proto == tls6 ->
+    true.
 
+%%--------------------------------------------------------------------
+%% Function: close_socket(SipSocket)
+%%           SipSocket = sipsocket record()
+%% Descrip.: Close a socket.
+%% Returns : ok              |
+%%           {error, Reason}
+%%           Reason = string()
+%%--------------------------------------------------------------------
+close_socket(#sipsocket{proto = Proto, pid = SPid}) when Proto == tcp; Proto == tcp6; Proto == tls; Proto == tls6 ->
+    case catch gen_server:cast(SPid, {close, self()}) of
+	ok ->
+	    ok;
+	{'EXIT', {noproc, _}} ->
+	    %% catch some more common gen_server errors since the error tuples from
+	    %% gen_server call are _huge_
+	    Msg = io_lib:format("sipsocket_tcp failed closing socket controlled by ~p : no such process",
+				[SPid]),
+	    {error, lists:flatten(Msg)};
+	{'EXIT', Reason} ->
+	    Msg = io_lib:format("sipsocket_tcp failed closing socket controlled by ~p : ~p",
+				[SPid, Reason]),
+	    {error, lists:flatten(Msg)}
+    end.
 
 %%====================================================================
 %% Internal functions

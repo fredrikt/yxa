@@ -21,7 +21,8 @@
 	 get_socket/1,
 	 get_specific_socket/1,
 	 get_raw_socket/1,
-	 get_remote_peer/1
+	 get_remote_peer/1,
+	 close_socket/1
 	]).
 
 %%--------------------------------------------------------------------
@@ -153,6 +154,21 @@ is_reliable_transport(#sipsocket{proto = yxa_test}) ->
 	    false
     end.
 
+%%--------------------------------------------------------------------
+%% Function: close_socket(SipSocket)
+%%           SipSocket = sipsocket record()
+%% Descrip.: Fake response based on process dictionary.
+%% Returns : ok              |
+%%           {error, Reason}
+%%           Reason = not_applicable | term()
+%%--------------------------------------------------------------------
+close_socket(#sipsocket{proto = yxa_test}) ->
+    case autotest:is_unit_testing(?MODULE, {sipsocket_test, close_socket}) of
+	{true, Res} ->
+	    Res;
+	false ->
+	    ok
+    end.
 
 %%====================================================================
 %% Internal functions
