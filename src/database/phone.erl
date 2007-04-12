@@ -212,23 +212,28 @@ insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq, Instanc
     end.
 
 %% part of insert_purge_phone/8
-insert_purge_phone_outbound(Instance, RegId, This) ->
+insert_purge_phone_outbound(Instance, RegId, This) when is_list(Instance), is_integer(RegId), is_record(This, phone) ->
     %% do Outbound registration - meaning we delete any record with the same
-    %% instance ID and reg-id this one has, not the same contact URI as we do
-    %% when not doing Outbound
+    %% SIP user, instance ID and reg-id this one has, not the same contact URI
+    %% as we do when not doing Outbound
     Fun = fun() ->
 		  Delete = fun(O) ->
 				   mnesia:delete_object(O)
 			   end,
 
-		  %% delete every entry with instance id matching ours, and reg_id
-		  %% also matching
+		  %% delete every entry with mathcing user (AOR in the spec), instance id
+		  %% and reg_id matching This
 		  L2 = mnesia:index_read(phone, Instance, #phone.instance),
 		  InvL =
 		      lists:foldl(fun(#phone{flags = HF} = H, Acc) ->
-					  case lists:member({reg_id, RegId}, HF) of
+					  case H#phone.user == This#phone.user of
 					      true ->
-						  [H | Acc];
+						  case lists:member({reg_id, RegId}, HF) of
+						      true ->
+							  [H | Acc];
+						      false ->
+							  Acc
+						  end;
 					      false ->
 						  Acc
 					  end
@@ -250,8 +255,7 @@ insert_purge_phone_outbound(Instance, RegId, This) ->
 				     address = Address,
 				     class = Class
 				    } = IP,
-			      %% XXX change to 'debug' log level
-			      logger:log(normal, "Location: Registration with Outbound mechanism "
+			      logger:log(debug, "Location: Registration with Outbound mechanism "
 					 "invalidated previously registered contact for user \"~s\" : ~s (~p)",
 					 [User, Address, Class])
 		      end, L)
