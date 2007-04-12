@@ -493,12 +493,10 @@
 		      type	= bool,
 		      required	= true
 		     },
-
-
-	   %% undocumented, don't use unless you really know you should!
-	   #cfg_entry{key	= pstnproxy_ignore_route_header_bad_idea,
-		      default	= false,
-		      type	= bool
+	   #cfg_entry{key	= pstnproxy_allow_reinvite_to_pstn_dst,
+		      default	= true,
+		      type	= bool,
+		      required	= true
 		     }
 	  ]},
 

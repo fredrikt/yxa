@@ -511,17 +511,17 @@ test_BYE() ->
     Message3 =
 	"BYE sip:foo@gw.example.org SIP/2.0\r\n"
 	"Via: SIP/2.0/YXA-TEST client.example.org\r\n"
-	"From: Test <sip:test@remote.example.org>\r\n"
-	"To: Number <sip:number@example.org>\r\n"
+	"From: Test <sip:test@remote.example.org>;tag=abc\r\n"
+	"To: Number <sip:number@example.org>;tag=123\r\n"
 	"\r\n",
 
     Request3_1 = sippacket:parse(Message3, none),
     Request3 = add_valid_credentials("Proxy-Authorization", Request3_1, "autotest1"),
 
-    autotest:mark(?LINE, "request/3 - BYE 3.1"),
+    autotest:mark(?LINE, "request/2 - BYE 3.1"),
     ok = pstnproxy:request(Request3, YxaCtx1),
 
-    autotest:mark(?LINE, "request/3 - BYE 3.3"),
+    autotest:mark(?LINE, "request/2 - BYE 3.2"),
     %% verify result (should be allowed, even with stale auth)
     {Request3_Res, _YxaCtx3, DstURL3_Res, AppData3_Res} = get_sippipe_result(),
     Request3_Res = Request3,
@@ -533,6 +533,27 @@ test_BYE() ->
 	       dst_class	= undefined,
 	       destination	= pstn
 	      }] = AppData3_Res,
+
+
+    autotest:mark(?LINE, "request/2 - BYE 4.0"),
+    %% test same thing (BYE to non-numeric userpart @ gateway) but without a To-tag
+    yxa_test_config:set(sipauth_challenge_expiration, -1),
+    Message4 =
+	"BYE sip:foo@gw.example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST client.example.org\r\n"
+	"From: Test <sip:test@remote.example.org>;tag=abc\r\n"
+	"To: Number <sip:number@example.org>\r\n"
+	"\r\n",
+
+    Request4_1 = sippacket:parse(Message4, none),
+    Request4 = add_valid_credentials("Proxy-Authorization", Request4_1, "autotest1"),
+
+    autotest:mark(?LINE, "request/2 - BYE 4.1"),
+    ok = pstnproxy:request(Request4, YxaCtx1),
+
+    autotest:mark(?LINE, "request/2 - BYE 4.2"),
+    %% BYE sent outside a dialog shoudl NOT be allowed
+    {403, "Forbidden", [], <<>>} = get_created_response(),
 
     ok.
 

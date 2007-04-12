@@ -501,6 +501,9 @@ pstnproxy_challenge_bye_to_pstn_dst (default: true) Should we challenge BYEs sen
                                 dialog stateful and therefor can't know that the
                                 BYE is sent to a 'free' destination.
 
+pstnproxy_allow_reinvite_to_pstn_dst (default: true) Should re-INVITEs on
+				existing dialogs be allowed?
+
 incomingproxy:
 --------------
 internal_to_e164		(default: []) Regexps for rewriting

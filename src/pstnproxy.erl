@@ -933,16 +933,30 @@ authorize_user_call_to_pstn(Request, YxaCtx, PstnCtx) ->
 
     case DstNumber of
 	undefined ->
+	    FromTag = (catch sipheader:get_tag(keylist:fetch('from', Request#request.header))),
+	    ToTag = (catch sipheader:get_tag(keylist:fetch('to', Request#request.header))),
 	    case Request#request.method of
-                "BYE" ->
-                    logger:log(debug, "~s: pstnproxy: Allowing BYE request to PSTN GW without trying to "
+                "BYE" when is_list(FromTag), is_list(ToTag) ->
+                    logger:log(normal, "~s: pstnproxy: Allowing BYE request to PSTN gateway without trying to "
 			       "determine PSTN number destination", [YxaCtx#yxa_ctx.app_logtag]),
 		    %% BYEs from IP to PSTN are sent to the Contact used by the gateway. The Contact may
 		    %% include the PSTN number, or it may not - it depends completely on the gateway.
 		    %% Better not make any assumptions. XXX check that there is a to-tag too?
 		    {ok, true, PstnCtx1};
+		"INVITE" when is_list(FromTag), is_list(ToTag) ->
+		    {ok, AllowReINVITE} = yxa_config:get_env(pstnproxy_allow_reinvite_to_pstn_dst),
+		    case AllowReINVITE of
+			true ->
+			    logger:log(normal, "~s: pstnproxy: Allowing re-INVITE to PSTN gateway",
+				      [YxaCtx#yxa_ctx.app_logtag]),
+			    {ok, true, PstnCtx1};
+			false ->
+			    logger:log(normal, "~s: pstnproxy: Disallowing re-INVITE to PSTN gateway",
+				      [YxaCtx#yxa_ctx.app_logtag]),
+			    {ok, false, PstnCtx1}
+		    end;
 		_ ->
-		    logger:log(debug, "~s: pstnproxy: Disallowing non-BYE request to PSTN gateway because "
+		    logger:log(normal, "~s: pstnproxy: Disallowing request to PSTN gateway because "
 			       "no PSTN number destination could be determined", [YxaCtx#yxa_ctx.app_logtag]),
 		    transactionlayer:send_response_handler(YxaCtx#yxa_ctx.thandler, 403, "Forbidden", []),
 		    {ok, false, PstnCtx1}
