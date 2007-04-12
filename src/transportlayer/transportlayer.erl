@@ -20,8 +20,8 @@
 	 stateless_proxy_request/2,
 	 stateless_proxy_ack/3,
 
-	 report_unreachable/2,
 	 report_unreachable/3,
+	 report_unreachable/4,
 	 remove_blacklisting/1,
 	 is_eligible_dst/1,
 
@@ -388,31 +388,35 @@ remove_blacklisting(Dst) ->
     sipsocket_blacklist:remove_blacklisting(Dst).
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(Dst, Msg)
-%%           Dst = sipdst record()
-%%           Msg = string(), reason for report
+%% Function: report_unreachable(Dst, SipSocket, Msg)
+%%           Dst       = sipdst record(), the unreachable destination
+%%           SipSocket  = sipsocket record() | none, socket that
+%%                                                   didn't work
+%%           Msg       = string(), reason for blacklisting
 %% Descrip.: Interface function to sipsocket_blacklist.
 %% Returns : ok
 %%--------------------------------------------------------------------
-report_unreachable(#sipdst{proto = yxa_test} = Dst, Msg) ->
+report_unreachable(#sipdst{proto = yxa_test} = Dst, _SipSocket, Msg) ->
     self() ! {transportlayer, report_unreachable, Dst, lists:flatten(Msg)},
     ok;
-report_unreachable(Dst, Msg) ->
-    sipsocket_blacklist:report_unreachable(Dst, Msg).
+report_unreachable(Dst, SipSocket, Msg) ->
+    sipsocket_blacklist:report_unreachable(Dst, SipSocket, Msg).
 
 %%--------------------------------------------------------------------
 %% Function: report_unreachable(Dst, Msg, RetryAfter)
-%%           Dst = sipdst record()
-%%           Msg = string(), reason for report
+%%           Dst        = sipdst record(), the unreachable destination
+%%           SipSocket  = sipsocket record() | none, socket that
+%%                                                   didn't work
+%%           Msg        = string(), reason for blacklisting
 %%           RetryAfter = undefined | integer(), seconds to blacklist
 %% Descrip.: Interface function to sipsocket_blacklist.
 %% Returns : ok
 %%--------------------------------------------------------------------
-report_unreachable(#sipdst{proto = yxa_test} = Dst, Msg, RetryAfter) ->
+report_unreachable(#sipdst{proto = yxa_test} = Dst, _SipSocket, Msg, RetryAfter) ->
     self() ! {transportlayer, report_unreachable, Dst, lists:flatten(Msg), RetryAfter},
     ok;
-report_unreachable(Dst, Msg, RetryAfter) ->
-    sipsocket_blacklist:report_unreachable(Dst, Msg, RetryAfter).
+report_unreachable(Dst, SipSocket, Msg, RetryAfter) ->
+    sipsocket_blacklist:report_unreachable(Dst, SipSocket, Msg, RetryAfter).
 
 %%--------------------------------------------------------------------
 %% Function: is_eligible_dst(Dst)

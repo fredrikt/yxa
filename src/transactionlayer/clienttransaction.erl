@@ -1006,18 +1006,18 @@ blacklist_report_if_unreachable(#state{response = {408, _Reason}, res_count = 0}
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     Msg = io_lib:format("'~s ~s' timed out (408)", [Method, sipurl:print(URI)]),
-    transportlayer:report_unreachable(State#state.dst, Msg);
+    transportlayer:report_unreachable(State#state.dst, State#state.socket, Msg);
 blacklist_report_if_unreachable(#state{response = {487, _Reason}, res_count = 0} = State) ->
     %% we were cancelled, but never recieved a provisional response
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     Msg = io_lib:format("'~s ~s' was cancelled without receiving a response (487)", [Method, sipurl:print(URI)]),
-    transportlayer:report_unreachable(State#state.dst, Msg);
+    transportlayer:report_unreachable(State#state.dst, State#state.socket, Msg);
 blacklist_report_if_unreachable(#state{response = {503, _Reason}, res_count = 0} = State) ->
     Request = State#state.request,
     {Method, URI} = {Request#request.method, Request#request.uri},
     Msg = io_lib:format("'~s ~s' transport layer failure (503)", [Method, sipurl:print(URI)]),
-    transportlayer:report_unreachable(State#state.dst, Msg);
+    transportlayer:report_unreachable(State#state.dst, State#state.socket, Msg);
 blacklist_report_if_unreachable(#state{response = #response{status = 503}} = State) ->
     %% RFC3261 #21.5.4 (503 Service Unavailable)
     case keylist:fetch('retry-after', (State#state.response)#response.header) of
@@ -1030,7 +1030,7 @@ blacklist_report_if_unreachable(#state{response = #response{status = 503}} = Sta
 		    {Method, URI} = {Request#request.method, Request#request.uri},
 		    Msg = io_lib:format("'~s ~s' received 503 with Retry-After (503)",
 					[Method, sipurl:print(URI)]),
-		    transportlayer:report_unreachable(State#state.dst, Msg, RetryAfter)
+		    transportlayer:report_unreachable(State#state.dst, State#state.socket, Msg, RetryAfter)
 	    catch
 		_: _ ->
 		    %% non-numeric Retry-After

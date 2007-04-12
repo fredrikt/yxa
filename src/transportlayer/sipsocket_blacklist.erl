@@ -21,8 +21,8 @@
 %%--------------------------------------------------------------------
 %% External interface exports
 %%--------------------------------------------------------------------
--export([report_unreachable/2,
-	 report_unreachable/3,
+-export([report_unreachable/3,
+	 report_unreachable/4,
 	 remove_blacklisting/1,
 	 remove_blacklisting/2,
 
@@ -101,26 +101,30 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(SipDst, Msg)
+%% Function: report_unreachable(SipDst, SipSocket, Msg)
 %%           SipDst     = sipdst record()
+%%           SipSocket  = sipsocket record() | none
 %%           Msg        = string(), reason for blacklisting
-%% @equiv    report_unreachable(SipDst, Msg, undefined)
+%% @equiv    report_unreachable(SipDst, SipSocket, Msg, undefined)
 %% Descrip.: Blacklist a destination.
 %% Returns : ok
 %%--------------------------------------------------------------------
-report_unreachable(SipDst, Msg) when is_record(SipDst, sipdst), is_list(Msg) ->
-    report_unreachable(SipDst, Msg, undefined).
+report_unreachable(SipDst, SipSocket, Msg) when is_record(SipDst, sipdst),
+						(is_record(SipSocket, sipsocket) orelse SipSocket == none),
+						is_list(Msg) ->
+    report_unreachable(SipDst, SipSocket, Msg, undefined).
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(SipDst, Msg, RetryAfter)
+%% Function: report_unreachable(SipDst, SipSocket, Msg, RetryAfter)
 %%           SipDst     = sipdst record()
+%%           SipSocket  = sipsocket record() | none
 %%           Msg        = string(), reason for blacklisting
 %%           RetryAfter = undefined | integer(), seconds to blacklist
 %% Descrip.: Blacklist a destination.
 %% Returns : ok
 %%--------------------------------------------------------------------
-report_unreachable(SipDst, Msg, RetryAfter) when is_record(SipDst, sipdst), is_list(Msg), is_integer(RetryAfter);
-                                                 RetryAfter == undefined ->
+report_unreachable(SipDst, SipSocket, Msg, RetryAfter) when is_record(SipDst, sipdst), is_list(Msg),
+							    (is_integer(RetryAfter) orelse RetryAfter == undefined) ->
     case yxa_config:get_env(sipsocket_blacklisting) of
 	{ok, true} ->
 	    %% Figure out how long time to blacklist this destination this time
@@ -135,8 +139,8 @@ report_unreachable(SipDst, Msg, RetryAfter) when is_record(SipDst, sipdst), is_l
 		    _ ->
 			undefined
 		end,
-	    do_report_unreachable(SipDst, lists:flatten(Msg), RetryAfter, StdDuration, MaxPenalty, ProbeTS,
-				  Now, ?SIPSOCKET_BLACKLIST);
+	    do_report_unreachable(SipDst, SipSocket, lists:flatten(Msg), RetryAfter,
+				  StdDuration, MaxPenalty, ProbeTS, Now, ?SIPSOCKET_BLACKLIST);
 	{ok, false} ->
 	    ok
     end.
@@ -305,10 +309,11 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_report_unreachable(SipDst, Msg, SecondsIn,
+%% Function: do_report_unreachable(SipDst, SipSocket, Msg, SecondsIn,
 %%                                 StdDuration, MaxPenalty, ProbeTS,
 %%                                 Now, EtsRef)
 %%           SipDst      = sipdst record()
+%%           SipSocket   = sipsocket record()
 %%           Msg         = string(), reason for blacklisting (only for
 %%                         debug/diagnostic use)
 %%           SecondsIn   = integer() | undefined, seconds requested by
@@ -327,7 +332,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%           this way in order to be testable.
 %% Returns : ok
 %%--------------------------------------------------------------------
-do_report_unreachable(SipDst, Msg, SecondsIn, StdDuration, MaxPenalty, ProbeTS, Now, EtsRef) ->
+do_report_unreachable(SipDst, SipSocket, Msg, SecondsIn, StdDuration, MaxPenalty, ProbeTS, Now, EtsRef) ->
     Dst = make_dst(SipDst),
     case get_blacklist_time(Dst, SecondsIn, EtsRef, StdDuration, MaxPenalty) of
 	Seconds when is_integer(Seconds) ->
@@ -341,7 +346,20 @@ do_report_unreachable(SipDst, Msg, SecondsIn, StdDuration, MaxPenalty, ProbeTS, 
 				 duration = Seconds
 				},
 
-	    ets:insert(EtsRef, {Dst, Entry});
+	    ets:insert(EtsRef, {Dst, Entry}),
+	    case is_record(SipSocket, sipsocket) of
+		true ->
+		    case sipsocket:close_socket(SipSocket) of
+			ok -> ok;
+			{error, not_applicable} -> ok;
+			{error, Reason} ->
+			    logger:log(error, "Sipsocket blacklist: Failed closing sipsocket ~p : ~p",
+				       [SipSocket, Reason])
+		    end,
+		    ok;
+		false ->
+		    ok
+	    end;
 	ignore ->
 	    ok
     end,
@@ -575,6 +593,9 @@ test() ->
 			  port  = 6050
 			 },
     TestDst1 = make_dst(TestSipDst1),
+    TestSipSocket1 = #sipsocket{proto  = yxa_test,
+				module = sipsocket_test
+			       },
 
     TestSipDst2 = #sipdst{proto = yxa_test,
 			  addr  = "192.0.2.2",
@@ -586,7 +607,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "blacklisting test 1 - 1"),
     TestNow1 = 10000000,
-    ok = do_report_unreachable(TestSipDst1, "test", undefined, 90, 120, 1234, TestNow1, TestEtsRef),
+    ok = do_report_unreachable(TestSipDst1, TestSipSocket1, "test", undefined, 90, 120, 1234, TestNow1, TestEtsRef),
 
     autotest:mark(?LINE, "blacklisting test 1 - 2"),
     %% verify result of insert
@@ -604,7 +625,7 @@ test() ->
 
     autotest:mark(?LINE, "blacklisting test 1 - 4"),
     %% insert again, with specified blacklist time
-    ok = do_report_unreachable(TestSipDst1, "test", 100, 90, 120, 1234, TestNow1, TestEtsRef),
+    ok = do_report_unreachable(TestSipDst1, TestSipSocket1, "test", 100, 90, 120, 1234, TestNow1, TestEtsRef),
 
     autotest:mark(?LINE, "blacklisting test 1 - 5"),
     %% verify result of insert, both entrys should be there
@@ -646,9 +667,11 @@ test() ->
     autotest:mark(?LINE, "blacklisting test 2 - 1"),
     TestNow2 = 10000000,
     %% simulate inserting entry 100 seconds ago, with expire time 60 seconds
-    ok = do_report_unreachable(TestSipDst1, "test 2", 60, 30, 120, undefined, TestNow2 - 100, TestEtsRef),
+    ok = do_report_unreachable(TestSipDst1, TestSipSocket1, "test 2", 60, 30, 120,
+			       undefined, TestNow2 - 100, TestEtsRef),
     %% simulate inserting entry 90 seconds ago, with expire time 30 seconds
-    ok = do_report_unreachable(TestSipDst1, "test 2", undefined, 30, 120, undefined, TestNow2 - 90, TestEtsRef),
+    ok = do_report_unreachable(TestSipDst1, TestSipSocket1, "test 2", undefined, 30, 120,
+			       undefined, TestNow2 - 90, TestEtsRef),
 
     autotest:mark(?LINE, "blacklisting test 2 - 2"),
     [{_, _}, {_, _}] = ets:tab2list(TestEtsRef),
@@ -664,7 +687,8 @@ test() ->
 
     autotest:mark(?LINE, "blacklisting test 2 - 4"),
     %% add non-expired entry
-    ok = do_report_unreachable(TestSipDst1, "test 2", 60, 30, 120, undefined, TestNow2, TestEtsRef),
+    ok = do_report_unreachable(TestSipDst1, TestSipSocket1, "test 2", 60, 30, 120,
+			       undefined, TestNow2, TestEtsRef),
 
     autotest:mark(?LINE, "blacklisting test 2 - 5"),
     %% delete expired entrys
@@ -691,7 +715,8 @@ test() ->
     autotest:mark(?LINE, "do_is_blacklisted/3 - 1.0"),
     TestISBL_Now = util:timestamp(),
     TestISBL_Penalty = 100,
-    ok = do_report_unreachable(TestSipDst1, "test", TestISBL_Penalty, 90, 120, undefined, TestISBL_Now, TestEtsRef),
+    ok = do_report_unreachable(TestSipDst1, TestSipSocket1, "test", TestISBL_Penalty, 90, 120,
+			       undefined, TestISBL_Now, TestEtsRef),
 
     autotest:mark(?LINE, "do_is_blacklisted/3 - 1.1"),
     %% other SipDst
@@ -708,8 +733,8 @@ test() ->
     autotest:mark(?LINE, "do_is_blacklisted/3 - 2.0"),
     TestISBL_ProbeT = TestISBL_Now + 5,
     TestISBL_Expire = 120,
-    ok = do_report_unreachable(TestSipDst2, "test", TestISBL_Penalty, 90, 120, TestISBL_ProbeT, TestISBL_Now,
-			       TestEtsRef),
+    ok = do_report_unreachable(TestSipDst2, TestSipSocket1, "test", TestISBL_Penalty,
+			       90, 120, TestISBL_ProbeT, TestISBL_Now, TestEtsRef),
     %% make sure there are no signals in our process mailbox
     receive
 	TestISBL_M1 ->
