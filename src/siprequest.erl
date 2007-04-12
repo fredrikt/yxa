@@ -920,14 +920,14 @@ request_to_me(Request, YxaCtx, ExtraHeaders) when is_record(Request, request), i
 %%--------------------------------------------------------------------
 %% Function: make_response(Status, Reason, Body, ExtraHeaders,
 %%                         ViaParameters, SipSocket, Request)
-%%           Status    = integer(), SIP status code
-%%           Reason    = string(), SIP reason phrase
-%%           Body      = binary() | string()
-%%           ExtraHeaders = keylist record()
+%%           Status        = integer(), SIP status code
+%%           Reason        = string(), SIP reason phrase
+%%           Body          = binary() | string()
+%%           ExtraHeaders  = keylist record()
 %%           ViaParameters = list() of string()
-%%           SipSocket = sipsocket record() | atom(), protocol
-%%                       (tcp | tcp6 | tls | tls6 | udp | udp6)
-%%           Request   = request record()
+%%           SipSocket     = sipsocket record() | atom(), protocol
+%%                           (tcp | tcp6 | tls | tls6 | udp | udp6)
+%%           Request       = request record()
 %% Descrip.: Create a response given a request.
 %% Returns : Response = response record()
 %%--------------------------------------------------------------------
@@ -942,29 +942,55 @@ make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
 make_response(Status, Reason, Body, ExtraHeaders, ViaParameters, Proto, Request)
   when is_integer(Status), is_list(Reason), is_binary(Body), is_list(ExtraHeaders),
        is_list(ViaParameters), is_atom(Proto), is_record(Request, request) ->
-    ReqHeader = Request#request.header,
-    AnswerHeader1 = keylist:appendlist(keylist:copy(ReqHeader, [via, from, to, 'call-id', cseq,
-								'record-route', timestamp, 'content-type']),
-				       ExtraHeaders),
+
+    CopyHeaders1 = [via, from, to, 'call-id', cseq, 'record-route', timestamp, 'content-type'],
+    %% If there is no body, don't copy Content-Type
+    CopyHeaders2 =
+	case Body of
+	    <<>> -> CopyHeaders1 -- ['content-type'];
+	    _ -> CopyHeaders1
+	end,
+    %% If this is not a 100 Trying response, don't copy Timestamp
+    %% The preservation of Timestamp headers into 100 Trying response is mandated by RFC 3261 8.2.6.1
+    CopyHeaders =
+	case Status of
+	    100 -> CopyHeaders2;
+	    _ ->   CopyHeaders2 -- ['timestamp']
+	end,
+    
+    ExtraHeaders1 =
+	case yxa_config:get_env(include_server_info_in_responses) of
+	    {ok, true} ->
+		case lists:keysearch("Server", 1, ExtraHeaders) of
+		    {value, _} -> ExtraHeaders;
+		    false ->
+			{ok, App} = yxa_config:get_env(yxa_appmodule),
+			ServerStr = io_lib:format("YXA ~p at ~s", [App, siprequest:myhostname()]),
+			ExtraHeaders ++ [{"Server", [ServerStr]}]
+		end;
+	    {ok, false} ->
+		ExtraHeaders
+	end,
+    
+    %% First copy the selected headers from the reqest
+    AnswerHeader1 = keylist:copy(Request#request.header, CopyHeaders),
+    %% ... then add any extra headers we might want to add to the response
+    AnswerHeader2 = keylist:appendlist(AnswerHeader1, ExtraHeaders1),
+
     %% PlaceHolderVia is an EXTRA Via with our hostname. We could do without this if
     %% we sent it with send_response() instead of send_proxy_response() but it is easier
     %% to just add an extra Via that will be stripped by send_proxy_response() and don't
     %% have to make a difference in how we send out responses.
     V = create_via(Proto, ViaParameters),
     PlaceHolderVia = sipheader:via_print([V]),
-    AnswerHeader3 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader1),
-    %% If there is no body, remove the Content-Type we copied above
-    AnswerHeader4 = case size(Body) of
-			0 -> keylist:delete('content-type', AnswerHeader3);
-			_ -> AnswerHeader3
-		    end,
-    %% If this is not a 100 Trying response, remove the Timestamp we copied above.
-    %% The preservation of Timestamp headers into 100 Trying response is mandated by RFC 3261 8.2.6.1
-    AnswerHeader5 = case Status of
-			100 -> AnswerHeader4;
-			_ -> keylist:delete(timestamp, AnswerHeader4)
-		    end,
-    set_response_body(#response{status=Status, reason=Reason, header=AnswerHeader5}, Body).
+    AnswerHeader3 = keylist:prepend({"Via", PlaceHolderVia}, AnswerHeader2),
+
+    Response1 = #response{status = Status,
+			  reason = Reason,
+			  header = AnswerHeader3
+			 },
+
+    set_response_body(Response1, Body).
 
 %%--------------------------------------------------------------------
 %% Function: binary_make_message(BinLine1, Header, BinBody)
@@ -1221,7 +1247,10 @@ test() ->
 
     %% test make_response/7
     autotest:mark(?LINE, "make_response/7 - 2.1"),
-    Response2 = make_response(486, "_BUSY_", <<>>, [{"Extra-Header", ["test"]}], ["test=true"],
+    Response2_ExtraHeaders = [{"Extra-Header", ["test"]},
+			      {"Server", ["unit test"]}
+			     ],
+    Response2 = make_response(486, "_BUSY_", <<>>, Response2_ExtraHeaders, ["test=true"],
 			      tls6, #request{header=ReqHeader}),
 
     %% basic response record check
@@ -1248,6 +1277,27 @@ test() ->
     autotest:mark(?LINE, "make_response/7 - 2.6.2"),
     [] = keylist:fetch('route', Response2#response.header),
 
+    %% Supplied Server header preventing a Server: header from being generated
+    autotest:mark(?LINE, "make_response/7 - 2.7"),
+    ["unit test"] = keylist:fetch("Server", Response2#response.header),
+
+    autotest:mark(?LINE, "make_response/7 - 3.1"),
+    %% test with Server: header generation disabled, and protocol provided as a sipsocket record
+    ok = yxa_test_config:init(unittest, [{include_server_info_in_responses, false}]),
+    Response3_ExtraHeaders = [],
+    Response3 = make_response(486, "_BUSY_", <<>>, Response3_ExtraHeaders, ["test=true"],
+			      #sipsocket{proto = yxa_test}, #request{header = ReqHeader}),
+
+    %% basic response record check
+    autotest:mark(?LINE, "make_response/7 - 3.2"),
+    #response{status = 486, reason = "_BUSY_", body = <<>>} = Response3,
+
+    %% check that we have no Server: tag
+    autotest:mark(?LINE, "make_response/7 - 3.3"),
+    [] = keylist:fetch(server, Response3#response.header),
+
+    %% clean up our special test config
+    yxa_test_config:stop(),
 
     %% check_valid_proxy_request(Method, Header)
     %%--------------------------------------------------------------------

@@ -236,6 +236,10 @@
 		    default	= true,
 		    type	= bool
 		   },
+	 #cfg_entry{key		= include_server_info_in_responses,
+		    default	= true,
+		    type	= bool
+		   },
 
 	 %% Transport layer settings
 	 #cfg_entry{key		= listenport,

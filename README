@@ -408,6 +408,10 @@ stun_demuxing_on_sip_ports	(default: false (except for outgoingproxy))
 				for clients to keep NAT bindings alive. See
 				draft-ietf-sip-outbound-03 for more information.
 
+include_server_info_in_responses (default: true) Add a Server: header to
+                                responses we create, to ease debugging/SIP call
+                                tracing through a number of proxies.
+
 pstnproxy:
 ----------
 e164_to_pstn			(no default) Regexps for choosing PSTN gateway
