@@ -251,9 +251,7 @@ get_elem_using_pid(Pid, TStateList) when is_pid(Pid), is_record(TStateList, tran
 	[Elem] when is_record(Elem, transactionstate) ->
 	    Elem;
 	L when is_list(L) ->
-	    {error, "more than one transactionstate found"};
-	_ ->
-	    {error, "unknown result from get_using_pid2"}
+	    {error, "more than one transactionstate found"}
     end.
 
 %%--------------------------------------------------------------------
@@ -577,17 +575,15 @@ ets_insert_new(TName, Data) when is_atom(TName), is_tuple(Data) ->
 	true ->
 	    true;
 	false ->
+	    %% fetch colliding data as quickly as possible
+	    {Key, _Value} = Data,
+	    X = (catch ets:lookup(TName, Key)),
+
 	    logger:log(error, "Transaction state list: Failed adding entry to ets table '~p'", [TName]),
 	    logger:log(debug, "Transaction state list: Data that did not get added to ets table '~p' :~n~p",
 		       [TName, Data]),
-	    case Data of
-		{Key, _Value} ->
-		    X = (catch ets:lookup(TName, Key)),
-		    logger:log(debug, "Transaction state list: Colliding data in ets table '~p' :~n~p",
-			       [TName, X]);
-		_ ->
-		    logger:log(debug, "Transaction state list: Data is not {Key, Value}")
-	    end,
+	    logger:log(debug, "Transaction state list: Colliding data in ets table '~p' :~n~p",
+		       [TName, X]),
 	    true
     end.
 
