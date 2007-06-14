@@ -46,8 +46,13 @@ if test "x$ERL" = "x" -o "x$ERLC" = "x"; then
 fi
 
 dnl check that the installed Erlang/OTP version is the right one for this version of YXA
-AC_MSG_CHECKING([Erlang/OTP version])
-cat > conftest.erl <<EOF
+AC_ARG_ENABLE(erlang-version-check,
+[AC_HELP_STRING([--enable-erlang-version-check],
+	[Check Erlang/OTP version @<:@default=yes@:>@])])
+	case "$enable_erlang_version_check" in
+	yes|'')
+		AC_MSG_CHECKING([Erlang/OTP version])
+		cat > conftest.erl <<EOF
 -module(conftest).
 -export([[start/0]]).
 
@@ -66,19 +71,24 @@ start() ->
 
 EOF
 
-$ERLC conftest.erl || AC_MSG_ERROR(["Could not compile Erlang/OTP version check program using '$ERLC'"])
+		$ERLC conftest.erl || AC_MSG_ERROR(["Could not compile Erlang/OTP version check program using '$ERLC'"])
 
-if ! $ERL -s conftest -noshell -o ! -f conftest.out ; then
-   AC_MSG_ERROR(["Could not run Erlang/OTP version check program using '$ERL'"])
-fi
+		if ! $ERL -s conftest -noshell -o ! -f conftest.out ; then
+		   AC_MSG_ERROR(["Could not run Erlang/OTP version check program using '$ERL'"])
+		fi
 
-if test "x`cat conftest.out`" != "xok"; then
-   AC_MSG_RESULT([failed])
-   X="`cat conftest.out`"
-   AC_MSG_FAILURE([$X])
-else
-   AC_MSG_RESULT([ok])
-fi
+		if test "x`cat conftest.out`" != "xok"; then
+		   AC_MSG_RESULT([failed])
+		   X="`cat conftest.out`"
+		   AC_MSG_FAILURE([$X])
+		else
+		   AC_MSG_RESULT([ok])
+		fi
+		;;
+	no)
+		AC_MSG_RESULT(Skipped Erlang/OTP version check)
+		;;
+esac
 
 
 AC_ARG_WITH(mnesiadir,
