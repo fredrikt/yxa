@@ -626,9 +626,11 @@ parse_packet2(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigi
 %% Returns : ok
 %%--------------------------------------------------------------------
 parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
-    {_, Method} = sipheader:cseq(Header),
-    case Method of
-	"ACK" ->
+    case sipheader:cseq(Header) of
+	{unparseable, CSeqStr} ->
+	    logger:log(error, "Sipserver: Malformed CSeq (~p) in response we were going to send, dropping response",
+		       [CSeqStr]);
+	{_Num, "ACK"} ->
 	    %% Empirical evidence says that it is a really bad idea to send responses to ACK
 	    %% (since the response may trigger yet another ACK). Although not very clearly,
 	    %% RFC3261 section 17 (Transactions) do say that responses to ACK is not permitted :
@@ -637,7 +639,7 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
 	    %%   retransmissions or disallowed responses (such as a response to ACK).'
 	    logger:log(normal, "Sipserver: Suppressing parsing error response ~p ~s because CSeq method is ACK",
 		       [Status, Reason]);
-	_ ->
+	{_Num, _Method} ->
 	    transportlayer:send_result(Header, Socket, <<>>, Status, Reason, ExtraHeaders)
     end,
     ok.
@@ -1064,10 +1066,7 @@ check_packet(Request, Origin) when is_record(Request, request), is_record(Origin
 		    throw({sipparseerror, request, Header, 400, "CSeq Method " ++ CSeqMethod ++
 			   " does not match request Method " ++ Method});
 		true -> true
-	    end;
-	_ ->
-	    logger:log(error, "INVALID CSeq in packet from ~s", [origin2str(Origin)]),
-	    throw({sipparseerror, request, Header, 400, "Invalid CSeq"})
+	    end
     end,
     case yxa_config:get_env(detect_loops) of
 	{ok, true} ->
