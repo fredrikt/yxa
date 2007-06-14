@@ -735,9 +735,9 @@ get_tag([String]) ->
 %%           ToTag   = string()
 %%--------------------------------------------------------------------
 dialogid(Header) when is_record(Header, keylist) ->
-    CallID = sipheader:callid(Header),
-    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
-    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
+    CallID = callid(Header),
+    FromTag = get_tag(keylist:fetch('from', Header)),
+    ToTag = get_tag(keylist:fetch('to', Header)),
     {CallID, FromTag, ToTag}.
 
 %%--------------------------------------------------------------------
@@ -777,7 +777,7 @@ get_server_transaction_id(Request) ->
     end.
 
 guarded_get_server_transaction_id(Request) when is_record(Request, request) ->
-    TopVia = sipheader:topvia(Request#request.header),
+    TopVia = topvia(Request#request.header),
     %% XXX the branch is actually a token and should apparently be compared case-insensitively
     %% http://bugs.sipit.net/show_bug.cgi?id=661
     Branch = get_via_branch(TopVia),
@@ -819,9 +819,9 @@ get_client_transaction_id(Response) ->
 
 guarded_get_client_transaction_id(Response) when is_record(Response, response) ->
     Header = Response#response.header,
-    TopVia = sipheader:topvia(Header),
+    TopVia = topvia(Header),
     Branch = get_via_branch(TopVia),
-    {_, CSeqMethod} = sipheader:cseq(Header),
+    {_, CSeqMethod} = cseq(Header),
     {Branch, CSeqMethod}.
 
 %%--------------------------------------------------------------------
@@ -864,10 +864,10 @@ get_server_transaction_ack_id_2543(Request) ->
 
 guarded_get_server_transaction_ack_id_2543(Request) when is_record(Request, request) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
-    TopVia = remove_branch(sipheader:topvia(Header)),
-    CallID = sipheader:callid(Header),
-    {CSeqNum, _} = sipheader:cseq(Header),
-    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
+    TopVia = remove_branch(topvia(Header)),
+    CallID = callid(Header),
+    {CSeqNum, _} = cseq(Header),
+    FromTag = get_tag(keylist:fetch('from', Header)),
     %% We are supposed to match only on the CSeq number, but the entry we are
     %% matching against is an INVITE and that INVITE had it's Id generated with
     %% the full CSeq. Make it possible to match the INVITE with this Id.
@@ -875,9 +875,9 @@ guarded_get_server_transaction_ack_id_2543(Request) when is_record(Request, requ
     {URI, FromTag, CallID, FakeCSeq, TopVia}.
 
 remove_branch(Via) when is_record(Via, via) ->
-    ParamDict = sipheader:param_to_dict(Via#via.param),
+    ParamDict = param_to_dict(Via#via.param),
     NewDict = dict:erase("branch", ParamDict),
-    Via#via{param=sipheader:dict_to_param(NewDict)}.
+    Via#via{param = dict_to_param(NewDict)}.
 
 %%--------------------------------------------------------------------
 %% Function: get_via_branch(TopVia)
@@ -931,7 +931,7 @@ remove_loop_cookie(Branch) ->
 %% Returns : Branch = string() | none
 %%--------------------------------------------------------------------
 get_via_branch_full(Via) when is_record(Via, via) ->
-    case dict:find("branch", sipheader:param_to_dict(Via#via.param)) of
+    case dict:find("branch", param_to_dict(Via#via.param)) of
 	error ->
 	    none;
 	{ok, Branch} ->
@@ -1161,10 +1161,10 @@ guarded_get_server_transaction_id_2543(Request, _) when is_record(Request, reque
 %%
 guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, request), is_record(TopVia, via) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
-    CallID = sipheader:callid(Header),
-    CSeq = sipheader:cseq(Header),
-    FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
-    ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
+    CallID = callid(Header),
+    CSeq = cseq(Header),
+    FromTag = get_tag(keylist:fetch('from', Header)),
+    ToTag = get_tag(keylist:fetch('to', Header)),
     {URI, ToTag, FromTag, CallID, CSeq, TopVia}.
 
 
