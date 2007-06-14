@@ -225,17 +225,11 @@ get_dialog_controller(Request) when is_record(Request, request) ->
 	{_CallId, _RemoteTag, none} ->
 	    nomatch;
         {CallId, RemoteTag, LocalTag} ->
-	    get_dialog_controller2(CallId, LocalTag, RemoteTag);
-	_ ->
-	    error
+	    get_dialog_controller2(CallId, LocalTag, RemoteTag)
     end;
 get_dialog_controller(Response) when is_record(Response, response) ->
-    case sipheader:dialogid(Response#response.header) of
-        {CallId, LocalTag, RemoteTag} ->
-	    get_dialog_controller2(CallId, LocalTag, RemoteTag);
-	_ ->
-	    error
-    end.
+    {CallId, LocalTag, RemoteTag} = sipheader:dialogid(Response#response.header),
+    get_dialog_controller2(CallId, LocalTag, RemoteTag).
 
 %% part of get_dialog_controller/1
 %% Returns : {ok, Pid} | nomatch
