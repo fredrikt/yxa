@@ -576,10 +576,6 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_reco
 	    logger:log(error, "Transaction layer: Failed locating server transaction handler for request ~s ~s : ~p",
 		       [Method, sipurl:print(URI), E]),
 	    none;
-	none ->
-	    logger:log(error, "Transaction layer: No server transaction found for request ~s ~s",
-		       [Method, sipurl:print(URI)]),
-	    none;
 	TH when is_record(TH, thandler) ->
 	    logger:log(debug, "Transaction layer: Located server transaction handler ~p", [TH#thandler.pid]),
 	    send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
@@ -639,17 +635,11 @@ send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
 %% Descrip.: Ask a server transaction handler to proxy a response.
 %%           When we proxy (as opposed to send) a response, we do some
 %%           additional processing like removing the top Via header.
-%% Returns : ok    |
-%%           {error, E}
-%%           E = string(), describes the error
+%% Returns : ok
 %%--------------------------------------------------------------------
 send_proxy_response_handler(TH, Response) when is_record(TH, thandler), is_record(Response, response) ->
-    case gen_server:cast(TH#thandler.pid, {forwardresponse, Response}) of
-	ok ->
-	    ok;
-	_ ->
-	    {error, "Transaction handler failure"}
-    end.
+    ok = gen_server:cast(TH#thandler.pid, {forwardresponse, Response}),
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: get_handler_for_request(Request)
