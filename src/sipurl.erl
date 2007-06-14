@@ -1279,12 +1279,10 @@ is_password(_) ->
 %%--------------------------------------------------------------------
 is_user(none) -> true;
 is_user([]) -> true;
-is_user([$%, C1, C2 | Str]) ->
-	 is_escaped([$%, C1, C2]) andalso is_user(Str);
-		     is_user([Char | Str]) ->
-			    (is_unreserved(Char) orelse is_user_unreserved(Char)) andalso is_user(Str);
-		     is_user(_) ->
-			    false.
+is_user([37, C1, C2 | Str]) ->					%% 37 is % 
+    is_escaped([37, C1, C2]) andalso is_user(Str);		%% 37 is %
+is_user([Char | Str]) ->
+    (is_unreserved(Char) orelse is_user_unreserved(Char)) andalso is_user(Str).
 
 %%--------------------------------------------------------------------
 %% Function: is_parameters(Parameters)
