@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% File    : autotest.erl
+%%% File    : url_param.erl
 %%% Author  : Håkan Stenholm <hsten@it.su.se>
 %%% Descrip.: This module handles parameters supplied in sip urls.
 %%%           They  must be unique - i.e. the same key can only occur
