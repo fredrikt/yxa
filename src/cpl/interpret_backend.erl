@@ -169,7 +169,7 @@ none_to_no_value_atom(SubField, Val) ->
 %% compare complete URIs according to protocol (SIP)
 compare_address_or_address_part(ReqVal, Val) when is_record(ReqVal, sipurl), is_list(Val) ->
     ValURI = sipurl:parse(Val),
-    sipurl:url_is_equal(ValURI, Val);
+    sipurl:url_is_equal(ReqVal, ValURI);
 
 %% values are case insensitive
 compare_address_or_address_part({'address-type', ReqVal}, Val) ->
@@ -494,12 +494,12 @@ parse_accept_language(Str) ->
     %% all errors in parse_accept_language/1, rather than returning 
     %% sipparse_util:split_fields/2 for some of them
     try begin
-	    case sipparse_util:split_fields(Str, $;) of
+	    case catch sipparse_util:split_fields(Str, $;) of
 		{Lang} ->
 		    {1.0, xml_parse_util:is_language_range(string:strip(Lang))};
-		{Lang, QPart} ->
-		    case sipparse_util:split_fields(QPart, $=) of
-			{Q, QValStr} ->
+		{Lang, QPart} when is_list(Lang), is_list(QPart) ->
+		    case catch sipparse_util:split_fields(QPart, $=) of
+			{Q, QValStr} when is_list(Q), is_list(QValStr) ->
 			    QVal = sipparse_util:str_to_qval(string:strip(QValStr)),
 			    case string:strip(Q) of
 				"Q" -> {QVal, xml_parse_util:is_language_range(string:strip(Lang))};
@@ -509,7 +509,7 @@ parse_accept_language(Str) ->
 			_ ->
 			    throw({error, malformed_accept_language_element})
 		    end;
-		_ ->
+		{error, _} ->
 		    throw({error, malformed_accept_language_element})
 	    end
 	end
@@ -759,17 +759,15 @@ test_proxy_destinations(Count, BranchBase, Request, Actions, Surplus, _Timeout, 
     %% but want to terminate if any of them exits - even normally
     STMonitor = erlang:monitor(process, STHandlerPid),
     AGMonitor = erlang:monitor(process, AppGluePid),
-    Res = test_proxy_destinations_loop(STHandlerPid, AppGluePid, true),
+    Res = test_proxy_destinations_loop(STHandlerPid, AppGluePid),
     erlang:demonitor(STMonitor),
     erlang:demonitor(AGMonitor),
     Res.
 
 %%--------------------------------------------------------------------
-%% Function: test_proxy_destinations_loop(STHandlerPid, AppGluePid,
-%%                                        STAlive)
+%% Function: test_proxy_destinations_loop(STHandlerPid, AppGluePid)
 %%           STHandlerPid = pid(), server transaction handler pid
 %%           AppGluePid   = pid(), appserver_glue process pid
-%%           STAlive      = true | false, server transaction status
 %% Descrip.:
 %% Returns : {Result, BestLocation, BestResponse}
 %%           Result       = success | atom(), proxy result
@@ -778,7 +776,7 @@ test_proxy_destinations(Count, BranchBase, Request, Actions, Surplus, _Timeout, 
 %%           Status       = integer(), SIP status code
 %%           Reason       = string(), SIP reason phrase
 %%--------------------------------------------------------------------
-test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive) ->
+test_proxy_destinations_loop(STHandlerPid, AppGluePid) ->
     receive
 	%%
 	%% Messages from the server transaction handler
@@ -793,10 +791,6 @@ test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive) ->
 	    %%test_proxy_destinations_loop(STHandlerPid, AppGluePid, false);
 	    make_proxy_destinations_response(500, {500, "Server transcation exited"});
 
-
-	{'DOWN', _MonitorRef1, process, STHandlerPid, normal} when STAlive == false ->
-	    %% just ignore, we knew the server transaction was terminating
-	    test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive);
 
 	%%
 	%% Messages about our appserver_glue process being finished, this is what makes us exit
@@ -818,7 +812,7 @@ test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive) ->
 		       "(normally) before I did", [AppGluePid]),
 	    erlang:error(appserver_glue_exited, [STHandlerPid, AppGluePid]);
 
-	{'DOWN', _MonitorRef3, process, STHandlerPid, normal} when STAlive == true ->
+	{'DOWN', _MonitorRef3, process, STHandlerPid, normal} ->
 	    %% Our STHandlerPid died (normally, but we wouldn't expect that)
 	    logger:log(error, "CPL test_proxy_destinations_loop: My server transaction (~p) terminated "
 		       "(normally) before I did", [STHandlerPid]),
@@ -830,7 +824,7 @@ test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive) ->
 	    %% earlier chosen to ingore the gen_server call timing out?
 	    logger:log(debug, "CPL test_proxy_destinations_loop: AppGluePid ~p - ignoring unknown signal :~n~p",
 		       [AppGluePid, Msg]),
-	    test_proxy_destinations_loop(STHandlerPid, AppGluePid, STAlive)
+	    test_proxy_destinations_loop(STHandlerPid, AppGluePid)
     end.
 
 %%--------------------------------------------------------------------
