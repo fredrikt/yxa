@@ -84,9 +84,7 @@ parse(Packet, Origin) when is_binary(Packet), Origin == none; is_record(Origin, 
 			    %% RFC 3261 19.1.5 Forming Requests from a URI
 			    request(Parsed, Header, Body);
 			{response, Parsed} ->
-			    response(Parsed, Header, Body);
-			none ->
-			    throw({siperror, 400, "Completely unparseable request/response"})
+			    response(Parsed, Header, Body)
 		    end;
 		{error, "invalid Content-Length"} ->
 		    logger:log(debug, "Packet has invalid Content-Length header : ~p", [CL]),

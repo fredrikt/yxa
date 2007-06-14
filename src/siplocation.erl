@@ -631,14 +631,8 @@ process_register_wildcard_isauth(RegReq, Contacts) ->
     case is_valid_wildcard_request(Header, Contacts) of
 	true ->
 	    logger:log(debug, "Location: Processing valid wildcard un-register"),
-	    case phone:get_phone(SipUser) of
-		{atomic, PhoneEntrys} ->
-		    unregister(LogTag, Header, PhoneEntrys);
-		E ->
-		    logger:log(error, "Location: Failed fetching registered contacts for user ~p : ~p",
-			       [SipUser, E]),
-		    {siperror, 500, "Server Internal Error"}
-	    end;
+	    {atomic, PhoneEntrys} = phone:get_phone(SipUser),
+	    process_register_wildcard_unregister(LogTag, Header, PhoneEntrys);
 	false ->
 	    none;
 	SipError when is_tuple(SipError), element(1, SipError) == siperror ->
@@ -648,7 +642,7 @@ process_register_wildcard_isauth(RegReq, Contacts) ->
 %% return = ok       | wildcard processed
 %%          SipError   db error
 %% unregister all location entries for a sipuser
-unregister(LogTag, Header, PhoneEntrys) ->
+process_register_wildcard_unregister(LogTag, Header, PhoneEntrys) ->
     %% unregister all Locations entries
     F = fun() ->
 		unregister_contacts(LogTag, Header, PhoneEntrys)
@@ -752,13 +746,9 @@ get_user_with_contact(URI) when is_record(URI, sipurl) ->
 %%           Locations = list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 get_locations_with_contact(URI) when is_record(URI, sipurl) ->
-    case phone:get_locations_using_contact(URI) of
-	{ok, L} when is_list(L) ->
-	    {ok, L};
-	Unknown ->
-	    logger:log(error, "Location: Unknown result from get_locations_using_contact/1 : ~p", [Unknown]),
-	    error
-    end.
+    {ok, L} = phone:get_locations_using_contact(URI),
+    true = is_list(L),
+    {ok, L}.
 
 %%--------------------------------------------------------------------
 %% Function: get_locations_for_users(SipUserList)
