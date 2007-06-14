@@ -649,11 +649,7 @@ stun_process(Packet, Proto, IPtuple, IP, Port, Socket) ->
 	    ok;
 	{error, not_stun} ->
 	    logger:log(debug, "Non-STUN packet received from ~p:~s:~p : ~n~p~n"
-		       "(as list: ~p)", [Proto, IP, Port, Packet, binary_to_list(Packet)]);
-	{error, Reason2} ->
-	    logger:log(debug, "Failed processing STUN packet from ~p:~s:~p : ~p",
-		       [Proto, IP, Port, Reason2]),
-	    ok
+		       "(as list: ~p)", [Proto, IP, Port, Packet, binary_to_list(Packet)])
     end,
     gen_udp:close(AltSocket),
     ok.
