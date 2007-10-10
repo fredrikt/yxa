@@ -796,10 +796,11 @@ update_transaction_state(Response, NewSipState, BranchAction, State) when is_rec
     end.
 
 %%--------------------------------------------------------------------
-%% Function: act_on_new_sipstate(S, S, BranchAction, State)
+%% Function: act_on_new_sipstate(OldSipState, NewSipState,
+%%                               BranchAction, State)
 %%           OldSipState  = sipstate()
 %%           NewSipState  = sipstate()
-%%           BranchAction = atom(),
+%%           BranchAction = ignore | tell_parent
 %%           State        = state record()
 %% Descrip.: Check if the SIP state has really changed, if so - invoke
 %%           act_on_new_sipstate2().
@@ -807,15 +808,15 @@ update_transaction_state(Response, NewSipState, BranchAction, State) when is_rec
 %%           NewState        = state record()
 %%           NewBranchAction = atom(), ignore | tell_parent
 %%--------------------------------------------------------------------
+act_on_new_sipstate(SipState, SipState, ignore, State) when is_atom(SipState), is_record(State, state) ->
+    %% SipState has not changed
+    {State, ignore};
+act_on_new_sipstate(SipState, SipState, tell_parent, State) when is_atom(SipState), is_record(State, state) ->
+    %% SipState has not changed
+    {State, tell_parent};
 act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State)
   when is_atom(OldSipState), is_atom(NewSipState), is_atom(BranchAction),
-       BranchAction == ignore; BranchAction == tell_parent,
-       is_record(State, state), OldSipState == NewSipState ->
-    %% State has not changed
-    {State, BranchAction};
-act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State)
-  when is_atom(OldSipState), is_atom(NewSipState), is_atom(BranchAction),
-       BranchAction == ignore; BranchAction == tell_parent,
+       (BranchAction == ignore orelse BranchAction == tell_parent),
        is_record(State, state) ->
     %% State has changed
     act_on_new_sipstate2(NewSipState, BranchAction, State).
@@ -851,8 +852,15 @@ act_on_new_sipstate2(proceeding, BranchAction, State) when is_record(State, stat
 		    logger:log(debug, "~s: A previously cancelled transaction (INVITE ~s) "
 			       "entered state 'proceeding' upon receiving a '~p ~s' response. "
 			       "CANCEL ourselves!", [State#state.logtag, sipurl:print(URI), Status, Reason]),
-		    NewState1 = State#state{do_cancel=false},
-		    NewState2 = cancel_request(NewState1, ExtraHeaders),
+		    %% make sure cancel_request/2 doesn't think we have already started a CANCEL for this INVITE
+		    NewState1 = State#state{cancelled = false, do_cancel = false},
+		    NewState2 =
+			case cancel_request(NewState1, ExtraHeaders) of
+			    NewState2_1 when is_record(NewState2_1, state) ->
+				NewState2_1;
+			    {ok, testing, NewState2_1, _CancelParams} when is_record(NewState2_1, state) ->
+				NewState2_1
+			end,
 		    {NewState2, ignore};
 		false ->
 		    {State, BranchAction}
@@ -1405,7 +1413,7 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 %%           transaction has finished because _this_ transaction will
 %%           then receive a '487 Request Cancelled' response.
 %% Returns : NewState = state record() |
-%%           {ok, testing, NewState}
+%%           {ok, testing, NewState, CancelData}
 %%--------------------------------------------------------------------
 start_cancel_transaction(State) when is_record(State, state) ->
     LogTag = State#state.logtag,
@@ -1425,7 +1433,7 @@ start_cancel_transaction(State) when is_record(State, state) ->
     case State#state.testing of
 	true ->
 	    {ok, testing, NewState#state{cancel_pid = testing},
-	     [CancelRequest, Dst, Branch, 32 * T1, none]};
+	     {CancelRequest, Dst, Branch, 32 * T1, none}};
 	false ->
 	    case transactionlayer:start_client_transaction(CancelRequest, Dst, Branch, 32 * T1, none) of
 		P when is_pid(P) ->
@@ -1611,7 +1619,7 @@ test() ->
     %% unknown handle_call
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "unknown gen_server:call() - 1"),
-    UnknownCallState = #state{},
+    UnknownCallState = #state{logtag = "test unknown gen_server call"},
     {reply, {error, "unknown gen_server call"}, UnknownCallState} =
 	handle_call(undefined, none, UnknownCallState),
 
@@ -1621,7 +1629,8 @@ test() ->
     autotest:mark(?LINE, "gen_server:cast() {sipmessage, ...} - 1.1"),
     SipMessage_State1 = #state{request   = Test_Request,
 			       sipstate  = calling,
-			       timerlist = siptimer:empty()
+			       timerlist = siptimer:empty(),
+			       testing   = true
 			      },
     {noreply, SipMessage_State1_out} =
 	handle_cast({sipmessage, Test_Response, #siporigin{}, "testing"}, SipMessage_State1),
@@ -1637,6 +1646,44 @@ test() ->
 						    res_count = 0
 						   },
 
+    autotest:mark(?LINE, "gen_server:cast() {sipmessage, ...} - 2.1"),
+    %% test that if we have a cancelled INVITE transaction in state 'calling', and receive
+    %% a 1xx response, we start the CANCEL transaction
+    SipMessage_State2 = #state{request   = Test_Request,
+			       sipstate  = calling,
+			       timerlist = siptimer:empty(),
+			       logtag    = "test of delayed CANCEL",
+			       cancelled = true,
+			       do_cancel = {true, []},
+			       testing   = true
+			      },
+    {noreply, SipMessage_State2_out} =
+	handle_cast({sipmessage, Test_Response, #siporigin{}, "testing"}, SipMessage_State2),
+
+    autotest:mark(?LINE, "gen_server:cast() {sipmessage, ...} - 2.2"),
+    %% verify new state
+    testing = SipMessage_State2_out#state.cancel_pid,
+    true = SipMessage_State2_out#state.cancelled,
+    false = SipMessage_State2_out#state.do_cancel,
+    proceeding = SipMessage_State2_out#state.sipstate,
+    100 = (SipMessage_State2_out#state.response)#response.status,
+    1 = SipMessage_State2_out#state.res_count,
+    "Testing" = (SipMessage_State2_out#state.response)#response.reason,
+    [{terminate_transaction}] = siptimer:test_get_appsignals(SipMessage_State2_out#state.timerlist),
+
+    %% take new state and reset everything we expect to have changed, to then check
+    %% that nothing _more_ than what we expected to change have changed
+    SipMessage_State2_out2 = SipMessage_State2_out#state{sipstate   = calling,
+							 response   = undefined,
+							 res_count  = 0,
+							 cancel_pid = undefined,
+							 timerlist  = siptimer:empty(),
+							 do_cancel  = {true, []}
+							},
+    SipMessage_State2 = SipMessage_State2_out2,
+
+    %% clean up
+    siptimer:cancel_all_timers(SipMessage_State2_out#state.timerlist),
 
     %% handle_cast({cancel, Msg, ExtraHeaders}
     %%--------------------------------------------------------------------
@@ -2188,7 +2235,7 @@ test() ->
 			  tl_branch = "tl_branch",
 			  dst       = Test_Dst,
 			  request   = Test_Request#request{header = PPRes_Header2},
-			  sipstate  = confirmed,
+			  sipstate  = completed,
 			  report_to = self(),
 			  timerlist = siptimer:empty(),
 			  testing   = true
@@ -2205,7 +2252,7 @@ test() ->
     401 = (PRRes_State2_out#state.response)#response.status,
     "Testing" = (PRRes_State2_out#state.response)#response.reason,
     [] = siptimer:test_get_appsignals(PRRes_State2_out#state.timerlist),
-    confirmed = PRRes_State2_out#state.sipstate,
+    completed = PRRes_State2_out#state.sipstate,
 
     %% verify the ACK sent
     {ok, PPRes_Request2_out} = test_verify_request_was_sent(Test_Request#request{method = "ACK", body = <<>>},
@@ -2268,7 +2315,7 @@ test() ->
     %% test do_cancel set to {true, []}
     ActOnNewSS_State1 = #state{logtag    = "testing",
 			       do_cancel = {true, []},
-			       cancelled = true,	%% to not actually start a CANCEL
+			       cancelled = true,
 			       socket    = #sipsocket{proto = yxa_test,
 						      module = sipsocket_test
 						     },
@@ -2277,7 +2324,7 @@ test() ->
 			       dst       = Test_Dst,
 			       request   = Test_Request,
 			       response  = Test_Response,
-			       sipstate  = confirmed,
+			       sipstate  = completed,
 			       report_to = self(),
 			       timerlist = siptimer:empty(),
 			       testing   = true
@@ -2306,7 +2353,7 @@ test() ->
     autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, true),
     ActOnNewSS_State4 = #state{logtag    = "testing",
 			       request   = Test_Request,
-			       sipstate  = confirmed,
+			       sipstate  = completed,
 			       socket    = #sipsocket{proto = yxa_test, module = sipsocket_test},
 			       timerlist = siptimer:empty()
 			      },
@@ -2746,11 +2793,11 @@ test() ->
     autotest:mark(?LINE, "end_invite/1 - 1.3"),
     %% verify arguments that would have been used to start the CANCEL transaction
     EndInviteDst1 = EndInvite_State1#state.dst,
-    [#request{method = "CANCEL"},
+    {#request{method = "CANCEL"},
      EndInviteDst1,
      "tl_branch",
      _EndInviteTimeout1,
-     none] = CancelStartArgs,
+     none} = CancelStartArgs,
 
     autotest:mark(?LINE, "end_invite/1 - 2"),
     %% test sipstate 'completed', should be ignored
