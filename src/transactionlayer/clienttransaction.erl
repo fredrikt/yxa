@@ -808,15 +808,15 @@ update_transaction_state(Response, NewSipState, BranchAction, State) when is_rec
 %%           NewState        = state record()
 %%           NewBranchAction = atom(), ignore | tell_parent
 %%--------------------------------------------------------------------
+act_on_new_sipstate(SipState, SipState, ignore, State) when is_atom(SipState), is_record(State, state) ->
+    %% SipState has not changed
+    {State, ignore};
+act_on_new_sipstate(SipState, SipState, tell_parent, State) when is_atom(SipState), is_record(State, state) ->
+    %% SipState has not changed
+    {State, tell_parent};
 act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State)
   when is_atom(OldSipState), is_atom(NewSipState), is_atom(BranchAction),
-       BranchAction == ignore; BranchAction == tell_parent,
-       is_record(State, state), OldSipState == NewSipState ->
-    %% State has not changed
-    {State, BranchAction};
-act_on_new_sipstate(OldSipState, NewSipState, BranchAction, State)
-  when is_atom(OldSipState), is_atom(NewSipState), is_atom(BranchAction),
-       BranchAction == ignore; BranchAction == tell_parent,
+       (BranchAction == ignore orelse BranchAction == tell_parent),
        is_record(State, state) ->
     %% State has changed
     act_on_new_sipstate2(NewSipState, BranchAction, State).
@@ -852,8 +852,15 @@ act_on_new_sipstate2(proceeding, BranchAction, State) when is_record(State, stat
 		    logger:log(debug, "~s: A previously cancelled transaction (INVITE ~s) "
 			       "entered state 'proceeding' upon receiving a '~p ~s' response. "
 			       "CANCEL ourselves!", [State#state.logtag, sipurl:print(URI), Status, Reason]),
-		    NewState1 = State#state{do_cancel=false},
-		    NewState2 = cancel_request(NewState1, ExtraHeaders),
+		    %% make sure cancel_request/2 doesn't think we have already started a CANCEL for this INVITE
+		    NewState1 = State#state{cancelled = false, do_cancel = false},
+		    NewState2 =
+			case cancel_request(NewState1, ExtraHeaders) of
+			    NewState2_1 when is_record(NewState2_1, state) ->
+				NewState2_1;
+			    {ok, testing, NewState2_1, _CancelParams} when is_record(NewState2_1, state) ->
+				NewState2_1
+			end,
 		    {NewState2, ignore};
 		false ->
 		    {State, BranchAction}
@@ -1622,7 +1629,8 @@ test() ->
     autotest:mark(?LINE, "gen_server:cast() {sipmessage, ...} - 1.1"),
     SipMessage_State1 = #state{request   = Test_Request,
 			       sipstate  = calling,
-			       timerlist = siptimer:empty()
+			       timerlist = siptimer:empty(),
+			       testing   = true
 			      },
     {noreply, SipMessage_State1_out} =
 	handle_cast({sipmessage, Test_Response, #siporigin{}, "testing"}, SipMessage_State1),
@@ -1638,6 +1646,44 @@ test() ->
 						    res_count = 0
 						   },
 
+    autotest:mark(?LINE, "gen_server:cast() {sipmessage, ...} - 2.1"),
+    %% test that if we have a cancelled INVITE transaction in state 'calling', and receive
+    %% a 1xx response, we start the CANCEL transaction
+    SipMessage_State2 = #state{request   = Test_Request,
+			       sipstate  = calling,
+			       timerlist = siptimer:empty(),
+			       logtag    = "test of delayed CANCEL",
+			       cancelled = true,
+			       do_cancel = {true, []},
+			       testing   = true
+			      },
+    {noreply, SipMessage_State2_out} =
+	handle_cast({sipmessage, Test_Response, #siporigin{}, "testing"}, SipMessage_State2),
+
+    autotest:mark(?LINE, "gen_server:cast() {sipmessage, ...} - 2.2"),
+    %% verify new state
+    testing = SipMessage_State2_out#state.cancel_pid,
+    true = SipMessage_State2_out#state.cancelled,
+    false = SipMessage_State2_out#state.do_cancel,
+    proceeding = SipMessage_State2_out#state.sipstate,
+    100 = (SipMessage_State2_out#state.response)#response.status,
+    1 = SipMessage_State2_out#state.res_count,
+    "Testing" = (SipMessage_State2_out#state.response)#response.reason,
+    [{terminate_transaction}] = siptimer:test_get_appsignals(SipMessage_State2_out#state.timerlist),
+
+    %% take new state and reset everything we expect to have changed, to then check
+    %% that nothing _more_ than what we expected to change have changed
+    SipMessage_State2_out2 = SipMessage_State2_out#state{sipstate   = calling,
+							 response   = undefined,
+							 res_count  = 0,
+							 cancel_pid = undefined,
+							 timerlist  = siptimer:empty(),
+							 do_cancel  = {true, []}
+							},
+    SipMessage_State2 = SipMessage_State2_out2,
+
+    %% clean up
+    siptimer:cancel_all_timers(SipMessage_State2_out#state.timerlist),
 
     %% handle_cast({cancel, Msg, ExtraHeaders}
     %%--------------------------------------------------------------------
