@@ -508,7 +508,7 @@ print([Contact | R]) when is_record(Contact, contact) ->
 print(Contact) when is_record(Contact, contact) ->
     DispName = case Contact#contact.display_name of
 		   none -> "";
-		   Name -> io_lib:format("~p ", [Name]) % this adds "..." around the name
+		   Name -> io_lib:format("\"~s\" ", [Name]) % this adds "..." around the name
 	       end,
     SipURI = case Contact#contact.urlstr of
 		 "*" -> "*";
@@ -925,6 +925,13 @@ test() ->
     %% test printing empty list of contacts
     autotest:mark(?LINE, "print/1 - 14"),
     "" = print([]),
+
+    %% test display name containing UTF-8
+    autotest:mark(?LINE, "print/1 - 15"),
+    PH15 = hd(parse(["\"P\303\244r \303\226sterman\" <sip:po@192.0.2.12:5060>"])),
+    "\"P\303\244r \303\226sterman\" <sip:po@192.0.2.12:5060>" = print(PH15),
+    
+
 
     %% add_param(Contact, Key, Val)
     %%--------------------------------------------------------------------
