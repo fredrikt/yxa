@@ -50,14 +50,18 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: date(DateString)
-%% Descrip.: parse a CPL DATE string
-%% Returns : {Year, Month, Day} |
-%%           throw({error, Reason})
-%%           Year   = integer()
-%%           Month  = integer()
-%%           Day    = integer()
-%%           Reason = atom()
+%% @spec    (DateString) ->
+%%            {Year, Month, Day} 
+%%
+%%            Year   = integer()
+%%            Month  = integer()
+%%            Day    = integer()
+%%            Reason = atom()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     parse a CPL DATE string
+%% @end
 %%--------------------------------------------------------------------
 %% BNF     :
 %%
@@ -68,8 +72,7 @@
 %% date-value         = date-fullyear date-month date-mday
 %% date-fullyear      = 4DIGIT
 %% date-month         = 2DIGIT        ;01-12
-%% date-mday          = 2DIGIT        ;01-28, 01-29, 01-30, 01-31
-%%                                    ;based on month/year
+%% date-mday          = 2DIGIT        ;01-28, 01-29, 01-30, 01-31 ;based on month/year
 %%
 %% RFC 2445 chapter 4.3.12
 %% time               = time-hour time-minute time-second [time-utc]
@@ -82,8 +85,7 @@
 %% time-utc   = "Z"
 %%
 %% RFC 2445 chapter 4.3.5
-%% date-time  = date "T" time ;As specified in the date and time
-%%                            ;value definitions
+%% date-time  = date "T" time ;As specified in the date and time ;value definitions
 %%--------------------------------------------------------------------
 date([Y1,Y2,Y3,Y4,M1,M2,D1,D2]) ->
     try
@@ -108,11 +110,15 @@ date(_) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: time(DateTimeString)
-%% Descrip.: parse a CPL DATE-TIME string
-%% Returns : date_time record() |
-%%           throw({error, Reason})
-%%           Reason = atom()
+%% @spec    (DateTimeString) ->
+%%            #date_time{} 
+%%
+%%            Reason = atom()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     parse a CPL DATE-TIME string
+%% @end
 %%--------------------------------------------------------------------
 time([_Y1,_Y2,_Y3,_Y4,_M1,_M2,_D1,_D2,$t,_H1,_H2,_Min1,_Min2,_S1,_S2 | R] = Time) ->
     time2(Time, time_type(R));
@@ -157,20 +163,23 @@ time2([Y1,Y2,Y3,Y4,M1,M2,D1,D2,_,H1,H2,Min1,Min2,S1,S2 | _], Type) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_until(UntilStr)
-%%           UntilStr = string(), the value of a until attribute in a
-%%                      time tag in a time-switch
-%% Descrip.: "The "until" parameter defines an iCalendar COS DATE or
-%%           DATE-TIME [COS DATE or COS DATE-TIME] value which bounds
-%%           the recurrence rule in an inclusive manner.
-%%           [.....] If specified as a date-time value, then it MUST
-%%           be specified in UTC time format."
-%%           - RFC 3880 chapter 4.4 p16
-%%           This function parses the until value in time tag in a
-%%           time-switch tag
-%% Returns : {Year, Month, Date} | date_time record() |
-%%           throw({error, Reason})
-%%           Reason = string()
+%% @spec    (UntilStr) ->
+%%            {Year, Month, Date} | #date_time{} 
+%%
+%%            UntilStr = string() "the value of a until attribute in a time tag in a time-switch"
+%%
+%%            Reason = string()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     "The "until" parameter defines an iCalendar COS DATE or
+%%          DATE-TIME [COS DATE or COS DATE-TIME] value which bounds
+%%          the recurrence rule in an inclusive manner. [.....] If
+%%          specified as a date-time value, then it MUST be specified
+%%          in UTC time format." - RFC 3880 chapter 4.4 p16 This
+%%          function parses the until value in time tag in a
+%%          time-switch tag
+%% @end
 %%--------------------------------------------------------------------
 parse_until(UntilStr) ->
     try time(UntilStr) of
@@ -184,14 +193,17 @@ parse_until(UntilStr) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_byday(Str)
-%%           Str = string(), content of a byday attribute
-%% Descrip.: process the content of the byday attribute in the time
-%%           tag used by the time-switch tag
-%% Returns : list() of {N, Day}
-%%           Day = mo | tu | we | th | fr | sa | su
-%%           N = integer(), -1 or less, 1 or greater,
-%%                   all (default, if no +N or -N is used)
+%% @spec    (Str) ->
+%%            [{N, Day}]
+%%
+%%            Str = string() "content of a byday attribute"
+%%
+%%            Day = mo | tu | we | th | fr | sa | su
+%%            N   = integer() "-1 or less, 1 or greater, all (default, if no +N or -N is used)"
+%%
+%% @doc     process the content of the byday attribute in the time tag
+%%          used by the time-switch tag
+%% @end
 %%--------------------------------------------------------------------
 parse_byday(Str) ->
     Days = string:tokens(httpd_util:to_lower(Str), ","),
@@ -249,12 +261,12 @@ get_day(_, _Acc) ->
     throw({error, byday_attribute_premature_end_of_day_entry}).
 
 %%--------------------------------------------------------------------
-%% Function: duration(DurationString)
-%% Descrip.: parse a CPL DURATION string
-%% Returns : duration record()
-%% Note    : is there a range limit on the time value, e.g.
-%%           dur-second = range "00S" - "59S" ?
-%%           probably - but cpl handles unlimited ranges
+%% @spec    (DurationString) -> #duration{}
+%%
+%% @doc     parse a CPL DURATION string Note : is there a range limit
+%%          on the time value, e.g. dur-second = range "00S" - "59S"
+%%          ? probably - but cpl handles unlimited ranges
+%% @end
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %% RFC 2445 chapter 4.3.6 p36
 %%
@@ -365,19 +377,11 @@ get_digit([Type | R], Acc) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: iolist_to_str(IOlist)
-%% Descrip.: "An I/O list is a deep list of binaries, integers in the
-%%           range 0 through 255, and other I/O lists. In an I/O list,
-%%           a binary is allowed as the tail of a list." - erlang
-%%           module documentation (R10B)
-%%           This function converts a iolist to a flat list (string())
-%%           so that they are easier to handle when doing various
-%%           forms of parsing on the text.
+%% @spec    (IOlist) -> string()
 %%
-%%           XXX put this in a utility module
-%% Returns : string()
-%% Note    : binaries are assumed to be "strings" i.e. each byte = a
-%%           char value.
+%% @doc     "An I/O list is a deep list of binaries, integers in the
+%%          range
+%% @end
 %%--------------------------------------------------------------------
 iolist_to_str(IOList) when list(IOList) ->
     %% this relies on lists being flattened when they are turned to
@@ -387,16 +391,19 @@ iolist_to_str(IOList) when list(IOList) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: check_range(Val, In)
-%%           Val = integer()
-%%           In  = {L1, L2} | InL
-%%           L1  = integer()
-%%           L2  = integer()
-%%           InL = list() of integer(), exactly two integers
-%% Descrip.: check if Val is part of range LN, either one or two
-%%           ranges are checked
-%% Returns : Val |
-%%           throw({error, value_out_of_range})
+%% @spec    (Val, In) -> Val
+%%
+%%            Val = integer()
+%%            In  = {L1, L2} | InL
+%%            L1  = integer()
+%%            L2  = integer()
+%%            InL = [integer()] "exactly two integers"
+%%
+%% @throws  {error, value_out_of_range} 
+%%
+%% @doc     check if Val is part of range LN, either one or two ranges
+%%          are checked
+%% @end
 %%--------------------------------------------------------------------
 check_range(Val, {L1, L2}) ->
     case check_range(Val, L1) or check_range(Val, L2) of
@@ -410,12 +417,15 @@ check_range(Val, L) when is_list(L) ->
     (Val >= Min) and (Val =< Max).
 
 %%--------------------------------------------------------------------
-%% Function: legal_value(Value, LegalValues)
-%%           Value       = term()
-%%           LegalValues = term()
-%% Descrip.: throw a exception if Value isn't part of LegalValues
-%% Returns : ok |
-%%           throw({error, attribute_value_is_not_legal})
+%% @spec    (Value, LegalValues) -> ok
+%%
+%%            Value       = term()
+%%            LegalValues = term()
+%%
+%% @throws  {error, attribute_value_is_not_legal} 
+%%
+%% @doc     throw a exception if Value isn't part of LegalValues
+%% @end
 %%--------------------------------------------------------------------
 legal_value(Value, LegalValues) ->
     case lists:member(Value, LegalValues) of
@@ -426,18 +436,22 @@ legal_value(Value, LegalValues) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: status_code_to_sip_error_code(Status)
-%%           Status = string(), the value of the status attribute in
-%%                    a reject tag
-%% Descrip.: return the numerical error code of Status. Throws an
-%%           error if numerical error code out of range or unkown
-%%           symbolic name is used
-%% Returns : integer() |
-%%           throw({error, Reason})
-%%           Reason = atom()
-%% Note    : other protocols than sip/sips may require additional
-%%           error codes
-%% XXX should return be integer(), this may pose problems for protocols with non-numeric error codes ?
+%% @spec    (Status) ->
+%%            integer() 
+%%
+%%            Status = string() "the value of the status attribute in a reject tag"
+%%
+%%            Reason = atom()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     return the numerical error code of Status. Throws an error
+%%          if numerical error code out of range or unkown symbolic
+%%          name is used Note : other protocols than sip/sips may
+%%          require additional error codes XXX should return be
+%%          integer(), this may pose problems for protocols with
+%%          non-numeric error codes ?
+%% @end
 %%--------------------------------------------------------------------
 status_code_to_sip_error_code(Status) ->
     case util:isnumeric(Status) of
@@ -459,16 +473,19 @@ status_code_to_sip_error_code(Status) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: normalize_prio(PrioStr)
-%%           PrioStr = string(), "emergency" or "urgent" or ...
-%% Descrip.: convert priority values used by priority-switch in the
-%%           attributes (less, greater, equal) of priority, to a
-%%           standard atom() format
-%% Returns : emergency | urgent | normal | 'non-urgent' |
-%%           {unknown, PrioStr}
-%% Note    : RFC 3880 chapter 4.5 p21 and RFC 3261 chapter 20.26 p173
-%%           allow for additional priority values beyond "non-urgent",
-%%           "normal", "urgent", and "emergency"
+%% @spec    (PrioStr) ->
+%%            emergency | urgent | normal | 'non-urgent' |
+%%            {unknown, PrioStr}
+%%
+%%            PrioStr = string() "\"emergency\" or \"urgent\" or ..."
+%%
+%% @doc     convert priority values used by priority-switch in the
+%%          attributes (less, greater, equal) of priority, to a
+%%          standard atom() format Note : RFC 3880 chapter 4.5 p21
+%%          and RFC 3261 chapter 20.26 p173 allow for additional
+%%          priority values beyond "non-urgent", "normal", "urgent",
+%%          and "emergency"
+%% @end
 %%--------------------------------------------------------------------
 normalize_prio(PrioStr) ->
     case httpd_util:to_lower(PrioStr) of
@@ -487,12 +504,17 @@ normalize_prio(PrioStr) ->
 %%
 %% language-range  = language-tag / "*"
 %%--------------------------------------------------------------------
-%% Function: is_language_range(Str)
-%%           Str = string()
-%% Descrip.: determine if Str is a language-range (or language-tag)
-%% Returns : string() |
-%%           throw({error, Reason})
-%%           Reason = integer()
+%% @spec    (Str) ->
+%%            string() 
+%%
+%%            Str = string()
+%%
+%%            Reason = integer()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     determine if Str is a language-range (or language-tag)
+%% @end
 %%--------------------------------------------------------------------
 %% throw() if language is malformed, otherwise return Str
 is_language_range("*") ->
@@ -501,12 +523,17 @@ is_language_range(Str) ->
     is_language_tag(Str, range).
 
 %%--------------------------------------------------------------------
-%% Function: is_language_tag(Str)
-%%           Str = string()
-%% Descrip.: determine if Str is a language-range (or language-tag)
-%% Returns : string() |
-%%           throw({error, Reason})
-%%           Reason = integer()
+%% @spec    (Str) ->
+%%            string() 
+%%
+%%            Str = string()
+%%
+%%            Reason = integer()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     determine if Str is a language-range (or language-tag)
+%% @end
 %%--------------------------------------------------------------------
 is_language_tag(Str) ->
     is_language_tag(Str, tag).

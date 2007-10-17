@@ -1,10 +1,12 @@
 %%%--------------------------------------------------------------------
 %%% File    : database_call.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: RAM based database to hold information about 'a call'.
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      RAM based database to hold information about 'a call'.
 %%%           This module is currently not used at all.
 %%%
-%%% Created : 09 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    09 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
+%%% @hidden
 %%%--------------------------------------------------------------------
 -module(database_call).
 
@@ -37,10 +39,12 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: create()
-%% Descrip.: Invoke create/1 with the list of servers indicated by
-%%           the configuration parameter 'databaseservers'.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    () -> term() "result of mnesia:create_table/2."
+%%
+%% @doc     Invoke create/1 with the list of servers indicated by the
+%%          configuration parameter 'databaseservers'.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create() ->
     {ok, S} = yxa_config:get_env(databaseservers),

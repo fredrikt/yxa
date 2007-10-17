@@ -1,12 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_monitor.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: YXA application monitor process. Monitors other nodes in
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      YXA application monitor process. Monitors other nodes in
 %%%           the network (for logging purposes) and shuts down the
 %%%           local node if it gets into serious problems (like Mnesia
 %%%           going away for an extended period of time).
 %%%
-%%% Created : 16 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    16 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_monitor).
 
@@ -36,6 +37,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {appmodule,		%% atom(), YXA application module
 		mnesia_tables		%% list() of atom(), Mnesia tables we require to be present
 	 }).
@@ -51,11 +54,13 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(AppModule, MnesiaTables)
-%%           AppModule = atom(), YXA application module
-%%           MnesiaTables = list() of atom(), Mnesia tables we require
-%%                          to be present
-%% Descrip.: Starts the server
+%% @spec    (AppModule, MnesiaTables) -> term()
+%%
+%%            AppModule    = atom() "YXA application module"
+%%            MnesiaTables = [atom()] "Mnesia tables we require to be present"
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link(AppModule, MnesiaTables) when is_atom(AppModule), is_list(MnesiaTables) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {AppModule, MnesiaTables}, []).
@@ -66,15 +71,18 @@ start_link(AppModule, MnesiaTables) when is_atom(AppModule), is_list(MnesiaTable
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({AppModule, MnesiaTables})
-%%           AppModule = atom(), YXA application module
-%%           MnesiaTables = list() of atom(), Mnesia tables we require
-%%                          to be present
-%% Descrip.: Initiates the server.
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ({AppModule, MnesiaTables}) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%%            AppModule    = atom() "YXA application module"
+%%            MnesiaTables = [atom()] "Mnesia tables we require to be present"
+%%
+%% @doc     Initiates the server.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({AppModule, MnesiaTables}) ->
     %% Tell net_kernel to notify us of nodes coming up or going down
@@ -87,22 +95,31 @@ init({AppModule, MnesiaTables}) ->
     {ok, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call({add_mnesia_tables, Tables}, From, State)
-%%           Tables = list() of atom()
-%% Descrip.: Add more tables to the list of Mnesia tables we should
-%%           look for.
-%% Returns : {reply, ok, NewState, ?TIMEOUT}
+%% @spec    ({add_mnesia_tables, Tables}, From, State) ->
+%%            {reply, ok, NewState, Timeout::integer()}
+%%
+%%            Tables = [atom()]
+%%
+%% @doc     Add more tables to the list of Mnesia tables we should
+%%          look for.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({add_mnesia_tables, Tables}, _From, State) when is_list(Tables) ->
     NewL = lists:usort(Tables ++ State#state.mnesia_tables),
@@ -110,26 +127,35 @@ handle_call({add_mnesia_tables, Tables}, _From, State) when is_list(Tables) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, From, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "YXA monitor: Received unknown gen_server call : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "YXA monitor: Received unknown gen_server cast : ~p", [Unknown]),
@@ -137,21 +163,30 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info({nodeup, Node, InfoList}, State)
-%%           Node     = atom()
-%%           InfoList = list() of {Key, Value}
-%%              Key   = atom()
-%%              Value = term()
-%% Descrip.: Handles a 'node up' message.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    ({nodeup, Node, InfoList}, State) ->
+%%            {noreply, State, Timeout::integer()}
+%%
+%%            Node     = atom()
+%%            InfoList = [{Key, Value}]
+%%            Key      = atom()
+%%            Value    = term()
+%%
+%% @doc     Handles a 'node up' message.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({nodeup, Node, InfoList}, State) ->
     %% XXX change to debug level
@@ -165,13 +200,17 @@ handle_info({nodeup, Node, InfoList}, State) ->
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({nodedown, Node, InfoList}, State)
-%%           Node     = atom()
-%%           InfoList = list() of {Key, Value}
-%%              Key   = atom()
-%%              Value = term()
-%% Descrip.: Handles a 'node down' message.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    ({nodedown, Node, InfoList}, State) ->
+%%            {noreply, State, Timeout::integer()}
+%%
+%%            Node     = atom()
+%%            InfoList = [{Key, Value}]
+%%            Key      = atom()
+%%            Value    = term()
+%%
+%% @doc     Handles a 'node down' message.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({nodedown, Node, InfoList}, State) ->
     {LogLevel, DownReason} =
@@ -186,31 +225,37 @@ handle_info({nodedown, Node, InfoList}, State) ->
     I2 = InfoList -- [{node_type, visible}],
     logger:log(debug, "YXA monitor: Node ~p info : ~p", [Node, I2]),
     {noreply, State, ?TIMEOUT};
-    
+
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Currently does nothing. Should check periodically for
-%%           resources we need, like Mnesia tables.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Currently does nothing. Should check periodically for
+%%          resources we need, like Mnesia tables.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     %%% XXX CHECK FOR MNESIA TABLES HERE
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Unknown info.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "YXA monitor: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
@@ -221,9 +266,11 @@ terminate(Reason, _State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

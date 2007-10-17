@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : event_mnesia_monitor.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Process that subscribes to Mnesia events and notifies
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Process that subscribes to Mnesia events and notifies
 %%%           ongoing subscription handlers about changes.
 %%%
-%%% Created : 05 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    05 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(event_mnesia_monitor).
 
@@ -34,6 +35,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	 }).
 
@@ -50,8 +53,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the server
+%% @spec    () -> term()
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -61,12 +66,15 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([])
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ([]) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([]) ->
     timer:apply_interval(?TIMEOUT, database_eventdata, delete_expired, []),
@@ -80,7 +88,7 @@ init([]) ->
 	    {stop, "Failed subscribing to Mnesia table events"}
     end.
 
-%% part of init/1	
+%% part of init/1
 subscribe_to_tables([Tab | T]) ->
     case subscribe_to_table(Tab, 2) of
 	ok ->
@@ -110,57 +118,79 @@ subscribe_to_table(Tab, C) when is_integer(C) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, From, State) -> {noreply, State}
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "Unknown gen_server call", State}}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(Info, State)
-%%           Info  = {mnesia_table_event, Event}
-%%           Event = tuple()
-%%           State = state record()
-%% Descrip.: Handle a mnesia_table_event for table 'eventdata'.
-%% Returns : {noreply, State}
+%% @spec    (Info, State) -> {noreply, State}
+%%
+%%            Info  = {mnesia_table_event, Event}
+%%            Event = tuple()
+%%            State = #state{}
+%%
+%% @doc     Handle a mnesia_table_event for table 'eventdata'.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when element(1, Rec) == eventdata ->
     case database_eventdata:decode_mnesia_change_event(Event) of
@@ -177,12 +207,15 @@ handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when elemen
     {noreply, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Info, State)
-%%           Info  = {mnesia_table_event, Event}
-%%           Event = tuple()
-%%           State = state record()
-%% Descrip.: Handle a mnesia_table_event for table 'phone'.
-%% Returns : {noreply, State}
+%% @spec    (Info, State) -> {noreply, State}
+%%
+%%            Info  = {mnesia_table_event, Event}
+%%            Event = tuple()
+%%            State = #state{}
+%%
+%% @doc     Handle a mnesia_table_event for table 'phone'.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when element(1, Rec) == phone ->
     case phone:decode_mnesia_change_event(Event) of
@@ -206,11 +239,14 @@ handle_info({mnesia_table_event, {_Type, Rec, _Tid} = Event}, State) when elemen
     {noreply, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(MnesiaInfo, State)
-%%           MnesiaInfo = tuple()
-%%           State      = state record()
-%% Descrip.: Handle a mnesia info tuple.
-%% Returns : {noreply, State}
+%% @spec    (MnesiaInfo, State) -> {noreply, State}
+%%
+%%            MnesiaInfo = tuple()
+%%            State      = #state{}
+%%
+%% @doc     Handle a mnesia info tuple.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(MnesiaInfo, State) when is_tuple(MnesiaInfo) ->
     case element(1, MnesiaInfo) of
@@ -230,18 +266,22 @@ handle_info(MnesiaInfo, State) when is_tuple(MnesiaInfo) ->
     {noreply, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Unknown info.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "SIP Event server Mnesia monitor: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
@@ -251,9 +291,11 @@ terminate(Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -263,13 +305,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: do_notify(PackageS, In)
-%%           PackageS = string(), event package name
-%%           In       = list() of eventdata_dbe record()
-%% Descrip.: Send {notify, Source} signals to all processes registered
-%%           as watchers for the presentitys in the eventdata_dbe
-%%           records.
-%% Returns : {ok, NewState}
+%% @spec    (PackageS, In) -> {ok, NewState}
+%%
+%%            PackageS = string() "event package name"
+%%            In       = [#eventdata_dbe{}]
+%%
+%% @doc     Send {notify, Source} signals to all processes registered
+%%          as watchers for the presentitys in the eventdata_dbe
+%%          records.
+%% @end
 %%--------------------------------------------------------------------
 do_notify(PackageS, [Eventdata | T]) when is_record(Eventdata, eventdata_dbe) ->
     #eventdata_dbe{presentity = Presentity,
@@ -292,12 +336,14 @@ do_notify(_PackageS, []) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: registration_event_actions(Actions)
-%%           Actions = list() of tuple()
-%% Descrip.: Perform any actions that
-%%           local:eventserver_locationdb_action/3 said we should when
-%%           some user registered.
-%% Returns : ok
+%% @spec    (Actions) -> ok
+%%
+%%            Actions = [tuple()]
+%%
+%% @doc     Perform any actions that
+%%          local:eventserver_locationdb_action/3 said we should when
+%%          some user registered.
+%% @end
 %%--------------------------------------------------------------------
 registration_event_actions([{shared_line, Resource, User, URL, Params} | T]) ->
     logger:log(normal, "SIP Event server Mnesia monitor: Starting shared line ~p for user ~p (~s)",

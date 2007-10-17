@@ -1,10 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : tcp_listener.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: tcp_listener first does SocketModule:listen() and then
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      tcp_listener first does SocketModule:listen() and then
 %%%           sits around in a loop that does gen_tcp:accept() and
 %%%           spawns one tcp_connection process for each socket.
-%%% Created : 15 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 
 -module(tcp_listener).
@@ -33,6 +35,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  socketmodule,	%% atom(), gen_tcp | ssl
 	  inetmodule,	%% atom(), inet | ssl
@@ -58,14 +62,18 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(IPt, Proto, Port)
-%%           IPt   = {A,B,C,D} | {A,B,C,D,E,F,G,H}
-%%           Proto = atom(), tcp | tcp6 | tls | tls6
-%%           Port  = integer()
-%% Descrip.: Starts the listener.
-%% Returns : {ok, Pid} |
-%%           ignore
-%%           Pid = pid(), the process we spawn that does accept().
+%% @spec    (IPt, Proto, Port) ->
+%%            {ok, Pid} |
+%%            ignore
+%%
+%%            IPt   = {A,B,C,D} | {A,B,C,D,E,F,G,H}
+%%            Proto = tcp | tcp6 | tls | tls6
+%%            Port  = integer()
+%%
+%%            Pid = pid() "the process we spawn that does accept()."
+%%
+%% @doc     Starts the listener.
+%% @end
 %%--------------------------------------------------------------------
 start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
     {ok, InetModule, SocketModule, Options} = get_settings(Proto, IPt),
@@ -86,18 +94,18 @@ start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: start_listening(Proto, Port, InetModule,
-%%                           SocketModule, Options)
-%%           Proto        = atom(), tcp | tcp6 | tls | tls6
-%%           IP           = string()
-%%           Port         = integer()
-%%           InetModule   = atom(), inet | ssl
-%%           SocketModule = atom(), gen_tcp | ssl
-%%           Options      = term(), socket options
-%% Descrip.: Starts listening on a port, then enters accept_loop.
+%% @spec    (Proto, Port, InetModule, SocketModule, Options) -> any()
 %%
-%%           NOTE : Does not return.
-%% Returns : any()
+%%            Proto        = tcp | tcp6 | tls | tls6
+%%            IP           = string()
+%%            Port         = integer()
+%%            InetModule   = inet | ssl
+%%            SocketModule = gen_tcp | ssl
+%%            Options      = term() "socket options"
+%%
+%% @doc     Starts listening on a port, then enters accept_loop.
+%%          NOTE : Does not return.
+%% @end
 %%--------------------------------------------------------------------
 start_listening(Proto, Port, InetModule, SocketModule, Options)
   when is_atom(Proto), is_integer(Port), is_atom(InetModule), is_atom(SocketModule), is_list(Options) ->
@@ -153,12 +161,13 @@ start_listening(Proto, Port, InetModule, SocketModule, Options)
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: accept_loop_start(State)
-%%           State = state record()
-%% Descrip.: Log a small message before starting the real accept_loop.
+%% @spec    (State) -> any()
 %%
-%%           NOTE : Does not return.
-%% Returns : any()
+%%            State = #state{}
+%%
+%% @doc     Log a small message before starting the real accept_loop.
+%%          NOTE : Does not return.
+%% @end
 %%--------------------------------------------------------------------
 accept_loop_start(State) when is_record(State, state) ->
     #hp{l_ip   = IP,
@@ -174,15 +183,16 @@ accept_loop_start(State) when is_record(State, state) ->
     accept_loop(State).
 
 %%--------------------------------------------------------------------
-%% Function: accept_loop(State)
-%%           State = state record()
-%% Descrip.: Waits in accept() until someone connects to the port we
-%%           are listening on. When someone does, spawn a
-%%           tcp_connection process that handles this connection and
-%%           then loop back to ourselves and do accept() again.
+%% @spec    (State) -> any()
 %%
-%%           NOTE : does not return.
-%% Returns : any()
+%%            State = #state{}
+%%
+%% @doc     Waits in accept() until someone connects to the port we
+%%          are listening on. When someone does, spawn a
+%%          tcp_connection process that handles this connection and
+%%          then loop back to ourselves and do accept() again.
+%%          NOTE : does not return.
+%% @end
 %%--------------------------------------------------------------------
 accept_loop(State) when is_record(State, state) ->
     SocketModule = State#state.socketmodule,
@@ -234,23 +244,24 @@ accept_loop(State) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: start_tcp_connection(SocketModule, Proto, Socket, HP)
-%%           SocketModule = gen_tcp | ssl, the name of the sipsocket
-%%                          module this socket uses
-%%           Proto  = tcp | tcp6 | tls | tls6
-%%           Socket = term()
-%%           HP     = hp record(), local/remote IP/port info
-%% Descrip.: Someone has just connected to our listening socket,
-%%           resulting in the connection socket Socket. Start a
-%%           tcp_connection process to handle this Socket, and in
-%%           case it is an SSL socket, also set controlling process
-%%           to the tcp_receiver process that the tcp_connection has
-%%           started instead of us (the listening process, which is
-%%           the default controlling process).
-%%           This must be done from here since the SSL socket handler
-%%           only allows the current controlling process to change who
-%%           is it's controlling process.
-%% Returns : ok
+%% @spec    (SocketModule, Proto, Socket, HP) -> ok
+%%
+%%            SocketModule = gen_tcp | ssl "the name of the sipsocket module this socket uses"
+%%            Proto        = tcp | tcp6 | tls | tls6
+%%            Socket       = term()
+%%            HP           = #hp{} "local/remote IP/port info"
+%%
+%% @doc     Someone has just connected to our listening socket,
+%%          resulting in the connection socket Socket. Start a
+%%          tcp_connection process to handle this Socket, and in case
+%%          it is an SSL socket, also set controlling process to the
+%%          tcp_receiver process that the tcp_connection has started
+%%          instead of us (the listening process, which is the
+%%          default controlling process). This must be done from here
+%%          since the SSL socket handler only allows the current
+%%          controlling process to change who is it's controlling
+%%          process.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% SSL socket
@@ -293,23 +304,32 @@ start_tcp_connection(SocketModule, Proto, Socket, HP) when is_atom(SocketModule)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_defaultaddr(Proto)
-%%           Proto = tcp | tcp6
-%% Descrip.: Get the "any" address.
-%% Returns : Addr = string()
+%% @spec    (Proto) ->
+%%            Addr
+%%
+%%            Proto = tcp | tcp6
+%%
+%%            Addr = string()
+%%
+%% @doc     Get the "any" address.
+%% @end
 %%--------------------------------------------------------------------
 get_defaultaddr(tcp) -> "0.0.0.0";
 get_defaultaddr(tcp6) -> "[::]".
 
 %%--------------------------------------------------------------------
-%% Function: get_settings(Proto, IPtuple)
-%%           IPtuple = {A,B,C,D} | {A,B,C,D,E,F,G,H}
-%%           Proto   = tcp | tcp6 | tls | tls6
-%% Descrip.: Get the variable things depending on protocol.
-%% Returns : {ok, InetModule, SocketModule, Options}
-%%           InetModule   = atom(), inet | ssl
-%%           SocketModule = atom(), gen_tcp | ssl
-%%           Options      = term(), socket options
+%% @spec    (Proto, IPtuple) ->
+%%            {ok, InetModule, SocketModule, Options}
+%%
+%%            IPtuple = {A,B,C,D} | {A,B,C,D,E,F,G,H}
+%%            Proto   = tcp | tcp6 | tls | tls6
+%%
+%%            InetModule   = inet | ssl
+%%            SocketModule = gen_tcp | ssl
+%%            Options      = term() "socket options"
+%%
+%% @doc     Get the variable things depending on protocol.
+%% @end
 %%--------------------------------------------------------------------
 get_settings(tcp, IPtuple) ->
     This = [inet, {ip, IPtuple}],

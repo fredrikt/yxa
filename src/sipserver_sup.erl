@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipserver_sup.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: YXA application main supervisor.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      YXA application main supervisor.
 %%%
-%%% Created : 21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipserver_sup).
 
@@ -41,23 +42,27 @@
 %% External functions
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: start_link(AppModule, MnesiaTables)
-%%           AppModule    = atom(), name of YXA application module
-%%           MnesiaTables = list() of atom()
-%% Descrip.: Starts the supervisor of all supervisors.
-%% Returns : term(), result of supervisor:start_link/3.
+%% @spec    (AppModule, MnesiaTables) ->
+%%            term() "result of supervisor:start_link/3."
+%%
+%%            AppModule    = atom() "name of YXA application module"
+%%            MnesiaTables = [atom()]
+%%
+%% @doc     Starts the supervisor of all supervisors.
+%% @end
 %%--------------------------------------------------------------------
 start_link(AppModule, MnesiaTables) ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {AppModule, MnesiaTables}).
 
 %%--------------------------------------------------------------------
-%% Function: get_pids()
-%% Descrip.: Try to make a complete list of all pids currently
-%%           involved in the running system (excluding ongoing worker
-%%           pids like client/server transcations and request
-%%           handlers) - for manual use. Intended for getting a list
-%%           of pids to tell eprof to profile.
-%% Returns : list() of pid()
+%% @spec    () -> [pid()]
+%%
+%% @doc     Try to make a complete list of all pids currently involved
+%%          in the running system (excluding ongoing worker pids like
+%%          client/server transcations and request handlers) - for
+%%          manual use. Intended for getting a list of pids to tell
+%%          eprof to profile.
+%% @end
 %%--------------------------------------------------------------------
 get_pids() ->
     sup_get_pids(?MODULE).
@@ -85,12 +90,16 @@ extract_pids([], Res) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({AppModule, MnesiaTables})
-%%           AppModule    = atom(), name of YXA application module
-%%           MnesiaTables = list() of atom()
-%% Returns : {ok,  {SupFlags, [ChildSpec]}} |
-%%           ignore                         |
-%%           {error, Reason}
+%% @spec    ({AppModule, MnesiaTables}) ->
+%%            {ok,  {SupFlags, [ChildSpec]}} |
+%%            ignore                         |
+%%            {error, Reason}
+%%
+%%            AppModule    = atom() "name of YXA application module"
+%%            MnesiaTables = [atom()]
+%%
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({AppModule, MnesiaTables}) ->
     CfgServer = {yxa_config, {yxa_config, start_link, [AppModule]},

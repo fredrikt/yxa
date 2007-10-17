@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config_erlang.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Config backend for parsing plain files containing Erlang
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Config backend for parsing plain files containing Erlang
 %%%           terms.
 %%%
-%%% Created : 16 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    16 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_config_erlang).
 
@@ -38,12 +39,17 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule])
-%%	     AppModule = atom(), YXA application module
-%% Descrip.: Initiates the configuration backend.
-%% Returns : {ok, State} | ignore | {error, Msg}
-%%           State = yxa_config_erlang_state record()
-%%           Msg = string()
+%% @spec    ([AppModule]) ->
+%%            {ok, State} | ignore | {error, Msg}
+%%
+%%            AppModule = atom() "YXA application module"
+%%
+%%            State = #yxa_config_erlang_state{}
+%%            Msg   = string()
+%%
+%% @doc     Initiates the configuration backend.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init(AppModule) ->
     FileName =
@@ -99,12 +105,16 @@ is_readable_file(Fn) when is_list(Fn) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse(State)
-%%	     State = yxa_config_erlang_state record()
-%% Descrip.: Initiates the configuration backend.
-%% Returns : {ok, State} | continue | {error, Msg}
-%%           State = yxa_config_erlang_state record()
-%%           Msg = string()
+%% @spec    (State) ->
+%%            {ok, State} | continue | {error, Msg}
+%%
+%%            State = #yxa_config_erlang_state{}
+%%
+%%            State = #yxa_config_erlang_state{}
+%%            Msg   = string()
+%%
+%% @doc     Initiates the configuration backend.
+%% @end
 %%--------------------------------------------------------------------
 parse(State) when is_record(State, yxa_config_erlang_state) ->
     try begin
@@ -192,12 +202,17 @@ parse_includes2(_State, [], Res) when is_list(Res) ->
     {ok, Res}.
 
 %%--------------------------------------------------------------------
-%% Function: extract_config(TermL, AppModule)
-%%           TermL     = list() of term()
-%%           AppModule = atom(), application for which to load config
-%% Descrip.: Get the 'common' and the application specific sections of
-%%           TermL, and merge them. Returns a sorted list.
-%% Returns : Cfg = list() of {Key, Value}
+%% @spec    (TermL, AppModule) ->
+%%            Cfg
+%%
+%%            TermL     = [term()]
+%%            AppModule = atom() "application for which to load config"
+%%
+%%            Cfg = [{Key, Value}]
+%%
+%% @doc     Get the 'common' and the application specific sections of
+%%          TermL, and merge them. Returns a sorted list.
+%% @end
 %%--------------------------------------------------------------------
 extract_config(TermL, AppModule) when is_list(TermL), is_atom(AppModule) ->
     {common, CommonConfig} = get_section(common, TermL),
@@ -240,9 +255,11 @@ merge_config(Config, []) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% parse_includes(State, TermL)

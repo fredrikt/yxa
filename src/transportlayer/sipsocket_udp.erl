@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_udp.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transportlayer UDP all-in-one handler. Receive UDP
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Transportlayer UDP all-in-one handler. Receive UDP
 %%%           datagrams and, if they are not keep alives (or too
 %%%           short), spawn sipserver:process(...) on the received
 %%%           packets. Send packets using either our IPv4 or our IPv6
@@ -16,7 +16,8 @@
 %%%           protocol), to be able to implement RFC3581 (rport)
 %%%           correctly.
 %%%
-%%% Created : 15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipsocket_udp).
 %%-compile(export_all).
@@ -60,6 +61,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {inet_socketlist  = [],	%% list() of {Socket, SipSocket}
 		inet6_socketlist = [],	%% list() of {Socket, SipSocket}
 		socketlist
@@ -78,8 +81,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the server
+%% @spec    () -> term()
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, sipsocket_udp}, ?MODULE, [], []).
@@ -89,11 +94,15 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([])
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}    |
-%%           {stop, Reason}
-%%           Reason = string()
+%% @spec    ([]) ->
+%%            {ok, State}    |
+%%            {stop, Reason}
+%%
+%%            Reason = string()
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([]) ->
     Port = sipsocket:get_listenport(udp),  %% same for UDP and UDPv6
@@ -117,15 +126,19 @@ init([]) ->
     start_listening(Spec, #state{socketlist = socketlist:empty()}).
 
 %%--------------------------------------------------------------------
-%% Function: start_listening(Spec, State)
-%%           Spec  = list() of {Proto, IP, Port}
-%%           Proto = udp | udp6
-%%           IP    = {A,B,C,D} | {A,B,C,D,E,F,G,H,I}
-%%           Port  = integer()
-%% Descrip.: Begin listening on port Port for interface with IP IP.
-%% Returns : {ok, State}    |
-%%           {stop, Reason}
-%%           Reason = string()
+%% @spec    (Spec, State) ->
+%%            {ok, State}    |
+%%            {stop, Reason}
+%%
+%%            Spec  = [{Proto, IP, Port}]
+%%            Proto = udp | udp6
+%%            IP    = {A,B,C,D} | {A,B,C,D,E,F,G,H,I}
+%%            Port  = integer()
+%%
+%%            Reason = string()
+%%
+%% @doc     Begin listening on port Port for interface with IP IP.
+%% @end
 %%--------------------------------------------------------------------
 start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(State, state) ->
     SocketOpts = [{ip, IP} | ?SOCKETOPTS],
@@ -188,26 +201,36 @@ start_listening([], State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_socket, Proto}, From, State)
-%%           Proto = atom(), udp | udp6
-%% Descrip.: Get a socket for a certain protocol (Proto). Always
-%%           return the first socket for the requested Proto for now.
-%% Returns : {reply, Reply, State}
-%%           Reply = {ok, SipSocket} | {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    ({get_socket, Proto}, From, State) ->
+%%            {reply, Reply, State}
+%%
+%%            Proto = udp | udp6
+%%
+%%            Reply     = {ok, SipSocket} | {error, Reason}
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Get a socket for a certain protocol (Proto). Always return
+%%          the first socket for the requested Proto for now.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_socket, udp}, _From, #state{inet_socketlist = [{_Socket, SipSocket} | _]} = State) ->
     {reply, {ok, SipSocket}, State};
@@ -220,13 +243,18 @@ handle_call({get_socket, _Proto}, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_specific_socket, Id}, From, State)
-%%           Id = ob_id record()
-%% Descrip.: Get a specific socket.
-%% Returns : {reply, Reply, State}
-%%           Reply = {ok, SipSocket} | {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    ({get_specific_socket, Id}, From, State) ->
+%%            {reply, Reply, State}
+%%
+%%            Id = #ob_id{}
+%%
+%%            Reply     = {ok, SipSocket} | {error, Reason}
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Get a specific socket.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_specific_socket, #ob_id{proto = udp} = Id}, _From, State) ->
     Res = get_sipsocket_id_match(Id, State#state.inet_socketlist),
@@ -238,12 +266,17 @@ handle_call({get_specific_socket, #ob_id{proto = udp6} = Id}, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_raw_socket, Proto}, From, State)
-%%           Proto = atom(), udp | udp6
-%% Descrip.: Get the raw socket.
-%% Returns : {reply, Reply, State}
-%%           Reply     = {ok, RawSocket}
-%%           RawSocket = term()
+%% @spec    ({get_raw_socket, Proto}, From, State) ->
+%%            {reply, Reply, State}
+%%
+%%            Proto = udp | udp6
+%%
+%%            Reply     = {ok, RawSocket}
+%%            RawSocket = term()
+%%
+%% @doc     Get the raw socket.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_raw_socket, udp}, _From, #state{inet_socketlist = [{Socket, _SipSocket} | _]} = State) ->
     {reply, {ok, Socket}, State};
@@ -256,17 +289,22 @@ handle_call({get_raw_socket, _Proto}, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({send, SipSocket, Host, Port, Message}, ...)
-%%           SipSocket = sipsocket record(), prefered socket to use
-%%           Host      = string()
-%%           Port      = integer()
-%%           Message   = term()
-%% Descrip.: Send Message to Host:Port.
-%% Returns : {reply, Reply, State}
-%%           Reply = {send_result, Res}
-%%           Res = term()
-%% Note    : Unfortunately there seems to be no way to receive ICMP
-%%           port unreachables when sending with gen_udp...
+%% @spec    ({send, SipSocket, Host, Port, Message}, ...) ->
+%%            {reply, Reply, State}
+%%
+%%            SipSocket = #sipsocket{} "prefered socket to use"
+%%            Host      = string()
+%%            Port      = integer()
+%%            Message   = term()
+%%
+%%            Reply = {send_result, Res}
+%%            Res   = term()
+%%
+%% @doc     Send Message to Host:Port. Note : Unfortunately there
+%%          seems to be no way to receive ICMP port unreachables when
+%%          sending with gen_udp...
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% Host = IPv6 address (e.g. [2001:6b0:5:987::1])
@@ -293,40 +331,55 @@ handle_call({send, SipSocket, Host, Port, Message}, _From, State) when is_record
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Sipsocket UDP: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info({udp, Socket, IPlist, InPortNo, Packet},
-%%                       State)
-%%           Socket   = term()
-%%           IPtuple  = term(), source IP address
-%%           InPortNo = integer()
-%%           Packet   = list()
-%% Descrip.: Handle data received (as a signal) from one of our
-%%           sockets.
-%% Returns : {noreply, State}
+%% @spec    ({udp, Socket, IPlist, InPortNo, Packet}, State) ->
+%%            {noreply, State}
+%%
+%%            Socket   = term()
+%%            IPtuple  = term() "source IP address"
+%%            InPortNo = integer()
+%%            Packet   = list()
+%%
+%% @doc     Handle data received (as a signal) from one of our
+%%          sockets.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({udp, Socket, IPtuple, InPortNo, Packet}, State) when is_integer(InPortNo) ->
     {Proto, SipSocket} =
@@ -358,9 +411,11 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
@@ -370,9 +425,11 @@ terminate(Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Purpose : Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -383,18 +440,22 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: send(SipSocket, Proto, Host, Port, Message)
-%%           SipSocket = sipsocket record()
-%%           Proto     = atom(), udp | udp6
-%%           Host      = string()
-%%           Port      = integer()
-%%           Message   = term()
-%% Descrip.: Send Message to Host:Port. Proto must currently be the
-%%           same protocol as is stored in SipSocket.
-%% Returns : Result |
-%%           {error, Reason}
-%%           Result = term(), ultimately the result of send()
-%%           Reason = string()
+%% @spec    (SipSocket, Proto, Host, Port, Message) ->
+%%            Result |
+%%            {error, Reason}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Proto     = udp | udp6
+%%            Host      = string()
+%%            Port      = integer()
+%%            Message   = term()
+%%
+%%            Result = term() "ultimately the result of send()"
+%%            Reason = string()
+%%
+%% @doc     Send Message to Host:Port. Proto must currently be the
+%%          same protocol as is stored in SipSocket.
+%% @end
 %%--------------------------------------------------------------------
 send(SipSocket, Proto, _Host, _Port, _Message)
   when is_record(SipSocket, sipsocket), SipSocket#sipsocket.proto /= Proto ->
@@ -413,13 +474,17 @@ send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Dst)
-%%           Dst = sipdst record()
-%% Descrip.: Return a socket suitable for communicating with this dst.
-%% Returns : SipSocket       |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    (Dst) ->
+%%            SipSocket       |
+%%            {error, Reason}
+%%
+%%            Dst = #sipdst{}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Return a socket suitable for communicating with this dst.
+%% @end
 %%--------------------------------------------------------------------
 get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
     case catch gen_server:call(sipsocket_udp, {get_socket, Proto}, 1500) of
@@ -431,15 +496,19 @@ get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_specific_socket(Id)
-%%           Id = ob_id record()
-%% Descrip.: Return a specific socket. Used by draft-Outbound implem-
-%%           entation to send requests using an existing flow, or not
-%%           at all.
-%% Returns : SipSocket       |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    (Id) ->
+%%            SipSocket       |
+%%            {error, Reason}
+%%
+%%            Id = #ob_id{}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Return a specific socket. Used by draft-Outbound implem-
+%%          entation to send requests using an existing flow, or not
+%%          at all.
+%% @end
 %%--------------------------------------------------------------------
 get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == udp; Proto == udp6 ->
     case catch gen_server:call(sipsocket_udp, {get_specific_socket, Id}) of
@@ -452,17 +521,21 @@ get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == udp; Proto == udp6
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_raw_socket(Socket)
-%%           Socket  = sipsocket record()
-%% Descrip.: Get the raw TCP/UDP/TLS socket from the socket handler.
-%%           Be careful with what you do with the raw socket - don't
-%%           use it for sending/receiving for example. Intended for
-%%           use in extractin certificate information of an SSL socket
-%%           or similar.
-%% Returns : {ok, RawSocket} |
-%%           {error, Reason}
-%%           RawSocket = term()
-%%           Reason    = string()
+%% @spec    (Socket) ->
+%%            {ok, RawSocket} |
+%%            {error, Reason}
+%%
+%%            Socket = #sipsocket{}
+%%
+%%            RawSocket = term()
+%%            Reason    = string()
+%%
+%% @doc     Get the raw TCP/UDP/TLS socket from the socket handler. Be
+%%          careful with what you do with the raw socket - don't use
+%%          it for sending/receiving for example. Intended for use in
+%%          extractin certificate information of an SSL socket or
+%%          similar.
+%% @end
 %%--------------------------------------------------------------------
 get_raw_socket(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     case catch gen_server:call(sipsocket_udp, {get_raw_socket, Proto}) of
@@ -474,29 +547,36 @@ get_raw_socket(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_peer(SipSocket)
-%% Descrip.: UDP sockets don't have a remote peer.
-%% Returns : not_applicable
+%% @spec    (SipSocket) -> not_applicable
+%%
+%% @doc     UDP sockets don't have a remote peer.
+%% @end
 %%--------------------------------------------------------------------
 get_remote_peer(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     not_applicable.
 
 %%--------------------------------------------------------------------
-%% Function: is_reliable_transport(SipSocket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: No UDP protocol is reliable transport. Return false.
-%% Returns : false
+%% @spec    (SipSocket) -> false
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%% @doc     No UDP protocol is reliable transport. Return false.
+%% @end
 %%--------------------------------------------------------------------
 is_reliable_transport(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: close_socket(SipSocket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: Close a socket.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = string
+%% @spec    (SipSocket) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%%            Reason = string
+%%
+%% @doc     Close a socket.
+%% @end
 %%--------------------------------------------------------------------
 close_socket(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
     {error, not_applicable}.
@@ -506,11 +586,16 @@ close_socket(#sipsocket{proto = Proto}) when Proto == udp; Proto == udp6 ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_localaddr(Socket, DefaultAddr)
-%%           Socket      = term(), gen_udp socket
-%%           DefaultAddr = list(), default if we fail
-%% Descrip.: Return the listening IP and port for a socket.
-%% Returns : HP = hostport record()
+%% @spec    (Socket, DefaultAddr) ->
+%%            HP
+%%
+%%            Socket      = term() "gen_udp socket"
+%%            DefaultAddr = list() "default if we fail"
+%%
+%%            HP = #hostport{}
+%%
+%% @doc     Return the listening IP and port for a socket.
+%% @end
 %%--------------------------------------------------------------------
 get_localaddr(Socket, DefaultAddr) ->
     case inet:sockname(Socket) of
@@ -529,20 +614,22 @@ get_localaddr(Socket, DefaultAddr) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: received_packet(Packet, IPtuple, IP, Port, Proto,
-%%                           Socket, SipSocket)
-%%           Packet     = binary(), packet received from network
-%%           IPtuple    = term(), source IP address tuple
-%%           IP         = string(), source IP address
-%%           Port       = integer(), source port
-%%           Proto      = atom(), source protocol
-%%           Soclet     = term(), socket we received packet on
-%%           SipSocket  = sipsocket record()
-%% Descrip.: Check if a received packet is a keepalive or possibly a
-%%           SIP message. For the latter case, we spawn
-%%           sipserver:process(...) on the packet, after creating the
-%%           necessary sipsocket and origin records.
-%% Returns : ok
+%% @spec    (Packet, IPtuple, IP, Port, Proto, Socket, SipSocket) ->
+%%            ok
+%%
+%%            Packet    = binary() "packet received from network"
+%%            IPtuple   = term() "source IP address tuple"
+%%            IP        = string() "source IP address"
+%%            Port      = integer() "source port"
+%%            Proto     = atom() "source protocol"
+%%            Soclet    = term() "socket we received packet on"
+%%            SipSocket = #sipsocket{}
+%%
+%% @doc     Check if a received packet is a keepalive or possibly a
+%%          SIP message. For the latter case, we spawn
+%%          sipserver:process(...) on the packet, after creating the
+%%          necessary sipsocket and origin records.
+%% @end
 %%--------------------------------------------------------------------
 received_packet(<<"\r\n">>, _IPtuple, IP, Port, Proto, _Socket, _SipSocket) ->
     logger:log(debug, "Keepalive packet (CRLF) received from ~p:~s:~p", [Proto, IP, Port]),
@@ -655,10 +742,12 @@ stun_process(Packet, Proto, IPtuple, IP, Port, Socket) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: is_only_nulls(Packet)
-%%           Packet = binary(), a packet received from the network
-%% Descrip.: Check if a binary packet is only NULL bytes or not.
-%% Returns : true | false
+%% @spec    (Packet) -> true | false
+%%
+%%            Packet = binary() "a packet received from the network"
+%%
+%% @doc     Check if a binary packet is only NULL bytes or not.
+%% @end
 %%--------------------------------------------------------------------
 is_only_nulls(<<0, Rest/binary>>) ->
     is_only_nulls(Rest);
@@ -668,14 +757,18 @@ is_only_nulls(_) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: get_sipsocket_id_match(Id, L)
-%%           Id = term()
-%%           L  = list() of sipsocket record()
-%% Descrip.: Look for sipsocket with id matching Id.
-%% Returns : {ok, SipSocket} |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    (Id, L) ->
+%%            {ok, SipSocket} |
+%%            {error, Reason}
+%%
+%%            Id = term()
+%%            L  = [#sipsocket{}]
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Look for sipsocket with id matching Id.
+%% @end
 %%--------------------------------------------------------------------
 get_sipsocket_id_match(Id, [{_Socket, #sipsocket{id = Id} = SipSocket} | _T]) ->
     {ok, SipSocket};
@@ -686,16 +779,19 @@ get_sipsocket_id_match(_Id, []) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_send(SocketList, SipSocket, Host, Port, Message)
-%%           SocketList = list() of {Socket, SipSocket}
-%%           Socket     = term(), gen_udp socket
-%%           SipSocket  = sipsocket record(), prefered socket to use
-%%           Host       = string()
-%%           Port       = integer()
-%%           Message    = term()
-%% Descrip.: Try sockets in SocketList until we find one that can send
-%%           to this destination, or they are all exhausted.
-%% Returns : {error, no_socket} | term(), send result
+%% @spec    (SocketList, SipSocket, Host, Port, Message) ->
+%%            {error, no_socket} | term() "send result"
+%%
+%%            SocketList = [{Socket, SipSocket}]
+%%            Socket     = term() "gen_udp socket"
+%%            SipSocket  = #sipsocket{} "prefered socket to use"
+%%            Host       = string()
+%%            Port       = integer()
+%%            Message    = term()
+%%
+%% @doc     Try sockets in SocketList until we find one that can send
+%%          to this destination, or they are all exhausted.
+%% @end
 %%--------------------------------------------------------------------
 do_send(Sockets, SipSocket, Host, Port, Message) ->
     %% look for SipSocket in Sockets, if it is found we place that socket first
@@ -717,17 +813,22 @@ do_send2([], _Host, _Port, _Message) ->
     {error, no_socket}.
 
 %%--------------------------------------------------------------------
-%% Function: do_send_sort_sockets(Sockets, SipSocket)
-%%           Sockets   = list() of {Socket, SipSocket}
-%%           Socket    = term(), gen_udp socket
-%%           SipSocket = sipsocket record(), prefered socket to use
-%% Descrip.: Sort sockets to try and send a message using. First, we
-%%           look for a socket that matches the requested SipSocket
-%%           exactly, and second we look for one with the same local
-%%           host and port. The best socket found is returned first
-%%           in a new list, but all sockets in Sockets will always be
-%%           returned in NewSockets.
-%% Returns : NewSockets = list() of {Socket, SipSocket}
+%% @spec    (Sockets, SipSocket) ->
+%%            NewSockets
+%%
+%%            Sockets   = [{Socket, SipSocket}]
+%%            Socket    = term() "gen_udp socket"
+%%            SipSocket = #sipsocket{} "prefered socket to use"
+%%
+%%            NewSockets = [{Socket, SipSocket}]
+%%
+%% @doc     Sort sockets to try and send a message using. First, we
+%%          look for a socket that matches the requested SipSocket
+%%          exactly, and second we look for one with the same local
+%%          host and port. The best socket found is returned first in
+%%          a new list, but all sockets in Sockets will always be
+%%          returned in NewSockets.
+%% @end
 %%--------------------------------------------------------------------
 do_send_sort_sockets(Sockets, SipSocket) ->
     case sort_sockets_id(Sockets, SipSocket#sipsocket.id, []) of
@@ -778,9 +879,11 @@ sort_sockets_laddr([], HP, _Res) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

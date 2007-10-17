@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipuserdb_ldap.erl
-%%% Author  : Fredrik Thulin
-%%% Descrip.: A sipuserdb module with an LDAP backend.
+%%% @author   Fredrik Thulin
+%%% @doc      A sipuserdb module with an LDAP backend.
 %%%
-%%% Created : 09 Oct 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    09 Oct 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipuserdb_ldap).
 
@@ -39,31 +40,39 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: yxa_init()
-%% Descrip.: Perform any necessary startup initialization and
-%%           return an OTP supervisor child spec if we want to add
-%%           to sipserver_sup's list. If this sipuserdb_module
-%%           needs to be persistent, it should be a gen_server and
-%%           init should just return a spec so that the gen_server
-%%           is started by the supervisor.
-%% Returns : Spec |
-%%           []
-%%           Spec = term(), OTP supervisor child specification
+%% @spec    () ->
+%%            Spec |
+%%            []
+%%
+%%            Spec = term() "OTP supervisor child specification"
+%%
+%% @doc     Perform any necessary startup initialization and return an
+%%          OTP supervisor child spec if we want to add to
+%%          sipserver_sup's list. If this sipuserdb_module needs to
+%%          be persistent, it should be a gen_server and init should
+%%          just return a spec so that the gen_server is started by
+%%          the supervisor.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 yxa_init() ->
     [].
 
 %%--------------------------------------------------------------------
-%% Function: get_user_with_address(Address)
-%%           Address = string(), an address in string format.
-%% Descrip.: Looks up exactly one user with an Address. Used for
-%%           example in REGISTER. If there are multiple users with
-%%           this address in our database, this function returns
-%%           'error'.
-%% Returns:  Username |
-%%           nomatch  |
-%%           error
-%%           Username = string()
+%% @spec    (Address) ->
+%%            Username |
+%%            nomatch  |
+%%            error
+%%
+%%            Address = string() "an address in string format."
+%%
+%%            Username = string()
+%%
+%% @doc     Looks up exactly one user with an Address. Used for
+%%          example in REGISTER. If there are multiple users with
+%%          this address in our database, this function returns
+%%          'error'.
+%% @end
 %%--------------------------------------------------------------------
 get_user_with_address(Address) ->
     case yxa_config:get_env(ldap_server) of
@@ -102,28 +111,36 @@ get_user_with_address(Address) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_address_of_record(Address)
-%%           Address = string(), an address in string format.
-%% Descrip.: Get all usernames of users matching an address. Used to
-%%           find out to which users we should send a request.
-%% Returns : Users   |
-%%           nomatch |
-%%           error
-%%           Users = list() of string() 
+%% @spec    (Address) ->
+%%            Users   |
+%%            nomatch |
+%%            error
+%%
+%%            Address = string() "an address in string format."
+%%
+%%            Users = [string()]
+%%
+%% @doc     Get all usernames of users matching an address. Used to
+%%          find out to which users we should send a request.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_address_of_record(Address) when is_list(Address) ->
     get_users_for_addresses_of_record([Address]).
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_addresses_of_record(Addresses)
-%%           Addresses = list() of string(), addresses in string format.
-%% Descrip.: Iterate over a list of addresses of record, return
-%%           all users matching one or more of the addresses,
-%%           without duplicates.
-%% Returns : Users   |
-%%           nomatch |
-%%           error
-%%           Users = list() of string() 
+%% @spec    (Addresses) ->
+%%            Users   |
+%%            nomatch |
+%%            error
+%%
+%%            Addresses = [string()] "addresses in string format."
+%%
+%%            Users = [string()]
+%%
+%% @doc     Iterate over a list of addresses of record, return all
+%%          users matching one or more of the addresses, without
+%%          duplicates.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(AddressList) when is_list(AddressList) ->
     case yxa_config:get_env(ldap_server) of
@@ -157,27 +174,35 @@ get_users_for_AOR_list(Server, UserAttribute, AddressAttribute, [Address | Rest]
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_addresses_for_user(User)
-%%           User = string()
-%% Descrip.: Get all possible addresses of a user. Both configured
-%%           ones, and implicit ones. Used for example to check if a
-%%           request from a user has an acceptable From: header.
-%% Returns : Addresses |
-%%           error
-%%           Addresses = list() of string()
+%% @spec    (User) ->
+%%            Addresses |
+%%            error
+%%
+%%            User = string()
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Get all possible addresses of a user. Both configured
+%%          ones, and implicit ones. Used for example to check if a
+%%          request from a user has an acceptable From: header.
+%% @end
 %%--------------------------------------------------------------------
 get_addresses_for_user(User) when is_list(User) ->
     get_addresses_for_users([User]).
 
 %%--------------------------------------------------------------------
-%% Function: get_addresses_for_users(UserList)
-%%           UserList = list() of string(), usernames
-%% Descrip.: Iterate over a list of users, return all their
-%%           addresses without duplicates.
-%% Returns : Addresses |
-%%           nomatch   |
-%%           error
-%%           Addresses = list() of string()
+%% @spec    (UserList) ->
+%%            Addresses |
+%%            nomatch   |
+%%            error
+%%
+%%            UserList = [string()] "usernames"
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Iterate over a list of users, return all their addresses
+%%          without duplicates.
+%% @end
 %%--------------------------------------------------------------------
 get_addresses_for_users(UserList) when is_list(UserList) ->
     case yxa_config:get_env(ldap_server) of
@@ -211,15 +236,20 @@ get_addresses_for_users_list(Server, UserAttribute, AddressAttribute, [User | Re
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_url(URL)
-%%           URL = sipurl record()
-%% Descrip.: Given an URL that is typically the Request-URI of an
-%%           incoming request, make a list of implicit user
-%%           addresses and return a list of all users matching any
-%%           of these addresses. This is located in here since
-%%           user database backends can have their own way of
-%%           deriving addresses from a Request-URI.
-%% Returns : Usernames = list() of string()
+%% @spec    (URL) ->
+%%            Usernames
+%%
+%%            URL = #sipurl{}
+%%
+%%            Usernames = [string()]
+%%
+%% @doc     Given an URL that is typically the Request-URI of an
+%%          incoming request, make a list of implicit user addresses
+%%          and return a list of all users matching any of these
+%%          addresses. This is located in here since user database
+%%          backends can have their own way of deriving addresses
+%%          from a Request-URI.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_url(URL) when is_record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_ldap, URL),
@@ -232,13 +262,17 @@ get_users_for_url(URL) when is_record(URL, sipurl) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%--------------------------------------------------------------------
-%% Function: get_password_for_user(Username)
-%%           Username = string()
-%% Descrip.: Returns the password for a user.
-%% Returns : Password |
-%%           nomatch  |
-%%           error
-%%           Password = string()
+%% @spec    (Username) ->
+%%            Password |
+%%            nomatch  |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Password = string()
+%%
+%% @doc     Returns the password for a user.
+%% @end
 %%--------------------------------------------------------------------
 get_password_for_user(User) when is_list(User) ->
     case yxa_config:get_env(ldap_server) of
@@ -259,30 +293,36 @@ get_password_for_user(User) when is_list(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_classes_for_user(Username)
-%%           Username = string()
-%% Descrip.: Should return a list of classes allowed for a user. This
-%%           is not yet implemented in the LDAP userdb. XXX FIX. The
-%%           reason it isn't implemented is because we (SU) haven't
-%%           decided on how to represent classes in the LDAP schema.
-%% Returns : []
+%% @spec    (Username) -> []
+%%
+%%            Username = string()
+%%
+%% @doc     Should return a list of classes allowed for a user. This
+%%          is not yet implemented in the LDAP userdb. XXX FIX. The
+%%          reason it isn't implemented is because we (SU) haven't
+%%          decided on how to represent classes in the LDAP schema.
+%% @end
 %%--------------------------------------------------------------------
 get_classes_for_user(_User) ->
     logger:log(debug, "userdb-ldap: Classes are not yet implemented in the LDAP userdb module"),
     [].
 
 %%--------------------------------------------------------------------
-%% Function: get_telephonenumber_for_user(User)
-%%           User = string()
-%% Descrip.: Return the telephone number for a user. We do this by
-%%           fetching all addresses for the user and then examining
-%%           them to see if any of them is a tel: URL, or has a
-%%           user part which is all numeric or is an E.164 number.
-%%           The numbering plan in the number return is not specified.
-%% Returns : Number  |
-%%           nomatch |
-%%           error
-%%           Number = string()
+%% @spec    (User) ->
+%%            Number  |
+%%            nomatch |
+%%            error
+%%
+%%            User = string()
+%%
+%%            Number = string()
+%%
+%% @doc     Return the telephone number for a user. We do this by
+%%          fetching all addresses for the user and then examining
+%%          them to see if any of them is a tel: URL, or has a user
+%%          part which is all numeric or is an E.164 number. The
+%%          numbering plan in the number return is not specified.
+%% @end
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(User) ->
     case yxa_config:get_env(ldap_server) of
@@ -303,28 +343,32 @@ get_telephonenumber_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_forwards_for_users(Usernames)
-%%           Usernames = list() of string()
-%% Descrip.: Should return a list of forwards for a list of users.
-%%           This is not yet implemented in the LDAP userdb. XXX FIX.
-%%           The reason it isn't implemented is because we (SU)
-%%           haven't decided on how to represent forwards in the LDAP
-%%           schema. XXX we haven't? Isn't this "sipRoutingAddress"?
-%% Returns : nomatch
+%% @spec    (Usernames) -> nomatch
+%%
+%%            Usernames = [string()]
+%%
+%% @doc     Should return a list of forwards for a list of users. This
+%%          is not yet implemented in the LDAP userdb. XXX FIX. The
+%%          reason it isn't implemented is because we (SU) haven't
+%%          decided on how to represent forwards in the LDAP schema.
+%%          XXX we haven't? Isn't this "sipRoutingAddress"?
+%% @end
 %%--------------------------------------------------------------------
 get_forwards_for_users(_Usernames) ->
     logger:log(debug, "userdb-ldap: Forwards are not yet implemented in the LDAP userdb module"),
     nomatch.
 
 %%--------------------------------------------------------------------
-%% Function: get_forward_for_user(Username)
-%%           Username = string()
-%% Descrip.: Should return the forward address for a user.
-%%           This is not yet implemented in the LDAP userdb. XXX FIX.
-%%           The reason it isn't implemented is because we (SU)
-%%           haven't decided on how to represent forwards in the LDAP
-%%           schema. XXX we haven't? Isn't this "sipRoutingAddress"?
-%% Returns : nomatch
+%% @spec    (Username) -> nomatch
+%%
+%%            Username = string()
+%%
+%% @doc     Should return the forward address for a user. This is not
+%%          yet implemented in the LDAP userdb. XXX FIX. The reason
+%%          it isn't implemented is because we (SU) haven't decided
+%%          on how to represent forwards in the LDAP schema. XXX we
+%%          haven't? Isn't this "sipRoutingAddress"?
+%% @end
 %%--------------------------------------------------------------------
 get_forward_for_user(_User) ->
     logger:log(debug, "userdb-ldap: Forwards are not yet implemented in the LDAP userdb module"),

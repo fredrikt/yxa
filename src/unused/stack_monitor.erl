@@ -1,8 +1,9 @@
 %%--------------------------------------------------------------------
 %%% File     : stack_monitor.erl
-%%% Author   : Fredrik Thulin <ft@it.su.se>
-%%% Descrip. : Graphical real-time monitor for YXA stacks.
-%%% Created  : 22 Oct 2004 by Fredrik <ft@it.su.se>
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Graphical real-time monitor for YXA stacks.
+%%% @since    22 Oct 2004 by Fredrik <ft@it.su.se>
+%%% @end
 %%--------------------------------------------------------------------
 
 -module(stack_monitor).
@@ -22,6 +23,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  gs,
 	  win,
@@ -63,7 +66,7 @@ start() ->
     WH = [{width, 1000}, {height, 500}],
 
     %% the parent of a top-level window is the gs server
-    Win = gs:create(window, GS, [{title, "YXA stack monitor"}, 
+    Win = gs:create(window, GS, [{title, "YXA stack monitor"},
 				 {map, true}, {configure, true} | WH]),
 
     %% Packer
@@ -82,25 +85,25 @@ start() ->
 				       {fixed, 30}
 				      ]}
 			  ]),
- 
+
     %% "Choose node" label
-    gs:label(packer, [{label, {text, "Choose node"}}, {width, 250}, 
+    gs:label(packer, [{label, {text, "Choose node"}}, {width, 250},
 		      {pack_xy, {?LEFTSTART, ?TOPROW}}]),
 
     %% Node listbox
-    NodeLb = gs:listbox(packer, [{doubleclick, true}, {vscroll, right}, 
+    NodeLb = gs:listbox(packer, [{doubleclick, true}, {vscroll, right},
 				 {pack_x, {?LEFTSTART,?LEFTEND}}, {pack_y, {?TOPROW + 1,4}}]),
 
     %% Refresh nodes button
-    RefreshNodes = gs:button(packer, [{label, {text, "Refresh"}}, {width, 10}, 
+    RefreshNodes = gs:button(packer, [{label, {text, "Refresh"}}, {width, 10},
 				      {pack_xy, {?LEFTSTART, ?BOTTOMROW}}]),
 
     %% Stop button
-    Stop = gs:button(packer, [{label, {text, "Stop"}}, {enable, false}, {width, 10}, 
+    Stop = gs:button(packer, [{label, {text, "Stop"}}, {enable, false}, {width, 10},
 			      {pack_xy, {?LEFTSTART + 2, ?BOTTOMROW}}]),
 
     %% Quit button
-    Quit = gs:button(packer, [{label, {text, "Quit"}}, {width, 10}, 
+    Quit = gs:button(packer, [{label, {text, "Quit"}}, {width, 10},
 			      {pack_xy, {?LEFTEND, ?BOTTOMROW}}]),
 
     %% "Connections" label
@@ -108,7 +111,7 @@ start() ->
 		      {pack_xy, {?RIGHTSTART, ?TOPROW}}]),
 
     %% Connections listbox
-    ConnectionsLb = gs:listbox(packer, [{vscroll, right}, 
+    ConnectionsLb = gs:listbox(packer, [{vscroll, right},
 					{pack_x, {?RIGHTSTART, ?RIGHTEND}},
 					{pack_y, {?TOPROW + 1, ?MIDDLEROW - 1}}
 				       ]),
@@ -119,7 +122,7 @@ start() ->
 
 
     %% Transactions listbox
-    TranscationsLb = gs:listbox(packer, [{vscroll, right}, 
+    TranscationsLb = gs:listbox(packer, [{vscroll, right},
 					 {pack_x, {?RIGHTSTART, ?RIGHTEND}},
 					 {pack_y, {?MIDDLEROW + 1, ?BOTTOMROW - 1}}
 					]),
@@ -134,7 +137,7 @@ start() ->
 		    win=Win,
 		    refresh_nodes_b=RefreshNodes,
 		    stop_b=Stop,
-		    quit_b=Quit, 
+		    quit_b=Quit,
 		    nodes_lb=NodeLb,
 		    connections_lb=ConnectionsLb,
 		    transactions_lb=TranscationsLb,
@@ -161,7 +164,7 @@ start() ->
 %% Returns :
 %%--------------------------------------------------------------------
 loop(State) when is_record(State, state) ->
-    Res9 = 
+    Res9 =
 	receive
 	    {gs, Id, Event, Data, Args} ->
 		case handle_gs(Id, Event, Data, Args, State) of
@@ -230,12 +233,16 @@ handle_gs(Id, Event, Data, Args, State) ->
 	      "Args  : ~p~n"
 	      "~n", [Id, Event, Data, Args]),
     State.
-    
+
 
 %%--------------------------------------------------------------------
-%% Function: refresh_nodes(State)
-%% Descrip.: Request to refresh the Nodes listbox.
-%% Returns : NewState = state record()
+%% @spec    (State) ->
+%%            NewState
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Request to refresh the Nodes listbox.
+%% @end
 %%--------------------------------------------------------------------
 refresh_nodes(State) when is_record(State, state) ->
     NodeLb = State#state.nodes_lb,
@@ -243,11 +250,12 @@ refresh_nodes(State) when is_record(State, state) ->
     State.
 
 %%--------------------------------------------------------------------
-%% Function: get_nodes()
-%% Descrip.: Try to connect to all nodes listed in the users
-%%           .hosts.erlang file and return a list of nodes we are
-%%           connected to.
-%% Returns : result of nodes()
+%% @spec    () -> result of nodes()
+%%
+%% @doc     Try to connect to all nodes listed in the users
+%%          .hosts.erlang file and return a list of nodes we are
+%%          connected to.
+%% @end
 %%--------------------------------------------------------------------
 get_nodes() ->
     %% get hosts
@@ -268,13 +276,13 @@ refresh_connectionslist(State) when is_record(State, state), State#state.current
     {Text9, NewState9} =
 	case catch gen_server:call({tcp_dispatcher, Node}, {get_socketlist}) of
 	    {ok, Connections} when is_record(Connections, socketlist) ->
-		C = io_lib:format("~p entrys in tcp_dispatcher socketlist :", 
+		C = io_lib:format("~p entrys in tcp_dispatcher socketlist :",
 				  [socketlist:get_length(Connections)]),
 		Text = [C, ""] ++ socketlist:monitor_format(Connections),
 		{Text, State};
 	    U ->
 		Ulist = format_unknown_for_listbox(U),
-		Text = 
+		Text =
 		    [io_lib:format("Unknown response from tcp_dispatcher at node ~p :", [Node]),
 		     ""] ++ Ulist,
 		%% Clear node since we got an error - no point in hammering a node
@@ -295,14 +303,14 @@ refresh_transactionslist(State) when is_record(State, state), State#state.curren
     {Text9, NewState9} =
 	case catch gen_server:call({transactionlayer, Node}, {monitor_get_transactionlist}) of
 	    {ok, Transactions} when is_record(Transactions, transactionstatelist) ->
-		C = io_lib:format("~p entrys in transactionlayer's list :", 
+		C = io_lib:format("~p entrys in transactionlayer's list :",
 				  [transactionstatelist:get_length(Transactions)]),
 		TF = transactionstatelist:monitor_format(Transactions),
 		Text = [C, ""] ++ TF,
 		{Text, State};
 	    U ->
 		Ulist = format_unknown_for_listbox(U),
-		Text = 
+		Text =
 		    [io_lib:format("Unknown response from transactionlayer at node ~p :", [Node]),
 		     ""] ++ Ulist,
 		%% Clear node since we got an error - no point in hammering a node

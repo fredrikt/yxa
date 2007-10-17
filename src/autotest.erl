@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : autotest.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: A minimalistic autotest suite for YXA. Test granularity
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      A minimalistic autotest suite for YXA. Test granularity
 %%%           is on a module basis, rather than the prefered test
 %%%           cases basis.
 %%%
-%%% Created : 25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 
 -module(autotest).
@@ -111,21 +112,23 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: run()
+%% @spec    () -> ok | error
+%%
 %% @equiv    run([erl])
-%% Returns : ok | error
+%% @end
 %%--------------------------------------------------------------------
 run() ->
     run([erl]).
 
 %%--------------------------------------------------------------------
-%% Function: run([Mode])
-%%           Mode = erl | shell
-%% Descrip.: Test all modules listed in ModulesToAutoTest and print
-%%           the result. If Mode is 'shell' we end with halting the
-%%           erlang runtime system, with exit status 1 if any tests
-%%           fail and 0 if they are all successfull.
-%% Returns : ok | error
+%% @spec    ([Mode]) -> ok | error
+%%
+%%            Mode = erl | shell
+%%
+%% @doc     Test all modules listed in ModulesToAutoTest and print the
+%%          result. If Mode is 'shell' we end with halting the erlang
+%%          runtime system, with exit status 1 if any tests fail and
+%% @end
 %%--------------------------------------------------------------------
 run([Mode]) ->
     case erlang:whereis(logger) of
@@ -219,7 +222,7 @@ run([Mode]) ->
 %	_ ->
 %	    ok
 %    end,
-    
+
     if
 	Status == error, Mode == shell -> erlang:halt(1);
 	Status == ok, Mode == shell -> erlang:halt(0);
@@ -228,25 +231,27 @@ run([Mode]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: test_module(Module)
-%%           Module = atom(), a module name
-%% Descrip.: Test a single module. We do this by spawning a separate
-%%           process (to get a clean environment every time) that
-%%           invokes Module:test(). That function should return 'ok'
-%%           if all works as expected, and crash if it doesn't.
+%% @spec    (Module) ->
+%%            ok | {Line, ModName, Error}
 %%
-%% Note    : each test in the test function should call
-%%           autotest:mark/2 which keeps track of in what part of the
-%%           test suite things fail, to make it easier to find the
-%%           failing sub test.
-%% Note    : individual subtest in test() should preferably be
-%%           independent of each other (test setup and execution
-%%           order) - both for readability and if more advanced
-%%           autotest systems are implemented
-%% Returns : ok | {Line, ModName, Error}
-%%           Line    = integer()
-%%           ModName = string(), module name
-%%           Error   = term()
+%%            Module = atom() "a module name"
+%%
+%%            Line    = integer()
+%%            ModName = string() "module name"
+%%            Error   = term()
+%%
+%% @doc     Test a single module. We do this by spawning a separate
+%%          process (to get a clean environment every time) that
+%%          invokes Module:test(). That function should return 'ok'
+%%          if all works as expected, and crash if it doesn't.
+%%          Note : each test in the test function should call
+%%          autotest:mark/2 which keeps track of in what part of the
+%%          test suite things fail, to make it easier to find the
+%%          failing sub test. Note : individual subtest in test()
+%%          should preferably be independent of each other (test
+%%          setup and execution order) - both for readability and if
+%%          more advanced autotest systems are implemented
+%% @end
 %%--------------------------------------------------------------------
 test_module(Module) ->
     io:format("~n"),
@@ -315,11 +320,13 @@ fail_on_leftover_messages(Res) when is_list(Res) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: run_cover([Mode])
-%%           Mode = erl | shell
-%% Descrip.: Run our tests after cover-compiling the modules. Show
-%%           some numbers about the coverage ratio before exiting.
-%% Returns : ok | error
+%% @spec    ([Mode]) -> ok | error
+%%
+%%            Mode = erl | shell
+%%
+%% @doc     Run our tests after cover-compiling the modules. Show some
+%%          numbers about the coverage ratio before exiting.
+%% @end
 %%--------------------------------------------------------------------
 run_cover([Mode]) ->
     TestModules = get_test_modules(),
@@ -372,12 +379,15 @@ run_cover([Mode]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: fail(Fun)
-%%           Fun = function()
-%% Descrip.: test case support function, used to check if call Fun()
-%%           fails - as expected
-%% Returns : ok |
-%%           throw({error, no_exception_thrown_by_test})
+%% @spec    (Fun) -> ok
+%%
+%%            Fun = function()
+%%
+%% @throws  {error, no_exception_thrown_by_test} 
+%%
+%% @doc     test case support function, used to check if call Fun()
+%%          fails - as expected
+%% @end
 %%--------------------------------------------------------------------
 fail(Fun) ->
     try Fun() of
@@ -387,24 +397,28 @@ fail(Fun) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: mark(Line, Msg)
-%%           Line = integer() | undefined
-%%           Msg  = string()
+%% @spec    (Line, Msg) -> ok
+%%
+%%            Line = integer() | undefined
+%%            Msg  = string()
+%%
 %% @equiv    mark(Line, Msg, [])
-%% Returns : ok
+%% @end
 %%--------------------------------------------------------------------
 mark(Line, Msg) ->
     mark(Line, Msg, []).
 
 %%--------------------------------------------------------------------
-%% Function: mark(Line, Fmt, Args)
-%%           Line = integer() | undefined
-%%           Fmt  = string()
-%%           Args = list()
-%% Descrip.: Mark a new test. Record whereabout information in the
-%%           process dictionary to help locate failing tests at the
-%%           end result stage.
-%% Returns : ok
+%% @spec    (Line, Fmt, Args) -> ok
+%%
+%%            Line = integer() | undefined
+%%            Fmt  = string()
+%%            Args = list()
+%%
+%% @doc     Mark a new test. Record whereabout information in the
+%%          process dictionary to help locate failing tests at the
+%%          end result stage.
+%% @end
 %%--------------------------------------------------------------------
 mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
     Name = io_lib:format(Fmt, Args),
@@ -413,14 +427,18 @@ mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: is_unit_testing(Module, Key)
-%%           Module = atom(), calling module (currently unused)
-%%           Key    = term()
-%% Descrip.: Check if we are currently unit testing and have a result
-%%           stored for the user of this specific Key.
-%% Returns : {true, Result} |
-%%           false
-%%           Result = term()
+%% @spec    (Module, Key) ->
+%%            {true, Result} |
+%%            false
+%%
+%%            Module = atom() "calling module (currently unused)"
+%%            Key    = term()
+%%
+%%            Result = term()
+%%
+%% @doc     Check if we are currently unit testing and have a result
+%%          stored for the user of this specific Key.
+%% @end
 %%--------------------------------------------------------------------
 is_unit_testing(Module, Key) when is_atom(Module) ->
     case get({autotest, Key}) of
@@ -431,22 +449,26 @@ is_unit_testing(Module, Key) when is_atom(Module) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: store_unit_test_result(Module, Key, Value)
-%%           Module = atom(), calling module (currently unused)
-%%           Key    = term()
-%%           Value  = term()
-%% Descrip.: Store a value to be returned for this Key.
-%% Returns : term()
+%% @spec    (Module, Key, Value) -> term()
+%%
+%%            Module = atom() "calling module (currently unused)"
+%%            Key    = term()
+%%            Value  = term()
+%%
+%% @doc     Store a value to be returned for this Key.
+%% @end
 %%--------------------------------------------------------------------
 store_unit_test_result(Module, Key, Value) when is_atom(Module) ->
     put({autotest, Key}, Value).
 
 %%--------------------------------------------------------------------
-%% Function: clear_unit_test_result(Module, Key)
-%%           Module = atom(), calling module (currently unused)
-%%           Key    = term()
-%% Descrip.: Clear any stored value for this Key.
-%% Returns : term()
+%% @spec    (Module, Key) -> term()
+%%
+%%            Module = atom() "calling module (currently unused)"
+%%            Key    = term()
+%%
+%% @doc     Clear any stored value for this Key.
+%% @end
 %%--------------------------------------------------------------------
 clear_unit_test_result(Module, Key) when is_atom(Module) ->
     erase({autotest, Key}).
@@ -457,14 +479,16 @@ clear_unit_test_result(Module, Key) when is_atom(Module) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: fake_logger_loop(Enabled)
-%%           Enabled = bool(), output to console or not?
-%% Descrip.: Main loop for a process that does nothing more than
-%%           registers itself as 'logger'. This is needed when this
-%%           module is executed from a unix-shell, instead of from an
-%%           erlang prompt with an YXA application running.
-%%           NOTE : this function does not return.
-%% Returns : term(), does not return.
+%% @spec    (Enabled) -> term() "does not return."
+%%
+%%            Enabled = bool() "output to console or not?"
+%%
+%% @doc     Main loop for a process that does nothing more than
+%%          registers itself as 'logger'. This is needed when this
+%%          module is executed from a unix-shell, instead of from an
+%%          erlang prompt with an YXA application running. NOTE :
+%%          this function does not return.
+%% @end
 %%--------------------------------------------------------------------
 fake_logger_loop(Enabled) ->
     receive
@@ -482,15 +506,19 @@ fake_logger_loop(Enabled) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: aggregate_coverage(Modules)
-%%           Modules = list() of atom(), list of module names
-%% Descrip.: Aggregate cover analysis data for Modules.
-%% Returns : {ok, CoveredLines, TotalLines, ModuleStats}
-%%           CoveredLines = integer(), code lines covered in Modules
-%%           TotalLines   = integer(), total lines of code in Modules
-%%           ModuleStats  = list() of {Module, Percent}
-%%              Module    = atom()
-%%              Percent   = float()
+%% @spec    (Modules) ->
+%%            {ok, CoveredLines, TotalLines, ModuleStats}
+%%
+%%            Modules = [atom()] "list of module names"
+%%
+%%            CoveredLines = integer() "code lines covered in Modules"
+%%            TotalLines   = integer() "total lines of code in Modules"
+%%            ModuleStats  = [{Module, Percent}]
+%%            Module       = atom()
+%%            Percent      = float()
+%%
+%% @doc     Aggregate cover analysis data for Modules.
+%% @end
 %%--------------------------------------------------------------------
 aggregate_coverage(Modules) ->
     aggregate_coverage2(Modules, 0, 0, []).
@@ -511,14 +539,18 @@ aggregate_coverage2([], CoveredLines, TotalLines, ModuleStats) ->
     {ok, CoveredLines, TotalLines, ModuleStats}.
 
 %%--------------------------------------------------------------------
-%% Function: get_module_coverage(Module)
-%%           Module = atom(), module name
-%% Descrip.: Get number of covered/not covered lines of real code in
-%%           a module. Excludes all functions named test* from the
-%%           bottom of the coverage data for Module.
-%% Returns : {ok, Cov, NotCov}
-%%           Cov    = integer(), code lines covered in Module
-%%           NotCov = integer(), lines not covered
+%% @spec    (Module) ->
+%%            {ok, Cov, NotCov}
+%%
+%%            Module = atom() "module name"
+%%
+%%            Cov    = integer() "code lines covered in Module"
+%%            NotCov = integer() "lines not covered"
+%%
+%% @doc     Get number of covered/not covered lines of real code in a
+%%          module. Excludes all functions named test* from the
+%%          bottom of the coverage data for Module.
+%% @end
 %%--------------------------------------------------------------------
 get_module_coverage(Module) when is_atom(Module) ->
     {ok, Data} = cover:analyse(Module, coverage, function),

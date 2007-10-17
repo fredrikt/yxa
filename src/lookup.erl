@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : lookup.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Varios lookup functions. Mainly routing logic for our
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Varios lookup functions. Mainly routing logic for our
 %%%           three applications incomingproxy, pstnproxy and
 %%%           appserver. Most of these functions are called through
 %%%           functions in local.erl with the same name, so if you
@@ -9,7 +9,8 @@
 %%%           defaults in this file, make a local.erl specific for
 %%%           your domain.
 %%%
-%%% Created : 20 Mar 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    20 Mar 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(lookup).
 %%-compile(export_all).
@@ -57,16 +58,20 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: lookupregexproute(Input)
-%%           Input = string(), what we will match against the regexps
-%% Descrip.: See if we have a regexp that matches Input in the Mnesia
-%%           regexp route table. If we find one, we return a proxy
-%%           tuple with the resulting destination. The regexps in the
-%%           database have a priority field, where higher priority
-%%           is better.
-%% Returns : {proxy, URL} |
-%%           none
-%%           URL = sipurl record()
+%% @spec    (Input) ->
+%%            {proxy, URL} |
+%%            none
+%%
+%%            Input = string() "what we will match against the regexps"
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     See if we have a regexp that matches Input in the Mnesia
+%%          regexp route table. If we find one, we return a proxy
+%%          tuple with the resulting destination. The regexps in the
+%%          database have a priority field, where higher priority is
+%%          better.
+%% @end
 %%--------------------------------------------------------------------
 lookupregexproute(Input) when is_list(Input) ->
     Routes = database_regexproute:list(),
@@ -108,20 +113,29 @@ lookupregexproute2(Input, Routes) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupuser(URL)
-%%           URL = sipurl record()
-%% Descrip.: The main 'give me a set of locations for one of our
-%%           users' function that incomingproxy uses, when it
-%%           determines that a request is for one of it's homedomains.
-%%           Returns 'nomatch' if no user was found, 'none' if the
-%%           user(s) associated with URL has no registered locations.
-%% Returns : {ok, Users, Res} | nomatch
-%%           Users  = list() of string() | none, usernames matching URL
-%%           Res    = {proxy, URL} | {proxy, {with_path, URL, Path}} | {relay, URL} | {forward, URL} | {response, Status, Reason} | none
-%%           URL    = sipurl record()
-%%           Path   = list() of string()
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
+%% @spec    (URL) ->
+%%            {ok, Users, Res} | nomatch
+%%
+%%            URL = #sipurl{}
+%%
+%%            Users  = [string()] | none "usernames matching URL"
+%%            Res    = {proxy, URL}                    |
+%%                     {proxy, {with_path, URL, Path}} |
+%%                     {relay, URL}                    |
+%%                     {forward, URL}                  |
+%%                     {response, Status, Reason}      |
+%%                     none
+%%            URL    = #sipurl{}
+%%            Path   = [string()]
+%%            Status = integer() "SIP status code"
+%%            Reason = string() "SIP reason phrase"
+%%
+%% @doc     The main 'give me a set of locations for one of our users'
+%%          function that incomingproxy uses, when it determines that
+%%          a request is for one of it's homedomains. Returns
+%%          'nomatch' if no user was found, 'none' if the user(s)
+%%          associated with URL has no registered locations.
+%% @end
 %%--------------------------------------------------------------------
 lookupuser(URL) when is_record(URL, sipurl) ->
     case local:is_gruu_url(URL) of
@@ -372,16 +386,21 @@ make_dstlist2([], _ThisNode, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: lookupuser_gruu(URL, GRUU)
-%%           URL  = sipurl record(), GRUU Request-URI
-%%           GRUU = string()
-%% Descrip.: Look up the 'best' contact of a GRUU.
-%% Returns : {ok, User, Res, Contact}
-%%           Res     = {proxy, URL} | {proxy, {with_path, URL, Path}} | {response, Status, Reason}
-%%           User    = none | string(), SIP authentication user of GRUU
-%%           Contact = siplocationdb_e record(), used by outgoingproxy
+%% @spec    (URL, GRUU) ->
+%%            {ok, User, Res, Contact}
 %%
-%% Note    : used by incomingproxy and outgoingproxy
+%%            URL  = #sipurl{} "GRUU Request-URI"
+%%            GRUU = string()
+%%
+%%            Res     = {proxy, URL}                    |
+%%                      {proxy, {with_path, URL, Path}} |
+%%                      {response, Status, Reason}
+%%            User    = none | string() "SIP authentication user of GRUU"
+%%            Contact = #siplocationdb_e{} "used by outgoingproxy"
+%%
+%% @doc     Look up the 'best' contact of a GRUU. Note : used by
+%%          incomingproxy and outgoingproxy
+%% @end
 %%--------------------------------------------------------------------
 lookupuser_gruu(URL, GRUU) when is_record(URL, sipurl), is_list(GRUU) ->
     %% XXX if it was an 'opaque=' GRUU, verify somehow that the rest of the URI matches
@@ -422,15 +441,19 @@ lookupuser_gruu(URL, GRUU) when is_record(URL, sipurl), is_list(GRUU) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupuser_locations(Users, URL)
-%%           Users = list() of string(), SIP users to fetch locations
-%%                                       of
-%%           URL   = sipurl record(), the Request-URI
-%% Descrip.: Return all locations for a list of users that is suitable
-%%           given a Request-URI. By suitable, we mean that we filter
-%%           out SIP locations if Request-URI was SIPS, unless this
-%%           proxy is configured not to.
-%% Returns : Locations = list() of siplocationdb_e record()
+%% @spec    (Users, URL) ->
+%%            Locations
+%%
+%%            Users = [string()] "SIP users to fetch locations of"
+%%            URL   = #sipurl{} "the Request-URI"
+%%
+%%            Locations = [#siplocationdb_e{}]
+%%
+%% @doc     Return all locations for a list of users that is suitable
+%%          given a Request-URI. By suitable, we mean that we filter
+%%          out SIP locations if Request-URI was SIPS, unless this
+%%          proxy is configured not to.
+%% @end
 %%--------------------------------------------------------------------
 lookupuser_locations(Users, URL) when is_list(Users), is_record(URL, sipurl) ->
     Locations1 = local:get_locations_for_users(Users),
@@ -438,14 +461,16 @@ lookupuser_locations(Users, URL) when is_list(Users), is_record(URL, sipurl) ->
     local:remove_unsuitable_locations(URL, Locations).
 
 %%--------------------------------------------------------------------
-%% Function: remove_unsuitable_locations(URL, Locations)
-%%           URL      = sipurl record(), Request-URI of request
-%%           Location = list() of siplocationdb_e record()
-%% Descrip.: Apply local policy for what locations are good to use for
-%%           a particular Request-URI. The default action we do here
-%%           is to remove non-SIPS locations if the Request-URI is
-%%           SIPS, unless we are configured not to.
-%% Returns : list() of siplocationdb_e record()
+%% @spec    (URL, Locations) -> [#siplocationdb_e{}]
+%%
+%%            URL      = #sipurl{} "Request-URI of request"
+%%            Location = [#siplocationdb_e{}]
+%%
+%% @doc     Apply local policy for what locations are good to use for
+%%          a particular Request-URI. The default action we do here
+%%          is to remove non-SIPS locations if the Request-URI is
+%%          SIPS, unless we are configured not to.
+%% @end
 %%--------------------------------------------------------------------
 remove_unsuitable_locations(#sipurl{proto="sips"}, Locations) when is_list(Locations) ->
     case yxa_config:get_env(ssl_require_sips_registration) of
@@ -475,16 +500,20 @@ remove_non_sips_locations([], Res) ->
     lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% Function: lookup_url_to_locations(URL)
-%%           URL = sipurl record()
-%% Descrip.: Turn an URL into a set of locations. The URL might map to
-%%           more than one user, in which case the locations for all
-%%           matched users are returned. Locations is sorted according
-%%           to the priority values they have in the location
-%%           database.
-%% Returns : Locations |
-%%           nomatch
-%%           Locations = list() of siplocationdb_e record()
+%% @spec    (URL) ->
+%%            Locations |
+%%            nomatch
+%%
+%%            URL = #sipurl{}
+%%
+%%            Locations = [#siplocationdb_e{}]
+%%
+%% @doc     Turn an URL into a set of locations. The URL might map to
+%%          more than one user, in which case the locations for all
+%%          matched users are returned. Locations is sorted according
+%%          to the priority values they have in the location
+%%          database.
+%% @end
 %%--------------------------------------------------------------------
 lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
@@ -496,14 +525,16 @@ lookup_url_to_locations(URL) when is_record(URL, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookup_url_to_addresses(Src, URL)
-%%           Src = atom(), who is asking
-%%           URL = sipurl record()
-%% Descrip.: Make up a bunch of possible userdb keys from an URL.
-%%           Since our userdbs store different addresses implicitly
-%%           sometimes, we do this mess to make sure we find one or
-%%           more users for requests destined to an URL.
-%% Returns : list() of string()
+%% @spec    (Src, URL) -> [string()]
+%%
+%%            Src = atom() "who is asking"
+%%            URL = #sipurl{}
+%%
+%% @doc     Make up a bunch of possible userdb keys from an URL. Since
+%%          our userdbs store different addresses implicitly
+%%          sometimes, we do this mess to make sure we find one or
+%%          more users for requests destined to an URL.
+%% @end
 %%--------------------------------------------------------------------
 lookup_url_to_addresses(Src, #sipurl{proto = "sips"} = URL) ->
     %% When turning address into user, we make no difference on SIP and SIPS URI's
@@ -535,11 +566,13 @@ lookup_url_to_addresses(_Src, URL) when is_record(URL, sipurl) ->
     lists:append([BareURLstr], Addrs).
 
 %%--------------------------------------------------------------------
-%% Function: lookup_addresses_to_users(Addresses)
-%%           Addresses = list() of term()
-%% Descrip.: Get a list of users that match an input list of
-%%           addresses.
-%% Returns : list() of string(), list of usernames or empty list
+%% @spec    (Addresses) ->
+%%            [string()] "list of usernames or empty list"
+%%
+%%            Addresses = [term()]
+%%
+%% @doc     Get a list of users that match an input list of addresses.
+%% @end
 %%--------------------------------------------------------------------
 lookup_addresses_to_users(Addresses) when is_list(Addresses) ->
     case local:get_users_for_addresses_of_record(Addresses) of
@@ -552,10 +585,12 @@ lookup_addresses_to_users(Addresses) when is_list(Addresses) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookup_address_to_users(Address)
-%%           Address = term()
-%% Descrip.: Get a list of users that match a single address.
-%% Returns : list() of string(), list of usernames or empty list
+%% @spec    (Address) -> [string()] "list of usernames or empty list"
+%%
+%%            Address = term()
+%%
+%% @doc     Get a list of users that match a single address.
+%% @end
 %%--------------------------------------------------------------------
 lookup_address_to_users(Address) ->
     case local:get_users_for_address_of_record(Address) of
@@ -568,15 +603,19 @@ lookup_address_to_users(Address) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupappserver(Key)
-%%           Key = sipurl record()
-%% Descrip.: Get the configured appserver to use for Key. Used in
-%%           incomingproxy.
-%% Returns : {forward, URL}             |
-%%           {response, Status, Reason}
-%%           URL    = sipurl record()
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
+%% @spec    (Key) ->
+%%            {forward, URL}             |
+%%            {response, Status, Reason}
+%%
+%%            Key = #sipurl{}
+%%
+%%            URL    = #sipurl{}
+%%            Status = integer() "SIP status code"
+%%            Reason = string() "SIP reason phrase"
+%%
+%% @doc     Get the configured appserver to use for Key. Used in
+%%          incomingproxy.
+%% @end
 %%--------------------------------------------------------------------
 lookupappserver(Key) when is_record(Key, sipurl) ->
     case yxa_config:get_env(appserver) of
@@ -597,14 +636,18 @@ lookupappserver(Key) when is_record(Key, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupdefault(URL)
-%%           URL = sipurl record()
-%% Descrip.: Get the configured default route. Used in incomingproxy.
-%% Returns : {proxy, DefaultRoute} |
-%%           {response, Status, Reason}
-%%           DefaultRoute = sipurl record()
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
+%% @spec    (URL) ->
+%%            {proxy, DefaultRoute} |
+%%            {response, Status, Reason}
+%%
+%%            URL = #sipurl{}
+%%
+%%            DefaultRoute = #sipurl{}
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%
+%% @doc     Get the configured default route. Used in incomingproxy.
+%% @end
 %%--------------------------------------------------------------------
 lookupdefault(URL) when is_record(URL, sipurl) ->
     case homedomain(URL#sipurl.host) of
@@ -628,18 +671,22 @@ lookupdefault(URL) when is_record(URL, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookuppotn(Number)
-%%           Number = string()
-%% Descrip.: Look Up Plain Old Telephone Number. Figures out where
-%%           to route a numerical destination. First we try to
-%%           rewrite it to E.164 and do ENUM lookup, and if that
-%%           fails, lookuppstn() on it. Then we try our fallback
-%%           numerical route matching, lookupnumber(). Used in both
-%%           incomingproxy and pstnproxy.
-%% Returns : {proxy, URL} |
-%%           {relay, URL} |
-%%           none
-%%           URL = sipurl record()
+%% @spec    (Number) ->
+%%            {proxy, URL} |
+%%            {relay, URL} |
+%%            none
+%%
+%%            Number = string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Look Up Plain Old Telephone Number. Figures out where to
+%%          route a numerical destination. First we try to rewrite it
+%%          to E.164 and do ENUM lookup, and if that fails,
+%%          lookuppstn() on it. Then we try our fallback numerical
+%%          route matching, lookupnumber(). Used in both
+%%          incomingproxy and pstnproxy.
+%% @end
 %%--------------------------------------------------------------------
 lookuppotn("+" ++ E164) ->
     Loc1 = case util:isnumeric(E164) of
@@ -674,14 +721,18 @@ lookuppotn(Number) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupenum(Number)
-%%           Number = string()
-%% Descrip.: Does ENUM resolving on an E164 number. If the input
-%%           number is not an E164 number, it is converted first.
-%% Returns : {proxy, URL} |
-%%           {relay, URL} |
-%%           none
-%%           URL = sipurl record()
+%% @spec    (Number) ->
+%%            {proxy, URL} |
+%%            {relay, URL} |
+%%            none
+%%
+%%            Number = string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Does ENUM resolving on an E164 number. If the input number
+%%          is not an E164 number, it is converted first.
+%% @end
 %%--------------------------------------------------------------------
 lookupenum("+" ++ E164) ->
     case dnsutil:enumlookup("+" ++ E164) of
@@ -732,16 +783,20 @@ lookupenum(Number) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookuppstn(Number)
-%%           Number = string()
-%% Descrip.: Rewrites a number to a PSTN URL using the e164_to_pstn
-%%           configuration regexp. If the number is not E164, it
-%%           is converted using rewrite_potn_to_e164() first.
-%% Returns : {proxy, URL}          |
-%%           {relay, URL}          |
-%%           none                  |
-%%           error
-%%           URL = sipurl record()
+%% @spec    (Number) ->
+%%            {proxy, URL}          |
+%%            {relay, URL}          |
+%%            none                  |
+%%            error
+%%
+%%            Number = string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Rewrites a number to a PSTN URL using the e164_to_pstn
+%%          configuration regexp. If the number is not E164, it is
+%%          converted using rewrite_potn_to_e164() first.
+%% @end
 %%--------------------------------------------------------------------
 lookuppstn("+" ++ E164) ->
     case util:isnumeric(E164) of
@@ -780,17 +835,21 @@ lookuppstn(Number) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookupnumber(Number)
-%%           Number = string()
-%% Descrip.: Check if there are any numerical matching rules that
-%%           apply (configured regexp 'number_to_pstn'). Called by
-%%           lookuppotn/1 and lookuppstn/1 when the input number is
-%%           not rewriteable to a E164 number.
-%% Returns : {proxy, URL}          |
-%%           {relay, URL}          |
-%%           none                  |
-%%           error
-%%           URL = sipurl record()
+%% @spec    (Number) ->
+%%            {proxy, URL}          |
+%%            {relay, URL}          |
+%%            none                  |
+%%            error
+%%
+%%            Number = string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Check if there are any numerical matching rules that apply
+%%          (configured regexp 'number_to_pstn'). Called by
+%%          lookuppotn/1 and lookuppstn/1 when the input number is
+%%          not rewriteable to a E164 number.
+%% @end
 %%--------------------------------------------------------------------
 lookupnumber(Number) ->
     %% Check if Number is all digits
@@ -829,13 +888,17 @@ lookupnumber2(Number, Regexps) when is_list(Number), is_list(Regexps) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: rewrite_potn_to_e164(Number)
-%%           Number = string()
-%% Descrip.: Rewrite a number to an E164 number using our local
-%%           numbering plan (configured regexp 'internal_to_e164').
-%% Returns : Result |
-%%           error
-%%           Result = string(), "+" followed by an E.164 number
+%% @spec    (Number) ->
+%%            Result |
+%%            error
+%%
+%%            Number = string()
+%%
+%%            Result = string() "\"+\" followed by an E.164 number"
+%%
+%% @doc     Rewrite a number to an E164 number using our local
+%%          numbering plan (configured regexp 'internal_to_e164').
+%% @end
 %%--------------------------------------------------------------------
 rewrite_potn_to_e164("+" ++ E164) ->
     case util:isnumeric(E164) of
@@ -861,10 +924,12 @@ rewrite_potn_to_e164(_Unknown) ->
     error.
 
 %%--------------------------------------------------------------------
-%% Function: isours(URL)
-%%           URL = sipurl record()
-%% Descrip.: Check if we have a user matching an URL.
-%% Returns : true | false
+%% @spec    (URL) -> true | false
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Check if we have a user matching an URL.
+%% @end
 %%--------------------------------------------------------------------
 isours(URL) when is_record(URL, sipurl) ->
     case local:get_users_for_url(URL) of
@@ -877,11 +942,13 @@ isours(URL) when is_record(URL, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_request_to_this_proxy(Request)
-%%           Request = request record()
-%% Descrip.: Check if a request is destined for this proxy. Not for a
-%%           domain handled by this proxy, but for this proxy itself.
-%% Returns : true | false
+%% @spec    (Request) -> true | false
+%%
+%%            Request = #request{}
+%%
+%% @doc     Check if a request is destined for this proxy. Not for a
+%%          domain handled by this proxy, but for this proxy itself.
+%% @end
 %%--------------------------------------------------------------------
 is_request_to_this_proxy(Request) when is_record(Request, request) ->
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
@@ -921,10 +988,12 @@ is_request_to_this_proxy2(_, URL, _) when is_record(URL, sipurl) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: homedomain(Domain)
-%%           Domain = string()
-%% Descrip.: Check if Domain is one of our configured homedomains.
-%% Returns : true | false
+%% @spec    (Domain) -> true | false
+%%
+%%            Domain = string()
+%%
+%% @doc     Check if Domain is one of our configured homedomains.
+%% @end
 %%--------------------------------------------------------------------
 homedomain(Domain) when is_list(Domain) ->
     {ok, HomedomainL} = yxa_config:get_env(homedomain, []),
@@ -941,22 +1010,26 @@ homedomain(Domain) when is_list(Domain) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_party_number(User, Header, URI, DstHost)
-%%           User    = string(), SIP authentication username
-%%           Header  = keylist record()
-%%           URI     = sipurl record(), outgoing Request-URI
-%%           DstHost = term(), chosen destination for request
-%% Descrip.: This function is used by the pstnproxy to provide a PSTN
-%%           gateway with usefull caller-id information. PSTN networks
-%%           typically gets upset if the "A-number" (calling party) is
-%%           a SIP URL. Different gateways might want the number
-%%           formatted differently, thus the DstHost parameter (a TSP
-%%           gateway to PSTN might only handle E.164 numbers, while a
-%%           PBX might be expecting only a 4-digit extension number).
-%% Returns : {ok, RPI, Number} |
-%%           none
-%%           RPI    = contact record()
-%%           Number = string()
+%% @spec    (User, Header, URI, DstHost) ->
+%%            {ok, RPI, Number} |
+%%            none
+%%
+%%            User    = string() "SIP authentication username"
+%%            Header  = #keylist{}
+%%            URI     = #sipurl{} "outgoing Request-URI"
+%%            DstHost = term() "chosen destination for request"
+%%
+%%            RPI    = #contact{}
+%%            Number = string()
+%%
+%% @doc     This function is used by the pstnproxy to provide a PSTN
+%%          gateway with usefull caller-id information. PSTN networks
+%%          typically gets upset if the "A-number" (calling party) is
+%%          a SIP URL. Different gateways might want the number
+%%          formatted differently, thus the DstHost parameter (a TSP
+%%          gateway to PSTN might only handle E.164 numbers, while a
+%%          PBX might be expecting only a 4-digit extension number).
+%% @end
 %%--------------------------------------------------------------------
 get_remote_party_number(User, _Header, URI, DstHost) when is_list(User), is_list(DstHost), is_record(URI, sipurl) ->
     case local:get_telephonenumber_for_user(User) of
@@ -976,19 +1049,22 @@ get_remote_party_number(User, _Header, URI, DstHost) when is_list(User), is_list
     end.
 
 %%--------------------------------------------------------------------
-%% Function: format_number_for_remote_party_id(Number, Header,
-%%                                             DstHost)
-%%           Number  = string(), the number to format
-%%           Header  = keylist record()
-%%           DstHost = term(), destination for request
-%% Descrip.: Hook for the actual formatting once
-%%           get_remote_party_number/2 has found a number to be
-%%           formatted. This default function simply tries to rewrite
-%%           the number to E.164. If one or more of your PSTN gateways
-%%           wants the Caller-ID information in any other format, then
-%%           override this function in local.erl.
-%% Returns : {ok, Number} | none
-%%           Number = string()
+%% @spec    (Number, Header, DstHost) ->
+%%            {ok, Number} | none
+%%
+%%            Number  = string() "the number to format"
+%%            Header  = #keylist{}
+%%            DstHost = term() "destination for request"
+%%
+%%            Number = string()
+%%
+%% @doc     Hook for the actual formatting once
+%%          get_remote_party_number/2 has found a number to be
+%%          formatted. This default function simply tries to rewrite
+%%          the number to E.164. If one or more of your PSTN gateways
+%%          wants the Caller-ID information in any other format, then
+%%          override this function in local.erl.
+%% @end
 %%--------------------------------------------------------------------
 format_number_for_remote_party_id(Number, _Header, _DstHost) when is_list(Number) ->
     case rewrite_potn_to_e164(Number) of
@@ -999,15 +1075,19 @@ format_number_for_remote_party_id(Number, _Header, _DstHost) when is_list(Number
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_party_name(Key, URI)
-%%           Key = string(), number we should turn into a name
-%%           URI = term(), destination for request
-%% Descrip.: When pstnproxy receives a request from a PSTN gateway,
-%%           this function is called to see if we can find a nice
-%%           Display Name for the calling party.
-%% Returns : {ok, DisplayName} |
-%%           none
-%%           DisplayName = string()
+%% @spec    (Key, URI) ->
+%%            {ok, DisplayName} |
+%%            none
+%%
+%%            Key = string() "number we should turn into a name"
+%%            URI = term() "destination for request"
+%%
+%%            DisplayName = string()
+%%
+%% @doc     When pstnproxy receives a request from a PSTN gateway,
+%%          this function is called to see if we can find a nice
+%%          Display Name for the calling party.
+%% @end
 %%--------------------------------------------------------------------
 get_remote_party_name(Key, URI) when is_list(Key), is_record(URI, sipurl) ->
     case directory:lookup_tel2name(Key) of
@@ -1022,10 +1102,12 @@ get_remote_party_name(Key, URI) when is_list(Key), is_record(URI, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookup_result_to_str(In)
-%%           In = term()
-%% Descrip.: Pretty-print our various used lookup result values.
-%% Returns : string()
+%% @spec    (In) -> string()
+%%
+%%            In = term()
+%%
+%% @doc     Pretty-print our various used lookup result values.
+%% @end
 %%--------------------------------------------------------------------
 lookup_result_to_str(In) ->
     lists:flatten(lookup_result_to_str2(In)).
@@ -1046,9 +1128,11 @@ lookup_result_to_str2(Unknown) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% test homedomain/1

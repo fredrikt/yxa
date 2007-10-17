@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipuserdb_test.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: A sipuserdb backend to be used in unit tests. Reads all
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      A sipuserdb backend to be used in unit tests. Reads all
 %%%           userdata from a per-process ets table.
 %%%
-%%% Created : 28 Nov 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    28 Nov 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipuserdb_test).
 %%-compile(export_all).
@@ -57,12 +58,17 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Data)
-%%           Data = [#user{} | #address{}]
-%% Descrip.: Initialize a per-process test userdb. Accepts Data in the
-%%           same format as sipuserdb_file.
-%% Returns : ok | {error, Reason}
-%%           Reason = term()
+%% @spec    (Data) ->
+%%            ok | {error, Reason}
+%%
+%%            Data = [#user{} | #address{}]
+%%
+%%            Reason = term()
+%%
+%% @doc     Initialize a per-process test userdb. Accepts Data in the
+%%          same format as sipuserdb_file.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init(Data) when is_list(Data) ->
     case sipuserdb_file_backend:parse_db([Data]) of
@@ -77,9 +83,10 @@ init(Data) when is_list(Data) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: stop()
-%% Descrip.: Stop using a per-process test userdb.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Stop using a per-process test userdb.
+%% @end
 %%--------------------------------------------------------------------
 stop() ->
     case erase(?SIPUSERDB_TEST_SOURCE) of
@@ -96,31 +103,39 @@ stop() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: yxa_init()
-%% Descrip.: Perform any necessary startup initialization and
-%%           return an OTP supervisor child spec if we want to add
-%%           to sipserver_sup's list. If this sipuserdb_module
-%%           needs to be persistent, it should be a gen_server and
-%%           init should just return a spec so that the gen_server
-%%           is started by the supervisor.
-%% Returns : Spec |
-%%           []
-%%           Spec = term(), OTP supervisor child specification
+%% @spec    () ->
+%%            Spec |
+%%            []
+%%
+%%            Spec = term() "OTP supervisor child specification"
+%%
+%% @doc     Perform any necessary startup initialization and return an
+%%          OTP supervisor child spec if we want to add to
+%%          sipserver_sup's list. If this sipuserdb_module needs to
+%%          be persistent, it should be a gen_server and init should
+%%          just return a spec so that the gen_server is started by
+%%          the supervisor.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 yxa_init() ->
     [].
 
 %%--------------------------------------------------------------------
-%% Function: get_user_with_address(Address)
-%%           Address = string(), an address in string format.
-%% Descrip.: Looks up exactly one user with an Address. Used for
-%%           example in REGISTER. If there are multiple users with
-%%           this address in our database, this function returns
-%%           'error'.
-%% Returns:  Username |
-%%           nomatch  |
-%%           error
-%%           Username = string()
+%% @spec    (Address) ->
+%%            Username |
+%%            nomatch  |
+%%            error
+%%
+%%            Address = string() "an address in string format."
+%%
+%%            Username = string()
+%%
+%% @doc     Looks up exactly one user with an Address. Used for
+%%          example in REGISTER. If there are multiple users with
+%%          this address in our database, this function returns
+%%          'error'.
+%% @end
 %%--------------------------------------------------------------------
 get_user_with_address(Address) ->
     case get_users_using_address(Address) of
@@ -137,25 +152,34 @@ get_user_with_address(Address) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_address_of_record(Address)
-%%           Address = string(), an address in string format.
-%% Descrip.: Get all usernames of users matching an address. Used to
-%%           find out to which users we should send a request.
-%% Returns : Users |
-%%           error
-%%           Users = list() of string()
+%% @spec    (Address) ->
+%%            Users |
+%%            error
+%%
+%%            Address = string() "an address in string format."
+%%
+%%            Users = [string()]
+%%
+%% @doc     Get all usernames of users matching an address. Used to
+%%          find out to which users we should send a request.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_address_of_record(Address) ->
     get_users_using_address(Address).
 
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_addresses_of_record(In)
-%%           In = list() of string(), addresses in string format.
-%% Descrip.: Iterate over a list of addresses of record, return
-%%           all users matching one or more of the addresses,
-%%           without duplicates.
-%% Returns : Users = list() of string()
+%% @spec    (In) ->
+%%            Users
+%%
+%%            In = [string()] "addresses in string format."
+%%
+%%            Users = [string()]
+%%
+%% @doc     Iterate over a list of addresses of record, return all
+%%          users matching one or more of the addresses, without
+%%          duplicates.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(In) ->
     get_users_for_addresses_of_record2(In, []).
@@ -172,12 +196,17 @@ get_users_for_addresses_of_record2([H | T], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_addresses_for_users(In)
-%%           In = list() of string(), usernames
-%% Descrip.: Iterate over a list of users, return all their
-%%           addresses without duplicates by using the next
-%%           function, get_addresses_for_user/1.
-%% Returns : Addresses = list() of string()
+%% @spec    (In) ->
+%%            Addresses
+%%
+%%            In = [string()] "usernames"
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Iterate over a list of users, return all their addresses
+%%          without duplicates by using the next function,
+%%          get_addresses_for_user/1.
+%% @end
 %%--------------------------------------------------------------------
 get_addresses_for_users(In) ->
     get_addresses_for_users2(In, []).
@@ -195,14 +224,18 @@ get_addresses_for_users2([H | T], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_addresses_for_user(Username)
-%%           Username = string()
-%% Descrip.: Get all possible addresses of a user. Both configured
-%%           ones, and implicit ones. Used for example to check if a
-%%           request from a user has an acceptable From: header.
-%% Returns : Addresses |
-%%           error
-%%           Addresses = list() of string()
+%% @spec    (Username) ->
+%%            Addresses |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Get all possible addresses of a user. Both configured
+%%          ones, and implicit ones. Used for example to check if a
+%%          request from a user has an acceptable From: header.
+%% @end
 %%--------------------------------------------------------------------
 get_addresses_for_user(Username) ->
     case get_user(Username) of
@@ -215,15 +248,20 @@ get_addresses_for_user(Username) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_url(URL)
-%%           URL = sipurl record()
-%% Descrip.: Given an URL that is typically the Request-URI of an
-%%           incoming request, make a list of implicit user
-%%           addresses and return a list of all users matching any
-%%           of these addresses. This is located in here since
-%%           user database backends can have their own way of
-%%           deriving addresses from a Request-URI.
-%% Returns : Usernames = list() of string()
+%% @spec    (URL) ->
+%%            Usernames
+%%
+%%            URL = #sipurl{}
+%%
+%%            Usernames = [string()]
+%%
+%% @doc     Given an URL that is typically the Request-URI of an
+%%          incoming request, make a list of implicit user addresses
+%%          and return a list of all users matching any of these
+%%          addresses. This is located in here since user database
+%%          backends can have their own way of deriving addresses
+%%          from a Request-URI.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_url(URL) when is_record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_file, URL),
@@ -237,13 +275,17 @@ get_users_for_url(URL) when is_record(URL, sipurl) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_password_for_user(Username)
-%%           Username = string()
-%% Descrip.: Returns the password for a user.
-%% Returns : Password |
-%%           nomatch  |
-%%           error
-%%           Password = string()
+%% @spec    (Username) ->
+%%            Password |
+%%            nomatch  |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Password = string()
+%%
+%% @doc     Returns the password for a user.
+%% @end
 %%--------------------------------------------------------------------
 get_password_for_user(Username) ->
     case get_user(Username) of
@@ -256,16 +298,19 @@ get_password_for_user(Username) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_classes_for_user(Username)
-%%           Username = string()
-%% Descrip.: Returns a list of classes allowed for a user. Classes
-%%           are used by pstnproxy to determine if it should allow
-%%           a call to a PSTN number (of a certain class) from a
-%%           user or not.
-%% Returns : Classes |
-%%           nomatch |
-%%           error
-%%           Classes = list() of atom()
+%% @spec    (Username) ->
+%%            Classes |
+%%            nomatch |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Classes = [atom()]
+%%
+%% @doc     Returns a list of classes allowed for a user. Classes are
+%%          used by pstnproxy to determine if it should allow a call
+%%          to a PSTN number (of a certain class) from a user or not.
+%% @end
 %%--------------------------------------------------------------------
 get_classes_for_user(Username) ->
     case get_user(Username) of
@@ -283,17 +328,21 @@ get_classes_for_user(Username) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_telephonenumber_for_user(Username)
-%%           Username = string()
-%% Descrip.: Return the telephone number for a user. We do this by
-%%           fetching all addresses for the user and then examining
-%%           them to see if any of them is a tel: URL, or has a
-%%           user part which is all numeric or is an E.164 number.
-%%           The numbering plan in the number return is not specified.
-%% Returns : Number  |
-%%           nomatch |
-%%           error
-%%           Number = string()
+%% @spec    (Username) ->
+%%            Number  |
+%%            nomatch |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Number = string()
+%%
+%% @doc     Return the telephone number for a user. We do this by
+%%          fetching all addresses for the user and then examining
+%%          them to see if any of them is a tel: URL, or has a user
+%%          part which is all numeric or is an E.164 number. The
+%%          numbering plan in the number return is not specified.
+%% @end
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(Username) ->
     case get_user(Username) of
@@ -321,11 +370,16 @@ get_telephonenumber_for_user(Username) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_forwards_for_users(In)
-%%           In = list() of string(), list of usernames
-%% Descrip.: Return a list of forward addresses for a list of users.
-%%           Uses the next function, get_forward_for_user/1.
-%% Returns : ForwardList = list() of sipproxy_forward record()
+%% @spec    (In) ->
+%%            ForwardList
+%%
+%%            In = [string()] "list of usernames"
+%%
+%%            ForwardList = [#sipproxy_forward{}]
+%%
+%% @doc     Return a list of forward addresses for a list of users.
+%%          Uses the next function, get_forward_for_user/1.
+%% @end
 %%--------------------------------------------------------------------
 get_forwards_for_users(In) ->
     get_forwards_for_users2(In, []).
@@ -342,13 +396,17 @@ get_forwards_for_users2([H | T], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_forward_for_user(Username)
-%%           Username = string()
-%% Descrip.: Return the forward address(es) for a user.
-%% Returns : ForwardList |
-%%           nomatch     |
-%%           error
-%%           ForwardList = list() of sipproxy_forward record()
+%% @spec    (Username) ->
+%%            ForwardList |
+%%            nomatch     |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            ForwardList = [#sipproxy_forward{}]
+%%
+%% @doc     Return the forward address(es) for a user.
+%% @end
 %%--------------------------------------------------------------------
 get_forward_for_user(Username) ->
     case get_user(Username) of
@@ -371,12 +429,15 @@ get_forward_for_user(Username) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_user(User)
-%%           User = string()
-%% Descrip.: Fetch a user record from the user database, given it's
-%%           username.
-%% Returns : User    |
-%%           nomatch
+%% @spec    (User) ->
+%%            User    |
+%%            nomatch
+%%
+%%            User = string()
+%%
+%% @doc     Fetch a user record from the user database, given it's
+%%          username.
+%% @end
 %%--------------------------------------------------------------------
 get_user(User) when is_list(User) ->
     get_user2(User, fetch_users()).
@@ -390,11 +451,16 @@ get_user2(User, [H | T]) when is_record(H, user) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_addresses_using_user(Username)
-%%           User = string() | user record()
-%% Descrip.: Return all addresses for a username or a user record,
-%%           sorted alphabetically.
-%% Returns : Addresses = list() of address record()
+%% @spec    (Username) ->
+%%            Addresses
+%%
+%%            User = string() | #user{}
+%%
+%%            Addresses = [#address{}]
+%%
+%% @doc     Return all addresses for a username or a user record,
+%%          sorted alphabetically.
+%% @end
 %%--------------------------------------------------------------------
 get_addresses_using_user(Username) when is_list(Username) ->
     Addresses = get_addresses_using_user2(Username, fetch_addresses(), []),
@@ -416,13 +482,18 @@ get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_users_using_address(Address)
-%%           Address = string() | sipurl record()
-%% Descrip.: Given an address (list) or URL (sipurl record), locate
-%%           and return all address records in the userdb, fetched
-%%           from the persistent sipuserdb_file process, that matches
-%%           using URI address matching rules.
-%% Returns : Usernames = list() of string()
+%% @spec    (Address) ->
+%%            Usernames
+%%
+%%            Address = string() | #sipurl{}
+%%
+%%            Usernames = [string()]
+%%
+%% @doc     Given an address (list) or URL (sipurl record), locate and
+%%          return all address records in the userdb, fetched from
+%%          the persistent sipuserdb_file process, that matches using
+%%          URI address matching rules.
+%% @end
 %%--------------------------------------------------------------------
 get_users_using_address(Address) when is_list(Address) ->
     %% Check that Address is a parseable URL. It really does not have to
@@ -440,14 +511,19 @@ get_users_using_address(URL) when is_record(URL, sipurl) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_usernames_for_url(URL, Addresses, [])
-%%           URL       = sipurl record()
-%%           Addresses = list() of address record()
-%% Descrip.: Given an URL (sipurl record), locate and return all
-%%           usernames for the matching address records, fetched from
-%%	     the persistent sipuserdb_file process, that matches using
-%%           URI address matching rules.
-%% Returns : Users = list() of string()
+%% @spec    (URL, Addresses, []) ->
+%%            Users
+%%
+%%            URL       = #sipurl{}
+%%            Addresses = [#address{}]
+%%
+%%            Users = [string()]
+%%
+%% @doc     Given an URL (sipurl record), locate and return all
+%%          usernames for the matching address records, fetched from
+%%          the persistent sipuserdb_file process, that matches using
+%%          URI address matching rules.
+%% @end
 %%--------------------------------------------------------------------
 get_usernames_for_url(_URL, [], Res) ->
     %% Make list sorted and remove duplicates
@@ -463,11 +539,13 @@ get_usernames_for_url(URL, [H | T], Res) when is_record(URL, sipurl), is_record(
 
 
 %%--------------------------------------------------------------------
-%% Function: collect_addresses(In)
-%%           In = list() of address record()
-%% Descrip.: Collect and return a list of all addresses from a
-%%           set of address records.
-%% Returns : list() of string(), list of addresses in string format
+%% @spec    (In) -> [string()] "list of addresses in string format"
+%%
+%%            In = [#address{}]
+%%
+%% @doc     Collect and return a list of all addresses from a set of
+%%          address records.
+%% @end
 %%--------------------------------------------------------------------
 collect_addresses(In) ->
     collect_addresses2(In, []).
@@ -480,14 +558,18 @@ collect_addresses2([H | T], Res) when is_record(H, address) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: find_first_telephonenumber(In)
-%%           In = list() of address record()
-%% Descrip.: Look through a list of address records and return the
-%%           first one that has a URL userpart that is all numeric.
-%%           Called from get_telephonenumber_for_user.
-%% Returns : Address |
-%%          nomatch
-%%          Address = address record()
+%% @spec    (In) ->
+%%            Address |
+%%            nomatch
+%%
+%%            In = [#address{}]
+%%
+%%            Address = #address{}
+%%
+%% @doc     Look through a list of address records and return the
+%%          first one that has a URL userpart that is all numeric.
+%%          Called from get_telephonenumber_for_user.
+%% @end
 %%--------------------------------------------------------------------
 find_first_telephonenumber([]) ->
     nomatch;
@@ -535,9 +617,11 @@ fetch_addresses() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% yxa_init()
@@ -579,7 +663,7 @@ test() ->
 		    {address, "sip:onemore@example.org"}
 		   ]}
 	],
-    
+
     ok = init(UserDb),
 
     autotest:mark(?LINE, "init/1 - 2"),
@@ -595,7 +679,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_user_with_address/1 - 1"),
     "foo@example.org" = get_user_with_address("sip:info@example.org"),
-    
+
     autotest:mark(?LINE, "get_user_with_address/1 - 2"),
     %% test with more than one matching user
     error = get_user_with_address("sip:all@example.org"),
@@ -635,13 +719,13 @@ test() ->
 
     autotest:mark(?LINE, "get_addresses_for_users/1 - 2"),
     [] = get_addresses_for_users(["nouser", "barX"]),
-   
+
     autotest:mark(?LINE, "get_addresses_for_users/1 - 3"),
     ["sip:2345@example.org",
      "sip:all@example.org",
      "sip:info@example.org",
      "sip:onemore@example.org"] = get_addresses_for_users(["ft.sip1", "foo@example.org"]),
-    
+
 
     %% get_addresses_for_user(Username)
     %%--------------------------------------------------------------------
@@ -655,10 +739,10 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_users_for_url/1 - 1"),
     [] = get_users_for_url(sipurl:parse("sip:NO")),
-    
+
     autotest:mark(?LINE, "get_users_for_url/1 - 2"),
     ["foo@example.org"] = get_users_for_url(sipurl:parse("sip:info@example.org")),
-    
+
 
     %% get_password_for_user(Username)
     %%--------------------------------------------------------------------

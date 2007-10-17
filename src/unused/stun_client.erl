@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : stun_client.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: STUN test client for TCP/TLS. Really just for testing
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      STUN test client for TCP/TLS. Really just for testing
 %%%           the SIP/STUN demuxing server implementation in YXA.
 %%%
-%%% Created :  22 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     22 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(stun_client).
 
@@ -43,7 +44,7 @@ send(URLstr, Count) when is_list(URLstr), is_integer(Count) ->
 
 send(Proto, Host, Port, Count) when is_atom(Proto), is_list(Host), is_integer(Port), is_integer(Count) ->
     send2(Proto, Host, Port, Count).
-    
+
 
 send2(Proto, Host, Port, Count) when is_atom(Proto), is_list(Host), is_integer(Port), is_integer(Count) ->
     SocketOpts =
@@ -93,7 +94,7 @@ send3(Proto, Socket, Host, Port, Count) ->
 	tcp -> gen_tcp:send(Socket, STUN);
 	udp -> gen_udp:send(Socket, Host, Port, STUN)
     end,
-    
+
     receive
 	{tcp, Socket, Packet} when Proto == tcp ->
 	    io:format("*** Received : ~p~n", [Packet]),
@@ -113,7 +114,7 @@ send3(Proto, Socket, Host, Port, Count) ->
 	Unknown ->
 	    io:format("*** UNKNOWN SIGNAL : ~p~n~n", [Unknown]),
 	    send3(Proto, Socket, Host, Port, Count - 1)
-	    
+
     after 1000 ->
 	    io:format("*** Timed out!~n"),
 	    error

@@ -1,14 +1,15 @@
 %%%-------------------------------------------------------------------
 %%% File    : pstnproxy.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: An SIP application level 'firewall' to defend a PSTN
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      An SIP application level 'firewall' to defend a PSTN
 %%%           gateway from misuse and to make sure users are
 %%%           authorized to make calls to different 'classes' of
 %%%           numbers (configured through regular expressions). Also
 %%%           perform ENUM lookups on requests _from_ the PSTN gw.
 %%%           See the README file for more information.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(pstnproxy).
 
@@ -40,9 +41,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA applications must export an init/0 function.
-%% Returns : yxa_app_init record()
+%% @spec    () -> #yxa_app_init{}
+%%
+%% @doc     YXA applications must export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     #yxa_app_init{mnesia_tables = [user, numbers]
@@ -50,11 +53,14 @@ init() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtl  = yxa_ctl record()
-%% Descrip.: YXA applications must export a request/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Request, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #request{}
+%%            YxaCtl  = #yxa_ctl{}
+%%
+%% @doc     YXA applications must export a request/2 function.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -82,11 +88,14 @@ request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa
 
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, YxaCtx)
-%%           Response = response record()
-%%           YxaCtx   = yxa_ctx record()
-%% Descrip.: YXA applications must export a response/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Response, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Response = #response{}
+%%            YxaCtx   = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a response/2 function.
+%% @end
 %%--------------------------------------------------------------------
 response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
@@ -97,10 +106,14 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
 
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Mode)
-%%           Mode = shutdown | graceful | atom()
-%% Descrip.: YXA applications must export a terminate/1 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Mode) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Mode = shutdown | graceful | atom()
+%%
+%% @doc     YXA applications must export a terminate/1 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Mode) when is_atom(Mode) ->
     ok.
@@ -111,46 +124,39 @@ terminate(Mode) when is_atom(Mode) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: auth_and_tag(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: Create a pstn_ctx record for this request. The pstn_ctx
-%%           record holds information that we can conclude right away
-%%           about the request :
+%% @spec    (Request, YxaCtx) ->
+%%            {ok, PstnCtx} |
+%%            ignore
 %%
-%%           tags         : list of atom() :
-%%              from_gateway : Request was received from one of
-%%                             our gateways.
-%%              has_route    : Request has a Route header.
-%%              route_to_gw  : Included if the Route header points
-%%                             at one of our gateways.
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
 %%
-%%           ip           : string(), the IP address we received the
-%%                          request from.
+%%            PstnCtx = #pstn_ctx{}
 %%
-%%           cert_subject : ssl_conn_subject record() describing TLS
-%%                          certificate used by client to send us
-%%                          this request.
-%%
-%%           user         : undefined | string(), the SIP user for
-%%                          which valid credentials has been provided
-%%
-%%           stale_auth   : true  - authentication provided, but it is
-%%                                  stale
-%%                          false - authentication not stale, but not
-%%                                  necessary provided
-%%
-%%           orig_uri     : sipurl record(), the Request-URI of the
-%%                          request we received.
-%%
-%%           If the From: address of the request is listed for one of
-%%           our users, we know that we will require confirmation of
-%%           this so then we challenge the request if valid authenti-
-%%           cation is not already provided. Gateways are excepted
-%%           from this, they are allowed to provide us with any name.
-%% Returns : {ok, PstnCtx} |
-%%           ignore
-%%           PstnCtx = pstn_ctx record()
+%% @doc     Create a pstn_ctx record for this request. The pstn_ctx
+%%          record holds information that we can conclude right away
+%%          about the request :
+%%          tags : list of atom() : from_gateway : Request was
+%%          received from one of our gateways. has_route : Request
+%%          has a Route header. route_to_gw : Included if the Route
+%%          header points at one of our gateways.
+%%          ip : string(), the IP address we received the request
+%%          from.
+%%          cert_subject : ssl_conn_subject record() describing TLS
+%%          certificate used by client to send us this request.
+%%          user : undefined | string(), the SIP user for which valid
+%%          credentials has been provided
+%%          stale_auth : true - authentication provided, but it is
+%%          stale false - authentication not stale, but not necessary
+%%          provided
+%%          orig_uri : sipurl record(), the Request-URI of the
+%%          request we received.
+%%          If the From: address of the request is listed for one of
+%%          our users, we know that we will require confirmation of
+%%          this so then we challenge the request if valid authenti-
+%%          cation is not already provided. Gateways are excepted
+%%          from this, they are allowed to provide us with any name.
+%% @end
 %%--------------------------------------------------------------------
 auth_and_tag(Request, YxaCtx) ->
     #yxa_ctx{thandler	= THandler,
@@ -183,17 +189,20 @@ auth_and_tag(Request, YxaCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: auth_and_tag_get_cert(Origin, LogTag)
-%%           Origin = siporigin record()
-%%           LogTag = string(), log prefix
-%% Descrip.: If the request was received over TLS, try to construct
-%%           a string describing the certificate. Returns 'undefined'
-%%           if such a string could not be created, for example
-%%           because the connecting party did not use a client
-%%           certificate.
-%% Returns : Subject   |
-%%           undefined
-%%           Subject = string()
+%% @spec    (Origin, LogTag) ->
+%%            Subject   |
+%%            undefined
+%%
+%%            Origin = #siporigin{}
+%%            LogTag = string() "log prefix"
+%%
+%%            Subject = string()
+%%
+%% @doc     If the request was received over TLS, try to construct a
+%%          string describing the certificate. Returns 'undefined' if
+%%          such a string could not be created, for example because
+%%          the connecting party did not use a client certificate.
+%% @end
 %%--------------------------------------------------------------------
 auth_and_tag_get_cert(#siporigin{proto = Proto} = Origin, LogTag) when Proto == tls; Proto == tls6 ->
     #siporigin{sipsocket = SipSocket,
@@ -218,16 +227,18 @@ auth_and_tag_get_cert(_Origin, _LogTag) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: auth_and_tag_get_user(Request)
-%%           Request = request record()
-%% Descrip.: Try to get a username for this request, and also check
-%%           to see if there are authentication information present.
-%% Returns : {ok, Stale, YXAPeerAuth, User}
-%%           Stale       = bool(), was the provided authentication
-%%                         information stale? false if none provided.
-%%           YXAPeerAuth = bool(), user information vouched for by a
-%%                         peer of ours, through X-Yxa-Peer-Auth?
-%%           User        = undefined | string(), username
+%% @spec    (Request) ->
+%%            {ok, Stale, YXAPeerAuth, User}
+%%
+%%            Request = #request{}
+%%
+%%            Stale       = bool() "was the provided authentication information stale? false if none provided."
+%%            YXAPeerAuth = bool() "user information vouched for by a peer of ours, through X-Yxa-Peer-Auth?"
+%%            User        = undefined | string() "username"
+%%
+%% @doc     Try to get a username for this request, and also check to
+%%          see if there are authentication information present.
+%% @end
 %%--------------------------------------------------------------------
 auth_and_tag_get_user(Request) ->
     {Stale, YXAPeerAuth, UserRes} =
@@ -246,12 +257,17 @@ auth_and_tag_get_user(Request) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: auth_and_tag_get_tags(Request, IsPeerAuth, PstnCtx)
-%%           Request    = request record()
-%%           IsPeerAuth = boolean(), X-Yxa-Peer-Auth authenticated?
-%%           PstnCtx    = pstn_ctx record()
-%% Descrip.: Create a list of tags for this request.
-%% Returns : Tags = list() of term()
+%% @spec    (Request, IsPeerAuth, PstnCtx) ->
+%%            Tags
+%%
+%%            Request    = #request{}
+%%            IsPeerAuth = boolean() "X-Yxa-Peer-Auth authenticated?"
+%%            PstnCtx    = #pstn_ctx{}
+%%
+%%            Tags = [term()]
+%%
+%% @doc     Create a list of tags for this request.
+%% @end
 %%--------------------------------------------------------------------
 auth_and_tag_get_tags(Request, IsPeerAuth, PstnCtx) when is_record(Request, request), is_boolean(IsPeerAuth),
 							 is_record(PstnCtx, pstn_ctx) ->
@@ -286,17 +302,20 @@ auth_and_tag_get_tags(Request, IsPeerAuth, PstnCtx) when is_record(Request, requ
 
 
 %%--------------------------------------------------------------------
-%% Function: auth_and_tag_verify_from(Request, YxaCtx, PstnCtx)
-%%           Request     = request record()
-%%           YxaCtx      = yxa_ctx record()
-%%           PstnCtx     = pstn_ctx record()
-%% Descrip.: If the From: has an address belonging to one of our
-%%           users, verify that the sender is authorized to use it.
-%%           This requires digest-authenticating a user, or determin-
-%%           ing that the request was received from one of our
-%%           gateways or was vouched for by a peer of ours.
-%% Returns : ignore |      (drop request)
-%%           ok
+%% @spec    (Request, YxaCtx, PstnCtx) ->
+%%            ignore |
+%%            ok
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%% @doc     If the From: has an address belonging to one of our users,
+%%          verify that the sender is authorized to use it. This
+%%          requires digest-authenticating a user, or determin- ing
+%%          that the request was received from one of our gateways or
+%%          was vouched for by a peer of ours.
+%% @end
 %%--------------------------------------------------------------------
 auth_and_tag_verify_from(Request, YxaCtx, PstnCtx) ->
     #yxa_ctx{thandler	= THandler,
@@ -361,13 +380,15 @@ auth_and_tag_verify_from2(Request, YxaCtx, PstnCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_request(Request, YxaCtx, PstnCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: Handle any non-ACK requests we receive, after the request
-%%           has been tagged, and potentially authenticated.
-%% Returns : ok
+%% @spec    (Request, YxaCtx, PstnCtx) -> ok
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%% @doc     Handle any non-ACK requests we receive, after the request
+%%          has been tagged, and potentially authenticated.
+%% @end
 %%--------------------------------------------------------------------
 handle_request(Request, YxaCtx, PstnCtx) ->
     Actions =
@@ -419,14 +440,17 @@ handle_request_unknown_destination(Request, YxaCtx, PstnCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: route_request_with_route(Request, YxaCtx, PstnCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: Figure out what to do with a request with a Route header.
-%% Returns : [{proxy, route}]                 |
-%%           [{response, Status, Reason, EH}] |
-%%           [{challenge, proxy, IsStale}]
+%% @spec    (Request, YxaCtx, PstnCtx) ->
+%%            [{proxy, route}]                 |
+%%            [{response, Status, Reason, EH}] |
+%%            [{challenge, proxy, IsStale}]
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%% @doc     Figure out what to do with a request with a Route header.
+%% @end
 %%--------------------------------------------------------------------
 route_request_with_route(Request, YxaCtx, PstnCtx) ->
     %% we relay any request with a Route header, as long as it is authenticated
@@ -455,13 +479,18 @@ route_request_with_route(Request, YxaCtx, PstnCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: number_based_routing(Request, YxaCtx, PstnCtx)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           PstnCtx  = pstn_ctx record(), context for this request
-%% Descrip.: Figure out what to do with a request that is destined
-%%           for one of our hostnames, or one of our gateways names.
-%% Returns : ActionList = list() of term()
+%% @spec    (Request, YxaCtx, PstnCtx) ->
+%%            ActionList
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%%            ActionList = [term()]
+%%
+%% @doc     Figure out what to do with a request that is destined for
+%%          one of our hostnames, or one of our gateways names.
+%% @end
 %%--------------------------------------------------------------------
 number_based_routing(Request, YxaCtx, PstnCtx) ->
     #yxa_ctx{thandler	= THandler,
@@ -490,30 +519,33 @@ number_based_routing(Request, YxaCtx, PstnCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions(Actions, Request, YxaCtx, PstnCtx)
-%%           Actions = [tuple() | atom()]
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: Process the Request through performing a set of actions,
-%%           that include trying to find a destination, proxying the
-%%           request to a found destination, challenging the sender of
-%%           the request or sending a response of some sort.
-%% Returns : void()
+%% @spec    (Actions, Request, YxaCtx, PstnCtx) -> void()
+%%
+%%            Actions = [tuple() | atom()]
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%% @doc     Process the Request through performing a set of actions,
+%%          that include trying to find a destination, proxying the
+%%          request to a found destination, challenging the sender of
+%%          the request or sending a response of some sort.
+%% @end
 %%--------------------------------------------------------------------
 
 %% @clear
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions({response, Status, Reason, ExtraHeaders},
-%%                           Request, YxaCtx, PstnCtx)
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, Value}, extra headers to
-%%                          put in the response
-%%           YxaCtx       = yxa_ctx record()
-%% Descrip.: Send a response.
-%% Returns : void()
+%% @spec    ({response, Status, Reason, ExtraHeaders}, Request,
+%%          YxaCtx, PstnCtx) -> void()
+%%
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = [{Key, Value}] "extra headers to put in the response"
+%%            YxaCtx       = #yxa_ctx{}
+%%
+%% @doc     Send a response.
+%% @end
 %%--------------------------------------------------------------------
 perform_actions([{response, Status, Reason, ExtraHeaders} | _], _Request, YxaCtx, _PstnCtx) ->
     #yxa_ctx{thandler	= THandler,
@@ -523,13 +555,15 @@ perform_actions([{response, Status, Reason, ExtraHeaders} | _], _Request, YxaCtx
     transactionlayer:send_response_handler(THandler, Status, Reason, ExtraHeaders);
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions({proxy, Dst}, Request, YxaCtx, PstnCtx)
-%%           Dst     = sipurl record() | route
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Proxy the request to a destination, if permitted.
-%% Returns : void()
+%% @spec    ({proxy, Dst}, Request, YxaCtx, PstnCtx) -> void()
+%%
+%%            Dst     = #sipurl{} | route
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%% @doc     Proxy the request to a destination, if permitted.
+%% @end
 %%--------------------------------------------------------------------
 perform_actions([{proxy, Dst} | _], Request, YxaCtx, PstnCtx) when is_record(Dst, sipurl); Dst == route ->
     #yxa_ctx{thandler	= THandler,
@@ -589,11 +623,13 @@ perform_actions([{proxy, Dst} | _], Request, YxaCtx, PstnCtx) when is_record(Dst
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions({challenge, Type, Stale}, ...)
-%%           Type  = proxy | www
-%%           Stale = bool()
-%% Descrip.: Send a challenge to the sender of a request.
-%% Returns : void()
+%% @spec    ({challenge, Type, Stale}, ...) -> void()
+%%
+%%            Type  = proxy | www
+%%            Stale = bool()
+%%
+%% @doc     Send a challenge to the sender of a request.
+%% @end
 %%--------------------------------------------------------------------
 perform_actions([{challenge, Type, Stale} | _], _Request, YxaCtx, _PstnCtx) when is_atom(Type),
 										 is_boolean(Stale) ->
@@ -604,12 +640,14 @@ perform_actions([{challenge, Type, Stale} | _], _Request, YxaCtx, _PstnCtx) when
     transactionlayer:send_challenge(THandler, Type, Stale, _RetryAfter = none);
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions({lookup, Type}, ...)
-%%           Type  = enum | pstn | not_e164 | ...
-%% Descrip.: Perform a lookup of some sort, and then either continue
-%%           to the next action (if nomatch was returned), or go
-%%           process the result of the lookup as the next action.
-%% Returns : void()
+%% @spec    ({lookup, Type}, ...) -> void()
+%%
+%%            Type = enum | pstn | not_e164 | ...
+%%
+%% @doc     Perform a lookup of some sort, and then either continue to
+%%          the next action (if nomatch was returned), or go process
+%%          the result of the lookup as the next action.
+%% @end
 %%--------------------------------------------------------------------
 perform_actions([{lookup, Type} | T], Request, YxaCtx, PstnCtx) ->
     LogTag = YxaCtx#yxa_ctx.app_logtag,
@@ -626,21 +664,24 @@ perform_actions([{lookup, Type} | T], Request, YxaCtx, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions(ignore, ...)
-%%           Type  = enum | pstn | not_e164 | ...
-%% Descrip.: Perform a lookup of some sort, and then either continue
-%%           to the next action (if nomatch was returned), or go
-%%           process the result of the lookup as the next action.
-%% Returns : void()
+%% @spec    (ignore, ...) -> void()
+%%
+%%            Type = enum | pstn | not_e164 | ...
+%%
+%% @doc     Perform a lookup of some sort, and then either continue to
+%%          the next action (if nomatch was returned), or go process
+%%          the result of the lookup as the next action.
+%% @end
 %%--------------------------------------------------------------------
 perform_actions([ignore | _], _Request, YxaCtx, _PstnCtx) ->
     logger:log(debug, "~s: pstnproxy: Action 'ignore'", [YxaCtx#yxa_ctx.app_logtag]),
     ok;
 
 %%--------------------------------------------------------------------
-%% Function: perform_actions([], ...)
-%% Descrip.: No actions left, send a '500 Server Internal Error'.
-%% Returns : void()
+%% @spec    ([], ...) -> void()
+%%
+%% @doc     No actions left, send a '500 Server Internal Error'.
+%% @end
 %%--------------------------------------------------------------------
 perform_actions([], _Request, YxaCtx, _PstnCtx) ->
     #yxa_ctx{thandler	= THandler,
@@ -652,31 +693,38 @@ perform_actions([], _Request, YxaCtx, _PstnCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(Type, Request, PstnCtx)
-%%           Type    = atom()
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Perform a lookup of some sort, which may or may not
-%%           result in a new action of the type that perform_actions
-%%           process.
-%% Returns : {ok, LookupSubstitute, NewPstnCtx} |
-%%           nomatch
-%%           LookupSubstitute = tuple() | atom()
-%%           NewPstnCtx       = pstn_ctx record()
+%% @spec    (Type, Request, PstnCtx) ->
+%%            {ok, LookupSubstitute, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Type    = atom()
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            LookupSubstitute = tuple() | atom()
+%%            NewPstnCtx       = #pstn_ctx{}
+%%
+%% @doc     Perform a lookup of some sort, which may or may not result
+%%          in a new action of the type that perform_actions process.
+%% @end
 %%--------------------------------------------------------------------
 
 %% @clear
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(enum, Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Perform an ENUM lookup. ENUM resolves E.164 numbers
-%%           through DNS (RFC3761).
-%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
-%%           nomatch
-%%           Dst        = sipurl record()
-%%           NewPstnCtx = pstn_ctx record()
+%% @spec    (enum, Request, PstnCtx) ->
+%%            {ok, {proxy, Dst}, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            Dst        = #sipurl{}
+%%            NewPstnCtx = #pstn_ctx{}
+%%
+%% @doc     Perform an ENUM lookup. ENUM resolves E.164 numbers
+%%          through DNS (RFC3761).
+%% @end
 %%--------------------------------------------------------------------
 perform_lookup(enum, Request, PstnCtx) ->
     User = (Request#request.uri)#sipurl.user,
@@ -714,14 +762,18 @@ perform_lookup(enum, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(sipproxy, Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Look up our default SIP proxy.
-%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
-%%           nomatch
-%%           Dst        = sipurl record()
-%%           NewPstnCtx = pstn_ctx record()
+%% @spec    (sipproxy, Request, PstnCtx) ->
+%%            {ok, {proxy, Dst}, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            Dst        = #sipurl{}
+%%            NewPstnCtx = #pstn_ctx{}
+%%
+%% @doc     Look up our default SIP proxy.
+%% @end
 %%--------------------------------------------------------------------
 perform_lookup(sipproxy, Request, PstnCtx) ->
     case yxa_config:get_env(sipproxy) of
@@ -742,16 +794,20 @@ perform_lookup(sipproxy, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(pstn, Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Look for a PSTN destination based on the user part of the
-%%           Request-URI of our Request. Only works if the user part
-%%           can be turned into an E.164 number.
-%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
-%%           nomatch
-%%           Dst        = sipurl record()
-%%           NewPstnCtx = pstn_ctx record()
+%% @spec    (pstn, Request, PstnCtx) ->
+%%            {ok, {proxy, Dst}, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            Dst        = #sipurl{}
+%%            NewPstnCtx = #pstn_ctx{}
+%%
+%% @doc     Look for a PSTN destination based on the user part of the
+%%          Request-URI of our Request. Only works if the user part
+%%          can be turned into an E.164 number.
+%% @end
 %%--------------------------------------------------------------------
 perform_lookup(pstn, Request, PstnCtx) ->
     User = (Request#request.uri)#sipurl.user,
@@ -767,14 +823,18 @@ perform_lookup(pstn, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(not_e164, Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Look for a PSTN destination for a number that could not
-%%           be resolved into an E.164 number.
-%% Returns : {ok, Res, NewPstnCtx} |
-%%           nomatch
-%%           Res = term()
+%% @spec    (not_e164, Request, PstnCtx) ->
+%%            {ok, Res, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            Res = term()
+%%
+%% @doc     Look for a PSTN destination for a number that could not be
+%%          resolved into an E.164 number.
+%% @end
 %%--------------------------------------------------------------------
 perform_lookup(not_e164, Request, PstnCtx) ->
     User = (Request#request.uri)#sipurl.user,
@@ -794,14 +854,18 @@ perform_lookup(not_e164, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(default_pstngateway, Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Look up our default PSTN gateway.
-%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
-%%           nomatch
-%%           Dst        = sipurl record()
-%%           NewPstnCtx = pstn_ctx record()
+%% @spec    (default_pstngateway, Request, PstnCtx) ->
+%%            {ok, {proxy, Dst}, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            Dst        = #sipurl{}
+%%            NewPstnCtx = #pstn_ctx{}
+%%
+%% @doc     Look up our default PSTN gateway.
+%% @end
 %%--------------------------------------------------------------------
 perform_lookup(default_pstngateway, Request, PstnCtx) ->
     %% Route to default PSTN gateway
@@ -822,14 +886,18 @@ perform_lookup(default_pstngateway, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(local, Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Call a local.erl hook.
-%% Returns : {ok, Action, NewPstnCtx} |
-%%           nomatch
-%%           Action     = atom() | tuple()
-%%           NewPstnCtx = pstn_ctx record()
+%% @spec    (local, Request, PstnCtx) ->
+%%            {ok, Action, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            Action     = atom() | tuple()
+%%            NewPstnCtx = #pstn_ctx{}
+%%
+%% @doc     Call a local.erl hook.
+%% @end
 %%--------------------------------------------------------------------
 perform_lookup(local, Request, PstnCtx) ->
     case local:pstnproxy_lookup_action(Request, PstnCtx) of
@@ -840,16 +908,19 @@ perform_lookup(local, Request, PstnCtx) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: perform_lookup(to_pstngw, Request, PstnCtx)
-%%           Request = request record()
-%%           PstnCtx = pstn_ctx record()
-%% Descrip.: Check if request is addressed directly to one of our
-%%           PSTN gateways, and if we should allow it based solely on
-%%           that.
-%% Returns : {ok, {proxy, Dst}, NewPstnCtx} |
-%%           nomatch
-%%           Dst        = sipurl record()
-%%           NewPstnCtx = pstn_ctx record()
+%% @spec    (to_pstngw, Request, PstnCtx) ->
+%%            {ok, {proxy, Dst}, NewPstnCtx} |
+%%            nomatch
+%%
+%%            Request = #request{}
+%%            PstnCtx = #pstn_ctx{}
+%%
+%%            Dst        = #sipurl{}
+%%            NewPstnCtx = #pstn_ctx{}
+%%
+%% @doc     Check if request is addressed directly to one of our PSTN
+%%          gateways, and if we should allow it based solely on that.
+%% @end
 %%--------------------------------------------------------------------
 perform_lookup(to_pstngw, Request, PstnCtx) ->
     ToHost = (Request#request.uri)#sipurl.host,
@@ -866,14 +937,18 @@ perform_lookup(to_pstngw, Request, PstnCtx) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: authorize_proxying(Request, YxaCtx, PstnCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: Before we proxy a request somewhere, make sure that it
-%%           is not against our policy.
-%% Returns : {ok, Verdict, NewPstnCtx}
-%%           Verdict = true | false
+%% @spec    (Request, YxaCtx, PstnCtx) ->
+%%            {ok, Verdict, NewPstnCtx}
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%%            Verdict = true | false
+%%
+%% @doc     Before we proxy a request somewhere, make sure that it is
+%%          not against our policy.
+%% @end
 %%--------------------------------------------------------------------
 authorize_proxying(Request, YxaCtx, PstnCtx) ->
     case is_tagged(from_gateway, PstnCtx) of
@@ -899,15 +974,19 @@ authorize_proxying(Request, YxaCtx, PstnCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: authorize_user_call_to_pstn(Request, YxaCtx, PstnCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: Part of authorize_proxying/4 - the destination is PSTN
-%%           and we need to make sure the number is permissible for
-%%           the originating user.
-%% Returns : {ok, Verdict, NewPstnCtx}
-%%           Verdict = true | false
+%% @spec    (Request, YxaCtx, PstnCtx) ->
+%%            {ok, Verdict, NewPstnCtx}
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%%            Verdict = true | false
+%%
+%% @doc     Part of authorize_proxying/4 - the destination is PSTN and
+%%          we need to make sure the number is permissible for the
+%%          originating user.
+%% @end
 %%--------------------------------------------------------------------
 authorize_user_call_to_pstn(Request, YxaCtx, PstnCtx) ->
     DstNumber =
@@ -1038,12 +1117,15 @@ check_unauth_request_to_pstn_dst(Request, YxaCtx, PstnCtx) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_localhostname(Hostname)
-%%           Hostname = string()
-%% Descrip.: Check if given hostname matches one of ours, or one of
-%%           our IP addresses.
-%% Returns : true  |
-%%           false
+%% @spec    (Hostname) ->
+%%            true  |
+%%            false
+%%
+%%            Hostname = string()
+%%
+%% @doc     Check if given hostname matches one of ours, or one of our
+%%          IP addresses.
+%% @end
 %%--------------------------------------------------------------------
 is_localhostname(Hostname) ->
     LChost = http_util:to_lower(Hostname),
@@ -1057,12 +1139,15 @@ is_localhostname(Hostname) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_pstngateway(Hostname)
-%%           Hostname = string()
-%% Descrip.: Check if given hostname matches one of our PSTN
-%%           gateways hostnames.
-%% Returns : true  |
-%%           false
+%% @spec    (Hostname) ->
+%%            true  |
+%%            false
+%%
+%%            Hostname = string()
+%%
+%% @doc     Check if given hostname matches one of our PSTN gateways
+%%          hostnames.
+%% @end
 %%--------------------------------------------------------------------
 is_pstngateway(Hostname) ->
     LChost = http_util:to_lower(Hostname),
@@ -1071,17 +1156,21 @@ is_pstngateway(Hostname) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: add_caller_identity(Type, Method, Header, Dst, PstnCtx)
-%%           Type    = sip | pstn
-%%           Method  = string(), SIP method of Request
-%%                               (for easy matching)
-%%           Header  = keylist record()
-%%           Dst     = sipurl record()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: If configured to, add Remote-Party-Id information
-%%           about caller to this request before it is sent to a
-%%           PSTN gateway. Useful to get proper caller-id.
-%% Returns : NewHeader = keylist record()
+%% @spec    (Type, Method, Header, Dst, PstnCtx) ->
+%%            NewHeader
+%%
+%%            Type    = sip | pstn
+%%            Method  = string() "SIP method of Request (for easy matching)"
+%%            Header  = #keylist{}
+%%            Dst     = #sipurl{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%%            NewHeader = #keylist{}
+%%
+%% @doc     If configured to, add Remote-Party-Id information about
+%%          caller to this request before it is sent to a PSTN
+%%          gateway. Useful to get proper caller-id.
+%% @end
 %%--------------------------------------------------------------------
 add_caller_identity(pstn, "INVITE", Header, Dst, PstnCtx) when is_record(Dst, sipurl) ->
     case yxa_config:get_env(remote_party_id) of
@@ -1146,11 +1235,16 @@ add_caller_identity(_Type, _Method, Header, _Dst, _PstnCtx) when is_record(Heade
     Header.
 
 %%--------------------------------------------------------------------
-%% Function: block_remote_party_id(Header)
-%%           Header = keylist record()
-%% Descrip.: Remove any present P-Preferred-Identity header, and add
-%%           an Anonymous Remote-Party-Id.
-%% Returns : NewHeader = keylist record()
+%% @spec    (Header) ->
+%%            NewHeader
+%%
+%%            Header = #keylist{}
+%%
+%%            NewHeader = #keylist{}
+%%
+%% @doc     Remove any present P-Preferred-Identity header, and add an
+%%          Anonymous Remote-Party-Id.
+%% @end
 %%--------------------------------------------------------------------
 block_remote_party_id(Header) ->
     Parameters = [{"party", "calling"}, {"screen", "yes"}, {"privacy", "on"}],
@@ -1161,13 +1255,18 @@ block_remote_party_id(Header) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: restore_sips_proto(OldURL, NewURL)
-%%           OldURL = sipurl()
-%%           NewURL = sipurl()
-%% Descrip.: Whenever we have constructed a brand new URL to use as a
-%%           destination, we can use this function to easily make sure
-%%           we didn't downgrade SIPS to SIP (which RFC3261 forbids).
-%% Returns : URL = sipurl record()
+%% @spec    (OldURL, NewURL) ->
+%%            URL
+%%
+%%            OldURL = sipurl()
+%%            NewURL = sipurl()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Whenever we have constructed a brand new URL to use as a
+%%          destination, we can use this function to easily make sure
+%%          we didn't downgrade SIPS to SIP (which RFC3261 forbids).
+%% @end
 %%--------------------------------------------------------------------
 restore_sips_proto(OldURL, NewURL) when is_record(OldURL, sipurl), is_record(NewURL, sipurl) ->
     case {OldURL#sipurl.proto, NewURL#sipurl.proto} of
@@ -1179,24 +1278,29 @@ restore_sips_proto(OldURL, NewURL) when is_record(OldURL, sipurl), is_record(New
 
 
 %%--------------------------------------------------------------------
-%% Function: is_tagged(Label, PstnCtx)
-%%           Label   = term()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: Check if Label is one of the tags in PstnCtx.
-%% Returns : true | false
+%% @spec    (Label, PstnCtx) -> true | false
+%%
+%%            Label   = term()
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%% @doc     Check if Label is one of the tags in PstnCtx.
+%% @end
 %%--------------------------------------------------------------------
 is_tagged(Label, PstnCtx) when is_atom(Label), is_record(PstnCtx, pstn_ctx) ->
     lists:member(Label, PstnCtx#pstn_ctx.tags).
 
 
 %%--------------------------------------------------------------------
-%% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           Dst     = list() of sipdst record() | route | sipurl record()
-%%           PstnCtx = pstn_ctx record(), context for this request
-%% Descrip.: Start a sippipe unless we are currently unit testing.
-%% Returns : term(), result of local:start_sippipe/4
+%% @spec    (Request, YxaCtx, Dst, AppData) ->
+%%            term() "result of local:start_sippipe/4"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            Dst     = [#sipdst{}] | route | #sipurl{}
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%% @doc     Start a sippipe unless we are currently unit testing.
+%% @end
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case autotest:is_unit_testing(?MODULE, testing_sippipe) of
@@ -1215,9 +1319,11 @@ start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), i
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     UserDb =

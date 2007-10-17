@@ -1,9 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : targetlist.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Targetlist is a module for managing a list of ongoing
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Targetlist is a module for managing a list of ongoing
 %%%           client transactions for sipproxy.
-%%% Created : 28 Jun 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    28 Jun 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(targetlist).
 
@@ -39,9 +41,13 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
-%% Container record to make sure noone tries to modify our records.
+%% @type targetlist() = #targetlist{}.
+%%                      Container record to make sure noone tries to modify our
+%%                      records.
 -record(targetlist, {list}).
 
+%% @type target() = #target{}.
+%%                  no description
 -record(target, {
 	  ref,			%% ref(), unique reference
 	  branch,		%% string(), this clients branch
@@ -64,21 +70,26 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: add(Branch, Request, Pid, State, Timeout, DstList,
-%%               UserInst, TargetList)
-%%           Branch     = string()
-%%           Request    = request record()
-%%           Pid        = pid()
-%%           State      = atom()
-%%           Timeout    = integer()
-%%           DstList    = list() of sipdst record()
-%%           UserInst   = none | {User, Instance}
-%%           TargetList = targetlist record()
-%% Descrip.: Add a new entry to TargetList, after verifying that a
-%%           target with this branch is not already in the list.
-%% Returns : NewTargetList = targetlist record()
+%% @spec    (Branch, Request, Pid, State, Timeout, DstList, UserInst,
+%%          TargetList) ->
+%%            NewTargetList
+%%
+%%            Branch     = string()
+%%            Request    = #request{}
+%%            Pid        = pid()
+%%            State      = atom()
+%%            Timeout    = integer()
+%%            DstList    = [#sipdst{}]
+%%            UserInst   = none | {User, Instance}
+%%            TargetList = #targetlist{}
+%%
+%%            NewTargetList = #targetlist{}
+%%
+%% @doc     Add a new entry to TargetList, after verifying that a
+%%          target with this branch is not already in the list.
+%% @end
 %%--------------------------------------------------------------------
-add(Branch, Request, Pid, State, Timeout, DstList, UserInst, TargetList) 
+add(Branch, Request, Pid, State, Timeout, DstList, UserInst, TargetList)
   when is_list(Branch), is_record(Request, request), is_pid(Pid), is_atom(State), is_integer(Timeout),
        is_list(DstList), is_record(TargetList, targetlist), (is_tuple(UserInst) orelse UserInst == none) ->
     case get_using_branch(Branch, TargetList) of
@@ -100,32 +111,46 @@ add(Branch, Request, Pid, State, Timeout, DstList, UserInst, TargetList)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: empty()
-%% Descrip.: Return empty targetlist record. For initialization.
-%% Returns : TargetList = targetlist record()
+%% @spec    () ->
+%%            TargetList
+%%
+%%            TargetList = #targetlist{}
+%%
+%% @doc     Return empty targetlist record. For initialization.
+%% @end
 %%--------------------------------------------------------------------
 empty() ->
     #targetlist{list = []}.
 
 %%--------------------------------------------------------------------
-%% Function: get_length(TargetList)
-%%           TargetList = targetlist record()
-%% Descrip.: Return length of list encapsulated in the TargetList
-%%           record.
-%% Returns : Length = integer()
+%% @spec    (TargetList) ->
+%%            Length
+%%
+%%            TargetList = #targetlist{}
+%%
+%%            Length = integer()
+%%
+%% @doc     Return length of list encapsulated in the TargetList
+%%          record.
+%% @end
 %%--------------------------------------------------------------------
 get_length(TargetList) when is_record(TargetList, targetlist) ->
     length(TargetList#targetlist.list).
 
 %%--------------------------------------------------------------------
-%% Function: update_target(Target, TargetList)
-%%           Target     = target record()
-%%           TargetList = targetlist record()
-%% Descrip.: Locate the old instance of the target Target in
-%%           the TargetList and exchange it with Target.
-%% Returns : NewTargetList |
-%%           throw({error, update_of_non_existin_target})
-%%           NewTargetList = list() of target record()
+%% @spec    (Target, TargetList) ->
+%%            NewTargetList 
+%%
+%%            Target     = #target{}
+%%            TargetList = #targetlist{}
+%%
+%%            NewTargetList = [#target{}]
+%%
+%% @throws  {error, update_of_non_existin_target} 
+%%
+%% @doc     Locate the old instance of the target Target in the
+%%          TargetList and exchange it with Target.
+%% @end
 %%--------------------------------------------------------------------
 update_target(Target, TargetList) when is_record(Target, target), is_record(TargetList, targetlist) ->
     Ref = Target#target.ref,
@@ -146,11 +171,16 @@ update_target2(Ref, NewT, [H | T], Res) when is_record(H, target) ->
     update_target2(Ref, NewT, T, [H | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: debugfriendly(TargetList)
-%%           TargetList = targetlist record()
-%% Descrip.: Format the entrys in TargetList in a way that is suitable
-%%           for logging using ~p.
-%% Returns : Data = term()
+%% @spec    (TargetList) ->
+%%            Data
+%%
+%%            TargetList = #targetlist{}
+%%
+%%            Data = term()
+%%
+%% @doc     Format the entrys in TargetList in a way that is suitable
+%%          for logging using ~p.
+%% @end
 %%--------------------------------------------------------------------
 debugfriendly(TargetList) when is_record(TargetList, targetlist) ->
     debugfriendly2(TargetList#targetlist.list, []).
@@ -176,11 +206,16 @@ debugfriendly2([H | T], Res) when is_record(H, target) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_using_pid(Pid, TargetList)
-%%           Pid        = pid()
-%%           TargetList = targetlist record()
-%% Descrip.: Get the target with pid matching Pid from TargetList.
-%% Returns : Target = target record() | none
+%% @spec    (Pid, TargetList) ->
+%%            Target
+%%
+%%            Pid        = pid()
+%%            TargetList = #targetlist{}
+%%
+%%            Target = #target{} | none
+%%
+%% @doc     Get the target with pid matching Pid from TargetList.
+%% @end
 %%--------------------------------------------------------------------
 get_using_pid(Pid, TargetList) when is_pid(Pid), is_record(TargetList, targetlist) ->
     get_using_pid2(Pid, TargetList#targetlist.list).
@@ -194,11 +229,16 @@ get_using_pid2(Pid, [H | T]) when is_record(H, target) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_using_branch(Branch, TargetList)
-%%           Branch     = string()
-%%           TargetList = targetlist record()
-%% Descrip.: Get the target with branch matching Branch.
-%% Returns : Target = target record() | none
+%% @spec    (Branch, TargetList) ->
+%%            Target
+%%
+%%            Branch     = string()
+%%            TargetList = #targetlist{}
+%%
+%%            Target = #target{} | none
+%%
+%% @doc     Get the target with branch matching Branch.
+%% @end
 %%--------------------------------------------------------------------
 get_using_branch(Branch, TargetList) when is_list(Branch), is_record(TargetList, targetlist) ->
     get_using_branch2(Branch, TargetList#targetlist.list).
@@ -212,11 +252,16 @@ get_using_branch2(Branch, [H | T]) when is_record(H, target) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_targets_in_state(State, TargetList)
-%%           State      = term()
-%%           TargetList = targetlist record()
-%% Descrip.: Get all targets with state matching State.
-%% Returns : TargetList = list() of target record()
+%% @spec    (State, TargetList) ->
+%%            TargetList
+%%
+%%            State      = term()
+%%            TargetList = #targetlist{}
+%%
+%%            TargetList = [#target{}]
+%%
+%% @doc     Get all targets with state matching State.
+%% @end
 %%--------------------------------------------------------------------
 get_targets_in_state(State, TargetList) when is_record(TargetList, targetlist) ->
     get_targets_in_state2(State, TargetList#targetlist.list, []).
@@ -230,13 +275,17 @@ get_targets_in_state2(State, [H | T], Res) when is_record(H, target) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_repsonses(TargetList)
-%%           TargetList = targetlist record()
-%% Descrip.: Get all responses that has been set (i.e. not undefined).
-%% Returns : list() of Response
-%%           Response = sp_response record() | {Status, Reason}
-%%           Status   = integer(), SIP status code
-%%           Reason   = string(), SIP reason phrase
+%% @spec    (TargetList) ->
+%%            [Response]
+%%
+%%            TargetList = #targetlist{}
+%%
+%%            Response = #sp_response{} | {Status, Reason}
+%%            Status   = integer() "SIP status code"
+%%            Reason   = string() "SIP reason phrase"
+%%
+%% @doc     Get all responses that has been set (i.e. not undefined).
+%% @end
 %%--------------------------------------------------------------------
 get_responses(TargetList) when is_record(TargetList, targetlist) ->
     get_responses2(TargetList#targetlist.list, []).
@@ -251,12 +300,21 @@ get_responses2([#target{endresult = none} | T], Res) ->
     get_responses2(T, Res).
 
 %%--------------------------------------------------------------------
-%% Function: extract(Keys, Target)
-%%           Keys   = [pid | branch | request | state | timeout | dstlist | endresult | cancelled]
-%%           Target = target record()
-%% Descrip.: Extract one or more values from a target record. Return
-%%           the values in a list of the same order as Keys.
-%% Returns : list() of term()
+%% @spec    (Keys, Target) -> [term()]
+%%
+%%            Keys   = [pid       |
+%%                     branch     |
+%%                     request    |
+%%                     state      |
+%%                     timeout    |
+%%                     dstlist    |
+%%                     endresult  |
+%%                     cancelled]
+%%            Target = #target{}
+%%
+%% @doc     Extract one or more values from a target record. Return
+%%          the values in a list of the same order as Keys.
+%% @end
 %%--------------------------------------------------------------------
 extract(Values, Target) when is_record(Target, target) ->
     extract(Values, Target, []).
@@ -273,51 +331,76 @@ extract([user_instance | T],	#target{user_instance = Value} = Ta,	Res) ->	extrac
 extract([],			#target{},				Res) -> lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% Function: set_pid(Target, Value)
-%%           Target = target record()
-%%           Value  = pid()
-%% Descrip.: Update an element in a target.
-%% Returns : NewTarget = target record()
+%% @spec    (Target, Value) ->
+%%            NewTarget
+%%
+%%            Target = #target{}
+%%            Value  = pid()
+%%
+%%            NewTarget = #target{}
+%%
+%% @doc     Update an element in a target.
+%% @end
 %%--------------------------------------------------------------------
 set_pid(Target, Value) when is_record(Target, target), is_pid(Value) ->
     Target#target{pid = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: set_state(Target, Value)
-%%           Target = target record()
-%%           Value  = atom()
-%% Descrip.: Update an element in a target.
-%% Returns : NewTarget = target record()
+%% @spec    (Target, Value) ->
+%%            NewTarget
+%%
+%%            Target = #target{}
+%%            Value  = atom()
+%%
+%%            NewTarget = #target{}
+%%
+%% @doc     Update an element in a target.
+%% @end
 %%--------------------------------------------------------------------
 set_state(Target, Value) when is_record(Target, target), is_atom(Value) ->
     Target#target{state = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: set_endresult(Target, Value)
-%%           Target = target record()
-%%           Value  = sp_response record()
-%% Descrip.: Update an element in a target.
-%% Returns : NewTarget = target record()
+%% @spec    (Target, Value) ->
+%%            NewTarget
+%%
+%%            Target = #target{}
+%%            Value  = #sp_response{}
+%%
+%%            NewTarget = #target{}
+%%
+%% @doc     Update an element in a target.
+%% @end
 %%--------------------------------------------------------------------
 set_endresult(Target, Value) when is_record(Target, target), is_record(Value, sp_response) ->
     Target#target{endresult = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: set_dstlist(Target, Value)
-%%           Target = target record()
-%%           Value  = list() of term()
-%% Descrip.: Update an element in a target.
-%% Returns : NewTarget = target record()
+%% @spec    (Target, Value) ->
+%%            NewTarget
+%%
+%%            Target = #target{}
+%%            Value  = [term()]
+%%
+%%            NewTarget = #target{}
+%%
+%% @doc     Update an element in a target.
+%% @end
 %%--------------------------------------------------------------------
 set_dstlist(Target, Value) when is_record(Target, target), is_list(Value) ->
     Target#target{dstlist = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: set_cancelled(Target, Value)
-%%           Target = target record()
-%%           Value  = true | false
-%% Descrip.: Update an element in a target.
-%% Returns : NewTarget = target record()
+%% @spec    (Target, Value) ->
+%%            NewTarget
+%%
+%%            Target = #target{}
+%%            Value  = true | false
+%%
+%%            NewTarget = #target{}
+%%
+%% @doc     Update an element in a target.
+%% @end
 %%--------------------------------------------------------------------
 set_cancelled(Target, Value) when is_record(Target, target), is_boolean(Value) ->
     Target#target{cancelled = Value}.
@@ -334,9 +417,11 @@ set_cancelled(Target, Value) when is_record(Target, target), is_boolean(Value) -
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% test empty/0
@@ -354,7 +439,7 @@ test() ->
     autotest:mark(?LINE, "add/7 - 1"),
     %% just add an element
     List1 = add("branch1", AddReq, self(), trying, 4711, [123], {"user", "instance"}, EmptyList),
-    
+
     autotest:mark(?LINE, "add/7 - 2"),
     %% test that we can't add another element with the same branch
     List1 = add("branch1", AddReq, self(), calling, 123, [234], none, List1),
@@ -370,7 +455,7 @@ test() ->
     autotest:mark(?LINE, "add/7 - 5"),
     %% another element
     List4 = add("branch4", AddReq, self(), trying, 345, [456], {"user2", "instance2"}, List3),
-    
+
 
     %% test length/1
     %%--------------------------------------------------------------------
@@ -421,11 +506,11 @@ test() ->
 
     autotest:mark(?LINE, "get_targets_in_state/2 - 2"),
     [#target{branch="branch1"}, #target{branch="branch4"}] = get_targets_in_state(trying, List4),
-    
+
     autotest:mark(?LINE, "get_targets_in_state/2 - 3"),
     [] = get_targets_in_state(none, List4),
 
-    
+
     %% test debugfriendly/1
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "debugfriendly/1 - 1"),
@@ -447,7 +532,7 @@ test() ->
     Target1Response = #sp_response{status=404, reason="Not Found"},
     UpdatedTarget1 = set_endresult(Target1, Target1Response),
     UpdatedList1 = update_target(UpdatedTarget1, List4),
-    
+
     autotest:mark(?LINE, "update_target/2 - 2.2"),
     %% verify that target was updated
     UpdatedTarget1 = get_using_branch("branch1", UpdatedList1),

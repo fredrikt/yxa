@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : interpret_cpl_test.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: Test cases for interpret_cpl.
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      Test cases for interpret_cpl.
 %%%
 %%% This module tests interpret_cpl.erl but also a substantial part of
 %%% interpret_backend.erl, as test_backend.erl mostly sends its calls
@@ -9,7 +9,9 @@
 %%% functions (mainly test_proxy_destinations(...)) which manipulate
 %%% the state in YXA.
 %%%
-%%% Created : 21 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    21 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
+%%% @hidden
 %%%-------------------------------------------------------------------
 -module(interpret_cpl_test).
 
@@ -60,9 +62,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     autotest:mark(?LINE, "interpret_cpl_test init - 0"),
@@ -1191,8 +1195,7 @@ test12() ->
 
 
 %% test <time-switch> and <lookup>
-%% RFC 3880 - Figure 25 - removed tzid and tzurl attribute
-%%                        as they are currently unsupported.
+%% RFC 3880 - Figure 25 - removed tzid and tzurl attribute as they are currently unsupported.
 %% replaced <proxy> with <reject> to simplify result checking
 test13() ->
     %% create cpl graph
@@ -2352,7 +2355,7 @@ test28b() ->
     LSa = lists:sort([URL28, URL29]),
     LSb = lists:sort(Locs),
     LSa = LSb.
-    
+
 
 
 %% test "proxy" tag - ordering="sequential"

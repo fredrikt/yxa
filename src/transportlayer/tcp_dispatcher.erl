@@ -1,10 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : tcp_dispatcher.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: TCP dispatcher initially does gen_tcp:listen() and
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      TCP dispatcher initially does gen_tcp:listen() and
 %%%           then keeps track of all existing TCP connections.
 %%%
-%%% Created : 12 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    12 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(tcp_dispatcher).
 
@@ -45,6 +47,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  socketlist	%% socketlist record(), our list of ongoing
 	                %% TCP (or TLS) connections, plus our listener
@@ -64,17 +68,22 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the server
+%% @spec    () -> term()
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, tcp_dispatcher}, ?MODULE, [], []).
 
 %%--------------------------------------------------------------------
-%% Function: get_socketlist()
-%% Descrip.: Get the complete list of sockets from the tcp_dispatcher.
-%% Returns : {ok, SocketList}
-%%           SocketList = socketlist record()
+%% @spec    () ->
+%%            {ok, SocketList}
+%%
+%%            SocketList = #socketlist{}
+%%
+%% @doc     Get the complete list of sockets from the tcp_dispatcher.
+%% @end
 %%--------------------------------------------------------------------
 get_socketlist() ->
     gen_server:call(tcp_dispatcher, {get_socketlist}).
@@ -84,12 +93,15 @@ get_socketlist() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([])
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ([]) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([]) ->
     %% This is a system process that traps EXIT signals from TCP/TLS connection handlers
@@ -100,13 +112,14 @@ init([]) ->
     {ok, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: get_listenerspecs()
-%% Descrip.: Get an OTP supservisor child specification for all TCP
-%%           listeners.
-%% Returns : SupSpec
-%%           SupSpec = term(), OTP supervisor child specification.
-%%                     Extra processes this application want the
-%%                     sipserver_sup to start and maintain.
+%% @spec    () ->
+%%            SupSpec
+%%
+%%            SupSpec = term() "OTP supervisor child specification. Extra processes this application want the sipserver_sup to start and maintain."
+%%
+%% @doc     Get an OTP supservisor child specification for all TCP
+%%          listeners.
+%% @end
 %%--------------------------------------------------------------------
 get_listenerspecs() ->
     Port = sipsocket:get_listenport(tcp),
@@ -147,16 +160,18 @@ get_listenerspecs() ->
     format_listener_specs(Listeners).
 
 %%--------------------------------------------------------------------
-%% Function: format_listener_specs(L)
-%%           L     = list() of {Proto, Port}
-%%           Proto = atom()
-%%           Port  = integer()
-%% Descrip.: Format a OTP supservisor child specification for each
-%%           entry in L.
-%% Returns : SupSpec
-%%           SupSpec = term(), OTP supervisor child specification.
-%%                     Extra processes this application want the
-%%                     sipserver_sup to start and maintain.
+%% @spec    (L) ->
+%%            SupSpec
+%%
+%%            L     = [{Proto, Port}]
+%%            Proto = atom()
+%%            Port  = integer()
+%%
+%%            SupSpec = term() "OTP supervisor child specification. Extra processes this application want the sipserver_sup to start and maintain."
+%%
+%% @doc     Format a OTP supservisor child specification for each
+%%          entry in L.
+%% @end
 %%--------------------------------------------------------------------
 format_listener_specs(L) ->
     format_listener_specs(L, []).
@@ -185,35 +200,45 @@ format_listener_specs([{Proto, IP, Port} | T], Res)
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_socket, Dst}, From, State)
-%%           Dst = sipdst record()
-%% Descrip.: Look for a cached connection to the destination in Dst.
-%%           If one is found, return {reply, ...} with it. If we are
-%%           already trying to connect to this destination, queue this
-%%           requestor with the existing tcp_connection process. Else,
-%%           start a tcp_connection process that tries to connect to
-%%           the Proto:Host:Port and will do gen_server:reply(...)
-%%           when it either succeeds or fails. We must do it this way
-%%           since we can't block the tcp_dispatcher process. There is
-%%           a race here where we might end up having more than one
-%%           connection to Proto:Host:Port at the same time, but that
-%%           should be OK.
-%% Returns : {reply, Reply, NewState, ?TIMEOUT} |
-%%           {noreply, NewState, ?TIMEOUT}
-%%           Reply = {ok, SipSocket} | {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    ({get_socket, Dst}, From, State) ->
+%%            {reply, Reply, NewState, Timeout::integer()} |
+%%            {noreply, NewState, Timeout::integer()}
+%%
+%%            Dst = #sipdst{}
+%%
+%%            Reply     = {ok, SipSocket} | {error, Reason}
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Look for a cached connection to the destination in Dst. If
+%%          one is found, return {reply, ...} with it. If we are
+%%          already trying to connect to this destination, queue this
+%%          requestor with the existing tcp_connection process. Else,
+%%          start a tcp_connection process that tries to connect to
+%%          the Proto:Host:Port and will do gen_server:reply(...)
+%%          when it either succeeds or fails. We must do it this way
+%%          since we can't block the tcp_dispatcher process. There is
+%%          a race here where we might end up having more than one
+%%          connection to Proto:Host:Port at the same time, but that
+%%          should be OK.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
     case get_socket_from_list(Dst, State#state.socketlist) of
@@ -241,15 +266,20 @@ handle_call({get_socket, Dst}, From, State) when is_record(Dst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_specific_socket, Id}, From, State)
-%%           Id = ob_id record()
-%% Descrip.: Return a specific socket. Used by draft-Outbound implem-
-%%           entation to send requests using an existing flow, or not
-%%           at all.
-%% Returns : {ok, SipSocket} |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    ({get_specific_socket, Id}, From, State) ->
+%%            {ok, SipSocket} |
+%%            {error, Reason}
+%%
+%%            Id = #ob_id{}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Return a specific socket. Used by draft-Outbound implem-
+%%          entation to send requests using an existing flow, or not
+%%          at all.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_specific_socket, Id}, _From, State) when is_record(Id, ob_id) ->
     case get_specific_socket_from_list(Id, State#state.socketlist) of
@@ -263,18 +293,20 @@ handle_call({get_specific_socket, Id}, _From, State) when is_record(Id, ob_id) -
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({register_sipsocket, Type, SipSocket}, From,
-%%                       State)
-%%           Type = in | out | listener, Direction (or, who initiated
-%%                                                  the socket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: Add a socket to our list. Called by tcp_connection
-%%           handlers when they have established a connection (inbound
-%%           or outbound).
-%% Returns : {reply, Reply, NewState, ?TIMEOUT}
-%%           Reply = ok              |
-%%                   {error, Reason}
-%%           Reason = string()
+%% @spec    ({register_sipsocket, Type, SipSocket}, From, State) ->
+%%            {reply, Reply, NewState, Timeout::integer()}
+%%
+%%            Type      = in | out | listener "Direction (or, who initiated the socket)"
+%%            SipSocket = #sipsocket{}
+%%
+%%            Reply  = ok              | {error, Reason}
+%%            Reason = string()
+%%
+%% @doc     Add a socket to our list. Called by tcp_connection
+%%          handlers when they have established a connection (inbound
+%%          or outbound).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Type), is_record(SipSocket, sipsocket) ->
     CPid = SipSocket#sipsocket.pid,
@@ -295,10 +327,14 @@ handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Ty
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_socketlist}, From, State)
-%% Descrip.: The stack monitor is requesting our list of connections.
-%% Returns : {reply, {ok, List} State, ?TIMEOUT}
-%%           List = socketlist record()
+%% @spec    ({get_socketlist}, From, State) ->
+%%            {reply, {ok, List} State, Timeout::integer()}
+%%
+%%            List = #socketlist{}
+%%
+%% @doc     The stack monitor is requesting our list of connections.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_socketlist}, _From, State) ->
     {reply, {ok, State#state.socketlist}, State, ?TIMEOUT};
@@ -312,17 +348,24 @@ handle_call(Msg, _From, State) ->
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "TCP dispatcher: Received unknown gen_server cast : ~p", [Unknown]),
@@ -330,20 +373,29 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Wake up and delete expired sockets from our list.
-%% Returns : {reply, Reply, NewState, ?TIMEOUT} |
-%%           Reply = ok | {error, Reason}
-%%           Reason    = string()
+%% @spec    (timeout, State) ->
+%%            {reply, Reply, NewState, Timeout::integer()} 
+%%
+%%            Reply  = ok | {error, Reason}
+%%            Reason = string()
+%%
+%% @doc     Wake up and delete expired sockets from our list.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     %% XXX not sure we actually ever add sockets with an expire time set
@@ -351,13 +403,17 @@ handle_info(timeout, State) ->
     {noreply, State#state{socketlist=SocketList1}, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({'EXIT', Pid, Reason}, State)
-%%           Pid    = pid()
-%%           Reason = normal | term()
-%% Descrip.: Trap exit signals from socket handlers and act on them.
-%%           Log if they exit with an error, and remove them from our
-%%           list of existing sockets.
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    ({'EXIT', Pid, Reason}, State) ->
+%%            {noreply, NewState, Timeout::integer()}
+%%
+%%            Pid    = pid()
+%%            Reason = normal | term()
+%%
+%% @doc     Trap exit signals from socket handlers and act on them.
+%%          Log if they exit with an error, and remove them from our
+%%          list of existing sockets.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
@@ -410,9 +466,11 @@ handle_info(Unknown, State) ->
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
@@ -423,9 +481,11 @@ terminate(Reason, _State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -435,13 +495,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: get_socket_from_list(Dst, SocketList)
-%%           Dst        = sipdst record()
-%%           SocketList = socketlist record()
-%% Descrip.: Look for an entry matching Dst in SocketList
-%% Returns : SipSocket |
-%%           none
-%%           SipSocket = sipsocket record()
+%% @spec    (Dst, SocketList) ->
+%%            SipSocket |
+%%            none
+%%
+%%            Dst        = #sipdst{}
+%%            SocketList = #socketlist{}
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%% @doc     Look for an entry matching Dst in SocketList
+%% @end
 %%--------------------------------------------------------------------
 get_socket_from_list(#sipdst{proto = Proto} = Dst, SocketList) when Proto == tcp; Proto == tcp6;
 								    Proto == tls; Proto == tls6 ->

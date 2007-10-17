@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : incomingproxy.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Server handling registrar functions and routing of SIP-
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Server handling registrar functions and routing of SIP-
 %%%           requests/responses. See the README file for more
 %%            information.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(incomingproxy).
 
@@ -36,9 +37,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA applications must export an init/0 function.
-%% Returns : yxa_app_init record()
+%% @spec    () -> #yxa_app_init{}
+%%
+%% @doc     YXA applications must export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     Registrar = {registrar, {registrar, start_link, []}, permanent, 2000, worker, [registrar]},
@@ -48,11 +51,14 @@ init() ->
 		 }.
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: YXA applications must export a request/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Request, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a request/2 function.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% ACK
@@ -123,11 +129,14 @@ request2(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yx
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, YxaCtx)
-%%           Request = response record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: YXA applications must export an response/3 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Response, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #response{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export an response/3 function.
+%% @end
 %%--------------------------------------------------------------------
 response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
@@ -137,10 +146,14 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Mode)
-%%           Mode = shutdown | graceful | atom()
-%% Descrip.: YXA applications must export a terminate/1 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Mode) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Mode = shutdown | graceful | atom()
+%%
+%% @doc     YXA applications must export a terminate/1 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Mode) when is_atom(Mode) ->
     ok.
@@ -151,14 +164,16 @@ terminate(Mode) when is_atom(Mode) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: verify_homedomain_user(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: If a request has a From: matching our homedomains,
-%%           this function is called to make sure the user really
-%%           is who it says it is, and not someone else forging
-%%           our users identity.
-%% Returns : true | false | drop
+%% @spec    (Request, YxaCtx) -> true | false | drop
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     If a request has a From: matching our homedomains, this
+%%          function is called to make sure the user really is who it
+%%          says it is, and not someone else forging our users
+%%          identity.
+%% @end
 %%--------------------------------------------------------------------
 verify_homedomain_user(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case yxa_config:get_env(always_verify_homedomain_user) of
@@ -220,13 +235,15 @@ verify_homedomain_user2(Request, YxaCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_request(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: Calls route_request() to determine what to do with a
-%%           request, and then takes whatever action we are
-%%           supposed to.
-%% Returns : term(), Does not matter
+%% @spec    (Request, YxaCtx) -> term() "Does not matter"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     Calls route_request() to determine what to do with a
+%%          request, and then takes whatever action we are supposed
+%%          to.
+%% @end
 %%--------------------------------------------------------------------
 do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     #yxa_ctx{origin     = Origin,
@@ -291,22 +308,25 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
     end.
 
 %%--------------------------------------------------------------------
-%% Function: route_request(Request, Origin, LogTag)
-%%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogTag  = string()
-%% Descrip.: Check if a request is destined for this proxy, a local
-%%           domain or a remote domain. In case of a local domain,
-%%           we call request_to_homedomain(), and in case of a
-%%           remote domain we call request_to_remote(). If these
-%%           functions return 'nomatch' we call lookupdefault().
-%% Returns : {error, Status}            |
-%%           {response, Status, Reason} |
-%%           {proxy, Location}          |
-%%           {relay, Location}          |
-%%           {forward, Location}        |
-%%           to_this_proxy              |
-%%           none
+%% @spec    (Request, Origin, LogTag) ->
+%%            {error, Status}            |
+%%            {response, Status, Reason} |
+%%            {proxy, Location}          |
+%%            {relay, Location}          |
+%%            {forward, Location}        |
+%%            to_this_proxy              |
+%%            none
+%%
+%%            Request = #request{}
+%%            Origin  = #siporigin{}
+%%            LogTag  = string()
+%%
+%% @doc     Check if a request is destined for this proxy, a local
+%%          domain or a remote domain. In case of a local domain, we
+%%          call request_to_homedomain(), and in case of a remote
+%%          domain we call request_to_remote(). If these functions
+%%          return 'nomatch' we call lookupdefault().
+%% @end
 %%--------------------------------------------------------------------
 route_request(Request, Origin, LogTag) when is_record(Request, request), is_list(LogTag) ->
     URL = Request#request.uri,
@@ -355,18 +375,21 @@ route_request(Request, Origin, LogTag) when is_record(Request, request), is_list
     end.
 
 %%--------------------------------------------------------------------
-%% Function: request_to_homedomain(Request, Origin, LogTag)
-%%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogTag  = string()
-%% Descrip.: Find out where to route this request which is for one
-%%           of our homedomains.
-%% Returns : {error, Status}              |
-%%           {response, Status, Reason}   |
-%%           {proxy, Location}            |
-%%           {relay, Location}            |
-%%           {forward, Location} |
-%%           none
+%% @spec    (Request, Origin, LogTag) ->
+%%            {error, Status}              |
+%%            {response, Status, Reason}   |
+%%            {proxy, Location}            |
+%%            {relay, Location}            |
+%%            {forward, Location} |
+%%            none
+%%
+%%            Request = #request{}
+%%            Origin  = #siporigin{}
+%%            LogTag  = string()
+%%
+%% @doc     Find out where to route this request which is for one of
+%%          our homedomains.
+%% @end
 %%--------------------------------------------------------------------
 request_to_homedomain(Request, Origin, LogTag) when is_record(Request, request), is_record(Origin, siporigin),
 						    is_list(LogTag) ->
@@ -437,23 +460,25 @@ request_to_homedomain_log_result(URLstr, Res) ->
     logger:log(debug, "Routing: lookupuser on ~p -> ~p", [URLstr, Res]).
 
 %%--------------------------------------------------------------------
-%% Function: request_to_homedomain_not_sipuser(Request, Origin,
-%%                                             LogTag, Recursing)
-%%           Request   = request record()
-%%           Origin    = siporigin record()
-%%           LogTag    = string()
-%%           Recursing = init | loop, have we recursed already?
-%% Descrip.: Second part of request_to_homedomain/1. The request
-%%           is not for one of our SIP-users, call
-%%           local:lookup_homedomain_request() and if that does not
-%%           result in something usefull then see if this is something
-%%           we can interpret as a phone number.
-%% Returns : {error, Status}            |
-%%           {response, Status, Reason} |
-%%           {proxy, Location}          |
-%%           {relay, Location}          |
-%%           {forward, Location}        |
-%%           none
+%% @spec    (Request, Origin, LogTag, Recursing) ->
+%%            {error, Status}            |
+%%            {response, Status, Reason} |
+%%            {proxy, Location}          |
+%%            {relay, Location}          |
+%%            {forward, Location}        |
+%%            none
+%%
+%%            Request   = #request{}
+%%            Origin    = #siporigin{}
+%%            LogTag    = string()
+%%            Recursing = init | loop "have we recursed already?"
+%%
+%% @doc     Second part of request_to_homedomain/1. The request is not
+%%          for one of our SIP-users, call
+%%          local:lookup_homedomain_request() and if that does not
+%%          result in something usefull then see if this is something
+%%          we can interpret as a phone number.
+%% @end
 %%--------------------------------------------------------------------
 request_to_homedomain_not_sipuser(_Request, _Origin, _LogTag, loop) ->
     none;
@@ -485,17 +510,20 @@ request_to_homedomain_not_sipuser(Request, Origin, LogTag, init)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: request_to_remote(Request, Origin)
-%%           Request   = request record()
-%%           Origin    = siporigin record()
-%% Descrip.: Find out where to route this request which is for a
-%%           remote domain.
-%% Returns : {error, Status}            |
-%%           {response, Status, Reason} |
-%%           {proxy, Location}          |
-%%           {relay, Location}          |
-%%           {forward, Location}        |
-%%           none
+%% @spec    (Request, Origin) ->
+%%            {error, Status}            |
+%%            {response, Status, Reason} |
+%%            {proxy, Location}          |
+%%            {relay, Location}          |
+%%            {forward, Location}        |
+%%            none
+%%
+%%            Request = #request{}
+%%            Origin  = #siporigin{}
+%%
+%% @doc     Find out where to route this request which is for a remote
+%%          domain.
+%% @end
 %%--------------------------------------------------------------------
 request_to_remote(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     URL = Request#request.uri,
@@ -517,15 +545,17 @@ request_to_remote(Request, Origin) when is_record(Request, request), is_record(O
     end.
 
 %%--------------------------------------------------------------------
-%% Function: forward_request(Request, YxaCtx, FwdURL)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           FwdURL   = sipurl record()
-%% Descrip.: Forward a request somewhere without authentication. This
-%%           function is used when forwarding requests to another
-%%           proxy that should handle it instead of us. It preserves
-%%           the Request-URI.
-%% Returns : term(), Does not matter
+%% @spec    (Request, YxaCtx, FwdURL) -> term() "Does not matter"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            FwdURL  = #sipurl{}
+%%
+%% @doc     Forward a request somewhere without authentication. This
+%%          function is used when forwarding requests to another
+%%          proxy that should handle it instead of us. It preserves
+%%          the Request-URI.
+%% @end
 %%--------------------------------------------------------------------
 forward_request(Request, YxaCtx, FwdURL) ->
     THandler = YxaCtx#yxa_ctx.thandler,
@@ -546,27 +576,31 @@ forward_request(Request, YxaCtx, FwdURL) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: proxy_request(Request, YxaCtx, Dst)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipdst record() | sipurl record() | route | list() of sipdst record()
-%% Descrip.: Proxy a request somewhere without authentication.
-%% Returns : term(), Does not matter
+%% @spec    (Request, YxaCtx, Dst) -> term() "Does not matter"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            Dst     = #sipdst{} | #sipurl{} | route | [#sipdst{}]
+%%
+%% @doc     Proxy a request somewhere without authentication.
+%% @end
 %%--------------------------------------------------------------------
 proxy_request(Request, YxaCtx, Dst) when is_record(Request, request) ->
     start_sippipe(Request, YxaCtx, Dst, []).
 
 %%--------------------------------------------------------------------
-%% Function: relay_request(Request, YxaCtx, Dst)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipdst record() | sipurl record() | route | list() of sipdst record()
-%% Descrip.: Relay request to remote host. If there is not valid
-%%           credentials present in the request, challenge user
-%%           unless local policy says not to. Never challenge
-%%           CANCEL or BYE since they can't be resubmitted and
-%%           therefor cannot be challenged.
-%% Returns : term(), Does not matter
+%% @spec    (Request, YxaCtx, Dst) -> term() "Does not matter"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            Dst     = #sipdst{} | #sipurl{} | route | [#sipdst{}]
+%%
+%% @doc     Relay request to remote host. If there is not valid
+%%          credentials present in the request, challenge user unless
+%%          local policy says not to. Never challenge CANCEL or BYE
+%%          since they can't be resubmitted and therefor cannot be
+%%          challenged.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -625,14 +659,16 @@ relay_dst2str(_) ->
     "unknown dst".
 
 %%--------------------------------------------------------------------
-%% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           Dst     = list() of sipdst record() | route | sipurl record()
-%%           AppData = term(), data from this application passed to
-%%                     local:start_sippipe/4.
-%% Descrip.: Start a sippipe unless we are currently unit testing.
-%% Returns : term(), result of local:start_sippipe/4
+%% @spec    (Request, YxaCtx, Dst, AppData) ->
+%%            term() "result of local:start_sippipe/4"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            Dst     = [#sipdst{}] | route | #sipurl{}
+%%            AppData = term() "data from this application passed to local:start_sippipe/4."
+%%
+%% @doc     Start a sippipe unless we are currently unit testing.
+%% @end
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get({?MODULE, testing_sippipe}) of
@@ -651,9 +687,11 @@ start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), i
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     ok = incomingproxy_test:test(),

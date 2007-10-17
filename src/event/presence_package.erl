@@ -1,12 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : presence_package.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: A very basic RFC3856 (SIP Presence) implementation.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      A very basic RFC3856 (SIP Presence) implementation.
 %%%
 %%%           PUBLISH is described in RFC3903 (SIP Event State
 %%%           Publication).
 %%%
-%%% Created : 27 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    27 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(presence_package).
 
@@ -48,29 +49,33 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA event packages must export an init/0 function.
-%% Returns : none | {append, SupSpec}
-%%           SupSpec = term(), OTP supervisor child specification.
-%%                     Extra processes this event package want the
-%%                     sipserver_sup to start and maintain.
+%% @spec    () ->
+%%            none | {append, SupSpec}
+%%
+%%            SupSpec = term() "OTP supervisor child specification. Extra processes this event package want the sipserver_sup to start and maintain."
+%%
+%% @doc     YXA event packages must export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     ok = presence_pidf:init(),
     none.
 
 %%--------------------------------------------------------------------
-%% Function: request(PkgS::event_pkg(), Request, YxaCtx, Ctx)
-%%           Request  = request record(), the SUBSCRIBE request
-%%           YxaCtx   = yxa_ctx record()
-%%           LogTag   = string(), log prefix
-%%           THandler = term(), server transaction handler
-%%           Ctx      = event_ctx record(), context information for
-%%                      request.
-%% Descrip.: YXA event packages must export a request/6 function.
-%%           See the eventserver.erl module description for more
-%%           information about when this function is invoked.
-%% Returns : void(), but return 'ok' or {error, Reason} for now
+%% @spec    (PkgS::event_pkg(), Request, YxaCtx, Ctx) ->
+%%            void() "but return 'ok' or {error, Reason} for now"
+%%
+%%            Request  = #request{} "the SUBSCRIBE request"
+%%            YxaCtx   = #yxa_ctx{}
+%%            LogTag   = string() "log prefix"
+%%            THandler = term() "server transaction handler"
+%%            Ctx      = #event_ctx{} "context information for request."
+%%
+%% @doc     YXA event packages must export a request/6 function. See
+%%          the eventserver.erl module description for more
+%%          information about when this function is invoked.
+%% @end
 %%--------------------------------------------------------------------
 request("presence", _Request, YxaCtx, #event_ctx{sipuser = undefined}) ->
     logger:log(debug, "~s: presence event package: Requesting authorization (only local users allowed)",
@@ -229,35 +234,36 @@ request("presence", _Request, YxaCtx, _Ctx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_allowed_subscribe(PkgS::event_pkg(), Num, Request, YxaCtx,
-%%                                SIPuser, Presentity, PkgState)
-%%           Num      = integer(), the number of subscribes we have
-%%                      received on this dialog, starts at 1
-%%           Request  = request record(), the SUBSCRIBE request
-%%           YxaCtx   = yxa_ctx record()
-%%           SIPuser  = undefined | string(), undefined if request
-%%                      originator is not not authenticated, and
-%%                      string() if the user is authenticated (empty
-%%                      string if user could not be authenticated)
-%%           Presentity = undefined | {user, User} | {address, Address}
-%%           PkgState = undefined | my_state record()
-%% Descrip.: YXA event packages must export an is_allowed_subscribe/6
-%%           function. This function is called when the event server
-%%           receives a subscription request for this event package,
-%%           and is the event packages chance to decide wether the
-%%           subscription should be accepted or not. It is also called
-%%           for every time the subscription is refreshed by the
-%%           subscriber.
-%% Returns : {error, need_auth} |
-%%           {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState}  |
-%%           {siperror, Status, Reason, ExtraHeaders}
-%%           SubState     = active | pending
-%%           Status       = integer(), SIP status code to respond with
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, ValueList}, headers to
-%%                          include in the response to the SUBSCRIBE,
-%%           Body         = binary() | list()
-%%           PkgState     = my_state record()
+%% @spec    (PkgS::event_pkg(), Num, Request, YxaCtx, SIPuser,
+%%          Presentity, PkgState) ->
+%%            {error, need_auth} |
+%%            {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState}  |
+%%            {siperror, Status, Reason, ExtraHeaders}
+%%
+%%            Num        = integer() "the number of subscribes we have received on this dialog, starts at 1"
+%%            Request    = #request{} "the SUBSCRIBE request"
+%%            YxaCtx     = #yxa_ctx{}
+%%            SIPuser    = undefined | string() "undefined if request originator is not not authenticated, and string() if the user is authenticated (empty string if user could not be authenticated)"
+%%            Presentity = undefined          |
+%%                         {user, User}       |
+%%                         {address, Address}
+%%            PkgState   = undefined | #my_state{}
+%%
+%%            SubState     = active | pending
+%%            Status       = integer() "SIP status code to respond with"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = [{Key, ValueList}] "headers to include in the response to the SUBSCRIBE,"
+%%            Body         = binary() | list()
+%%            PkgState     = #my_state{}
+%%
+%% @doc     YXA event packages must export an is_allowed_subscribe/6
+%%          function. This function is called when the event server
+%%          receives a subscription request for this event package,
+%%          and is the event packages chance to decide wether the
+%%          subscription should be accepted or not. It is also called
+%%          for every time the subscription is refreshed by the
+%%          subscriber.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% SIPuser = undefined
@@ -297,26 +303,27 @@ is_allowed_subscribe2(Header, SubState, Status, Reason, ExtraHeaders, PkgState) 
     end.
 
 %%--------------------------------------------------------------------
-%% Function: notify_content(PkgS::event_pkg(), Presentity, LastAccept,
-%%                          PkgState)
-%%           Presentity   = {users, UserList} | {address, AddressStr}
-%%               UserList = list() of string(), SIP usernames
-%%             AddressStr = string(), parseable with sipurl:parse/1
-%%           LastAccept   = list() of string(), Accept: header value
-%%                          from last SUBSCRIBE
-%%           PkgState     = my_state record()
-%% Descrip.: YXA event packages must export a notify_content/3
-%%           function. Whenever the subscription requires us to
-%%           generate a NOTIFY request, this function is called to
-%%           generate the body and extra headers to include in the
-%%           NOTIFY request.
-%% Returns : {ok, Body, ExtraHeaders, NewPkgState} |
-%%           {error, Reason}
-%%           Body         = io_list()
-%%           ExtraHeaders = list() of {Key, ValueList}, headers to
-%%                          include in the NOTIFY request
-%%           Reason       = string() | atom()
-%%           NewPkgState  = my_state record()
+%% @spec    (PkgS::event_pkg(), Presentity, LastAccept, PkgState) ->
+%%            {ok, Body, ExtraHeaders, NewPkgState} |
+%%            {error, Reason}
+%%
+%%            Presentity = {users, UserList} | {address, AddressStr}
+%%            UserList   = [string()] "SIP usernames"
+%%            AddressStr = string() "parseable with sipurl:parse/1"
+%%            LastAccept = [string()] "Accept: header value from last SUBSCRIBE"
+%%            PkgState   = #my_state{}
+%%
+%%            Body         = io_list()
+%%            ExtraHeaders = [{Key, ValueList}] "headers to include in the NOTIFY request"
+%%            Reason       = string() | atom()
+%%            NewPkgState  = #my_state{}
+%%
+%% @doc     YXA event packages must export a notify_content/3
+%%          function. Whenever the subscription requires us to
+%%          generate a NOTIFY request, this function is called to
+%%          generate the body and extra headers to include in the
+%%          NOTIFY request.
+%% @end
 %%--------------------------------------------------------------------
 notify_content("presence", {users, [ToUser]}, LastAccept, PkgState) when is_list(ToUser),
 									 is_record(PkgState, my_state) ->
@@ -353,20 +360,30 @@ notify_content2(ToUser, LastAccept, PkgState) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(), Param)
-%%           Param = atom()
-%% Descrip.: YXA event packages must export a package_parameters/2
-%%           function. 'undefined' MUST be returned for all unknown
-%%           parameters.
-%% Returns : Value | undefined
-%%           Value = term()
+%% @spec    package_parameters(PkgS::event_pkg(), Param) ->
+%%            Value | undefined
+%%
+%%            Param = atom()
+%%
+%%            Value = term()
+%%
+%% @doc     YXA event packages must export a package_parameters/2
+%%          function. 'undefined' MUST be returned for all unknown
+%%          parameters.
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(), notification_rate_limit)
-%% Descrip.: The minimum amount of time that should pass between
-%%           NOTIFYs we send about this event packages events.
-%% Returns : MilliSeconds = integer()
+%% @spec    (PkgS::event_pkg(), notification_rate_limit) ->
+%%            MilliSeconds
+%%
+%%            MilliSeconds = integer()
+%%
+%% @doc     The minimum amount of time that should pass between
+%%          NOTIFYs we send about this event packages events.
+%% @end
 %%--------------------------------------------------------------------
 package_parameters("presence", notification_rate_limit) ->
     %% The minimum amount of time that the SIP event package RFC in question
@@ -374,20 +391,27 @@ package_parameters("presence", notification_rate_limit) ->
     5000;
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(), request_methods)
-%% Descrip.: What SIP methods this event packages request/7 function
-%%           can handle.
-%% Returns : Methods = list() of string()
+%% @spec    (PkgS::event_pkg(), request_methods) ->
+%%            Methods
+%%
+%%            Methods = [string()]
+%%
+%% @doc     What SIP methods this event packages request/7 function
+%%          can handle.
+%% @end
 %%--------------------------------------------------------------------
 package_parameters("presence", request_methods) ->
     ["PUBLISH", "NOTIFY"];
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(),
-%%                              subscribe_accept_content_types)
-%% Descrip.: What Content-Type encodings we should list as acceptable
-%%           in SUBSCRIBEs we send.
-%% Returns : ContentTypes = list() of string()
+%% @spec    (PkgS::event_pkg(), subscribe_accept_content_types) ->
+%%            ContentTypes
+%%
+%%            ContentTypes = [string()]
+%%
+%% @doc     What Content-Type encodings we should list as acceptable
+%%          in SUBSCRIBEs we send.
+%% @end
 %%--------------------------------------------------------------------
 package_parameters("presence", subscribe_accept_content_types) ->
     presence_pidf:get_supported_content_types(set);
@@ -397,26 +421,34 @@ package_parameters("presence", _Param) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour(PkgS::event_pkg(), Param, Argument)
-%%           Param = atom()
-%%           Argument = term(), depending on Param
-%% Descrip.: YXA event packages must export a sbuscription_behaviour/2
-%%           function. 'undefined' MUST be returned for all unknown
-%%           parameters.
-%% Returns : Value | undefined
-%%           Value = term()
+%% @spec
+%%    subscription_behaviour(PkgS::event_pkg(), Param, Argument) ->
+%%            Value | undefined
+%%
+%%            Param    = atom()
+%%            Argument = term() "depending on Param"
+%%
+%%            Value = term()
+%%
+%% @doc     YXA event packages must export a sbuscription_behaviour/2
+%%          function. 'undefined' MUST be returned for all unknown
+%%          parameters.
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour(PkgS::event_pkg(),
-%%                                  bidirectional_subscribe,
-%%                                  Request)
-%%           Request = request record()
-%% Descrip.: When we receive a SUBSCRIBE, should the subscription
-%%           handler also SUBSCRIBE to the other side in the same
-%%           dialog? For the presence package, this depends on if the
-%%           SUBSCRIBE has an Allow-Events header listing "presence".
-%% Returns : true | false
+%% @spec    (PkgS::event_pkg(), bidirectional_subscribe, Request) ->
+%%            true | false
+%%
+%%            Request = #request{}
+%%
+%% @doc     When we receive a SUBSCRIBE, should the subscription
+%%          handler also SUBSCRIBE to the other side in the same
+%%          dialog? For the presence package, this depends on if the
+%%          SUBSCRIBE has an Allow-Events header listing "presence".
+%% @end
 %%--------------------------------------------------------------------
 subscription_behaviour("presence", bidirectional_subscribe, Request) when is_record(Request, request) ->
     case keylist:fetch('allow-events', Request#request.header) of
@@ -441,10 +473,12 @@ subscription_behaviour("presence", _Param, _Argument) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_accept(Header)
-%%           Header = keylist record()
-%% Descrip.: Get Accept: header value (or default) from a header.
-%% Returns : list() of string()
+%% @spec    (Header) -> [string()]
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     Get Accept: header value (or default) from a header.
+%% @end
 %%--------------------------------------------------------------------
 get_accept(Header) ->
     case keylist:fetch('accept', Header) of
@@ -456,17 +490,21 @@ get_accept(Header) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_publish_etag_expires(Request, SIPuser, THandler)
-%%           Request = request record()
-%%           SIPuser = string()
-%%           THandler = term(), server transaction handle
-%% Descrip.: Get ETag and Expires values from a PUBLISH request.
-%% Returns : {ok, Action, ETag, Expires} | error
-%%           Action  = insert | update | refresh
-%%           ETag    = none | string()
-%%           Expires = integer()
-%% Note    : Functionality is specified in RFC3903 #6 (Processing
-%%           PUBLISH Requests), steps 2-3
+%% @spec    (Request, SIPuser, THandler) ->
+%%            {ok, Action, ETag, Expires} | error
+%%
+%%            Request  = #request{}
+%%            SIPuser  = string()
+%%            THandler = term() "server transaction handle"
+%%
+%%            Action  = insert | update | refresh
+%%            ETag    = none | string()
+%%            Expires = integer()
+%%
+%% @doc     Get ETag and Expires values from a PUBLISH request. Note :
+%%          Functionality is specified in RFC3903 #6 (Processing
+%%          PUBLISH Requests), steps 2-3
+%% @end
 %%--------------------------------------------------------------------
 get_publish_etag_expires(Request, SIPuser, THandler) ->
     {Action, ETag} =
@@ -535,11 +573,15 @@ publish_get_expires(Header, THandler) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: generate_etag()
-%% Descrip.: Generate an ETag value. ETag values probably only need to
-%%           be unique at a given time for package+user or similar,
-%%           but this is a very easy solution.
-%% Returns : ETag = string()
+%% @spec    () ->
+%%            ETag
+%%
+%%            ETag = string()
+%%
+%% @doc     Generate an ETag value. ETag values probably only need to
+%%          be unique at a given time for package+user or similar,
+%%          but this is a very easy solution.
+%% @end
 %%--------------------------------------------------------------------
 generate_etag() ->
     {A, B, C} = erlang:now(),

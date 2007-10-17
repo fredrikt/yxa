@@ -52,20 +52,23 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: new()
-%% Descrip.: Create a new key_val_db.
-%% Returns : key_val_db()
+%% @spec    () -> key_val_db()
+%%
+%% @doc     Create a new key_val_db.
+%% @end
 %%--------------------------------------------------------------------
 new() ->
     [].
 
 %%--------------------------------------------------------------------
-%% Function: new(KeyValList)
-%%           KeyValList = [{Key, Val}]
-%%           Key        = term()
-%%           Val        = term()
-%% Descrip.: Create a new key_val_db with content.
-%% Returns : key_val_db()
+%% @spec    (KeyValList) -> key_val_db()
+%%
+%%            KeyValList = [{Key, Val}]
+%%            Key        = term()
+%%            Val        = term()
+%%
+%% @doc     Create a new key_val_db with content.
+%% @end
 %%--------------------------------------------------------------------
 new(KeyValList) ->
     F = fun({Key, Val}, DB) ->
@@ -75,36 +78,47 @@ new(KeyValList) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: to_key_val(DB)
-%%           DB = key_val_db()
-%% Descrip.: Turn one of our internal format databases into a list of
-%%           key-value tuples.
-%% Returns : KeyValList = list() of {Key, Val}
-%%           Key = term()
-%%           Val = term()
+%% @spec    (DB) ->
+%%            KeyValList
+%%
+%%            DB = key_val_db()
+%%
+%%            KeyValList = [{Key, Val}]
+%%            Key        = term()
+%%            Val        = term()
+%%
+%% @doc     Turn one of our internal format databases into a list of
+%%          key-value tuples.
+%% @end
 %%--------------------------------------------------------------------
 to_key_val(DB) ->
     DB.
 
 %%--------------------------------------------------------------------
-%% Function: add(DB, Key)
-%%           DB    = key_val_db()
-%%           Key   = term()
+%% @spec    (DB, Key) -> DB
+%%
+%%            DB  = key_val_db()
+%%            Key = term()
+%%
+%% @throws  {error, duplicate_key} 
+%%
 %% @equiv   add(DB, Key, none)
-%% Returns : DB
-%%           throw({error, duplicate_key})
+%% @end
 %%--------------------------------------------------------------------
 add(DB, Key) ->
     add3(DB, {Key, none}).
 
 %%--------------------------------------------------------------------
-%% Function: add(DB, Key, Value)
-%%           DB    = key_val_db()
-%%           Key   = term()
-%%           Value = term()
-%% Descrip.: Add new entry to DB.
-%% Returns : DB
-%%           throw({error, duplicate_key})
+%% @spec    (DB, Key, Value) -> DB
+%%
+%%            DB    = key_val_db()
+%%            Key   = term()
+%%            Value = term()
+%%
+%% @throws  {error, duplicate_key} 
+%%
+%% @doc     Add new entry to DB.
+%% @end
 %%--------------------------------------------------------------------
 add(DB, Key, Value) ->
     add3(DB, {Key, Value}).
@@ -117,11 +131,13 @@ add3([Pair1 | R], Pair2) ->
     [Pair1 | add3(R, Pair2)].
 
 %%--------------------------------------------------------------------
-%% Function: find(DB, Key)
-%%           DB  = key_val_db()
-%%           Key = term()
-%% Descrip.: Retrive the value of Key if it is contained in DB.
-%% Returns : [term()] | []
+%% @spec    (DB, Key) -> [term()] | []
+%%
+%%            DB  = key_val_db()
+%%            Key = term()
+%%
+%% @doc     Retrive the value of Key if it is contained in DB.
+%% @end
 %%--------------------------------------------------------------------
 find(DB, Key) ->
     case lists:keysearch(Key, 1, DB) of
@@ -132,11 +148,13 @@ find(DB, Key) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: remove(DB, Key)
-%%           DB  = key_val_db()
-%%           Key = term()
-%% Descrip.: Delete a Key-Val pair from DB.
-%% Returns : key_val_db()
+%% @spec    (DB, Key) -> key_val_db()
+%%
+%%            DB  = key_val_db()
+%%            Key = term()
+%%
+%% @doc     Delete a Key-Val pair from DB.
+%% @end
 %%--------------------------------------------------------------------
 rm(DB, Key) ->
     lists:keydelete(Key, 1, DB).
@@ -147,9 +165,11 @@ rm(DB, Key) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     ok.

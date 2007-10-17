@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_ctl.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: YXA command line control module.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      YXA command line control module.
 %%%
-%%% Created : 28 May 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    28 May 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_ctl).
 
@@ -43,9 +44,10 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: start()
-%% Descrip.: Fetch the command line arguments and start processing.
-%% Returns : term(), does not return - does erlang:halt().
+%% @spec    () -> term() "does not return - does erlang:halt()."
+%%
+%% @doc     Fetch the command line arguments and start processing.
+%% @end
 %%--------------------------------------------------------------------
 start() ->
     case init:get_plain_arguments() of
@@ -79,11 +81,13 @@ start() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: process(Node, [Action])
-%%           Node   = atom()
-%%           Action = string(), "status" | "stop" | "restart" | "reload"
-%% Descrip.: Do something to Node.
-%% Returns : ok | term(), result of rpc:call(...)
+%% @spec    (Node, [Action]) -> ok | term() "result of rpc:call(...)"
+%%
+%%            Node   = atom()
+%%            Action = string() "\"status\" | \"stop\" | \"restart\" | \"reload\""
+%%
+%% @doc     Do something to Node.
+%% @end
 %%--------------------------------------------------------------------
 process(Node, ["status"]) ->
     case rpc:call(Node, yxa_ctl, status, []) of
@@ -146,10 +150,13 @@ process(_Node, [Cmd]) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: status()
-%% Descrip.: Check status of running SIP server
-%% Returns : {ok, Output}
-%%           Output = string()
+%% @spec    () ->
+%%            {ok, Output}
+%%
+%%            Output = string()
+%%
+%% @doc     Check status of running SIP server
+%% @end
 %%--------------------------------------------------------------------
 status() ->
     [{starttime, Starttime}] = ets:lookup(yxa_statistics, starttime),
@@ -157,11 +164,15 @@ status() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: info(Flags)
-%%           Flags = list() of string(), "all"
-%% Descrip.: Check status of running SIP server
-%% Returns : {ok, Output}
-%%           Output = list() of {Topic, Indent, Width, [{Key, Value}]}
+%% @spec    (Flags) ->
+%%            {ok, Output}
+%%
+%%            Flags = [string()] "\"all\""
+%%
+%%            Output = [{Topic, Indent, Width, [{Key, Value}]}]
+%%
+%% @doc     Check status of running SIP server
+%% @end
 %%--------------------------------------------------------------------
 info([]) ->
     [{starttime, Starttime1}] = ets:lookup(yxa_statistics, starttime),
@@ -245,13 +256,17 @@ info_transactions() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: format_status(Starttime)
-%%           Starttime = integer(), absolute timestamp
-%% Descrip.: Given the start-time returned from status(), construct
-%%           information about start-time and current uptime and
-%%           format it for printing.
-%% Returns : {ok, Output}
-%%           Output = string()
+%% @spec    (Starttime) ->
+%%            {ok, Output}
+%%
+%%            Starttime = integer() "absolute timestamp"
+%%
+%%            Output = string()
+%%
+%% @doc     Given the start-time returned from status(), construct
+%%          information about start-time and current uptime and
+%%          format it for printing.
+%% @end
 %%--------------------------------------------------------------------
 format_status(Starttime) ->
     %% get running time in days, hours, minutes, seconds

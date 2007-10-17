@@ -100,7 +100,7 @@ play_sound(Parent, Handle, Socket, Dest, Data) ->
 play_sound_start(Parent, Handle, Socket, {Address, Port}, Data) ->
     timer:send_interval(20, {sound, play_sound, send}),
     sendloop(Handle, Parent, Socket, Address, Port, Data).
-    
+
 play_sound_stop(Pid) ->
     Pid ! {sound, sendloop, quit}.
 

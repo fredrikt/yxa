@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : dialog_server.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Supervised process that all dialog controllers link to,
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Supervised process that all dialog controllers link to,
 %%%           which cleans away the dialog state when the dialog
 %%%           controller terminates.
 %%%
-%%% Created : 14 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    14 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(dialog_server).
 
@@ -35,6 +36,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	 }).
 
@@ -49,8 +52,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the server
+%% @spec    () -> term()
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -61,12 +66,15 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([])
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ([]) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([]) ->
     %% This is a system process that traps EXIT signals from dialog controllers
@@ -76,37 +84,51 @@ init([]) ->
     {ok, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, From, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Dialog server: Received unknown gen_server call : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Dialog server: Received unknown gen_server cast : ~p", [Unknown]),
@@ -114,17 +136,24 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Check for expired dialogs.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (timeout, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Check for expired dialogs.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     sipdialog:handle_expired_dialogs(?TIMEOUT div 1000),
@@ -132,13 +161,17 @@ handle_info(timeout, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({'EXIT', Pid, Reason}, State)
-%%           Pid    = pid()
-%%           Reason = normal | term()
-%% Descrip.: Trap exit signals from socket handlers and act on them.
-%%           Log if they exit with an error, and remove them from our
-%%           list of existing sockets.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    ({'EXIT', Pid, Reason}, State) ->
+%%            {noreply, State, Timeout::integer()}
+%%
+%%            Pid    = pid()
+%%            Reason = normal | term()
+%%
+%% @doc     Trap exit signals from socket handlers and act on them.
+%%          Log if they exit with an error, and remove them from our
+%%          list of existing sockets.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
@@ -164,18 +197,22 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Unknown info.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Dialog server: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
@@ -186,9 +223,11 @@ terminate(Reason, _State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

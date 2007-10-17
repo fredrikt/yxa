@@ -50,9 +50,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: run()
-%% Descrip.: run xref on yxa code, to look for bugs
-%% Returns : term()
+%% @spec    () -> term()
+%%
+%% @doc     run xref on yxa code, to look for bugs
+%% @end
 %%--------------------------------------------------------------------
 run() ->
 
@@ -138,12 +139,14 @@ run_shell() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: filter(Res, AnalysisKind)
-%%           Res          = term(), return value of xref:analyze
-%%           AnalysisKind = atom(), the xref:analyze kind
-%% Descrip.: remove certain xref:analyze output that only appears
-%%           to be wrong
-%% Returns : list() of term()
+%% @spec    (Res, AnalysisKind) -> [term()]
+%%
+%%            Res          = term() "return value of xref:analyze"
+%%            AnalysisKind = atom() "the xref:analyze kind"
+%%
+%% @doc     remove certain xref:analyze output that only appears to be
+%%          wrong
+%% @end
 %%--------------------------------------------------------------------
 %% filter out the all calls to local:xxxx/yyy
 filter(Res, undefined_function_calls) ->

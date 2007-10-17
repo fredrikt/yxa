@@ -82,28 +82,28 @@
 
 %%--------------------------------------------------------------------
 %% Function:
-%% Descrip.: 
-%% Returns : 
-%% Note    : 
+%% Descrip.:
+%% Returns :
+%% Note    :
 %%--------------------------------------------------------------------
 get_outgoing_destination(Request) ->
     interpret_backend:get_outgoing_destination(Request).
 
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
-%% Note    : 
+%% Function:
+%% Descrip.:
+%% Returns :
+%% Note    :
 %%--------------------------------------------------------------------
 'get_address-switch_field'(Request, Field, SubField) ->
     interpret_backend:'get_address-switch_field'(Request, Field, SubField).
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
-%% Note    : 
+%% Function:
+%% Descrip.:
+%% Returns :
+%% Note    :
 %%--------------------------------------------------------------------
 compare_address_or_address_part(ReqVal, Val) ->
     interpret_backend:compare_address_or_address_part(ReqVal, Val).
@@ -111,35 +111,35 @@ compare_address_or_address_part(ReqVal, Val) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 address_or_address_part_contains({display, ReqVal}, Val) ->
     interpret_backend:address_or_address_part_contains({display, ReqVal}, Val).
 
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 is_subdomain(Str, SubStr) ->
     interpret_backend:is_subdomain(Str, SubStr).
 
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 'get_string-switch_field'(Request, Field) ->
     interpret_backend:'get_string-switch_field'(Request, Field).
 
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
+%% Function:
+%% Descrip.:
 %% Returns :
 %%--------------------------------------------------------------------
 string_is(ReqVal, Val) ->
@@ -178,13 +178,13 @@ priority_equal(ReqVal, Val) ->
     interpret_backend:priority_equal(ReqVal, Val).
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: fake lookup result - the same way as in 
+%% Function:
+%% Descrip.: fake lookup result - the same way as in
 %%           test_proxy_destinations(...)
 %%           use put(Index, Val) to add suitable returnvalues
 %%           Val = notfound | failure | {success, Locations}
 %%           Locations = list() of sipurl record()
-%% Returns : 
+%% Returns :
 %%--------------------------------------------------------------------
 lookup(_Source, _User, _UserURI, _Timeout) ->
     Index = get_next_put(),
@@ -196,17 +196,17 @@ lookup(_Source, _User, _UserURI, _Timeout) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 add_location(Locations, URI, Prio, Clear) ->
     interpret_backend:add_location(Locations, URI, Prio, Clear).
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 rm_location(Locations, URIStr) ->
     interpret_backend:rm_location(Locations, URIStr).
@@ -220,17 +220,17 @@ log(LogAttrs, User, Request) ->
     interpret_backend:log(LogAttrs, User, Request).
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 mail(Mail, User) ->
     interpret_backend:mail(Mail, User).
 
 %%--------------------------------------------------------------------
 %% Function:
-%% Descrip.: 
-%% Returns : 
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 in_time_range(Timezone, TimeSwitchCond) ->
     Index = get_next_put(),
@@ -242,18 +242,20 @@ in_time_range(Timezone, TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_min_ring()
-%% Descrip.: the shortest time a "phone" may ring
-%% Returns : integer(), the number of seconds
+%% @spec    () -> integer() "the number of seconds"
+%%
+%% @doc     the shortest time a "phone" may ring
+%% @end
 %%--------------------------------------------------------------------
 get_min_ring() ->
     {ok, M} = yxa_config:get_env(cpl_minimum_ringtime, 10),
     M.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_max()
-%% Descrip.: the maximum ring-time for this application
-%% Returns : integer(), the number of seconds
+%% @spec    () -> integer() "the number of seconds"
+%%
+%% @doc     the maximum ring-time for this application
+%% @end
 %%--------------------------------------------------------------------
 get_server_max() ->
     {ok, M} = yxa_config:get_env(cpl_call_max_timeout),
@@ -267,7 +269,7 @@ get_server_max() ->
 test_proxy_destinations(_Count, _BranchBase, _Request, _Actions, _Surplus, _Timeout, _Recurse, _STHandler) ->
     BestLocation = none,
     BestResponse = none,
-    
+
     %% Index is used to retrieve process dict data in order
     %% each erase(Index) returns {NodeInTestScript, Result}
     Index = get_next_put(),
@@ -283,9 +285,9 @@ test_proxy_destinations(_Count, _BranchBase, _Request, _Actions, _Surplus, _Time
 	{test2_3b, Val} ->
 	    {Val, BestLocation, BestResponse};
 	{test2_5, redirection} ->
-	    %% what 
+	    %% what
 	    {redirection, sipurl:parse("sip:jones@jonespc.example.com"), BestResponse};
-	
+
 	%% put(Index, Val)
 	Val ->
 	    {Val, BestLocation, BestResponse}
@@ -297,7 +299,7 @@ get_next_put() ->
     [{Index, _} | _] = L,
     Index.
 
-	    
+
 
 
 

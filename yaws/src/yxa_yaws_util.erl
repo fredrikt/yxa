@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_yaws.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Yxa Yaws utility functions.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Yxa Yaws utility functions.
 %%%
-%%% Created : 11 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    11 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_yaws_util).
 
@@ -52,9 +53,13 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: script_output(In)
-%% Descrip.:
-%% Returns : EHTML = term(), Yaws ehtml data
+%% @spec    (In) ->
+%%            EHTML
+%%
+%%            EHTML = term() "Yaws ehtml data"
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 script_output({redirect, Link}) when is_list(Link) ->
     yaws_api:redirect(Link);
@@ -77,19 +82,21 @@ script_output(In) when is_list(In); is_tuple(In) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: form_checkboxes(A, In, List)
-%%           A    = term(), Yaws request data
-%%           In   = list() of atom(), current information
-%%           List = {VarName, Fields}
-%%             VarName = string(), the base of the HTTP variables
-%%             Fields  = list() of atom(), the fields
-%% Descrip.: Create checkboxes for every entry in Fields. Example :
-%%             In = [foo]
-%%             List = {"base", [foo, bar]}
-%%           Outputs :
-%%             checkbox "base.foo", checked
-%%             checkbox "base.bar", not checked
-%% Returns : HTML = term(), Yaws html data
+%% @spec    (A, In, List) ->
+%%            HTML
+%%
+%%            A       = term() "Yaws request data"
+%%            In      = [atom()] "current information"
+%%            List    = {VarName, Fields}
+%%            VarName = string() "the base of the HTTP variables"
+%%            Fields  = [atom()] "the fields"
+%%
+%%            HTML = term() "Yaws html data"
+%%
+%% @doc     Create checkboxes for every entry in Fields. Example : In
+%%          = [foo] List = {"base", [foo, bar]} Outputs : checkbox
+%%          "base.foo", checked checkbox "base.bar", not checked
+%% @end
 %%--------------------------------------------------------------------
 form_checkboxes(A, In, List) ->
     form_checkboxes(A, In, List, []).
@@ -123,19 +130,19 @@ form_checkboxes(_A, _In, {_VarName, []}, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_checkbox_input(A, In)
-%%           A    = term(), Yaws request data
-%%           In   = {VarName, Fields}
-%%             VarName = string(), the base of the HTTP variables
-%%             Fields  = list() of atom(), the fields
-%% Descrip.: Check which of the HTML variables 'listed' in In that are
-%%           set in A, and return a list of the atoms in Fields that
-%%           are set. Example :
-%%             VarName = "base"
-%%              Fields = [foo, bar]
-%%           returns [foo] if "base.foo" is set to "true", but
-%%           "base.bar" is not.
-%% Returns : list() of atom()
+%% @spec    (A, In) -> [atom()]
+%%
+%%            A       = term() "Yaws request data"
+%%            In      = {VarName, Fields}
+%%            VarName = string() "the base of the HTTP variables"
+%%            Fields  = [atom()] "the fields"
+%%
+%% @doc     Check which of the HTML variables 'listed' in In that are
+%%          set in A, and return a list of the atoms in Fields that
+%%          are set. Example : VarName = "base" Fields = [foo, bar]
+%%          returns [foo] if "base.foo" is set to "true", but
+%%          "base.bar" is not.
+%% @end
 %%--------------------------------------------------------------------
 get_checkbox_input(A, In) ->
     get_checkbox_input(A, In, []).
@@ -154,15 +161,16 @@ get_checkbox_input(_A, {_VarName, []}, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: make_radio_input(A, Name, Default, In)
-%%           A       = term(), Yaws request data
-%%           Name    = string(), variable name
-%%           Default = string(), the radio button that should be
-%%                     checked
-%%           In      = list() of Value
-%%             Value = string()
-%% Descrip.: Return a Yaws HTML construct of a radio button input.
-%% Returns : {ok, HTML}
+%% @spec    (A, Name, Default, In) -> {ok, HTML}
+%%
+%%            A       = term() "Yaws request data"
+%%            Name    = string() "variable name"
+%%            Default = string() "the radio button that should be checked"
+%%            In      = [Value]
+%%            Value   = string()
+%%
+%% @doc     Return a Yaws HTML construct of a radio button input.
+%% @end
 %%--------------------------------------------------------------------
 make_radio_input(A, Name, Default, In) ->
     make_radio_input2(A, Name, Default, In, false, []).
@@ -196,12 +204,17 @@ make_radio_input2(_A, _Name, _Default, [], _DefaultSeen, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: hidden_inputs(In)
-%%           In = list() of {Name, Value}
-%%             Name  = string() | atom()
-%%             Value = string() | atom()
-%% Descrip.: Produce a list of input fields of type 'hidden'.
-%% Returns : Out = list() of tuple()
+%% @spec    (In) ->
+%%            Out
+%%
+%%            In    = [{Name, Value}]
+%%            Name  = string() | atom()
+%%            Value = string() | atom()
+%%
+%%            Out = [tuple()]
+%%
+%% @doc     Produce a list of input fields of type 'hidden'.
+%% @end
 %%--------------------------------------------------------------------
 hidden_inputs(In) when is_list(In) ->
     hidden_inputs2(In, []).
@@ -216,13 +229,15 @@ hidden_inputs2([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_var(A, Name)
-%%           A    = term(), Yaws request data
-%%           Name = string(), URL or POST data variable name
-%% Descrip.: Get variable Name content. First look for a URL variable,
-%%           and if that is not found and this is a POST, look for a
-%%           posted variable.
-%% Returns : {ok, Value} | undefined
+%% @spec    (A, Name) -> {ok, Value} | undefined
+%%
+%%            A    = term() "Yaws request data"
+%%            Name = string() "URL or POST data variable name"
+%%
+%% @doc     Get variable Name content. First look for a URL variable,
+%%          and if that is not found and this is a POST, look for a
+%%          posted variable.
+%% @end
 %%--------------------------------------------------------------------
 get_var(A, Name) when is_list(Name) ->
     case yaws_api:queryvar(A, Name) of
@@ -250,14 +265,19 @@ get_var(A, Name) when is_list(Name) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_var_int(A, Name)
-%%           A    = term(), Yaws request data
-%%           Name = string(), URL or POST data variable name
-%% Descrip.: Like get_var/2 but converts the result to an integer.
-%% Returns : {ok, Int} |
-%%           throw({error, Reason})
-%%           Int    = integer()
-%%           Reason = string()
+%% @spec    (A, Name) ->
+%%            {ok, Int} 
+%%
+%%            A    = term() "Yaws request data"
+%%            Name = string() "URL or POST data variable name"
+%%
+%%            Int    = integer()
+%%            Reason = string()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Like get_var/2 but converts the result to an integer.
+%% @end
 %%--------------------------------------------------------------------
 get_var_int(A, Name) ->
     case get_var(A, Name) of
@@ -278,10 +298,15 @@ get_var_int(A, Name) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: error(Msg)
-%%           Msg = string()
-%% Descrip.: Create a red error message of Msg.
-%% Returns : HTML = term(), Yaws html data
+%% @spec    (Msg) ->
+%%            HTML
+%%
+%%            Msg = string()
+%%
+%%            HTML = term() "Yaws html data"
+%%
+%% @doc     Create a red error message of Msg.
+%% @end
 %%--------------------------------------------------------------------
 error(Msg) when is_list(Msg) ->
     {font,
@@ -291,13 +316,18 @@ error(Msg) when is_list(Msg) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: user_exists(User, Node)
-%%           User    = string(), username
-%%           Node    = atom(), node we are to talk with
-%% Descrip.: Check if user User exists in the Mnesia userdb.
-%% Returns : true | false |
-%%           throw({error, Reason})
-%%           Reason = string()
+%% @spec    (User, Node) ->
+%%            true | false 
+%%
+%%            User = string() "username"
+%%            Node = atom() "node we are to talk with"
+%%
+%%            Reason = string()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Check if user User exists in the Mnesia userdb.
+%% @end
 %%--------------------------------------------------------------------
 user_exists(User, Node) when is_list(User), is_atom(Node) ->
     case rpc:call(Node, phone, get_user, [User]) of
@@ -312,12 +342,14 @@ user_exists(User, Node) when is_list(User), is_atom(Node) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_user_addresses(User, Node)
-%%           User = user record() | string(), username
-%%           Node = atom(), the node we are to talk with
-%% Descrip.: Fetch all addresses for a user. For legacy reasons,
-%%           addresses are called numbers in the Mnesia backend.
-%% Returns : list() of string()
+%% @spec    (User, Node) -> [string()]
+%%
+%%            User = #user{} | string() "username"
+%%            Node = atom() "the node we are to talk with"
+%%
+%% @doc     Fetch all addresses for a user. For legacy reasons,
+%%          addresses are called numbers in the Mnesia backend.
+%% @end
 %%--------------------------------------------------------------------
 get_user_addresses(User, Node) when is_record(User, user), is_atom(Node) ->
     case get_user_addresses(User#user.user, Node) of
@@ -337,11 +369,16 @@ get_user_addresses(User, Node) when is_list(User), is_atom(Node) ->
     L.
 
 %%--------------------------------------------------------------------
-%% Function: fmt_expires(In)
-%%           In = integer() | never
-%% Descrip.: Format one of our 'expires' dates into a string telling
-%%           how far in the future the 'expires' time is.
-%% Returns : HTML = term(), Yaws html data
+%% @spec    (In) ->
+%%            HTML
+%%
+%%            In = integer() | never
+%%
+%%            HTML = term() "Yaws html data"
+%%
+%% @doc     Format one of our 'expires' dates into a string telling
+%%          how far in the future the 'expires' time is.
+%% @end
 %%--------------------------------------------------------------------
 fmt_expires(In) when is_integer(In) ->
     case In - util:timestamp() of
@@ -355,13 +392,15 @@ fmt_expires(never) ->
     "never".
 
 %%--------------------------------------------------------------------
-%% Function: fmt_daystime_short({D, {H, M, S}})
-%%           D = integer(), days
-%%           H = integer(), hours
-%%           M = integer(), minutes
-%%           S = integer(), seconds
-%% Descrip.: Make a string out of a calendar modules "daystime".
-%% Returns : string()
+%% @spec    ({D, {H, M, S}}) -> string()
+%%
+%%            D = integer() "days"
+%%            H = integer() "hours"
+%%            M = integer() "minutes"
+%%            S = integer() "seconds"
+%%
+%% @doc     Make a string out of a calendar modules "daystime".
+%% @end
 %%--------------------------------------------------------------------
 fmt_daystime_short({0, {0, M, S}}) ->
     io_lib:format("~pm, ~ps", [M, S]);
@@ -373,14 +412,18 @@ fmt_daystime_short({D, {H, M, S}}) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_incomingproxy_node()
-%% Descrip.: Get name of incomingproxy node. Per default we do this by
-%%           figuring out our local hostname, and prepending it with
-%%           "incomingproxy@". Patch this function if you want to run
-%%           your web interface on another host than your
-%%           incomingproxy (NOTE: you MUST make sure the nodes can
-%%           talk to each other through distributed Erlang).
-%% Returns : Nodename = string()
+%% @spec    () ->
+%%            Nodename
+%%
+%%            Nodename = string()
+%%
+%% @doc     Get name of incomingproxy node. Per default we do this by
+%%          figuring out our local hostname, and prepending it with
+%%          "incomingproxy@". Patch this function if you want to run
+%%          your web interface on another host than your
+%%          incomingproxy (NOTE: you MUST make sure the nodes can
+%%          talk to each other through distributed Erlang).
+%% @end
 %%--------------------------------------------------------------------
 get_yxa_application_node() ->
     {ok, MyHostname} = my_hostname(),
@@ -405,12 +448,16 @@ my_hostname() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_fqdn(H)
-%%           H = string(), hostname
-%% Descrip.: Get the FQDN (Fully Qualified Domain Name) for a
-%%           (possibly) not fully qualified hostname.
-%% Returns : {ok, FQDN} | error
-%%           FQDN = string()
+%% @spec    (H) ->
+%%            {ok, FQDN} | error
+%%
+%%            H = string() "hostname"
+%%
+%%            FQDN = string()
+%%
+%% @doc     Get the FQDN (Fully Qualified Domain Name) for a
+%%          (possibly) not fully qualified hostname.
+%% @end
 %%--------------------------------------------------------------------
 get_fqdn(Hostname) ->
     case inet:gethostbyname(Hostname) of

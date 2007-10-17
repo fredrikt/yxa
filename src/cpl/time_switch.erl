@@ -1,7 +1,7 @@
-%% This module contains operations to access the various kinds of 
-%% time_switch__cond_N (N = 2 | 5 | 7 | 8) record fields in a 
-%% convenient manner - the records could be view as a chain of 
-%% inherited classes, from N = 2 (as a base class) to N = 8 
+%% This module contains operations to access the various kinds of
+%% time_switch__cond_N (N = 2 | 5 | 7 | 8) record fields in a
+%% convenient manner - the records could be view as a chain of
+%% inherited classes, from N = 2 (as a base class) to N = 8
 %% (last child in inheritance chain)
 %%--------------------------------------------------------------------
 
@@ -54,18 +54,21 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_xxx(TimeSwitchCond) 
-%% Descrip.: get field xxx in a time_switch__cond_x record()
-%% Returns : TimeSwitchCond#time_switch__cond_x.xxx content
+%% @spec    (TimeSwitchCond) ->
+%%            TimeSwitchCond#time_switch__cond_x.xxx content
+%%
+%% @doc     get field xxx in a time_switch__cond_x record()
+%% @end
 %%--------------------------------------------------------------------
 
 %% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: get_dtstart(TimeSwitchCond) 
-%% Descrip.: get dtstart from a time_switch__cond_{2,5,7,8} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get dtstart from a time_switch__cond_{2,5,7,8} record
+%% @end
 %%--------------------------------------------------------------------
 get_dtstart(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -80,9 +83,11 @@ get_dtstart(TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_dtend_duration(TimeSwitchCond) 
-%% Descrip.: get dtend_duration from a time_switch__cond_{2,5,7,8} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get dtend_duration from a time_switch__cond_{2,5,7,8}
+%%          record
+%% @end
 %%--------------------------------------------------------------------
 get_dtend_duration(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -97,9 +102,10 @@ get_dtend_duration(TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_freq(TimeSwitchCond) 
-%% Descrip.: get freq from a time_switch__cond_{5,7,8} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get freq from a time_switch__cond_{5,7,8} record
+%% @end
 %%--------------------------------------------------------------------
 get_freq(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -112,9 +118,10 @@ get_freq(TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_interval(TimeSwitchCond) 
-%% Descrip.: get interval from a time_switch__cond_{5,7,8} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get interval from a time_switch__cond_{5,7,8} record
+%% @end
 %%--------------------------------------------------------------------
 get_interval(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -127,9 +134,10 @@ get_interval(TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_until_count(TimeSwitchCond) 
-%% Descrip.: get until_count from a time_switch__cond_{5,7,8} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get until_count from a time_switch__cond_{5,7,8} record
+%% @end
 %%--------------------------------------------------------------------
 get_until_count(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -142,9 +150,10 @@ get_until_count(TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_until_count(TimeSwitchCond) 
-%% Descrip.: get by_values from a time_switch__cond_{7,8} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get by_values from a time_switch__cond_{7,8} record
+%% @end
 %%--------------------------------------------------------------------
 get_by_values(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -153,11 +162,12 @@ get_by_values(TimeSwitchCond) ->
 	_ when is_record(TimeSwitchCond, time_switch__cond_8) ->
 	    TimeSwitchCond#time_switch__cond_8.by_values
     end.
-	    
+
 %%--------------------------------------------------------------------
-%% Function: get_wkst(TimeSwitchCond) 
-%% Descrip.: get wkst from a time_switch__cond_{7,8} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get wkst from a time_switch__cond_{7,8} record
+%% @end
 %%--------------------------------------------------------------------
 get_wkst(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -168,20 +178,22 @@ get_wkst(TimeSwitchCond) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_bysetpos(TimeSwitchCond) 
-%% Descrip.: get bysetpos from a time_switch__cond_8 record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get bysetpos from a time_switch__cond_8 record
+%% @end
 %%--------------------------------------------------------------------
-get_bysetpos(TimeSwitchCond) -> 
+get_bysetpos(TimeSwitchCond) ->
     case TimeSwitchCond of
 	_ when is_record(TimeSwitchCond, time_switch__cond_8) ->
 	    TimeSwitchCond#time_switch__cond_8.bysetpos
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_time_ranges(TimeSwitchCond) 
-%% Descrip.: get time_ranges from a time_switch__cond_{5,7} record
-%% Returns : term()
+%% @spec    (TimeSwitchCond) -> term()
+%%
+%% @doc     get time_ranges from a time_switch__cond_{5,7} record
+%% @end
 %%--------------------------------------------------------------------
 get_time_ranges(TimeSwitchCond) ->
     case TimeSwitchCond of
@@ -205,6 +217,3 @@ get_time_ranges(TimeSwitchCond) ->
 
 
 
-%%====================================================================
-%% Test functions
-%%====================================================================

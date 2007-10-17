@@ -1,12 +1,14 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_blacklist_probe.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Blacklist probe process. When started, sends an OPTIONS
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Blacklist probe process. When started, sends an OPTIONS
 %%%           request to the (currently blacklisted) destination. If
 %%%           we get a response, the blacklist entry is removed. If we
 %%%           don't, the blacklisting is prolonged.
 %%%
-%%% Created : 23 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    23 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(sipsocket_blacklist_probe).
 %%-compile(export_all).
@@ -39,6 +41,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {dst,			%% sipdst record(), destination of our probe
 		bl,			%% term(), blacklist ETS table name/reference
 		probe_id,		%% term(), id of probe in the ETS table
@@ -56,9 +60,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start(Dst, EtsRef, ProbeId, Timeout)
-%% Descrip.: Starts the server
-%% Returns : term()
+%% @spec    (Dst, EtsRef, ProbeId, Timeout) -> term()
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start(Dst, EtsRef, ProbeId, Timeout) ->
     gen_server:start(?MODULE, {Dst, EtsRef, ProbeId, Timeout}, []).
@@ -69,13 +74,16 @@ start(Dst, EtsRef, ProbeId, Timeout) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({Dst, EtsRef, ProbeId, Timeout})
-%%           Dst     = sipdst record()
-%%           EtsRef  = term(), ETS table name/reference
-%%           ProbeId = term(), id of probe in the ETS table
-%%           Timeout = integer(), probe client transaction timeout
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}
+%% @spec    ({Dst, EtsRef, ProbeId, Timeout}) -> {ok, State}
+%%
+%%            Dst     = #sipdst{}
+%%            EtsRef  = term() "ETS table name/reference"
+%%            ProbeId = term() "id of probe in the ETS table"
+%%            Timeout = integer() "probe client transaction timeout"
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({Dst, EtsRef, ProbeId, Timeout}) ->
     %% Send myself a signal to start, and then return immediately to
@@ -90,20 +98,28 @@ init({Dst, EtsRef, ProbeId, Timeout}) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {reply, {error, not_implemented}, State, ?TIMEOUT}
+%% @spec    (Unknown, From, State) ->
+%%            {reply, {error, not_implemented}, State, Timeout::integer()}
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server call : ~p", [Unknown]),
@@ -111,17 +127,24 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server cast : ~p", [Unknown]),
@@ -129,12 +152,17 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 handle_info(start, State) ->
     %% really part of init/1, but done this way to not block the caller
@@ -165,27 +193,33 @@ handle_info({clienttransaction_terminating, Pid, _Branch}, #state{probe_pid = Pi
     {stop, normal, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Unknown info.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Sipsocket blacklist probe: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
     true = ets:delete(State#state.bl, State#state.probe_id),
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

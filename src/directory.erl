@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : directory.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: gen_server that caches connection to LDAP-server
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      gen_server that caches connection to LDAP-server
 %%%           and do all the querying.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%
 %%% Note    : You have to give the server name to every query to make
 %%%           it possible for the server process to have cached
@@ -57,12 +58,16 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  handle,	%% not_connected | none | ldaphandle record()
 	  server,	%% string(), server name
 	  querycount,	%% integer(), number of queries we have used the current handle for
 	  timeout       %% integer(), exponential backoff for reconnect attempts
 	 }).
+%% @type ldaphandle() = #ldaphandle{}.
+%%                      no description
 -record(ldaphandle, {
 	  ref		%% term(), eldap handle
 	 }).
@@ -77,9 +82,10 @@
 %% External functions
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the server
-%% Returns : gen_server:start_link() result
+%% @spec    () -> term()
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     case yxa_config:get_env(ldap_server) of
@@ -98,11 +104,15 @@ start_link(Server) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Server])
-%%           Server = string()
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}           |
-%%           {ok, State, ?TIMEOUT}
+%% @spec    ([Server]) ->
+%%            {ok, State}           |
+%%            {ok, State, Timeout::integer()}
+%%
+%%            Server = string()
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([Server]) ->
     Handle =
@@ -135,31 +145,39 @@ init([Server]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Description: Handling call messages
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) Description: Handling call
+%%          messages ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({simple_search, Server, Type, In, Attribute},
-%%                       From, State)
-%%           Server    = string()
-%%           Type      = string()
-%%           In        = string()
-%%           Attribute = string()
-%% Descrip.: Perform an LDAP search for a single attribute. Type is
-%%           the attribute name of In.
-%% Returns:  {reply, Reply, State, ?TIMEOUT}
-%%           Reply = {ok, Res} | {error, Reason}
-%%           Res = string() |
-%%                 none     |
-%%                 error
+%% @spec    ({simple_search, Server, Type, In, Attribute}, From,
+%%          State) ->
+%%            {reply, Reply, State, Timeout::integer()}
+%%
+%%            Server    = string()
+%%            Type      = string()
+%%            In        = string()
+%%            Attribute = string()
+%%
+%%            Reply = {ok, Res} | {error, Reason}
+%%            Res   = string() | none     | error
+%%
+%% @doc     Perform an LDAP search for a single attribute. Type is the
+%%          attribute name of In.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
     case State#state.server of
@@ -171,20 +189,22 @@ handle_call({simple_search, Server, Type, In, Attribute}, _From, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({search, Server, Type, In, Attribute},
-%%                       From, State)
-%%           Server    = string()
-%%           Type      = string()
-%%           In        = string()
-%%           Attribute = string()
-%% Descrip.: Perform an LDAP search for a single attribute. Type is
-%%           the attribute name of In.
-%% Returns:  {reply, Reply, State, ?TIMEOUT}
-%%           Reply = {ok, Res} | {error, Reason}
-%%           Res = list() of SearchRes |
-%%                 none                |
-%%                 error
-%%                 SearchRes = ldapres record()
+%% @spec    ({search, Server, Type, In, Attribute}, From, State) ->
+%%            {reply, Reply, State, Timeout::integer()}
+%%
+%%            Server    = string()
+%%            Type      = string()
+%%            In        = string()
+%%            Attribute = string()
+%%
+%%            Reply     = {ok, Res} | {error, Reason}
+%%            Res       = [SearchRes] | none                | error
+%%            SearchRes = #ldapres{}
+%%
+%% @doc     Perform an LDAP search for a single attribute. Type is the
+%%          attribute name of In.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({search, Server, Type, In, Attributes}, _From, State) ->
     case State#state.server of
@@ -196,18 +216,25 @@ handle_call({search, Server, Type, In, Attributes}, _From, State) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Description: Handling cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) Description: Handling cast
+%%          messages ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast({ping_of_death, Pid}, State)
-%% Descrip.: Log a debug message, then exit. We will get restarted by
-%%           the sipserver_sup OTP supervisor.
-%% Returns : {stop, normal, State}            (terminate/2 is called)
+%% @spec    ({ping_of_death, Pid}, State) -> {stop, normal, State}
+%%
+%% @doc     Log a debug message, then exit. We will get restarted by
+%%          the sipserver_sup OTP supervisor.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({ping_of_death, Pid}, State) ->
     logger:log(debug, "LDAP client: Pinged with death by ~p, handle ~p server ~p query count ~p",
@@ -215,18 +242,25 @@ handle_cast({ping_of_death, Pid}, State) ->
     {stop, normal, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Check if we should try to re-open our LDAP handle every
-%%           time we have been idle for 2 seconds
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    (timeout, State) -> {noreply, NewState, Timeout::integer()}
+%%
+%% @doc     Check if we should try to re-open our LDAP handle every
+%%          time we have been idle for 2 seconds
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, #state{handle = none} = State) ->
     %% short-circuit the reconnection-on-timeout when no LDAP server has been configured
@@ -260,9 +294,11 @@ handle_info(timeout, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     case Reason of
@@ -274,9 +310,11 @@ terminate(Reason, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -286,10 +324,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: should_reopen_connection(State)
-%% Descrip.: Determine if it is time to try and re-open our connection
-%%           to the LDAP server.
-%% Returns : true | false
+%% @spec    (State) -> true | false
+%%
+%% @doc     Determine if it is time to try and re-open our connection
+%%          to the LDAP server.
+%% @end
 %%--------------------------------------------------------------------
 should_reopen_connection(State) when is_record(State, state) ->
     QueryCount = State#state.querycount,
@@ -318,17 +357,20 @@ should_reopen_connection(State) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: ldapsearch_wrapper(Mode, Args, State)
-%%           Mode  = simple | full
-%%           Args  = term()
-%%           State = state record()
-%% Descrip.: Perform an LDAP search (using exec_ldapsearch()) and, if
-%%           the search results in 'error', close the connection, try
-%%           to open a new one and repeat the search.
-%% Returns : {ok, NewState, Res}
-%%           NewHandle = ldaphandle record()
-%%           Res       = {ok, SearchRes} |
-%%                       {error, Reason}
+%% @spec    (Mode, Args, State) ->
+%%            {ok, NewState, Res}
+%%
+%%            Mode  = simple | full
+%%            Args  = term()
+%%            State = #state{}
+%%
+%%            NewHandle = #ldaphandle{}
+%%            Res       = {ok, SearchRes} | {error, Reason}
+%%
+%% @doc     Perform an LDAP search (using exec_ldapsearch()) and, if
+%%          the search results in 'error', close the connection, try
+%%          to open a new one and repeat the search.
+%% @end
 %%--------------------------------------------------------------------
 ldapsearch_wrapper(Mode, Args, State) when Mode == simple orelse Mode == full, is_record(State, state) ->
     case ensure_connected(State) of
@@ -394,21 +436,25 @@ ensure_connected(State) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: exec_ldapsearch(Mode, Handle, {Type, In, AttrIn})
-%%           Mode   = simple | full
-%%           Handle = ldaphandle record()
-%%           Type   = string()
-%%           In     = string()
-%%           AttrIn = list() of string() | string()
-%%           State = state record()
-%% Descrip.: Perform an LDAP search, and depending on Mode return
-%%           either just the result values or the whole set of
-%%           results, complete with DN information and all.
-%% Returns : [SearchRes] | none | error
-%%           SearchRes  = ldapres record() | string()
-%% Note    : If you make a simple query with AttrIn being a
-%%           [string()], then the subsequent query will fail
-%%           mysteriously. Seems to be a bug in eldap module.
+%% @spec    (Mode, Handle, {Type, In, AttrIn}) ->
+%%            [SearchRes] | none | error
+%%
+%%            Mode   = simple | full
+%%            Handle = #ldaphandle{}
+%%            Type   = string()
+%%            In     = string()
+%%            AttrIn = [string()] | string()
+%%            State  = #state{}
+%%
+%%            SearchRes = #ldapres{} | string()
+%%
+%% @doc     Perform an LDAP search, and depending on Mode return
+%%          either just the result values or the whole set of
+%%          results, complete with DN information and all. Note : If
+%%          you make a simple query with AttrIn being a [string()],
+%%          then the subsequent query will fail mysteriously. Seems
+%%          to be a bug in eldap module.
+%% @end
 %%--------------------------------------------------------------------
 exec_ldapsearch(Mode, Handle, {Type, In, AttrIn}) when is_record(Handle, ldaphandle) ->
     Attr = case {Mode, AttrIn} of
@@ -451,18 +497,19 @@ exec_ldapsearch(_Mode, Handle, {Type, In, _AttrIn}) ->
     error.
 
 %%--------------------------------------------------------------------
-%% Function: get_valuelist(L, Attribute)
-%%           L         = list() of {Key, Value}
-%%           Attribute = string()
-%%           Key       = string()
-%%           Value     = string()
-%% Descrip.: Find the interesting attributes from an LDAP search
-%%           result list. L is typically the attribute that was
-%%           requested with a 'simple' LDAP search, but since we share
-%%           code for 'simple' and 'full' searches the result is
-%%           formatted as if there might have been more than one
-%%           result.
-%% Returns : list() of string()
+%% @spec    (L, Attribute) -> [string()]
+%%
+%%            L         = [{Key, Value}]
+%%            Attribute = string()
+%%            Key       = string()
+%%            Value     = string()
+%%
+%% @doc     Find the interesting attributes from an LDAP search result
+%%          list. L is typically the attribute that was requested
+%%          with a 'simple' LDAP search, but since we share code for
+%%          'simple' and 'full' searches the result is formatted as
+%%          if there might have been more than one result.
+%% @end
 %%--------------------------------------------------------------------
 get_valuelist(L, Attribute) ->
     get_valuelist2(L, Attribute, []).
@@ -478,14 +525,17 @@ get_valuelist2([H | T], Attribute, Res) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: exec_ldapsearch_unsafe(LHandle, Type, In, Attributes)
-%%           LHandle    = ldaphandle record()
-%%           Type       = string()
-%%           In         = string()
-%%           Attributes = list() of string()
-%% Descrip.: Perform an LDAP search in a catch context, since we might
-%%           crash.
-%% Returns : [#ldapres{}] | none | error
+%% @spec    (LHandle, Type, In, Attributes) ->
+%%            [#ldapres{}] | none | error
+%%
+%%            LHandle    = #ldaphandle{}
+%%            Type       = string()
+%%            In         = string()
+%%            Attributes = [string()]
+%%
+%% @doc     Perform an LDAP search in a catch context, since we might
+%%          crash.
+%% @end
 %%--------------------------------------------------------------------
 exec_ldapsearch_unsafe(LHandle, Type, In, Attributes) when is_record(LHandle, ldaphandle), is_list(Type),
 							   is_list(In), is_list(Attributes) ->
@@ -529,11 +579,16 @@ exec_ldapsearch_unsafe(Handle, Type, In, Arguments) ->
     error.
 
 %%--------------------------------------------------------------------
-%% Function: get_ldapres(In)
-%%           In          = list() of eldap_entry record()
-%% Descrip.: Turn a list of eldap module query results into our own
-%%           result format (ldapres records).
-%% Returns : Res = list() of ldapres record()
+%% @spec    (In) ->
+%%            Res
+%%
+%%            In = [#eldap_entry{}]
+%%
+%%            Res = [#ldapres{}]
+%%
+%% @doc     Turn a list of eldap module query results into our own
+%%          result format (ldapres records).
+%% @end
 %%--------------------------------------------------------------------
 get_ldapres(In) ->
     get_ldapres(In, []).
@@ -547,12 +602,16 @@ get_ldapres([#eldap_entry{object_name = Dn, attributes = RAttributes} | T], Res)
     get_ldapres(T, [This | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: ldap_connect(Server)
-%%           Server = string()
-%% Descrip.: Connect to LDAP server Server.
-%% Returns : Handle          |
-%%           {error, Reason}
-%%           Handle = ldaphandle record()
+%% @spec    (Server) ->
+%%            Handle          |
+%%            {error, Reason}
+%%
+%%            Server = string()
+%%
+%%            Handle = #ldaphandle{}
+%%
+%% @doc     Connect to LDAP server Server.
+%% @end
 %%--------------------------------------------------------------------
 ldap_connect(Server) when is_list(Server) ->
     {Host, Port} = sipparse_util:parse_hostport(Server),
@@ -599,10 +658,12 @@ ldap_connect(Server) when is_list(Server) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: ldap_connect(H)
-%%           H = ldaphandle record()
-%% Descrip.: Close connection to LDAP server.
-%% Returns : ok
+%% @spec    (H) -> ok
+%%
+%%            H = #ldaphandle{}
+%%
+%% @doc     Close connection to LDAP server.
+%% @end
 %%--------------------------------------------------------------------
 ldap_close(H) when is_record(H, ldaphandle) ->
     logger:log(debug, "LDAP client: Closing LDAP handle '~p'", [H#ldaphandle.ref]),
@@ -612,18 +673,22 @@ ldap_close(_) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: query_ldapclient(Query)
-%%           Query = term()
-%% Descrip.: Send a query to the persistent directory gen_server, and
-%%           return the results. If the persistent process fails in
-%%           any way, we kill it so that it gets restarted and
-%%           hopefully works better for the next query.
-%% Returns : Result |
-%%           error
-%%           Result = term(), result returned by persistent server
-%% Note    : query_ldapclient is executed by the interface functions
-%%           in the calling process, not in the persistent ldap_client
-%%           gen_server.
+%% @spec    (Query) ->
+%%            Result |
+%%            error
+%%
+%%            Query = term()
+%%
+%%            Result = term() "result returned by persistent server"
+%%
+%% @doc     Send a query to the persistent directory gen_server, and
+%%          return the results. If the persistent process fails in
+%%          any way, we kill it so that it gets restarted and
+%%          hopefully works better for the next query. Note :
+%%          query_ldapclient is executed by the interface functions
+%%          in the calling process, not in the persistent ldap_client
+%%          gen_server.
+%% @end
 %%--------------------------------------------------------------------
 query_ldapclient(Query) ->
     case util:safe_is_process_alive(ldap_client) of
@@ -657,15 +722,20 @@ query_ldapclient(Query) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: get_value(LDAPres, Attribute)
-%%           LDAPres     = ldapres record()
-%%           EAttributes = term()
-%%           Attribute   = string()
-%% Descrip.: Find the Attribute we are looking for in the result list
-%%           EAttributes. Returns the value of the first found
-%%           matching attribute. Does not indicate in any way if there
-%%           were multiple matches.
-%% Returns : Value = string() | none
+%% @spec    (LDAPres, Attribute) ->
+%%            Value
+%%
+%%            LDAPres     = #ldapres{}
+%%            EAttributes = term()
+%%            Attribute   = string()
+%%
+%%            Value = string() | none
+%%
+%% @doc     Find the Attribute we are looking for in the result list
+%%          EAttributes. Returns the value of the first found
+%%          matching attribute. Does not indicate in any way if there
+%%          were multiple matches.
+%% @end
 %%--------------------------------------------------------------------
 get_value(#ldapres{attributes=EAttributes}, Attribute) when is_list(Attribute) ->
     get_value2(EAttributes, Attribute).
@@ -679,17 +749,21 @@ get_value2(EAttributes, Attribute) when is_list(EAttributes), is_list(Attribute)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: ldapsearch_simple(Server, Type, In, Attribute)
-%%           Server    = string()
-%%           Type      = string()
-%%           In        = string()
-%%           Attribute = string()
-%% Descrip.: Query LDAP for a single Attribute and return a single
-%%           result.
-%% Returns : Value |
-%%           none  |
-%%           error
-%%           Value = string()
+%% @spec    (Server, Type, In, Attribute) ->
+%%            Value |
+%%            none  |
+%%            error
+%%
+%%            Server    = string()
+%%            Type      = string()
+%%            In        = string()
+%%            Attribute = string()
+%%
+%%            Value = string()
+%%
+%% @doc     Query LDAP for a single Attribute and return a single
+%%          result.
+%% @end
 %%--------------------------------------------------------------------
 ldapsearch_simple(Server, Type, In, Attribute) when is_list(Server), is_list(Type), is_list(In), is_list(Attribute) ->
     logger:log(debug, "Directory: Extra debug: ldapsearch_simple() Server ~p, Type ~p, In ~p, Attribute ~p",
@@ -697,16 +771,20 @@ ldapsearch_simple(Server, Type, In, Attribute) when is_list(Server), is_list(Typ
     query_ldapclient({simple_search, Server, Type, In, Attribute}).
 
 %%--------------------------------------------------------------------
-%% Function: ldapsearch(Server, Type, In, Attributes)
-%%           Server     = string()
-%%           Type       = string()
-%%           In         = string()
-%%           Attributes = list() of string()
-%% Descrip.: Query LDAP. Return a list of our result tuples.
-%% Returns : Result |
-%%           none   |
-%%           error
-%%           Result = list() of ldapres record()
+%% @spec    (Server, Type, In, Attributes) ->
+%%            Result |
+%%            none   |
+%%            error
+%%
+%%            Server     = string()
+%%            Type       = string()
+%%            In         = string()
+%%            Attributes = [string()]
+%%
+%%            Result = [#ldapres{}]
+%%
+%% @doc     Query LDAP. Return a list of our result tuples.
+%% @end
 %%--------------------------------------------------------------------
 ldapsearch(Server, Type, In, Attributes) when is_list(Server), is_list(Type), is_list(In), is_list(Attributes) ->
     logger:log(debug, "Directory: Extra debug: ldapsearch() Server ~p, Type ~p, In ~p, Attributes ~p",
@@ -717,14 +795,18 @@ ldapsearch(Server, Type, In, Attributes) when is_list(Server), is_list(Type), is
 %% Specific querys
 
 %%--------------------------------------------------------------------
-%% Function: lookup_mail2tel(Mail)
-%%           Mail = string(), e-mail address
-%% Descrip.: Find the telephoneNumber of a user that has Mail as mail-
-%%           attribute in LDAP.
-%% Returns : Value |
-%%           none  |
-%%           error
-%%           Value = string()
+%% @spec    (Mail) ->
+%%            Value |
+%%            none  |
+%%            error
+%%
+%%            Mail = string() "e-mail address"
+%%
+%%            Value = string()
+%%
+%% @doc     Find the telephoneNumber of a user that has Mail as mail-
+%%          attribute in LDAP.
+%% @end
 %%--------------------------------------------------------------------
 lookup_mail2tel(Mail) ->
     case yxa_config:get_env(ldap_server) of
@@ -737,14 +819,18 @@ lookup_mail2tel(Mail) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookup_mail2uid(Mail)
-%%           Mail = string(), e-mail address
-%% Descrip.: Find the uid of a user that has Mail as mail-attribute in
-%%           LDAP.
-%% Returns : Value |
-%%           none  |
-%%           error
-%%           Value = string()
+%% @spec    (Mail) ->
+%%            Value |
+%%            none  |
+%%            error
+%%
+%%            Mail = string() "e-mail address"
+%%
+%%            Value = string()
+%%
+%% @doc     Find the uid of a user that has Mail as mail-attribute in
+%%          LDAP.
+%% @end
 %%--------------------------------------------------------------------
 lookup_mail2uid(Mail) ->
     case yxa_config:get_env(ldap_server) of
@@ -757,14 +843,18 @@ lookup_mail2uid(Mail) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookup_mail2cn(Mail)
-%%           Mail = string(), e-mail address
-%% Descrip.: Find the cn (common name) of a user that has Mail as
-%%           mail-attribute in LDAP.
-%% Returns : Value |
-%%           none  |
-%%           error
-%%           Value = string()
+%% @spec    (Mail) ->
+%%            Value |
+%%            none  |
+%%            error
+%%
+%%            Mail = string() "e-mail address"
+%%
+%%            Value = string()
+%%
+%% @doc     Find the cn (common name) of a user that has Mail as
+%%          mail-attribute in LDAP.
+%% @end
 %%--------------------------------------------------------------------
 lookup_mail2cn(Mail) ->
     case yxa_config:get_env(ldap_server) of
@@ -777,14 +867,18 @@ lookup_mail2cn(Mail) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: lookup_mail2tel(Number)
-%%           Number = string(), telephone number
-%% Descrip.: Find the displayName of a user that has Number as
-%%           telephoneNumber in LDAP.
-%% Returns : Value |
-%%           none  |
-%%           error
-%%           Value = string()
+%% @spec    (Number) ->
+%%            Value |
+%%            none  |
+%%            error
+%%
+%%            Number = string() "telephone number"
+%%
+%%            Value = string()
+%%
+%% @doc     Find the displayName of a user that has Number as
+%%          telephoneNumber in LDAP.
+%% @end
 %%--------------------------------------------------------------------
 lookup_tel2name(Number) ->
     case yxa_config:get_env(ldap_server) of

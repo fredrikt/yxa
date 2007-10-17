@@ -42,11 +42,13 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: to(Number, N)
-%%           Number = integer()
-%%           N      = integer()
-%% Descrip.: Convert Number to a hex string.
-%% Returns : string()
+%% @spec    (Number, N) -> string()
+%%
+%%            Number = integer()
+%%            N      = integer()
+%%
+%% @doc     Convert Number to a hex string.
+%% @end
 %%--------------------------------------------------------------------
 to(_, 0) ->
     [];
@@ -58,11 +60,13 @@ to(Number, N) when is_integer(Number), N > 0 ->
 						       $c, $d, $e, $f])]).
 
 %%--------------------------------------------------------------------
-%% Function: to(Binary)
-%%           Binary = binary()
-%% Descrip.: Convert a binary (for example the result of erlang:md5/1)
-%%           to a hex string.
-%% Returns : string()
+%% @spec    (Binary) -> string()
+%%
+%%            Binary = binary()
+%%
+%% @doc     Convert a binary (for example the result of erlang:md5/1)
+%%          to a hex string.
+%% @end
 %%--------------------------------------------------------------------
 to(Binary) when is_binary(Binary) ->
     A = binary_to_list(Binary),
@@ -73,10 +77,13 @@ to(Binary) when is_binary(Binary) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: to_hex_string(Int)
-%%           Int = integer()
-%% Descrip.: convert Int into string() in hex encoding
-%% Returns : string(), containing $0-$F, upper case is used for $A-$F
+%% @spec    (Int) ->
+%%            string() "containing $0-$F, upper case is used for $A-$F"
+%%
+%%            Int = integer()
+%%
+%% @doc     convert Int into string() in hex encoding
+%% @end
 %%--------------------------------------------------------------------
 %% the basic idea of this function is to alway take the least
 %% significant (right) 4 bits (hex number) and add as a hex char to
@@ -94,10 +101,12 @@ to_hex_string(IntRest, HexString) when is_integer(IntRest), is_list(HexString) -
     to_hex_string(IntRest bsr 4, [to_hex_char(IntRest band Mask) | HexString] ).
 
 %%--------------------------------------------------------------------
-%% Function: to_hex_char(Int)
-%%           Int = integer(), 0-15
-%% Descrip.: convert Int into char() in hex encoding
-%% Returns : integer(), $0-$F, upper case is used for $A-$F
+%% @spec    (Int) -> integer() "$0-$F, upper case is used for $A-$F"
+%%
+%%            Int = integer() "0-15"
+%%
+%% @doc     convert Int into char() in hex encoding
+%% @end
 %%--------------------------------------------------------------------
 to_hex_char(Int) when (Int >= 0), (Int =< 9) ->
     $0 + Int;
@@ -106,21 +115,23 @@ to_hex_char(Int) when (Int >= 10), (Int =< 15) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: to_int(String)
-%%           String = string(), a numeric string of hex values (0-9,
-%%                    A-F and a-f can be used)
+%% @spec    (String) -> integer()
+%%
+%%            String = string() "a numeric string of hex values (0-9, A-F and a-f can be used)"
+%%
 %% @equiv   from(String)
-%% Returns : integer()
+%% @end
 %%--------------------------------------------------------------------
 to_int(String) ->
     from(String, 0).
 
 %%--------------------------------------------------------------------
-%% Function: from(String)
-%%           String = string(), a numeric string of hex values (0-9,
-%%                    A-F and a-f can be used)
-%% Descrip.: Convert hex string into an integer.
-%% Returns : integer()
+%% @spec    (String) -> integer()
+%%
+%%            String = string() "a numeric string of hex values (0-9, A-F and a-f can be used)"
+%%
+%% @doc     Convert hex string into an integer.
+%% @end
 %%--------------------------------------------------------------------
 from(String) ->
     from(String, 0).
@@ -150,9 +161,11 @@ from([C | String], N) when C >= $A, C =< $F ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

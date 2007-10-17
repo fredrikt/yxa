@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: YXA configuration subsystem.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      YXA configuration subsystem.
 %%%
-%%% Created : 15 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_config).
 
@@ -47,6 +48,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  backends,	%% list() of {Module, Opaque} where Module is an atom and Opaque is state internal to Module
 	  appmodule,	%% atom(), YXA application module
@@ -67,21 +70,30 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(AppModule)
-%%           AppModule = atom(), YXA application module
-%% Descrip.: start the server.
-%% Returns : {ok, Pid}
-%%           Pid = pid(), yxa_config persistent gen_server pid
+%% @spec    (AppModule) ->
+%%            {ok, Pid}
+%%
+%%            AppModule = atom() "YXA application module"
+%%
+%%            Pid = pid() "yxa_config persistent gen_server pid"
+%%
+%% @doc     start the server.
+%% @end
 %%--------------------------------------------------------------------
 start_link(AppModule) when is_atom(AppModule) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {AppModule}, []).
 
 %%--------------------------------------------------------------------
-%% Function: init({AppModule})
-%%	     AppModule = atom(), YXA application module
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}
-%%           State = state record()
+%% @spec    ({AppModule}) ->
+%%            {ok, State}
+%%
+%%            AppModule = atom() "YXA application module"
+%%
+%%            State = #state{}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({AppModule}) when is_atom(AppModule) ->
     yxa_config_util:startup_log(?MODULE, debug, "Starting configuration subsystem for '~p'", [AppModule]),
@@ -90,14 +102,19 @@ init({AppModule}) when is_atom(AppModule) ->
     init_config(?BACKENDS, AppModule, ExtraCfg, EtsRef).
 
 %%--------------------------------------------------------------------
-%% Function: init_config(Backends, AppModule, ExtraCfg, EtsRef)
-%%           Backends  = list() of atom(), backend module names
-%%	     AppModule = atom(), YXA application module
-%%           ExtraCfg  = yxa_cfg record(), config to append
-%%           EtsRef    = term(), ets table to load config into
-%% Descrip.: Part of init/1 and exported for yxa_test_config.
-%% Returns : {ok, State}
-%%           State = state record()
+%% @spec    (Backends, AppModule, ExtraCfg, EtsRef) ->
+%%            {ok, State}
+%%
+%%            Backends  = [atom()] "backend module names"
+%%            AppModule = atom() "YXA application module"
+%%            ExtraCfg  = #yxa_cfg{} "config to append"
+%%            EtsRef    = term() "ets table to load config into"
+%%
+%%            State = #state{}
+%%
+%% @doc     Part of init/1 and exported for yxa_test_config.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 %% part of init/1 and exported for yxa_test_config
 init_config(Backends, AppModule, ExtraCfg, EtsRef) when is_list(Backends), is_atom(AppModule),
@@ -138,15 +155,20 @@ init_config(Backends, AppModule, ExtraCfg, EtsRef) when is_list(Backends), is_at
     {ok, State}.
 
 %%--------------------------------------------------------------------
-%% Function: init_backends(In, AppModule)
-%%           In        = list() of atom(), list of module names
-%%	     AppModule = atom(), YXA application module
-%% Descrip.: Calls the init/1 function in each backend, and returns
-%%           the backends opaque data structures that will later be
-%%           passed to their parse/1 functions.
-%% Returns : Res = list() of {Backend, Opaque}
-%%           Backend = atom()
-%%           Opaque  = term()
+%% @spec    (In, AppModule) ->
+%%            Res
+%%
+%%            In        = [atom()] "list of module names"
+%%            AppModule = atom() "YXA application module"
+%%
+%%            Res     = [{Backend, Opaque}]
+%%            Backend = atom()
+%%            Opaque  = term()
+%%
+%% @doc     Calls the init/1 function in each backend, and returns the
+%%          backends opaque data structures that will later be passed
+%%          to their parse/1 functions.
+%% @end
 %%--------------------------------------------------------------------
 init_backends(In, AppModule) when is_list(In), is_atom(AppModule) ->
     F = fun(M, Acc) ->
@@ -167,21 +189,26 @@ init_backends(In, AppModule) when is_list(In), is_atom(AppModule) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: reload()
-%% Descrip.: Parse, validate and load the configuration (again).
-%% Returns : ok | {error, Where, Msg}
-%%           Where = atom()
-%%           Msg   = string()
+%% @spec    () ->
+%%            ok | {error, Where, Msg}
+%%
+%%            Where = atom()
+%%            Msg   = string()
+%%
+%% @doc     Parse, validate and load the configuration (again).
+%% @end
 %%--------------------------------------------------------------------
 reload() ->
     gen_server:call(yxa_config, reload).
 
 %%--------------------------------------------------------------------
-%% Function: behaviour_info(callbacks)
-%% Descrip.: Describe all the API functions a module indicating it is
-%%           an yxa_config behaviour module must export. List of
-%%           tuples of the function names and their arity.
-%% Returns : list() of tuple()
+%% @spec    (callbacks) -> [tuple()]
+%%
+%% @doc     Describe all the API functions a module indicating it is
+%%          an yxa_config behaviour module must export. List of
+%%          tuples of the function names and their arity.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
     [{init, 1},
@@ -191,14 +218,16 @@ behaviour_info(_Other) ->
     undefined.
 
 %%--------------------------------------------------------------------
-%% Function: get_env(Key)
-%%           Key = atom()
-%% Descrip.: Fetch parameter value. Return 'none' if parameter is
-%%           known but not set. throw() if unknown parameter is
-%%           requested.
-%% Returns : {ok, Value} |
-%%           Value       |
-%%           none
+%% @spec    (Key) ->
+%%            {ok, Value} |
+%%            Value       |
+%%            none
+%%
+%%            Key = atom()
+%%
+%% @doc     Fetch parameter value. Return 'none' if parameter is known
+%%          but not set. throw() if unknown parameter is requested.
+%% @end
 %%--------------------------------------------------------------------
 get_env(Key) when is_atom(Key) ->
     %% check if the configuration source for this process is overridden -
@@ -211,14 +240,17 @@ get_env(Key) when is_atom(Key) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_env(Key, Default)
-%%           Key     = atom()
-%%           Default = term(), returned if no value is present
-%% Descrip.: Fetch parameter value, with a default specified by the
-%%           caller. throw() if unknown parameter is requested.
-%% Returns : {ok, Value} |
-%%           Value       |
-%%           none
+%% @spec    (Key, Default) ->
+%%            {ok, Value} |
+%%            Value       |
+%%            none
+%%
+%%            Key     = atom()
+%%            Default = term() "returned if no value is present"
+%%
+%% @doc     Fetch parameter value, with a default specified by the
+%%          caller. throw() if unknown parameter is requested.
+%% @end
 %%--------------------------------------------------------------------
 get_env(Key, Default) when is_atom(Key) ->
     %% check if the configuration source for this process is overridden -
@@ -253,13 +285,16 @@ get_env2(Key, Default, Tab) when is_atom(Key) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: list()
-%% Descrip.: Return a list of tuples with the current configuration.
-%% Returns : list() of ConfigTuple
-%%           ConfigTuple = {Key, Value, Source}
-%%             Key       = atom()
-%%             Value     = term()
-%%             Source    = atom(), backend module this entry came from
+%% @spec    () ->
+%%            [ConfigTuple]
+%%
+%%            ConfigTuple = {Key, Value, Source}
+%%            Key         = atom()
+%%            Value       = term()
+%%            Source      = atom() "backend module this entry came from"
+%%
+%% @doc     Return a list of tuples with the current configuration.
+%% @end
 %%--------------------------------------------------------------------
 list() ->
     case get(?YXA_CONFIG_SOURCE_PTR) of
@@ -278,23 +313,32 @@ list(Tab) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages.
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(reload, From, State)
-%% Descrip.: Reload configuration.
-%% Returns : {reply, Reply, State}
-%%           Reply = ok | {error, Where, Msg}
-%%           Where = parse | validation | load
+%% @spec    (reload, From, State) ->
+%%            {reply, Reply, State}
+%%
+%%            Reply = ok | {error, Where, Msg}
+%%            Where = parse | validation | load
+%%
+%% @doc     Reload configuration.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(reload, _From, State) ->
     logger:log(normal, "Config server: Reloading configuration"),
@@ -336,18 +380,25 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Log unknown casts we receive.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Log unknown casts we receive.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Config server: Received unknown gen_server cast : ~p", [Unknown]),
@@ -355,34 +406,45 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Log unknown signals we receive.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Log unknown signals we receive.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Config server: Received unknown signal :~n~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(_OldVsn, State, _Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (_OldVsn, State, _Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     %% XXX has to reload/re-validate config in ets table in case
@@ -396,19 +458,23 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: parse(ExtraCfg, State)
-%%           ExtraCfg = yxa_cfg record()
-%%           State    = state record()
-%% Descrip.: Let all our backends parse their config and then merge
-%%           it together into our final configuration. Merge ExtraCfg
-%%           in last of all. The merging is from right to left, so the
-%%           order of the backends in State is crucial - last backend
-%%           wins if there is a merge conflict.
-%% Returns : {ok, NewCfg}          |
-%%           {error, Backend, Msg}
-%%           NewCfg  = yxa_cfg record()
-%%           Backend = atom(), module name
-%%           Msg     = term()
+%% @spec    (ExtraCfg, State) ->
+%%            {ok, NewCfg}          |
+%%            {error, Backend, Msg}
+%%
+%%            ExtraCfg = #yxa_cfg{}
+%%            State    = #state{}
+%%
+%%            NewCfg  = #yxa_cfg{}
+%%            Backend = atom() "module name"
+%%            Msg     = term()
+%%
+%% @doc     Let all our backends parse their config and then merge it
+%%          together into our final configuration. Merge ExtraCfg in
+%%          last of all. The merging is from right to left, so the
+%%          order of the backends in State is crucial - last backend
+%%          wins if there is a merge conflict.
+%% @end
 %%--------------------------------------------------------------------
 parse(ExtraCfg, State) when is_record(ExtraCfg, yxa_cfg), is_record(State, state) ->
     Backends = State#state.backends,
@@ -445,11 +511,16 @@ parse2([], Entrys) ->
     {ok, lists:keysort(1, Entrys)}.
 
 %%--------------------------------------------------------------------
-%% Function: merge_entrys(Left, Right)
-%%           Left  = list() of {Key, Value, Src}
-%%           Right = list() of {Key, Value, Src}
-%% Descrip.: Merge entrys from Right to Left
-%% Returns : NewEntrys = list() of {Key, Value, Src}
+%% @spec    (Left, Right) ->
+%%            NewEntrys
+%%
+%%            Left  = [{Key, Value, Src}]
+%%            Right = [{Key, Value, Src}]
+%%
+%%            NewEntrys = [{Key, Value, Src}]
+%%
+%% @doc     Merge entrys from Right to Left
+%% @end
 %%--------------------------------------------------------------------
 merge_entrys(Entrys, [{Key, Value, Src} | T]) ->
     NewL =
@@ -465,31 +536,37 @@ merge_entrys(Entrys, []) ->
     Entrys.
 
 %%--------------------------------------------------------------------
-%% Function: validate(Cfg, AppModule, Mode)
-%%           Cfg       = yxa_cfg record()
-%%           AppModule = atom(), YXA application name
-%%           Mode      = soft | hard
-%% Descrip.: Validate and normalize (according to the type
-%%           declarations) all configuration entrys in Cfg. Mode is
-%%           our fail mode - soft (for reloads) or hard (for initial
-%%           startup).
-%% Returns : {ok, NewCfg} |
-%%           {error, Msg}
-%%           NewCfg = yxa_cfg record()
-%%           Msg    = string()
+%% @spec    (Cfg, AppModule, Mode) ->
+%%            {ok, NewCfg} |
+%%            {error, Msg}
+%%
+%%            Cfg       = #yxa_cfg{}
+%%            AppModule = atom() "YXA application name"
+%%            Mode      = soft | hard
+%%
+%%            NewCfg = #yxa_cfg{}
+%%            Msg    = string()
+%%
+%% @doc     Validate and normalize (according to the type
+%%          declarations) all configuration entrys in Cfg. Mode is
+%%          our fail mode - soft (for reloads) or hard (for initial
+%%          startup).
+%% @end
 %%--------------------------------------------------------------------
 validate(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModule), (Mode == soft orelse Mode == hard) ->
     yxa_config_check:check_config(Cfg, AppModule, Mode).
 
 %%--------------------------------------------------------------------
-%% Function: load(Cfg, Mode, State)
-%%           Cfg   = yxa_cfg record()
-%%           Mode  = soft | hard
-%%           State = state record()
-%% Descrip.: Load a parsed and validated config into our configuration
-%%           storage. Mode is our fail mode - soft (for reloads) or
-%%           hard (for initial startup).
-%% Returns : ok
+%% @spec    (Cfg, Mode, State) -> ok
+%%
+%%            Cfg   = #yxa_cfg{}
+%%            Mode  = soft | hard
+%%            State = #state{}
+%%
+%% @doc     Load a parsed and validated config into our configuration
+%%          storage. Mode is our fail mode - soft (for reloads) or
+%%          hard (for initial startup).
+%% @end
 %%--------------------------------------------------------------------
 load(Cfg, Mode, State) when is_record(Cfg, yxa_cfg), (Mode == soft orelse Mode == hard) ->
     ok = load_set(Cfg#yxa_cfg.entrys, Mode, State#state.etsref),
@@ -615,14 +692,18 @@ value_for_logging(Key, Value) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: change_action(Key, Value, Mode)
-%%           Key   = atom()
-%%           Value = term()
-%%           Mode  = soft | hard
-%% Descrip.: Perform any necessary actions when a configuration value
-%%           changes, like perhaps notifying a gen_server or similar.
-%% Returns : ok | {error, Reason}
-%%           Reason = string()
+%% @spec    (Key, Value, Mode) ->
+%%            ok | {error, Reason}
+%%
+%%            Key   = atom()
+%%            Value = term()
+%%            Mode  = soft | hard
+%%
+%%            Reason = string()
+%%
+%% @doc     Perform any necessary actions when a configuration value
+%%          changes, like perhaps notifying a gen_server or similar.
+%% @end
 %%--------------------------------------------------------------------
 change_action(sipuserdb_file_refresh_interval, Value, soft) ->
     case sipuserdb_file_backend:change_interval(Value) of
@@ -644,9 +725,11 @@ change_action(Key, Value, Mode) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% merge_entrys(Left, Right)

@@ -1,9 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_app.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Behaviour definition for YXA applications.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Behaviour definition for YXA applications.
 %%%
-%%% Created : 01 Sep 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    01 Sep 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @hidden
 %%%-------------------------------------------------------------------
 -module(yxa_app).
 
@@ -12,11 +14,13 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: behaviour_info(callbacks)
-%% Descrip.: Describe all the API functions a module indicating it is
-%%           an YXA application must export. List of tuples of the
-%%           function names and their arity.
-%% Returns : list() of tuple()
+%% @spec    (callbacks) -> [tuple()]
+%%
+%% @doc     Describe all the API functions a module indicating it is
+%%          an YXA application must export. List of tuples of the
+%%          function names and their arity.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
     [{init, 0},

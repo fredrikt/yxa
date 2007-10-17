@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : stun.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Incomplete STUN-server. Based on
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Incomplete STUN-server. Based on
 %%%           draft-ietf-behave-rfc3489bis-03 but only a subset
 %%%           currently implemented. You have been warned!
 %%%
@@ -11,7 +11,8 @@
 %%%           process(...) function though, such as our own sockets
 %%%           IP address, the alternate sockets IP address and so on.
 %%%
-%%% Created :  9 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     9 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(stun).
 %%-compile(export_all).
@@ -103,17 +104,21 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: process(Packet, Env)
-%%           Packet    = binary(), the STUN packet received
-%%           Env       = stun_env record()
-%% Descrip.: Process a STUN packet received from the network. Relies
-%%           on the caller to send the actual response, if one is
-%%           returned from this function (in order to be fully
-%%           testable).
-%% Returns : StunResult        |
-%%           ignore            |
-%%           {error, not_stun}
-%%           StunResult = stun_result record()
+%% @spec    (Packet, Env) ->
+%%            StunResult        |
+%%            ignore            |
+%%            {error, not_stun}
+%%
+%%            Packet = binary() "the STUN packet received"
+%%            Env    = #stun_env{}
+%%
+%%            StunResult = #stun_result{}
+%%
+%% @doc     Process a STUN packet received from the network. Relies on
+%%          the caller to send the actual response, if one is
+%%          returned from this function (in order to be fully
+%%          testable).
+%% @end
 %%--------------------------------------------------------------------
 process(<<N:8, _/binary>> = Packet, Env) when is_binary(Packet), is_record(Env, stun_env),
 					      N == 0; N == 1 ->
@@ -135,26 +140,24 @@ process(_Packet, _Env) ->
     {error, not_stun}.
 
 %%--------------------------------------------------------------------
-%% Function: process_stream(Stream, Env)
-%%           Stream    = binary(), data received from network that
-%%                       is believed to start with a STUN packet
-%%           Env       = stun_env record()
-%% Descrip.: Process a binary stream of data received from the
-%%           network.
-%%           Relies
-%%           on the caller to send the actual response, if one is
-%%           returned from this function (in order to be fully
-%%           testable).
-%% Returns : {ok, StunResult, StreamRest}  |
-%%           {need_more_data, Num}         |
-%%           {error, not_stun}             |
-%%           ignore
-%%           StunResult = stun_result record()
-%%           Num        = integer()
-%%           StreamRest = binary(), the rest of Stream when the first
-%%                        STUN packet has been processed.
-%%                        NOTE: Caller must check if StreamRest starts
-%%                              with another STUN packet!
+%% @spec    (Stream, Env) ->
+%%            {ok, StunResult, StreamRest}  |
+%%            {need_more_data, Num}         |
+%%            {error, not_stun}             |
+%%            ignore
+%%
+%%            Stream = binary() "data received from network that is believed to start with a STUN packet"
+%%            Env    = #stun_env{}
+%%
+%%            StunResult = #stun_result{}
+%%            Num        = integer()
+%%            StreamRest = binary() "the rest of Stream when the first STUN packet has been processed. NOTE: Caller must check if StreamRest starts with another STUN packet!"
+%%
+%% @doc     Process a binary stream of data received from the network.
+%%          Relies on the caller to send the actual response, if one
+%%          is returned from this function (in order to be fully
+%%          testable).
+%% @end
 %%--------------------------------------------------------------------
 process_stream(<<FirstByte:8, _/binary>> = Stream, Env) when is_binary(Stream), is_record(Env, stun_env),
 							     FirstByte == 0; FirstByte == 1 ->
@@ -210,17 +213,21 @@ process_get_transaction(Data, SReq) when is_binary(Data), is_record(SReq, stun_r
     end.
 
 %%--------------------------------------------------------------------
-%% Function: received_stun_request(SReq, Packet)
-%%           SReq   = stun_request record()
-%%           Packet = binary(), the STUN packet received
-%% Descrip.: What we received at least held something that could pass
-%%           as a STUN header. Wrap our further processing of the
-%%           packet in a try/catch to try and ensure that we never
-%%           crash or return anything unexpected to the caller of this
-%%           module.
-%% Returns : StunResult        |
-%%           ignore
-%%           StunResult = stun_result record()
+%% @spec    (SReq, Packet) ->
+%%            StunResult        |
+%%            ignore
+%%
+%%            SReq   = #stun_request{}
+%%            Packet = binary() "the STUN packet received"
+%%
+%%            StunResult = #stun_result{}
+%%
+%% @doc     What we received at least held something that could pass
+%%          as a STUN header. Wrap our further processing of the
+%%          packet in a try/catch to try and ensure that we never
+%%          crash or return anything unexpected to the caller of this
+%%          module.
+%% @end
 %%--------------------------------------------------------------------
 received_stun_request(SReq, Packet) ->
     try safe_received_stun_request(SReq, Packet) of
@@ -252,20 +259,24 @@ received_stun_request(SReq, Packet) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: safe_received_stun_request(SReq, Packet)
-%%           SReq   = stun_request record()
-%%           Packet = binary(), the STUN packet received
-%% Descrip.: Do some initial sanity checks of the received packet to
-%%           see if it could be wellformed STUN. Check the size of the
-%%           payload section against the value encoded in the STUN
-%%           header (the first 20 bytes) and so on.
-%% Returns : StunResult                       |
-%%           ignore                           |
-%%           throw(stun_error())              |
-%%           {error, {not_implemented, Line}}
-%%           StunResult = stun_result record()
-%%           Line       = integer(), source code line where the
-%%                        'not implemented' situation occured
+%% @spec    (SReq, Packet) ->
+%%            StunResult                       |
+%%            ignore                           |
+%%            {error, {not_implemented, Line}}
+%%
+%%            SReq   = #stun_request{}
+%%            Packet = binary() "the STUN packet received"
+%%
+%%            StunResult = #stun_result{}
+%%            Line       = integer() "source code line where the 'not implemented' situation occured"
+%%
+%% @throws  stun_error() 
+%%
+%% @doc     Do some initial sanity checks of the received packet to
+%%          see if it could be wellformed STUN. Check the size of the
+%%          payload section against the value encoded in the STUN
+%%          header (the first 20 bytes) and so on.
+%% @end
 %%--------------------------------------------------------------------
 safe_received_stun_request(#stun_request{length = Len} = SReq, Packet) ->
     #stun_env{proto = Proto, remote_ip_str = IPstr, remote_port = Port} = SReq#stun_request.env,
@@ -294,21 +305,23 @@ safe_received_stun_request(#stun_request{length = Len} = SReq, Packet) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: stun_request_check_integrity(SReq, Packet, MI_Offset)
-%%           SReq      = stun_request record()
-%%           Packet    = binary(), the STUN packet received
-%%           MI_Offset = integer(), how many bytes from the start of
-%%                       Packet were there up to the MI-attr?
-%% Descrip.: If there was an MESSAGE-INTEGRITY attribute in the
-%%           Packet, we go along verifying the integrity of the STUN
-%%           request.
-%% Returns : StunResult                       |
-%%           ignore                           |
-%%           throw(stun_error())              |
-%%           {error, {not_implemented, Line}}
-%%           StunResult = stun_result record()
-%%           Line       = integer(), source code line where the
-%%                        'not implemented' situation occured
+%% @spec    (SReq, Packet, MI_Offset) ->
+%%            StunResult                       |
+%%            ignore                           |
+%%            {error, {not_implemented, Line}}
+%%
+%%            SReq      = #stun_request{}
+%%            Packet    = binary() "the STUN packet received"
+%%            MI_Offset = integer() "how many bytes from the start of Packet were there up to the MI-attr?"
+%%
+%%            StunResult = #stun_result{}
+%%            Line       = integer() "source code line where the 'not implemented' situation occured"
+%%
+%% @throws  stun_error() 
+%%
+%% @doc     If there was an MESSAGE-INTEGRITY attribute in the Packet,
+%%          we go along verifying the integrity of the STUN request.
+%% @end
 %%--------------------------------------------------------------------
 stun_request_check_integrity(#stun_request{rfc = rfc3489bis} = SReq, Packet, MI_Offset) when is_binary(Packet),
 											     is_integer(MI_Offset) ->
@@ -357,17 +370,21 @@ stun_request_check_integrity(#stun_request{rfc = rfc3489} = SReq, _Packet, _MI_O
     stun_request_check_mandatory_attributes(SReq).
 
 %%--------------------------------------------------------------------
-%% Function: stun_request_check_mandatory_attributes(SReq)
-%%           SReq      = stun_request record()
-%% Descrip.: Check that there are no mandatory attributes (type less
-%%           than 0x7ffff) that we don't recognize in the request we
-%%           received.
-%% Returns : StunResult                       |
-%%           throw(stun_error())              |
-%%           {error, {not_implemented, Line}}
-%%           StunResult = stun_result record()
-%%           Line       = integer(), source code line where the
-%%                        'not implemented' situation occured
+%% @spec    (SReq) ->
+%%            StunResult                       |
+%%            {error, {not_implemented, Line}}
+%%
+%%            SReq = #stun_request{}
+%%
+%%            StunResult = #stun_result{}
+%%            Line       = integer() "source code line where the 'not implemented' situation occured"
+%%
+%% @throws  stun_error() 
+%%
+%% @doc     Check that there are no mandatory attributes (type less
+%%          than 0x7ffff) that we don't recognize in the request we
+%%          received.
+%% @end
 %%--------------------------------------------------------------------
 stun_request_check_mandatory_attributes(SReq) ->
     %% The server MUST check for any mantadory attributes in the request
@@ -392,19 +409,23 @@ stun_request_check_mandatory_attributes(SReq) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: stun_request(SReq)
-%%           SReq      = stun_request record()
-%% Descrip.: We have now performed all checks on the received STUN
-%%           request - integrity check has passed and we have checked
-%%           that there are no mandatory attributes in there we don't
-%%           understand. Now handle the request differently based on
-%%           the type of request.
-%% Returns : StunResult                       |
-%%           throw(stun_error())              |
-%%           {error, {not_implemented, Line}}
-%%           StunResult = stun_result record()
-%%           Line       = integer(), source code line where the
-%%                        'not implemented' situation occured
+%% @spec    (SReq) ->
+%%            StunResult                       |
+%%            {error, {not_implemented, Line}}
+%%
+%%            SReq = #stun_request{}
+%%
+%%            StunResult = #stun_result{}
+%%            Line       = integer() "source code line where the 'not implemented' situation occured"
+%%
+%% @throws  stun_error() 
+%%
+%% @doc     We have now performed all checks on the received STUN
+%%          request - integrity check has passed and we have checked
+%%          that there are no mandatory attributes in there we don't
+%%          understand. Now handle the request differently based on
+%%          the type of request.
+%% @end
 %%--------------------------------------------------------------------
 stun_request(#stun_request{type = ?STUN_TYPE_BINDING_REQUEST} = SReq) ->
     #stun_env{proto = Proto, remote_ip_str = IPstr, remote_ip = IP, remote_port = Port} = SReq#stun_request.env,
@@ -442,25 +463,27 @@ stun_request(SReq) when is_record(SReq, stun_request) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: check_message_integrity(Packet, SReq, MI_Offset,
-%%                                   MsgIntegrity, Realm, Nonce,
-%%                                   Username)
-%%           Packet    = binary(), STUN request
-%%           SReq      = stun_request record()
-%%           MI_Offset = integer(), how many bytes from the start of
-%%                       Packet were there up to the MI-attr?
-%%           MsgIntegrity = string(), SHA1 HMAC (or? XXX)
-%%           Realm    = AttrValue, see below
-%%           Nonce    = AttrValue, see below
-%%           Username = AttrValue, see below
-%%             AttrValue = nomatch | {ok, [String]}
-%% Descrip.: Process the list of parsed attributes in SReq, and put
-%%           together attributes for the response where those vary
-%%           with the attributes in the request,
-%% Returns : {error, {not_implemented, Line}} |
-%%           throw(stun_error())
-%%           Line = integer(), source code line where the
-%%                  'not implemented' situation occured
+%% @spec    (Packet, SReq, MI_Offset, MsgIntegrity, Realm, Nonce,
+%%          Username) ->
+%%            {error, {not_implemented, Line}} 
+%%
+%%            Packet       = binary() "STUN request"
+%%            SReq         = #stun_request{}
+%%            MI_Offset    = integer() "how many bytes from the start of Packet were there up to the MI-attr?"
+%%            MsgIntegrity = string() "SHA1 HMAC (or? XXX)"
+%%            Realm        = AttrValue
+%%            Nonce        = AttrValue
+%%            Username     = AttrValue
+%%            AttrValue    = nomatch | {ok, [String]}
+%%
+%%            Line = integer() "source code line where the 'not implemented' situation occured"
+%%
+%% @throws  stun_error() 
+%%
+%% @doc     Process the list of parsed attributes in SReq, and put
+%%          together attributes for the response where those vary
+%%          with the attributes in the request,
+%% @end
 %%--------------------------------------------------------------------
 check_message_integrity(_Packet, SReq, _MI_Offset, MsgIntegrityL, RealmL, NonceL, UsernameL)
   when length(MsgIntegrityL) > 1; length(RealmL) > 1; length(NonceL) > 1; length(UsernameL) > 1 ->
@@ -519,15 +542,20 @@ check_message_integrity(Packet, SReq, MI_Offset, MsgIntegrity, [Realm], [Nonce],
 
 
 %%--------------------------------------------------------------------
-%% Function: process_attributes(SReq)
-%%           SReq       = stun_request record()
-%% Descrip.: Process the list of parsed attributes in SReq, and put
-%%           together attributes for the response where those vary
-%%           with the attributes in the request,
-%% Returns : {Change, ReplyAttrs} |
-%%           throw(stun_error())
-%%           Change     = none | ip | port | both | error
-%%           ReplyAttrs = list() of stun_attr record()
+%% @spec    (SReq) ->
+%%            {Change, ReplyAttrs} 
+%%
+%%            SReq = #stun_request{}
+%%
+%%            Change     = none | ip | port | both | error
+%%            ReplyAttrs = [#stun_attr{}]
+%%
+%% @throws  stun_error() 
+%%
+%% @doc     Process the list of parsed attributes in SReq, and put
+%%          together attributes for the response where those vary
+%%          with the attributes in the request,
+%% @end
 %%--------------------------------------------------------------------
 process_attributes(SReq) when is_record(SReq, stun_request) ->
     Attrs = SReq#stun_request.attrs,
@@ -637,16 +665,20 @@ process_attributes2([], _SReq, Status, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: guarded_create_stun_error(SReq, Number, Attributes)
-%%           SReq       = stun_request record()
-%%           Number     = stun_error_code()
-%%           Attributes = stun_error_attr()
-%% Descrip.: Create a STUN error response in a try/catch to hopefully
-%%           never crash inside this code, or any code this code
-%%           calls. Used from high-level functions that have no other
-%%           error protection.
-%% Returns : StunResult | ignore
-%%           StunResult = stun_result record()
+%% @spec    (SReq, Number, Attributes) ->
+%%            StunResult | ignore
+%%
+%%            SReq       = #stun_request{}
+%%            Number     = stun_error_code()
+%%            Attributes = stun_error_attr()
+%%
+%%            StunResult = #stun_result{}
+%%
+%% @doc     Create a STUN error response in a try/catch to hopefully
+%%          never crash inside this code, or any code this code
+%%          calls. Used from high-level functions that have no other
+%%          error protection.
+%% @end
 %%--------------------------------------------------------------------
 guarded_create_stun_error(SReq, Number, Attributes) ->
     try create_stun_error(SReq, Number, Attributes) of
@@ -670,12 +702,17 @@ guarded_create_stun_error(SReq, Number, Attributes) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_stun_error(SReq, Number, Attributes)
-%%           SReq       = stun_request record()
-%%           Number     = stun_error_code()
-%%           Attributes = stun_error_attr()
-%% Descrip.: Create a STUN error response to the request SReq.
-%% Returns : StunResult = stun_result record()
+%% @spec    (SReq, Number, Attributes) ->
+%%            StunResult
+%%
+%%            SReq       = #stun_request{}
+%%            Number     = stun_error_code()
+%%            Attributes = stun_error_attr()
+%%
+%%            StunResult = #stun_result{}
+%%
+%% @doc     Create a STUN error response to the request SReq.
+%% @end
 %%--------------------------------------------------------------------
 create_stun_error(SReq, Number, Attributes) when is_record(SReq, stun_request), is_list(Attributes) ->
     %% all STUN error responses MUST have a type whose value is
@@ -689,12 +726,17 @@ create_stun_error(SReq, Number, Attributes) when is_record(SReq, stun_request), 
 		}.
 
 %%--------------------------------------------------------------------
-%% Function: create_stun_response(SReq, Status, Attributes)
-%%           SReq       = stun_request record()
-%%           Change     = none | ip | port | both
-%%           Attributes = list() of binary(), encoded attributes
-%% Descrip.: Create a STUN response.
-%% Returns : StunResult = stun_result record()
+%% @spec    (SReq, Status, Attributes) ->
+%%            StunResult
+%%
+%%            SReq       = #stun_request{}
+%%            Change     = none | ip | port | both
+%%            Attributes = [binary()] "encoded attributes"
+%%
+%%            StunResult = #stun_result{}
+%%
+%% @doc     Create a STUN response.
+%% @end
 %%--------------------------------------------------------------------
 create_stun_response(SReq, Change, Attributes) when is_record(SReq, stun_request), is_list(Attributes) ->
     %% All STUN success responses MUST have a type whose value is 0x100 higher
@@ -707,17 +749,20 @@ create_stun_response(SReq, Change, Attributes) when is_record(SReq, stun_request
 		}.
 
 %%--------------------------------------------------------------------
-%% Function: create_stun_response_bin(Increment, SReq, Attributes)
-%%           Increment  = integer(), 0x100 for successful response and
-%%                                   0x110 for error responses
-%%           SReq       = stun_request record()
-%%           Attributes = list() of binary(), encoded attributes
-%% Descrip.: Encode a STUN response. Returned as a list with two
-%%           elements (STUN header and attributes) to make writing
-%%           test cases easier [Header | Attrs].
-%% Returns : [Header | Attrs]
-%%           Header = binary(), the 20 bytes STUN header
-%%           Attrs  = binary()
+%% @spec    (Increment, SReq, Attributes) ->
+%%            [Header | Attrs]
+%%
+%%            Increment  = integer() "0x100 for successful response and 0x110 for error responses"
+%%            SReq       = #stun_request{}
+%%            Attributes = [binary()] "encoded attributes"
+%%
+%%            Header = binary() "the 20 bytes STUN header"
+%%            Attrs  = binary()
+%%
+%% @doc     Encode a STUN response. Returned as a list with two
+%%          elements (STUN header and attributes) to make writing
+%%          test cases easier [Header | Attrs].
+%% @end
 %%--------------------------------------------------------------------
 create_stun_response_bin(Increment, SReq, Attributes) when is_list(Attributes) ->
     Type = SReq#stun_request.type + Increment,
@@ -742,17 +787,20 @@ create_stun_response_bin(Increment, SReq, Attributes) when is_list(Attributes) -
 
 
 %%--------------------------------------------------------------------
-%% Function: decode_attributes(Packet, Offset)
-%%           Packet = binary(), STUN packet received from network
-%%           Offset = integer(), offset to attributes in Packet
-%% Descrip.: Decode all STUN attributes in Packet. To not create sub-
-%%           binarys we work with an offset into one and the same
-%%           binary all the time.
-%% Returns : {ok, Attributes, MIntegrityOffset} |
-%%           {error, bad_attribute}
-%%           Attributes       = list() of stun_attr record()
-%%           MIntegrityOffset = integer(), offset to first
-%%                              MESSAGE-INTEGRITY attribute
+%% @spec    (Packet, Offset) ->
+%%            {ok, Attributes, MIntegrityOffset} |
+%%            {error, bad_attribute}
+%%
+%%            Packet = binary() "STUN packet received from network"
+%%            Offset = integer() "offset to attributes in Packet"
+%%
+%%            Attributes       = [#stun_attr{}]
+%%            MIntegrityOffset = integer() "offset to first MESSAGE-INTEGRITY attribute"
+%%
+%% @doc     Decode all STUN attributes in Packet. To not create sub-
+%%          binarys we work with an offset into one and the same
+%%          binary all the time.
+%% @end
 %%--------------------------------------------------------------------
 decode_attributes(Packet, Offset) when is_binary(Packet), is_integer(Offset) ->
     MIntegrityOffset = 0,
@@ -792,13 +840,17 @@ decode_attributes2(Packet, Offset, MIO, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_attribute(Type, Attributes)
-%%           Type       = integer(), STUN attribute number
-%%           Attributes = list() of stun_attr record()
-%% Descrip.: Find all attributes matching Type.
-%% Returns : {ok, Matching} |
-%%           nomatch
-%%           Matching = list() of stun_attr record()
+%% @spec    (Type, Attributes) ->
+%%            {ok, Matching} |
+%%            nomatch
+%%
+%%            Type       = integer() "STUN attribute number"
+%%            Attributes = [#stun_attr{}]
+%%
+%%            Matching = [#stun_attr{}]
+%%
+%% @doc     Find all attributes matching Type.
+%% @end
 %%--------------------------------------------------------------------
 get_attribute(Type, Attributes) when is_list(Attributes) ->
     case get_attribute2(Type, Attributes, [], []) of
@@ -809,15 +861,19 @@ get_attribute(Type, Attributes) when is_list(Attributes) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_attribute2(Type, Attributes, [], [])
-%%           Type       = integer(), STUN attribute number
-%%           Attributes = list() of stun_attr record()
-%% Descrip.: Find all attributes matching Type, and return both the
-%%           ones matching and those that don't match in two new lists
-%%           of stun_attr records.
-%% Returns : {ok, Match, NoMatch}
-%%           Match   = list() of stun_attr record()
-%%           NoMatch = list() of stun_attr record()
+%% @spec    (Type, Attributes, [], []) ->
+%%            {ok, Match, NoMatch}
+%%
+%%            Type       = integer() "STUN attribute number"
+%%            Attributes = [#stun_attr{}]
+%%
+%%            Match   = [#stun_attr{}]
+%%            NoMatch = [#stun_attr{}]
+%%
+%% @doc     Find all attributes matching Type, and return both the
+%%          ones matching and those that don't match in two new lists
+%%          of stun_attr records.
+%% @end
 %%--------------------------------------------------------------------
 get_attribute2(Type, [#stun_attr{type = Type} = H | T], Match, NoMatch) ->
     get_attribute2(Type, T, [H | Match], NoMatch);
@@ -828,14 +884,19 @@ get_attribute2(_Type, [], Match, NoMatch) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(STUN_ATTRIBUTE_MAPPED_ADDRESS,
-%%                            {Proto, Address, Port})
-%%           Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | atom()
-%%           Address = tuple(), {A,B,C,D} | {A,B,C,D,E,F,G,H}
-%%           Port    = integer()
-%% Descrip.: MAPPED-ADDRESS is the IP and port we received a STUN
-%%           request from.
-%% Returns : Attr = binary()
+%% @spec
+%%    (STUN_ATTRIBUTE_MAPPED_ADDRESS, {Proto, Address, Port}) ->
+%%            Attr
+%%
+%%            Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | atom()
+%%            Address = {A,B,C,D} | {A,B,C,D,E,F,G,H}
+%%            Port    = integer()
+%%
+%%            Attr = binary()
+%%
+%% @doc     MAPPED-ADDRESS is the IP and port we received a STUN
+%%          request from.
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_MAPPED_ADDRESS,	In) ->
     %% 11.1
@@ -846,32 +907,39 @@ create_attribute(?STUN_ATTRIBUTE_MAPPED_ADDRESS,	In) ->
 %%    {error, {not_implemented, ?LINE}};
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_CHANGED_ADDRESS,
-%%                            {Proto, Address, Port})
-%%           Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | atom()
-%%           Address = tuple(), {A,B,C,D} | {A,B,C,D,E,F,G,H}
-%%           Port    = integer()
-%% Descrip.: CHANGED-ADDRESS is the IP and port we _would_ have
-%%           responded using if the client had requested it (through
-%%           a CHANGE-REQUEST attribute with the appropriate bits
-%%           set).
-%% Returns : Attr = binary()
+%% @spec
+%%    (?STUN_ATTRIBUTE_CHANGED_ADDRESS, {Proto, Address, Port}) ->
+%%            Attr
+%%
+%%            Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | atom()
+%%            Address = {A,B,C,D} | {A,B,C,D,E,F,G,H}
+%%            Port    = integer()
+%%
+%%            Attr = binary()
+%%
+%% @doc     CHANGED-ADDRESS is the IP and port we _would_ have
+%%          responded using if the client had requested it (through a
+%%          CHANGE-REQUEST attribute with the appropriate bits set).
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_CHANGED_ADDRESS,	In) ->
     %% 11.3
     mapped_address_encode(?STUN_ATTRIBUTE_CHANGED_ADDRESS, In);
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_CHANGE_REQUEST,
-%%                            {ChangeIP, ChangePort})
-%%           ChangeIP   = bool(), client requests us to use an
-%%                        alternate source IP when responing
-%%           ChangePort = bool(), client requests us to use an
-%%                        alternate source port when responing
-%% Descrip.: CHANGE-REQUEST is how the client tells the STUN server to
-%%           use an alternate source IP / source port when responding,
-%%           or just polls the servers capability to do so.
-%% Returns : Attr = binary()
+%% @spec
+%%    (?STUN_ATTRIBUTE_CHANGE_REQUEST, {ChangeIP, ChangePort}) ->
+%%            Attr
+%%
+%%            ChangeIP   = bool() "client requests us to use an alternate source IP when responing"
+%%            ChangePort = bool() "client requests us to use an alternate source port when responing"
+%%
+%%            Attr = binary()
+%%
+%% @doc     CHANGE-REQUEST is how the client tells the STUN server to
+%%          use an alternate source IP / source port when responding,
+%%          or just polls the servers capability to do so.
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_CHANGE_REQUEST,	In) ->
     %% 11.4
@@ -883,63 +951,84 @@ create_attribute(?STUN_ATTRIBUTE_CHANGE_REQUEST,	In) ->
     encode_attribute(?STUN_ATTRIBUTE_CHANGE_REQUEST, Data);
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_SOURCE_ADDRESS,
-%%                            {Proto, Address, Port})
-%%           Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | ...
-%%           Address = tuple(), {A,B,C,D} | {A,B,C,D,E,F,G,H}
-%%           Port    = integer()
-%% Descrip.: This is the attribute used by the server to tell the
-%%           client which IP and port it used to send a STUN response,
-%%           in case there is some kind of address translator between
-%%           the client and server that obfuscates the true source IP
-%%           or port.
-%% Returns : Attr = binary()
+%% @spec
+%%    (?STUN_ATTRIBUTE_SOURCE_ADDRESS, {Proto, Address, Port}) ->
+%%            Attr
+%%
+%%            Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | ...
+%%            Address = {A,B,C,D} | {A,B,C,D,E,F,G,H}
+%%            Port    = integer()
+%%
+%%            Attr = binary()
+%%
+%% @doc     This is the attribute used by the server to tell the
+%%          client which IP and port it used to send a STUN response,
+%%          in case there is some kind of address translator between
+%%          the client and server that obfuscates the true source IP
+%%          or port.
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_SOURCE_ADDRESS,	In) ->
     %% 11.5
     mapped_address_encode(?STUN_ATTRIBUTE_SOURCE_ADDRESS, In);
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_USERNAME,
-%%                            Username)
-%%           Username = string()
-%% Descrip.:
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_USERNAME, Username) ->
+%%            Attr
+%%
+%%            Username = string()
+%%
+%%            Attr = binary()
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_USERNAME,		_In) ->
     %% 11.6
     {error, {not_implemented, ?LINE}};
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_PASSWORD,
-%%                            Password)
-%%           Password = string()
-%% Descrip.:
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_PASSWORD, Password) ->
+%%            Attr
+%%
+%%            Password = string()
+%%
+%%            Attr = binary()
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_PASSWORD,		_In) ->
     %% 11.7
     {error, {not_implemented, ?LINE}};
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_MESSAGE_INTEGRITY,
-%%                            HMAC)
-%%           HMAC = string()
-%% Descrip.:
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_MESSAGE_INTEGRITY, HMAC) ->
+%%            Attr
+%%
+%%            HMAC = string()
+%%
+%%            Attr = binary()
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_MESSAGE_INTEGRITY,	_In) ->
     %% 11.8
     {error, {not_implemented, ?LINE}};
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_ERROR_CODE,
-%%                            {Status, Reason})
-%%           Status = integer()
-%%           Reason = string()
-%% Descrip.: ERROR-CODE is how a server informs a client about an
-%%           non-successfull result of the processing of a request.
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_ERROR_CODE, {Status, Reason}) ->
+%%            Attr
+%%
+%%            Status = integer()
+%%            Reason = string()
+%%
+%%            Attr = binary()
+%%
+%% @doc     ERROR-CODE is how a server informs a client about an
+%%          non-successfull result of the processing of a request.
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_ERROR_CODE,		In) ->
     %% 11.9
@@ -966,36 +1055,48 @@ create_attribute(?STUN_ATTRIBUTE_ERROR_CODE,		In) ->
 %%    {error, {not_implemented, ?LINE}};
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_REALM,
-%%                            Realm)
-%%           Realm = string()
-%% Descrip.:
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_REALM, Realm) ->
+%%            Attr
+%%
+%%            Realm = string()
+%%
+%%            Attr = binary()
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_REALM,			_In) ->
     %% 11.12
     {error, {not_implemented, ?LINE}};
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_NONCE,
-%%                            Nonce)
-%%           Nonce = string()
-%% Descrip.:
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_NONCE, Nonce) ->
+%%            Attr
+%%
+%%            Nonce = string()
+%%
+%%            Attr = binary()
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_NONCE,			_In) ->
     %% 11.13
     {error, {not_implemented, ?LINE}};
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_UNKNOWN_ATTRIBUTES,
-%%                            In)
-%%           In = list() of integer()
-%% Descrip.: UNKNOWN-ATTRIBUTES is a list of mandatory attributes the
-%%           server does not recognize. Indicates non-conformance in
-%%           the server, or updated specifications the client is aware
-%%           of but not the server.
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_UNKNOWN_ATTRIBUTES, In) ->
+%%            Attr
+%%
+%%            In = [integer()]
+%%
+%%            Attr = binary()
+%%
+%% @doc     UNKNOWN-ATTRIBUTES is a list of mandatory attributes the
+%%          server does not recognize. Indicates non-conformance in
+%%          the server, or updated specifications the client is aware
+%%          of but not the server.
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_UNKNOWN_ATTRIBUTES,	In) ->
     %% 11.14
@@ -1013,14 +1114,18 @@ create_attribute(?STUN_ATTRIBUTE_UNKNOWN_ATTRIBUTES,	In) ->
     encode_attribute(?STUN_ATTRIBUTE_UNKNOWN_ATTRIBUTES, list_to_binary(B));
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS,
-%%                            SReq)
-%%           SReq = stun_request record()
-%% Descrip.: This is the same as MAPPED-ADDRESS, but the values are
-%%           XOR encoded to prevent a NAT searching and replacing it's
-%%           own address/port in datagram payloads from interveining
-%%           with STUN.
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, SReq) ->
+%%            Attr
+%%
+%%            SReq = #stun_request{}
+%%
+%%            Attr = binary()
+%%
+%% @doc     This is the same as MAPPED-ADDRESS, but the values are XOR
+%%          encoded to prevent a NAT searching and replacing it's own
+%%          address/port in datagram payloads from interveining with
+%%          STUN.
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS,	In) ->
     %% 11.15
@@ -1051,11 +1156,15 @@ create_attribute(?STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS,	In) ->
     mapped_address_encode(?STUN_ATTRIBUTE_XOR_MAPPED_ADDRESS, {Proto, XAddress, XPort});
 
 %%--------------------------------------------------------------------
-%% Function: create_attribute(?STUN_ATTRIBUTE_SERVER,
-%%                            In)
-%%           In = string()
-%% Descrip.: Freeform text description of STUN server.
-%% Returns : Attr = binary()
+%% @spec    (?STUN_ATTRIBUTE_SERVER, In) ->
+%%            Attr
+%%
+%%            In = string()
+%%
+%%            Attr = binary()
+%%
+%% @doc     Freeform text description of STUN server.
+%% @end
 %%--------------------------------------------------------------------
 create_attribute(?STUN_ATTRIBUTE_SERVER,		In) ->
     %% 11.16
@@ -1070,16 +1179,20 @@ create_attribute(?STUN_ATTRIBUTE_SERVER,		In) ->
 %%    {error, {not_implemented, ?LINE}}.
 
 %%--------------------------------------------------------------------
-%% Function: mapped_address_encode(Type, {Proto, IP, Port})
-%%           Type    = integer(), STUN attribute number
-%%           Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | atom()
-%%           Address = {A,B,C,D} | {A,B,C,D,E,F,G,H} | binary(),
-%%                     four or 16 bytes (IPv4 or IPv6)
-%%           Port    = integer()
-%% Descrip.: Encode IP and port number in the MAPPED-ADDRESS format.
-%%           A number of other attributes have semantics equivalent
-%%           with MAPPED-ADDRESS, so a helper function makes sense.
-%% Returns : Attr = binary()
+%% @spec    (Type, {Proto, IP, Port}) ->
+%%            Attr
+%%
+%%            Type    = integer() "STUN attribute number"
+%%            Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | atom()
+%%            Address = {A,B,C,D} | {A,B,C,D,E,F,G,H} | binary() "four or 16 bytes (IPv4 or IPv6)"
+%%            Port    = integer()
+%%
+%%            Attr = binary()
+%%
+%% @doc     Encode IP and port number in the MAPPED-ADDRESS format. A
+%%          number of other attributes have semantics equivalent with
+%%          MAPPED-ADDRESS, so a helper function makes sense.
+%% @end
 %%--------------------------------------------------------------------
 mapped_address_encode(Type, {Proto, IP, Port}) ->
     Family =
@@ -1105,11 +1218,16 @@ mapped_address_encode(Type, {Proto, IP, Port}) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: encode_attribute(Type, Value)
-%%           Type  = integer(), STUN attribute number
-%%           Value = binary()
-%% Descrip.: TLV (type-length-value) encode a STUN attribute.
-%% Returns : Attr = binary()
+%% @spec    (Type, Value) ->
+%%            Attr
+%%
+%%            Type  = integer() "STUN attribute number"
+%%            Value = binary()
+%%
+%%            Attr = binary()
+%%
+%% @doc     TLV (type-length-value) encode a STUN attribute.
+%% @end
 %%--------------------------------------------------------------------
 encode_attribute(Type, Value) when is_integer(Type), is_binary(Value) ->
     Len = size(Value),
@@ -1117,11 +1235,16 @@ encode_attribute(Type, Value) when is_integer(Type), is_binary(Value) ->
 		    Value]).
 
 %%--------------------------------------------------------------------
-%% Function: make_even_four_bin(L)
-%%           L = string()
-%% Descrip.: All STUN attributes must be a multiple of four bytes, so
-%%           we need to pad strings with spaces at the end.
-%% Returns : Value = binary()
+%% @spec    (L) ->
+%%            Value
+%%
+%%            L = string()
+%%
+%%            Value = binary()
+%%
+%% @doc     All STUN attributes must be a multiple of four bytes, so
+%%          we need to pad strings with spaces at the end.
+%% @end
 %%--------------------------------------------------------------------
 make_even_four_bin(L) when is_list(L) ->
     case length(L) rem 4 of
@@ -1132,10 +1255,15 @@ make_even_four_bin(L) when is_list(L) ->
      end.
 
 %%--------------------------------------------------------------------
-%% Function: ip_tuple_to_bin(Address)
-%%           Address = {A,B,C,D} | {A,B,C,D,E,F,G,H}
-%% Descrip.: Turn an IP address tuple into a network order binary.
-%% Returns : Value = binary()
+%% @spec    (Address) ->
+%%            Value
+%%
+%%            Address = {A,B,C,D} | {A,B,C,D,E,F,G,H}
+%%
+%%            Value = binary()
+%%
+%% @doc     Turn an IP address tuple into a network order binary.
+%% @end
 %%--------------------------------------------------------------------
 ip_tuple_to_bin({A1,A2,A3,A4}) ->
     <<A1,A2,A3,A4>>;
@@ -1147,10 +1275,14 @@ ip_tuple_to_bin({A1,A2,A3,A4,A5,A6,A7,A8}) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: stun_error(Code)
-%%           Code = stun_error_code()
+%% @spec    (Code) -> term()
+%%
+%%            Code = stun_error_code()
+%%
+%% @throws  stun_error() 
+%%
 %% @equiv    stun_error(Code, [])
-%% Returns : throw(stun_error())
+%% @end
 %%--------------------------------------------------------------------
 stun_error(N) when is_integer(N) ->
     throw({stun_error, N, []});
@@ -1158,28 +1290,36 @@ stun_error({N, Reason}) when is_integer(N), is_list(Reason) ->
     throw({stun_error, {N, Reason}, []}).
 
 %%--------------------------------------------------------------------
-%% Function: stun_error(Code, Attrs)
-%%           Code  = stun_error_code()
-%%           Attrs = stun_error_attrs()
-%% Descrip.: Throw a signal that when caught by the upper level error
-%%           handling functions will be turned into a STUN ERROR-CODE
-%%           attribute.
-%% Returns : throw(stun_error())
+%% @spec    (Code, Attrs) -> term()
+%%
+%%            Code  = stun_error_code()
+%%            Attrs = stun_error_attrs()
+%%
+%% @throws  stun_error() 
+%%
+%% @doc     Throw a signal that when caught by the upper level error
+%%          handling functions will be turned into a STUN ERROR-CODE
+%%          attribute.
+%% @end
 %%--------------------------------------------------------------------
 stun_error(N, Attrs) when (is_integer(N) orelse is_tuple(N)), is_list(Attrs) ->
     throw({stun_error, N, Attrs}).
 
 %%--------------------------------------------------------------------
-%% Function: attr_to_label(Number)
-%%           Number = integer()
-%% Descrip.: Turn a STUN attribute number into an atom label. The
-%%           label is mostly used for debugging/test cases, but the
-%%           return value is also significant when we check for
-%%           unknown attributes - if a mandatory attribute (Number
-%%           less than 0x7fff) is not recognized by this function then
-%%           the STUN request will be rejected.
-%% Returns : Label | 'unknown_attr'
-%%           Label = atom()
+%% @spec    (Number) ->
+%%            Label | 'unknown_attr'
+%%
+%%            Number = integer()
+%%
+%%            Label = atom()
+%%
+%% @doc     Turn a STUN attribute number into an atom label. The label
+%%          is mostly used for debugging/test cases, but the return
+%%          value is also significant when we check for unknown
+%%          attributes - if a mandatory attribute (Number less than
+%%          0x7fff) is not recognized by this function then the STUN
+%%          request will be rejected.
+%% @end
 %%--------------------------------------------------------------------
 attr_to_label(?STUN_ATTRIBUTE_MAPPED_ADDRESS) ->	'MAPPED-ADDRESS';
 %%attr_to_label(?STUN_ATTRIBUTE_RESPONSE_ADDRESS) ->	'RESPONSE-ADDRESS';
@@ -1203,10 +1343,15 @@ attr_to_label(_Unknown) ->				 unknown_attr.
 
 
 %%--------------------------------------------------------------------
-%% Function: error_code_reason(Number)
-%%           Number = integer(), STUN attribute number
-%% Descrip.: Get the default reason phrase for STUN errors.
-%% Returns : Reason = string()
+%% @spec    (Number) ->
+%%            Reason
+%%
+%%            Number = integer() "STUN attribute number"
+%%
+%%            Reason = string()
+%%
+%% @doc     Get the default reason phrase for STUN errors.
+%% @end
 %%--------------------------------------------------------------------
 %% Defaults from section rfc3489bis-03 #11.9 (ERROR-CODE)
 error_code_reason(300) -> "Try Alternate";
@@ -1234,9 +1379,11 @@ error_code_reason(N) when is_integer(N) -> "unknown error".
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

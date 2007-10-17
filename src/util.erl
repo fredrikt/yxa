@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : util.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Utility functions.
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Utility functions.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%--------------------------------------------------------------------
 
 -module(util).
@@ -49,22 +50,24 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: timestamp()
-%% Descrip.: Number of seconds elapsed since start point used by now()
-%% Returns : integer()
+%% @spec    () -> integer()
+%%
+%% @doc     Number of seconds elapsed since start point used by now()
+%% @end
 %%--------------------------------------------------------------------
 timestamp() ->
     {Megasec, Sec, _} = now(),
     Megasec * 1000000 + Sec.
 
 %%--------------------------------------------------------------------
-%% Function: sec_to_date(Seconds)
-%%           Seconds = integer(), seconds since start point used by
-%%                     now()
-%% Descrip.: Takes a Seconds value (for example the result of
-%%           timestamp/0) and returns a nicely formatted
-%%           date-time string ("yyyy-mm-dd hh:mm:ss").
-%% Returns : string()
+%% @spec    (Seconds) -> string()
+%%
+%%            Seconds = integer() "seconds since start point used by now()"
+%%
+%% @doc     Takes a Seconds value (for example the result of
+%%          timestamp/0) and returns a nicely formatted date-time
+%%          string ("yyyy-mm-dd hh:mm:ss").
+%% @end
 %%--------------------------------------------------------------------
 sec_to_date(never) ->
     "never";
@@ -77,12 +80,14 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
 		  [Year, Month, Day, Hour, Minute, Second]).
 
 %%--------------------------------------------------------------------
-%% Function: isnumeric(Number)
-%%           Number = string()
-%% Descrip.: Determine if Number is a string containing only numbers.
-%%           Length of Number must be >= 1.
-%% Returns : true | false
-%% Note    : Using the BIF list_to_integer() is probably cheaper.
+%% @spec    (Number) -> true | false
+%%
+%%            Number = string()
+%%
+%% @doc     Determine if Number is a string containing only numbers.
+%%          Length of Number must be >= 1. Note : Using the BIF
+%%          list_to_integer() is probably cheaper.
+%% @end
 %%--------------------------------------------------------------------
 isnumeric(Number) when is_list(Number) ->
     Pattern = "^[0-9]+\$",
@@ -96,15 +101,17 @@ isnumeric(_) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: regexp_rewrite(Input, RegexpList)
-%%           Input      = string()
-%%           RegexpList = list() of {Regexp, Rewrite}
-%%              Regexp  = string(), e.g. "foo(.+)"
-%%              Rewrite = string(), e.g. "\\1@example.com"
-%% Descrip.: Do regexp substitution. If Input is "foobar" and the
-%%           regexp tuple is {"foo(.+)", "\\1@example.com"} this
-%%           function will return "bar@example.com".
-%% Returns : string() | nomatch
+%% @spec    (Input, RegexpList) -> string() | nomatch
+%%
+%%            Input      = string()
+%%            RegexpList = [{Regexp, Rewrite}]
+%%            Regexp     = string() "e.g. \"foo(.+)\""
+%%            Rewrite    = string() "e.g. \"\\1@example.com\""
+%%
+%% @doc     Do regexp substitution. If Input is "foobar" and the
+%%          regexp tuple is {"foo(.+)", "\\1@example.com"} this
+%%          function will return "bar@example.com".
+%% @end
 %%--------------------------------------------------------------------
 regexp_rewrite(_Input, []) ->
     nomatch;
@@ -121,12 +128,14 @@ regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: casecompare(Str1, Str2)
-%%           Str1 = string() | none
-%%           Str2 = string() | none
-%% Descrip.: return true if Str1 and Str2 are either 'none' or the
-%%           same string (ignore case)
-%% Returns : true | false
+%% @spec    (Str1, Str2) -> true | false
+%%
+%%            Str1 = string() | none
+%%            Str2 = string() | none
+%%
+%% @doc     return true if Str1 and Str2 are either 'none' or the same
+%%          string (ignore case)
+%% @end
 %%--------------------------------------------------------------------
 casecompare(none, none) ->
     true;
@@ -144,11 +153,13 @@ casecompare(String1, String2) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: casegrep(Str, StrList)
-%%           Str     = string() | none
-%%           StrList = list() of string()
-%% Descrip.: determine if Str is a member of StrList
-%% Returns : true | false
+%% @spec    (Str, StrList) -> true | false
+%%
+%%            Str     = string() | none
+%%            StrList = [string()]
+%%
+%% @doc     determine if Str is a member of StrList
+%% @end
 %%--------------------------------------------------------------------
 casegrep(_String1, []) ->
     false;
@@ -161,13 +172,15 @@ casegrep(String1, [String2 | Rest]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: join(Strings, Separator)
-%%           Strings = list() of string()
-%%           Separator = string()
-%% Descrip.: Create a single string from the Strings entries.
-%%           Separator is placed between all entries (but not after
-%%           the last one).
-%% Returns : string()
+%% @spec    (Strings, Separator) -> string()
+%%
+%%            Strings   = [string()]
+%%            Separator = string()
+%%
+%% @doc     Create a single string from the Strings entries. Separator
+%%          is placed between all entries (but not after the last
+%%          one).
+%% @end
 %%--------------------------------------------------------------------
 %% XXX badly chosen function name - I mostly associate this name with
 %% functions like lists:append - hsten
@@ -177,12 +190,14 @@ join([H | T], Separator) ->
     H ++ lists:concat([Separator ++ X || X <- T]).
 
 %%--------------------------------------------------------------------
-%% Function: concat(Strings, Separator)
-%%           Strings = list() of string()
-%%           Separator = string()
-%% Descrip.: create a single string from the Strings entries, each
-%%           entry ends with the Separator.
-%% Returns : list()
+%% @spec    (Strings, Separator) -> list()
+%%
+%%            Strings   = [string()]
+%%            Separator = string()
+%%
+%% @doc     create a single string from the Strings entries, each
+%%          entry ends with the Separator.
+%% @end
 %%--------------------------------------------------------------------
 %% XXX badly chosen function name - I mostly associate this name with
 %% functions that add a element to a list - hsten
@@ -194,12 +209,16 @@ concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
 
 %%--------------------------------------------------------------------
-%% Function: safe_is_process_alive(Process)
-%%           Process = pid() | atom()
-%% Descrip.: determine if the process Process is running
-%% Returns : {Alive, ProcessPid}
-%%           Alive = true | false
-%%           ProcessPid = pid()
+%% @spec    (Process) ->
+%%            {Alive, ProcessPid}
+%%
+%%            Process = pid() | atom()
+%%
+%%            Alive      = true | false
+%%            ProcessPid = pid()
+%%
+%% @doc     determine if the process Process is running
+%% @end
 %%--------------------------------------------------------------------
 safe_is_process_alive(Pid) when is_pid(Pid) ->
     {is_process_alive(Pid), Pid};
@@ -217,12 +236,14 @@ safe_is_process_alive(Name) when is_atom(Name) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: safe_signal(LogTag, PidIn, Message)
-%%           LogTag = string(), log prefix when we fail
-%%           PidIn  = pid() | atom()
-%%           Message = string()
-%% Descrip.: Check if a process is alive before sending it a signal.
-%% Returns : ok | error
+%% @spec    (LogTag, PidIn, Message) -> ok | error
+%%
+%%            LogTag  = string() "log prefix when we fail"
+%%            PidIn   = pid() | atom()
+%%            Message = string()
+%%
+%% @doc     Check if a process is alive before sending it a signal.
+%% @end
 %%--------------------------------------------------------------------
 safe_signal(LogTag, PidIn, Message) ->
     case util:safe_is_process_alive(PidIn) of
@@ -238,12 +259,16 @@ safe_signal(LogTag, PidIn, Message) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: remove_v6_brackets(In)
-%%           In = string()
-%% Descrip.: If In is "[IPv6Address]" then return "IPv6Address".
-%%           Otherwise, return whatever In was.
-%% Returns : In | V6addr
-%%           V6Addr = string()
+%% @spec    (In) ->
+%%            In | V6addr
+%%
+%%            In = string()
+%%
+%%            V6Addr = string()
+%%
+%% @doc     If In is "[IPv6Address]" then return "IPv6Address".
+%%          Otherwise, return whatever In was.
+%% @end
 %%--------------------------------------------------------------------
 remove_v6_brackets([$[ | Rest] = In) ->
     %% Might be IPv6 formatted address, check if it ends with "]"
@@ -270,16 +295,18 @@ remove_v6_brackets(In) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: apply_rewrite(Rewrite, List)
-%% Descrip.: Do regexp group substitution. Part of regexp_rewrite.
-%%           Easiest to explain with examples :
+%% @spec    (Rewrite, List) ->
+%%            Res
 %%
-%%           Rewrite = "\\1@foo", List = ["first"] -> "first@foo"
-%%           Rewrite = "abc\\1def\\2", List = ["123", "456"] ->
-%%                        "abc123def456"
-%% Returns : Res = string() |
-%%           []
-%% Note    : Function is not tail recursive.
+%%            Res = string() |
+%%            []
+%%
+%% @doc     Do regexp group substitution. Part of regexp_rewrite.
+%%          Easiest to explain with examples :
+%%          Rewrite = "\\1@foo", List = ["first"] -> "first@foo"
+%%          Rewrite = "abc\\1def\\2", List = ["123", "456"] ->
+%%          "abc123def456" Note : Function is not tail recursive.
+%% @end
 %%--------------------------------------------------------------------
 apply_rewrite([], _List) ->
     [];
@@ -320,9 +347,11 @@ digit(_Digit) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -335,7 +364,7 @@ test() ->
 
     autotest:mark(?LINE, "timestamp/0 - 2"),
     %% ... and that the integer returned is at least 1.1 billion
-    true = (Timestamp1 >= 1100000000),    
+    true = (Timestamp1 >= 1100000000),
 
     %% test sec_to_date(Seconds)
     %%--------------------------------------------------------------------
@@ -367,7 +396,7 @@ test() ->
     %% not even a string
     false = isnumeric({1,2,3}),
 
-    
+
     %% test apply_rewrite(Rewrite, List)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "apply_rewrite/2 - 1"),
@@ -562,7 +591,7 @@ test() ->
     %% for 100% coverage
     error = safe_signal(none, DeadPid, {SafeSignalRef, "test with dead recipient"}),
 
-    
+
     %% test remove_v6_brackets(In)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "remove_v6_brackets/1 - 1"),

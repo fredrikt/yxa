@@ -1,11 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipuserdb_file_backend.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: gen_server backend for the sipuserdb file module that
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      gen_server backend for the sipuserdb file module that
 %%%           reads it's user database from a file using
 %%%           file:consult().
 %%%
-%%% Created : 28 Dec 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    28 Dec 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%
 %%% Notes   : If there is unparsable data in the userdb when we start,
 %%%           we crash rather ungracefully. Start with empty userdb
@@ -56,6 +58,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  fn,		%% string(), filename
 	  file_mtime,	%% integer(), mtime of fn
@@ -78,18 +82,21 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the persistent sipuserdb_file gen_server.
-%% Returns : term()
+%% @spec    () -> term()
+%%
+%% @doc     Starts the persistent sipuserdb_file gen_server.
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%--------------------------------------------------------------------
-%% Function: change_interval(Interval)
-%%           Interval = integer(), number of seconds
-%% Descrip.: Change the time between checks for a changed userdb file.
-%% Returns : ok | {error, Reason}
+%% @spec    (Interval) -> ok | {error, Reason}
+%%
+%%            Interval = integer() "number of seconds"
+%%
+%% @doc     Change the time between checks for a changed userdb file.
+%% @end
 %%--------------------------------------------------------------------
 change_interval(Interval) when is_integer(Interval) ->
     gen_server:call(?SERVER, {change_check_file_timeout, Interval}).
@@ -99,12 +106,15 @@ change_interval(Interval) when is_integer(Interval) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([])
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ([]) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([]) ->
     case yxa_config:get_env(sipuserdb_file_filename) of
@@ -147,41 +157,57 @@ init([]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call({fetch_users}, From, State)
-%% Descrip.: Fetch our user database.
-%% Returns : {reply, {ok, Users}, State}
-%%           Users = list() of user record()
+%% @spec    ({fetch_users}, From, State) ->
+%%            {reply, {ok, Users}, State}
+%%
+%%            Users = [#user{}]
+%%
+%% @doc     Fetch our user database.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({fetch_users}, _From, State) ->
     {reply, {ok, State#state.userlist}, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({fetch_addresses}, From, State)
-%% Descrip.: Fetch our address database.
-%% Returns : {reply, {ok, Addresses}, State}
-%%           Addresses = list() of address record()
+%% @spec    ({fetch_addresses}, From, State) ->
+%%            {reply, {ok, Addresses}, State}
+%%
+%%            Addresses = [#address{}]
+%%
+%% @doc     Fetch our address database.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({fetch_addresses}, _From, State) ->
     {reply, {ok, State#state.addresslist}, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({change_check_file_timeout, Interval}, From,
-%%                       State)
-%%           Interval = integer(), seconds between checks
-%% Descrip.: Set up a new timer for when to check if the userdb file
-%%           has changed.
-%% Returns : {reply, ok, State}
+%% @spec    ({change_check_file_timeout, Interval}, From, State) ->
+%%            {reply, ok, State}
+%%
+%%            Interval = integer() "seconds between checks"
+%%
+%% @doc     Set up a new timer for when to check if the userdb file
+%%          has changed.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({change_check_file_timeout, Interval}, _From, State) when is_integer(Interval) ->
     case State#state.check_tref of
@@ -206,18 +232,25 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast({reload_userdb}, State)
-%% Descrip.: Signal to reload our user database, even if mtime has
-%%           not changed.
-%% Returns : {noreply, State}
+%% @spec    ({reload_userdb}, State) -> {noreply, State}
+%%
+%% @doc     Signal to reload our user database, even if mtime has not
+%%          changed.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({reload_userdb}, State) ->
     logger:log(debug, "sipuserdb_file: Forcing reload of userdb upon request"),
@@ -241,18 +274,25 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info({check_file}, State)
-%% Descrip.: Periodically check if our files mtime has changed, and if
-%%           so reload it.
-%% Returns : {noreply, State}
+%% @spec    ({check_file}, State) -> {noreply, State}
+%%
+%% @doc     Periodically check if our files mtime has changed, and if
+%%          so reload it.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({check_file}, State) ->
     case get_mtime(State#state.fn) of
@@ -274,18 +314,23 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%%           Reason = term()
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%%            Reason = term()
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -296,13 +341,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: read_userdb(State, MTime, Caller)
-%%           State  = state record()
-%%           MTime  = integer(), file modification time
-%%           Caller = init | cast | info
-%% Descrip.: (Re-)load the user database.
-%% Returns : State           |
-%%           {error, Reason}
+%% @spec    (State, MTime, Caller) ->
+%%            State           |
+%%            {error, Reason}
+%%
+%%            State  = #state{}
+%%            MTime  = integer() "file modification time"
+%%            Caller = init | cast | info
+%%
+%% @doc     (Re-)load the user database.
+%% @end
 %%--------------------------------------------------------------------
 read_userdb(State, MTime, Caller) when is_record(State, state) ->
     logger:log(debug, "sipuserdb_file: (Re-)Loading userdb from file ~p", [State#state.fn]),
@@ -329,20 +377,24 @@ read_userdb(State, MTime, Caller) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: read_userdb_error(E, State, Caller)
-%%           E      = string(), the error reason
-%%           State  = state record()
-%%           Caller = init | cast | info
-%% Descrip.: Create error return-value for read_userdb/3. Different
-%%           depending on who it is that called read_userdb/3 - for
-%%           'init' (startup), we have no good database in memory to
-%%           fall back on, so we return {error, E} while for others
-%%           we log the error and return the old state which contains
-%%           the last good user database.
-%% Returns : {error, Reason} |
-%%           NewState
-%%           Reason = string()
-%%           NewState = state record()
+%% @spec    (E, State, Caller) ->
+%%            {error, Reason} |
+%%            NewState
+%%
+%%            E      = string() "the error reason"
+%%            State  = #state{}
+%%            Caller = init | cast | info
+%%
+%%            Reason   = string()
+%%            NewState = #state{}
+%%
+%% @doc     Create error return-value for read_userdb/3. Different
+%%          depending on who it is that called read_userdb/3 - for
+%%          'init' (startup), we have no good database in memory to
+%%          fall back on, so we return {error, E} while for others we
+%%          log the error and return the old state which contains the
+%%          last good user database.
+%% @end
 %%--------------------------------------------------------------------
 read_userdb_error(E, State, init) when is_list(E), is_record(State, state) ->
     %% On init, always return error tuple
@@ -364,12 +416,16 @@ read_userdb_error(E, State, info) when is_list(E), is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_mtime(Fn)
-%%           Fn = string(), the filename
-%% Descrip.: Get file modification time of a file.
-%% Returns : {ok, MTime} |
-%%           error
-%%           MTime = integer()
+%% @spec    (Fn) ->
+%%            {ok, MTime} |
+%%            error
+%%
+%%            Fn = string() "the filename"
+%%
+%%            MTime = integer()
+%%
+%% @doc     Get file modification time of a file.
+%% @end
 %%--------------------------------------------------------------------
 get_mtime(Fn) ->
     case file:read_file_info(Fn) of
@@ -381,14 +437,18 @@ get_mtime(Fn) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_db([TermList])
-%%           TermList = list() of term(), result of file:consult()
-%% Descrip.: Parse our userdb file.
-%% Returns : {ok, UserList, AddrList} |
-%%           {error, Reason}
-%%           UserList = list() of user record()
-%%           AddrList = list() of addr record()
-%%           Reason   = string()
+%% @spec    ([TermList]) ->
+%%            {ok, UserList, AddrList} |
+%%            {error, Reason}
+%%
+%%            TermList = [term()] "result of file:consult()"
+%%
+%%            UserList = [#user{}]
+%%            AddrList = [#addr{}]
+%%            Reason   = string()
+%%
+%% @doc     Parse our userdb file.
+%% @end
 %%--------------------------------------------------------------------
 parse_db([TermList]) ->
     case parse_term(TermList, [], []) of
@@ -400,16 +460,20 @@ parse_db([TermList]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_term(In, UserList, AddrList)
-%%           In       = [{user, Params} | {address, Params}]
-%%           UserList = list() of user record()
-%%           AddrList = list() of addr record()
-%% Descrip.: Parse terms read from the userdb file.
-%% Returns : {ok, UserList, AddrList} |
-%%           {error, Reason}
-%%           UserList = list() of user record()
-%%           AddrList = list() of addr record()
-%%           Reason   = string()
+%% @spec    (In, UserList, AddrList) ->
+%%            {ok, UserList, AddrList} |
+%%            {error, Reason}
+%%
+%%            In       = [{user, Params} | {address, Params}]
+%%            UserList = [#user{}]
+%%            AddrList = [#addr{}]
+%%
+%%            UserList = [#user{}]
+%%            AddrList = [#addr{}]
+%%            Reason   = string()
+%%
+%% @doc     Parse terms read from the userdb file.
+%% @end
 %%--------------------------------------------------------------------
 parse_term([], UserList, AddrList) ->
     {ok, lists:reverse(UserList), lists:reverse(AddrList)};
@@ -452,16 +516,20 @@ parse_addresses(_Username, [], Res) ->
     lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% Function: parse_user(Params, U, Addrs)
-%%           Params = list() of {Key, Value}
-%%           U      = user record()
-%%           Addrs  = list() of string(), just accumulator
-%% Descrip.: Parse a user entry.
-%% Returns : {ok, User, AddrList} |
-%%           {error, Reason}
-%%           User     = user record()
-%%           AddrList = list() of string()
-%%           Reason   = string()
+%% @spec    (Params, U, Addrs) ->
+%%            {ok, User, AddrList} |
+%%            {error, Reason}
+%%
+%%            Params = [{Key, Value}]
+%%            U      = #user{}
+%%            Addrs  = [string()] "just accumulator"
+%%
+%%            User     = #user{}
+%%            AddrList = [string()]
+%%            Reason   = string()
+%%
+%% @doc     Parse a user entry.
+%% @end
 %%--------------------------------------------------------------------
 parse_user([], U, Addrs) when is_record(U, user), U#user.name == undefined ->
     E = io_lib:format("user record incomplete (no user, raw user ~p, addresses ~p)", [U, Addrs]),
@@ -487,14 +555,18 @@ parse_user([H | _T], U, _Addrs) when is_record(U, user) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: parse_address(Params, A)
-%%           Params = list() of {Key, Value}
-%%           A      = address record()
-%% Descrip.: Parse an address entry.
-%% Returns : Address         |
-%%           {error, Reason}
-%%           Address = address record()
-%%           Reason  = string()
+%% @spec    (Params, A) ->
+%%            Address         |
+%%            {error, Reason}
+%%
+%%            Params = [{Key, Value}]
+%%            A      = #address{}
+%%
+%%            Address = #address{}
+%%            Reason  = string()
+%%
+%% @doc     Parse an address entry.
+%% @end
 %%--------------------------------------------------------------------
 parse_address([], A) when is_record(A, address), A#address.user == undefined ->
     E = io_lib:format("address record incomplete (no user, address ~p)", [A#address.address]),
@@ -530,12 +602,14 @@ parse_address([H | _T], A) when is_record(A, address) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: verify_consistency(Users, Addresses)
-%%           Users    = list() of user record()
-%%           Adresses = list() of address record()
-%% Descrip.: Log warnings if there are any users that has no addresses
-%%           or any addresses that has no users.
-%% Returns : ok
+%% @spec    (Users, Addresses) -> ok
+%%
+%%            Users    = [#user{}]
+%%            Adresses = [#address{}]
+%%
+%% @doc     Log warnings if there are any users that has no addresses
+%%          or any addresses that has no users.
+%% @end
 %%--------------------------------------------------------------------
 verify_consistency(Users, Addresses) ->
     {ok, NoAddressUsers, NoUserAddresses} = verify_consistency2(Users, Addresses),
@@ -610,9 +684,11 @@ get_no_user_addresses2(_Username, []) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

@@ -1,9 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : event_package.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Behaviour definition for YXA event package modules.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Behaviour definition for YXA event package modules.
 %%%
-%%% Created : 04 May 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    04 May 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @hidden
 %%%-------------------------------------------------------------------
 -module(event_package).
 
@@ -12,11 +14,13 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: behaviour_info(callbacks)
-%% Descrip.: Describe all the API functions a module indicating it is
-%%           an YXA event package module must export. List of tuples
-%%           of the function names and their arity.
-%% Returns : list() of tuple()
+%% @spec    (callbacks) -> [tuple()]
+%%
+%% @doc     Describe all the API functions a module indicating it is
+%%          an YXA event package module must export. List of tuples
+%%          of the function names and their arity.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
     [{init, 0},

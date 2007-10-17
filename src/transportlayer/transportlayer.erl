@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : transportlayer
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transport layer functions.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Transport layer functions.
 %%%
-%%% Created : 01 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    01 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 
 -module(transportlayer).
@@ -43,22 +44,27 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
+%% @spec    () -> term()
+%%
 %% @equiv    sipsocket:start_link()
-%% Returns : term()
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     sipsocket:start_link().
 
 %%--------------------------------------------------------------------
-%% Function: send_proxy_response(Socket, Response)
-%%           Socket   = sipsocket record() | none
-%%           Response = response record()
-%% Descrip.: Extract the top Via from Response, and send this response
-%%           to that location (destination).
-%% Returns : {error, invalid_Via} |
-%%           SendResult
-%%           SendResult = term(), result of send_response()
+%% @spec    (Socket, Response) ->
+%%            {error, invalid_Via} |
+%%            SendResult
+%%
+%%            Socket   = #sipsocket{} | none
+%%            Response = #response{}
+%%
+%%            SendResult = term() "result of send_response()"
+%%
+%% @doc     Extract the top Via from Response, and send this response
+%%          to that location (destination).
+%% @end
 %%--------------------------------------------------------------------
 send_proxy_response(Socket, Response)
   when is_record(Socket, sipsocket); Socket == none, is_record(Response, response) ->
@@ -75,22 +81,25 @@ send_proxy_response(Socket, Response)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_proxy_request(Socket, Request, Dst, ViaParameters)
-%%           Socket        = sipsocket record() | none, socket to use
-%%                           for sending this request
-%%           Request       = request record()
-%%           Dst           = sipdst record()
-%%           ViaParameters = list() of {Key, Value}
-%% Descrip.: Prepare for proxying a request. The preparation process
-%%           is basically to get us a list() of sipdst records and
-%%           then calling send_to_available_dst().
-%% Returns : {error, Reason}             |
-%%           {ok, SipSocket, UsedBranch} |
-%%           Reason     = timeout | string() | term()
-%%           SipSocket  = sipsocket record(), the socket used
-%%           UsedBranch = string(), the complete branch finally used
-%% Note    : To use this function, you should already have called
-%%           check_proxy_request (directly or indirectly).
+%% @spec    (Socket, Request, Dst, ViaParameters) ->
+%%            {error, Reason}             |
+%%            {ok, SipSocket, UsedBranch} 
+%%
+%%            Socket        = #sipsocket{} | none "socket to use for sending this request"
+%%            Request       = #request{}
+%%            Dst           = #sipdst{}
+%%            ViaParameters = [{Key, Value}]
+%%
+%%            Reason     = timeout | string() | term()
+%%            SipSocket  = #sipsocket{} "the socket used"
+%%            UsedBranch = string() "the complete branch finally used"
+%%
+%% @doc     Prepare for proxying a request. The preparation process is
+%%          basically to get us a list() of sipdst records and then
+%%          calling send_to_available_dst(). Note : To use this
+%%          function, you should already have called
+%%          check_proxy_request (directly or indirectly).
+%% @end
 %%--------------------------------------------------------------------
 send_proxy_request(Socket, Request, Dst, ViaParameters)
   when is_record(Socket, sipsocket); Socket == none, is_record(Request, request), is_record(Dst, sipdst) ->
@@ -142,19 +151,22 @@ send_proxy_request(Socket, Request, Dst, ViaParameters)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_result(RequestHeader, Socket, Body, Status, Reason)
-%%           RequestHeader = keylist record(), header of SIP request
-%%                           we should respond to
-%%           Socket   = none | sipsocket record()
-%%           Body     = string() | binary()
-%%           Status   = integer(), SIP status code
-%%           Reason   = string(), SIP reason phrase
-%% Descrip.: Create a response (with minimal headers) to a request
-%%           and send it.
-%% Returns : Res                 |
-%%           {senderror, Reason}
-%%           Res = term(), result of send_response_to(...)
-%%           Reason = string()
+%% @spec    (RequestHeader, Socket, Body, Status, Reason) ->
+%%            Res                 |
+%%            {senderror, Reason}
+%%
+%%            RequestHeader = #keylist{} "header of SIP request we should respond to"
+%%            Socket        = none | #sipsocket{}
+%%            Body          = string() | binary()
+%%            Status        = integer() "SIP status code"
+%%            Reason        = string() "SIP reason phrase"
+%%
+%%            Res    = term() "result of send_response_to(...)"
+%%            Reason = string()
+%%
+%% @doc     Create a response (with minimal headers) to a request and
+%%          send it.
+%% @end
 %%--------------------------------------------------------------------
 send_result(RequestHeader, Socket, Body, Status, Reason)
   when is_record(RequestHeader, keylist), (is_record(Socket, sipsocket) orelse Socket == none),
@@ -165,24 +177,27 @@ send_result(RequestHeader, Socket, Body, Status, Reason)
     send_response(Socket, Response).
 
 %%--------------------------------------------------------------------
-%% Function: send_result(RequestHeader, Socket, Body, Status, Reason,
-%%                       ExtraHeaders)
-%%           RequestHeader = keylist record(), header of SIP request
-%%                           we should respond to
-%%           Socket   = none | sipsocket record()
-%%           Body     = string() | binary()
-%%           Status   = integer(), SIP status code
-%%           Reason   = string(), SIP reason phrase
-%%           ExtraHeaders  = list() of {Key, Value}
-%%             Key    = string(), SIP header name
-%%             Value  = list() of string(), header content
-%% Descrip.: Create a response (with minimal headers) to a request
-%%           and send it. Include one or more extra headers specified
-%%           by the caller.
-%% Returns : Res                 |
-%%           {senderror, Reason}
-%%           Res = term(), result of send_response_to(...)
-%%           Reason = string()
+%% @spec    (RequestHeader, Socket, Body, Status, Reason,
+%%          ExtraHeaders) ->
+%%            Res                 |
+%%            {senderror, Reason}
+%%
+%%            RequestHeader = #keylist{} "header of SIP request we should respond to"
+%%            Socket        = none | #sipsocket{}
+%%            Body          = string() | binary()
+%%            Status        = integer() "SIP status code"
+%%            Reason        = string() "SIP reason phrase"
+%%            ExtraHeaders  = [{Key, Value}]
+%%            Key           = string() "SIP header name"
+%%            Value         = [string()] "header content"
+%%
+%%            Res    = term() "result of send_response_to(...)"
+%%            Reason = string()
+%%
+%% @doc     Create a response (with minimal headers) to a request and
+%%          send it. Include one or more extra headers specified by
+%%          the caller.
+%% @end
 %%--------------------------------------------------------------------
 send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
   when is_record(RequestHeader, keylist), (is_record(Socket, sipsocket) orelse Socket == none),
@@ -195,17 +210,22 @@ send_result(RequestHeader, Socket, Body, Status, Reason, ExtraHeaders)
     send_response(Socket, Response).
 
 %%--------------------------------------------------------------------
-%% Function: stateless_proxy_ack(LogTag, Request, YxaCtx)
-%%           LogTag  = string(), only used on error
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: Proxy a request statelessly. We do that sometimes, for
-%%           example ACK 'requests' of to 2xx response to INVITE.
-%% Returns : Res = term()    |
-%%           ignore          |
-%%           {error, Reason}
-%%           Res    = term(), result of transportlayer:send_proxy_request()
-%%           Reason = string()
+%% @spec    (LogTag, Request, YxaCtx) ->
+%%            Res
+%%
+%%            LogTag  = string() "only used on error"
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%%            Res    = term()    |
+%%            ignore          |
+%%            {error, Reason}
+%%            Res    = term() "result of transportlayer:send_proxy_request()"
+%%            Reason = string()
+%%
+%% @doc     Proxy a request statelessly. We do that sometimes, for
+%%          example ACK 'requests' of to 2xx response to INVITE.
+%% @end
 %%--------------------------------------------------------------------
 stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, YxaCtx) when is_list(LogTag),
 									     is_record(YxaCtx, yxa_ctx) ->
@@ -246,15 +266,20 @@ stateless_proxy_ack(LogTag, #request{method = "ACK"} = Request, YxaCtx) when is_
     end.
 
 %%--------------------------------------------------------------------
-%% Function: stateless_proxy_request(LogTag, Request)
-%%           LogTag  = string(), only used on error
-%%           Request = request record()
-%% Descrip.: Proxy a request statelessly. We do that sometimes, for
-%%           example ACK 'requests' of to 2xx response to INVITE.
-%% Returns : Res = term() |
-%%           {error, Reason}
-%%           Res    = term(), result of transportlayer:send_proxy_request()
-%%           Reason = string()
+%% @spec    (LogTag, Request) ->
+%%            Res
+%%
+%%            LogTag  = string() "only used on error"
+%%            Request = #request{}
+%%
+%%            Res    = term() |
+%%            {error, Reason}
+%%            Res    = term() "result of transportlayer:send_proxy_request()"
+%%            Reason = string()
+%%
+%% @doc     Proxy a request statelessly. We do that sometimes, for
+%%          example ACK 'requests' of to 2xx response to INVITE.
+%% @end
 %%--------------------------------------------------------------------
 stateless_proxy_request(LogTag, Request) when is_list(LogTag), is_record(Request, request) ->
     case siprequest:stateless_route_proxy_request(Request) of
@@ -301,14 +326,18 @@ stateless_proxy_request2(LogTag, Request, []) ->
     {error, "No reachable destination"}.
 
 %%--------------------------------------------------------------------
-%% Function: send_response(Socket, Response)
-%%           Socket   = sipsocket record() | none
-%%           Response = response record()
-%% Descrip.: Prepare to send a response out on a socket.
-%% Returns : Res                 |
-%%           {senderror, Reason}
-%%           Res = term(), result of send_response_to(...)
-%%           Reason = string()
+%% @spec    (Socket, Response) ->
+%%            Res                 |
+%%            {senderror, Reason}
+%%
+%%            Socket   = #sipsocket{} | none
+%%            Response = #response{}
+%%
+%%            Res    = term() "result of send_response_to(...)"
+%%            Reason = string()
+%%
+%% @doc     Prepare to send a response out on a socket.
+%% @end
 %%--------------------------------------------------------------------
 send_response(Socket, Response) when is_record(Response, response) ->
     case sipheader:topvia(Response#response.header) of
@@ -323,17 +352,20 @@ send_response(Socket, Response) when is_record(Response, response) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_response_to(Socket, Response, TopVia)
-%%           Socket   = sipsocket record() | none
-%%           Response = response record()
-%%           Via      = via record()
-%% Descrip.: Send a response out on a socket.
-%% Returns : ok                  |
-%%           {senderror, Reason}
-%%           Reason = string()
-%% Note    : XXX this function does not handle errors returned from
-%%           sub-functions in a very consistent manner. Should be
-%%           fixed.
+%% @spec    (Socket, Response, TopVia) ->
+%%            ok                  |
+%%            {senderror, Reason}
+%%
+%%            Socket   = #sipsocket{} | none
+%%            Response = #response{}
+%%            Via      = #via{}
+%%
+%%            Reason = string()
+%%
+%% @doc     Send a response out on a socket. Note : XXX this function
+%%          does not handle errors returned from sub-functions in a
+%%          very consistent manner. Should be fixed.
+%% @end
 %%--------------------------------------------------------------------
 send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, response), record(TopVia, via) ->
     #response{status = Status,
@@ -379,22 +411,25 @@ send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, respo
 
 
 %%--------------------------------------------------------------------
-%% Function: remove_blacklisting(Dst)
-%%           Dst = sipdst record()
-%% Descrip.: Interface function to sipsocket_blacklist.
-%% Returns : ok
+%% @spec    (Dst) -> ok
+%%
+%%            Dst = #sipdst{}
+%%
+%% @doc     Interface function to sipsocket_blacklist.
+%% @end
 %%--------------------------------------------------------------------
 remove_blacklisting(Dst) ->
     sipsocket_blacklist:remove_blacklisting(Dst).
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(Dst, SipSocket, Msg)
-%%           Dst       = sipdst record(), the unreachable destination
-%%           SipSocket  = sipsocket record() | none, socket that
-%%                                                   didn't work
-%%           Msg       = string(), reason for blacklisting
-%% Descrip.: Interface function to sipsocket_blacklist.
-%% Returns : ok
+%% @spec    (Dst, SipSocket, Msg) -> ok
+%%
+%%            Dst       = #sipdst{} "the unreachable destination"
+%%            SipSocket = #sipsocket{} | none "socket that didn't work"
+%%            Msg       = string() "reason for blacklisting"
+%%
+%% @doc     Interface function to sipsocket_blacklist.
+%% @end
 %%--------------------------------------------------------------------
 report_unreachable(#sipdst{proto = yxa_test} = Dst, _SipSocket, Msg) ->
     self() ! {transportlayer, report_unreachable, Dst, lists:flatten(Msg)},
@@ -403,14 +438,15 @@ report_unreachable(Dst, SipSocket, Msg) ->
     sipsocket_blacklist:report_unreachable(Dst, SipSocket, Msg).
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(Dst, SipSocket, Msg, RetryAfter)
-%%           Dst        = sipdst record(), the unreachable destination
-%%           SipSocket  = sipsocket record() | none, socket that
-%%                                                   didn't work
-%%           Msg        = string(), reason for blacklisting
-%%           RetryAfter = undefined | integer(), seconds to blacklist
-%% Descrip.: Interface function to sipsocket_blacklist.
-%% Returns : ok
+%% @spec    (Dst, SipSocket, Msg, RetryAfter) -> ok
+%%
+%%            Dst        = #sipdst{} "the unreachable destination"
+%%            SipSocket  = #sipsocket{} | none "socket that didn't work"
+%%            Msg        = string() "reason for blacklisting"
+%%            RetryAfter = undefined | integer() "seconds to blacklist"
+%%
+%% @doc     Interface function to sipsocket_blacklist.
+%% @end
 %%--------------------------------------------------------------------
 report_unreachable(#sipdst{proto = yxa_test} = Dst, _SipSocket, Msg, RetryAfter) ->
     self() ! {transportlayer, report_unreachable, Dst, lists:flatten(Msg), RetryAfter},
@@ -419,16 +455,20 @@ report_unreachable(Dst, SipSocket, Msg, RetryAfter) ->
     sipsocket_blacklist:report_unreachable(Dst, SipSocket, Msg, RetryAfter).
 
 %%--------------------------------------------------------------------
-%% Function: is_eligible_dst(Dst)
-%%           Dst = sipdst record()
-%% Descrip.: Check if the transport layer thinks a destination is
-%%           eligible. Currently we only check if it is blacklisted,
-%%           but we could for example check if the protocol is
-%%           supported, if we change the resolving functions to
-%%           support more types of destinations than the transport
-%%           layer.
-%% Returns : true | {false, Reason}
-%%           Reason = string()
+%% @spec    (Dst) ->
+%%            true | {false, Reason}
+%%
+%%            Dst = #sipdst{}
+%%
+%%            Reason = string()
+%%
+%% @doc     Check if the transport layer thinks a destination is
+%%          eligible. Currently we only check if it is blacklisted,
+%%          but we could for example check if the protocol is
+%%          supported, if we change the resolving functions to
+%%          support more types of destinations than the transport
+%%          layer.
+%% @end
 %%--------------------------------------------------------------------
 is_eligible_dst(Dst) when is_record(Dst, sipdst) ->
     case sipsocket_blacklist:is_blacklisted(Dst) of
@@ -444,18 +484,22 @@ is_eligible_dst(Dst) when is_record(Dst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_good_socket(DefaultSocket, Dst)
-%%           DefaultSocket = sipsocket record() | none
-%%           Dst           = sipdst record()
-%% Descrip.: Check if DefaultSocket is a working socket, and is of the
-%%           protocol requested (SendProto). If so, return the
-%%           DefaultSocket - otherwise go bother the transport layer
-%%           and try to get a socket useable to communicate with
-%%           SendToHost on port Port using protocol SendProto.
-%% Returns : Socket          |
-%%           {error, Reason}
-%%           Socket = sipsocket record()
-%%           Reason = string()
+%% @spec    (DefaultSocket, Dst) ->
+%%            Socket          |
+%%            {error, Reason}
+%%
+%%            DefaultSocket = #sipsocket{} | none
+%%            Dst           = #sipdst{}
+%%
+%%            Socket = #sipsocket{}
+%%            Reason = string()
+%%
+%% @doc     Check if DefaultSocket is a working socket, and is of the
+%%          protocol requested (SendProto). If so, return the
+%%          DefaultSocket - otherwise go bother the transport layer
+%%          and try to get a socket useable to communicate with
+%%          SendToHost on port Port using protocol SendProto.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% Default socket provided, check that it is still valid
@@ -516,9 +560,11 @@ get_good_socket(none, Dst) when is_record(Dst, sipdst) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     MyHostname = siprequest:myhostname(),

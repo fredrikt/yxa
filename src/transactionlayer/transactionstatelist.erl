@@ -1,12 +1,14 @@
 %%%-------------------------------------------------------------------
 %%% File    : transactionstatelist.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transaction layer's list-module. A mix of code
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Transaction layer's list-module. A mix of code
 %%%           manipulating a list of transactions, and code to locate
 %%%           transactions in all strange ways the SIP RFC3261
 %%%           prescribe.
 %%%
-%%% Created : 05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(transactionstatelist).
 
@@ -47,6 +49,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type tables() = #tables{}.
+%%                  no description
 -record(tables, {ref_to_t, pid_to_ref, ack_to_ref, typeid_to_ref}).
 
 %%--------------------------------------------------------------------
@@ -61,16 +65,20 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: add_client_transaction(Method, Branch, Pid, Desc)
-%%           Method     = string()
-%%           Branch     = string()
-%%           Pid        = pid()
-%%           Desc       = string(), description of transaction
-%% Descrip.: Add a new client transaction state entry to TStateList.
-%% Returns : ok               |
-%%           error            |
-%%           {duplicate, Dup}
-%%           Dup = transactionstate record()
+%% @spec    (Method, Branch, Pid, Desc) ->
+%%            ok               |
+%%            error            |
+%%            {duplicate, Dup}
+%%
+%%            Method = string()
+%%            Branch = string()
+%%            Pid    = pid()
+%%            Desc   = string() "description of transaction"
+%%
+%%            Dup = #transactionstate{}
+%%
+%% @doc     Add a new client transaction state entry to TStateList.
+%% @end
 %%--------------------------------------------------------------------
 add_client_transaction(Method, Branch, Pid, Desc)
   when is_list(Method), is_list(Branch), is_pid(Pid), is_list(Desc) ->
@@ -78,15 +86,19 @@ add_client_transaction(Method, Branch, Pid, Desc)
     add(client, Id, none, Pid, Desc).
 
 %%--------------------------------------------------------------------
-%% Function: add_server_transaction(Request, Pid, Desc)
-%%           Request    = request record()
-%%           Pid        = pid()
-%%           Desc       = string(), description of transaction
-%% Descrip.: Add a new transaction state entry to SocketList.
-%% Returns : ok               |
-%%           error            |
-%%           {duplicate, Dup}
-%%           Dup = transactionstate record()
+%% @spec    (Request, Pid, Desc) ->
+%%            ok               |
+%%            error            |
+%%            {duplicate, Dup}
+%%
+%%            Request = #request{}
+%%            Pid     = pid()
+%%            Desc    = string() "description of transaction"
+%%
+%%            Dup = #transactionstate{}
+%%
+%% @doc     Add a new transaction state entry to SocketList.
+%% @end
 %%--------------------------------------------------------------------
 add_server_transaction(Request, Pid, Desc)
   when is_record(Request, request), is_pid(Pid), is_list(Desc) ->
@@ -108,9 +120,13 @@ add_server_transaction(Request, Pid, Desc)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: empty()
-%% Descrip.: Get an empty transactionstatelist.
-%% Returns : TStateList = transactionstatelist record()
+%% @spec    () ->
+%%            TStateList
+%%
+%%            TStateList = #transactionstatelist{}
+%%
+%% @doc     Get an empty transactionstatelist.
+%% @end
 %%--------------------------------------------------------------------
 empty() ->
     Ref2t = ets:new(transactionstate_ref_to_t, [public, set, named_table]),
@@ -122,14 +138,18 @@ empty() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction_using_request(Request)
-%%           Request    = request record()
-%% Descrip.: Given a (newly received) request (resend or ACK), try to
-%%           locate an already existing server transaction handler.
-%% Returns : Entry |
-%%           error |
-%%           none
-%%           Entry = transactionstate record()
+%% @spec    (Request) ->
+%%            Entry |
+%%            error |
+%%            none
+%%
+%%            Request = #request{}
+%%
+%%            Entry = #transactionstate{}
+%%
+%% @doc     Given a (newly received) request (resend or ACK), try to
+%%          locate an already existing server transaction handler.
+%% @end
 %%--------------------------------------------------------------------
 get_server_transaction_using_request(Request) when is_record(Request, request) ->
     case sipheader:get_server_transaction_id(Request) of
@@ -160,16 +180,20 @@ get_server_transaction_using_request(Request) when is_record(Request, request) -
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction_ack_2543(Request)
-%%           Request    = request record()
-%% Descrip.: Given an (newly received) ACK that we have already
-%%           determined has no RFC3261 Via branch parameter, try to
-%%           locate an already existing server transaction handler
-%%           using the painful old RFC2543 backwards compatible code.
-%% Returns : Entry |
-%%           error |
-%%           none
-%%           Entry = transactionstate record()
+%% @spec    (Request) ->
+%%            Entry |
+%%            error |
+%%            none
+%%
+%%            Request = #request{}
+%%
+%%            Entry = #transactionstate{}
+%%
+%% @doc     Given an (newly received) ACK that we have already
+%%          determined has no RFC3261 Via branch parameter, try to
+%%          locate an already existing server transaction handler
+%%          using the painful old RFC2543 backwards compatible code.
+%% @end
 %%--------------------------------------------------------------------
 get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
     %% ACK requests are matched to transactions differently if they are not received from
@@ -195,32 +219,40 @@ get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_client_transaction(Method, Branch)
-%%           Method     = string()
-%%           Branch     = string()
-%% Descrip.: Look for a client transaction using a method and branch.
-%% Returns : Entry |
-%%           none
-%%           Entry = transactionstate record()
-%% Notes   : This code is only used in transcationlayer before adding
-%%           a new client transaction. Since we have only a single
-%%           transactionlayer process per node, this is not a race,
-%%           but it would be better to just look for duplicates in
-%%           add_client_transaction().
+%% @spec    (Method, Branch) ->
+%%            Entry |
+%%            none
+%%
+%%            Method = string()
+%%            Branch = string()
+%%
+%%            Entry = #transactionstate{}
+%%
+%% @doc     Look for a client transaction using a method and branch.
+%%          Notes : This code is only used in transcationlayer before
+%%          adding a new client transaction. Since we have only a
+%%          single transactionlayer process per node, this is not a
+%%          race, but it would be better to just look for duplicates
+%%          in add_client_transaction().
+%% @end
 %%--------------------------------------------------------------------
 get_client_transaction(Method, Branch) ->
     Id = {Branch, Method},
     get_elem(client, Id).
 
 %%--------------------------------------------------------------------
-%% Function: get_entrylist_using_pid(Pid)
-%%           Pid        = pid()
-%% Descrip.: Find all elements in a transactionstatelist who have a
-%%           matching pid. Return a plain list of those. Use with
-%%           care.
-%% Returns : EntryList |
-%%           none
-%%           EntryList = list() of transactionstate record()
+%% @spec    (Pid) ->
+%%            EntryList |
+%%            none
+%%
+%%            Pid = pid()
+%%
+%%            EntryList = [#transactionstate{}]
+%%
+%% @doc     Find all elements in a transactionstatelist who have a
+%%          matching pid. Return a plain list of those. Use with
+%%          care.
+%% @end
 %%--------------------------------------------------------------------
 get_entrylist_using_pid(Pid) when is_pid(Pid) ->
     case get_using_pid2(Pid) of
@@ -231,17 +263,21 @@ get_entrylist_using_pid(Pid) when is_pid(Pid) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_elem_using_pid(Pid, TStateList)
-%%           Pid        = pid()
-%%           TStateList = transactionstatelist record()
-%% Descrip.: The same as get_list_using_pid/2 except this function
-%%           returns {error, Reason} if more than one record has
-%%           a matching pid.
-%% Returns : TransactionState |
-%%           {error, Reason}  |
-%%           none
-%%           TransactionState = transactionstate record()
-%%           Reason           = string()
+%% @spec    (Pid, TStateList) ->
+%%            TransactionState |
+%%            {error, Reason}  |
+%%            none
+%%
+%%            Pid        = pid()
+%%            TStateList = #transactionstatelist{}
+%%
+%%            TransactionState = #transactionstate{}
+%%            Reason           = string()
+%%
+%% @doc     The same as get_list_using_pid/2 except this function
+%%          returns {error, Reason} if more than one record has a
+%%          matching pid.
+%% @end
 %%--------------------------------------------------------------------
 get_elem_using_pid(Pid, TStateList) when is_pid(Pid), is_record(TStateList, transactionstatelist) ->
     %%case get_using_pid2(Pid, TStateList#transactionstatelist.list, []) of
@@ -255,28 +291,36 @@ get_elem_using_pid(Pid, TStateList) when is_pid(Pid), is_record(TStateList, tran
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_using_pid2(Pid)
-%%           Pid    = pid()
-%% Descrip.: Internal function that returns a plain list (not a
-%%           transactionstatelist) of all the elements of a given
-%%           transactionstatelist who have a matching pid.
-%% Returns : Entrys |
-%%           []
-%%           Entrys = list() of transactionstate record()
+%% @spec    (Pid) ->
+%%            Entrys |
+%%            []
+%%
+%%            Pid = pid()
+%%
+%%            Entrys = [#transactionstate{}]
+%%
+%% @doc     Internal function that returns a plain list (not a
+%%          transactionstatelist) of all the elements of a given
+%%          transactionstatelist who have a matching pid.
+%% @end
 %%--------------------------------------------------------------------
 get_using_pid2(Pid) ->
     RefList = ets:lookup(transactionstate_pid_to_ref, Pid),
     fetch_using_ref_tuples(RefList).
 
 %%--------------------------------------------------------------------
-%% Function: get_elem(Type, Id)
-%%           Type       = client | server
-%%           Id         = term()
-%% Descrip.: Find a single element from a transactionstatelist which
-%%           has a matching type and id.
-%% Returns : Entry |
-%%           none
-%%           Entry = transactionstate record()
+%% @spec    (Type, Id) ->
+%%            Entry |
+%%            none
+%%
+%%            Type = client | server
+%%            Id   = term()
+%%
+%%            Entry = #transactionstate{}
+%%
+%% @doc     Find a single element from a transactionstatelist which
+%%          has a matching type and id.
+%% @end
 %%--------------------------------------------------------------------
 get_elem(Type, Id) when is_atom(Type); Type == server; Type == client ->
     TId = {Type, Id},
@@ -289,16 +333,20 @@ get_elem(Type, Id) when is_atom(Type); Type == server; Type == client ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_elem_ackid(AckId, ToTag)
-%%           AckId      = term()
-%%           ToTag      = string() | none
-%% Descrip.: Find a single element from a transactionstatelist which
-%%           has a matching ack_id and response_to_tag. Only look at
-%%           server transactions (type == server). This is used when
-%%           matching RFC2543 ACK's to non-2xx responses to INVITEs.
-%% Returns : Entry |
-%%           none
-%%           Entry = transactionstate record()
+%% @spec    (AckId, ToTag) ->
+%%            Entry |
+%%            none
+%%
+%%            AckId = term()
+%%            ToTag = string() | none
+%%
+%%            Entry = #transactionstate{}
+%%
+%% @doc     Find a single element from a transactionstatelist which
+%%          has a matching ack_id and response_to_tag. Only look at
+%%          server transactions (type == server). This is used when
+%%          matching RFC2543 ACK's to non-2xx responses to INVITEs.
+%% @end
 %%--------------------------------------------------------------------
 get_elem_ackid(AckId, ToTag) ->
     RefList = ets:lookup(transactionstate_ack_to_ref, AckId),
@@ -319,10 +367,13 @@ filter_server_totag_matches(ToTag, [H|T]) when is_record(H, transactionstate) ->
     filter_server_totag_matches(ToTag, T).
 
 %%--------------------------------------------------------------------
-%% Function: get_expired()
-%% Descrip.: Get all transactionstatelist entrys that have expired.
-%% Returns : none | Expired
-%%           Expired = list() of transactionstate record()
+%% @spec    () ->
+%%            none | Expired
+%%
+%%            Expired = [#transactionstate{}]
+%%
+%% @doc     Get all transactionstatelist entrys that have expired.
+%% @end
 %%--------------------------------------------------------------------
 get_expired() ->
     Now = util:timestamp(),
@@ -343,11 +394,16 @@ get_expired2([], _Now, Res) ->
     Res.
 
 %%--------------------------------------------------------------------
-%% Function: extract(Fields, TState)
-%%           Fields = list() of atom(), pid|appdata|response_to_tag
-%%           TState = transactionstate record()
-%% Descrip.: Return one or more values from a transactionstate record.
-%% Returns : Values = list()
+%% @spec    (Fields, TState) ->
+%%            Values
+%%
+%%            Fields = [pid|appdata|response_to_tag]
+%%            TState = #transactionstate{}
+%%
+%%            Values = list()
+%%
+%% @doc     Return one or more values from a transactionstate record.
+%% @end
 %%--------------------------------------------------------------------
 extract(Values, TState) when is_record(TState, transactionstate) ->
     extract(Values, TState, []).
@@ -362,51 +418,75 @@ extract([response_to_tag | T], TState, Res) when is_record(TState, transactionst
     extract(T, TState, lists:append(Res, [TState#transactionstate.response_to_tag])).
 
 %%--------------------------------------------------------------------
-%% Function: set_pid(TState, Value)
-%%           TState = transactionstate record()
-%%           Value  = pid()
-%% Descrip.: Set pid in a transactionstate record()
-%% Returns : NewTState = transactionstate record()
+%% @spec    (TState, Value) ->
+%%            NewTState
+%%
+%%            TState = #transactionstate{}
+%%            Value  = pid()
+%%
+%%            NewTState = #transactionstate{}
+%%
+%% @doc     Set pid in a transactionstate record()
+%% @end
 %%--------------------------------------------------------------------
 set_pid(TState, Value) when is_record(TState, transactionstate), is_pid(Value); Value == none ->
     TState#transactionstate{pid = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: set_appdata(TState, Value)
-%%           TState = transactionstate record()
-%%           Value  = term()
-%% Descrip.: Set appdata in a transactionstate record()
-%% Returns : NewTState = transactionstate record()
+%% @spec    (TState, Value) ->
+%%            NewTState
+%%
+%%            TState = #transactionstate{}
+%%            Value  = term()
+%%
+%%            NewTState = #transactionstate{}
+%%
+%% @doc     Set appdata in a transactionstate record()
+%% @end
 %%--------------------------------------------------------------------
 set_appdata(TState, Value) when is_record(TState, transactionstate) ->
     TState#transactionstate{appdata = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: set_response_to_tag(TState, Value)
-%%           TState = transactionstate record()
-%%           Value  = string()
-%% Descrip.: Set response_to_tag in a transactionstate record()
-%% Returns : NewTState = transactionstate record()
+%% @spec    (TState, Value) ->
+%%            NewTState
+%%
+%%            TState = #transactionstate{}
+%%            Value  = string()
+%%
+%%            NewTState = #transactionstate{}
+%%
+%% @doc     Set response_to_tag in a transactionstate record()
+%% @end
 %%--------------------------------------------------------------------
 set_response_to_tag(TState, Value) when is_record(TState, transactionstate) ->
     TState#transactionstate{response_to_tag = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: set_result(TState, Value)
-%%           TState = transactionstate record()
-%%           Value  = string()
-%% Descrip.: Set result in a transactionstate record()
-%% Returns : NewTState = transactionstate record()
+%% @spec    (TState, Value) ->
+%%            NewTState
+%%
+%%            TState = #transactionstate{}
+%%            Value  = string()
+%%
+%%            NewTState = #transactionstate{}
+%%
+%% @doc     Set result in a transactionstate record()
+%% @end
 %%--------------------------------------------------------------------
 set_result(TState, Value) when is_record(TState, transactionstate), is_list(Value) ->
     TState#transactionstate{result = Value}.
 
 %%--------------------------------------------------------------------
-%% Function: delete_using_entrylist(EntryList)
-%%           EntryList  = list() of transactionstate record()
-%% Descrip.: Delete all entrys in EntryList.
-%% Returns : {ok, NumDeleted}
-%%           NumDeleted = integer(), number of records deleted
+%% @spec    (EntryList) ->
+%%            {ok, NumDeleted}
+%%
+%%            EntryList = [#transactionstate{}]
+%%
+%%            NumDeleted = integer() "number of records deleted"
+%%
+%% @doc     Delete all entrys in EntryList.
+%% @end
 %%--------------------------------------------------------------------
 delete_using_entrylist(EntryList) when is_list(EntryList) ->
     ok = del_entrys(EntryList),
@@ -415,12 +495,17 @@ delete_using_entrylist(EntryList) when is_list(EntryList) ->
     {ok, NumEntrys}.
 
 %%--------------------------------------------------------------------
-%% Function: update_transactionstate(TState)
-%%           TState     = transcationstate record()
-%% Descrip.: Look in TStateList for an entry matching (using the
-%%           unique reference) the TState entry, and replace it with
-%%           the (presumably) updated TState entry.
-%% Returns : NewTStateList = transactionstatelist record()
+%% @spec    (TState) ->
+%%            NewTStateList
+%%
+%%            TState = #transcationstate{}
+%%
+%%            NewTStateList = #transactionstatelist{}
+%%
+%% @doc     Look in TStateList for an entry matching (using the unique
+%%          reference) the TState entry, and replace it with the
+%%          (presumably) updated TState entry.
+%% @end
 %%--------------------------------------------------------------------
 update_transactionstate(TState) when is_record(TState, transactionstate) ->
     Ref = TState#transactionstate.ref,
@@ -428,10 +513,14 @@ update_transactionstate(TState) when is_record(TState, transactionstate) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: get_length()
-%% Descrip.: Returns the length of the list record element of a
-%%           transactionstatelist.
-%% Returns : Length = integer()
+%% @spec    () ->
+%%            Length
+%%
+%%            Length = integer()
+%%
+%% @doc     Returns the length of the list record element of a
+%%          transactionstatelist.
+%% @end
 %%--------------------------------------------------------------------
 get_length() ->
     ets:info(transactionstate_ref_to_t, size).
@@ -442,12 +531,17 @@ debugfriendly() ->
     debugfriendly2(L, []).
 
 %%--------------------------------------------------------------------
-%% Function: debugfriendly(TStateList)
-%%           TStateList = transactionstatelist record()
-%% Descrip.: Return information about the elements in an
-%%           transactionstatelist record in a format that is suitable
-%%           for logging using ~p.
-%% Returns : Data = term()
+%% @spec    (TStateList) ->
+%%            Data
+%%
+%%            TStateList = #transactionstatelist{}
+%%
+%%            Data = term()
+%%
+%% @doc     Return information about the elements in an
+%%          transactionstatelist record in a format that is suitable
+%%          for logging using ~p.
+%% @end
 %%--------------------------------------------------------------------
 debugfriendly([]) ->
     [];
@@ -523,17 +617,21 @@ monitor_format2([H|T], Res) when record(H, transactionstate) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: add(Type, Id, AckId, Pid, Desc)
-%%           Type       = atom(), client | server
-%%           Id         = term()
-%%           AckId      = term() | none
-%%           Pid        = pid()
-%%           Desc       = string(),
-%% Descrip.: Add a new transaction state entry to the ets tables.
-%% Returns : ok               |
-%%           error            |
-%%           {duplicate, Dup}
-%%           Dup = transactionstate record()
+%% @spec    (Type, Id, AckId, Pid, Desc) ->
+%%            ok               |
+%%            error            |
+%%            {duplicate, Dup}
+%%
+%%            Type  = client | server
+%%            Id    = term()
+%%            AckId = term() | none
+%%            Pid   = pid()
+%%            Desc  = string() ""
+%%
+%%            Dup = #transactionstate{}
+%%
+%% @doc     Add a new transaction state entry to the ets tables.
+%% @end
 %%--------------------------------------------------------------------
 add(Type, Id, AckId, Pid, Desc) when is_pid(Pid), is_atom(Type),
 				     (Type == client orelse Type == server) ->

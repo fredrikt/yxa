@@ -21,14 +21,16 @@
 
 %%%-------------------------------------------------------------------
 %%% File    : presence_xmerl_xml.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: xmerl callback module identical to xmerl_xml except that
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      xmerl callback module identical to xmerl_xml except that
 %%%           we include the complete XML namespace in any presence
 %%%           tuple that we output.
 %%%
 %%%           Originally xmerl_xml.erl from Erlang/OTP R11B-0.
 %%%
-%%% Created : 19 Jun 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    19 Jun 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(presence_xmerl_xml).
 
@@ -80,11 +82,16 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: fix_xml_ns(E, Attrs)
-%%           E = xmlElement record()
-%%           Attrs = list() of xmlAttribute record()
-%% Descrip.: Add the complete XML namespace to Attrs.
-%% Returns : NewAttrs = list() of xmlAttribute record()
+%% @spec    (E, Attrs) ->
+%%            NewAttrs
+%%
+%%            E     = #xmlElement{}
+%%            Attrs = [#xmlAttribute{}]
+%%
+%%            NewAttrs = [#xmlAttribute{}]
+%%
+%% @doc     Add the complete XML namespace to Attrs.
+%% @end
 %%--------------------------------------------------------------------
 fix_xml_ns(E, Attrs) ->
     Nodes = (E#xmlElement.namespace)#xmlNamespace.nodes,

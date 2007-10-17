@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_edoc.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Run edoc with YXA parameters.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Run edoc with YXA parameters.
 %%%
-%%% Created : 15 Dec 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Dec 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_edoc).
 
@@ -12,12 +13,13 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: run(Args)
-%%           Args = list() of string(), the first entry is our list
-%%                  of files.
-%% Descrip.: Run edoc on a number of files, with a constructed set
-%%           of options.
-%% Returns : ok
+%% @spec    (Args) -> ok
+%%
+%%            Args = [string()] "the first entry is our list of files."
+%%
+%% @doc     Run edoc on a number of files, with a constructed set of
+%%          options.
+%% @end
 %%--------------------------------------------------------------------
 run(Args) ->
     FilesIn = string:tokens(hd(Args), " "),
@@ -30,23 +32,24 @@ run(Args) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: get_options(Filelist)
-%%           Filelist = list() of string(), filenames we are to run
-%%                      edoc on. Might need path prepending.
-%% Descrip.: Look if any of the following command line options were
-%%           passed to the emulator, and construct an edoc Options
-%%           parameter out of them :
+%% @spec    (Filelist) ->
+%%            {ok, Options, Files}
 %%
-%%             yxa_edoc_dir - specifies output directory
-%%             yxa_edoc_gen - if the value of this parameter is
-%%                            "private" then we set {private, true}
-%%             yxa_edoc_srcpath - the source directory for the files
-%%                                in Filelist
-%% Returns : {ok, Options, Files}
-%%           Options = list() of {Key, Value}
-%%             Key   = atom()
-%%             Value = term()
-%%           Files   = list() of string()
+%%            Filelist = [string()] "filenames we are to run edoc on. Might need path prepending."
+%%
+%%            Options = [{Key, Value}]
+%%            Key     = atom()
+%%            Value   = term()
+%%            Files   = [string()]
+%%
+%% @doc     Look if any of the following command line options were
+%%          passed to the emulator, and construct an edoc Options
+%%          parameter out of them :
+%%          yxa_edoc_dir - specifies output directory yxa_edoc_gen -
+%%          if the value of this parameter is "private" then we set
+%%          {private, true} yxa_edoc_srcpath - the source directory
+%%          for the files in Filelist
+%% @end
 %%--------------------------------------------------------------------
 get_options(FileList) ->
     Options1 =

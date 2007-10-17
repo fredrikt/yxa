@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : mysql_conn.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: MySQL connection handler, handles de-framing of messages
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      MySQL connection handler, handles de-framing of messages
 %%%           received by the MySQL receiver process.
-%%% Created :  5 Aug 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since     5 Aug 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%
 %%% Note    : All MySQL code was written by Magnus Ahltorp, originally
 %%%           in the file mysql.erl - I just moved it here.
@@ -55,6 +56,8 @@
 -export([do_recv/3
 	]).
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  log_fun,
 	  recv_pid,
@@ -71,18 +74,22 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Host, Port, User, Password, Database, LogFun)
-%%           Host     = string()
-%%           Port     = integer()
-%%           User     = string()
-%%           Password = string()
-%%           Database = string()
-%%           LogFun   = undefined | function() of arity 3
-%% Descrip.: Starts a mysql_conn process that connects to a MySQL
-%%           server, logs in and chooses a database.
-%% Returns : {ok, Pid} | {error, Reason}
-%%           Pid    = pid()
-%%           Reason = string()
+%% @spec    (Host, Port, User, Password, Database, LogFun) ->
+%%            {ok, Pid} | {error, Reason}
+%%
+%%            Host     = string()
+%%            Port     = integer()
+%%            User     = string()
+%%            Password = string()
+%%            Database = string()
+%%            LogFun   = undefined | function() of arity 3
+%%
+%%            Pid    = pid()
+%%            Reason = string()
+%%
+%% @doc     Starts a mysql_conn process that connects to a MySQL
+%%          server, logs in and chooses a database.
+%% @end
 %%--------------------------------------------------------------------
 start(Host, Port, User, Password, Database, LogFun) when is_list(Host), is_integer(Port), is_list(User),
 							 is_list(Password), is_list(Database) ->
@@ -104,25 +111,24 @@ start(Host, Port, User, Password, Database, LogFun) when is_list(Host), is_integ
     end.
 
 %%--------------------------------------------------------------------
-%% Function: fetch(Pid, Query, From)
-%%           fetch(Pid, Query, From, Timeout)
-%%           Pid     = pid(), mysql_conn to send fetch-request to
-%%           Query   = string(), MySQL query in verbatim
-%%           From    = pid() or term(), use a From of self() when
-%%                     using this module for a single connection,
-%%                     or pass the gen_server:call/3 From argument if
-%%                     using a gen_server to do the querys (e.g. the
-%%                     mysql_dispatcher)
-%%           Timeout = integer() | infinity, gen_server timeout value
-%% Descrip.: Send a query and wait for the result if running stand-
-%%           alone (From = self()), but don't block the caller if we
-%%           are not running stand-alone (From = gen_server From).
-%% Returns : ok                    | (non-stand-alone mode)
-%%           {ok, FieldInfo, Rows} | (stand-alone mode)
-%%           {error, Reason}         (stand-alone mode)
-%%           FieldInfo = term()
-%%           Rows      = list() of [string()]
-%%           Reason    = term()
+%% @spec    (Pid, Query, From) fetch(Pid, Query, From, Timeout) ->
+%%            ok                    |
+%%            {ok, FieldInfo, Rows} |
+%%            {error, Reason}         (stand-alone mode)
+%%
+%%            Pid     = pid() "mysql_conn to send fetch-request to"
+%%            Query   = string() "MySQL query in verbatim"
+%%            From    = pid() or term() "use a From of self() when using this module for a single connection, or pass the gen_server:call/3 From argument if using a gen_server to do the querys (e.g. the mysql_dispatcher)"
+%%            Timeout = integer() | infinity "gen_server timeout value"
+%%
+%%            FieldInfo = term()
+%%            Rows      = [[string()]]
+%%            Reason    = term()
+%%
+%% @doc     Send a query and wait for the result if running stand-
+%%          alone (From = self()), but don't block the caller if we
+%%          are not running stand-alone (From = gen_server From).
+%% @end
 %%--------------------------------------------------------------------
 fetch(Pid, Query, From) ->
     fetch(Pid, Query, From, ?DEFAULT_STANDALONE_TIMEOUT).
@@ -143,20 +149,23 @@ fetch(Pid, Query, From, Timeout) when is_pid(Pid), is_list(Query), is_integer(Ti
 	    %% From is gen_server From, Pid will do gen_server:reply() when it has an answer
 	    ok
     end.
-     
+
 %%--------------------------------------------------------------------
-%% Function: do_recv(LogFun, RecvPid, SeqNum)
-%%           LogFun  = undefined | function() with arity 3
-%%           RecvPid = pid(), mysql_recv process
-%%           SeqNum  = undefined | integer()
-%% Descrip.: Wait for a frame decoded and sent to us by RecvPid.
-%%           Either wait for a specific frame if SeqNum is an integer,
-%%           or just any frame if SeqNum is undefined.
-%% Returns : {ok, Packet, Num} |
-%%           {error, Reason}
-%%           Reason = term()
+%% @spec    (LogFun, RecvPid, SeqNum) ->
+%%            {ok, Packet, Num} |
+%%            {error, Reason}
 %%
-%% Note    : Only to be used externally by the 'mysql_auth' module.
+%%            LogFun  = undefined | function() with arity 3
+%%            RecvPid = pid() "mysql_recv process"
+%%            SeqNum  = undefined | integer()
+%%
+%%            Reason = term()
+%%
+%% @doc     Wait for a frame decoded and sent to us by RecvPid. Either
+%%          wait for a specific frame if SeqNum is an integer, or
+%%          just any frame if SeqNum is undefined. Note : Only to be
+%%          used externally by the 'mysql_auth' module.
+%% @end
 %%--------------------------------------------------------------------
 do_recv(LogFun, RecvPid, SeqNum) when is_function(LogFun); LogFun == undefined, SeqNum == undefined ->
     receive
@@ -182,19 +191,22 @@ do_recv(LogFun, RecvPid, SeqNum) when is_function(LogFun); LogFun == undefined, 
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Host, Port, User, Password, Database, LogFun,
-%%                Parent)
-%%           Host     = string()
-%%           Port     = integer()
-%%           User     = string()
-%%           Password = string()
-%%           Database = string()
-%%           LogFun   = undefined | function() of arity 3
-%%           Parent   = pid() of process starting this mysql_conn
-%% Descrip.: Connect to a MySQL server, log in and chooses a database.
-%%           Report result of this to Parent, and then enter loop() if
-%%           we were successfull.
-%% Returns : void() | does not return
+%% @spec    (Host, Port, User, Password, Database, LogFun, Parent) ->
+%%            void() | does not return
+%%
+%%            Host     = string()
+%%            Port     = integer()
+%%            User     = string()
+%%            Password = string()
+%%            Database = string()
+%%            LogFun   = undefined | function() of arity 3
+%%            Parent   = pid() of process starting this mysql_conn
+%%
+%% @doc     Connect to a MySQL server, log in and chooses a database.
+%%          Report result of this to Parent, and then enter loop() if
+%%          we were successfull.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init(Host, Port, User, Password, Database, LogFun, Parent) ->
     case mysql_recv:start_link(Host, Port, LogFun, self()) of
@@ -225,11 +237,13 @@ init(Host, Port, User, Password, Database, LogFun, Parent) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: loop(State)
-%%           State = state record()
-%% Descrip.: Wait for signals asking us to perform a MySQL query, or
-%%           signals that the socket was closed.
-%% Returns : error | does not return
+%% @spec    (State) -> error | does not return
+%%
+%%            State = #state{}
+%%
+%% @doc     Wait for signals asking us to perform a MySQL query, or
+%%          signals that the socket was closed.
+%% @end
 %%--------------------------------------------------------------------
 loop(State) ->
     RecvPid = State#state.recv_pid,
@@ -259,15 +273,19 @@ loop(State) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: mysql_init(Sock, RecvPid, User, Password, LogFun)
-%%           Sock     = term(), gen_tcp socket
-%%           RecvPid  = pid(), mysql_recv process
-%%           User     = string()
-%%           Password = string()
-%%           LogFun   = undefined | function() with arity 3
-%% Descrip.: Try to authenticate on our new socket.
-%% Returns : ok | {error, Reason}
-%%           Reason = string()
+%% @spec    (Sock, RecvPid, User, Password, LogFun) ->
+%%            ok | {error, Reason}
+%%
+%%            Sock     = term() "gen_tcp socket"
+%%            RecvPid  = pid() "mysql_recv process"
+%%            User     = string()
+%%            Password = string()
+%%            LogFun   = undefined | function() with arity 3
+%%
+%%            Reason = string()
+%%
+%% @doc     Try to authenticate on our new socket.
+%% @end
 %%--------------------------------------------------------------------
 mysql_init(Sock, RecvPid, User, Password, LogFun) ->
     case do_recv(LogFun, RecvPid, undefined) of
@@ -320,15 +338,19 @@ asciz(Data) when list(Data) ->
     {String, Rest}.
 
 %%--------------------------------------------------------------------
-%% Function: get_query_response(LogFun, RecvPid)
-%%           LogFun  = undefined | function() with arity 3
-%%           RecvPid = pid(), mysql_recv process
-%% Descrip.: Wait for frames until we have a complete query response.
-%% Returns : {ok, FieldInfo, Rows} |
-%%           {error, Reason}
-%%           FieldInfo = list() of term()
-%%           Rows      = list() of [string()]
-%%           Reason    = term()
+%% @spec    (LogFun, RecvPid) ->
+%%            {ok, FieldInfo, Rows} |
+%%            {error, Reason}
+%%
+%%            LogFun  = undefined | function() with arity 3
+%%            RecvPid = pid() "mysql_recv process"
+%%
+%%            FieldInfo = [term()]
+%%            Rows      = [[string()]]
+%%            Reason    = term()
+%%
+%% @doc     Wait for frames until we have a complete query response.
+%% @end
 %%--------------------------------------------------------------------
 get_query_response(LogFun, RecvPid) ->
     case do_recv(LogFun, RecvPid, undefined) of
@@ -357,14 +379,18 @@ get_query_response(LogFun, RecvPid) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_fields(LogFun, RecvPid, [])
-%%           LogFun  = undefined | function() with arity 3
-%%           RecvPid = pid(), mysql_recv process
-%% Descrip.: Received and decode field information.
-%% Returns : {ok, FieldInfo} |
-%%           {error, Reason}
-%%           FieldInfo = list() of term()
-%%           Reason    = term()
+%% @spec    (LogFun, RecvPid, []) ->
+%%            {ok, FieldInfo} |
+%%            {error, Reason}
+%%
+%%            LogFun  = undefined | function() with arity 3
+%%            RecvPid = pid() "mysql_recv process"
+%%
+%%            FieldInfo = [term()]
+%%            Reason    = term()
+%%
+%% @doc     Received and decode field information.
+%% @end
 %%--------------------------------------------------------------------
 get_fields(LogFun, RecvPid, Res) ->
     case do_recv(LogFun, RecvPid, undefined) of
@@ -393,14 +419,18 @@ get_fields(LogFun, RecvPid, Res) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_rows(N, LogFun, RecvPid, [])
-%%           N       = integer(), number of rows to get
-%%           LogFun  = undefined | function() with arity 3
-%%           RecvPid = pid(), mysql_recv process
-%% Descrip.: Receive and decode a number of rows.
-%% Returns : {ok, Rows} |
-%%           {error, Reason}
-%%           Rows = list() of [string()]
+%% @spec    (N, LogFun, RecvPid, []) ->
+%%            {ok, Rows} |
+%%            {error, Reason}
+%%
+%%            N       = integer() "number of rows to get"
+%%            LogFun  = undefined | function() with arity 3
+%%            RecvPid = pid() "mysql_recv process"
+%%
+%%            Rows = [[string()]]
+%%
+%% @doc     Receive and decode a number of rows.
+%% @end
 %%--------------------------------------------------------------------
 get_rows(N, LogFun, RecvPid, Res) ->
     case do_recv(LogFun, RecvPid, undefined) of
@@ -442,14 +472,16 @@ get_with_length(<<Length:8, Rest/binary>>) when Length < 251 ->
     split_binary(Rest, Length).
 
 %%--------------------------------------------------------------------
-%% Function: do_query(State, Query)
-%%           do_query(Sock, RecvPid, LogFun, Query)
-%%           Sock    = term(), gen_tcp socket
-%%           RecvPid = pid(), mysql_recv process
-%%           LogFun  = undefined | function() with arity 3
-%%           Query   = string()
-%% Descrip.: Send a MySQL query and block awaiting it's response.
-%% Returns : result of get_query_response/2 | {error, Reason}
+%% @spec    (State, Query) do_query(Sock, RecvPid, LogFun, Query) ->
+%%            result of get_query_response/2 | {error, Reason}
+%%
+%%            Sock    = term() "gen_tcp socket"
+%%            RecvPid = pid() "mysql_recv process"
+%%            LogFun  = undefined | function() with arity 3
+%%            Query   = string()
+%%
+%% @doc     Send a MySQL query and block awaiting it's response.
+%% @end
 %%--------------------------------------------------------------------
 do_query(State, Query) when is_record(State, state) ->
     do_query(State#state.socket,
@@ -469,13 +501,15 @@ do_query(Sock, RecvPid, LogFun, Query) when is_pid(RecvPid), is_list(Query) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: do_send(Sock, Packet, SeqNum, LogFun)
-%%           Sock   = term(), gen_tcp socket
-%%           Packet = binary()
-%%           SeqNum = integer(), packet sequence number
-%%           LogFun = undefined | function() with arity 3
-%% Descrip.: Send a packet to the MySQL server.
-%% Returns : result of gen_tcp:send/2
+%% @spec    (Sock, Packet, SeqNum, LogFun) -> result of gen_tcp:send/2
+%%
+%%            Sock   = term() "gen_tcp socket"
+%%            Packet = binary()
+%%            SeqNum = integer() "packet sequence number"
+%%            LogFun = undefined | function() with arity 3
+%%
+%% @doc     Send a packet to the MySQL server.
+%% @end
 %%--------------------------------------------------------------------
 do_send(Sock, Packet, SeqNum, _LogFun) when is_binary(Packet), is_integer(SeqNum) ->
     Data = <<(size(Packet)):24/little, SeqNum:8, Packet/binary>>,

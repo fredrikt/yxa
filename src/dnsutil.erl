@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : dnsutil.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: DNS resolving utility functions. Mainly used from the
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      DNS resolving utility functions. Mainly used from the
 %%%           sipdst module. Functions to resolve domain SRV- or
 %%%           NAPTR records, and to do ENUM resolving.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(dnsutil).
 %%-compile(export_all).
@@ -33,7 +34,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
-%% These records are entirely internal to this module
+%% @type srventry() = #srventry{}.
+%%                    These records are entirely internal to this module
 -record(srventry, {
 	  proto,	%% inet or inet6 ? XXX
 	  order,	%% SRV RR order
@@ -41,6 +43,8 @@
 	  host,		%% SRV RR host
 	  port		%% SRV RR port
 	 }).
+%% @type naptrrecord() = #naptrrecord{}.
+%%                       no description
 -record(naptrrecord, {
 	  order,
 	  preference,
@@ -63,17 +67,21 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: siplookup(Domain)
-%%           Domain = string()
-%% Descrip.: Look up where to send SIP requests for a domain name.
-%%           Ultimately return a list of {Proto, Host, Port} and/or
-%%           {error, E} entrys. Proto is tcp, udp or tls. Never
-%%           tcp6, udp6 or tls6 since we do not resolve Host into
-%%           an address.
-%% Returns : SRVList         |
-%%           {error, Reason}
-%%           SRVList = list() of sipdns_srv record()
-%%           Reason  = nxdomain | atom()
+%% @spec    (Domain) ->
+%%            SRVList         |
+%%            {error, Reason}
+%%
+%%            Domain = string()
+%%
+%%            SRVList = [#sipdns_srv{}]
+%%            Reason  = nxdomain | atom()
+%%
+%% @doc     Look up where to send SIP requests for a domain name.
+%%          Ultimately return a list of {Proto, Host, Port} and/or
+%%          {error, E} entrys. Proto is tcp, udp or tls. Never tcp6,
+%%          udp6 or tls6 since we do not resolve Host into an
+%%          address.
+%% @end
 %%--------------------------------------------------------------------
 siplookup([]) ->
     {error, invalid_domainname};
@@ -100,15 +108,18 @@ siplookup(Domain) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: enumlookup(In)
-%%           In = none | string(), E.164 number (string starting with
-%%                "+" followed by only digits)
-%% Descrip.: Do ENUM (RFC2916 and 2916bis) lookup on a E.164 number
-%%           in the default configured list of ENUM domains. Uses
-%%           enumlookup/2 below.
-%% Returns : Result |
-%%           none
-%%           Result = string(), result of ENUM NAPTR regexp rewrite
+%% @spec    (In) ->
+%%            Result |
+%%            none
+%%
+%%            In = none | string() "E.164 number (string starting with \"+\" followed by only digits)"
+%%
+%%            Result = string() "result of ENUM NAPTR regexp rewrite"
+%%
+%% @doc     Do ENUM (RFC2916 and 2916bis) lookup on a E.164 number in
+%%          the default configured list of ENUM domains. Uses
+%%          enumlookup/2 below.
+%% @end
 %%--------------------------------------------------------------------
 enumlookup(none) ->
     none;
@@ -126,16 +137,20 @@ enumlookup(Foo) ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: enumlookup(Number, DomainList)
-%%           Number     = string(), E.164 number (starting with "+")
-%%           DomainList = list() of string(), ENUM domains to look in
-%% Descrip.: Do ENUM (RFC2916 and 2916bis) lookup on a E.164 number
-%%           in a set of domains. Returns a single value which is the
-%%           result of ENUM regexp rewrite of the best NAPTR found
-%%           as a string.
-%% Returns : Result |
-%%           none
-%%           Result = string(), result of ENUM NAPTR regexp rewrite
+%% @spec    (Number, DomainList) ->
+%%            Result |
+%%            none
+%%
+%%            Number     = string() "E.164 number (starting with \"+\")"
+%%            DomainList = [string()] "ENUM domains to look in"
+%%
+%%            Result = string() "result of ENUM NAPTR regexp rewrite"
+%%
+%% @doc     Do ENUM (RFC2916 and 2916bis) lookup on a E.164 number in
+%%          a set of domains. Returns a single value which is the
+%%          result of ENUM regexp rewrite of the best NAPTR found as
+%%          a string.
+%% @end
 %%--------------------------------------------------------------------
 enumlookup("+" ++ Number, DomainList) ->
     %% XXX remove dashes and spaces etc. from Number
@@ -149,16 +164,20 @@ enumlookup("+" ++ Number, DomainList) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_ip_port(Host, Port)
-%%           Host = string(), hostname or IP address
-%%           Port = integer() | none, port number
-%% Descrip.: Simply look up the hostname supplied and return a list
-%%           of #sipdns_hostport records with the IP addresses the
-%%           Host resolved to, together with the IP address as
-%%           supplied to this function.
-%% Returns : AddrList        |
-%%           {error, Reason}
-%%           AddrList = list() of sipdns_hostport record()
+%% @spec    (Host, Port) ->
+%%            AddrList        |
+%%            {error, Reason}
+%%
+%%            Host = string() "hostname or IP address"
+%%            Port = integer() | none "port number"
+%%
+%%            AddrList = [#sipdns_hostport{}]
+%%
+%% @doc     Simply look up the hostname supplied and return a list of
+%%          #sipdns_hostport records with the IP addresses the Host
+%%          resolved to, together with the IP address as supplied to
+%%          this function.
+%% @end
 %%--------------------------------------------------------------------
 get_ip_port(Host, Port) when is_integer(Port) ; Port == none ->
     V6List = case yxa_config:get_env(enable_v6) of
@@ -227,12 +246,15 @@ get_ip_port2(Family, Host, Port) when Family == inet ; Family == inet6 ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: siplookup_naptr(Domain)
-%% Descrip.: Look for NAPTR records for a domain telling us where
-%%           to look for SRV records for the very same domain.
-%% Returns : SRVList |
-%%           nomatch
-%%           SRVList = list() of srventry record()
+%% @spec    (Domain) ->
+%%            SRVList |
+%%            nomatch
+%%
+%%            SRVList = [#srventry{}]
+%%
+%% @doc     Look for NAPTR records for a domain telling us where to
+%%          look for SRV records for the very same domain.
+%% @end
 %%--------------------------------------------------------------------
 siplookup_naptr(Domain) when is_list(Domain) ->
     case naptrlookup(Domain) of
@@ -255,13 +277,17 @@ siplookup_naptr(Domain) when is_list(Domain) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: naptr_to_srvlist(In)
-%%           In = list() of naptrrecord record()
-%% Descrip.: Take a list of sorted NAPTR records and try to turn
-%%           them into SRV records.
-%% Returns : SRVList |
-%%           nomatch
-%%           SRVList = list() of srventry record()
+%% @spec    (In) ->
+%%            SRVList |
+%%            nomatch
+%%
+%%            In = [#naptrrecord{}]
+%%
+%%            SRVList = [#srventry{}]
+%%
+%% @doc     Take a list of sorted NAPTR records and try to turn them
+%%          into SRV records.
+%% @end
 %%--------------------------------------------------------------------
 naptr_to_srvlist(In) ->
     naptr_to_srvlist2(In, []).
@@ -295,11 +321,16 @@ naptr_to_srvlist2([], Res) ->
     Res.
 
 %%--------------------------------------------------------------------
-%% Function: debugfriendly_srventry(In)
-%%           In = list() of srventry record()
-%% Descrip.: Take a list of srventry records and return them in a
-%%           format suitable for logging with ~p.
-%% Returns : Data = list() of string()
+%% @spec    (In) ->
+%%            Data
+%%
+%%            In = [#srventry{}]
+%%
+%%            Data = [string()]
+%%
+%% @doc     Take a list of srventry records and return them in a
+%%          format suitable for logging with ~p.
+%% @end
 %%--------------------------------------------------------------------
 debugfriendly_srventry(In) when is_list(In) ->
     debugfriendly_srventry2(In, []).
@@ -317,15 +348,19 @@ debugfriendly_srventry2([H|T], Res) when is_record(H, srventry) ->
     debugfriendly_srventry2(T, [This | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: combine_srvresults(In)
-%%           In = list() of srventry record() | {error, R}
-%% Descrip.: Walk through a list of srventry records or {error, R}
-%%           tuples and turn the srventry records into
-%%           {Proto, Host, Port} tuples.
-%% Returns : SRVList         |
-%%           {error, Reason}
-%%           SRVList = list() of sipdns_srv record()
-%%           Reason  = nxdomain | atom()
+%% @spec    (In) ->
+%%            SRVList         |
+%%            {error, Reason}
+%%
+%%            In = [#srventry{}] | {error, R}
+%%
+%%            SRVList = [#sipdns_srv{}]
+%%            Reason  = nxdomain | atom()
+%%
+%% @doc     Walk through a list of srventry records or {error, R}
+%%          tuples and turn the srventry records into {Proto, Host,
+%%          Port} tuples.
+%% @end
 %%--------------------------------------------------------------------
 combine_srvresults(In) ->
     combine_srvresults(In, [], []).
@@ -348,14 +383,16 @@ combine_srvresults([H | T], Res, Errors) when is_record(H, srventry) ->
     combine_srvresults(T, [This | Res], Errors).
 
 %%--------------------------------------------------------------------
-%% Function: sort_srvlist(In)
-%%           In = list() of srventry record() | {error, R}
-%% Descrip.: Walk through a list of srventry records or {error, R}
-%%           tuples and sort them according to order and secondly by
-%%           weight. Sort errors last, but put nxdomain errors first
-%%           of the errors. The weight sorting is proportional for
-%%           entrys of the same order, not fixed.
-%% Returns : list() of srventry record()
+%% @spec    (In) -> [#srventry{}]
+%%
+%%            In = [#srventry{}] | {error, R}
+%%
+%% @doc     Walk through a list of srventry records or {error, R}
+%%          tuples and sort them according to order and secondly by
+%%          weight. Sort errors last, but put nxdomain errors first
+%%          of the errors. The weight sorting is proportional for
+%%          entrys of the same order, not fixed.
+%% @end
 %%--------------------------------------------------------------------
 sort_srvlist(In) when is_list(In) ->
     Sorted = lists:sort(fun sortsrv/2, In),
@@ -399,12 +436,16 @@ sortsrv({error, _}, {error, _}) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: make_weight_proportional(In)
-%%           In = list() of srventry record() | {error, R}
-%% Descrip.: First, separate out all entrys with the same priority.
-%%           Invoke order_proportional_weight once per priority.
-%% Returns : list() of Res
-%%           Res = srventry record() | {error, R}
+%% @spec    (In) ->
+%%            [Res]
+%%
+%%            In = [#srventry{}] | {error, R}
+%%
+%%            Res = #srventry{} | {error, R}
+%%
+%% @doc     First, separate out all entrys with the same priority.
+%%          Invoke order_proportional_weight once per priority.
+%% @end
 %%--------------------------------------------------------------------
 make_weight_proportional(In) when is_list(In) ->
     make_weight_proportional2(In, undefined, [], []).
@@ -434,15 +475,17 @@ make_weight_proportional2([], _Order, SRVs, Res) ->
     lists:append([OrderedSRVs | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: order_proportional_weight(In)
-%%           In = list() of srventry record()
-%% Descrip.: Use random to sort the entrys in In in a proportional
-%%           fashion. If three entrys have priority 45, 45 and 10,
-%%           the probability of one of the 45 percent entrys to be
-%%           returned first is 90 % (one of the two, not the first or
-%%           second one individually) and the probability of the last
-%%           entry being returned first is ten percent.
-%% Returns : list() of srventry record()
+%% @spec    (In) -> [#srventry{}]
+%%
+%%            In = [#srventry{}]
+%%
+%% @doc     Use random to sort the entrys in In in a proportional
+%%          fashion. If three entrys have priority 45, 45 and 10, the
+%%          probability of one of the 45 percent entrys to be
+%%          returned first is 90 % (one of the two, not the first or
+%%          second one individually) and the probability of the last
+%%          entry being returned first is ten percent.
+%% @end
 %%--------------------------------------------------------------------
 order_proportional_weight(In) when is_list(In) ->
     WeightSum = lists:foldl(fun(E, Acc) ->
@@ -467,12 +510,17 @@ get_winner([#srventry{weight = ThisWeight} | T], WinnerNum) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: number2enum(Number, Domain)
-%%           Number = string(), reversed E.164 number without the "+"
-%%           Domain = string(), ENUM domain to append
-%% Descrip.: Insert dots between all digits in the input. The input is
-%%           the original number in reverse.
-%% Returns : ENUMdomain = string()
+%% @spec    (Number, Domain) ->
+%%            ENUMdomain
+%%
+%%            Number = string() "reversed E.164 number without the \"+\""
+%%            Domain = string() "ENUM domain to append"
+%%
+%%            ENUMdomain = string()
+%%
+%% @doc     Insert dots between all digits in the input. The input is
+%%          the original number in reverse.
+%% @end
 %%--------------------------------------------------------------------
 number2enum([], Domain) ->
     Domain;
@@ -482,13 +530,18 @@ number2enum([C | Rest], Domain) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: fixplus(In)
-%%           In = string()
-%% Descrip.: ENUM users frequently put regexps starting with ^+ in
-%%           their NAPTR records (because of examples in RFC2916).
-%%           Erlang (R9C-0) regexp module can't handle those (it
-%%           loops forever) so we turn them into ^\\+ which works.
-%% Returns : NewRegexp = string()
+%% @spec    (In) ->
+%%            NewRegexp
+%%
+%%            In = string()
+%%
+%%            NewRegexp = string()
+%%
+%% @doc     ENUM users frequently put regexps starting with ^+ in
+%%          their NAPTR records (because of examples in RFC2916).
+%%          Erlang (R9C-0) regexp module can't handle those (it loops
+%%          forever) so we turn them into ^\\+ which works.
+%% @end
 %%--------------------------------------------------------------------
 fixplus("^+" ++ Regexp) ->
     logger:log(debug,"Resolver: applyregexp: E.164 subscriber has used an invalid regexp, "
@@ -499,17 +552,22 @@ fixplus(Regexp) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: applyregexp(Number, RegexpList)
-%%           Number = string(), input
-%%           Regexp = string(), regexp formatted as "regexp!rewrite".
-%% Descrip.: Try a list of regexps together with our indata and
-%%           return the rewrite result of the first one which could
-%%           be rewritten, or 'none'.
-%% Returns : Out = string() |
-%%           none
-%% Note    : We need to handle other tokens than "!" !!! XXX !!!
-%% XXX an artefact of using string:tokens() is that multiple tokens
-%% are treated as one, instead of being rejected!
+%% @spec    (Number, RegexpList) ->
+%%            Out
+%%
+%%            Number = string() "input"
+%%            Regexp = string() "regexp formatted as \"regexp!rewrite\"."
+%%
+%%            Out = string() |
+%%            none
+%%
+%% @doc     Try a list of regexps together with our indata and return
+%%          the rewrite result of the first one which could be
+%%          rewritten, or 'none'. Note : We need to handle other
+%%          tokens than "!" !!! XXX !!! XXX an artefact of using
+%%          string:tokens() is that multiple tokens are treated as
+%%          one, instead of being rejected!
+%% @end
 %%--------------------------------------------------------------------
 applyregexp(_Number, []) ->
     none;
@@ -533,12 +591,17 @@ applyregexp(Number, [Regexp | Rest]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: enumalldomains(Number, Domains)
-%%           Number  = string(), E.164 number _without_ the "+"
-%%           Domains = list() of string(), ENUM domains
-%% Descrip.: Perform ENUM NAPTR lookup of Number under a set of
-%%           domains and result a list of naptrrecord records.
-%% Returns : NAPTRList = list() of naptrrecord record()
+%% @spec    (Number, Domains) ->
+%%            NAPTRList
+%%
+%%            Number  = string() "E.164 number _without_ the \"+\""
+%%            Domains = [string()] "ENUM domains"
+%%
+%%            NAPTRList = [#naptrrecord{}]
+%%
+%% @doc     Perform ENUM NAPTR lookup of Number under a set of domains
+%%          and result a list of naptrrecord records.
+%% @end
 %%--------------------------------------------------------------------
 enumalldomains(Number, Domains) ->
     enumalldomains2(lists:reverse(Number), Domains, []).
@@ -552,19 +615,23 @@ enumalldomains2(RNumber, [Domain | Rest], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: chooseenum(NAPTRList, Type)
-%%           NAPTRList = list() of naptrrecord record()
-%%           Type      = string(), "SIP+E2U" or "E2U+SIP" or ...
-%% Descrip.: Pick out all NAPTR records with a Enumservice matching
-%%           the specified Type from a list of naptrrecord records.
-%% Returns : ENUMNAPTRList = list() of naptrrecord record()
-%% Note    : RFC3761 2.4.2 (Services Parameters) defines services as
-%%               service-field = "E2U" 1*(servicespec)
-%%               servicespec   = "+" enumservice
-%%           and says "...followed by 1 or more or more Enumservices
-%%           ... Each Enumservice is indicated by an initial '+'
-%%           character.". XXX we don't handle entrys with more than
-%%           one Enumservice.
+%% @spec    (NAPTRList, Type) ->
+%%            ENUMNAPTRList
+%%
+%%            NAPTRList = [#naptrrecord{}]
+%%            Type      = string() "\"SIP+E2U\" or \"E2U+SIP\" or ..."
+%%
+%%            ENUMNAPTRList = [#naptrrecord{}]
+%%
+%% @doc     Pick out all NAPTR records with a Enumservice matching the
+%%          specified Type from a list of naptrrecord records. Note :
+%%          RFC3761 2.4.2 (Services Parameters) defines services as
+%%          service-field = "E2U" 1*(servicespec) servicespec = "+"
+%%          enumservice and says "...followed by 1 or more or more
+%%          Enumservices ... Each Enumservice is indicated by an
+%%          initial '+' character.". XXX we don't handle entrys with
+%%          more than one Enumservice.
+%% @end
 %%--------------------------------------------------------------------
 chooseenum([], _Type) ->
     [];
@@ -596,13 +663,15 @@ chooseenum([H | Rest], Type) when is_record(H, naptrrecord), H#naptrrecord.repla
 
 
 %%--------------------------------------------------------------------
-%% Function: sortenum(A, B)
-%%           A = naptrrecord record()
-%%           B = naptrrecord record()
-%% Descrip.: lists:sort function for ENUM naptrrecord records. Return
-%%           true if A has lower order. If the order is the same,
-%%           return 'true' if A has the lowest preference.
-%% Returns : true  | false
+%% @spec    (A, B) -> true  | false
+%%
+%%            A = #naptrrecord{}
+%%            B = #naptrrecord{}
+%%
+%% @doc     lists:sort function for ENUM naptrrecord records. Return
+%%          true if A has lower order. If the order is the same,
+%%          return 'true' if A has the lowest preference.
+%% @end
 %%--------------------------------------------------------------------
 sortenum(#naptrrecord{order=AOrder}, #naptrrecord{order=BOrder}) when AOrder < BOrder ->
     true;
@@ -614,10 +683,15 @@ sortenum(A, B) when is_record(A, naptrrecord), is_record(B, naptrrecord) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: naptr_regexp(In)
-%%           In = list() of naptrrecord record()
-%% Descrip.: Return the regexps from a list of naptrrecords.
-%% Returns : RegexpList = list() of string()
+%% @spec    (In) ->
+%%            RegexpList
+%%
+%%            In = [#naptrrecord{}]
+%%
+%%            RegexpList = [string()]
+%%
+%% @doc     Return the regexps from a list of naptrrecords.
+%% @end
 %%--------------------------------------------------------------------
 naptr_regexp([]) ->
     [];
@@ -626,11 +700,16 @@ naptr_regexp([H | T]) when is_record(H, naptrrecord) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: naptrlookup(Name)
-%%           Name = string(), complete DNS label
-%% Descrip.: Look up and return all NAPTR records for a given DNS
-%%           domain name.
-%% Returns : NAPTRList = list() of naptrrecord record()
+%% @spec    (Name) ->
+%%            NAPTRList
+%%
+%%            Name = string() "complete DNS label"
+%%
+%%            NAPTRList = [#naptrrecord{}]
+%%
+%% @doc     Look up and return all NAPTR records for a given DNS
+%%          domain name.
+%% @end
 %%--------------------------------------------------------------------
 naptrlookup(Name) ->
     case inet_res:nslookup(Name, in, ?T_NAPTR) of
@@ -646,11 +725,16 @@ naptrlookup(Name) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: parse_naptr_answer(DNSRRList)
-%%           DNSRRList = list() of dns_rr record()
-%% Descrip.: Look for NAPTR RRs in DNSRRList, and call parsenaptr on
-%%           those.
-%% Returns : NAPTRList = list() of naptrrecord record()
+%% @spec    (DNSRRList) ->
+%%            NAPTRList
+%%
+%%            DNSRRList = [#dns_rr{}]
+%%
+%%            NAPTRList = [#naptrrecord{}]
+%%
+%% @doc     Look for NAPTR RRs in DNSRRList, and call parsenaptr on
+%%          those.
+%% @end
 %%--------------------------------------------------------------------
 parse_naptr_answer(DNSRRList) when is_list(DNSRRList) ->
     parse_naptr_answer2(DNSRRList, []).
@@ -667,12 +751,16 @@ parse_naptr_answer2([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: parsenaptr(Binary)
-%%           Binary = binary(), dns_rr record() 'data' element conv-
-%%                    erted to binary
-%% Descrip.: Takes some DNS RR data and parses it into a naptrrecord.
-%% Returns : NAPTRrecord = naptrrecord record()
-%% Note    : XXX could be rewritten to not create sub-binaries.
+%% @spec    (Binary) ->
+%%            NAPTRrecord
+%%
+%%            Binary = binary() "#dns_rr{} 'data' element conv- erted to binary"
+%%
+%%            NAPTRrecord = #naptrrecord{}
+%%
+%% @doc     Takes some DNS RR data and parses it into a naptrrecord.
+%%          Note : XXX could be rewritten to not create sub-binaries.
+%% @end
 %%--------------------------------------------------------------------
 parsenaptr(Binary) when is_binary(Binary) ->
     <<Order:16,
@@ -700,13 +788,18 @@ parsenaptr(Binary) when is_binary(Binary) ->
 		}.
 
 %%--------------------------------------------------------------------
-%% Function: parsenaptr_replacement(Len, In, [])
-%%           Len = integer(), length of replacement
-%%           In  = binary(), the raw DNS data
-%% Descrip.: Part of parsenaptr/1. Parse the replacement part of the
-%%           inet:nslookup result into a string.
-%% Returns : Replacement = string()
-%% Note    : XXX could be rewritten to not create sub-binaries.
+%% @spec    (Len, In, []) ->
+%%            Replacement
+%%
+%%            Len = integer() "length of replacement"
+%%            In  = binary() "the raw DNS data"
+%%
+%%            Replacement = string()
+%%
+%% @doc     Part of parsenaptr/1. Parse the replacement part of the
+%%          inet:nslookup result into a string. Note : XXX could be
+%%          rewritten to not create sub-binaries.
+%% @end
 %%--------------------------------------------------------------------
 parsenaptr_replacement(0, _, Res) ->
     Res;
@@ -725,15 +818,20 @@ parsenaptr_replacement(Len, In, Res) when is_integer(Len), is_binary(In) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: filter_naptr(NAPTRs, Flag, Service)
-%%           NAPTRs  = list() of naptrrecord record()
-%%           Flag    = string(), currently always "s"
-%%           Service = string(), "SIP+D2U" | "SIP+D2T" | "SIPS+D2T"
-%% Descrip.: Pick out all NAPTR records we recognize as domain NAPTR
-%%           records from a list of naptrrecord records.
-%% Returns : DomainNAPTRs = list() of naptrrecord record()
-%% Note    : This function is quite similar to chooseenum(). Maybe
-%%           they can be merged...
+%% @spec    (NAPTRs, Flag, Service) ->
+%%            DomainNAPTRs
+%%
+%%            NAPTRs  = [#naptrrecord{}]
+%%            Flag    = string() "currently always \"s\""
+%%            Service = string() "\"SIP+D2U\" | \"SIP+D2T\" | \"SIPS+D2T\""
+%%
+%%            DomainNAPTRs = [#naptrrecord{}]
+%%
+%% @doc     Pick out all NAPTR records we recognize as domain NAPTR
+%%          records from a list of naptrrecord records. Note : This
+%%          function is quite similar to chooseenum(). Maybe they can
+%%          be merged...
+%% @end
 %%--------------------------------------------------------------------
 filter_naptr(In, Flag, Service) when is_list(In), is_list(Flag), is_list(Service) ->
     filter_naptr2(In, Flag, Service, []).
@@ -748,15 +846,19 @@ filter_naptr2([H | T], Flag, Service, Res) when is_record(H, naptrrecord) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: srvlookup(Proto, Name)
-%%           Proto = tcp | udp | tls
-%%           Name  = string(), the DNS label
-%% Descrip.: Resolve a SRV record (indicated by Name) and return a
-%%           list of srventry records. The DNS RR data in them is
-%%           of the format {Order, Pref, Port, Host}.
-%% Returns : SRVList         |
-%%           {error, Reason}
-%%           SRVList = list() of srventry record()
+%% @spec    (Proto, Name) ->
+%%            SRVList         |
+%%            {error, Reason}
+%%
+%%            Proto = tcp | udp | tls
+%%            Name  = string() "the DNS label"
+%%
+%%            SRVList = [#srventry{}]
+%%
+%% @doc     Resolve a SRV record (indicated by Name) and return a list
+%%          of srventry records. The DNS RR data in them is of the
+%%          format {Order, Pref, Port, Host}.
+%% @end
 %%--------------------------------------------------------------------
 srvlookup(Proto, Name) when is_list(Name) ->
     case inet_res:nslookup(Name, in, srv) of
@@ -783,11 +885,13 @@ srvlookup(Proto, Name) when is_list(Name) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
-%% Note    : There are a bunch of functions we don't test yet since
-%%           they have side effects (does resolving).
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback Note : There are a bunch of functions we
+%%          don't test yet since they have side effects (does
+%%          resolving).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% test siplookup(Domain)

@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : siphost.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Network interface status/address retreival functions.
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Network interface status/address retreival functions.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(siphost).
 
@@ -23,10 +24,14 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: myip()
-%% Descrip.: Get one IP address for this host. Currently, we default
-%%           to the first one returned by get_iplist().
-%% Returns : Addr = string()
+%% @spec    () ->
+%%            Addr
+%%
+%%            Addr = string()
+%%
+%% @doc     Get one IP address for this host. Currently, we default to
+%%          the first one returned by get_iplist().
+%% @end
 %%--------------------------------------------------------------------
 myip() ->
     case get_iplist() of
@@ -37,12 +42,16 @@ myip() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: myip_list()
-%% Descrip.: Get all IP addresses of this host. Exclude loopback and
-%%           addresses of interfaces that are down.
-%% Returns : Addresses = list() of string()
-%% Note    : XXX make this return all addresses, currently IPv6
-%%           addresses are not returned!
+%% @spec    () ->
+%%            Addresses
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Get all IP addresses of this host. Exclude loopback and
+%%          addresses of interfaces that are down. Note : XXX make
+%%          this return all addresses, currently IPv6 addresses are
+%%          not returned!
+%% @end
 %%--------------------------------------------------------------------
 myip_list() ->
     case get_iplist() of
@@ -53,12 +62,16 @@ myip_list() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: makeip(IPTuple)
-%%           IPTuple = tuple(), IPv4 or IPv6 address as tuple (e.g.
-%%                     {192, 0, 2, 45} or {2001, ..., 1}).
-%% Descrip.: Turn a v4 or v6 address represented as a tuple into
-%%           a string representation.
-%% Returns : Addr = string()
+%% @spec    (IPTuple) ->
+%%            Addr
+%%
+%%            IPTuple = tuple() "IPv4 or IPv6 address as tuple (e.g. {192, 0, 2, 45} or {2001, ..., 1})."
+%%
+%%            Addr = string()
+%%
+%% @doc     Turn a v4 or v6 address represented as a tuple into a
+%%          string representation.
+%% @end
 %%--------------------------------------------------------------------
 makeip({A1, A2, A3, A4}) ->
     integer_to_list(A1) ++ "." ++
@@ -75,10 +88,14 @@ makeip({A1, A2, A3, A4, A5, A6, A7, A8}) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_iplist()
-%% Descrip.: Get the addresses of all interfaces that have global
-%%           addresses, and which are 'up'.
-%% Returns : Addresses = list() of string()
+%% @spec    () ->
+%%            Addresses
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Get the addresses of all interfaces that have global
+%%          addresses, and which are 'up'.
+%% @end
 %%--------------------------------------------------------------------
 get_iplist() ->
     case yxa_config:get_env(myips) of
@@ -95,13 +112,18 @@ get_iplist() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_ifaddrs(IfData)
-%%           IfList = list() of List
-%%           List   = list() of term(), interface data
-%% Descrip.: Get the addresses of all interfaces for which we have
-%%           been given data that have global addressses, and which
-%%           are 'up'.
-%% Returns : Addresses = list() of string()
+%% @spec    (IfData) ->
+%%            Addresses
+%%
+%%            IfList = [List]
+%%            List   = [term()] "interface data"
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Get the addresses of all interfaces for which we have been
+%%          given data that have global addressses, and which are
+%%          'up'.
+%% @end
 %%--------------------------------------------------------------------
 get_ifaddrs(IfData) when is_list(IfData) ->
     get_ifaddrs(IfData, []).
@@ -119,12 +141,16 @@ get_ifaddrs([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_ifaddrs2(If)
-%%           If = list() of tuple(), result of inet:ifget/2
-%% Descrip.: Get IP address of an interface, unless the interface is
-%%           to be ignored.
-%% Returns : ignore | Address
-%%           Address = string()
+%% @spec    (If) ->
+%%            ignore | Address
+%%
+%%            If = [tuple()] "result of inet:ifget/2"
+%%
+%%            Address = string()
+%%
+%% @doc     Get IP address of an interface, unless the interface is to
+%%          be ignored.
+%% @end
 %%--------------------------------------------------------------------
 get_ifaddrs2(IfData) when is_list(IfData) ->
     {value, {flags, Flags}} = lists:keysearch(flags, 1, IfData),
@@ -140,12 +166,14 @@ get_ifaddrs2(IfData) when is_list(IfData) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: usable_if(Flags, AddrT)
-%%           Flags = list() of atom()
-%%           AddrT = tuple() | none
-%% Descrip.: Interface must be up and not have an address known to
-%%           only work locally to be considered usable.
-%% Returns : true | false
+%% @spec    (Flags, AddrT) -> true | false
+%%
+%%            Flags = [atom()]
+%%            AddrT = tuple() | none
+%%
+%% @doc     Interface must be up and not have an address known to only
+%%          work locally to be considered usable.
+%% @end
 %%--------------------------------------------------------------------
 usable_if(_Flags, none) ->
     %% Interface has no address, might happen on BSD
@@ -169,11 +197,15 @@ usable_if(Flags, AddrT) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_defaultaddr()
-%% Descrip.: Return host default address.
-%% Returns : DefaultAddr = string()
-%% Note    : XXX look for loopback interface and use that address,
-%%           if found. Don't assume loopback is 127.0.0.1.
+%% @spec    () ->
+%%            DefaultAddr
+%%
+%%            DefaultAddr = string()
+%%
+%% @doc     Return host default address. Note : XXX look for loopback
+%%          interface and use that address, if found. Don't assume
+%%          loopback is 127.0.0.1.
+%% @end
 %%--------------------------------------------------------------------
 get_defaultaddr() ->
     "127.0.0.1".
@@ -184,9 +216,11 @@ get_defaultaddr() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

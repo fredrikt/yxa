@@ -65,11 +65,13 @@ printvalue([A | B]) ->
     A ++ "," ++ printvalue(B).
 
 %%--------------------------------------------------------------------
-%% Function: concat_strings(In)
-%%           In = list() of string()
-%% Descrip.: Insanely ineffective concatenation of strings, with
-%%           CRLFs in between. Please, don't use this function!
-%% Returns : list() of string()
+%% @spec    (In) -> [string()]
+%%
+%%            In = [string()]
+%%
+%% @doc     Insanely ineffective concatenation of strings, with CRLFs
+%%          in between. Please, don't use this function!
+%% @end
 %%--------------------------------------------------------------------
 concat_strings([]) ->
     [];
@@ -81,11 +83,15 @@ concat_strings([A | B]) ->
     A ++ "\r\n" ++ concat_strings(B).
 
 %%--------------------------------------------------------------------
-%% Function: generate_tag()
-%% Descrip.: Generate a string that might be used as To: tag in
-%%           responses we create. This means it includes at least 32
-%%           bits of randomness (specified by RFC3261 #19.3).
-%% Returns : Tag = string()
+%% @spec    () ->
+%%            Tag
+%%
+%%            Tag = string()
+%%
+%% @doc     Generate a string that might be used as To: tag in
+%%          responses we create. This means it includes at least 32
+%%          bits of randomness (specified by RFC3261 #19.3).
+%% @end
 %%--------------------------------------------------------------------
 generate_tag() ->
     %% Erlang guarantees that subsequent calls to now() generate increasing values (on the same node).

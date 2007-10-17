@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipuserdb_mysql.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: MySQL sipuserdb module.
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      MySQL sipuserdb module.
 %%%
-%%% Created :  4 Aug 2005 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since     4 Aug 2005 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipuserdb_mysql).
 %%-compile(export_all).
@@ -43,16 +44,20 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: yxa_init()
-%% Descrip.: Perform any necessary startup initialization and
-%%           return an OTP supervisor child spec if we want to add
-%%           to sipserver_sup's list. If this sipuserdb_module
-%%           needs to be persistent, it should be a gen_server and
-%%           init should just return a spec so that the gen_server
-%%           is started by the supervisor.
-%% Returns : Spec |
-%%           []
-%%           Spec = term(), OTP supervisor child specification
+%% @spec    () ->
+%%            Spec |
+%%            []
+%%
+%%            Spec = term() "OTP supervisor child specification"
+%%
+%% @doc     Perform any necessary startup initialization and return an
+%%          OTP supervisor child spec if we want to add to
+%%          sipserver_sup's list. If this sipuserdb_module needs to
+%%          be persistent, it should be a gen_server and init should
+%%          just return a spec so that the gen_server is started by
+%%          the supervisor.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 yxa_init() ->
     {ok, [Host, User, Password, Db]} =
@@ -98,16 +103,20 @@ get_mysql_params([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_user_with_address(Address)
-%%           Address = string(), an address in string format.
-%% Descrip.: Looks up exactly one user with an Address. Used for
-%%           example in REGISTER. If there are multiple users with
-%%           this address in our database, this function returns
-%%           'error'.
-%% Returns : Username |
-%%           nomatch  |
-%%           error
-%%           Username = string()
+%% @spec    (Address) ->
+%%            Username |
+%%            nomatch  |
+%%            error
+%%
+%%            Address = string() "an address in string format."
+%%
+%%            Username = string()
+%%
+%% @doc     Looks up exactly one user with an Address. Used for
+%%          example in REGISTER. If there are multiple users with
+%%          this address in our database, this function returns
+%%          'error'.
+%% @end
 %%--------------------------------------------------------------------
 get_user_with_address(Address) ->
     Query1 = make_sql_statement(sipuserdb_mysql_get_user,
@@ -141,25 +150,34 @@ get_user_with_address(Address) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_address_of_record(Address)
-%%           Address = string(), an address in string format.
-%% Descrip.: Get all usernames of users matching an address. Used to
-%%           find out to which users we should send a request.
-%% Returns : Users |
-%%           error
-%%           Users = list() of string()
+%% @spec    (Address) ->
+%%            Users |
+%%            error
+%%
+%%            Address = string() "an address in string format."
+%%
+%%            Users = [string()]
+%%
+%% @doc     Get all usernames of users matching an address. Used to
+%%          find out to which users we should send a request.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_address_of_record(Address) ->
     get_users_for_addresses_of_record([Address]).
 
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_addresses_of_record(In)
-%%           In = list() of string(), addresses in string format.
-%% Descrip.: Iterate over a list of addresses of record, return
-%%           all users matching one or more of the addresses,
-%%           without duplicates.
-%% Returns : Users = list() of string()
+%% @spec    (In) ->
+%%            Users
+%%
+%%            In = [string()] "addresses in string format."
+%%
+%%            Users = [string()]
+%%
+%% @doc     Iterate over a list of addresses of record, return all
+%%          users matching one or more of the addresses, without
+%%          duplicates.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_addresses_of_record(AddressList) ->
     Query1 = make_sql_statement(sipuserdb_mysql_get_user_for_address,
@@ -175,15 +193,20 @@ get_users_for_addresses_of_record(AddressList) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_addresses_for_users(In)
-%%           In = list() of string(), usernames
-%% Descrip.: Iterate over a list of users, return all their
-%%           addresses without duplicates by using the next
-%%           function, get_addresses_for_user/1.
-%% Returns : Addresses = list() of string()
+%% @spec    (In) ->
+%%            Addresses
+%%
+%%            In = [string()] "usernames"
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Iterate over a list of users, return all their addresses
+%%          without duplicates by using the next function,
+%%          get_addresses_for_user/1.
+%% @end
 %%--------------------------------------------------------------------
 get_addresses_for_users(In) when is_list(In) ->
-    Addresses = 
+    Addresses =
 	lists:foldl(fun(User, Acc) ->
 			    case get_addresses_for_user(User) of
 				nomatch ->
@@ -195,14 +218,18 @@ get_addresses_for_users(In) when is_list(In) ->
     lists:usort(lists:append(Addresses)).
 
 %%--------------------------------------------------------------------
-%% Function: get_addresses_for_user(Username)
-%%           Username = string()
-%% Descrip.: Get all possible addresses of a user. Both configured
-%%           ones, and implicit ones. Used for example to check if a
-%%           request from a user has an acceptable From: header.
-%% Returns : Addresses |
-%%           error
-%%           Addresses = list() of string()
+%% @spec    (Username) ->
+%%            Addresses |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Addresses = [string()]
+%%
+%% @doc     Get all possible addresses of a user. Both configured
+%%          ones, and implicit ones. Used for example to check if a
+%%          request from a user has an acceptable From: header.
+%% @end
 %%--------------------------------------------------------------------
 get_addresses_for_user(User) ->
     Query1 = make_sql_statement(sipuserdb_mysql_get_addresses_for_user,
@@ -238,15 +265,20 @@ get_addresses_for_user(User) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_url(URL)
-%%           URL = sipurl record()
-%% Descrip.: Given an URL that is typically the Request-URI of an
-%%           incoming request, make a list of implicit user
-%%           addresses and return a list of all users matching any
-%%           of these addresses. This is located in here since
-%%           user database backends can have their own way of
-%%           deriving addresses from a Request-URI.
-%% Returns : Usernames = list() of string()
+%% @spec    (URL) ->
+%%            Usernames
+%%
+%%            URL = #sipurl{}
+%%
+%%            Usernames = [string()]
+%%
+%% @doc     Given an URL that is typically the Request-URI of an
+%%          incoming request, make a list of implicit user addresses
+%%          and return a list of all users matching any of these
+%%          addresses. This is located in here since user database
+%%          backends can have their own way of deriving addresses
+%%          from a Request-URI.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_url(URL) when record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_mysql, URL),
@@ -259,13 +291,17 @@ get_users_for_url(URL) when record(URL, sipurl) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%--------------------------------------------------------------------
-%% Function: get_password_for_user(Username)
-%%           Username = string()
-%% Descrip.: Returns the password for a user.
-%% Returns : Password |
-%%           nomatch  |
-%%           error
-%%           Password = string()
+%% @spec    (Username) ->
+%%            Password |
+%%            nomatch  |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Password = string()
+%%
+%% @doc     Returns the password for a user.
+%% @end
 %%--------------------------------------------------------------------
 get_password_for_user(User) ->
     Query1 = make_sql_statement(sipuserdb_mysql_get_password_for_user,
@@ -282,16 +318,19 @@ get_password_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_classes_for_user(Username)
-%%           Username = string()
-%% Descrip.: Returns a list of classes allowed for a user. Classes
-%%           are used by pstnproxy to determine if it should allow
-%%           a call to a PSTN number (of a certain class) from a
-%%           user or not.
-%% Returns : Classes |
-%%           nomatch |
-%%           error
-%%           Classes = list() of atom()
+%% @spec    (Username) ->
+%%            Classes |
+%%            nomatch |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Classes = [atom()]
+%%
+%% @doc     Returns a list of classes allowed for a user. Classes are
+%%          used by pstnproxy to determine if it should allow a call
+%%          to a PSTN number (of a certain class) from a user or not.
+%% @end
 %%--------------------------------------------------------------------
 get_classes_for_user(User) ->
     Query1 = make_sql_statement(sipuserdb_mysql_get_classes_for_user,
@@ -307,16 +346,20 @@ get_classes_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_telephonenumber_for_user(Username)
-%%           Username = string()
-%% Descrip.: Return the telephone number for a user. Return the number
-%%           as a string which is probably an E.164 number or just a
-%%           string with digits. The numbering plan in the number
-%%           return is not specified.
-%% Returns : Number  |
-%%           nomatch |
-%%           error
-%%           Number = string()
+%% @spec    (Username) ->
+%%            Number  |
+%%            nomatch |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            Number = string()
+%%
+%% @doc     Return the telephone number for a user. Return the number
+%%          as a string which is probably an E.164 number or just a
+%%          string with digits. The numbering plan in the number
+%%          return is not specified.
+%% @end
 %%--------------------------------------------------------------------
 get_telephonenumber_for_user(User) ->
     Query1 = make_sql_statement(sipuserdb_mysql_get_telephonenumber_for_user,
@@ -335,38 +378,52 @@ get_telephonenumber_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_forwards_for_users(In)
-%%           In = list() of string(), list of usernames
-%% Descrip.: Return a list of forward addresses for a list of users.
-%%           Uses the next function, get_forward_for_user/1.
-%% Returns : ForwardList = list() of sipproxy_forward record()
+%% @spec    (In) ->
+%%            ForwardList
+%%
+%%            In = [string()] "list of usernames"
+%%
+%%            ForwardList = [#sipproxy_forward{}]
+%%
+%% @doc     Return a list of forward addresses for a list of users.
+%%          Uses the next function, get_forward_for_user/1.
+%% @end
 %%--------------------------------------------------------------------
 get_forwards_for_users(_In) ->
     nomatch.
 
 %%--------------------------------------------------------------------
-%% Function: get_forward_for_user(Username)
-%%           Username = string()
-%% Descrip.: Return the forward address(es) for a user.
-%% Returns : ForwardList |
-%%           nomatch     |
-%%           error
-%%           ForwardList = list() of sipproxy_forward record()
+%% @spec    (Username) ->
+%%            ForwardList |
+%%            nomatch     |
+%%            error
+%%
+%%            Username = string()
+%%
+%%            ForwardList = [#sipproxy_forward{}]
+%%
+%% @doc     Return the forward address(es) for a user.
+%% @end
 %%--------------------------------------------------------------------
 get_forward_for_user(_User) ->
     nomatch.
 
 
 %%--------------------------------------------------------------------
-%% Function: make_sql_statement(In, Args)
-%%           In       = CfgKey | Template
-%%           CfgKey   = atom()
-%%           Template = string()
-%%           Args     = list() of term(), SQL query key(s)
-%% Descrip.: Construct an SQL query statement given a configuration
-%%           parameter name or a string template. If Args consists of
-%%           more than one element, SQL ' or ' will be used.
-%% Returns : Query = string()
+%% @spec    (In, Args) ->
+%%            Query
+%%
+%%            In       = CfgKey | Template
+%%            CfgKey   = atom()
+%%            Template = string()
+%%            Args     = [term()] "SQL query key(s)"
+%%
+%%            Query = string()
+%%
+%% @doc     Construct an SQL query statement given a configuration
+%%          parameter name or a string template. If Args consists of
+%%          more than one element, SQL ' or ' will be used.
+%% @end
 %%--------------------------------------------------------------------
 make_sql_statement(CfgKey, Args) when is_atom(CfgKey) ->
     case local:sipuserdb_mysql_make_sql_statement(CfgKey, Args) of
@@ -388,15 +445,20 @@ make_sql_statement(Template, Args) when is_list(Template), is_list(Args) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: make_sql_statement(Template, Args, [])
-%%           Template = string()
-%%           Args     = list() of term(), SQL query key(s)
-%% Descrip.: Construct an SQL query statement given a template,
-%%           replacing all occurrences of '?' with either Args (if it
-%%           is a single-value argument) or an SQL ' or ' list if
-%%           Args is multi-value. The latter of course requires that
-%%           we can identify the SQL variable name.
-%% Returns : Query = string()
+%% @spec    (Template, Args, []) ->
+%%            Query
+%%
+%%            Template = string()
+%%            Args     = [term()] "SQL query key(s)"
+%%
+%%            Query = string()
+%%
+%% @doc     Construct an SQL query statement given a template,
+%%          replacing all occurrences of '?' with either Args (if it
+%%          is a single-value argument) or an SQL ' or ' list if Args
+%%          is multi-value. The latter of course requires that we can
+%%          identify the SQL variable name.
+%% @end
 %%--------------------------------------------------------------------
 make_sql_statement2([$? | T], Args, Res) ->
     %% ok, ? found

@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : ssl_util.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Utility functions for SSL socket validation/certificate
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Utility functions for SSL socket validation/certificate
 %%            information parsing.
-%%% Created : 30 Sep 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    30 Sep 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(ssl_util).
 %%-compile(export_all).
@@ -32,21 +33,25 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_ssl_peer_info(Socket, Proto, IP, Port)
-%%           Socket = term()
-%%           Proto  = tls | tls6
-%%           IP     = string()
-%%           Port   = integer()
-%% Descrip.: Try to get the SSL peer certificate using a socket. If
-%%           that fails, we check if it was a client that connected to
-%%           us and if clients are required to present a certificate.
-%%           Returns either {ok, Subject}, or true/false saying if the
-%%           socket should be considered valid or not.
-%% Returns : {ok, Subject, AltNames} |
-%%           {error, Reason}
-%%           Subject  = term(), ssl:peercert() subject data
-%%           AltNames = list() of string(), subjectAltName:s in cert
-%%           Reason   = string()
+%% @spec    (Socket, Proto, IP, Port) ->
+%%            {ok, Subject, AltNames} |
+%%            {error, Reason}
+%%
+%%            Socket = term()
+%%            Proto  = tls | tls6
+%%            IP     = string()
+%%            Port   = integer()
+%%
+%%            Subject  = term() "ssl:peercert() subject data"
+%%            AltNames = [string()] "subjectAltName:s in cert"
+%%            Reason   = string()
+%%
+%% @doc     Try to get the SSL peer certificate using a socket. If
+%%          that fails, we check if it was a client that connected to
+%%          us and if clients are required to present a certificate.
+%%          Returns either {ok, Subject}, or true/false saying if the
+%%          socket should be considered valid or not.
+%% @end
 %%--------------------------------------------------------------------
 get_ssl_peer_info(Socket, Proto, IP, Port) when is_atom(Proto), is_list(IP), is_integer(Port) ->
     %% ssl:peercert/3 needs to be wrapped in a try/catch - it fails badly on some certificates
@@ -86,20 +91,19 @@ get_ssl_peer_info2(Proto, IP, Port, PeerCertRes) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_acceptable_ssl_socket(Socket, Dir, Proto, Remote,
-%%                                    Names)
-%%           Socket = term(), (sslsocket, NOT sipsocket)
-%%           Dir    = in | out
-%%           Proto  = tls | tcp
-%%           Remote = {IP, Port}
-%%             IP   = string()
-%%             Port = integer()
-%%           Names  = list() of string(), list of names for the
-%%                    certificate that the upper layer is willing to
-%%                    accept
-%% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
-%%           verify that the subjectAltName/CN is included in Names.
-%% Returns : true | false
+%% @spec    (Socket, Dir, Proto, Remote, Names) -> true | false
+%%
+%%            Socket = term() "(sslsocket, NOT sipsocket)"
+%%            Dir    = in | out
+%%            Proto  = tls | tcp
+%%            Remote = {IP, Port}
+%%            IP     = string()
+%%            Port   = integer()
+%%            Names  = [string()] "list of names for the certificate that the upper layer is willing to accept"
+%%
+%% @doc     Check if a socket is 'acceptable'. For SSL, this means
+%%          verify that the subjectAltName/CN is included in Names.
+%% @end
 %%--------------------------------------------------------------------
 is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls orelse Proto == tls6, is_list(Names) ->
     {IP, Port} = Remote,
@@ -150,21 +154,22 @@ is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls or
 
 
 %%--------------------------------------------------------------------
-%% Function: decode_ssl_rdnseq(RdnSequence)
-%%           RdnSequence = term(), ({rdnSequence, AttrList}). SSL
-%%                         PKIX formatted data from a certificate
-%%                         parsed using ssl:peercert or
-%%                         ssl_pkix:decode_cert*.
-%% Descrip.: Turn a rdnSequence into a list of {Key, Value} where
-%%           Key is either the oid (integer() or tuple()) or, if
-%%           ssl_pkix_oid could turn it into an atom, then an atom
-%%           (like countryName).
-%% Returns : {ok, Tuples}    |
-%%           {error, Reason}
-%%           Tuples  = {Key, Value}
-%%             Key   = integer()
-%%             Value = string()
-%%           Reason  = string()
+%% @spec    (RdnSequence) ->
+%%            {ok, Tuples}    |
+%%            {error, Reason}
+%%
+%%            RdnSequence = term() "({rdnSequence, AttrList}). SSL PKIX formatted data from a certificate parsed using ssl:peercert or ssl_pkix:decode_cert*."
+%%
+%%            Tuples = {Key, Value}
+%%            Key    = integer()
+%%            Value  = string()
+%%            Reason = string()
+%%
+%% @doc     Turn a rdnSequence into a list of {Key, Value} where Key
+%%          is either the oid (integer() or tuple()) or, if
+%%          ssl_pkix_oid could turn it into an atom, then an atom
+%%          (like countryName).
+%% @end
 %%--------------------------------------------------------------------
 decode_ssl_rdnseq({rdnSequence, AttrList}) when is_list(AttrList) ->
     decode_ssl_rdnseq2(AttrList, []);
@@ -219,12 +224,16 @@ decode_ssl_rdnseq2([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_ssl_peer_info_subject(Cert)
-%%           Cert = 'Certificate' record(), SSL PKIX parsed
-%% Descrip.: Extracts subject information from an SSL PKIX certificate
-%% Returns : {ok, Subject} |
-%%           error
-%%           Subject = ssl_conn_subject record()
+%% @spec    (Cert) ->
+%%            {ok, Subject} |
+%%            error
+%%
+%%            Cert = #'Certificate'{} "SSL PKIX parsed"
+%%
+%%            Subject = #ssl_conn_subject{}
+%%
+%% @doc     Extracts subject information from an SSL PKIX certificate
+%% @end
 %%--------------------------------------------------------------------
 get_ssl_peer_info_subject(Cert) when is_record(Cert, 'Certificate') ->
     Subject = (Cert#'Certificate'.tbsCertificate)#'TBSCertificate'.subject,
@@ -256,12 +265,16 @@ ssl_decoded_rdn_get(Key, L) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_ssl_peer_info_host_altnames(Cert)
-%%           Cert = 'Certificate' record(), SSL PKIX parsed
-%% Descrip.: Extracts subjectAltName's of type dNSName or iPAddress
-%%           from an SSL PKIX certificate.
-%% Returns : {ok, AltNames}
-%%           AltNames = list() of string()
+%% @spec    (Cert) ->
+%%            {ok, AltNames}
+%%
+%%            Cert = #'Certificate'{} "SSL PKIX parsed"
+%%
+%%            AltNames = [string()]
+%%
+%% @doc     Extracts subjectAltName's of type dNSName or iPAddress
+%%          from an SSL PKIX certificate.
+%% @end
 %%--------------------------------------------------------------------
 get_ssl_peer_info_host_altnames(Cert) when is_record(Cert, 'Certificate') ->
     Extensions = (Cert#'Certificate'.tbsCertificate)#'TBSCertificate'.extensions,
@@ -311,18 +324,17 @@ get_host_altnames(_Type, [], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_valid_ssl_certname(ValidNames, Subject, AltNames,
-%%                                 Reject)
-%%           ValidNames = list() of string(), the hostname(s) we want
-%%                        to make sure the subjectAltName matches.
-%%           Subject    = ssl_conn_subject record()
-%%           AltNames   = list() of string()
-%%           Reject     = true | false, reject if name does not match
-%%                        or just log?
-%% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
-%%           verify that the subjectAltName/commonName is in the list
-%%           of names we expect.
-%% Returns : true | false
+%% @spec    (ValidNames, Subject, AltNames, Reject) -> true | false
+%%
+%%            ValidNames = [string()] "the hostname(s) we want to make sure the subjectAltName matches."
+%%            Subject    = #ssl_conn_subject{}
+%%            AltNames   = [string()]
+%%            Reject     = true | false "reject if name does not match or just log?"
+%%
+%% @doc     Check if a socket is 'acceptable'. For SSL, this means
+%%          verify that the subjectAltName/commonName is in the list
+%%          of names we expect.
+%% @end
 %%--------------------------------------------------------------------
 is_valid_ssl_certname(ValidNames, Subject, AltNames, Reject) when is_list(ValidNames),
 								  is_record(Subject, ssl_conn_subject),
@@ -382,9 +394,11 @@ get_matching_altname(ValidNames, CommonName, []) when is_list(ValidNames), is_li
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     autotest:mark(?LINE, "SSL certificates - 0"),

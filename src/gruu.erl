@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : gruu.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Code for Globally Routable User Agent (UA) URIs (GRUU),
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Code for Globally Routable User Agent (UA) URIs (GRUU),
 %%%           based on draft-ietf-sip-gruu-06 and then updated with
 %%%           regards to the changes in draft-ietf-sip-gruu-07.
-%%% Created :  3 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     3 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(gruu).
 
@@ -33,11 +34,16 @@
 -define(GRUU_LENGTH, 10).
 
 %%--------------------------------------------------------------------
-%% Function: generate_gruu(SipUser, InstanceId)
-%%           SipUser    = string(), username
-%%           InstanceId = string(), Instance ID the users device uses.
-%% Descrip.: Generate a new GRUU.
-%% Returns : GRUU = string()
+%% @spec    (SipUser, InstanceId) ->
+%%            GRUU
+%%
+%%            SipUser    = string() "username"
+%%            InstanceId = string() "Instance ID the users device uses."
+%%
+%%            GRUU = string()
+%%
+%% @doc     Generate a new GRUU.
+%% @end
 %%--------------------------------------------------------------------
 generate_gruu(SipUser, InstanceId) when is_list(SipUser), is_list(InstanceId) ->
     {MegaSec, Sec, MicroSec} = now(),
@@ -52,15 +58,18 @@ generate_gruu(SipUser, InstanceId) when is_list(SipUser), is_list(InstanceId) ->
     http_util:to_lower( string:substr(Token, 1, ?GRUU_LENGTH) ).
 
 %%--------------------------------------------------------------------
-%% Function: create_if_not_exists(SipUser, InstanceId)
-%%           SipUser    = string(), username
-%%           InstanceId = string(), Instance ID the users device uses.
-%% Descrip.: Update last registration time on an existing
-%%           User+Instance combination, or create a new GRUU for the
-%%           User+Instance combination if it hasn't been registered
-%%           before.
-%% Returns : {ok, GRUU}
-%%           GRUU = string()
+%% @spec    (SipUser, InstanceId) ->
+%%            {ok, GRUU}
+%%
+%%            SipUser    = string() "username"
+%%            InstanceId = string() "Instance ID the users device uses."
+%%
+%%            GRUU = string()
+%%
+%% @doc     Update last registration time on an existing User+Instance
+%%          combination, or create a new GRUU for the User+Instance
+%%          combination if it hasn't been registered before.
+%% @end
 %%--------------------------------------------------------------------
 create_if_not_exists(SipUser, InstanceId) ->
     case database_gruu:fetch_using_user_instance(SipUser, InstanceId) of
@@ -80,12 +89,17 @@ create_if_not_exists(SipUser, InstanceId) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: generate_unique_gruu(SipUser, InstanceId)
-%%           SipUser    = string(), username
-%%           InstanceId = string(), Instance ID the users device uses.
-%% Descrip.: Generate a new GRUU, and make sure it is unique. If it
-%%           wasn't, we generate a new GRUU and check again and so on.
-%% Returns : UniqueGRUU = string()
+%% @spec    (SipUser, InstanceId) ->
+%%            UniqueGRUU
+%%
+%%            SipUser    = string() "username"
+%%            InstanceId = string() "Instance ID the users device uses."
+%%
+%%            UniqueGRUU = string()
+%%
+%% @doc     Generate a new GRUU, and make sure it is unique. If it
+%%          wasn't, we generate a new GRUU and check again and so on.
+%% @end
 %%--------------------------------------------------------------------
 generate_unique_gruu(SipUser, InstanceId) ->
     GRUU = generate_gruu(SipUser, InstanceId),
@@ -99,13 +113,17 @@ generate_unique_gruu(SipUser, InstanceId) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_contact_for_gruu(GRUUstr)
-%%           GRUUstr = string()
-%% Descrip.: Fetch the contact for a GRUU from the location database
-%% Returns : nomatch          | (No such GRUU in database)
-%%           {ok, User, none} | (User has no active contacts)
-%%           {ok, User, SingleContact}
-%%           SingleContact = siplocationdb_e record()
+%% @spec    (GRUUstr) ->
+%%            nomatch          |
+%%            {ok, User, none} |
+%%            {ok, User, SingleContact}
+%%
+%%            GRUUstr = string()
+%%
+%%            SingleContact = #siplocationdb_e{}
+%%
+%% @doc     Fetch the contact for a GRUU from the location database
+%% @end
 %%--------------------------------------------------------------------
 get_contact_for_gruu(GRUUstr) when is_list(GRUUstr) ->
     case database_gruu:fetch_using_gruu(GRUUstr) of
@@ -177,13 +195,18 @@ newest_contact_first(#siplocationdb_e{flags = AFlags} = A,
     end.
 
 %%--------------------------------------------------------------------
-%% Function: make_url(SipUser, InstanceId, GRUU, ToHeader)
-%%           SipUser = string(), username
-%%           InstanceId = string()
-%%           GRUU = string() | gruu record()
-%%           ToHeader = string()
-%% Descrip.: Make a SIP/SIPS URL out of a GRUU.
-%% Returns : URL = sipurl record()
+%% @spec    (SipUser, InstanceId, GRUU, ToHeader) ->
+%%            URL
+%%
+%%            SipUser    = string() "username"
+%%            InstanceId = string()
+%%            GRUU       = string() | #gruu{}
+%%            ToHeader   = string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Make a SIP/SIPS URL out of a GRUU.
+%% @end
 %%--------------------------------------------------------------------
 make_url(SipUser, InstanceId, GRUU, ToHeader) when is_record(GRUU, gruu_dbe) ->
     make_url(SipUser, InstanceId, GRUU#gruu_dbe.gruu, ToHeader);
@@ -223,13 +246,17 @@ make_url(SipUser, InstanceId, GRUU, ToHeader) when is_list(SipUser), is_list(Ins
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_gruu_url(URL)
-%%           URL = sipurl record()
-%% Descrip.: Check if a URL could be a GRUU we have generated. Does
-%%           NOT check in the database to see if there is such a GRUU.
-%%           NOTE : Only call this on a URL matching 'homedomain'.
-%% Returns : {true, GRUU} | false
-%%           GRUU = string()
+%% @spec    (URL) ->
+%%            {true, GRUU} | false
+%%
+%%            URL = #sipurl{}
+%%
+%%            GRUU = string()
+%%
+%% @doc     Check if a URL could be a GRUU we have generated. Does NOT
+%%          check in the database to see if there is such a GRUU.
+%%          NOTE : Only call this on a URL matching 'homedomain'.
+%% @end
 %%--------------------------------------------------------------------
 is_gruu_url(URL) when is_record(URL, sipurl) ->
     case url_param:find(URL#sipurl.param_pairs, "gruu") of
@@ -245,7 +272,7 @@ is_gruu_url(URL) when is_record(URL, sipurl) ->
 	    is_gruu_prefix(GRUUindicator, URL#sipurl.user)
     end.
 
-is_gruu_prefix([H | T1], [H | T2]) ->    
+is_gruu_prefix([H | T1], [H | T2]) ->
     %% one more char match
     is_gruu_prefix(T1, T2);
 is_gruu_prefix([], Rest) ->
@@ -254,11 +281,18 @@ is_gruu_prefix(_In, _NoMatch) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: extract(Field, GRUU_DBE)
-%%           Field = gruu|sipuser|instance_id|created|last_registered|flags
-%%           GRUU_DBE = gruu_dbe record()
-%% Descrip.: Extract data from our private gruu_dbe record.
-%% Returns : term()
+%% @spec    (Field, GRUU_DBE) -> term()
+%%
+%%            Field    = gruu            |
+%%                       sipuser         |
+%%                       instance_id     |
+%%                       created         |
+%%                       last_registered |
+%%                       flags
+%%            GRUU_DBE = #gruu_dbe{}
+%%
+%% @doc     Extract data from our private gruu_dbe record.
+%% @end
 %%--------------------------------------------------------------------
 extract(gruu,		E) when is_record(E, gruu_dbe) -> E#gruu_dbe.gruu;
 extract(sipuser,	E) when is_record(E, gruu_dbe) -> E#gruu_dbe.sipuser;
@@ -269,10 +303,12 @@ extract(flags,		E) when is_record(E, gruu_dbe) -> E#gruu_dbe.flags.
 
 
 %%--------------------------------------------------------------------
-%% Function: show_all()
-%% Descrip.: Displays all currently registered GRUUs on the system
-%%           console. For debugging use only.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Displays all currently registered GRUUs on the system
+%%          console. For debugging use only.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 show_all() ->
     {ok, GRUUs} = database_gruu:fetch_all(),
@@ -302,11 +338,16 @@ dump_loc(GRUU) when is_list(GRUU) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: prepare_contact(Contact, URI)
-%%           Contact = contact record()
-%%           URI     = sipurl record()
-%% Descrip.: Copy any 'grid' parameter from Request-URI to contact URI
-%% Returns : NewURI = sipurl record()
+%% @spec    (Contact, URI) ->
+%%            NewURI
+%%
+%%            Contact = #contact{}
+%%            URI     = #sipurl{}
+%%
+%%            NewURI = #sipurl{}
+%%
+%% @doc     Copy any 'grid' parameter from Request-URI to contact URI
+%% @end
 %%--------------------------------------------------------------------
 prepare_contact(Contact, URI) ->
     %% "The server MUST copy the "grid" parameter from the Request URI (if

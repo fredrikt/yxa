@@ -1,21 +1,21 @@
 -module(admin_www).
 -export([
-	 start/2, 
-	 start/1, 
-	 list_phones/2, 
-	 list_users/2, 
-	 add_user/2, 
+	 start/2,
+	 start/1,
+	 list_phones/2,
+	 list_users/2,
+	 add_user/2,
 	 change_user_form/2,
-	 change_user/2, 
-	 add_route/2, 
-	 del_route/2, 
-	 wml/2, 
+	 change_user/2,
+	 add_route/2,
+	 del_route/2,
+	 wml/2,
 	 add_user_with_cookie/2,
-	 change_classes/2, 
-	 list_numbers/2, 
-	 add_regexp/2, 
+	 change_classes/2,
+	 list_numbers/2,
+	 add_regexp/2,
 	 del_regexp/2,
-	 show_user/2, 
+	 show_user/2,
 	 set_forward/2
 	]).
 
@@ -358,11 +358,11 @@ check_auth2(Header, Env, WantAdmin) ->
     Response3 = sipauth:get_response(Nonce2, "GET",
 				     URI,
 				     User, Password),
-    if 
+    if
 	Password == "" ->
 	    false;
 	Response == Response2 ; Response == Response3 ->
-	    if 
+	    if
 		WantAdmin == true ->
 		    if
 			IsAdmin == true ->
@@ -395,11 +395,11 @@ check_auth_user2(Header, Env, InUser) ->
     Response3 = sipauth:get_response(Nonce2, "GET",
 				     URI,
 				     User, Password),
-    if 
+    if
 	Password == "" ->
 	    false;
 	Response == Response2 ; Response == Response3 ->
-	    if 
+	    if
 		User == InUser ->
 		    true;
 		true ->
@@ -455,7 +455,7 @@ list_users(Env, _Input) ->
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Anv&auml;ndarnamn</th><th>Nummer</th><th>Flaggor</th>",
 	     "<th>Klasser</th><th>KTH-ID</th><th>Namn</th></tr>\n",
-	     print_users(lists:sort(fun (Elem1, Elem2) -> 
+	     print_users(lists:sort(fun (Elem1, Elem2) ->
 					    if
 						Elem1#user.user < Elem2#user.user ->
 						    true;
@@ -494,7 +494,7 @@ list_numbers(Env, _Input) ->
 	     "<h1>Alla allokerade nummer</h1>\n",
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Nummer</th><th>Anv&auml;ndarnamn</th><th>KTH-ID</th><th>Namn</th></tr>\n",
-	     print_numbers_list(lists:sort(fun (Elem1, Elem2) -> 
+	     print_numbers_list(lists:sort(fun (Elem1, Elem2) ->
 						   if
 						       Elem1#numbers.number < Elem2#numbers.number ->
 							   true;
@@ -519,7 +519,7 @@ list_phones(Env, _Input) ->
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
 	     "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
-	     print_phones(lists:sort(fun (Elem1, Elem2) -> 
+	     print_phones(lists:sort(fun (Elem1, Elem2) ->
 					     if
 						 Elem1#phone.user < Elem2#phone.user ->
 						     true;
@@ -539,7 +539,7 @@ list_phones(Env, _Input) ->
 	     "<table cellspacing=0 border=1 cellpadding=4>\n",
 	     "<tr><th>Nummer</th><th>Flaggor</th><th>Klass</th>",
 	     "<th>G&aring;r ut</th><th>Adress</th></tr>\n",
-	     print_phones(lists:sort(fun (Elem1, Elem2) -> 
+	     print_phones(lists:sort(fun (Elem1, Elem2) ->
 					     if
 						 Elem1#regexproute.regexp < Elem2#regexproute.regexp ->
 						     true;
@@ -910,7 +910,7 @@ show_user_number(User, Number, InType) ->
 		  _ ->
 		      none
 	      end,
-    {Forwards, Timeout, Localring} = 
+    {Forwards, Timeout, Localring} =
 	case Forward of
 	    none ->
 		{[""], 20, false};
@@ -1051,9 +1051,9 @@ set_forward(Env, Input) ->
 	    Message;
 	{ok} ->
 	    Numberlist = get_numbers(User),
-	    
+
 	    true = lists:member(Number, Numberlist),
-	    
+
 	    Forwards = [dict_find("forwardnumber", Args, "")],
 	    TimeoutText = dict_find("timeout", Args, "20"),
 	    Timeout = case util:isnumeric(TimeoutText) of
@@ -1063,7 +1063,7 @@ set_forward(Env, Input) ->
 			      20
 		      end,
 	    Localring = list_to_atom(dict_find("localring", Args, "false")),
-	    
+
 	    set_forward_type(Number, Type, Forwards, Timeout, Localring),
 	    header(redirect, showuserurl() ++ "?user=" ++ User)
     end.

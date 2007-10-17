@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : dialog_package.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Basic RFC4235 implementation.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Basic RFC4235 implementation.
 %%%
-%%% Created :  8 May 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     8 May 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(dialog_package).
 
@@ -55,26 +56,30 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA event packages export an init/0 function.
-%% Returns : none | {append, SupSpec}
-%%           SupSpec = term(), OTP supervisor child specification.
-%%                     Extra processes this event package want the
-%%                     sipserver_sup to start and maintain.
+%% @spec    () ->
+%%            none | {append, SupSpec}
+%%
+%%            SupSpec = term() "OTP supervisor child specification. Extra processes this event package want the sipserver_sup to start and maintain."
+%%
+%% @doc     YXA event packages export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: request(PkgS::event_pkg(), Request, YxaCtx, SIPuser)
-%%           Request = request record(), the SUBSCRIBE request
-%%           YxaCtx  = yxa_ctx record()
-%%           Ctx     = event_ctx record(), context information for
-%%                     request.
-%% Descrip.: YXA event packages must export a request/7 function.
-%%           See the eventserver.erl module description for more
-%%           information about when this function is invoked.
-%% Returns : void(), but return 'ok' or {error, Reason} for now
+%% @spec    (PkgS::event_pkg(), Request, YxaCtx, SIPuser) ->
+%%            void() "but return 'ok' or {error, Reason} for now"
+%%
+%%            Request = #request{} "the SUBSCRIBE request"
+%%            YxaCtx  = #yxa_ctx{}
+%%            Ctx     = #event_ctx{} "context information for request."
+%%
+%% @doc     YXA event packages must export a request/7 function. See
+%%          the eventserver.erl module description for more
+%%          information about when this function is invoked.
+%% @end
 %%--------------------------------------------------------------------
 request("dialog", _Request, YxaCtx, #event_ctx{sipuser = undefined}) ->
     logger:log(debug, "~s: dialog event package: Requesting authorization (only local users allowed)",
@@ -108,9 +113,9 @@ request("dialog", #request{method = "NOTIFY"} = Request, YxaCtx, Ctx) ->
 			{atomic, ok}, database_eventdata:delete_using_presentity_etag(Presentity, ETag),
 			{atomic, ok} = database_eventdata:insert("dialog", Presentity, ETag, UseExpires, Flags, DE)
 		end,
-	    
-	    [F(E) || E <- Dialogs], 
-	    
+
+	    [F(E) || E <- Dialogs],
+
 	    transactionlayer:send_response_handler(THandler, 200, "Ok");
 	{error, bad_xml} ->
 	    transactionlayer:send_response_handler(THandler, 400, "Invalid PIDF XML")
@@ -130,36 +135,36 @@ request("dialog", _Request, YxaCtx, _Ctx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_allowed_subscribe(PkgS::event_pkg(), Num, Request,
-%%                                YxaCtx, SIPuser, Presentity,
-%%                                PkgState)
-%%           Num      = integer(), the number of subscribes we have
-%%                      received on this dialog, starts at 1
-%%           Request  = request record(), the SUBSCRIBE request
-%%           YxaCtx   = yxa_ctx record()
-%%           SIPuser  = undefined | string(), undefined if request
-%%                      originator is not not authenticated, and
-%%                      string() if the user is authenticated (empty
-%%                      string if user could not be authenticated)
-%%           Presentity = {user, User} | {address, Address} | undefined
-%%           PkgState = undefined | my_state record()
-%% Descrip.: YXA event packages must export an is_allowed_subscribe/8
-%%           function. This function is called when the event server
-%%           receives a subscription request for this event package,
-%%           and is the event packages chance to decide wether the
-%%           subscription should be accepted or not. It is also called
-%%           for every time the subscription is refreshed by the
-%%           subscriber.
-%% Returns : {error, need_auth} |
-%%           {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState}  |
-%%           {siperror, Status, Reason, ExtraHeaders}
-%%           SubState     = active | pending
-%%           Status       = integer(), SIP status code to respond with
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, ValueList}, headers to
-%%                          include in the response to the SUBSCRIBE
-%%           Body         = binary() | list(), body of response
-%%           NewPkgState  = my_state record()
+%% @spec    (PkgS::event_pkg(), Num, Request, YxaCtx, SIPuser,
+%%          Presentity, PkgState) ->
+%%            {error, need_auth} |
+%%            {ok, SubState, Status, Reason, ExtraHeaders, NewPkgState}  |
+%%            {siperror, Status, Reason, ExtraHeaders}
+%%
+%%            Num        = integer() "the number of subscribes we have received on this dialog, starts at 1"
+%%            Request    = #request{} "the SUBSCRIBE request"
+%%            YxaCtx     = #yxa_ctx{}
+%%            SIPuser    = undefined | string() "undefined if request originator is not not authenticated, and string() if the user is authenticated (empty string if user could not be authenticated)"
+%%            Presentity = {user, User}       |
+%%                         {address, Address} |
+%%                         undefined
+%%            PkgState   = undefined | #my_state{}
+%%
+%%            SubState     = active | pending
+%%            Status       = integer() "SIP status code to respond with"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = [{Key, ValueList}] "headers to include in the response to the SUBSCRIBE"
+%%            Body         = binary() | list() "body of response"
+%%            NewPkgState  = #my_state{}
+%%
+%% @doc     YXA event packages must export an is_allowed_subscribe/8
+%%          function. This function is called when the event server
+%%          receives a subscription request for this event package,
+%%          and is the event packages chance to decide wether the
+%%          subscription should be accepted or not. It is also called
+%%          for every time the subscription is refreshed by the
+%%          subscriber.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% SIPuser = undefined
@@ -209,26 +214,27 @@ is_allowed_subscribe2(Request, SubState, Status, Reason, ExtraHeaders, PkgState)
 
 
 %%--------------------------------------------------------------------
-%% Function: notify_content(PkgS::event_pkg(), Presentity, LastAccept,
-%%                          PkgState)
-%%           Presentity = {users, UserList} | {address, AddressStr}
-%%               UserList = list() of string(), SIP usernames
-%%             AddressStr = string(), parseable with sipurl:parse/1
-%%           LastAccept = list() of string(), Accept: header value
-%%                        from last SUBSCRIBE
-%%           PkgState   = my_state record()
-%% Descrip.: YXA event packages must export a notify_content/3
-%%           function. Whenever the subscription requires us to
-%%           generate a NOTIFY request, this function is called to
-%%           generate the body and extra headers to include in the
-%%           NOTIFY request.
-%% Returns : {ok, Body, ExtraHeaders, NewPkgState} |
-%%           {error, Reason}
-%%           Body         = io_list()
-%%           ExtraHeaders = list() of {Key, ValueList}, headers
-%%                          to include in the NOTIFY request
-%%           Reason       = string() | atom()
-%%           NewPkgState  = my_state record()
+%% @spec    (PkgS::event_pkg(), Presentity, LastAccept, PkgState) ->
+%%            {ok, Body, ExtraHeaders, NewPkgState} |
+%%            {error, Reason}
+%%
+%%            Presentity = {users, UserList} | {address, AddressStr}
+%%            UserList   = [string()] "SIP usernames"
+%%            AddressStr = string() "parseable with sipurl:parse/1"
+%%            LastAccept = [string()] "Accept: header value from last SUBSCRIBE"
+%%            PkgState   = #my_state{}
+%%
+%%            Body         = io_list()
+%%            ExtraHeaders = [{Key, ValueList}] "headers to include in the NOTIFY request"
+%%            Reason       = string() | atom()
+%%            NewPkgState  = #my_state{}
+%%
+%% @doc     YXA event packages must export a notify_content/3
+%%          function. Whenever the subscription requires us to
+%%          generate a NOTIFY request, this function is called to
+%%          generate the body and extra headers to include in the
+%%          NOTIFY request.
+%% @end
 %%--------------------------------------------------------------------
 notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgState, my_state) ->
     #my_state{entity  = Entity,
@@ -259,40 +265,57 @@ notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgSt
 
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(), Param)
-%%           Param = atom()
-%% Descrip.: YXA event packages must export a package_parameters/2
-%%           function. 'undefined' MUST be returned for all unknown
-%%           parameters.
-%% Returns : Value | undefined
-%%           Value = term()
+%% @spec    package_parameters(PkgS::event_pkg(), Param) ->
+%%            Value | undefined
+%%
+%%            Param = atom()
+%%
+%%            Value = term()
+%%
+%% @doc     YXA event packages must export a package_parameters/2
+%%          function. 'undefined' MUST be returned for all unknown
+%%          parameters.
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(), notification_rate_limit)
-%% Descrip.: The minimum amount of time that should pass between
-%%           NOTIFYs we send about this event packages events.
-%% Returns : MilliSeconds = integer()
+%% @spec    (PkgS::event_pkg(), notification_rate_limit) ->
+%%            MilliSeconds
+%%
+%%            MilliSeconds = integer()
+%%
+%% @doc     The minimum amount of time that should pass between
+%%          NOTIFYs we send about this event packages events.
+%% @end
 %%--------------------------------------------------------------------
 package_parameters("dialog", notification_rate_limit) ->
     %% RFC4235 #3.10 (Rate of Notifications)
     1000;  %% 1000 milliseconds, 1 second
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(), request_methods)
-%% Descrip.: What SIP methods this event packages request/7 function
-%%           can handle.
-%% Returns : Methods = list() of string()
+%% @spec    (PkgS::event_pkg(), request_methods) ->
+%%            Methods
+%%
+%%            Methods = [string()]
+%%
+%% @doc     What SIP methods this event packages request/7 function
+%%          can handle.
+%% @end
 %%--------------------------------------------------------------------
 package_parameters("dialog", request_methods) ->
     ["PUBLISH"];
 
 %%--------------------------------------------------------------------
-%% Function: package_parameters(PkgS::event_pkg(),
-%%                              subscribe_accept_content_types)
-%% Descrip.: What Content-Type encodings we should list as acceptable
-%%           in the SUBSCRIBEs we send.
-%% Returns : ContentTypes = list() of string()
+%% @spec    (PkgS::event_pkg(), subscribe_accept_content_types) ->
+%%            ContentTypes
+%%
+%%            ContentTypes = [string()]
+%%
+%% @doc     What Content-Type encodings we should list as acceptable
+%%          in the SUBSCRIBEs we send.
+%% @end
 %%--------------------------------------------------------------------
 package_parameters("dialog", subscribe_accept_content_types) ->
     ["application/dialog-info+xml"];
@@ -302,24 +325,33 @@ package_parameters("dialog", _Param) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour(PkgS::event_pkg(), Param, Argument)
-%%           Param = atom()
-%%           Argument = term(), depending on Param
-%% Descrip.: YXA event packages must export a sbuscription_behaviour/2
-%%           function. 'undefined' MUST be returned for all unknown
-%%           parameters.
-%% Returns : Value | undefined
-%%           Value = term()
+%% @spec
+%%    subscription_behaviour(PkgS::event_pkg(), Param, Argument) ->
+%%            Value | undefined
+%%
+%%            Param    = atom()
+%%            Argument = term() "depending on Param"
+%%
+%%            Value = term()
+%%
+%% @doc     YXA event packages must export a sbuscription_behaviour/2
+%%          function. 'undefined' MUST be returned for all unknown
+%%          parameters.
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: subscription_behaviour(PkgS::event_pkg(), bidirectional_subscribe,
-%%                                  Request)
-%%           Request = request record()
-%% Descrip.: When we receive a SUBSCRIBE, should the subscription
-%%           handler also SUBSCRIBE to the other side in the same
-%%           dialog? For the dialog package, this is always true.
-%% Returns : true
+%% @spec    (PkgS::event_pkg(), bidirectional_subscribe, Request) ->
+%%            true
+%%
+%%            Request = #request{}
+%%
+%% @doc     When we receive a SUBSCRIBE, should the subscription
+%%          handler also SUBSCRIBE to the other side in the same
+%%          dialog? For the dialog package, this is always true.
+%% @end
 %%--------------------------------------------------------------------
 subscription_behaviour("dialog", bidirectional_subscribe, Request) when is_record(Request, request) ->
     true;
@@ -332,10 +364,12 @@ subscription_behaviour("dialog", _Param, _Argument) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_accept(Header)
-%%           Header = keylist record()
-%% Descrip.: Get Accept: header value (or default) from a header.
-%% Returns : list() of string()
+%% @spec    (Header) -> [string()]
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     Get Accept: header value (or default) from a header.
+%% @end
 %%--------------------------------------------------------------------
 get_accept(Header) ->
     case keylist:fetch('accept', Header) of
@@ -388,7 +422,7 @@ parse_dialog_xml2(XML) ->
     Dialogs = get_xml_elements(dialog, XML#xmlElement.content),
 
     IdPrefix = pidstr(self()),
-    
+
     F = fun(E) when is_record(E, xmlElement) ->
 		Id = get_xml_attributes(id, E#xmlElement.attributes),
 		NewId = lists:flatten( lists:concat([IdPrefix, "-", Id]) ),
@@ -426,13 +460,18 @@ pidstr(Pid) when is_pid(Pid) ->
      ).
 
 %%--------------------------------------------------------------------
-%% Function: get_xml_attributes(Name, In)
-%%           Name = atom()
-%%           In   = list() of term()
-%% Descrip.: Look for xmlAttribute record() with name matching Name.
-%%           Extract the value elements of the xmlAttribute records
-%%           matching.
-%% Returns : Values = list() of string()
+%% @spec    (Name, In) ->
+%%            Values
+%%
+%%            Name = atom()
+%%            In   = [term()]
+%%
+%%            Values = [string()]
+%%
+%% @doc     Look for xmlAttribute record() with name matching Name.
+%%          Extract the value elements of the xmlAttribute records
+%%          matching.
+%% @end
 %%--------------------------------------------------------------------
 get_xml_attributes(Name, In) when is_atom(Name), is_list(In) ->
     get_xml_attributes2(Name, In, []).
@@ -447,12 +486,17 @@ get_xml_attributes2(_Name, [], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_xml_elements(Name, In)
-%%           Name = atom()
-%%           In   = list() of term()
-%% Descrip.: Look for xmlElement record() with name matching Name.
-%%           Return all matching xmlElement records.
-%% Returns : Elements = list() of xmlElement record()
+%% @spec    (Name, In) ->
+%%            Elements
+%%
+%%            Name = atom()
+%%            In   = [term()]
+%%
+%%            Elements = [#xmlElement{}]
+%%
+%% @doc     Look for xmlElement record() with name matching Name.
+%%          Return all matching xmlElement records.
+%% @end
 %%--------------------------------------------------------------------
 get_xml_elements(Name, In) when is_atom(Name), is_list(In) ->
     get_xml_elements2(Name, In, []).
@@ -474,16 +518,18 @@ get_xml_elements2(_Name, [], Res) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
     %% parse_xml/1
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "parse_xml/1 - 1"),
-    ParseXML1 = 
+    ParseXML1 =
 	"<?xml version=\"1.0\"?>"
 	"<dialog-info xmlns=\"urn:ietf:params:xml:ns:dialog-info\""
 	"  version=\"0\""
@@ -520,7 +566,7 @@ test() ->
 	"</dialog-info>",
 
     {ok, "0", "sip:dialog1@yxa.sipit.net", ParseXML2_Dialogs} = parse_xml(ParseXML2),
-    
+
     autotest:mark(?LINE, "parse_xml/1 - 2.1"),
     ParseXML2_Entry_Id = lists:flatten( io_lib:format("~s-(null)", [pidstr(self())]) ),
     ParseXML2_Entry_XML =

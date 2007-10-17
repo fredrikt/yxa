@@ -1,11 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : tcp_connection.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Handles a single TCP connection - executes send and gets
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Handles a single TCP connection - executes send and gets
 %%%           complete received SIP messages from a single TCP
 %%%           receiver associated with this TCP connection.
 %%%
-%%% Created : 15 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(tcp_connection).
 %%-compile(export_all).
@@ -40,6 +42,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  socketmodule,
 	  socket,
@@ -62,16 +66,19 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: connection_from(SocketModule, Proto, Socket, HostPort)
-%%           SocketModule = gen_tcp | ssl, socket module
-%%           Proto        = atom(), tcp | tcp6 | tls | tls6
-%%           Socket       = term()
-%%           HostPort     = hp record(), local/remote IP/port info
-%% Descrip.: Handle an incoming connection. Starts a tcp_connection
-%%           gen_server to handle this socket.
-%% Returns : {ok, Pid} | ignore
-%% Note    : 'ignore' is returned if the socket is not acceptable for
-%%           some reason (e.g. SSL certificate validation failed)
+%% @spec    (SocketModule, Proto, Socket, HostPort) ->
+%%            {ok, Pid} | ignore
+%%
+%%            SocketModule = gen_tcp | ssl "socket module"
+%%            Proto        = tcp | tcp6 | tls | tls6
+%%            Socket       = term()
+%%            HostPort     = #hp{} "local/remote IP/port info"
+%%
+%% @doc     Handle an incoming connection. Starts a tcp_connection
+%%          gen_server to handle this socket. Note : 'ignore' is
+%%          returned if the socket is not acceptable for some reason
+%%          (e.g. SSL certificate validation failed)
+%% @end
 %%--------------------------------------------------------------------
 connection_from(SocketModule, Proto, Socket, HostPort) when is_atom(SocketModule), is_atom(Proto),
 							    is_record(HostPort, hp) ->
@@ -79,16 +86,19 @@ connection_from(SocketModule, Proto, Socket, HostPort) when is_atom(SocketModule
     gen_server:start(?MODULE, {in, SocketModule, Proto, Socket, HostPort, SSLNames}, []).
 
 %%--------------------------------------------------------------------
-%% Function: connect_to(Dst, GenServerFrom)
-%%           Dst           = sipdst record()
-%%           GenServerFrom = term(), send result of connection attempt
-%%                           to this caller using gen_server:reply().
-%% Descrip.: Starts a tcp_connection gen_server and try to connect to
-%%           a remote destination. Will eventually send result of
-%%           connection attempt to GenServerFrom using
-%%           gen_server:reply().
-%% Returns : {ok, Pid} | Error
-%%           Error = term(), result of gen_server:start()
+%% @spec    (Dst, GenServerFrom) ->
+%%            {ok, Pid} | Error
+%%
+%%            Dst           = #sipdst{}
+%%            GenServerFrom = term() "send result of connection attempt to this caller using gen_server:reply()."
+%%
+%%            Error = term() "result of gen_server:start()"
+%%
+%% @doc     Starts a tcp_connection gen_server and try to connect to a
+%%          remote destination. Will eventually send result of
+%%          connection attempt to GenServerFrom using
+%%          gen_server:reply().
+%% @end
 %%--------------------------------------------------------------------
 connect_to(Dst, GenServerFrom) when is_record(Dst, sipdst) ->
     gen_server:start_link(?MODULE, {connect, Dst, GenServerFrom}, []).
@@ -98,22 +108,28 @@ connect_to(Dst, GenServerFrom) when is_record(Dst, sipdst) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Arg)
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    init(Arg) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: init({connect, Dst, GenServerFrom})
-%%           Dst           = sipdst record()
-%%           GenServerFrom = term(), gen_server:call From - used to
-%%                           reply with the new socket to the process
-%%                           that requested it.
-%% Descrip.: Try to connect to a remote host, and answer GenServerFrom
-%% Returns : {ok, State} | ignore
+%% @spec    ({connect, Dst, GenServerFrom}) -> {ok, State} | ignore
+%%
+%%            Dst           = #sipdst{}
+%%            GenServerFrom = term() "gen_server:call From - used to reply with the new socket to the process that requested it."
+%%
+%% @doc     Try to connect to a remote host, and answer GenServerFrom
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({connect, Dst, GenServerFrom}) when is_record(Dst, sipdst) ->
     %% to avoid trying to connect to a destination more than once at the same time,
@@ -145,27 +161,27 @@ init({connect, Dst, GenServerFrom}) when is_record(Dst, sipdst) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: init({Direction, SocketModule, Proto, Socket, HostPort,
-%%                 SSLNames})
-%%           Direction    = in | out
-%%           SocketModule = gen_tcp | ssl, the name of the socket
-%%                          module this socket uses
-%%           Proto        = atom(), tcp | tcp6 | tls | tls6
-%%           Socket       = term()
-%%           HP           = hp record(), local/remote IP/port info
-%%           SSLNames     = list() of string(), certificate names to
-%%                          verify a SSL certificate against, or a
-%%                          list containing a single string() with the
-%%			    IP of the remote host if this is an
-%%                          inbound non-TLS connection
-%% Descrip.: Initialize this tcp_connection process to handle Socket.
-%%           This function is called either directly from start_link,
-%%           or in case we are connecting to a remote party, by
-%%           handle_call({connect_to_remote, ...) when it has
-%%           established a connection that needs to be checked and
-%%           initialized.
-%% Returns : {ok, State, Timeout} |
-%%           {stop, Reason}
+%% @spec    ({Direction, SocketModule, Proto, Socket, HostPort,
+%%          SSLNames}) ->
+%%            {ok, State, Timeout} |
+%%            {stop, Reason}
+%%
+%%            Direction    = in | out
+%%            SocketModule = gen_tcp | ssl "the name of the socket module this socket uses"
+%%            Proto        = tcp | tcp6 | tls | tls6
+%%            Socket       = term()
+%%            HP           = #hp{} "local/remote IP/port info"
+%%            SSLNames     = [string()] "certificate names to verify a SSL certificate against, or a list containing a single string() with the"
+%%            IP of the remote host if this is an inbound non-TLS connection
+%%
+%% @doc     Initialize this tcp_connection process to handle Socket.
+%%          This function is called either directly from start_link,
+%%          or in case we are connecting to a remote party, by
+%%          handle_call({connect_to_remote, ...) when it has
+%%          established a connection that needs to be checked and
+%%          initialized.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({Direction, SocketModule, Proto, Socket, HP, SSLNames}) when is_record(HP, hp) ->
     %% First check if socket is acceptable
@@ -222,27 +238,37 @@ init2([Direction, SocketModule, Proto, Socket, HP]) when Direction == in; Direct
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({send, {Host, Port, Message}}, From, State)
-%%           Host = string()
-%%           Port = integer()
-%%           Message = list()
-%% Descrip.: Send data on our socket, provided that
-%%           State#state.on == true.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply = {send_result, SendRes}
-%%           SendRes = term(), result of SocketModule:send()
+%% @spec    ({send, {Host, Port, Message}}, From, State) ->
+%%            {reply, Reply, State, Timeout}
+%%
+%%            Host    = string()
+%%            Port    = integer()
+%%            Message = list()
+%%
+%%            Reply   = {send_result, SendRes}
+%%            SendRes = term() "result of SocketModule:send()"
+%%
+%% @doc     Send data on our socket, provided that State#state.on ==
+%%          true.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({send, {_Host, _Port, Message}}, _From, State) when State#state.on == true ->
     %% XXX verify that Host:Port matches host and port in State#State.sipsocket!
@@ -252,13 +278,16 @@ handle_call({send, {_Host, _Port, Message}}, _From, State) when State#state.on =
     {reply, Reply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_receiver}, From, State)
-%% Descrip.: Get our receiver processes pid.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply = {ok, Pid}       |
-%%                   {error, Reason}
-%%           Pid    = pid()
-%%           Reason = string()
+%% @spec    ({get_receiver}, From, State) ->
+%%            {reply, Reply, State, Timeout}
+%%
+%%            Reply  = {ok, Pid}       | {error, Reason}
+%%            Pid    = pid()
+%%            Reason = string()
+%%
+%% @doc     Get our receiver processes pid.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_receiver}, _From, State) when State#state.on == true ->
     {reply, {ok, State#state.receiver}, State, State#state.timeout};
@@ -266,36 +295,48 @@ handle_call({get_receiver}, _From, State) ->
     {reply, {error, "Not started"}, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(get_raw_socket, From, State)
-%% Descrip.: Get the raw socket we are using.
-%% Returns : {reply, Reply, State, Timeout}
-%%           Reply = {ok, RawSocket} |
-%%                   {error, Reason}
-%%           RawSocket = term()
+%% @spec    (get_raw_socket, From, State) ->
+%%            {reply, Reply, State, Timeout}
+%%
+%%            Reply     = {ok, RawSocket} | {error, Reason}
+%%            RawSocket = term()
+%%
+%% @doc     Get the raw socket we are using.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(get_raw_socket, _From, State) when State#state.on == true ->
     {reply, {ok, State#state.socket}, State, State#state.timeout}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({connect_to_remote, Dst, GenServerFrom},
-%%                       State)
-%%           Dst           = sipdst record()
-%%           GenServerFrom = term(), gen_server From data
-%% Descrip.: Connect to a remote Host on port Port over protocol Proto
-%%           provided that State#state.on == false. Send the result of
-%%           this operation to GenServerFrom using gen_server:reply().
-%% Returns : {noreply, NewState, Timeout} |
-%%           {stop, Reason, State}
-%%           Reason = normal | string()
+%% @spec    ({connect_to_remote, Dst, GenServerFrom}, State) ->
+%%            {noreply, NewState, Timeout} |
+%%            {stop, Reason, State}
+%%
+%%            Dst           = #sipdst{}
+%%            GenServerFrom = term() "gen_server From data"
+%%
+%%            Reason = normal | string()
+%%
+%% @doc     Connect to a remote Host on port Port over protocol Proto
+%%          provided that State#state.on == false. Send the result of
+%%          this operation to GenServerFrom using gen_server:reply().
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({connect_to_remote, #sipdst{proto = Proto, addr = Host, port = Port} = Dst, GenServerFrom},
 	    #state{on = false} = State) when (Proto == tcp orelse Proto == tcp6 orelse
@@ -366,11 +407,14 @@ handle_cast({connect_to_remote, #sipdst{proto = Proto, addr = Host, port = Port}
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({recv_sipmsg, Data}, State)
-%%           Data = request record() | response record()
-%% Descrip.: Our receiver process has received a SIP message on our
-%%           socket, invoke sipserver:process() on it.
-%% Returns : {noreply, State, Timeout}
+%% @spec    ({recv_sipmsg, Data}, State) -> {noreply, State, Timeout}
+%%
+%%            Data = #request{} | #response{}
+%%
+%% @doc     Our receiver process has received a SIP message on our
+%%          socket, invoke sipserver:process() on it.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
     #sipsocket{proto	= Proto,
@@ -388,10 +432,14 @@ handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({send_stun_response, STUNresponse}, State)
-%%           STUNresponse = iolist(), data to send to peer
-%% Descrip.:
-%% Returns : {noreply, State, Timeout}
+%% @spec    ({send_stun_response, STUNresponse}, State) ->
+%%            {noreply, State, Timeout}
+%%
+%%            STUNresponse = iolist() "data to send to peer"
+%%
+%% @doc
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({send_stun_response, STUNresponse}, State) when State#state.on == true ->
     #sipsocket{proto	= Proto,
@@ -406,10 +454,13 @@ handle_cast({send_stun_response, STUNresponse}, State) when State#state.on == tr
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({close, FromPid}, State)
-%%           FromPid = pid()
-%% Descrip.: A request to close this connection.
-%% Returns : {stop, normal, NewState}
+%% @spec    ({close, FromPid}, State) -> {stop, normal, NewState}
+%%
+%%            FromPid = pid()
+%%
+%% @doc     A request to close this connection.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({close, FromPid}, State) when is_pid(FromPid) ->
     Duration = util:timestamp() - State#state.starttime,
@@ -438,10 +489,13 @@ handle_cast({close, FromPid}, State) when is_pid(FromPid) ->
     {stop, normal, State#state{socket = undefined}};
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({connection_closed, From}, State)
-%% Descrip.: Our receiver signals us that it detected that the other
-%%           end closed the connection.
-%% Returns : {stop, normal, NewState}
+%% @spec    ({connection_closed, From}, State) ->
+%%            {stop, normal, NewState}
+%%
+%% @doc     Our receiver signals us that it detected that the other
+%%          end closed the connection.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({connection_closed, FromPid}, #state{receiver=FromPid}=State) when is_pid(FromPid) ->
     Duration = util:timestamp() - State#state.starttime,
@@ -466,19 +520,26 @@ handle_cast(Msg, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: This connection has neither received nor sent any data in
-%%           our configured maximum time period. Make the socket go
-%%           away.
-%% Returns : {stop, normal, NewState}          (terminate/2 is called)
+%% @spec    (timeout, State) -> {stop, normal, NewState}
+%%
+%% @doc     This connection has neither received nor sent any data in
+%%          our configured maximum time period. Make the socket go
+%%          away.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) when State#state.on == true ->
     #sipsocket{proto	= Proto,
@@ -502,13 +563,17 @@ handle_info(timeout, State) when State#state.on == true ->
     {stop, normal, State#state{socket = undefined}};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({also_notify, GenServerFrom}, State)
-%%           GenServerFrom = term()
-%% Descrip.: Do a gen_server:reply with our sipsocket to all processes
-%%           that have queued with us instead of starting a parallell
-%%           connection attempt to the same destination we have now
-%%           connected to.
-%% Returns : {noreply, State, ?TIMEOUT}          (terminate/2 is called)
+%% @spec    ({also_notify, GenServerFrom}, State) ->
+%%            {noreply, State, Timeout::integer()}
+%%
+%%            GenServerFrom = term()
+%%
+%% @doc     Do a gen_server:reply with our sipsocket to all processes
+%%          that have queued with us instead of starting a parallell
+%%          connection attempt to the same destination we have now
+%%          connected to.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({also_notify, GenServerFrom}, State) when State#state.on == true ->
     gen_server:reply(GenServerFrom, {ok, State#state.sipsocket}),
@@ -519,9 +584,11 @@ handle_info(Info, State) ->
     {noreply, State, State#state.timeout}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(normal, _State) ->
     %% if someone is waiting in the connection queue for us when we terminate normally, then
@@ -533,9 +600,11 @@ terminate(Reason, _State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Purpose : Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -547,13 +616,15 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: start_tcp_receiver(SocketModule, Socket, SipSocket, Dir)
-%%           SocketModule = gen_tcp | ssl
-%%           Socket       = term(), the socket
-%%           SipSocket    = sipsocket record()
-%%           Direction    = atom(), in | out
-%% Descrip.: Start a receiver that does blocking read on the socket.
-%% Returns : {ok, Receiver}
+%% @spec    (SocketModule, Socket, SipSocket, Dir) -> {ok, Receiver}
+%%
+%%            SocketModule = gen_tcp | ssl
+%%            Socket       = term() "the socket"
+%%            SipSocket    = #sipsocket{}
+%%            Direction    = in | out
+%%
+%% @doc     Start a receiver that does blocking read on the socket.
+%% @end
 %%--------------------------------------------------------------------
 start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModule), is_record(SipSocket, sipsocket),
 							      (Dir == in orelse Dir == out) ->
@@ -590,19 +661,19 @@ start_tcp_receiver(SocketModule, Socket, SipSocket, Dir) when is_atom(SocketModu
     {ok, Receiver}.
 
 %%--------------------------------------------------------------------
-%% Function: is_acceptable_socket(Socket, Dir, Proto, Remote, Names)
-%%           Socket = term()
-%%           Dir    = in | out
-%%           Proto  = tls | tcp
-%%           Remote = {IP, Port}
-%%             IP   = string()
-%%             Port = integer()
-%%           Names  = list() of string(), list of names for the
-%%                    certificate that the upper layer is willing to
-%%                    accept
-%% Descrip.: Check if a socket is 'acceptable'. For SSL, this means
-%%           verify that the subjectAltName/CN is included in Names.
-%% Returns : true | false
+%% @spec    (Socket, Dir, Proto, Remote, Names) -> true | false
+%%
+%%            Socket = term()
+%%            Dir    = in | out
+%%            Proto  = tls | tcp
+%%            Remote = {IP, Port}
+%%            IP     = string()
+%%            Port   = integer()
+%%            Names  = [string()] "list of names for the certificate that the upper layer is willing to accept"
+%%
+%% @doc     Check if a socket is 'acceptable'. For SSL, this means
+%%          verify that the subjectAltName/CN is included in Names.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% SSL socket
@@ -624,13 +695,17 @@ is_acceptable_socket(Socket, Dir, Proto, Names, Port) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_settings(Proto)
-%%           Proto = tcp | tcp6 | tls | tls6
-%% Descrip.: Get the variable things depending on protocol.
-%% Returns : {ok, InetModule, SocketModule, Options}
-%%           InetModule   = atom(), inet | ssl
-%%           SocketModule = gen_tcp | ssl
-%%           Options      = list(), socket options
+%% @spec    (Proto) ->
+%%            {ok, InetModule, SocketModule, Options}
+%%
+%%            Proto = tcp | tcp6 | tls | tls6
+%%
+%%            InetModule   = inet | ssl
+%%            SocketModule = gen_tcp | ssl
+%%            Options      = list() "socket options"
+%%
+%% @doc     Get the variable things depending on protocol.
+%% @end
 %%--------------------------------------------------------------------
 get_settings(tcp) ->
     {ok, inet, gen_tcp, ?SOCKETOPTS};
@@ -652,14 +727,18 @@ get_settings_tls() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_local_ip_port(Socket, InetModule, Proto)
-%%           Socket     = term(), our new socket
-%%           InetModule = inet | ssl
-%%           Proto      = tcp | tcp6 | tls | tls6
-%% Descrip.: Get the local address and port of a socket.
-%% Returns : {IP, Port}
-%%           IP   = string()
-%%           Port = integer()
+%% @spec    (Socket, InetModule, Proto) ->
+%%            {IP, Port}
+%%
+%%            Socket     = term() "our new socket"
+%%            InetModule = inet | ssl
+%%            Proto      = tcp | tcp6 | tls | tls6
+%%
+%%            IP   = string()
+%%            Port = integer()
+%%
+%% @doc     Get the local address and port of a socket.
+%% @end
 %%--------------------------------------------------------------------
 get_local_ip_port(Socket, InetModule, Proto) ->
     case InetModule:sockname(Socket) of
@@ -672,26 +751,33 @@ get_local_ip_port(Socket, InetModule, Proto) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_defaultaddr(Proto)
-%%           Proto = tcp | tcp6
-%% Descrip.: Get the "any" address.
-%% Returns : Addr = string()
+%% @spec    (Proto) ->
+%%            Addr
+%%
+%%            Proto = tcp | tcp6
+%%
+%%            Addr = string()
+%%
+%% @doc     Get the "any" address.
+%% @end
 %%--------------------------------------------------------------------
 get_defaultaddr(tcp) -> "0.0.0.0";
 get_defaultaddr(tcp6) -> "[::]".
 
 %%--------------------------------------------------------------------
-%% Function: connect_fail_handle_conn_queue(Proto, Host, Port, Reply)
-%%           Proto = tcp | tcp6 | tls | tls6
-%%           Host  = string(), IP address
-%%           Port  = integer()
-%%           Reply = term(), probably {error, Reason}
-%% Descrip.: When we have failed connecting to a remote destination,
-%%           we remove the entry saying that we are trying from the
-%%           connection queue ets table, and then notify any other
-%%           processes waiting for a connection to Proto:Host:Port
-%%           about our failure.
-%% Returns : ok
+%% @spec    (Proto, Host, Port, Reply) -> ok
+%%
+%%            Proto = tcp | tcp6 | tls | tls6
+%%            Host  = string() "IP address"
+%%            Port  = integer()
+%%            Reply = term() "probably {error, Reason}"
+%%
+%% @doc     When we have failed connecting to a remote destination, we
+%%          remove the entry saying that we are trying from the
+%%          connection queue ets table, and then notify any other
+%%          processes waiting for a connection to Proto:Host:Port
+%%          about our failure.
+%% @end
 %%--------------------------------------------------------------------
 connect_fail_handle_conn_queue(Proto, Host, Port, Reply) ->
     %% we are no longer trying to connect to this destination
@@ -706,14 +792,16 @@ connect_fail_handle_conn_queue(Proto, Host, Port, Reply) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: check_also_notify(Reply)
-%%           Reply = term(), but probably {error, Reason}
-%% Descrip.: Tell any processes that have queued with this one about
-%%           the result of our connection attempt. If we have
-%%           succeeded, this function will not be called (instead
-%%           handle_info({also_notify, ) will deliver good news to
-%%           processes in notify queue.
-%% Returns : ok
+%% @spec    (Reply) -> ok
+%%
+%%            Reply = term() "but probably {error, Reason}"
+%%
+%% @doc     Tell any processes that have queued with this one about
+%%          the result of our connection attempt. If we have
+%%          succeeded, this function will not be called (instead
+%%          handle_info({also_notify, ) will deliver good news to
+%%          processes in notify queue.
+%% @end
 %%--------------------------------------------------------------------
 check_also_notify(Reply) ->
     receive
@@ -733,9 +821,11 @@ check_also_notify(Reply) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     ok.

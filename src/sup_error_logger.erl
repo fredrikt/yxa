@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : sup_error_logger.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Make sure we don't miss error information because our
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Make sure we don't miss error information because our
 %%            logger isn't started yet.
 %%%
-%%% Created :  5 Oct 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since     5 Oct 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sup_error_logger).
 
@@ -33,6 +34,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {parent,
 		stack
 	       }).
@@ -48,10 +51,13 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start()
-%% Descrip.: Tell error_logger to add this handler.
-%% Returns : ok | Error
-%%           Error = term(), error_logger:add_report_handler/2 result
+%% @spec    () ->
+%%            ok | Error
+%%
+%%            Error = term() "error_logger:add_report_handler/2 result"
+%%
+%% @doc     Tell error_logger to add this handler.
+%% @end
 %%--------------------------------------------------------------------
 start() ->
     error_logger:add_report_handler(?MODULE, {self()}).
@@ -61,10 +67,12 @@ start() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({Parent})
-%% Descrip.: Initialize this event handler. Called by the event
-%%           manager that has been told to add this event handler.
-%% Returns : {ok, State}
+%% @spec    ({Parent}) -> {ok, State}
+%%
+%% @doc     Initialize this event handler. Called by the event manager
+%%          that has been told to add this event handler.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({Parent}) ->
     {ok, #state{parent = Parent,
@@ -72,24 +80,30 @@ init({Parent}) ->
 	       }}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_event(Event, State)
-%% Descrip.: This function gets called when the event manager receives
-%%           an event sent using gen_event:notify/2 (or sync_notify).
-%% Returns : {ok, State}                                |
-%%           {swap_handler, Args1, State1, Mod2, Args2} |
-%%           remove_handler
+%% @spec    handle_event(Event, State) ->
+%%            {ok, State}                                |
+%%            {swap_handler, Args1, State1, Mod2, Args2} |
+%%            remove_handler
+%%
+%% @doc     This function gets called when the event manager receives
+%%          an event sent using gen_event:notify/2 (or sync_notify).
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_event({info_report, SomePid, Event}, State)
-%%           Event  = {Parent, progress, Args}
-%%           Parent = pid(), matching our parents pid from State
-%%           Args   = list() of {Key, Value} 
-%% Descrip.: Handle informational reports from the error_logger. We
-%%           maintain a list of the last five process reports we see
-%%           from our parent supervisor, to help narrow down where
-%%           failures occur, if any.
-%% Returns : {ok, NewState}
+%% @spec    ({info_report, SomePid, Event}, State) -> {ok, NewState}
+%%
+%%            Event  = {Parent, progress, Args}
+%%            Parent = pid() "matching our parents pid from State"
+%%            Args   = [{Key, Value}]
+%%
+%% @doc     Handle informational reports from the error_logger. We
+%%          maintain a list of the last five process reports we see
+%%          from our parent supervisor, to help narrow down where
+%%          failures occur, if any.
+%% @end
 %%--------------------------------------------------------------------
 handle_event({info_report, _SomePid, {Parent, progress, Args}}, #state{parent = Parent} = State) ->
     %% save the last five info_report from our top level supervisor
@@ -112,11 +126,13 @@ handle_event({info_report, _SomePid, {Parent, progress, Args}}, #state{parent = 
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_event({error_report, SomePid, ReportArgs}, State)
-%% Descrip.: Try to make sure the user sees all error information when
-%%           errors occur. First print it to stdout and then, if the
-%%           logger process is running, log it using the logger too.
-%% Returns : {ok, State}
+%% @spec    ({error_report, SomePid, ReportArgs}, State) ->
+%%            {ok, State}
+%%
+%% @doc     Try to make sure the user sees all error information when
+%%          errors occur. First print it to stdout and then, if the
+%%          logger process is running, log it using the logger too.
+%% @end
 %%--------------------------------------------------------------------
 handle_event({error_report, _SomePid, _ReportArgs} = Report, State) ->
     ReportStr = lists:flatten( io_lib:format("~p", [Report]) ),
@@ -133,66 +149,83 @@ handle_event({error_report, _SomePid, _ReportArgs} = Report, State) ->
     {ok, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_event(Unknown, State)
-%% Descrip.: Ignore any other events.
-%% Returns : {ok, State}
+%% @spec    (Unknown, State) -> {ok, State}
+%%
+%% @doc     Ignore any other events.
+%% @end
 %%--------------------------------------------------------------------
 handle_event(_Unknown, State) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Request, State)
-%% Descrip.: This gets called when the event manager receives a
-%%           request sent using gen_event:call/3,4.
-%% Returns : {ok, Reply, State}                                |
-%%           {swap_handler, Reply, Args1, State1, Mod2, Args2} |
-%%           {remove_handler, Reply}
+%% @spec    (Request, State) ->
+%%            {ok, Reply, State}                                |
+%%            {swap_handler, Reply, Args1, State1, Mod2, Args2} |
+%%            {remove_handler, Reply}
+%%
+%% @doc     This gets called when the event manager receives a request
+%%          sent using gen_event:call/3,4.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
 %% @clear
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, State)
-%% Descrip.: This event handler does not handle calls.
-%% Returns : {ok, Reply, State}
-%%           Reply = {error, bad_request}
+%% @spec    (Unknown, State) ->
+%%            {ok, Reply, State}
+%%
+%%            Reply = {error, bad_request}
+%%
+%% @doc     This event handler does not handle calls.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(_Unknown, State) ->
     {ok, {error, bad_request}, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Info, State)
-%% Descrip.: This function is called when the event manager receives
-%%           any other message than an event or a synchronous request
-%%           (or a system message).
-%% Returns : {ok, State}                                |
-%%           {swap_handler, Args1, State1, Mod2, Args2} |
-%%           remove_handler
+%% @spec    (Info, State) ->
+%%            {ok, State}                                |
+%%            {swap_handler, Args1, State1, Mod2, Args2} |
+%%            remove_handler
+%%
+%% @doc     This function is called when the event manager receives
+%%          any other message than an event or a synchronous request
+%%          (or a system message).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
 %% @clear
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: This event handler does not handle info.
-%% Returns : {ok, State}
+%% @spec    (Unknown, State) -> {ok, State}
+%%
+%% @doc     This event handler does not handle info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(_Unknown, State) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Called when this event handler is deleted from the event
-%%           manager. Clean up.
-%% Returns : void()
+%% @spec    (Reason, State) -> void()
+%%
+%% @doc     Called when this event handler is deleted from the event
+%%          manager. Clean up.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -203,11 +236,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: describe_started_child(ChildInfo)
-%%           ChildInfo = list() of tuple()
-%% Descrip.: Make a string containing name and pid of started
-%%           processes from data we get in info_reports.
-%% Returns : Descr = string()
+%% @spec    (ChildInfo) ->
+%%            Descr
+%%
+%%            ChildInfo = [tuple()]
+%%
+%%            Descr = string()
+%%
+%% @doc     Make a string containing name and pid of started processes
+%%          from data we get in info_reports.
+%% @end
 %%--------------------------------------------------------------------
 describe_started_child(ChildInfo) when is_list(ChildInfo) ->
     ChildName =

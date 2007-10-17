@@ -1,13 +1,14 @@
 %%%-------------------------------------------------------------------
 %%% File    : outgoingproxy.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: YXA application to manage client connections from your
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      YXA application to manage client connections from your
 %%%           user agents. Keeps TCP connections open virtually
 %%%           forever, and implements draft-Outbound to helt clients
 %%%           behind NATs etc. See the README file for more
 %%%           information.
 %%%
-%%% Created : 16 Mar 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    16 Mar 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(outgoingproxy).
 
@@ -37,20 +38,25 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA applications must export an init/0 function.
-%% Returns : yxa_app_init record()
+%% @spec    () -> #yxa_app_init{}
+%%
+%% @doc     YXA applications must export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     #yxa_app_init{mnesia_tables = [user, numbers, phone]
 		 }.
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: YXA applications must export a request/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Request, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a request/2 function.
+%% @end
 %%--------------------------------------------------------------------
 
 
@@ -148,11 +154,14 @@ do_foreign_register(Request, YxaCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, YxaCtx)
-%%           Request = response record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: YXA applications must export a response/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Response, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #response{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a response/2 function.
+%% @end
 %%--------------------------------------------------------------------
 response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
@@ -163,10 +172,14 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
 
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Mode)
-%%           Mode = shutdown | graceful | atom()
-%% Descrip.: YXA applications must export a terminate/1 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Mode) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Mode = shutdown | graceful | atom()
+%%
+%% @doc     YXA applications must export a terminate/1 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Mode) when is_atom(Mode) ->
     ok.
@@ -226,7 +239,7 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> socket ~p",
 		       [LogTag, Method, sipurl:print(URI), Socket#sipsocket.id]),
 	    proxy_request(Request, YxaCtx1, DstList);
-	
+
 	{proxy, route} ->
 	    logger:log(normal, "~s: outgoingproxy: Proxy ~s ~s -> Route header",
 		       [LogTag, Method, sipurl:print(URI)]),
@@ -258,16 +271,19 @@ do_request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
     end.
 
 %%--------------------------------------------------------------------
-%% Function: route_request(Request)
-%%           Request = request record()
-%% Descrip.:
-%% Returns : {error, Status}            |
-%%           {response, Status, Reason} |
-%%           {proxy, Location}          |
-%%           {relay, Location}          |
-%%           {forward, Location}        |
-%%           me                         |
-%%           none
+%% @spec    (Request) ->
+%%            {error, Status}            |
+%%            {response, Status, Reason} |
+%%            {proxy, Location}          |
+%%            {relay, Location}          |
+%%            {forward, Location}        |
+%%            me                         |
+%%            none
+%%
+%%            Request = #request{}
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 route_request(Request) when is_record(Request, request) ->
     route_request_check_gruu(Request).
@@ -437,28 +453,32 @@ route_request_host_is_this_proxy(Request) when is_record(Request, request) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: proxy_request(Request, YxaCtx, Dst)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipdst record() | sipurl record() | route | list() of sipdst record()
-%% Descrip.: Proxy a request somewhere without authentication.
-%% Returns : term(), Does not matter
+%% @spec    (Request, YxaCtx, Dst) -> term() "Does not matter"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            Dst     = #sipdst{} | #sipurl{} | route | [#sipdst{}]
+%%
+%% @doc     Proxy a request somewhere without authentication.
+%% @end
 %%--------------------------------------------------------------------
 proxy_request(Request, YxaCtx, Dst) when is_record(Request, request),
 					 (is_list(Dst) orelse is_record(Dst, sipurl) orelse Dst == route) ->
     start_sippipe(Request, YxaCtx, Dst, []).
 
 %%--------------------------------------------------------------------
-%% Function: relay_request(Request, YxaCtx, Dst)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           Dst      = sipdst record() | sipurl record() | route
-%% Descrip.: Relay request to remote host. If there is not valid
-%%           credentials present in the request, challenge user
-%%           unless local policy says not to. Never challenge
-%%           CANCEL or BYE since they can't be resubmitted and
-%%           therefor cannot be challenged.
-%% Returns : term(), Does not matter
+%% @spec    (Request, YxaCtx, Dst) -> term() "Does not matter"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            Dst     = #sipdst{} | #sipurl{} | route
+%%
+%% @doc     Relay request to remote host. If there is not valid
+%%          credentials present in the request, challenge user unless
+%%          local policy says not to. Never challenge CANCEL or BYE
+%%          since they can't be resubmitted and therefor cannot be
+%%          challenged.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -517,14 +537,16 @@ relay_dst2str(_) ->
     "unknown dst".
 
 %%--------------------------------------------------------------------
-%% Function: start_sippipe(Request, YxaCtx, Dst, AppData)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           Dst     = list() of sipdst record() | route | sipurl record()
-%%           AppData = term(), data from this application passed to
-%%                     local:start_sippipe/4.
-%% Descrip.: Start a sippipe unless we are currently unit testing.
-%% Returns : term(), result of local:start_sippipe/4
+%% @spec    (Request, YxaCtx, Dst, AppData) ->
+%%            term() "result of local:start_sippipe/4"
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            Dst     = [#sipdst{}] | route | #sipurl{}
+%%            AppData = term() "data from this application passed to local:start_sippipe/4."
+%%
+%% @doc     Start a sippipe unless we are currently unit testing.
+%% @end
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case autotest:is_unit_testing(?MODULE, testing_sippipe) of
@@ -536,19 +558,21 @@ start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), i
 	false ->
 	    local:start_sippipe(Request, YxaCtx, Dst, AppData)
     end.
-	    
+
 
 %%====================================================================
 %% Test functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
-    
+
     %% route_request_to_user_contact(Locations)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "route_request_to_user_contact/1 - 0"),
@@ -629,7 +653,7 @@ test() ->
 		     port   = 2360,
 		     socket = #sipsocket{}
 		    }]} = route_request_to_user_contact([Loc2, Loc3]),
-    
+
     ok = outgoingproxy_test:test(),
 
     ok.

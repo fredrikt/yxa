@@ -1,8 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% File    : mysql_auth.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: MySQL client authentication functions.
-%%% Created :  4 Aug 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      MySQL client authentication functions.
+%%% @since     4 Aug 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%
 %%% Note    : All MySQL code was written by Magnus Ahltorp, originally
 %%%           in the file mysql.erl - I just moved it here.
@@ -38,17 +39,19 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: do_old_auth(Sock, RecvPid, SeqNum, User, Password, Salt1,
-%%                       LogFun)
-%%           Sock     = term(), gen_tcp socket
-%%           RecvPid  = pid(), receiver process pid
-%%           SeqNum   = integer(), first sequence number we should use
-%%           User     = string(), MySQL username
-%%           Password = string(), MySQL password
-%%           Salt1    = string(), salt 1 from server greeting
-%%           LogFun   = undefined | function() of arity 3
-%% Descrip.: Perform old-style MySQL authentication.
-%% Returns : result of mysql_conn:do_recv/3
+%% @spec    (Sock, RecvPid, SeqNum, User, Password, Salt1, LogFun) ->
+%%            result of mysql_conn:do_recv/3
+%%
+%%            Sock     = term() "gen_tcp socket"
+%%            RecvPid  = pid() "receiver process pid"
+%%            SeqNum   = integer() "first sequence number we should use"
+%%            User     = string() "MySQL username"
+%%            Password = string() "MySQL password"
+%%            Salt1    = string() "salt 1 from server greeting"
+%%            LogFun   = undefined | function() of arity 3
+%%
+%% @doc     Perform old-style MySQL authentication.
+%% @end
 %%--------------------------------------------------------------------
 do_old_auth(Sock, RecvPid, SeqNum, User, Password, Salt1, LogFun) ->
     Auth = password_old(Password, Salt1),
@@ -57,18 +60,20 @@ do_old_auth(Sock, RecvPid, SeqNum, User, Password, Salt1, LogFun) ->
     mysql_conn:do_recv(LogFun, RecvPid, SeqNum).
 
 %%--------------------------------------------------------------------
-%% Function: do_new_auth(Sock, RecvPid, SeqNum, User, Password, Salt1,
-%%                       Salt2, LogFun)
-%%           Sock     = term(), gen_tcp socket
-%%           RecvPid  = pid(), receiver process pid
-%%           SeqNum   = integer(), first sequence number we should use
-%%           User     = string(), MySQL username
-%%           Password = string(), MySQL password
-%%           Salt1    = string(), salt 1 from server greeting
-%%           Salt2    = string(), salt 2 from server greeting
-%%           LogFun   = undefined | function() of arity 3
-%% Descrip.: Perform MySQL authentication.
-%% Returns : result of mysql_conn:do_recv/3
+%% @spec    (Sock, RecvPid, SeqNum, User, Password, Salt1, Salt2,
+%%          LogFun) -> result of mysql_conn:do_recv/3
+%%
+%%            Sock     = term() "gen_tcp socket"
+%%            RecvPid  = pid() "receiver process pid"
+%%            SeqNum   = integer() "first sequence number we should use"
+%%            User     = string() "MySQL username"
+%%            Password = string() "MySQL password"
+%%            Salt1    = string() "salt 1 from server greeting"
+%%            Salt2    = string() "salt 2 from server greeting"
+%%            LogFun   = undefined | function() of arity 3
+%%
+%% @doc     Perform MySQL authentication.
+%% @end
 %%--------------------------------------------------------------------
 do_new_auth(Sock, RecvPid, SeqNum, User, Password, Salt1, Salt2, LogFun) ->
     Auth = password_new(Password, Salt1 ++ Salt2),

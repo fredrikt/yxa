@@ -1,11 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_blacklist.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Sipsocket blacklist gen_server and interface functions.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Sipsocket blacklist gen_server and interface functions.
 %%%           Keeps track of destinations that recently has failed to
 %%%           respond to SIP messages. Read more in RFC3263 and 4321.
 %%%
-%%% Created : 19 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    19 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(sipsocket_blacklist).
 %%-compile(export_all).
@@ -62,6 +64,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {bl			%% blacklist ETS table name/reference
 	       }).
 
@@ -89,8 +93,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the server
+%% @spec    () -> term()
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [?SIPSOCKET_BLACKLIST], []).
@@ -101,13 +107,15 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(SipDst, SipSocket, Msg)
-%%           SipDst     = sipdst record()
-%%           SipSocket  = sipsocket record() | none
-%%           Msg        = string(), reason for blacklisting
+%% @spec    (SipDst, SipSocket, Msg) -> ok
+%%
+%%            SipDst    = #sipdst{}
+%%            SipSocket = #sipsocket{} | none
+%%            Msg       = string() "reason for blacklisting"
+%%
+%% @doc     Blacklist a destination.
 %% @equiv    report_unreachable(SipDst, SipSocket, Msg, undefined)
-%% Descrip.: Blacklist a destination.
-%% Returns : ok
+%% @end
 %%--------------------------------------------------------------------
 report_unreachable(SipDst, SipSocket, Msg) when is_record(SipDst, sipdst),
 						(is_record(SipSocket, sipsocket) orelse SipSocket == none),
@@ -115,13 +123,15 @@ report_unreachable(SipDst, SipSocket, Msg) when is_record(SipDst, sipdst),
     report_unreachable(SipDst, SipSocket, Msg, undefined).
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(SipDst, SipSocket, Msg, RetryAfter)
-%%           SipDst     = sipdst record()
-%%           SipSocket  = sipsocket record() | none
-%%           Msg        = string(), reason for blacklisting
-%%           RetryAfter = undefined | integer(), seconds to blacklist
-%% Descrip.: Blacklist a destination.
-%% Returns : ok
+%% @spec    (SipDst, SipSocket, Msg, RetryAfter) -> ok
+%%
+%%            SipDst     = #sipdst{}
+%%            SipSocket  = #sipsocket{} | none
+%%            Msg        = string() "reason for blacklisting"
+%%            RetryAfter = undefined | integer() "seconds to blacklist"
+%%
+%% @doc     Blacklist a destination.
+%% @end
 %%--------------------------------------------------------------------
 report_unreachable(SipDst, SipSocket, Msg, RetryAfter) when is_record(SipDst, sipdst), is_list(Msg),
 							    (is_integer(RetryAfter) orelse RetryAfter == undefined) ->
@@ -147,11 +157,13 @@ report_unreachable(SipDst, SipSocket, Msg, RetryAfter) when is_record(SipDst, si
 
 
 %%--------------------------------------------------------------------
-%% Function: remove_blacklisting(SipDst)
-%%           SipDst = sipdst record()
-%% Descrip.: Remove a destination from the blacklist, if it is present
-%%           there.
-%% Returns : ok
+%% @spec    (SipDst) -> ok
+%%
+%%            SipDst = #sipdst{}
+%%
+%% @doc     Remove a destination from the blacklist, if it is present
+%%          there.
+%% @end
 %%--------------------------------------------------------------------
 remove_blacklisting(SipDst) when is_record(SipDst, sipdst) ->
     do_remove_blacklisting(SipDst, ?SIPSOCKET_BLACKLIST).
@@ -161,10 +173,12 @@ remove_blacklisting(SipDst, EtsRef) when is_record(SipDst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: is_blacklisted(SipDst)
-%%           SipDst = sipdst record()
-%% Descrip.: Check if a destination is currently blacklisted.
-%% Returns : true | false
+%% @spec    (SipDst) -> true | false
+%%
+%%            SipDst = #sipdst{}
+%%
+%% @doc     Check if a destination is currently blacklisted.
+%% @end
 %%--------------------------------------------------------------------
 is_blacklisted(SipDst) when is_record(SipDst, sipdst) ->
     case yxa_config:get_env(sipsocket_blacklisting) of
@@ -176,17 +190,20 @@ is_blacklisted(SipDst) when is_record(SipDst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: lookup_sipsocket_blacklist(Dst)
-%%           Dst   = {Proto, Addr, Port}, ets table lookup key
-%%           Proto = term()
-%%           Addr  = term()
-%%           Port  = term()
-%% Descrip.: Part of lookup_dst, unless 'local' had an opinion about
-%%           a destination. NOTE: Not implemented yet.
-%% Returns : {ok, Entry}       |
-%%           {ok, whitelisted} |
-%%           {ok, blacklisted} |
-%%           undefined
+%% @spec    (Dst) ->
+%%            {ok, Entry}       |
+%%            {ok, whitelisted} |
+%%            {ok, blacklisted} |
+%%            undefined
+%%
+%%            Dst   = {Proto, Addr, Port} "ets table lookup key"
+%%            Proto = term()
+%%            Addr  = term()
+%%            Port  = term()
+%%
+%% @doc     Part of lookup_dst, unless 'local' had an opinion about a
+%%          destination. NOTE: Not implemented yet.
+%% @end
 %%--------------------------------------------------------------------
 lookup_sipsocket_blacklist({_Proto, _Addr, _Port} = _Dst) ->
     %% XXX check for configured lists of black/whitelisted destinations here
@@ -197,11 +214,15 @@ lookup_sipsocket_blacklist({_Proto, _Addr, _Port} = _Dst) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_blacklist_name()
-%% Descrip.: Return the name of the blacklisting ets table. For use
-%%           from sipsocket supervisor only!
-%% Returns : EtsRef = term()
+%% @spec    () ->
+%%            EtsRef
+%%
+%%            EtsRef = term()
+%%
+%% @doc     Return the name of the blacklisting ets table. For use
+%%          from sipsocket supervisor only!
 %% @hidden
+%% @end
 %%--------------------------------------------------------------------
 get_blacklist_name() ->
     ?SIPSOCKET_BLACKLIST.
@@ -212,33 +233,45 @@ get_blacklist_name() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([TableName])
-%%           TableName = term(), ETS table name/reference
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ([TableName]) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%%            TableName = term() "ETS table name/reference"
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([TableName]) ->
     {ok, #state{bl = TableName}, ?TIMEOUT}.
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {reply, {error, not_implemented}, State, ?TIMEOUT}
+%% @spec    (Unknown, From, State) ->
+%%            {reply, {error, not_implemented}, State, Timeout::integer()}
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Sipsocket blacklist: Received unknown gen_server call : ~p", [Unknown]),
@@ -246,17 +279,24 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Sipsocket blacklist: Received unknown gen_server cast : ~p", [Unknown]),
@@ -264,17 +304,24 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Wake up and delete expired sockets from our list.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (timeout, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Wake up and delete expired sockets from our list.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     AllEntrys = ets:tab2list(State#state.bl),
@@ -288,17 +335,21 @@ handle_info(timeout, State) ->
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -309,28 +360,22 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_report_unreachable(SipDst, SipSocket, Msg, SecondsIn,
-%%                                 StdDuration, MaxPenalty, ProbeTS,
-%%                                 Now, EtsRef)
-%%           SipDst      = sipdst record()
-%%           SipSocket   = sipsocket record()
-%%           Msg         = string(), reason for blacklisting (only for
-%%                         debug/diagnostic use)
-%%           SecondsIn   = integer() | undefined, seconds requested by
-%%                         upper layers (through an Retry-After header
-%%                         in a 503 response for example)
-%%           StdDuration = integer(), configured default duration -
-%%                         used if SecondsIn is 'undefined'
-%%           MaxPenalty  = integer(), configured max duration
-%%           ProbeTS     = undefined() | integer(), util:timestamp()
-%%                         notion of when we should start probing this
-%%                         destination, if it is requested again
-%%           Now         = integer(), util:timestamp() notion of
-%%                         present time
-%%           EtsRef      = term(), ETS table reference
-%% Descrip.: Part of the exported report_unreachable function. Made
-%%           this way in order to be testable.
-%% Returns : ok
+%% @spec    (SipDst, SipSocket, Msg, SecondsIn, StdDuration,
+%%          MaxPenalty, ProbeTS, Now, EtsRef) -> ok
+%%
+%%            SipDst      = #sipdst{}
+%%            SipSocket   = #sipsocket{}
+%%            Msg         = string() "reason for blacklisting (only for debug/diagnostic use)"
+%%            SecondsIn   = integer() | undefined "seconds requested by upper layers (through an Retry-After header in a 503 response for example)"
+%%            StdDuration = integer() "configured default duration - used if SecondsIn is 'undefined'"
+%%            MaxPenalty  = integer() "configured max duration"
+%%            ProbeTS     = undefined() | integer() "util:timestamp() notion of when we should start probing this destination, if it is requested again"
+%%            Now         = integer() "util:timestamp() notion of present time"
+%%            EtsRef      = term() "ETS table reference"
+%%
+%% @doc     Part of the exported report_unreachable function. Made
+%%          this way in order to be testable.
+%% @end
 %%--------------------------------------------------------------------
 do_report_unreachable(SipDst, SipSocket, Msg, SecondsIn, StdDuration, MaxPenalty, ProbeTS, Now, EtsRef) ->
     Dst = make_dst(SipDst),
@@ -367,23 +412,23 @@ do_report_unreachable(SipDst, SipSocket, Msg, SecondsIn, StdDuration, MaxPenalty
 
 
 %%--------------------------------------------------------------------
-%% Function: get_blacklist_time(Dst, SecondsIn, EtsRef, StdDuration,
-%%                              MaxDuration)
-%%           Dst         = term(), ETS table key
-%%           SecondsIn   = integer() | undefined, seconds requested by
-%%                         upper layers (through an Retry-After header
-%%                         in a 503 response for example)
-%%           EtsRef      = term(), ETS table reference
-%%           StdDuration = integer(), configured default duration -
-%%                         used if SecondsIn is 'undefined'
-%%           MaxDuration = integer(), configured max duration
-%% Descrip.: Decide how long a host should be blacklisted, or if the
-%%           blacklisting request should be ignored completely
-%%           (because the destination is black/whitelisted through
-%%            configuration).
-%% Returns : Seconds |
-%%           ignore
-%%           Seconds = integer()
+%% @spec    (Dst, SecondsIn, EtsRef, StdDuration, MaxDuration) ->
+%%            Seconds |
+%%            ignore
+%%
+%%            Dst         = term() "ETS table key"
+%%            SecondsIn   = integer() | undefined "seconds requested by upper layers (through an Retry-After header in a 503 response for example)"
+%%            EtsRef      = term() "ETS table reference"
+%%            StdDuration = integer() "configured default duration - used if SecondsIn is 'undefined'"
+%%            MaxDuration = integer() "configured max duration"
+%%
+%%            Seconds = integer()
+%%
+%% @doc     Decide how long a host should be blacklisted, or if the
+%%          blacklisting request should be ignored completely
+%%          (because the destination is black/whitelisted through
+%%          configuration).
+%% @end
 %%--------------------------------------------------------------------
 get_blacklist_time(Dst, SecondsIn, EtsRef, StdDuration, MaxDuration) ->
     case lookup_dst(Dst, EtsRef) of
@@ -405,18 +450,19 @@ get_blacklist_time_res(N, _StdDur, Max) when is_integer(N) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_remove_blacklisting(SipDst, EtsRef)
-%%           SipDst = sipdst record()
-%%           EtsRef = term(), ETS table reference
-%% Descrip.: Part of the exported remove_blacklisting function. Made
-%%           this way in order to be testable.
-%% Returns : ok
-%% NOTE    : Currently, the exported function is not used by the YXA
-%%           stack or applications. Things get blacklisted, and the
-%%           only part removing blacklists are this modules gen_server
-%%           or probes that notice the destination is now reachable
-%%           again. Having an API function to do it seems reasonable
-%%           though.
+%% @spec    (SipDst, EtsRef) -> ok
+%%
+%%            SipDst = #sipdst{}
+%%            EtsRef = term() "ETS table reference"
+%%
+%% @doc     Part of the exported remove_blacklisting function. Made
+%%          this way in order to be testable. NOTE : Currently, the
+%%          exported function is not used by the YXA stack or
+%%          applications. Things get blacklisted, and the only part
+%%          removing blacklists are this modules gen_server or probes
+%%          that notice the destination is now reachable again.
+%%          Having an API function to do it seems reasonable though.
+%% @end
 %%--------------------------------------------------------------------
 do_remove_blacklisting(SipDst, EtsRef) when is_record(SipDst, sipdst) ->
     Dst = make_dst(SipDst),
@@ -437,17 +483,21 @@ do_remove_blacklisting(SipDst, EtsRef) when is_record(SipDst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: do_blacklist_filter_dstlist(SipDst, Now, EtsRef)
-%%           SipDst     = sipdst record()
-%%           Now        = integer(), util:timestamp() notion of
-%%                        present time
-%%           EtsRef     = term(), ETS table reference
-%% Descrip.: Filter out all currently blacklisted destinations from a
-%%           list of sipdst records. Starts background probes where
-%%           appropriate. Part of the exported
-%%           blacklist_filter_dstlist/1 function - written this way to
-%%           be testable.
-%% Returns : NewDstList = list() of sipdst record()
+%% @spec    (SipDst, Now, EtsRef) ->
+%%            NewDstList
+%%
+%%            SipDst = #sipdst{}
+%%            Now    = integer() "util:timestamp() notion of present time"
+%%            EtsRef = term() "ETS table reference"
+%%
+%%            NewDstList = [#sipdst{}]
+%%
+%% @doc     Filter out all currently blacklisted destinations from a
+%%          list of sipdst records. Starts background probes where
+%%          appropriate. Part of the exported
+%%          blacklist_filter_dstlist/1 function - written this way to
+%%          be testable.
+%% @end
 %%--------------------------------------------------------------------
 do_is_blacklisted(SipDst, Now, EtsRef) ->
     Dst = make_dst(SipDst),
@@ -508,16 +558,20 @@ start_background_probe(_SipDst, _Dst, DstStr, undefined, _Now, _EtsRef) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: lookup_dst(Dst, EtsRef)
-%%           Dst    = term(), database lookup key
-%%           EtsRef = term(), ETS table reference
-%% Descrip.: Returns the latest entry for Dst. Note well that the
-%%           entry might be expired!
-%% Returns : {ok, Entry} |
-%%           none
-%%           Entry = blacklist_entry() |
-%%           whitelisted               |
-%%           blacklisted
+%% @spec    (Dst, EtsRef) ->
+%%            {ok, Entry} |
+%%            none
+%%
+%%            Dst    = term() "database lookup key"
+%%            EtsRef = term() "ETS table reference"
+%%
+%%            Entry = blacklist_entry() |
+%%            whitelisted               |
+%%            blacklisted
+%%
+%% @doc     Returns the latest entry for Dst. Note well that the entry
+%%          might be expired!
+%% @end
 %%--------------------------------------------------------------------
 lookup_dst({_Proto, _Addr, _Port} = Dst, EtsRef) ->
     case local:lookup_sipsocket_blacklist(Dst) of
@@ -535,17 +589,18 @@ lookup_dst({_Proto, _Addr, _Port} = Dst, EtsRef) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: delete_expired_entrys(In, Now, EtsRef)
-%%           In    = list() of {Dst, Entry}
-%%                   Dst   = term(), lookup key ({Proto, Addr, Port})
-%%                   Entry = blacklist_entry record()
-%%           Now    = integer(), util:timestamp() value of present
-%%                    time
-%%           EtsRef = term(), ETS table reference
-%% Descrip.: Delete all entrys that have a ts+duration less than Now.
-%%           Called periodically by the sipsocket_blacklist
-%%           gen_server.
-%% Returns : ok
+%% @spec    (In, Now, EtsRef) -> ok
+%%
+%%            In     = [{Dst, Entry}]
+%%            Dst    = term() "lookup key ({Proto, Addr, Port})"
+%%            Entry  = #blacklist_entry{}
+%%            Now    = integer() "util:timestamp() value of present time"
+%%            EtsRef = term() "ETS table reference"
+%%
+%% @doc     Delete all entrys that have a ts+duration less than Now.
+%%          Called periodically by the sipsocket_blacklist
+%%          gen_server.
+%% @end
 %%--------------------------------------------------------------------
 delete_expired_entrys([{Dst, H} | T], Now, EtsRef) when is_record(H, blacklist_entry) ->
     case (H#blacklist_entry.ts + H#blacklist_entry.duration) - Now of
@@ -564,10 +619,15 @@ delete_expired_entrys([], _Now, _EtsRef) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: make_dst(SipDst)
-%%           SipDst = sipdst record()
-%% Descrip.: Make database key from a sipdst record.
-%% Returns : Dst = term()
+%% @spec    (SipDst) ->
+%%            Dst
+%%
+%%            SipDst = #sipdst{}
+%%
+%%            Dst = term()
+%%
+%% @doc     Make database key from a sipdst record.
+%% @end
 %%--------------------------------------------------------------------
 make_dst(SipDst) when is_record(SipDst, sipdst) ->
     {SipDst#sipdst.proto, SipDst#sipdst.addr, SipDst#sipdst.port}.
@@ -579,9 +639,11 @@ make_dst(SipDst) when is_record(SipDst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     Self = self(),
