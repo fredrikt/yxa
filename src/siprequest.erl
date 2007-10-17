@@ -697,8 +697,8 @@ construct_record_route(Proto) when is_list(Proto) ->
 %%--------------------------------------------------------------------
 %% Function: construct_record_route(Proto, Hostname, Port)
 %%           Proto      = string(), "sips" or "sip"
-%%           Hostname = string()
-%%           Port     = integer()
+%%           Hostname   = string() | undefined
+%%           Port       = integer() | undefined
 %% Descrip.: Construct a Record-Route header value for this proxy.
 %% Returns : RRStr = string(), URL enclosed in "<>"
 %%--------------------------------------------------------------------

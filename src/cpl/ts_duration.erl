@@ -214,7 +214,7 @@ first_day_in_next_month(MonthDays, NumByVals) ->
     FirstDay.
 
 %% ByVals = {byday, Val}       
-%%          Val = list of {N, Day} 
+%%          Val = list() of {N, Day} 
 %%          Day = integer() range = [1,7] (= [mo-su])
 %%          N   = -1 or less | 1 or greater | all 
 %% MonthDays = list() of {MonthDayNo, Day}
@@ -310,7 +310,7 @@ byday_testsets() ->
     
   
 %% ByVals = {byday, Val}       
-%%          Val = list of {N, Day} 
+%%          Val = list() of {N, Day} 
 %%          Day = integer() range = [1,7] (= [mo-su])
 %%          N   = -1 or less | 1 or greater | all 
 %% MonthDays = list() of {MonthDayNo, Day}

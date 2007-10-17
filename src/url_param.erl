@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% File    : autotest.erl
+%%% File    : url_param.erl
 %%% Author  : Håkan Stenholm <hsten@it.su.se>
 %%% Descrip.: This module handles parameters supplied in sip urls.
 %%%           They  must be unique - i.e. the same key can only occur
@@ -90,10 +90,11 @@ to_norm(Params) when is_list(Params) ->
 %% Function: to_list(Norm)
 %%           Norm = url_param record()
 %% Descrip.: returns a normalized form of the parameters
-%% Returns : list() of {Key,Val}
+%% Returns : list() of {Key, Val}
 %%           Key = string()
-%%           Val = string() | none (if a "name" paramter rather than
-%%           "name=val")
+%%           Val = string() | none
+%% Note    : Val will be 'none' if this was a "name" parameter rather
+%%           than "name=val" - for example 'lr'.
 %%--------------------------------------------------------------------
 to_list(Norm) when is_record(Norm, url_param) ->
         key_val_db:to_key_val(Norm#url_param.pairs).
@@ -104,8 +105,8 @@ to_list(Norm) when is_record(Norm, url_param) ->
 %%           Norm = url_param record()
 %% Descrip.: return parameter data in the same format as input to
 %%           to_norm/1
-%% Returns : list() of string(), the strings are either "name=val" or
-%%                               "name"
+%% Returns : list() of string()
+%% Note    : The strings returned are either "name=val" or "name".
 %%--------------------------------------------------------------------
 to_string_list(Norm) when is_record(Norm, url_param) ->
     F = fun(E) ->
@@ -125,7 +126,7 @@ to_string_list(Norm) when is_record(Norm, url_param) ->
 %% Function: to_string(Norm)
 %%           Norm = url_param record()
 %% Descrip.: return a raw uri-parameter string
-%% Returns : string(), on the ";name=val;..." format
+%% Returns : string(), in the ";name=val;..." format
 %%--------------------------------------------------------------------
 to_string(Norm) when is_record(Norm, url_param) ->
     L = to_string_list(Norm),

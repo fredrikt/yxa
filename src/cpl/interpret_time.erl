@@ -722,8 +722,7 @@ dt_to_partial_init(DT, secondly) ->
 %%           element, N = 2 the second and so on. Negative indexes 
 %%           are count from the end rather than the front of L. 
 %% Returns : term() | '#not_found'
-%%                   ('#not_found' if N refers to position beyond 
-%%                                  the elements in L) 
+%%           "'#not_found' if N refers to position beyond the elements in L"
 %%--------------------------------------------------------------------
 nth(L,N) when N > 0 ->
     nth2(L,N);
@@ -764,7 +763,7 @@ nth2([_|List], N) ->
 %%                            time value - a path through the search
 %%                            tree
 %%           MaxCount       = integer() | get_set, number of start
-%%                            points to retrieve from time dtstart)
+%%                            points to retrieve from time dtstart
 %%                            or get_set to retrieve a search tree 
 %%                            branch - used by get_set/2
 %%           TabId          = term(), from count_create/0 
@@ -1036,7 +1035,7 @@ count_filter(MatchFilter, Level, LowestLevel, TimeSwitchCond, ByParams, Time, Ma
 %%                          against a single ByParam of the same level 
 %%               ByParam  = term(), a time_switch__cond_N.by_values 
 %%                          element (where N is 7|8) 
-%%           CurrentLevelParams = [ByParam]
+%%           CurrentLevelParams = [ByParam],
 %%                          should be of the same level as the value
 %%                          tested by MatchFilter  
 %% Descrip.: check that all (if any) byxxx values for a certain xxx
@@ -1092,9 +1091,9 @@ new_times(secondly, BaseTime, Vals) ->
 %%           Level = atom(), generator type
 %%           ST    = date_time record(), partialy initialized start
 %%                   point that needs to be tested to see if it is 
-%%                   part of its "parent" Time 
+%%                   part of its 'parent' Time 
 %%           Time  = date_time record(), partialy initialized time 
-%%                   created by traversing "start point" tree with
+%%                   created by traversing 'start point' tree with
 %%                   generate_counts(...)
 %% Descrip.: determine if ST is a star point that is part of the Time
 %%           search branch 
@@ -1782,8 +1781,8 @@ lt_usec(V1, V2) ->
 
 %%--------------------------------------------------------------------
 %% Function: sort_byparam(ByParams)
-%%           ByParams = list() of term(), byxxx elements (see 
-%%                      #time_switch__cond_N.by_values)
+%%           ByParams = list() of term(), byxxx elements
+%%                      (see #time_switch__cond_N.by_values)
 %% Descrip.: sort list of byxxx parameters in order as specified by 
 %%           RFC 3880 chapter 4.4 page 18
 %% Returns : list() of term(), byxxx elements
@@ -2014,9 +2013,9 @@ get_next_level(CurrentLevel) ->
 %%--------------------------------------------------------------------
 %% Function: get_next_level(CurrentLevel, ByParams, TimeSwitchCond)
 %%           CurrentLevel = atom()
-%%           ByParams     = list() of {Level,Val}, ordered on Level, 
+%%           ByParams     = list() of {Level, Val}, ordered on Level, 
 %%                          contains all tuples where 
-%%                          Level less than or equal to CurrentLevel
+%%                          Level is less than or equal to CurrentLevel
 %%           TimeSwitchCond = term(), time_switch__cond_n record() (n >= 7)
 %% Descrip.: get the next supplied level and it's ByParams where 
 %%           Level `=<' NextLevel
@@ -2065,7 +2064,7 @@ get_next_process_level(Level, ByParams, TimeSwitchCond) ->
 %%--------------------------------------------------------------------
 %% Function: get_level_params(Level, ByParams)
 %%           Level    = term(), the level of a ByParams elements
-%%                                  {Level,Val}
+%%                                  {Level, Val} tuple
 %%           ByParams = term(), time_switch__cond_x.by_values sorted
 %%                              on Level
 %% Descrip.: get the {Level, Val} entries from ByParam (the N first 
@@ -2201,7 +2200,7 @@ is_reoccurrence(TimeSwitchCond, DateTime) ->
 %%           CurrentDateTime = term(), the time to check against 
 %%                             TimeSwitchCond
 %%           TimeSwitchCond  = term(), a time_switch__cond_n (N >= 7) 
-%%                             record()
+%%                             record
 %% Descrip.: determine if CurrentDateTime is part of any time interval
 %%           defined by ByParams (from TimeSwitchCond)
 %% Returns : true | false
@@ -2586,7 +2585,7 @@ create_startpoints_in_range(RangeStart, RangeEnd, TimeSwitchCond, _Start) ->
 %%           Start     = date_time record()
 %%           ByxxxVals = list() of {ByType, Val} 
 %%           ByType    = bysecond | byminute | byhour | byday | bymonthday | byyearday | byweekno | bymonth
-%%           Wkst      = mo | tu | we | th | fr | sa | su
+%%           Wkst      = mo | tu | we | th | fr | sa | su,
 %%                       (weekday) first working day of the week
 %% Descrip.: create all the time (starting) points defined by 
 %%           ByxxxVals - ByType associated with the time Start

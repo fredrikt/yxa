@@ -115,7 +115,7 @@
 %%           {proxy_call_to_location, Location}          |
 %%           {proxy_or_redirect_to_locations, Locations} |
 %%           ok                                          |
-%%           throw({error, ...})                         |
+%%           throw({error, atom()})                      |
 %%           {error, Reason}
 %%--------------------------------------------------------------------
 process_cpl_script(Request, User, Graph, Direction) ->
@@ -273,7 +273,7 @@ get_start_node(outgoing) ->
 
 %%--------------------------------------------------------------------
 %% Function: execute_node(StartIndex, State)
-%%           StartIndex = node index
+%%           StartIndex = term(), node index (integer() or [integer()] I think XXX)
 %%           State      = state record()
 %% Descrip.: this functions handles walking the node graph. See
 %%           @{link process_cpl_script/4} for possible return values.
@@ -465,9 +465,11 @@ signalling_performed(Graph, [Index | Visited]) ->
 
 %%--------------------------------------------------------------------
 %% Function: get_node(Graph, Index)
-%%           Graph            = list() of {NodeIndex, NodeCode}
-%%           Index, NodeIndex = list() of integer(), node id created
-%%                              in xml_parse.erl
+%%           Graph     = list() of {NodeIndex, NodeCode}
+%%           Index     = list() of integer(), node id created
+%%                       in xml_parse.erl
+%%           NodeIndex = list() of integer(), node id created
+%%                       in xml_parse.erl
 %%           NodeCode         = node_code record()
 %% Descrip.: find node with Index in Graph
 %% Returns : node_code reccord() | throw({error, index_not_found})
@@ -519,7 +521,7 @@ outgoing(Index, State) ->
 %% Function: 'address-switch'(Code, State)
 %%           Code = {{Field, SubField}, Conds}
 %%           State = state record()
-%% Descrip.: process a address-switch
+%% Descrip.: process an address-switch
 %% Returns : {NextId, NewState}
 %%--------------------------------------------------------------------
 'address-switch'({{Field, SubField}, Conds}, State) ->
@@ -727,7 +729,7 @@ location({#location__attrs{url = URI, priority = Prio, clear = Clear}, Dest}, St
 %%--------------------------------------------------------------------
 %% Function: lookup({Lookup,Cond}, State)
 %%           Lookup = lookup__attrs record()
-%%           Cond = list of {LookupResult, Dest}
+%%           Cond = list() of {LookupResult, Dest}
 %%           State = state record()
 %% Descrip.: process the lookup tag
 %% Returns : {NextId, NewState}
@@ -783,7 +785,8 @@ lookup_dest(Result, [_ | R]) ->
 
 %%--------------------------------------------------------------------
 %% Function: sub(Dest, State)
-%%           Dest = node id
+%%           Dest = term(), node id
+%%           State = state record()
 %% Descrip.: process sub tag
 %% Returns : {NextId, NewState}
 %%--------------------------------------------------------------------
@@ -793,7 +796,8 @@ sub(Dest, State) ->
 %%--------------------------------------------------------------------
 %% Function: log({Log, Dest}, State)
 %%           Log  = log__attrs record()
-%%           Dest = node id
+%%           Dest = term(), node id
+%%           State = state record()
 %% Descrip.: log the data in Log
 %% Returns : {NextId, NewState}
 %%--------------------------------------------------------------------
@@ -807,7 +811,7 @@ log({Log, Dest}, State) ->
 %%--------------------------------------------------------------------
 %% Function: mail({Mail, Dest}, State)
 %%           Mail = string(), a mail url
-%%           Dest = node id
+%%           Dest = term(), node id
 %% Descrip.: send mail
 %% Returns : {NextId, NewState}
 %%--------------------------------------------------------------------
@@ -1045,7 +1049,7 @@ find_result(Cond, [ _ | R]) ->
 %%--------------------------------------------------------------------
 %% Function: create_sequential_proxyaction_list(PrioOrderLocs,
 %%           Backend, Timeout, User)
-%%           PrioOrderLos = list of location record(), ordered on
+%%           PrioOrderLos = list() of location record(), ordered on
 %%                          priority
 %%           Backend      = atom(), callback module
 %%           Timeout      = integer(), no. of seconds
@@ -1058,8 +1062,8 @@ find_result(Cond, [ _ | R]) ->
 %%           binding will be in Actions, and the rest in Surplus (this
 %%           is draft-Outbound processing).
 %% Returns : {ok, Actions, Surplus}
-%%           Actions = list of sipproxy_action record()
-%%           Surplus = list of sipproxy_action record()
+%%           Actions = list() of sipproxy_action record()
+%%           Surplus = list() of sipproxy_action record()
 %% Note    : timeout for locations can be assigned in two ways:
 %%           * if (Timeout / no. of locations) > minimum ring timeout
 %%             the (Timeout / no. of locations) period is used for

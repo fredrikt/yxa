@@ -433,7 +433,7 @@ get_usernames_for_url(URL, [H | T], Res) when is_record(URL, sipurl), is_record(
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_usernames_for_exact_address(Address, Addresses, [])
+%% Function: get_usernames_for_exact_address(Address, Addresses)
 %%           Address   = string()
 %%           Addresses = list() of address record()
 %% Descrip.: Get all address records having Addr#address.address

@@ -492,7 +492,7 @@ unquote(QString) ->
 %%           Param = list() of string(), each string is a "key=value"
 %%                   pair, that may have preceding or trailing spaces
 %%                   as well as hex encoded values (e.g. chars of the
-%%                   format %hh (where hh is a hex number)
+%%                   format %hh (where hh is a hex number))
 %% Descrip.: Convert SIP parameter strings into a dictionary.
 %% Returns : dict()
 %%--------------------------------------------------------------------

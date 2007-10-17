@@ -721,7 +721,7 @@ update_dialog_recv_request(Request, Dialog) when is_record(Request, request), is
 %%--------------------------------------------------------------------
 %% Function: generate_new_request(Method, ExtraHeaders, Body, Dialog)
 %%           Method       = string(), SIP method
-%%           ExtraHeaders = list() of {Key, Value} tuple(), extra
+%%           ExtraHeaders = list() of {Key, Value}, extra
 %%                          headers to include in response
 %%           Body         = binary() | list(), request body
 %%           Dialog       = dialog record()
