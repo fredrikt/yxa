@@ -147,6 +147,8 @@ doc::
 	cp $(srcdir)/doc/overview.edoc doc/html/
 	echo "Making doc in src/"; \
 	(cd src/ && $(MAKE) doc) || exit 1
+	echo "Making doc in yaws/src/"; \
+	(cd yaws/src/ && $(MAKE) doc) || exit 1
 	# generate edoc overview in top doc/html/ directory
 	$(ERL) -yxa_edoc_dir doc/html -pa src/ -noshell -run yxa_edoc run "" -run init stop
 	# for the top level, we clean away everything but the non-frame page
