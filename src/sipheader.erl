@@ -255,7 +255,7 @@ contact2(Header, Name) when is_record(Header, keylist), is_atom(Name) ->
 %% Function: via(In)
 %%           In = keylist record() | list() of string()
 %% Descrip.: Parse Via: header data.
-%% Returns : Vias = list() of via record() |
+%% Returns : list() of via record() |
 %%           throw({error, Reason})
 %%           Reason = unparseable_via | term()
 %%--------------------------------------------------------------------
