@@ -1,0 +1,25 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Event handler
+
+@doc The event handler subsystem is thought to be able to accomodate
+     everyones different needs of event generation on typical 'call'
+     events. My need was to log things to syslog, someone elses is
+     most likely to generate CDR data.
+
+     The implementation is a standard OTP gen_event one, and what
+     event handlers are initialized is controlled by the event_handler_handlers
+     configuration parameter.
+
+=== Event handlers ===
+
+<ul>
+  <li><a href="event_handler_csyslog.html">syslog</a>:
+      Log events to syslog through a C port driver (to use libc instead of
+      sending UDP datagrams, since syslog daemon might not be configured
+      for remote access).
+  </li>
+</ul>

@@ -1,0 +1,37 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title SIP user database subsystem
+
+@doc The sipuserdb subsystem is designed to be extendible if
+     someone wants to add some new backend holding a user database.
+
+     The main interface to this subsystem is <a href="sipuserdb.html">sipuserdb</a>.
+
+=== Backends ===
+
+<ul>
+  <li><a href="sipuserdb_mnesia.html">mnesia</a>:
+  	The default backend, with user data stored in Mnesia tables.
+  </li>
+  <li><a href="sipuserdb_file.html">file</a>:
+  	The simplest backend, with all users, passwords and addreses in a plain
+	text file (erlang term format, see README file for more info).
+  </li>
+  <li><a href="sipuserdb_ldap.html">LDAP</a>:
+  	Not fully documented, but this is a backend which reads all user data from
+	an LDAP directory. Used at Stockholm university.
+  </li>
+  <li><a href="sipuserdb_mysql.html">MySQL</a>:
+  	A backend for those preferring MySQL as storage. All querys are configurable.
+	See the README file for more info.
+  </li>
+</ul>
+
+<ul>
+  <li><a href="sipuserdb_test.html">test</a>:
+  	A backend for use in unit testing.
+  </li>
+</ul>

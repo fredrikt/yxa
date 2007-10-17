@@ -40,7 +40,7 @@ SUBDIRS = \
 	src \
 	yaws/src
 
-RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive doc-recursive
 
 erl_FILES = \
 	version.erl
@@ -140,3 +140,9 @@ covertest:
 xreftest: $(beam_FILES)
 	echo "Making xreftest in src/"; \
 	(cd src/ && $(MAKE) xreftest) || exit 1
+
+doc::
+	mkdir -p doc
+	echo "Making doc in src/"; \
+	(cd src/ && $(MAKE) doc) || exit 1
+

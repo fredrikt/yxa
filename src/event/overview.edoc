@@ -1,0 +1,33 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Event subsystem
+
+@doc The event subsystem consists of two parts.
+
+     <ul>
+        <li>Code to establish or accept, and maintain RFC3265 subscriptions.</li>
+	<li>An YXA application called 'eventserver' than is a useful framework for
+	    implementing event packages that user agents can SUBSCRIBE to, and also
+            (if supported by the event package in question) PUBLISH state to.
+	</li>
+     </ul>
+
+     The modules related to subscriptions are
+        <a href="subscription.html">subscription</a> and
+        <a href="active_subscription.html">active_subscription</a>.
+
+     The eventserver applications is <a href="eventserver.html">eventserver</a>.
+
+=== Event packages ===
+
+<ul>
+  <li><a href="presence_package.html">presence</a>:
+  	Presence state agent (presence server).
+  </li>
+  <li><a href="dialog_package.html">dialog</a>:
+  	Dialog event package (for things like shared linse).
+  </li>
+</ul>

@@ -1,0 +1,25 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Config subsystem
+
+@doc The configuration subsystem is designed to be extendible if
+     someone wants to add some new backend holding configuration,
+     for example an SQL database, or XML or INI files.
+
+     Validation is done in yxa_config_check.
+
+     The main interface to this subsystem is <a href="yxa_config.html">yxa_config</a>.
+
+=== Backends ===
+
+<ul>
+  <li><a href="yxa_config_erlang.html">erlang</a>:
+  	 The default backend, reading files containing Erlang terms
+  </li>
+  <li><a href="yxa_config_default.html">default</a>:
+  	A backend holding all the default values.
+  </li>
+</ul>

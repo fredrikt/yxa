@@ -92,6 +92,15 @@ clean:
 	rm -f *.o ktrace.out erl_crash.dump
 	rm -f $(start_FILES)
 
+doc:
+	mkdir -p ../../doc/html/src/event
+	cp $(srcdir)/overview.edoc ../../doc/html/src/event/
+	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
+		-yxa_edoc_dir ../../doc/html/src/event \
+		-yxa_edoc_srcpath $(srcdir) \
+		-run yxa_edoc run "$(erl_FILES)" \
+		-run init stop
+
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
 

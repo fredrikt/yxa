@@ -1,0 +1,10 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title eldap source
+
+@doc This is eldap - it is not a part of YXA. It is an Erlang LDAP client
+     implementation written by Torbjorn Tornquist, and it is a part of
+     <a href="http://jungerl.sourceforge.net">jungerl</a>.
