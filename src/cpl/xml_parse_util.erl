@@ -190,7 +190,7 @@ parse_until(UntilStr) ->
 %%           tag used by the time-switch tag
 %% Returns : list() of {N, Day}
 %%           Day = mo | tu | we | th | fr | sa | su
-%%           N = integer(), -1 or less | 1 or greater |
+%%           N = integer(), -1 or less, 1 or greater,
 %%                   all (default, if no +N or -N is used)
 %%--------------------------------------------------------------------
 parse_byday(Str) ->
@@ -460,15 +460,15 @@ status_code_to_sip_error_code(Status) ->
 
 %%--------------------------------------------------------------------
 %% Function: normalize_prio(PrioStr)
+%%           PrioStr = string(), "emergency" or "urgent" or ...
 %% Descrip.: convert priority values used by priority-switch in the
 %%           attributes (less, greater, equal) of priority, to a
 %%           standard atom() format
-%% Returns : emrengency | urgent | normal | 'non-urgent' |
-%%           {unkown, PrioStr}
-%%                 RFC 3880 chapter 4.5 p21 and
-%%                 RFC 3261 chapter 20.26 p173 allow for additional
-%%                 priority values beyond "non-urgent", "normal",
-%%                 "urgent", and "emergency"
+%% Returns : emergency | urgent | normal | 'non-urgent' |
+%%           {unknown, PrioStr}
+%% Note    : RFC 3880 chapter 4.5 p21 and RFC 3261 chapter 20.26 p173
+%%           allow for additional priority values beyond "non-urgent",
+%%           "normal", "urgent", and "emergency"
 %%--------------------------------------------------------------------
 normalize_prio(PrioStr) ->
     case httpd_util:to_lower(PrioStr) of

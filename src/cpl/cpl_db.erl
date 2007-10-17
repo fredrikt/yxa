@@ -93,8 +93,7 @@ get_cpl_for_user(User) ->
 %% Function: get_cpl_text_for_user(User)
 %% Descrip.: Get the CPL script for User as text.
 %% Returns : nomatch | {ok, CPLText}
-%%           CPLGraph = term(), a cpl graph for use in
-%%                              interpret_cpl:process_cpl_script(...)
+%%           CPLText = string(), the CPL XML
 %%--------------------------------------------------------------------
 get_cpl_text_for_user(User) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of

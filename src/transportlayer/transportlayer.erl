@@ -403,7 +403,7 @@ report_unreachable(Dst, SipSocket, Msg) ->
     sipsocket_blacklist:report_unreachable(Dst, SipSocket, Msg).
 
 %%--------------------------------------------------------------------
-%% Function: report_unreachable(Dst, Msg, RetryAfter)
+%% Function: report_unreachable(Dst, SipSocket, Msg, RetryAfter)
 %%           Dst        = sipdst record(), the unreachable destination
 %%           SipSocket  = sipsocket record() | none, socket that
 %%                                                   didn't work

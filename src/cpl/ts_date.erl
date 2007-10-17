@@ -217,8 +217,9 @@ nth_bymonthday(Year,Month,N) when N =< -1 ->
 %%           N     = integer(), N >= 1 or N =< -1
 %% Descrip.: find date of Nth day in selected Year-Month
 %%                    -1 = last day, -2 = day before last day ...
-%% Returns : integer(), >= 1 (monthday) if N is valid
-%%                      < 1 if monthday is invalid 
+%% Returns : DayNo
+%%           DayNo = integer(), >= 1 (monthday) if N is valid
+%%                              < 1 if monthday is invalid 
 %%--------------------------------------------------------------------
 normalize_monthday(_Year, _Month, N) when N >= 1 ->
     N;
@@ -591,7 +592,8 @@ byyearday_to_date(Year,N) when N =< -1 ->
 %%           N     = integer(), N >= 1 or N =< -1
 %% Descrip.: find day number of Nth day in selected Year.
 %%                         -1 = last day, -2 = day before last day ...
-%% Returns : integer(), >= 1 (yearday) if N is valid
+%% Returns : YearDay
+%%           YearDay = integer(), >= 1 (yearday) if N is valid
 %%                      < 1 if yearday is invalid 
 %%--------------------------------------------------------------------
 normalize_yearday(_Year, N)  when N >= 1 ->

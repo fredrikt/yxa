@@ -449,7 +449,7 @@ stun_request(SReq) when is_record(SReq, stun_request) ->
 %%           SReq      = stun_request record()
 %%           MI_Offset = integer(), how many bytes from the start of
 %%                       Packet were there up to the MI-attr?
-%%           MsgIntegrity = string(), SHA1 HMAC (? XXX)
+%%           MsgIntegrity = string(), SHA1 HMAC (or? XXX)
 %%           Realm    = AttrValue, see below
 %%           Nonce    = AttrValue, see below
 %%           Username = AttrValue, see below
@@ -1073,8 +1073,8 @@ create_attribute(?STUN_ATTRIBUTE_SERVER,		In) ->
 %% Function: mapped_address_encode(Type, {Proto, IP, Port})
 %%           Type    = integer(), STUN attribute number
 %%           Proto   = udp | udp6 | tcp | tcp6 | tls | tls6 | atom()
-%%           Address = tuple(), {A,B,C,D} | {A,B,C,D,E,F,G,H} |
-%%                     binary(), four or 16 bytes (IPv4 or IPv6)
+%%           Address = {A,B,C,D} | {A,B,C,D,E,F,G,H} | binary(),
+%%                     four or 16 bytes (IPv4 or IPv6)
 %%           Port    = integer()
 %% Descrip.: Encode IP and port number in the MAPPED-ADDRESS format.
 %%           A number of other attributes have semantics equivalent

@@ -93,7 +93,7 @@
 %%           throw({error, Error})
 %%
 %%           VertexId = list() of integer(), a unique node id
-%%           Lable = term(), the "code" of the node
+%%           Label = term(), the 'code' of the node
 %%           Error = bad_xml | cycle_detected_in_graph |
 %%                   unreachable_nodes_detected | atom()
 %%

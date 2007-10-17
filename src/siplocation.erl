@@ -518,7 +518,7 @@ create_process_updates_response(RegReq) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_contacts(SipUser, Do_GRUU, To)
+%% Function: fetch_contacts(SipUser, Do_GRUU, DoOutbound, To)
 %%           SipUser    = string(), SIP authentication user - key in
 %%                        location database
 %%           Do_GRUU    = bool(), add gruu= parameters or not?

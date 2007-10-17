@@ -75,8 +75,8 @@
 %%           List = keylist record()
 %% Descrip.: return the contents of the header that matches Key
 %% Returns : list() of string(), the value of Key - Key may have
-%%                    several values associated with it (e.g. the "Via"
-%%                    header in sip requests)
+%%                    several values associated with it (e.g. the
+%%                    Via header in sip requests)
 %%--------------------------------------------------------------------
 fetch(Key, List) when is_list(Key), is_record(List, keylist) ->
     fetchcase(normalize(Key), List#keylist.list);

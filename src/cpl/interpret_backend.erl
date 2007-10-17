@@ -152,9 +152,8 @@ none_to_no_value_atom(SubField, Val) ->
 
 %%--------------------------------------------------------------------
 %% Function: compare_address_or_address_part(ReqVal, Val)
-%%           ReqVal = sipurl record() | {SubField, RVal}
-%%                    both are return values from
-%%                    'get_address-switch_field'/3
+%%           ReqVal = sipurl record() | {SubField, RVal}, both are
+%%                    return values from 'get_address-switch_field'/3
 %%           Val    = string(), cpl script supplied value
 %% Descrip.: determine if Val from CPL script matches value (ReqVal)
 %%           in Request
@@ -216,8 +215,8 @@ compare_address_or_address_part({password, ReqVal}, Val) ->
 
 %%--------------------------------------------------------------------
 %% Function: compare_address_or_address_part(ReqVal, Val)
-%%           ReqVal = {display, RVal}
-%%                    value from 'get_address-switch_field'/3
+%%           ReqVal = {display, RVal}, value from
+%%                    'get_address-switch_field'/3
 %%           Val    = string()
 %% Descrip.: determine if Val from CPL script was part of value
 %%           (ReqVal) in Request
@@ -313,8 +312,7 @@ is_subdomain3([_C1 | _], [_C2 | _]) ->
 %%           Field    = atom(), 'string-switch' tag 'field' attribute
 %%                      value
 %% Descrip.: retrieve the specified field from Request
-%% Returns : '#no_value' |
-%%           string(), in lower case       XXX this should be lower case unicode
+%% Returns : Res = '#no_value' | string(), in lower case       XXX this should be lower case unicode
 %%--------------------------------------------------------------------
 'get_string-switch_field'(Request, Field) when is_record(Request, request) ->
     Header = Request#request.header,
@@ -485,8 +483,7 @@ prefix_match2(_, _) ->
 %% Returns : {QVal, Language} |
 %%           throw({error, malformed_accept_language_element})
 %%           Language = string() | Asterisk
-%%           Asterisk = [42]
-%%                             silly because of edoc limitation
+%%           Asterisk = [42], silly because of edoc limitation
 %%           QVal     = float(), in range = 0-1
 %%--------------------------------------------------------------------
 parse_accept_language(Str) ->
