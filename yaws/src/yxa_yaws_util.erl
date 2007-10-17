@@ -198,8 +198,8 @@ make_radio_input2(_A, _Name, _Default, [], _DefaultSeen, Res) ->
 %%--------------------------------------------------------------------
 %% Function: hidden_inputs(In)
 %%           In = list() of {Name, Value}
-%%             Name  = list() or atom()
-%%             Value = list() or atom()
+%%             Name  = string() | atom()
+%%             Value = string() | atom()
 %% Descrip.: Produce a list of input fields of type 'hidden'.
 %% Returns : Out = list() of tuple()
 %%--------------------------------------------------------------------
@@ -249,6 +249,16 @@ get_var(A, Name) when is_list(Name) ->
 	    end
     end.
 
+%%--------------------------------------------------------------------
+%% Function: get_var_int(A, Name)
+%%           A    = term(), Yaws request data
+%%           Name = string(), URL or POST data variable name
+%% Descrip.: Like get_var/2 but converts the result to an integer.
+%% Returns : {ok, Int} |
+%%           throw({error, Reason})
+%%           Int    = integer()
+%%           Reason = string()
+%%--------------------------------------------------------------------
 get_var_int(A, Name) ->
     case get_var(A, Name) of
 	{ok, Value} when is_list(Value) ->
@@ -285,7 +295,9 @@ error(Msg) when is_list(Msg) ->
 %%           User    = string(), username
 %%           Node    = atom(), node we are to talk with
 %% Descrip.: Check if user User exists in the Mnesia userdb.
-%% Returns : true | false | throw({error, ...})
+%% Returns : true | false |
+%%           throw({error, Reason})
+%%           Reason = string()
 %%--------------------------------------------------------------------
 user_exists(User, Node) when is_list(User), is_atom(Node) ->
     case rpc:call(Node, phone, get_user, [User]) of

@@ -1,0 +1,29 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title YXA source code documentation
+
+@doc YXA is a BSD licensed SIP stack written in Erlang. This is edoc
+     documentation generated directly from the source files.
+
+== Subdirectories ==
+
+<ol>
+  <li><a href="src/index.html">Top Source directory</a></li>
+  <ol>
+    <li><a href="src/config/index.html">config: Configuration subsystem</a></li>
+    <li><a href="src/cpl/index.html">cpl: CPL (Call Processing Language) subsystem</a></li>
+    <li><a href="src/database/index.html">database: Mnesia database code</a></li>
+    <li><a href="src/eldap/index.html">eldap: The eldap LDAP client (from jungerl)</a></li>
+    <li><a href="src/event/index.html">event: SIP event server and packages</a></li>
+    <li><a href="src/event_handler/index.html">event_handler: Event subsystem</a></li>
+    <li><a href="src/local/index.html">local: A place for your local additions</a></li>
+    <li><a href="src/mysql/index.html">mysql: Erlang MySQL client</a></li>
+    <li><a href="src/sipuserdb/index.html">sipuserdb: User database subsystem</a></li>
+    <li><a href="src/transactionlayer/index.html">transactionlayer: SIP stack transactionlayer</a></li>
+    <li><a href="src/transportlayer/index.html">transportlayer: SIP stack transportlayer</a></li>
+  </ol>
+  <li><a href="yaws/src/index.html">Yaws web interface sources</a></li>
+</ol>

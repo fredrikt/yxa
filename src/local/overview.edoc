@@ -1,0 +1,13 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Local additions
+
+@doc This is a place where you can put modules you want compiled when
+     you compile YXA, but that are not part of the official distribution.
+
+     The idea is that you should have to spend as little time as possible
+     merging local changes when upgrading YXA, so this directory provides
+     you with a Makefile.in that will change very infrequently.

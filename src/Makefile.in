@@ -80,6 +80,7 @@ erl_FILES = \
 	util.erl \
 	xref_test.erl \
 	yxa_ctl.erl \
+	yxa_edoc.erl \
 	yxa_monitor.erl \
 	$(local_module).erl
 
@@ -127,7 +128,7 @@ SUBDIRS = \
 	transactionlayer \
 	transportlayer
 
-RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive doc-recursive
 
 all: $(beam_FILES) all-recursive $(boot_FILES) start_ssl.boot
 
@@ -199,3 +200,12 @@ covertest: autotest.beam
 
 xreftest: $(beam_FILES)
 	$(ERL) -noshell -s xref_test run_shell -pz .. $(SUBDIRS)
+
+doc: yxa_edoc.beam doc-recursive
+	mkdir -p ../doc/html/src
+	cp $(srcdir)/overview.edoc ../doc/html/src/
+	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
+		-yxa_edoc_dir ../doc/html/src \
+		-yxa_edoc_srcpath $(srcdir) \
+		-run yxa_edoc run "$(erl_FILES)" \
+		-run init stop

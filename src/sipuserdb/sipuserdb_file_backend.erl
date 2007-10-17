@@ -401,7 +401,7 @@ parse_db([TermList]) ->
 
 %%--------------------------------------------------------------------
 %% Function: parse_term(In, UserList, AddrList)
-%%           In       = list() of {user, Params} | {address, Params}
+%%           In       = [{user, Params} | {address, Params}]
 %%           UserList = list() of user record()
 %%           AddrList = list() of addr record()
 %% Descrip.: Parse terms read from the userdb file.

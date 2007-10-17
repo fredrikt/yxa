@@ -491,7 +491,7 @@ number_based_routing(Request, YxaCtx, PstnCtx) ->
 
 %%--------------------------------------------------------------------
 %% Function: perform_actions(Actions, Request, YxaCtx, PstnCtx)
-%%           Actions = list() of (tuple() | atom())
+%%           Actions = [tuple() | atom()]
 %%           Request = request record()
 %%           YxaCtx  = yxa_ctx record()
 %%           PstnCtx = pstn_ctx record(), context for this request

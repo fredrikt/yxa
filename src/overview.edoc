@@ -1,0 +1,79 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Top level source directory
+
+@doc This is the least organized part of the YXA source directory. In
+     the early days, all files were in this directory, and we haven't
+     succeeded in finding more suitable groupings for them all yet.
+
+     Things of interest :
+
+=== Applications ===
+
+<ul>
+  <li><a href="incomingproxy.html">incomingproxy</a>:
+  	 Main application for servicing one or more domains.
+  </li>
+  <li><a href="appserver.html">appserver</a>:
+  	 Handles forking and more complex call routings (CPL).
+  </li>
+  <li><a href="outgoingproxy.html">outgoingproxy</a>:
+  	 Helps clients get the SIP signalling through NATs (no RTP proxy support!).
+  </li>
+  <li><a href="event/eventserver.html">eventserver</a>:
+  	 Handle SIP event packages, SUBSCRIBE/NOTIFY/PUBLISH (in subdirectory event/).
+  </li>
+  <li><a href="pstnproxy.html">pstnproxy</a>:
+  	 A SIP application level gateway to put in front of insecure PSTN gateways.
+  </li>
+</ul>
+
+
+=== Parsing ===
+
+<ul>
+  <li><a href="keylist.html">keylist</a>:
+  	 SIP header manipulation functions.
+  </li>
+  <li><a href="sipurl.html">sipurl</a>:
+  	 Parses SIP URLs.
+  </li>
+  <li><a href="contact.html">contact</a>:
+  	 Parses contacts (URLs inside &lt;&gt;)
+  </li>
+  <li><a href="sippacket.html">sippacket</a>:
+  	 Parses complete SIP messages we receive.
+  </li>
+  <li><a href="sipparse_util.html">sipparse_util</a>:
+  	 Parsing utility functions.
+  </li>
+</ul>
+
+
+=== Proxying ===
+
+<ul>
+  <li><a href="sippipe.html">sippipe</a>:
+  	 Sequentially tries a list of destinations, and 'pipes' responses to a
+	 server transaction.
+  </li>
+  <li><a href="pstnproxy.html">sipproxy</a>:
+  	 Forking engine. Can try destinations in parallell, or sequentially.
+  </li>
+</ul>
+
+
+=== DNS ===
+
+<ul>
+  <li><a href="sipdst.html">sipdst</a>:
+  	 Create 'destination lists'.
+  </li>
+  <li><a href="dnsutil.html">dnsutil</a>:
+  	 DNS resolving code.
+  </li>
+</ul>
+

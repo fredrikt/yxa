@@ -509,7 +509,7 @@ get_sipusers_using_contact(URI) when is_record(URI, sipurl) ->
 %% Descrip.: Fetch the complete siplocationdb_e records for all
 %%           registrations of a specific concact (location database
 %%           binding).
-%% Returns : {atomic, LDBEs}
+%% Returns : {ok, LDBEs}
 %%           LDBEs = list() of siplocationdb_e record()
 %%--------------------------------------------------------------------
 get_locations_using_contact(URI) when is_record(URI, sipurl) ->

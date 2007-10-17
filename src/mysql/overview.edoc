@@ -1,0 +1,16 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title MySQL client
+
+@doc This is the Erlang MySQL driver, originally written by Magnus Ahltorp.
+     Great care has been taken to make this code not depend on any other
+     part of the YXA source tree, in order to be easily re-used by other
+     projects.
+
+     Generation of documentation is currently not done, because before we
+     translate all function documentations for these modules into edoc
+     format we have to merge back changes done by Process One and also by
+     Yariv Sadan.

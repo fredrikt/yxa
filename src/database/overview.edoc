@@ -1,0 +1,38 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Mnesia database table access modules
+
+@doc This directory holds modules used to manipulate and query various
+     Mnesia tables we use.
+
+=== Modules ===
+
+<ul>
+  <li>database_eventdata:	Published state for various events, used by
+				the subscribe/notify mechanisms in the eventserver
+				application.
+  </li>
+
+  <li>database_forward:		Forwarding locations for SIP users - not really
+                        	supported, due to lack of documentation and test code.
+  </li>
+
+  <li>database_gruu:		Stores GRUUs we assign.
+  </li>
+
+  <li>database_regexproute:	Stores regular expressions used for address
+                            	manipulations done in the incomingproxy application.
+  </li>
+
+  <li>phone:			Location database as well as Mnesia user database
+  				access code.
+  </li>
+
+  <li>table_update:		Code for table transformations if the records
+				defining the Mnesia tables change.
+  </li>
+
+</ul>

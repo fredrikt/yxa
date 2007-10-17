@@ -1,0 +1,18 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title CPL (call processing language) subsystem
+
+@doc This is the CPL subsystem in YXA. It is used by the appserver application
+     to provide users with the possibility to manage their call routing almost
+     ad infinitum.
+
+     It was written by Håkan Stenholm in 2004-2005     , sponsored by Sektionen
+     för IT och media, Stockholm university. It contains an (almost) complete
+     iCalendar implementation in Erlang. Hålan wrote a small paper about this
+     subsystem which is available
+     <a href="http://www.stacken.kth.se/project/yxa/documentation.html">here</a>.
+
+     The interface is through the module <a href="interpret_cpl.html">interface_cpl</a>.

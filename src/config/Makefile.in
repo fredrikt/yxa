@@ -76,3 +76,12 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 .erl.beam:
 	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -W +debug_info $<
+
+doc:
+	mkdir -p ../../doc/html/src/config
+	cp $(srcdir)/overview.edoc ../../doc/html/src/config/
+	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
+		-yxa_edoc_dir ../../doc/html/src/config \
+		-yxa_edoc_srcpath $(srcdir) \
+		-run yxa_edoc run "$(erl_FILES)" \
+		-run init stop

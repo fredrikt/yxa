@@ -17,6 +17,8 @@
 	  
 %% XXX can we assume that fields with the same names have the same possible types ?
 
+%% @type     request() = #request{}.
+%%              SIP request record, containing 'method', 'uri', 'header' and 'body'.
 -record(request, {
 	  method, % string(), type of request e.g. "REGISTER", "ACK", "CANCEL", "BYE", "INVITE", "MESSAGE" etc.
 	  uri,    % sipurl record()

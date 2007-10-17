@@ -61,6 +61,9 @@ clean:
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out erl_crash.dump
 
+doc:
+	@echo No need to 'make doc' in here - no source files
+
 SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES:
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in

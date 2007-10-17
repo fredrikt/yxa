@@ -1,0 +1,11 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Transaction layer
+
+@doc This is a rather straight forward implementation of a SIP transaction layer,
+     as described in RFC3261.
+
+     The main interface to this subsystem is <a href="transactionlayer.html">transactionlayer</a>.

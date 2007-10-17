@@ -277,7 +277,7 @@ default_url2mnesia_userlist(_URL) ->
 %%--------------------------------------------------------------------
 canonify_user(User) when is_list(User) ->
     ?CHECK_EXPORTED({canonify_user, 1},
-		    ?LOCAL_MODULE:canonfiy_user(User),
+		    ?LOCAL_MODULE:canonify_user(User),
 		    default_canonify_user(User)
 		   ).
 
@@ -309,7 +309,7 @@ default_canonify_user(Fulluser) ->
 %%--------------------------------------------------------------------
 canonify_addresses(In) when is_list(In) ->
     ?CHECK_EXPORTED({canonify_addresses, 1},
-		    ?LOCAL_MODULE:canonfiy_addresses(In),
+		    ?LOCAL_MODULE:canonify_addresses(In),
 		    default_canonify_addresses(In)
 		   ).
 

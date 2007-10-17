@@ -1,0 +1,28 @@
+			-*- html -*-
+
+	YXA source code documentation
+
+
+@title Transport layer
+
+@doc This is a rather straight forward implementation of a SIP transport layer,
+     as described in RFC3261.
+
+     If you need to parse SSL certificates, then look at <a href="ssl_util.html">ssl_util</a>.
+
+     There is a stand alone STUN server (RFC3489-bis03 - incomplete) in <a href="stun.html">here</a>.
+
+     The main interface to the network send/receive code is <a href="sipsocket.html">sipsocket</a>.
+
+     The main interface for sending requests/responses (statelessly) and adding/removing
+     destinations from the transport layer blacklist is <a href="transportlayer.html">transportlayer</a>.
+
+=== Transports ===
+
+<ul>
+   <li><a href="sipsocket_tcp.html">TCP and TLS</a></li>
+   <li><a href="sipsocket_udp.html">UDP</a></li>
+</ul>
+<ul>
+   <li><a href="sipsocket_test.html">Test</a></li>
+</ul>
