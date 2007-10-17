@@ -168,7 +168,7 @@ none_to_no_value_atom(SubField, Val) ->
 %% compare complete URIs according to protocol (SIP)
 compare_address_or_address_part(ReqVal, Val) when is_record(ReqVal, sipurl), is_list(Val) ->
     ValURI = sipurl:parse(Val),
-    sipurl:url_is_equal(ValURI, Val);
+    sipurl:url_is_equal(ReqVal, ValURI);
 
 %% values are case insensitive
 compare_address_or_address_part({'address-type', ReqVal}, Val) ->
@@ -491,12 +491,12 @@ parse_accept_language(Str) ->
     %% all errors in parse_accept_language/1, rather than returning 
     %% sipparse_util:split_fields/2 for some of them
     try begin
-	    case sipparse_util:split_fields(Str, $;) of
+	    case catch sipparse_util:split_fields(Str, $;) of
 		{Lang} ->
 		    {1.0, xml_parse_util:is_language_range(string:strip(Lang))};
-		{Lang, QPart} ->
-		    case sipparse_util:split_fields(QPart, $=) of
-			{Q, QValStr} ->
+		{Lang, QPart} when is_list(Lang), is_list(QPart) ->
+		    case catch sipparse_util:split_fields(QPart, $=) of
+			{Q, QValStr} when is_list(Q), is_list(QValStr) ->
 			    QVal = sipparse_util:str_to_qval(string:strip(QValStr)),
 			    case string:strip(Q) of
 				"Q" -> {QVal, xml_parse_util:is_language_range(string:strip(Lang))};
@@ -506,7 +506,7 @@ parse_accept_language(Str) ->
 			_ ->
 			    throw({error, malformed_accept_language_element})
 		    end;
-		_ ->
+		{error, _} ->
 		    throw({error, malformed_accept_language_element})
 	    end
 	end
