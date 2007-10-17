@@ -1,9 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : local_su_se.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Local functionality for Stockholm university (su.se).
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Local functionality for Stockholm university (su.se).
 %%%
-%%% Created : 10 May 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    10 May 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @hidden
 %%%-------------------------------------------------------------------
 -module(local_su_se).
 
@@ -158,7 +160,7 @@ get_classes_for_user_in_domain2(User, Dn, []) ->
 	      [User, Dn]),
     nomatch.
 
-    
+
 get_telephonenumber_for_user("ft.sip1") ->
     "1225";
 get_telephonenumber_for_user("ft.sip2") ->

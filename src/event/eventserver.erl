@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : eventserver.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Event package server framework (RFC3265).
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Event package server framework (RFC3265).
 %%%
-%%% Created : 26 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    26 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(eventserver).
 
@@ -47,9 +48,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA applications must export an init/0 function.
-%% Returns : yxa_app_init record()
+%% @spec    () -> #yxa_app_init{}
+%%
+%% @doc     YXA applications must export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     %% This is a table listing processes interested in hearing about changes to different
@@ -80,11 +83,14 @@ init() ->
 		 }.
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: YXA applications must export a request/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Request, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a request/2 function.
+%% @end
 %%--------------------------------------------------------------------
 request(Request, YxaCtx) ->
     THandler = YxaCtx#yxa_ctx.thandler,
@@ -183,11 +189,14 @@ request2(Request, YxaCtx) when is_record(Request, request) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, YxaCtx)
-%%           Request = response record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: YXA applications must export a response/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Response, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #response{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a response/2 function.
+%% @end
 %%--------------------------------------------------------------------
 response(Response, YxaCtx) when is_record(Response, response) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
@@ -196,10 +205,14 @@ response(Response, YxaCtx) when is_record(Response, response) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Mode)
-%%           Mode = shutdown | graceful | atom()
-%% Descrip.: YXA applications must export a terminate/1 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Mode) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Mode = shutdown | graceful | atom()
+%%
+%% @doc     YXA applications must export a terminate/1 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Mode) when is_atom(Mode) ->
     Now = util:timestamp(),
@@ -232,14 +245,16 @@ terminate_wait(N) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: event(EventPackage, Request, YxaCtx)
-%%           EventPackage = string()
-%%           Request      = request record()
-%%           YxaCtx       = yxa_ctx record()
-%% Descrip.: Eventserver has received a new request from the transact-
-%%           ion layer (on a new dialog). It is either a SUBSCRIBE or
-%%           a PUBLISH for which we could figure out an event package.
-%% Returns : void()
+%% @spec    (EventPackage, Request, YxaCtx) -> void()
+%%
+%%            EventPackage = string()
+%%            Request      = #request{}
+%%            YxaCtx       = #yxa_ctx{}
+%%
+%% @doc     Eventserver has received a new request from the transact-
+%%          ion layer (on a new dialog). It is either a SUBSCRIBE or
+%%          a PUBLISH for which we could figure out an event package.
+%% @end
 %%--------------------------------------------------------------------
 event(EventPackage, Request, YxaCtx) ->
     #yxa_ctx{app_logtag   = LogTag,
@@ -260,16 +275,18 @@ event(EventPackage, Request, YxaCtx) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: event2(Request, YxaCtx, Module, EventPackage)
-%%           Request      = request record()
-%%           YxaCtx       = yxa_ctx record()
-%%           Module       = atom()
-%%           EventPackage = string()
-%% Descrip.: If the request we received was a SUBSCRIBE, we start an
-%%           subscription domain controller process to handle the new
-%%           dialog. If it was something else (read: PUBLISH) we pass
-%%           it to the package modules request function.
-%% Returns : void()
+%% @spec    (Request, YxaCtx, Module, EventPackage) -> void()
+%%
+%%            Request      = #request{}
+%%            YxaCtx       = #yxa_ctx{}
+%%            Module       = atom()
+%%            EventPackage = string()
+%%
+%% @doc     If the request we received was a SUBSCRIBE, we start an
+%%          subscription domain controller process to handle the new
+%%          dialog. If it was something else (read: PUBLISH) we pass
+%%          it to the package modules request function.
+%% @end
 %%--------------------------------------------------------------------
 event2(#request{method = "SUBSCRIBE"} = Request, YxaCtx, Module, EventPackage) ->
     case subscription:start(Request, YxaCtx, Module, EventPackage, undefined) of
@@ -324,19 +341,23 @@ event2(Request, YxaCtx, Module, EventPackage) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: authenticate_subscriber(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: The event package has requested that we authenticate the
-%%           user who sent us this request. Do WWW _OR_ Proxy-
-%%           authentication since there has been cases where a client
-%%           first got a 407 from 'incomingproxy', sent a new request
-%%           with proxy credentials, got a 401 from the eventserver
-%%           and sent a new request with www credentials but without
-%%           the proxy credentials, which of course caused the
-%%           incomingproxy to one again require proxy authentication.
-%% Returns : {true, AuthUser} | false | drop
-%%           AuthUser = string()
+%% @spec    (Request, YxaCtx) ->
+%%            {true, AuthUser} | false | drop
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%%            AuthUser = string()
+%%
+%% @doc     The event package has requested that we authenticate the
+%%          user who sent us this request. Do WWW _OR_ Proxy-
+%%          authentication since there has been cases where a client
+%%          first got a 407 from 'incomingproxy', sent a new request
+%%          with proxy credentials, got a 401 from the eventserver
+%%          and sent a new request with www credentials but without
+%%          the proxy credentials, which of course caused the
+%%          incomingproxy to one again require proxy authentication.
+%% @end
 %%--------------------------------------------------------------------
 authenticate_subscriber(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     #yxa_ctx{app_logtag	= LogTag,
@@ -396,14 +417,19 @@ authenticate_subscriber(Request, YxaCtx) when is_record(Request, request), is_re
 
 
 %%--------------------------------------------------------------------
-%% Function: get_event_package_module(EventPackage, Request, YxaCtx)
-%%           EventPackage = string()
-%%           Request      = request record()
-%%           YxaCtx       = yxa_ctx record()
-%% Descrip.: Get branch from server transaction handler and then
-%%           remove the -UAS suffix. The result is used as a tag
-%%           when logging actions.
-%% Returns : BranchBase = string()
+%% @spec    (EventPackage, Request, YxaCtx) ->
+%%            BranchBase
+%%
+%%            EventPackage = string()
+%%            Request      = #request{}
+%%            YxaCtx       = #yxa_ctx{}
+%%
+%%            BranchBase = string()
+%%
+%% @doc     Get branch from server transaction handler and then remove
+%%          the -UAS suffix. The result is used as a tag when logging
+%%          actions.
+%% @end
 %%--------------------------------------------------------------------
 get_event_package_module(EventPackage, Request, YxaCtx) ->
     case local:get_event_package_module(EventPackage, Request, YxaCtx) of
@@ -420,10 +446,14 @@ get_event_package_module(EventPackage, Request, YxaCtx) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_allowed_events()
-%% Descrip.: Get a list of all event packages for which we have a
-%%           handler. For use in OPTIONS replys.
-%% Returns : Packages = list() of string()
+%% @spec    () ->
+%%            Packages
+%%
+%%            Packages = [string()]
+%%
+%% @doc     Get a list of all event packages for which we have a
+%%          handler. For use in OPTIONS replys.
+%% @end
 %%--------------------------------------------------------------------
 get_allowed_events() ->
     {ok, L} = local:get_all_event_packages(),
@@ -432,23 +462,31 @@ get_allowed_events() ->
     lists:usort(PL).
 
 %%--------------------------------------------------------------------
-%% Function: get_event_package_modules()
-%% Descrip.: Get a list of all event package modules, to call each of
-%%           their's init/0 function from our init/0 function.
-%% Returns : Packages = list() of string()
+%% @spec    () ->
+%%            Packages
+%%
+%%            Packages = [string()]
+%%
+%% @doc     Get a list of all event package modules, to call each of
+%%          their's init/0 function from our init/0 function.
+%% @end
 %%--------------------------------------------------------------------
 get_event_modules() ->
     {ok, L} = local:get_all_event_packages(),
     [Module || {_Package, Module} <- L].
 
 %%--------------------------------------------------------------------
-%% Function: make_extraheaders(Status, ExtraHeaders_In)
-%%           Status          = integer(), SIP status code of response
-%%                                        we are creating
-%%           ExtraHeaders_In = list() of {Key, ValueL}
-%% Descrip.: Create ExtraHeaders to use when sending responses.
-%%           Include Server: and Allow-Event: headers as appropriate.
-%% Returns : ExtraHeaders = list() of {Key, ValueL}
+%% @spec    (Status, ExtraHeaders_In) ->
+%%            ExtraHeaders
+%%
+%%            Status          = integer() "SIP status code of response we are creating"
+%%            ExtraHeaders_In = [{Key, ValueL}]
+%%
+%%            ExtraHeaders = [{Key, ValueL}]
+%%
+%% @doc     Create ExtraHeaders to use when sending responses. Include
+%%          Server: and Allow-Event: headers as appropriate.
+%% @end
 %%--------------------------------------------------------------------
 make_extraheaders(Status, ExtraHeaders_In) ->
     Server =
@@ -475,9 +513,11 @@ make_extraheaders(Status, ExtraHeaders_In) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     ok = eventserver_test:test(),

@@ -1,8 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipauth.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: SIP authentication functions.
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      SIP authentication functions.
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipauth).
 
@@ -38,10 +39,11 @@
 %% resp = H(H(A1) ":" nonce ":" H(A2))
 
 %%--------------------------------------------------------------------
-%% Function: realm()
-%% Descrip.: Return this proxys configured authentication realm, or
-%%           the hostname if no realm has been configured.
-%% Returns : string()
+%% @spec    () -> string()
+%%
+%% @doc     Return this proxys configured authentication realm, or the
+%%          hostname if no realm has been configured.
+%% @end
 %%--------------------------------------------------------------------
 realm() ->
     case yxa_config:get_env(sipauth_realm) of
@@ -52,55 +54,64 @@ realm() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_nonce(Timestamp)
-%%           Timestamp = string(), current time in hex
-%% Descrip.: Create a nonce. Since we have not located any useful
-%%           randomness functions in Erlang, and since all proxys that
-%%           share authentication realm should be able to use the
-%%           responses to the challenges we create here, we use the
-%%           current time plus the configured sipauth_password.
-%% Returns : string()
+%% @spec    (Timestamp) -> string()
+%%
+%%            Timestamp = string() "current time in hex"
+%%
+%% @doc     Create a nonce. Since we have not located any useful
+%%          randomness functions in Erlang, and since all proxys that
+%%          share authentication realm should be able to use the
+%%          responses to the challenges we create here, we use the
+%%          current time plus the configured sipauth_password.
+%% @end
 %%--------------------------------------------------------------------
 get_nonce(Timestamp) when is_list(Timestamp) ->
     {ok, Password} = yxa_config:get_env(sipauth_password, ""),
     hex:to(erlang:md5([Timestamp, ":", Password])).
 
 %%--------------------------------------------------------------------
-%% Function: get_challenge()
-%% Descrip.: Create a challenge tuple.
-%% Returns : Challenge
-%%           Challenge = {Realm, Nonce, Timestamp}
-%%           Realm     = string()
-%%           Nonce     = string()
-%%           Timestamp = string()
+%% @spec    () ->
+%%            Challenge
+%%
+%%            Challenge = {Realm, Nonce, Timestamp}
+%%            Realm     = string()
+%%            Nonce     = string()
+%%            Timestamp = string()
+%%
+%% @doc     Create a challenge tuple.
+%% @end
 %%--------------------------------------------------------------------
 get_challenge() ->
     Timestamp = hex:to(util:timestamp(), 8),
     {realm(), get_nonce(Timestamp), Timestamp}.
 
 %%--------------------------------------------------------------------
-%% Function: get_response(Nonce, Method, URIstr, User, Password)
+%% @spec    (Nonce, Method, URIstr, User, Password) -> term()
+%%
 %% @equiv    get_response(Nonce, Method, URIstr, User, Password, realm())
-%% Returns : term()
+%% @end
 %%--------------------------------------------------------------------
 get_response(Nonce, Method, URIstr, User, Password) ->
     Realm = realm(),
     get_response(Nonce, Method, URIstr, User, Password, Realm).
 
 %%--------------------------------------------------------------------
-%% Function: get_response(Nonce, Method, URIstr, User, Password,
-%%                        Realm)
-%%           Nonce    = string()
-%%           Method   = string()
-%%           URIstr   = string()
-%%           User     = string()
-%%           Password = string() | nomatch
-%%           Realm    = string()
-%% Descrip.: Get the correct response to a challenge, given a nonce,
-%%           method, URI, username and password.
-%% Returns : Response |
-%%           none
-%%           Response = string()
+%% @spec    (Nonce, Method, URIstr, User, Password, Realm) ->
+%%            Response |
+%%            none
+%%
+%%            Nonce    = string()
+%%            Method   = string()
+%%            URIstr   = string()
+%%            User     = string()
+%%            Password = string() | nomatch
+%%            Realm    = string()
+%%
+%%            Response = string()
+%%
+%% @doc     Get the correct response to a challenge, given a nonce,
+%%          method, URI, username and password.
+%% @end
 %%--------------------------------------------------------------------
 get_response(_Nonce, _Method, _URIstr, _User, nomatch, _Realm) ->
     %% Password is nomatch - return 'none'
@@ -111,17 +122,21 @@ get_response(Nonce, Method, URIstr, User, Password, Realm) ->
     hex:to(erlang:md5([A1, ":", Nonce, ":", A2])).
 
 %%--------------------------------------------------------------------
-%% Function: classify_number(Number, Regexps)
-%%           Number  = string() | none
-%%           Regexps = list() of {Regexp, Class}
-%%           Regexp  = string()
-%%           Class   = atom()
-%% Descrip.: Search a list of regexps until Number matches the Regexp
-%%           and return the Class.
-%% Returns : {ok, Class}   |
-%%           {ok, unknown} |
-%%           {error, E}
-%%           Class = atom()
+%% @spec    (Number, Regexps) ->
+%%            {ok, Class}   |
+%%            {ok, unknown} |
+%%            {error, E}
+%%
+%%            Number  = string() | none
+%%            Regexps = [{Regexp, Class}]
+%%            Regexp  = string()
+%%            Class   = atom()
+%%
+%%            Class = atom()
+%%
+%% @doc     Search a list of regexps until Number matches the Regexp
+%%          and return the Class.
+%% @end
 %%--------------------------------------------------------------------
 classify_number(none, _Regexps) ->
     {ok, unknown};
@@ -146,16 +161,20 @@ classify_number(Number, [{Regexp, Class} | Rest]) when is_list(Number), is_list(
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_user_verified(Header, Method)
-%%           Header = keylist record()
-%%           Method = string()
-%% Descrip.: Check if there is an Authorization: header in Header and
-%%           check if it contains a valid response of a challenge we
-%%           supposedly sent out.
-%% Returns : false                 |
-%%           {stale, User}         |
-%%           {authenticated, User}
-%%           User = string(), SIP authentication username
+%% @spec    (Header, Method) ->
+%%            false                 |
+%%            {stale, User}         |
+%%            {authenticated, User}
+%%
+%%            Header = #keylist{}
+%%            Method = string()
+%%
+%%            User = string() "SIP authentication username"
+%%
+%% @doc     Check if there is an Authorization: header in Header and
+%%          check if it contains a valid response of a challenge we
+%%          supposedly sent out.
+%% @end
 %%--------------------------------------------------------------------
 get_user_verified(Header, Method) ->
     case keylist:fetch('authorization', Header) of
@@ -168,20 +187,25 @@ get_user_verified(Header, Method) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_user_verified_proxy(Header, Method)
-%%           Header = keylist record()
-%%           Method = string()
-%% Descrip.: Check if there is an Proxy-Authorization: header in
-%%           Header and check if it contains a valid response of a
-%%           challenge we supposedly sent out. Might throw an
-%%           {siperror, ...} if something is wrong with the
-%%           authorization header.
-%% Returns : false                 |
-%%           {stale, User}         |
-%%           {authenticated, User} |
-%%           throw({siperror, ...})
-%%           User = string(), SIP authentication username
-%% Notes   : XXX we should verify the URI too
+%% @spec    (Header, Method) ->
+%%            false                 |
+%%            {stale, User}         |
+%%            {authenticated, User} 
+%%
+%%            Header = #keylist{}
+%%            Method = string()
+%%
+%%            User = string() "SIP authentication username"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Check if there is an Proxy-Authorization: header in Header
+%%          and check if it contains a valid response of a challenge
+%%          we supposedly sent out. Might throw an {siperror, ...} if
+%%          something is wrong with the authorization header. Notes :
+%%          XXX we should verify the URI too
+%% @end
 %%--------------------------------------------------------------------
 get_user_verified_proxy(Header, Method) ->
     case keylist:fetch('proxy-authorization', Header) of
@@ -194,19 +218,25 @@ get_user_verified_proxy(Header, Method) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_user_verified_yxa_peer(Header, Method)
-%%           Header = keylist record()
-%%           Method = string()
-%% Descrip.: Check if there is an X-YXA-Peer-Auth: header in Header
-%%           and check if it authorizes this request. Might throw an
-%%           {siperror, ...} if something is wrong with the
-%%           authorization header.
-%% Returns : false                 |
-%%           {stale, User}         |
-%%           {authenticated, User} |
-%%           throw({siperror, ...})
-%%           User = string(), SIP authentication username
-%% Notes   : XXX we should verify the URI too
+%% @spec    (Header, Method) ->
+%%            false                 |
+%%            {stale, User}         |
+%%            {authenticated, User} 
+%%
+%%            Header = #keylist{}
+%%            Method = string()
+%%
+%%            User = string() "SIP authentication username"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Check if there is an X-YXA-Peer-Auth: header in Header and
+%%          check if it authorizes this request. Might throw an
+%%          {siperror, ...} if something is wrong with the
+%%          authorization header. Notes : XXX we should verify the
+%%          URI too
+%% @end
 %%--------------------------------------------------------------------
 get_user_verified_yxa_peer(Header, Method) ->
     case keylist:fetch('x-yxa-peer-auth', Header) of
@@ -251,15 +281,20 @@ get_user_verified_yxa_peer2(_Header, _Method, [], _Realm, LastRes) ->
 %%    erlang:fault({error, "GSSAPI code broken and not yet fixed"});
 
 %%--------------------------------------------------------------------
-%% Function: get_user_verified2(Method, AuthDicts, Header)
-%%           Method    = string()
-%%           AuthDicts = list() of dict(), the authorization data
-%%           Header    = keylist record()
-%% Descrip.: Authenticate a request.
-%% Returns : {authenticated, User} |
-%%           {stale, User}         |
-%%           false                 |
-%%           throw({siperror, ...})
+%% @spec    (Method, AuthDicts, Header) ->
+%%            {authenticated, User} |
+%%            {stale, User}         |
+%%            false
+%%
+%%            Method    = string()
+%%            AuthDicts = [dict()] "the authorization data"
+%%            Header    = #keylist{}
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Authenticate a request.
+%% @end
 %%--------------------------------------------------------------------
 get_user_verified2(Method, AuthDicts, Header) ->
     get_user_verified2(Method, AuthDicts, Header, false).
@@ -343,15 +378,17 @@ do_get_user_verified2(Method, User, OrigUser, Password, Realm, Now, AuthDict) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_auth_filter_realm(In, Realm, Name)
-%%           In    = list() of string(), auth header values
-%%           Realm = string(), this proxys realm
-%%           Name  = string(), description of header we are parsing
-%% Descrip.: Parse a number of auth-header values (auth headers are
-%%           Proxy-Authorization, Authorization and X-YXA-Peer-Auth)
-%%           with sipheader:auth/1 and return the ones whose realm
-%%           matches Realm.
-%% Returns : list() of dict()
+%% @spec    (In, Realm, Name) -> [dict()]
+%%
+%%            In    = [string()] "auth header values"
+%%            Realm = string() "this proxys realm"
+%%            Name  = string() "description of header we are parsing"
+%%
+%% @doc     Parse a number of auth-header values (auth headers are
+%%          Proxy-Authorization, Authorization and X-YXA-Peer-Auth)
+%%          with sipheader:auth/1 and return the ones whose realm
+%%          matches Realm.
+%% @end
 %%--------------------------------------------------------------------
 parse_auth_filter_realm(In, Realm, Name) when is_list(Name), is_list(In), is_list(Realm) ->
     parse_auth_filter_realm(In, Realm, Name, []).
@@ -371,19 +408,25 @@ parse_auth_filter_realm([H | T], Realm, Name, Res) when is_list(H) ->
     end;
 parse_auth_filter_realm([], _Realm, _Name, Res) ->
     lists:reverse(Res).
-    
+
 %%--------------------------------------------------------------------
-%% Function: pstn_get_user_verified(Header, Method)
-%%           Header = keylist record()
-%%           Method = string()
-%% Descrip.: Authenticate through X-YXA-Peer-Auth or, if that does not
-%%           exist, through Proxy-Authentication.
-%% Returns : false                      |
-%%           {stale, User}              |
-%%           {authenticated, User}      |
-%%           {peer_authenticated, User} |
-%%           throw({siperror, ...})
-%%           User = string(), SIP authentication username
+%% @spec    (Header, Method) ->
+%%            false                      |
+%%            {stale, User}              |
+%%            {authenticated, User}      |
+%%            {peer_authenticated, User} 
+%%
+%%            Header = #keylist{}
+%%            Method = string()
+%%
+%%            User = string() "SIP authentication username"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Authenticate through X-YXA-Peer-Auth or, if that does not
+%%          exist, through Proxy-Authentication.
+%% @end
 %%--------------------------------------------------------------------
 pstn_get_user_verified(Header, Method) when is_record(Header, keylist), is_list(Method) ->
     case get_user_verified_yxa_peer(Header, Method) of
@@ -396,15 +439,18 @@ pstn_get_user_verified(Header, Method) when is_record(Header, keylist), is_list(
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_allowed_pstn_dst(User, ToNumber, Header, Class)
-%%           User     = string()
-%%           ToNumber = string(), destination, local or E.164 number
-%%           Header   = keylist record()
-%%           Class    = atom()
-%% Descrip.: Check if a given User is explicitly allowed to call a
-%%           number in a given Class.
-%% Returns : true  |
-%%           false
+%% @spec    (User, ToNumber, Header, Class) ->
+%%            true  |
+%%            false
+%%
+%%            User     = string()
+%%            ToNumber = string() "destination, local or E.164 number"
+%%            Header   = #keylist{}
+%%            Class    = atom()
+%%
+%% @doc     Check if a given User is explicitly allowed to call a
+%%          number in a given Class.
+%% @end
 %%--------------------------------------------------------------------
 is_allowed_pstn_dst(User, _ToNumber, _Header, Class) ->
     case local:get_classes_for_user(User) of
@@ -415,14 +461,17 @@ is_allowed_pstn_dst(User, _ToNumber, _Header, Class) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: can_use_address(User, URL)
-%%           User    = string()
-%%           URL     = sipurl record()
-%% Descrip.: Check if a given User may use address Address as From:
-%%           by using the function can_use_address_detail/2 not caring
-%%           about the reason it returns.
-%% Returns : true  |
-%%           false
+%% @spec    (User, URL) ->
+%%            true  |
+%%            false
+%%
+%%            User = string()
+%%            URL  = #sipurl{}
+%%
+%% @doc     Check if a given User may use address Address as From: by
+%%          using the function can_use_address_detail/2 not caring
+%%          about the reason it returns.
+%% @end
 %%--------------------------------------------------------------------
 can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
     case local:can_use_address_detail(User, URL) of
@@ -431,13 +480,17 @@ can_use_address(User, URL) when is_list(User), is_record(URL, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: can_use_address_detail(User, URL)
-%%           User    = string()
-%%           URL     = sipurl record()
-%% Descrip.: Check if a given User may use address Address as From:
-%% Returns : {Verdict, Reason}
-%%           Verdict = true | false
-%%           Reason  = ok | eperm | nomatch | error
+%% @spec    (User, URL) ->
+%%            {Verdict, Reason}
+%%
+%%            User = string()
+%%            URL  = #sipurl{}
+%%
+%%            Verdict = true | false
+%%            Reason  = ok | eperm | nomatch | error
+%%
+%% @doc     Check if a given User may use address Address as From:
+%% @end
 %%--------------------------------------------------------------------
 can_use_address_detail(User, URL) when is_list(User), is_record(URL, sipurl) ->
     can_use_address_detail2(User, URL, local:get_users_for_url(URL)).
@@ -473,18 +526,22 @@ can_use_address_detail2(User, URL, nomatch) when is_list(User), is_record(URL, s
     {false, nomatch}.
 
 %%--------------------------------------------------------------------
-%% Function: can_register(Header, ToURL)
-%%           Header = keylist record()
-%%           ToURL  = sipurl record()
-%% Descrip.: Check if a REGISTER message authenticates OK, and check
-%%           that the User returned from credentials check actually
-%%           may use this To: (NOT From:, so third party registrations
-%%           are not denied per se by this check).
-%% Returns : {{Verdict, Reason}, User} |
-%%           {stale, User}             |
-%%           {false, none}
-%%           Verdict = true | false
-%%           Reason  = ok | eperm | nomatch | error
+%% @spec    (Header, ToURL) ->
+%%            {{Verdict, Reason}, User} |
+%%            {stale, User}             |
+%%            {false, none}
+%%
+%%            Header = #keylist{}
+%%            ToURL  = #sipurl{}
+%%
+%%            Verdict = true | false
+%%            Reason  = ok | eperm | nomatch | error
+%%
+%% @doc     Check if a REGISTER message authenticates OK, and check
+%%          that the User returned from credentials check actually
+%%          may use this To: (NOT From:, so third party registrations
+%%          are not denied per se by this check).
+%% @end
 %%--------------------------------------------------------------------
 can_register(Header, ToURL) ->
     case local:get_user_verified(Header, "REGISTER") of
@@ -498,14 +555,19 @@ can_register(Header, ToURL) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: add_x_yxa_peer_auth(Method, URI, Header, User, Secret)
-%%           Method = string(), SIP method
-%%           URI    = sipurl record()
-%%           Header = keylist record()
-%%           User   = string()
-%%           Secret = string()
-%% Descrip.: Compute and add an X-YXA-Peer-Auth header to Header.
-%% Returns : NewHeader = keylist record()
+%% @spec    (Method, URI, Header, User, Secret) ->
+%%            NewHeader
+%%
+%%            Method = string() "SIP method"
+%%            URI    = #sipurl{}
+%%            Header = #keylist{}
+%%            User   = string()
+%%            Secret = string()
+%%
+%%            NewHeader = #keylist{}
+%%
+%% @doc     Compute and add an X-YXA-Peer-Auth header to Header.
+%% @end
 %%--------------------------------------------------------------------
 add_x_yxa_peer_auth(Method, URI, Header, User, Secret) when is_list(Method), is_record(URI, sipurl),
 							    is_record(Header, keylist), is_list(User),
@@ -513,18 +575,22 @@ add_x_yxa_peer_auth(Method, URI, Header, User, Secret) when is_list(Method), is_
     add_credentials(digest, "X-YXA-Peer-Auth", Method, URI, Header, User, Secret).
 
 %%--------------------------------------------------------------------
-%% Function: add_credentials(Type, HeaderName, Method, URI, Header,
-%%                           User, Secret)
-%%           Type       = atom(), only 'digest' supported so far!
-%%           HeaderName = string(), SIP header name
-%%           Method     = string(), SIP method
-%%           URI        = sipurl record()
-%%           Header     = keylist record()
-%%           User       = string()
-%%           Secret     = string()
-%% Descrip.: Compute and add a MD5 digest response header (HeaderName)
-%%           to a header.
-%% Returns : NewHeader = keylist record()
+%% @spec    (Type, HeaderName, Method, URI, Header, User, Secret) ->
+%%            NewHeader
+%%
+%%            Type       = atom() "only 'digest' supported so far!"
+%%            HeaderName = string() "SIP header name"
+%%            Method     = string() "SIP method"
+%%            URI        = #sipurl{}
+%%            Header     = #keylist{}
+%%            User       = string()
+%%            Secret     = string()
+%%
+%%            NewHeader = #keylist{}
+%%
+%% @doc     Compute and add a MD5 digest response header (HeaderName)
+%%          to a header.
+%% @end
 %%--------------------------------------------------------------------
 add_credentials(digest, HeaderName, Method, URI, Header, User, Secret)
   when is_list(HeaderName), is_list(Method), is_record(URI, sipurl), is_record(Header, keylist), is_list(User),
@@ -535,21 +601,23 @@ add_credentials(digest, HeaderName, Method, URI, Header, User, Secret)
     AuthStr = print_auth_response("Digest", User, Realm, URIstr,
 				  Response, Nonce, Opaque, "md5"),
     keylist:set(HeaderName, [AuthStr], Header).
-    
+
 %%--------------------------------------------------------------------
-%% Function: print_auth_response(AuthMethod, User, Realm, URIstr,
-%%                               Response, Nonce, Opaque, Algorithm)
-%%           AuthMethod = string()
-%%           User       = string()
-%%           Realm      = string()
-%%           URIstr     = string()
-%%           Response   = string()
-%%           Nonce      = string()
-%%           Opaque     = string()
-%%           Algorithm  = string()
-%% Descrip.: Construct a challenge response, given a bunch of in-
-%%           parameters.
-%% Returns : string()
+%% @spec    (AuthMethod, User, Realm, URIstr, Response, Nonce, Opaque,
+%%          Algorithm) -> string()
+%%
+%%            AuthMethod = string()
+%%            User       = string()
+%%            Realm      = string()
+%%            URIstr     = string()
+%%            Response   = string()
+%%            Nonce      = string()
+%%            Opaque     = string()
+%%            Algorithm  = string()
+%%
+%% @doc     Construct a challenge response, given a bunch of in-
+%%          parameters.
+%% @end
 %%--------------------------------------------------------------------
 print_auth_response(AuthMethod, User, Realm, URIstr, Response, Nonce, Opaque, Algorithm) ->
     Quote = "\"",
@@ -570,9 +638,11 @@ print_auth_response(AuthMethod, User, Realm, URIstr, Response, Nonce, Opaque, Al
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     autotest:mark(?LINE, "sipauth - 0"),
@@ -773,7 +843,7 @@ test() ->
     %% verify the usernames in the dicts
     {ok, "test1"} = dict:find("username", RealmFilterDict1),
     {ok, "test2"} = dict:find("username", RealmFilterDict2),
-    
+
     ok = yxa_test_config:stop(),
 
     ok.

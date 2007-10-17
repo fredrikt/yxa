@@ -1,12 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : presence_pidf.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Presence PIDF document store. Input and output for this
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Presence PIDF document store. Input and output for this
 %%%           module is always XML PIDF documents.
 %%%           PIDF is Presence Information Data Format, described in
 %%%           RFC3863.
 %%%
-%%% Created : 30 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    30 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(presence_pidf).
 
@@ -83,25 +84,28 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: Initialization code for presence_pidf.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Initialization code for presence_pidf.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: set_pidf_for_user(User, ETag, Expires, ContentType, XML,
-%%                             Ctx)
-%%           User        = string(), presentity username
-%%           ETag        = string(), presence ETag
-%%           Expires     = integer(), how many seconds this data is
-%%                         valid
-%%           ContentType = string(), "application/pidf+xml" | ...
-%%           XML         = string(), XML data
-%%           Ctx         = event_ctx record()
-%% Descrip.: Parse and store an PIDF XML associated with a presentity.
-%% Returns : ok | {error, Reason}
+%% @spec    (User, ETag, Expires, ContentType, XML, Ctx) ->
+%%            ok | {error, Reason}
+%%
+%%            User        = string() "presentity username"
+%%            ETag        = string() "presence ETag"
+%%            Expires     = integer() "how many seconds this data is valid"
+%%            ContentType = string() "\"application/pidf+xml\" | ..."
+%%            XML         = string() "XML data"
+%%            Ctx         = #event_ctx{}
+%%
+%% @doc     Parse and store an PIDF XML associated with a presentity.
+%% @end
 %%--------------------------------------------------------------------
 set_pidf_for_user(_User, _ETag, Expires, _ContentType, _XML, _Ctx) when is_integer(Expires) andalso
 								          (Expires < ?EXPIRES_LOWER_LIMIT orelse
@@ -133,18 +137,19 @@ set_pidf_for_user(User, ETag, Expires, ContentType, XML, Ctx) when is_list(User)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: update_pidf_for_user(User, ETag, NewEtag, Expires,
-%%                                ContentType, XML, Ctx)
-%%           User        = string(), presentity username
-%%           ETag        = string(), current ETag
-%%           NewETag     = string(), new ETag
-%%           Expires     = integer(), how many seconds this data is
-%%                         valid
-%%           ContentType = string(), "application/pidf+xml" | ...
-%%           XML         = string(), XML data
-%%           Ctx         = event_ctx record()
-%% Descrip.: Parse and update an PIDF XML associated with a presentity.
-%% Returns : ok | nomatch | {error, Reason}
+%% @spec    (User, ETag, NewEtag, Expires, ContentType, XML, Ctx) ->
+%%            ok | nomatch | {error, Reason}
+%%
+%%            User        = string() "presentity username"
+%%            ETag        = string() "current ETag"
+%%            NewETag     = string() "new ETag"
+%%            Expires     = integer() "how many seconds this data is valid"
+%%            ContentType = string() "\"application/pidf+xml\" | ..."
+%%            XML         = string() "XML data"
+%%            Ctx         = #event_ctx{}
+%%
+%% @doc     Parse and update an PIDF XML associated with a presentity.
+%% @end
 %%--------------------------------------------------------------------
 update_pidf_for_user(_User, _ETag, _NewEtag, Expires, _ContentType, _XML, _Ctx) when is_integer(Expires) andalso
 								                (Expires < ?EXPIRES_LOWER_LIMIT orelse
@@ -176,20 +181,23 @@ update_pidf_for_user(User, ETag, NewETag, Expires, ContentType, XML, Ctx) when i
 
 
 %%--------------------------------------------------------------------
-%% Function: refresh_pidf_user_etag(User, ETag, NewExpires, NewETag)
-%%           User       = string(), presentity username
-%%           ETag       = string(), presence ETag
-%%           NewExpires = integer(), how many more seconds this record
-%%                        is now valid (NOT util:timestamp/0 format)
-%%           NewETag    = string(), new ETag for this record
-%% Descrip.: Update the expiration time of the record for User with
-%%           etag ETag. Also changes the ETag to a new value, because
-%%           of how the RFC is written. I don't know why the ETag has
-%%           to change. As a validiator of sequentiality perhaps.
-%% Returns : ok | nomatch | {error, Reason}
-%%           Reason = atom
+%% @spec    (User, ETag, NewExpires, NewETag) ->
+%%            ok | nomatch | {error, Reason}
+%%
+%%            User       = string() "presentity username"
+%%            ETag       = string() "presence ETag"
+%%            NewExpires = integer() "how many more seconds this record is now valid (NOT util:timestamp/0 format)"
+%%            NewETag    = string() "new ETag for this record"
+%%
+%%            Reason = atom
+%%
+%% @doc     Update the expiration time of the record for User with
+%%          etag ETag. Also changes the ETag to a new value, because
+%%          of how the RFC is written. I don't know why the ETag has
+%%          to change. As a validiator of sequentiality perhaps.
+%% @end
 %%--------------------------------------------------------------------
-refresh_pidf_user_etag(_User, _ETag, NewExpires, _NewETag) when is_integer(NewExpires) andalso 
+refresh_pidf_user_etag(_User, _ETag, NewExpires, _NewETag) when is_integer(NewExpires) andalso
                                                                 (NewExpires < ?EXPIRES_LOWER_LIMIT orelse
                                                                  NewExpires > ?EXPIRES_UPPER_LIMIT) ->
     {error, expires_out_of_bounds};
@@ -205,18 +213,20 @@ refresh_pidf_user_etag(User, ETag, NewExpires, NewETag) when is_list(User) ->
     database_eventdata:refresh_presentity_etag({user, User}, ETag, UseExpires, NewETag).
 
 %%--------------------------------------------------------------------
-%% Function: get_pidf_xml_for_user(User, AcceptL)
-%%           User   = {fake_offline, AddrStr} | string(), presentity
-%%                    username
-%%             AddrStr = string(), presentity address string
-%%           Accept = list() of string(), content types the UA we are
-%%                    going to send the PIDF to accepts
-%% Descrip.: Return a Presence PIDF document for User. If User is
-%%           'none' we generate a fake offline presence document.
-%% Returns : {ok, ContentType, PIDF_document} |
-%%           {error, Reason}
-%%           ContentType   = string()
-%%           PIDF_document = io_list()
+%% @spec    (User, AcceptL) ->
+%%            {ok, ContentType, PIDF_document} |
+%%            {error, Reason}
+%%
+%%            User    = {fake_offline, AddrStr} | string() "presentity username"
+%%            AddrStr = string() "presentity address string"
+%%            Accept  = [string()] "content types the UA we are going to send the PIDF to accepts"
+%%
+%%            ContentType   = string()
+%%            PIDF_document = io_list()
+%%
+%% @doc     Return a Presence PIDF document for User. If User is
+%%          'none' we generate a fake offline presence document.
+%% @end
 %%--------------------------------------------------------------------
 get_pidf_xml_for_user({fake_offline, AddrStr}, AcceptL) when is_list(AddrStr), is_list(AcceptL) ->
     case get_best_accepted_content_type(AcceptL) of
@@ -288,22 +298,22 @@ get_pidf_xml_for_user(User, AcceptL) when is_list(User), is_list(AcceptL) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: output_pidf_xml(Type, Presentity, User, Tuples)
-%%           Type       = pidf | xpidf
-%%           Presentity = string(), "pres:" URL of presentity
-%%           User       = none | string(), presentity username
-%%           Tuples     = list() of string()
-%% Descrip.: Merge a bunch of XML tuples into a PIDF document of the
-%%           requested type. Tuples should be a list of XML presence
-%%           tuples, e.g. : [
-%%                         ```  "<tuple id=\"foo\">\n"
-%%                             "  <status>\n"
-%%                             "    <basic>open</basic>\n"
-%%                             "  </status>\n"
-%%                             "</tuple>\n"
-%%                         '''
-%%                          ]
-%% Returns : PIDF_XML = string(), PIDF document
+%% @spec    (Type, Presentity, User, Tuples) ->
+%%            PIDF_XML
+%%
+%%            Type       = pidf | xpidf
+%%            Presentity = string() "\"pres:\" URL of presentity"
+%%            User       = none | string() "presentity username"
+%%            Tuples     = [string()]
+%%
+%%            PIDF_XML = string() "PIDF document"
+%%
+%% @doc     Merge a bunch of XML tuples into a PIDF document of the
+%%          requested type. Tuples should be a list of XML presence
+%%          tuples, e.g. : [ ``` "<tuple id=\"foo\">\n" " <status>\n"
+%%          " <basic>open</basic>\n" " </status>\n" "</tuple>\n" '''
+%%          ]
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% application/pidf+xml or application/cpim-pidf+xml
@@ -378,11 +388,16 @@ output_pidf_xml(xpidf, Presentity, User, TuplesIn) when is_list(Presentity), is_
 
 
 %%--------------------------------------------------------------------
-%% Function: priority_sort_tuples(In)
-%%           In = list() of xmlElement record()
-%% Descrip.: Sort a number of PIDF tuples according to their
-%%           'priority' XML value.
-%% Returns : Out = list() of xmlElement record()
+%% @spec    (In) ->
+%%            Out
+%%
+%%            In = [#xmlElement{}]
+%%
+%%            Out = [#xmlElement{}]
+%%
+%% @doc     Sort a number of PIDF tuples according to their 'priority'
+%%          XML value.
+%% @end
 %%--------------------------------------------------------------------
 priority_sort_tuples(In) when is_list(In) ->
     lists:sort(fun sort_xml_presence_tuples/2, In).
@@ -412,25 +427,31 @@ sort_xml_presence_tuples_get_prio(#xmlElement{content = Content}) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_user_etag(User, ETag)
-%%           User = list(), SIP username of presentity
-%%           ETag = string(), ETag header value
-%% Descrip.: Fetch an eventdata_dbe record from the event database,
-%%           given a User and ETag.
-%% Returns : {ok, Entry} |
-%%           nomatch
-%%           Entry = evendata_dbe record()
+%% @spec    (User, ETag) ->
+%%            {ok, Entry} |
+%%            nomatch
+%%
+%%            User = list() "SIP username of presentity"
+%%            ETag = string() "ETag header value"
+%%
+%%            Entry = #evendata_dbe{}
+%%
+%% @doc     Fetch an eventdata_dbe record from the event database,
+%%          given a User and ETag.
+%% @end
 %%--------------------------------------------------------------------
 get_user_etag(User, ETag) when is_list(User), is_list(ETag) ->
     database_eventdata:fetch_using_presentity_etag({user, User}, ETag).
 
 %%--------------------------------------------------------------------
-%% Function: check_if_user_etag_exists(User, ETag)
-%%           User = list(), SIP username of presentity
-%%           ETag = string(), ETag header value
-%% Descrip.: Check if an entry exists in the event database for a User
-%%           and ETag.
-%% Returns : true | false
+%% @spec    (User, ETag) -> true | false
+%%
+%%            User = list() "SIP username of presentity"
+%%            ETag = string() "ETag header value"
+%%
+%% @doc     Check if an entry exists in the event database for a User
+%%          and ETag.
+%% @end
 %%--------------------------------------------------------------------
 check_if_user_etag_exists(User, ETag) when is_list(User), is_list(ETag) ->
     case get_user_etag(User, ETag) of
@@ -441,51 +462,58 @@ check_if_user_etag_exists(User, ETag) when is_list(User), is_list(ETag) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: delete_pidf_for_user(User)
-%%           User = list(), SIP username of presentity
-%% Descrip.: Delete an entry from the event data Mnesia database.
-%% Returns : ok
+%% @spec    (User) -> ok
+%%
+%%            User = list() "SIP username of presentity"
+%%
+%% @doc     Delete an entry from the event data Mnesia database.
+%% @end
 %%--------------------------------------------------------------------
 delete_pidf_for_user(User) when is_list(User) ->
     {atomic, ok} = database_eventdata:delete_using_presentity({user, User}),
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: delete_expired()
-%% Descrip.: Purge expired event data from the Mnesia database.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Purge expired event data from the Mnesia database.
+%% @end
 %%--------------------------------------------------------------------
 delete_expired() ->
     {ok, _} = database_eventdata:delete_expired(),
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: get_supported_content_types()
-%% Descrip.: Return a list of our supported content types as strings,
-%%           in the order of our preference (best first).
-%% Returns : list() of string()
+%% @spec    () -> [string()]
+%%
+%% @doc     Return a list of our supported content types as strings,
+%%          in the order of our preference (best first).
+%% @end
 %%--------------------------------------------------------------------
 get_supported_content_types() ->
     [E#pidf_type.name || E <- ?PIDF_TYPES].
 
 %%--------------------------------------------------------------------
-%% Function: get_supported_content_types(set)
-%% Descrip.: Return a list of the content types we allow a client to
-%%           PUBLISH/NOTIFY a PIDF document using.
-%% Returns : list() of string()
+%% @spec    (set) -> [string()]
+%%
+%% @doc     Return a list of the content types we allow a client to
+%%          PUBLISH/NOTIFY a PIDF document using.
+%% @end
 %%--------------------------------------------------------------------
 get_supported_content_types(set) ->
     %% We currently can't parse application/xpidf+xml, only output something that looks like it
     [E#pidf_type.name || E <- ?PIDF_TYPES] -- ["application/xpidf+xml"].
 
 %%--------------------------------------------------------------------
-%% Function: is_compatible_contenttype(PubOrSub, AcceptL)
-%%           PubOrSub = publish | subscribe
-%%           AcceptL  = list() of string(), Content-Type values
-%% Descrip.: Check if our peers list of content types are acceptable
-%%           for us, for this kind of operation (publish or
-%%           subscribe).
-%% Returns : true | false
+%% @spec    (PubOrSub, AcceptL) -> true | false
+%%
+%%            PubOrSub = publish | subscribe
+%%            AcceptL  = [string()] "Content-Type values"
+%%
+%% @doc     Check if our peers list of content types are acceptable
+%%          for us, for this kind of operation (publish or
+%%          subscribe).
+%% @end
 %%--------------------------------------------------------------------
 is_compatible_contenttype(PubOrSub, AcceptL) when is_atom(PubOrSub), is_list(AcceptL) ->
     case get_best_accepted_content_type(AcceptL) of
@@ -501,11 +529,16 @@ is_compatible_contenttype(PubOrSub, AcceptL) when is_atom(PubOrSub), is_list(Acc
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: content_type(ContentType)
-%%           ContentType = string(), must be lower cased
-%% Descrip.: Turn Content-Type into atom representation. ContentType
-%%           must be lower cased.
-%% Returns : Type = atom()
+%% @spec    (ContentType) ->
+%%            Type
+%%
+%%            ContentType = string() "must be lower cased"
+%%
+%%            Type = atom()
+%%
+%% @doc     Turn Content-Type into atom representation. ContentType
+%%          must be lower cased.
+%% @end
 %%--------------------------------------------------------------------
 content_type(Name) ->
     Res = [E#pidf_type.type || E <- ?PIDF_TYPES, E#pidf_type.name == Name],
@@ -515,14 +548,17 @@ content_type(Name) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_best_accepted_content_type(Accept)
-%%           Accept = list() of string(), our peers list of it's
-%%                    accepted content types
-%% Descrip.: Find the best Content-Type match between our preferred
-%%           ones, and the list our SIP peer says it supports.
-%% Returns : ContentType                         |
-%%           {error, no_acceptable_content_type}
-%%           ContentType = string()
+%% @spec    (Accept) ->
+%%            ContentType                         |
+%%            {error, no_acceptable_content_type}
+%%
+%%            Accept = [string()] "our peers list of it's accepted content types"
+%%
+%%            ContentType = string()
+%%
+%% @doc     Find the best Content-Type match between our preferred
+%%          ones, and the list our SIP peer says it supports.
+%% @end
 %%--------------------------------------------------------------------
 get_best_accepted_content_type(Accept) ->
     Preference = get_supported_content_types(),
@@ -544,15 +580,19 @@ get_best_accepted_content_type2([], _Accept) ->
     nomatch.
 
 %%--------------------------------------------------------------------
-%% Function: parse_pidf_xml(ContentType, XML)
-%%           ContentType = string(), ("application/pidf+xml" | ...)
-%%           XML         = string(), PIDF document
-%% Descrip.: Parse an XML document into our internal PIDF
-%%           representation (pidf_doc record()).
-%% Returns : {ok, PIDF_Doc}  |
-%%           {error, Reason}
-%%           PIDF_Doc = pidf_doc record()
-%%           Reason   = atom()
+%% @spec    (ContentType, XML) ->
+%%            {ok, PIDF_Doc}  |
+%%            {error, Reason}
+%%
+%%            ContentType = string() "(\"application/pidf+xml\" | ...)"
+%%            XML         = string() "PIDF document"
+%%
+%%            PIDF_Doc = #pidf_doc{}
+%%            Reason   = atom()
+%%
+%% @doc     Parse an XML document into our internal PIDF
+%%          representation (pidf_doc record()).
+%% @end
 %%--------------------------------------------------------------------
 parse_pidf_xml(ContentType, XML) ->
     case content_type(ContentType) of
@@ -626,11 +666,16 @@ parse_pidf_xml2(XML) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: normalize_entity(Entity)
-%%           Entity = string(), from presence entity attr in PIDFs
-%% Descrip.: Change sip: into pres: in presence entitys and normalize
-%%           some things people have gotten wrong at SIPits.
-%% Returns : Presentity = string()
+%% @spec    (Entity) ->
+%%            Presentity
+%%
+%%            Entity = string() "from presence entity attr in PIDFs"
+%%
+%%            Presentity = string()
+%%
+%% @doc     Change sip: into pres: in presence entitys and normalize
+%%          some things people have gotten wrong at SIPits.
+%% @end
 %%--------------------------------------------------------------------
 normalize_entity(Entity) ->
     Presentity1 =
@@ -653,13 +698,18 @@ normalize_entity(Entity) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_xml_attributes(Name, In)
-%%           Name = atom()
-%%           In   = list() of term()
-%% Descrip.: Look for xmlAttribute record() with name matching Name.
-%%           Extract the value elements of the xmlAttribute records
-%%           matching.
-%% Returns : Values = list() of string()
+%% @spec    (Name, In) ->
+%%            Values
+%%
+%%            Name = atom()
+%%            In   = [term()]
+%%
+%%            Values = [string()]
+%%
+%% @doc     Look for xmlAttribute record() with name matching Name.
+%%          Extract the value elements of the xmlAttribute records
+%%          matching.
+%% @end
 %%--------------------------------------------------------------------
 get_xml_attributes(Name, In) when is_atom(Name), is_list(In) ->
     get_xml_attributes2(Name, In, []).
@@ -674,12 +724,17 @@ get_xml_attributes2(_Name, [], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_xml_elements(Name, In)
-%%           Name = atom()
-%%           In   = list() of term()
-%% Descrip.: Look for xmlElement record() with name matching Name.
-%%           Return all matching xmlElement records.
-%% Returns : Elements = list() of xmlElement record()
+%% @spec    (Name, In) ->
+%%            Elements
+%%
+%%            Name = atom()
+%%            In   = [term()]
+%%
+%%            Elements = [#xmlElement{}]
+%%
+%% @doc     Look for xmlElement record() with name matching Name.
+%%          Return all matching xmlElement records.
+%% @end
 %%--------------------------------------------------------------------
 get_xml_elements(Name, In) when is_atom(Name), is_list(In) ->
     get_xml_elements2(Name, In, []).
@@ -695,10 +750,12 @@ get_xml_elements2(_Name, [], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_pidfs_for_user(User)
-%%           User = string(), presentity username
-%% Descrip.: Fetch all eventdata entrys matching our presentity.
-%% Returns : list() of eventdata_dbe record()
+%% @spec    (User) -> [#eventdata_dbe{}]
+%%
+%%            User = string() "presentity username"
+%%
+%% @doc     Fetch all eventdata entrys matching our presentity.
+%% @end
 %%--------------------------------------------------------------------
 get_pidfs_for_user(User) when is_list(User) ->
     case database_eventdata:fetch_using_presentity({user, User}) of
@@ -710,16 +767,20 @@ get_pidfs_for_user(User) when is_list(User) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_unique_tuples(Tuples)
-%%           Tuples = list() of string(), list of presence tuples in
-%%                    XML format
-%% Descrip.: Make a list of tuples with unique id's from a list that
-%%           might contain tuples with duplicate id's.
-%% NOTE    : We just ignore all but the first one for every Id. Which
-%%           one is the first is rather arbitrary. We should probably
-%%           keep the most recent tuple, or make unique ids based on
-%%           the tuple and where it came from or something.
-%% Returns : NewTuples = list() of string()
+%% @spec    (Tuples) ->
+%%            NewTuples
+%%
+%%            Tuples = [string()] "list of presence tuples in XML format"
+%%
+%%            NewTuples = [string()]
+%%
+%% @doc     Make a list of tuples with unique id's from a list that
+%%          might contain tuples with duplicate id's. NOTE : We just
+%%          ignore all but the first one for every Id. Which one is
+%%          the first is rather arbitrary. We should probably keep
+%%          the most recent tuple, or make unique ids based on the
+%%          tuple and where it came from or something.
+%% @end
 %%--------------------------------------------------------------------
 get_unique_tuples(Tuples) when is_list(Tuples) ->
     Parsed = [{get_tuple_id(E), E} || E <- Tuples],
@@ -753,9 +814,11 @@ get_tuple_id(Tuple) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -1182,7 +1245,7 @@ test_parse_xml(PIDF_XML1, PIDF_XML1_Tuple1) ->
 	"    <dm:note>Idle</dm:note>"
 	"  </dm:person>"
 	"</pr:presence>",
-    
+
     autotest:mark(?LINE, "parse_pidf_xml/2 - 2.1"),
     {ok, #pidf_data{type = ParseCT1,
 		    xml  = PIDF_XML2,
@@ -1195,7 +1258,7 @@ test_parse_xml(PIDF_XML1, PIDF_XML1_Tuple1) ->
     autotest:mark(?LINE, "parse_pidf_xml/2 - 2.2"),
     %% verify tuples
     test_verify_tuples([PIDF_XML2_Tuple1_with_NS], ParseCT_Tuples2),
-    
+
     {ok, ParseCT_Tuples1}.
 
 

@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : database_eventdata.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Eventdata database functions.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Eventdata database functions.
 %%%
-%%% Created :  3 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     3 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(database_eventdata).
 
@@ -44,7 +45,8 @@
 %%--------------------------------------------------------------------
 -define(MIN_ABSOLUTE_TIME, 1161388800).  %% refuse expiration times that would be before this
 
-%% private Mnesia record
+%% @type eventdata() = #eventdata{}.
+%%                     private Mnesia record
 -record(eventdata, {
 	  presentity,	%% term(), presentity this data belongs to ({user, User} | {address, AddressStr} | ...)
 	  entity_tag,	%% term(), event package record reference
@@ -69,20 +71,25 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: create()
-%% Descrip.: Invoke create/1 with the list of servers indicated by
-%%           the configuration parameter 'databaseservers'.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    () -> term() "result of mnesia:create_table/2."
+%%
+%% @doc     Invoke create/1 with the list of servers indicated by the
+%%          configuration parameter 'databaseservers'.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create() ->
     {ok, S} = yxa_config:get_env(databaseservers),
     create(S).
 
 %%--------------------------------------------------------------------
-%% Function: create(Servers)
-%%           Servers = list() of atom(), list of nodes
-%% Descrip.: Create the 'eventdata' table on Servers.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    (Servers) -> term() "result of mnesia:create_table/2."
+%%
+%%            Servers = [atom()] "list of nodes"
+%%
+%% @doc     Create the 'eventdata' table on Servers.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create(Servers) when is_list(Servers) ->
     mnesia:create_table(eventdata, [{attributes, record_info(fields, eventdata)},
@@ -93,15 +100,18 @@ create(Servers) when is_list(Servers) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: insert(PackageS, Presentity, ETag, Expires, Flags, Data)
-%%           PackageS   = string(), event package
-%%           Presentity = tuple(), {user, User} | {address, AddrStr}
-%%           ETag       = term(), event package record reference
-%%           Expires    = integer() | never
-%%           Flags      = list() of {Key, Value}, (for future use)
-%%           Data       = term(), event package data
-%% Descrip.: Create a new entry in the database.
-%% Returns : transaction_result()
+%% @spec    (PackageS, Presentity, ETag, Expires, Flags, Data) ->
+%%            transaction_result()
+%%
+%%            PackageS   = string() "event package"
+%%            Presentity = {user, User} | {address, AddrStr}
+%%            ETag       = term() "event package record reference"
+%%            Expires    = integer() | never
+%%            Flags      = [{Key, Value}] "(for future use)"
+%%            Data       = term() "event package data"
+%%
+%% @doc     Create a new entry in the database.
+%% @end
 %%--------------------------------------------------------------------
 insert(Package, Presentity, ETag, Expires, Flags, Data) when is_integer(Expires), Expires < ?MIN_ABSOLUTE_TIME ->
     erlang:error("time supplied to insert/6 should be absolute, not relative",
@@ -118,18 +128,21 @@ insert(Package, Presentity, ETag, Expires, Flags, Data) when is_list(Package), i
 			       }).
 
 %%--------------------------------------------------------------------
-%% Function: update(Package, Presentity, ETag, NewETag, Expires,
-%%                  Flags, Data)
-%%           PackageS   = string(), event package
-%%           Presentity = tuple(), {user, User} | {address, AddrStr}
-%%           ETag       = term(), event package record reference
-%%           NewETag    = term(), NEW event package record reference
-%%           Expires    = integer() | never
-%%           Flags      = list() of {Key, Value}, (for future use)
-%%           Data       = term(), event package data
-%% Descrip.: Update an existing element that matches Package,
-%%           Presentity and ETag.
-%% Returns : ok | nomatch | error
+%% @spec
+%%    (Package, Presentity, ETag, NewETag, Expires, Flags, Data) ->
+%%            ok | nomatch | error
+%%
+%%            PackageS   = string() "event package"
+%%            Presentity = {user, User} | {address, AddrStr}
+%%            ETag       = term() "event package record reference"
+%%            NewETag    = term() "NEW event package record reference"
+%%            Expires    = integer() | never
+%%            Flags      = [{Key, Value}] "(for future use)"
+%%            Data       = term() "event package data"
+%%
+%% @doc     Update an existing element that matches Package,
+%%          Presentity and ETag.
+%% @end
 %%--------------------------------------------------------------------
 update(Package, Presentity, ETag, NewETag, Expires, Flags, Data) when is_integer(Expires),
 								      Expires < ?MIN_ABSOLUTE_TIME ->
@@ -169,16 +182,18 @@ update(Package, Presentity, ETag, NewETag, Expires, Flags, Data) when is_list(Pa
 
 
 %%--------------------------------------------------------------------
-%% Function: refresh_presentity_etag(Presentity, ETag, NewExpires,
-%%                                  NewETag)
-%%           Presentity = tuple(), {user, User} | {address, AddrStr}
-%%           ETag       = term(), event package record reference
-%%           Expires    = integer()
-%%           Flags      = list() of {Key, Value}, (for future use)
-%%           Data       = term(), event package data
-%% Descrip.: Update the expires (and optionally entity_tag) element(s)
-%%           of a database record.
-%% Returns : ok | nomatch | error
+%% @spec    (Presentity, ETag, NewExpires, NewETag) ->
+%%            ok | nomatch | error
+%%
+%%            Presentity = {user, User} | {address, AddrStr}
+%%            ETag       = term() "event package record reference"
+%%            Expires    = integer()
+%%            Flags      = [{Key, Value}] "(for future use)"
+%%            Data       = term() "event package data"
+%%
+%% @doc     Update the expires (and optionally entity_tag) element(s)
+%%          of a database record.
+%% @end
 %%--------------------------------------------------------------------
 refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_integer(NewExpires),
 								    NewExpires < ?MIN_ABSOLUTE_TIME ->
@@ -211,21 +226,26 @@ refresh_presentity_etag(Presentity, ETag, NewExpires, NewETag) when is_tuple(Pre
     end.
 
 %%--------------------------------------------------------------------
-%% Function: list()
-%% Descrip.: List all eventdata records in the database.
-%% Returns : list() of eventdata record()
+%% @spec    () -> [#eventdata{}]
+%%
+%% @doc     List all eventdata records in the database.
+%% @end
 %%--------------------------------------------------------------------
 list() ->
     db_util:tab_to_list(eventdata).
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_using_presentity(Presentity)
-%%           Presentity = tuple(), {user, User} | {address, AddrStr}
-%% Descrip.: Fetch all entrys for a presentity.
-%% Returns : {ok, List} |
-%%           nomatch
-%%           List = list() of evendata_dbe record()
+%% @spec    (Presentity) ->
+%%            {ok, List} |
+%%            nomatch
+%%
+%%            Presentity = {user, User} | {address, AddrStr}
+%%
+%%            List = [#evendata_dbe{}]
+%%
+%% @doc     Fetch all entrys for a presentity.
+%% @end
 %%--------------------------------------------------------------------
 fetch_using_presentity(Presentity) when is_tuple(Presentity) ->
     F = fun() ->
@@ -241,13 +261,17 @@ fetch_using_presentity(Presentity) when is_tuple(Presentity) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_using_presentity_etag(Presentity, ETag)
-%%           Presentity = tuple(), {user, User} | {address, AddrStr}
-%%           ETag       = term()
-%% Descrip.: Fetch a single record, matching both Presentity and ETag.
-%% Returns : {ok, Entry} |
-%%           nomatch
-%%           Entry = evendata_dbe record()
+%% @spec    (Presentity, ETag) ->
+%%            {ok, Entry} |
+%%            nomatch
+%%
+%%            Presentity = {user, User} | {address, AddrStr}
+%%            ETag       = term()
+%%
+%%            Entry = #evendata_dbe{}
+%%
+%% @doc     Fetch a single record, matching both Presentity and ETag.
+%% @end
 %%--------------------------------------------------------------------
 fetch_using_presentity_etag(Presentity, ETag) when is_tuple(Presentity) ->
     F = fun() ->
@@ -264,22 +288,26 @@ fetch_using_presentity_etag(Presentity, ETag) when is_tuple(Presentity) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: delete_using_presentity(Presentity)
-%%           Presentity = tuple(), {user, User} | {address, AddrStr}
-%% Descrip.: Delete all entrys for a presentity.
-%% Returns : transaction_result()
+%% @spec    (Presentity) -> transaction_result()
+%%
+%%            Presentity = {user, User} | {address, AddrStr}
+%%
+%% @doc     Delete all entrys for a presentity.
+%% @end
 %%--------------------------------------------------------------------
 delete_using_presentity(Presentity) when is_tuple(Presentity) ->
     db_util:delete_with_key(eventdata, Presentity).
 
 
 %%--------------------------------------------------------------------
-%% Function: delete_using_presentity_etag(Presentity, ETag)
-%%           Presentity = tuple(), {user, User} | {address, AddrStr}
-%%           ETag       = term()
-%% Descrip.: Delete all eventdata entrys matching a Presentity and
-%%           ETag.
-%% Returns : transaction_result()
+%% @spec    (Presentity, ETag) -> transaction_result()
+%%
+%%            Presentity = {user, User} | {address, AddrStr}
+%%            ETag       = term()
+%%
+%% @doc     Delete all eventdata entrys matching a Presentity and
+%%          ETag.
+%% @end
 %%--------------------------------------------------------------------
 delete_using_presentity_etag(Presentity, ETag) when is_tuple(Presentity) ->
     F = fun() ->
@@ -289,10 +317,13 @@ delete_using_presentity_etag(Presentity, ETag) when is_tuple(Presentity) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: delete_expired()
-%% Descrip.: Delete all expired eventdata entrys.
-%% Returns : {ok, Num} | error
-%%           Num = integer(), deleted entrys
+%% @spec    () ->
+%%            {ok, Num} | error
+%%
+%%            Num = integer() "deleted entrys"
+%%
+%% @doc     Delete all expired eventdata entrys.
+%% @end
 %%--------------------------------------------------------------------
 delete_expired() ->
     Now = util:timestamp(),
@@ -318,15 +349,20 @@ delete_expired() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: decode_mnesia_change_event(MnesiaEvent)
-%%           MnesiaEvent = tuple(), Mnesia 'subscribe' event data
-%% Descrip.: Return eventdata_dbe records from Mnesia write or
-%%           delete_object events.
-%% Returns : {ok, PackageS, List} |
-%%           none                 |
-%%           error
-%%           PackageS = string()
-%%           List     = list() of evendata_dbe record()
+%% @spec    (MnesiaEvent) ->
+%%            {ok, PackageS, List} |
+%%            none                 |
+%%            error
+%%
+%%            MnesiaEvent = tuple() "Mnesia 'subscribe' event data"
+%%
+%%            PackageS = string()
+%%            List     = [#evendata_dbe{}]
+%%
+%% @doc     Return eventdata_dbe records from Mnesia write or
+%%          delete_object events.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 decode_mnesia_change_event({Type, Data, _TId}) when (Type == write orelse Type == delete_object),
 						    is_record(Data, eventdata) ->
@@ -345,13 +381,17 @@ decode_mnesia_change_event(_Unknown) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_transform_fun()
-%% Descrip.: Return a function that table_update uses to transform
-%%           this table. We do it this way to not have to export the
-%%           private record 'eventdata'.
-%% Returns : {ok, RecordInfo, Fun}
-%%           RecordInfo = list() of atom(), record field names
-%%           Fun        = function()
+%% @spec    () ->
+%%            {ok, RecordInfo, Fun}
+%%
+%%            RecordInfo = [atom()] "record field names"
+%%            Fun        = function()
+%%
+%% @doc     Return a function that table_update uses to transform this
+%%          table. We do it this way to not have to export the
+%%          private record 'eventdata'.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 get_transform_fun() ->
     %% Table = eventdata,
@@ -369,16 +409,20 @@ get_transform_fun() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: make_fetch_result(Entrys)
-%%           Entrys = list() of eventdata record()
-%% Descrip.: Turn a list of 'eventdata' records into a list of
-%%           'eventdata_dbe' records. 'eventdata' records are our
-%%           internal data format for storing event data in Mnesia,
-%%           'eventdata_dbe' are potentially different records that
-%%           outside modules might use.
-%% Returns : {ok, Entrys} |
-%%           nomatch
-%%           Entrys = list() of eventdata_dbe record()
+%% @spec    (Entrys) ->
+%%            {ok, Entrys} |
+%%            nomatch
+%%
+%%            Entrys = [#eventdata{}]
+%%
+%%            Entrys = [#eventdata_dbe{}]
+%%
+%% @doc     Turn a list of 'eventdata' records into a list of
+%%          'eventdata_dbe' records. 'eventdata' records are our
+%%          internal data format for storing event data in Mnesia,
+%%          'eventdata_dbe' are potentially different records that
+%%          outside modules might use.
+%% @end
 %%--------------------------------------------------------------------
 make_fetch_result(Entrys) ->
     Now = util:timestamp(),
@@ -413,9 +457,11 @@ make_fetch_result2(Entrys, Now) when is_list(Entrys), is_integer(Now) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -426,9 +472,11 @@ test() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: test_create_table()
-%% Descrip.: Create a table in RAM only, for use in unit tests.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Create a table in RAM only, for use in unit tests.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test_create_table() ->
     case catch mnesia:table_info(eventdata, attributes) of

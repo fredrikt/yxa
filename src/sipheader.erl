@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipheader.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Various functions for parsing headers or formatting
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Various functions for parsing headers or formatting
 %%%           headers for printing.
 %%%
 %%% Note: some functions do several passes over the same string() to
@@ -17,7 +17,8 @@
 %%% but while this improves performance it increases the need for later
 %%% exception handling.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 
 -module(sipheader).
@@ -103,14 +104,15 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: comma(String)
-%% Descrip.: split a comma separated string into separate strings,
-%%           along the commas (don't include them).
-%%           Each substring is cleared of any preceding or trailing
-%%           spaces. example: "foo, bar, zop, \"quoted, hi\"" ->
-%%           ["foo","bar","zop", "\"quoted, hi\""]
+%% @spec    (String) -> [string()]
 %%
-%% Returns : list() of string()
+%% @doc     split a comma separated string into separate strings,
+%%          along the commas (don't include them). Each substring is
+%%          cleared of any preceding or trailing spaces. example:
+%%          "foo, bar, zop, \"quoted, hi\"" -> ["foo","bar","zop",
+%%          "\"quoted, hi\""]
+%%
+%% @end
 %%--------------------------------------------------------------------
 comma(String) ->
     comma([], String, false, false).
@@ -181,22 +183,31 @@ comma(Parsed, [], _InQuote = false, false) ->
     [lists:reverse(string:strip(Parsed, both))].
 
 %%--------------------------------------------------------------------
-%% Function: expires(Header)
-%%           Header = keylist record()
-%% Descrip.: Get the value of the "Expires" header.
-%% Returns : Expires = list() of string()
+%% @spec    (Header) ->
+%%            Expires
+%%
+%%            Header = #keylist{}
+%%
+%%            Expires = [string()]
+%%
+%% @doc     Get the value of the "Expires" header.
+%% @end
 %%--------------------------------------------------------------------
 expires(Header) when is_record(Header, keylist) ->
     keylist:fetch('expires', Header).
 
 %%--------------------------------------------------------------------
-%% Function: to(In)
-%%           In = [string()] | keylist record()
-%% Descrip.: Parse To: header data.
+%% @spec    (In) ->
+%%            {DisplayName, URI}
+%%
+%%            In = [string()] | #keylist{}
+%%
+%%            DisplayName = none | string()
+%%            URI         = #sipurl{}
+%%
+%% @doc     Parse To: header data.
 %% @see      name_header/1.
-%% Returns : {DisplayName, URI}
-%%           DisplayName = none | string()
-%%           URI         = sipurl record()
+%% @end
 %%--------------------------------------------------------------------
 to(Header) when is_record(Header, keylist) ->
     to(keylist:fetch('to', Header));
@@ -205,13 +216,17 @@ to([String]) ->
     name_header(String).
 
 %%--------------------------------------------------------------------
-%% Function: from(In)
-%%           In = [string()] | keylist record()
-%% Descrip.: Parse From: header data.
+%% @spec    (In) ->
+%%            {DisplayName, URI}
+%%
+%%            In = [string()] | #keylist{}
+%%
+%%            DisplayName = none | string()
+%%            URI         = #sipurl{}
+%%
+%% @doc     Parse From: header data.
 %% @see      name_header/1.
-%% Returns : {DisplayName, URI}
-%%           DisplayName = none | string()
-%%           URI         = sipurl record()
+%% @end
 %%--------------------------------------------------------------------
 from(Header) when is_record(Header, keylist) ->
     from(keylist:fetch('from', Header));
@@ -220,28 +235,34 @@ from([String]) ->
     name_header(String).
 
 %%--------------------------------------------------------------------
-%% Function: contact(Header)
-%%           Header = keylist record()
-%% Descrip.: Return the parsed Contact: header from Header.
-%% Returns : list() of contact record()
+%% @spec    (Header) -> [#contact{}]
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     Return the parsed Contact: header from Header.
+%% @end
 %%--------------------------------------------------------------------
 contact(Header) when is_record(Header, keylist) ->
     contact2(Header, 'contact').
 
 %%--------------------------------------------------------------------
-%% Function: route(Header)
-%%           Header = keylist record()
-%% Descrip.: Return the parsed Route: header from Header.
-%% Returns : list() of contact record()
+%% @spec    (Header) -> [#contact{}]
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     Return the parsed Route: header from Header.
+%% @end
 %%--------------------------------------------------------------------
 route(Header) when is_record(Header, keylist) ->
     contact2(Header, 'route').
 
 %%--------------------------------------------------------------------
-%% Function: record_route(Header)
-%%           Header = keylist record()
-%% Descrip.: Return the parsed Record-Route: header from Header.
-%% Returns : list() of contact record()
+%% @spec    (Header) -> [#contact{}]
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     Return the parsed Record-Route: header from Header.
+%% @end
 %%--------------------------------------------------------------------
 record_route(Header) when is_record(Header, keylist) ->
     contact2(Header, 'record-route').
@@ -252,12 +273,17 @@ contact2(Header, Name) when is_record(Header, keylist), is_atom(Name) ->
     contact:parse(V).
 
 %%--------------------------------------------------------------------
-%% Function: via(In)
-%%           In = keylist record() | list() of string()
-%% Descrip.: Parse Via: header data.
-%% Returns : list() of via record() |
-%%           throw({error, Reason})
-%%           Reason = unparseable_via | term()
+%% @spec    (In) ->
+%%            [#via{}] 
+%%
+%%            In = #keylist{} | [string()]
+%%
+%%            Reason = unparseable_via | term()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Parse Via: header data.
+%% @end
 %%--------------------------------------------------------------------
 via(Header) when is_record(Header, keylist) ->
     via2(keylist:fetch('via', Header), []);
@@ -328,13 +354,16 @@ via_proto_hostport(ProtoHostport) ->
 	    %% Vias can have whitespace both between host and colon, and colon and port - crazy
 	    {ok, Proto, Host ++ ":" ++ Port}
     end.
-    
+
 %%--------------------------------------------------------------------
-%% Function: topvia(Header)
-%%           Header = keylist record()
-%% Descrip.: get the first Via entry from Header
-%% Returns : via record() |
-%%           none
+%% @spec    (Header) ->
+%%            #via{} |
+%%            none
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     get the first Via entry from Header
+%% @end
 %%--------------------------------------------------------------------
 topvia(Header) when is_record(Header, keylist) ->
     case via(Header) of
@@ -344,10 +373,15 @@ topvia(Header) when is_record(Header, keylist) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: print_parameters(In)
-%%           In = list() of string()
-%% Descrip.: print string() separated by ";"
-%% Returns : Res = string()
+%% @spec    (In) ->
+%%            Res
+%%
+%%            In = [string()]
+%%
+%%            Res = string()
+%%
+%% @doc     print string() separated by ";"
+%% @end
 %%--------------------------------------------------------------------
 print_parameters([]) ->
     "";
@@ -355,11 +389,15 @@ print_parameters([A | B]) ->
     ";" ++ A ++ print_parameters(B).
 
 %%--------------------------------------------------------------------
-%% Function: via_print(Via)
-%%           Via = via record()
-%% Descrip.: Print via record() or list() of via record().
-%% Returns : list() of ViaStr
-%%           ViaStr = string()
+%% @spec    (Via) ->
+%%            [ViaStr]
+%%
+%%            Via = #via{}
+%%
+%%            ViaStr = string()
+%%
+%% @doc     Print via record() or list() of via record().
+%% @end
 %%--------------------------------------------------------------------
 via_print(Via) when is_record(Via, via) ->
     via_print2([Via], []);
@@ -374,21 +412,24 @@ via_print2([], Res) ->
     lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% Function: via_params(Via)
-%%           Via = via record()
-%% Descrip.: convert parameters stored in Via to a dictionary
-%% Returns : dict()
+%% @spec    (Via) -> dict()
+%%
+%%            Via = #via{}
+%%
+%% @doc     convert parameters stored in Via to a dictionary
+%% @end
 %%--------------------------------------------------------------------
 via_params(Via) when is_record(Via, via) ->
     param_to_dict(Via#via.param).
 
 %%--------------------------------------------------------------------
-%% Function: contact_print(Contacts)
-%%           Contacts = list() of contact record(), containing contact
-%%                      from contact/1
-%% Descrip.: Take a list of contact records, and return a list of
-%%           those contacts as strings
-%% Returns : list() of string()
+%% @spec    (Contacts) -> [string()]
+%%
+%%            Contacts = [#contact{}] "containing contact from contact/1"
+%%
+%% @doc     Take a list of contact records, and return a list of those
+%%          contacts as strings
+%% @end
 %%--------------------------------------------------------------------
 contact_print(Contacts) when is_list(Contacts) ->
     contact_print2(Contacts, []).
@@ -400,24 +441,27 @@ contact_print2([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: auth_print(Auth)
+%% @spec    (Auth) -> [string()]
+%%
 %% @equiv    auth_print(Auth, false)
-%% Returns : [string()]
+%% @end
 %%--------------------------------------------------------------------
 auth_print(Auth) when is_tuple(Auth) ->
     auth_print(Auth, false).
 
 %%--------------------------------------------------------------------
-%% Function: auth_print(Auth, Stale)
-%%           Auth     = {Realm, Nonce, Opaque}
-%%             Realm  = string()
-%%             Nonce  = string()
-%%             Opaque = string()
-%%           Stale    = true | false
-%% Descrip.: Generate the value of an WWW-Authenticate that we need
-%%           when challenging a REGISTER, or a Proxy-Authenticate that
-%%           we put in other challenges of a request.
-%% Returns : [string()]
+%% @spec    (Auth, Stale) -> [string()]
+%%
+%%            Auth   = {Realm, Nonce, Opaque}
+%%            Realm  = string()
+%%            Nonce  = string()
+%%            Opaque = string()
+%%            Stale  = true | false
+%%
+%% @doc     Generate the value of an WWW-Authenticate that we need
+%%          when challenging a REGISTER, or a Proxy-Authenticate that
+%%          we put in other challenges of a request.
+%% @end
 %%--------------------------------------------------------------------
 auth_print(Auth, Stale) when is_tuple(Auth), is_boolean(Stale) ->
     {Realm, Nonce, Opaque} = Auth,
@@ -431,17 +475,20 @@ auth_print(Auth, Stale) when is_tuple(Auth), is_boolean(Stale) ->
     ].
 
 %%--------------------------------------------------------------------
-%% Function: auth(In)
-%%           In = string(), one authentication header value
-%% Descrip.: Parse an authorization header.
-%% Returns : dict() |
-%%           throw({siperror, ...})
-%% Note    : In is a string like
-%%           "Digest username=\"test\",realm=\"example.org\" ...",
-%%           a SIP message can have multiple of those header values
-%%           in it. This function only handles one at a time.
-%% XXX We should preserve the type in the repsonse as well. Define a
-%% new record for parsed authentication data and use that.
+%% @spec    (In) -> dict()
+%%
+%%            In = string() "one authentication header value"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Parse an authorization header. Note : In is a string like
+%%          "Digest username=\"test\",realm=\"example.org\" ...", a
+%%          SIP message can have multiple of those header values in
+%%          it. This function only handles one at a time. XXX We
+%%          should preserve the type in the repsonse as well. Define
+%%          a new record for parsed authentication data and use that.
+%% @end
 %%--------------------------------------------------------------------
 auth(In) when is_list(In) ->
     %% lowercase first word (to implement case insensitivity)
@@ -490,13 +537,12 @@ unquote(QString) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: param_to_dict(Param)
-%%           Param = list() of string(), each string is a "key=value"
-%%                   pair, that may have preceding or trailing spaces
-%%                   as well as hex encoded values (e.g. chars of the
-%%                   format %hh (where hh is a hex number))
-%% Descrip.: Convert SIP parameter strings into a dictionary.
-%% Returns : dict()
+%% @spec    (Param) -> dict()
+%%
+%%            Param = [string()] "each string is a \"key=value\" pair, that may have preceding or trailing spaces as well as hex encoded values (e.g. chars of the format %hh (where hh is a hex number))"
+%%
+%% @doc     Convert SIP parameter strings into a dictionary.
+%% @end
 %%--------------------------------------------------------------------
 param_to_dict(Param) ->
     L = lists:map(fun(A) ->
@@ -522,11 +568,13 @@ unescape([C | Rest]) ->
     [C | unescape(Rest)].
 
 %%--------------------------------------------------------------------
-%% Function: dict_to_param(Dict)
-%%           Dict = dict(), a dictionary containing parameter entries
-%% Descrip.: convert a dictionary containing parameters back into a
-%%           "name=value" format - the inverse of param_to_dict/1
-%% Returns : list() of string()
+%% @spec    (Dict) -> [string()]
+%%
+%%            Dict = dict() "a dictionary containing parameter entries"
+%%
+%% @doc     convert a dictionary containing parameters back into a
+%%          "name=value" format - the inverse of param_to_dict/1
+%% @end
 %%--------------------------------------------------------------------
 %% XXX should certain chars in the "value" part be hex encoded ?
 dict_to_param(Dict) ->
@@ -544,10 +592,11 @@ list_to_parameters2([], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: httparg(String)
-%% Descrip.: Make dict out of parameters separated by ampersand (`&').
-%% Returns : dict()
-%% Note    : Only used in admin_www. Perhaps move there?
+%% @spec    (String) -> dict()
+%%
+%% @doc     Make dict out of parameters separated by ampersand (`&').
+%%          Note : Only used in admin_www. Perhaps move there?
+%% @end
 %%--------------------------------------------------------------------
 httparg(String) ->
     Headers = string:tokens(String, "&"),
@@ -555,12 +604,16 @@ httparg(String) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: cseq(In)
-%%           In = keylist record() | list() of string()
-%% Descrip.: Parse CSeq: header data.
-%% Returns : {Seq, Method} | {unparseable, String}
-%%           Seq    = integer()
-%%           Method = string()
+%% @spec    (In) ->
+%%            {Seq, Method} | {unparseable, String}
+%%
+%%            In = #keylist{} | [string()]
+%%
+%%            Seq    = integer()
+%%            Method = string()
+%%
+%% @doc     Parse CSeq: header data.
+%% @end
 %%--------------------------------------------------------------------
 cseq(Header) when is_record(Header, keylist) ->
     cseq(keylist:fetch('cseq', Header));
@@ -575,21 +628,25 @@ cseq([String]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: cseq_print({Seq, Method})
-%%           Seq    = integer()
-%%           Method = string()
-%% Descrip.: Print data parsed with cseq/1.
-%% Returns : string()
+%% @spec    ({Seq, Method}) -> string()
+%%
+%%            Seq    = integer()
+%%            Method = string()
+%%
+%% @doc     Print data parsed with cseq/1.
+%% @end
 %%--------------------------------------------------------------------
 cseq_print({Seq, Method}) when is_list(Seq), is_list(Method) ->
     %% XXX Seq should be integer
     Seq ++ " " ++ Method.
 
 %%--------------------------------------------------------------------
-%% Function: callid(Header)
-%%           Header = keylist record()
-%% Descrip.: Get Call-Id: from header.
-%% Returns : string()
+%% @spec    (Header) -> string()
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     Get Call-Id: from header.
+%% @end
 %%--------------------------------------------------------------------
 %% XXX does not handle non-existing Call-Id, but that means our
 %% callers might not either, so the right solution might not be to
@@ -599,15 +656,19 @@ callid(Header) when is_record(Header, keylist) ->
     CallId.
 
 %%--------------------------------------------------------------------
-%% Function: build_header_binary(Header)
-%%           Header = keylist record()
-%% Descrip.: Build a SIP header we can combine with a first line and
-%%           body to create a message to send out on the wire. We try
-%%           to prioritize speed here, so we don't spend extra cycles
-%%           making the resulting data uniformed. We might return a
-%%           list of lists of binaries, or just binaries.
-%% Returns : binary() |
-%%           throw({siperror, ...})
+%% @spec    (Header) -> binary()
+%%
+%%            Header = #keylist{}
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Build a SIP header we can combine with a first line and
+%%          body to create a message to send out on the wire. We try
+%%          to prioritize speed here, so we don't spend extra cycles
+%%          making the resulting data uniformed. We might return a
+%%          list of lists of binaries, or just binaries.
+%% @end
 %%--------------------------------------------------------------------
 build_header_binary(Header) when is_record(Header, keylist) ->
     case catch build_header_unsafe_binary(Header) of
@@ -625,15 +686,17 @@ build_header_unsafe_binary(Header) ->
     list_to_binary(sort_headers(Lines)).
 
 %%--------------------------------------------------------------------
-%% Function: sort_headers(In)
-%%           In = list() of {Key, Binary}
-%%              Key    = atom() | string()
-%%              Binary = binary()
-%% Descrip.: Rough sort headers for better readability (and to follow
-%%           RFC3261 #7.3.1 (Header Field Format) recommendations
-%%           about some sorting to facilitate more rapid parsing by
-%%           other nodes
-%% Returns : binary()
+%% @spec    (In) -> binary()
+%%
+%%            In     = [{Key, Binary}]
+%%            Key    = atom() | string()
+%%            Binary = binary()
+%%
+%% @doc     Rough sort headers for better readability (and to follow
+%%          RFC3261 #7.3.1 (Header Field Format) recommendations
+%%          about some sorting to facilitate more rapid parsing by
+%%          other nodes
+%% @end
 %%--------------------------------------------------------------------
 sort_headers(In) when is_list(In) ->
     sort_headers2(In, #header_sort{}).
@@ -645,7 +708,7 @@ sort_headers2([{'call-id', Val} | T], R) ->		sort_headers2(T, R#header_sort{'cal
 sort_headers2([{cseq, Val} | T], R) ->			sort_headers2(T, R#header_sort{cseq = Val});
 sort_headers2([{route, Val} | T], R) ->			sort_headers2(T, R#header_sort{route = Val});
 sort_headers2([{'record-route', Val} | T], R) ->	sort_headers2(T, R#header_sort{'record-route' = Val});
-sort_headers2([{_Other, Val} | T], R) ->		
+sort_headers2([{_Other, Val} | T], R) ->
     NewRest = [Val | R#header_sort.rest],
     sort_headers2(T, R#header_sort{rest = NewRest});
 sort_headers2([], R) ->
@@ -709,12 +772,16 @@ print_one_header_binary3(false, _BinName, []) ->
     [].
 
 %%--------------------------------------------------------------------
-%% Function: get_tag([String])
-%% Descrip.: Get From- or To-tag from from- or to-header value.
-%% Returns : Tag = string() | none
-%% Note    : This function really ought to parse String using
-%%           contact:new() in order to not be fooled by $> appearing
-%%           more than once, tag= not written in lowercase etc.
+%% @spec    ([String]) ->
+%%            Tag
+%%
+%%            Tag = string() | none
+%%
+%% @doc     Get From- or To-tag from from- or to-header value. Note :
+%%          This function really ought to parse String using
+%%          contact:new() in order to not be fooled by $> appearing
+%%          more than once, tag= not written in lowercase etc.
+%% @end
 %%--------------------------------------------------------------------
 get_tag([String]) ->
     [Contact] = contact:parse([String]),
@@ -726,15 +793,19 @@ get_tag([String]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: dialogid(Header)
-%%           Header = keylist record()
-%% Descrip.: Get what in RFC3261 is referred to as a dialog ID. This
-%%           will be the same for all requests in a dialog. Note
-%%           though that the ToTag might be 'none' and later get set.
-%% Returns : {CallID, FromTag, ToTag}
-%%           CallId  = string()
-%%           FromTag = string()
-%%           ToTag   = string()
+%% @spec    (Header) ->
+%%            {CallID, FromTag, ToTag}
+%%
+%%            Header = #keylist{}
+%%
+%%            CallId  = string()
+%%            FromTag = string()
+%%            ToTag   = string()
+%%
+%% @doc     Get what in RFC3261 is referred to as a dialog ID. This
+%%          will be the same for all requests in a dialog. Note
+%%          though that the ToTag might be 'none' and later get set.
+%% @end
 %%--------------------------------------------------------------------
 dialogid(Header) when is_record(Header, keylist) ->
     CallID = sipheader:callid(Header),
@@ -743,29 +814,38 @@ dialogid(Header) when is_record(Header, keylist) ->
     {CallID, FromTag, ToTag}.
 
 %%--------------------------------------------------------------------
-%% Function: via_sentby(Via)
-%%           Via = via record()
-%% Descrip.: Extract sent-by part of a via record()
-%% Returns : {Proto, Host, Port}
-%%           Proto = string()
-%%           Host  = string()
-%%           Port  = integer()
+%% @spec    (Via) ->
+%%            {Proto, Host, Port}
+%%
+%%            Via = #via{}
+%%
+%%            Proto = string()
+%%            Host  = string()
+%%            Port  = integer()
+%%
+%% @doc     Extract sent-by part of a via record()
+%% @end
 %%--------------------------------------------------------------------
 via_sentby(Via) when is_record(Via, via) ->
     {Via#via.proto, Via#via.host, Via#via.port}.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction_id(Request)
-%%           Request = request record()
-%% Descrip.: Turn a request into a transaction id, that can be stored
-%%           in our transaction state database together with a
-%%           reference to the process handling this request (server
-%%           transaction handler) if this is a new transaction, or
-%%           looked up in the database to find an existing handler if
-%%           this is a resend of the same request or an ACK to a
-%%           non-2xx response to INVITE. This is specified in RFC3261
-%%           #17.2.3 (Matching Requests to Server Transactions).
-%% Returns : Id = term() | is_2543_ack | error
+%% @spec    (Request) ->
+%%            Id
+%%
+%%            Request = #request{}
+%%
+%%            Id = term() | is_2543_ack | error
+%%
+%% @doc     Turn a request into a transaction id, that can be stored
+%%          in our transaction state database together with a
+%%          reference to the process handling this request (server
+%%          transaction handler) if this is a new transaction, or
+%%          looked up in the database to find an existing handler if
+%%          this is a resend of the same request or an ACK to a
+%%          non-2xx response to INVITE. This is specified in RFC3261
+%%          #17.2.3 (Matching Requests to Server Transactions).
+%% @end
 %%--------------------------------------------------------------------
 get_server_transaction_id(Request) ->
     %% We do a catch around this since it includes much parsing of the
@@ -799,14 +879,19 @@ guarded_get_server_transaction_id(Request) when is_record(Request, request) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_client_transaction_id(Response)
-%%           Response = response record()
-%% Descrip.: When we receive a response, we use this function to get
-%%           an Id which we look up in our transaction state database
-%%           to see if we have a client transaction handler that
-%%           should get this response. This is specified in RFC3261
-%%           #17.1.3 (Matching Responses to Client Transactions).
-%% Returns : Id = term() | error
+%% @spec    (Response) ->
+%%            Id
+%%
+%%            Response = #response{}
+%%
+%%            Id = term() | error
+%%
+%% @doc     When we receive a response, we use this function to get an
+%%          Id which we look up in our transaction state database to
+%%          see if we have a client transaction handler that should
+%%          get this response. This is specified in RFC3261 #17.1.3
+%%          (Matching Responses to Client Transactions).
+%% @end
 %%--------------------------------------------------------------------
 get_client_transaction_id(Response) ->
     %% We do a catch around this since it includes much parsing of the
@@ -827,33 +912,36 @@ guarded_get_client_transaction_id(Response) when is_record(Response, response) -
     {Branch, CSeqMethod}.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction_ack_id_2543(Request)
-%%           Request = request record()
-%% Descrip.: When we receive an ACK that has no RFC3261 Via branch
-%%           parameter, we use this function to get an Id that we then
-%%           look up in our transaction state database to try and find
-%%           an existing server transaction that this ACK should be
-%%           delivered to. This is specified in RFC3261 #17.2.3
-%%           (Matching Requests to Server Transactions).
-%% Returns : Id = term() | error
-%% Note    : When using this function, you have to make sure the
-%%           To-tag of this ACK matches the To-tag of the response you
-%%           think this might be the ACK for!
+%% @spec    (Request) ->
+%%            Id
 %%
-%% Note    : RFC3261 #17.2.3 relevant text :
-%%           The ACK request matches a transaction if the Request-
-%%           URI, From tag, Call-ID, CSeq number (not the method),
-%%	     and top Via header field match those of the INVITE
-%%           request which created the transaction, and the To tag of
-%%           the ACK matches the To tag of the response sent by the
-%%           server transaction.
+%%            Request = #request{}
 %%
-%% Note    : We are supposed to do the comparison of for example, the
-%%           URI, according to the matching rules for URIs but that
-%%           would require us to do a full table scan for every ACK.
-%%           XXX perhaps we should divide the Id into two parts - one
-%%           that is byte-by-byte and used as table index, and another
-%%           part for elements that require more exhaustive matching.
+%%            Id = term() | error
+%%
+%% @doc     When we receive an ACK that has no RFC3261 Via branch
+%%          parameter, we use this function to get an Id that we then
+%%          look up in our transaction state database to try and find
+%%          an existing server transaction that this ACK should be
+%%          delivered to. This is specified in RFC3261 #17.2.3
+%%          (Matching Requests to Server Transactions). Note : When
+%%          using this function, you have to make sure the To-tag of
+%%          this ACK matches the To-tag of the response you think
+%%          this might be the ACK for!
+%%          Note : RFC3261 #17.2.3 relevant text : The ACK request
+%%          matches a transaction if the Request- URI, From tag,
+%%          Call-ID, CSeq number (not the method), and top Via header
+%%          field match those of the INVITE request which created the
+%%          transaction, and the To tag of the ACK matches the To tag
+%%          of the response sent by the server transaction.
+%%          Note : We are supposed to do the comparison of for
+%%          example, the URI, according to the matching rules for
+%%          URIs but that would require us to do a full table scan
+%%          for every ACK. XXX perhaps we should divide the Id into
+%%          two parts - one that is byte-by-byte and used as table
+%%          index, and another part for elements that require more
+%%          exhaustive matching.
+%% @end
 %%--------------------------------------------------------------------
 get_server_transaction_ack_id_2543(Request) ->
     case catch guarded_get_server_transaction_ack_id_2543(Request) of
@@ -882,13 +970,17 @@ remove_branch(Via) when is_record(Via, via) ->
     Via#via{param=sipheader:dict_to_param(NewDict)}.
 
 %%--------------------------------------------------------------------
-%% Function: get_via_branch(TopVia)
-%% Descrip.: Get the branch from the TopVia parameters, and then
-%%           remove any YXA loop cookie from it. This function should
-%%           typically only be called on a Via that matches this proxy
-%%           so that should be ok - we won't be altering anyone elses
-%%           branches.
-%% Returns : Branch = string() | none
+%% @spec    (TopVia) ->
+%%            Branch
+%%
+%%            Branch = string() | none
+%%
+%% @doc     Get the branch from the TopVia parameters, and then remove
+%%          any YXA loop cookie from it. This function should
+%%          typically only be called on a Via that matches this proxy
+%%          so that should be ok - we won't be altering anyone elses
+%%          branches.
+%% @end
 %%--------------------------------------------------------------------
 get_via_branch(TopVia) when is_record(TopVia, via) ->
     %% XXX lowercase result since branches are to be compared case insensitively?
@@ -897,12 +989,16 @@ get_via_branch(TopVia) when is_record(TopVia, via) ->
     remove_loop_cookie(Branch).
 
 %%--------------------------------------------------------------------
-%% Function: remove_loop_cookie(Branch)
-%%           Branch = string() | none
-%% Descrip.: Removes our special YXA loop cookie from a branch, if it
-%%           really is an YXA generated branch.
-%% Returns : Branch | NewBranch
-%%           NewBranch = string()
+%% @spec    (Branch) ->
+%%            Branch | NewBranch
+%%
+%%            Branch = string() | none
+%%
+%%            NewBranch = string()
+%%
+%% @doc     Removes our special YXA loop cookie from a branch, if it
+%%          really is an YXA generated branch.
+%% @end
 %%--------------------------------------------------------------------
 remove_loop_cookie(Branch) ->
     case Branch of
@@ -926,11 +1022,16 @@ remove_loop_cookie(Branch) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_via_branch_full(Via)
-%%           Via = via record()
-%% Descrip.: Get the whole Via branch (inclusive any loop cookie) from
-%%           Via.
-%% Returns : Branch = string() | none
+%% @spec    (Via) ->
+%%            Branch
+%%
+%%            Via = #via{}
+%%
+%%            Branch = string() | none
+%%
+%% @doc     Get the whole Via branch (inclusive any loop cookie) from
+%%          Via.
+%% @end
 %%--------------------------------------------------------------------
 get_via_branch_full(Via) when is_record(Via, via) ->
     case dict:find("branch", sipheader:param_to_dict(Via#via.param)) of
@@ -941,28 +1042,36 @@ get_via_branch_full(Via) when is_record(Via, via) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: via_is_equal(A, B)
-%%           A = via record()
-%%           B = via record()
-%% Descrip.: Compare two Via records according to the rules in
-%%           RFC3261 20.42 (Via)
-%% Returns : true  |
-%%           false
+%% @spec    (A, B) ->
+%%            true  |
+%%            false
+%%
+%%            A = #via{}
+%%            B = #via{}
+%%
+%% @doc     Compare two Via records according to the rules in RFC3261
+%%          20.42 (Via)
+%% @end
 %%--------------------------------------------------------------------
 via_is_equal(A, B) when is_record(A, via), is_record(B, via) ->
     via_is_equal(A, B, [proto, host, port, parameters]).
 
 
 %%--------------------------------------------------------------------
-%% Function: via_is_equal(A, B, CmpList)
-%%           A = via record()
-%%           B = via record()
-%%           CmpList = list() of proto|host|port|parameters, what to
-%%                     compare
-%% Descrip.: Compare one or more parts of two Via records according
-%%           to RFC3261 20.42.
-%% Returns : true  |
-%%           false
+%% @spec    (A, B, CmpList) ->
+%%            true  |
+%%            false
+%%
+%%            A       = #via{}
+%%            B       = #via{}
+%%            CmpList = [proto                        |
+%%                      host                          |
+%%                      port                          |
+%%                      parameters] "what to compare"
+%%
+%% @doc     Compare one or more parts of two Via records according to
+%%          RFC3261 20.42.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -1017,32 +1126,41 @@ via_is_equal(A, B, []) when is_record(A, via), is_record(B, via) ->
     true.
 
 %%--------------------------------------------------------------------
-%% Function: is_supported(Extension, Header)
-%%           Extension = string()
-%%           Header    = keylist record()
-%% Descrip.: Check if Extension appears in a Supported: header.
-%% Returns : true | false
+%% @spec    (Extension, Header) -> true | false
+%%
+%%            Extension = string()
+%%            Header    = #keylist{}
+%%
+%% @doc     Check if Extension appears in a Supported: header.
+%% @end
 %%--------------------------------------------------------------------
 is_supported(Extension, Header) when is_list(Extension), is_record(Header, keylist) ->
     Supported = keylist:fetch('supported', Header),
     lists:member(Extension, Supported).
 
 %%--------------------------------------------------------------------
-%% Function: is_required(Extension, Header)
-%%           Extension = string()
-%%           Header    = keylist record()
-%% Descrip.: Check if Extension appears in a Required: header.
-%% Returns : true | false
+%% @spec    (Extension, Header) -> true | false
+%%
+%%            Extension = string()
+%%            Header    = #keylist{}
+%%
+%% @doc     Check if Extension appears in a Required: header.
+%% @end
 %%--------------------------------------------------------------------
 is_required(Extension, Header) when is_list(Extension), is_record(Header, keylist) ->
     Supported = keylist:fetch('require', Header),
     lists:member(Extension, Supported).
 
 %%--------------------------------------------------------------------
-%% Function: event_package(Header)
-%%           Header = keylist record()
-%% Descrip.: Get the Event package name from Header.
-%% Returns : EventPackage = string()
+%% @spec    (Header) ->
+%%            EventPackage
+%%
+%%            Header = #keylist{}
+%%
+%%            EventPackage = string()
+%%
+%% @doc     Get the Event package name from Header.
+%% @end
 %%--------------------------------------------------------------------
 event_package(Header) when is_record(Header, keylist) ->
     case keylist:fetch('event', Header) of
@@ -1062,13 +1180,16 @@ event_package(Header) when is_record(Header, keylist) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: name_header(String)
-%%           String = string(), a sip URI string or sip URI inside "<"
-%%                           and ">" quotes, preceded by a displayname
-%% Descrip.: used to parse the contents in a To, From or Contact header
-%% Returns : {Displayname, URI} | {unparseable, String}
-%%           Displayname = none | string()
-%%           URI = sipurl record()
+%% @spec    (String) ->
+%%            {Displayname, URI} | {unparseable, String}
+%%
+%%            String = string() "a sip URI string or sip URI inside \"<\" and \">\" quotes, preceded by a displayname"
+%%
+%%            Displayname = none | string()
+%%            URI         = #sipurl{}
+%%
+%% @doc     used to parse the contents in a To, From or Contact header
+%% @end
 %%--------------------------------------------------------------------
 name_header(String) ->
     Index1 = string:rchr(String, $<),
@@ -1108,13 +1229,18 @@ empty_displayname(Name) ->
     Name.
 
 %%--------------------------------------------------------------------
-%% Function: guarded_get_server_transaction_id_3261(Method, TopVia)
-%%           Method = list()
-%%           TopVia = via record()
-%% Descrip.: Part of guarded_get_server_transaction_id(), called when
-%%           the top Via header is found to contain an RFC3261 branch
-%%           parameter. This is the straight forward case.
-%% Returns : Id = term()
+%% @spec    (Method, TopVia) ->
+%%            Id
+%%
+%%            Method = list()
+%%            TopVia = #via{}
+%%
+%%            Id = term()
+%%
+%% @doc     Part of guarded_get_server_transaction_id(), called when
+%%          the top Via header is found to contain an RFC3261 branch
+%%          parameter. This is the straight forward case.
+%% @end
 %%--------------------------------------------------------------------
 guarded_get_server_transaction_id_3261(Method, TopVia) when is_list(Method), is_record(TopVia, via) ->
     Branch = get_via_branch_full(TopVia),
@@ -1122,35 +1248,36 @@ guarded_get_server_transaction_id_3261(Method, TopVia) when is_list(Method), is_
     {Branch, SentBy, Method}.
 
 %%--------------------------------------------------------------------
-%% Function: guarded_get_server_transaction_id_2543(Request, TopVia)
-%%           Request = request record()
-%%           TopVia = via record()
-%% Descrip.: Part of guarded_get_server_transaction_id(), called when
-%%           the top Via header does NOT contain an RFC3261 branch
-%%           parameter. Creates an Id based on RFC3261 #17.2.3
-%%           (Matching Requests to Server Transactions).
-%% Returns : Id = term() | is_2543_ack
-%% Note    : We could very well do the 2543 ack-id computation here,
-%%           but since the caller must do the To-tag verification for
-%%           such requests we just return is_2543_ack here to make
-%%           sure the caller does not miss this.
-%% Note    : RFC3261 #17.2.3 has different text for ACK (entirely
-%%           separate, see previous note), INVITE and "all other
-%%           methods". However, it seems to me that the instructions
-%%           for INVITE and "all other" are the same :
+%% @spec    (Request, TopVia) ->
+%%            Id
 %%
-%%           The INVITE request matches a transaction if the
-%%           Request-URI, To tag, From tag, Call-ID, CSeq, and top Via
-%%           header field match those of the INVITE request which
-%%           created the transaction.
-%%           ...
-%%           For all other request methods, a request is matched to a
-%%           transaction if the Request-URI, To tag, From tag,
-%%           Call-ID, CSeq (including the method), and top Via header
-%%           field match those of the request that created the
-%%           transaction.
+%%            Request = #request{}
+%%            TopVia  = #via{}
 %%
-%%           Therefor, we just have non-ACK below.
+%%            Id = term() | is_2543_ack
+%%
+%% @doc     Part of guarded_get_server_transaction_id(), called when
+%%          the top Via header does NOT contain an RFC3261 branch
+%%          parameter. Creates an Id based on RFC3261 #17.2.3
+%%          (Matching Requests to Server Transactions). Note : We
+%%          could very well do the 2543 ack-id computation here, but
+%%          since the caller must do the To-tag verification for such
+%%          requests we just return is_2543_ack here to make sure the
+%%          caller does not miss this. Note : RFC3261 #17.2.3 has
+%%          different text for ACK (entirely separate, see previous
+%%          note), INVITE and "all other methods". However, it seems
+%%          to me that the instructions for INVITE and "all other"
+%%          are the same :
+%%          The INVITE request matches a transaction if the
+%%          Request-URI, To tag, From tag, Call-ID, CSeq, and top Via
+%%          header field match those of the INVITE request which
+%%          created the transaction. ... For all other request
+%%          methods, a request is matched to a transaction if the
+%%          Request-URI, To tag, From tag, Call-ID, CSeq (including
+%%          the method), and top Via header field match those of the
+%%          request that created the transaction.
+%%          Therefor, we just have non-ACK below.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% ACK
@@ -1175,9 +1302,11 @@ guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, 
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -1822,6 +1951,6 @@ test() ->
 
     autotest:mark(?LINE, "is_required/2 - 3"),
     false = is_required("test", keylist:from_list([])),
-    
+
 
     ok.

@@ -1,9 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : socketlist.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transport layer modules list-module.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Transport layer modules list-module.
 %%%
-%%% Created : 15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(socketlist).
 
@@ -61,16 +63,18 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: add(Type, Pid, SipSocket, SocketList)
-%%           Type       = listener | in | out
-%%           Pid        = pid(), pid of connection handler
-%%           SipSocket  = sipsocket record()
-%%           SocketList = socketlist record()
+%% @spec    (Type, Pid, SipSocket, SocketList) -> term()
+%%
+%%            Type       = listener | in | out
+%%            Pid        = pid() "pid of connection handler"
+%%            SipSocket  = #sipsocket{}
+%%            SocketList = #socketlist{}
+%%
+%% @doc     Add a new sipsocket entry to SocketList with a default
+%%          expiration time. The DefaultExpire is current time plus
+%%          300 seconds.
 %% @equiv    add(Type, Pid, SipSocket, DefaultExpire, SocketList)
-%% Descrip.: Add a new sipsocket entry to SocketList with a default
-%%           expiration time. The DefaultExpire is current time plus
-%%           300 seconds.
-%% Returns : term()
+%% @end
 %%--------------------------------------------------------------------
 add(Type, Pid, SipSocket, SocketList) when is_atom(Type), is_pid(Pid), is_record(SipSocket, sipsocket),
 					   is_record(SocketList, socketlist) ->
@@ -79,18 +83,21 @@ add(Type, Pid, SipSocket, SocketList) when is_atom(Type), is_pid(Pid), is_record
     add(Type, Pid, SipSocket, Expire, SocketList).
 
 %%--------------------------------------------------------------------
-%% Function: add(Type, Pid, SipSocket, Expire, SocketList)
-%%           Type       = listener | in | out
-%%           Pid        = pid(), pid of connection handler
-%%           SipSocket  = sipsocket record()
-%%           Expire     = integer(), absolute expiration time in
-%%                        util:timestamp() format - 0 for never expire.
-%%           SocketList = socketlist record()
-%% Descrip.: Add a new sipsocket entry to SocketList.
-%% Returns : {ok, NewSocketList} |
-%%           {error, Reason}
-%%           NewSocketList = socketlist record()
-%%           Reason        = string()
+%% @spec    (Type, Pid, SipSocket, Expire, SocketList) ->
+%%            {ok, NewSocketList} |
+%%            {error, Reason}
+%%
+%%            Type       = listener | in | out
+%%            Pid        = pid() "pid of connection handler"
+%%            SipSocket  = #sipsocket{}
+%%            Expire     = integer() "absolute expiration time in util:timestamp() format - 0 for never expire."
+%%            SocketList = #socketlist{}
+%%
+%%            NewSocketList = #socketlist{}
+%%            Reason        = string()
+%%
+%% @doc     Add a new sipsocket entry to SocketList.
+%% @end
 %%--------------------------------------------------------------------
 add(Type, Pid, SipSocket, Expire, SocketList) when is_pid(Pid), is_record(SipSocket, sipsocket), is_integer(Expire),
 						   is_record(SocketList, socketlist) ->
@@ -130,19 +137,28 @@ add(Type, Pid, SipSocket, Expire, SocketList) when is_pid(Pid), is_record(SipSoc
     end.
 
 %%--------------------------------------------------------------------
-%% Function: empty()
-%% Descrip.: Get an empty socketlist.
-%% Returns : SocketList = socketlist record()
+%% @spec    () ->
+%%            SocketList
+%%
+%%            SocketList = #socketlist{}
+%%
+%% @doc     Get an empty socketlist.
+%% @end
 %%--------------------------------------------------------------------
 empty() ->
     #socketlist{list = []}.
 
 %%--------------------------------------------------------------------
-%% Function: extract(Fields, SListElem)
-%%           Fields = list() of slist_field()
-%%           SListElem = socketlistelem record()
-%% Descrip.: Return one or more values from a socketlistelem record.
-%% Returns : Values = list()
+%% @spec    (Fields, SListElem) ->
+%%            Values
+%%
+%%            Fields    = [slist_field()]
+%%            SListElem = #socketlistelem{}
+%%
+%%            Values = list()
+%%
+%% @doc     Return one or more values from a socketlistelem record.
+%% @end
 %%--------------------------------------------------------------------
 extract(Values, SListElem) when is_record(SListElem, socketlistelem) ->
     extract(Values, SListElem, []).
@@ -163,35 +179,49 @@ extract([expire | T], SListElem, Res) when is_record(SListElem, socketlistelem) 
     extract(T, SListElem, [SListElem#socketlistelem.expire | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: delete_using_pid(Pid, SocketList)
-%%           Pid        = pid()
-%%           SocketList = socketlist record()
-%% Descrip.: Delete an element from SocketList identified by a pid.
-%% Returns : NewSocketList = socketlist record()
+%% @spec    (Pid, SocketList) ->
+%%            NewSocketList
+%%
+%%            Pid        = pid()
+%%            SocketList = #socketlist{}
+%%
+%%            NewSocketList = #socketlist{}
+%%
+%% @doc     Delete an element from SocketList identified by a pid.
+%% @end
 %%--------------------------------------------------------------------
 delete_using_pid(Pid, SocketList) when is_pid(Pid), is_record(SocketList, socketlist) ->
     #socketlist{list = del_pid(Pid, SocketList#socketlist.list)}.
 
 %%--------------------------------------------------------------------
-%% Function: delete_expired(SocketList)
-%%           SocketList = socketlist record()
-%% Descrip.: Delete all elements from SocketList that has a timestamp
-%%           less than the current time.
-%% Returns : NewSocketList = socketlist record()
+%% @spec    (SocketList) ->
+%%            NewSocketList
+%%
+%%            SocketList = #socketlist{}
+%%
+%%            NewSocketList = #socketlist{}
+%%
+%% @doc     Delete all elements from SocketList that has a timestamp
+%%          less than the current time.
+%% @end
 %%--------------------------------------------------------------------
 delete_expired(SocketList) when is_record(SocketList, socketlist) ->
     Now = util:timestamp(),
     #socketlist{list = del_time(Now, SocketList#socketlist.list)}.
 
 %%--------------------------------------------------------------------
-%% Function: get_using_id(Id, SocketList)
-%%           Id         = term()
-%%           SocketList = socketlist record()
-%% Descrip.: Find the first element of SocketList that has an id
-%%           matching the supplied Id.
-%% Returns : Elem |
-%%           []
-%%           Elem = socketlistelem record()
+%% @spec    (Id, SocketList) ->
+%%            Elem |
+%%            []
+%%
+%%            Id         = term()
+%%            SocketList = #socketlist{}
+%%
+%%            Elem = #socketlistelem{}
+%%
+%% @doc     Find the first element of SocketList that has an id
+%%          matching the supplied Id.
+%% @end
 %%--------------------------------------------------------------------
 get_using_id(Id, SocketList) when is_record(SocketList, socketlist) ->
     get_using_id1(Id, SocketList#socketlist.list).
@@ -205,14 +235,18 @@ get_using_id1(Id, [H | T]) when is_record(H, socketlistelem) ->
     get_using_id1(Id, T).
 
 %%--------------------------------------------------------------------
-%% Function: get_using_pid(Pid, SocketList)
-%%           Pid        = pid()
-%%           SocketList = socketlist record()
-%% Descrip.: Return all elements of SocketList that has a pid matching
-%%           the supplied Pid.
-%% Returns : NewSocketList |
-%%           none
-%%           NewSocketList = socketlist record()
+%% @spec    (Pid, SocketList) ->
+%%            NewSocketList |
+%%            none
+%%
+%%            Pid        = pid()
+%%            SocketList = #socketlist{}
+%%
+%%            NewSocketList = #socketlist{}
+%%
+%% @doc     Return all elements of SocketList that has a pid matching
+%%          the supplied Pid.
+%% @end
 %%--------------------------------------------------------------------
 get_using_pid(Pid, SocketList) when is_record(SocketList, socketlist), is_pid(Pid) ->
     case get_using_pid1(Pid, SocketList#socketlist.list, []) of
@@ -230,16 +264,20 @@ get_using_pid1(_Pid, [], Res) ->
     lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% Function: get_using_remote(Proto, IP, Port, SocketList)
-%%           Proto      = atom()
-%%           IP         = string()
-%%           Port       = integer()
-%%           SocketList = socketlist record()
-%% Descrip.: Find the first element of SocketList that has a remote
-%%           matching the supplied Remote, and protocol matches Proto.
-%% Returns : Elem |
-%%           none
-%%           Elem = socketlistelem record()
+%% @spec    (Proto, IP, Port, SocketList) ->
+%%            Elem |
+%%            none
+%%
+%%            Proto      = atom()
+%%            IP         = string()
+%%            Port       = integer()
+%%            SocketList = #socketlist{}
+%%
+%%            Elem = #socketlistelem{}
+%%
+%% @doc     Find the first element of SocketList that has a remote
+%%          matching the supplied Remote, and protocol matches Proto.
+%% @end
 %%--------------------------------------------------------------------
 get_using_remote(Proto, IP, Port, SocketList) when is_atom(Proto), is_record(SocketList, socketlist),
 						     is_list(IP), is_integer(Port) ->
@@ -260,14 +298,18 @@ get_using_remote1(_Proto, _IP, _Port, []) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_using_socketid(Id, SocketList)
-%%           Id         = ob_id record()
-%%           SocketList = socketlist record()
-%% Descrip.: Return the first element of SocketList that has a socket
-%%           with id matching the supplied Id.
-%% Returns : Elem |
-%%           none
-%%           Elem = socketlistelem record()
+%% @spec    (Id, SocketList) ->
+%%            Elem |
+%%            none
+%%
+%%            Id         = #ob_id{}
+%%            SocketList = #socketlist{}
+%%
+%%            Elem = #socketlistelem{}
+%%
+%% @doc     Return the first element of SocketList that has a socket
+%%          with id matching the supplied Id.
+%% @end
 %%--------------------------------------------------------------------
 get_using_socketid(Id, SocketList) when is_record(SocketList, socketlist), is_record(Id, ob_id) ->
     get_using_socketid1(Id, SocketList#socketlist.list).
@@ -282,32 +324,47 @@ get_using_socketid1(Id, [H | T]) when is_record(H, socketlistelem) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_length(SList)
-%%           SList = socketlist record()
-%% Descrip.: Return the number of elements in an socketlist record().
-%% Returns : Length = integer()
+%% @spec    (SList) ->
+%%            Length
+%%
+%%            SList = #socketlist{}
+%%
+%%            Length = integer()
+%%
+%% @doc     Return the number of elements in an socketlist record().
+%% @end
 %%--------------------------------------------------------------------
 get_length(SList) when is_record(SList, socketlist) ->
     length(SList#socketlist.list).
 
 %%--------------------------------------------------------------------
-%% Function: debugfriendly(SList)
-%%           SList = socketlist record()
-%% Descrip.: Return information about the elements in an socketlist
-%%           record in a format that is suitable for logging using ~p.
-%% Returns : Data = term()
+%% @spec    (SList) ->
+%%            Data
+%%
+%%            SList = #socketlist{}
+%%
+%%            Data = term()
+%%
+%% @doc     Return information about the elements in an socketlist
+%%          record in a format that is suitable for logging using ~p.
+%% @end
 %%--------------------------------------------------------------------
 debugfriendly(SList) when is_record(SList, socketlist) ->
     debugfriendly2(debug, SList#socketlist.list).
 
 %%--------------------------------------------------------------------
-%% Function: monitor_format(SList)
-%%           SList = socketlist record()
-%% Descrip.: Return information about the elements in a socketlist
-%%           record in a format that is usable by the monitor program
-%%           once written. The monitor program is NOT maintained.
-%% Returns : Data = term()
+%% @spec    (SList) ->
+%%            Data
+%%
+%%            SList = #socketlist{}
+%%
+%%            Data = term()
+%%
+%% @doc     Return information about the elements in a socketlist
+%%          record in a format that is usable by the monitor program
+%%          once written. The monitor program is NOT maintained.
 %% @hidden
+%% @end
 %%--------------------------------------------------------------------
 monitor_format(SList) when is_record(SList, socketlist) ->
     debugfriendly2(monitor, SList#socketlist.list).
@@ -366,12 +423,17 @@ debugfriendly2(Output, [H | Rest]) when is_record(H, socketlistelem) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: delete_using_ref(Id, SocketList)
-%%           Id         = term()
-%%           SocketList = socketlist record()
-%% Descrip.: Delete an element from SocketList identified by a
-%%           reference.
-%% Returns : NewSocketList = socketlist record()
+%% @spec    (Id, SocketList) ->
+%%            NewSocketList
+%%
+%%            Id         = term()
+%%            SocketList = #socketlist{}
+%%
+%%            NewSocketList = #socketlist{}
+%%
+%% @doc     Delete an element from SocketList identified by a
+%%          reference.
+%% @end
 %%--------------------------------------------------------------------
 delete_using_ref(Ref, SocketList) when is_record(SocketList, socketlist) ->
     #socketlist{list=del_ref(Ref, SocketList#socketlist.list)}.
@@ -432,14 +494,16 @@ make_yxa_socket_ident(out, Proto, HP) when is_atom(Proto), is_record(HP, hp) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     DeadPid1 = spawn(fun() -> ok end),
     Empty = empty(),
-    
+
     %% add(Type, Pid, SipSocket, Expire, SocketList)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "add/5 - 1.1"),
@@ -451,10 +515,10 @@ test() ->
 							     },
 					 id		= #ob_id{id = 1}
 					}, 0, Empty),
-    
+
     autotest:mark(?LINE, "add/5 - 1.2"),
     #socketlist{list = [Add_L1_1]} = Add_L1,
-    
+
     autotest:mark(?LINE, "add/5 - 1.3"),
     #socketlistelem{id = #yxa_socket_ident{type		= listener,
 					   proto	= yxa_test,
@@ -476,7 +540,7 @@ test() ->
 				   },
     {ok, Add_L2} =
 	add(in, self(), Add_L2_2_SipSocket, util:timestamp() - 10, Add_L1),
-    
+
     autotest:mark(?LINE, "add/5 - 2.2"),
     #socketlist{list = [Add_L1_2, Add_L1_1]} = Add_L2,
 
@@ -495,7 +559,7 @@ test() ->
     %% test adding newer entry (should replace old one)
     {ok, Add_L3_L1} = add(in, self(), Add_L2_2_SipSocket, 10, Empty),
     {ok, Add_L3_L2} = add(in, self(), Add_L2_2_SipSocket, 20, Add_L3_L1),
-    
+
     autotest:mark(?LINE, "add/5 - 3.2"),
     %% check result
     #socketlist{list = [Add_L3_L1_Elem1]} = Add_L3_L1,
@@ -539,7 +603,7 @@ test() ->
 				   hostport	= Add4_L1_1_HP,
 				   id		= #ob_id{id = 2}
 				  }, Empty),
-    
+
     autotest:mark(?LINE, "add/4 - 1.2"),
     #socketlist{list = [#socketlistelem{id		= #yxa_socket_ident{type = to},
 					hostport	= Add4_L1_1_HP
@@ -569,7 +633,7 @@ test() ->
 
     autotest:mark(?LINE, "get_length/1 - 2"),
     2 = get_length(Add_L2),
-    
+
 
     %% get_using_id(Id, SocketList)
     %%--------------------------------------------------------------------
@@ -631,7 +695,7 @@ test() ->
     [Extract_Sipsocket1] = extract([sipsocket], Add_L1_2),
 
     autotest:mark(?LINE, "extract/2 - 6"),
-    Extract_Expire1 = Add_L1_2#socketlistelem.expire,    
+    Extract_Expire1 = Add_L1_2#socketlistelem.expire,
     [Extract_Expire1] = extract([expire], Add_L1_2),
 
     autotest:mark(?LINE, "extract/2 - 7"),

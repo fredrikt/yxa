@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : contact.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: This module handles contact-params for a single contact
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      This module handles contact-params for a single contact
 %%%           header entry (sip/sips uri).
 %%%
 %%%           Note: keys and values are currently stored as strings
@@ -9,7 +9,8 @@
 %%%           if standard values are represented as atoms (but don't
 %%%           turn them all into atoms - as atoms aren't GCed)
 %%%
-%%% Created : 09 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    09 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(contact_param).
 
@@ -54,16 +55,18 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: to_norm(Params)
-%%           Params = list() of {Name, Val}
-%%           Name = string(), treated as case insensitive
-%%           Val  = string() | none, treated as case insensitive
-%%                                   unless it starts with a quote
-%% Descrip.: Convert a contact-parameter list to a normalized (a case
-%%           insensitive form) form. Throws an error if Name component
-%%           is already present in Params.
-%% Returns : contact_param record()
-%%           throw({error, duplicate_key})
+%% @spec    (Params) -> #contact_param{}
+%%
+%%            Params = [{Name, Val}]
+%%            Name   = string() "treated as case insensitive"
+%%            Val    = string() | none "treated as case insensitive unless it starts with a quote"
+%%
+%% @throws  {error, duplicate_key} 
+%%
+%% @doc     Convert a contact-parameter list to a normalized (a case
+%%          insensitive form) form. Throws an error if Name component
+%%          is already present in Params.
+%% @end
 %%--------------------------------------------------------------------
 to_norm(Params) when is_list(Params) ->
     F = fun({Name, ValIn}) when is_list(Name), (is_list(ValIn) orelse ValIn == none) ->
@@ -85,22 +88,28 @@ to_norm(Params) when is_list(Params) ->
     #contact_param{pairs = key_val_db:new(L)}.
 
 %%--------------------------------------------------------------------
-%% Function: to_list(Norm)
-%%           Norm = contact_param record()
-%% Descrip.: Returns a normalized form of the parameters.
-%% Returns : list() of {Key, Val}
-%%           Key = string()
-%%           Val = string()
+%% @spec    (Norm) ->
+%%            [{Key, Val}]
+%%
+%%            Norm = #contact_param{}
+%%
+%%            Key = string()
+%%            Val = string()
+%%
+%% @doc     Returns a normalized form of the parameters.
+%% @end
 %%--------------------------------------------------------------------
 to_list(Norm) when is_record(Norm, contact_param) ->
     key_val_db:to_key_val(Norm#contact_param.pairs).
 
 
 %%--------------------------------------------------------------------
-%% Function: to_string(Norm)
-%%           Norm = contact_param record()
-%% Descrip.: Return a raw contact-parameter string.
-%% Returns : string(), in the ";name=val;..." format
+%% @spec    (Norm) -> string() "in the \";name=val;...\" format"
+%%
+%%            Norm = #contact_param{}
+%%
+%% @doc     Return a raw contact-parameter string.
+%% @end
 %%--------------------------------------------------------------------
 to_string(Norm) when is_record(Norm, contact_param) ->
     L = to_list(Norm),
@@ -114,14 +123,15 @@ format_param({Name, none}) when is_list(Name) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: add(ContactParam, Key, Value)
-%%           ContactParam = contact_param record(), the record to
-%%                          update
-%%           Key          = string(), treated as case insensitive
-%%           Value        = string(), treated as case insensitive
-%% Descrip.: Add new entry or replace old entry in contact_param. Key
-%%           and Value are stored in a case insensitive manner.
-%% Returns : contact_param record()
+%% @spec    (ContactParam, Key, Value) -> #contact_param{}
+%%
+%%            ContactParam = #contact_param{} "the record to update"
+%%            Key          = string() "treated as case insensitive"
+%%            Value        = string() "treated as case insensitive"
+%%
+%% @doc     Add new entry or replace old entry in contact_param. Key
+%%          and Value are stored in a case insensitive manner.
+%% @end
 %%--------------------------------------------------------------------
 add(ContactParam, Key, Value) when is_record(ContactParam, contact_param), is_list(Key), is_list(Value) ->
     NKey = httpd_util:to_lower(Key),
@@ -133,13 +143,14 @@ add2(ContactParam, {Key, Value}) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: find(ContactParam, Key)
-%%           ContactParam = contact_param record(), the record to
-%%                          update
-%%           Key          = string(), is treated as case insensitive
-%% Descrip.: Retrieve the value of Key if it is present in
-%%           ContactParam.
-%% Returns : [string()] | []
+%% @spec    (ContactParam, Key) -> [string()] | []
+%%
+%%            ContactParam = #contact_param{} "the record to update"
+%%            Key          = string() "is treated as case insensitive"
+%%
+%% @doc     Retrieve the value of Key if it is present in
+%%          ContactParam.
+%% @end
 %%--------------------------------------------------------------------
 find(ContactParam, Key) when is_record(ContactParam, contact_param), is_list(Key) ->
     Data = ContactParam#contact_param.pairs,
@@ -147,11 +158,13 @@ find(ContactParam, Key) when is_record(ContactParam, contact_param), is_list(Key
     key_val_db:find(Data, CKey).
 
 %%--------------------------------------------------------------------
-%% Function: remove(ContactParam, Key)
-%%           ContactParam = contact_param record()
-%%           Key          = string(), is treated as case insensitive
-%% Descrip.: Find the Key-Val pair to remove from ContactParam.
-%% Returns : contact_param record()
+%% @spec    (ContactParam, Key) -> #contact_param{}
+%%
+%%            ContactParam = #contact_param{}
+%%            Key          = string() "is treated as case insensitive"
+%%
+%% @doc     Find the Key-Val pair to remove from ContactParam.
+%% @end
 %%--------------------------------------------------------------------
 remove(ContactParam, Key) ->
     Data = ContactParam#contact_param.pairs,
@@ -160,9 +173,11 @@ remove(ContactParam, Key) ->
     ContactParam#contact_param{pairs = Res}.
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% test to_norm(Params)
@@ -299,6 +314,3 @@ test() ->
 %% Behaviour functions
 %%====================================================================
 
-%%====================================================================
-%% Internal functions
-%%====================================================================

@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : siplocation.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Interface module for the location database. Also handles
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Interface module for the location database. Also handles
 %%%           processing of REGISTER requests for our domains,
 %%%           received by 'incomingproxy' and 'outgoingproxy'.
 %%%
-%%% Created : 29 Jan 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    29 Jan 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 
 %%       ___How REGISTER requests are processed___
@@ -160,17 +161,19 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: process_register_request(Request, YxaCtx, AppName)
-%%           Request = response record()
-%%           YxaCtx  = yxa_ctx record()
-%%           AppName = atom(), application name
-%% Descrip.: Process a received REGISTER. First check if it is for
-%%           one of our domains (homedomain), then check that it
-%%           contains proper authentication and that the authenticated
-%%           user is allowed to register using this address-of-record.
-%%           Finally, let process_updates() process all the
-%%           Contact headers and update the location database.
-%% Returns : not_homedomain | void()
+%% @spec    (Request, YxaCtx, AppName) -> not_homedomain | void()
+%%
+%%            Request = #response{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            AppName = atom() "application name"
+%%
+%% @doc     Process a received REGISTER. First check if it is for one
+%%          of our domains (homedomain), then check that it contains
+%%          proper authentication and that the authenticated user is
+%%          allowed to register using this address-of-record.
+%%          Finally, let process_updates() process all the Contact
+%%          headers and update the location database.
+%% @end
 %%--------------------------------------------------------------------
 process_register_request(Request, YxaCtx, AppName) when is_record(Request, request), is_record(YxaCtx, yxa_ctx),
 							is_atom(AppName) ->
@@ -202,15 +205,17 @@ process_register_request(Request, YxaCtx, AppName) when is_record(Request, reque
     end.
 
 %%--------------------------------------------------------------------
-%% Function: register_require_supported(RegReq, OrigLogTag)
-%%           RegReq     = reg_request record()
-%%           OrigLogTag = string(), logtag used for events
-%% Descrip.: After we have checked that the REGISTER request is for
-%%           one of our homedomains, we start checking the validity of
-%%           the request. First, we do some checks in this function
-%%           before going on to making sure the request is
-%%           authenticated in register_authenticate(...).
-%% Returns : term()
+%% @spec    (RegReq, OrigLogTag) -> term()
+%%
+%%            RegReq     = #reg_request{}
+%%            OrigLogTag = string() "logtag used for events"
+%%
+%% @doc     After we have checked that the REGISTER request is for one
+%%          of our homedomains, we start checking the validity of the
+%%          request. First, we do some checks in this function before
+%%          going on to making sure the request is authenticated in
+%%          register_authenticate(...).
+%% @end
 %%--------------------------------------------------------------------
 register_require_supported(RegReq, OrigLogTag) when is_record(RegReq, reg_request), is_list(OrigLogTag) ->
     %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 2
@@ -302,10 +307,12 @@ register_authenticate(RegReq, OrigLogTag) when is_record(RegReq, reg_request), i
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_valid_register_request(Header)
-%%           Header = keylist record()
-%% Descrip.: looks for unsupported extensions.
-%% Returns : true | SipError
+%% @spec    (Header) -> true | SipError
+%%
+%%            Header = #keylist{}
+%%
+%% @doc     looks for unsupported extensions.
+%% @end
 %%--------------------------------------------------------------------
 is_valid_register_request(Header) ->
     case keylist:fetch('require', Header) of
@@ -344,17 +351,21 @@ get_unsupported_extensions2([], _DoGRUU, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: process_updates(RegReq, Contacts)
-%%           RegReq    = reg_request record()
-%%           Contacts  = list() of contact record()
-%% Descrip.: Update the location database, based on a REGISTER request
-%%           we are processing. Either add or remove entrys.
-%% Returns : {ok, {Status, Reason, ExtraHeaders}}     |
-%%           {siperror, Status, Reason}               |
-%%           {siperror, Status, Reason, ExtraHeaders}
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, NewValueList}
+%% @spec    (RegReq, Contacts) ->
+%%            {ok, {Status, Reason, ExtraHeaders}}     |
+%%            {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders}
+%%
+%%            RegReq   = #reg_request{}
+%%            Contacts = [#contact{}]
+%%
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = [{Key, NewValueList}]
+%%
+%% @doc     Update the location database, based on a REGISTER request
+%%          we are processing. Either add or remove entrys.
+%% @end
 %%--------------------------------------------------------------------
 %% RFC 3261 chapter 10.3 - Processing REGISTER Request - step 6 and 7
 %% remove, add or update contact info in location (phone) database
@@ -408,14 +419,18 @@ process_updates(RegReq, Contacts) when is_record(RegReq, reg_request), is_list(C
     end.
 
 %%--------------------------------------------------------------------
-%% Function: process_updates_get_path_vector(RegReq)
-%%           RegReq    = reg_request record()
-%% Descrip.: Examine Path: header in request, and possibly add
-%%           ourselves to the path vector. Create a path vector if
-%%           there were none.
-%% Returns : PathVector |
-%%           {siperror, Status, Reason, ExtraHeaders}
-%%           PathVector = list() of string()
+%% @spec    (RegReq) ->
+%%            PathVector |
+%%            {siperror, Status, Reason, ExtraHeaders}
+%%
+%%            RegReq = #reg_request{}
+%%
+%%            PathVector = [string()]
+%%
+%% @doc     Examine Path: header in request, and possibly add
+%%          ourselves to the path vector. Create a path vector if
+%%          there were none.
+%% @end
 %%--------------------------------------------------------------------
 process_updates_get_path_vector(RegReq) when is_record(RegReq, reg_request) ->
     #reg_request{uri		= URL,
@@ -518,20 +533,20 @@ create_process_updates_response(RegReq) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_contacts(SipUser, Do_GRUU, DoOutbound, To)
-%%           SipUser    = string(), SIP authentication user - key in
-%%                        location database
-%%           Do_GRUU    = bool(), add gruu= parameters or not?
-%%           DoOutbound = bool(), is outbound enabled?
-%%           To         = list() of string(), REGISTER request To
-%%                        header
-%% Descrip.: Find all the locations where a specific sipuser can be
-%%           located (e.g. all the users phones).
-%% Returns : {ok, GRUUs, Contacts}
-%%           GRUUs    = bool(), true if one or more of the contacts
-%%                      were equipped with 'gruu' contact parameters
-%%           Contacts = list() of string(), formated as a contact
-%%                      field-value (see RFC 3261)
+%% @spec    (SipUser, Do_GRUU, DoOutbound, To) ->
+%%            {ok, GRUUs, Contacts}
+%%
+%%            SipUser    = string() "SIP authentication user - key in location database"
+%%            Do_GRUU    = bool() "add gruu= parameters or not?"
+%%            DoOutbound = bool() "is outbound enabled?"
+%%            To         = [string()] "REGISTER request To header"
+%%
+%%            GRUUs    = bool() "true if one or more of the contacts were equipped with 'gruu' contact parameters"
+%%            Contacts = [string()] "formated as a contact field-value (see RFC 3261)"
+%%
+%% @doc     Find all the locations where a specific sipuser can be
+%%          located (e.g. all the users phones).
+%% @end
 %%--------------------------------------------------------------------
 fetch_contacts(SipUser, Do_GRUU, DoOutbound, To) ->
     {ok, Locations} = phone:get_sipuser_locations(SipUser),
@@ -670,16 +685,20 @@ unregister(LogTag, Header, PhoneEntrys) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_valid_wildcard_request(Header, Contacts)
-%%           Header      = keylist record(), the sip request headers
-%%           Contacts    = list() of contact record()
-%% Descrip.: determine if request is a properly formed wildcard
-%%           request (see RFC 3261 Chapter 10 page 64 - step 6)
-%% Returns : true            |
-%%           false           |
-%%           {siperror, Status, Reason}
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
+%% @spec    (Header, Contacts) ->
+%%            true            |
+%%            false           |
+%%            {siperror, Status, Reason}
+%%
+%%            Header   = #keylist{} "the sip request headers"
+%%            Contacts = [#contact{}]
+%%
+%%            Status = integer() "SIP status code"
+%%            Reason = string() "SIP reason phrase"
+%%
+%% @doc     determine if request is a properly formed wildcard request
+%%          (see RFC 3261 Chapter 10 page 64 - step 6)
+%% @end
 %%--------------------------------------------------------------------
 %% there is only one Contact and it's a wildcard
 is_valid_wildcard_request(Header, [ #contact{urlstr = "*"} ]) ->
@@ -719,16 +738,19 @@ wildcard_grep([_Foo | Rest]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_user_with_contact(URI)
-%%           URI = sipurl record()
-%% Descrip.: Checks if any of our users are registered at the
-%%           location specified. Used to determine if we should
-%%           proxy requests to a URI without authorization.
-%% Returns : none | SIPuser
-%%           SIPuser = string(), #phone.user field value
-%% NOTE    : If you want to know all the users (in case there is more
-%%           than one), you should use get_locations_with_contact/1
-%%           instead.
+%% @spec    (URI) ->
+%%            none | SIPuser
+%%
+%%            URI = #sipurl{}
+%%
+%%            SIPuser = string() "#phone.user field value"
+%%
+%% @doc     Checks if any of our users are registered at the location
+%%          specified. Used to determine if we should proxy requests
+%%          to a URI without authorization. NOTE : If you want to
+%%          know all the users (in case there is more than one), you
+%%          should use get_locations_with_contact/1 instead.
+%% @end
 %%--------------------------------------------------------------------
 get_user_with_contact(URI) when is_record(URI, sipurl) ->
     case phone:get_sipusers_using_contact(URI) of
@@ -740,16 +762,20 @@ get_user_with_contact(URI) when is_record(URI, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_locations_with_contact(URI)
-%%           URI = sipurl record()
-%% Descrip.: Checks if any of our users are registered at the
-%%           location specified. Return all the location database
-%%           entrys matching the URI, so that the caller can look
-%%           for a specific socket matching the registration(s) if
-%%           the client used Outbound.
-%% Returns : {ok, Locations} |
-%%           error
-%%           Locations = list() of siplocationdb_e record()
+%% @spec    (URI) ->
+%%            {ok, Locations} |
+%%            error
+%%
+%%            URI = #sipurl{}
+%%
+%%            Locations = [#siplocationdb_e{}]
+%%
+%% @doc     Checks if any of our users are registered at the location
+%%          specified. Return all the location database entrys
+%%          matching the URI, so that the caller can look for a
+%%          specific socket matching the registration(s) if the
+%%          client used Outbound.
+%% @end
 %%--------------------------------------------------------------------
 get_locations_with_contact(URI) when is_record(URI, sipurl) ->
     case phone:get_locations_using_contact(URI) of
@@ -761,12 +787,14 @@ get_locations_with_contact(URI) when is_record(URI, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_locations_for_users(SipUserList)
-%%           SipUserList = list() of string(), usernames
-%% Descrip.: Looks up all locations for a list of users. Used
-%%           to find out where a set of users are to see where
-%%           we should route a request.
-%% Returns : list() of siplocationdb_e record()
+%% @spec    (SipUserList) -> [#siplocationdb_e{}]
+%%
+%%            SipUserList = [string()] "usernames"
+%%
+%% @doc     Looks up all locations for a list of users. Used to find
+%%          out where a set of users are to see where we should route
+%%          a request.
+%% @end
 %%--------------------------------------------------------------------
 get_locations_for_users(In) when is_list(In) ->
     get_locations_for_users2(In, []).
@@ -778,12 +806,14 @@ get_locations_for_users2([H | T], Res) when is_list(H) ->
     get_locations_for_users2(T, Res ++ Locations).
 
 %%--------------------------------------------------------------------
-%% Function: prioritize_locations(Locations)
-%%           Locations = list() of siplocationdb_e record()
-%% Descrip.: Look through a list of siplocation DB entrys, figure out
-%%           what the lowest priority amongst them are and then
-%%           return all records which has that priority.
-%% Returns : list() of siplocationdb_e record()
+%% @spec    (Locations) -> [#siplocationdb_e{}]
+%%
+%%            Locations = [#siplocationdb_e{}]
+%%
+%% @doc     Look through a list of siplocation DB entrys, figure out
+%%          what the lowest priority amongst them are and then return
+%%          all records which has that priority.
+%% @end
 %%--------------------------------------------------------------------
 prioritize_locations(Locations) when is_list(Locations) ->
     case get_priorities(Locations) of
@@ -830,17 +860,23 @@ get_locations_with_prio2(Priority, [#siplocationdb_e{flags = Flags} = H | T], Re
     end.
 
 %%--------------------------------------------------------------------
-%% Function: process_non_wildcard_contacts(RegReq, Contacts)
-%%           RegReq    = reg_request record()
-%%           Contacts  = list() of contact record()
-%% Descrip.: process a SIP Contact entry (thats not a wildcard)
-%%           and do the appropriate db add/rm/update, see:
-%%           RFC 3261 chapter 10.3 - Processing REGISTER Request -
-%%           step 7 for more details
-%% Returns : void()                 |
-%%           throw({siperror, ...}) |
-%%           throw(MnesiaError)
-%%           MnesiaError = {aborted, term()} | term()
+%% @spec    (RegReq, Contacts) ->
+%%            void()                 
+%%
+%%            RegReq   = #reg_request{}
+%%            Contacts = [#contact{}]
+%%
+%%            MnesiaError = {aborted, term()} | term()
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} |
+%%            MnesiaError                              
+%%
+%% @doc     process a SIP Contact entry (thats not a wildcard) and do
+%%          the appropriate db add/rm/update, see: RFC 3261 chapter
+%%          10.3 - Processing REGISTER Request - step 7 for more
+%%          details
+%% @end
 %%--------------------------------------------------------------------
 process_non_wildcard_contacts(RegReq, Contacts) ->
     Header = RegReq#reg_request.header,
@@ -929,18 +965,22 @@ get_database_phone_instance_reg_id(_Instance, _RegId, [], Res) ->
     Res.
 
 %%--------------------------------------------------------------------
-%% Function: check_same_call_id(RegReq, Contact, DBLocation)
-%%           RegReq      = reg_request record()
-%%           Contact     = contact record(), sipuser-location binding
-%%                         data in REGISTER request
-%%           DBLocations = phone record(), currently stored
-%%                         sipuser-location info
-%% Descrip.: Check if the REGISTER we are processing has the same
-%%           Call-Id as the currently stored location binding.
-%% Returns : void()                 |
-%%           throw({siperror, ...}) |
-%%           throw(MnesiaError)
-%%           MnesiaError = {aborted, term()} | term()
+%% @spec    (RegReq, Contact, DBLocation) ->
+%%            void()                 
+%%
+%%            RegReq      = #reg_request{}
+%%            Contact     = #contact{} "sipuser-location binding data in REGISTER request"
+%%            DBLocations = #phone{} "currently stored sipuser-location info"
+%%
+%%            MnesiaError = {aborted, term()} | term()
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} |
+%%            MnesiaError                              
+%%
+%% @doc     Check if the REGISTER we are processing has the same
+%%          Call-Id as the currently stored location binding.
+%% @end
 %%--------------------------------------------------------------------
 check_same_call_id(RegReq, Contact, DBLocation) ->
     Expire = parse_register_contact_expire(RegReq#reg_request.expire_h, Contact),
@@ -967,21 +1007,23 @@ check_same_call_id(RegReq, Contact, DBLocation) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_greater_cseq(RegReq, Contact, DBLocation, Expire)
-%%           RegReq     = reg_request record()
-%%           Contact    = contact record(), sipuser-location binding
-%%                        data in REGISTER request
-%%           DBLocation = phone record(), currently stored
-%%                        sipuser-location info
-%%           Expire     = none | integer(), expire value supplied by
-%%                        UA client - either through an 'expires'
-%%                        contact parameter, or an Expires header
-%% Descrip.: Check if the REGISTER we are processing has the same
-%%           Call-Id as the currently stored location binding.
-%% Returns : void()                 |
-%%           throw({siperror, ...}) |
-%%           throw(MnesiaError)
-%%           MnesiaError = {aborted, term()} | term()
+%% @spec    (RegReq, Contact, DBLocation, Expire) ->
+%%            void()                 
+%%
+%%            RegReq     = #reg_request{}
+%%            Contact    = #contact{} "sipuser-location binding data in REGISTER request"
+%%            DBLocation = #phone{} "currently stored sipuser-location info"
+%%            Expire     = none | integer() "expire value supplied by UA client - either through an 'expires' contact parameter, or an Expires header"
+%%
+%%            MnesiaError = {aborted, term()} | term()
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} |
+%%            MnesiaError                              
+%%
+%% @doc     Check if the REGISTER we are processing has the same
+%%          Call-Id as the currently stored location binding.
+%% @end
 %%--------------------------------------------------------------------
 check_greater_cseq(RegReq, Contact, DBLocation, Expire) ->
     #reg_request{cseq		= CSeq,
@@ -1015,20 +1057,27 @@ check_greater_cseq(RegReq, Contact, DBLocation, Expire) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: to_url(LDBE)
-%%           LDBE = siplocationdb_e record()
-%% Descrip.: Create a SIP URL from a SIP location db entry.
-%% Returns : sipurl record()
+%% @spec    (LDBE) -> #sipurl{}
+%%
+%%            LDBE = #siplocationdb_e{}
+%%
+%% @doc     Create a SIP URL from a SIP location db entry.
+%% @end
 %%--------------------------------------------------------------------
 to_url(LDBE) when is_record(LDBE, siplocationdb_e) ->
     LDBE#siplocationdb_e.address.
 
 %%--------------------------------------------------------------------
-%% Function: sort_most_recent_first(Locations)
-%%           Locations = list() of siplocationdb_e record()
-%% Descrip.: Sort the locations based on when they were created, most
-%%           recent locations first.
-%% Returns : NewLocations = list() of siplocationdb_e record()
+%% @spec    (Locations) ->
+%%            NewLocations
+%%
+%%            Locations = [#siplocationdb_e{}]
+%%
+%%            NewLocations = [#siplocationdb_e{}]
+%%
+%% @doc     Sort the locations based on when they were created, most
+%%          recent locations first.
+%% @end
 %%--------------------------------------------------------------------
 sort_most_recent_first(Locations) when is_list(Locations) ->
     F = fun(A, B) when is_record(A, siplocationdb_e), is_record(B, siplocationdb_e) ->
@@ -1052,13 +1101,17 @@ sort_most_recent_first(Locations) when is_list(Locations) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: register_contact(RegReq, Contact, Expire)
-%%           RegReq  = reg_request record()
-%%           Contact = contact record()
-%%           Expire  = none | integer(), value provided by UA client
-%% Descrip.: add or update a location database entry
-%% Returns : ok | {atomic, Result}
-%%           Result = term()
+%% @spec    (RegReq, Contact, Expire) ->
+%%            ok | {atomic, Result}
+%%
+%%            RegReq  = #reg_request{}
+%%            Contact = #contact{}
+%%            Expire  = none | integer() "value provided by UA client"
+%%
+%%            Result = term()
+%%
+%% @doc     add or update a location database entry
+%% @end
 %%--------------------------------------------------------------------
 register_contact(RegReq, Contact, ExpireIn) when is_record(RegReq, reg_request), is_record(Contact, contact) ->
     #reg_request{logtag		= LogTag,
@@ -1089,23 +1142,27 @@ register_contact(RegReq, Contact, ExpireIn) when is_record(RegReq, reg_request),
 			     CallId, CSeq, Instance).
 
 %%--------------------------------------------------------------------
-%% Function: register_contact_params(RegReq, Contact)
-%%           RegReq  = reg_request record()
-%%           Contact = contact record()
-%% Descrip.: Create flags to store in the location database for this
-%%           registration. For outgoingproxy, this includes an 'addr'
-%%           that is the address of the proxy to which the UAC
-%%           (presumably) has a persistent TCP connection that must
-%%           be used in order to reach this client with SIP messages.
-%% Returns : {ok, Flags, Instance}
-%%           Flags = list() of {Key, Value}, (sorted, to be testable)
-%%           Key   = atom()
-%%           Value = term()
-%%           Instance = string(), instance ID (or "")
-%% Note    : The registration_time is used by the GRUU mechanism in
-%%           case there is more than one registered contact with the
-%%           same instance id for a user.
-%%           GRUU draft 06 #8.4.1 (Request Targeting)
+%% @spec    (RegReq, Contact) ->
+%%            {ok, Flags, Instance}
+%%
+%%            RegReq  = #reg_request{}
+%%            Contact = #contact{}
+%%
+%%            Flags    = [{Key, Value}] "(sorted, to be testable)"
+%%            Key      = atom()
+%%            Value    = term()
+%%            Instance = string() "instance ID (or \"\")"
+%%
+%% @doc     Create flags to store in the location database for this
+%%          registration. For outgoingproxy, this includes an 'addr'
+%%          that is the address of the proxy to which the UAC
+%%          (presumably) has a persistent TCP connection that must be
+%%          used in order to reach this client with SIP messages.
+%%          Note : The registration_time is used by the GRUU
+%%          mechanism in case there is more than one registered
+%%          contact with the same instance id for a user. GRUU draft
+%%          06 #8.4.1 (Request Targeting)
+%% @end
 %%--------------------------------------------------------------------
 register_contact_params(RegReq, Contact) ->
     case RegReq#reg_request.path_vector of
@@ -1238,15 +1295,18 @@ get_register_expire(Expire) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: unregister_contacts(LogTag, RequestHeader, PhoneEntrys)
-%%           LogTag        = string(),
-%%           RequestHeader = keylist record(),
-%%           PhoneEntrys   = list() of phone record(),
-%% Descrip.: handles wildcard based removal (RFC 3261 chapter 10
-%%           page 64 - step 6), this function handles a list of
-%%           Locations (sipuser-location binding)
-%% Returns : ok |
-%%           throw(SipError)
+%% @spec    (LogTag, RequestHeader, PhoneEntrys) -> ok
+%%
+%%            LogTag        = string() ""
+%%            RequestHeader = #keylist{} ""
+%%            PhoneEntrys   = [#phone{}] ""
+%%
+%% @throws  SipError 
+%%
+%% @doc     handles wildcard based removal (RFC 3261 chapter 10 page
+%%          64 - step 6), this function handles a list of Locations
+%%          (sipuser-location binding)
+%% @end
 %%--------------------------------------------------------------------
 unregister_contacts(LogTag, RequestHeader, PhoneEntrys) when is_record(RequestHeader, keylist),
 							     is_list(PhoneEntrys) ->
@@ -1294,16 +1354,18 @@ unregister_phone(LogTag, Phone, _RequestCallId, _RequestCSeq) when is_record(Pho
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: parse_register_contact_expire(ExpireHeader, Contact)
-%%           Header  = keylist record(), the request headers
-%%           ExpireHeader = list() of string(), Expire header value
-%%           Contact = contact record(), a contact entry from a request
-%% Descrip.: determine the expire time supplied for a contact in a SIP
-%%           REGISTER request
-%% Returns : integer() |
-%%           none
-%% Note    : Test order may not be changed as it is specified by
-%%           RFC 3261 chapter 10 page 64 - step 6
+%% @spec    (ExpireHeader, Contact) ->
+%%            integer() |
+%%            none
+%%
+%%            Header       = #keylist{} "the request headers"
+%%            ExpireHeader = [string()] "Expire header value"
+%%            Contact      = #contact{} "a contact entry from a request"
+%%
+%% @doc     determine the expire time supplied for a contact in a SIP
+%%          REGISTER request Note : Test order may not be changed as
+%%          it is specified by RFC 3261 chapter 10 page 64 - step 6
+%% @end
 %%--------------------------------------------------------------------
 parse_register_contact_expire(ExpireHeader, Contact) when is_list(ExpireHeader),
 							  is_record(Contact, contact) ->
@@ -1336,9 +1398,11 @@ get_flag_value(Key, #phone{flags = Flags}) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

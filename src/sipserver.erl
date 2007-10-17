@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipserver.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Main OTP application startup function, and per-request
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Main OTP application startup function, and per-request
 %%%           start processing function.
 %%%
-%%% Created : 12 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    12 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipserver).
 %%-compile(export_all).
@@ -44,15 +45,18 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start(normal, [AppModule])
-%%           AppModule = atom(), name of this YXA application
-%% Descrip.: The big start-function for the YXA stack. Invoke this
-%%           function to make the sun go up, and tell it the name of
-%%           your YXA application (AppModule) to have the stack invoke
-%%           the correct init/0, request/3 and response/3 methods.
-%% Returns : {ok, Pid}
-%%           Pid = pid(),  the YXA OTP supervisor
-%%                         (module sipserver_sup)
+%% @spec    (normal, [AppModule]) ->
+%%            {ok, Pid}
+%%
+%%            AppModule = atom() "name of this YXA application"
+%%
+%%            Pid = pid() "the YXA OTP supervisor (module sipserver_sup)"
+%%
+%% @doc     The big start-function for the YXA stack. Invoke this
+%%          function to make the sun go up, and tell it the name of
+%%          your YXA application (AppModule) to have the stack invoke
+%%          the correct init/0, request/3 and response/3 methods.
+%% @end
 %%--------------------------------------------------------------------
 start(normal, [AppModule]) ->
     %% First of all, we add a custom error_logger module. This is the only
@@ -99,10 +103,11 @@ start(normal, [AppModule]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: stop()
-%% Descrip.: Log and then shut down application. Shuts down the whole
-%%           Erlang virtual machine, so never really returns.
-%% Returns : term(), does not return
+%% @spec    () -> term() "does not return"
+%%
+%% @doc     Log and then shut down application. Shuts down the whole
+%%          Erlang virtual machine, so never really returns.
+%% @end
 %%--------------------------------------------------------------------
 stop() ->
     logger:log(normal, "Sipserver: shutting down"),
@@ -116,27 +121,30 @@ stop() ->
     init:stop().
 
 %%--------------------------------------------------------------------
-%% Function: restart()
-%% Descrip.: Log and then restart application. Will never really
-%%           return.
-%% Returns : term(), does not return
+%% @spec    () -> term() "does not return"
+%%
+%% @doc     Log and then restart application. Will never really
+%%          return.
+%% @end
 %%--------------------------------------------------------------------
 restart() ->
     logger:log(normal, "Sipserver: restarting"),
     init:restart().
 
 %%--------------------------------------------------------------------
-%% Function: init_mnesia(Tables)
-%%           Tables = list() of atom(), names of Mnesia tables needed
-%%                    by this YXA application.
-%% Descrip.: Initiate Mnesia on this node. If there are no remote
-%%           mnesia-tables, we conclude that we are a mnesia master
-%%           and check if any of the tables needs to be updated.
-%% Returns : ok |
-%%           throw(DescriptiveAtom)
-%%           DescriptiveAtom = atom(), reason converted to atom since
-%%                             atoms are displayed best when an
-%%                             application fails to start
+%% @spec    (Tables) ->
+%%            ok 
+%%
+%%            Tables = [atom()] "names of Mnesia tables needed by this YXA application."
+%%
+%%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
+%%
+%% @throws  DescriptiveAtom 
+%%
+%% @doc     Initiate Mnesia on this node. If there are no remote
+%%          mnesia-tables, we conclude that we are a mnesia master
+%%          and check if any of the tables needs to be updated.
+%% @end
 %%--------------------------------------------------------------------
 init_mnesia(none) ->
     init_mnesia_update();
@@ -225,15 +233,18 @@ get_remote_tables([], Res) ->
     {ok, Res}.
 
 %%--------------------------------------------------------------------
-%% Function: check_for_tables(Tables)
-%%           Tables = list() of atom(), list of table names
-%% Descrip.: Make sure the tables listed in Tables exist, otherwise
-%%           halt the Erlang runtime system.
-%% Returns : ok |
-%%           throw(DescriptiveAtom)
-%%           DescriptiveAtom = atom(), reason converted to atom since
-%%                             atoms are displayed best when an
-%%                             application fails to start
+%% @spec    (Tables) ->
+%%            ok 
+%%
+%%            Tables = [atom()] "list of table names"
+%%
+%%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
+%%
+%% @throws  DescriptiveAtom 
+%%
+%% @doc     Make sure the tables listed in Tables exist, otherwise
+%%          halt the Erlang runtime system.
+%% @end
 %%--------------------------------------------------------------------
 check_for_tables([H | T]) ->
     %% check if table exists
@@ -251,18 +262,20 @@ check_for_tables([]) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: find_mnesia_tables(Descr, Tables)
-%%           Descr  = string(), "local" or "remote"
-%%           Tables = list() of atom(), names of local/remote Mnesia
-%%                    tables needed by this YXA application.
-%% Descrip.: Do mnesia:wait_for_tables() for RemoteTables, with a
-%%           timeout since Mnesia doesn't always start correctly due
-%%           to network issues, fast restarts or other reasons.
-%% Returns : ok |
-%%           throw(DescriptiveAtom)
-%%           DescriptiveAtom = atom(), reason converted to atom since
-%%                             atoms are displayed best when an
-%%                             application fails to start
+%% @spec    (Descr, Tables) ->
+%%            ok 
+%%
+%%            Descr  = string() "\"local\" or \"remote\""
+%%            Tables = [atom()] "names of local/remote Mnesia tables needed by this YXA application."
+%%
+%%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
+%%
+%% @throws  DescriptiveAtom 
+%%
+%% @doc     Do mnesia:wait_for_tables() for RemoteTables, with a
+%%          timeout since Mnesia doesn't always start correctly due
+%%          to network issues, fast restarts or other reasons.
+%% @end
 %%--------------------------------------------------------------------
 find_mnesia_tables(Descr, Tables) ->
     logger:log(debug, "Initializing ~s Mnesia tables ~p", [Descr, Tables]),
@@ -293,9 +306,10 @@ find_mnesia_tables2(Descr, OrigTableList, Tables, Count) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: init_statistics()
-%% Descrip.: Create ETS tables used by YXA.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Create ETS tables used by YXA.
+%% @end
 %%--------------------------------------------------------------------
 init_statistics() ->
     ets:new(yxa_statistics, [public, set, named_table]),
@@ -303,14 +317,19 @@ init_statistics() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: safe_spawn(Module, Function, Arguments)
-%%           Module    = atom()
-%%           Function  = atom()
-%%           Arguments = list()
-%% Descrip.: Run Module:Function(Arguments), in a separate process.
-%%           Log errors, but otherwise just ignore them. Relies on
-%%           Erlang process links elsewhere to 'fix' errors.
-%% Returns : Pid = pid(), spawned process pid
+%% @spec    (Module, Function, Arguments) ->
+%%            Pid
+%%
+%%            Module    = atom()
+%%            Function  = atom()
+%%            Arguments = list()
+%%
+%%            Pid = pid() "spawned process pid"
+%%
+%% @doc     Run Module:Function(Arguments), in a separate process. Log
+%%          errors, but otherwise just ignore them. Relies on Erlang
+%%          process links elsewhere to 'fix' errors.
+%% @end
 %%--------------------------------------------------------------------
 safe_spawn(Module, Function, Arguments) ->
     spawn(fun() -> safe_spawn_child(Module, Function, Arguments) end).
@@ -334,22 +353,25 @@ safe_spawn_child(Module, Function, Arguments) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: my_send_result(Request, Socket, Status, Reason,
-%%                          ExtraHeaders)
-%%           Request = request record()
-%%           Socket  = sipsocket record()
-%%           Status  = integer(), SIP response code
-%%           Reason  = string(), error description
-%%           ExtraHeaders = keylist record()
-%% Descrip.: In sipserver we do lots of checking in the dark areas of
-%%           transport layer, transaction layer or somewhere in
-%%           between. When we detect unparseable requests for example,
-%%           we generate an error response in sipserver but special
-%%           care must be taken so that we do not generate responses
-%%           to malformed ACK's. This function checks that.
-%% Returns : ok  |
-%%           Res
-%%           Res = term(), result of transportlayer:send_result()
+%% @spec    (Request, Socket, Status, Reason, ExtraHeaders) ->
+%%            ok  |
+%%            Res
+%%
+%%            Request      = #request{}
+%%            Socket       = #sipsocket{}
+%%            Status       = integer() "SIP response code"
+%%            Reason       = string() "error description"
+%%            ExtraHeaders = #keylist{}
+%%
+%%            Res = term() "result of transportlayer:send_result()"
+%%
+%% @doc     In sipserver we do lots of checking in the dark areas of
+%%          transport layer, transaction layer or somewhere in
+%%          between. When we detect unparseable requests for example,
+%%          we generate an error response in sipserver but special
+%%          care must be taken so that we do not generate responses
+%%          to malformed ACK's. This function checks that.
+%% @end
 %%--------------------------------------------------------------------
 my_send_result(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Request, request) ->
     case Request#request.method of
@@ -374,15 +396,19 @@ my_send_result(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
     end.
 
 %%--------------------------------------------------------------------
-%% Function: internal_error(Request, Socket)
-%%           Request = request record()
-%%           Socket  = sipsocket record()
-%% Descrip.: Send a 500 Server Internal Error, or some other given
-%%           error, in response to a request (Request) received on a
-%%           specific socket (Socket).
-%% Returns : ok  |
-%%           Res
-%%           Res = term(), result of transportlayer:send_result()
+%% @spec    (Request, Socket) ->
+%%            ok  |
+%%            Res
+%%
+%%            Request = #request{}
+%%            Socket  = #sipsocket{}
+%%
+%%            Res = term() "result of transportlayer:send_result()"
+%%
+%% @doc     Send a 500 Server Internal Error, or some other given
+%%          error, in response to a request (Request) received on a
+%%          specific socket (Socket).
+%% @end
 %%--------------------------------------------------------------------
 internal_error(Request, Socket) when is_record(Request, request), is_record(Socket, sipsocket) ->
     my_send_result(Request, Socket, 500, "Server Internal Error", []).
@@ -395,16 +421,18 @@ internal_error(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
     my_send_result(Request, Socket, Status, Reason, ExtraHeaders).
 
 %%--------------------------------------------------------------------
-%% Function: process(Packet, Origin)
-%%           Packet = string()
-%%           Origin = siporigin record()
-%% Descrip.: Check if something we received from a socket (Packet) is
-%%           a valid SIP request/response by calling parse_packet() on
-%%           it. Then, use my_apply to either send it on to the
-%%           transaction layer, or invoke a modules request/3 or
-%%           response/3 function on it - depending on the contents of
-%%           Dst.
-%% Returns : void(), does not matter.
+%% @spec    (Packet, Origin) -> void() "does not matter."
+%%
+%%            Packet = string()
+%%            Origin = #siporigin{}
+%%
+%% @doc     Check if something we received from a socket (Packet) is a
+%%          valid SIP request/response by calling parse_packet() on
+%%          it. Then, use my_apply to either send it on to the
+%%          transaction layer, or invoke a modules request/3 or
+%%          response/3 function on it - depending on the contents of
+%%          Dst.
+%% @end
 %%--------------------------------------------------------------------
 process(Packet, Origin) when is_record(Origin, siporigin) ->
     SipSocket = Origin#siporigin.sipsocket,
@@ -449,23 +477,26 @@ process(Packet, Origin) when is_record(Origin, siporigin) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: my_apply(Dst, Request, YxaCtx)
-%%           Dst     = transactionlayer | Module
-%%           Module  = atom(), YXA application module name
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: If Dst is transactionlayer, gen_server call the
-%%           transaction layer and let it decide our next action. If
-%%           Dst is the name of a module, apply() that modules
-%%           request/2 or response/2 function.
-%% Returns : ignore      |
-%%           SIPerror    |
-%%           ApplyResult
-%%           SIPerror = {siperror, Status, Reason}
-%%             Status = integer()
-%%             Reason = string()
-%%           ApplyResult = term(), result of applications request/3 or
-%%                         response/3 function.
+%% @spec    (Dst, Request, YxaCtx) ->
+%%            ignore      |
+%%            SIPerror    |
+%%            ApplyResult
+%%
+%%            Dst     = transactionlayer | Module
+%%            Module  = atom() "YXA application module name"
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%%            SIPerror    = {siperror, Status, Reason}
+%%            Status      = integer()
+%%            Reason      = string()
+%%            ApplyResult = term() "result of applications request/3 or response/3 function."
+%%
+%% @doc     If Dst is transactionlayer, gen_server call the
+%%          transaction layer and let it decide our next action. If
+%%          Dst is the name of a module, apply() that modules
+%%          request/2 or response/2 function.
+%% @end
 %%--------------------------------------------------------------------
 my_apply(transactionlayer, R, YxaCtx) when is_record(R, request) orelse is_record(R, response),
 					   is_record(YxaCtx, yxa_ctx) ->
@@ -505,19 +536,23 @@ my_apply(AppModule, Response, YxaCtx) when is_atom(AppModule), is_record(Respons
     AppModule:response(Response, YxaCtx).
 
 %%--------------------------------------------------------------------
-%% Function: parse_packet(Packet, Origin)
-%%           Packet = string() | binary()
-%%           Origin = siporigin record()
-%% Descrip.: Check if something we received from a socket (Packet) is
-%%           a valid SIP request/response. What we return is a parsed
-%%           request/response that has been checked for loops, correct
-%%           top-Via etc. together with a logging string that descr-
-%%           ibes this request/response.
-%% Returns : {ok, R, YxaCtx}       |
-%%           void(), unspecified
-%%           R = request record()  |
-%%               response record()
-%%           YxaCtx = yxa_ctx record()
+%% @spec    (Packet, Origin) ->
+%%            {ok, R, YxaCtx}       |
+%%            void() "unspecified"
+%%
+%%            Packet = string() | binary()
+%%            Origin = #siporigin{}
+%%
+%%            R      = #request{}  |
+%%            #response{}
+%%            YxaCtx = #yxa_ctx{}
+%%
+%% @doc     Check if something we received from a socket (Packet) is a
+%%          valid SIP request/response. What we return is a parsed
+%%          request/response that has been checked for loops, correct
+%%          top-Via etc. together with a logging string that descr-
+%%          ibes this request/response.
+%% @end
 %%--------------------------------------------------------------------
 parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
     Socket = Origin#siporigin.sipsocket,
@@ -612,18 +647,19 @@ parse_packet2(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigi
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_do_internal_error(Header, Socket, Status, Reason,
-%%                                   ExtraHeaders)
-%%           Header = term(), opaque (keylist record())
-%%           Socket = term(), opaque (sipsocket record())
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%%           ExtraHeaders = term(), opaque (keylist record())
-%% Descrip.: Handle errors returned during initial parsing of a
-%%           request. These errors occur before the transaction layer
-%%           is notified of the requests, so there are never any
-%%           server transactions to handle the errors. Just send them.
-%% Returns : ok
+%% @spec    (Header, Socket, Status, Reason, ExtraHeaders) -> ok
+%%
+%%            Header       = term() "opaque #(keylist{})"
+%%            Socket       = term() "opaque #(sipsocket{})"
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = term() "opaque #(keylist{})"
+%%
+%% @doc     Handle errors returned during initial parsing of a
+%%          request. These errors occur before the transaction layer
+%%          is notified of the requests, so there are never any
+%%          server transactions to handle the errors. Just send them.
+%% @end
 %%--------------------------------------------------------------------
 parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
     {_, Method} = sipheader:cseq(Header),
@@ -643,16 +679,17 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: process_parsed_packet(Request, Origin)
-%%           Request = request record()
-%%           Origin  = siporigin record(), information about where
-%%                     this Packet was received from
-%% Descrip.: Do alot of transport/transaction layer checking/work on
-%%           a request or response we have received and previously
-%%           concluded was parseable. For example, do RFC3581 handling
-%%           of rport parameter on top via, check for loops, check if
-%%           we received a request from a strict router etc.
-%% Returns : {ok, NewRequest, YxaCtx}
+%% @spec    (Request, Origin) -> {ok, NewRequest, YxaCtx}
+%%
+%%            Request = #request{}
+%%            Origin  = #siporigin{} "information about where this Packet was received from"
+%%
+%% @doc     Do alot of transport/transaction layer checking/work on a
+%%          request or response we have received and previously
+%%          concluded was parseable. For example, do RFC3581 handling
+%%          of rport parameter on top via, check for loops, check if
+%%          we received a request from a strict router etc.
+%% @end
 %%--------------------------------------------------------------------
 process_parsed_packet(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     NewHeader2 = fix_topvia_received_rport(Request#request.header, Origin),
@@ -691,17 +728,19 @@ process_parsed_packet(Request, Origin) when is_record(Request, request), is_reco
     {ok, NewRequest, YxaCtx};
 
 %%--------------------------------------------------------------------
-%% Function: process_parsed_packet(Response, Origin)
-%%           Response = response record()
-%%           Origin   = siporigin record(), information about where
-%%                      this Packet was received from
-%% Descrip.: Do alot of transport/transaction layer checking/work on
-%%           a request or response we have received and previously
-%%           concluded was parseable. For example, do RFC3581 handling
-%%           of rport parameter on top via, check for loops, check if
-%%           we received a request from a strict router etc.
-%% Returns : {NewResponse, LogStr} |
-%%           invalid
+%% @spec    (Response, Origin) ->
+%%            {NewResponse, LogStr} |
+%%            invalid
+%%
+%%            Response = #response{}
+%%            Origin   = #siporigin{} "information about where this Packet was received from"
+%%
+%% @doc     Do alot of transport/transaction layer checking/work on a
+%%          request or response we have received and previously
+%%          concluded was parseable. For example, do RFC3581 handling
+%%          of rport parameter on top via, check for loops, check if
+%%          we received a request from a strict router etc.
+%% @end
 %%--------------------------------------------------------------------
 process_parsed_packet(Response, Origin) when is_record(Response, response), is_record(Origin, siporigin) ->
     check_packet(Response, Origin),
@@ -719,14 +758,16 @@ process_parsed_packet(Response, Origin) when is_record(Response, response), is_r
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_response_via(Origin, TopVia)
-%%           Origin   = siporigin record(), information about where
-%%                      this Packet was received from
-%%           TopVia   = via record() | none
-%% Descrip.: Check that there actually was a Via header in this
-%%           response, and check if it matches us.
-%% Returns : ok    |
-%%           error
+%% @spec    (Origin, TopVia) ->
+%%            ok    |
+%%            error
+%%
+%%            Origin = #siporigin{} "information about where this Packet was received from"
+%%            TopVia = #via{} | none
+%%
+%% @doc     Check that there actually was a Via header in this
+%%          response, and check if it matches us.
+%% @end
 %%--------------------------------------------------------------------
 check_response_via(Origin, none) when is_record(Origin, siporigin) ->
     logger:log(error, "INVALID top-Via in response [client=~s] (no Via found).",
@@ -767,15 +808,19 @@ check_response_via(Origin, TopVia) when is_record(Origin, siporigin), is_record(
     end.
 
 %%--------------------------------------------------------------------
-%% Function: fix_topvia_received_rport(Header, Origin)
-%%           Header = term(), opaque (keylist record())
-%%           Origin = siporigin record()
-%% Descrip.: Implement handling of rport= top Via parameter upon
-%%           receiving a request with an 'rport' parameter. RFC3581.
-%%           Even if there is no rport parameter, we check if we must
-%%           add a received= parameter (RFC3261 #18.2.1).
-%% Returns : NewHeader
-%%           NewHeader = term(), opaque (a new keylist record())
+%% @spec    (Header, Origin) ->
+%%            NewHeader
+%%
+%%            Header = term() "opaque #(keylist{})"
+%%            Origin = #siporigin{}
+%%
+%%            NewHeader = term() "opaque (a new #keylist{})"
+%%
+%% @doc     Implement handling of rport= top Via parameter upon
+%%          receiving a request with an 'rport' parameter. RFC3581.
+%%          Even if there is no rport parameter, we check if we must
+%%          add a received= parameter (RFC3261 #18.2.1).
+%% @end
 %%--------------------------------------------------------------------
 %% XXX this RFC3581 implementation is not 100% finished. RFC3581 Section 4 says we MUST
 %% send the responses to this request back from the same IP and port we received the
@@ -837,15 +882,18 @@ replace_top_via(NewVia, Header) when is_record(NewVia, via) ->
     keylist:set("Via", sipheader:via_print(lists:append([NewVia], Via)), Header).
 
 %%--------------------------------------------------------------------
-%% Function: received_from_strict_router(URI, Header)
-%%           URI = sipurl record()
-%%           Header = term(), opaque (keylist record())
-%% Descrip.: Look at the URI of a request we just received to see
-%%           if it is something we (possibly) put in a Record-Route
-%%           and this is a request sent from a strict router
-%%           (RFC2543 compliant UA).
-%% Returns : true |
-%%           false
+%% @spec    (URI, Header) ->
+%%            true |
+%%            false
+%%
+%%            URI    = #sipurl{}
+%%            Header = term() "opaque #(keylist{})"
+%%
+%% @doc     Look at the URI of a request we just received to see if it
+%%          is something we (possibly) put in a Record-Route and this
+%%          is a request sent from a strict router (RFC2543 compliant
+%%          UA).
+%% @end
 %%--------------------------------------------------------------------
 received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     MyPorts = sipsocket:get_all_listenports(),
@@ -882,16 +930,21 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: remove_maddr_matching_me(URI, Origin)
-%%           URI    = sipurl record()
-%%           Origin = siporigin record()
-%% Descrip.: Perform some rather complex processing of a Request-URI
-%%           if it has an maddr parameter. RFC3261 #16.4 (Route
-%%           Information Preprocessing) requires this as some kind of
-%%           backwards compatibility thing for clients that are
-%%           trying to do loose routing while being strict routers.
-%%           The world would be a better place without this need.
-%% Returns : NewURI = sipurl record()
+%% @spec    (URI, Origin) ->
+%%            NewURI
+%%
+%%            URI    = #sipurl{}
+%%            Origin = #siporigin{}
+%%
+%%            NewURI = #sipurl{}
+%%
+%% @doc     Perform some rather complex processing of a Request-URI if
+%%          it has an maddr parameter. RFC3261 #16.4 (Route
+%%          Information Preprocessing) requires this as some kind of
+%%          backwards compatibility thing for clients that are trying
+%%          to do loose routing while being strict routers. The world
+%%          would be a better place without this need.
+%% @end
 %%--------------------------------------------------------------------
 remove_maddr_matching_me(URI, Origin) when is_record(URI, sipurl), is_record(Origin, siporigin) ->
     case url_param:find(URI#sipurl.param_pairs, "maddr") of
@@ -967,12 +1020,17 @@ remove_maddr_matching_me(URI, Origin) when is_record(URI, sipurl), is_record(Ori
     end.
 
 %%--------------------------------------------------------------------
-%% Function: remove_route_matching_me(Header)
-%%           Header = term(), opaque (keylist record())
-%% Descrip.: Look at the first Route header element in Header (if any)
-%%           and see if it matches this proxy. If so, remove the first
-%%           element and return a new Header.
-%% Returns : NewHeader = keylist record()
+%% @spec    (Header) ->
+%%            NewHeader
+%%
+%%            Header = term() "opaque #(keylist{})"
+%%
+%%            NewHeader = #keylist{}
+%%
+%% @doc     Look at the first Route header element in Header (if any)
+%%          and see if it matches this proxy. If so, remove the first
+%%          element and return a new Header.
+%% @end
 %%--------------------------------------------------------------------
 remove_route_matching_me(Header) ->
     case keylist:fetch('route', Header) of
@@ -997,12 +1055,15 @@ remove_route_matching_me(Header) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: route_matches_me(Route)
-%%           Route = contact record()
-%% Descrip.: Helper function for remove_route_matching_me/1. Check if
-%%           an URL matches this proxys name (or address) and port.
-%% Returns : true  |
-%%           false
+%% @spec    (Route) ->
+%%            true  |
+%%            false
+%%
+%%            Route = #contact{}
+%%
+%% @doc     Helper function for remove_route_matching_me/1. Check if
+%%          an URL matches this proxys name (or address) and port.
+%% @end
 %%--------------------------------------------------------------------
 route_matches_me(Route) when is_record(Route, contact) ->
     URL = sipurl:parse(Route#contact.urlstr),
@@ -1029,16 +1090,18 @@ route_matches_me(Route) when is_record(Route, contact) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_packet(Packet, Origin)
-%%           Packet  = request record() | response record()
-%%           Origin  = siporigin record(), information about where
-%%                     this Packet was received from
-%% Descrip.: Sanity check To: and From: in a received request/response
-%%           and, if Packet is a request record(), also check sanity
-%%           of CSeq and (unless configured not to) check for a
-%%           looping request.
-%% Returns : ok |
-%%           throw({sipparseerror, request, Header, Status, Reason})
+%% @spec    (Packet, Origin) -> ok
+%%
+%%            Packet = #request{} | #response{}
+%%            Origin = #siporigin{} "information about where this Packet was received from"
+%%
+%% @throws  {sipparseerror, request, Header, Status, Reason} 
+%%
+%% @doc     Sanity check To: and From: in a received request/response
+%%          and, if Packet is a request record(), also check sanity
+%%          of CSeq and (unless configured not to) check for a
+%%          looping request.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% Packet is request record()
@@ -1093,15 +1156,17 @@ check_packet(Response, Origin) when is_record(Response, response), is_record(Ori
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: check_for_loop(Header, URI, Origin)
-%%           Header = term(), opaque (keylist record())
-%%           URI    = term(), opaque (sipurl record())
-%%           Origin  = siporigin record(), information about where
-%%                     this Packet was received from
-%% Descrip.: Inspect Header's Via: record(s) to make sure this is not
-%%           a looping request.
-%% Returns : ok |
-%%           throw({sipparseerror, request, Header, Status, Reason})
+%% @spec    (Header, URI, Origin) -> ok
+%%
+%%            Header = term() "opaque #(keylist{})"
+%%            URI    = term() "opaque #(sipurl{})"
+%%            Origin = #siporigin{} "information about where this Packet was received from"
+%%
+%% @throws  {sipparseerror, request, Header, Status, Reason} 
+%%
+%% @doc     Inspect Header's Via: record(s) to make sure this is not a
+%%          looping request.
+%% @end
 %%--------------------------------------------------------------------
 check_for_loop(Header, URI, Origin) when is_record(Origin, siporigin) ->
     LoopCookie = siprequest:get_loop_cookie(Header, URI, Origin#siporigin.proto),
@@ -1121,14 +1186,16 @@ check_for_loop(Header, URI, Origin) when is_record(Origin, siporigin) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: via_indicates_loop(LoopCookie, CmpVia, ViaList)
-%%           LoopCookie = string(), loop cookie as generated by
-%%                        siprequest:get_loop_cookie/3.
-%%           CmpVia     = via record(), what my Via would look like
-%%           ViaList    = list() of via record()
-%% Descrip.: Helper function for check_for_loop/3. See that function.
-%% Returns : true  |
-%%           false
+%% @spec    (LoopCookie, CmpVia, ViaList) ->
+%%            true  |
+%%            false
+%%
+%%            LoopCookie = string() "loop cookie as generated by siprequest:get_loop_cookie/3."
+%%            CmpVia     = #via{} "what my Via would look like"
+%%            ViaList    = [#via{}]
+%%
+%% @doc     Helper function for check_for_loop/3. See that function.
+%% @end
 %%--------------------------------------------------------------------
 via_indicates_loop(_LoopCookie, _CmpVia, []) ->
     false;
@@ -1188,20 +1255,25 @@ extract_loopcookie(Branch, CookieLen) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: make_logstr(R, Origin)
-%%           R      = request record() | response record()
-%%           Origin = siporigin record()
-%% Descrip.: Create a textual representation of a request/response,
-%%           for use in logging.
-%% Returns : LogStr = string()
-%% Note    : draft-ietf-sipping-torture-tests-04.txt argues that a
-%%           proxy shouldn't fail processing a packet just because it
-%%           has a From: header using an URI scheme that it doesn't
-%%           understand - like http. Well, we do - here. The reason
-%%           for not just fixing this here is that there might be
-%%           other places where we expect the From: to be parsable by
-%%           our sipheader:from() - and this hasn't been a problem in
-%%           real life.
+%% @spec    (R, Origin) ->
+%%            LogStr
+%%
+%%            R      = #request{} | #response{}
+%%            Origin = #siporigin{}
+%%
+%%            LogStr = string()
+%%
+%% @doc     Create a textual representation of a request/response, for
+%%          use in logging. Note :
+%%          draft-ietf-sipping-torture-tests-04.txt argues that a
+%%          proxy shouldn't fail processing a packet just because it
+%%          has a From: header using an URI scheme that it doesn't
+%%          understand - like http. Well, we do - here. The reason
+%%          for not just fixing this here is that there might be
+%%          other places where we expect the From: to be parsable by
+%%          our sipheader:from() - and this hasn't been a problem in
+%%          real life.
+%% @end
 %%--------------------------------------------------------------------
 make_logstr(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
@@ -1233,14 +1305,18 @@ url2str({unparseable, URLstr}) when is_list(URLstr) ->
     "unparseable".
 
 %%--------------------------------------------------------------------
-%% Function: sanity_check_contact(Type, Name, Header)
-%%           Type   = request | response
-%%           Name   = string(), "From" or "To" or similar
-%%           Header = keylist record()
-%% Descrip.: Check if the header Name (from Header) is parsable.
-%%           Currently we define parsable as parsable by
-%%           sipheader:from().
-%% Returns : ok | throw({sipparseerror, Type, Header, Status, Reason})
+%% @spec    (Type, Name, Header) -> term()
+%%
+%%            Type   = request | response
+%%            Name   = string() "\"From\" or \"To\" or similar"
+%%            Header = #keylist{}
+%%
+%% @throws  {sipparseerror, Type, Header, Status, Reason} 
+%%
+%% @doc     Check if the header Name (from Header) is parsable.
+%%          Currently we define parsable as parsable by
+%%          sipheader:from().
+%% @end
 %%--------------------------------------------------------------------
 sanity_check_contact(Type, Name, Header) when Type == request; Type == response; is_list(Name),
 					      is_record(Header, keylist) ->
@@ -1267,13 +1343,17 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: check_supported_uri_scheme(URI, Header)
-%%           URI    = sipurl record() | {unparseable, URIstr}
-%%           Header = keylist record()
-%% Descrip.: Check if we supported the URI scheme of a request. If
-%%           we didn't support the URI scheme, sipurl:parse(...) will
-%%           have failed, and we just format the 416 error response.
-%% Returns : true | throw({sipparseerror, Type, Header, Status, Reason})
+%% @spec    (URI, Header) -> term()
+%%
+%%            URI    = #sipurl{} | {unparseable, URIstr}
+%%            Header = #keylist{}
+%%
+%% @throws  {sipparseerror, Type, Header, Status, Reason} 
+%%
+%% @doc     Check if we supported the URI scheme of a request. If we
+%%          didn't support the URI scheme, sipurl:parse(...) will
+%%          have failed, and we just format the 416 error response.
+%% @end
 %%--------------------------------------------------------------------
 check_supported_uri_scheme({unparseable, URIstr}, Header) when is_list(URIstr), is_record(Header, keylist) ->
     case string:chr(URIstr, $:) of
@@ -1291,11 +1371,16 @@ check_supported_uri_scheme(URI, Header) when is_record(URI, sipurl), is_record(H
     true.
 
 %%--------------------------------------------------------------------
-%% Function: origin2str(Origin)
-%%           Origin = siporigin record()
-%%           Default = term()
-%% Descrip.: Turn a siporigin record into a string.
-%% Returns : OriginStr = string()
+%% @spec    (Origin) ->
+%%            OriginStr
+%%
+%%            Origin  = #siporigin{}
+%%            Default = term()
+%%
+%%            OriginStr = string()
+%%
+%% @doc     Turn a siporigin record into a string.
+%% @end
 %%--------------------------------------------------------------------
 origin2str(Origin) when is_record(Origin, siporigin) ->
     lists:concat([Origin#siporigin.proto, ":", Origin#siporigin.addr, ":", Origin#siporigin.port]).
@@ -1318,9 +1403,11 @@ origin2str(Origin) when is_record(Origin, siporigin) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     EmptyBody = <<>>,	%% Work around compiler bug in Erlang R10B-2

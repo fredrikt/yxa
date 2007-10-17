@@ -1,11 +1,12 @@
 %%%--------------------------------------------------------------------
 %%% File    : database_forward.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Access routines for a Mnesia table holding forwarding
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Access routines for a Mnesia table holding forwarding
 %%%           information for users. Only used at KTH, in
 %%%           'appserver' and maybe 'incomingproxy'.
 %%%
-%%% Created : 11 Sep 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    11 Sep 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%--------------------------------------------------------------------
 -module(database_forward).
 
@@ -37,20 +38,25 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: create()
-%% Descrip.: Invoke create/1 with the list of servers indicated by
-%%           the configuration parameter 'databaseservers'.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    () -> term() "result of mnesia:create_table/2."
+%%
+%% @doc     Invoke create/1 with the list of servers indicated by the
+%%          configuration parameter 'databaseservers'.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create() ->
     {ok, S} = yxa_config:get_env(databaseservers),
     create(S).
 
 %%--------------------------------------------------------------------
-%% Function: create(Servers)
-%%           Servers = list() of atom(), list of nodes
-%% Descrip.: Create the table 'forward' on Servers.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    (Servers) -> term() "result of mnesia:create_table/2."
+%%
+%%            Servers = [atom()] "list of nodes"
+%%
+%% @doc     Create the table 'forward' on Servers.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create(Servers) when is_list(Servers) ->
     mnesia:create_table(forward, [{attributes, record_info(fields, forward)},
@@ -60,17 +66,15 @@ create(Servers) when is_list(Servers) ->
 				 ]).
 
 %%--------------------------------------------------------------------
-%% Function: insert(Number, Forwards, Timeout, Localring)
-%%           Number    = string(), arbitrary number or SIP username
-%%           Forwards  = list() of sipurl record()
-%%           Timeout   = integer(), wait timeout - timeout for wait
-%%                       sipproxy_action placed after the call
-%%                       sipproxy_actions generated for Forwards
-%%           LocalRing = bool(), whether to ring on location database
-%%                       entry at the same time as the forward
-%%                       destinations or not
-%% Descrip.: Store Forwards for Number.
-%% Returns : mnesia:transactions()
+%% @spec    (Number, Forwards, Timeout, Localring) -> term()
+%%
+%%            Number    = string() "arbitrary number or SIP username"
+%%            Forwards  = [#sipurl{}]
+%%            Timeout   = integer() "wait timeout - timeout for wait sipproxy_action placed after the call sipproxy_actions generated for Forwards"
+%%            LocalRing = bool() "whether to ring on location database entry at the same time as the forward destinations or not"
+%%
+%% @doc     Store Forwards for Number.
+%% @end
 %%--------------------------------------------------------------------
 insert(Number, Forwards, Timeout, Localring) when is_list(Number), is_list(Forwards), is_integer(Timeout),
 						  Localring == true; Localring == false ->
@@ -81,19 +85,24 @@ insert(Number, Forwards, Timeout, Localring) when is_list(Number), is_list(Forwa
 				   localring = Localring}).
 
 %%--------------------------------------------------------------------
-%% Function: list()
-%% Descrip.: List all forwards in the database.
-%% Returns : list() of forward record()
+%% @spec    () -> [#forward{}]
+%%
+%% @doc     List all forwards in the database.
+%% @end
 %%--------------------------------------------------------------------
 list() ->
     db_util:tab_to_list(forward).
 
 %%--------------------------------------------------------------------
-%% Function: fetch(Number)
-%%           Number = string(), arbitrary number or SIP username
-%% Descrip.: Fetch all forwards for Number.
-%% Returns : {ok, Forwards}
-%%           Forwards = list() of sipproxy_forward record()
+%% @spec    (Number) ->
+%%            {ok, Forwards}
+%%
+%%            Number = string() "arbitrary number or SIP username"
+%%
+%%            Forwards = [#sipproxy_forward{}]
+%%
+%% @doc     Fetch all forwards for Number.
+%% @end
 %%--------------------------------------------------------------------
 fetch(Number) ->
     F = fun() ->
@@ -119,10 +128,12 @@ fetch(Number) ->
     {ok, lists:map(Rewrite, L)}.
 
 %%--------------------------------------------------------------------
-%% Function: delete(Number)
-%%           Number = string(), arbitrary number or SIP username
-%% Descrip.: Delete all forwards for Number.
-%% Returns : mnesia:transaction()
+%% @spec    (Number) -> term()
+%%
+%%            Number = string() "arbitrary number or SIP username"
+%%
+%% @doc     Delete all forwards for Number.
+%% @end
 %%--------------------------------------------------------------------
 delete(Number) when is_list(Number) ->
     db_util:delete_with_key(forward, Number).

@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : mysql_recv.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Handles data being received on a MySQL socket. Decodes
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Handles data being received on a MySQL socket. Decodes
 %%%           per-row framing and sends each row to parent.
 %%%
-%%% Created :  4 Aug 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since     4 Aug 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%
 %%% Note    : All MySQL code was written by Magnus Ahltorp, originally
 %%%           in the file mysql.erl - I just moved it here.
@@ -34,6 +35,8 @@
 -export([start_link/4
 	]).
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  socket,
 	  parent,
@@ -49,19 +52,23 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Host, Port, LogFun, Parent)
-%%           Host = string()
-%%           Port = integer()
-%%           LogFun = undefined | function() of arity 3
-%%           Parent = pid(), process that should get received frames
-%% Descrip.: Start a process that connects to Host:Port and waits for
-%%           data. When it has received a MySQL frame, it sends it to
-%%           Parent and waits for the next frame.
-%% Returns : {ok, RecvPid, Socket} |
-%%           {error, Reason}
-%%           RecvPid = pid(), receiver process pid
-%%           Socket  = term(), gen_tcp socket
-%%           Reason  = atom() | string()
+%% @spec    (Host, Port, LogFun, Parent) ->
+%%            {ok, RecvPid, Socket} |
+%%            {error, Reason}
+%%
+%%            Host   = string()
+%%            Port   = integer()
+%%            LogFun = undefined | function() of arity 3
+%%            Parent = pid() "process that should get received frames"
+%%
+%%            RecvPid = pid() "receiver process pid"
+%%            Socket  = term() "gen_tcp socket"
+%%            Reason  = atom() | string()
+%%
+%% @doc     Start a process that connects to Host:Port and waits for
+%%          data. When it has received a MySQL frame, it sends it to
+%%          Parent and waits for the next frame.
+%% @end
 %%--------------------------------------------------------------------
 start_link(Host, Port, LogFun, Parent) when is_list(Host), is_integer(Port) ->
     RecvPid =
@@ -86,13 +93,16 @@ start_link(Host, Port, LogFun, Parent) when is_list(Host), is_integer(Port) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init((Host, Port, LogFun, Parent)
-%%           Host = string()
-%%           Port = integer()
-%%           LogFun = undefined | function() of arity 3
-%%           Parent = pid(), process that should get received frames
-%% Descrip.: Connect to Host:Port and then enter receive-loop.
-%% Returns : error | never returns
+%% @spec    ((Host, Port, LogFun, Parent) -> error | never returns
+%%
+%%            Host   = string()
+%%            Port   = integer()
+%%            LogFun = undefined | function() of arity 3
+%%            Parent = pid() "process that should get received frames"
+%%
+%% @doc     Connect to Host:Port and then enter receive-loop.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init(Host, Port, LogFun, Parent) ->
     case gen_tcp:connect(Host, Port, [binary, {packet, 0}]) of
@@ -112,11 +122,13 @@ init(Host, Port, LogFun, Parent) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: loop(State)
-%%           State = state record()
-%% Descrip.: The main loop. Wait for data from our TCP socket and act
-%%           on received data or signals that our socket was closed.
-%% Returns : error | never returns
+%% @spec    (State) -> error | never returns
+%%
+%%            State = #state{}
+%%
+%% @doc     The main loop. Wait for data from our TCP socket and act
+%%          on received data or signals that our socket was closed.
+%% @end
 %%--------------------------------------------------------------------
 loop(State) ->
     Sock = State#state.socket,
@@ -137,12 +149,17 @@ loop(State) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: sendpacket(Parent, Data)
-%%           Parent = pid()
-%%           Data   = binary()
-%% Descrip.: Check if we have received one or more complete frames by
-%%           now, and if so - send them to Parent.
-%% Returns : Rest = binary()
+%% @spec    (Parent, Data) ->
+%%            Rest
+%%
+%%            Parent = pid()
+%%            Data   = binary()
+%%
+%%            Rest = binary()
+%%
+%% @doc     Check if we have received one or more complete frames by
+%%          now, and if so - send them to Parent.
+%% @end
 %%--------------------------------------------------------------------
 %% send data to parent if we have enough data
 sendpacket(Parent, Data) ->

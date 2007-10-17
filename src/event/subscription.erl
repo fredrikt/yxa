@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : subscription.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Handle a SUBSCRIBE dialog (RFC3265).
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Handle a SUBSCRIBE dialog (RFC3265).
 %%%
 %%%           These gen_servers are dialog controllers for dialogs
 %%%           established by SUBSCRIBE requests sent to the
@@ -37,7 +37,8 @@
 %%%
 %%%           * Implement NOTIFY rate limiting
 %%%
-%%% Created : 27 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    27 Apr 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(subscription).
 
@@ -74,6 +75,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {subscriber,		%% string(), subscriber SIP username
 		presentity,		%% {users, UserList} | {address, AddressStr}, presentity SIP username or address
 		logtag,			%% string(), log prefix
@@ -121,19 +124,23 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start(Request, YxaCtx, PackageM, PackageS, Subscriber)
-%%           Request    = request record()
-%%           YxaCtx     = yxa_ctx record()
-%%           PackageM   = atom(), event package module name
-%%           PackageS   = string(), event package
-%%           Subscriber = undefined | string(), subscribing user
-%%                                    (authenticated)
-%% Descrip.: Starts the server, if the event package in question
-%%           says that the preconditions for a subscription are met.
-%% Returns : Pid = pid()     |
-%%           {error, Reason} |
-%%           ignore
-%%           Reason = need_auth | unacceptable
+%% @spec    (Request, YxaCtx, PackageM, PackageS, Subscriber) ->
+%%            Pid
+%%
+%%            Request    = #request{}
+%%            YxaCtx     = #yxa_ctx{}
+%%            PackageM   = atom() "event package module name"
+%%            PackageS   = string() "event package"
+%%            Subscriber = undefined | string() "subscribing user (authenticated)"
+%%
+%%            Pid    = pid()     |
+%%            {error, Reason} |
+%%            ignore
+%%            Reason = need_auth | unacceptable
+%%
+%% @doc     Starts the server, if the event package in question says
+%%          that the preconditions for a subscription are met.
+%% @end
 %%--------------------------------------------------------------------
 start(#request{method = "SUBSCRIBE"} = Request, YxaCtx, PackageM, PackageS, Subscriber) ->
     SubscribeNum = 1,
@@ -219,12 +226,14 @@ start(#request{method = "SUBSCRIBE"} = Request, YxaCtx, PackageM, PackageS, Subs
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_notify(Pid)
-%%           Pid = pid()
-%% Descrip.: Request that the subscription dialog controller Pid sends
-%%           out a NOTIFY. No NOTIFY will be sent out if it matches
-%%           the last NOTIFY sent on that subscription.
-%% Returns : term(), result of gen_server:cast/2
+%% @spec    (Pid) -> term() "result of gen_server:cast/2"
+%%
+%%            Pid = pid()
+%%
+%% @doc     Request that the subscription dialog controller Pid sends
+%%          out a NOTIFY. No NOTIFY will be sent out if it matches
+%%          the last NOTIFY sent on that subscription.
+%% @end
 %%--------------------------------------------------------------------
 send_notify(Pid) ->
     gen_server:cast(Pid, {notify, undefined}).
@@ -235,22 +244,24 @@ send_notify(Pid) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({Request, YxaCtx, State1, Status, Reason,
-%%                 ExtraHeaders, Body})
-%%           Request      = request record(), SUBSCRIBE request
-%%           YxaCtx       = yxa_ctx record()
-%%           State1       = state record(), state in
-%%           Status       = integer(), (200 or 202), SIP status code
-%%                          to send in response to this SUBSCRIBE
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, Value}, extra headers to
-%%                          include in response
-%%           Body         = binary() | list(), body of response
-%% Descrip.: Initiates the server when eventserver has received a
-%%           SUBSCRIBE request.
-%% Returns : {ok, State}    |
-%%           ignore         |
-%%           {stop, Reason}
+%% @spec    ({Request, YxaCtx, State1, Status, Reason, ExtraHeaders,
+%%          Body}) ->
+%%            {ok, State}    |
+%%            ignore         |
+%%            {stop, Reason}
+%%
+%%            Request      = #request{} "SUBSCRIBE request"
+%%            YxaCtx       = #yxa_ctx{}
+%%            State1       = #state{} "state in"
+%%            Status       = integer() "(200 or 202), SIP status code to send in response to this SUBSCRIBE"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = [{Key, Value}] "extra headers to include in response"
+%%            Body         = binary() | list() "body of response"
+%%
+%% @doc     Initiates the server when eventserver has received a
+%%          SUBSCRIBE request.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({Request, YxaCtx, State1, Status, Reason, ExtraHeaders, Body}) ->
     #yxa_ctx{app_logtag   = LogTag,
@@ -339,35 +350,48 @@ init({Request, YxaCtx, State1, Status, Reason, ExtraHeaders, Body}) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 handle_call(Msg, _From, State) ->
     logger:log(error, "Subscription: Received unknown gen_server call : ~p", [Msg]),
     {noreply, State}.
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast({notify, Source}, State)
-%% Descrip.: Request to send a NOTIFY on our subscription. Do so
-%%           (unless it is supressed as a duplicate) and then check
-%%           if our Subscription-State is 'terminated'.
-%% Returns : {noreply, State} |
-%%           {stop, Reason, State}
+%% @spec    ({notify, Source}, State) ->
+%%            {noreply, State} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Request to send a NOTIFY on our subscription. Do so
+%%          (unless it is supressed as a duplicate) and then check if
+%%          our Subscription-State is 'terminated'.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({notify, Source}, State) ->
     case Source == State#state.dialog_id of
@@ -379,11 +403,14 @@ handle_cast({notify, Source}, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({terminate, Mode}, State)
-%%           Mode = shutdown | graceful | atom()
-%% Descrip.: Terminate the subscription since the eventserver is
-%%           shutting down.
-%% Returns :    {stop, Reason, State}
+%% @spec    ({terminate, Mode}, State) -> {stop, Reason, State}
+%%
+%%            Mode = shutdown | graceful | atom()
+%%
+%% @doc     Terminate the subscription since the eventserver is
+%%          shutting down.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({terminate, Mode}, State) when is_atom(Mode) ->
     NewState =
@@ -402,22 +429,31 @@ handle_cast(Msg, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({siptimer, TRef, TDesc}, State)
-%%           TRef  = term(), siptimer reference
-%%           TDesc = string(), description of timer event
-%% Descrip.: One of our siptimers has fired. Find it in our list and
-%%           invoke process_timer/2.
-%% Returns : {noreply, NewState}      |
-%%           {stop, Reason, NewState}
+%% @spec    ({siptimer, TRef, TDesc}, State) ->
+%%            {noreply, NewState}      |
+%%            {stop, Reason, NewState}
+%%
+%%            TRef  = term() "siptimer reference"
+%%            TDesc = string() "description of timer event"
+%%
+%% @doc     One of our siptimers has fired. Find it in our list and
+%%          invoke process_timer/2.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({siptimer, TRef, TDesc}, State) ->
     LogTag = State#state.logtag,
@@ -431,13 +467,16 @@ handle_info({siptimer, TRef, TDesc}, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({branch_result, FromPid, Branch, SipState,
-%%                       Response}, State)
-%% Descrip.: A NOTIFY client transaction we started resulted in a
-%%           response. Check if that response was a (received) 481 and
-%%           terminate if it was.
-%% Returns : {noreply, State} |
-%%           {stop, Reason, State}
+%% @spec    ({branch_result, FromPid, Branch, SipState, Response},
+%%          State) ->
+%%            {noreply, State} |
+%%            {stop, Reason, State}
+%%
+%% @doc     A NOTIFY client transaction we started resulted in a
+%%          response. Check if that response was a (received) 481 and
+%%          terminate if it was.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({branch_result, FromPid, _Branch, _SipState, Response}, #state{subscribe_pid = FromPid} = State) ->
     Status = case Response of
@@ -533,11 +572,14 @@ handle_info({branch_result, FromPid, Branch, SipState, Response}, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({clienttransaction_terminating, FromPid,
-%%                       Branch}, State)
-%% Descrip.: A NOTIFY client transaction has terminated. Remove it
-%%           from our list of active NOTIFY client transactions.
-%% Returns : {noreply, State, Timeout}
+%% @spec
+%%    ({clienttransaction_terminating, FromPid, Branch}, State) ->
+%%            {noreply, State, Timeout}
+%%
+%% @doc     A NOTIFY client transaction has terminated. Remove it from
+%%          our list of active NOTIFY client transactions.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({clienttransaction_terminating, FromPid, Branch}, State) ->
     PidList =
@@ -553,26 +595,30 @@ handle_info({clienttransaction_terminating, FromPid, Branch}, State) ->
     {noreply, State#state{notify_pids = PidList}};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({servertransaction_terminating, ...}, State)
-%% Descrip.: A SUBSCRIBE server transaction (probably) has terminated,
-%%           just ignore.
-%% Returns : {noreply, State, Timeout}
+%% @spec    ({servertransaction_terminating, ...}, State) ->
+%%            {noreply, State, Timeout}
+%%
+%% @doc     A SUBSCRIBE server transaction (probably) has terminated,
+%%          just ignore.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({servertransaction_terminating, _FromPid}, State) ->
     {noreply, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({new_request, FromPid, Ref, NewRequest,
-%%                       YxaCtx}, ...)
-%%           FromPid    = pid(), transaction layer
-%%           Ref        = ref(), unique reference to ack this message
-%%                               with (signal back to transaction
-%%                               layer)
-%%           NewRequest = request record()
-%%           YxaCtx     = yxa_ctx record()
-%% Descrip.: Handle incoming requests on our dialog.
-%% Returns : {noreply, State, Timeout}      |
-%%           {stop, normal, State}
+%% @spec    ({new_request, FromPid, Ref, NewRequest, YxaCtx}, ...) ->
+%%            {noreply, State, Timeout}      |
+%%            {stop, normal, State}
+%%
+%%            FromPid    = pid() "transaction layer"
+%%            Ref        = ref() "unique reference to ack this message with (signal back to transaction layer)"
+%%            NewRequest = #request{}
+%%            YxaCtx     = #yxa_ctx{}
+%%
+%% @doc     Handle incoming requests on our dialog.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({new_request, FromPid, Ref, NewRequest, YxaCtx}, State) when is_record(NewRequest, request),
 									 is_record(YxaCtx, yxa_ctx) ->
@@ -598,13 +644,15 @@ handle_info({new_request, FromPid, Ref, NewRequest, YxaCtx}, State) when is_reco
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({dialog_expired, ...}, State)
-%% Descrip.: This should never happen, but the transaction layer just
-%%           signaled us that this dialog has expired. Log an error
-%%           message and exit. This almost certainly means that a bug
-%%           was encountered, since we should otherwise have noticed
-%%           that the subscription expired and exited ourselves.
-%% Returns : {stop, normal, State}
+%% @spec    ({dialog_expired, ...}, State) -> {stop, normal, State}
+%%
+%% @doc     This should never happen, but the transaction layer just
+%%          signaled us that this dialog has expired. Log an error
+%%          message and exit. This almost certainly means that a bug
+%%          was encountered, since we should otherwise have noticed
+%%          that the subscription expired and exited ourselves.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({dialog_expired, _DialogId}, State) ->
     logger:log(error, "Subscription: Dialog expired, should not happen."),
@@ -616,11 +664,13 @@ handle_info(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: The server is being shut down. Remove ourselves from the
-%%           ets table with subscriptions for presentitys before we
-%%           terminate.
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     The server is being shut down. Remove ourselves from the
+%%          ets table with subscriptions for presentitys before we
+%%          terminate.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, State) when is_record(State, state) ->
     case Reason of
@@ -647,9 +697,11 @@ terminate(Reason, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -661,20 +713,25 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: received_request(State, THandler, NewRequest, YxaCtx)
-%%           State      = state record()
-%%           THandler   = term(), server transaction handle
-%%           NewRequest = request record()
-%%           YxaCtx     = yxa_ctx record()
-%% Descrip.: We have received a request on our dialog.
-%%           Figure out what we should respond to it with and tell the
-%%           THandler to send that response. If it is a SUBSCRIBE, we
-%%           handle it here. If it is not a SUBSCRIBE, we check our
-%%           my_allow list to see if the event package says it has
-%%           implemented the particular method, and if so we invoke
-%%           the event packages request/7 method on the new request.
-%% Returns : NewState = state record() |
-%%           {stop, Reason, NewState}
+%% @spec    (State, THandler, NewRequest, YxaCtx) ->
+%%            NewState
+%%
+%%            State      = #state{}
+%%            THandler   = term() "server transaction handle"
+%%            NewRequest = #request{}
+%%            YxaCtx     = #yxa_ctx{}
+%%
+%%            NewState = #state{} |
+%%            {stop, Reason, NewState}
+%%
+%% @doc     We have received a request on our dialog. Figure out what
+%%          we should respond to it with and tell the THandler to
+%%          send that response. If it is a SUBSCRIBE, we handle it
+%%          here. If it is not a SUBSCRIBE, we check our my_allow
+%%          list to see if the event package says it has implemented
+%%          the particular method, and if so we invoke the event
+%%          packages request/7 method on the new request.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% SUBSCRIBE
@@ -837,13 +894,17 @@ received_request(State, THandler, NewRequest, YxaCtx) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: process_timer(Timer, State)
-%%           Timer = siptimer record()
-%%           State = state record()
-%% Descrip.: Process fired siptimer events.
-%% Returns : {noreply, NewState}      |
-%%           {stop, Reason, NewState}
-%%           NewState = state record()
+%% @spec    (Timer, State) ->
+%%            {noreply, NewState}      |
+%%            {stop, Reason, NewState}
+%%
+%%            Timer = #siptimer{}
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Process fired siptimer events.
+%% @end
 %%--------------------------------------------------------------------
 process_timer(Timer, State) when is_record(State, state) ->
     [TRef, Signal, Description] = siptimer:extract([ref, appsignal, description], Timer),
@@ -852,25 +913,32 @@ process_timer(Timer, State) when is_record(State, state) ->
     process_timer_signal(Signal, Timer, State).
 
 %%--------------------------------------------------------------------
-%% Function: process_timer_signal(subscription_timeout, Timer, State)
-%%           Timer = undefined | siptimer record()
-%%           State = state record()
-%% Descrip.: The subscription has timed out, send a final NOTIFY and
-%%           then terminate.
-%% Returns : {stop, Reason, NewState}
+%% @spec    (subscription_timeout, Timer, State) ->
+%%            {stop, Reason, NewState}
+%%
+%%            Timer = undefined | #siptimer{}
+%%            State = #state{}
+%%
+%% @doc     The subscription has timed out, send a final NOTIFY and
+%%          then terminate.
+%% @end
 %%--------------------------------------------------------------------
 process_timer_signal(subscription_timeout, Timer, State) when is_record(State, state) ->
     process_timer_signal(send_notify, Timer, State);
 
 %%--------------------------------------------------------------------
-%% Function: process_timer_signal(send_notify, Timer, State)
-%%           Timer = undefined | siptimer record()
-%%           State = state record()
-%% Descrip.: We should send a NOTIFY. After that, we check if our
-%%           subscription state is 'terminated' and if it is we exit.
-%% Returns : {noreply, NewState}      |
-%%           {stop, Reason, NewState}
-%%           NewState = state record()
+%% @spec    (send_notify, Timer, State) ->
+%%            {noreply, NewState}      |
+%%            {stop, Reason, NewState}
+%%
+%%            Timer = undefined | #siptimer{}
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     We should send a NOTIFY. After that, we check if our
+%%          subscription state is 'terminated' and if it is we exit.
+%% @end
 %%--------------------------------------------------------------------
 process_timer_signal(send_notify, _Timer, State) when is_record(State, state) ->
     %% Set last_notify_content to 'undefined' to make sure we don't supress sending of this NOTIFY
@@ -904,12 +972,17 @@ process_timer_signal(Unknown, _Timer, State) when is_record(State, state) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: prepare_and_send_notify(State)
-%%           State = state record()
-%% Descrip.: Create a NOTIFY request for this event package, and send
-%%           it on our dialog unless it happens to exactly match the
-%%           last NOTIFY we sent.
-%% Returns : NewState = state record()
+%% @spec    (State) ->
+%%            NewState
+%%
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Create a NOTIFY request for this event package, and send
+%%          it on our dialog unless it happens to exactly match the
+%%          last NOTIFY we sent.
+%% @end
 %%--------------------------------------------------------------------
 prepare_and_send_notify(State) when is_record(State, state) ->
     #state{package_module  = PackageM,
@@ -941,12 +1014,17 @@ prepare_and_send_notify(State) when is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_notify_request(State, Body, ExtraHeaders)
-%%           State        = state record()
-%%           Body         = list() | binary()
-%%           ExtraHeaders = list() of {Key, ValueL}
-%% Descrip.: Part of prepare_and_send_notify/1.
-%% Returns : NewState = state record()
+%% @spec    (State, Body, ExtraHeaders) ->
+%%            NewState
+%%
+%%            State        = #state{}
+%%            Body         = list() | binary()
+%%            ExtraHeaders = [{Key, ValueL}]
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Part of prepare_and_send_notify/1.
+%% @end
 %%--------------------------------------------------------------------
 send_notify_request(State, Body, ExtraHeaders) when is_list(Body); is_binary(Body), is_list(ExtraHeaders) ->
     Now = util:timestamp(),
@@ -1044,13 +1122,17 @@ start_client_transaction(Method, ExtraHeaders, Body, Timeout, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: generate_contact_str()
-%% Descrip.: Generate a Contact header value for our requests. The
-%%           registration as a dialog controller will get all requests
-%%           on the dialog sent to us, so the user part of the contact
-%%           is not important. We use the Erlang pid, without
-%%           ``<'' and ``>''.
-%% Returns : Contact = string(), SIP URL inside ``<'' and ``>''
+%% @spec    () ->
+%%            Contact
+%%
+%%            Contact = string() "SIP URL inside ``<'' and ``>''"
+%%
+%% @doc     Generate a Contact header value for our requests. The
+%%          registration as a dialog controller will get all requests
+%%          on the dialog sent to us, so the user part of the contact
+%%          is not important. We use the Erlang pid, without ``<''
+%%          and ``>''.
+%% @end
 %%--------------------------------------------------------------------
 generate_contact_str() ->
     generate_contact_str("sip").
@@ -1086,14 +1168,18 @@ generate_contact_str(Proto) ->
     "<" ++ sipurl:print(URL) ++ ">".
 
 %%--------------------------------------------------------------------
-%% Function: check_subscribe_expires(Request, THandler)
-%%           Request  = request record()
-%%           THandler = term(), server transaction handle
-%% Descrip.: Extract and check that the 'expires' value of this
-%%           SUBSCRIBE request is acceptable.
-%% Returns : {ok, Expires} |
-%%           error
-%%           Expires = integer()
+%% @spec    (Request, THandler) ->
+%%            {ok, Expires} |
+%%            error
+%%
+%%            Request  = #request{}
+%%            THandler = term() "server transaction handle"
+%%
+%%            Expires = integer()
+%%
+%% @doc     Extract and check that the 'expires' value of this
+%%          SUBSCRIBE request is acceptable.
+%% @end
 %%--------------------------------------------------------------------
 check_subscribe_expires(Request, THandler) ->
     %% RFC3265 #3.1.6.1 (Initial SUBSCRIBE Transaction Processing)
@@ -1120,16 +1206,20 @@ check_subscribe_expires(Request, THandler) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: headers_for_response(Method, Status, ExtraHeaders, State)
-%%           Method       = string(), SIP method
-%%           Status       = integer(), SIP status code
-%%           ExtraHeaders = list() of {Key, ValueL}
-%%           State        = state record()
-%% Descrip.: Extract and check that the 'expires' value of this
-%%           SUBSCRIBE request is acceptable.
-%% Returns : {ok, Expires} |
-%%           error
-%%           Expires = integer()
+%% @spec    (Method, Status, ExtraHeaders, State) ->
+%%            {ok, Expires} |
+%%            error
+%%
+%%            Method       = string() "SIP method"
+%%            Status       = integer() "SIP status code"
+%%            ExtraHeaders = [{Key, ValueL}]
+%%            State        = #state{}
+%%
+%%            Expires = integer()
+%%
+%% @doc     Extract and check that the 'expires' value of this
+%%          SUBSCRIBE request is acceptable.
+%% @end
 %%--------------------------------------------------------------------
 headers_for_response("SUBSCRIBE", Status, ExtraHeaders, State) when is_integer(Status), is_list(ExtraHeaders),
 								    is_record(State, state) ->
@@ -1198,12 +1288,16 @@ get_subscribe_2xx_expires(Header, Default) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_useragent_or_server(Key)
-%%           Key = string(), "User-Agent" or "Server"
-%% Descrip.: Create a User-Agent or Server ExtraHeaders list, if not
-%%           configured not to.
-%% Returns : [{Key, Value}] | []
-%%           Value = string()
+%% @spec    (Key) ->
+%%            [{Key, Value}] | []
+%%
+%%            Key = string() "\"User-Agent\" or \"Server\""
+%%
+%%            Value = string()
+%%
+%% @doc     Create a User-Agent or Server ExtraHeaders list, if not
+%%          configured not to.
+%% @end
 %%--------------------------------------------------------------------
 get_useragent_or_server(Key) ->
     case yxa_config:get_env(set_useragent_and_server) of
@@ -1217,19 +1311,24 @@ get_useragent_or_server(Key) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_subscribe_refresh_timeout(Expires)
-%%           Expires = integer()
-%% Descrip.: Figure out what we should use as refresh timer for a
-%%           subscription of ours. We must refresh _before_ the other
-%%           end times out, and the other end might be 32 seconds
-%%           ahead of us if we only received the last 200 OK response
-%%           to SUBSCRIBE resend. We must also re-subscribe at least
-%%           32 seconds before the remote end might terminate the
-%%           subscription in case our (re-)SUBSCRIBE only gets to the
-%%           other side at it's last resend. Hence we try to set up
-%%           a refresh 64 seconds before the expires-time, unless it
-%%           is very low.
-%% Returns : Refresh = integer()
+%% @spec    (Expires) ->
+%%            Refresh
+%%
+%%            Expires = integer()
+%%
+%%            Refresh = integer()
+%%
+%% @doc     Figure out what we should use as refresh timer for a
+%%          subscription of ours. We must refresh _before_ the other
+%%          end times out, and the other end might be 32 seconds
+%%          ahead of us if we only received the last 200 OK response
+%%          to SUBSCRIBE resend. We must also re-subscribe at least
+%%          32 seconds before the remote end might terminate the
+%%          subscription in case our (re-)SUBSCRIBE only gets to the
+%%          other side at it's last resend. Hence we try to set up a
+%%          refresh 64 seconds before the expires-time, unless it is
+%%          very low.
+%% @end
 %%--------------------------------------------------------------------
 get_subscribe_refresh_timeout(Expires) when is_integer(Expires) ->
     if
@@ -1245,9 +1344,11 @@ get_subscribe_refresh_timeout(Expires) when is_integer(Expires) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% get_subscribe_refresh_timeout(Expires)
@@ -1260,5 +1361,5 @@ test() ->
 
     autotest:mark(?LINE, "get_subscribe_refresh_timeout/1 - 3"),
     4 * 1000 = get_subscribe_refresh_timeout(5),
-    
+
     ok.

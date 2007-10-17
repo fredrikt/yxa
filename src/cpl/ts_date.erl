@@ -1,5 +1,5 @@
 %% This module contains various functions that manipulate dates
-%% or parts of dates - year, month, day as well as weeks and year 
+%% or parts of dates - year, month, day as well as weeks and year
 %% days, week days and the like.
 %%--------------------------------------------------------------------
 
@@ -64,11 +64,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
-%% assumes that DT1 >= DT2   
+%% assumes that DT1 >= DT2
 diff_weekly(Date1, Date2, Wkst) ->
     G1 = gregorian_weekno(Date1, Wkst),
     G2 = gregorian_weekno(Date2, Wkst),
@@ -76,8 +76,8 @@ diff_weekly(Date1, Date2, Wkst) ->
 
 %% return: weekno since 0000-01-01
 %% 0000-01-01 is a saturday (day = 6)
-%% note: weekno is only defined for dates that follow after the 
-%%       first occurrence of Wkst (or are the first Wkst day) 
+%% note: weekno is only defined for dates that follow after the
+%%       first occurrence of Wkst (or are the first Wkst day)
 gregorian_weekno(Date, Wkst) ->
     %% get start of week no. 1
     WeekStart = case day_type_to_no(Wkst) of
@@ -95,26 +95,29 @@ gregorian_weekno(Date, Wkst) ->
     WeekNo.
 
 %%--------------------------------------------------------------------
-%% Function: date_to_weekno(Date, Wkst)
-%%           DateTime = {Year,Month,Day}
-%%           Year     = integer()
-%%           Month    = integer()
-%%           Day      = integer()
-%%           Wkst     = mo | tu | we | th | fr | sa | su, (weekday)
-%%                      first working day of the week
-%% Descrip.: determine which week DateTime belongs to 
-%% Returns : {Year, WeekNo}
-%%           Year = integer()
-%%           WeekNo = integer()
-%% Note    : see RFC 3880 chapter 4.4 page 17 for details - this code
-%%           uses Wkst as the starting date of the week.
-%%           Count weeks as belonging to the year where the week has
-%%           most of it's days.
-%%-------------------------------------------------------------------- 
+%% @spec    (Date, Wkst) ->
+%%            {Year, WeekNo}
+%%
+%%            DateTime = {Year,Month,Day}
+%%            Year     = integer()
+%%            Month    = integer()
+%%            Day      = integer()
+%%            Wkst     = mo | tu | we | th | fr | sa | su "(weekday) first working day of the week"
+%%
+%%            Year   = integer()
+%%            WeekNo = integer()
+%%
+%% @doc     determine which week DateTime belongs to Note : see RFC
+%%          3880 chapter 4.4 page 17 for details - this code uses
+%%          Wkst as the starting date of the week. Count weeks as
+%%          belonging to the year where the week has most of it's
+%%          days.
+%% @end
+%%--------------------------------------------------------------------
 date_to_weekno({Year,_Month,_Day} = Date, Wkst) ->
     %% find first occurence of week = 1, start date
-    {_,_,FirstWkst} = nth_byday_in_year(Year,1,Wkst),  
-    
+    {_,_,FirstWkst} = nth_byday_in_year(Year,1,Wkst),
+
     LastWeekStart = {Year, 12, 31 - (last_week_length(Year, Wkst) - 1)},
     if
 	%% first week
@@ -126,7 +129,7 @@ date_to_weekno({Year,_Month,_Day} = Date, Wkst) ->
 	%% last week
 	Date >= LastWeekStart ->
 	    LastWeekLength = last_week_length(Year, Wkst),
-	    case LastWeekLength >= 4 of 
+	    case LastWeekLength >= 4 of
 		true -> {Year, weeks_in_year(Year, Wkst)};
 		false -> {Year+1, 1}
 	    end;
@@ -149,23 +152,25 @@ date_to_weekno({Year,_Month,_Day} = Date, Wkst) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: days_in_range(Start, End)
-%%           Start = {Y,M,D} | {Y,M}
-%%           End   = {Y,M,D} | {Y,M}
-%%           Y = integer(), year
-%%           M = integer(), month
-%%           D = integer(), day
-%% Descrip.: determine the number of days in the (inclusive) time 
-%%           range Start-End, where Start `=<' End
-%% Returns : integer()
-%% Note    : CPU cost = O(N), N = length of time range in months 
+%% @spec    (Start, End) -> integer()
+%%
+%%            Start = {Y,M,D} | {Y,M}
+%%            End   = {Y,M,D} | {Y,M}
+%%            Y     = integer() "year"
+%%            M     = integer() "month"
+%%            D     = integer() "day"
+%%
+%% @doc     determine the number of days in the (inclusive) time range
+%%          Start-End, where Start `=<' End Note : CPU cost = O(N), N
+%%          = length of time range in months
+%% @end
 %%--------------------------------------------------------------------
 days_in_range({Y1,M1,D1},{Y2,M2,D2}) ->
     %% days_in_range({Y1,M1}, {Y2,M2}) counts all days in the range
     %% "-(D1-1)" - remove days before date Y1-M1-D1
     %% "- last_day_of_the_month(Y2,M2) + D2" - correct day count in last month
-    days_in_range({Y1,M1}, {Y2,M2}) 
-	- (D1-1) 
+    days_in_range({Y1,M1}, {Y2,M2})
+	- (D1-1)
 	+ D2 -calendar:last_day_of_the_month(Y2, M2);
 
 days_in_range({YStart, MStart}, {YEnd, MEnd}) ->
@@ -177,7 +182,7 @@ days_in_range({Y, M}, {Y, M}, DayCount) ->
 days_in_range({YStart, MStart}, {YEnd, MEnd}, DayCount) ->
     NoOfDays = calendar:last_day_of_the_month(YStart, MStart),
     case MStart of
-	12 -> 
+	12 ->
 	    NextM = 1,
 	    NextY = YStart + 1,
 	    days_in_range({NextY, NextM}, {YEnd, MEnd}, DayCount + NoOfDays);
@@ -188,13 +193,16 @@ days_in_range({YStart, MStart}, {YEnd, MEnd}, DayCount) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: nth_bymonthday(Year, Month, N)
-%%           Year  = integer()
-%%           Month = integer()
-%%           N     = integer(), N >= 1 or N =< -1
-%% Descrip.: find date of Nth day in selected Year-Month. XXX unused.
-%%                         -1 = last day, -2 = day before last day ...
-%% Returns : {Year,Month,Day} | nth_day_does_not_exist
+%% @spec    (Year, Month, N) ->
+%%            {Year,Month,Day} | nth_day_does_not_exist
+%%
+%%            Year  = integer()
+%%            Month = integer()
+%%            N     = integer() "N >= 1 or N =< -1"
+%%
+%% @doc     find date of Nth day in selected Year-Month. XXX unused.
+%%          -1 = last day, -2 = day before last day ...
+%% @end
 %%--------------------------------------------------------------------
 nth_bymonthday(Year,Month,N) when N >= 1 ->
     MonthLength = calendar:last_day_of_the_month(Year, Month),
@@ -211,15 +219,18 @@ nth_bymonthday(Year,Month,N) when N =< -1 ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: normalize_monthday(Year,Month,N)       
-%%           Year  = integer()
-%%           Month = integer()
-%%           N     = integer(), N >= 1 or N =< -1
-%% Descrip.: find date of Nth day in selected Year-Month
-%%                    -1 = last day, -2 = day before last day ...
-%% Returns : DayNo
-%%           DayNo = integer(), >= 1 (monthday) if N is valid
-%%                              < 1 if monthday is invalid 
+%% @spec    (Year,Month,N) ->
+%%            DayNo
+%%
+%%            Year  = integer()
+%%            Month = integer()
+%%            N     = integer() "N >= 1 or N =< -1"
+%%
+%%            DayNo = integer() ">= 1 (monthday) if N is valid < 1 if monthday is invalid "
+%%
+%% @doc     find date of Nth day in selected Year-Month -1 = last day,
+%%          -2 = day before last day ...
+%% @end
 %%--------------------------------------------------------------------
 normalize_monthday(_Year, _Month, N) when N >= 1 ->
     N;
@@ -229,13 +240,16 @@ normalize_monthday(Year, Month, N) when N =< -1 ->
     MonthLength - (Nabs-1).
 
 %%--------------------------------------------------------------------
-%% Function: nth_byday_in_month(Year,Month,N,DayType)
-%%           Year    = integer()
-%%           Month   = integer()
-%%           N       = integer(), N >= 1 or N =< -1
-%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
-%% Descrip.: get date of Nth occurrence of day DayType in month
-%% Returns : {Year,Month,Day} | nth_day_does_not_exist
+%% @spec    (Year,Month,N,DayType) ->
+%%            {Year,Month,Day} | nth_day_does_not_exist
+%%
+%%            Year    = integer()
+%%            Month   = integer()
+%%            N       = integer() "N >= 1 or N =< -1"
+%%            DayType = mo | tu | we | th | fr | sa | su "(weekday)"
+%%
+%% @doc     get date of Nth occurrence of day DayType in month
+%% @end
 %%--------------------------------------------------------------------
 nth_byday_in_month(Year,Month,N,DayType) when N >= 1 ->
     NoOfDays = calendar:last_day_of_the_month(Year, Month),
@@ -275,14 +289,16 @@ get_last_occurence_of_weekday(Year, Month, DayTypeNo, N) ->
 	DayTypeNo -> N;
 	_ -> get_last_occurence_of_weekday(Year, Month, DayTypeNo, N-1)
     end.
-	    
+
 %%--------------------------------------------------------------------
-%% Function: all_byday_in_month(Year,Month,DayType)
-%%           Year    = integer()
-%%           Month   = integer()
-%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
-%% Descrip.: get all occurrences of DayType in the indicated month
-%% Returns : list() of {Year,Month,Day}
+%% @spec    (Year,Month,DayType) -> [{Year,Month,Day}]
+%%
+%%            Year    = integer()
+%%            Month   = integer()
+%%            DayType = mo | tu | we | th | fr | sa | su "(weekday)"
+%%
+%% @doc     get all occurrences of DayType in the indicated month
+%% @end
 %%--------------------------------------------------------------------
 all_byday_in_month(Year,Month,DayType) ->
     N = 1,
@@ -298,11 +314,13 @@ all_byday_in_month(Year,Month,DayType,N,Acc) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: day_type_to_no(DayType)
-%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
-%% Descrip.: maps DayType codes to numerical weekday numbers (mo -> 1,
-%%           tu -> 2 ....)
-%% Returns : integer()
+%% @spec    (DayType) -> integer()
+%%
+%%            DayType = mo | tu | we | th | fr | sa | su "(weekday)"
+%%
+%% @doc     maps DayType codes to numerical weekday numbers (mo -> 1,
+%%          tu -> 2 ....)
+%% @end
 %%--------------------------------------------------------------------
 day_type_to_no(mo) -> 1;
 day_type_to_no(tu) -> 2;
@@ -321,25 +339,30 @@ dayno_to_daytype(6) -> sa;
 dayno_to_daytype(7) -> su.
 
 %%--------------------------------------------------------------------
-%% Function: date_to_weekday(Date)
-%%           Date  = {Year, Month, Day}
-%%           Year  = integer()
-%%           Month = integer()
-%%           Day   = integer()
-%% Descrip.: determine weekday of Date
-%% Returns : mo | tu | we | th | fr | sa | su
+%% @spec    (Date) -> mo | tu | we | th | fr | sa | su
+%%
+%%            Date  = {Year, Month, Day}
+%%            Year  = integer()
+%%            Month = integer()
+%%            Day   = integer()
+%%
+%% @doc     determine weekday of Date
+%% @end
 %%--------------------------------------------------------------------
-date_to_weekday(Date) -> 
+date_to_weekday(Date) ->
     dayno_to_daytype(calendar:day_of_the_week(Date)).
 
 
 %%--------------------------------------------------------------------
-%% Function: nth_byday_in_year(Year,N,DayType)
-%%           Year    = integer()
-%%           N       = integer(), N >= 1 or N =< -1
-%%           DayType = mo | tu | we | th | fr | sa | su, (weekday)
-%% Descrip.: get date of Nth occurrence of weekday DayType in year Year
-%% Returns : {Year,Month,Day} | nth_day_does_not_exist
+%% @spec    (Year,N,DayType) ->
+%%            {Year,Month,Day} | nth_day_does_not_exist
+%%
+%%            Year    = integer()
+%%            N       = integer() "N >= 1 or N =< -1"
+%%            DayType = mo | tu | we | th | fr | sa | su "(weekday)"
+%%
+%% @doc     get date of Nth occurrence of weekday DayType in year Year
+%% @end
 %%--------------------------------------------------------------------
 nth_byday_in_year(Year,N,DayType) when N >= 1 ->
     FirstMatchPos = get_first_occurence_of_weekday(Year, DayType),
@@ -358,18 +381,20 @@ get_last_occurence_of_weekday(Year, DayType) ->
     m_days(Year, 11) + get_last_occurence_of_weekday(Year, 12, DayType).
 
 %%--------------------------------------------------------------------
-%% Function: is_leap_year(Year)
-%% Descrip.: determine if Year a leap year
-%% Returns : true | false
+%% @spec    (Year) -> true | false
+%%
+%% @doc     determine if Year a leap year
+%% @end
 %%--------------------------------------------------------------------
 is_leap_year(Year) ->
     %% Feb 29 is a leap day so check if it is a valid year
     calendar:valid_date(Year, 2, 29).
-	     
+
 %%--------------------------------------------------------------------
-%% Function: days_in_year(Year)
-%% Descrip.: return number of days in year Year
-%% Returns : 365 | 366
+%% @spec    (Year) -> 365 | 366
+%%
+%% @doc     return number of days in year Year
+%% @end
 %%--------------------------------------------------------------------
 days_in_year(Year) ->
     case calendar:is_leap_year(Year) of
@@ -378,10 +403,11 @@ days_in_year(Year) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: m_days(Year, Month)
-%% Descrip.: return the number of days in month range [1,Month] in 
-%%           year Year
-%% Returns : integer()
+%% @spec    (Year, Month) -> integer()
+%%
+%% @doc     return the number of days in month range [1,Month] in year
+%%          Year
+%% @end
 %%--------------------------------------------------------------------
 m_days(_Year, 0) -> 0; %% guard case for get_month/2
 m_days(_Year, 1) -> 31;
@@ -397,21 +423,25 @@ m_days(Year, 10) -> feb(Year) + 276;
 m_days(Year, 11) -> feb(Year) + 306;
 m_days(Year, 12) -> feb(Year) + 337.
 
-feb(Year) -> 
+feb(Year) ->
     case is_leap_year(Year) of
 	true -> 29;
 	false -> 28
-    end. 
+    end.
 
 %%--------------------------------------------------------------------
-%% Function: dayno_to_date(Year, NthDay)
-%%           Year   = integer() 
-%%           Nthday = integer(), 1-365 (366 if Year is a leap year) 
-%% Descrip.: determine which month the NthDay occurs (in year Year)
-%% Returns : {Year2,Month2,Day2} | nth_day_does_not_exist
-%%           Year2  = integer()
-%%           Month2 = integer()
-%%           Day2   = integer()  
+%% @spec    (Year, NthDay) ->
+%%            {Year2,Month2,Day2} | nth_day_does_not_exist
+%%
+%%            Year   = integer()
+%%            Nthday = integer() "1-365 (366 if Year is a leap year)"
+%%
+%%            Year2  = integer()
+%%            Month2 = integer()
+%%            Day2   = integer()
+%%
+%% @doc     determine which month the NthDay occurs (in year Year)
+%% @end
 %%--------------------------------------------------------------------
 dayno_to_date(Year, NthDay) ->
     DaysInYear = days_in_year(Year),
@@ -425,24 +455,28 @@ dayno_to_date(Year, NthDay) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: date_to_dayno(Date)
-%%           Date  = {Year,Month,Day}
-%%           Year  = integer()
-%%           Month = integer()
-%%           Day   = integer()
-%% Descrip.: convert date to day count
-%% Returns : integer()
+%% @spec    (Date) -> integer()
+%%
+%%            Date  = {Year,Month,Day}
+%%            Year  = integer()
+%%            Month = integer()
+%%            Day   = integer()
+%%
+%% @doc     convert date to day count
+%% @end
 %%--------------------------------------------------------------------
 date_to_dayno({Year,Month,Day}) ->
     m_days(Year, Month-1) + Day.
 
 
 %%--------------------------------------------------------------------
-%% Function: dayno_to_month(Year, NthDay)
-%%           Year   = integer() 
-%%           Nthday = integer(), 1-365 (366 if Year is a leap year) 
-%% Descrip.: determine which month the NthDay occurs (in year Year)
-%% Returns : integer()
+%% @spec    (Year, NthDay) -> integer()
+%%
+%%            Year   = integer()
+%%            Nthday = integer() "1-365 (366 if Year is a leap year)"
+%%
+%% @doc     determine which month the NthDay occurs (in year Year)
+%% @end
 %%--------------------------------------------------------------------
 dayno_to_month(Year, NthDay) ->
     DaysInYear = days_in_year(Year),
@@ -456,8 +490,8 @@ get_month(Year, CurrentMonth, NthDay) ->
     %% check if there are to few days in month range [1,CurrentMonth]
     case m_days(Year, CurrentMonth) < NthDay of
 	true -> get_month(Year, CurrentMonth + 1, NthDay);
-	%% sufficient number of days in month range [1,CurrentMonth], 
-	%% check that range [1,CurrentMonth-1] isn't sufficent 
+	%% sufficient number of days in month range [1,CurrentMonth],
+	%% check that range [1,CurrentMonth-1] isn't sufficent
 	%% i.e. that CurrentMonth should be used
 	false -> case m_days(Year, CurrentMonth - 1) < NthDay of
 		     true -> CurrentMonth;
@@ -466,15 +500,16 @@ get_month(Year, CurrentMonth, NthDay) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: weeks_in_year(Year, Wkst)
-%%           Year = integer()
-%%           Wkst = mo | tu | we | th | fr | sa | su, (weekday)
-%%                  first working day of the week
-%% Descrip.: determine how many weeks belong to the year Year, some 
-%%           may overlap into the next and previous year - ISO 8601
-%%           counts weeks as belonging to the year where the week has
-%%           most of it's days.
-%% Returns : integer()
+%% @spec    (Year, Wkst) -> integer()
+%%
+%%            Year = integer()
+%%            Wkst = mo | tu | we | th | fr | sa | su "(weekday) first working day of the week"
+%%
+%% @doc     determine how many weeks belong to the year Year, some may
+%%          overlap into the next and previous year - ISO 8601 counts
+%%          weeks as belonging to the year where the week has most of
+%%          it's days.
+%% @end
 %%--------------------------------------------------------------------
 weeks_in_year(Year, Wkst) ->
     {_,_,FirstWkst} = nth_byday_in_year(Year,1,Wkst),
@@ -485,19 +520,19 @@ weeks_in_year(Year, Wkst) ->
 		  end,
     %% check if major part of last partial week (4+ days) belongs to current year Year
     LastWeekLength = last_week_length(Year, Wkst),
-    LastWeek = case LastWeekLength >= 4 of 
+    LastWeek = case LastWeekLength >= 4 of
 		   true -> 1;
 		   false -> 0
 	       end,
-    
+
     DaysInYear = days_in_year(Year),
     FullWeeks = (DaysInYear - (FirstWkst-1) - LastWeekLength) div 7,
 
-    %% NoOfWeeks 
+    %% NoOfWeeks
     FullWeeks + InitialWeek + LastWeek.
 
 last_week_length(Year, Wkst) ->
-    LastDay = 31, 
+    LastDay = 31,
     WkstNo = day_type_to_no(Wkst),
     last_week_length(Year, WkstNo, LastDay, 1).
 
@@ -506,17 +541,18 @@ last_week_length(Year, WkstNo, LastDay, Count) ->
 	WkstNo -> Count;
 	_ -> last_week_length(Year, WkstNo, LastDay-1, Count+1)
     end.
-      
+
 %%--------------------------------------------------------------------
-%% Function: get_week_no(Year, Wkst, WeekNo) 
-%%           Year   = integer()
-%%           Wkst   = mo | tu | we | th | fr | sa | su, (weekday)
-%%                    first working day of the week
-%%           WeekNo = integer(), >= 1 or =< -1
-%% Descrip.: map WeekNo to the week in Year to the regular nonnegative
-%%           week no. representation 
-%%           WeekNo
-%% Returns : integer() | nth_week_does_not_exits
+%% @spec    (Year, Wkst, WeekNo) ->
+%%            integer() | nth_week_does_not_exits
+%%
+%%            Year   = integer()
+%%            Wkst   = mo | tu | we | th | fr | sa | su "(weekday) first working day of the week"
+%%            WeekNo = integer() ">= 1 or =< -1"
+%%
+%% @doc     map WeekNo to the week in Year to the regular nonnegative
+%%          week no. representation WeekNo
+%% @end
 %%--------------------------------------------------------------------
 get_week_no(Year, Wkst, WeekNo) when WeekNo >= 1 ->
     WeeksInYear = weeks_in_year(Year, Wkst),
@@ -535,18 +571,20 @@ get_week_no(Year, Wkst, WeekNo) when WeekNo =< -1 ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: weekno_to_date(Year, Wkst, WeekNo)
-%%           Year   = integer(), current year
-%%           Wkst   = mo | tu | we | th | fr | sa | su, (weekday)
-%%                    first working day of the week
-%%           WeekNo = integer(), no. of week thats part of Year
-%% Descrip.: return date of first day in week WeekNo 
-%% Returns : {Year,Month,Day} | week_does_not_exist
+%% @spec    (Year, Wkst, WeekNo) ->
+%%            {Year,Month,Day} | week_does_not_exist
+%%
+%%            Year   = integer() "current year"
+%%            Wkst   = mo | tu | we | th | fr | sa | su "(weekday) first working day of the week"
+%%            WeekNo = integer() "no. of week thats part of Year"
+%%
+%% @doc     return date of first day in week WeekNo
+%% @end
 %%--------------------------------------------------------------------
 weekno_to_date(Year, Wkst, WeekNo) ->
     %% find first occurence of week = 1, start date
-    {_,_,FirstWkst} = nth_byday_in_year(Year,1,Wkst),  
-    
+    {_,_,FirstWkst} = nth_byday_in_year(Year,1,Wkst),
+
     WeeksInYear = weeks_in_year(Year, Wkst),
     case (WeekNo >= 1) and (WeekNo =< WeeksInYear) of
 	false ->
@@ -556,7 +594,7 @@ weekno_to_date(Year, Wkst, WeekNo) ->
 	    StartOffset = case FirstWeekLength of
 			      0 -> 1;
 			      Val when Val < 4 -> FirstWkst;
-			      Val when Val >= 4 -> FirstWkst - 7 
+			      Val when Val >= 4 -> FirstWkst - 7
 			  end,
 	    DayCount = StartOffset + ((WeekNo-1) * 7),
 	    DaysInYear = days_in_year(Year),
@@ -571,30 +609,35 @@ weekno_to_date(Year, Wkst, WeekNo) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: byyearday_to_date(Year,N)
-%%           Year = integer()
-%%           N    = integer(), N >= 1 or N =< -1
-%% Descrip.: get date of Nth day.
-%%                  -1 = last day, -2 = day before last day ...
-%% Returns : {Year,Month,Day} | nth_day_does_not_exist
+%% @spec    (Year,N) -> {Year,Month,Day} | nth_day_does_not_exist
+%%
+%%            Year = integer()
+%%            N    = integer() "N >= 1 or N =< -1"
+%%
+%% @doc     get date of Nth day. -1 = last day, -2 = day before last
+%%          day ...
+%% @end
 %%--------------------------------------------------------------------
 byyearday_to_date(Year,N) when N >= 1 ->
-    NthDay = normalize_yearday(Year, N), 
+    NthDay = normalize_yearday(Year, N),
     dayno_to_date(Year, NthDay);
 byyearday_to_date(Year,N) when N =< -1 ->
-    NthDay = normalize_yearday(Year, N), 
+    NthDay = normalize_yearday(Year, N),
     dayno_to_date(Year, NthDay).
 
 %%--------------------------------------------------------------------
-%% Function: normalize_yearday(Year, N)    
-%%           Year  = integer()
-%%           Month = integer()
-%%           N     = integer(), N >= 1 or N =< -1
-%% Descrip.: find day number of Nth day in selected Year.
-%%                         -1 = last day, -2 = day before last day ...
-%% Returns : YearDay
-%%           YearDay = integer(), >= 1 (yearday) if N is valid
-%%                      < 1 if yearday is invalid 
+%% @spec    (Year, N) ->
+%%            YearDay
+%%
+%%            Year  = integer()
+%%            Month = integer()
+%%            N     = integer() "N >= 1 or N =< -1"
+%%
+%%            YearDay = integer() ">= 1 (yearday) if N is valid < 1 if yearday is invalid "
+%%
+%% @doc     find day number of Nth day in selected Year. -1 = last
+%%          day, -2 = day before last day ...
+%% @end
 %%--------------------------------------------------------------------
 normalize_yearday(_Year, N)  when N >= 1 ->
     N;
@@ -609,9 +652,9 @@ normalize_yearday(Year, N)  when N =< -1 ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 
 %%====================================================================
@@ -619,9 +662,9 @@ normalize_yearday(Year, N)  when N =< -1 ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: 
-%% Descrip.: 
-%% Returns : 
+%% Function:
+%% Descrip.:
+%% Returns :
 %%--------------------------------------------------------------------
 
 %%====================================================================
@@ -629,19 +672,21 @@ normalize_yearday(Year, N)  when N =< -1 ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
-    
+
 
     %% gregorian_weekno(Date, Wkst)
     %%--------------------------------------------------------------------
     %% first week (when Wkst = mo)
     autotest:mark(?LINE, "gregorian_weekno/2 - 1"),
     1  = gregorian_weekno({0,1,3}, mo),
-  
+
     %% check that week boundaries are honored
     autotest:mark(?LINE, "gregorian_weekno/2 - 2"),
     W = gregorian_weekno({2005,5,2}, mo), %% mo
@@ -677,7 +722,7 @@ test() ->
 
     %% diff_weekly(Date1, Date2, Wkst)
     %%--------------------------------------------------------------------
-    %% same week - dates are start and end of week 
+    %% same week - dates are start and end of week
     autotest:mark(?LINE, "diff_weekly/3 - 1"),
     0 = diff_weekly({2005,2,20}, {2005,2,14}, mo),
 
@@ -694,18 +739,18 @@ test() ->
     2 = diff_weekly({2005,2,21}, {2005,2,13}, mo),
 
 
-    %% date_to_weekno(DateTime, Wkst) 
+    %% date_to_weekno(DateTime, Wkst)
     %%--------------------------------------------------------------------
     %% first week not part of year
     autotest:mark(?LINE, "date_to_weekno/2 - 1"),
     {2005, 40} = date_to_weekno({2005,10,5}, mo),
-    
+
     %% first week part of year
     autotest:mark(?LINE, "date_to_weekno/2 - 2"),
     {2003, 40} = date_to_weekno({2003,10,5}, mo),
-    
-    %% test handling of first (partial) week in year 
-    %% first week part of year 
+
+    %% test handling of first (partial) week in year
+    %% first week part of year
     autotest:mark(?LINE, "date_to_weekno/2 - 3"),
     {2003, 1} = date_to_weekno({2003,1,1}, mo),
     %% first week not part of year
@@ -721,17 +766,17 @@ test() ->
     {2004, 53} = date_to_weekno({2004,12,31}, mo),
 
     %% same tests with sunday instead of monday as first day of week
-    
+
     %% first week not part of year
     autotest:mark(?LINE, "date_to_weekno/2 - 7"),
     {2005, 40} = date_to_weekno({2005,10,5}, su),
-    
+
     %% first week part of year
     autotest:mark(?LINE, "date_to_weekno/2 - 8"),
     {2003, 41} = date_to_weekno({2003,10,5}, su),
-    
-    %% test handling of first (partial) week in year 
-    %% first week part of year 
+
+    %% test handling of first (partial) week in year
+    %% first week part of year
     autotest:mark(?LINE, "date_to_weekno/2 - 9"),
     {2003, 1} = date_to_weekno({2003,1,1}, su),
     %% first week not part of year
@@ -747,7 +792,7 @@ test() ->
     {2004, 52} = date_to_weekno({2004,12,31}, su),
 
     %%--------------------------------------------------------------------
-    
+
     %% last of first days belonging to week in prev. year
     autotest:mark(?LINE, "date_to_weekno/2 - 13"),
     {2004,53} = date_to_weekno({2005, 1, 2}, mo),
@@ -764,8 +809,8 @@ test() ->
     autotest:mark(?LINE, "date_to_weekno/2 - 16"),
     {2005,17} = date_to_weekno({2005, 4, 25}, mo),
 
-    
-    %% yearday = 1, week = 1 
+
+    %% yearday = 1, week = 1
     autotest:mark(?LINE, "date_to_weekno/2 - 17"),
     {2004,1} = date_to_weekno({2004, 1, 1}, mo),
 
@@ -785,7 +830,7 @@ test() ->
     autotest:mark(?LINE, "date_to_weekno/2 - 21"),
     {2004,1} = date_to_weekno({2003, 12, 29}, mo),
 
-    %% last day of last week belonging to current year 
+    %% last day of last week belonging to current year
     autotest:mark(?LINE, "date_to_weekno/2 - 22"),
     {2003,52} = date_to_weekno({2003, 12, 28}, mo),
 
@@ -819,7 +864,7 @@ test() ->
     %% single month (start to end) - Y-M-D format
     autotest:mark(?LINE, "days_in_range/2 - 7"),
     31 = days_in_range({2005,1,1}, {2005,1,31}),
-    
+
     %% 2 month - Y-M-D format (D1 > D2)
     autotest:mark(?LINE, "days_in_range/2 - 8"),
     17 = days_in_range({2005,1,25}, {2005,2,10}),
@@ -854,7 +899,7 @@ test() ->
     %% count days from end of month - last day
     autotest:mark(?LINE, "nth_bymonthday/3 - 6"),
     {2005,4,30} = nth_bymonthday(2005, 4, -1),
-    
+
     %% count days from end of month - first day
     autotest:mark(?LINE, "nth_bymonthday/3 - 7"),
     {2005,4,1} = nth_bymonthday(2005, 4, -30),
@@ -862,15 +907,15 @@ test() ->
     %% count days from end of month - non-existing day
     autotest:mark(?LINE, "nth_bymonthday/3 - 8"),
     nth_day_does_not_exist = nth_bymonthday(2005, 4, -31),
-    
+
 
     %% nth_byday_in_month(Year,Month,N,DayType)
     %%--------------------------------------------------------------------
-    %% 1st tuesday 
+    %% 1st tuesday
     autotest:mark(?LINE, "nth_byday_in_month/4 - 1"),
     {2005, 4, 5} = nth_byday_in_month(2005, 4, 1, tu),
 
-    %% 2nd tuesday 
+    %% 2nd tuesday
     autotest:mark(?LINE, "nth_byday_in_month/4 - 2"),
     {2005, 4, 12} = nth_byday_in_month(2005, 4, 2, tu),
 
@@ -885,7 +930,7 @@ test() ->
     %% no more tuesday in month
     autotest:mark(?LINE, "nth_byday_in_month/4 - 5"),
     nth_day_does_not_exist = nth_byday_in_month(2005, 4, 5, tu),
-    
+
     %% 1st tuesday from end
     autotest:mark(?LINE, "nth_byday_in_month/4 - 6"),
     {2005, 4, 26} = nth_byday_in_month(2005, 4, -1, tu),
@@ -912,7 +957,7 @@ test() ->
     %% tuesdays in april
     autotest:mark(?LINE, "all_byday_in_month/3 - 1"),
     [{2005,4,5}, {2005,4,12}, {2005,4,19}, {2005,4,26}] = all_byday_in_month(2005, 4, tu),
-    
+
     %% sundays in december
     autotest:mark(?LINE, "all_byday_in_month/3 - 2"),
     [{2005,12,4}, {2005,12,11}, {2005,12,18}, {2005,12,25}]  = all_byday_in_month(2005, 12, su),
@@ -931,7 +976,7 @@ test() ->
     %% last day (non-leap year)
     autotest:mark(?LINE, "dayno_to_month/2 - 1"),
     12 = dayno_to_month(2005,365),
-    
+
     %% first day (non-leap year)
     autotest:mark(?LINE, "dayno_to_month/2 - 2"),
     1 = dayno_to_month(2005,1),
@@ -944,12 +989,12 @@ test() ->
     9 = dayno_to_month(2005,257),
     %% 2005-02-28 (non-leap year)
     2 = dayno_to_month(2005,59),
-    
-    %% check that leap year contains 
+
+    %% check that leap year contains
     %% last day (leap year)
     autotest:mark(?LINE, "dayno_to_month/2 - 4"),
     12 = dayno_to_month(2004,366),
-    
+
     %% first day (leap year)
     autotest:mark(?LINE, "dayno_to_month/2 - 5"),
     1 = dayno_to_month(2004,1),
@@ -1035,21 +1080,21 @@ test() ->
     autotest:mark(?LINE, "date_to_dayno/2 - 8"),
     120 = date_to_dayno({2005,4,30}),
 
-    
+
     %% nth_byday_in_year(Year,N,DayType)
     %%--------------------------------------------------------------------
     %% first monday in year
     autotest:mark(?LINE, "nth_byday_in_year/3 - 1"),
     {2004,1,5} = nth_byday_in_year(2004,1,mo),
-    
+
     %% last monday in year
     autotest:mark(?LINE, "nth_byday_in_year/3 - 2"),
     {2004,12,27} = nth_byday_in_year(2004,-1,mo),
-    
+
     %% 10:th monday in year
     autotest:mark(?LINE, "nth_byday_in_year/3 - 3"),
     {2004,3,4} = nth_byday_in_year(2004,10,th),
-    
+
     %% 10.th monday from end of year
     autotest:mark(?LINE, "nth_byday_in_year/3 - 4"),
     {2004,10,28} = nth_byday_in_year(2004,-10,th),
@@ -1060,7 +1105,7 @@ test() ->
     %% first and last week part of year
     autotest:mark(?LINE, "weeks_in_year/1 - 1"),
     53 = weeks_in_year(2004, mo),
-    
+
     %% first week part of year
     autotest:mark(?LINE, "weeks_in_year/1 - 2"),
     52 = weeks_in_year(2003, mo),
@@ -1069,12 +1114,12 @@ test() ->
     autotest:mark(?LINE, "weeks_in_year/1 - 3"),
     52 = weeks_in_year(2005, mo),
 
-    %% sunday as first day of week 
+    %% sunday as first day of week
 
     %% last week part of year
     autotest:mark(?LINE, "weeks_in_year/1 - 4"),
     52 = weeks_in_year(2004, su),
-    
+
     %% first week part of year
     autotest:mark(?LINE, "weeks_in_year/1 - 5"),
     53 = weeks_in_year(2003, su),
@@ -1089,7 +1134,7 @@ test() ->
 
     autotest:mark(?LINE, "get_week_no/3 - 1"),
     52 = get_week_no(2005, mo, -1),
-    
+
     autotest:mark(?LINE, "get_week_no/3 - 2"),
     53 = get_week_no(2004, mo, -1),
 
@@ -1098,7 +1143,7 @@ test() ->
 
     autotest:mark(?LINE, "get_week_no/3 - 4"),
     1 = get_week_no(2004, mo, -53),
-    
+
     autotest:mark(?LINE, "get_week_no/3 - 5"),
     nth_week_does_not_exits = get_week_no(2005, mo, -53),
 
@@ -1107,7 +1152,7 @@ test() ->
 
     autotest:mark(?LINE, "get_week_no/3 - 7"),
     43 = get_week_no(2005, mo, 43),
-    
+
     autotest:mark(?LINE, "get_week_no/3 - 8"),
     nth_week_does_not_exits = get_week_no(2005, mo, 53),
 
@@ -1117,7 +1162,7 @@ test() ->
     %% first (partial) week in year
     autotest:mark(?LINE, "weekno_to_date/3 - 1"),
     {2003,12,29} = weekno_to_date(2004, mo, 1),
-    
+
     %% first full week in year
     autotest:mark(?LINE, "weekno_to_date/3 - 2"),
     {2004,1,5} = weekno_to_date(2004, mo, 2),
@@ -1149,7 +1194,7 @@ test() ->
     %% week in middle of year
     autotest:mark(?LINE, "weekno_to_date/3 - 9"),
     {2005,7,18} = weekno_to_date(2005, mo, 29),
-    
+
     %% --------------
     %% Wkst = su
     %% first week of year
@@ -1165,7 +1210,7 @@ test() ->
     {1997,1,12} = weekno_to_date(1997, su, 3),
 
 
-    %% byyearday_to_date(Year,N) 
+    %% byyearday_to_date(Year,N)
     %%--------------------------------------------------------------------
     %% day N to date (in leap year)
     autotest:mark(?LINE, "byyearday_to_date/3 - 1"),

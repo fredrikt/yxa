@@ -15,9 +15,11 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA applications must export an init/0 function.
-%% Returns : term()
+%% @spec    () -> term()
+%%
+%% @doc     YXA applications must export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     database_call:create([node()]),
@@ -25,9 +27,10 @@ init() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, YxaCtx)
-%% Descrip.: YXA applications must export a request/2 function.
-%% Returns : ok
+%% @spec    (Request, YxaCtx) -> ok
+%%
+%% @doc     YXA applications must export a request/2 function.
+%% @end
 %%--------------------------------------------------------------------
 request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     THandler = YxaCtx#yxa_ctx.thandler,
@@ -51,9 +54,10 @@ request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, YxaCtx)
-%% Descrip.: YXA applications must export a response/2 function.
-%% Returns : ok
+%% @spec    (Response, YxaCtx) -> ok
+%%
+%% @doc     YXA applications must export a response/2 function.
+%% @end
 %%--------------------------------------------------------------------
 response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     logger:log(normal, "~p ~p - dropping", [Response#response.status, Response#response.reason]),
@@ -85,7 +89,7 @@ process_request(Request, LogTag) when record(Request, request), Request#request.
 %%
 %% INVITE or MESSAGE
 %%
-process_request(Request, LogTag) when record(Request, request), Request#request.method == "INVITE"; 
+process_request(Request, LogTag) when record(Request, request), Request#request.method == "INVITE";
 Request#request.method == "MESSAGE" ->
     case get_user(Request#request.uri) of
 	{404, Reason} ->

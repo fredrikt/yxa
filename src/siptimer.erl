@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File     : siptimer.erl
-%%% Author   : Fredrik Thulin <ft@it.su.se>
-%%% Descrip. : Module to manage timers, for use in client and server
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Module to manage timers, for use in client and server
 %%%            transactions. Make it easier to cancel timers and
 %%%            revive them when we get provisional responses etc.
-%%% Created  : 17 Jun 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    17 Jun 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(siptimer).
 
@@ -33,9 +34,13 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type siptimerlist() = #siptimerlist{}.
+%%                        no description
 -record(siptimerlist, {
 	  list		%% list() of siptimer record()
 	 }).
+%% @type siptimer() = #siptimer{}.
+%%                    no description
 -record(siptimer, {
 	  ref,		%% ref(), unique reference
 	  timer,	%% term(), timer reference
@@ -50,13 +55,18 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: add_timer(Timeout, Description, AppSignal, TimerList)
-%%           Timeout     = integer(), new timeout in milliseconds
-%%           Description = string()
-%%           AppSignal   = term()
-%%           TimerList   = siptimerlist record()
-%% Descrip.: Create a new timer and add it to TimerList.
-%% Returns : NewTimerList = siptimerlist record()
+%% @spec    (Timeout, Description, AppSignal, TimerList) ->
+%%            NewTimerList
+%%
+%%            Timeout     = integer() "new timeout in milliseconds"
+%%            Description = string()
+%%            AppSignal   = term()
+%%            TimerList   = #siptimerlist{}
+%%
+%%            NewTimerList = #siptimerlist{}
+%%
+%% @doc     Create a new timer and add it to TimerList.
+%% @end
 %%--------------------------------------------------------------------
 add_timer(0, _Description, _AppSignal, TimerList) when is_record(TimerList, siptimerlist) ->
     TimerList;
@@ -76,20 +86,29 @@ add_timer(Timeout, Description, AppSignal, TimerList) when is_record(TimerList, 
 
 
 %%--------------------------------------------------------------------
-%% Function: empty()
-%% Descrip.: Create an empty siptimerlist.
-%% Returns : NewTimerList = siptimerlist record()
+%% @spec    () ->
+%%            NewTimerList
+%%
+%%            NewTimerList = #siptimerlist{}
+%%
+%% @doc     Create an empty siptimerlist.
+%% @end
 %%--------------------------------------------------------------------
 empty() ->
     make_siptimerlist([]).
 
 %%--------------------------------------------------------------------
-%% Function: reset_timers(Timers, TimerList)
-%%           Timers    = list() of siptimer record()
-%%           TimerList = siptimerlist record()
-%% Descrip.: Reset all timers listed in Timers to their original
-%%           timeout value.
-%% Returns : NewTimerList = siptimerlist record()
+%% @spec    (Timers, TimerList) ->
+%%            NewTimerList
+%%
+%%            Timers    = [#siptimer{}]
+%%            TimerList = #siptimerlist{}
+%%
+%%            NewTimerList = #siptimerlist{}
+%%
+%% @doc     Reset all timers listed in Timers to their original
+%%          timeout value.
+%% @end
 %%--------------------------------------------------------------------
 reset_timers([H | T], TimerList) when is_record(H, siptimer), is_record(TimerList, siptimerlist) ->
     Ref = H#siptimer.ref,
@@ -123,15 +142,20 @@ reset_timers([], TimerList) when is_record(TimerList, siptimerlist) ->
     TimerList.
 
 %%--------------------------------------------------------------------
-%% Function: revive_timer(SipTimer, NewTimeout, TimerList)
-%%           SipTimer   = siptimer record()
-%%           NewTimeout = integer(), new timeout in milliseconds
-%%           TimerList  = siptimerlist record()
-%% Descrip.: Revive a sip timer. This means we start a new timer with
-%%           the same parameters as the old one, but with a new
-%%           timeout value. Don't revive a timer that hasn't fired or
-%%           you will have two timers that might fire!
-%% Returns : NewTimerList = siptimerlist record()
+%% @spec    (SipTimer, NewTimeout, TimerList) ->
+%%            NewTimerList
+%%
+%%            SipTimer   = #siptimer{}
+%%            NewTimeout = integer() "new timeout in milliseconds"
+%%            TimerList  = #siptimerlist{}
+%%
+%%            NewTimerList = #siptimerlist{}
+%%
+%% @doc     Revive a sip timer. This means we start a new timer with
+%%          the same parameters as the old one, but with a new
+%%          timeout value. Don't revive a timer that hasn't fired or
+%%          you will have two timers that might fire!
+%% @end
 %%--------------------------------------------------------------------
 revive_timer(SipTimer, NewTimeout, TimerList) when is_record(SipTimer, siptimer), is_integer(NewTimeout),
 						   is_record(TimerList, siptimerlist) ->
@@ -154,13 +178,18 @@ revive_timer(SipTimer, NewTimeout, TimerList) when is_record(SipTimer, siptimer)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: update_timer(SipTimer, TimerList)
-%%           SipTimer   = siptimer record()
-%%           TimerList  = siptimerlist record()
-%% Descrip.: Locate a timer in TimerList whose reference matches the
-%%           reference of SipTimer. Return TimerList with the matching
-%%           timer replaced by SipTimer.
-%% Returns : NewTimerList = siptimerlist record()
+%% @spec    (SipTimer, TimerList) ->
+%%            NewTimerList
+%%
+%%            SipTimer  = #siptimer{}
+%%            TimerList = #siptimerlist{}
+%%
+%%            NewTimerList = #siptimerlist{}
+%%
+%% @doc     Locate a timer in TimerList whose reference matches the
+%%          reference of SipTimer. Return TimerList with the matching
+%%          timer replaced by SipTimer.
+%% @end
 %%--------------------------------------------------------------------
 update_timer(SipTimer, TList) when is_record(SipTimer, siptimer), is_record(TList, siptimerlist) ->
     Ref = SipTimer#siptimer.ref,
@@ -172,11 +201,13 @@ update_timer2(Ref, NewT, [H | T], TList) when is_record(H, siptimer) ->
     lists:append([H], update_timer2(Ref, NewT, T, TList)).
 
 %%--------------------------------------------------------------------
-%% Function: get_timer(Ref, TimerList)
-%%           Ref        = ref(), unique reference
-%%           TimerList  = siptimerlist record()
-%% Descrip.: Locate a timer in TimerList whose reference matches Ref.
-%% Returns : siptimer record() | none
+%% @spec    (Ref, TimerList) -> #siptimer{} | none
+%%
+%%            Ref       = ref() "unique reference"
+%%            TimerList = #siptimerlist{}
+%%
+%% @doc     Locate a timer in TimerList whose reference matches Ref.
+%% @end
 %%--------------------------------------------------------------------
 get_timer(Ref, TimerList) when is_record(TimerList, siptimerlist) ->
     get_timer2(Ref, TimerList#siptimerlist.list).
@@ -189,12 +220,14 @@ get_timer2(Ref, [H | T]) when is_record(H, siptimer) ->
     get_timer2(Ref, T).
 
 %%--------------------------------------------------------------------
-%% Function: get_timers_appsignal_matching(AppSignal, TimerList)
-%%           AppSignal  = term()
-%%           TimerList  = siptimerlist record()
-%% Descrip.: Locate all timers in TimerList which have their
-%%           'appsignal' element matching AppSignal.
-%% Returns : list() of siptimer record()
+%% @spec    (AppSignal, TimerList) -> [#siptimer{}]
+%%
+%%            AppSignal = term()
+%%            TimerList = #siptimerlist{}
+%%
+%% @doc     Locate all timers in TimerList which have their
+%%          'appsignal' element matching AppSignal.
+%% @end
 %%--------------------------------------------------------------------
 get_timers_appsignal_matching(AppSignal, TimerList) when is_record(TimerList, siptimerlist) ->
     get_timers_appsignal_matching2(AppSignal, TimerList#siptimerlist.list, []).
@@ -208,11 +241,17 @@ get_timers_appsignal_matching2(_Value, [], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: extract(Values, SipTimer)
-%%           Values = [ref | timeout | description | starttime | appsignal]
-%%           TimerList  = siptimerlist record()
-%% Descrip.: Extract elements from a siptimer record().
-%% Returns : list() of term()
+%% @spec    (Values, SipTimer) -> [term()]
+%%
+%%            Values    = [ref        |
+%%                        timeout     |
+%%                        description |
+%%                        starttime   |
+%%                        appsignal]
+%%            TimerList = #siptimerlist{}
+%%
+%% @doc     Extract elements from a siptimer record().
+%% @end
 %%--------------------------------------------------------------------
 extract(Values, SipTimer) when is_record(SipTimer, siptimer) ->
     extract(Values, SipTimer, []).
@@ -231,12 +270,17 @@ extract([appsignal | T], SipTimer, Res) when is_record(SipTimer, siptimer) ->
     extract(T, SipTimer, [SipTimer#siptimer.appsignal | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: cancel_timers(Timers, TimerList)
-%%           Timers    = list() of siptimer record()
-%%           TimerList = siptimerlist record() | none
-%% Descrip.: Cancel a siptimer, return a new TimerList without the
-%%           cancelled siptimer.
-%% Returns : NewTimerList = siptimerlist record()
+%% @spec    (Timers, TimerList) ->
+%%            NewTimerList
+%%
+%%            Timers    = [#siptimer{}]
+%%            TimerList = #siptimerlist{} | none
+%%
+%%            NewTimerList = #siptimerlist{}
+%%
+%% @doc     Cancel a siptimer, return a new TimerList without the
+%%          cancelled siptimer.
+%% @end
 %%--------------------------------------------------------------------
 cancel_timers([H | T], TimerList) when is_record(H, siptimer), is_record(TimerList, siptimerlist) ->
     Timer = H#siptimer.timer,
@@ -256,10 +300,15 @@ cancel_timers([], TimerList) when is_record(TimerList, siptimerlist) ->
     TimerList.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_all_timers(TimerList)
-%%           TimerList = siptimerlist record() | none
-%% Descrip.: Cancel all siptimers in TimerList.
-%% Returns : EmptyList = siptimerlist record()
+%% @spec    (TimerList) ->
+%%            EmptyList
+%%
+%%            TimerList = #siptimerlist{} | none
+%%
+%%            EmptyList = #siptimerlist{}
+%%
+%% @doc     Cancel all siptimers in TimerList.
+%% @end
 %%--------------------------------------------------------------------
 cancel_all_timers(TimerList) when is_record(TimerList, siptimerlist) ->
     EmptyList = empty(),
@@ -268,12 +317,17 @@ cancel_all_timers(TimerList) when is_record(TimerList, siptimerlist) ->
     EmptyList.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_timers_with_appsignal(AppSignal, TimerList)
-%%           AppSignal = term(), appsignal to match on
-%%           TimerList = siptimerlist record() | none
-%% Descrip.: Cancel all siptimers in TimerList that has an appsignal
-%%           matching AppSignal.
-%% Returns : NewTimerList = siptimerlist record()
+%% @spec    (AppSignal, TimerList) ->
+%%            NewTimerList
+%%
+%%            AppSignal = term() "appsignal to match on"
+%%            TimerList = #siptimerlist{} | none
+%%
+%%            NewTimerList = #siptimerlist{}
+%%
+%% @doc     Cancel all siptimers in TimerList that has an appsignal
+%%          matching AppSignal.
+%% @end
 %%--------------------------------------------------------------------
 cancel_timers_with_appsignal(AppSignal, TimerList) when is_record(TimerList, siptimerlist) ->
     case get_timers_appsignal_matching(AppSignal, TimerList) of
@@ -287,11 +341,13 @@ cancel_timers_with_appsignal(AppSignal, TimerList) when is_record(TimerList, sip
     end.
 
 %%--------------------------------------------------------------------
-%% Function: debugfriendly(TimerList)
-%%           TimerList = siptimerlist record() | none
-%% Descrip.: Format all timers in TimerList into strings suitable for
-%%           debug logging.
-%% Returns : list() of string()
+%% @spec    (TimerList) -> [string()]
+%%
+%%            TimerList = #siptimerlist{} | none
+%%
+%% @doc     Format all timers in TimerList into strings suitable for
+%%          debug logging.
+%% @end
 %%--------------------------------------------------------------------
 debugfriendly(TimerList) when is_record(TimerList, siptimerlist) ->
     debugfriendly2(TimerList#siptimerlist.list, []).
@@ -306,10 +362,15 @@ debugfriendly2([], Res) ->
     lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% Function: timeout2str(Timeout)
-%%           Timeout = integer(), milliseconds
-%% Descrip.: Give string second representation of Timeout.
-%% Returns : TStr = string()
+%% @spec    (Timeout) ->
+%%            TStr
+%%
+%%            Timeout = integer() "milliseconds"
+%%
+%%            TStr = string()
+%%
+%% @doc     Give string second representation of Timeout.
+%% @end
 %%--------------------------------------------------------------------
 timeout2str(500) ->
     "0.5";
@@ -317,11 +378,16 @@ timeout2str(Timeout) ->
     integer_to_list(Timeout div 1000).
 
 %%--------------------------------------------------------------------
-%% Function: get_length(TimerList)
-%%           TimerList = siptimerlist record()
-%% Descrip.: Return the length of the list of siptimers contained in
-%%           the siptimerlist record().
-%% Returns : Len = integer()
+%% @spec    (TimerList) ->
+%%            Len
+%%
+%%            TimerList = #siptimerlist{}
+%%
+%%            Len = integer()
+%%
+%% @doc     Return the length of the list of siptimers contained in
+%%          the siptimerlist record().
+%% @end
 %%--------------------------------------------------------------------
 get_length(TimerList) when is_record(TimerList, siptimerlist) ->
     length(TimerList#siptimerlist.list).
@@ -369,12 +435,16 @@ del_ref(Ref, [H | T]) when is_record(H, siptimer) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test_get_appsignals(TimerList)
-%% Descrip.: Exported function for use in unit testings of modules
-%%           using siptimer timers. Returns just the appsignals from
-%%           the timers in TimerList, in fixed order of which timers
-%%           would fire first.
-%% Returns : AppSignals = list() of term()
+%% @spec    (TimerList) ->
+%%            AppSignals
+%%
+%%            AppSignals = [term()]
+%%
+%% @doc     Exported function for use in unit testings of modules
+%%          using siptimer timers. Returns just the appsignals from
+%%          the timers in TimerList, in fixed order of which timers
+%%          would fire first.
+%% @end
 %%--------------------------------------------------------------------
 test_get_appsignals(TimerList) when is_record(TimerList, siptimerlist) ->
     Sorted = lists:sort(fun test_get_appsignals_sort/2, TimerList#siptimerlist.list),
@@ -388,9 +458,11 @@ test_get_appsignals_sort(A, B) when is_record(A, siptimer), is_record(B, siptime
     (Bt >= At).
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% empty()

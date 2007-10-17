@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipproxy.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Find a working destination for a request, given a number
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Find a working destination for a request, given a number
 %%%           of locations and actions. Through forking or sequential
 %%%           'search'.
 %%%
@@ -33,7 +33,8 @@
 %%%           if the server transaction has been cancelled), send it
 %%%           an {cancel_pending, ExtraHeaders} signal.
 %%%
-%%% Created : 13 Feb 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    13 Feb 2003 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipproxy).
 %%-compile(export_all).
@@ -56,6 +57,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  parent,			%% pid(), parent process - used to trap EXITs
 	  branchbase,			%% string(), a base for us to use when creating client transaction branches.
@@ -84,21 +87,20 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_actions(BranchBase, Parent, OrigRequest, Actions,
-%%                         Surplus)
-%%           BranchBase = string(), the "base" part of the server
-%%                        transactions branch - so that we can get
-%%                        sipproxy to generate intuitive branches for
-%%                        it's corresponding client transactions
-%%           Parent     = pid(), the pid to which sipproxy should report
-%%           OrigRequest = request record()
-%%           Actions = list() of sipproxy_action record()
-%%           Surplus = list() of sipproxy_action record()
-%% Descrip.: Start the processing, currently forking (in parallell or
-%%           sequentially) of Request according to Actions.
-%%           This function is typically executed by a spawn in the
-%%           appserver glue process.
-%% Returns : ok | error
+%% @spec    (BranchBase, Parent, OrigRequest, Actions, Surplus) ->
+%%            ok | error
+%%
+%%            BranchBase  = string() "the \"base\" part of the server transactions branch - so that we can get sipproxy to generate intuitive branches for it's corresponding client transactions"
+%%            Parent      = pid() "the pid to which sipproxy should report"
+%%            OrigRequest = #request{}
+%%            Actions     = [#sipproxy_action{}]
+%%            Surplus     = [#sipproxy_action{}]
+%%
+%% @doc     Start the processing, currently forking (in parallell or
+%%          sequentially) of Request according to Actions. This
+%%          function is typically executed by a spawn in the
+%%          appserver glue process.
+%% @end
 %%--------------------------------------------------------------------
 start_actions(BranchBase, Parent, OrigRequest, Actions, Surplus) when is_record(OrigRequest, request) ->
     case start_check_actions(Actions) of
@@ -122,22 +124,26 @@ start_actions(BranchBase, Parent, OrigRequest, Actions, Surplus) when is_record(
     end.
 
 %%--------------------------------------------------------------------
-%% Function: start(BranchBase, Parent, Request, Actions, Surplus,
-%%                 Timeout)
-%%           BranchBase = string()
-%%           Parent     = pid()
-%%           Request    = request record()
-%%           Actions    = list() of sipproxy_action record()
-%%           Surplus    = list() of sipproxy_action record()
-%%           Timeout    = integer()
-%% Descrip.: Start the processing, currently forking (in parallell or
-%%           sequentially) of Request according to Actions.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = string()
-%% Note    : Actions is a set of actions to perform. Currently
-%%           supported actions are a list of 'call' and 'wait'. You
-%%           can mix calls and waits freely.
+%% @spec
+%%    (BranchBase, Parent, Request, Actions, Surplus, Timeout) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            BranchBase = string()
+%%            Parent     = pid()
+%%            Request    = #request{}
+%%            Actions    = [#sipproxy_action{}]
+%%            Surplus    = [#sipproxy_action{}]
+%%            Timeout    = integer()
+%%
+%%            Reason = string()
+%%
+%% @doc     Start the processing, currently forking (in parallell or
+%%          sequentially) of Request according to Actions. Note :
+%%          Actions is a set of actions to perform. Currently
+%%          supported actions are a list of 'call' and 'wait'. You
+%%          can mix calls and waits freely.
+%% @end
 %%--------------------------------------------------------------------
 start(BranchBase, Parent, Request, Actions, Surplus, Timeout)
   when is_list(BranchBase), is_pid(Parent), is_record(Request, request), is_list(Actions), is_list(Surplus),
@@ -198,12 +204,15 @@ start(BranchBase, Parent, Request, Actions, Surplus, Timeout)
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_check_actions(Actions)
-%% Descrip.: Check that the actions supplied to our start function
-%%           makes sense.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = string()
+%% @spec    (Actions) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            Reason = string()
+%%
+%% @doc     Check that the actions supplied to our start function
+%%          makes sense.
+%% @end
 %%--------------------------------------------------------------------
 start_check_actions(Actions) when is_list(Actions) ->
     case start_check_actions2(Actions, 0, 0) of
@@ -223,11 +232,13 @@ start_check_actions2([], Calls, Waits) ->
     {ok, Calls, Waits}.
 
 %%--------------------------------------------------------------------
-%% Function: fork(EndTime, State)
-%%           EndTime = integer(), absolute timestamp we should end
-%%           State = state record()
-%% Descrip.: Main loop. Process actions until there are none left.
-%% Returns : ok
+%% @spec    (EndTime, State) -> ok
+%%
+%%            EndTime = integer() "absolute timestamp we should end"
+%%            State   = #state{}
+%%
+%% @doc     Main loop. Process actions until there are none left.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% No actions left
@@ -346,12 +357,15 @@ fork(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: make_new_target_request(Request, ApproxMsgSize, Action)
-%%           Request       = request record()
-%%           ApproxMsgSize = integer()
-%%           Action        = sipproxy_action record()
-%% Descrip.:
-%% Returns: {ok, NewRequest, NewCallURI}
+%% @spec    (Request, ApproxMsgSize, Action) ->
+%%            {ok, NewRequest, NewCallURI}
+%%
+%%            Request       = #request{}
+%%            ApproxMsgSize = integer()
+%%            Action        = #sipproxy_action{}
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 make_new_target_request(Request, ApproxMsgSize, Action)
   when is_record(Request, request), is_integer(ApproxMsgSize), is_record(Action, sipproxy_action) ->
@@ -397,11 +411,16 @@ make_new_target_request(Request, ApproxMsgSize, Action)
     {ok, NewRequest, DstList}.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_pending_targets(Targets, ExtraHeaders)
-%%           Targets      = targetlist record()
-%%           ExtraHeaders = list() of {Key, ValueList}
-%% Descrip.: Cancel all targets in state 'calling' or 'proceeding'.
-%% Returns : NewTargets = targetlist record()
+%% @spec    (Targets, ExtraHeaders) ->
+%%            NewTargets
+%%
+%%            Targets      = #targetlist{}
+%%            ExtraHeaders = [{Key, ValueList}]
+%%
+%%            NewTargets = #targetlist{}
+%%
+%% @doc     Cancel all targets in state 'calling' or 'proceeding'.
+%% @end
 %%--------------------------------------------------------------------
 cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
     %% cancel all PIDs in states other than completed and terminated
@@ -409,12 +428,17 @@ cancel_pending_targets(Targets, ExtraHeaders) when is_list(ExtraHeaders) ->
     cancel_targets_state(NewTargets1, proceeding, ExtraHeaders).
 
 %%--------------------------------------------------------------------
-%% Function: cancel_targets_state(Targets, TargetState, ExtraHeaders)
-%%           Targets      = targetlist record()
-%%           TargetState  = atom()
-%%           ExtraHeaders = list() of {Key, ValueList}
-%% Descrip.: Cancel all targets in state TargetState.
-%% Returns : NewTargets = targetlist record()
+%% @spec    (Targets, TargetState, ExtraHeaders) ->
+%%            NewTargets
+%%
+%%            Targets      = #targetlist{}
+%%            TargetState  = atom()
+%%            ExtraHeaders = [{Key, ValueList}]
+%%
+%%            NewTargets = #targetlist{}
+%%
+%% @doc     Cancel all targets in state TargetState.
+%% @end
 %%--------------------------------------------------------------------
 cancel_targets_state(Targets, TargetState, ExtraHeaders) when is_atom(TargetState), is_list(ExtraHeaders) ->
     %% cancel all PIDs in a specific state, return updated TargetList
@@ -427,11 +451,16 @@ cancel_targets_state(Targets, TargetState, ExtraHeaders) when is_atom(TargetStat
     NewTargets.
 
 %%--------------------------------------------------------------------
-%% Function: mark_cancelled(Targets, TargetList)
-%%           Targets    = list() of term()
-%%           TargetList = targetlist record()
-%% Descrip.: Marks a number of targets (Targets) as cancelled.
-%% Returns : NewTargets = targetlist record()
+%% @spec    (Targets, TargetList) ->
+%%            NewTargets
+%%
+%%            Targets    = [term()]
+%%            TargetList = #targetlist{}
+%%
+%%            NewTargets = #targetlist{}
+%%
+%% @doc     Marks a number of targets (Targets) as cancelled.
+%% @end
 %%--------------------------------------------------------------------
 mark_cancelled([], TargetList) ->
     TargetList;
@@ -441,13 +470,17 @@ mark_cancelled([H | T], TargetList) ->
     mark_cancelled(T, NewTargetList).
 
 %%--------------------------------------------------------------------
-%% Function: process_wait(EndTime, State)
-%%           EndTime = integer(), time when we should end this wait
-%%           State   = state record()
-%% Descrip.: Marks a number of targets (Targets) as cancelled.
-%% Returns : {discontinue, NewState} |
-%%           {timeout, NewState}
-%%           NewState = state record()
+%% @spec    (EndTime, State) ->
+%%            {discontinue, NewState} |
+%%            {timeout, NewState}
+%%
+%%            EndTime = integer() "time when we should end this wait"
+%%            State   = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Marks a number of targets (Targets) as cancelled.
+%% @end
 %%--------------------------------------------------------------------
 process_wait(EndTime, State) when is_integer(EndTime), is_record(State, state) ->
     Time = lists:max([EndTime - util:timestamp(), 0]),
@@ -488,11 +521,15 @@ process_wait(EndTime, State) when is_integer(EndTime), is_record(State, state) -
     end.
 
 %%--------------------------------------------------------------------
-%% Function: process_signal({cancel_pending}, State)
-%%           State = state record()
-%% Descrip.: We are asked to terminate all pending targets.
-%% Returns : {ok, NewState}
-%%           NewState = state record()
+%% @spec    ({cancel_pending}, State) ->
+%%            {ok, NewState}
+%%
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     We are asked to terminate all pending targets.
+%% @end
 %%--------------------------------------------------------------------
 process_signal({cancel_pending, ExtraHeaders}, State) when is_record(State, state) ->
     Targets = State#state.targets,
@@ -511,20 +548,24 @@ process_signal({cancel_pending, ExtraHeaders}, State) when is_record(State, stat
     {ok, NewState};
 
 %%--------------------------------------------------------------------
-%% Function: process_signal({branch_result, ClientPid, Branch,
-%%                           NewTState, Response}, State)
-%%           ClientPid = pid()
-%%           Branch    = string()
-%%           NewTState = term(), new client transaction state
-%%           Response  = response record() | {Status, Reason}
-%%             Status  = integer(), SIP status code
-%%             Reason  = string(), SIP reason phrase
-%%           State     = state record()
-%% Descrip.: One of our client transactions reports something. Either
-%%           it has received a response, timed out or been told to
-%%           report something by someone.
-%% Returns : {ok, NewState}
-%%           NewState = state record()
+%% @spec    ({branch_result, ClientPid, Branch, NewTState, Response},
+%%          State) ->
+%%            {ok, NewState}
+%%
+%%            ClientPid = pid()
+%%            Branch    = string()
+%%            NewTState = term() "new client transaction state"
+%%            Response  = #response{} | {Status, Reason}
+%%            Status    = integer() "SIP status code"
+%%            Reason    = string() "SIP reason phrase"
+%%            State     = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     One of our client transactions reports something. Either
+%%          it has received a response, timed out or been told to
+%%          report something by someone.
+%% @end
 %%--------------------------------------------------------------------
 process_signal({branch_result, ClientPid, Branch, NewTState, Response}, State)
   when is_pid(ClientPid), is_record(State, state) ->
@@ -550,14 +591,17 @@ process_signal({branch_result, ClientPid, Branch, NewTState, Response}, State)
     {ok, NewState};
 
 %%--------------------------------------------------------------------
-%% Function: process_signal({clienttransaction_terminating,
-%%                           ClientPid}, State)
-%%           ClientPid = pid(), pid of client transaction
-%%           State     = state record()
-%% Descrip.: One of our client transactions reports that it is
-%%           terminating.
-%% Returns : {ok, NewState}
-%%           NewState = state record()
+%% @spec    ({clienttransaction_terminating, ClientPid}, State) ->
+%%            {ok, NewState}
+%%
+%%            ClientPid = pid() "pid of client transaction"
+%%            State     = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     One of our client transactions reports that it is
+%%          terminating.
+%% @end
 %%--------------------------------------------------------------------
 process_signal({clienttransaction_terminating, ClientPid, Branch}, State) when is_pid(ClientPid),
 									       is_record(State, state) ->
@@ -580,11 +624,13 @@ process_signal({clienttransaction_terminating, ClientPid, Branch}, State) when i
     {ok, NewState};
 
 %%--------------------------------------------------------------------
-%% Function: process_signal({showtargets}, State)
-%%           State     = state record()
-%% Descrip.: Someone wants us to log our current set of targets to the
-%%           debug log.
-%% Returns : {ok, State}
+%% @spec    ({showtargets}, State) -> {ok, State}
+%%
+%%            State = #state{}
+%%
+%% @doc     Someone wants us to log our current set of targets to the
+%%          debug log.
+%% @end
 %%--------------------------------------------------------------------
 process_signal({showtargets}, State) when is_record(State, state) ->
     logger:log(debug, "sipproxy: Received 'showtargets' request, debugfriendly(TargetList) :~n~p",
@@ -592,16 +638,19 @@ process_signal({showtargets}, State) when is_record(State, state) ->
     {ok, State};
 
 %%--------------------------------------------------------------------
-%% Function: process_signal({'EXIT', Parent, Reason}, State)
-%%           Parent = pid()
-%%           Reason = term()
-%% Descrip.: If Pid matches our parent (State#state.parent), this
-%%           function will match. We log the exit reason and then
-%%           exit (hard) ourselves. This will cause the EXIT signal to
-%%           be propagated to our client branches, which will CANCEL
-%%           themselves if they are not already completed.
-%% Returns : {quit, State} |
-%%           does not return
+%% @spec    ({'EXIT', Parent, Reason}, State) ->
+%%            {quit, State} |
+%%            does not return
+%%
+%%            Parent = pid()
+%%            Reason = term()
+%%
+%% @doc     If Pid matches our parent (State#state.parent), this
+%%          function will match. We log the exit reason and then exit
+%%          (hard) ourselves. This will cause the EXIT signal to be
+%%          propagated to our client branches, which will CANCEL
+%%          themselves if they are not already completed.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% final_response_sent == 'true' or mystate /= 'calling'
@@ -627,19 +676,23 @@ process_signal({'EXIT', Pid, Reason}, #state{parent = Parent}) when Pid == Paren
     erlang:exit(sipproxy_parent_died);
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({'EXIT', Pid, Reason}, State)
-%%           Pid    = pid()
-%%           Reason = term()
-%% Descrip.: Some other process than our parent has exited. Check if
-%%           it was one of our client transaction. If it was,
-%%           determine what it's final result should be (500 if the
-%%           client transaction did not throw a siperror), and store
-%%           that in our response context (target list).
-%% Note    : Ideally, we should start a CANCEL transaction if it was
-%%           an invite, that wasn't completed or terminated, that
-%%           exited. We would need to know a few things more than we
-%%           know today though - such as what branch the transport
-%%           layer used for the INVITE etc.
+%% @spec    ({'EXIT', Pid, Reason}, State) -> term()
+%%
+%%            Pid    = pid()
+%%            Reason = term()
+%%
+%% @doc     Some other process than our parent has exited. Check if it
+%%          was one of our client transaction. If it was, determine
+%%          what it's final result should be (500 if the client
+%%          transaction did not throw a siperror), and store that in
+%%          our response context (target list). Note : Ideally, we
+%%          should start a CANCEL transaction if it was an invite,
+%%          that wasn't completed or terminated, that exited. We
+%%          would need to know a few things more than we know today
+%%          though - such as what branch the transport layer used for
+%%          the INVITE etc.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 process_signal({'EXIT', Pid, Reason}, State) when is_record(State, state) ->
     Targets = State#state.targets,
@@ -692,17 +745,22 @@ process_signal(Msg, State) when is_record(State, state) ->
     {error, State}.
 
 %%--------------------------------------------------------------------
-%% Function: try_next_destination(Response, Target, State)
-%%           Response = response record()
-%%           Target   = term(), targetlist target
-%%           State    = state record()
-%% Descrip.: Examine a response we have received, and if it is a 503
-%%           (we fake receiving 503's when the transport layer
-%%           indicates failure), we start a new client transaction for
-%%           the next destination in this targets destination list.
-%%           The targets destination list is typically a list of
-%%           destinations derived from a URI.
-%% Returns : NewState = state record()
+%% @spec    (Response, Target, State) ->
+%%            NewState
+%%
+%%            Response = #response{}
+%%            Target   = term() "targetlist target"
+%%            State    = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Examine a response we have received, and if it is a 503
+%%          (we fake receiving 503's when the transport layer
+%%          indicates failure), we start a new client transaction for
+%%          the next destination in this targets destination list.
+%%          The targets destination list is typically a list of
+%%          destinations derived from a URI.
+%% @end
 %%--------------------------------------------------------------------
 try_next_destination(Status, Target, State) when is_integer(Status), is_record(State, state) ->
     case {Status, State#state.mystate} of
@@ -804,12 +862,17 @@ try_next_destination_430(NextAction, Target, UserInstance, State) when is_record
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_next_sipdst(DstList)
-%%           DstList = list() of sipdst record()
-%% Descrip.: Get the next entry in DstList that the transport layer
-%%           considers eligible. This includes checking if the dest-
-%%           ination is currently blacklisted or not.
-%% Returns : NewDstList = list() of sipdst record()
+%% @spec    (DstList) ->
+%%            NewDstList
+%%
+%%            DstList = [#sipdst{}]
+%%
+%%            NewDstList = [#sipdst{}]
+%%
+%% @doc     Get the next entry in DstList that the transport layer
+%%          considers eligible. This includes checking if the dest-
+%%          ination is currently blacklisted or not.
+%% @end
 %%--------------------------------------------------------------------
 get_next_sipdst([H | T] = DstList) ->
     case transportlayer:is_eligible_dst(H) of
@@ -824,12 +887,17 @@ get_next_sipdst([]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_next_target_branch(In)
-%%           In = string()
-%% Descrip.: Create the next branch given the current one. Basically
-%%           we increase the number at the end, or add ".1" if there
-%%           is no .number at the end.
-%% Returns : Out = string()
+%% @spec    (In) ->
+%%            Out
+%%
+%%            In = string()
+%%
+%%            Out = string()
+%%
+%% @doc     Create the next branch given the current one. Basically we
+%%          increase the number at the end, or add ".1" if there is
+%%          no .number at the end.
+%% @end
 %%--------------------------------------------------------------------
 get_next_target_branch(In) ->
     case string:rchr(In, $.) of
@@ -847,19 +915,22 @@ get_next_target_branch(In) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: allterminated(State)
+%% @spec    (State) -> true | false
+%%
 %% @equiv    allterminated(State#state.targets)
-%% Returns : true | false
+%% @end
 %%--------------------------------------------------------------------
 allterminated(State) when is_record(State, state) ->
     allterminated(State#state.targets);
 
 %%--------------------------------------------------------------------
-%% Function: allterminated(TargetList)
-%%           TargetList = targetlist record()
-%% Descrip.: Determine if all targets are terminated (that is, no
-%%           targets are in the states calling, trying or proceeding).
-%% Returns : true | false
+%% @spec    (TargetList) -> true | false
+%%
+%%            TargetList = #targetlist{}
+%%
+%% @doc     Determine if all targets are terminated (that is, no
+%%          targets are in the states calling, trying or proceeding).
+%% @end
 %%--------------------------------------------------------------------
 allterminated(TargetList) ->
     TargetsCalling = targetlist:get_targets_in_state(calling, TargetList),
@@ -873,12 +944,14 @@ allterminated(TargetList) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: end_processing(EndTime, State)
-%%           EndTime = integer(), absulute time we should end
-%%           State   = state record()
-%% Descrip.: Determine if we should end processing or not (by looking
-%%           at the endtime element of our State record).
-%% Returns : true | false
+%% @spec    (EndTime, State) -> true | false
+%%
+%%            EndTime = integer() "absulute time we should end"
+%%            State   = #state{}
+%%
+%% @doc     Determine if we should end processing or not (by looking
+%%          at the endtime element of our State record).
+%% @end
 %%--------------------------------------------------------------------
 end_processing(EndTime, State) when is_integer(EndTime), is_record(State, state), State#state.mystate == stayalive ->
     Now = util:timestamp(),
@@ -892,14 +965,19 @@ end_processing(_EndTime, State) when is_record(State, state) ->
     allterminated(State).
 
 %%--------------------------------------------------------------------
-%% Function: report_upstreams(AllTerminated, State)
-%%           AllTerminated = true | false
-%%           State         = state record()
-%% Descrip.: If AllTerminated is true, this function decides what
-%%           final response we should report upstreams.
-%% Returns : NewState = state record()
-%% Note    : We need to forward 2xx responses to INVITE to upstream
-%%           even if we are 'cancelled'.
+%% @spec    (AllTerminated, State) ->
+%%            NewState
+%%
+%%            AllTerminated = true | false
+%%            State         = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     If AllTerminated is true, this function decides what final
+%%          response we should report upstreams. Note : We need to
+%%          forward 2xx responses to INVITE to upstream even if we
+%%          are 'cancelled'.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% AllTerminated == true, final_response_sent == false, mystate == calling or cancelled
@@ -960,18 +1038,22 @@ report_upstreams(_AllTerminated, State) when is_record(State, state) ->
     State.
 
 %%--------------------------------------------------------------------
-%% Function: process_branch_result(ClientPid, Branch, NewTState,
-%%                                 SPResponse, State)
-%%           ClientPid  = pid()
-%%           Branch     = string()
-%%           NewTState  = term(), new client transaction state
-%%           SPResponse = sp_response record()
-%%             Status  = integer(), SIP status code
-%%             Reason  = string(), SIP reason phrase
-%%           State     = state record()
-%% Descrip.: A branch has reported a result to us. Check what we need
-%%           to do with it, and do it.
-%% Returns : NewState = state record()
+%% @spec    (ClientPid, Branch, NewTState, SPResponse, State) ->
+%%            NewState
+%%
+%%            ClientPid  = pid()
+%%            Branch     = string()
+%%            NewTState  = term() "new client transaction state"
+%%            SPResponse = #sp_response{}
+%%            Status     = integer() "SIP status code"
+%%            Reason     = string() "SIP reason phrase"
+%%            State      = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     A branch has reported a result to us. Check what we need
+%%          to do with it, and do it.
+%% @end
 %%--------------------------------------------------------------------
 process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_pid(ClientPid), is_list(Branch),
 									    is_record(SPResponse, sp_response),
@@ -1013,18 +1095,22 @@ process_branch_result(ClientPid, Branch, NewTState, SPResponse, State) when is_p
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_forward_immediately(Request, SPResponse, Branch,
-%%                                     State)
-%%           Request    = request record()
-%%           SPResponse = sp_response record()
-%%           Branch     = string()
-%%           State      = state record()
-%% Descrip.: When one of our client transactions receive a response,
-%%           this function gets called to see if it is a response that
-%%           we are supposed to send to our parent immediately. Such
-%%           responses are provisional responses (1xx) except 100, and
-%%           2xx responses to INVITE.
-%% Returns : NewState = state record()
+%% @spec    (Request, SPResponse, Branch, State) ->
+%%            NewState
+%%
+%%            Request    = #request{}
+%%            SPResponse = #sp_response{}
+%%            Branch     = string()
+%%            State      = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     When one of our client transactions receive a response,
+%%          this function gets called to see if it is a response that
+%%          we are supposed to send to our parent immediately. Such
+%%          responses are provisional responses (1xx) except 100, and
+%%          2xx responses to INVITE.
+%% @end
 %%--------------------------------------------------------------------
 check_forward_immediately(_Request, #sp_response{status = Status, created = true}, _Branch, _State)
   when Status == 401; Status == 407 ->
@@ -1075,16 +1161,20 @@ check_forward_immediately(Request, SPResponse, Branch, State)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: forward_immediately(Method, Status, State)
-%%           Method = string()
-%%           Status = integer(), SIP status code
-%%           State  = state record()
-%% Descrip.: Return 'true' if this is a response that we are supposed
-%%           to send to our parent immediately. Such responses are
-%%           provisional responses (1xx) except 100, and 2xx responses
-%%           to INVITE.
-%% Returns : {true, NewState} | false
-%%           NewState = state record()
+%% @spec    (Method, Status, State) ->
+%%            {true, NewState} | false
+%%
+%%            Method = string()
+%%            Status = integer() "SIP status code"
+%%            State  = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Return 'true' if this is a response that we are supposed
+%%          to send to our parent immediately. Such responses are
+%%          provisional responses (1xx) except 100, and 2xx responses
+%%          to INVITE.
+%% @end
 %%--------------------------------------------------------------------
 forward_immediately(Method, Status, State) when is_record(State, state), Status == 100 ->
     %% A 100 Trying is considered an illegal response here since it is hop-by-hop and should
@@ -1110,15 +1200,19 @@ forward_immediately(_Method, Status, State) when is_record(State, state), Status
     false.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_pending_if_invite_2xx_or_6xx(Method, Status,
-%%                                               Reason, State)
-%%           Method = string()
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%%           State  = state record()
-%% Descrip.: If we receive a 2xx response to INVITE, or a 6xx response
-%%           to any request we should terminate all pending targets.
-%% Returns : NewState = state record()
+%% @spec    (Method, Status, Reason, State) ->
+%%            NewState
+%%
+%%            Method = string()
+%%            Status = integer() "SIP status code"
+%%            Reason = string() "SIP reason phrase"
+%%            State  = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     If we receive a 2xx response to INVITE, or a 6xx response
+%%          to any request we should terminate all pending targets.
+%% @end
 %%--------------------------------------------------------------------
 cancel_pending_if_invite_2xx_or_6xx("INVITE", Status, _Reason, State) when is_record(State, state), Status =< 199 ->
     State;
@@ -1140,10 +1234,12 @@ cancel_pending_if_invite_2xx_or_6xx(_Method, Status, Reason, State) when is_reco
     State#state{targets = NewTargets}.
 
 %%--------------------------------------------------------------------
-%% Function: printable_responses(Responses)
-%%           Responses = list() of sp_response record()
-%% Descrip.: Format a list of responses for (debug) logging.
-%% Returns : list() of string()
+%% @spec    (Responses) -> [string()]
+%%
+%%            Responses = [#sp_response{}]
+%%
+%% @doc     Format a list of responses for (debug) logging.
+%% @end
 %%--------------------------------------------------------------------
 printable_responses(In) ->
     printable_responses2(In, []).
@@ -1155,22 +1251,22 @@ printable_responses2([H | T], Res) when is_record(H, sp_response) ->
     printable_responses2(T, [This | Res]).
 
 %%--------------------------------------------------------------------
-%% Function: make_final_response(Responses)
-%%           Responses = list() of Res
-%%           Res = response record() | {Status, Reason}
-%%              Status = integer(), SIP status code
-%%              Reason = string(), SIP reason phrase
-%% Descrip.: Determine which response is the best response in a
-%%           response context (Responses). Perform any necessary
-%%           authentication-header aggregation and return the response
-%%           to deliver to our parent.
-%% Returns : sp_response record() | none
+%% @spec    (Responses) -> #sp_response{} | none
 %%
-%% Note    : Look for 6xx responses, then pick the lowest but prefer
-%%           401, 407, 415, 420 and 484 if we choose a 4xx and avoid
-%%           503 if we choose a 5xx. This is described in RFC3261
-%%           #16.7 (Response Processing), bullet 6. (Choosing the best
-%%           response).
+%%            Responses = [Res]
+%%            Res       = #response{} | {Status, Reason}
+%%            Status    = integer() "SIP status code"
+%%            Reason    = string() "SIP reason phrase"
+%%
+%% @doc     Determine which response is the best response in a
+%%          response context (Responses). Perform any necessary
+%%          authentication-header aggregation and return the response
+%%          to deliver to our parent. Note : Look for 6xx responses,
+%%          then pick the lowest but prefer 401, 407, 415, 420 and
+%%          484 if we choose a 4xx and avoid 503 if we choose a 5xx.
+%%          This is described in RFC3261 #16.7 (Response Processing),
+%%          bullet 6. (Choosing the best response).
+%% @end
 %%--------------------------------------------------------------------
 make_final_response(Responses) ->
     TwoxxResponses = get_xx_responses(200, Responses),
@@ -1196,16 +1292,17 @@ make_final_response(Responses) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: aggregate_authreqs(BestResponse, Responses)
-%%           BestResponse = sp_response record()
-%%           Responses    = list() of sp_response record()
-%% Descrip.: Put authentication headers from all responses in
-%%           Responses into the one we have decided to send to our
-%%           parent - BestResponse.
-%% Returns : sp_response record() | none
+%% @spec    (BestResponse, Responses) -> #sp_response{} | none
 %%
-%% Note    : This is described in RFC3261 #16.7 (Response Processing),
-%%           bullet 7. (Aggregate Authorization Header Field Values).
+%%            BestResponse = #sp_response{}
+%%            Responses    = [#sp_response{}]
+%%
+%% @doc     Put authentication headers from all responses in Responses
+%%          into the one we have decided to send to our parent -
+%%          BestResponse. Note : This is described in RFC3261 #16.7
+%%          (Response Processing), bullet 7. (Aggregate Authorization
+%%          Header Field Values).
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% BestResponse status == 407, Proxy-Authenticate
@@ -1236,14 +1333,19 @@ aggregate_authreqs(BestResponse, Responses) when is_record(BestResponse, sp_resp
     BestResponse.
 
 %%--------------------------------------------------------------------
-%% Function: collect_auth_headers(Status, Key, Responses)
-%%           Status    = integer(), SIP status code
-%%           Key       = term(), keylist key of headers to look for
-%%           Responses = list() of sp_response record()
-%% Descrip.: Part of aggregate_authreqs(). Get all headers matched by
-%%           Key from all responses in Responses which have status
-%%           Status.
-%% Returns : HeaderValue = list() of string()
+%% @spec    (Status, Key, Responses) ->
+%%            HeaderValue
+%%
+%%            Status    = integer() "SIP status code"
+%%            Key       = term() "keylist key of headers to look for"
+%%            Responses = [#sp_response{}]
+%%
+%%            HeaderValue = [string()]
+%%
+%% @doc     Part of aggregate_authreqs(). Get all headers matched by
+%%          Key from all responses in Responses which have status
+%%          Status.
+%% @end
 %%--------------------------------------------------------------------
 collect_auth_headers(Status, Key, Responses) ->
     collect_auth_headers2(Status, Key, Responses, []).
@@ -1261,12 +1363,17 @@ collect_auth_headers2(Status, Key, [H | T], Res) when is_record(H, sp_response) 
     collect_auth_headers2(Status, Key, T, Res).
 
 %%--------------------------------------------------------------------
-%% Function: pick_response(Nxx, Responses)
-%%           Nxx       = integer(), 4 for 4xx repsonses etc.
-%%           Responses = list() of sp_response record()
-%% Descrip.: Pick a response from class Nxx. We use some different
-%%           sorting routines depending on Nxx.
-%% Returns : BestResponse = response record()
+%% @spec    (Nxx, Responses) ->
+%%            BestResponse
+%%
+%%            Nxx       = integer() "4 for 4xx repsonses etc."
+%%            Responses = [#sp_response{}]
+%%
+%%            BestResponse = #response{}
+%%
+%% @doc     Pick a response from class Nxx. We use some different
+%%          sorting routines depending on Nxx.
+%% @end
 %%--------------------------------------------------------------------
 pick_response(4, FourxxResponses) when is_list(FourxxResponses) ->
     hd(lists:sort(fun pick_4xx_sort/2, FourxxResponses));
@@ -1304,12 +1411,17 @@ avoid_503_sort(#sp_response{status=Astatus}, #sp_response{status=Bstatus}) ->
     (Astatus =< Bstatus).
 
 %%--------------------------------------------------------------------
-%% Function: get_xx_responses(Min, Responses)
-%%           Min       = integer(), number evenly divided by 100
-%%           Responses = list() of sp_response record()
-%% Descrip.: Get all responses between Min and Min + 99.
-%%           sorting routines depending on Nxx.
-%% Returns : BestResponse = sp_response record()
+%% @spec    (Min, Responses) ->
+%%            BestResponse
+%%
+%%            Min       = integer() "number evenly divided by 100"
+%%            Responses = [#sp_response{}]
+%%
+%%            BestResponse = #sp_response{}
+%%
+%% @doc     Get all responses between Min and Min + 99. sorting
+%%          routines depending on Nxx.
+%% @end
 %%--------------------------------------------------------------------
 get_xx_responses(Min, Responses) ->
     Max = Min + 99,
@@ -1333,9 +1445,11 @@ get_range_responses(Min, Max, [H | T], Res) when is_record(H, sp_response) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     Self = self(),

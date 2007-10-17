@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transport layer processes supervisor, and sipsocket
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Transport layer processes supervisor, and sipsocket
 %%%           interface functions.
 %%%
-%%% Created : 21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipsocket).
 
@@ -66,18 +67,22 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the supervisor
+%% @spec    () -> term()
+%%
+%% @doc     Starts the supervisor
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %%--------------------------------------------------------------------
-%% Function: behaviour_info(callbacks)
-%% Descrip.: Describe all the API functions a module indicating it is
-%%           a sipsocket behaviour module must export. List of tuples
-%%           of the function names and their arity.
-%% Returns : list() of tuple()
+%% @spec    (callbacks) -> [tuple()]
+%%
+%% @doc     Describe all the API functions a module indicating it is a
+%%          sipsocket behaviour module must export. List of tuples of
+%%          the function names and their arity.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
     [{start_link, 0},
@@ -98,12 +103,15 @@ behaviour_info(_Other) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([])
-%% Descrip.: Initialize the supervisor with child specs for one
-%%           sipsocket_udp and one tcp_dispatcher worker process.
-%% Returns : {ok, {SupFlags, [ChildSpec]}} |
-%%           ignore                        |
-%%           {error, Reason}
+%% @spec    ([]) ->
+%%            {ok, {SupFlags, [ChildSpec]}} |
+%%            ignore                        |
+%%            {error, Reason}
+%%
+%% @doc     Initialize the supervisor with child specs for one
+%%          sipsocket_udp and one tcp_dispatcher worker process.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([]) ->
     logger:log(debug, "Transport layer supervisor started"),
@@ -131,18 +139,23 @@ init([]) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: send(Socket, Proto, Host, Port, Message)
-%%           Socket  = sipsocket record()
-%%           Proto   = proto()
-%%           Host    = string()
-%%           Port    = integer()
-%%           Message = term(), I/O list to send
-%% Descrip.: Locate a sipsocket module through the Socket record(),
-%%           and then ask that sipsocket module to send Message to
-%%           Host, port Port using protocol Proto. Currently, none of
-%%           our sipsocket modules accept different protocol in the
-%%           Socket record() and Proto.
-%% Returns : Res = ok | {error, E} | term()
+%% @spec    (Socket, Proto, Host, Port, Message) ->
+%%            Res
+%%
+%%            Socket  = #sipsocket{}
+%%            Proto   = proto()
+%%            Host    = string()
+%%            Port    = integer()
+%%            Message = term() "I/O list to send"
+%%
+%%            Res = ok | {error, E} | term()
+%%
+%% @doc     Locate a sipsocket module through the Socket record(), and
+%%          then ask that sipsocket module to send Message to Host,
+%%          port Port using protocol Proto. Currently, none of our
+%%          sipsocket modules accept different protocol in the Socket
+%%          record() and Proto.
+%% @end
 %%--------------------------------------------------------------------
 send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_atom(Proto),
 					      is_list(Host), is_integer(Port) ->
@@ -150,14 +163,18 @@ send(Socket, Proto, Host, Port, Message) when is_record(Socket, sipsocket), is_a
     SipSocketM:send(Socket, Proto, Host, Port, Message).
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Dst)
-%%           Dst = sipdst record()
-%% Descrip.: Get a socket, cached or new, useable to send messages to
-%%           Dst using protocol Proto.
-%% Returns : SipSocket       |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    (Dst) ->
+%%            SipSocket       |
+%%            {error, Reason}
+%%
+%%            Dst = #sipdst{}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Get a socket, cached or new, useable to send messages to
+%%          Dst using protocol Proto.
+%% @end
 %%--------------------------------------------------------------------
 get_socket(Dst) when is_record(Dst, sipdst) ->
     Module = proto2module(Dst#sipdst.proto),
@@ -165,14 +182,18 @@ get_socket(Dst) when is_record(Dst, sipdst) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_specific_socket(Id)
-%%           Id = ob_id record()
-%% Descrip.: Get a specific socket. Don't try to open a new connection
-%%           if the requested one does not exist.
-%% Returns : SipSocket       |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    (Id) ->
+%%            SipSocket       |
+%%            {error, Reason}
+%%
+%%            Id = #ob_id{}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Get a specific socket. Don't try to open a new connection
+%%          if the requested one does not exist.
+%% @end
 %%--------------------------------------------------------------------
 get_specific_socket(#ob_id{proto = Proto} = Id) when is_atom(Proto) ->
     Module = proto2module(Proto),
@@ -182,51 +203,65 @@ get_specific_socket(Unknown) ->
     {error, "Invalid specific socket identifier"}.
 
 %%--------------------------------------------------------------------
-%% Function: get_raw_socket(Socket)
-%%           Socket  = sipsocket record()
-%% Descrip.: Get the raw TCP/UDP/TLS socket from the socket handler.
-%%           Be careful with what you do with the raw socket - don't
-%%           use it for sending/receiving for example. Intended for
-%%           use in extractin certificate information of an SSL socket
-%%           or similar.
-%% Returns : {ok, RawSocket} |
-%%           {error, Reason}
-%%           RawSocket = term()
-%%           Reason    = string()
+%% @spec    (Socket) ->
+%%            {ok, RawSocket} |
+%%            {error, Reason}
+%%
+%%            Socket = #sipsocket{}
+%%
+%%            RawSocket = term()
+%%            Reason    = string()
+%%
+%% @doc     Get the raw TCP/UDP/TLS socket from the socket handler. Be
+%%          careful with what you do with the raw socket - don't use
+%%          it for sending/receiving for example. Intended for use in
+%%          extractin certificate information of an SSL socket or
+%%          similar.
+%% @end
 %%--------------------------------------------------------------------
 get_raw_socket(Socket) when is_record(Socket, sipsocket) ->
     SipSocketM = Socket#sipsocket.module,
     SipSocketM:get_raw_socket(Socket).
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_peer(Socket)
-%%           Socket  = sipsocket record()
-%% Descrip.: Get informaion about 'who' is on the other side of a
-%%           specific socket.
-%% Returns : {ok, Proto, Addr, Port} |
-%%           not_applicable
-%%           Proto = proto()
-%%           Addr  = string(), IP/IPv6 address of peer
-%%           Port  = integer()
+%% @spec    (Socket) ->
+%%            {ok, Proto, Addr, Port} |
+%%            not_applicable
+%%
+%%            Socket = #sipsocket{}
+%%
+%%            Proto = proto()
+%%            Addr  = string() "IP/IPv6 address of peer"
+%%            Port  = integer()
+%%
+%% @doc     Get informaion about 'who' is on the other side of a
+%%          specific socket.
+%% @end
 %%--------------------------------------------------------------------
 get_remote_peer(Socket) when is_record(Socket, sipsocket) ->
     SipSocketM = Socket#sipsocket.module,
     SipSocketM:get_remote_peer(Socket).
 
 %%--------------------------------------------------------------------
-%% Function: is_reliable_transport(Socket)
-%% Descrip.: Call the sipsocket module in specified in Socket and let
-%%           it tell the caller if it is a reliable transport or not.
-%% Returns : true | false
+%% @spec    (Socket) -> true | false
+%%
+%% @doc     Call the sipsocket module in specified in Socket and let
+%%          it tell the caller if it is a reliable transport or not.
+%% @end
 %%--------------------------------------------------------------------
 is_reliable_transport(#sipsocket{module=Module} = Socket) ->
     Module:is_reliable_transport(Socket).
 
 %%--------------------------------------------------------------------
-%% Function: proto2module(Proto)
-%%           Proto = proto()
-%% Descrip.: Get the sipsocket module for Proto.
-%% Returns : Module = atom()
+%% @spec    (Proto) ->
+%%            Module
+%%
+%%            Proto = proto()
+%%
+%%            Module = atom()
+%%
+%% @doc     Get the sipsocket module for Proto.
+%% @end
 %%--------------------------------------------------------------------
 proto2module(tcp)  -> sipsocket_tcp;
 proto2module(tcp6) -> sipsocket_tcp;
@@ -238,21 +273,31 @@ proto2module(yxa_test)  -> sipsocket_test;
 proto2module(yxa_test6)  -> sipsocket_test.
 
 %%--------------------------------------------------------------------
-%% Function: proto2viastr(Socket)
-%%           Socket = sipsocket record()
-%% Descrip.: Get the Via string (e.g. "SIP/2.0/TCP") for a transport
-%%           layer protocol.
-%% Returns : ViaStr = string()
+%% @spec    (Socket) ->
+%%            ViaStr
+%%
+%%            Socket = #sipsocket{}
+%%
+%%            ViaStr = string()
+%%
+%% @doc     Get the Via string (e.g. "SIP/2.0/TCP") for a transport
+%%          layer protocol.
+%% @end
 %%--------------------------------------------------------------------
 proto2viastr(Socket) when is_record(Socket, sipsocket) ->
     proto2viastr(Socket#sipsocket.proto);
 
 %%--------------------------------------------------------------------
-%% Function: proto2viastr(Proto)
-%%           Proto = proto()
-%% Descrip.: Get the Via string (e.g. "SIP/2.0/TCP") for a transport
-%%           layer protocol.
-%% Returns : ViaStr = string()
+%% @spec    (Proto) ->
+%%            ViaStr
+%%
+%%            Proto = proto()
+%%
+%%            ViaStr = string()
+%%
+%% @doc     Get the Via string (e.g. "SIP/2.0/TCP") for a transport
+%%          layer protocol.
+%% @end
 %%--------------------------------------------------------------------
 proto2viastr(tcp)  -> "SIP/2.0/TCP";
 proto2viastr(tcp6) -> "SIP/2.0/TCP";
@@ -264,12 +309,17 @@ proto2viastr(yxa_test) -> "SIP/2.0/YXA-TEST";
 proto2viastr(yxa_test6) -> "SIP/2.0/YXA-TEST".
 
 %%--------------------------------------------------------------------
-%% Function: viastr2proto(Str)
-%%           Str = string(), "SIP/2.0/TCP" or other
-%% Descrip.: Turn a SIP/2.0/TCP or similar string into an atom
-%%           corresponding to our internal representation of that
-%%           protocol.
-%% Returns : Proto = proto()
+%% @spec    (Str) ->
+%%            Proto
+%%
+%%            Str = string() "\"SIP/2.0/TCP\" or other"
+%%
+%%            Proto = proto()
+%%
+%% @doc     Turn a SIP/2.0/TCP or similar string into an atom
+%%          corresponding to our internal representation of that
+%%          protocol.
+%% @end
 %%--------------------------------------------------------------------
 viastr2proto("SIP/2.0/TCP") -> tcp;
 viastr2proto("SIP/2.0/TLS") -> tls;
@@ -277,13 +327,15 @@ viastr2proto("SIP/2.0/UDP") -> udp;
 viastr2proto("SIP/2.0/YXA-TEST") -> yxa_test.
 
 %%--------------------------------------------------------------------
-%% Function: is_good_socket(Socket)
-%%           Socket = sipsocket record()
-%% Descrip.: Check if a socket is still potentially useable. Does not
-%%           guarantee that sending using the socket in question will
-%%           be successfull, but indicates if it is worth trying to
-%%           use the socket at all or not.
-%% Returns : true | false
+%% @spec    (Socket) -> true | false
+%%
+%%            Socket = #sipsocket{}
+%%
+%% @doc     Check if a socket is still potentially useable. Does not
+%%          guarantee that sending using the socket in question will
+%%          be successfull, but indicates if it is worth trying to
+%%          use the socket at all or not.
+%% @end
 %%--------------------------------------------------------------------
 is_good_socket(Socket) when is_record(Socket, sipsocket) ->
     case util:safe_is_process_alive(Socket#sipsocket.pid) of
@@ -296,12 +348,16 @@ is_good_socket(_) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: get_listenport(Proto)
-%%           Proto = proto()
-%% Descrip.: Return the port we would listen on for a Proto,
-%%           regardless of if we in fact are listening on the port or
-%%           not.
-%% Returns : Port = integer()
+%% @spec    (Proto) ->
+%%            Port
+%%
+%%            Proto = proto()
+%%
+%%            Port = integer()
+%%
+%% @doc     Return the port we would listen on for a Proto, regardless
+%%          of if we in fact are listening on the port or not.
+%% @end
 %%--------------------------------------------------------------------
 get_listenport(Proto) when Proto == tls; Proto == tls6 ->
     case yxa_config:get_env(tls_listenport) of
@@ -326,14 +382,17 @@ get_listenport(yxa_test) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_all_listenports()
-%% Descrip.: Returns a list of all ports we listen on. In some places,
-%%           we need to get a list of all ports which are valid for
-%%           this proxy.
-%% Returns : PortList = list() of integer()
-%% Notes   : Perhaps this problem can't be solved this easilly - what
-%%           if we have multiple interfaces and listen on different
-%%           ports on them?
+%% @spec    () ->
+%%            PortList
+%%
+%%            PortList = [integer()]
+%%
+%% @doc     Returns a list of all ports we listen on. In some places,
+%%          we need to get a list of all ports which are valid for
+%%          this proxy. Notes : Perhaps this problem can't be solved
+%%          this easilly - what if we have multiple interfaces and
+%%          listen on different ports on them?
+%% @end
 %%--------------------------------------------------------------------
 get_all_listenports() ->
     get_all_listenports2(ets:tab2list(yxa_sipsocket_info), []).
@@ -344,13 +403,15 @@ get_all_listenports2([], Res) ->
     lists:usort(Res).
 
 %%--------------------------------------------------------------------
-%% Function: add_listener_info(Proto, Addr, Port)
-%%           Proto = proto()
-%%           Addr  = string(), listening IP address
-%%           Port  = integer()
-%% Descrip.: Add an entry to ETS table yxa_sipsocket_info and sweep it
-%%           for stale entrys.
-%% Returns : ok
+%% @spec    (Proto, Addr, Port) -> ok
+%%
+%%            Proto = proto()
+%%            Addr  = string() "listening IP address"
+%%            Port  = integer()
+%%
+%% @doc     Add an entry to ETS table yxa_sipsocket_info and sweep it
+%%          for stale entrys.
+%% @end
 %%--------------------------------------------------------------------
 add_listener_info(Proto, Addr, Port) when is_atom(Proto), is_list(Addr), is_integer(Port) ->
     InfoRecord = #yxa_sipsocket_info_e{proto = Proto,
@@ -380,13 +441,18 @@ add_listener_info(Proto, Addr, Port) when is_atom(Proto), is_list(Addr), is_inte
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: default_port(Proto, Port)
-%%           Proto = proto() | ProtoStr
-%%           ProtoStr = string(), "sip" | "sips"
-%%           Port  = integer() | none
-%% Descrip.: Yucky function returning a "default port number" as an
-%%           integer, based on input Proto and Port.
-%% Returns : Port = integer()
+%% @spec    (Proto, Port) ->
+%%            Port
+%%
+%%            Proto    = proto() | ProtoStr
+%%            ProtoStr = string() "\"sip\" | \"sips\""
+%%            Port     = integer() | none
+%%
+%%            Port = integer()
+%%
+%% @doc     Yucky function returning a "default port number" as an
+%%          integer, based on input Proto and Port.
+%% @end
 %%--------------------------------------------------------------------
 default_port(Proto, none) when Proto == udp; Proto == udp6; Proto == tcp; Proto == tcp6; Proto == "sip" ->
     5060;
@@ -399,12 +465,16 @@ default_port(_, Port) when is_integer(Port) ->
     Port.
 
 %%--------------------------------------------------------------------
-%% Function: close_socket(Socket)
-%%           Socket = sipsocket record()
-%% Descrip.: Close a socket.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = not_applicable | term()
+%% @spec    (Socket) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            Socket = #sipsocket{}
+%%
+%%            Reason = not_applicable | term()
+%%
+%% @doc     Close a socket.
+%% @end
 %%--------------------------------------------------------------------
 close_socket(Socket) when is_record(Socket, sipsocket) ->
     SipSocketM = Socket#sipsocket.module,
@@ -415,9 +485,11 @@ close_socket(Socket) when is_record(Socket, sipsocket) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

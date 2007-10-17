@@ -1,7 +1,7 @@
 %%%--------------------------------------------------------------------
 %%% File    : sippipe.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Try a given set of destinations sequentially until we
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Try a given set of destinations sequentially until we
 %%%           get a final response from one or them, or have no
 %%%           destinations left to try.
 %%%
@@ -9,7 +9,8 @@
 %%%           be alerted when they die. We are currently linked to
 %%%           them, and will die too if they die.
 %%%
-%%% Created :  20 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since     20 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%--------------------------------------------------------------------
 -module(sippipe).
 
@@ -31,6 +32,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {branch,			%% string(), current client transaction branch
 		serverhandler,		%% term(), server transaction handle
 		clienttransaction_pid,	%% pid(), current client transaction process
@@ -54,24 +57,22 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start(ServerHandler, ClientPid, Request, Dst, Timeout)
-%%           ServerHandler = term(), server transaction handler
-%%           ClientPid     = pid() | none, pid of already existing
-%%                           client transaction that we should connect
-%%                           with the server transaction
-%%           Request       = request record(), original request
-%%           Dst           = sipurl record() | route | list() of sipdst record()
-%%           Timeout       = integer(), seconds given for this sippipe
-%%                           to finish. Our client transactions
-%%                           timeouts will be adjusted to not exceed
-%%                           this value in total.
-%% Descrip.: Start a sippipe. We try to be flexible with the input
-%%           arguments. If we are provided with a URL as DstList, we
-%%           resolve it into a list of sipdst records.
-%%           If we are given a client transaction handle, we start out
-%%           with that one. Otherwise we start a client transaction
-%%           and then enter loop/1.
-%% Returns : term(), Does not matter
+%% @spec    (ServerHandler, ClientPid, Request, Dst, Timeout) ->
+%%            term() "Does not matter"
+%%
+%%            ServerHandler = term() "server transaction handler"
+%%            ClientPid     = pid() | none "pid of already existing client transaction that we should connect with the server transaction"
+%%            Request       = #request{} "original request"
+%%            Dst           = #sipurl{} | route | [#sipdst{}]
+%%            Timeout       = integer() "seconds given for this sippipe to finish. Our client transactions timeouts will be adjusted to not exceed this value in total."
+%%
+%% @doc     Start a sippipe. We try to be flexible with the input
+%%          arguments. If we are provided with a URL as DstList, we
+%%          resolve it into a list of sipdst records. If we are given
+%%          a client transaction handle, we start out with that one.
+%%          Otherwise we start a client transaction and then enter
+%%          loop/1.
+%% @end
 %%--------------------------------------------------------------------
 start(ServerHandler, ClientPid, RequestIn, DstIn, Timeout) when is_record(RequestIn, request) ->
     %% call check_proxy_request to get sanity of proxying this request verified (Max-Forwards checked etc)
@@ -156,9 +157,10 @@ final_start(Branch, ServerHandler, ClientPid, Request, [Dst | _] = DstList, Time
 
 
 %%--------------------------------------------------------------------
-%% Function: loop(State)
-%% Descrip.: Main loop.
-%% Returns : term(), does not return until we are finished.
+%% @spec    (State) -> term() "does not return until we are finished."
+%%
+%% @doc     Main loop.
+%% @end
 %%--------------------------------------------------------------------
 loop(State) when is_record(State, state) ->
     WarnOrEnd = lists:min([State#state.warntime, State#state.endtime]) - util:timestamp(),
@@ -206,13 +208,17 @@ loop_receive_once(State, WarnOrEnd) when is_record(State, state), is_integer(War
     end.
 
 %%--------------------------------------------------------------------
-%% Function: warn_or_end(State, Now)
-%%           Now = integer(), current time
-%% Descrip.: Check to see if it is time to warn, or time to die.
-%% Returns : {quit, NewState} |
-%%           {Res, NewState}
-%%           NewState = state record()
-%%           Res      = quit | ok | warn_or_end
+%% @spec    (State, Now) ->
+%%            {quit, NewState} |
+%%            {Res, NewState}
+%%
+%%            Now = integer() "current time"
+%%
+%%            NewState = #state{}
+%%            Res      = quit | ok | warn_or_end
+%%
+%% @doc     Check to see if it is time to warn, or time to die.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -232,11 +238,16 @@ warn_or_end(State, Now) when is_record(State, state), Now >= State#state.warntim
 
 
 %%--------------------------------------------------------------------
-%% Function: process_received_response(Response, State)
-%%           Response = response record()
-%% Descrip.: We have received a response. Check if we should do
-%%           something.
-%% Returns : NewState = state record()
+%% @spec    (Response, State) ->
+%%            NewState
+%%
+%%            Response = #response{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     We have received a response. Check if we should do
+%%          something.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% We are already cancelled
@@ -324,14 +335,19 @@ default_process_received_response(Status, Reason, Response, State) when is_recor
     State.
 
 %%--------------------------------------------------------------------
-%% Function: start_next_client_transaction(Status, State)
-%%           Status = integer(), SIP status code of last branch result
-%%           State  = state record()
-%% Descrip.: When this function is called, any previous client
-%%           transactions will have received a final response. Start
-%%           the next client transaction from State#state.dstlist, or
-%%           send a 500 response in case we have no destinations left.
-%% Returns : NewState = state record()
+%% @spec    (Status, State) ->
+%%            NewState
+%%
+%%            Status = integer() "SIP status code of last branch result"
+%%            State  = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     When this function is called, any previous client
+%%          transactions will have received a final response. Start
+%%          the next client transaction from State#state.dstlist, or
+%%          send a 500 response in case we have no destinations left.
+%% @end
 %%--------------------------------------------------------------------
 start_next_client_transaction(Status, #state{cancelled = false} = State) ->
     case get_next_client_transaction_params(Status, State) of
@@ -435,11 +451,16 @@ get_next_sipdst_with_instance(_Instance, _ApproxMsgSize, [], _NoMatch) ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: get_next_target_branch(In)
-%%           In = string()
-%% Descrip.: Given the current branch as input, return the next one
-%%           to use.
-%% Returns: NewBranch = string()
+%% @spec    (In) ->
+%%            NewBranch
+%%
+%%            In = string()
+%%
+%%            NewBranch = string()
+%%
+%% @doc     Given the current branch as input, return the next one to
+%%          use.
+%% @end
 %%--------------------------------------------------------------------
 get_next_target_branch(In) ->
     case string:rchr(In, $.) of
@@ -457,14 +478,19 @@ get_next_target_branch(In) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_next_sipdst(DstList, ApproxMsgSize)
-%%           DstList       = list() of sipdst record()
-%%           ApproxMsgSize = integer()
-%% Descrip.: Look at the first element of the input DstList. If it is
-%%           a URI instead of a sipdst record, then resolve the URI
-%%           into sipdst record(s) and prepend the new record(s) to
-%%           the input DstList and return the new list
-%% Returns : NewDstList = list() of sipdst record()
+%% @spec    (DstList, ApproxMsgSize) ->
+%%            NewDstList
+%%
+%%            DstList       = [#sipdst{}]
+%%            ApproxMsgSize = integer()
+%%
+%%            NewDstList = [#sipdst{}]
+%%
+%% @doc     Look at the first element of the input DstList. If it is a
+%%          URI instead of a sipdst record, then resolve the URI into
+%%          sipdst record(s) and prepend the new record(s) to the
+%%          input DstList and return the new list
+%% @end
 %%--------------------------------------------------------------------
 get_next_sipdst([], _ApproxMsgSize) ->
     [];
@@ -508,13 +534,18 @@ get_next_sipdst([H | T] = DstList, ApproxMsgSize) when is_record(H, sipdst) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_transaction(State, Reason, ExtraHeaders)
-%%           State        = state record()
-%%           Reason       = string()
-%%           ExtraHeaders = list() of {Key, ValueList}
-%% Descrip.: Our server transaction has been cancelled. Signal the
-%%           client transaction.
-%% Returns : NewState = state record()
+%% @spec    (State, Reason, ExtraHeaders) ->
+%%            NewState
+%%
+%%            State        = #state{}
+%%            Reason       = string()
+%%            ExtraHeaders = [{Key, ValueList}]
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Our server transaction has been cancelled. Signal the
+%%          client transaction.
+%% @end
 %%--------------------------------------------------------------------
 cancel_transaction(#state{cancelled = false} = State, Reason, ExtraHeaders) when is_list(Reason) ->
     logger:log(debug, "sippipe: Original request has been cancelled, asking current "
@@ -534,20 +565,22 @@ cancel_transaction(#state{cancelled = true} = State, Reason, _ExtraHeaders) when
 
 
 %%--------------------------------------------------------------------
-%% Function: start_get_dstlist(ServerHandler, Request, ApproxMsgSize,
-%%                             Dst)
-%%           ServerHandler = term(), server transaction handle
-%%           Request       = request record()
-%%           ApproxMsgSize = integer(), approximate size of formatted
-%%                                      request
-%%           Dst           = sipurl record() | route | list() of sipdst record()
-%% Descrip.: Get an initial list of destinations for this request.
-%%           This might mean we pop the destination from a Route
-%%           header, in which case we return a new request.
-%% Returns : {ok, DstList, NewRequest} |
-%%           error
-%%           DstList    = list() of sipdst record()
-%%           NewRequest = request record()
+%% @spec    (ServerHandler, Request, ApproxMsgSize, Dst) ->
+%%            {ok, DstList, NewRequest} |
+%%            error
+%%
+%%            ServerHandler = term() "server transaction handle"
+%%            Request       = #request{}
+%%            ApproxMsgSize = integer() "approximate size of formatted request"
+%%            Dst           = #sipurl{} | route | [#sipdst{}]
+%%
+%%            DstList    = [#sipdst{}]
+%%            NewRequest = #request{}
+%%
+%% @doc     Get an initial list of destinations for this request. This
+%%          might mean we pop the destination from a Route header, in
+%%          which case we return a new request.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -593,17 +626,21 @@ start_get_dstlist(_ServerHandler, Request, _ApproxMsgSize, [Dst | _] = DstList) 
     {ok, DstList, Request}.
 
 %%--------------------------------------------------------------------
-%% Function: start_get_servertransaction(ServerHandler, Request)
-%%           ServerHandler = none | term(), server transaction handle
-%%           Request       = request record()
-%% Descrip.: Assure we have a working server transaction handle.
-%%           Either we get one as ServerHandler argument, or we try to
-%%           find one using the transaction layer. If the server
-%%           transaction has already been cancelled, we return 'ok'.
-%% Returns : {ok, STHandler, Branch} |
-%%           ignore
-%%           STHandler = term()
-%%           Branch    = string()
+%% @spec    (ServerHandler, Request) ->
+%%            {ok, STHandler, Branch} |
+%%            ignore
+%%
+%%            ServerHandler = none | term() "server transaction handle"
+%%            Request       = #request{}
+%%
+%%            STHandler = term()
+%%            Branch    = string()
+%%
+%% @doc     Assure we have a working server transaction handle. Either
+%%          we get one as ServerHandler argument, or we try to find
+%%          one using the transaction layer. If the server
+%%          transaction has already been cancelled, we return 'ok'.
+%% @end
 %%--------------------------------------------------------------------
 start_get_servertransaction(TH, Request) when is_record(Request, request) ->
     Q = case TH of
@@ -631,9 +668,11 @@ start_get_servertransaction(TH, Request) when is_record(Request, request) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     yxa_test_config:init(incomingproxy, [{sipsocket_blacklisting, false}]),
@@ -755,7 +794,7 @@ test() ->
     GNCTP_Res3 = get_next_client_transaction_params(400, GNCTP_State3),
 
     autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.2"),
-    {ok, #request{uri = GNCTP_NewURL3}, #sipdst{addr = "192.0.2.3", port = 4997}, 
+    {ok, #request{uri = GNCTP_NewURL3}, #sipdst{addr = "192.0.2.3", port = 4997},
      GNCTP_Timeout3, GNCTP_State3_Res} = GNCTP_Res3,
     "foo.2" = GNCTP_State3_Res#state.branch,
     {timeout, true} = {timeout, (GNCTP_Timeout3 >= 9 andalso GNCTP_Timeout3 =< 10)},

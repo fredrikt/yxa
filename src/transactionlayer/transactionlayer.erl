@@ -1,8 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% File    : transactionlayer.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Transactionlayer
-%%% Created : 05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Transactionlayer
+%%% @since    05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(transactionlayer).
 
@@ -87,12 +88,15 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
-%% My State
+%% @type state() = #state{}.
+%%                 My State
 -record(state, {
 	 }).
 
-%% A container record to make it clear that all communication with
-%% the transaction processes should go through this module.
+%% @type thandler() = #thandler{}.
+%%                    A container record to make it clear that all communication
+%%                    with the transaction processes should go through this
+%%                    module.
 -record(thandler, {
 	  pid
 	 }).
@@ -111,11 +115,12 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: start the transactionlayer gen_server.
-%%           The transactionlayer is only registered localy (on the
-%%           current node)
-%% Returns : gen_server:start_link/4
+%% @spec    () -> term()
+%%
+%% @doc     start the transactionlayer gen_server. The
+%%          transactionlayer is only registered localy (on the
+%%          current node)
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, transactionlayer}, ?MODULE, [], []).
@@ -125,12 +130,15 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([])
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ([]) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([]) ->
     process_flag(trap_exit, true),
@@ -148,25 +156,34 @@ init([]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages.
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({monitor_get_transactionlist}, From, State)
-%% Descrip.: The stack monitor is requesting our list of transactions.
-%% Returns : {reply, {ok, List}, State, ?TIMEOUT}
-%%           List = transactionstatelist record()
-%% Note    : Returning all entrys from an ets table is a relatively
-%%           expensive operation. You might not want to run the
-%%           stack monitor on a busy system...
+%% @spec    ({monitor_get_transactionlist}, From, State) ->
+%%            {reply, {ok, List}, State, Timeout::integer()}
+%%
+%%            List = #transactionstatelist{}
+%%
+%% @doc     The stack monitor is requesting our list of transactions.
+%%          Note : Returning all entrys from an ets table is a
+%%          relatively expensive operation. You might not want to run
+%%          the stack monitor on a busy system...
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({monitor_get_transactionlist}, _From, State) ->
     {reply, {ok, transactionstatelist:get_all_entries()}, State, ?TIMEOUT};
@@ -177,20 +194,29 @@ handle_call(Request, From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast({unregister_pid, Pid}, State)
-%%           Pid = pid()
-%% Descrip.: Delete all transactions handled by Pid from our list.
-%%           Does NOT send the Pid any signals to quit or similar -
-%%           just removes the transactions from our list.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    ({unregister_pid, Pid}, State) ->
+%%            {noreply, State, Timeout::integer()}
+%%
+%%            Pid = pid()
+%%
+%% @doc     Delete all transactions handled by Pid from our list. Does
+%%          NOT send the Pid any signals to quit or similar - just
+%%          removes the transactions from our list.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({unregister_pid, Pid}, State) ->
     L = transactionstatelist:get_entrylist_using_pid(Pid),
@@ -202,11 +228,15 @@ handle_cast({unregister_pid, Pid}, State) ->
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({debug_show_transactions, FromPid}, State)
-%%           Pid = pid()
-%% Descrip.: Dump all our current transactions to logger. Just for
-%%           debug output.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    ({debug_show_transactions, FromPid}, State) ->
+%%            {noreply, State, Timeout::integer()}
+%%
+%%            Pid = pid()
+%%
+%% @doc     Dump all our current transactions to logger. Just for
+%%          debug output.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({debug_show_transactions, FromPid}, State) ->
     logger:log(debug, "Transaction layer: Pid ~p asked me to show all ongoing transactions :~n~p",
@@ -214,10 +244,12 @@ handle_cast({debug_show_transactions, FromPid}, State) ->
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({quit}, State)
-%% Descrip.: Terminate the transactionlayer process. Should normally
-%%           never be used.
-%% Returns : {stop, normal, State}
+%% @spec    ({quit}, State) -> {stop, normal, State}
+%%
+%% @doc     Terminate the transactionlayer process. Should normally
+%%          never be used.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({quit}, State) ->
     logger:log(debug, "Transaction layer: Received signal to quit"),
@@ -229,19 +261,26 @@ handle_cast(Msg, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Wake up and remove all expired transactions from our
-%%           list. DOES tell transaction handlers that it is time to
-%%           terminate, if they are found to be expired.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (timeout, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Wake up and remove all expired transactions from our list.
+%%          DOES tell transaction handlers that it is time to
+%%          terminate, if they are found to be expired.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     case transactionstatelist:get_expired() of
@@ -258,13 +297,17 @@ handle_info(timeout, State) ->
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({'EXIT', Pid, Reason}, State)
-%%           Pid    = pid()
-%%           Reason = normal | term()
-%% Descrip.: Trap exit signals from client/server transaction handlers
-%%           and act on them. Log if they exit with an error, and
-%%           remove them from our list of ongoing transactions.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    ({'EXIT', Pid, Reason}, State) ->
+%%            {noreply, State, Timeout::integer()}
+%%
+%%            Pid    = pid()
+%%            Reason = normal | term()
+%%
+%% @doc     Trap exit signals from client/server transaction handlers
+%%          and act on them. Log if they exit with an error, and
+%%          remove them from our list of ongoing transactions.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
@@ -289,9 +332,10 @@ handle_info(Msg, State) ->
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate/2
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @end
 %%--------------------------------------------------------------------
 terminate(normal, _State) ->
     logger:log(debug, "Transaction layer: Terminating normally."),
@@ -305,9 +349,11 @@ terminate(Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Purpose : Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -317,43 +363,41 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: received_new_request(Request, YxaCtx, AppModule)
-%%           Request   = request record()
-%%           YxaCtx    = yxa_ctx record()
-%%           AppModule = atom(), YXA application module
-%% Descrip.: Act on a new request that has just been delivered to the
-%%           transaction layer from the transport layer, where the
-%%           transaction layer did not have any prior transaction.
-%%           This code executes in the request handler process - NOT
-%%           in the transactionlayer. This is to achieve better
-%%           concurrency by not doing alot of work in the
-%%           transactionlayer process.
-%% Returns : {pass_to_core, AppModule, STPid} |
-%%           continue
-%%           STPid = pid() | undefined
+%% @spec    (Request, YxaCtx, AppModule) ->
+%%            {pass_to_core, AppModule, STPid} |
+%%            continue
 %%
-%% Notes   :
-%%           Meaning of Reply :
-%%           continue means that the transaction layer has taken care
-%%           of this Request and no further action should be taken by
-%%           the caller of this function.
+%%            Request   = #request{}
+%%            YxaCtx    = #yxa_ctx{}
+%%            AppModule = atom() "YXA application module"
 %%
-%%           {pass_to_core, AppModule, STPid} means that the caller
-%%           should apply() AppModule:request/2 with this Request as
-%%           argument.
-%%           We can't do it here since we can't block the
-%%           transacton_layer process, and asking the caller to do it
-%%           saves us a spawn(). AppModule is the module name passed
-%%           to our init/1.
+%%            STPid = pid() | undefined
 %%
+%% @doc     Act on a new request that has just been delivered to the
+%%          transaction layer from the transport layer, where the
+%%          transaction layer did not have any prior transaction.
+%%          This code executes in the request handler process - NOT
+%%          in the transactionlayer. This is to achieve better
+%%          concurrency by not doing alot of work in the
+%%          transactionlayer process. Notes : Meaning of Reply :
+%%          continue means that the transaction layer has taken care
+%%          of this Request and no further action should be taken by
+%%          the caller of this function.
+%%          {pass_to_core, AppModule, STPid} means that the caller
+%%          should apply() AppModule:request/2 with this Request as
+%%          argument. We can't do it here since we can't block the
+%%          transacton_layer process, and asking the caller to do it
+%%          saves us a spawn(). AppModule is the module name passed
+%%          to our init/1.
 %%
-%%           It might be worthwile to insert a dummy-entry in the
-%%           transaction layers list of transactions for this new
-%%           transaction, before spawning a servertransaction. That
-%%           would reduce the workload of a really loaded system that
-%%           receives a big percentage of resends before it has had
-%%           time to spawn servertransactions that have registered
-%%           themselves in the transaction layers list.
+%%          It might be worthwile to insert a dummy-entry in the
+%%          transaction layers list of transactions for this new
+%%          transaction, before spawning a servertransaction. That
+%%          would reduce the workload of a really loaded system that
+%%          receives a big percentage of resends before it has had
+%%          time to spawn servertransactions that have registered
+%%          themselves in the transaction layers list.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -388,17 +432,21 @@ received_new_request(Request, YxaCtx, AppModule) when is_record(Request, request
     end.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_corresponding_transaction(Request, STPid)
-%%           Request = request record()
-%%           STPid   = pid(), CANCEL server transaction.
-%% Descrip.: Part of received_new_request/4. We have received a CANCEL
-%%           and here we try to find the corresponding INVITE and tell
-%%           it that it has been cancelled. If we find an INVITE, we
-%%           return 'false' to _not_ pass this CANCEL to the
-%%           Transaction User (core). If we do not find it however, we
-%%           return 'true' to pass the CANCEL to core.
-%% Returns : PassToCore
-%%           PassToCore = true | false
+%% @spec    (Request, STPid) ->
+%%            PassToCore
+%%
+%%            Request = #request{}
+%%            STPid   = pid() "CANCEL server transaction."
+%%
+%%            PassToCore = true | false
+%%
+%% @doc     Part of received_new_request/4. We have received a CANCEL
+%%          and here we try to find the corresponding INVITE and tell
+%%          it that it has been cancelled. If we find an INVITE, we
+%%          return 'false' to _not_ pass this CANCEL to the
+%%          Transaction User (core). If we do not find it however, we
+%%          return 'true' to pass the CANCEL to core.
+%% @end
 %%--------------------------------------------------------------------
 cancel_corresponding_transaction(#request{method="CANCEL"}=Request, STPid) when is_pid(STPid) ->
     Header = Request#request.header,
@@ -447,13 +495,17 @@ cancel_corresponding_transaction(Request, STPid) when is_record(Request, request
     true.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction_pid(Request)
-%%           Request = request record()
-%% Descrip.: Find a server transaction given a request. Return it's
-%%           pid.
-%% Returns : Pid |
-%%           none
-%%           Pid         = pid()
+%% @spec    (Request) ->
+%%            Pid |
+%%            none
+%%
+%%            Request = #request{}
+%%
+%%            Pid = pid()
+%%
+%% @doc     Find a server transaction given a request. Return it's
+%%          pid.
+%% @end
 %%--------------------------------------------------------------------
 get_server_transaction_pid(Request) when is_record(Request, request) ->
     case get_server_transaction(Request) of
@@ -469,25 +521,33 @@ get_server_transaction_pid(Request) when is_record(Request, request) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_server_transaction(Request)
-%%           Request = request record()
-%% Descrip.: Find a server transaction in our list given either a
-%%           request or a response record().
-%% Returns : THandler |
-%%           error    |
-%%           none
-%%           THandler    = transactionstate record()
+%% @spec    (Request) ->
+%%            THandler |
+%%            error    |
+%%            none
+%%
+%%            Request = #request{}
+%%
+%%            THandler = #transactionstate{}
+%%
+%% @doc     Find a server transaction in our list given either a
+%%          request or a response record().
+%% @end
 %%--------------------------------------------------------------------
 get_server_transaction(Request) when is_record(Request, request) ->
     transactionstatelist:get_server_transaction_using_request(Request).
 
 %%--------------------------------------------------------------------
-%% Function: get_client_transaction(Response)
-%%           Response    = response record()
-%% Descrip.: Find a client transaction given a response.
-%% Returns : TState |
-%%           none
-%%           TState      = transactionstate record()
+%% @spec    (Response) ->
+%%            TState |
+%%            none
+%%
+%%            Response = #response{}
+%%
+%%            TState = #transactionstate{}
+%%
+%% @doc     Find a client transaction given a response.
+%% @end
 %%--------------------------------------------------------------------
 get_client_transaction(Response) when is_record(Response, response) ->
     Header = Response#response.header,
@@ -497,13 +557,17 @@ get_client_transaction(Response) when is_record(Response, response) ->
     transactionstatelist:get_client_transaction(Method, Branch).
 
 %%--------------------------------------------------------------------
-%% Function: get_client_transaction_pid(Response)
-%%           Response    = response record()
-%% Descrip.: Find a client transaction given a response.
-%%           Return it's pid.
-%% Returns : Pid  |
-%%           none
-%%           Pid         = pid()
+%% @spec    (Response) ->
+%%            Pid  |
+%%            none
+%%
+%%            Response = #response{}
+%%
+%%            Pid = pid()
+%%
+%% @doc     Find a client transaction given a response. Return it's
+%%          pid.
+%% @end
 %%--------------------------------------------------------------------
 get_client_transaction_pid(Response) when is_record(Response, response) ->
     case get_client_transaction(Response) of
@@ -524,50 +588,55 @@ get_client_transaction_pid(Response) when is_record(Response, response) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: send_response_request(Request, Status, Reason)
-%%           Request      = request record()
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
-%% Descrip.: Sends a response with an empty body and no extra headers.
-%%	     @see send_response_request/5.
-%% Returns : term()
+%% @spec    (Request, Status, Reason) -> term()
+%%
+%%            Request = #request{}
+%%            Status  = integer() "SIP status code"
+%%            Reason  = string() "SIP reason phrase"
+%%
+%% @doc     Sends a response with an empty body and no extra headers.
+%%          @see send_response_request/5.
+%% @end
 %%--------------------------------------------------------------------
 send_response_request(Request, Status, Reason) when is_record(Request, request) ->
     send_response_request(Request, Status, Reason, []).
 
 %%--------------------------------------------------------------------
-%% Function: send_response_request(Request, Status, Reason,
-%%                                 ExtraHeaders)
-%%           Request      = request record()
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = keylist record()
-%% Descrip.: Sends a response with an empty body.
-%%	     @see send_response_request/5.
-%% Returns : term()
+%% @spec    (Request, Status, Reason, ExtraHeaders) -> term()
+%%
+%%            Request      = #request{}
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = #keylist{}
+%%
+%% @doc     Sends a response with an empty body. @see
+%%          send_response_request/5.
+%% @end
 %%--------------------------------------------------------------------
 send_response_request(Request, Status, Reason, ExtraHeaders) when is_record(Request, request) ->
     send_response_request(Request, Status, Reason, ExtraHeaders, <<>>).
 
 %%--------------------------------------------------------------------
-%% Function: send_response_request(Request, Status, Reason,
-%%                                 ExtraHeaders, RBody)
-%%           Request      = request record()
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = keylist record()
-%%           RBody        = string(), response body
-%% Descrip.: Locate the server transaction handler using a request,
-%%           and then ask the server transaction handler to send a
-%%           response.
-%% Returns : none  |
-%%           ok    |
-%%           {error, E}
-%%           E = string(), describes the error
+%% @spec    (Request, Status, Reason, ExtraHeaders, RBody) ->
+%%            none  |
+%%            ok    |
+%%            {error, E}
 %%
-%% Note    : If this function returns 'none' it did not find a server
-%%           transasction. Should probably be changed to
-%%           {error, "No server transaction found"} or similar.
+%%            Request      = #request{}
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = #keylist{}
+%%            RBody        = string() "response body"
+%%
+%%            E = string() "describes the error"
+%%
+%% @doc     Locate the server transaction handler using a request, and
+%%          then ask the server transaction handler to send a
+%%          response. Note : If this function returns 'none' it did
+%%          not find a server transasction. Should probably be
+%%          changed to {error, "No server transaction found"} or
+%%          similar.
+%% @end
 %%--------------------------------------------------------------------
 send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_record(Request, request) ->
     {Method, URI} = {Request#request.method, Request#request.uri},
@@ -586,42 +655,49 @@ send_response_request(Request, Status, Reason, ExtraHeaders, RBody) when is_reco
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_response_handler(TH, Status, Reason)
-%%           TH     = thandler record(), transaction handler
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%% Descrip.: Send a response with an empty body and no extra headers.
-%%           @see send_response_handler/5.
-%% Returns : term()
+%% @spec    (TH, Status, Reason) -> term()
+%%
+%%            TH     = #thandler{} "transaction handler"
+%%            Status = integer() "SIP status code"
+%%            Reason = string() "SIP reason phrase"
+%%
+%% @doc     Send a response with an empty body and no extra headers.
+%%          @see send_response_handler/5.
+%% @end
 %%--------------------------------------------------------------------
 send_response_handler(TH, Status, Reason) when is_record(TH, thandler) ->
     send_response_handler(TH, Status, Reason, []).
 
 %%--------------------------------------------------------------------
-%% Function: send_response_handler(TH, Status, Reason, ExtraHeaders)
-%%           TH           = thandler record(), transaction handler
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = keylist record()
-%% Descrip.: Send a response with an empty body.
-%%           @see send_response_handler/5.
-%% Returns : term()
+%% @spec    (TH, Status, Reason, ExtraHeaders) -> term()
+%%
+%%            TH           = #thandler{} "transaction handler"
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = #keylist{}
+%%
+%% @doc     Send a response with an empty body. @see
+%%          send_response_handler/5.
+%% @end
 %%--------------------------------------------------------------------
 send_response_handler(TH, Status, Reason, ExtraHeaders) when is_record(TH, thandler) ->
     send_response_handler(TH, Status, Reason, ExtraHeaders, <<>>).
 
 %%--------------------------------------------------------------------
-%% Function: send_response_handler(TH, Status, Reason, ExtraHeaders,
-%%                                 RBody)
-%%           TH           = thandler record(), transaction handler
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = keylist record()
-%%           RBody        = binary(), response body
-%% Descrip.: Ask a server transaction handler to send a response.
-%% Returns : ok    |
-%%           {error, E}
-%%           E = string(), describes the error
+%% @spec    (TH, Status, Reason, ExtraHeaders, RBody) ->
+%%            ok    |
+%%            {error, E}
+%%
+%%            TH           = #thandler{} "transaction handler"
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = #keylist{}
+%%            RBody        = binary() "response body"
+%%
+%%            E = string() "describes the error"
+%%
+%% @doc     Ask a server transaction handler to send a response.
+%% @end
 %%--------------------------------------------------------------------
 send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
   when is_record(TH, thandler), is_integer(Status), is_list(Reason), is_list(ExtraHeaders), is_binary(RBody) ->
@@ -633,15 +709,19 @@ send_response_handler(TH, Status, Reason, ExtraHeaders, RBody)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_proxy_response_handler(TH, Response)
-%%           TH           = thandler record(), transaction handler
-%%           Response     = response record()
-%% Descrip.: Ask a server transaction handler to proxy a response.
-%%           When we proxy (as opposed to send) a response, we do some
-%%           additional processing like removing the top Via header.
-%% Returns : ok    |
-%%           {error, E}
-%%           E = string(), describes the error
+%% @spec    (TH, Response) ->
+%%            ok    |
+%%            {error, E}
+%%
+%%            TH       = #thandler{} "transaction handler"
+%%            Response = #response{}
+%%
+%%            E = string() "describes the error"
+%%
+%% @doc     Ask a server transaction handler to proxy a response. When
+%%          we proxy (as opposed to send) a response, we do some
+%%          additional processing like removing the top Via header.
+%% @end
 %%--------------------------------------------------------------------
 send_proxy_response_handler(TH, Response) when is_record(TH, thandler), is_record(Response, response) ->
     case gen_server:cast(TH#thandler.pid, {forwardresponse, Response}) of
@@ -652,16 +732,20 @@ send_proxy_response_handler(TH, Response) when is_record(TH, thandler), is_recor
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_handler_for_request(Request)
-%%           Request = request record()
-%% Descrip.: Return the server transaction handler using a request.
-%%           This is the ordinary way for an application to locate the
-%%           server transaction for a request it gets passed, in order
-%%           to send a response or get it's branch or whatever.
-%% Returns : THandler   |
-%%           {error, E}
-%%           THandler = thandler record()
-%%           E = string(), describes the error
+%% @spec    (Request) ->
+%%            THandler   |
+%%            {error, E}
+%%
+%%            Request = #request{}
+%%
+%%            THandler = #thandler{}
+%%            E        = string() "describes the error"
+%%
+%% @doc     Return the server transaction handler using a request.
+%%          This is the ordinary way for an application to locate the
+%%          server transaction for a request it gets passed, in order
+%%          to send a response or get it's branch or whatever.
+%% @end
 %%--------------------------------------------------------------------
 get_handler_for_request(Request) when is_record(Request, request) ->
     case get_server_transaction_pid(Request) of
@@ -672,18 +756,22 @@ get_handler_for_request(Request) when is_record(Request, request) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: adopt_server_transaction(Request)
-%%           Request = request record()
-%% Descrip.: Adopt a server transaction. Adoption means that the
-%%           server transaction will inform whoever is adopting it
-%%           if the server transaction gets cancelled, and when it
-%%           terminates.
-%% Returns : THandler         |
-%%           {ignore, Reason} |
-%%           {error, E}
-%%           THandler = thandler record()
-%%           Reason   = cancelled | completed
-%%           E        = string(), describes the error
+%% @spec    (Request) ->
+%%            THandler         |
+%%            {ignore, Reason} |
+%%            {error, E}
+%%
+%%            Request = #request{}
+%%
+%%            THandler = #thandler{}
+%%            Reason   = cancelled | completed
+%%            E        = string() "describes the error"
+%%
+%% @doc     Adopt a server transaction. Adoption means that the server
+%%          transaction will inform whoever is adopting it if the
+%%          server transaction gets cancelled, and when it
+%%          terminates.
+%% @end
 %%--------------------------------------------------------------------
 adopt_server_transaction(Request) when is_record(Request, request) ->
     case get_handler_for_request(Request) of
@@ -707,18 +795,22 @@ adopt_server_transaction_handler(TH) when is_record(TH, thandler) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: adopt_st_and_get_branchbase(In)
-%%           In = thandler record() | request record()
-%% Descrip.: Adopt a server transaction, and get it's branch. This is
-%%           just a helper function for applications, since this is
-%%           typically what they do anyways. If you want to know for
-%%           example the real reason it returns 'ignore', use the more
-%%           articulate adopt_server_transaction_handler/1.
-%% Returns : {ok, THandler, BranchBase} |
-%%           error                      |
-%%           ignore
-%%           THandler   = thandler record()
-%%           BranchBase = string(), branch minus the "-UAS" suffix
+%% @spec    (In) ->
+%%            {ok, THandler, BranchBase} |
+%%            error                      |
+%%            ignore
+%%
+%%            In = #thandler{} | #request{}
+%%
+%%            THandler   = #thandler{}
+%%            BranchBase = string() "branch minus the \"-UAS\" suffix"
+%%
+%% @doc     Adopt a server transaction, and get it's branch. This is
+%%          just a helper function for applications, since this is
+%%          typically what they do anyways. If you want to know for
+%%          example the real reason it returns 'ignore', use the more
+%%          articulate adopt_server_transaction_handler/1.
+%% @end
 %%--------------------------------------------------------------------
 adopt_st_and_get_branchbase(Request) when is_record(Request, request) ->
     case get_handler_for_request(Request) of
@@ -742,16 +834,20 @@ adopt_st_and_get_branchbase(TH) when is_record(TH, thandler) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_branchbase_from_handler(TH)
-%%           TH = thandler record(), the transaction handler to query
-%% Descrip.: Get the branch from a server transaction, and then remove
-%%           the "-UAS" suffix to get the base of the branch. The base
-%%           can for example be used to generate unique branches that
-%%           can be visually correlated to each other, by appending a
-%%           sequence number.
-%% Returns : BranchBase |
-%%           error
-%%           BranchBase = string(), branch minus the "-UAS" suffix
+%% @spec    (TH) ->
+%%            BranchBase |
+%%            error
+%%
+%%            TH = #thandler{} "the transaction handler to query"
+%%
+%%            BranchBase = string() "branch minus the \"-UAS\" suffix"
+%%
+%% @doc     Get the branch from a server transaction, and then remove
+%%          the "-UAS" suffix to get the base of the branch. The base
+%%          can for example be used to generate unique branches that
+%%          can be visually correlated to each other, by appending a
+%%          sequence number.
+%% @end
 %%--------------------------------------------------------------------
 get_branchbase_from_handler(TH) when is_record(TH, thandler) ->
     case get_branch_from_handler(TH) of
@@ -769,15 +865,19 @@ get_branchbase_from_handler(TH) when is_record(TH, thandler) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_branch_from_handler(TH)
-%%           TH = thandler record(), the transaction handler to query
-%% Descrip.: Get the branch from a server transaction. It is useful to
-%%           get the branch from a server transaction for use in
-%%           logging, and when generating branches for client
-%%           transactions related to the server transaction.
-%% Returns : Branch |
-%%           error
-%%           Branch = string()
+%% @spec    (TH) ->
+%%            Branch |
+%%            error
+%%
+%%            TH = #thandler{} "the transaction handler to query"
+%%
+%%            Branch = string()
+%%
+%% @doc     Get the branch from a server transaction. It is useful to
+%%          get the branch from a server transaction for use in
+%%          logging, and when generating branches for client
+%%          transactions related to the server transaction.
+%% @end
 %%--------------------------------------------------------------------
 get_branch_from_handler(#thandler{pid = TPid}) when is_pid(TPid), TPid == self() ->
     %% for unit testing
@@ -803,10 +903,12 @@ transaction_terminating(TransactionPid) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: start_client_transaction(Request, SocketIn, Dst, Branch,
-%%                                    Timeout, ReportTo)
-%% Descrip.: OBSOLETE   There is no need to pass in a socket anymore.
-%%           @see start_client_transaction/5.
+%% @spec    (Request, SocketIn, Dst, Branch, Timeout, ReportTo) ->
+%%            term()
+%%
+%% @doc     OBSOLETE There is no need to pass in a socket anymore.
+%%          @see start_client_transaction/5.
+%% @end
 %%--------------------------------------------------------------------
 start_client_transaction(Request, _SocketIn, Dst, Branch, Timeout, ReportTo) ->
     %% OBSOLETE - there is no reason to pass sockets to client transactions anymore
@@ -815,21 +917,21 @@ start_client_transaction(Request, _SocketIn, Dst, Branch, Timeout, ReportTo) ->
     start_client_transaction(Request, Dst, Branch, Timeout, ReportTo).
 
 %%--------------------------------------------------------------------
-%% Function: start_client_transaction(Request, Dst, Branch, Timeout,
-%%                                    ReportTo)
-%%           Request  = request record()
-%%           Dst      = sipdst record(), the destination for this
-%%                      client transaction
-%%           Branch   = string(), branch parameter to use
-%%           Timeout  = integer(), timeout for INVITE transactions
-%%                                 (seconds from now)
-%%           ReportTo = pid(), who the client transaction should
-%%                      report to
-%% Descrip.: Start a new client transaction.
-%% Returns : Pid        |
-%%           {error, E}
-%%           Pid = pid()
-%%           E   = string()
+%% @spec    (Request, Dst, Branch, Timeout, ReportTo) ->
+%%            Pid        |
+%%            {error, E}
+%%
+%%            Request  = #request{}
+%%            Dst      = #sipdst{} "the destination for this client transaction"
+%%            Branch   = string() "branch parameter to use"
+%%            Timeout  = integer() "timeout for INVITE transactions (seconds from now)"
+%%            ReportTo = pid() "who the client transaction should report to"
+%%
+%%            Pid = pid()
+%%            E   = string()
+%%
+%% @doc     Start a new client transaction.
+%% @end
 %%--------------------------------------------------------------------
 start_client_transaction(Request, Dst, Branch, Timeout, ReportTo)
   when is_record(Request, request), is_record(Dst, sipdst), is_list(Branch), is_integer(Timeout),
@@ -843,32 +945,38 @@ start_client_transaction(Request, Dst, Branch, Timeout, ReportTo)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: cancel_client_transaction(Pid, Reason, ExtraHeaders)
-%%           Pid          = pid(), client transaction pid
-%%           Reason       = string(), will be logged by client
-%%                          transaction
-%%           ExtraHeaders = list() of {Key, Value}, headers to put in
-%%                          any CANCELs we send
-%% Descrip.: Store the to-tag we use when sending non-2xx responses in
-%%           INVITE server transactions. We need to do this to
-%%           correctly match ACK to the server transaction.
-%% Returns : ok         |
-%%           {error, E}
-%%           E = string(), description of error
+%% @spec    (Pid, Reason, ExtraHeaders) ->
+%%            ok         |
+%%            {error, E}
+%%
+%%            Pid          = pid() "client transaction pid"
+%%            Reason       = string() "will be logged by client transaction"
+%%            ExtraHeaders = [{Key, Value}] "headers to put in any CANCELs we send"
+%%
+%%            E = string() "description of error"
+%%
+%% @doc     Store the to-tag we use when sending non-2xx responses in
+%%          INVITE server transactions. We need to do this to
+%%          correctly match ACK to the server transaction.
+%% @end
 %%--------------------------------------------------------------------
 cancel_client_transaction(Pid, Reason, ExtraHeaders) when is_pid(Pid), is_list(Reason), is_list(ExtraHeaders) ->
     gen_server:cast(Pid, {cancel, Reason, ExtraHeaders}).
 
 %%--------------------------------------------------------------------
-%% Function: store_to_tag(Request, ToTag)
-%%           Request  = request record()
-%%           ToTag    = string()
-%% Descrip.: Store the to-tag we use when sending non-2xx responses in
-%%           INVITE server transactions. We need to do this to
-%%           correctly match ACK to the server transaction.
-%% Returns : ok         |
-%%           {error, E}
-%%           E = string(), description of error
+%% @spec    (Request, ToTag) ->
+%%            ok         |
+%%            {error, E}
+%%
+%%            Request = #request{}
+%%            ToTag   = string()
+%%
+%%            E = string() "description of error"
+%%
+%% @doc     Store the to-tag we use when sending non-2xx responses in
+%%          INVITE server transactions. We need to do this to
+%%          correctly match ACK to the server transaction.
+%% @end
 %%--------------------------------------------------------------------
 store_to_tag(Request, ToTag) when is_record(Request, request), is_list(ToTag) ->
     case get_server_transaction(Request) of
@@ -881,15 +989,19 @@ store_to_tag(Request, ToTag) when is_record(Request, request), is_list(ToTag) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: set_result(Request, ToTag)
-%%           Request  = request record()
-%%           ToTag    = string()
-%% Descrip.: Set the informational result parameter of a transaction.
-%%           This 'result' value is only used for debugging/
-%%           informational purposes.
-%% Returns : ok         |
-%%           {error, E}
-%%           E = string(), description of error
+%% @spec    (Request, ToTag) ->
+%%            ok         |
+%%            {error, E}
+%%
+%%            Request = #request{}
+%%            ToTag   = string()
+%%
+%%            E = string() "description of error"
+%%
+%% @doc     Set the informational result parameter of a transaction.
+%%          This 'result' value is only used for debugging/
+%%          informational purposes.
+%% @end
 %%--------------------------------------------------------------------
 set_result(Request, Value) when is_record(Request, request), is_list(Value) ->
     case get_server_transaction(Request) of
@@ -902,16 +1014,20 @@ set_result(Request, Value) when is_record(Request, request), is_list(Value) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: store_appdata(Request, ToTag)
-%%           Request  = request record()
-%%           Value    = term()
-%% Descrip.: Store some arbitrary data associated with this
-%%           transcation for an application. The YXA stack never uses
-%%           this data - it is just provided as convenient storage
-%%           for application writers.
-%% Returns : ok         |
-%%           {error, E}
-%%           E = string(), description of error
+%% @spec    (Request, ToTag) ->
+%%            ok         |
+%%            {error, E}
+%%
+%%            Request = #request{}
+%%            Value   = term()
+%%
+%%            E = string() "description of error"
+%%
+%% @doc     Store some arbitrary data associated with this transcation
+%%          for an application. The YXA stack never uses this data -
+%%          it is just provided as convenient storage for application
+%%          writers.
+%% @end
 %%--------------------------------------------------------------------
 store_appdata(Request, Value) when is_record(Request, request) ->
     case get_server_transaction(Request) of
@@ -924,12 +1040,15 @@ store_appdata(Request, Value) when is_record(Request, request) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_good_transaction(TH)
-%%           TH = thandler record() | term()
-%% Descrip.: Check if a given argument is a thandler record() that
-%%           refers to a transaction handler that is still alive.
-%% Returns : true  |
-%%           false
+%% @spec    (TH) ->
+%%            true  |
+%%            false
+%%
+%%            TH = #thandler{} | term()
+%%
+%% @doc     Check if a given argument is a thandler record() that
+%%          refers to a transaction handler that is still alive.
+%% @end
 %%--------------------------------------------------------------------
 is_good_transaction(TH) when is_record(TH, thandler) ->
     case util:safe_is_process_alive(TH#thandler.pid) of
@@ -942,16 +1061,20 @@ is_good_transaction(_) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: get_pid_from_handler(TH)
-%%           TH      = thandler record() | term()
-%% Descrip.: Sometimes it is actually necessary for something besides
-%%           the transaction layer to know the pid handling a
-%%           transaction. In those cases, this function lets a caller
-%%           extract the pid of a transaction handler. Note though
-%%           that you should NEVER communicate with that pid directly.
-%% Returns : Pid  |
-%%           none
-%%           Pid = pid()
+%% @spec    (TH) ->
+%%            Pid  |
+%%            none
+%%
+%%            TH = #thandler{} | term()
+%%
+%%            Pid = pid()
+%%
+%% @doc     Sometimes it is actually necessary for something besides
+%%          the transaction layer to know the pid handling a
+%%          transaction. In those cases, this function lets a caller
+%%          extract the pid of a transaction handler. Note though
+%%          that you should NEVER communicate with that pid directly.
+%% @end
 %%--------------------------------------------------------------------
 get_pid_from_handler(TH) when is_record(TH, thandler) ->
     TH#thandler.pid;
@@ -959,16 +1082,20 @@ get_pid_from_handler(_) ->
     none.
 
 %%--------------------------------------------------------------------
-%% Function: send_challenge_request(Request, Type, Stale, RetryAfter)
-%%           Request    = request record()
-%%           Type       = www | proxy
-%%           Stale      = true | false
-%%           RetryAfter = integer()
-%% Descrip.: Locate a server transaction handler using Request, then
-%%           invoke send_challenge() with the rest of our parameters.
-%% Returns : ok         |
-%%           {error, E}
-%%           E = string()
+%% @spec    (Request, Type, Stale, RetryAfter) ->
+%%            ok         |
+%%            {error, E}
+%%
+%%            Request    = #request{}
+%%            Type       = www | proxy
+%%            Stale      = true | false
+%%            RetryAfter = integer()
+%%
+%%            E = string()
+%%
+%% @doc     Locate a server transaction handler using Request, then
+%%          invoke send_challenge() with the rest of our parameters.
+%% @end
 %%--------------------------------------------------------------------
 send_challenge_request(Request, Type, Stale, RetryAfter) ->
     case get_handler_for_request(Request) of
@@ -979,16 +1106,18 @@ send_challenge_request(Request, Type, Stale, RetryAfter) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: send_challenge(TH, Type, Stale, RetryAfter)
-%%           TH         = thandler record()
-%%           Type       = www | proxy
-%%           Stale      = true | false
-%%           RetryAfter = integer()
-%% Descrip.: Generate a '407 Proxy-Authenticate' or
-%%           '401 WWW-Authenticate' response and hand this to a
-%%           server transaction handler. If given a request record()
-%%           as In, first locate the real server transaction handler.
-%% Returns : ok
+%% @spec    (TH, Type, Stale, RetryAfter) -> ok
+%%
+%%            TH         = #thandler{}
+%%            Type       = www | proxy
+%%            Stale      = true | false
+%%            RetryAfter = integer()
+%%
+%% @doc     Generate a '407 Proxy-Authenticate' or '401
+%%          WWW-Authenticate' response and hand this to a server
+%%          transaction handler. If given a request record() as In,
+%%          first locate the real server transaction handler.
+%% @end
 %%--------------------------------------------------------------------
 send_challenge(TH, www, Stale, RetryAfter) when is_record(TH, thandler) ->
     AuthHeader = [{"WWW-Authenticate", sipheader:auth_print(sipauth:get_challenge(), Stale)}],
@@ -1026,25 +1155,30 @@ send_challenge2(TH, Status, Reason, AuthHeader, RetryAfter) when is_record(TH, t
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: debug_show_transactions()
-%% Descrip.: Make the transaction layer log info about all it's
-%%           transactions to the debug log.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Make the transaction layer log info about all it's
+%%          transactions to the debug log.
+%% @end
 %%--------------------------------------------------------------------
 debug_show_transactions() ->
     gen_server:cast(transactionlayer, {debug_show_transactions, self()}),
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: from_transportlayer(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: The transport layer passes us a request it has just
-%%           received.
-%% Returns : {pass_to_core, AppModule, NewYxaCtx} |
-%%           continue
-%%           AppModule = atom(), YXA application module name
-%%           NewYxaCtx = yxa_ctx record()
+%% @spec    (Request, YxaCtx) ->
+%%            {pass_to_core, AppModule, NewYxaCtx} |
+%%            continue
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%%            AppModule = atom() "YXA application module name"
+%%            NewYxaCtx = #yxa_ctx{}
+%%
+%% @doc     The transport layer passes us a request it has just
+%%          received.
+%% @end
 %%--------------------------------------------------------------------
 from_transportlayer(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get_server_transaction_pid(Request) of
@@ -1076,15 +1210,19 @@ from_transportlayer(Request, YxaCtx) when is_record(Request, request), is_record
     end;
 
 %%--------------------------------------------------------------------
-%% Function: from_transportlayer(Response, YxaCtx)
-%%           Response = response record()
-%%           YxaCtx   = yxa_ctx record()
-%% Descrip.: The transport layer passes us a response it has just
-%%           received.
-%% Returns : {pass_to_core, AppModule, NewYxaCtx} |
-%%           continue
-%%           AppModule = atom(), YXA application module name
-%%           NewYxaCtx = yxa_ctx record()
+%% @spec    (Response, YxaCtx) ->
+%%            {pass_to_core, AppModule, NewYxaCtx} |
+%%            continue
+%%
+%%            Response = #response{}
+%%            YxaCtx   = #yxa_ctx{}
+%%
+%%            AppModule = atom() "YXA application module name"
+%%            NewYxaCtx = #yxa_ctx{}
+%%
+%% @doc     The transport layer passes us a response it has just
+%%          received.
+%% @end
 %%--------------------------------------------------------------------
 from_transportlayer(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     case get_client_transaction_pid(Response) of
@@ -1179,22 +1317,32 @@ pass_to_dialog_controller(DCPid, STPid, Request, YxaCtx) when is_record(Request,
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_my_to_tag(TH)
-%%           TH = thandler record(), server transaction handle
-%% Descrip.: Get to tag that will we used in server transaction response
-%% Returns : {ok, ToTag}
-%%           ToTag = string()
+%% @spec    (TH) ->
+%%            {ok, ToTag}
+%%
+%%            TH = #thandler{} "server transaction handle"
+%%
+%%            ToTag = string()
+%%
+%% @doc     Get to tag that will we used in server transaction
+%%          response
+%% @end
 %%--------------------------------------------------------------------
 get_my_to_tag(TH) when is_record(TH, thandler) ->
     gen_server:call(TH#thandler.pid, get_my_to_tag, ?STORE_TIMEOUT).
 
 %%--------------------------------------------------------------------
-%% Function: get_dialog_handler(Re)
-%%           Re = request record() | response record()
-%% Descrip.: Get the dialog controller for a request or response.
-%% Returns : DCPid = pid() |
-%%           nomatch       |
-%%           error
+%% @spec    (Re) ->
+%%            DCPid
+%%
+%%            Re = #request{} | #response{}
+%%
+%%            DCPid = pid() |
+%%            nomatch       |
+%%            error
+%%
+%% @doc     Get the dialog controller for a request or response.
+%% @end
 %%--------------------------------------------------------------------
 get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
     case sipdialog:get_dialog_controller(Re) of
@@ -1203,17 +1351,21 @@ get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: change_transaction_parent(Entity, From, To)
-%%           Entity = thandler record() | pid()
-%%           From   = pid()
-%%           To     = pid() | none
-%% Descrip.: Change parent of a client or server transaction. Entity
-%%           should be a thandler record for a server transaction,
-%%           and a pid for a client transaction. A 'To' of 'none' is
-%%           only applicable to client transactions.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = string()
+%% @spec    (Entity, From, To) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            Entity = #thandler{} | pid()
+%%            From   = pid()
+%%            To     = pid() | none
+%%
+%%            Reason = string()
+%%
+%% @doc     Change parent of a client or server transaction. Entity
+%%          should be a thandler record for a server transaction, and
+%%          a pid for a client transaction. A 'To' of 'none' is only
+%%          applicable to client transactions.
+%% @end
 %%--------------------------------------------------------------------
 change_transaction_parent(TH, From, To) when is_record(TH, thandler), is_pid(From), is_pid(To) ->
     %% server transaction
@@ -1228,18 +1380,22 @@ change_transaction_parent(Pid, From, To) when is_pid(Pid), is_pid(From), is_pid(
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: test_get_thandler_self()
-%% Descrip.: Get fake transaction handler pointing at the calling
-%%           process for use in test cases in other modules.
-%% Returns : thandler record()
+%% @spec    () -> #thandler{}
+%%
+%% @doc     Get fake transaction handler pointing at the calling
+%%          process for use in test cases in other modules.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 test_get_thandler_self() ->
     #thandler{pid = self()}.

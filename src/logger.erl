@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : logger.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: Logger is the process that writes our log messages
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Logger is the process that writes our log messages
 %%%           to disk (and erlang shell).
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%
 %%% Note    : Erlang/OTP has it's own log module - disk_log, that
 %%%           among other things is able to do log rotation. People
@@ -52,9 +53,10 @@
 %% Records
 %%--------------------------------------------------------------------
 
-%% used to keep track of the files, used by the log functions, one
-%% file type of file is keept for each type of log (debug, normal,
-%% error)
+%% @type state() = #state{}.
+%%                 used to keep track of the files, used by the log functions,
+%%                 one file type of file is keept for each type of log (debug,
+%%                 normal, error)
 -record(state, {
 	  debug_iodev,		% term(), file descriptor
 	  debug_fn,		% string(), file name
@@ -83,10 +85,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Start the 'logger' server, with a default logbase.
+%% @spec    () -> term()
+%%
+%% @doc     Start the 'logger' server, with a default logbase.
 %% @see      start_link/1.
-%% Returns : term()
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     LogBase =
@@ -110,48 +113,55 @@ start_link() ->
     start_link(LogBase).
 
 %%--------------------------------------------------------------------
-%% Function: start_link(LogBase)
-%%           LogBase = string(), base name of logfiles to use
-%% Descrip.: Start the 'logger' server
-%%           start_link/0 uses the current application name, together
-%%           with any configured logger_logdir as LogBase.
-%%           The logger is only registered locally (on the current
-%%           node)
-%% Returns : gen_server:start_link/4
+%% @spec    (LogBase) -> term()
+%%
+%%            LogBase = string() "base name of logfiles to use"
+%%
+%% @doc     Start the 'logger' server start_link/0 uses the current
+%%          application name, together with any configured
+%%          logger_logdir as LogBase. The logger is only registered
+%%          locally (on the current node)
+%% @end
 %%--------------------------------------------------------------------
 start_link(LogBase) when is_list(LogBase) ->
     gen_server:start_link({local, logger}, ?MODULE, [LogBase], []).
 
 
 %%--------------------------------------------------------------------
-%% Function: log(Level, Format)
-%%           Level     = normal | debug | error
-%%           Format    = string(), a io:format format string
+%% @spec    (Level, Format) -> ok
+%%
+%%            Level  = normal | debug | error
+%%            Format = string() "a io:format format string"
+%%
 %% @equiv    log(Level, Format, [])
-%% Returns : ok
+%% @end
 %%--------------------------------------------------------------------
 log(Level, Format) when is_atom(Level), is_list(Format) ->
     log(Level, Format, []).
 
 %%--------------------------------------------------------------------
-%% Function: log(Level, Format, Arguments)
-%%           Level     = normal | debug | error
-%%           Format    = string(), a io:format format string
-%%           Arguments = list(), a io:format argument list
-%% Descrip.: Log a log entry.
-%% Returns : ok
+%% @spec    (Level, Format, Arguments) -> ok
+%%
+%%            Level     = normal | debug | error
+%%            Format    = string() "a io:format format string"
+%%            Arguments = list() "a io:format argument list"
+%%
+%% @doc     Log a log entry.
+%% @end
 %%--------------------------------------------------------------------
 log(Level, Format, Arguments) when is_atom(Level), is_list(Format),
 				   is_list(Arguments) ->
     do_log(Level, Format, Arguments).
 
 %%--------------------------------------------------------------------
-%% Function: log_iolist(Level, IOlist)
-%%           Level  = normal | debug | error
-%%           IOlist = io_list()
-%% Descrip.: Log a log entry, without formatting the data in any way
-%%           (except adding the timestamp-pid-level prefix).
-%% Returns : ok
+%% @spec    (Level, IOlist) -> ok
+%%
+%%            Level  = normal | debug | error
+%%            IOlist = io_list()
+%%
+%% @doc     Log a log entry, without formatting the data in any way
+%%          (except adding the timestamp-pid-level prefix).
+%% @end
 %%--------------------------------------------------------------------
 log_iolist(Level, IOlist) when is_atom(Level) ->
     LogTS = get_ts(now()),
@@ -161,12 +171,16 @@ log_iolist(Level, IOlist) when is_atom(Level) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: quit(Msg)
-%%           Msg = none | [] | term()
-%% Descrip.: Terminate the logger process. If Msg is term(), it will
-%%           be sent to the log before quitting "log(normal, Msg)".
-%% Returns : ok | {error, Reason}
-%%           Reason = string()
+%% @spec    (Msg) ->
+%%            ok | {error, Reason}
+%%
+%%            Msg = none | [] | term()
+%%
+%%            Reason = string()
+%%
+%% @doc     Terminate the logger process. If Msg is term(), it will be
+%%          sent to the log before quitting "log(normal, Msg)".
+%% @end
 %%--------------------------------------------------------------------
 quit(Msg) ->
     case Msg of
@@ -185,16 +199,20 @@ quit(Msg) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: enable(Which)
-%%           Which = Id | list() of Id
-%%           Id    = all | debug | normal | error | console
-%% Descrip.: Enables logging on one or more outputs.
-%% Returns : {ok, Status}    |
-%%           {error, Reason}
-%%           Status    = list() of {Output, Enabled}
-%%             Output  = debug | normal | error | console
-%%             Enabled = bool()
-%%           Reason    = term() 
+%% @spec    (Which) ->
+%%            {ok, Status}    |
+%%            {error, Reason}
+%%
+%%            Which = Id | [Id]
+%%            Id    = all | debug | normal | error | console
+%%
+%%            Status  = [{Output, Enabled}]
+%%            Output  = debug | normal | error | console
+%%            Enabled = bool()
+%%            Reason  = term()
+%%
+%% @doc     Enables logging on one or more outputs.
+%% @end
 %%--------------------------------------------------------------------
 enable(Status) when is_list(Status) ->
     enable_disable_list(Status, true);
@@ -202,16 +220,20 @@ enable(Which) when is_atom(Which) ->
     gen_server:call(logger, {update_logger_status, [{Which, true}]}).
 
 %%--------------------------------------------------------------------
-%% Function: disable(Which)
-%%           Which = Id | list() of Id
-%%           Id    = all | debug | normal | error | console
-%% Descrip.: Disables logging on one or more outputs.
-%% Returns : {ok, Status}    |
-%%           {error, Reason}
-%%           Status    = list() of {Output, Enabled}
-%%             Output  = debug | normal | error | console
-%%             Enabled = bool()
-%%           Reason    = term() 
+%% @spec    (Which) ->
+%%            {ok, Status}    |
+%%            {error, Reason}
+%%
+%%            Which = Id | [Id]
+%%            Id    = all | debug | normal | error | console
+%%
+%%            Status  = [{Output, Enabled}]
+%%            Output  = debug | normal | error | console
+%%            Enabled = bool()
+%%            Reason  = term()
+%%
+%% @doc     Disables logging on one or more outputs.
+%% @end
 %%--------------------------------------------------------------------
 disable(Status) when is_list(Status) ->
     enable_disable_list(Status, false);
@@ -234,10 +256,13 @@ enable_disable_list(Status, Val) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Basename])
-%%           Basename = string(), log filename base
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}
+%% @spec    ([Basename]) -> {ok, State}
+%%
+%%            Basename = string() "log filename base"
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([Basename]) ->
     %% Set up a timer to check if log files needs rotating every 60 seconds
@@ -276,27 +301,35 @@ init([Basename]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages.
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call({rotate_logs}, From, State)
-%% Descrip.: Rotate all logs with a default suffix.
-%% Returns : {reply, Reply, State}
-%%           Reply  = ok | {error, Reason}
-%%           Reason = string()
+%% @spec    ({rotate_logs}, From, State) ->
+%%            {reply, Reply, State}
 %%
-%% Note    : This code is not invoked from anywhere. Intended for
-%%           future use when rotate_log may be triggered from other
-%%           sources than the timer, but can of course be used
-%%           manually (from the erl shell) on a running system.
+%%            Reply  = ok | {error, Reason}
+%%            Reason = string()
+%%
+%% @doc     Rotate all logs with a default suffix. Note : This code is
+%%          not invoked from anywhere. Intended for future use when
+%%          rotate_log may be triggered from other sources than the
+%%          timer, but can of course be used manually (from the erl
+%%          shell) on a running system.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({rotate_logs}, _From, State) ->
     %% Create rotation filename suffix from current time
@@ -305,48 +338,62 @@ handle_call({rotate_logs}, _From, State) ->
     {reply, Res, NewState};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({rotate_logs, Suffix}, From, State)
-%% Descrip.: Rotate all logs with a specific Suffix.
+%% @spec    ({rotate_logs, Suffix}, From, State) ->
+%%            {reply, Reply, NewState}
+%%
+%%            Reply    = ok | {error, Reason}
+%%            NewState = #state{}
+%%
+%% @doc     Rotate all logs with a specific Suffix.
 %% @see      rotate/3.
-%% Returns : {reply, Reply, NewState}
-%%           Reply = ok | {error, Reason}
-%%           NewState = state record()
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({rotate_logs, Suffix}, _From, State) ->
     {Res, NewState} = rotate([debug, normal, error], Suffix, State),
     {reply, Res, NewState};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({rotate_logs, Suffix, Logs}, From, State)
-%% Descrip.: Rotate the outputs indicated in Logs with a specific
-%%           Suffix.
+%% @spec    ({rotate_logs, Suffix, Logs}, From, State) ->
+%%            {reply, Reply, NewState}
+%%
+%%            Reply    = ok | {error, Reason}
+%%            NewState = #state{}
+%%
+%% @doc     Rotate the outputs indicated in Logs with a specific
+%%          Suffix.
 %% @see      rotate/3.
-%% Returns : {reply, Reply, NewState}
-%%           Reply = ok | {error, Reason}
-%%           NewState = state record()
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({rotate_logs, Suffix, Logs}, _From, State) when list(Logs) ->
     {Res, NewState} = rotate(Logs, Suffix, State),
     {reply, Res, NewState};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({quit}, From, State)
-%% Descrip.: Stop the logger.
-%% Returns : {stop, normal, {ok}, State}
+%% @spec    ({quit}, From, State) -> {stop, normal, {ok}, State}
+%%
+%% @doc     Stop the logger.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({quit}, _From, State) ->
     {stop, normal, {ok}, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({update_logger_status, Status}, From, State)
-%% Descrip.: Enable or disable different outputs.
-%% Returns : {reply, Reply, NewState}
-%%           Reply = {ok, Result} | {error, Reason}
-%%           Result = list() of {Level, Status}
-%%           Level  = debug | normal | error | console
-%%           Status = true | false
-%%           Reason = term()
-%%           NewState = state record()
+%% @spec    ({update_logger_status, Status}, From, State) ->
+%%            {reply, Reply, NewState}
+%%
+%%            Reply    = {ok, Result} | {error, Reason}
+%%            Result   = [{Level, Status}]
+%%            Level    = debug | normal | error | console
+%%            Status   = true | false
+%%            Reason   = term()
+%%            NewState = #state{}
+%%
+%% @doc     Enable or disable different outputs.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({update_logger_status, Status}, _From, State) when is_list(Status) ->
     case update_logger_status(Status, State) of
@@ -362,10 +409,14 @@ handle_call({update_logger_status, Status}, _From, State) when is_list(Status) -
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {reply, {error, Reason}, State}
-%%           Reason = string()
+%% @spec    (Unknown, From, State) ->
+%%            {reply, {error, Reason}, State}
+%%
+%%            Reason = string()
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Logger: Received unknown gen_server call : ~p", [Unknown]),
@@ -373,21 +424,29 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast({log, Level, Data}, State)
-%%           Level = debug | normal | error
-%%           Data  = binary(), what we should write to the log file
-%% Descrip.: Write a log message to one or more of our log files (and
-%%           to stdout if Level /= debug). Having this as a cast()
-%%           makes the log/2 and log/3 calls non-blocking.
-%% Returns : {noreply, State}
+%% @spec    ({log, Level, Data}, State) -> {noreply, State}
+%%
+%%            Level = debug | normal | error
+%%            Data  = binary() "what we should write to the log file"
+%%
+%% @doc     Write a log message to one or more of our log files (and
+%%          to stdout if Level /= debug). Having this as a cast()
+%%          makes the log/2 and log/3 calls non-blocking.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data); is_list(Data) ->
     case Level of
@@ -406,9 +465,11 @@ handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data); is_
     {noreply, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Logger: Received unknown gen_server cast : ~p", [Unknown]),
@@ -416,19 +477,26 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(check_logfile_size, State)
-%% Descrip.: Periodically gets invoked by timer. Check if any of our
-%%           logfiles are greater than our configured limit, if so -
-%%           call rotate() on them.
-%% Returns : {noreply, NewState}
+%% @spec    (check_logfile_size, State) -> {noreply, NewState}
+%%
+%% @doc     Periodically gets invoked by timer. Check if any of our
+%%          logfiles are greater than our configured limit, if so -
+%%          call rotate() on them.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(check_logfile_size, State) ->
     %% If not configured not to, we get a check_logfile_size signal
@@ -450,18 +518,22 @@ handle_info(check_logfile_size, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Unknown info.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Logger: Received unknown signal :~n~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     file:close(State#state.error_iodev),
@@ -470,9 +542,11 @@ terminate(Reason, State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(_OldVsn, State, _Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (_OldVsn, State, _Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -493,17 +567,18 @@ safe_open(Filename, Args) when is_list(Filename) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: log_to_device(Enabled, IoDevice, Data)
-%%           Enabled  = true | false
-%%           IoDevice = term(), where to send io:format() output (a file
-%%                              descriptor)
-%%           Data     = binary()
-%% Descrip.: Log a message to an IO device (file).
-%% Returns : ok | term()
-%% Note    : catch is used to ensure that formating error in io:format
-%%           calls are logged - they may otherwise simply crash the
-%%           logger without feedback, if the logger is run without
-%%           a erlang shell to look at
+%% @spec    (Enabled, IoDevice, Data) -> ok | term()
+%%
+%%            Enabled  = true | false
+%%            IoDevice = term() "where to send io:format() output (a file descriptor)"
+%%            Data     = binary()
+%%
+%% @doc     Log a message to an IO device (file). Note : catch is used
+%%          to ensure that formating error in io:format calls are
+%%          logged - they may otherwise simply crash the logger
+%%          without feedback, if the logger is run without a erlang
+%%          shell to look at
+%% @end
 %%--------------------------------------------------------------------
 log_to_device(false, _IoDevice, _Data) ->
     ok;
@@ -511,15 +586,16 @@ log_to_device(true, IoDevice, Data) ->
     file:write(IoDevice, Data).
 
 %%--------------------------------------------------------------------
-%% Function: log_to_stdout(Enabled, Data)
-%%           Enabled  = true | false
-%%           Data     = binary()
-%% Descrip.: Log a message to console.
-%% Returns : ok | term()
-%% Note    : catch is used to ensure that formating error in io:format
-%%           calls are logged - they may otherwise simply crash the
-%%           logger without feedback, if the logger is run without
-%%           a erlang shell to look at
+%% @spec    (Enabled, Data) -> ok | term()
+%%
+%%            Enabled = true | false
+%%            Data    = binary()
+%%
+%% @doc     Log a message to console. Note : catch is used to ensure
+%%          that formating error in io:format calls are logged - they
+%%          may otherwise simply crash the logger without feedback,
+%%          if the logger is run without a erlang shell to look at
+%% @end
 %%--------------------------------------------------------------------
 log_to_stdout(false, _Data) ->
     ok;
@@ -538,10 +614,11 @@ log_to_stdout(true, Data) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_filename_time_suffix()
-%% Descrip.: Return a date string (european style) suitable for
-%%           appending to a filename when rotating it.
-%% Returns : string()
+%% @spec    () -> string()
+%%
+%% @doc     Return a date string (european style) suitable for
+%%          appending to a filename when rotating it.
+%% @end
 %%--------------------------------------------------------------------
 create_filename_time_suffix() ->
     {Megasec, Sec, _USec} = now(),
@@ -551,14 +628,16 @@ create_filename_time_suffix() ->
     Suffix.
 
 %%--------------------------------------------------------------------
-%% Function: needs_rotating(In, Size, State)
-%%           In    = [debug | normal | error]
-%%           Size  = integer(), max size before rotating
-%%           State = state record()
-%% Descrip.: Check a list of log files to see if any of
-%%           them are larger than Size bytes. Return a list of all
-%%           'level' atoms whose logfiles exceeds the limit.
-%% Returns : list() of atom()
+%% @spec    (In, Size, State) -> [atom()]
+%%
+%%            In    = [debug | normal | error]
+%%            Size  = integer() "max size before rotating"
+%%            State = #state{}
+%%
+%% @doc     Check a list of log files to see if any of them are larger
+%%          than Size bytes. Return a list of all 'level' atoms whose
+%%          logfiles exceeds the limit.
+%% @end
 %%--------------------------------------------------------------------
 needs_rotating(In, Size, State) when record(State, state) ->
     Fun = fun(H, Acc) ->
@@ -664,15 +743,20 @@ format_usec(Usec, Precision) ->
     string:substr(FullStr, 1 , Precision).
 
 %%--------------------------------------------------------------------
-%% Function: format_msg(TimeStamp, Level, Pid, Format, Arguments)
-%%           TimeStamp = binary()
-%%           Level     = atom()
-%%           Pid       = pid()
-%%           Format    = string()
-%%           Arguments = term()
-%% Descrip.: Do a guarded io_lib:format() on Format and Arguments and
-%%           produce a binary that we send to the logger process.
-%% Returns : LogMsg = binary()
+%% @spec    (TimeStamp, Level, Pid, Format, Arguments) ->
+%%            LogMsg
+%%
+%%            TimeStamp = binary()
+%%            Level     = atom()
+%%            Pid       = pid()
+%%            Format    = string()
+%%            Arguments = term()
+%%
+%%            LogMsg = binary()
+%%
+%% @doc     Do a guarded io_lib:format() on Format and Arguments and
+%%          produce a binary that we send to the logger process.
+%% @end
 %%--------------------------------------------------------------------
 format_msg(TimeStamp, Level, Pid, Format, Arguments) ->
     %% make binary out of Format and Arguments
@@ -688,16 +772,20 @@ format_msg(TimeStamp, Level, Pid, Format, Arguments) ->
     list_to_binary([TimeStamp, 32, Tag, Msg, 10]).
 
 %%--------------------------------------------------------------------
-%% Function: update_logger_status(Status, State)
-%%           Status = list() of {Type, Enabled}
-%%             Type    = all | debug | normal | error | console
-%%             Enabled = bool()
-%%           State     = state record()
-%% Descrip.: Update what logging facilities are enabled/disabled.
-%% Returns : {ok, NewState}  |
-%%           {error, Reason}
-%%           NewState = state record()
-%%           Reason   = term()
+%% @spec    (Status, State) ->
+%%            {ok, NewState}  |
+%%            {error, Reason}
+%%
+%%            Status  = [{Type, Enabled}]
+%%            Type    = all | debug | normal | error | console
+%%            Enabled = bool()
+%%            State   = #state{}
+%%
+%%            NewState = #state{}
+%%            Reason   = term()
+%%
+%% @doc     Update what logging facilities are enabled/disabled.
+%% @end
 %%--------------------------------------------------------------------
 update_logger_status(Status, State) ->
     case update_logger_status2(Status, State) of

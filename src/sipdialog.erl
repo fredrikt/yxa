@@ -1,12 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipdialog.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Dialog related functions. Half is for the management of
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Dialog related functions. Half is for the management of
 %%%           the dialog ETS table (yxa_dialogs), and half is helper
 %%%           functions for applications making use of dialogs
 %%%           (through 'dialog' records).
 %%%
-%%% Created :  7 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     7 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipdialog).
 
@@ -49,6 +50,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type dialogid() = #dialogid{}.
+%%                    no description
 -record(dialogid, {callid,		%% string()
 		   local_tag,		%% string()
 		   remote_tag		%% string() | undefined
@@ -67,10 +70,12 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: Called when the YXA node starts up. Create any ETS tables
-%%           we need.
-%% Returns : ok |
+%% @spec    () -> ok
+%%
+%% @doc     Called when the YXA node starts up. Create any ETS tables
+%%          we need.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     ets:new(?ETS_DIALOG_TABLE, [public, set, named_table]),
@@ -78,12 +83,15 @@ init() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: register_dialog_controller(Dialog, Pid)
-%%           Dialog = dialog record()
-%%           Pid    = pid(), dialog controller to be
-%% Descrip.: Register a dialog controller for a dialog record.
-%% Returns : ok |
-%%           throw({error, Reason})
+%% @spec    (Dialog, Pid) -> ok
+%%
+%%            Dialog = #dialog{}
+%%            Pid    = pid() "dialog controller to be"
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Register a dialog controller for a dialog record.
+%% @end
 %%--------------------------------------------------------------------
 register_dialog_controller(Dialog, Pid) when is_record(Dialog, dialog), is_pid(Pid) ->
     register_dialog_controller(Dialog#dialog.callid,
@@ -92,13 +100,16 @@ register_dialog_controller(Dialog, Pid) when is_record(Dialog, dialog), is_pid(P
 			       Pid).
 
 %%--------------------------------------------------------------------
-%% Function: register_dialog_controller(Dialog, Pid, Expire)
-%%           Dialog = dialog record()
-%%           Pid    = pid(), dialog controller to be
-%%           Expire = integer(), expire time in seconds
-%% Descrip.: Register a dialog controller for a dialog record.
-%% Returns : ok |
-%%           throw({error, Reason})
+%% @spec    (Dialog, Pid, Expire) -> ok
+%%
+%%            Dialog = #dialog{}
+%%            Pid    = pid() "dialog controller to be"
+%%            Expire = integer() "expire time in seconds"
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Register a dialog controller for a dialog record.
+%% @end
 %%--------------------------------------------------------------------
 register_dialog_controller(Dialog, Pid, Expire) when is_record(Dialog, dialog), is_pid(Pid), is_integer(Expire) ->
     register_dialog_controller(Dialog#dialog.callid,
@@ -108,65 +119,75 @@ register_dialog_controller(Dialog, Pid, Expire) when is_record(Dialog, dialog), 
 			       Expire);
 
 %%--------------------------------------------------------------------
-%% Function: register_dialog_controller(CallId, LocalTag, Pid)
-%%           CallId   = string()
-%%           LocalTag = string()
-%%           Pid      = pid(), dialog controller to be
-%% Descrip.: Register 'half a dialog'. A half dialog is one where we
-%%           do not yet know the remote tag, like when we send out a
-%%           request that, if answered, will establish one or more
-%%           dialogs.
-%% Returns : ok |
-%%           throw({error, Reason})
+%% @spec    (CallId, LocalTag, Pid) -> ok
+%%
+%%            CallId   = string()
+%%            LocalTag = string()
+%%            Pid      = pid() "dialog controller to be"
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Register 'half a dialog'. A half dialog is one where we do
+%%          not yet know the remote tag, like when we send out a
+%%          request that, if answered, will establish one or more
+%%          dialogs.
+%% @end
 %%--------------------------------------------------------------------
 register_dialog_controller(CallId, LocalTag, Pid) when is_list(CallId), is_list(LocalTag), is_pid(Pid) ->
     register_dialog_controller(CallId, LocalTag, undefined, Pid).
 
 %%--------------------------------------------------------------------
-%% Function: register_dialog_controller(CallId, LocalTag, Pid, Expire)
-%%           CallId   = string()
-%%           LocalTag = string()
-%%           Pid      = pid(), dialog controller to be
-%%           Expire   = integer(), expire time in seconds
-%% Descrip.: Register 'half a dialog'. A half dialog is one where we
-%%           do not yet know the remote tag, like when we send out a
-%%           request that, if answered, will establish one or more
-%%           dialogs.
-%% Returns : ok |
-%%           throw({error, Reason})
+%% @spec    (CallId, LocalTag, Pid, Expire) -> ok
+%%
+%%            CallId   = string()
+%%            LocalTag = string()
+%%            Pid      = pid() "dialog controller to be"
+%%            Expire   = integer() "expire time in seconds"
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Register 'half a dialog'. A half dialog is one where we do
+%%          not yet know the remote tag, like when we send out a
+%%          request that, if answered, will establish one or more
+%%          dialogs.
+%% @end
 %%--------------------------------------------------------------------
 register_dialog_controller(CallId, LocalTag, Pid, Expire) when is_list(CallId), is_list(LocalTag), is_pid(Pid),
 							       is_integer(Expire) ->
     register_dialog_controller(CallId, LocalTag, undefined, Pid, Expire);
 
 %%--------------------------------------------------------------------
-%% Function: register_dialog_controller(CallId, LocalTag, RemoteTag,
-%%                                      Pid)
-%%           CallId    = string()
-%%           LocalTag  = string()
-%%           RemoteTag = string() | undefined
-%%           Pid       = pid(), dialog controller to be
-%%           Expire    = integer(), expire time in seconds
-%% Descrip.: Register a dialog ('half dialog' if RemoteTag is
-%%           undefined).
-%% Returns : ok |
-%%           throw({error, Reason})
+%% @spec    (CallId, LocalTag, RemoteTag, Pid) -> ok
+%%
+%%            CallId    = string()
+%%            LocalTag  = string()
+%%            RemoteTag = string() | undefined
+%%            Pid       = pid() "dialog controller to be"
+%%            Expire    = integer() "expire time in seconds"
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Register a dialog ('half dialog' if RemoteTag is
+%%          undefined).
+%% @end
 %%--------------------------------------------------------------------
 register_dialog_controller(CallId, LocalTag, RemoteTag, Pid) when is_list(CallId), is_list(LocalTag), is_pid(Pid) ->
     register_dialog_controller(CallId, LocalTag, RemoteTag, Pid, ?DEFAULT_EXPIRE).
 
 %%--------------------------------------------------------------------
-%% Function: register_dialog_controller(CallId, LocalTag, RemoteTag,
-%%                                      Pid, Expire)
-%%           CallId    = string()
-%%           LocalTag  = string()
-%%           RemoteTag = string() | undefined
-%%           Pid       = pid(), dialog controller to be
-%%           Expire    = integer(), expire time in seconds
-%% Descrip.: Register a dialog ('half dialog' if RemoteTag is
-%%           undefined).
-%% Returns : ok |
-%%           throw({error, Reason})
+%% @spec    (CallId, LocalTag, RemoteTag, Pid, Expire) -> ok
+%%
+%%            CallId    = string()
+%%            LocalTag  = string()
+%%            RemoteTag = string() | undefined
+%%            Pid       = pid() "dialog controller to be"
+%%            Expire    = integer() "expire time in seconds"
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Register a dialog ('half dialog' if RemoteTag is
+%%          undefined).
+%% @end
 %%--------------------------------------------------------------------
 register_dialog_controller(CallId, LocalTag, RemoteTag, Pid, Expire) when is_list(CallId), is_list(LocalTag),
 									  is_pid(Pid), is_integer(Expire),
@@ -209,14 +230,18 @@ register_dialog_controller(CallId, LocalTag, RemoteTag, Pid, Expire) when is_lis
 
 
 %%--------------------------------------------------------------------
-%% Function: get_dialog_controller(In)
-%%           In = request record() | response record()
-%% Descrip.: Find the dialog controller for a received request or
-%%           response.
-%% Returns : {ok, DCPid} |
-%%           nomatch     |
-%%           error
-%%           DCPid = pid(), dialog controller process
+%% @spec    (In) ->
+%%            {ok, DCPid} |
+%%            nomatch     |
+%%            error
+%%
+%%            In = #request{} | #response{}
+%%
+%%            DCPid = pid() "dialog controller process"
+%%
+%% @doc     Find the dialog controller for a received request or
+%%          response.
+%% @end
 %%--------------------------------------------------------------------
 get_dialog_controller(Request) when is_record(Request, request) ->
     %% When looking for dialog matching a header from a request we received,
@@ -265,11 +290,13 @@ get_dialog_controller2(CallId, LocalTag, RemoteTag) when is_list(CallId), is_lis
 
 
 %%--------------------------------------------------------------------
-%% Function: unregister_dialog_controller(Dialog)
-%%           Dialog = dialog record()
-%% Descrip.: Unregister a dialog. Really just a shortcut for
-%%           delete_dialog_controller/3.
-%% Returns : ok
+%% @spec    (Dialog) -> ok
+%%
+%%            Dialog = #dialog{}
+%%
+%% @doc     Unregister a dialog. Really just a shortcut for
+%%          delete_dialog_controller/3.
+%% @end
 %%--------------------------------------------------------------------
 unregister_dialog_controller(Dialog) when is_record(Dialog, dialog) ->
     delete_dialog_controller(Dialog#dialog.callid,
@@ -278,12 +305,16 @@ unregister_dialog_controller(Dialog) when is_record(Dialog, dialog) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: delete_using_pid(Pid)
-%%           Pid = pid()
-%% Descrip.: Delete any records of dialogs controlled by Pid.
-%% Returns : {ok, Id} |
-%%           nomatch
-%%           Id = dialogid record()
+%% @spec    (Pid) ->
+%%            {ok, Id} |
+%%            nomatch
+%%
+%%            Pid = pid()
+%%
+%%            Id = #dialogid{}
+%%
+%% @doc     Delete any records of dialogs controlled by Pid.
+%% @end
 %%--------------------------------------------------------------------
 delete_using_pid(Pid) when is_pid(Pid) ->
     case ets:lookup(?ETS_DIALOG_TABLE, Pid) of
@@ -299,11 +330,13 @@ delete_using_pid(Pid) when is_pid(Pid) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: delete_dialog_controller(CallId, LocalTag, RemoteTag)
-%%           Pid = pid()
-%% Descrip.: Delete a dialog from the ETS table. See also
-%%           unregister_dialog_controller/1 above.
-%% Returns : ok
+%% @spec    (CallId, LocalTag, RemoteTag) -> ok
+%%
+%%            Pid = pid()
+%%
+%% @doc     Delete a dialog from the ETS table. See also
+%%          unregister_dialog_controller/1 above.
+%% @end
 %%--------------------------------------------------------------------
 delete_dialog_controller(CallId, LocalTag, RemoteTag) when is_list(CallId), is_list(LocalTag),
 							   is_list(RemoteTag); RemoteTag == undefined ->
@@ -322,13 +355,15 @@ delete_dialog_controller(CallId, LocalTag, RemoteTag) when is_list(CallId), is_l
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_expired_dialogs(Interval)
-%%           Interval = integer()
-%% Descrip.: Look for expired dialogs and signal their dialog contr-
-%%           ollers that they are expired. If they don't exit until
-%%           this function is called again (after Interval seconds),
-%%           we kill them.
-%% Returns : ok
+%% @spec    (Interval) -> ok
+%%
+%%            Interval = integer()
+%%
+%% @doc     Look for expired dialogs and signal their dialog contr-
+%%          ollers that they are expired. If they don't exit until
+%%          this function is called again (after Interval seconds),
+%%          we kill them.
+%% @end
 %%--------------------------------------------------------------------
 handle_expired_dialogs(Interval) when is_integer(Interval) ->
     handle_expired_dialogs2(Interval, ets:tab2list(?ETS_DIALOG_TABLE)).
@@ -358,30 +393,32 @@ handle_expired_dialogs2(Interval, Entrys) when is_integer(Interval), is_list(Ent
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: set_dialog_expires(Dialog, Expires)
-%%           Dialog  = dialog record()
-%%           Expires = integer(), seconds from now the dialog should
-%%                     expire
-%% Descrip.: Set a new expiration time on an existing dialog.
-%% Returns : ok | nomatch
+%% @spec    (Dialog, Expires) -> ok | nomatch
+%%
+%%            Dialog  = #dialog{}
+%%            Expires = integer() "seconds from now the dialog should expire"
+%%
+%% @doc     Set a new expiration time on an existing dialog.
+%% @end
 %%--------------------------------------------------------------------
 set_dialog_expires(Dialog, Expires) when is_record(Dialog, dialog), is_integer(Expires) ->
     #dialog{callid     = CallId,
 	    local_tag  = LocalTag,
 	    remote_tag = RemoteTag
 	   } = Dialog,
-    
+
     set_dialog_expires(CallId, LocalTag, RemoteTag, Expires).
 
 %%--------------------------------------------------------------------
-%% Function: set_dialog_expires(CallId, LocalTag, RemoteTag, Expires)
-%%           CallId    = string()
-%%           LocalTag  = string()
-%%           RemoteTag = string() | undefined
-%%           Expires   = integer(), seconds from now the dialog should
-%%                       expire
-%% Descrip.: Set a new expiration time on an existing dialog.
-%% Returns : ok | nomatch
+%% @spec    (CallId, LocalTag, RemoteTag, Expires) -> ok | nomatch
+%%
+%%            CallId    = string()
+%%            LocalTag  = string()
+%%            RemoteTag = string() | undefined
+%%            Expires   = integer() "seconds from now the dialog should expire"
+%%
+%% @doc     Set a new expiration time on an existing dialog.
+%% @end
 %%--------------------------------------------------------------------
 set_dialog_expires(CallId, LocalTag, RemoteTag, Expires) when is_list(CallId), is_list(LocalTag),
 							      is_list(RemoteTag); RemoteTag == undefined,
@@ -417,16 +454,20 @@ set_dialog_expires(CallId, LocalTag, RemoteTag, Expires) when is_list(CallId), i
 
 
 %%--------------------------------------------------------------------
-%% Function: create_dialog_state_uac(Request, Response)
-%%           Request  = request record()
-%%           Response = response record()
-%% Descrip.: Call this when a UAC receives a response which
-%%           establishes a dialog, if you want a dialog record() with
-%%           all the information about the dialog filled in.
-%% Returns : {ok, Dialog}
-%%           Dialog = dialog record()
-%% NOTE    : all the comments in the code below are quotes from
-%%           RFC3261 #12.1.2 (UAC Behavior).
+%% @spec    (Request, Response) ->
+%%            {ok, Dialog}
+%%
+%%            Request  = #request{}
+%%            Response = #response{}
+%%
+%%            Dialog = #dialog{}
+%%
+%% @doc     Call this when a UAC receives a response which establishes
+%%          a dialog, if you want a dialog record() with all the
+%%          information about the dialog filled in. NOTE : all the
+%%          comments in the code below are quotes from RFC3261
+%%          #12.1.2 (UAC Behavior).
+%% @end
 %%--------------------------------------------------------------------
 create_dialog_state_uac(Request, Response) when is_record(Request, request), is_record(Response, response) ->
     Header = Request#request.header,
@@ -514,17 +555,22 @@ create_dialog_state_uac(Request, Response) when is_record(Request, request), is_
 
 
 %%--------------------------------------------------------------------
-%% Function: create_dialog_state_uas(Request, Response)
-%%           Request  = request record()
-%%           Response = response record()
-%% Descrip.: Call this when a local UAS prepares to answer a request
-%%           and thereby establishes a dialog, if you want a dialog
-%%           record() with all the information about the dialog filled
-%%           in.
-%% Returns : {ok, Dialog} |
-%%           throw({error, Reason})
-%%           Dialog = dialog record()
-%%           Reason = string()
+%% @spec    (Request, Response) ->
+%%            {ok, Dialog} 
+%%
+%%            Request  = #request{}
+%%            Response = #response{}
+%%
+%%            Dialog = #dialog{}
+%%            Reason = string()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Call this when a local UAS prepares to answer a request
+%%          and thereby establishes a dialog, if you want a dialog
+%%          record() with all the information about the dialog filled
+%%          in.
+%% @end
 %%--------------------------------------------------------------------
 create_dialog_state_uas(Request, Response) when is_record(Request, request), is_record(Response, response) ->
     [ResponseContact] = keylist:fetch('contact', Response#response.header),
@@ -538,20 +584,22 @@ create_dialog_state_uas(Request, Response) when is_record(Request, request), is_
     create_dialog_state_uas(Request, ResponseToTag, ResponseContact).
 
 %%--------------------------------------------------------------------
-%% Function: create_dialog_state_uas(Request, ResponseToTag,
-%%                                   ResponseContact)
-%%           Request  = request record()
-%%           Response = response record()
-%%           ResponseToTag = string(), To-tag of server transcation
-%%           ResponseContact = string(), Contact that will be used
-%% Descrip.: Call this when a local UAS prepares to answer a request
-%%           and thereby establishes a dialog, if you want a dialog
-%%           record() with all the information about the dialog filled
-%%           in.
-%% Returns : {ok, Dialog}
-%%           Dialog = dialog record()
-%% NOTE    : all the comments in the code below are quotes from
-%%           RFC3261 #12.1.1 (UAS behavior).
+%% @spec    (Request, ResponseToTag, ResponseContact) ->
+%%            {ok, Dialog}
+%%
+%%            Request         = #request{}
+%%            Response        = #response{}
+%%            ResponseToTag   = string() "To-tag of server transcation"
+%%            ResponseContact = string() "Contact that will be used"
+%%
+%%            Dialog = #dialog{}
+%%
+%% @doc     Call this when a local UAS prepares to answer a request
+%%          and thereby establishes a dialog, if you want a dialog
+%%          record() with all the information about the dialog filled
+%%          in. NOTE : all the comments in the code below are quotes
+%%          from RFC3261 #12.1.1 (UAS behavior).
+%% @end
 %%--------------------------------------------------------------------
 create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
   when is_record(Request, request), is_list(ResponseToTag), is_list(ResponseContact) ->
@@ -631,17 +679,21 @@ create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
 
 
 %%--------------------------------------------------------------------
-%% Function: create_dialog_state_uas_is_secure(Request,
-%%                                             ResponseContact)
-%%           Request         = request record()
-%%           ResponseContact = [string()]
-%% Descrip.: Figure out if the 'secure' flag should be set on a
-%%           dialog, and assert if the current request+contact
-%%           combination violates this rule.
-%% Returns : true | false |
-%%           throw({error, Reason})
-%%           Reason = response_contact_must_be_secure |
-%%                    response_contact_missing
+%% @spec    (Request, ResponseContact) ->
+%%            true | false 
+%%
+%%            Request         = #request{}
+%%            ResponseContact = [string()]
+%%
+%%            Reason = response_contact_must_be_secure |
+%%                     response_contact_missing
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     Figure out if the 'secure' flag should be set on a dialog,
+%%          and assert if the current request+contact combination
+%%          violates this rule.
+%% @end
 %%--------------------------------------------------------------------
 create_dialog_state_uas_is_secure(Request, []) when is_record(Request, request) ->
     throw({error, response_contact_missing});
@@ -692,14 +744,18 @@ is_sips_uri([Str]) when is_list(Str) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: update_dialog_recv_request(Request, Dialog)
-%%           Request = request record()
-%%           Dialog  = dialog record()
-%% Descrip.: Update a dialog when a new request was received on the
-%%           dialog.
-%% Returns : {ok, NewDialog} |
-%%           {error, old_cseq}
-%%           NewDialog = dialog record()
+%% @spec    (Request, Dialog) ->
+%%            {ok, NewDialog} |
+%%            {error, old_cseq}
+%%
+%%            Request = #request{}
+%%            Dialog  = #dialog{}
+%%
+%%            NewDialog = #dialog{}
+%%
+%% @doc     Update a dialog when a new request was received on the
+%%          dialog.
+%% @end
 %%--------------------------------------------------------------------
 update_dialog_recv_request(Request, Dialog) when is_record(Request, request), is_record(Dialog, dialog) ->
     {CSeqStr, _} = sipheader:cseq(Request#request.header),
@@ -719,18 +775,21 @@ update_dialog_recv_request(Request, Dialog) when is_record(Request, request), is
 
 
 %%--------------------------------------------------------------------
-%% Function: generate_new_request(Method, ExtraHeaders, Body, Dialog)
-%%           Method       = string(), SIP method
-%%           ExtraHeaders = list() of {Key, Value}, extra
-%%                          headers to include in response
-%%           Body         = binary() | list(), request body
-%%           Dialog       = dialog record()
-%% Descrip.: Generate a new request based on Method, supplied Extra-
-%%           Headers, body and dialog info found in Dialog.
-%% Returns : {ok, Request, NewDialog, DstList}
-%%           Request   = request record()
-%%           NewDialog = dialog record()
-%%           DstList   = list() of sipdst record()
+%% @spec    (Method, ExtraHeaders, Body, Dialog) ->
+%%            {ok, Request, NewDialog, DstList}
+%%
+%%            Method       = string() "SIP method"
+%%            ExtraHeaders = [{Key, Value}] "extra headers to include in response"
+%%            Body         = binary() | list() "request body"
+%%            Dialog       = #dialog{}
+%%
+%%            Request   = #request{}
+%%            NewDialog = #dialog{}
+%%            DstList   = [#sipdst{}]
+%%
+%% @doc     Generate a new request based on Method, supplied Extra-
+%%          Headers, body and dialog info found in Dialog.
+%% @end
 %%--------------------------------------------------------------------
 generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), is_list(ExtraHeaders),
 							      is_binary(Body); is_list(Body),
@@ -795,12 +854,17 @@ generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), i
 
 
 %%--------------------------------------------------------------------
-%% Function: set_tag(ToTag, {DisplayName, ToURI})
-%%           ToTag       = string()
-%%           DisplayName = string() | none
-%%           ToURI       = sipurl record()
-%% Descrip.: Set tag on a parsed To: header.
-%% Returns : NewTo = string()
+%% @spec    (ToTag, {DisplayName, ToURI}) ->
+%%            NewTo
+%%
+%%            ToTag       = string()
+%%            DisplayName = string() | none
+%%            ToURI       = #sipurl{}
+%%
+%%            NewTo = string()
+%%
+%% @doc     Set tag on a parsed To: header.
+%% @end
 %%--------------------------------------------------------------------
 set_tag(ToTag, {DisplayName, ToURI}) when is_list(ToTag) ->
     [NewTo] = sipheader:contact_print(
@@ -814,10 +878,15 @@ set_tag(ToTag, URI) when is_list(ToTag), is_record(URI, sipurl) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: dialog2str(Dialog)
-%%           Dialog  = dialog record()
-%% Descrip.: Format a dialog for debug logging.
-%% Returns : DialogString = string()
+%% @spec    (Dialog) ->
+%%            DialogString
+%%
+%%            Dialog = #dialog{}
+%%
+%%            DialogString = string()
+%%
+%% @doc     Format a dialog for debug logging.
+%% @end
 %%--------------------------------------------------------------------
 dialog2str(Dialog) when is_record(Dialog, dialog) ->
     lists:flatten(["#dialog{\n",
@@ -835,12 +904,16 @@ dialog2str2([H1 | T1], [H2 | T2], Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_next_local_cseq(Dialog)
-%%           Dialog  = dialog record()
-%% Descrip.: Get the next local CSeq number for a dialog.
-%% Returns : {ok, NextCSeq, NewDialog}
-%%           NewDialog = dialog record()
-%%           NextCSeq  = integer()
+%% @spec    (Dialog) ->
+%%            {ok, NextCSeq, NewDialog}
+%%
+%%            Dialog = #dialog{}
+%%
+%%            NewDialog = #dialog{}
+%%            NextCSeq  = integer()
+%%
+%% @doc     Get the next local CSeq number for a dialog.
+%% @end
 %%--------------------------------------------------------------------
 get_next_local_cseq(Dialog) when is_record(Dialog, dialog) ->
     Num =
@@ -859,9 +932,11 @@ get_next_local_cseq(Dialog) when is_record(Dialog, dialog) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     Now = util:timestamp(),

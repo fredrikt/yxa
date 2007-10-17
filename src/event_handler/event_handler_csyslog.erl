@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : event_handler_csyslog.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Event handler to log events to syslog using a C port
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Event handler to log events to syslog using a C port
 %%%           driver (syslog_port).
 %%%
 %%%           The reason to not do this simply by sending syslog UDP
@@ -15,7 +15,8 @@
 %%%           The reason for not simply writing to /dev/syslog is that
 %%%           Erlang refuses to open character devices.
 %%%
-%%% Created : 6 Dec 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    6 Dec 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(event_handler_csyslog).
 %%-compile(export_all).
@@ -44,6 +45,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  port
 	 }).
@@ -64,9 +67,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Args)
-%% Descrip.: Initialize this event handler.
-%% Returns : {ok, State}
+%% @spec    (Args) -> {ok, State}
+%%
+%% @doc     Initialize this event handler.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([AppName]) when is_atom(AppName) ->
     init([AppName, ?DEFAULT_PORTNAME]);
@@ -88,24 +93,29 @@ init([AppName, PortName]) when is_atom(AppName), is_list(PortName) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: handle_event(Event, State)
-%% Descrip.: This function gets called when the event manager receives
-%%           an event sent using gen_event:notify/2 (or sync_notify).
-%% Returns : {ok, State}                                |
-%%           {swap_handler, Args1, State1, Mod2, Args2} |
-%%           remove_handler
+%% @spec    handle_event(Event, State) ->
+%%            {ok, State}                                |
+%%            {swap_handler, Args1, State1, Mod2, Args2} |
+%%            remove_handler
+%%
+%% @doc     This function gets called when the event manager receives
+%%          an event sent using gen_event:notify/2 (or sync_notify).
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_event({event, Pid, Prio, Class, Id, L},
-%%                        State)
-%%           Pid   = pid(), process generating the event
-%%           Prio  = atom(), debug | normal | error
-%%           Class = call | proxy | atom(), class of message
-%%           Id    = string()
-%%           L     = list() of term(), the data to be logged
-%% Descrip.: Log event using our syslog port driver.
-%% Returns : {ok, State}
+%% @spec    ({event, Pid, Prio, Class, Id, L}, State) -> {ok, State}
+%%
+%%            Pid   = pid() "process generating the event"
+%%            Prio  = debug | normal | error
+%%            Class = call | proxy | atom() "class of message"
+%%            Id    = string()
+%%            L     = [term()] "the data to be logged"
+%%
+%% @doc     Log event using our syslog port driver.
+%% @end
 %%--------------------------------------------------------------------
 handle_event({event, Pid, Prio, Class, Id, L}, State) when is_pid(Pid), is_atom(Prio), is_atom(Class),
 							   is_list(Id); is_list(L) ->
@@ -126,12 +136,15 @@ handle_event(Event, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Request, State)
-%% Descrip.: This gets called when the event manager receives a
-%%           request sent using gen_event:call/3,4.
-%% Returns : {ok, Reply, State}                                |
-%%           {swap_handler, Reply, Args1, State1, Mod2, Args2} |
-%%           {remove_handler, Reply}
+%% @spec    (Request, State) ->
+%%            {ok, Reply, State}                                |
+%%            {swap_handler, Reply, Args1, State1, Mod2, Args2} |
+%%            {remove_handler, Reply}
+%%
+%% @doc     This gets called when the event manager receives a request
+%%          sent using gen_event:call/3,4.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Request, State) ->
     logger:log(error, "Event handler csyslog: Received unknown call : ~p", [Request]),
@@ -140,13 +153,16 @@ handle_call(Request, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Info, State)
-%% Descrip.: This function is called when the event manager receives
-%%           any other message than an event or a synchronous request
-%%           (or a system message).
-%% Returns : {ok, State}                                |
-%%           {swap_handler, Args1, State1, Mod2, Args2} |
-%%           remove_handler
+%% @spec    (Info, State) ->
+%%            {ok, State}                                |
+%%            {swap_handler, Args1, State1, Mod2, Args2} |
+%%            remove_handler
+%%
+%% @doc     This function is called when the event manager receives
+%%          any other message than an event or a synchronous request
+%%          (or a system message).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({Port, {data, Data}}, State) when is_record(State, state), State#state.port == Port ->
     logger:log(error, "Event handler csyslog: Error from port driver : ~p", [Data]),
@@ -161,19 +177,23 @@ handle_info(Unknown, State) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Called when this event handler is deleted from the event
-%%           manager. Clean up.
-%% Returns : void()
+%% @spec    (Reason, State) -> void()
+%%
+%% @doc     Called when this event handler is deleted from the event
+%%          manager. Clean up.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
     true = port_close(State#state.port),
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -184,9 +204,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: locate_file(Path, File)
-%% Descrip.: Locate a file fiven a set of directorys.
-%% Returns : {ok, Filename} | not_found
+%% @spec    (Path, File) -> {ok, Filename} | not_found
+%%
+%% @doc     Locate a file fiven a set of directorys.
+%% @end
 %%--------------------------------------------------------------------
 locate_file([H | T], File) ->
     Filename = filename:join(H, File),

@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config_check.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Checking and normalization of config.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Checking and normalization of config.
 %%%
-%%% Created : 20 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    20 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_config_check).
 
@@ -34,17 +35,21 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: check_config(Cfg, AppModule, Mode)
-%%           Cfg       = yxa_cfg record()
-%%           AppModule = atom(), YXA application module
-%%           Mode      = soft | hard
-%% Descrip.: Check Cfg and return a new yxa_cfg record with all the
-%%           values normalized, or an error. Mode is failure mode -
-%%           soft for config reloads and hard for initial startup.
-%% Returns : {ok, NewCfg} |
-%%           {error, Msg}
-%%           NewCfg = yxa_cfg record()
-%%           Msg    = string()
+%% @spec    (Cfg, AppModule, Mode) ->
+%%            {ok, NewCfg} |
+%%            {error, Msg}
+%%
+%%            Cfg       = #yxa_cfg{}
+%%            AppModule = atom() "YXA application module"
+%%            Mode      = soft | hard
+%%
+%%            NewCfg = #yxa_cfg{}
+%%            Msg    = string()
+%%
+%% @doc     Check Cfg and return a new yxa_cfg record with all the
+%%          values normalized, or an error. Mode is failure mode -
+%%          soft for config reloads and hard for initial startup.
+%% @end
 %%--------------------------------------------------------------------
 check_config(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModule), Mode == soft; Mode == hard ->
     Definitions = get_cfg_definitions(AppModule),
@@ -76,14 +81,17 @@ check_config(Cfg, AppModule, Mode) when is_record(Cfg, yxa_cfg), is_atom(AppModu
     end.
 
 %%--------------------------------------------------------------------
-%% Function: start_bg_check(Cfg, AppModule)
-%%           Cfg       = yxa_cfg record()
-%%           AppModule = atom(), YXA application module
-%% Descrip.: Start sanity checks of parameters in the background to
-%%           warn about things.
-%% NOTE    : Not yet implemented.
-%% Returns : {ok, Pid}
-%%           Pid = pid(), config checker started
+%% @spec    (Cfg, AppModule) ->
+%%            {ok, Pid}
+%%
+%%            Cfg       = #yxa_cfg{}
+%%            AppModule = atom() "YXA application module"
+%%
+%%            Pid = pid() "config checker started"
+%%
+%% @doc     Start sanity checks of parameters in the background to
+%%          warn about things. NOTE : Not yet implemented.
+%% @end
 %%--------------------------------------------------------------------
 start_bg_check(Cfg, AppModule) when is_record(Cfg, yxa_cfg), is_atom(AppModule) ->
     %% warn if detect_loops is not 'true'
@@ -97,11 +105,16 @@ start_bg_check(Cfg, AppModule) when is_record(Cfg, yxa_cfg), is_atom(AppModule) 
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: get_cfg_definitions(AppModule)
-%%           AppModule = atom(), YXA application module
-%% Descrip.: Get common + more specific configuration definitions for
-%%           this application.
-%% Returns : Entrys = list() of cfg_entry record()
+%% @spec    (AppModule) ->
+%%            Entrys
+%%
+%%            AppModule = atom() "YXA application module"
+%%
+%%            Entrys = [#cfg_entry{}]
+%%
+%% @doc     Get common + more specific configuration definitions for
+%%          this application.
+%% @end
 %%--------------------------------------------------------------------
 get_cfg_definitions(AppModule) when is_atom(AppModule) ->
     AppConfig = case lists:keysearch(AppModule, 1, ?APPLICATION_DEFAULTS) of
@@ -113,13 +126,18 @@ get_cfg_definitions(AppModule) when is_atom(AppModule) ->
     merge_cfg_entrys(?COMMON_DEFAULTS, AppConfig).
 
 %%--------------------------------------------------------------------
-%% Function: merge_cfg_entrys(Entrys, In)
-%%           Entrys = list() of cfg_entry record()
-%%           In     = list() of cfg_entry record()
-%% Descrip.: Merge all entrys in In into Entrys, overwriting any
-%%           duplicates in Entrys with the values from In. Return
-%%           a sorted list (so that it is testable).
-%% Returns : Entrys = list() of cfg_entry record()
+%% @spec    (Entrys, In) ->
+%%            Entrys
+%%
+%%            Entrys = [#cfg_entry{}]
+%%            In     = [#cfg_entry{}]
+%%
+%%            Entrys = [#cfg_entry{}]
+%%
+%% @doc     Merge all entrys in In into Entrys, overwriting any
+%%          duplicates in Entrys with the values from In. Return a
+%%          sorted list (so that it is testable).
+%% @end
 %%--------------------------------------------------------------------
 merge_cfg_entrys(Entrys, [H | T]) when is_record(H, cfg_entry) ->
     NewEntrys = replace_or_append(Entrys, H, []),
@@ -128,14 +146,19 @@ merge_cfg_entrys(Entrys, []) ->
     lists:sort(fun cfg_entry_sort/2, Entrys).
 
 %%--------------------------------------------------------------------
-%% Function: replace_or_append(Entrys, This, [])
-%%           Entrys = list() of cfg_entry record()
-%%           This   = cfg_entry record()
-%% Descrip.: Look in Entrys for a record with cfg_entry key matching
-%%           the one of This. If it is found, replace that record in
-%%           Entrys with This. If it is not found, append This to
-%%           Entrys.
-%% Returns : NewEntrys = list() of cfg_entry record()
+%% @spec    (Entrys, This, []) ->
+%%            NewEntrys
+%%
+%%            Entrys = [#cfg_entry{}]
+%%            This   = #cfg_entry{}
+%%
+%%            NewEntrys = [#cfg_entry{}]
+%%
+%% @doc     Look in Entrys for a record with cfg_entry key matching
+%%          the one of This. If it is found, replace that record in
+%%          Entrys with This. If it is not found, append This to
+%%          Entrys.
+%% @end
 %%--------------------------------------------------------------------
 replace_or_append([#cfg_entry{key = Key} | T], #cfg_entry{key = Key} = This, Seen) ->
     %% match, return Seen (reversed) ++ This ++ T
@@ -148,12 +171,17 @@ replace_or_append([H | T], This, Seen) ->
     replace_or_append(T, This, [H | Seen]).
 
 %%--------------------------------------------------------------------
-%% Function: cfg_entry_sort(A, B)
-%%           A = cfg_entry record()
-%%           B = cfg_entry record()
-%% Descrip.: lists:sort/2 function for sorting a list of cfg_entry
-%%           records (sort on cfg_entry.key).
-%% Returns : NewEntrys = list() of cfg_entry record()
+%% @spec    (A, B) ->
+%%            NewEntrys
+%%
+%%            A = #cfg_entry{}
+%%            B = #cfg_entry{}
+%%
+%%            NewEntrys = [#cfg_entry{}]
+%%
+%% @doc     lists:sort/2 function for sorting a list of cfg_entry
+%%          records (sort on cfg_entry.key).
+%% @end
 %%--------------------------------------------------------------------
 cfg_entry_sort(#cfg_entry{key = A}, #cfg_entry{key = B}) when A > B ->
     false;
@@ -162,16 +190,20 @@ cfg_entry_sort(_A, _B) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: check_types(Cfg, Definitions)
-%%           Cfg         = yxa_cfg record()
-%%           Definitions = list() of cfg_entry record()
-%% Descrip.: Check that all entrys in Cfg have values matching their
-%%           specification (found in Definitions). Return new yxa_cfg
-%%           record with normalized values.
-%% Returns : {ok, NewCfg} |
-%%           {error, Msg}
-%%           NewCfg = yxa_cfg record()
-%%           Msg    = string()
+%% @spec    (Cfg, Definitions) ->
+%%            {ok, NewCfg} |
+%%            {error, Msg}
+%%
+%%            Cfg         = #yxa_cfg{}
+%%            Definitions = [#cfg_entry{}]
+%%
+%%            NewCfg = #yxa_cfg{}
+%%            Msg    = string()
+%%
+%% @doc     Check that all entrys in Cfg have values matching their
+%%          specification (found in Definitions). Return new yxa_cfg
+%%          record with normalized values.
+%% @end
 %%--------------------------------------------------------------------
 check_types(Cfg, Definitions) when is_record(Cfg, yxa_cfg), is_list(Definitions) ->
     case check_types2(Cfg#yxa_cfg.entrys, Definitions, []) of
@@ -182,18 +214,22 @@ check_types(Cfg, Definitions) when is_record(Cfg, yxa_cfg), is_list(Definitions)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: check_types2(Entrys, Definitions, [])
-%%           Entrys      = list() of {Key, Value, Src}
-%%             Key       = atom()
-%%             Value     = term()
-%%             Src       = atom(), 'source module' of this entry
-%%           Definitions = list() of cfg_entry record()
-%% Descrip.: Check that all keys have values matching their
-%%           specification (found in Definitions).
-%% Returns : {ok, NewEntrys} |
-%%           {error, Msg}
-%%           NewEntrys = list() of {Key, NewValue, Src}
-%%           Msg    = string()
+%% @spec    (Entrys, Definitions, []) ->
+%%            {ok, NewEntrys} |
+%%            {error, Msg}
+%%
+%%            Entrys      = [{Key, Value, Src}]
+%%            Key         = atom()
+%%            Value       = term()
+%%            Src         = atom() "'source module' of this entry"
+%%            Definitions = [#cfg_entry{}]
+%%
+%%            NewEntrys = [{Key, NewValue, Src}]
+%%            Msg       = string()
+%%
+%% @doc     Check that all keys have values matching their
+%%          specification (found in Definitions).
+%% @end
 %%--------------------------------------------------------------------
 check_types2([{Key, Value, Src} | T], Definitions, Res) when is_atom(Key), is_atom(Src) ->
     case get_definition(Key, Definitions) of
@@ -234,14 +270,17 @@ get_definition(_Key, []) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: check_cfg_entry_type(Key, Value, Src, Def)
-%%           Key   = atom()
-%%           Value = term()
-%%           Src   = atom(), 'source module' of this entry
-%%           Def   = cfg_entry record()
-%% Descrip.: Check a single key-value against it's definition.
-%% Returns : {ok, NewValue} |
-%%           {error, Msg}
+%% @spec    (Key, Value, Src, Def) ->
+%%            {ok, NewValue} |
+%%            {error, Msg}
+%%
+%%            Key   = atom()
+%%            Value = term()
+%%            Src   = atom() "'source module' of this entry"
+%%            Def   = #cfg_entry{}
+%%
+%% @doc     Check a single key-value against it's definition.
+%% @end
 %%--------------------------------------------------------------------
 check_cfg_entry_type(Key, undefined, yxa_config_default, Def) when is_atom(Key), is_record(Def, cfg_entry) ->
     {ok, undefined};
@@ -286,17 +325,20 @@ check_cfg_entry_type(Key, Value, Src, Def) when is_atom(Key), is_record(Def, cfg
 
 
 %%--------------------------------------------------------------------
-%% Function: check_local_cfg_entry_type(Key, Value, Src)
-%%           Key   = atom()
-%%           Value = term()
-%%           Src   = atom(), 'source module' of this entry
-%%           Def   = cfg_entry record()
-%% Descrip.: Part of check_cfg_entry_type/3. Call
-%%           local:check_config_type/2 to check an unknown parameter
-%%           with key being local_* to validate/normalize the Value.
-%% Returns : {ok, NewValue} |
-%%           {error, Msg}
-%% Note    : XXX test this code with actual local_ variables!
+%% @spec    (Key, Value, Src) ->
+%%            {ok, NewValue} |
+%%            {error, Msg}
+%%
+%%            Key   = atom()
+%%            Value = term()
+%%            Src   = atom() "'source module' of this entry"
+%%            Def   = #cfg_entry{}
+%%
+%% @doc     Part of check_cfg_entry_type/3. Call
+%%          local:check_config_type/2 to check an unknown parameter
+%%          with key being local_* to validate/normalize the Value.
+%%          Note : XXX test this code with actual local_ variables!
+%% @end
 %%--------------------------------------------------------------------
 check_local_cfg_entry_type(Key, Value, Src) ->
     try case local:check_config_type(Key, Value, Src) of
@@ -325,14 +367,17 @@ check_local_cfg_entry_type(Key, Value, Src) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: type_check(Key, Value, Def)
-%%           Key   = atom()
-%%           Value = term()
-%%           Def   = cfg_entry record()
-%% Descrip.: Check type of Value. Handle list/non-list issue, and then
-%%           call type_check_elements on the value or values.
-%% Returns : {ok, NewValue} |
-%%           {error, Msg}
+%% @spec    (Key, Value, Def) ->
+%%            {ok, NewValue} |
+%%            {error, Msg}
+%%
+%%            Key   = atom()
+%%            Value = term()
+%%            Def   = #cfg_entry{}
+%%
+%% @doc     Check type of Value. Handle list/non-list issue, and then
+%%          call type_check_elements on the value or values.
+%% @end
 %%--------------------------------------------------------------------
 type_check(Key, Value, #cfg_entry{list_of = false} = Def) ->
     try case type_check_elements([Value], Def#cfg_entry.type, Def, []) of
@@ -364,15 +409,29 @@ type_check(Key, Value, #cfg_entry{list_of = true} = Def) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: type_check_elements(Values, Type, Def, [])
-%%           Values = list() of term()
-%%           Type   = atom | integer | bool | term | string | regexp_rewrite | regexp_match | sipurl | sip_sipurl | sips_sipurl | tuple | {tuple, Arity}
-%%            Arity = integer()
-%%           Def    = cfg_entry record()
-%% Descrip.: Check Values to make sure they match Type. The tests and
-%%           normalization done is depending on Type and Def.
-%% Returns : {ok, NewValue} |
-%%           {error, Msg}
+%% @spec    (Values, Type, Def, []) ->
+%%            {ok, NewValue} |
+%%            {error, Msg}
+%%
+%%            Values = [term()]
+%%            Type   = atom           |
+%%                     integer        |
+%%                     bool           |
+%%                     term           |
+%%                     string         |
+%%                     regexp_rewrite |
+%%                     regexp_match   |
+%%                     sipurl         |
+%%                     sip_sipurl     |
+%%                     sips_sipurl    |
+%%                     tuple          |
+%%                     {tuple, Arity}
+%%            Arity  = integer()
+%%            Def    = #cfg_entry{}
+%%
+%% @doc     Check Values to make sure they match Type. The tests and
+%%          normalization done is depending on Type and Def.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -526,13 +585,17 @@ type_check_elements([], _Type, _Def, Res) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: check_required(Cfg, Definitions)
-%%           Cfg         = yxa_cfg record()
-%%           Definitions = list() of cfg_entry record()
-%% Descrip.: Check that all required entrys in Definitions is present
-%%           in Cfg.
-%% Returns : ok | {error, Msg}
-%%           Msg    = string()
+%% @spec    (Cfg, Definitions) ->
+%%            ok | {error, Msg}
+%%
+%%            Cfg         = #yxa_cfg{}
+%%            Definitions = [#cfg_entry{}]
+%%
+%%            Msg = string()
+%%
+%% @doc     Check that all required entrys in Definitions is present
+%%          in Cfg.
+%% @end
 %%--------------------------------------------------------------------
 check_required(Cfg, Definitions) when is_record(Cfg, yxa_cfg), is_list(Definitions) ->
     check_required2(Definitions, Cfg#yxa_cfg.entrys).
@@ -555,11 +618,15 @@ check_required2([], _Entrys) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: check_config_dependencys(Cfg)
-%%           Cfg = yxa_cfg record()
-%% Descrip.: Check parameters that depend on other parameters.
-%% Returns : ok | {error, Msg}
-%%           Msg = string()
+%% @spec    (Cfg) ->
+%%            ok | {error, Msg}
+%%
+%%            Cfg = #yxa_cfg{}
+%%
+%%            Msg = string()
+%%
+%% @doc     Check parameters that depend on other parameters.
+%% @end
 %%--------------------------------------------------------------------
 check_config_dependencys(Cfg) when is_record(Cfg, yxa_cfg) ->
     %% XXX check dependant configuration parameters too!
@@ -579,12 +646,16 @@ check_config_dependencys(Cfg) when is_record(Cfg, yxa_cfg) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: check_application_specific(AppModule, Cfg)
-%%           AppModule = atom(), YXA application module
-%%           Cfg       = yxa_cfg record()
-%% Descrip.: Check parameters that are application specific.
-%% Returns : ok | {error, Msg}
-%%           Msg = string()
+%% @spec    (AppModule, Cfg) ->
+%%            ok | {error, Msg}
+%%
+%%            AppModule = atom() "YXA application module"
+%%            Cfg       = #yxa_cfg{}
+%%
+%%            Msg = string()
+%%
+%% @doc     Check parameters that are application specific.
+%% @end
 %%--------------------------------------------------------------------
 
 check_application_specific(AppModule, Cfg) when is_atom(AppModule), is_record(Cfg, yxa_cfg) ->
@@ -602,14 +673,18 @@ check_application_specific2(_AppModule, _L) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: check_loadable(Cfg, Definitions, Mode)
-%%           Cfg         = yxa_cfg record()
-%%           Definitions = list() of cfg_entry record()
-%%           Mode        = soft | hard
-%% Descrip.: Check if it is possible to do a reload of type Mode of
-%%           the configuration parameters in Cfg.
-%% Returns : ok | {error, Msg}
-%%           Msg    = string()
+%% @spec    (Cfg, Definitions, Mode) ->
+%%            ok | {error, Msg}
+%%
+%%            Cfg         = #yxa_cfg{}
+%%            Definitions = [#cfg_entry{}]
+%%            Mode        = soft | hard
+%%
+%%            Msg = string()
+%%
+%% @doc     Check if it is possible to do a reload of type Mode of the
+%%          configuration parameters in Cfg.
+%% @end
 %%--------------------------------------------------------------------
 check_loadable(Cfg, Definitions, soft) when is_record(Cfg, yxa_cfg), is_list(Definitions) ->
     check_loadable_soft(Cfg#yxa_cfg.entrys, Definitions);
@@ -694,9 +769,11 @@ check_loadable_soft_no_definition(Key, Value) when is_atom(Key) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

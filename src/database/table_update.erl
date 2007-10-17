@@ -1,10 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : table_update.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: This code updates older database tables.
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      This code updates older database tables.
 %%%           to disk (and erlang shell).
 %%%
-%%% Created : 25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 -module(table_update).
 
@@ -53,10 +55,11 @@ update() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: phone()
-%% Descrip.: Phone record got two new fields, add dummy fields for old
-%%           existing database entries. Change dated ~2004-12.
-%% Returns : void()
+%% @spec    () -> void()
+%%
+%% @doc     Phone record got two new fields, add dummy fields for old
+%%          existing database entries. Change dated ~2004-12.
+%% @end
 %%--------------------------------------------------------------------
 phone() ->
     Table = phone,
@@ -102,7 +105,7 @@ phone() ->
 		Phone
 	end,
     do_transform_table(Table, F, record_info(fields, phone)),
-    
+
     case lists:member(#phone.requristr, mnesia:table_info(phone, index)) of
 	true ->
 	    ok;
@@ -123,11 +126,12 @@ phone() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: regexproute()
-%% Descrip.: Update the sipurl record() in the regexproute, and store
-%%           it as a string instead of as a record. Change dated
-%%           2005-02.
-%% Returns : void()
+%% @spec    () -> void()
+%%
+%% @doc     Update the sipurl record() in the regexproute, and store
+%%          it as a string instead of as a record. Change dated
+%%          2005-02.
+%% @end
 %%--------------------------------------------------------------------
 regexproute() ->
     Table = regexproute,
@@ -170,10 +174,11 @@ regexproute() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: cpl_script_graph()
-%% Descrip.: Update the cpl_script_graph record() in cpl_db to also
-%%           store CPL script as plain text. Change dated 2005-10.
-%% Returns : void()
+%% @spec    () -> void()
+%%
+%% @doc     Update the cpl_script_graph record() in cpl_db to also
+%%          store CPL script as plain text. Change dated 2005-10.
+%% @end
 %%--------------------------------------------------------------------
 cpl_script_graph() ->
     Table = cpl_script_graph,
@@ -181,9 +186,10 @@ cpl_script_graph() ->
     do_transform_table(Table, Fun, Attrs).
 
 %%--------------------------------------------------------------------
-%% Function: gruu()
-%% Descrip.: Update the gruu record().
-%% Returns : void()
+%% @spec    () -> void()
+%%
+%% @doc     Update the gruu record().
+%% @end
 %%--------------------------------------------------------------------
 gruu() ->
     Table = gruu,
@@ -211,7 +217,7 @@ do_transform_table(Table, Fun, Fields) when is_atom(Table), is_function(Fun, 1),
 		       "function is not the same as the one on node ~p", [Table, OtherNode]),
 	    erlang:error('Version inconsistency with other disc_copies nodes - table transform impossible')
     end,
-    
+
     case erase({Table, update}) of
 	true ->
 	    logger:log(debug, "~p: updated", [Table]);

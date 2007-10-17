@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : sippacket.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Parses a SIP message received from the network.
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Parses a SIP message received from the network.
 %%%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sippacket).
 %%-compile(export_all).
@@ -31,10 +32,14 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type ptr() = #ptr{}.
+%%               no description
 -record(ptr, {
 	  offset,	%% integer(), start offset of element
 	  length	%% integer(), length of element
 	 }).
+%% @type header() = #header{}.
+%%                  no description
 -record(header, {
 	  key,		%% ptr record() with data about header key
 	  valueptrs,	%% list() of ptr record(), value element(s)
@@ -54,19 +59,25 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: parse(Packet, Origin)
-%%           Packet = binary() | string()
-%%           Origin = siporigin record() | none
-%% Descrip.: Parse a packet received from the network into either a
-%%           request or a response record()
-%% Returns : Request   |
-%%           Response  |
-%%           keepalive |
-%%           throw({siperror, ...})
-%%           Request  = request record()
-%%           Response = response record()
-%%           Status   = integer(), SIP status code
-%%           Reason   = string(), SIP reason phrase
+%% @spec    (Packet, Origin) ->
+%%            Request   |
+%%            Response  |
+%%            keepalive 
+%%
+%%            Packet = binary() | string()
+%%            Origin = #siporigin{} | none
+%%
+%%            Request  = #request{}
+%%            Response = #response{}
+%%            Status   = integer() "SIP status code"
+%%            Reason   = string() "SIP reason phrase"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Parse a packet received from the network into either a
+%%          request or a response record()
+%% @end
 %%--------------------------------------------------------------------
 parse(Packet, Origin) when is_binary(Packet), Origin == none; is_record(Origin, siporigin) ->
     case parse_packet(Packet, Origin) of
@@ -129,20 +140,27 @@ extract_body(_Bin, _BodyOffset, CL) ->
     %% More than one Content-Length header or something else wrong with it
     logger:log(debug, "Packet has invalid Content-Length header : ~p", [CL]),
     {error, "invalid Content-Length"}.
-    
+
 
 %%--------------------------------------------------------------------
-%% Function: parse_packet(Packet, Origin)
-%%           Packet = binary()
-%%           Origin = siporigin record() | none
-%% Descrip.: Parse a request/response. Extract the first line
-%%           contents, build a Header keylist, and return the offset
-%%           to the body.
-%% Returns : {FirstLine, Header, BodyOffset} | keepalive |
-%%           throw({siperror, ...})
-%%           FirstLine  = {request, {Method, URIstr}} | {response, {Status, Reason}}
-%%           Header     = keylist record()
-%%           BodyOffset = integer()
+%% @spec    (Packet, Origin) ->
+%%            {FirstLine, Header, BodyOffset} | keepalive 
+%%
+%%            Packet = binary()
+%%            Origin = #siporigin{} | none
+%%
+%%            FirstLine  = {request, {Method, URIstr}}  |
+%%                         {response, {Status, Reason}}
+%%            Header     = #keylist{}
+%%            BodyOffset = integer()
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Parse a request/response. Extract the first line contents,
+%%          build a Header keylist, and return the offset to the
+%%          body.
+%% @end
 %%--------------------------------------------------------------------
 parse_packet(<<?CR, ?LF>>, Origin) ->
     if
@@ -154,7 +172,7 @@ parse_packet(<<?CR, ?LF>>, Origin) ->
     end,
     keepalive;
 parse_packet(Packet, Origin) when is_binary(Packet) ->
-    if 
+    if
 	is_record(Origin, siporigin) ->
 	    OriginStr = sipserver:origin2str(Origin),
 	    %% Extract receiver pid if present
@@ -174,14 +192,18 @@ parse_packet(Packet, Origin) when is_binary(Packet) ->
     {FirstLine, Header, BodyOffset}.
 
 %%--------------------------------------------------------------------
-%% Function: parse_headers(Bin, Offset)
-%%           Bin    = binary(), the complete SIP message
-%%           Offset = integer(), headers start offset
-%% Descrip.: Get all headers, and a new offset pointing at whatever
-%%           is after the header-body separator (body or nothing).
-%% Returns : {Headers, BodyOffset}
-%%           Headers    = keylist record()
-%%           BodyOffset = integer()
+%% @spec    (Bin, Offset) ->
+%%            {Headers, BodyOffset}
+%%
+%%            Bin    = binary() "the complete SIP message"
+%%            Offset = integer() "headers start offset"
+%%
+%%            Headers    = #keylist{}
+%%            BodyOffset = integer()
+%%
+%% @doc     Get all headers, and a new offset pointing at whatever is
+%%          after the header-body separator (body or nothing).
+%% @end
 %%--------------------------------------------------------------------
 parse_headers(Bin, Offset) ->
     parse_headers(Bin, Offset, []).
@@ -202,17 +224,21 @@ parse_headers(Bin, Offset, Res) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_one_header(Bin, Offset)
-%%           Bin    = binary(), the complete SIP message
-%%           Offset = integer(), this headers start offset
-%% Descrip.: Get the offsets for all elements in the header starting
-%%           at Offset. This is a tuple containing the offset and
-%%           length of the header name, and one or more tuples with
-%%           start offset and length of value elements. This is a list
-%%           since header values can span over multiple lines.
-%% Returns : {ok, HData, NextLineOffset}
-%%           HData          = header record()
-%%           NextLineOffset = integer()
+%% @spec    (Bin, Offset) ->
+%%            {ok, HData, NextLineOffset}
+%%
+%%            Bin    = binary() "the complete SIP message"
+%%            Offset = integer() "this headers start offset"
+%%
+%%            HData          = #header{}
+%%            NextLineOffset = integer()
+%%
+%% @doc     Get the offsets for all elements in the header starting at
+%%          Offset. This is a tuple containing the offset and length
+%%          of the header name, and one or more tuples with start
+%%          offset and length of value elements. This is a list since
+%%          header values can span over multiple lines.
+%% @end
 %%--------------------------------------------------------------------
 parse_one_header(Bin, Offset) ->
     {KeyLength, ColonOffset} = parse_one_header_key(Bin, Offset),
@@ -222,15 +248,19 @@ parse_one_header(Bin, Offset) ->
     {ok, This, NextLineOffset}.
 
 %%--------------------------------------------------------------------
-%% Function: parse_one_header_key(Bin, Offset)
-%%           Bin    = binary(), the complete SIP message
-%%           Offset = integer(), this headers start offset
-%% Descrip.: Get the offset and length of the key for this header.
-%%           Return an offset to the first byte after the colon
-%%           separating key and values.
-%% Returns : {Length, AfterColonOffset}
-%%           Length           = integer()
-%%           AfterColonOffset = integer()
+%% @spec    (Bin, Offset) ->
+%%            {Length, AfterColonOffset}
+%%
+%%            Bin    = binary() "the complete SIP message"
+%%            Offset = integer() "this headers start offset"
+%%
+%%            Length           = integer()
+%%            AfterColonOffset = integer()
+%%
+%% @doc     Get the offset and length of the key for this header.
+%%          Return an offset to the first byte after the colon
+%%          separating key and values.
+%% @end
 %%--------------------------------------------------------------------
 parse_one_header_key(Bin, Offset) ->
     parse_one_header_key2(Bin, Offset, 0, false).
@@ -272,17 +302,20 @@ parse_one_header_key2(Bin, Offset, KeyLen, RequireColon) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse_one_header_values(Bin, Offset)
-%%           Bin    = binary(), the complete SIP message
-%%           Offset = integer(), this headers start offset
-%% Descrip.: Locate all value elements for this header. This is a list
-%%           of tuples consisting of start offset and length, since
-%%           header values can span over multiple lines.
-%% Returns : {Comma, ValuePtrs, NextOffset}
-%%           Comma      = true | false, comma seen or not?
-%%           ValuePtrs  = ptr record()
-%%           NextOffset = integer(), offset of whatever is after this
-%%                        header's value(s)
+%% @spec    (Bin, Offset) ->
+%%            {Comma, ValuePtrs, NextOffset}
+%%
+%%            Bin    = binary() "the complete SIP message"
+%%            Offset = integer() "this headers start offset"
+%%
+%%            Comma      = true | false "comma seen or not?"
+%%            ValuePtrs  = #ptr{}
+%%            NextOffset = integer() "offset of whatever is after this header's value(s)"
+%%
+%% @doc     Locate all value elements for this header. This is a list
+%%          of tuples consisting of start offset and length, since
+%%          header values can span over multiple lines.
+%% @end
 %%--------------------------------------------------------------------
 parse_one_header_values(Bin, Offset) ->
     parse_one_header_values2(Bin, false, Offset, Offset, 0, []).
@@ -330,13 +363,18 @@ parse_one_header_values2(Bin, Comma, Offset, StartOffset, Len, Res) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: make_keylist(Bin, Headers)
-%%           Bin     = binary(), the complete SIP message
-%%           Headers = list() of header record()
-%% Descrip.: Turn every element of Offsets into a {Key, Name, Values}
-%%           tuple and then hand all those tuples to
-%%           keylist:from_list() to get a keylist record.
-%% Returns : Keylist = keylist record()
+%% @spec    (Bin, Headers) ->
+%%            Keylist
+%%
+%%            Bin     = binary() "the complete SIP message"
+%%            Headers = [#header{}]
+%%
+%%            Keylist = #keylist{}
+%%
+%% @doc     Turn every element of Offsets into a {Key, Name, Values}
+%%          tuple and then hand all those tuples to
+%%          keylist:from_list() to get a keylist record.
+%% @end
 %%--------------------------------------------------------------------
 make_keylist(Bin, Headers) ->
     Headerlist = make_keylist2(Bin, Headers, []),
@@ -361,18 +399,22 @@ make_keylist2(_Bin, [], Res) ->
     lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% Function: split_header_value(Key, ValuePtrs, Bin, Comma)
-%%           Key       = atom() | string()
-%%           ValuePtrs = list() of ptr record()
-%%           Bin       = binary(), the complete SIP message
-%%           Comma     = true | false, whether there is a comma in
-%%                       the values or not
-%% Descrip.: Look at Key and decide whether Value is a header that
-%%           should be splitted on comma or not. Then look at Comma to
-%%           see if there is a comma in the values at all. If it is,
-%%           then do the expensive sipheader:comma() on the values,
-%%           otherwise just return it as [Value].
-%% Returns : ValueList = list() of string()
+%% @spec    (Key, ValuePtrs, Bin, Comma) ->
+%%            ValueList
+%%
+%%            Key       = atom() | string()
+%%            ValuePtrs = [#ptr{}]
+%%            Bin       = binary() "the complete SIP message"
+%%            Comma     = true | false "whether there is a comma in the values or not"
+%%
+%%            ValueList = [string()]
+%%
+%% @doc     Look at Key and decide whether Value is a header that
+%%          should be splitted on comma or not. Then look at Comma to
+%%          see if there is a comma in the values at all. If it is,
+%%          then do the expensive sipheader:comma() on the values,
+%%          otherwise just return it as [Value].
+%% @end
 %%--------------------------------------------------------------------
 %% Except the headers listed in RFC3261 7.3.1 and in the RFC3261 BNF
 %% to be excepted from standard header comma splitting
@@ -461,15 +503,19 @@ extract_value2([], _Bin, Res) ->
     binary_to_list(All).
 
 %%--------------------------------------------------------------------
-%% Function: parse_firstline(Bin, Offset)
-%%           Bin    = binary()
-%%           Offset = integer(), where in Bin the first line starts
-%% Descrip.: Figure out if this is a request or response.
-%% Returns : {request, {Method, URIstr}} | {response, {Status, Reason}}
-%%           Method = string(), e.g. "INVITE"
-%%           URIstr = string(), e.g. "sip:user@example.org"
-%%           Status = integer(), e.g. 100
-%%           Reason = string(), e.g. "Trying"
+%% @spec    (Bin, Offset) ->
+%%            {request, {Method, URIstr}} | {response, {Status, Reason}}
+%%
+%%            Bin    = binary()
+%%            Offset = integer() "where in Bin the first line starts"
+%%
+%%            Method = string() "e.g. \"INVITE\""
+%%            URIstr = string() "e.g. \"sip:user@example.org\""
+%%            Status = integer() "e.g. 100"
+%%            Reason = string() "e.g. \"Trying\""
+%%
+%% @doc     Figure out if this is a request or response.
+%% @end
 %%--------------------------------------------------------------------
 parse_firstline(Bin, Offset) ->
     case Bin of
@@ -570,13 +616,15 @@ extract_eol(Bin, Offset, CRLFseen, Res) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: request({Method, URI}, Header, Body)
-%%           Method = string()
-%%           URI    = string(), URI as string - gets parsed here
-%%           Header = keylist record()
-%%           Body   = binary()
-%% Descrip.: Put all the pieces of a request together.
-%% Returns : request record()
+%% @spec    ({Method, URI}, Header, Body) -> #request{}
+%%
+%%            Method = string()
+%%            URI    = string() "URI as string - gets parsed here"
+%%            Header = #keylist{}
+%%            Body   = binary()
+%%
+%% @doc     Put all the pieces of a request together.
+%% @end
 %%--------------------------------------------------------------------
 request({Method, URIstr}, Header, Body) when is_list(Method), is_list(URIstr),
 					     is_record(Header, keylist), is_binary(Body) ->
@@ -584,13 +632,15 @@ request({Method, URIstr}, Header, Body) when is_list(Method), is_list(URIstr),
     #request{method=Method, uri=URI, header=Header, body=Body}.
 
 %%--------------------------------------------------------------------
-%% Function: response({Status, Reason}, Header, Body)
-%%           Status = string(), gets converted to integer here
-%%           Reason = string()
-%%           Header = keylist record()
-%%           Body   = binary()
-%% Descrip.: Put all the pieces of a response together.
-%% Returns : response record()
+%% @spec    ({Status, Reason}, Header, Body) -> #response{}
+%%
+%%            Status = string() "gets converted to integer here"
+%%            Reason = string()
+%%            Header = #keylist{}
+%%            Body   = binary()
+%%
+%% @doc     Put all the pieces of a response together.
+%% @end
 %%--------------------------------------------------------------------
 response({Status, Reason}, Header, Body) when is_integer(Status), is_list(Reason),
 					      is_record(Header, keylist), is_binary(Body) ->
@@ -602,9 +652,11 @@ response({Status, Reason}, Header, Body) when is_integer(Status), is_list(Reason
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% parse/2
@@ -642,7 +694,7 @@ test() ->
     %% More complex header, one faulty \r\n (end of To: line) and
     %% two Vias not located together. Also some extra spaces after To: value
     %% and extra \r\n at the end of body.
-    #request{method = "INVITE", 
+    #request{method = "INVITE",
 	     header = Header2,
 	     body   = <<"body\r\n">>
 	    } = parse(Message2, none),
@@ -788,7 +840,7 @@ test() ->
 
     autotest:mark(?LINE, "parse/2 request - 6.2.10"),
     [";;", "", ";;", ";"] = keylist:fetch("UnknownHeaderWithUnusualValue", Header6),
-    
+
     autotest:mark(?LINE, "parse/2 request - 6.2.11"),
     %% Content-Type:
     ["application/sdp"] = keylist:fetch("Content-Type", Header6),
@@ -810,7 +862,7 @@ test() ->
 							       {"secondparam", none},
 							       {"q", "0.330"}])
 			},
-    [Parse13C] = contact:parse( keylist:fetch('contact', Header6) ),    
+    [Parse13C] = contact:parse( keylist:fetch('contact', Header6) ),
 
 
     Message7 =

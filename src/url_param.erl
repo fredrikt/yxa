@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : url_param.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: This module handles parameters supplied in sip urls.
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      This module handles parameters supplied in sip urls.
 %%%           They  must be unique - i.e. the same key can only occur
 %%%           once.
 %%%
@@ -10,7 +10,8 @@
 %%%           if standard values are represented as atoms (but don't
 %%%           turn them all into atoms - as atoms aren't GCed)
 %%%
-%%% Created : 25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    25 Oct 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 
 -module(url_param).
@@ -59,18 +60,18 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: to_norm(Params)
-%%           Params = list() of string(), each string is a "name=val"
-%%                    pair or a single "name" value and may contain
-%%                    %HH hex escape codes - they are treated as case
-%%                    insensitive
-%% Descrip.: convert a uri-parameter list to a normalized (a non case
-%%           sensitive form) form
-%% Returns : url_param record() |
-%%           throw({error, duplicate_key})
-%% Note    : URL parameters may not contain quotes, and the = is
-%%           literal in the RFC3261 BNF, not EQUAL (which may be
-%%           surrounded with linear whitespace)
+%% @spec    (Params) -> #url_param{}
+%%
+%%            Params = [string()] "each string is a \"name=val\" pair or a single \"name\" value and may contain %HH hex escape codes - they are treated as case insensitive"
+%%
+%% @throws  {error, duplicate_key} 
+%%
+%% @doc     convert a uri-parameter list to a normalized (a non case
+%%          sensitive form) form Note : URL parameters may not
+%%          contain quotes, and the = is literal in the RFC3261 BNF,
+%%          not EQUAL (which may be surrounded with linear
+%%          whitespace)
+%% @end
 %%--------------------------------------------------------------------
 to_norm(Params) when is_list(Params) ->
     F = fun(E) ->
@@ -87,26 +88,32 @@ to_norm(Params) when is_list(Params) ->
     #url_param{pairs = key_val_db:new(L)}.
 
 %%--------------------------------------------------------------------
-%% Function: to_list(Norm)
-%%           Norm = url_param record()
-%% Descrip.: returns a normalized form of the parameters
-%% Returns : list() of {Key, Val}
-%%           Key = string()
-%%           Val = string() | none
-%% Note    : Val will be 'none' if this was a "name" parameter rather
-%%           than "name=val" - for example 'lr'.
+%% @spec    (Norm) ->
+%%            [{Key, Val}]
+%%
+%%            Norm = #url_param{}
+%%
+%%            Key = string()
+%%            Val = string() | none
+%%
+%% @doc     returns a normalized form of the parameters Note : Val
+%%          will be 'none' if this was a "name" parameter rather than
+%%          "name=val" - for example 'lr'.
+%% @end
 %%--------------------------------------------------------------------
 to_list(Norm) when is_record(Norm, url_param) ->
         key_val_db:to_key_val(Norm#url_param.pairs).
 
 
 %%--------------------------------------------------------------------
-%% Function: to_string_list(Norm)
-%%           Norm = url_param record()
-%% Descrip.: return parameter data in the same format as input to
-%%           to_norm/1
-%% Returns : list() of string()
-%% Note    : The strings returned are either "name=val" or "name".
+%% @spec    (Norm) -> [string()]
+%%
+%%            Norm = #url_param{}
+%%
+%% @doc     return parameter data in the same format as input to
+%%          to_norm/1 Note : The strings returned are either
+%%          "name=val" or "name".
+%% @end
 %%--------------------------------------------------------------------
 to_string_list(Norm) when is_record(Norm, url_param) ->
     F = fun(E) ->
@@ -123,10 +130,12 @@ to_string_list(Norm) when is_record(Norm, url_param) ->
     lists:map(F, to_list(Norm)).
 
 %%--------------------------------------------------------------------
-%% Function: to_string(Norm)
-%%           Norm = url_param record()
-%% Descrip.: return a raw uri-parameter string
-%% Returns : string(), in the ";name=val;..." format
+%% @spec    (Norm) -> string() "in the \";name=val;...\" format"
+%%
+%%            Norm = #url_param{}
+%%
+%% @doc     return a raw uri-parameter string
+%% @end
 %%--------------------------------------------------------------------
 to_string(Norm) when is_record(Norm, url_param) ->
     L = to_string_list(Norm),
@@ -135,27 +144,31 @@ to_string(Norm) when is_record(Norm, url_param) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: add(UrlParam, Key)
-%%           UrlParam = url_param record(), the record to update
-%%           Key      = string(), treated as case insensitive
-%% Descrip.: add new entry or replace old entry in url_param. Key is
-%%           stored in a case insensitive manner, and Value is set
-%%           to 'none' - needed for parameters such as "lr" that have
-%%           no value.
-%% Returns : url_param record()
+%% @spec    (UrlParam, Key) -> #url_param{}
+%%
+%%            UrlParam = #url_param{} "the record to update"
+%%            Key      = string() "treated as case insensitive"
+%%
+%% @doc     add new entry or replace old entry in url_param. Key is
+%%          stored in a case insensitive manner, and Value is set to
+%%          'none' - needed for parameters such as "lr" that have no
+%%          value.
+%% @end
 %%--------------------------------------------------------------------
 add(UrlParam, Key) ->
     NKey = httpd_util:to_lower(Key),
     add2(UrlParam, {NKey, none}).
 
 %%--------------------------------------------------------------------
-%% Function: add(UrlParam, Key, Value)
-%%           UrlParam = url_param record(), the record to update
-%%           Key      = string(), treated as case insensitive
-%%           Value    = string(), treated as case insensitive
-%% Descrip.: add new entry or replace old entry in url_param. Key and
-%%           Value are stored in a case insensitive manner
-%% Returns : url_param record()
+%% @spec    (UrlParam, Key, Value) -> #url_param{}
+%%
+%%            UrlParam = #url_param{} "the record to update"
+%%            Key      = string() "treated as case insensitive"
+%%            Value    = string() "treated as case insensitive"
+%%
+%% @doc     add new entry or replace old entry in url_param. Key and
+%%          Value are stored in a case insensitive manner
+%% @end
 %%--------------------------------------------------------------------
 add(UrlParam, Key, Value) when is_record(UrlParam, url_param), is_list(Key) ->
     NKey = httpd_util:to_lower(Key),
@@ -169,11 +182,13 @@ add2(UrlParam, {Key, Value}) when is_record(UrlParam, url_param), is_list(Key) -
     #url_param{ pairs = NewDB }.
 
 %--------------------------------------------------------------------
-%% Function: find(Param, Key)
-%%           Param = url_param record(), the record to update
-%%           Key   = string(), is treated as case insensitive
-%% Descrip.: retrive the value of Key if it is contained in Param
-%% Returns : [string()] | []
+%% @spec    (Param, Key) -> [string()] | []
+%%
+%%            Param = #url_param{} "the record to update"
+%%            Key   = string() "is treated as case insensitive"
+%%
+%% @doc     retrive the value of Key if it is contained in Param
+%% @end
 %%--------------------------------------------------------------------
 find(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     Data = Param#url_param.pairs,
@@ -181,11 +196,13 @@ find(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     key_val_db:find(Data, CKey).
 
 %%--------------------------------------------------------------------
-%% Function: remove(Param, Key)
-%%           Param = url_param record()
-%%           Key   = string(), is treated as case insensitive
-%% Descrip.: find the Key-Val pair to remove from Param
-%% Returns : url_param record()
+%% @spec    (Param, Key) -> #url_param{}
+%%
+%%            Param = #url_param{}
+%%            Key   = string() "is treated as case insensitive"
+%%
+%% @doc     find the Key-Val pair to remove from Param
+%% @end
 %%--------------------------------------------------------------------
 remove(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     Data = Param#url_param.pairs,
@@ -199,9 +216,11 @@ remove(Param, Key) when is_record(Param, url_param), is_list(Key) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% test to_norm

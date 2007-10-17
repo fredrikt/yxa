@@ -1,11 +1,13 @@
 %%%-------------------------------------------------------------------
 %%% File    : group_regexp.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: This file is regexp.erl from Erlang/OTP with a few small
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      This file is regexp.erl from Erlang/OTP with a few small
 %%%           modifications by Magnus Ahltorp to allow the extraction
 %%%           of groups (added export: groups/2)
 %%%
-%%% Created : 19 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    19 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
+%%% @hidden
 %%%-------------------------------------------------------------------
 
 %% ``The contents of this file are subject to the Erlang Public License,
@@ -13,16 +15,16 @@
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
+%%
 %% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
-%% 
+%%
 %%     Id
 %%
 -module(group_regexp).
@@ -171,7 +173,7 @@ char_class([C1|S0], Cc) when C1 /= $] ->
     case char(C1, S0) of
 	{Cf,[$-,C2|S1]} when C2 /= $] ->
 	    case char(C2, S1) of
-		{Cl,S2} when Cf < Cl -> char_class(S2, [{Cf,Cl}|Cc]); 
+		{Cl,S2} when Cf < Cl -> char_class(S2, [{Cf,Cl}|Cc]);
 		{Cl,_S2} -> throw({error,{char_class,[Cf,$-,Cl]}})
 	    end;
 	{C,S1} -> char_class(S1, [C|Cc])

@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_test.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Sipsocket test module, fakes network communication to
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Sipsocket test module, fakes network communication to
 %%%           make it possible to test other modules.
 %%%
-%%% Created : 18 Jul 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    18 Jul 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipsocket_test).
 %%-compile(export_all).
@@ -36,10 +37,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Would've done some useful initialization if this was not
-%%           merely a test module.
-%% Returns : ignore
+%% @spec    () -> ignore
+%%
+%% @doc     Would've done some useful initialization if this was not
+%%          merely a test module.
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     ignore.
@@ -50,17 +52,21 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: send(SipSocket, Proto, Host, Port, Message)
-%%           SipSocket = sipsocket record()
-%%           Proto     = atom(), yxa_test
-%%           Host      = string()
-%%           Port      = integer()
-%%           Message   = term()
-%% Descrip.: Fake sending Message to Host:Port. Return failure or
-%%           success based on process dictionary.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = string()
+%% @spec    (SipSocket, Proto, Host, Port, Message) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Proto     = atom() "yxa_test"
+%%            Host      = string()
+%%            Port      = integer()
+%%            Message   = term()
+%%
+%%            Reason = string()
+%%
+%% @doc     Fake sending Message to Host:Port. Return failure or
+%%          success based on process dictionary.
+%% @end
 %%--------------------------------------------------------------------
 send(SipSocket, Proto, _Host, _Port, _Message)
   when is_record(SipSocket, sipsocket), SipSocket#sipsocket.proto /= Proto ->
@@ -76,10 +82,12 @@ send(SipSocket, yxa_test, Host, Port, Message) when is_record(SipSocket, sipsock
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Dst)
-%%           Dst = sipdst record()
-%% Descrip.: Return a fake socket or a term based on process dict.
-%% Returns : sipsocket record() | term()
+%% @spec    (Dst) -> #sipsocket{} | term()
+%%
+%%            Dst = #sipdst{}
+%%
+%% @doc     Return a fake socket or a term based on process dict.
+%% @end
 %%--------------------------------------------------------------------
 get_socket(#sipdst{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_socket}) of
@@ -93,10 +101,12 @@ get_socket(#sipdst{proto = yxa_test}) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_specific_socket(Id)
-%%           Id = ob_id record()
-%% Descrip.: Return a fake socket or a term based on process dict.
-%% Returns : sipsocket record() | term()
+%% @spec    (Id) -> #sipsocket{} | term()
+%%
+%%            Id = #ob_id{}
+%%
+%% @doc     Return a fake socket or a term based on process dict.
+%% @end
 %%--------------------------------------------------------------------
 get_specific_socket(#ob_id{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_specific_socket}) of
@@ -110,10 +120,12 @@ get_specific_socket(#ob_id{proto = yxa_test}) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_raw_socket(SipSocket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: Return a fake raw socket or a term based on process dict.
-%% Returns : sipsocket record() | term()
+%% @spec    (SipSocket) -> #sipsocket{} | term()
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%% @doc     Return a fake raw socket or a term based on process dict.
+%% @end
 %%--------------------------------------------------------------------
 get_raw_socket(#sipsocket{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_raw_socket}) of
@@ -124,13 +136,17 @@ get_raw_socket(#sipsocket{proto = yxa_test}) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_peer(SipSocket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: Return fake remote peer info based on process dictionary.
-%% Returns : {ok, Proto, Addr, Port} | term()
-%%           Proto = yxa_test
-%%           Addr  = string(), "192.0.2.242"
-%%           Port  = integer()
+%% @spec    (SipSocket) ->
+%%            {ok, Proto, Addr, Port} | term()
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%%            Proto = yxa_test
+%%            Addr  = string() "\"192.0.2.242\""
+%%            Port  = integer()
+%%
+%% @doc     Return fake remote peer info based on process dictionary.
+%% @end
 %%--------------------------------------------------------------------
 get_remote_peer(#sipsocket{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_remote_peer}) of
@@ -141,10 +157,12 @@ get_remote_peer(#sipsocket{proto = yxa_test}) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_reliable_transport(SipSocket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: Fake response based on process dictionary.
-%% Returns : true | false
+%% @spec    (SipSocket) -> true | false
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%% @doc     Fake response based on process dictionary.
+%% @end
 %%--------------------------------------------------------------------
 is_reliable_transport(#sipsocket{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, is_reliable_transport}) of
@@ -155,12 +173,16 @@ is_reliable_transport(#sipsocket{proto = yxa_test}) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: close_socket(SipSocket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: Fake response based on process dictionary.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = not_applicable | term()
+%% @spec    (SipSocket) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%%            Reason = not_applicable | term()
+%%
+%% @doc     Fake response based on process dictionary.
+%% @end
 %%--------------------------------------------------------------------
 close_socket(#sipsocket{proto = yxa_test}) ->
     case autotest:is_unit_testing(?MODULE, {sipsocket_test, close_socket}) of

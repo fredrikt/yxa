@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config_erlang.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Config backend for default values.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Config backend for default values.
 %%%
-%%% Created : 18 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @since    18 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_config_default).
 
@@ -33,12 +34,17 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: init([AppModule])
-%%	     AppModule = atom(), YXA application module
-%% Descrip.: Initiates the configuration backend.
-%% Returns : {ok, State} | ignore | {error, Msg}
-%%           State = yxa_config_erlang_state record()
-%%           Msg = string()
+%% @spec    ([AppModule]) ->
+%%            {ok, State} | ignore | {error, Msg}
+%%
+%%            AppModule = atom() "YXA application module"
+%%
+%%            State = #yxa_config_erlang_state{}
+%%            Msg   = string()
+%%
+%% @doc     Initiates the configuration backend.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init(AppModule) ->
     %% common defaults
@@ -68,12 +74,16 @@ init_get_app_dict(Application) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: parse(State)
-%%	     State = yxa_config_default_state record()
-%% Descrip.: Return parsed config data.
-%% Returns : {ok, Cfg} | {error, Msg}
-%%           Cfg = yxa_config record()
-%%           Msg = string()
+%% @spec    (State) ->
+%%            {ok, Cfg} | {error, Msg}
+%%
+%%            State = #yxa_config_default_state{}
+%%
+%%            Cfg = #yxa_config{}
+%%            Msg = string()
+%%
+%% @doc     Return parsed config data.
+%% @end
 %%--------------------------------------------------------------------
 parse(State) when is_record(State, yxa_config_default_state) ->
     L1 = dict:to_list(State#yxa_config_default_state.defaults),

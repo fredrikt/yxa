@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : tcp_receiver.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: TCP receiver does blocking read on a single socket and
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      TCP receiver does blocking read on a single socket and
 %%%           signals parent when a complete SIP request/response has
 %%%           been received. If we encounter something we can't handle
 %%%           we just close the socket. There is no way to know if we
@@ -39,7 +39,9 @@
 %%%
 %%%           {quit_receiver, Parent} - we should close the socket
 %%%
-%%% Created : 15 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @private
 %%%-------------------------------------------------------------------
 
 -module(tcp_receiver).
@@ -68,6 +70,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  socketmodule,		%% atom(), the module used to handle 'socket'
 	  socket,		%% term(), the socket we should read from
@@ -76,6 +80,8 @@
 	  linked = false	%% bool(), some SSL initialization performed yet?
 	 }).
 
+%% @type recv() = #recv{}.
+%%                no description
 -record(recv, {
 	  msg_stack = [],	%% First-in-last-out stack of received frames (messages)
 	  frame = <<>>,		%% The current frame
@@ -101,12 +107,17 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(SocketModule, Socket, SipSocket)
-%%           SocketModule = atom(), ssl | gen_tcp
-%%           Socket       = term(), socket to read from
-%%           SipSocket    = sipsocket record()
-%% Descrip.: Spawn a tcp_receiver process into it's recv_loop().
-%% Returns : Receiver = pid()
+%% @spec    (SocketModule, Socket, SipSocket) ->
+%%            Receiver
+%%
+%%            SocketModule = ssl | gen_tcp
+%%            Socket       = term() "socket to read from"
+%%            SipSocket    = #sipsocket{}
+%%
+%%            Receiver = pid()
+%%
+%% @doc     Spawn a tcp_receiver process into it's recv_loop().
+%% @end
 %%--------------------------------------------------------------------
 start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModule == gen_tcp,
 						 is_record(SipSocket, sipsocket) ->
@@ -170,14 +181,16 @@ start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModu
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: recv_loop(State, DataIn)
-%%           State  = state record()
-%%           DataIn = list()
-%% Descrip.: SSL version: Wait for data from our socket. If we receive
-%%           (more) data, call handle_received_data(). Loops back to
-%%           self until someone closes the connection or some sort of
-%%           error occur.
-%% Returns : void()
+%% @spec    (State, DataIn) -> void()
+%%
+%%            State  = #state{}
+%%            DataIn = list()
+%%
+%% @doc     SSL version: Wait for data from our socket. If we receive
+%%          (more) data, call handle_received_data(). Loops back to
+%%          self until someone closes the connection or some sort of
+%%          error occur.
+%% @end
 %%--------------------------------------------------------------------
 recv_loop(#state{linked = false, socketmodule = ssl} = State, Recv) when is_record(Recv, recv) ->
     %% Socket is SSL and this is the first time we enter recv_loop(). Link to sockets pid
@@ -257,14 +270,16 @@ recv_loop(#state{socketmodule = ssl} = State, Recv) when is_record(Recv, recv) -
     end;
 
 %%--------------------------------------------------------------------
-%% Function: recv_loop(State, DataIn)
-%%           State  = state record()
-%%           DataIn = list()
-%% Descrip.: SSL version: Wait for data from our socket. If we receive
-%%           (more) data, call handle_received_data(). Loops back to
-%%           self until someone closes the connection or some sort of
-%%           error occur.
-%% Returns : void()
+%% @spec    (State, DataIn) -> void()
+%%
+%%            State  = #state{}
+%%            DataIn = list()
+%%
+%% @doc     SSL version: Wait for data from our socket. If we receive
+%%          (more) data, call handle_received_data(). Loops back to
+%%          self until someone closes the connection or some sort of
+%%          error occur.
+%% @end
 %%--------------------------------------------------------------------
 recv_loop(State, Recv) when is_record(State, state), is_record(Recv, recv) ->
     #state{parent	= Parent,
@@ -298,16 +313,21 @@ recv_loop(State, Recv) when is_record(State, state), is_record(Recv, recv) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: handle_received_data(Data, Recv, State)
-%%           Data  = binary(), the data we have just received
-%%           Recv  = recv record(), receive state
-%%           State = state record()
-%% Descrip.: Handle data just received from the network. Calls
-%%           handle_received_data2/2 and then looks at the msg_stack
-%%           in the returned recv record() to see if we now have one
-%%           or more messages to pass to our parent.
-%% Returns : NewRecv = recv record() |
-%%           close
+%% @spec    (Data, Recv, State) ->
+%%            NewRecv
+%%
+%%            Data  = binary() "the data we have just received"
+%%            Recv  = #recv{} "receive state"
+%%            State = #state{}
+%%
+%%            NewRecv = #recv{} |
+%%            close
+%%
+%% @doc     Handle data just received from the network. Calls
+%%          handle_received_data2/2 and then looks at the msg_stack
+%%          in the returned recv record() to see if we now have one
+%%          or more messages to pass to our parent.
+%% @end
 %%--------------------------------------------------------------------
 handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, recv) ->
     try handle_received_data2(Data, Recv) of
@@ -338,16 +358,20 @@ handle_received_data(Data, Recv, State) when is_binary(Data), is_record(Recv, re
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_received_data2(Data, Recv)
-%%           Data = binary(), the data we have just received
-%%           Recv = recv record(), receive state
-%% Descrip.: Look at received data to see if it should be added to our
-%%           current recv.frame, or if it is CRLF's between requests.
+%% @spec    (Data, Recv) ->
+%%            NewRecv
 %%
-%%           These first three instances of handle_received_data2/2 is
-%%           just for ignoring CRLF's (and LF's) between requests, as
-%%           specified by RFC3261 #7.5.
-%% Returns : NewRecv = recv record()
+%%            Data = binary() "the data we have just received"
+%%            Recv = #recv{} "receive state"
+%%
+%%            NewRecv = #recv{}
+%%
+%% @doc     Look at received data to see if it should be added to our
+%%          current recv.frame, or if it is CRLF's between requests.
+%%          These first three instances of handle_received_data2/2 is
+%%          just for ignoring CRLF's (and LF's) between requests, as
+%%          specified by RFC3261 #7.5.
+%% @end
 %%--------------------------------------------------------------------
 handle_received_data2(<<?CR, ?LF, Rest/binary>>, #recv{frame = <<>>} = Recv) ->
     %% Ignore CRLF received when current recv.frame is empty.
@@ -372,16 +396,21 @@ handle_received_data2(Data, #recv{is_stun = true} = Recv) ->
     handle_received_data2_stun(NewFrame, Recv#recv{frame = <<>>});
 
 %%--------------------------------------------------------------------
-%% Function: handle_received_data2(Data, Recv)
-%%           Data = binary(), the data we have just received
-%%           Recv = recv record(), receive state
-%% Descrip.: Look at received data to see if we should attempt to
-%%           parse message headers now (because we've just spotted the
-%%           header-body separator). init_frame() might find that we
-%%           have received the complete frame by the way, in which
-%%           case it will place the received frame in recv.msg_stack
-%%           and start on a new frame.
-%% Returns : NewRecv = recv record()
+%% @spec    (Data, Recv) ->
+%%            NewRecv
+%%
+%%            Data = binary() "the data we have just received"
+%%            Recv = #recv{} "receive state"
+%%
+%%            NewRecv = #recv{}
+%%
+%% @doc     Look at received data to see if we should attempt to parse
+%%          message headers now (because we've just spotted the
+%%          header-body separator). init_frame() might find that we
+%%          have received the complete frame by the way, in which
+%%          case it will place the received frame in recv.msg_stack
+%%          and start on a new frame.
+%% @end
 %%--------------------------------------------------------------------
 handle_received_data2(Data, #recv{body_offset = undefined, is_stun = false} = Recv) when is_binary(Data) ->
     %% No body_offset information - means we haven't parsed the headers yet
@@ -403,14 +432,19 @@ handle_received_data2(Data, #recv{body_offset = undefined, is_stun = false} = Re
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_received_data2(Data, Recv)
-%%           Data = binary(), the data we have just received
-%%           Recv = recv record(), receive state
-%% Descrip.: recv.body_offset is set, meaning we have recevied all the
-%%           headers but (at least previously) not the whole body. Add
-%%           the received data to our current frame, and call
-%%           decode_frame() to see if we have a complete frame now.
-%% Returns : NewRecv = recv record()
+%% @spec    (Data, Recv) ->
+%%            NewRecv
+%%
+%%            Data = binary() "the data we have just received"
+%%            Recv = #recv{} "receive state"
+%%
+%%            NewRecv = #recv{}
+%%
+%% @doc     recv.body_offset is set, meaning we have recevied all the
+%%          headers but (at least previously) not the whole body. Add
+%%          the received data to our current frame, and call
+%%          decode_frame() to see if we have a complete frame now.
+%% @end
 %%--------------------------------------------------------------------
 handle_received_data2(Data, #recv{is_stun = false} = Recv) when is_binary(Data), is_record(Recv, recv) ->
     %% bytes_left is set, means we have already received the headers and are now just
@@ -423,11 +457,16 @@ handle_received_data2(Data, #recv{is_stun = false} = Recv) when is_binary(Data),
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_received_data2_stun(Data, Recv)
-%%           Data = binary(), the data we have just received
-%%           Recv = recv record(), receive state
-%% Descrip.:
-%% Returns : NewRecv = recv record()
+%% @spec    (Data, Recv) ->
+%%            NewRecv
+%%
+%%            Data = binary() "the data we have just received"
+%%            Recv = #recv{} "receive state"
+%%
+%%            NewRecv = #recv{}
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 handle_received_data2_stun(Frame, #recv{stun_env = undefined, frame = <<>>}) when is_binary(Frame) ->
     logger:log(error, "TCP receiver: Received non-SIP-probably-STUN when not de-muxing, "
@@ -460,19 +499,24 @@ handle_received_data2_stun(Frame, #recv{stun_env = StunEnv, frame = <<>>} = Recv
 
 
 %%--------------------------------------------------------------------
-%% Function: init_frame(Frame, BodyOffset, Recv)
-%%           Frame      = binary(), our frame with the newly arrived
-%%                        data appended
-%%           BodyOffset = integer(), where the body starts
-%%           Recv       = recv record(), receive state
-%% Descrip.: When we see the header-body separator, we let this
-%%           function call sippacket:parse() on the data we have this
-%%           far, so that we can calculate the total frame length (we
-%%           must parse the headers for that - to find the Content-
-%%           Length header). This function caches the parse results
-%%           in recv.parsed to avoid having to do that again later.
-%% Returns : NewRecv = recv record()
-%%           throw({error, parse_failed, Reason::string()})
+%% @spec    (Frame, BodyOffset, Recv) ->
+%%            NewRecv
+%%
+%%            Frame      = binary() "our frame with the newly arrived data appended"
+%%            BodyOffset = integer() "where the body starts"
+%%            Recv       = #recv{} "receive state"
+%%
+%%            NewRecv = #recv{}
+%%
+%% @throws  {error, parse_failed, Reason::string()} 
+%%
+%% @doc     When we see the header-body separator, we let this
+%%          function call sippacket:parse() on the data we have this
+%%          far, so that we can calculate the total frame length (we
+%%          must parse the headers for that - to find the Content-
+%%          Length header). This function caches the parse results in
+%%          recv.parsed to avoid having to do that again later.
+%% @end
 %%--------------------------------------------------------------------
 init_frame(Frame, BodyOffset, Recv) when is_binary(Frame), is_integer(BodyOffset), is_record(Recv, recv) ->
     case catch sippacket:parse(Frame, none) of
@@ -497,17 +541,21 @@ init_frame(Frame, BodyOffset, Recv) when is_binary(Frame), is_integer(BodyOffset
     end.
 
 %%--------------------------------------------------------------------
-%% Function: decode_frame(Frame, Recv)
-%%           Frame = binary(), our frame with the newly arrived data
-%%                   appended
-%%           Recv  = recv record(), receive state
-%% Descrip.: Check bytes_left inside Recv to see if we have now
-%%           received enough data, or if we should just set frame in
-%%           Recv to Frame. The caller is responsible for updating
-%%           bytes_left in Recv. If we have enough data, split out
-%%           this frame and push it onto the msg_stack in Recv. Then
-%%           call handle_received_data2 on any remaining bytes.
-%% Returns : NewRecv = recv record()
+%% @spec    (Frame, Recv) ->
+%%            NewRecv
+%%
+%%            Frame = binary() "our frame with the newly arrived data appended"
+%%            Recv  = #recv{} "receive state"
+%%
+%%            NewRecv = #recv{}
+%%
+%% @doc     Check bytes_left inside Recv to see if we have now
+%%          received enough data, or if we should just set frame in
+%%          Recv to Frame. The caller is responsible for updating
+%%          bytes_left in Recv. If we have enough data, split out
+%%          this frame and push it onto the msg_stack in Recv. Then
+%%          call handle_received_data2 on any remaining bytes.
+%% @end
 %%--------------------------------------------------------------------
 decode_frame(Frame, #recv{bytes_left = BL} = Recv) when is_binary(Frame), is_integer(BL), BL =< 0 ->
     %% Bytes left is zero or less, we have a full frame
@@ -549,12 +597,15 @@ decode_frame(Frame, Recv) when is_binary(Frame), is_record(Recv, recv) ->
     Recv#recv{frame = Frame}.
 
 %%--------------------------------------------------------------------
-%% Function: has_header_body_separator(Data, Offset)
-%%           Data   = binary(), our current frame
-%%           Offset = integer(), start offset for search
-%% Descrip.: Look for header-body separator (CRLFCRLF or LFLF).
-%% Returns : {true, BodyOffset} |
-%%           false
+%% @spec    (Data, Offset) ->
+%%            {true, BodyOffset} |
+%%            false
+%%
+%%            Data   = binary() "our current frame"
+%%            Offset = integer() "start offset for search"
+%%
+%% @doc     Look for header-body separator (CRLFCRLF or LFLF).
+%% @end
 %%--------------------------------------------------------------------
 %%
 has_header_body_separator(Data, Offset) when is_integer(Offset), Offset >= 0 ->
@@ -576,12 +627,14 @@ has_header_body_separator2(Data, Offset) when is_binary(Data), is_integer(Offset
     end.
 
 %%--------------------------------------------------------------------
-%% Function: process_msg_stack(MsgList, Parent)
-%%           MsgList = [#request{} | #response{} | #stun_result{}]
-%%           Parent  = term(), pid() or atom()
-%% Descrip.: Send received frames to parent (tcp_connection pid), and
-%%           respond to STUN requests.
-%% Returns : ok
+%% @spec    (MsgList, Parent) -> ok
+%%
+%%            MsgList = [#request{} | #response{} | #stun_result{}]
+%%            Parent  = term() "pid() or atom()"
+%%
+%% @doc     Send received frames to parent (tcp_connection pid), and
+%%          respond to STUN requests.
+%% @end
 %%--------------------------------------------------------------------
 process_msg_stack([H | T], Parent) when is_record(H, stun_result) ->
     case H of
@@ -598,12 +651,18 @@ process_msg_stack([], _Parent) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: get_content_length(Type, Header)
-%%           Type   = request | response
-%%           Header = keylist record()
-%% Descrip.: Get Content-Length and return it as an integer value.
-%% Returns : Length = integer()
-%%           throw({error, Type, invalid_content_length, Header})
+%% @spec    (Type, Header) ->
+%%            Length
+%%
+%%            Type   = request | response
+%%            Header = #keylist{}
+%%
+%%            Length = integer()
+%%
+%% @throws  {error, Type, invalid_content_length, Header} 
+%%
+%% @doc     Get Content-Length and return it as an integer value.
+%% @end
 %%--------------------------------------------------------------------
 get_content_length(Type, Header) ->
     case keylist:fetch('content-length', Header) of
@@ -620,9 +679,11 @@ get_content_length(Type, Header) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% handle_received_data2(Data, Recv)

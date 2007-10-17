@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : yxa_config_util.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: YXA config subsystem utility functions.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      YXA config subsystem utility functions.
 %%%
-%%% Created : 29 Nov 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    29 Nov 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(yxa_config_util).
 
@@ -12,16 +13,18 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: startup_log(Source, Level, Fmt, Args)
-%%           Source = atom(), typically module name
-%%           Level  = atom(), debug | normal | error
-%%           Fmt    = string()
-%%           Args   = list() of term()
-%% Descrip.: Output debug messages to console if OS environment
-%%           variable YXA_STARTUP_DEBUG is set. Necessary to debug
-%%           errors when YXA applications are starting up, but logging
-%%           subsystem isn't running yet.
-%% Returns : ok
+%% @spec    (Source, Level, Fmt, Args) -> ok
+%%
+%%            Source = atom() "typically module name"
+%%            Level  = debug | normal | error
+%%            Fmt    = string()
+%%            Args   = [term()]
+%%
+%% @doc     Output debug messages to console if OS environment
+%%          variable YXA_STARTUP_DEBUG is set. Necessary to debug
+%%          errors when YXA applications are starting up, but logging
+%%          subsystem isn't running yet.
+%% @end
 %%--------------------------------------------------------------------
 startup_log(Source, Level, Fmt, Args) when is_atom(Source), is_atom(Level), is_list(Fmt), is_list(Args) ->
     case os:getenv("YXA_STARTUP_DEBUG") of

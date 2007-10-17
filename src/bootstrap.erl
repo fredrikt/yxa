@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : bootstrap.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Initialize Mnesia databases needed for an YXA
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Initialize Mnesia databases needed for an YXA
 %%%           installation. Run through the 'yxa-bootstrap' shell
 %%%           script.
 %%%
-%%% Created : 07 Oct 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    07 Oct 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(bootstrap).
 
@@ -35,10 +36,11 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: start()
-%% Descrip.: Create a first Mnesia database server at the node where
-%%           this is run (through the execution of "yxa-bootstrap").
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Create a first Mnesia database server at the node where
+%%          this is run (through the execution of "yxa-bootstrap").
+%% @end
 %%--------------------------------------------------------------------
 start() ->
     io:format("Bootstrapping YXA on node ~p :~n", [node()]),
@@ -77,16 +79,18 @@ init_db_module([], _Node) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: replica([Master])
-%%           Master = string()
-%% Descrip.: Create a second Mnesia database server at the node where
-%%           this is run (through the execution of "yxa-bootstrap").
-%% Returns : ok
+%% @spec    ([Master]) -> ok
+%%
+%%            Master = string()
+%%
+%% @doc     Create a second Mnesia database server at the node where
+%%          this is run (through the execution of "yxa-bootstrap").
+%% @end
 %%--------------------------------------------------------------------
 replica([Master]) ->
     MasterNode = list_to_atom(Master),
     io:format("Making YXA on node ~p a Mnesia replica node~n", [node()]),
-    
+
     io:format("* Starting Mnesia~n"),
     ok = mnesia:start(),
 
@@ -118,7 +122,7 @@ replica([Master]) ->
 
     io:format("* Replicating ~p tables :~n", [length(AllTables)]),
     ok = replicate_tables(AllTables),
-    
+
     io:format("~nReplica created successfully.~n~n"),
     ok.
 

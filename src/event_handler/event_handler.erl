@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : event_handler.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Event handler event manager. Receives all the events and
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Event handler event manager. Receives all the events and
 %%%           sends them on to all your configured event handlers.
 %%%
-%%% Created : 6 Dec 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    6 Dec 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(event_handler).
 %%-compile(export_all).
@@ -40,10 +41,12 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(AppName)
-%%           AppName  = string(), name of YXA application
-%% Descrip.: start the server.
-%% Returns : term(), Result of gen_server:start_link/4
+%% @spec    (AppName) -> term() "Result of gen_server:start_link/4"
+%%
+%%            AppName = string() "name of YXA application"
+%%
+%% @doc     start the server.
+%% @end
 %%--------------------------------------------------------------------
 start_link(AppName) ->
     {ok, Handlers} = yxa_config:get_env(event_handler_handlers),
@@ -78,7 +81,7 @@ new_request(Method, URI, Branch, DialogId, From, To) when is_list(Method), is_re
 							  is_list(From), is_list(To) ->
     L = [{method, Method},
 	 {uri, sipurl:print(URI)},
-	 {dialogid, DialogId}, 
+	 {dialogid, DialogId},
 	 {from, From},
 	 {to, To}
 	],
@@ -102,6 +105,3 @@ uac_result(Branch, Status, Reason, L) when is_list(Branch), is_integer(Status), 
 	  | L],
     gen_event:notify(?SERVER, {event, self(), debug, uac_result, Branch, L2}).
 
-%%====================================================================
-%% Internal functions
-%%====================================================================

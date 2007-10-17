@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : refer.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: REFER tests.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      REFER tests.
 %%%
-%%% Created :  8 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     8 Feb 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%
 %%% If the real_start function is used, and a ProgressPid is supplied,
 %%% then that process will receive progress reports from the REFER
@@ -47,6 +48,8 @@
 	 code_change/3
 	]).
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {invite_request,	%% request record()
 		invite_pid,	%% pid() | none
 		invite_branch,	%% string()
@@ -76,13 +79,16 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: start_ir(Referee, ReferTo)
-%%           URLstr = string(), parseable with sipurl:parse/1
-%%           ReferTo = string(), parseable with sipurl:parse/1
-%% Descrip.: Refer Referee to ReferTo by first establishing a dialog
-%%           using an INVITE, and then sending a REFER on that dialog.
-%% Returns : Does not matter - does not return until we are finished.
-%% Note    : Intended for invocation from the Erlang console.
+%% @spec    (Referee, ReferTo) ->
+%%            Does not matter - does not return until we are finished.
+%%
+%%            URLstr  = string() "parseable with sipurl:parse/1"
+%%            ReferTo = string() "parseable with sipurl:parse/1"
+%%
+%% @doc     Refer Referee to ReferTo by first establishing a dialog
+%%          using an INVITE, and then sending a REFER on that dialog.
+%%          Note : Intended for invocation from the Erlang console.
+%% @end
 %%--------------------------------------------------------------------
 start_ir(Referee, ReferTo) when is_list(Referee), is_list(ReferTo) ->
     case real_start(contact:parse([Referee]),
@@ -99,14 +105,17 @@ start_ir(Referee, ReferTo) when is_list(Referee), is_list(ReferTo) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: start_ir(Referee, ReferTo)
-%%           Referee = string(), parseable with sipurl:parse/1
-%%           ReferTo = string(), parseable with sipurl:parse/1
-%% Descrip.: Refer URLstr to ReferTo by just sending a REFER and
-%%           thereafter handle the NOTIFYs that a standards compliant
-%%           User-Agent will send us.
-%% Returns : Does not matter - does not return until we are finished.
-%% Note    : Intended for invocation from the Erlang console.
+%% @spec    (Referee, ReferTo) ->
+%%            Does not matter - does not return until we are finished.
+%%
+%%            Referee = string() "parseable with sipurl:parse/1"
+%%            ReferTo = string() "parseable with sipurl:parse/1"
+%%
+%% @doc     Refer URLstr to ReferTo by just sending a REFER and
+%%          thereafter handle the NOTIFYs that a standards compliant
+%%          User-Agent will send us. Note : Intended for invocation
+%%          from the Erlang console.
+%% @end
 %%--------------------------------------------------------------------
 start_r(Referee, ReferTo) when is_list(Referee), is_list(ReferTo) ->
     case real_start(contact:parse([Referee]),
@@ -123,23 +132,26 @@ start_r(Referee, ReferTo) when is_list(Referee), is_list(ReferTo) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: real_start(Referee, ReferTo, Referer, Timeout,
-%%                      ProgressPid, StartOptions)
-%%           Referee      = contact record()
-%%           ReferTo      = contact record()
-%%           Referer      = contact record()
-%%           Timeout      = integer()
-%%           LogFun       = undefined | fun()
-%%           ProgressPid  = undefined | pid(), notify this pid of
-%%                          progress we make
-%%           StartOptions = [no_invite] | []
-%% Descrip.: Build the initial request, call start_link and then
-%%           wait until the started gen_server worker process exits.
-%% Returns : {ok, Pid, CallId, LocalTag} |
-%%           error
-%%           Pid      = pid(), INVITE/REFER client transaction pid
-%%           CallId   = string(), part of Dialog ID
-%%           LocalTag = string(), part of Dialog ID
+%% @spec    (Referee, ReferTo, Referer, Timeout, ProgressPid,
+%%          StartOptions) ->
+%%            {ok, Pid, CallId, LocalTag} |
+%%            error
+%%
+%%            Referee      = #contact{}
+%%            ReferTo      = #contact{}
+%%            Referer      = #contact{}
+%%            Timeout      = integer()
+%%            LogFun       = undefined | fun()
+%%            ProgressPid  = undefined | pid() "notify this pid of progress we make"
+%%            StartOptions = [no_invite] | []
+%%
+%%            Pid      = pid() "INVITE/REFER client transaction pid"
+%%            CallId   = string() "part of Dialog ID"
+%%            LocalTag = string() "part of Dialog ID"
+%%
+%% @doc     Build the initial request, call start_link and then wait
+%%          until the started gen_server worker process exits.
+%% @end
 %%--------------------------------------------------------------------
 real_start([Referee], [ReferTo], [Referer], Timeout, LogFun, ProgressPid, StartOptions) ->
     real_start(Referee, ReferTo, Referer, Timeout, LogFun, ProgressPid, StartOptions);
@@ -186,18 +198,21 @@ start_link(Request, Referer, Referee, ReferTo, Timeout, LogFun, ProgressPid, Opt
 
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, Referer, ReferTo, Timeout, ProgressPid,
-%%                 Options])
-%%           Request     = request record()
-%%           Referer     = contact record()
-%%           Referee     = contact record()
-%%           ReferTo     = contact record()
-%%           Timeout     = integer(), timeout of the first request
-%%           LogFun      = undefined | fun()
-%%           ProgressPid = undefined | pid()
-%%           Options     = [no_invite] | []
-%% Descrip.: Initiates the gen_server worker process.
-%% Returns : {ok, State}
+%% @spec    ([Request, Referer, ReferTo, Timeout, ProgressPid,
+%%          Options]) -> {ok, State}
+%%
+%%            Request     = #request{}
+%%            Referer     = #contact{}
+%%            Referee     = #contact{}
+%%            ReferTo     = #contact{}
+%%            Timeout     = integer() "timeout of the first request"
+%%            LogFun      = undefined | fun()
+%%            ProgressPid = undefined | pid()
+%%            Options     = [no_invite] | []
+%%
+%% @doc     Initiates the gen_server worker process.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([Request, Referer, Referee, ReferTo, Timeout, LogFun, ProgressPid, Options])
   when is_record(Request, request), is_record(Referer, contact), is_record(ReferTo, contact), is_integer(Timeout),
@@ -242,15 +257,19 @@ handle_cast(_Msg, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({branch_request, Pid, Branch, BranchState,
-%%                       Response}, ...)
-%%           Pid         = pid(), client transaction
-%%           Branch      = string(), client transaction branch
-%%           BranchState = atom()
-%%           Response    = response record() | {Status, Reason}
-%% Descrip.: Handle responses received by our client transactions.
-%% Returns : {noreply, State}      |
-%%           {stop, normal, State}
+%% @spec    ({branch_request, Pid, Branch, BranchState, Response},
+%%          ...) ->
+%%            {noreply, State}      |
+%%            {stop, normal, State}
+%%
+%%            Pid         = pid() "client transaction"
+%%            Branch      = string() "client transaction branch"
+%%            BranchState = atom()
+%%            Response    = #response{} | {Status, Reason}
+%%
+%% @doc     Handle responses received by our client transactions.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -316,16 +335,20 @@ handle_info({branch_result, Pid, Branch, _BranchState, Response},
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({clienttransaction_terminating, Pid, Branch},
-%%                       ...)
-%%           Pid         = pid(), client transaction
-%%           Branch      = string(), client transaction branch
-%% Descrip.: Handle client transactions terminating. If we only sent a
-%%           REFER, terminate when that transaction terminates.
-%%           XXX HANDLE NOTIFYS FIRST?
-%% Returns : {noreply, State}       |
-%%           {stop, StopRes, State}
-%%           StopRes = normal | string()
+%% @spec    ({clienttransaction_terminating, Pid, Branch}, ...) ->
+%%            {noreply, State}       |
+%%            {stop, StopRes, State}
+%%
+%%            Pid    = pid() "client transaction"
+%%            Branch = string() "client transaction branch"
+%%
+%%            StopRes = normal | string()
+%%
+%% @doc     Handle client transactions terminating. If we only sent a
+%%          REFER, terminate when that transaction terminates. XXX
+%%          HANDLE NOTIFYS FIRST?
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({clienttransaction_terminating, Pid, Branch},
 	    #state{invite_pid = Pid, invite_branch = Branch} = State) ->
@@ -349,28 +372,34 @@ handle_info({clienttransaction_terminating, Pid, Branch},
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({servertransaction_terminating, Pid}, ...)
-%%           Pid         = pid(), server transaction
-%% Descrip.: Ignore signals about server transactions terminating.
-%% Returns : {noreply, State}
+%% @spec    ({servertransaction_terminating, Pid}, ...) ->
+%%            {noreply, State}
+%%
+%%            Pid = pid() "server transaction"
+%%
+%% @doc     Ignore signals about server transactions terminating.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({servertransaction_terminating, _Pid}, State) ->
     %% ignore all signals about server transactions (all the NOTIFYs for example) terminating, we don't care
     {noreply, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({new_request, FromPid, Ref, NewRequest,
-%%                       YxaCtx}, ...)
-%%           FromPid = pid(), transaction layer
-%%           Ref     = ref(), unique reference to ack this message
-%%                            with (signal back to transaction layer)
-%%           NewRequest = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: Handle incoming requests on our dialog. Answer all
-%%           NOFITYs with '200 Ok', handle BYE and reject all other
-%%           methods with '501 Not Implemented'.
-%% Returns : {noreply, State}      |
-%%           {stop, normal, State}
+%% @spec    ({new_request, FromPid, Ref, NewRequest, YxaCtx}, ...) ->
+%%            {noreply, State}      |
+%%            {stop, normal, State}
+%%
+%%            FromPid    = pid() "transaction layer"
+%%            Ref        = ref() "unique reference to ack this message with (signal back to transaction layer)"
+%%            NewRequest = #request{}
+%%            YxaCtx     = #yxa_ctx{}
+%%
+%% @doc     Handle incoming requests on our dialog. Answer all NOFITYs
+%%          with '200 Ok', handle BYE and reject all other methods
+%%          with '501 Not Implemented'.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({new_request, FromPid, Ref, NewRequest, _YxaCtx}, State) when is_record(NewRequest, request) ->
     THandler = transactionlayer:get_handler_for_request(NewRequest),
@@ -437,13 +466,17 @@ handle_info({new_request, FromPid, Ref, NewRequest, _YxaCtx}, State) when is_rec
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({new_response, Response, YxaCtx}, ...)
-%%           Response = response record()
-%%           YxaCtx   = yxa_ctx record(),
-%% Descrip.: Handle incoming responses not matching any client
-%%           transaction, but matching our dialog.
-%% Returns : {noreply, State}      |
-%%           {stop, normal, State}
+%% @spec    ({new_response, Response, YxaCtx}, ...) ->
+%%            {noreply, State}      |
+%%            {stop, normal, State}
+%%
+%%            Response = #response{}
+%%            YxaCtx   = #yxa_ctx{} ""
+%%
+%% @doc     Handle incoming responses not matching any client
+%%          transaction, but matching our dialog.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({new_response, #response{status = Status} = Response, _YxaCtx},
 	    State) when Status >= 200, Status =< 299 ->
@@ -458,11 +491,14 @@ handle_info({new_response, #response{status = Status} = Response, _YxaCtx},
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({dialog_expired, DialogId}, ...)
-%%           DialogId = term(), dialog id for the dialog we have
-%%                      registered as dialog controller for
-%% Descrip.: Our dialog has expired. Terminate.
-%% Returns : {stop, dialog_expired, State}
+%% @spec    ({dialog_expired, DialogId}, ...) ->
+%%            {stop, dialog_expired, State}
+%%
+%%            DialogId = term() "dialog id for the dialog we have registered as dialog controller for"
+%%
+%% @doc     Our dialog has expired. Terminate.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({dialog_expired, DialogId}, State) ->
     log(State#state.log_fun, error, "Dialog ~p apparently expired, exiting.", [DialogId]),
@@ -482,19 +518,22 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: start_generate_request(Method, Referer, Referee,
-%%                                  ExtraHeaders, Body)
-%%           Method       = string(), SIP method
-%%           Referer      = contact record()
-%%           Referee      = contact record()
-%%           ExtraHeaders = list() of {Key, ValueList} tuple()
-%%           Body         = binary(), request body
-%% Descrip.: Part of the startup functions. Build our initial request
-%%           record.
-%% Returns : {ok, Request, CallId, FromTag}
-%%           Request = request record()
-%%           CallId  = string(), Call-Id of generated request
-%%           FromTag = string(), From-tag of generated request
+%% @spec    (Method, Referer, Referee, ExtraHeaders, Body) ->
+%%            {ok, Request, CallId, FromTag}
+%%
+%%            Method       = string() "SIP method"
+%%            Referer      = #contact{}
+%%            Referee      = #contact{}
+%%            ExtraHeaders = [{Key, ValueList} tuple()]
+%%            Body         = binary() "request body"
+%%
+%%            Request = #request{}
+%%            CallId  = string() "Call-Id of generated request"
+%%            FromTag = string() "From-tag of generated request"
+%%
+%% @doc     Part of the startup functions. Build our initial request
+%%          record.
+%% @end
 %%--------------------------------------------------------------------
 start_generate_request(Method, Referer, Referee, ExtraHeaders, Body) ->
     FromTag = siputil:generate_tag(),
@@ -522,13 +561,17 @@ start_generate_request(Method, Referer, Referee, ExtraHeaders, Body) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: generate_contact_str()
-%% Descrip.: Generate a Contact header value for our requests. The
-%%           registration as a dialog controller will get all requests
-%%           on the dialog sent to us, so the user part of the contact
-%%           is not important. We use the Erlang pid, without
-%%           "<" and ">".
-%% Returns : Contact = string(), SIP URL inside "<" and ">"
+%% @spec    () ->
+%%            Contact
+%%
+%%            Contact = string() "SIP URL inside \"<\" and \">\""
+%%
+%% @doc     Generate a Contact header value for our requests. The
+%%          registration as a dialog controller will get all requests
+%%          on the dialog sent to us, so the user part of the contact
+%%          is not important. We use the Erlang pid, without "<" and
+%%          ">".
+%% @end
 %%--------------------------------------------------------------------
 generate_contact_str() ->
     PidStr = pid_to_list(self()),
@@ -544,12 +587,17 @@ generate_contact_str() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: received_invite_2xx(Response, State)
-%%           Response = response record()
-%%           State    = state record()
-%% Descrip.: Handle 2xx responses to INVITE. If we haven't done so yet
-%%           we start a REFER when we receive a 2xx.
-%% Returns : NewState = state record()
+%% @spec    (Response, State) ->
+%%            NewState
+%%
+%%            Response = #response{}
+%%            State    = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Handle 2xx responses to INVITE. If we haven't done so yet
+%%          we start a REFER when we receive a 2xx.
+%% @end
 %%--------------------------------------------------------------------
 received_invite_2xx(Response, State) when is_record(Response, response), is_record(State, state) ->
     Dialog =
@@ -576,12 +624,17 @@ received_invite_2xx(Response, State) when is_record(Response, response), is_reco
 
 
 %%--------------------------------------------------------------------
-%% Function: generate_ack(Response, State)
-%%           Response = response record()
-%%           State    = state record()
-%% Descrip.: Generate and send ACKs of 2xx responses to INVITE.
-%%           we start a REFER when we receive a 2xx.
-%% Returns : NewState = state record()
+%% @spec    (Response, State) ->
+%%            NewState
+%%
+%%            Response = #response{}
+%%            State    = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Generate and send ACKs of 2xx responses to INVITE. we
+%%          start a REFER when we receive a 2xx.
+%% @end
 %%--------------------------------------------------------------------
 generate_ack(Response, #state{invite_branch = Branch} = State) ->
     Header = Response#response.header,
@@ -614,10 +667,15 @@ generate_ack(Response, #state{invite_branch = Branch} = State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: send_refer(State)
-%%           State = state record()
-%% Descrip.: Generate and send a REFER request.
-%% Returns : NewState = state record()
+%% @spec    (State) ->
+%%            NewState
+%%
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Generate and send a REFER request.
+%% @end
 %%--------------------------------------------------------------------
 send_refer(State) ->
     {ok, Request1, NewDialog, Dst} = generate_new_request("REFER", State),
@@ -643,10 +701,15 @@ send_refer(State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: send_bye(State)
-%%           State = state record()
-%% Descrip.: Generate and send a BYE request.
-%% Returns : NewState = state record()
+%% @spec    (State) ->
+%%            NewState
+%%
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Generate and send a BYE request.
+%% @end
 %%--------------------------------------------------------------------
 send_bye(State) ->
     {ok, Request1, NewDialog, Dst} = generate_new_request("BYE", State),
@@ -666,15 +729,17 @@ send_bye(State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: generate_new_request(Method, State)
-%%           Method = string(), SIP method
-%%           State  = state record()
-%% Descrip.: Generate a request template using values from the dialog
-%%           state in State#state.dialog, or from the INVITE request
-%%           created during startup and stored in
-%%           State#state.invite_request (note that the INVITE request
-%%           is always created, even though it is not always sent).
-%% Returns : {ok, Request, NewDialog}
+%% @spec    (Method, State) -> {ok, Request, NewDialog}
+%%
+%%            Method = string() "SIP method"
+%%            State  = #state{}
+%%
+%% @doc     Generate a request template using values from the dialog
+%%          state in State#state.dialog, or from the INVITE request
+%%          created during startup and stored in
+%%          State#state.invite_request (note that the INVITE request
+%%          is always created, even though it is not always sent).
+%% @end
 %%--------------------------------------------------------------------
 generate_new_request(Method, State) ->
     %% Figure out a bunch of parameters in ways that vary depending on if we have
@@ -733,12 +798,17 @@ generate_new_request(Method, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: set_to_tag(ToTag, {DisplayName, ToURI})
-%%           ToTag       = string()
-%%           DisplayName = string() | none
-%%           ToURI       = sipurl record()
-%% Descrip.: Set tag on a parsed To: header.
-%% Returns : NewTo = string()
+%% @spec    (ToTag, {DisplayName, ToURI}) ->
+%%            NewTo
+%%
+%%            ToTag       = string()
+%%            DisplayName = string() | none
+%%            ToURI       = #sipurl{}
+%%
+%%            NewTo = string()
+%%
+%% @doc     Set tag on a parsed To: header.
+%% @end
 %%--------------------------------------------------------------------
 set_to_tag(ToTag, {DisplayName, ToURI}) when is_list(ToTag) ->
     [NewTo] = sipheader:contact_print(
@@ -747,14 +817,16 @@ set_to_tag(ToTag, {DisplayName, ToURI}) when is_list(ToTag) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: start_client_transaction(Request, Dst, Branch, Timeout)
-%%           Request = request record()
-%%           Dst     = sipdst record()
-%%           Branch  = string()
-%%           Timeout = integer()
-%% Descrip.: Wrapper for transactionlayer:start_client_transaction/5
-%%           to do some logging first.
-%% Returns : Pid | {error, E}
+%% @spec    (Request, Dst, Branch, Timeout) -> Pid | {error, E}
+%%
+%%            Request = #request{}
+%%            Dst     = #sipdst{}
+%%            Branch  = string()
+%%            Timeout = integer()
+%%
+%% @doc     Wrapper for transactionlayer:start_client_transaction/5 to
+%%          do some logging first.
+%% @end
 %%--------------------------------------------------------------------
 start_client_transaction(Request, Dst, Branch, Timeout, LogFun) ->
     %% Logging
@@ -766,12 +838,16 @@ start_client_transaction(Request, Dst, Branch, Timeout, LogFun) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: wait_for_pids(PidList, LogFun)
-%%           PidList = list() of pid()
-%%           LogFun  = undefined | function()
-%% Descrip.: Wait until none of the pids in PidList is alive amymore.
-%% Returns : {ok, Msg}
-%%           Msg = string()
+%% @spec    (PidList, LogFun) ->
+%%            {ok, Msg}
+%%
+%%            PidList = [pid()]
+%%            LogFun  = undefined | function()
+%%
+%%            Msg = string()
+%%
+%% @doc     Wait until none of the pids in PidList is alive amymore.
+%% @end
 %%--------------------------------------------------------------------
 wait_for_pids(PidList, LogFun) ->
     case any_alive(PidList) of
@@ -797,16 +873,18 @@ any_alive([]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: log(LogFun, Level, Format)
-%%           log(LogFun, Level, Format, Arguments)
-%%           LogFun    = undefined | function() with arity 3
-%%           Level     = debug | normal | error | extra_verbose
-%%           Format    = string()
-%%           Arguments = list() of term()
-%% Descrip.: Either call the function LogFun with the Level, Format
-%%           and Arguments as parameters or log it to the console if
-%%           LogFun is undefined.
-%% Returns : void()
+%% @spec    (LogFun, Level, Format) log(LogFun, Level, Format,
+%%          Arguments) -> void()
+%%
+%%            LogFun    = undefined | function() with arity 3
+%%            Level     = debug | normal | error | extra_verbose
+%%            Format    = string()
+%%            Arguments = [term()]
+%%
+%% @doc     Either call the function LogFun with the Level, Format and
+%%          Arguments as parameters or log it to the console if
+%%          LogFun is undefined.
+%% @end
 %%--------------------------------------------------------------------
 log(LogFun, Level, Format) ->
     log(LogFun, Level, Format, []).
@@ -823,16 +901,18 @@ log(undefined, _Level, Format, Arguments) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: report_progress(State, Method, Progress)
-%%           report_progress(State, Method, Status, Reason)
-%%           State    = state record()
-%%           Method   = string()
-%%           Progress = string()
-%%           Status   = integer()
-%%           Reason   = string()
-%% Descrip.: Report some progress to the State#state.progress_pid if
-%%           it is set.
-%% Returns : void()
+%% @spec    (State, Method, Progress) report_progress(State, Method,
+%%          Status, Reason) -> void()
+%%
+%%            State    = #state{}
+%%            Method   = string()
+%%            Progress = string()
+%%            Status   = integer()
+%%            Reason   = string()
+%%
+%% @doc     Report some progress to the State#state.progress_pid if it
+%%          is set.
+%% @end
 %%--------------------------------------------------------------------
 report_progress(#state{progress_pid = Pid}, Method, Progress) when is_pid(Pid) ->
     Pid ! {refer_progress, self(), Method, Progress};

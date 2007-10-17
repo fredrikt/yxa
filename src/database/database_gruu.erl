@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : database_gruu.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: GRUU database functions.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      GRUU database functions.
 %%%
-%%% Created :  3 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since     3 Mar 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(database_gruu).
 
@@ -44,7 +45,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
-%% private Mnesia record, the interface record is called gruu_dbe
+%% @type gruu() = #gruu{}.
+%%                private Mnesia record, the interface record is called gruu_dbe
 -record(gruu, {
 	  gruu,			%% string()
 	  sipuser,		%% string()
@@ -68,20 +70,25 @@
 
 
 %%--------------------------------------------------------------------
-%% Function: create()
-%% Descrip.: Invoke create/1 with the list of servers indicated by
-%%           the configuration parameter 'databaseservers'.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    () -> term() "result of mnesia:create_table/2."
+%%
+%% @doc     Invoke create/1 with the list of servers indicated by the
+%%          configuration parameter 'databaseservers'.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create() ->
     {ok, S} = yxa_config:get_env(databaseservers),
     create(S).
 
 %%--------------------------------------------------------------------
-%% Function: create(Servers)
-%%           Servers = list() of atom(), list of nodes
-%% Descrip.: Create the table 'gruu' on Servers.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    (Servers) -> term() "result of mnesia:create_table/2."
+%%
+%%            Servers = [atom()] "list of nodes"
+%%
+%% @doc     Create the table 'gruu' on Servers.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create(Servers) when is_list(Servers) ->
     mnesia:create_table(gruu, [{attributes, record_info(fields, gruu)},
@@ -93,14 +100,15 @@ create(Servers) when is_list(Servers) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: insert(GRUU, SIPuser, InstanceId, Flags)
-%%           GRUU       = string()
-%%           SIPuser    = string(), SIP authentication username (key
-%%                        in our location database)
-%%           InstanceId = string(), +sip.instance from Contact
-%%           Flags      = list() of {Key, Value}
-%% Descrip.: Create a new GRUU entry in the database.
-%% Returns : transaction_result()
+%% @spec    (GRUU, SIPuser, InstanceId, Flags) -> transaction_result()
+%%
+%%            GRUU       = string()
+%%            SIPuser    = string() "SIP authentication username (key in our location database)"
+%%            InstanceId = string() "+sip.instance from Contact"
+%%            Flags      = [{Key, Value}]
+%%
+%% @doc     Create a new GRUU entry in the database.
+%% @end
 %%--------------------------------------------------------------------
 insert(GRUU, SIPuser, InstanceId, Flags) when is_list(GRUU), is_list(SIPuser), is_list(InstanceId),
 					      is_list(Flags) ->
@@ -120,11 +128,13 @@ insert(GRUU, SIPuser, InstanceId, Flags) when is_list(GRUU), is_list(SIPuser), i
 
 
 %%--------------------------------------------------------------------
-%% Function: update_last_registered(GRUU)
-%%           GRUU = string()
-%% Descrip.: Update the 'last_registered' on the GRUU database entry
-%%           matching GRUU.
-%% Returns : transaction_result()
+%% @spec    (GRUU) -> transaction_result()
+%%
+%%            GRUU = string()
+%%
+%% @doc     Update the 'last_registered' on the GRUU database entry
+%%          matching GRUU.
+%% @end
 %%--------------------------------------------------------------------
 update_last_registered(GRUU) when is_list(GRUU) ->
     Now = util:timestamp(),
@@ -141,21 +151,26 @@ update_last_registered(GRUU) when is_list(GRUU) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: list()
-%% Descrip.: List all GRUUs in the database.
-%% Returns : list() of gruu record()
+%% @spec    () -> [#gruu{}]
+%%
+%% @doc     List all GRUUs in the database.
+%% @end
 %%--------------------------------------------------------------------
 list() ->
     db_util:tab_to_list(gruu).
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_using_gruu(GRUU)
-%%           GRUU = string()
-%% Descrip.: Fetch a GRUU database entry based on the GRUU string.
-%% Returns : {ok, GRUUs} |
-%%           nomatch
-%%           GRUUs = list() of gruu_dbe record()
+%% @spec    (GRUU) ->
+%%            {ok, GRUUs} |
+%%            nomatch
+%%
+%%            GRUU = string()
+%%
+%%            GRUUs = [#gruu_dbe{}]
+%%
+%% @doc     Fetch a GRUU database entry based on the GRUU string.
+%% @end
 %%--------------------------------------------------------------------
 fetch_using_gruu(GRUU) when is_list(GRUU) ->
     F = fun() ->
@@ -171,14 +186,18 @@ fetch_using_gruu(GRUU) when is_list(GRUU) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_using_user_instance(SipUser, InstanceId)
-%%           SipUser    = string()
-%%           InstanceId = string()
-%% Descrip.: Fetch a GRUU database entry based on a SipUser and an
-%%           Instance ID.
-%% Returns : {ok, GRUUs} |
-%%           nomatch
-%%           GRUUs = list() of gruu_dbe record()
+%% @spec    (SipUser, InstanceId) ->
+%%            {ok, GRUUs} |
+%%            nomatch
+%%
+%%            SipUser    = string()
+%%            InstanceId = string()
+%%
+%%            GRUUs = [#gruu_dbe{}]
+%%
+%% @doc     Fetch a GRUU database entry based on a SipUser and an
+%%          Instance ID.
+%% @end
 %%--------------------------------------------------------------------
 fetch_using_user_instance(SipUser, InstanceId) when is_list(SipUser), is_list(InstanceId) ->
     F = fun() ->
@@ -190,15 +209,19 @@ fetch_using_user_instance(SipUser, InstanceId) when is_list(SipUser), is_list(In
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_using_user_instance(InstanceId)
-%%           InstanceId = string()
-%% Descrip.: Fetch all GRUU database entrys matching an Instance ID.
-%%           There might be more than one if a UA uses a single
-%%           Instance ID to acquire GRUUs for multiple users (AORs in
-%%           the GRUU draft).
-%% Returns : {ok, GRUUs} |
-%%           nomatch
-%%           GRUUs = list() of gruu_dbe record()
+%% @spec    (InstanceId) ->
+%%            {ok, GRUUs} |
+%%            nomatch
+%%
+%%            InstanceId = string()
+%%
+%%            GRUUs = [#gruu_dbe{}]
+%%
+%% @doc     Fetch all GRUU database entrys matching an Instance ID.
+%%          There might be more than one if a UA uses a single
+%%          Instance ID to acquire GRUUs for multiple users (AORs in
+%%          the GRUU draft).
+%% @end
 %%--------------------------------------------------------------------
 fetch_using_instance(InstanceId) when is_list(InstanceId) ->
     F = fun() ->
@@ -209,31 +232,38 @@ fetch_using_instance(InstanceId) when is_list(InstanceId) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: fetch_all()
-%% Descrip.: Fetch all GRUU database entrys.
-%% Returns : {ok, GRUUs} |
-%%           nomatch
-%%           GRUUs = list() of gruu_dbe record()
+%% @spec    () ->
+%%            {ok, GRUUs} |
+%%            nomatch
+%%
+%%            GRUUs = [#gruu_dbe{}]
+%%
+%% @doc     Fetch all GRUU database entrys.
+%% @end
 %%--------------------------------------------------------------------
 fetch_all() ->
     make_fetch_result(db_util:tab_to_list(gruu)).
 
 
 %%--------------------------------------------------------------------
-%% Function: delete(GRUU)
-%%           GRUU = string()
-%% Descrip.: Delete all GRUUs matching a GRUU string.
-%% Returns : transaction_result()
+%% @spec    (GRUU) -> transaction_result()
+%%
+%%            GRUU = string()
+%%
+%% @doc     Delete all GRUUs matching a GRUU string.
+%% @end
 %%--------------------------------------------------------------------
 delete(GRUU) when is_list(GRUU) ->
     db_util:delete_with_key(gruu, GRUU).
 
 
 %%--------------------------------------------------------------------
-%% Function: delete_gruus_for_user(SipUser)
-%%           SipUser = string()
-%% Descrip.: Delete all GRUUs matching a SIP user.
-%% Returns : transaction_result()
+%% @spec    (SipUser) -> transaction_result()
+%%
+%%            SipUser = string()
+%%
+%% @doc     Delete all GRUUs matching a SIP user.
+%% @end
 %%--------------------------------------------------------------------
 delete_gruus_for_user(SipUser) ->
     F = fun() ->
@@ -247,10 +277,12 @@ delete_gruus_for_user(SipUser) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: delete_gruus_for_instance(InstanceId)
-%%           InstanceId = string()
-%% Descrip.: Delete all GRUUs matching an Instance ID.
-%% Returns : transaction_result()
+%% @spec    (InstanceId) -> transaction_result()
+%%
+%%            InstanceId = string()
+%%
+%% @doc     Delete all GRUUs matching an Instance ID.
+%% @end
 %%--------------------------------------------------------------------
 delete_gruus_for_instance(InstanceId) ->
     F = fun() ->
@@ -264,9 +296,11 @@ delete_gruus_for_instance(InstanceId) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_transform_fun()
-%% Descrip.: Return a function to transform the gruu Mnesia table.
-%% Returns : {ok, FieldInfo, Fun}
+%% @spec    () -> {ok, FieldInfo, Fun}
+%%
+%% @doc     Return a function to transform the gruu Mnesia table.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 get_transform_fun() ->
     %% Table = gruu,
@@ -284,15 +318,19 @@ get_transform_fun() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: make_fetch_result(Entrys)
-%%           Entrys = list() of gruu record()
-%% Descrip.: Turn a list of 'gruu' records into a list of 'gruu_dbe'
-%%           records. 'gruu' records are our internal data format for
-%%           storing GRUUs in Mnesia, 'gruu_dbe' are potentially
-%%           different records that outside modules might use.
-%% Returns : {ok, GRUUs} |
-%%           nomatch
-%%           GRUUs = list() of gruu_dbe record() 
+%% @spec    (Entrys) ->
+%%            {ok, GRUUs} |
+%%            nomatch
+%%
+%%            Entrys = [#gruu{}]
+%%
+%%            GRUUs = [#gruu_dbe{}]
+%%
+%% @doc     Turn a list of 'gruu' records into a list of 'gruu_dbe'
+%%          records. 'gruu' records are our internal data format for
+%%          storing GRUUs in Mnesia, 'gruu_dbe' are potentially
+%%          different records that outside modules might use.
+%% @end
 %%--------------------------------------------------------------------
 make_fetch_result([]) ->
     nomatch;
@@ -318,9 +356,11 @@ make_fetch_result(Entrys) when is_list(Entrys) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -331,9 +371,11 @@ test() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: test_create_table()
-%% Descrip.: Create a table in RAM only, for use in unit tests.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Create a table in RAM only, for use in unit tests.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test_create_table() ->
     case catch mnesia:table_info(gruu, attributes) of

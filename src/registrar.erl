@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : registrar.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Process that handles expiration of expired entrys in the
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Process that handles expiration of expired entrys in the
 %%%           Mnesia based location database.
 %%%
-%%% Created : 21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    21 Mar 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(registrar).
 
@@ -34,6 +35,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {}).
 
 
@@ -42,9 +45,10 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link()
-%% Descrip.: Starts the server
-%% Returns : term(), result of gen_server:start_link/4
+%% @spec    () -> term() "result of gen_server:start_link/4"
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, registrar}, ?MODULE, {}, []).
@@ -54,12 +58,15 @@ start_link() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({})
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}          |
-%%           {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ({}) ->
+%%            {ok, State}          |
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({}) ->
     timer:apply_interval(60000, phone, remove_expired_phones, []),
@@ -67,64 +74,89 @@ init({}) ->
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages.
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {reply, {error, Reason}, State}
-%%           Reason = string()
+%% @spec    (Unknown, From, State) ->
+%%            {reply, {error, Reason}, State}
+%%
+%%            Reason = string()
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Registrar: Received unknown gen_server call : ~p", [Unknown]),
     {reply, {error, "Unknown gen_server call", State}}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Registrar: Received unknown gen_server cast : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Unknown info.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Registrar: Received unknown gen_server info : ~p", [Unknown]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
@@ -134,9 +166,11 @@ terminate(Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(_OldVsn, State, _Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (_OldVsn, State, _Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

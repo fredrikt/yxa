@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : cpl_db.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: This module handles storage and loading of cpl scripts.
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      This module handles storage and loading of cpl scripts.
 %%%           to disk (and erlang shell).
 %%%
-%%% Created : 17 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    17 Dec 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(cpl_db).
 
@@ -54,20 +55,25 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: create()
-%% Descrip.: Invoke create/1 with the list of servers indicated by
-%%           the configuration parameter 'databaseservers'.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    () -> term() "result of mnesia:create_table/2."
+%%
+%% @doc     Invoke create/1 with the list of servers indicated by the
+%%          configuration parameter 'databaseservers'.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create() ->
     {ok, S} = yxa_config:get_env(databaseservers),
     create(S).
 
 %%--------------------------------------------------------------------
-%% Function: create(Servers)
-%%           Servers = list() of atom(), list of nodes
-%% Descrip.: Put cpl_script_graph table as disc_copies on Servers
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    (Servers) -> term() "result of mnesia:create_table/2."
+%%
+%%            Servers = [atom()] "list of nodes"
+%%
+%% @doc     Put cpl_script_graph table as disc_copies on Servers
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create(Servers) ->
     mnesia:create_table(cpl_script_graph, [{attributes, record_info(fields, cpl_script_graph)},
@@ -77,11 +83,13 @@ create(Servers) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_cpl_for_user(User)
-%% Descrip.: get the cpl script graph for a certain user
-%% Returns : nomatch | {ok, CPLGraph}
-%%           CPLGraph = term(), a cpl graph for use in
-%%                              interpret_cpl:process_cpl_script(...)
+%% @spec    (User) ->
+%%            nomatch | {ok, CPLGraph}
+%%
+%%            CPLGraph = term() "a cpl graph for use in interpret_cpl:process_cpl_script(...)"
+%%
+%% @doc     get the cpl script graph for a certain user
+%% @end
 %%--------------------------------------------------------------------
 get_cpl_for_user(User) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
@@ -90,10 +98,13 @@ get_cpl_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_cpl_text_for_user(User)
-%% Descrip.: Get the CPL script for User as text.
-%% Returns : nomatch | {ok, CPLText}
-%%           CPLText = string(), the CPL XML
+%% @spec    (User) ->
+%%            nomatch | {ok, CPLText}
+%%
+%%            CPLText = string() "the CPL XML"
+%%
+%% @doc     Get the CPL script for User as text.
+%% @end
 %%--------------------------------------------------------------------
 get_cpl_text_for_user(User) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
@@ -102,11 +113,15 @@ get_cpl_text_for_user(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: load_cpl_for_user(User, FilePath)
-%%           FilePath = string(), a full file path (no .|..|~)
-%% Descrip.: store the cpl script file at FilePath in mnesia
-%% Returns : {atomic, Result}
-%%           Result = ok | term()
+%% @spec    (User, FilePath) ->
+%%            {atomic, Result}
+%%
+%%            FilePath = string() "a full file path (no .|..|~)"
+%%
+%%            Result = ok | term()
+%%
+%% @doc     store the cpl script file at FilePath in mnesia
+%% @end
 %%--------------------------------------------------------------------
 load_cpl_for_user(User, FilePath) ->
     Str = load_file(FilePath),
@@ -114,12 +129,16 @@ load_cpl_for_user(User, FilePath) ->
     store_graph(User, Graph, Str).
 
 %%--------------------------------------------------------------------
-%% Function: set_cpl_for_user(User, CPLXML)
-%%           User   = string()
-%%           CPLXML = string(), CPL XML
-%% Descrip.: store the cpl script CPLXML in mnesia
-%% Returns : {atomic, Result}
-%%           Result = ok | term()
+%% @spec    (User, CPLXML) ->
+%%            {atomic, Result}
+%%
+%%            User   = string()
+%%            CPLXML = string() "CPL XML"
+%%
+%%            Result = ok | term()
+%%
+%% @doc     store the cpl script CPLXML in mnesia
+%% @end
 %%--------------------------------------------------------------------
 set_cpl_for_user(User, CPLXML) when is_list(User), is_list(CPLXML) ->
     Graph = xml_parse:cpl_script_to_graph(CPLXML),
@@ -135,9 +154,10 @@ store_graph(User, Graph, Text) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: rm_cpl_for_user(User)
-%% Descrip.: remove the cpl script associated with user User
-%% Returns : {atomic, ok} | term()
+%% @spec    (User) -> {atomic, ok} | term()
+%%
+%% @doc     remove the cpl script associated with user User
+%% @end
 %%--------------------------------------------------------------------
 rm_cpl_for_user(User) ->
     F = fun() ->
@@ -146,12 +166,14 @@ rm_cpl_for_user(User) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: user_has_cpl_script(User)
-%%           User = string(), username
-%% Descrip.: determine if a cpl script has been loaded for the user
-%%           User. Type is used to determine if script can handle
-%%           incoming or outgoing traffic - it may be able to do both
-%% Returns : true | false
+%% @spec    (User) -> true | false
+%%
+%%            User = string() "username"
+%%
+%% @doc     determine if a cpl script has been loaded for the user
+%%          User. Type is used to determine if script can handle
+%%          incoming or outgoing traffic - it may be able to do both
+%% @end
 %%--------------------------------------------------------------------
 user_has_cpl_script(User) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
@@ -162,13 +184,15 @@ user_has_cpl_script(User) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: user_has_cpl_script(User, Type)
-%%           User = string(), username
-%%           Type = incoming | outgoing
-%% Descrip.: determine if a cpl script has been loaded for the user
-%%           User. Type is used to determine if script can handle
-%%           incoming or outgoing traffic - it may be able to do both
-%% Returns : true | false
+%% @spec    (User, Type) -> true | false
+%%
+%%            User = string() "username"
+%%            Type = incoming | outgoing
+%%
+%% @doc     determine if a cpl script has been loaded for the user
+%%          User. Type is used to determine if script can handle
+%%          incoming or outgoing traffic - it may be able to do both
+%% @end
 %%--------------------------------------------------------------------
 user_has_cpl_script(User, Type) ->
     case mnesia:dirty_read({cpl_script_graph, User}) of
@@ -189,10 +213,12 @@ user_has_cpl_script(User, Type) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_transform_fun()
-%% Descrip.: Return a function to transform the cpl_script_graph
-%%           Mnesia table.
-%% Returns : {ok, Fun}
+%% @spec    () -> {ok, Fun}
+%%
+%% @doc     Return a function to transform the cpl_script_graph Mnesia
+%%          table.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 get_transform_fun() ->
     Table = cpl_script_graph,
@@ -216,10 +242,12 @@ get_transform_fun() ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: load_file(FilePath)
-%%           FilePath = string(), a full file path (no .|..|~)
-%% Descrip.: get data from file a FilePath
-%% Returns : string()
+%% @spec    (FilePath) -> string()
+%%
+%%            FilePath = string() "a full file path (no .|..|~)"
+%%
+%% @doc     get data from file a FilePath
+%% @end
 %%--------------------------------------------------------------------
 load_file(FilePath) ->
     case file:read_file(FilePath) of

@@ -1,7 +1,7 @@
 %%%--------------------------------------------------------------------
 %%% File    : phone.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: This function is a mix of location database and Mnesia
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      This function is a mix of location database and Mnesia
 %%%           user database functions. It pre-dates the modular
 %%%           sipuserdb system (but sipuserdb_mnesia uses these
 %%%           functions), and the location database has not yet been
@@ -11,7 +11,8 @@
 %%% url_to_requristr/1, otherwise functions that match againts
 %%% requristr, like get_sipuser_location_binding/2 will fail.
 %%
-%%% Created : 15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%--------------------------------------------------------------------
 
 -module(phone).
@@ -73,30 +74,37 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: start mnesia and use local node as disc node
-%% Returns : term(), result of mnesia:start()
+%% @spec    () -> term() "result of mnesia:start()"
+%%
+%% @doc     start mnesia and use local node as disc node
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     mnesia:create_schema([node()]),
     mnesia:start().
 
 %%--------------------------------------------------------------------
-%% Function: create()
-%% Descrip.: Invoke create/1 with the list of servers indicated by
-%%           the configuration parameter 'databaseservers'.
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    () -> term() "result of mnesia:create_table/2."
+%%
+%% @doc     Invoke create/1 with the list of servers indicated by the
+%%          configuration parameter 'databaseservers'.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create() ->
     {ok, S} = yxa_config:get_env(databaseservers),
     create(S).
 
 %%--------------------------------------------------------------------
-%% Function: create(Servers)
-%%           Servers = list() of atom(), list of nodes
-%% Descrip.: Put phone, user and numbers tables as disc_copies on
-%%           Servers
-%% Returns : term(), result of mnesia:create_table/2.
+%% @spec    (Servers) -> term() "result of mnesia:create_table/2."
+%%
+%%            Servers = [atom()] "list of nodes"
+%%
+%% @doc     Put phone, user and numbers tables as disc_copies on
+%%          Servers
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 create(Servers) ->
     mnesia:create_table(phone, [{attributes, record_info(fields, phone)},
@@ -111,10 +119,11 @@ create(Servers) ->
 				  {type, bag}]).
 
 %%--------------------------------------------------------------------
-%% Function: remove_expired_phones()
-%% Descrip.: remove phone entries in DB that should no longer be
-%%           present
-%% Returns : true | error
+%% @spec    () -> true | error
+%%
+%% @doc     remove phone entries in DB that should no longer be
+%%          present
+%% @end
 %%--------------------------------------------------------------------
 remove_expired_phones() ->
     case expired_phones() of
@@ -152,21 +161,24 @@ remove_phones(ExpiredPhones) ->
     lists:foreach(F, ExpiredPhones).
 
 %%--------------------------------------------------------------------
-%% Function: insert_purge_phone(SipUser, Flags, Class, Expire,
-%%                              Address, CallId, CSeq, Instance)
-%%           SipUser  = string(), username
-%%           Flags    = list() of {Name, Value}
-%%             Name   = atom()
-%%             Value  =  term(), but typically integer() or string()
-%%           Class    = static | dynamic
-%%           Expire   = integer() | never
-%%           Address  = sipurl record()
-%%           CallId   = string()
-%%           CSeq     = integer()
-%%           Instance = string(), Instance ID (or "")
-%% Descrip.: Remove a certain SipUser -> location mapping. Then create
-%%           a new entry with a new Expire value
-%% Returns : {atomic, term()}, The result of the mnesia:transaction()
+%% @spec    (SipUser, Flags, Class, Expire, Address, CallId, CSeq,
+%%          Instance) ->
+%%            {atomic, term()} "The result of the mnesia:transaction()"
+%%
+%%            SipUser  = string() "username"
+%%            Flags    = [{Name, Value}]
+%%            Name     = atom()
+%%            Value    =  term() "but typically integer() or string()"
+%%            Class    = static | dynamic
+%%            Expire   = integer() | never
+%%            Address  = #sipurl{}
+%%            CallId   = string()
+%%            CSeq     = integer()
+%%            Instance = string() "Instance ID (or \"\")"
+%%
+%% @doc     Remove a certain SipUser -> location mapping. Then create
+%%          a new entry with a new Expire value
+%% @end
 %%--------------------------------------------------------------------
 insert_purge_phone(SipUser, Flags, Class, Expire, Address, CallId, CSeq, Instance)
   when is_list(SipUser), is_list(Flags), (Class == static orelse Class == dynamic),
@@ -266,12 +278,14 @@ insert_purge_phone_outbound(Instance, RegId, This) when is_list(Instance), is_in
 
 
 %%--------------------------------------------------------------------
-%% Function: purge_class_phone(User, Class)
-%%           User  = string()
-%%           Class = atom()
-%% Descrip.: Removes all entrys matching User (SIP user),
-%%           and class from the location database.
-%% Returns : transaction_result()
+%% @spec    (User, Class) -> transaction_result()
+%%
+%%            User  = string()
+%%            Class = atom()
+%%
+%% @doc     Removes all entrys matching User (SIP user), and class
+%%          from the location database.
+%% @end
 %%--------------------------------------------------------------------
 purge_class_phone(User, Class) ->
     Fun = fun() ->
@@ -287,13 +301,14 @@ purge_class_phone(User, Class) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: delete_location(User, Class, Address)
-%%           User    = string(), username (phone record 'user'
-%%                     element)
-%%           Class   = static | dynamic
-%%           Address = string(), address to remove
-%% Descrip.: Delete a specific location from the location database.
-%% Returns : transaction_result()
+%% @spec    (User, Class, Address) -> transaction_result()
+%%
+%%            User    = string() "username (phone record 'user' element)"
+%%            Class   = static | dynamic
+%%            Address = string() "address to remove"
+%%
+%% @doc     Delete a specific location from the location database.
+%% @end
 %%--------------------------------------------------------------------
 delete_location(User, Class, Address) when is_list(User), (Class == static orelse Class == dynamic),
 					   is_list(Address) ->
@@ -310,13 +325,15 @@ delete_location(User, Class, Address) when is_list(User), (Class == static orels
     mnesia:transaction(Fun).
 
 %%--------------------------------------------------------------------
-%% Function: insert_user(User, Password, Flags, Classes)
-%%           User     = string()
-%%           Password = term()
-%%           Flags    = list() of atom()
-%%           Classes  = list() of atom()
-%% Descrip.: Create a new user.
-%% Returns : transaction_result()
+%% @spec    (User, Password, Flags, Classes) -> transaction_result()
+%%
+%%            User     = string()
+%%            Password = term()
+%%            Flags    = [atom()]
+%%            Classes  = [atom()]
+%%
+%% @doc     Create a new user.
+%% @end
 %%--------------------------------------------------------------------
 insert_user(User, Password, Flags, Classes) when is_list(User), is_list(Flags), is_list(Classes) ->
     db_util:insert_record(#user{user = User,
@@ -326,11 +343,13 @@ insert_user(User, Password, Flags, Classes) when is_list(User), is_list(Flags), 
 			       }).
 
 %%--------------------------------------------------------------------
-%% Function: insert_user_or_password(User, Password)
-%%           User     = string()
-%%           Password = term()
-%% Descrip.: Create a user, or set existing user's password.
-%% Returns : transaction_result()
+%% @spec    (User, Password) -> transaction_result()
+%%
+%%            User     = string()
+%%            Password = term()
+%%
+%% @doc     Create a user, or set existing user's password.
+%% @end
 %%--------------------------------------------------------------------
 insert_user_or_password(User, Password) when is_list(User) ->
     Fun = fun() ->
@@ -349,39 +368,44 @@ insert_user_or_password(User, Password) when is_list(User) ->
     mnesia:transaction(Fun).
 
 %%--------------------------------------------------------------------
-%% Function: list_phones()
-%% Descrip.: Return database contents of the table named 'phone' as a
-%%           list. NOTE: this code is mainly intended for debugging.
-%% Returns : list() of phone record()
+%% @spec    () -> [#phone{}]
+%%
+%% @doc     Return database contents of the table named 'phone' as a
+%%          list. NOTE: this code is mainly intended for debugging.
+%% @end
 %%--------------------------------------------------------------------
 list_phones() ->
     db_util:tab_to_list(phone).
 
 %%--------------------------------------------------------------------
-%% Function: list_users()
-%% Descrip.: Return database contents of the table named 'user' as a
-%%           list. NOTE: this code is mainly intended for debugging.
-%% Returns : list() of user record()
+%% @spec    () -> [#user{}]
+%%
+%% @doc     Return database contents of the table named 'user' as a
+%%          list. NOTE: this code is mainly intended for debugging.
+%% @end
 %%--------------------------------------------------------------------
 list_users() ->
     db_util:tab_to_list(user).
 
 %%--------------------------------------------------------------------
-%% Function: list_numbers()
-%% Descrip.: Return database contents of the table named 'numbers' as
-%%           a list. NOTE: this code is mainly intended for debugging.
-%% Returns : list() of numbers record()
+%% @spec    () -> [#numbers{}]
+%%
+%% @doc     Return database contents of the table named 'numbers' as a
+%%          list. NOTE: this code is mainly intended for debugging.
+%% @end
 %%--------------------------------------------------------------------
 list_numbers() ->
     db_util:tab_to_list(numbers).
 
 %%--------------------------------------------------------------------
-%% Function: get_sipuser_location_binding(SipUser, Location)
-%%           SipUser  = string()
-%%           Location = sipurl record()
-%% Descrip.: Look for a phone record() that maps SipUser to Location.
-%%           Returns a list of phone records.
-%% Returns : transaction_result()
+%% @spec    (SipUser, Location) -> transaction_result()
+%%
+%%            SipUser  = string()
+%%            Location = #sipurl{}
+%%
+%% @doc     Look for a phone record() that maps SipUser to Location.
+%%          Returns a list of phone records.
+%% @end
 %%--------------------------------------------------------------------
 get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record(Location, sipurl) ->
     Now = util:timestamp(),
@@ -400,12 +424,16 @@ get_sipuser_location_binding(SipUser, Location) when is_list(SipUser), is_record
 
 
 %%--------------------------------------------------------------------
-%% Function: get_sipuser_locations(SipUser)
-%%           SipUser = string()
-%% Descrip.: Fetches all locations for a given user (SIP user)
-%%           from the location database.
-%% Returns : {ok, Entries} |
-%%           Entries = list() of siplocationdb_e record()
+%% @spec    (SipUser) ->
+%%            {ok, Entries} 
+%%
+%%            SipUser = string()
+%%
+%%            Entries = [#siplocationdb_e{}]
+%%
+%% @doc     Fetches all locations for a given user (SIP user) from the
+%%          location database.
+%% @end
 %%--------------------------------------------------------------------
 get_sipuser_locations(SipUser) when is_list(SipUser) ->
     F = fun() ->
@@ -417,15 +445,17 @@ get_sipuser_locations(SipUser) when is_list(SipUser) ->
     {ok, Rewrite}.
 
 %%--------------------------------------------------------------------
-%% Function: get_phone(SipUser)
-%%           SipUser = string()
-%% Descrip.: Fetches all locations for a given user (SIP user)
-%%           from the location database. Return raw phone record()s.
-%% Returns : transaction_result()
-%% Note    : Only use this for testing, use get_sipuser_locations/1
-%%           in your applications! (The exception to this rule is
-%%           siplocation:process_register_wildcard_isauth/4 which
-%%           needs the Call-Id and CSeq information).
+%% @spec    (SipUser) -> transaction_result()
+%%
+%%            SipUser = string()
+%%
+%% @doc     Fetches all locations for a given user (SIP user) from the
+%%          location database. Return raw phone record()s. Note :
+%%          Only use this for testing, use get_sipuser_locations/1 in
+%%          your applications! (The exception to this rule is
+%%          siplocation:process_register_wildcard_isauth/4 which
+%%          needs the Call-Id and CSeq information).
+%% @end
 %%--------------------------------------------------------------------
 get_phone(SipUser) when is_list(SipUser) ->
     F = fun() ->
@@ -439,16 +469,18 @@ get_phone(SipUser) when is_list(SipUser) ->
     {atomic, Res}.
 
 %%--------------------------------------------------------------------
-%% Function: get_user(User)
-%%           User = string()
-%% Descrip.: Get password, flags and classes for User.
-%% Returns : {atomic, Result}
-%%           Result = list() of {Password, Flags, Classes}
-%%           Password = term(), password element of user record()
-%%           Flags    = list() of atom(), flags element of user
-%%                      record()
-%%           Classes  = list() of atom(), classes element of user
-%%                      record()
+%% @spec    (User) ->
+%%            {atomic, Result}
+%%
+%%            User = string()
+%%
+%%            Result   = [{Password, Flags, Classes}]
+%%            Password = term() "password element of #user{}"
+%%            Flags    = [atom()] "flags element of #user{}"
+%%            Classes  = [atom()] "classes element of #user{}"
+%%
+%% @doc     Get password, flags and classes for User.
+%% @end
 %%--------------------------------------------------------------------
 get_user(User) when is_list(User) ->
     F = fun() ->
@@ -459,11 +491,15 @@ get_user(User) when is_list(User) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_numbers_for_user(User)
-%%           User = string()
-%% Descrip.: Get numbers for User.
-%% Returns : {atomic, Result}
-%%           Result = list() of string()
+%% @spec    (User) ->
+%%            {atomic, Result}
+%%
+%%            User = string()
+%%
+%%            Result = [string()]
+%%
+%% @doc     Get numbers for User.
+%% @end
 %%--------------------------------------------------------------------
 get_numbers_for_user(User) when is_list(User) ->
     F = fun() ->
@@ -472,11 +508,15 @@ get_numbers_for_user(User) when is_list(User) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: get_users_for_number(Number)
-%%           Number = string()
-%% Descrip.: Fetch all users having an address matchig Number.
-%% Returns : {atomic, Users}
-%%           Users = list() of string(), list of #numbers.user
+%% @spec    (Number) ->
+%%            {atomic, Users}
+%%
+%%            Number = string()
+%%
+%%            Users = [string()] "list of #numbers.user"
+%%
+%% @doc     Fetch all users having an address matchig Number.
+%% @end
 %%--------------------------------------------------------------------
 get_users_for_number(Number) ->
     F = fun() ->
@@ -485,12 +525,16 @@ get_users_for_number(Number) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: get_sipusers_using_contact(URI)
-%%           URI = sipurl record()
-%% Descrip.: Find all users (#phone.user) that have registered a
-%%           specific concact (location database binding).
-%% Returns : {atomic, Users}
-%%           Users = list() of string(), #phone.user values
+%% @spec    (URI) ->
+%%            {atomic, Users}
+%%
+%%            URI = #sipurl{}
+%%
+%%            Users = [string()] "#phone.user values"
+%%
+%% @doc     Find all users (#phone.user) that have registered a
+%%          specific concact (location database binding).
+%% @end
 %%--------------------------------------------------------------------
 get_sipusers_using_contact(URI) when is_record(URI, sipurl) ->
     ReqURIstr = url_to_requristr(URI),
@@ -504,13 +548,17 @@ get_sipusers_using_contact(URI) when is_record(URI, sipurl) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_locations_using_contact(URI)
-%%           URI = sipurl record()
-%% Descrip.: Fetch the complete siplocationdb_e records for all
-%%           registrations of a specific concact (location database
-%%           binding).
-%% Returns : {ok, LDBEs}
-%%           LDBEs = list() of siplocationdb_e record()
+%% @spec    (URI) ->
+%%            {ok, LDBEs}
+%%
+%%            URI = #sipurl{}
+%%
+%%            LDBEs = [#siplocationdb_e{}]
+%%
+%% @doc     Fetch the complete siplocationdb_e records for all
+%%          registrations of a specific concact (location database
+%%          binding).
+%% @end
 %%--------------------------------------------------------------------
 get_locations_using_contact(URI) when is_record(URI, sipurl) ->
     ReqURIstr = url_to_requristr(URI),
@@ -523,13 +571,17 @@ get_locations_using_contact(URI) when is_record(URI, sipurl) ->
     {ok, Rewrite}.
 
 %%--------------------------------------------------------------------
-%% Function: set_user_password(User, Password)
-%%           User     = string()
-%%           Password = term()
-%% Descrip.: Set password for User.
-%% Returns : {atomic, ok} |
-%%           {aborted, Reason}
-%%           Reason = no_such_user | illegal
+%% @spec    (User, Password) ->
+%%            {atomic, ok} |
+%%            {aborted, Reason}
+%%
+%%            User     = string()
+%%            Password = term()
+%%
+%%            Reason = no_such_user | illegal
+%%
+%% @doc     Set password for User.
+%% @end
 %%--------------------------------------------------------------------
 set_user_password(User, Password) ->
     F = fun() ->
@@ -548,11 +600,13 @@ set_user_password(User, Password) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: set_user_flags(User, Flags)
-%%           User  = string()
-%%           Flags = list() of atom()
-%% Descrip.: Set flags for User.
-%% Returns : transaction_result()
+%% @spec    (User, Flags) -> transaction_result()
+%%
+%%            User  = string()
+%%            Flags = [atom()]
+%%
+%% @doc     Set flags for User.
+%% @end
 %%--------------------------------------------------------------------
 set_user_flags(User, Flags) when is_list(User), is_list(Flags) ->
     F = fun() ->
@@ -571,11 +625,13 @@ set_user_flags(User, Flags) when is_list(User), is_list(Flags) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: set_user_numbers(User, Numbers)
-%%           User    = string()
-%%           Numbers = list() of string()
-%% Descrip.: Set numbers for User.
-%% Returns : transaction_result()
+%% @spec    (User, Numbers) -> transaction_result()
+%%
+%%            User    = string()
+%%            Numbers = [string()]
+%%
+%% @doc     Set numbers for User.
+%% @end
 %%--------------------------------------------------------------------
 set_user_numbers(User, Numbers) when is_list(User), is_list(Numbers) ->
     F = fun() ->
@@ -593,11 +649,13 @@ set_user_numbers(User, Numbers) when is_list(User), is_list(Numbers) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: set_user_classes(User, Classes)
-%%           User    = string()
-%%           Classes = list() of atom()
-%% Descrip.: Set classes for User.
-%% Returns : transaction_result()
+%% @spec    (User, Classes) -> transaction_result()
+%%
+%%            User    = string()
+%%            Classes = [atom()]
+%%
+%% @doc     Set classes for User.
+%% @end
 %%--------------------------------------------------------------------
 set_user_classes(User, Classes) when is_list(User), is_list(Classes) ->
     F = fun() ->
@@ -616,10 +674,13 @@ set_user_classes(User, Classes) when is_list(User), is_list(Classes) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: expired_phones()
-%% Descrip.: Finds all expired entrys from the location database.
-%% Returns : {ok, Entries} | transaction_result()
-%%           Entries = list() of {Number, Address, Class}
+%% @spec    () ->
+%%            {ok, Entries} | transaction_result()
+%%
+%%            Entries = [{Number, Address, Class}]
+%%
+%% @doc     Finds all expired entrys from the location database.
+%% @end
 %%--------------------------------------------------------------------
 expired_phones() ->
     Now = util:timestamp(),
@@ -643,18 +704,20 @@ expired_phones() ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: delete_phone(SipUser, Address, Class)
-%%           SipUser = string()
-%%           Class   = atom()
-%%           Address = term(), should be string
-%% Descrip.: Removes all entrys matching a user (SIP user), class
-%%           and address from the location database. Address can be
-%%           whatever - this function should not be depending on being
-%%           able to understand Address to remove old records from the
-%%           database.
-%% Returns : transaction_result()
-%% Note    : used by remove_phones (and remove_expired_phones)
-%% XXX Redundant with delete_location/3???
+%% @spec    (SipUser, Address, Class) -> transaction_result()
+%%
+%%            SipUser = string()
+%%            Class   = atom()
+%%            Address = term() "should be string"
+%%
+%% @doc     Removes all entrys matching a user (SIP user), class and
+%%          address from the location database. Address can be
+%%          whatever - this function should not be depending on being
+%%          able to understand Address to remove old records from the
+%%          database. Note : used by remove_phones (and
+%%          remove_expired_phones) XXX Redundant with
+%%          delete_location/3???
+%% @end
 %%--------------------------------------------------------------------
 delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
     Fun = fun() ->
@@ -670,12 +733,14 @@ delete_phone(SipUser, Address, Class) when is_list(SipUser), is_atom(Class) ->
     mnesia:transaction(Fun).
 
 %%--------------------------------------------------------------------
-%% Function: delete_phone_for_user(SipUser, Class)
-%%           SipUser = string()
-%%           Class   = atom()
-%% Descrip.: Removes all registered locations of a specific Class for
-%%           a SipUser.
-%% Returns : transaction_result()
+%% @spec    (SipUser, Class) -> transaction_result()
+%%
+%%            SipUser = string()
+%%            Class   = atom()
+%%
+%% @doc     Removes all registered locations of a specific Class for a
+%%          SipUser.
+%% @end
 %%--------------------------------------------------------------------
 delete_phone_for_user(SipUser, Class) when is_list(SipUser), is_atom(Class) ->
     Fun = fun() ->
@@ -690,19 +755,22 @@ delete_phone_for_user(SipUser, Class) when is_list(SipUser), is_atom(Class) ->
     mnesia:transaction(Fun).
 
 %%--------------------------------------------------------------------
-%% Function: delete_record(Obj)
-%%           Obj = phone record()
-%% Descrip.: remove a single phone record Obj in a bag table
-%% Returns : transaction_result()
+%% @spec    (Obj) -> transaction_result()
+%%
+%%            Obj = #phone{}
+%%
+%% @doc     remove a single phone record Obj in a bag table
+%% @end
 %%--------------------------------------------------------------------
 delete_record(Obj) ->
     db_util:delete_record(Obj).
 
 %%--------------------------------------------------------------------
-%% Function: delete_user(User)
-%% Descrip.: Delete user User and all numbers for that user from the
-%%           database.
-%% Returns : transaction_result()
+%% @spec    (User) -> transaction_result()
+%%
+%% @doc     Delete user User and all numbers for that user from the
+%%          database.
+%% @end
 %%--------------------------------------------------------------------
 delete_user(User) when is_list(User) ->
     F = fun() ->
@@ -721,15 +789,20 @@ delete_with_key(Db, Key) ->
     Rec.
 
 %%--------------------------------------------------------------------
-%% Function: decode_mnesia_change_event(MnesiaEvent)
-%%           MnesiaEvent = tuple(), Mnesia 'subscribe' event data
-%% Descrip.: Return location records from Mnesia write or
-%%           delete_object events.
-%% Returns : {ok, Action, User, Locations} |
-%%           none
-%%           Action    = insert | delete
-%%           User      = string()
-%%           Locations = list() of siploctiondb_e record()
+%% @spec    (MnesiaEvent) ->
+%%            {ok, Action, User, Locations} |
+%%            none
+%%
+%%            MnesiaEvent = tuple() "Mnesia 'subscribe' event data"
+%%
+%%            Action    = insert | delete
+%%            User      = string()
+%%            Locations = [#siploctiondb_e{}]
+%%
+%% @doc     Return location records from Mnesia write or delete_object
+%%          events.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 decode_mnesia_change_event({Type, Data, _TId}) when (Type == write orelse Type == delete_object),
 						    is_record(Data, phone) ->
@@ -752,14 +825,16 @@ decode_mnesia_change_event(_Unknown) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: url_to_requristr(URL)
-%%           URL = sipurl record()
-%% Descrip.: We need to store the location as a searchable string
-%%           in order to be able to look up a location to a user.
-%%           This string is not used to look up the location of a
-%%           user, but rather to see if we are to relay requests
-%%           to a destination without challenging and so on.
-%% Returns : string()
+%% @spec    (URL) -> string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     We need to store the location as a searchable string in
+%%          order to be able to look up a location to a user. This
+%%          string is not used to look up the location of a user, but
+%%          rather to see if we are to relay requests to a
+%%          destination without challenging and so on.
+%% @end
 %%--------------------------------------------------------------------
 url_to_requristr(URL) when is_record(URL, sipurl) ->
     Port = sipsocket:default_port(URL#sipurl.proto, sipurl:get_port(URL)),
@@ -798,9 +873,11 @@ phones_to_ldbe(L) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -811,9 +888,11 @@ test() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: test_create_table()
-%% Descrip.: Create a table in RAM only, for use in unit tests.
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Create a table in RAM only, for use in unit tests.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test_create_table() ->
     case catch mnesia:table_info(phone, attributes) of

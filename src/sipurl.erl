@@ -123,20 +123,16 @@
 %%    Several rules are incorporated from RFC 2396 [5] but are updated to
 %%    make them compliant with RFC 2234 [10].  These include:
 %%
-%%       reserved    =  ";" / "/" / "?" / ":" / "@" / "&" / "=" / "+"
-%%                      / "$" / ","
+%%       reserved    =  ";" / "/" / "?" / ":" / "@" / "&" / "=" / "+" / "$" / ","
 %%       unreserved  =  alphanum / mark
-%%       mark        =  "-" / "_" / "." / "!" / "~" / "*" / "'"
-%%                      / "(" / ")"
+%%       mark        =  "-" / "_" / "." / "!" / "~" / "*" / "'" / "(" / ")"
 %%       escaped     =  "%" HEXDIG HEXDIG
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 %%
-%% SIP-URI          =  "sip:" [ userinfo ] hostport
-%%                     uri-parameters [ headers ]
-%% SIPS-URI         =  "sips:" [ userinfo ] hostport
-%%                     uri-parameters [ headers ]
+%% SIP-URI          =  "sip:" [ userinfo ] hostport uri-parameters [ headers ]
+%% SIPS-URI         =  "sips:" [ userinfo ] hostport uri-parameters [ headers ]
 %% userinfo         =  ( user / telephone-subscriber ) [ ":" password ] "@"
 %% user             =  1*( unreserved / escaped / user-unreserved )
 %% user-unreserved  =  "&" / "=" / "+" / "$" / "," / ";" / "?" / "/"
@@ -145,8 +141,7 @@
 %% hostport         =  host [ ":" port ]
 %% host             =  hostname / IPv4address / IPv6reference
 %% hostname         =  *( domainlabel "." ) toplabel [ "." ]
-%% domainlabel      =  alphanum
-%%                     / alphanum *( alphanum / "-" ) alphanum
+%% domainlabel      =  alphanum / alphanum *( alphanum / "-" ) alphanum
 %% toplabel         =  ALPHA / ALPHA *( alphanum / "-" ) alphanum
 %%
 %% IPv4address    =  1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT "." 1*3DIGIT
@@ -162,11 +157,8 @@
 %%    the user part of the SIP URI MUST be escaped.
 %%
 %% uri-parameters    =  *( ";" uri-parameter)
-%% uri-parameter     =  transport-param / user-param / method-param
-%%                      / ttl-param / maddr-param / lr-param / other-param
-%% transport-param   =  "transport="
-%%                      ( "udp" / "tcp" / "sctp" / "tls"
-%%                      / other-transport)
+%% uri-parameter     =  transport-param / user-param / method-param / ttl-param / maddr-param / lr-param / other-param
+%% transport-param   =  "transport=" ( "udp" / "tcp" / "sctp" / "tls" / other-transport)
 %% other-transport   =  token
 %% user-param        =  "user=" ( "phone" / "ip" / other-user)
 %% other-user        =  token
@@ -189,29 +181,27 @@
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 %%--------------------------------------------------------------------
-%% Function: parse(URLStr)
-%%           URLStr = string(), a sip url
-%% Descrip.: parses a sip url of the following format (see RFC 3261
-%%           chapter 19.1.1 for more details):
+%% @spec    (URLStr) -> #sipurl{} | {unparseable, URLStr}
 %%
-%%           sip:user:password@host:port;uri-parameters?headers
+%%            URLStr = string() "a sip url"
 %%
-%%           * uri-parameters = any number of "parameter_name=value"
-%%           separated by `;'
-%%           * headers = any number of "hname=hvalue" separated by `&'
-%%
-%%           Phone numbers can also be encoded as sip uris (see
-%%           chapter 19.1.6). A tel uri:
-%%           "tel:+358-555-1234567;postd=pp22" becomes
-%%           "sip:+358-555-1234567;postd=pp22@foo.com;user=phone" i.e.
-%%           "user" is replaced by "phone-no;tel-paramters", and a
-%%           default domain for the entity doing the conversion is
-%%           appended.
-%%
-%% Returns : sipurl record() | {unparseable, URLStr}
-%% Note    : only the sip and sips protocols are supported
-%% Note    : the headers field is currently not supported
-%% Note    : tel URIs encoded as sip URIs are currently not supported
+%% @doc     parses a sip url of the following format (see RFC 3261
+%%          chapter 19.1.1 for more details):
+%%          sip:user:password@host:port;uri-parameters?headers
+%%          * uri-parameters = any number of "parameter_name=value"
+%%          separated by `;' * headers = any number of "hname=hvalue"
+%%          separated by `&'
+%%          Phone numbers can also be encoded as sip uris (see
+%%          chapter 19.1.6). A tel uri:
+%%          "tel:+358-555-1234567;postd=pp22" becomes
+%%          "sip:+358-555-1234567;postd=pp22@foo.com;user=phone" i.e.
+%%          "user" is replaced by "phone-no;tel-paramters", and a
+%%          default domain for the entity doing the conversion is
+%%          appended.
+%%          Note : only the sip and sips protocols are supported Note
+%%          : the headers field is currently not supported Note : tel
+%%          URIs encoded as sip URIs are currently not supported
+%% @end
 %%--------------------------------------------------------------------
 parse("sip:" ++ RURL) ->
     case parse2("sip", RURL) of
@@ -318,10 +308,12 @@ parse_userinfo(Userinfo) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: unescape_str(Str)
-%%           Str = none | string()
-%% Descrip.: replaces %HH escape codes in a string with its value
-%% Returns : none | string()
+%% @spec    (Str) -> none | string()
+%%
+%%            Str = none | string()
+%%
+%% @doc     replaces %HH escape codes in a string with its value
+%% @end
 %%--------------------------------------------------------------------
 unescape_str(none) ->
     none;
@@ -334,17 +326,18 @@ unescape_str([$%, H1, H2 | RStr]) ->
 		     [Char | unescape_str(RStr)].
 
 %%--------------------------------------------------------------------
-%% Function: print(URL)
-%%           URL = sipurl record()
-%% Descrip.: create parseable sip url string
-%% Returns : string()
-%% Note    : user, password, uri-parameters and headers can use char
-%%           codes that need to be escaped using the %HH (H = 0-F)
-%%           notation
+%% @spec    (URL) -> string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     create parseable sip url string Note : user, password,
+%%          uri-parameters and headers can use char codes that need
+%%          to be escaped using the %HH (H = 0-F) notation
+%% @end
 %%--------------------------------------------------------------------
 %% XXX this will break if if the #sipurl.proto field isn't a string()
 print(URL) when record(URL, sipurl) ->
-    URL#sipurl.proto ++ ":" ++ 
+    URL#sipurl.proto ++ ":" ++
 	print_userinfo(URL#sipurl.user, URL#sipurl.pass) ++
 	print_hostport(URL#sipurl.host, get_port(URL)) ++
 	print_parameters(URL#sipurl.param_pairs).
@@ -357,12 +350,13 @@ print_userinfo(User, Pass) ->
     escape_user(User) ++ ":" ++ escape_password(Pass) ++ "@".
 
 %%--------------------------------------------------------------------
-%% Function: print_hostport(Host, Port)
-%%           Host = string()
-%%           Port = integer() | none, (if sipurl contained no port
-%%                                     value)
-%% Descrip.: return a "host:port" string
-%% Returns : string()
+%% @spec    (Host, Port) -> string()
+%%
+%%            Host = string()
+%%            Port = integer() | none "(if sipurl contained no port value)"
+%%
+%% @doc     return a "host:port" string
+%% @end
 %%--------------------------------------------------------------------
 print_hostport(Host, none) ->
     Host;
@@ -387,10 +381,12 @@ escape_password(Str) ->
     escape_str(Str, IsNonEscapeChar).
 
 %%--------------------------------------------------------------------
-%% Function: escape_parameters(Str)
-%%           Str = string()
-%% Descrip.: Do SIP URL parameter escaping on Str.
-%% Returns : string()
+%% @spec    (Str) -> string()
+%%
+%%            Str = string()
+%%
+%% @doc     Do SIP URL parameter escaping on Str.
+%% @end
 %%--------------------------------------------------------------------
 escape_parameters(Str) ->
     IsNonEscapeChar = fun(Char) ->
@@ -413,18 +409,20 @@ escape_str(Str,IsNonEscapeChar) ->
 %% generate a escape hex encoding for a char
 escape(Char) ->
     [37 | hex:to_hex_string(Char)].	%% 37 is '%'
-    
+
 %%--------------------------------------------------------------------
-%% Function: url_is_equal(A, B, Compare)
-%%           A       = sipurl record()
-%%           B       = sipurl record()
-%%           Compare = [proto | user | pass | host | port | param]
-%% Descrip.: Return 'true' if A = B according to RFC 3261 chapter
-%%           19.1.4, in the aspects you list. Use url_is_equal/2 to
-%%           do a full compare.
-%% Returns : true | false
-%% Note    : assume that A and B are properly parsed sipurl records
-%%           with unencoded chars i.e. no hex encoded chars
+%% @spec    (A, B, Compare) -> true | false
+%%
+%%            A       = #sipurl{}
+%%            B       = #sipurl{}
+%%            Compare = [proto | user | pass | host | port | param]
+%%
+%% @doc     Return 'true' if A = B according to RFC 3261 chapter
+%%          19.1.4, in the aspects you list. Use url_is_equal/2 to do
+%%          a full compare. Note : assume that A and B are properly
+%%          parsed sipurl records with unencoded chars i.e. no hex
+%%          encoded chars
+%% @end
 %%--------------------------------------------------------------------
 url_is_equal(A, B, []) when is_record(A, sipurl), is_record(B, sipurl) ->
     true;
@@ -466,14 +464,16 @@ url_is_equal(A, B, [param | T]) when is_record(A, sipurl), is_record(B, sipurl) 
     end.
 
 %%--------------------------------------------------------------------
-%% Function: url_is_equal(A, B)
-%%           A = sipurl record()
-%%           B = sipurl record()
-%% Descrip.: return 'true' if A = B according to RFC 3261 chapter
-%%           19.1.4
-%% Returns : true | false
-%% Note    : assume that A and B are properly parsed sipurl records
-%%           with unencoded chars i.e. no hex encoded chars
+%% @spec    (A, B) -> true | false
+%%
+%%            A = #sipurl{}
+%%            B = #sipurl{}
+%%
+%% @doc     return 'true' if A = B according to RFC 3261 chapter
+%%          19.1.4 Note : assume that A and B are properly parsed
+%%          sipurl records with unencoded chars i.e. no hex encoded
+%%          chars
+%% @end
 %%--------------------------------------------------------------------
 url_is_equal(A, B) when record(A, sipurl), record(B, sipurl) ->
     %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -646,13 +646,17 @@ url_is_equal_header(_A, _B) ->
 %% I can't see any good way to solve this (hsten)
 
 %%--------------------------------------------------------------------
-%% Function: parse_url_with_default_protocol(Proto, URLstr)
-%%           Proto  = string()
-%%           URLstr = string()
-%% Descrip.: Try to parse URLstr (using @{link parse/1}), and if that
-%%           fails then try to parse Proto + UrlStr.
-%% Returns : URL | error
-%%           URL = sipurl record()
+%% @spec    (Proto, URLstr) ->
+%%            URL | error
+%%
+%%            Proto  = string()
+%%            URLstr = string()
+%%
+%%            URL = #sipurl{}
+%%
+%% @doc     Try to parse URLstr (using @{link parse/1}), and if that
+%%          fails then try to parse Proto + UrlStr.
+%% @end
 %%--------------------------------------------------------------------
 parse_url_with_default_protocol(Proto, URLstr) ->
     case sipurl:parse(URLstr) of
@@ -668,10 +672,12 @@ parse_url_with_default_protocol(Proto, URLstr) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_port(Sipurl)
-%%           Sipurl = sipurl record()
-%% Descrip.: return the port value in a consistent manner
-%% Returns : none | integer()
+%% @spec    (Sipurl) -> none | integer()
+%%
+%%            Sipurl = #sipurl{}
+%%
+%% @doc     return the port value in a consistent manner
+%% @end
 %%--------------------------------------------------------------------
 get_port(Sipurl) when is_record(Sipurl, sipurl) ->
     case Sipurl#sipurl.port of
@@ -685,15 +691,16 @@ get_port(Sipurl) when is_record(Sipurl, sipurl) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: new(AttrList)
-%%           AttrList = list() of {Id, Value}
-%%           Id       = proto | user | pass | host | port | param
-%%           Value    = term(), context specific - see set() below
-%% Descrip.: Create a sipurl record(). Value is context specific, see
-%%           @{link set/2} below.
-%% Returns : sipurl record()
-%% Note    : sipurl record() is defined in siprecords.hrl
-%% XXX headers are currently no supported
+%% @spec    (AttrList) -> #sipurl{}
+%%
+%%            AttrList = [{Id, Value}]
+%%            Id       = proto | user | pass | host | port | param
+%%            Value    = term() "context specific - see set() below"
+%%
+%% @doc     Create a sipurl record(). Value is context specific, see
+%%          @{link set/2} below. Note : sipurl record() is defined in
+%%          siprecords.hrl XXX headers are currently no supported
+%% @end
 %%--------------------------------------------------------------------
 new(AttrList) ->
     URLtemplate = #sipurl{proto="sip", user=none, pass=none, port=none,
@@ -702,28 +709,24 @@ new(AttrList) ->
     set(AttrList, URLtemplate).
 
 %%--------------------------------------------------------------------
-%% Function: set(AttrList, URL)
-%%           AttrList = list() of {Id, Value}
-%%           Id       = proto | user | pass | host | port | param
-%%           Value    = term()
-%% Descrip.: Update one or more attributes of a sipurl record().
-%%           Value is context specific, depending on Id :
-%%           ```
-%%           proto  = string(), may be of any case, is stored in a
-%%                    case insensitive manner, may be = "sip" |
-%%                    "tel" (not yet supported) |
-%%                    the protocol to use
-%%           user   = string(), case sensitive user name
-%%           pass   = string(), case sensitive password
-%%           host   = string(), usually a domain name, will be stored
-%%                    in a case insensitive manner
-%%           port   = integer()
-%%           param  = list() of "name=value" string() |
-%%                    url_param record()
-%%           '''
-%% Returns : sipurl record()
-%% Note    : sipurl record() is defined in siprecords.hrl
-%% XXX headers are currently no supported
+%% @spec    (AttrList, URL) -> #sipurl{}
+%%
+%%            AttrList = [{Id, Value}]
+%%            Id       = proto | user | pass | host | port | param
+%%            Value    = term()
+%%
+%% @doc     Update one or more attributes of a sipurl record(). Value
+%%          is context specific, depending on Id : ``` proto =
+%%          string(), may be of any case, is stored in a case
+%%          insensitive manner, may be = "sip" | "tel" (not yet
+%%          supported) | the protocol to use user = string(), case
+%%          sensitive user name pass = string(), case sensitive
+%%          password host = string(), usually a domain name, will be
+%%          stored in a case insensitive manner port = integer()
+%%          param = list() of "name=value" string() | url_param
+%%          record() ''' Note : sipurl record() is defined in
+%%          siprecords.hrl XXX headers are currently no supported
+%% @end
 %%--------------------------------------------------------------------
 
 %% PROTO
@@ -776,9 +779,11 @@ set([], URL) when is_record(URL, sipurl) ->
     URL.
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     %% unescape_str/1
@@ -1245,11 +1250,13 @@ is_password_without_escape(Char) ->
     is_unreserved(Char).
 
 %%--------------------------------------------------------------------
-%% Function: is_password(Str)
-%%           Str = string() | none
-%% Descrip.: parse password string, return 'true' if it conforms to
-%%           the format specified in RFC3261 chapter 25.1 p218
-%% Returns : true | false
+%% @spec    (Str) -> true | false
+%%
+%%            Str = string() | none
+%%
+%% @doc     parse password string, return 'true' if it conforms to the
+%%          format specified in RFC3261 chapter 25.1 p218
+%% @end
 %%--------------------------------------------------------------------
 is_password(none) -> true;
 is_password([]) -> true;
@@ -1271,11 +1278,13 @@ is_password(_) ->
     false.
 
 %%--------------------------------------------------------------------
-%% Function: is_user(Str)
-%%           Str = string() | none
-%% Descrip.: parse user string, return 'true' if it conforms to
-%%           the format specified in RFC3261 chapter 25.1 p218
-%% Returns : true | false
+%% @spec    (Str) -> true | false
+%%
+%%            Str = string() | none
+%%
+%% @doc     parse user string, return 'true' if it conforms to the
+%%          format specified in RFC3261 chapter 25.1 p218
+%% @end
 %%--------------------------------------------------------------------
 is_user(none) -> true;
 is_user([]) -> true;
@@ -1287,12 +1296,14 @@ is_user([$%, C1, C2 | Str]) ->
 			    false.
 
 %%--------------------------------------------------------------------
-%% Function: is_parameters(Parameters)
-%%           Parameters = string()
-%% Descrip.: parse uri-parameter string, return true if there are no
-%%           duplicate ";" or "=" and all other chars are correct and
-%%           properly escaped
-%% Returns : true | false
+%% @spec    (Parameters) -> true | false
+%%
+%%            Parameters = string()
+%%
+%% @doc     parse uri-parameter string, return true if there are no
+%%          duplicate ";" or "=" and all other chars are correct and
+%%          properly escaped
+%% @end
 %%--------------------------------------------------------------------
 %% this is a redundant check but reduces the amount of work done to
 %% check for empty Parameters strings

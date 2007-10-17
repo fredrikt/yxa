@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : servertransaction.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: A server transaction gen_server.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      A server transaction gen_server.
 %%%
-%%% Created : 05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    05 Feb 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%
 %%% Note    : Perhaps we should generate a 500 if we don't get adopted
 %%%           in a few seconds from when we start?
@@ -71,6 +72,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  branch,		%% string(), our branch identifier
 	  logtag,		%% string(), prefix to use when logging
@@ -100,11 +103,13 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: Starts the server
-%% Returns : gen_server:start_link/4
+%% @spec    (Request, YxaCtx) -> term()
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     Starts the server
+%% @end
 %%--------------------------------------------------------------------
 start_link(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     %% It is intentional to call gen_server:start(...) here even though
@@ -123,13 +128,17 @@ start_link(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, 
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({Request, YxaCtx, Parent})
-%%           Request   = request record()
-%%           YxaCtx    = yxa_ctx record()
-%% Descrip.: Initiates the server transaction gen_server
-%% Returns : {ok, State, Timeout} |
-%%           ignore               |
-%%           {stop, Reason}
+%% @spec    ({Request, YxaCtx, Parent}) ->
+%%            {ok, State, Timeout} |
+%%            ignore               |
+%%            {stop, Reason}
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     Initiates the server transaction gen_server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -196,7 +205,7 @@ init2({Request, YxaCtx, Branch, Parent}) when is_record(Request, request) ->
     IsRel = sipsocket:is_reliable_transport(Socket),
 
     State = #state{branch	= Branch,
-		   logtag	= LogTag, 
+		   logtag	= LogTag,
 		   socket	= Socket,
 		   is_rel_sock	= IsRel,
 		   request	= Request,
@@ -238,47 +247,61 @@ init2({Request, YxaCtx, Branch, Parent}) when is_record(Request, request) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call({get_branch}, From, State)
-%% Descrip.: This is a request to get our generated branch.
-%% Returns : {reply, Reply, State, ?TIMEOUT} |
-%%           {stop, Reason, Reply, State}      (terminate/2 is called)
-%%           Reply  = {ok, Branch}
-%%           Branch = string()
+%% @spec    ({get_branch}, From, State) ->
+%%            {reply, Reply, State, Timeout::integer()} |
+%%            {stop, Reason, Reply, State}
+%%
+%%            Reply  = {ok, Branch}
+%%            Branch = string()
+%%
+%% @doc     This is a request to get our generated branch.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({get_branch}, From, State) ->
     check_quit({reply, {ok, State#state.branch}, State, ?TIMEOUT}, From);
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({set_report_to, Pid}, From, State)
-%%           Pid = pid()
-%% Descrip.: This is a request to set our report_to. This is typically
-%%           done by a TU (Transaction User (YXA application)) that
-%%           wants to receive notice if we terminate etc.
-%%           We can only report to one process, so this function will
-%%           fail if our report_to is already set. It will also fail
-%%           if we have already been cancelled.
-%% Returns : {reply, Reply, State, ?TIMEOUT} |
-%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
-%%           Reply  = ok               |
-%%                    {error, Error}   |
-%%                    {ignore, Reason} |
-%%           Error  = string()
-%%           Reason = cancelled | completed
-%% Note    : If we already have a report_to, we will reject the call
-%%           even if report_to is the same pid as the call asks us to
-%%           set it to. This might be relaxed later, but for now you
-%%           should not try to adopt a server transcation twice.
+%% @spec    ({set_report_to, Pid}, From, State) ->
+%%            {reply, Reply, State, Timeout::integer()} |
+%%            {stop, Reason, Reply, State}    
+%%
+%%            Pid = pid()
+%%
+%%            Reply  = ok               |
+%%                     {error, Error}   |
+%%                     {ignore, Reason}
+%%            Error  = string()
+%%            Reason = cancelled | completed
+%%
+%% @doc     This is a request to set our report_to. This is typically
+%%          done by a TU (Transaction User (YXA application)) that
+%%          wants to receive notice if we terminate etc. We can only
+%%          report to one process, so this function will fail if our
+%%          report_to is already set. It will also fail if we have
+%%          already been cancelled. Note : If we already have a
+%%          report_to, we will reject the call even if report_to is
+%%          the same pid as the call asks us to set it to. This might
+%%          be relaxed later, but for now you should not try to adopt
+%%          a server transcation twice.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({set_report_to, Pid}, _From, #state{report_to=RTo}=State) when is_pid(Pid), is_pid(RTo) ->
     {reply, {error, "Server transaction already adopted"}, State, ?TIMEOUT};
@@ -304,17 +327,22 @@ handle_call({set_report_to, Pid}, From, #state{report_to=undefined}=State) when 
     check_quit(Reply, From);
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(change_parent, FromPid, ToPid}, From, State)
-%%           FromPid = pid()
-%%           ToPid   = pid()
-%% Descrip.: Change our parent. Internal to the transaction layer -
-%%           used when a dialog controller is handed the request
-%%           instead of the YXA application's request/3 function being
-%%           invoked.
-%% Returns : {reply, Reply, State, ?TIMEOUT} |
-%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
-%%           Reply  = {ok, ToTag}
-%%           ToTag = string()
+%% @spec    (change_parent, FromPid, ToPid}, From, State) ->
+%%            {reply, Reply, State, Timeout::integer()} |
+%%            {stop, Reason, Reply, State}    
+%%
+%%            FromPid = pid()
+%%            ToPid   = pid()
+%%
+%%            Reply = {ok, ToTag}
+%%            ToTag = string()
+%%
+%% @doc     Change our parent. Internal to the transaction layer -
+%%          used when a dialog controller is handed the request
+%%          instead of the YXA application's request/3 function being
+%%          invoked.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({change_parent, FromPid, ToPid}, From, #state{parent = FromPid} = State) when is_pid(ToPid) ->
     LogTag = State#state.logtag,
@@ -325,15 +353,19 @@ handle_call({change_parent, FromPid, ToPid}, From, #state{parent = FromPid} = St
     check_quit(Reply, From);
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(get_my_to_tag, From, State)
-%% Descrip.: Return our To-tag. Functionality required for making
-%%           UAC/UAS applications, which must be able to send other
-%%           requests with the same to-tag (requests inside the same
-%%           dialog).
-%% Returns : {reply, Reply, State, ?TIMEOUT} |
-%%           {stop, Reason, Reply, State}    | (terminate/2 is called)
-%%           Reply  = {ok, ToTag}
-%%           ToTag = string()
+%% @spec    (get_my_to_tag, From, State) ->
+%%            {reply, Reply, State, Timeout::integer()} |
+%%            {stop, Reason, Reply, State}    
+%%
+%%            Reply = {ok, ToTag}
+%%            ToTag = string()
+%%
+%% @doc     Return our To-tag. Functionality required for making
+%%          UAC/UAS applications, which must be able to send other
+%%          requests with the same to-tag (requests inside the same
+%%          dialog).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(get_my_to_tag, _From, State) ->
     Reply = {reply, {ok, State#state.my_to_tag}, State, ?TIMEOUT},
@@ -348,22 +380,31 @@ handle_call(Request, From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast({siprequest, Request, Origin}, State)
-%%           Request = request record()
-%%           Origin  = siporigin record()
-%% Descrip.: The transaction layer has received a request that matches
-%%           this server transaction. It should be either a resend of
-%%           the previous request, or an ACK that matches a non-2xx
-%%           response to INVITE that we are sending reliably.
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    ({siprequest, Request, Origin}, State) ->
+%%            {noreply, NewState, Timeout::integer()}
+%%
+%%            Request = #request{}
+%%            Origin  = #siporigin{}
+%%
+%% @doc     The transaction layer has received a request that matches
+%%          this server transaction. It should be either a resend of
+%%          the previous request, or an ACK that matches a non-2xx
+%%          response to INVITE that we are sending reliably.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({siprequest, Request, Origin}, State) when is_record(Request, request),
 						       is_record(Origin, siporigin) ->
@@ -409,15 +450,18 @@ handle_cast({siprequest, Request, Origin}, State) when is_record(Request, reques
     check_quit({noreply, NewState, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({{create_response, Status, Reason,
-%%                         ExtraHeaders, RBody}, State)
-%%           Status       = integer(), SIP status code
-%%           Reason       = string(), SIP reason phrase
-%%           ExtraHeaders = list() of {Key, ValueList} tuples
-%%           RBody        = binary(), body to use in response
-%% Descrip.: The TU (transaction user) instructs us to create a
-%%           response to our request (and send it).
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    ({{create_response, Status, Reason, ExtraHeaders, RBody},
+%%          State) -> {noreply, NewState, Timeout::integer()}
+%%
+%%            Status       = integer() "SIP status code"
+%%            Reason       = string() "SIP reason phrase"
+%%            ExtraHeaders = [{Key, ValueList} tuples]
+%%            RBody        = binary() "body to use in response"
+%%
+%% @doc     The TU (transaction user) instructs us to create a
+%%          response to our request (and send it).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({create_response, Status, Reason, ExtraHeaders, RBody}, State)
   when is_integer(Status), is_list(Reason), is_list(ExtraHeaders), is_binary(RBody) ->
@@ -426,23 +470,31 @@ handle_cast({create_response, Status, Reason, ExtraHeaders, RBody}, State)
     check_quit({noreply, NewState1, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({forwardresponse, Response}, State)
-%%           Response = response record()
-%% Descrip.: The TU (transaction user) instructs us to proxy a
-%%           response we have received from some other transaction as
-%%           a response to this transaction.
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    ({forwardresponse, Response}, State) ->
+%%            {noreply, NewState, Timeout::integer()}
+%%
+%%            Response = #response{}
+%%
+%% @doc     The TU (transaction user) instructs us to proxy a response
+%%          we have received from some other transaction as a
+%%          response to this transaction.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({forwardresponse, Response}, State) when is_record(Response, response) ->
     {ok, NewState1} = do_response(forwarded, Response, State),
     check_quit({noreply, NewState1, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({expired}, State)
-%% Descrip.: The transaction layer tells us that we are overdue and
-%%           should exit now.
-%% Returns : {stop, Reason, State}
-%%           Reason = string()
+%% @spec    ({expired}, State) ->
+%%            {stop, Reason, State}
+%%
+%%            Reason = string()
+%%
+%% @doc     The transaction layer tells us that we are overdue and
+%%          should exit now.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({expired}, State) ->
     LogTag = State#state.logtag,
@@ -450,16 +502,20 @@ handle_cast({expired}, State) ->
     check_quit({stop, "Server transaction expired", State});
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({cancelled, ExtraHeaders}, State)
-%%           ExtraHeaders = list() of {Key, ValueList} tuples
-%% Descrip.: The transaction layer tells us that it has received a
-%%           CANCEL matching our request. If our report_to is set, we
-%%           inform the TU and let it do whatever it wants before
-%%           instructing us to send a 487 response. If report_to is
-%%           NOT set, we answer 487 right here and remember the fact
-%%           that we have been cancelled so that we can inform the TU
-%%           when it tries to adopt us.
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    ({cancelled, ExtraHeaders}, State) ->
+%%            {noreply, NewState, Timeout::integer()}
+%%
+%%            ExtraHeaders = [{Key, ValueList} tuples]
+%%
+%% @doc     The transaction layer tells us that it has received a
+%%          CANCEL matching our request. If our report_to is set, we
+%%          inform the TU and let it do whatever it wants before
+%%          instructing us to send a 487 response. If report_to is
+%%          NOT set, we answer 487 right here and remember the fact
+%%          that we have been cancelled so that we can inform the TU
+%%          when it tries to adopt us.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({cancelled, ExtraHeaders}, State) ->
     LogTag = State#state.logtag,
@@ -498,9 +554,11 @@ handle_cast({cancelled, ExtraHeaders}, State) ->
     check_quit(Reply);
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast({quit}, State)
-%% Descrip.: Someone tells us it is time to quit now.
-%% Returns : {stop, normal, State}
+%% @spec    ({quit}, State) -> {stop, normal, State}
+%%
+%% @doc     Someone tells us it is time to quit now.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast({quit}, State) ->
     LogTag = State#state.logtag,
@@ -516,22 +574,31 @@ handle_cast(Msg, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: Timeout received. Check if we have report_to set, and if
-%%           so check if that process is still alive. Try to find a
-%%           reason to terminate (better than having processes linger
-%%           forever).
-%% Returns : {noreply, State, ?TIMEOUT} |
-%%           {stop, Reason, State}            (terminate/2 is called)
-%%           Reason = string()
+%% @spec    (timeout, State) ->
+%%            {noreply, State, Timeout::integer()} |
+%%            {stop, Reason, State}
+%%
+%%            Reason = string()
+%%
+%% @doc     Timeout received. Check if we have report_to set, and if
+%%          so check if that process is still alive. Try to find a
+%%          reason to terminate (better than having processes linger
+%%          forever).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     LogTag = State#state.logtag,
@@ -583,12 +650,16 @@ handle_info(timeout, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({siptimer, TRef, TDesc}, State)
-%%           TRef  = term(), siptimer reference
-%%           TDesc = string(), description of timer event
-%% Descrip.: One of our siptimers has fired. Find it in our list and
-%%           invoke process_timer/2.
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    ({siptimer, TRef, TDesc}, State) ->
+%%            {noreply, NewState, Timeout::integer()}
+%%
+%%            TRef  = term() "siptimer reference"
+%%            TDesc = string() "description of timer event"
+%%
+%% @doc     One of our siptimers has fired. Find it in our list and
+%%          invoke process_timer/2.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({siptimer, TRef, TDesc}, State) ->
     LogTag = State#state.logtag,
@@ -614,13 +685,17 @@ handle_info({siptimer, TRef, TDesc}, State) ->
     check_quit({noreply, NewState, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({'EXIT', Parent, Reason}, State)
-%%           Parent = pid()
-%%           Reason = term()
-%% Descrip.: Handle trapped EXIT signal from Parent. If we haven't
-%%           sent a final response yet, we will generate a
-%%           '500 Server Internal Error'.
-%% Returns : {noreply, NewState, ?TIMEOUT}
+%% @spec    ({'EXIT', Parent, Reason}, State) ->
+%%            {noreply, NewState, Timeout::integer()}
+%%
+%%            Parent = pid()
+%%            Reason = term()
+%%
+%% @doc     Handle trapped EXIT signal from Parent. If we haven't sent
+%%          a final response yet, we will generate a '500 Server
+%%          Internal Error'.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -661,9 +736,11 @@ handle_info(Info, State) ->
     check_quit({noreply, State, ?TIMEOUT}).
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     LogTag = State#state.logtag,
@@ -684,9 +761,11 @@ terminate(Reason, State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -697,26 +776,31 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: check_quit(Res)
-%%           Res  = term(), gen_server:call/cast/info() return value
+%% @spec    (Res) -> term()
+%%
+%%            Res = term() "gen_server:call/cast/info() return value"
+%%
 %% @equiv    check_quit(Res, none)
+%% @end
 %%--------------------------------------------------------------------
 check_quit(Res) ->
     check_quit(Res, none).
 
 %%--------------------------------------------------------------------
-%% Function: check_quit(Res, From)
-%%           Res  = term(), gen_server:call/cast/info() return value
-%%           From = term(), gen_server from-value | none
-%% Descrip.: Extract the state record() from Res, and check if it's
-%%           sipstate is 'terminated'. If it is then turn Res into a
-%%           stop signal, but if Res was {reply, ...} execute a
-%%           gen_server:reply() first.
-%% Returns : {noreply, State}          |
-%%           {stop, Reason, State}            (terminate/2 is called)
-%% Note    : Not all variants of gen_server call/cast/info return
-%%           values are covered in these functions - only the ones we
-%%           actually use!
+%% @spec    (Res, From) ->
+%%            {noreply, State}          |
+%%            {stop, Reason, State}
+%%
+%%            Res  = term() "gen_server:call/cast/info() return value"
+%%            From = term() "gen_server from-value | none"
+%%
+%% @doc     Extract the state record() from Res, and check if it's
+%%          sipstate is 'terminated'. If it is then turn Res into a
+%%          stop signal, but if Res was {reply, ...} execute a
+%%          gen_server:reply() first. Note : Not all variants of
+%%          gen_server call/cast/info return values are covered in
+%%          these functions - only the ones we actually use!
+%% @end
 %%--------------------------------------------------------------------
 check_quit(Res, From) ->
     case Res of
@@ -766,11 +850,16 @@ send_reply(Reply, To, State) when is_record(State, state)   ->
     gen_server:reply(To, Reply).
 
 %%--------------------------------------------------------------------
-%% Function: process_timer(Timer, State)
-%%           Timer = siptimer record()
-%%           State = state record()
-%% Descrip.: Process fired siptimer events.
-%% Returns : NewState = state record()
+%% @spec    (Timer, State) ->
+%%            NewState
+%%
+%%            Timer = #siptimer{}
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Process fired siptimer events.
+%% @end
 %%--------------------------------------------------------------------
 process_timer(Timer, State) when is_record(State, state) ->
     [TRef, Signal, Description] = siptimer:extract([ref, appsignal, description], Timer),
@@ -779,12 +868,17 @@ process_timer(Timer, State) when is_record(State, state) ->
     process_timer2(Signal, Timer, State).
 
 %%--------------------------------------------------------------------
-%% Function: process_timer2({resendresponse}, Timer, State)
-%%           Timer = siptimer record()
-%%           State = state record()
-%% Descrip.: We should resend a response, and arrange for it to be
-%%           resent once again (unless it gets ACKed).
-%% Returns : NewState = state record()
+%% @spec    ({resendresponse}, Timer, State) ->
+%%            NewState
+%%
+%%            Timer = #siptimer{}
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     We should resend a response, and arrange for it to be
+%%          resent once again (unless it gets ACKed).
+%% @end
 %%--------------------------------------------------------------------
 process_timer2({resendresponse}, Timer, State) when is_record(State, state) ->
     [Timeout] = siptimer:extract([timeout], Timer),
@@ -822,12 +916,17 @@ process_timer2({resendresponse}, Timer, State) when is_record(State, state) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: process_timer2({resendresponse_timeout}, Timer, State)
-%%           Timer = siptimer record()
-%%           State = state record()
-%% Descrip.: We have been sending and sending our response. Enough is
-%%           enough, terminate transaction.
-%% Returns : NewState = state record()
+%% @spec    ({resendresponse_timeout}, Timer, State) ->
+%%            NewState
+%%
+%%            Timer = #siptimer{}
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     We have been sending and sending our response. Enough is
+%%          enough, terminate transaction.
+%% @end
 %%--------------------------------------------------------------------
 process_timer2({resendresponse_timeout}, Timer, State) when is_record(State, state) ->
     [Timeout] = siptimer:extract([timeout], Timer),
@@ -843,11 +942,16 @@ process_timer2({resendresponse_timeout}, Timer, State) when is_record(State, sta
     enter_sip_state(terminated, State);
 
 %%--------------------------------------------------------------------
-%% Function: process_timer2({terminate_transaction}, Timer, State)
-%%           Timer = siptimer record()
-%%           State = state record()
-%% Descrip.: Signal that it is time to terminate this transaction.
-%% Returns : NewState = state record()
+%% @spec    ({terminate_transaction}, Timer, State) ->
+%%            NewState
+%%
+%%            Timer = #siptimer{}
+%%            State = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Signal that it is time to terminate this transaction.
+%% @end
 %%--------------------------------------------------------------------
 process_timer2({terminate_transaction}, _Timer, State) ->
     LogTag = State#state.logtag,
@@ -880,18 +984,22 @@ process_timer2(Signal, Timer, State) when is_record(State, state) ->
     State.
 
 %%--------------------------------------------------------------------
-%% Function: do_response(Created, Response, State)
-%%           Created = created | forwarded
-%%           Timer   = siptimer record()
-%%           State   = state record()
-%% Descrip.: We have a response to send. It is either created by our
-%%           TU (Transaction User (YXA application)) or it is a
-%%           response we have received and should proxy. Regardless of
-%%           which, we need to run it through our state machine to
-%%           see if we should change state. Do that, and pass this
-%%           response to send_response/3.
-%% Returns : {ok, NewState}
-%%           NewState = state record()
+%% @spec    (Created, Response, State) ->
+%%            {ok, NewState}
+%%
+%%            Created = created | forwarded
+%%            Timer   = #siptimer{}
+%%            State   = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     We have a response to send. It is either created by our TU
+%%          (Transaction User (YXA application)) or it is a response
+%%          we have received and should proxy. Regardless of which,
+%%          we need to run it through our state machine to see if we
+%%          should change state. Do that, and pass this response to
+%%          send_response/3.
+%% @end
 %%--------------------------------------------------------------------
 do_response(Created, Response, State) when is_record(State, state), is_record(Response, response),
 					   Created == created; Created == forwarded ->
@@ -955,17 +1063,18 @@ event_final_response(_Created, _State, _Status) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: store_transaction_result(SipState, Request, Status,
-%%                                    Reason, LogTag)
-%%           SipState = completed | atom()
-%%           Request  = requets record()
-%%           Status   = integer(), SIP status code
-%%           Reason   = string(), SIP reason phrase
-%%           LogTag   = string(), log prefix if we fail 
-%% Descrip.: If SipState == completed, store this response with the
-%%           transaction layer. This information is only used for
-%%           debugging/informational purposes.
-%% Returns : ok | error
+%% @spec    (SipState, Request, Status, Reason, LogTag) -> ok | error
+%%
+%%            SipState = completed | atom()
+%%            Request  = #requets{}
+%%            Status   = integer() "SIP status code"
+%%            Reason   = string() "SIP reason phrase"
+%%            LogTag   = string() "log prefix if we fail"
+%%
+%% @doc     If SipState == completed, store this response with the
+%%          transaction layer. This information is only used for
+%%          debugging/informational purposes.
+%% @end
 %%--------------------------------------------------------------------
 store_transaction_result(completed, Request, Status, Reason, LogTag) ->
     RStr = lists:concat([Status, " ", Reason]),
@@ -980,17 +1089,21 @@ store_transaction_result(_SipState, _Request, _Status, _Reason, _LogTag) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: send_response_statemachine(Method, Status, SipState)
-%%           Method   = string(), SIP request method
-%%           Status   = integer(), SIP status code (received response)
-%%           SipState = trying | proceeding | completed | terminated
-%% Descrip.: State machine to decide what to do with a response we are
-%%           going to send. Might choose not to send the response, and
-%%           tells whether or not we should set up retransmission
-%%           timers. Also says what we should set our SIP state to.
-%% Returns : {send, Reliably, SipState} | ignore
-%%           Reliably = true | false, send response reliably or not
-%%           State    = trying | proceeding | completed | terminated
+%% @spec    (Method, Status, SipState) ->
+%%            {send, Reliably, SipState} | ignore
+%%
+%%            Method   = string() "SIP request method"
+%%            Status   = integer() "SIP status code (received response)"
+%%            SipState = trying | proceeding | completed | terminated
+%%
+%%            Reliably = true | false "send response reliably or not"
+%%            State    = trying | proceeding | completed | terminated
+%%
+%% @doc     State machine to decide what to do with a response we are
+%%          going to send. Might choose not to send the response, and
+%%          tells whether or not we should set up retransmission
+%%          timers. Also says what we should set our SIP state to.
+%% @end
 %%--------------------------------------------------------------------
 send_response_statemachine(Method, Status, trying) when Status == 100 ->
     logger:log(debug, "UAS decision: Requested to send 1xx response ~p to ~s when in state 'trying' - " ++
@@ -1045,10 +1158,11 @@ send_response_statemachine(Method, Status, terminated) when Status >= 100, Statu
     ignore.
 
 %%--------------------------------------------------------------------
-%% Function: send_response_non_invite_check(Method, Status, State)
-%% Descrip.: Check the plan to send a response against the rules in
-%%           RFC4320 (SIP Non-INVITE Actions) which updates RFC3261.
-%% Returns : ignore | send
+%% @spec    (Method, Status, State) -> ignore | send
+%%
+%% @doc     Check the plan to send a response against the rules in
+%%          RFC4320 (SIP Non-INVITE Actions) which updates RFC3261.
+%% @end
 %%--------------------------------------------------------------------
 send_response_non_invite_check(Method, 100, State) when Method /= "INVITE" ->
     T2hasFired = (State#state.nit_100 == true),
@@ -1069,7 +1183,7 @@ send_response_non_invite_check(Method, 100, State) when Method /= "INVITE" ->
 		       "over non-reliable transport based on the rules in RFC4320 (which updates RFC3261)", [LogTag]),
 	    ignore
     end;
-       
+
 send_response_non_invite_check(Method, Status, State) when Method /= "INVITE", Status >= 101, Status =< 199 ->
     %% "An SIP element MUST NOT send any provisional response with a Status-
     %%  Code other than 100 to a non-INVITE request." RFC4320 #4.1 (Action 1)
@@ -1091,14 +1205,17 @@ send_response_non_invite_check(_Method, _Status, _State) ->
     send.
 
 %%--------------------------------------------------------------------
-%% Function: send_response(Response, SendReliably, State)
-%% Descrip.: This server transaction should answer something. If it is
-%%           a final, but non-2xx, response to INVITE we also must
-%%           store the To-tag we used with the transaction layer so
-%%           that it can correctly match the ACK to this server
-%%           transaction.
-%% Returns : {ok, NewState}
-%%           NewState = state record()
+%% @spec    (Response, SendReliably, State) ->
+%%            {ok, NewState}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     This server transaction should answer something. If it is
+%%          a final, but non-2xx, response to INVITE we also must
+%%          store the To-tag we used with the transaction layer so
+%%          that it can correctly match the ACK to this server
+%%          transaction.
+%% @end
 %%--------------------------------------------------------------------
 send_response(Response, SendReliably, State) when is_record(Response, response), is_record(State, state) ->
     {Status, Reason} = {Response#response.status, Response#response.reason},
@@ -1123,7 +1240,7 @@ send_response(Response, SendReliably, State) when is_record(Response, response),
 		{ok, T1} = yxa_config:get_env(timerT1),
 		%% "For unreliable transports, timer G is set to fire in T1 seconds,
 		%%  and is not set to fire for reliable transports." RFC3261 #17.2.1
-		NewState2 = 
+		NewState2 =
 		    case State#state.is_rel_sock of
 			true ->
 			    State;
@@ -1192,24 +1309,38 @@ add_timer(Timeout, Description, AppSignal, State) when is_record(State, state) -
 del_timer(AppSignal, State) ->
     NewTL = siptimer:cancel_timers_with_appsignal(AppSignal, State#state.timerlist),
     State#state{timerlist = NewTL}.
-    
+
 %%--------------------------------------------------------------------
-%% Function: enter_sip_state(SipState, State)
-%%           SipState = trying | proceeding | completed | confirmed | terminated
-%%           State    = state record()
-%% Descrip.: We are already in SIP state SipState, just return.
-%% Returns : State = state record()
+%% @spec    (SipState, State) ->
+%%            State
+%%
+%%            SipState = trying     |
+%%                       proceeding |
+%%                       completed  |
+%%                       confirmed  |
+%%                       terminated
+%%            State    = #state{}
+%%
+%%            State = #state{}
+%%
+%% @doc     We are already in SIP state SipState, just return.
+%% @end
 %%--------------------------------------------------------------------
 enter_sip_state(SipState, #state{sipstate=SipState}=State) ->
     State;
 
 %%--------------------------------------------------------------------
-%% Function: enter_sip_state(proceeding, State)
-%%           State    = state record()
-%% Descrip.: Check if we are a non-INVITE transaction. If so, we might
-%%           need to cancel the {send_nit_100} timer because it is no
-%%           longer needed.
-%% Returns : State = state record()
+%% @spec    (proceeding, State) ->
+%%            State
+%%
+%%            State = #state{}
+%%
+%%            State = #state{}
+%%
+%% @doc     Check if we are a non-INVITE transaction. If so, we might
+%%          need to cancel the {send_nit_100} timer because it is no
+%%          longer needed.
+%% @end
 %%--------------------------------------------------------------------
 enter_sip_state(proceeding, State) ->
     Method = (State#state.request)#request.method,
@@ -1224,13 +1355,18 @@ enter_sip_state(proceeding, State) ->
 	false ->
 	    NewState1
     end;
-	    
+
 %%--------------------------------------------------------------------
-%% Function: enter_sip_state(completed, State)
-%%           State    = state record()
-%% Descrip.: Check if we are a non-INVITE transaction. If so, set up
-%%           Timer J to terminate this transaction in 64 * T1 ms.
-%% Returns : State = state record()
+%% @spec    (completed, State) ->
+%%            State
+%%
+%%            State = #state{}
+%%
+%%            State = #state{}
+%%
+%% @doc     Check if we are a non-INVITE transaction. If so, set up
+%%          Timer J to terminate this transaction in 64 * T1 ms.
+%% @end
 %%--------------------------------------------------------------------
 enter_sip_state(completed, State) when is_record(State, state) ->
     LogTag = State#state.logtag,
@@ -1256,13 +1392,18 @@ enter_sip_state(completed, State) when is_record(State, state) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: enter_sip_state(confirmed, State)
-%%           State    = state record()
-%% Descrip.: We are an INVITE transaction that has sent a reply which
-%%           has been ACK:ed. Stay alive for a few seconds (default 5)
-%%           to absorb any additional ACK:s that might arrive if we've
-%%           sent our response more than once.
-%% Returns : State = state record()
+%% @spec    (confirmed, State) ->
+%%            State
+%%
+%%            State = #state{}
+%%
+%%            State = #state{}
+%%
+%% @doc     We are an INVITE transaction that has sent a reply which
+%%          has been ACK:ed. Stay alive for a few seconds (default 5)
+%%          to absorb any additional ACK:s that might arrive if we've
+%%          sent our response more than once.
+%% @end
 %%--------------------------------------------------------------------
 enter_sip_state(confirmed, State) when is_record(State, state) ->
     LogTag = State#state.logtag,
@@ -1284,13 +1425,18 @@ enter_sip_state(NewSipState, State) when is_record(State, state), NewSipState ==
     State#state{sipstate=NewSipState}.
 
 %%--------------------------------------------------------------------
-%% Function: process_received_ack(State)
-%%           State    = state record()
-%% Descrip.: We are an INVITE transaction that has just received an
-%%           ACK. Check that we have actually sent a final response,
-%%           and then cancel any response resend siptimers and go into
-%%           SIP state 'confirmed'.
-%% Returns : State = state record()
+%% @spec    (State) ->
+%%            State
+%%
+%%            State = #state{}
+%%
+%%            State = #state{}
+%%
+%% @doc     We are an INVITE transaction that has just received an
+%%          ACK. Check that we have actually sent a final response,
+%%          and then cancel any response resend siptimers and go into
+%%          SIP state 'confirmed'.
+%% @end
 %%--------------------------------------------------------------------
 process_received_ack(State) when is_record(State, state), is_record(State#state.response, response) ->
     Request = State#state.request,
@@ -1327,18 +1473,23 @@ process_received_ack(State) when is_record(State, state) ->
     State.
 
 %%--------------------------------------------------------------------
-%% Function: make_response(Status, Reason, RBody, ExtraHeaders,
-%%                         ViaParameters, State)
-%%           Status        = integer(), SIP status code
-%%           Reason        = string(), SIP reason phrase
-%%           RBody         = integer(), body of response
-%%           ExtraHeaders  = list() of {Key, ValueList}
-%%           ViaParameters = term()
-%%           State         = state record()
-%% Descrip.: If there is no To-tag in our requests header, put ours
-%%           there. Then use siprequest:make_response/7 to create a
-%%           response from our requests headers.
-%% Returns : Response = response record()
+%% @spec    (Status, Reason, RBody, ExtraHeaders, ViaParameters,
+%%          State) ->
+%%            Response
+%%
+%%            Status        = integer() "SIP status code"
+%%            Reason        = string() "SIP reason phrase"
+%%            RBody         = integer() "body of response"
+%%            ExtraHeaders  = [{Key, ValueList}]
+%%            ViaParameters = term()
+%%            State         = #state{}
+%%
+%%            Response = #response{}
+%%
+%% @doc     If there is no To-tag in our requests header, put ours
+%%          there. Then use siprequest:make_response/7 to create a
+%%          response from our requests headers.
+%% @end
 %%--------------------------------------------------------------------
 make_response(100, Reason, RBody, ExtraHeaders, ViaParameters, State)
   when is_record(State, state), is_list(Reason), is_binary(RBody), is_list(ExtraHeaders) ->
@@ -1372,14 +1523,15 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
-%% Note    : Not much is tested in this module at the moment because
-%%           almost every function includes communication with the
-%%           outside world (receiving or sending signals/SIP-messages)
-%%           which the current test framework does not allow testing
-%%           of.
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback Note : Not much is tested in this module
+%%          at the moment because almost every function includes
+%%          communication with the outside world (receiving or
+%%          sending signals/SIP-messages) which the current test
+%%          framework does not allow testing of.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     Test_OrigRequest =

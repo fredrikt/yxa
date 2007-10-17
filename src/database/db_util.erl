@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : db_util.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: This module contains various usefull functions used to
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      This module contains various usefull functions used to
 %%%           handle mnesia tables
 %%%
-%%% Created : 22 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    22 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 %%--------------------------------------------------------------------
 
@@ -44,12 +45,14 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: tab_to_list(MnesiaTab)
-%%           MnesiaTab = atom(), the name of a mnesia table
-%% Descrip.: return a list with all entries in MnesiaTab
-%% Returns : list() of records
-%% Note    : This is a time and memory consuming operation if the
-%%           table is large
+%% @spec    (MnesiaTab) -> [records]
+%%
+%%            MnesiaTab = atom() "the name of a mnesia table"
+%%
+%% @doc     return a list with all entries in MnesiaTab Note : This is
+%%          a time and memory consuming operation if the table is
+%%          large
+%% @end
 %%--------------------------------------------------------------------
 tab_to_list(MnesiaTab) ->
     F = fun() ->
@@ -62,10 +65,12 @@ tab_to_list(MnesiaTab) ->
     lists:reverse(L).
 
 %%--------------------------------------------------------------------
-%% Function: delete_all_entries(MnesiaTab)
-%%           MnesiaTab = atom(), the name of a mnesia table
-%% Descrip.: delete all entries in the mnesia table MnesiaTab
-%% Returns : mnesia:transaction()
+%% @spec    (MnesiaTab) -> term()
+%%
+%%            MnesiaTab = atom() "the name of a mnesia table"
+%%
+%% @doc     delete all entries in the mnesia table MnesiaTab
+%% @end
 %%--------------------------------------------------------------------
 delete_all_entries(MnesiaTab) ->
     F = fun() ->
@@ -77,14 +82,15 @@ delete_all_entries(MnesiaTab) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: insert_record(Record)
-%%           Record = term()
-%% Descrip.: wraps mnesia:write in a transaction context.
+%% @spec    (Record) -> term()
 %%
-%%           NOTE: Record MUST have the same name as the table it is
-%%                 inserted into
+%%            Record = term()
 %%
-%% Returns : mnesia:transaction()
+%% @doc     wraps mnesia:write in a transaction context.
+%%          NOTE: Record MUST have the same name as the table it is
+%%          inserted into
+%%
+%% @end
 %%--------------------------------------------------------------------
 insert_record(Record) ->
     Fun = fun() ->
@@ -93,14 +99,15 @@ insert_record(Record) ->
     mnesia:transaction(Fun).
 
 %%--------------------------------------------------------------------
-%% Function: delete_record(Record)
-%%           Record = term()
-%% Descrip.: wraps mnesia:delete_object in a transaction context
+%% @spec    (Record) -> term()
 %%
-%%           NOTE: Record MUST have the same name as the table it is
-%%                 inserted into
+%%            Record = term()
 %%
-%%%% Returns : mnesia:transaction()
+%% @doc     wraps mnesia:delete_object in a transaction context
+%%          NOTE: Record MUST have the same name as the table it is
+%%          inserted into
+%%          Returns : mnesia:transaction()
+%% @end
 %%--------------------------------------------------------------------
 delete_record(Record) ->
     F = fun() ->
@@ -109,11 +116,13 @@ delete_record(Record) ->
     mnesia:transaction(F).
 
 %%--------------------------------------------------------------------
-%% Function: delete_with_key(Db, Key)
-%%           Db = atom(), name of mnesia database
-%%           Key = term(), key value for entry/entries to delete
-%% Descrip.: wraps mnesia:delete({Db, Key}) in a transaction context
-%% Returns : mnesia:transaction()
+%% @spec    (Db, Key) -> term()
+%%
+%%            Db  = atom() "name of mnesia database"
+%%            Key = term() "key value for entry/entries to delete"
+%%
+%% @doc     wraps mnesia:delete({Db, Key}) in a transaction context
+%% @end
 %%--------------------------------------------------------------------
 delete_with_key(Db, Key) ->
     F = fun() ->
@@ -123,22 +132,24 @@ delete_with_key(Db, Key) ->
     Rec.
 
 %%--------------------------------------------------------------------
-%% Function: match_object(Pattern)
-%%           Pattern = term(), a tuple as used by mnesia:match_object/1
-%% Descrip.: alternative match_object based on mnesia:select/2 it
-%%           should be faster than mnesia:match_object/1. Finds the
-%%           records that match the pattern Pattern.
+%% @spec    (Pattern) ->
+%%            Records
 %%
-%%           Pattern is usually something like:
-%%               #rec_name{f1 = V1, f2 = V2, ..., _ = '_'} where
-%%               '_' acts as a wildcard value
+%%            Pattern = term() "a tuple as used by mnesia:match_object/1"
 %%
-%% NOTE    : the record name must be = table name. '$number'
-%%           (e.g. '$1', '$2', .... ) can not be used in Pattern (it
-%%           has special meaning in the match specification used by
-%%           mnesia:select/1)
+%%            Records = [term()]
 %%
-%% Returns : Records = list() of term()
+%% @doc     alternative match_object based on mnesia:select/2 it
+%%          should be faster than mnesia:match_object/1. Finds the
+%%          records that match the pattern Pattern.
+%%          Pattern is usually something like: #rec_name{f1 = V1, f2
+%%          = V2, ..., _ = '_'} where '_' acts as a wildcard value
+%%          NOTE : the record name must be = table name. '$number'
+%%          (e.g. '$1', '$2', .... ) can not be used in Pattern (it
+%%          has special meaning in the match specification used by
+%%          mnesia:select/1)
+%%
+%% @end
 %%--------------------------------------------------------------------
 match_object(Pattern) ->
     mnesia:select(element(1,Pattern),
@@ -148,12 +159,14 @@ match_object(Pattern) ->
 		   }]).
 
 %%--------------------------------------------------------------------
-%% Function: generic_table_info(Tab, Item)
-%%           Tab  = atom(), table name
-%%           Item = atom(), item we are interested in
-%% Descrip.: Get mnesia table information, regardless of where table
-%%           resides.
-%% Returns : term()
+%% @spec    (Tab, Item) -> term()
+%%
+%%            Tab  = atom() "table name"
+%%            Item = atom() "item we are interested in"
+%%
+%% @doc     Get mnesia table information, regardless of where table
+%%          resides.
+%% @end
 %%--------------------------------------------------------------------
 generic_table_info(Tab, Item) ->
     Info = fun(T, I) ->

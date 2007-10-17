@@ -59,27 +59,27 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: new_graph()
-%% Descrip.: return a digraph that checks that graph remains acyclical
-%% Returns : term(), digraph
-%% Note    : the digraph graph, returned is implemented (in digraph)
-%%           with a ets table so the returned graph acts as a
-%%           reference (pointer), rather than a single assignment
-%%           variable value.
+%% @spec    () -> term() "digraph"
+%%
+%% @doc     return a digraph that checks that graph remains acyclical
+%%          Note : the digraph graph, returned is implemented (in
+%%          digraph) with a ets table so the returned graph acts as a
+%%          reference (pointer), rather than a single assignment
+%%          variable value.
+%% @end
 %%--------------------------------------------------------------------
 new_graph() ->
     digraph:new([acyclic]).
 
 %%--------------------------------------------------------------------
-%% Function: add_node(ParseState, TagType )
-%%           ParseState = parse_state record(), is used by the parser
-%%                        to store the currently accumulated parse
-%%                        data
-%%           TagType    = atom(), the name of CPL vertex to store
-%% Descrip.: adds a node of TagType to the ParseState.
-%% Returns : parse_state record(), containing the new graph (due to
-%%                 the implementation of digraph this will be the same
-%%                 value - therefore ParseState is simply returned)
+%% @spec    (ParseState, TagType ) ->
+%%            #parse_state{} "containing the new graph (due to the implementation of digraph this will be the same value - therefore ParseState is simply returned)"
+%%
+%%            ParseState = #parse_state{} "is used by the parser to store the currently accumulated parse data"
+%%            TagType    = atom() "the name of CPL vertex to store"
+%%
+%% @doc     adds a node of TagType to the ParseState.
+%% @end
 %%--------------------------------------------------------------------
 %% Node add algorithm:
 %%
@@ -109,20 +109,15 @@ add_node(ParseState, outgoing) ->
     ParseState.
 
 %%--------------------------------------------------------------------
-%% Function: add_node(ParseState, TagType, DestCond )
-%%           ParseState = parse_state record(), is used by the parser
-%%                        to store the currently accumulated parse
-%%                        data
-%%           TagType    = atom(), the name of CPL vertex to store
-%%           DestCond   = term(), switches use a list of {Cond, Dest}
-%%                        pairs, this field is used to store action
-%%                        and destination vertex. The content of these
-%%                        fields is TagType dependent
+%% @spec    (ParseState, TagType, DestCond ) ->
+%%            #parse_state{} "containing the new graph (due to the implementation of digraph this will be the same value - therefore ParseState is simply returned)"
 %%
-%% Descrip.: adds a node of TagType to the ParseState.
-%% Returns : parse_state record(), containing the new graph (due to
-%%                 the implementation of digraph this will be the same
-%%                 value - therefore ParseState is simply returned)
+%%            ParseState = #parse_state{} "is used by the parser to store the currently accumulated parse data"
+%%            TagType    = atom() "the name of CPL vertex to store"
+%%            DestCond   = term() "switches use a list of {Cond, Dest} pairs, this field is used to store action and destination vertex. The content of these fields is TagType dependent"
+%%
+%% @doc     adds a node of TagType to the ParseState.
+%% @end
 %%--------------------------------------------------------------------
 %% Node add algorithm:
 %%
@@ -187,22 +182,16 @@ add_node(ParseState, reject, {StatusReason, terminate}) ->
     ParseState.
 
 %%--------------------------------------------------------------------
-%% Function: add_node(ParseState, TagType, Index, DestCond )
-%%           ParseState = parse_state record(), is used by the parser
-%%                        to store the currently accumulated parse
-%%                        data
-%%           TagType    = atom(), the name of CPL vertex to store
-%%           Index      = term(), a index value to allow lookup in the
-%%                        SIP request. The content is TagType dependent.
-%%           DestCond   = term(), switches use a list of {Cond, Dest}
-%%                        pairs, this field is used to store action and
-%%                        destination vertex. The content is TagType
-%%                        dependent
+%% @spec    (ParseState, TagType, Index, DestCond ) ->
+%%            #parse_state{} "containing the new graph (due to the implementation of digraph this will be the same value - therefore ParseState is simply returned)"
 %%
-%% Descrip.: adds a node of TagType to the ParseState.
-%% Returns : parse_state record(), containing the new graph (due to
-%%                 the implementation of digraph this will be the same
-%%                 value - therefore ParseState is simply returned)
+%%            ParseState = #parse_state{} "is used by the parser to store the currently accumulated parse data"
+%%            TagType    = atom() "the name of CPL vertex to store"
+%%            Index      = term() "a index value to allow lookup in the SIP request. The content is TagType dependent."
+%%            DestCond   = term() "switches use a list of {Cond, Dest} pairs, this field is used to store action and destination vertex. The content is TagType dependent"
+%%
+%% @doc     adds a node of TagType to the ParseState.
+%% @end
 %%--------------------------------------------------------------------
 %% Node add algorithm:
 %%
@@ -265,12 +254,16 @@ add_single_dest(Graph, CurrentNode, NextId) ->
     add_edge(Graph, CurrentNode, V1).
 
 %%--------------------------------------------------------------------
-%% Function: add_edge(Graph, Source, Dest)
-%% Descrip.: call digraph:add_edge/3, throw a error if cycles are
-%%           detected
-%% Returns : ok |
-%%           throw({error, Reason})
-%%           Reason = atom()
+%% @spec    (Graph, Source, Dest) ->
+%%            ok 
+%%
+%%            Reason = atom()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     call digraph:add_edge/3, throw a error if cycles are
+%%          detected
+%% @end
 %%--------------------------------------------------------------------
 add_edge(Graph, Source, Dest) ->
     case digraph:add_edge(Graph, Source, Dest) of
@@ -281,12 +274,16 @@ add_edge(Graph, Source, Dest) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: add_current_node(Graph, CurrentNodeId, TagType, Statements)
-%% Descrip.: add a new node or replace a dummy node previously created
-%% Returns : DiGraph |
-%%           throw({error, Reason})
-%%           DiGraph = term()
-%%           Reason = atom()
+%% @spec    (Graph, CurrentNodeId, TagType, Statements) ->
+%%            DiGraph 
+%%
+%%            DiGraph = term()
+%%            Reason  = atom()
+%%
+%% @throws  {error, Reason} 
+%%
+%% @doc     add a new node or replace a dummy node previously created
+%% @end
 %%--------------------------------------------------------------------
 add_current_node(Graph, CurrentNodeId, TagType, Statements) ->
     case digraph:vertex(Graph, CurrentNodeId) of

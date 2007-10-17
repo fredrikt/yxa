@@ -1,10 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : appserver.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: SIP application server. Handles forking and other more
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      SIP application server. Handles forking and other more
 %%%           advanced message routing for our users.
 %%%
-%%% Created : 09 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since    09 Dec 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(appserver).
 
@@ -53,9 +54,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init()
-%% Descrip.: YXA applications must export an init/0 function.
-%% Returns : yxa_app_init record()
+%% @spec    () -> #yxa_app_init{}
+%%
+%% @doc     YXA applications must export an init/0 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init() ->
     Tables = [user, numbers, phone, cpl_script_graph, gruu],
@@ -64,11 +67,14 @@ init() ->
 
 
 %%--------------------------------------------------------------------
-%% Function: request(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: YXA applications must export a request/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Request, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a request/2 function.
+%% @end
 %%--------------------------------------------------------------------
 
 %%
@@ -155,11 +161,14 @@ request(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa
 
 
 %%--------------------------------------------------------------------
-%% Function: response(Response, YxaCtx)
-%%           Response = response record()
-%%           YxaCtx   = yxa_ctx record()
-%% Descrip.: YXA applications must export a response/2 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Response, YxaCtx) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Response = #response{}
+%%            YxaCtx   = #yxa_ctx{}
+%%
+%% @doc     YXA applications must export a response/2 function.
+%% @end
 %%--------------------------------------------------------------------
 response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx, yxa_ctx) ->
     %% RFC 3261 16.7 says we MUST act like a stateless proxy when no
@@ -172,10 +181,14 @@ response(Response, YxaCtx) when is_record(Response, response), is_record(YxaCtx,
 
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Mode)
-%%           Mode = shutdown | graceful | atom()
-%% Descrip.: YXA applications must export a terminate/1 function.
-%% Returns : Yet to be specified. Return 'ok' for now.
+%% @spec    (Mode) ->
+%%            term() "Yet to be specified. Return 'ok' for now."
+%%
+%%            Mode = shutdown | graceful | atom()
+%%
+%% @doc     YXA applications must export a terminate/1 function.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Mode) when is_atom(Mode) ->
     ok.
@@ -187,15 +200,20 @@ terminate(Mode) when is_atom(Mode) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: create_session(Request, YxaCtx, CPL)
-%%           Request = request record()
-%%           Origin  = siporigin record()
-%%           LogStr  = string()
-%%           DoCPL   = true | false, do CPL or not
-%% Descrip.: Request was not meant for this proxy itself - find out if
-%%           this request is for one of our users, and if so find out
-%%           what actions to perform for the request.
-%% Returns : void() | throw({siperror, ...})
+%% @spec    (Request, YxaCtx, CPL) -> term()
+%%
+%%            Request = #request{}
+%%            Origin  = #siporigin{}
+%%            LogStr  = string()
+%%            DoCPL   = true | false "do CPL or not"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     Request was not meant for this proxy itself - find out if
+%%          this request is for one of our users, and if so find out
+%%          what actions to perform for the request.
+%% @end
 %%--------------------------------------------------------------------
 create_session(Request, YxaCtx, DoCPL) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     case get_actions(Request#request.uri, DoCPL) of
@@ -208,23 +226,25 @@ create_session(Request, YxaCtx, DoCPL) when is_record(Request, request), is_reco
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_session_actions(Request, Users, Actions, Surplus)
-%%           Request = request record()
-%%           Users   = list() of string(), list of SIP usernames
-%%           Actions = list() of sipproxy_action record()
-%%           Surplus = list() of sipproxy_action record(), surplus
-%%                     actions for user agents with multiple active
-%%                     bindings (draft-Outbound)
-%% Descrip.: The request was turned into a set of Actions (derived
-%%           from it's URI matching a set of Users).
-%% Returns : void() | throw({siperror, ...})
-%% Note    : When we start the appserver_glue process, we should
-%%           ideally not do a spawn but instead just execute it.
-%%           Currently this is the way we do it though (to keep the
-%%           code clean). Since this process is the parent of the
-%%           server transaction, we must stay alive until the
-%%           process that does the actual work exits - so we monitor
-%%           it.
+%% @spec    (Request, Users, Actions, Surplus) -> term()
+%%
+%%            Request = #request{}
+%%            Users   = [string()] "list of SIP usernames"
+%%            Actions = [#sipproxy_action{}]
+%%            Surplus = [#sipproxy_action{}] "surplus actions for user agents with multiple active bindings (draft-Outbound)"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     The request was turned into a set of Actions (derived from
+%%          it's URI matching a set of Users). Note : When we start
+%%          the appserver_glue process, we should ideally not do a
+%%          spawn but instead just execute it. Currently this is the
+%%          way we do it though (to keep the code clean). Since this
+%%          process is the parent of the server transaction, we must
+%%          stay alive until the process that does the actual work
+%%          exits - so we monitor it.
+%% @end
 %%--------------------------------------------------------------------
 create_session_actions(Request, Users, Actions, Surplus) when is_record(Request, request), is_list(Users),
 							      is_list(Actions), is_list(Surplus) ->
@@ -249,12 +269,17 @@ create_session_actions(Request, Users, Actions, Surplus) when is_record(Request,
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_session_nomatch(Request, YxaCtx)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%% Descrip.: No actions found for this request. Check if we should
-%%           forward it anyways, or respond '404 Not Found'.
-%% Returns : void() | throw({siperror, ...})
+%% @spec    (Request, YxaCtx) -> term()
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     No actions found for this request. Check if we should
+%%          forward it anyways, or respond '404 Not Found'.
+%% @end
 %%--------------------------------------------------------------------
 create_session_nomatch(Request, YxaCtx) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
     %% Check if the Request-URI is the registered location of one of our users. If we added
@@ -278,18 +303,23 @@ create_session_nomatch(Request, YxaCtx) when is_record(Request, request), is_rec
     end.
 
 %%--------------------------------------------------------------------
-%% Function: create_session_cpl(Request, YxaCtx, User, Graph)
-%%           Request = request record()
-%%           YxaCtx  = yxa_ctx record()
-%%           User    = string(), SIP username of CPL script owner
-%%           Graph   = term(), CPL graph
-%% Descrip.: We found a CPL script that should be applied to this
-%%           request (or perhaps have this request applied to it). Do
-%%           that and handle any return values. Noteably handle a CPL
-%%           return value of '{server_default_action}' by calling
-%%           create_session(...) again, but this time with DoCPL set
-%%           to 'false' to not end up here again.
-%% Returns : void() | throw({siperror, ...})
+%% @spec    (Request, YxaCtx, User, Graph) -> term()
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            User    = string() "SIP username of CPL script owner"
+%%            Graph   = term() "CPL graph"
+%%
+%% @throws  {siperror, Status, Reason}               |
+%%            {siperror, Status, Reason, ExtraHeaders} 
+%%
+%% @doc     We found a CPL script that should be applied to this
+%%          request (or perhaps have this request applied to it). Do
+%%          that and handle any return values. Noteably handle a CPL
+%%          return value of '{server_default_action}' by calling
+%%          create_session(...) again, but this time with DoCPL set
+%%          to 'false' to not end up here again.
+%% @end
 %%--------------------------------------------------------------------
 create_session_cpl(Request, YxaCtx, User, Graph)
   when is_record(Request, request), is_record(YxaCtx, yxa_ctx), is_list(User) ->
@@ -307,17 +337,21 @@ create_session_cpl(Request, YxaCtx, User, Graph)
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_actions(URI, DoCPL)
-%%           URI   = sipuri record()
-%%           DoCPL = true | false, do CPL or not
-%% Descrip.: Find the SIP user(s) for a URI and make a list() of
-%%           sipproxy_action to take for a request destined for that
-%%           user(s).
-%% Returns : {UserList, ActionsList} |
-%%           {cpl, User, Graph}      |
-%%           nomatch
-%%           UserList    = list() of string(), SIP usernames
-%%           ActionsList = list() of sipproxy_action record()
+%% @spec    (URI, DoCPL) ->
+%%            {UserList, ActionsList} |
+%%            {cpl, User, Graph}      |
+%%            nomatch
+%%
+%%            URI   = #sipuri{}
+%%            DoCPL = true | false "do CPL or not"
+%%
+%%            UserList    = [string()] "SIP usernames"
+%%            ActionsList = [#sipproxy_action{}]
+%%
+%% @doc     Find the SIP user(s) for a URI and make a list() of
+%%          sipproxy_action to take for a request destined for that
+%%          user(s).
+%% @end
 %%--------------------------------------------------------------------
 get_actions(URI, DoCPL) when is_record(URI, sipurl) ->
     LookupURL = sipurl:set([{pass, none}, {port, none}, {param, []}], URI),
@@ -355,18 +389,20 @@ get_actions_users2(Users, Proto) when is_list(Users), is_list(Proto) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: fetch_actions_for_users(Users, Proto)
-%%           Users = list() of string(), list of SIP usernames
-%%           Proto = string(), OrigURI proto ("sips" | "sip" | ...)
-%% Descrip.: Construct a list of sipproxy_action record()s for a list
-%%           of users, based on the contents of the location database
-%%           and the KTH-only 'forwards' database. Just ignore the
-%%           'forwards' part.
-%% Returns : {ok, Actions, Surplus}
-%%           Actions = list() of sipproxy_action record()
-%%           Surplus = list() of sipproxy_action record(), extra
-%%                     contacts for instances with more than one
-%%                     location binding (draft-Outbound)
+%% @spec    (Users, Proto) ->
+%%            {ok, Actions, Surplus}
+%%
+%%            Users = [string()] "list of SIP usernames"
+%%            Proto = string() "OrigURI proto (\"sips\" | \"sip\" | ...)"
+%%
+%%            Actions = [#sipproxy_action{}]
+%%            Surplus = [#sipproxy_action{}] "extra contacts for instances with more than one location binding (draft-Outbound)"
+%%
+%% @doc     Construct a list of sipproxy_action record()s for a list
+%%          of users, based on the contents of the location database
+%%          and the KTH-only 'forwards' database. Just ignore the
+%%          'forwards' part.
+%% @end
 %%--------------------------------------------------------------------
 fetch_actions_for_users(Users, Proto) ->
     {ok, Actions, Surplus} = fetch_users_locations_as_actions(Users, Proto),
@@ -389,38 +425,47 @@ fetch_users_locations_as_actions(Users, Proto) ->
     locations_to_actions(Locations).
 
 %%--------------------------------------------------------------------
-%% Function: locations_to_actions(Locations)
-%%           Locations = list() of Loc
-%%             Loc = siplocationdb_e record() | {URL, Timeout} | {wait, Timeout}
-%%             URL = sipurl record()
-%% Descrip.: Turn a list of location database entrys/pseudo-actions
-%%           into a list of sipproxy_action record()s.
+%% @spec    (Locations) ->
+%%            {ok, Actions, Surplus}
+%%
+%%            Locations = [Loc]
+%%            Loc       = #siplocationdb_e{} |
+%%                        {URL, Timeout}     |
+%%                        {wait, Timeout}
+%%            URL       = #sipurl{}
+%%
+%%            Actions = [#sipproxy_action{}]
+%%            Surplus = [#sipproxy_action{}] "extra contacts for instances with more than one location binding (draft-Outbound)"
+%%
+%% @doc     Turn a list of location database entrys/pseudo-actions
+%%          into a list of sipproxy_action record()s.
 %% @equiv    locations_to_actions(Locations, CallTimeout)
-%% Returns : {ok, Actions, Surplus}
-%%           Actions = list() of sipproxy_action record()
-%%           Surplus = list() of sipproxy_action record(), extra
-%%                     contacts for instances with more than one
-%%                     location binding (draft-Outbound)
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 locations_to_actions(L) when is_list(L) ->
     {ok, CallTimeout} = yxa_config:get_env(appserver_call_timeout),
     locations_to_actions2(L, CallTimeout, [], []).
 
 %%--------------------------------------------------------------------
-%% Function: locations_to_actions(Locations, Timeout)
-%%           Locations = list() of Loc
-%%             Loc = siplocationdb_e record() | {URL, Timeout} | {wait, Timeout}
-%%             URL = sipurl record()
-%%           Timeout   = integer()
-%% Descrip.: Turn a list of location database entrys/pseudo-actions
-%%           into a list of sipproxy_action record()s.
+%% @spec    (Locations, Timeout) ->
+%%            {ok, Actions, Surplus}
 %%
-%%           NOTE : Exported only for the CPL subsystem.
-%% Returns : {ok, Actions, Surplus}
-%%           Actions = list() of sipproxy_action record()
-%%           Surplus = list() of sipproxy_action record(), extra
-%%                     contacts for instances with more than one
-%%                     location binding (draft-Outbound)
+%%            Locations = [Loc]
+%%            Loc       = #siplocationdb_e{} |
+%%                        {URL, Timeout}     |
+%%                        {wait, Timeout}
+%%            URL       = #sipurl{}
+%%            Timeout   = integer()
+%%
+%%            Actions = [#sipproxy_action{}]
+%%            Surplus = [#sipproxy_action{}] "extra contacts for instances with more than one location binding (draft-Outbound)"
+%%
+%% @doc     Turn a list of location database entrys/pseudo-actions
+%%          into a list of sipproxy_action record()s.
+%%          NOTE : Exported only for the CPL subsystem.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 locations_to_actions(L, Timeout) when is_list(L), is_integer(Timeout) ->
     %% Exported for CPL subsystem
@@ -463,13 +508,15 @@ locations_to_actions2([{wait, Timeout} | T], CallTimeout, Res, Surplus) ->
     locations_to_actions2(T, CallTimeout, [WaitAction | Res], Surplus).
 
 %%--------------------------------------------------------------------
-%% Function: location_to_call_action(H, Timeout)
-%%           H       = sipurl record()
-%%           Timeout = term()
-%% Descrip.: Create a sipproxy_action call record out of the input.
+%% @spec    (H, Timeout) -> #sipproxy_action{}
 %%
-%%           NOTE : Exported only for the CPL subsystem.
-%% Returns : sipproxy_action record()
+%%            H       = #sipurl{}
+%%            Timeout = term()
+%%
+%% @doc     Create a sipproxy_action call record out of the input.
+%%          NOTE : Exported only for the CPL subsystem.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 location_to_call_action(H, Timeout) ->
     URL = siplocation:to_url(H),
@@ -496,15 +543,20 @@ get_locations_with_instance(Instance, SipUser, In) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: forward_call_actions(ForwardList, Actions, Proto)
-%%           ForwardList = list() of sipproxy_forward record()
-%%           Actions     = list() of sipproxy_action record()
-%%           Proto       = string(), "sips" or other
-%% Descrip.: This is something Magnus at KTH developed to suit their
-%%           needs of forwarding calls. He hasn't to this date
-%%           committed all of the implementation - so don't use it.
-%%           Use CPL to accomplish forwards instead.
-%% Returns : NewActions = list() of sipproxy_action record()
+%% @spec    (ForwardList, Actions, Proto) ->
+%%            NewActions
+%%
+%%            ForwardList = [#sipproxy_forward{}]
+%%            Actions     = [#sipproxy_action{}]
+%%            Proto       = string() "\"sips\" or other"
+%%
+%%            NewActions = [#sipproxy_action{}]
+%%
+%% @doc     This is something Magnus at KTH developed to suit their
+%%          needs of forwarding calls. He hasn't to this date
+%%          committed all of the implementation - so don't use it.
+%%          Use CPL to accomplish forwards instead.
+%% @end
 %%--------------------------------------------------------------------
 %% forward_call_actions/2 helps fetch_actions_for_users/1 make a list of
 %% sipproxy_action out of a list of forwards, a timeout value and
@@ -574,9 +626,11 @@ forward_call_actions_create_calls2([], _Timeout, _Localring, _User, _Proto, Res)
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 

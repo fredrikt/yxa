@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : sipsocket_tcp.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: TCP/TLS sipsocket module. Interface module to the
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      TCP/TLS sipsocket module. Interface module to the
 %%%           tcp_dispatcher gen_server process that shepherds all
 %%%           TCP/TLS connection handler processes.
 %%%
-%%% Created : 15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @since    15 Dec 2003 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(sipsocket_tcp).
 %%-compile(export_all).
@@ -36,8 +37,7 @@
 %%--------------------------------------------------------------------
 %% Types
 %%--------------------------------------------------------------------
-%% @type tcp_proto() = tcp | tcp6 | tls | tls6.
-%%	               Transport layer TCP/TLS protocol.
+%% @type tcp_proto() = tcp | tcp6 | tls | tls6. Transport layer TCP/TLS protocol.
 
 
 %%====================================================================
@@ -48,21 +48,25 @@ start_link() ->
     tcp_dispatcher:start_link().
 
 %%--------------------------------------------------------------------
-%% Function: send(SipSocket, Proto, Host, Port, Message)
-%%           SipSocket = sipsocket record()
-%%           Proto     = tcp_proto()
-%%           Host      = string()
-%%           Port      = integer()
-%%           Message   = term(), I/O list to send
-%% Descrip.: Send a SIP message. Get the tcp_connection process from
-%%           the sipsocket, and request it to send the message.
-%%           Returns whatever the socket module (gen_tcp or ssl) send-
-%%           function returns. Typically 'ok' or {error, Something}.
-%% Returns : SendRes         |
-%%           {error, Reason} |
-%%           term()
-%%           SendRes = term(), socket module send() result
-%%           Reason = string()
+%% @spec    (SipSocket, Proto, Host, Port, Message) ->
+%%            SendRes         |
+%%            {error, Reason} |
+%%            term()
+%%
+%%            SipSocket = #sipsocket{}
+%%            Proto     = tcp_proto()
+%%            Host      = string()
+%%            Port      = integer()
+%%            Message   = term() "I/O list to send"
+%%
+%%            SendRes = term() "socket module send() result"
+%%            Reason  = string()
+%%
+%% @doc     Send a SIP message. Get the tcp_connection process from
+%%          the sipsocket, and request it to send the message.
+%%          Returns whatever the socket module (gen_tcp or ssl) send-
+%%          function returns. Typically 'ok' or {error, Something}.
+%% @end
 %%--------------------------------------------------------------------
 send(#sipsocket{proto=SProto}, Proto, _Host, Port, _Message) when is_integer(Port), SProto /= Proto ->
     {error, "Protocol mismatch"};
@@ -87,14 +91,18 @@ send(SipSocket, _Proto, Host, Port, Message) when is_record(SipSocket, sipsocket
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_socket(Dst)
-%%           Dst = sipdst record()
-%% Descrip.: Get a socket, cached or new, useable to send messages to
-%%           this destination.
-%% Returns : SipSocket       |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    (Dst) ->
+%%            SipSocket       |
+%%            {error, Reason}
+%%
+%%            Dst = #sipdst{}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Get a socket, cached or new, useable to send messages to
+%%          this destination.
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% Protocol is 'tls' or 'tls6'
@@ -137,15 +145,19 @@ get_socket2(Dst, true) ->
     {error, lists:flatten(Msg)}.
 
 %%--------------------------------------------------------------------
-%% Function: get_specific_socket(Id)
-%%           Id = ob_id record()
-%% Descrip.: Return a specific socket. Used by draft-Outbound implem-
-%%           entation to send requests using an existing flow, or not
-%%           at all.
-%% Returns : SipSocket       |
-%%           {error, Reason}
-%%           SipSocket = sipsocket record()
-%%           Reason    = string()
+%% @spec    (Id) ->
+%%            SipSocket       |
+%%            {error, Reason}
+%%
+%%            Id = #ob_id{}
+%%
+%%            SipSocket = #sipsocket{}
+%%            Reason    = string()
+%%
+%% @doc     Return a specific socket. Used by draft-Outbound implem-
+%%          entation to send requests using an existing flow, or not
+%%          at all.
+%% @end
 %%--------------------------------------------------------------------
 get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == tcp orelse Proto == tcp6
 						     orelse Proto == tls orelse Proto == tls6 ->
@@ -158,17 +170,21 @@ get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == tcp orelse Proto =
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_raw_socket(Socket)
-%%           Socket  = sipsocket record()
-%% Descrip.: Get the raw TCP/UDP/TLS socket from the socket handler.
-%%           Be careful with what you do with the raw socket - don't
-%%           use it for sending/receiving for example. Intended for
-%%           use in extractin certificate information of an SSL socket
-%%           or similar.
-%% Returns : {ok, RawSocket} |
-%%           {error, Reason}
-%%           RawSocket = term()
-%%           Reason    = string()
+%% @spec    (Socket) ->
+%%            {ok, RawSocket} |
+%%            {error, Reason}
+%%
+%%            Socket = #sipsocket{}
+%%
+%%            RawSocket = term()
+%%            Reason    = string()
+%%
+%% @doc     Get the raw TCP/UDP/TLS socket from the socket handler. Be
+%%          careful with what you do with the raw socket - don't use
+%%          it for sending/receiving for example. Intended for use in
+%%          extractin certificate information of an SSL socket or
+%%          similar.
+%% @end
 %%--------------------------------------------------------------------
 get_raw_socket(SipSocket) when is_record(SipSocket, sipsocket) ->
     SPid = SipSocket#sipsocket.pid,
@@ -183,15 +199,19 @@ get_raw_socket(SipSocket) when is_record(SipSocket, sipsocket) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_remote_peer(Id)
-%%           Id = ob_id record()
-%% Descrip.: Get the remote IP and port of a specific socket.
-%% Returns : {ok, Proto, IP, Port} |
-%%           {error, Reason}
-%%           Proto  = tcp_proto()
-%%           IP     = string()
-%%           Port   = integer()
-%%           Reason = string()
+%% @spec    (Id) ->
+%%            {ok, Proto, IP, Port} |
+%%            {error, Reason}
+%%
+%%            Id = #ob_id{}
+%%
+%%            Proto  = tcp_proto()
+%%            IP     = string()
+%%            Port   = integer()
+%%            Reason = string()
+%%
+%% @doc     Get the remote IP and port of a specific socket.
+%% @end
 %%--------------------------------------------------------------------
 get_remote_peer(Id) when is_record(Id, ob_id) ->
     case get_specific_socket(Id) of
@@ -207,23 +227,28 @@ get_remote_peer(Id) when is_record(Id, ob_id) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: is_reliable_transport(_SipSocket)
-%% Descrip.: Return true. This sipsocket modules transports are
-%%           reliable. The meaning of reliable is that they handle
-%%           resends automatically, so the transaction layer does not
-%%           have to set up timers to resend messages.
-%% Returns : true
+%% @spec    (_SipSocket) -> true
+%%
+%% @doc     Return true. This sipsocket modules transports are
+%%          reliable. The meaning of reliable is that they handle
+%%          resends automatically, so the transaction layer does not
+%%          have to set up timers to resend messages.
+%% @end
 %%--------------------------------------------------------------------
 is_reliable_transport(#sipsocket{proto = Proto}) when Proto == tcp; Proto == tcp6; Proto == tls; Proto == tls6 ->
     true.
 
 %%--------------------------------------------------------------------
-%% Function: close_socket(SipSocket)
-%%           SipSocket = sipsocket record()
-%% Descrip.: Close a socket.
-%% Returns : ok              |
-%%           {error, Reason}
-%%           Reason = string()
+%% @spec    (SipSocket) ->
+%%            ok              |
+%%            {error, Reason}
+%%
+%%            SipSocket = #sipsocket{}
+%%
+%%            Reason = string()
+%%
+%% @doc     Close a socket.
+%% @end
 %%--------------------------------------------------------------------
 close_socket(#sipsocket{proto = Proto, pid = SPid}) when Proto == tcp; Proto == tcp6; Proto == tls; Proto == tls6 ->
     case catch gen_server:cast(SPid, {close, self()}) of
@@ -256,9 +281,11 @@ get_timeout(tls6) -> 5000.
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     autotest:mark(?LINE, "tcp connections - 0"),

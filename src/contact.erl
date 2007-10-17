@@ -1,11 +1,12 @@
 %%%-------------------------------------------------------------------
 %%% File    : contact.erl
-%%% Author  : Håkan Stenholm <hsten@it.su.se>
-%%% Descrip.: Parsing and printing functions for SIP Contact headers.
+%%% @author   Håkan Stenholm <hsten@it.su.se>
+%%% @doc      Parsing and printing functions for SIP Contact headers.
 %%%           Also used for other headers containing the same sort of
 %%%           data : Record-Route, Route, Path for example.
 %%%
-%%% Created : 09 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @since    09 Sep 2004 by Håkan Stenholm <hsten@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 
 %% A "quick and dirty" parser that should accept _most_ correct input
@@ -230,12 +231,14 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: parse(Contacts)
-%%           Contacts = string(), "contact1, concact2" or just "c1"
-%% Descrip.: Parse header data from a request that uses the same
-%%           (or nearly the same) grammar as "Contact". This include
-%%           "From", "To", "Route" and "Record-Route".
-%% Returns : list() of contact record() | {unparseable, Reason}
+%% @spec    (Contacts) -> [#contact{}] | {unparseable, Reason}
+%%
+%%            Contacts = string() "\"contact1, concact2\" or just \"c1\""
+%%
+%% @doc     Parse header data from a request that uses the same (or
+%%          nearly the same) grammar as "Contact". This include
+%%          "From", "To", "Route" and "Record-Route".
+%% @end
 %%--------------------------------------------------------------------
 parse(Contacts) when is_list(Contacts) ->
     %% throw({unparseable, Str}) if parsing failed
@@ -483,10 +486,12 @@ is_quoted(_Str) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: print(Contact)
-%%           Contact = contact record()
-%% Descrip.: Format a contact 
-%% Returns : string()
+%% @spec    (Contact) -> string()
+%%
+%%            Contact = #contact{}
+%%
+%% @doc     Format a contact
+%% @end
 %%--------------------------------------------------------------------
 print([]) ->
     "";
@@ -495,11 +500,13 @@ print([Contact]) when is_record(Contact, contact) ->
     print(Contact);
 
 %%--------------------------------------------------------------------
-%% Function: print(Contacts)
-%%           Contacts = list() of contact record()
-%% Descrip.: Format a list of contact records as a single string, with
-%%           commas separating the contacts.
-%% Returns : string()
+%% @spec    (Contacts) -> string()
+%%
+%%            Contacts = [#contact{}]
+%%
+%% @doc     Format a list of contact records as a single string, with
+%%          commas separating the contacts.
+%% @end
 %%--------------------------------------------------------------------
 print([Contact | R]) when is_record(Contact, contact) ->
     print(Contact) ++ ", " ++ print(R);
@@ -520,38 +527,43 @@ print(Contact) when is_record(Contact, contact) ->
     lists:flatten(DispName ++ SipURI ++ contact_param:to_string(ContactParams)).
 
 %%--------------------------------------------------------------------
-%% Function: new(SipURI)
-%%           SipURI = sipurl record() | string()
+%% @spec    (SipURI) -> #contact{}
+%%
+%%            SipURI = #sipurl{} | string()
+%%
 %% @equiv    new(none, SipURI, [])
-%% Returns : contact record()
+%% @end
 %%--------------------------------------------------------------------
 new(SipURI) when is_list(SipURI); is_record(SipURI, sipurl) ->
     new(none, SipURI, []).
 
 %%--------------------------------------------------------------------
-%% Function: new(SipURI, Params)
-%%           SipURI = sipurl record() | string()
-%%           Params      = list() of {Name, Val}
-%%           Name        = string
-%%           Val         = string()
+%% @spec    (SipURI, Params) -> #contact{}
+%%
+%%            SipURI = #sipurl{} | string()
+%%            Params = [{Name, Val}]
+%%            Name   = string
+%%            Val    = string()
+%%
 %% @equiv    new(none, SipURI, Params)
-%% Returns : contact record()
+%% @end
 %%--------------------------------------------------------------------
 new(SipURI, Params) when (is_list(SipURI) orelse is_record(SipURI, sipurl)), is_list(Params) ->
     new(none, SipURI, Params).
 
 %%--------------------------------------------------------------------
-%% Function: new(DisplayName, SipURI, Params)
-%%           DisplayName = none | string()
-%%           SipURI      = sipurl record() | string()
-%%           Params      = list() of {Name, Val}
-%%           Name        = string
-%%           Val         = string()
-%% Descrip.: Create a contact record(), should be used to ensure
-%%           proper handling of internal data. Valid string values for
-%%           SipURI are "*" or a string that is parseable by
-%%           sipurl:parse/1.
-%% Returns : contact record()
+%% @spec    (DisplayName, SipURI, Params) -> #contact{}
+%%
+%%            DisplayName = none | string()
+%%            SipURI      = #sipurl{} | string()
+%%            Params      = [{Name, Val}]
+%%            Name        = string
+%%            Val         = string()
+%%
+%% @doc     Create a contact record(), should be used to ensure proper
+%%          handling of internal data. Valid string values for SipURI
+%%          are "*" or a string that is parseable by sipurl:parse/1.
+%% @end
 %%--------------------------------------------------------------------
 new(DisplayName, URL, Params) when is_record(URL, sipurl) ->
     new(DisplayName, sipurl:print(URL), Params);
@@ -570,12 +582,14 @@ new(DisplayName, UrlStr, Params) when is_list(DisplayName); DisplayName == none,
 
 
 %%--------------------------------------------------------------------
-%% Function: add_param(Contact, Key, Val)
-%%           Contact = contact record()
-%%           Key     = string()
-%%           Val     = string()
-%% Descrip.: Add a contact-parameter entry
-%% Returns : contact record()
+%% @spec    (Contact, Key, Val) -> #contact{}
+%%
+%%            Contact = #contact{}
+%%            Key     = string()
+%%            Val     = string()
+%%
+%% @doc     Add a contact-parameter entry
+%% @end
 %%--------------------------------------------------------------------
 add_param(Contact, Key, Val) ->
     Param = Contact#contact.contact_param,
@@ -583,11 +597,13 @@ add_param(Contact, Key, Val) ->
     Contact#contact{ contact_param = NewParam }.
 
 %%--------------------------------------------------------------------
-%% Function: rm_param(Contact, Key)
-%%           Contact = contact record()
-%%           Key     = string()
-%% Descrip.: Remove a contact-parameter entry
-%% Returns : contact record()
+%% @spec    (Contact, Key) -> #contact{}
+%%
+%%            Contact = #contact{}
+%%            Key     = string()
+%%
+%% @doc     Remove a contact-parameter entry
+%% @end
 %%--------------------------------------------------------------------
 rm_param(Contact, Key) ->
     Param = Contact#contact.contact_param,
@@ -595,21 +611,25 @@ rm_param(Contact, Key) ->
     Contact#contact{ contact_param = NewParam }.
 
 %%--------------------------------------------------------------------
-%% Function: set_display_name(Contact, DispName)
-%%           Contact  = contact record()
-%%           DispName = none | string()
-%% Descrip.: Change the display name of Contact
-%% Returns : contact record()
+%% @spec    (Contact, DispName) -> #contact{}
+%%
+%%            Contact  = #contact{}
+%%            DispName = none | string()
+%%
+%% @doc     Change the display name of Contact
+%% @end
 %%--------------------------------------------------------------------
 set_display_name(Contact, DispName) when is_record(Contact, contact), DispName == none; is_list(DispName) ->
     Contact#contact{display_name = DispName}.
 
 %%--------------------------------------------------------------------
-%% Function: set_urlstr(Contact, SipURL)
-%%           Contact = contact record()
-%%           SipURL  = sipurl record() | string()
-%% Descrip.: Change the sipurl contained in Contact
-%% Returns : contact record()
+%% @spec    (Contact, SipURL) -> #contact{}
+%%
+%%            Contact = #contact{}
+%%            SipURL  = #sipurl{} | string()
+%%
+%% @doc     Change the sipurl contained in Contact
+%% @end
 %%--------------------------------------------------------------------
 set_urlstr(Contact, SipURL) when is_record(SipURL, sipurl) ->
     Contact#contact{urlstr = sipurl:print(SipURL)};
@@ -620,9 +640,11 @@ set_urlstr(Contact, URLstr) when is_list(URLstr) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -930,7 +952,7 @@ test() ->
     autotest:mark(?LINE, "print/1 - 15"),
     PH15 = hd(parse(["\"P\303\244r \303\226sterman\" <sip:po@192.0.2.12:5060>"])),
     "\"P\303\244r \303\226sterman\" <sip:po@192.0.2.12:5060>" = print(PH15),
-    
+
 
 
     %% add_param(Contact, Key, Val)

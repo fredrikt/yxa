@@ -65,6 +65,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  branch_base,    % string(), base of a unique id used in sipproxy:start/5
 	  request,        % request record(), the incoming or outgoing sip request
@@ -101,22 +103,26 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: process_cpl_script(Request, User, Graph, Direction)
-%%           Request   = request record()
-%%           User      = string(), the owner of the CPL script
-%%           Graph     = term(), cpl script graph
-%%           Direction = incoming | outgoing
-%% Descrip.: This is just a simpler version of process_cpl_script/7,
-%%           which adopts the server transaction handler for Request,
-%%           figures out the BranchBase for you and take care of some
-%%           general result actions. See documentation of the big
-%%           process_cpl_script/7 for more information.
-%% Returns : {server_default_action}                     |
-%%           {proxy_call_to_location, Location}          |
-%%           {proxy_or_redirect_to_locations, Locations} |
-%%           ok                                          |
-%%           throw({error, atom()})                      |
-%%           {error, Reason}
+%% @spec    (Request, User, Graph, Direction) ->
+%%            {server_default_action}                     |
+%%            {proxy_call_to_location, Location}          |
+%%            {proxy_or_redirect_to_locations, Locations} |
+%%            ok                                          |
+%%            {error, Reason}
+%%
+%%            Request   = #request{}
+%%            User      = string() "the owner of the CPL script"
+%%            Graph     = term() "cpl script graph"
+%%            Direction = incoming | outgoing
+%%
+%% @throws  {error, atom()} 
+%%
+%% @doc     This is just a simpler version of process_cpl_script/7,
+%%          which adopts the server transaction handler for Request,
+%%          figures out the BranchBase for you and take care of some
+%%          general result actions. See documentation of the big
+%%          process_cpl_script/7 for more information.
+%% @end
 %%--------------------------------------------------------------------
 process_cpl_script(Request, User, Graph, Direction) ->
     case transactionlayer:adopt_st_and_get_branchbase(Request) of
@@ -168,81 +174,69 @@ process_cpl_script_res(Unmatched, _STHandler) ->
     Unmatched.
 
 %%--------------------------------------------------------------------
-%% Function: process_cpl_script(BranchBase, Request, User, Graph,
-%%                              Backend, STHandler, Direction)
-%%           BranchBase = string(), prefix to use when generating
-%%                        branches for client transactions
-%%           Request    = request record()
-%%           User       = string(), owner of cpl script
-%%           Graph      = term(), cpl script graph
-%%           Backend    = atom(), callback module
-%%           STHandler  = term(), server transaction handler
-%%           Direction  = incoming | outgoing
-%% Descrip.: execute the the cpl script and return a {Action, ....}
-%%           tuple to specify what to do with the request, the Action
-%%           parameter indicates the action to do
-%%           There are a number of possible return values of the
-%%           format {ExitType, ....}:
+%% @spec    (BranchBase, Request, User, Graph, Backend, STHandler,
+%%          Direction) ->
+%%            {ExitType, Param} | {ExitType, Param1, Param2} 
 %%
-%%           {redirect, Permanent, Locations}
-%%           * a redirect cpl tag was processed, Permanent determines
-%%             if this redirection should be made permanent. Locations
-%%             lists the locations to redirect to, see RFC 3380
-%%             chapter 6.2
+%%            BranchBase = string() "prefix to use when generating branches for client transactions"
+%%            Request    = #request{}
+%%            User       = string() "owner of cpl script"
+%%            Graph      = term() "cpl script graph"
+%%            Backend    = atom() "callback module"
+%%            STHandler  = term() "server transaction handler"
+%%            Direction  = incoming | outgoing
 %%
-%%           {reject, Status, Reason}
-%%           {reject, Status}
-%%           * a reject cpl tag was processed, see RFC 3880 chapter
-%%             6.3, Status is a numerical error code, Reason is a
-%%             textual description - both are supplied by the cpl
-%%             script. Reason is only supplied if the reason sub tag in the
-%%             reject cpl tag is not = ""
+%%            ExitType = atom()
+%%            Param    = term()
+%%            Param1   = term()
+%%            Param2   = term()
+%%            Reason   = string() | atom()
 %%
-%%           {server_default_action}
-%%           * process request the same way as it would be processed
-%%             if no cpl script was run, see RFC 3880 chapter 10
+%% @throws  {error, Reason} 
 %%
-%%           {proxy_call_to_location, Location}
-%%           * outgoing call, cpl call supplied no additional locations
-%%             or signaling operations - see RFC 3880 chapter 10
-%%
-%%           {proxy_or_redirect_to_locations, Locations}
-%%           * locations where accumulated with cpl script but no
-%%             signaling operation where executed, so server decides
-%%             what is to be done, see RFC 3880 chapter 10
-%%
-%%           {proxy, Response}
-%%           * proxy tag was processed as the last cpl action,
-%%             Response contains the results from this action [1]
-%%
-%%           {use_last_proxy_result, Response}
-%%           * proxy tag was the last signaling action, but additional
-%%             cpl tags where processed before terminating [1]
-%%
-%%           throw({error, ...})
-%%
-%%           Status      = integer()
-%%           Response    = see #state.response
-%%           Permanent   = yes | no
-%%           Locations   = list() of sipurl record()
-%%           Location    = sipurl record()
-%%           Reason      = string()
-%%           RejectAttrs = reject__attr record()
-%%
-%% [1]     : a {proxy ...} return is unusual in that it indicates that
-%%           a proxying action has already been done - so there is no
-%%           need to act on the proxy return value, as is needed for
-%%           the other return values.
-%% Note    : CPL processing should be done in a spawned process - cpl
-%%           processing can take a long time (waiting for timeouts)
-%%           and many scripts may needed to be run at the same time
-%% Returns : {ExitType, Param} | {ExitType, Param1, Param2} |
-%%           throw({error, Reason})
-%%           ExitType = atom()
-%%           Param    = term()
-%%           Param1   = term()
-%%           Param2   = term()
-%%           Reason   = string() | atom()
+%% @doc     execute the the cpl script and return a {Action, ....}
+%%          tuple to specify what to do with the request, the Action
+%%          parameter indicates the action to do There are a number
+%%          of possible return values of the format {ExitType, ....}:
+%%          {redirect, Permanent, Locations} * a redirect cpl tag was
+%%          processed, Permanent determines if this redirection
+%%          should be made permanent. Locations lists the locations
+%%          to redirect to, see RFC 3380 chapter 6.2
+%%          {reject, Status, Reason} {reject, Status} * a reject cpl
+%%          tag was processed, see RFC 3880 chapter 6.3, Status is a
+%%          numerical error code, Reason is a textual description -
+%%          both are supplied by the cpl script. Reason is only
+%%          supplied if the reason sub tag in the reject cpl tag is
+%%          not = ""
+%%          {server_default_action} * process request the same way as
+%%          it would be processed if no cpl script was run, see RFC
+%%          3880 chapter 10
+%%          {proxy_call_to_location, Location} * outgoing call, cpl
+%%          call supplied no additional locations or signaling
+%%          operations - see RFC 3880 chapter 10
+%%          {proxy_or_redirect_to_locations, Locations} * locations
+%%          where accumulated with cpl script but no signaling
+%%          operation where executed, so server decides what is to be
+%%          done, see RFC 3880 chapter 10
+%%          {proxy, Response} * proxy tag was processed as the last
+%%          cpl action, Response contains the results from this
+%%          action [1]
+%%          {use_last_proxy_result, Response} * proxy tag was the
+%%          last signaling action, but additional cpl tags where
+%%          processed before terminating [1]
+%%          throw({error, ...})
+%%          Status = integer() Response = see #state.response
+%%          Permanent = yes | no Locations = list() of sipurl
+%%          record() Location = sipurl record() Reason = string()
+%%          RejectAttrs = reject__attr record()
+%%          [1] : a {proxy ...} return is unusual in that it
+%%          indicates that a proxying action has already been done -
+%%          so there is no need to act on the proxy return value, as
+%%          is needed for the other return values. Note : CPL
+%%          processing should be done in a spawned process - cpl
+%%          processing can take a long time (waiting for timeouts)
+%%          and many scripts may needed to be run at the same time
+%% @end
 %%--------------------------------------------------------------------
 process_cpl_script(BranchBase, Request, User, Graph, Backend, STHandler, Direction) ->
     StartNodeIndex = get_start_node(Direction),
@@ -272,23 +266,23 @@ get_start_node(outgoing) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: execute_node(StartIndex, State)
-%%           StartIndex = term(), node index (integer() or [integer()] I think XXX)
-%%           State      = state record()
-%% Descrip.: this functions handles walking the node graph. See
-%%           @{link process_cpl_script/4} for possible return values.
-%% Returns : term(), see process_cpl_script/4
-%% Note    : There are three ways a node can terminate:
-%%           It can be a terminator node, terminator nodes are created
-%%           by the parser, for single destination nodes, when the tag
-%%           is empty.
-%%           The second type are switches, nodes able to branch to
-%%           several destinations, they have a "Cond" list of
-%%           {Rule, Dest} elements, they terminate if Cond = [],
-%%           i.e. when the cpl tag has no sub tags.
-%%           The third type are nodes that always terminate and
-%%           therefore have 'terminated' as destination, rather than
-%%           another node.
+%% @spec    (StartIndex, State) -> term() "see process_cpl_script/4"
+%%
+%%            StartIndex = term() "node index (integer() or [integer()] I think XXX)"
+%%            State      = #state{}
+%%
+%% @doc     this functions handles walking the node graph. See @{link
+%%          process_cpl_script/4} for possible return values. Note :
+%%          There are three ways a node can terminate: It can be a
+%%          terminator node, terminator nodes are created by the
+%%          parser, for single destination nodes, when the tag is
+%%          empty. The second type are switches, nodes able to branch
+%%          to several destinations, they have a "Cond" list of
+%%          {Rule, Dest} elements, they terminate if Cond = [], i.e.
+%%          when the cpl tag has no sub tags. The third type are
+%%          nodes that always terminate and therefore have
+%%          'terminated' as destination, rather than another node.
+%% @end
 %%--------------------------------------------------------------------
 execute_node(Index, State) ->
     execute_node(Index, State, 0).
@@ -338,18 +332,21 @@ add_node_to_visited(State, Index) ->
     State#state{visited_nodes = [Index | Visited]}.
 
 %%--------------------------------------------------------------------
-%% Function: finish_redirect(Permanent, State)
-%% Descrip.: create return result - from running a cpl script
-%% Returns : {Action, Response}
+%% @spec    (Permanent, State) -> {Action, Response}
+%%
+%% @doc     create return result - from running a cpl script
+%% @end
 %%--------------------------------------------------------------------
 finish_redirect(Permanent, State) ->
     Locations = State#state.locations,
     {redirect, Permanent, location_to_uri(Locations)}.
 
 %%--------------------------------------------------------------------
-%% Function: finish_reject(RejectAttrs, State)
-%% Descrip.: create return result - from running a cpl script
-%% Returns : {reject, Status} | {reject, Status, Reason}
+%% @spec    (RejectAttrs, State) ->
+%%            {reject, Status} | {reject, Status, Reason}
+%%
+%% @doc     create return result - from running a cpl script
+%% @end
 %%--------------------------------------------------------------------
 finish_reject(#reject__attrs{status = Status, reason = Reason}, _State) ->
     case Reason of
@@ -423,10 +420,11 @@ location_to_uri(Locations) when is_list(Locations) ->
     [location_to_uri(Loc) || Loc <- Locations].
 
 %%--------------------------------------------------------------------
-%% Function: location_mod_performed(Graph, VisitedNodeIndexList)
-%% Descrip.: determine if a location modifier has been visited during
-%%           script execution
-%% Returns : true | false
+%% @spec    (Graph, VisitedNodeIndexList) -> true | false
+%%
+%% @doc     determine if a location modifier has been visited during
+%%          script execution
+%% @end
 %%--------------------------------------------------------------------
 location_mod_performed(_Graph, []) ->
     false;
@@ -443,10 +441,11 @@ location_mod_performed(Graph, [Index | Visited]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: signalling_performed(Graph, VisitedNodeIndexList)
-%% Descrip.: determine if a signaling node has been visited during
-%%           script execution
-%% Returns : true | false
+%% @spec    (Graph, VisitedNodeIndexList) -> true | false
+%%
+%% @doc     determine if a signaling node has been visited during
+%%          script execution
+%% @end
 %%--------------------------------------------------------------------
 signalling_performed(_Graph, []) ->
     false;
@@ -464,19 +463,21 @@ signalling_performed(Graph, [Index | Visited]) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_node(Graph, Index)
-%%           Graph     = list() of {NodeIndex, NodeCode}
-%%           Index     = list() of integer(), node id created
-%%                       in xml_parse.erl
-%%           NodeIndex = list() of integer(), node id created
-%%                       in xml_parse.erl
-%%           NodeCode         = node_code record()
-%% Descrip.: find node with Index in Graph
-%% Returns : node_code reccord() | throw({error, index_not_found})
-%% Note    : Graph could be implemented as a gb_tree (see gb_tree
-%%           module) which will be faster for large graphs,
-%%           O(log N * log N) instead of O(N log N) (number of nodes
-%%           processed = log N = path through graph)
+%% @spec    (Graph, Index) -> term()
+%%
+%%            Graph     = [{NodeIndex, NodeCode}]
+%%            Index     = [integer()] "node id created in xml_parse.erl"
+%%            NodeIndex = [integer()] "node id created in xml_parse.erl"
+%%            NodeCode  = #node_code{}
+%%
+%% @throws  {error, index_not_found} 
+%%
+%% @doc     find node with Index in Graph Note : Graph could be
+%%          implemented as a gb_tree (see gb_tree module) which will
+%%          be faster for large graphs, O(log N * log N) instead of
+%%          O(N log N) (number of nodes processed = log N = path
+%%          through graph)
+%% @end
 %%--------------------------------------------------------------------
 get_node([], Index) ->
     throw({error, {index_not_found, Index}});
@@ -486,27 +487,32 @@ get_node([_N | R], Index) ->
     get_node(R, Index).
 
 %%--------------------------------------------------------------------
-%% Function: terminator(_Code, State)
-%% Descrip.:
-%% Returns : {terminated, NewState}
+%% @spec    (_Code, State) -> {terminated, NewState}
+%%
+%% @doc
+%% @end
 %%--------------------------------------------------------------------
 terminator(_Code, State) ->
     {terminated, State}.
 
 %%--------------------------------------------------------------------
-%% Function: incoming(Index, State)
-%%           State = state record()
-%% Descrip.: process a start node
-%% Returns : {NextId, NewState}
+%% @spec    (Index, State) -> {NextId, NewState}
+%%
+%%            State = #state{}
+%%
+%% @doc     process a start node
+%% @end
 %%--------------------------------------------------------------------
 incoming(Index, State) ->
     {Index, State}.
 
 %%--------------------------------------------------------------------
-%% Function: outgoing(Index, State)
-%%           State = state record()
-%% Descrip.: process a start node
-%% Returns : {NextId, NewState}
+%% @spec    (Index, State) -> {NextId, NewState}
+%%
+%%            State = #state{}
+%%
+%% @doc     process a start node
+%% @end
 %%--------------------------------------------------------------------
 %% "For the outgoing action, it [#state.locations] is initialized to
 %%  the destination address of the call." - RFC 3880 chapter 2.3
@@ -518,11 +524,13 @@ outgoing(Index, State) ->
     {Index, State2}.
 
 %%--------------------------------------------------------------------
-%% Function: 'address-switch'(Code, State)
-%%           Code = {{Field, SubField}, Conds}
-%%           State = state record()
-%% Descrip.: process an address-switch
-%% Returns : {NextId, NewState}
+%% @spec    (Code, State) -> {NextId, NewState}
+%%
+%%            Code  = {{Field, SubField}, Conds}
+%%            State = #state{}
+%%
+%% @doc     process an address-switch
+%% @end
 %%--------------------------------------------------------------------
 'address-switch'({{Field, SubField}, Conds}, State) ->
     Request = State#state.request,
@@ -573,11 +581,13 @@ outgoing(Index, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: 'string-switch'(Code, State)
-%%           Code = {Field, Conds}
-%%           State = state record()
-%% Descrip.: process a address-switch
-%% Returns : {NextId, NewState}
+%% @spec    (Code, State) -> {NextId, NewState}
+%%
+%%            Code  = {Field, Conds}
+%%            State = #state{}
+%%
+%% @doc     process a address-switch
+%% @end
 %%--------------------------------------------------------------------
 'string-switch'({Field, Conds}, State) ->
     Request = State#state.request,
@@ -614,11 +624,13 @@ outgoing(Index, State) ->
     Dest.
 
 %%--------------------------------------------------------------------
-%% Function: 'language-switch'(Code, State)
-%%           Code = Conds
-%%           State = state record()
-%% Descrip.: process a address-switch
-%% Returns : {NextId, NewState}
+%% @spec    (Code, State) -> {NextId, NewState}
+%%
+%%            Code  = Conds
+%%            State = #state{}
+%%
+%% @doc     process a address-switch
+%% @end
 %%--------------------------------------------------------------------
 'language-switch'(Conds, State) ->
     Request = State#state.request,
@@ -647,14 +659,15 @@ outgoing(Index, State) ->
     Dest.
 
 %%--------------------------------------------------------------------
-%% Function: 'priority-switch'(Code, State)
-%%           Code = Conds
-%%           State = state record()
-%% Descrip.: process a address-switch
-%% Returns : {NextId, NewState}
-%% Note    : "Since every message has a priority, the "not-present"
-%%            output is never true for a priority switch." - RFC 3880
-%%            chapter 4.5 p21
+%% @spec    (Code, State) -> {NextId, NewState}
+%%
+%%            Code  = Conds
+%%            State = #state{}
+%%
+%% @doc     process a address-switch Note : "Since every message has a
+%%          priority, the "not-present" output is never true for a
+%%          priority switch." - RFC 3880 chapter 4.5 p21
+%% @end
 %%--------------------------------------------------------------------
 'priority-switch'(Conds, State) ->
     Request = State#state.request,
@@ -688,11 +701,13 @@ outgoing(Index, State) ->
     Dest.
 
 %%--------------------------------------------------------------------
-%% Function: 'time-switch'(Code, State)
-%%           Code = {Timezone, Conds}
-%%           State = state record()
-%% Descrip.: process a time-switch
-%% Returns : {NextId, NewState}
+%% @spec    (Code, State) -> {NextId, NewState}
+%%
+%%            Code  = {Timezone, Conds}
+%%            State = #state{}
+%%
+%% @doc     process a time-switch
+%% @end
 %%--------------------------------------------------------------------
 'time-switch'({Timezone, Conds}, State) when record(Timezone, time_zone) ->
     Backend = State#state.backend,
@@ -712,12 +727,14 @@ outgoing(Index, State) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: location(Location, State)
-%%           Location = location__attrs record()
-%%           State = state record()
-%% Descrip.: process a location tag, this adds the location to the
-%%           location set used by cpl
-%% Returns : {NextId, NewState}
+%% @spec    (Location, State) -> {NextId, NewState}
+%%
+%%            Location = #location__attrs{}
+%%            State    = #state{}
+%%
+%% @doc     process a location tag, this adds the location to the
+%%          location set used by cpl
+%% @end
 %%--------------------------------------------------------------------
 location({#location__attrs{url = URI, priority = Prio, clear = Clear}, Dest}, State) ->
     Locations = State#state.locations,
@@ -727,12 +744,14 @@ location({#location__attrs{url = URI, priority = Prio, clear = Clear}, Dest}, St
     {Dest, NewState}.
 
 %%--------------------------------------------------------------------
-%% Function: lookup({Lookup,Cond}, State)
-%%           Lookup = lookup__attrs record()
-%%           Cond = list() of {LookupResult, Dest}
-%%           State = state record()
-%% Descrip.: process the lookup tag
-%% Returns : {NextId, NewState}
+%% @spec    ({Lookup,Cond}, State) -> {NextId, NewState}
+%%
+%%            Lookup = #lookup__attrs{}
+%%            Cond   = [{LookupResult, Dest}]
+%%            State  = #state{}
+%%
+%% @doc     process the lookup tag
+%% @end
 %%--------------------------------------------------------------------
 lookup({#lookup__attrs{source = Source, timeout = Timeout, clear = Clear}, Cond}, State) ->
     Backend = State#state.backend,
@@ -765,13 +784,15 @@ lookup_dest(Result, [_ | R]) ->
     lookup_dest(Result, R).
 
 %%--------------------------------------------------------------------
-%% Function: 'remove-location'(Location, State)
-%%           Location = {Loc, Dest}
-%%           Loc = remove_location__attrs record()
-%%           State = state record()
-%% Descrip.: process a location tag, this adds the location to the
-%%           location set used by cpl
-%% Returns : {NextId, NewState}
+%% @spec    (Location, State) -> {NextId, NewState}
+%%
+%%            Location = {Loc, Dest}
+%%            Loc      = #remove_location__attrs{}
+%%            State    = #state{}
+%%
+%% @doc     process a location tag, this adds the location to the
+%%          location set used by cpl
+%% @end
 %%--------------------------------------------------------------------
 'remove-location'({#remove_location__attrs{location = all}, Dest}, State) ->
     NewState = State#state{locations = []},
@@ -784,22 +805,26 @@ lookup_dest(Result, [_ | R]) ->
     {Dest, NewState}.
 
 %%--------------------------------------------------------------------
-%% Function: sub(Dest, State)
-%%           Dest = term(), node id
-%%           State = state record()
-%% Descrip.: process sub tag
-%% Returns : {NextId, NewState}
+%% @spec    (Dest, State) -> {NextId, NewState}
+%%
+%%            Dest  = term() "node id"
+%%            State = #state{}
+%%
+%% @doc     process sub tag
+%% @end
 %%--------------------------------------------------------------------
 sub(Dest, State) ->
     {Dest, State}.
 
 %%--------------------------------------------------------------------
-%% Function: log({Log, Dest}, State)
-%%           Log  = log__attrs record()
-%%           Dest = term(), node id
-%%           State = state record()
-%% Descrip.: log the data in Log
-%% Returns : {NextId, NewState}
+%% @spec    ({Log, Dest}, State) -> {NextId, NewState}
+%%
+%%            Log   = #log__attrs{}
+%%            Dest  = term() "node id"
+%%            State = #state{}
+%%
+%% @doc     log the data in Log
+%% @end
 %%--------------------------------------------------------------------
 log({Log, Dest}, State) ->
     Backend = State#state.backend,
@@ -809,11 +834,13 @@ log({Log, Dest}, State) ->
     {Dest, State}.
 
 %%--------------------------------------------------------------------
-%% Function: mail({Mail, Dest}, State)
-%%           Mail = string(), a mail url
-%%           Dest = term(), node id
-%% Descrip.: send mail
-%% Returns : {NextId, NewState}
+%% @spec    ({Mail, Dest}, State) -> {NextId, NewState}
+%%
+%%            Mail = string() "a mail url"
+%%            Dest = term() "node id"
+%%
+%% @doc     send mail
+%% @end
 %%--------------------------------------------------------------------
 mail({Mail, Dest}, State) ->
     User = State#state.user,
@@ -822,21 +849,22 @@ mail({Mail, Dest}, State) ->
     {Dest, State}.
 
 %%--------------------------------------------------------------------
-%% Function: proxy(Code, Count, State)
-%%           Code  = {ProxyAttrs, Conds}
-%%           State = state record()
-%% Descrip.:
-%% Returns : {NextId, NewState}
-%% Note    : RFC 3880 is rather vague about how Timeout should be
-%%           handled when ordering = sequential, the most plausible
-%%           interpretation seams to be that the timeout applies to
-%%           the "global" behavior of the proxy, i.e. timeout is the
-%%           total max time to wait for any kind of proxy condition.
-%%           This interpretation requires that the timeout period is
-%%           divided between the different locations (as their
-%%           individual timeout periods) when ordering = sequential,
-%%           the create_sequential_proxyaction_list/4 function does
-%%           this.
+%% @spec    (Code, Count, State) -> {NextId, NewState}
+%%
+%%            Code  = {ProxyAttrs, Conds}
+%%            State = #state{}
+%%
+%% @doc     Note : RFC 3880 is rather vague about how Timeout should
+%%          be handled when ordering = sequential, the most plausible
+%%          interpretation seams to be that the timeout applies to
+%%          the "global" behavior of the proxy, i.e. timeout is the
+%%          total max time to wait for any kind of proxy condition.
+%%          This interpretation requires that the timeout period is
+%%          divided between the different locations (as their
+%%          individual timeout periods) when ordering = sequential,
+%%          the create_sequential_proxyaction_list/4 function does
+%%          this.
+%% @end
 %%--------------------------------------------------------------------
 proxy({#proxy__attrs{timeout = TimeoutIn, recurse = Recurse, ordering = Ordering}, Conds}, Count, State) ->
     Backend = State#state.backend,
@@ -968,14 +996,9 @@ cpl_locations_to_call_action2([], _Timeout, _User, Actions, Surplus) ->
 
 
 %% Returns: {First, Surplus, Rest}
-%%          First   = list() of sipproxy_action record(), 'call' action for the most recently registered location
-%%                    for this user and instance, if an instance id is present, otherwise a list of 'call'
-%%                    actions for this user
-%%          Surplus = list() of sipproxy_action record(), 'call' actions for all the other registered locations
-%%                    for this user and instance
-%%          Rest    = list() of location record(), all entrys from Locations
-%%                    _not_ matching this user and instance (or not coming from the location
-%%                    database at all)
+%%          First   = list() of sipproxy_action record(), 'call' action for the most recently registered location for this user and instance, if an instance id is present, otherwise a list of 'call' actions for this user
+%%          Surplus = list() of sipproxy_action record(), 'call' actions for all the other registered locations for this user and instance
+%%          Rest    = list() of location record(), all entrys from Locations _not_ matching this user and instance (or not coming from the location database at all)
 process_user_instance(Instance, User, Timeout, PrioLocations) when is_list(Instance), is_list(User), is_integer(Timeout),
 								   is_list(PrioLocations) ->
     {ok, Same, Other} = process_instance_divide(Instance, User, PrioLocations),
@@ -1047,33 +1070,34 @@ find_result(Cond, [ _ | R]) ->
     find_result(Cond, R).
 
 %%--------------------------------------------------------------------
-%% Function: create_sequential_proxyaction_list(PrioOrderLocs,
-%%           Backend, Timeout, User)
-%%           PrioOrderLos = list() of location record(), ordered on
-%%                          priority
-%%           Backend      = atom(), callback module
-%%           Timeout      = integer(), no. of seconds
-%%           User         = string(), SIP username of CPL script owner
-%% Descrip.: return a list of sipproxy_action record() that defines
-%%           how the the sip proxy in yxa is supposed to check the
-%%           locations in PrioOrderLocs. If a UA has registered more
-%%           than once for a SIP-user, with the same instance-id
-%%           and different reg-id's then the most recently registered
-%%           binding will be in Actions, and the rest in Surplus (this
-%%           is draft-Outbound processing).
-%% Returns : {ok, Actions, Surplus}
-%%           Actions = list() of sipproxy_action record()
-%%           Surplus = list() of sipproxy_action record()
-%% Note    : timeout for locations can be assigned in two ways:
-%%           * if (Timeout / no. of locations) > minimum ring timeout
-%%             the (Timeout / no. of locations) period is used for
-%%             each location
-%%           * otherwise minimum ring time, will be assigned in
-%%             location priority order, until all Timeout seconds have
-%%             been consumed (no location gets less than minimum ring
-%%             time seconds), this means that some locations will NOT
-%%             be checked by the proxy - as there are no seconds left
-%%             to assign to them
+%% @spec    (PrioOrderLocs, Backend, Timeout, User) ->
+%%            {ok, Actions, Surplus}
+%%
+%%            PrioOrderLos = [#location{}] "ordered on priority"
+%%            Backend      = atom() "callback module"
+%%            Timeout      = integer() "no. of seconds"
+%%            User         = string() "SIP username of CPL script owner"
+%%
+%%            Actions = [#sipproxy_action{}]
+%%            Surplus = [#sipproxy_action{}]
+%%
+%% @doc     return a list of sipproxy_action record() that defines how
+%%          the the sip proxy in yxa is supposed to check the
+%%          locations in PrioOrderLocs. If a UA has registered more
+%%          than once for a SIP-user, with the same instance-id and
+%%          different reg-id's then the most recently registered
+%%          binding will be in Actions, and the rest in Surplus (this
+%%          is draft-Outbound processing). Note : timeout for
+%%          locations can be assigned in two ways: * if (Timeout /
+%%          no. of locations) > minimum ring timeout the (Timeout /
+%%          no. of locations) period is used for each location *
+%%          otherwise minimum ring time, will be assigned in location
+%%          priority order, until all Timeout seconds have been
+%%          consumed (no location gets less than minimum ring time
+%%          seconds), this means that some locations will NOT be
+%%          checked by the proxy - as there are no seconds left to
+%%          assign to them
+%% @end
 %%--------------------------------------------------------------------
 %% special case to handle TimePerLoc = Timeout div 0
 create_sequential_proxyaction_list([], _Backend, _Timeout, _User) ->
@@ -1170,22 +1194,28 @@ call_count_proxyaction_list([{Location, []} | R], TimeLeft, User, TimePerLoc, Co
 
 
 %%--------------------------------------------------------------------
-%% Function: redirect({Permanent, terminated}, State)
-%%           Permanent = yes | no
-%% Descrip.: redirect tag encountered, terminate cpl script and
-%%           redirect call (in finish_execution)
-%% Returns : {Termination, NewState}
+%% @spec    ({Permanent, terminated}, State) ->
+%%            {Termination, NewState}
+%%
+%%            Permanent = yes | no
+%%
+%% @doc     redirect tag encountered, terminate cpl script and
+%%          redirect call (in finish_execution)
+%% @end
 %%--------------------------------------------------------------------
 redirect({Permanent, terminate}, State) ->
     {{terminated, redirect, Permanent}, State}.
 
 %%--------------------------------------------------------------------
-%% Function: reject({RejectAttrs, terminate}, State)
-%%           RejectAttrs = reject__attrs record()
-%%           State       = state record()
-%% Descrip.: process a reject tag - terminate cpl script whit a reject
-%%           termination reason
-%% Returns : {Termination, NewState}
+%% @spec    ({RejectAttrs, terminate}, State) ->
+%%            {Termination, NewState}
+%%
+%%            RejectAttrs = #reject__attrs{}
+%%            State       = #state{}
+%%
+%% @doc     process a reject tag - terminate cpl script whit a reject
+%%          termination reason
+%% @end
 %%--------------------------------------------------------------------
 reject({RejectAttrs, terminate}, State) ->
     {{terminated, reject, RejectAttrs}, State}.
@@ -1196,9 +1226,11 @@ reject({RejectAttrs, terminate}, State) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
 
@@ -1209,12 +1241,14 @@ test() ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: test27()
-%% Descrip.: Called from interpret_cpl_test.erl to ensure calling
-%%           order of tests. The test is done here so that
-%%           create_sequential_proxyaction_list/4 doesn't need to be
-%%           exported
-%% Returns : ok
+%% @spec    () -> ok
+%%
+%% @doc     Called from interpret_cpl_test.erl to ensure calling order
+%%          of tests. The test is done here so that
+%%          create_sequential_proxyaction_list/4 doesn't need to be
+%%          exported
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test27() ->
     autotest:mark(?LINE, "process_cpl_script/7 - 27.0"),
@@ -1279,7 +1313,7 @@ test27() ->
     {ok, Res3, []} = create_sequential_proxyaction_list([], Backend, Timeout3, "test"),
     %% io:format("Res3 = ~p~n",[Res3]),
     [] = Res3,
-    
+
     autotest:mark(?LINE, "process_cpl_script/7 - 27.4"),
     %% test with location records containing siplocationdb_e records
 
@@ -1299,7 +1333,7 @@ test27() ->
 		      CreateLoc4(URI2, 0.8, "same-user-instance",	"<urn:test:instance1>", 200),
 		      #location{url = URI4, priority = 0.5}
 		     ],
-    
+
     Timeout4 = 40,
     {ok, Res4, Surplus4} = create_sequential_proxyaction_list(PrioOrderLocs4, Backend, Timeout4, "cpl-user"),
 
@@ -1333,13 +1367,13 @@ test27() ->
 						 }
 			 }
 	end,
-    
+
     PrioOrderLocs5 = [CreateLoc5("same-user", 100, 1),
 		      CreateLoc5("same-user", 200, 2),
 		      CreateLoc5("same-user", 300, 3),
 		      CreateLoc5("same-user", 305, 4)
 		     ],
-        
+
     Timeout5 = 40,
     {ok, First5, Surplus5} = create_sequential_proxyaction_list(PrioOrderLocs5, Backend, Timeout5, "cpl-user"),
 
@@ -1370,7 +1404,7 @@ test27() ->
 		      CreateLoc5("user2", 306, 1),
 		      CreateLoc5("user2", 400, 2)
 		     ],
-        
+
     Timeout6 = 40,
     {ok, First6, Surplus6} = create_sequential_proxyaction_list(PrioOrderLocs6, Backend, Timeout6, "cpl-user"),
 
@@ -1429,7 +1463,7 @@ test27() ->
 		      CreateLoc7b(2, 200, "flow2"),
 		      #location{url = StaticURL7, priority = 0.5}
 		     ],
-    
+
     Timeout7 = 70,
     {ok, Res7, Surplus7} = create_sequential_proxyaction_list(PrioOrderLocs7, Backend, Timeout7, "cpl-user"),
 
@@ -1459,5 +1493,5 @@ test27() ->
     ] = Surplus7,
 
 
-    
+
     ok.

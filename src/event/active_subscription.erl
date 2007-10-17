@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : active_subscription.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Handle a single SUBSCRIBE dialog. Refreshes the sub-
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Handle a single SUBSCRIBE dialog. Refreshes the sub-
 %%%           scription and sends all NOTIFYs we receive to our
 %%%           parent process (the active_subscriber) using
 %%%           gen_server:cast({received_notify, ...})
@@ -11,7 +11,8 @@
 %%%           an example and possibly also needed for some future
 %%%           event package.
 %%%
-%%% Created : 12 May 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    12 May 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(active_subscription).
 
@@ -44,6 +45,8 @@
 %% Records
 %%--------------------------------------------------------------------
 
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {uri,			%% sipurl record(), remote target (or where to send SUBSCRIBE request)
 		interval,		%% integer(), number of seconds until our subscription terminates (what we ask for anyways)
 		extra_headers,		%% list() of {Key, ValueL} - extra SIP headers to put in SUBSCRIBEs
@@ -78,26 +81,27 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, YxaCtx, BranchBase,
-%%                      Parent, ParentState, Interval, ExtraH,
-%%                      FirstCSeq)
-%%           Request     = request record()
-%%           YxaCtx      = yxa_ctx record()
-%%           BranchBase  = string(), base of branch we should use
-%%           Parent      = pid()
-%%           ParentState = init | active | stop | stopped
-%%           Interval    = integer(), what we should request as
-%%                         subscription expiration time
-%%           ExtraH      = list() of {Key, Value}, stuff we should
-%%                         put in our SUBSCRIBEs.
-%%           FirstCSeq   = integer(), first CSeq number we should use
-%% Descrip.: Starts the active_subscriber gen_server.
+%% @spec    (Request, YxaCtx, BranchBase, Parent, ParentState,
+%%          Interval, ExtraH, FirstCSeq) ->
+%%            Pid
 %%
-%% NOTE    : ExtraH MUST include one (and only one) of each of the
-%%           following : "Contact", "Event" and "Accept"
+%%            Request     = #request{}
+%%            YxaCtx      = #yxa_ctx{}
+%%            BranchBase  = string() "base of branch we should use"
+%%            Parent      = pid()
+%%            ParentState = init | active | stop | stopped
+%%            Interval    = integer() "what we should request as subscription expiration time"
+%%            ExtraH      = [{Key, Value}] "stuff we should put in our SUBSCRIBEs."
+%%            FirstCSeq   = integer() "first CSeq number we should use"
 %%
-%% Returns : Pid = pid() | {error, Reason}
-%%           Reason = {siperror, Status, Reason, EH} | term()
+%%            Pid    = pid() | {error, Reason}
+%%            Reason = {siperror, Status, Reason, EH} | term()
+%%
+%% @doc     Starts the active_subscriber gen_server.
+%%          NOTE : ExtraH MUST include one (and only one) of each of
+%%          the following : "Contact", "Event" and "Accept"
+%%
+%% @end
 %%--------------------------------------------------------------------
 start_link(#request{method = "NOTIFY"} = Request, YxaCtx, BranchBase, Parent, ParentState,
 	   Interval, ExtraH, FirstCSeq) when is_record(YxaCtx, yxa_ctx), is_list(BranchBase), is_pid(Parent),
@@ -136,16 +140,20 @@ start_link(#request{method = "NOTIFY"} = Request, YxaCtx, BranchBase, Parent, Pa
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({State1, Request, YxaCtx, ParentState, FirstCSeq})
-%%           State1      = state record(), state in
-%%           Request     = request record()
-%%           YxaCtx      = yxa_ctx record()
-%%           ParentState = atom(), init | active | stop | stopped
-%%           FirstCSeq   = integer(), first CSeq number we should use
-%% Descrip.: Initiates the server
-%% Returns : {ok, State}    |
-%%           ignore         |
-%%           {stop, Reason}
+%% @spec    ({State1, Request, YxaCtx, ParentState, FirstCSeq}) ->
+%%            {ok, State}    |
+%%            ignore         |
+%%            {stop, Reason}
+%%
+%%            State1      = #state{} "state in"
+%%            Request     = #request{}
+%%            YxaCtx      = #yxa_ctx{}
+%%            ParentState = init | active | stop | stopped
+%%            FirstCSeq   = integer() "first CSeq number we should use"
+%%
+%% @doc     Initiates the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([State1, Request, YxaCtx, ParentState, FirstCSeq]) ->
     THandler = YxaCtx#yxa_ctx.thandler,
@@ -188,32 +196,44 @@ init([State1, Request, YxaCtx, ParentState, FirstCSeq]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call({set_interval, NewInterval}, From, State)
-%%           NewInterval = integer()
-%% Descrip.: Change the SUBSCRIBE refresh interval.
-%% Returns : {reply, Reply, NewState}
-%%           NewState = state record()
-%%           Reply    = ok
+%% @spec    ({set_interval, NewInterval}, From, State) ->
+%%            {reply, Reply, NewState}
+%%
+%%            NewInterval = integer()
+%%
+%%            NewState = #state{}
+%%            Reply    = ok
+%%
+%% @doc     Change the SUBSCRIBE refresh interval.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({set_interval, NewInterval}, _From, State) when is_integer(NewInterval) ->
     %% XXX send a new SUBSCRIBE? Only do it if interval is decreased?
     {reply, ok, State#state{interval = NewInterval}};
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, From, State) -> {noreply, State}
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, _From, State) ->
     logger:log(error, "Active subscription: Received unknown gen_server call : ~p", [Unknown]),
@@ -221,18 +241,25 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Active subscription: Received unknown gen_server cast : ~p", [Unknown]),
@@ -240,22 +267,30 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({branch_result, FromPid, Branch, SipState,
-%%                       Response}, State)
-%% Descrip.: A SUBSCRIBE client transaction we started resulted in a
-%%           response. Check if that response was a (received) 481 and
-%%           terminate if it was.
-%% Returns : {noreply, State, Timeout} |
-%%           {stop, Reason, State}
+%% @spec    ({branch_result, FromPid, Branch, SipState, Response},
+%%          State) ->
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     A SUBSCRIBE client transaction we started resulted in a
+%%          response. Check if that response was a (received) 481 and
+%%          terminate if it was.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({branch_result, FromPid, Branch, SipState, Response}, State) ->
     Status =
@@ -335,10 +370,13 @@ handle_info(refresh_subscription, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({clienttransaction_terminating, ...}, State)
-%% Descrip.: A SUBSCRIBE client transaction has terminated. Remove it
-%%           from our list of active SUBSCRIBE client transactions.
-%% Returns : {noreply, State, Timeout}
+%% @spec    ({clienttransaction_terminating, ...}, State) ->
+%%            {noreply, State, Timeout}
+%%
+%% @doc     A SUBSCRIBE client transaction has terminated. Remove it
+%%          from our list of active SUBSCRIBE client transactions.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({clienttransaction_terminating, FromPid, _Branch}, State) ->
     NewState =
@@ -355,26 +393,30 @@ handle_info({clienttransaction_terminating, FromPid, _Branch}, State) ->
     {noreply, NewState};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({servertransaction_terminating, ...}, State)
-%% Descrip.: A SUBSCRIBE server transaction (probably) has terminated,
-%%           just ignore.
-%% Returns : {noreply, State, Timeout}
+%% @spec    ({servertransaction_terminating, ...}, State) ->
+%%            {noreply, State, Timeout}
+%%
+%% @doc     A SUBSCRIBE server transaction (probably) has terminated,
+%%          just ignore.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({servertransaction_terminating, _FromPid}, State) ->
     {noreply, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({new_request, FromPid, Ref, NewRequest,
-%%                       YxaCtx}, ...)
-%%           FromPid    = pid(), transaction layer
-%%           Ref        = ref(), unique reference to ack this message
-%%                               with (signal back to transaction
-%%                               layer)
-%%           NewRequest = request record()
-%%           YxaCtx     = yxa_ctx record(),
-%% Descrip.: Handle incoming requests on our dialog.
-%% Returns : {noreply, State, Timeout}      |
-%%           {stop, normal, State}
+%% @spec    ({new_request, FromPid, Ref, NewRequest, YxaCtx}, ...) ->
+%%            {noreply, State, Timeout}      |
+%%            {stop, normal, State}
+%%
+%%            FromPid    = pid() "transaction layer"
+%%            Ref        = ref() "unique reference to ack this message with (signal back to transaction layer)"
+%%            NewRequest = #request{}
+%%            YxaCtx     = #yxa_ctx{} ""
+%%
+%% @doc     Handle incoming requests on our dialog.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({new_request, FromPid, Ref, NewRequest, YxaCtx}, State) when is_record(NewRequest, request),
 									 is_record(YxaCtx, yxa_ctx) ->
@@ -399,22 +441,26 @@ handle_info({new_request, FromPid, Ref, NewRequest, YxaCtx}, State) when is_reco
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({dialog_expired, ...}, State)
-%% Descrip.: This should never happen, but the transaction layer just
-%%           signaled us that this dialog has expired. Log an error
-%%           message and exit. This almost certainly means that a bug
-%%           was encountered, since we should otherwise have noticed
-%%           that the subscription expired and exited ourselves.
-%% Returns : {stop, normal, State}
+%% @spec    ({dialog_expired, ...}, State) -> {stop, normal, State}
+%%
+%% @doc     This should never happen, but the transaction layer just
+%%          signaled us that this dialog has expired. Log an error
+%%          message and exit. This almost certainly means that a bug
+%%          was encountered, since we should otherwise have noticed
+%%          that the subscription expired and exited ourselves.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({dialog_expired, _DialogId}, State) ->
     logger:log(error, "Active subscription: Dialog expired, should not happen."),
     {stop, normal, State};
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Unknown, State)
-%% Descrip.: Unknown info.
-%% Returns : {noreply, State}
+%% @spec    (Unknown, State) -> {noreply, State}
+%%
+%% @doc     Unknown info.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(Unknown, State) ->
     logger:log(error, "Active subscription: Received unknown gen_server info : ~p", [Unknown]),
@@ -422,11 +468,13 @@ handle_info(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: The server is being shut down. Remove ourselves from the
-%%           ets table with subscriptions for presentitys before we
-%%           terminate.
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     The server is being shut down. Remove ourselves from the
+%%          ets table with subscriptions for presentitys before we
+%%          terminate.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, _State) ->
     case Reason of
@@ -438,9 +486,11 @@ terminate(Reason, _State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -452,11 +502,16 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: process_subscribe_2xx_response(Response, State)
-%%           Response = response record()
-%%           State    = state record()
-%% Descrip.: Process a 2xx response to a SUBSCRIBE we sent.
-%% Returns : NewState = state record()
+%% @spec    (Response, State) ->
+%%            NewState
+%%
+%%            Response = #response{}
+%%            State    = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Process a 2xx response to a SUBSCRIBE we sent.
+%% @end
 %%--------------------------------------------------------------------
 process_subscribe_2xx_response(Response, State) ->
     Expires =
@@ -501,11 +556,16 @@ process_subscribe_2xx_response(Response, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: send_subscribe(Expires, State)
-%%           Expires = integer()
-%%           State   = state record()
-%% Descrip.: Send a SUBSCRIBE request.
-%% Returns : NewState = state record()
+%% @spec    (Expires, State) ->
+%%            NewState
+%%
+%%            Expires = integer()
+%%            State   = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Send a SUBSCRIBE request.
+%% @end
 %%--------------------------------------------------------------------
 send_subscribe(Expires, State) when is_integer(Expires), State#state.subscribe_pid == undefined ->
     ExtraHeaders = State#state.extra_headers ++ [{"Expires", [integer_to_list(Expires)]}],
@@ -536,19 +596,23 @@ send_subscribe(Expires, State) when is_integer(Expires), State#state.subscribe_p
 
 
 %%--------------------------------------------------------------------
-%% Function: process_received_notify(Request, YxaCtx, State)
-%%           Request  = request record()
-%%           YxaCtx   = yxa_ctx record()
-%%           State    = state record()
-%% Descrip.: Process a NOTIFY request we have received.
-%% Returns : {noreply, NewState}      |
-%%           {stop, normal, NewState}
-%%           NewState = state record()
+%% @spec    (Request, YxaCtx, State) ->
+%%            {noreply, NewState}      |
+%%            {stop, normal, NewState}
+%%
+%%            Request = #request{}
+%%            YxaCtx  = #yxa_ctx{}
+%%            State   = #state{}
+%%
+%%            NewState = #state{}
+%%
+%% @doc     Process a NOTIFY request we have received.
+%% @end
 %%--------------------------------------------------------------------
 process_received_notify(Request, YxaCtx, State) when is_record(Request, request), is_record(YxaCtx, yxa_ctx),
 						     is_record(State, state) ->
     THandler = YxaCtx#yxa_ctx.thandler,
-    
+
     Now = util:timestamp(),
     NewState1 = State#state{last_notify_ts = Now},
 
@@ -603,11 +667,11 @@ process_received_notify(Request, YxaCtx, State) when is_record(Request, request)
 			    %% process the body
 			    Dialog = State#state.dialog,
 			    DialogId = {Dialog#dialog.callid, Dialog#dialog.local_tag, Dialog#dialog.remote_tag},
-			    
+
 			    Ctx = #event_ctx{dialog_id = DialogId},
 			    gen_server:cast(State#state.parent, {received_notify, self(), Request, YxaCtx,
 								 THandler, Ctx}),
-			    
+
 			    {noreply, NewState1}
 		    end;
 		{siperror, Status, Reason, EH} ->
@@ -618,13 +682,17 @@ process_received_notify(Request, YxaCtx, State) when is_record(Request, request)
 
 
 %%--------------------------------------------------------------------
-%% Function: check_is_acceptable(Request, AcceptL)
-%%           Request = request record()
-%%           AcceptL = list() of string()
-%% Descrip.: Check if the Content-Type of Request matches any element
-%%           in AcceptL (the list of accepted content types).
-%% Returns : ok | SipError
-%%           SipError = {siperror, Status, Reason, EH}
+%% @spec    (Request, AcceptL) ->
+%%            ok | SipError
+%%
+%%            Request = #request{}
+%%            AcceptL = [string()]
+%%
+%%            SipError = {siperror, Status, Reason, EH}
+%%
+%% @doc     Check if the Content-Type of Request matches any element
+%%          in AcceptL (the list of accepted content types).
+%% @end
 %%--------------------------------------------------------------------
 check_is_acceptable(Request, AcceptL) ->
     case keylist:fetch('content-type', Request#request.header) of
@@ -641,14 +709,18 @@ check_is_acceptable(Request, AcceptL) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_subscription_state_expires(Header, Default)
-%%           Header  = keylist record()
-%%           Default = integer()
-%% Descrip.: Check for an Subscription-State header with an expires
-%%           parameter, or return Default if no expires parameter is
-%%           found, or it does not contain an integer.
-%% Returns : {ok, Seconds}
-%%           Seconds = integer()
+%% @spec    (Header, Default) ->
+%%            {ok, Seconds}
+%%
+%%            Header  = #keylist{}
+%%            Default = integer()
+%%
+%%            Seconds = integer()
+%%
+%% @doc     Check for an Subscription-State header with an expires
+%%          parameter, or return Default if no expires parameter is
+%%          found, or it does not contain an integer.
+%% @end
 %%--------------------------------------------------------------------
 get_subscription_state_expires(Header, Default) when is_integer(Default) ->
     case keylist:fetch("Subscription-State", Header) of
@@ -681,13 +753,18 @@ get_subscription_state_expires2([], Default) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: get_retry_after(Header, Default)
-%%           Header  = keylist record()
-%%           Default = integer()
-%% Descrip.: Check for an Retry-After header, and retun it's value or
-%%           return Default if no value is found, or it does not
-%%           contain an integer.
-%% Returns : Seconds = integer()
+%% @spec    (Header, Default) ->
+%%            Seconds
+%%
+%%            Header  = #keylist{}
+%%            Default = integer()
+%%
+%%            Seconds = integer()
+%%
+%% @doc     Check for an Retry-After header, and retun it's value or
+%%          return Default if no value is found, or it does not
+%%          contain an integer.
+%% @end
 %%--------------------------------------------------------------------
 get_retry_after(Header, Default) when is_integer(Default) ->
     case keylist:fetch('retry-after', Header) of

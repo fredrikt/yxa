@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : appserver_glue.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Appserver glue between sipproxy and server transaction.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Appserver glue between sipproxy and server transaction.
 %%%
 %%%           During a fork of a request, we typically have the
 %%%           following components working together :
@@ -18,7 +18,7 @@
 %%%               ------------------
 %%%               |    sipproxy    |
 %%%               ------------------
-%%%                 |     |      | 
+%%%                 |     |      |
 %%%               ----- -----  -----
 %%%               |UAC| |UAC|  |UAC|  ...
 %%%               ----- -----  -----
@@ -42,7 +42,7 @@
 %%%           3) Tells sipproxy to CANCEL all pending transactions if
 %%%              the UAS is cancelled (the transaction layer receives
 %%%              a CANCEL that matches the UAS transaction).
-%%%           
+%%%
 %%%           for CPL processing, things work a bit differently. When
 %%%           we process a CPL script, we don't pass final responses
 %%%           to the UAS but rather to the CPL engine so that it can
@@ -77,7 +77,8 @@
 %%%              `{sipproxy_terminating, FromPid}'                      <br/>
 %%%                  The sipproxy process is finally terminating.
 %%%
-%%% Created : 25 Oct 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @since    25 Oct 2004 by Fredrik Thulin <ft@it.su.se>
+%%% @end
 %%%-------------------------------------------------------------------
 -module(appserver_glue).
 
@@ -112,6 +113,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  branchbase,		%% string(), base of branches we should use
 	  callhandler,		%% term(), the server transaction handler
@@ -134,31 +137,36 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Request, Actions, Surplus)
-%%           Request = request record()
-%%           Actions = list() of sipproxy_action record()
-%%           Surplus = list() of sipproxy_action record()
-%% Descrip.: Start an appserver_glue gen_server. One is started for
-%%           each forked request - acting as glue between a sipproxy
-%%           process and a server transaction.
-%% Returns : gen_server:start_link/4
+%% @spec    (Request, Actions, Surplus) -> term()
+%%
+%%            Request = #request{}
+%%            Actions = [#sipproxy_action{}]
+%%            Surplus = [#sipproxy_action{}]
+%%
+%% @doc     Start an appserver_glue gen_server. One is started for
+%%          each forked request - acting as glue between a sipproxy
+%%          process and a server transaction.
+%% @end
 %%--------------------------------------------------------------------
 start_link(Request, Actions, Surplus) when is_record(Request, request), is_list(Actions),
 					   is_list(Surplus) ->
     gen_server:start_link(?MODULE, {Request, Actions, Surplus}, []).
 
 %%--------------------------------------------------------------------
-%% Function: start_link_cpl(Parent, BranchBase, CallHandler, Request,
-%%                Actions, Surplus)
-%%           Parent      = pid(), CPL interpreter backend process
-%%           BranchBase  = string()
-%%           CallHandler = thandler record()
-%%           Request     = request record()
-%%           Actions     = list() of sipproxy_action record()
-%%           Surplus     = list() of sipproxy_action record()
-%% Descrip.: Starts a fork as a part of CPL processing. Exported only
-%%           for use by the CPL subsystem.
-%% Returns : gen_server:start_link/4
+%% @spec    (Parent, BranchBase, CallHandler, Request, Actions,
+%%          Surplus) -> term()
+%%
+%%            Parent      = pid() "CPL interpreter backend process"
+%%            BranchBase  = string()
+%%            CallHandler = #thandler{}
+%%            Request     = #request{}
+%%            Actions     = [#sipproxy_action{}]
+%%            Surplus     = [#sipproxy_action{}]
+%%
+%% @doc     Starts a fork as a part of CPL processing. Exported only
+%%          for use by the CPL subsystem.
+%% @private
+%% @end
 %%--------------------------------------------------------------------
 start_link_cpl(Parent, BranchBase, CallHandler, Request, Actions, Surplus)
   when is_pid(Parent), is_list(BranchBase), is_record(Request, request), is_list(Actions), is_list(Surplus) ->
@@ -170,16 +178,20 @@ start_link_cpl(Parent, BranchBase, CallHandler, Request, Actions, Surplus)
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init({Request, Actions, Surplus})
-%%           Request     = request record()
-%%           Actions     = list() of sipproxy_action record()
-%%           Surplus     = list() of sipproxy_action record()
-%%           Parent      = pid(), CPL interpreter backend process
-%%           BranchBase  = string()
-%% Descrip.: Initiates the server.
-%% Returns : {ok, State, Timeout} |
-%%           ok                   |
-%%           error
+%% @spec    ({Request, Actions, Surplus}) ->
+%%            {ok, State, Timeout} |
+%%            ok                   |
+%%            error
+%%
+%%            Request    = #request{}
+%%            Actions    = [#sipproxy_action{}]
+%%            Surplus    = [#sipproxy_action{}]
+%%            Parent     = pid() "CPL interpreter backend process"
+%%            BranchBase = string()
+%%
+%% @doc     Initiates the server.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({Request, Actions, Surplus}) when is_record(Request, request), is_list(Actions), is_list(Surplus) ->
     case transactionlayer:adopt_st_and_get_branchbase(Request) of
@@ -206,23 +218,26 @@ init({Request, Actions, Surplus}) when is_record(Request, request), is_list(Acti
     end;
 
 %%--------------------------------------------------------------------
-%% Function: init({cpl, Parent, BranchBase, CallHandler, Request,
-%%                Actions, Surplus})
-%%           Parent      = pid(), CPL interpreter backend process
-%%           BranchBase  = string()
-%%           CallHandler = thandler record()
-%%           Request     = request record()
-%%           Actions     = list() of sipproxy_action record()
-%%           Surplus     = list() of sipproxy_action record()
-%% Descrip.: Initiates the server.
-%%           For CPL proxy actions, we don't adopt the server
-%%           transaction and we return everything but provisional
-%%           responses and 2xx response to INVITE to the CPL script
-%%           for further processing, instead of sending it to the
-%%           STHandler like we do for non-CPL processing.
-%% Returns : {ok, State, Timeout} |
-%%           ok                   |
-%%           error
+%% @spec    ({cpl, Parent, BranchBase, CallHandler, Request, Actions,
+%%          Surplus}) ->
+%%            {ok, State, Timeout} |
+%%            ok                   |
+%%            error
+%%
+%%            Parent      = pid() "CPL interpreter backend process"
+%%            BranchBase  = string()
+%%            CallHandler = #thandler{}
+%%            Request     = #request{}
+%%            Actions     = [#sipproxy_action{}]
+%%            Surplus     = [#sipproxy_action{}]
+%%
+%% @doc     Initiates the server. For CPL proxy actions, we don't
+%%          adopt the server transaction and we return everything but
+%%          provisional responses and 2xx response to INVITE to the
+%%          CPL script for further processing, instead of sending it
+%%          to the STHandler like we do for non-CPL processing.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init({cpl, Parent, BranchBase, CallHandler, Request, Actions, Surplus}) ->
     ForkPid = spawn_link(sipproxy, start_actions, [BranchBase, self(), Request, Actions, Surplus]),
@@ -242,20 +257,27 @@ init({cpl, Parent, BranchBase, CallHandler, Request, Actions, Surplus}) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages.
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_call(Unknown, From, State)
-%% Descrip.: Unknown call.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, From, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown call.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(Unknown, From, State) ->
     logger:log(error, "Appserver glue: Received unknown gen_server call from ~p :~n~p",
@@ -263,41 +285,55 @@ handle_call(Unknown, From, State) ->
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Unknown, State)
-%% Descrip.: Unknown cast.
-%% Returns : {noreply, State, ?TIMEOUT}
+%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%%
+%% @doc     Unknown cast.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_cast(Unknown, State) ->
     logger:log(error, "Appserver glue: Received unknown gen_server cast :~n~p", [Unknown]),
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info({servertransaction_cancelled, FromPid, EH},
-%%                    State)
-%%           FromPid = pid(), callhandler_pid
-%%           EH      = list() of {Key, ValueList}, extra headers
-%%                     to include in the CANCEL requests
-%% Descrip.: Our server transaction (CallHandlerPid) signals that it
-%%           has been cancelled. Send {cancel_pending, EH} to our
-%%           sipproxy process (ForkPid).
-%% Returns : {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    ({servertransaction_cancelled, FromPid, EH}, State) ->
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%%            FromPid = pid() "callhandler_pid"
+%%            EH      = [{Key, ValueList}] "extra headers to include in the CANCEL requests"
+%%
+%% @doc     Our server transaction (CallHandlerPid) signals that it
+%%          has been cancelled. Send {cancel_pending, EH} to our
+%%          sipproxy process (ForkPid).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid = FromPid} = State)
   when is_pid(FromPid) ->
@@ -312,17 +348,20 @@ handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid =
     check_quit({noreply, NewState1, ?TIMEOUT}, none);
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({servertransaction_terminated, FromPid},
-%%                       State)
-%%           FromPid = pid(), callhandler_pid
-%% Descrip.: Our server transaction (CallHandlerPid) signals that it
-%%           has terminated. We have no business when either our
-%%           server transaction, or our sipproxy has terminated so
-%%           we might as well quit too. This will make sipproxy
-%%           exit, which will make the client transactions cancel
-%%           themselves if they are not already finished.
-%% Returns : {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    ({servertransaction_terminated, FromPid}, State) ->
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%%            FromPid = pid() "callhandler_pid"
+%%
+%% @doc     Our server transaction (CallHandlerPid) signals that it
+%%          has terminated. We have no business when either our
+%%          server transaction, or our sipproxy has terminated so we
+%%          might as well quit too. This will make sipproxy exit,
+%%          which will make the client transactions cancel themselves
+%%          if they are not already finished.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({servertransaction_terminating, FromPid}, #state{callhandler_pid = FromPid} = State) when is_pid(FromPid) ->
     #state{callhandler_pid	= CallHandlerPid,
@@ -333,18 +372,22 @@ handle_info({servertransaction_terminating, FromPid}, #state{callhandler_pid = F
     check_quit({stop, normal, State});
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({sipproxy_response, FromPid, Branch,
-%%                       Response}, State)
-%%           FromPid  = pid(), forkpid
-%%           Branch   = string()
-%%           Response = response record()
-%% Descrip.: Our sipproxy has received a response that it was supposed
-%%           to forward to the TU (transaction user, us). Check it out
-%%           to see what we should do with it (forward it to the
-%%           server transaction, or just ignore it - depends on our
-%%           sipstate).
-%% Returns : {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec
+%%    ({sipproxy_response, FromPid, Branch, Response}, State) ->
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%%            FromPid  = pid() "forkpid"
+%%            Branch   = string()
+%%            Response = #response{}
+%%
+%% @doc     Our sipproxy has received a response that it was supposed
+%%          to forward to the TU (transaction user, us). Check it out
+%%          to see what we should do with it (forward it to the
+%%          server transaction, or just ignore it - depends on our
+%%          sipstate).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({sipproxy_response, FromPid, _Branch, Response}, #state{forkpid = FromPid} = State)
   when is_record(Response, response), is_pid(FromPid) ->
@@ -352,20 +395,26 @@ handle_info({sipproxy_response, FromPid, _Branch, Response}, #state{forkpid = Fr
     check_quit({noreply, NewState, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({sipproxy_all_terminated, FromPid,
-%%                        FinalResponse}, State)
-%%           FromPid  = pid(), forkpid
-%%           FinalResponse = response record() | {Status, Reason} | {Status, Reason, ExtraHeaders}
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%% Descrip.: Our sipproxy says that now, all it's client transactions
-%%           are finished. It hands us either a final response
-%%           as a record(), which we might or might not have seen
-%%           before (so we check if we should forward it to the server
-%%           transaction), or an (error) response as a tuple that it
-%%           wants us to tell the server transaction to generate.
-%% Returns : {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec
+%%    ({sipproxy_all_terminated, FromPid, FinalResponse}, State) ->
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%%            FromPid       = pid() "forkpid"
+%%            FinalResponse = #response{}                    |
+%%                            {Status, Reason}               |
+%%                            {Status, Reason, ExtraHeaders}
+%%            Status        = integer() "SIP status code"
+%%            Reason        = string() "SIP reason phrase"
+%%
+%% @doc     Our sipproxy says that now, all it's client transactions
+%%          are finished. It hands us either a final response as a
+%%          record(), which we might or might not have seen before
+%%          (so we check if we should forward it to the server
+%%          transaction), or an (error) response as a tuple that it
+%%          wants us to tell the server transaction to generate.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({sipproxy_all_terminated, FromPid, FinalResponse}, #state{forkpid = FromPid} = State) when is_pid(FromPid) ->
     CallHandler = State#state.callhandler,
@@ -396,15 +445,19 @@ handle_info({sipproxy_all_terminated, FromPid, FinalResponse}, #state{forkpid = 
     check_quit({noreply, NewState1, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({sipproxy_no_more_actions, FromPid}, State)
-%%           FromPid  = pid(), forkpid
-%% Descrip.: Our sipproxy says that it has no more actions to perform.
-%%           Check if we have sent a final response by now, and if so
-%%           just ignore this signal. If we haven't sent a final
-%%           response yet we check if we should generate a
-%%           '408 Request Timeout' response.
-%% Returns : {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    ({sipproxy_no_more_actions, FromPid}, State) ->
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%%            FromPid = pid() "forkpid"
+%%
+%% @doc     Our sipproxy says that it has no more actions to perform.
+%%          Check if we have sent a final response by now, and if so
+%%          just ignore this signal. If we haven't sent a final
+%%          response yet we check if we should generate a '408
+%%          Request Timeout' response.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({sipproxy_no_more_actions, FromPid}, #state{forkpid = FromPid} = State) when is_pid(FromPid) ->
     NewState1 =
@@ -429,14 +482,18 @@ handle_info({sipproxy_no_more_actions, FromPid}, #state{forkpid = FromPid} = Sta
     check_quit({noreply, NewState1, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
-%% Function: handle_info({sipproxy_terminating, FromPid}, State)
-%%           FromPid  = pid(), forkpid
-%% Descrip.: Our sipproxy is terminating. We might as well terminate
-%%           too. If we haven't sent a final response to our server
-%%           transaction yet, it will detect us exiting and generate a
-%%           500 Server Internal Error.
-%% Returns : {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    ({sipproxy_terminating, FromPid}, State) ->
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%%            FromPid = pid() "forkpid"
+%%
+%% @doc     Our sipproxy is terminating. We might as well terminate
+%%          too. If we haven't sent a final response to our server
+%%          transaction yet, it will detect us exiting and generate a
+%%          500 Server Internal Error.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({sipproxy_terminating, FromPid}, #state{forkpid=FromPid}=State) when is_pid(FromPid) ->
     #state{callhandler_pid	= CallHandlerPid,
@@ -447,14 +504,15 @@ handle_info({sipproxy_terminating, FromPid}, #state{forkpid=FromPid}=State) when
     check_quit({stop, normal, State});
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(timeout, State)
-%% Descrip.: For some reason, we are still alive. Check if we should
-%%           just garbage collect our way out of here.
-%% Returns : {noreply, NewState, ?TIMEOUT}
-%% Notes   : XXX maybe we should log this as an error. This should
-%%           always be an indication that _something_ is wrong - even
-%%           if it really is something in the transaction layer or
-%%           wherever.
+%% @spec    (timeout, State) -> {noreply, NewState, Timeout::integer()}
+%%
+%% @doc     For some reason, we are still alive. Check if we should
+%%          just garbage collect our way out of here. Notes : XXX
+%%          maybe we should log this as an error. This should always
+%%          be an indication that _something_ is wrong - even if it
+%%          really is something in the transaction layer or wherever.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     logger:log(error, "Appserver glue: Still alive after 5 minutes! Exiting. CallHandler '~p', ForkPid '~p'",
@@ -467,9 +525,11 @@ handle_info(Info, State) ->
     {noreply, State, ?TIMEOUT}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : any (ignored by gen_server)
+%% @spec    (Reason, State) -> term() "ignored by gen_server"
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     BranchBase = State#state.branchbase,
@@ -486,9 +546,11 @@ terminate(Reason, State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(OldVsn, State, Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, NewState}
+%% @spec    (OldVsn, State, Extra) -> {ok, NewState}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -498,25 +560,30 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Function: check_quit(Res)
+%% @spec    (Res) -> term()
+%%
 %% @equiv    check_quit(Res, none)
+%% @end
 %%--------------------------------------------------------------------
 check_quit(Res) ->
     check_quit(Res, none).
 
 %%--------------------------------------------------------------------
-%% Function: check_quit(Res, From)
-%%           Res  = term(), gen_server:call/cast/info() return value
-%%           From = term(), gen_server from-value | none
-%% Descrip.: Wrapper function checking if our server transaction
-%%           (callhandler) or our sipproxy (forkpid) is dead. If so,
-%%           If so, turn Res into a {stop, ...} but if Res was a
-%%           {reply, ...} do the gen_server:reply() first.
-%% Returns : Res                   |
-%%           {stop, Reason, State}            (terminate/2 is called)
-%% Note    : Not all variants of gen_server call/cast/info return
-%%           values are covered in these functions - only the ones we
-%%           actually use!
+%% @spec    (Res, From) ->
+%%            Res                   |
+%%            {stop, Reason, State}
+%%
+%%            Res  = term() "gen_server:call/cast/info() return value"
+%%            From = term() "gen_server from-value | none"
+%%
+%% @doc     Wrapper function checking if our server transaction
+%%          (callhandler) or our sipproxy (forkpid) is dead. If so,
+%%          If so, turn Res into a {stop, ...} but if Res was a
+%%          {reply, ...} do the gen_server:reply() first. Note : Not
+%%          all variants of gen_server call/cast/info return values
+%%          are covered in these functions - only the ones we
+%%          actually use!
+%% @end
 %%--------------------------------------------------------------------
 check_quit(Res, From) ->
     case Res of
@@ -552,29 +619,36 @@ check_quit2_terminate(Res, _From, State) ->
     NewReply.
 
 %%--------------------------------------------------------------------
-%% Function: send_final_response(State, Status, Reason)
-%%           State  = state record()
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
+%% @spec    (State, Status, Reason) -> term()
+%%
+%%            State  = #state{}
+%%            Status = integer() "SIP status code"
+%%            Reason = string() "SIP reason phrase"
+%%
 %% @equiv    send_final_response(State, Status, Reason, [])
+%% @end
 %%--------------------------------------------------------------------
 send_final_response(State, Status, Reason) ->
     send_final_response(State, Status, Reason, []).
 
 %%--------------------------------------------------------------------
-%% Function: send_final_response(State, Status, Reason, EH)
-%%           State  = state record()
-%%           Status = integer(), SIP status code
-%%           Reason = string(), SIP reason phrase
-%%           EH     = list() of {Key, Value}, extra headers
-%% Descrip.: We have a final response to deliver.
-%%           * Non-CPL : Send a final response to our server
-%%             transaction (aka. callhandler).
-%%           * CPL : Check if it is a 2xx response. If it is, we send
-%%             it to the server transaction directly and then tell the
-%%             CPL pid about it. If it is not a 2xx response, just
-%%             tell the CPL pid about it.
-%% Returns : State = state record()
+%% @spec    (State, Status, Reason, EH) ->
+%%            State
+%%
+%%            State  = #state{}
+%%            Status = integer() "SIP status code"
+%%            Reason = string() "SIP reason phrase"
+%%            EH     = [{Key, Value}] "extra headers"
+%%
+%%            State = #state{}
+%%
+%% @doc     We have a final response to deliver. * Non-CPL : Send a
+%%          final response to our server transaction (aka.
+%%          callhandler). * CPL : Check if it is a 2xx response. If
+%%          it is, we send it to the server transaction directly and
+%%          then tell the CPL pid about it. If it is not a 2xx
+%%          response, just tell the CPL pid about it.
+%% @end
 %%--------------------------------------------------------------------
 send_final_response(#state{cpl_pid = none} = State, Status, Reason, EH) when is_integer(Status), is_list(Reason) ->
     TH = State#state.callhandler,
@@ -592,14 +666,19 @@ send_final_response(State, Status, Reason, EH) when is_record(State, state), is_
     State#state{completed = true}.
 
 %%--------------------------------------------------------------------
-%% Function: handle_sipproxy_response(Response, State)
-%%           Response = response record()
-%%           State    = state record()
-%% Descrip.: Process a response we have received from our sipproxy
-%%           process and figure out what to do with it. See if we
-%%           should send it on to our parent and record if this was a
-%%           final response (set State#state.completed=true if so).
-%% Returns : State = state record()
+%% @spec    (Response, State) ->
+%%            State
+%%
+%%            Response = #response{}
+%%            State    = #state{}
+%%
+%%            State = #state{}
+%%
+%% @doc     Process a response we have received from our sipproxy
+%%          process and figure out what to do with it. See if we
+%%          should send it on to our parent and record if this was a
+%%          final response (set State#state.completed=true if so).
+%% @end
 %%--------------------------------------------------------------------
 %%
 %% Method is INVITE and we are already completed

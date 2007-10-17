@@ -1,9 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : mysql.erl
-%%% Author  : Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% Descrip.: MySQL client.
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      MySQL client.
 %%%
-%%% Created :  4 Aug 2005 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @since     4 Aug 2005 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
 %%%
 %%% Copyright (c) 2001-2004 Kungliga Tekniska Högskolan
 %%% See the file COPYING
@@ -84,6 +85,8 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
+%% @type state() = #state{}.
+%%                 no description
 -record(state, {
 	  conn_list,	%% list() of mysql_connection record()
 	  log_fun	%% undefined | function for logging,
@@ -115,20 +118,22 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: start_link(Id, Host, User, Password, Database)
-%%           start_link(Id, Host, Port, User, Password, Database)
-%%           start_link(Id, Host, User, Password, Database, LogFun)
-%%           start_link(Id, Host, Port, User, Password, Database,
-%%                      LogFun)
-%%           Id       = term(), first connection-group Id
-%%           Host     = string()
-%%           Port     = integer()
-%%           User     = string()
-%%           Password = string()
-%%           Database = string()
-%%           LogFun   = undefined | function() of arity 3
-%% Descrip.: Starts the MySQL client gen_server process.
-%% Returns : {ok, Pid} | ignore | {error, Error}
+%% @spec    (Id, Host, User, Password, Database) start_link(Id, Host,
+%%          Port, User, Password, Database) start_link(Id, Host,
+%%          User, Password, Database, LogFun) start_link(Id, Host,
+%%          Port, User, Password, Database, LogFun) ->
+%%            {ok, Pid} | ignore | {error, Error}
+%%
+%%            Id       = term() "first connection-group Id"
+%%            Host     = string()
+%%            Port     = integer()
+%%            User     = string()
+%%            Password = string()
+%%            Database = string()
+%%            LogFun   = undefined | function() of arity 3
+%%
+%% @doc     Starts the MySQL client gen_server process.
+%% @end
 %%--------------------------------------------------------------------
 start_link(Id, Host, User, Password, Database) when is_list(Host), is_list(User), is_list(Password),
 						    is_list(Database) ->
@@ -148,17 +153,20 @@ start_link(Id, Host, Port, User, Password, Database, LogFun) when is_list(Host),
     gen_server:start_link({local, ?SERVER}, ?MODULE, [Id, Host, Port, User, Password, Database, LogFun], []).
 
 %%--------------------------------------------------------------------
-%% Function: fetch(Id, Query)
-%%           fetch(Id, Query, Timeout)
-%%           Id      = term(), connection-group Id
-%%           Query   = string(), MySQL query in verbatim
-%%           Timeout = integer() | infinity, gen_server timeout value
-%% Descrip.: Send a query and wait for the result.
-%% Returns : {ok, FieldInfo, Rows} |
-%%           {error, Reason}
-%%           FieldInfo = term()
-%%           Rows      = list() of [string()]
-%%           Reason    = term()
+%% @spec    (Id, Query) fetch(Id, Query, Timeout) ->
+%%            {ok, FieldInfo, Rows} |
+%%            {error, Reason}
+%%
+%%            Id      = term() "connection-group Id"
+%%            Query   = string() "MySQL query in verbatim"
+%%            Timeout = integer() | infinity "gen_server timeout value"
+%%
+%%            FieldInfo = term()
+%%            Rows      = [[string()]]
+%%            Reason    = term()
+%%
+%% @doc     Send a query and wait for the result.
+%% @end
 %%--------------------------------------------------------------------
 fetch(Id, Query) when is_list(Query) ->
     gen_server:call(?SERVER, {fetch, Id, Query}).
@@ -166,11 +174,16 @@ fetch(Id, Query, Timeout) when is_list(Query) ->
     gen_server:call(?SERVER, {fetch, Id, Query}, Timeout).
 
 %%--------------------------------------------------------------------
-%% Function: quote(String)
-%%           String = string()
-%% Descrip.: Quote a string so that it can be included safely in a
-%%           MySQL query.
-%% Returns : Quoted = string()
+%% @spec    (String) ->
+%%            Quoted
+%%
+%%            String = string()
+%%
+%%            Quoted = string()
+%%
+%% @doc     Quote a string so that it can be included safely in a
+%%          MySQL query.
+%% @end
 %%--------------------------------------------------------------------
 quote(String) when is_list(String) ->
     [34 | lists:reverse([34 | quote(String, [])])].	%% 34 is $"
@@ -195,15 +208,18 @@ quote([C | Rest], Acc) ->
     quote(Rest, [C | Acc]).
 
 %%--------------------------------------------------------------------
-%% Function: asciz_binary(Data, Acc)
-%%           Data = binary()
-%%           Acc  = list(), input accumulator
-%% Descrip.: Find the first zero-byte in Data and add everything
-%%           before it to Acc, as a string.
-%% Returns : {NewList, Rest}
-%%           NewList = list(), Acc plus what we extracted from Data
-%%           Rest    = binary(), whatever was left of Data, not
-%%                     including the zero-byte
+%% @spec    (Data, Acc) ->
+%%            {NewList, Rest}
+%%
+%%            Data = binary()
+%%            Acc  = list() "input accumulator"
+%%
+%%            NewList = list() "Acc plus what we extracted from Data"
+%%            Rest    = binary() "whatever was left of Data, not including the zero-byte"
+%%
+%% @doc     Find the first zero-byte in Data and add everything before
+%%          it to Acc, as a string.
+%% @end
 %%--------------------------------------------------------------------
 asciz_binary(<<>>, Acc) ->
     {lists:reverse(Acc), <<>>};
@@ -213,18 +229,20 @@ asciz_binary(<<C:8, Rest/binary>>, Acc) ->
     asciz_binary(Rest, [C | Acc]).
 
 %%--------------------------------------------------------------------
-%% Function: connect(Id, Host, Port, User, Password, Database,
-%%                   Reconnect)
-%%           Id        = term(), connection-group Id
-%%           Host      = string()
-%%           Port      = undefined | integer()
-%%           User      = string()
-%%           Password  = string()
-%%           Database  = string()
-%%           Reconnect = true | false
-%% Descrip.: Starts a MySQL connection and, if successfull, registers
-%%           it with the mysql_dispatcher.
-%% Returns : {ok, ConnPid} | {error, Reason}
+%% @spec    (Id, Host, Port, User, Password, Database, Reconnect) ->
+%%            {ok, ConnPid} | {error, Reason}
+%%
+%%            Id        = term() "connection-group Id"
+%%            Host      = string()
+%%            Port      = undefined | integer()
+%%            User      = string()
+%%            Password  = string()
+%%            Database  = string()
+%%            Reconnect = true | false
+%%
+%% @doc     Starts a MySQL connection and, if successfull, registers
+%%          it with the mysql_dispatcher.
+%% @end
 %%--------------------------------------------------------------------
 connect(Id, Host, undefined, User, Password, Database, Reconnect) ->
     connect(Id, Host, ?PORT, User, Password, Database, Reconnect);
@@ -261,19 +279,20 @@ connect(Id, Host, Port, User, Password, Database, Reconnect) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: log(LogFun, Level, Format)
-%%           log(LogFun, Level, Format, Arguments)
-%%           LogFun    = undefined | function() with arity 3
-%%           Level     = debug | normal | error
-%%           Format    = string()
-%%           Arguments = list() of term()
-%% Descrip.: Either call the function LogFun with the Level, Format
-%%           and Arguments as parameters or log it to the console if
-%%           LogFun is undefined.
-%% Returns : void()
+%% @spec    (LogFun, Level, Format) log(LogFun, Level, Format,
+%%          Arguments) -> void()
 %%
-%% Note    : Exported only for use by the mysql_* modules.
+%%            LogFun    = undefined | function() with arity 3
+%%            Level     = debug | normal | error
+%%            Format    = string()
+%%            Arguments = [term()]
 %%
+%% @doc     Either call the function LogFun with the Level, Format and
+%%          Arguments as parameters or log it to the console if
+%%          LogFun is undefined. Note : Exported only for use by the
+%%          mysql_* modules.
+%%
+%% @end
 %%--------------------------------------------------------------------
 log(LogFun, Level, Format) ->
     log(LogFun, Level, Format, []).
@@ -291,19 +310,21 @@ log(undefined, _Level, Format, Arguments) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Args) -> {ok, State} |
-%%                         {ok, State, Timeout} |
-%%                         ignore               |
-%%                         {stop, Reason}
-%%           Args = [Id, Host, Port, User, Password, Database, LogFun]
-%%             Id       = term(), connection-group Id
-%%             Host     = string()
-%%             Port     = integer()
-%%             User     = string()
-%%             Password = string()
-%%             Database = string()
-%%             LogFun   = undefined | function() with arity 3
-%% Descrip.: Initiates the gen_server (MySQL dispatcher).
+%% @spec    (Args) -> {ok, State} | {ok, State, Timeout} | ignore |
+%%          {stop, Reason} -> term()
+%%
+%%            Args     = [Id, Host, Port, User, Password, Database, LogFun]
+%%            Id       = term() "connection-group Id"
+%%            Host     = string()
+%%            Port     = integer()
+%%            User     = string()
+%%            Password = string()
+%%            Database = string()
+%%            LogFun   = undefined | function() with arity 3
+%%
+%% @doc     Initiates the gen_server (MySQL dispatcher).
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 init([Id, Host, Port, User, Password, Database, LogFun]) ->
     case mysql_conn:start(Host, Port, User, Password, Database, LogFun) of
@@ -333,29 +354,39 @@ init([Id, Host, Port, User, Password, Database, LogFun]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(Msg, From, State)
-%% Descrip.: Handling call messages.
-%% Returns : {reply, Reply, State}          |
-%%           {reply, Reply, State, Timeout} |
-%%           {noreply, State}               |
-%%           {noreply, State, Timeout}      |
-%%           {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_call(Msg, From, State) ->
+%%            {reply, Reply, State}          |
+%%            {reply, Reply, State, Timeout} |
+%%            {noreply, State}               |
+%%            {noreply, State, Timeout}      |
+%%            {stop, Reason, Reply, State}   |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling call messages.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({fetch, Id, Query}, From, State)
-%%           Id    = term(), connection-group id
-%%           Query = string(), MySQL query
-%% Descrip.: Make a MySQL query. Use the first connection matching Id
-%%           in our connection-list. Don't block the mysql_dispatcher
-%%           by returning {noreply, ...} here and let the mysql_conn
-%%           do gen_server:reply(...) when it has an answer.
-%% Returns : {noreply, NewState}             |
-%%           {reply, {error, Reason}, State}
-%%           NewState = state record()
-%%           Reason   = atom() | string()
+%% @spec    ({fetch, Id, Query}, From, State) ->
+%%            {noreply, NewState}             |
+%%            {reply, {error, Reason}, State}
+%%
+%%            Id    = term() "connection-group id"
+%%            Query = string() "MySQL query"
+%%
+%%            NewState = #state{}
+%%            Reason   = atom() | string()
+%%
+%% @doc     Make a MySQL query. Use the first connection matching Id
+%%          in our connection-list. Don't block the mysql_dispatcher
+%%          by returning {noreply, ...} here and let the mysql_conn
+%%          do gen_server:reply(...) when it has an answer.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({fetch, Id, Query}, From, State) ->
     log(State#state.log_fun, debug, "mysql: fetch ~p (id ~p)", [Query, Id]),
@@ -372,13 +403,18 @@ handle_call({fetch, Id, Query}, From, State) ->
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call({add_mysql_connection, Conn}, From, State)
-%%           Conn = mysql_connection record()
-%% Descrip.: Add Conn to our list of connections.
-%% Returns : {reply, Reply, NewState}
-%%           Reply = ok | {error, Reason}
-%%           NewState = state record()
-%%           Reason   = string()
+%% @spec    ({add_mysql_connection, Conn}, From, State) ->
+%%            {reply, Reply, NewState}
+%%
+%%            Conn = #mysql_connection{}
+%%
+%%            Reply    = ok | {error, Reason}
+%%            NewState = #state{}
+%%            Reason   = string()
+%%
+%% @doc     Add Conn to our list of connections.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call({add_mysql_connection, Conn}, _From, State) when is_record(Conn, mysql_connection) ->
     case add_mysql_conn(Conn, State#state.conn_list) of
@@ -392,10 +428,14 @@ handle_call({add_mysql_connection, Conn}, _From, State) when is_record(Conn, mys
     end;
 
 %%--------------------------------------------------------------------
-%% Function: handle_call(get_logfun, From, State)
-%% Descrip.: Fetch our logfun.
-%% Returns : {reply, {ok, LogFun}, State}
-%%           LogFun = undefined | function() with arity 3
+%% @spec    (get_logfun, From, State) ->
+%%            {reply, {ok, LogFun}, State}
+%%
+%%            LogFun = undefined | function() with arity 3
+%%
+%% @doc     Fetch our logfun.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_call(get_logfun, _From, State) ->
     {reply, {ok, State#state.log_fun}, State};
@@ -406,12 +446,17 @@ handle_call(Unknown, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State)
-%% Descrip.: Handling cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_cast(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
+
+%% @clear
 
 handle_cast(Unknown, State) ->
     log(State#state.log_fun, error, "mysql: Received unknown gen_server cast : ~p", [Unknown]),
@@ -419,27 +464,35 @@ handle_cast(Unknown, State) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: handle_info(Msg, State)
-%% Descrip.: Handling all non call/cast messages
-%% Returns : {noreply, State}          |
-%%           {noreply, State, Timeout} |
-%%           {stop, Reason, State}            (terminate/2 is called)
+%% @spec    handle_info(Msg, State) ->
+%%            {noreply, State}          |
+%%            {noreply, State, Timeout} |
+%%            {stop, Reason, State}
+%%
+%% @doc     Handling all non call/cast messages
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 
+%% @clear
+
 %%--------------------------------------------------------------------
-%% Function: handle_info({'DOWN', ...}, State)
-%% Descrip.: Handle a message that one of our monitored processes
-%%           (mysql_conn processes in our connection list) has exited.
-%%           Remove the entry from our list.
-%% Returns : {noreply, NewState}   |
-%%           {stop, normal, State}
-%%           NewState = state record()
+%% @spec    ({'DOWN', ...}, State) ->
+%%            {noreply, NewState}   |
+%%            {stop, normal, State}
 %%
-%% Note    : For now, we stop if our connection list becomes empty.
-%%           We should try to reconnect for a while first, to not
-%%           eventually stop the whole OTP application if the MySQL-
-%%           server is shut down and the mysql_dispatcher was super-
-%%           vised by an OTP supervisor.
+%%            NewState = #state{}
+%%
+%% @doc     Handle a message that one of our monitored processes
+%%          (mysql_conn processes in our connection list) has exited.
+%%          Remove the entry from our list. Note : For now, we stop
+%%          if our connection list becomes empty. We should try to
+%%          reconnect for a while first, to not eventually stop the
+%%          whole OTP application if the MySQL- server is shut down
+%%          and the mysql_dispatcher was super- vised by an OTP
+%%          supervisor.
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 handle_info({'DOWN', _MonitorRef, process, Pid, Info}, State) ->
     LogFun = State#state.log_fun,
@@ -463,15 +516,17 @@ handle_info({'DOWN', _MonitorRef, process, Pid, Info}, State) ->
 	    log(LogFun, error, "mysql: Received 'DOWN' signal from pid ~p not in my list", [Pid]),
 	    {noreply, State}
     end;
-    
+
 handle_info(Info, State) ->
     log(State#state.log_fun, error, "mysql: Received unknown signal : ~p", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
-%% Function: terminate(Reason, State)
-%% Descrip.: Shutdown the server
-%% Returns : Reason
+%% @spec    (Reason, State) -> Reason
+%%
+%% @doc     Shutdown the server
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     LogFun = State#state.log_fun,
@@ -483,9 +538,11 @@ terminate(Reason, State) ->
     Reason.
 
 %%--------------------------------------------------------------------
-%% Function: code_change(_OldVsn, State, _Extra)
-%% Descrip.: Convert process state when code is changed
-%% Returns : {ok, State}
+%% @spec    (_OldVsn, State, _Extra) -> {ok, State}
+%%
+%% @doc     Convert process state when code is changed
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -495,26 +552,35 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: add_mysql_conn(Conn, ConnList)
-%%           Conn     = mysql_connection record()
-%%           ConnList = list() of mysql_connection record()
-%% Descrip.: Set up process monitoring of the mysql_conn process and
-%%           then add it (first) to ConnList.
-%% Returns : NewConnList = list() of mysql_connection record()
+%% @spec    (Conn, ConnList) ->
+%%            NewConnList
+%%
+%%            Conn     = #mysql_connection{}
+%%            ConnList = [#mysql_connection{}]
+%%
+%%            NewConnList = [#mysql_connection{}]
+%%
+%% @doc     Set up process monitoring of the mysql_conn process and
+%%          then add it (first) to ConnList.
+%% @end
 %%--------------------------------------------------------------------
 add_mysql_conn(Conn, ConnList) when is_record(Conn, mysql_connection), is_list(ConnList) ->
     erlang:monitor(process, Conn#mysql_connection.conn_pid),
     {ok, [Conn | ConnList]}.
 
 %%--------------------------------------------------------------------
-%% Function: remove_mysql_connection_using_pid(Pid, ConnList)
-%%           Pid      = pid()
-%%           ConnList = list() of mysql_connection record()
-%% Descrip.: Removes the first mysql_connection in ConnList that has
-%%           a pid matching Pid.
-%% Returns : {ok, Conn, NewConnList} | nomatch
-%%           Conn        = mysql_connection record()
-%%           NewConnList = list() of mysql_connection record()
+%% @spec    (Pid, ConnList) ->
+%%            {ok, Conn, NewConnList} | nomatch
+%%
+%%            Pid      = pid()
+%%            ConnList = [#mysql_connection{}]
+%%
+%%            Conn        = #mysql_connection{}
+%%            NewConnList = [#mysql_connection{}]
+%%
+%% @doc     Removes the first mysql_connection in ConnList that has a
+%%          pid matching Pid.
+%% @end
 %%--------------------------------------------------------------------
 remove_mysql_connection_using_pid(Pid, [#mysql_connection{conn_pid = Pid} = H | T], Res) ->
     {ok, H, lists:reverse(Res) ++ T};
@@ -524,15 +590,18 @@ remove_mysql_connection_using_pid(_Pid, [], _Res) ->
     nomatch.
 
 %%--------------------------------------------------------------------
-%% Function: get_next_mysql_connection_for_id(Id, ConnList)
-%%           Id       = term(), connection-group id
-%%           ConnList = list() of mysql_connection record()
-%% Descrip.: Find the first mysql_connection in ConnList that has an
-%%           id matching Id.
-%% Returns : {ok, Conn, NewConnList} | nomatch
-%%           Conn        = mysql_connection record()
-%%           NewConnList = list() of mysql_connection record(), same
-%%                         as ConnList but without Conn
+%% @spec    (Id, ConnList) ->
+%%            {ok, Conn, NewConnList} | nomatch
+%%
+%%            Id       = term() "connection-group id"
+%%            ConnList = [#mysql_connection{}]
+%%
+%%            Conn        = #mysql_connection{}
+%%            NewConnList = [#mysql_connection{}] "same as ConnList but without Conn"
+%%
+%% @doc     Find the first mysql_connection in ConnList that has an id
+%%          matching Id.
+%% @end
 %%--------------------------------------------------------------------
 get_next_mysql_connection_for_id(Id, ConnList) ->
     get_next_mysql_connection_for_id(Id, ConnList, []).
@@ -545,13 +614,15 @@ get_next_mysql_connection_for_id(_Id, [], _Res) ->
     nomatch.
 
 %%--------------------------------------------------------------------
-%% Function: start_reconnect(Conn, LogFun)
-%%           Conn   = mysql_connection record()
-%%           LogFun = undefined | function() with arity 3
-%% Descrip.: Spawns a process that will try to re-establish a new
-%%           connection instead of the one in Conn which has just
-%%           died.
-%% Returns : ok
+%% @spec    (Conn, LogFun) -> ok
+%%
+%%            Conn   = #mysql_connection{}
+%%            LogFun = undefined | function() with arity 3
+%%
+%% @doc     Spawns a process that will try to re-establish a new
+%%          connection instead of the one in Conn which has just
+%%          died.
+%% @end
 %%--------------------------------------------------------------------
 start_reconnect(Conn, LogFun) when is_record(Conn, mysql_connection) ->
     Pid = spawn(fun () ->
@@ -563,12 +634,14 @@ start_reconnect(Conn, LogFun) when is_record(Conn, mysql_connection) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Function: reconnect_loop(Conn, LogFun, 0)
-%%           Conn   = mysql_connection record()
-%%           LogFun = undefined | function() with arity 3
-%% Descrip.: Loop indefinately until we are able to reconnect to the
-%%           server specified in the now dead connection Conn.
-%% Returns : ok
+%% @spec    (Conn, LogFun, 0) -> ok
+%%
+%%            Conn   = #mysql_connection{}
+%%            LogFun = undefined | function() with arity 3
+%%
+%% @doc     Loop indefinately until we are able to reconnect to the
+%%          server specified in the now dead connection Conn.
+%% @end
 %%--------------------------------------------------------------------
 reconnect_loop(Conn, LogFun, N) when is_record(Conn, mysql_connection) ->
     {Id, Host, Port} = {Conn#mysql_connection.id, Conn#mysql_connection.host, Conn#mysql_connection.port},

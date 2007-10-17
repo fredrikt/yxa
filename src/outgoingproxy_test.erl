@@ -1,9 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% File    : outgoingproxy_test.erl
-%%% Author  : Fredrik Thulin <ft@it.su.se>
-%%% Descrip.: Test cases for the complete outgoingproxy application.
+%%% @author   Fredrik Thulin <ft@it.su.se>
+%%% @doc      Test cases for the complete outgoingproxy application.
 %%%
-%%% Created : 29 Nov 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @since    29 Nov 2006 by Fredrik Thulin <ft@it.su.se>
+%%% @end
+%%% @hidden
 %%%-------------------------------------------------------------------
 -module(outgoingproxy_test).
 
@@ -20,9 +22,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: test()
-%% Descrip.: autotest callback
-%% Returns : ok | throw()
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
 %%--------------------------------------------------------------------
 test() ->
     autotest:mark(?LINE, "outgoingproxy_test setup - 0"),
