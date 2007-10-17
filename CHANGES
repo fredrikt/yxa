@@ -1,3 +1,12 @@
+-- 1.0rc2	(2007-10-17)
+
+ - Start using edoc for documentation of all functions.
+ - Fix bug in handling of race condition with CANCEL, which could
+   result in phones that never stop ringing.
+ - Handle UTF-8 in contact display names.
+ - Bugfix a certain case of URI comparision in the CPL subsystem.
+
+
 -- 1.0rc1	(2007-04-12)
 
  - Updated RFC3263 (SIP DNS) implementation to work just like
