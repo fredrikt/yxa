@@ -72,7 +72,7 @@ install: $(beam_FILES) $(start_FILES) install-recursive
 	for p in $(beam_FILES); do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
 	done
-	for p in $(start_FILES) yxa-bootstrap ; do \
+	for p in $(start_FILES); do \
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
