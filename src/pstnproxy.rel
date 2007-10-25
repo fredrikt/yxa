@@ -1,8 +1,8 @@
 %% Erlang OTP R11B-5 library versions
 {release, {"YXA pstnproxy","0.0"}, {erts, "5.2"},
- [{kernel,"2.11.5"},
-  {stdlib,"1.14.5"},
-  {ssl, "3.1.1.1"},
-  {asn1, "1.4.5"},
-  {mnesia, "4.3.5"},
+ [{kernel,"2.11.2"},
+  {stdlib,"1.14.2"},
+  {ssl, "3.0.12"},
+  {asn1, "1.4.4.11"},
+  {mnesia, "4.3.3"},
   {pstnproxy, "0.0"}]}.
