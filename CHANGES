@@ -1,3 +1,9 @@
+-- 1.0		(2007-11-02)
+
+ - Require Erlang/OTP R11B-2, the latest official release with
+   working Erlang distribution over SSL.
+
+
 -- 1.0rc2	(2007-10-17)
 
  - Start using edoc for documentation of all functions.
