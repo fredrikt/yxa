@@ -1,4 +1,4 @@
-%% Erlang OTP R11B-4 library versions
+%% Erlang OTP R11B-2 library versions
 {release, {"YXA Event package server framework", "0.0"}, {erts, "5.2"},
  [{kernel,"2.11.2"},
   {stdlib,"1.14.2"},
