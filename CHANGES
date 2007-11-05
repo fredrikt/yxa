@@ -1,4 +1,4 @@
--- 1.0		(2007-11-02)
+-- 1.0		(2007-11-05)
 
  - Require Erlang/OTP R11B-2, the latest official release with
    working Erlang distribution over SSL.
