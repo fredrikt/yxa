@@ -69,6 +69,12 @@
 -define(MYSQL_QUERY_OP, 3).
 -define(DEFAULT_STANDALONE_TIMEOUT, 5000).
 
+%% @type mysql_log_fun() = function().
+%%			   Fun(Level, Fmt, Args)
+%%			   Level = debug | normal | error
+%%                         Fmt   = string() "format string"
+%%                         Args  = list() of term() "format arguments"
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -82,7 +88,7 @@
 %%            User     = string()
 %%            Password = string()
 %%            Database = string()
-%%            LogFun   = undefined | function() of arity 3
+%%            LogFun   = undefined | mysql_log_fun()
 %%
 %%            Pid    = pid()
 %%            Reason = string()
@@ -155,7 +161,7 @@ fetch(Pid, Query, From, Timeout) when is_pid(Pid), is_list(Query), is_integer(Ti
 %%            {ok, Packet, Num} |
 %%            {error, Reason}
 %%
-%%            LogFun  = undefined | function() with arity 3
+%%            LogFun  = undefined | mysql_log_fun()
 %%            RecvPid = pid() "mysql_recv process"
 %%            SeqNum  = undefined | integer()
 %%
@@ -199,7 +205,7 @@ do_recv(LogFun, RecvPid, SeqNum) when is_function(LogFun); LogFun == undefined, 
 %%            User     = string()
 %%            Password = string()
 %%            Database = string()
-%%            LogFun   = undefined | function() of arity 3
+%%            LogFun   = undefined | mysql_log_fun()
 %%            Parent   = pid() of process starting this mysql_conn
 %%
 %% @doc     Connect to a MySQL server, log in and chooses a database.
@@ -280,7 +286,7 @@ loop(State) ->
 %%            RecvPid  = pid() "mysql_recv process"
 %%            User     = string()
 %%            Password = string()
-%%            LogFun   = undefined | function() with arity 3
+%%            LogFun   = undefined | mysql_log_fun()
 %%
 %%            Reason = string()
 %%
@@ -318,31 +324,22 @@ mysql_init(Sock, RecvPid, User, Password, LogFun) ->
 %% part of mysql_init/4
 greeting(Packet, LogFun) ->
     <<_Protocol:8, Rest/binary>> = Packet,
-    {Version, Rest2} = asciz(Rest),
+    {Version, Rest2} = mysql:asciz_binary(Rest, []),
     <<_TreadID:32/little, Rest3/binary>> = Rest2,
-    {Salt, Rest4} = asciz(Rest3),
+    {Salt, Rest4} = mysql:asciz_binary(Rest3, []),
     <<Caps:16/little, Rest5/binary>> = Rest4,
     <<ServerChar:16/binary-unit:8, Rest6/binary>> = Rest5,
-    {Salt2, _Rest7} = asciz(Rest6),
+    {Salt2, _Rest7} = mysql:asciz_binary(Rest6, []),
     mysql:log(LogFun, debug, "mysql_conn: greeting version ~p salt ~p caps ~p serverchar ~p salt2 ~p",
 	      [Version, Salt, Caps, ServerChar, Salt2]),
     {Salt, Salt2, Caps}.
-
-%% part of greeting/2
-asciz(Data) when binary(Data) ->
-    mysql:asciz_binary(Data, []);
-asciz(Data) when list(Data) ->
-    {String, [0 | Rest]} = lists:splitwith(fun (C) ->
-						   C /= 0
-					   end, Data),
-    {String, Rest}.
 
 %%--------------------------------------------------------------------
 %% @spec    (LogFun, RecvPid) ->
 %%            {ok, FieldInfo, Rows} |
 %%            {error, Reason}
 %%
-%%            LogFun  = undefined | function() with arity 3
+%%            LogFun  = undefined | mysql_log_fun()
 %%            RecvPid = pid() "mysql_recv process"
 %%
 %%            FieldInfo = [term()]
@@ -383,7 +380,7 @@ get_query_response(LogFun, RecvPid) ->
 %%            {ok, FieldInfo} |
 %%            {error, Reason}
 %%
-%%            LogFun  = undefined | function() with arity 3
+%%            LogFun  = undefined | mysql_log_fun()
 %%            RecvPid = pid() "mysql_recv process"
 %%
 %%            FieldInfo = [term()]
@@ -424,7 +421,7 @@ get_fields(LogFun, RecvPid, Res) ->
 %%            {error, Reason}
 %%
 %%            N       = integer() "number of rows to get"
-%%            LogFun  = undefined | function() with arity 3
+%%            LogFun  = undefined | mysql_log_fun()
 %%            RecvPid = pid() "mysql_recv process"
 %%
 %%            Rows = [[string()]]
@@ -477,7 +474,7 @@ get_with_length(<<Length:8, Rest/binary>>) when Length < 251 ->
 %%
 %%            Sock    = term() "gen_tcp socket"
 %%            RecvPid = pid() "mysql_recv process"
-%%            LogFun  = undefined | function() with arity 3
+%%            LogFun  = undefined | mysql_log_fun()
 %%            Query   = string()
 %%
 %% @doc     Send a MySQL query and block awaiting it's response.
@@ -506,7 +503,7 @@ do_query(Sock, RecvPid, LogFun, Query) when is_pid(RecvPid), is_list(Query) ->
 %%            Sock   = term() "gen_tcp socket"
 %%            Packet = binary()
 %%            SeqNum = integer() "packet sequence number"
-%%            LogFun = undefined | function() with arity 3
+%%            LogFun = undefined | mysql_log_fun()
 %%
 %% @doc     Send a packet to the MySQL server.
 %% @end
