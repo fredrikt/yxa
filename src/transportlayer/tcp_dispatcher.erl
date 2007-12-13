@@ -313,18 +313,14 @@ handle_call({register_sipsocket, Type, SipSocket}, _From, State) when is_atom(Ty
     %% Socket expiration not implemented. Perhaps not even needed. If you are thinking of
     %% implementing it remember that listening sockets should always have timeout 0.
     Timeout = 0,
-    case link(CPid) of
-	true ->
-	    case socketlist:add(Type, CPid, SipSocket, Timeout, State#state.socketlist) of
-		{ok, NewSocketList1} ->
-		    {reply, ok, State#state{socketlist = NewSocketList1}, ?TIMEOUT};
-		{error, E} ->
-		    {reply, {error, E}, State, ?TIMEOUT}
-	    end;
-	_ ->
-	    logger:log(error, "TCP dispatcher: Failed linking to socket handler (pid ~p)", [CPid]),
-	    {reply, {error, "Link failed"}, State, ?TIMEOUT}
+    true = link(CPid),
+    case socketlist:add(Type, CPid, SipSocket, Timeout, State#state.socketlist) of
+	{ok, NewSocketList1} ->
+	    {reply, ok, State#state{socketlist = NewSocketList1}, ?TIMEOUT};
+	{error, E} ->
+	    {reply, {error, E}, State, ?TIMEOUT}
     end;
+
 
 %%--------------------------------------------------------------------
 %% @spec    ({get_socketlist}, From, State) ->
