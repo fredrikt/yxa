@@ -644,15 +644,15 @@ test() ->
     DFVH1 = from_list([{via, "Via", ["one", "two", "three"]},
 		       {"other", "Other", ["foo"]}]),
 
-    autotest:mark(?LINE, "deletefirstvalue/2 - 2"),
+    autotest:mark(?LINE, "deletefirstvalue/2 - 2.1"),
     DFVH2 = deletefirstvalue("Via", DFVH1),
 
-    autotest:mark(?LINE, "deletefirstvalue/2 - 3"),
+    autotest:mark(?LINE, "deletefirstvalue/2 - 2.2"),
     %% check results
     #keylist{list=[
 		   #keyelem{key=via, name="Via", item=["two", "three"]},
 		   #keyelem{key="other", name="Other", item=["foo"]}
-		  ]},
+		  ]} = DFVH2,
 
     autotest:mark(?LINE, "deletefirstvalue/2 - 3"),
     DFVH3 = deletefirstvalue("Other", DFVH2),
