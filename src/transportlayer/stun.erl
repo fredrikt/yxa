@@ -281,8 +281,8 @@ received_stun_request(SReq, Packet) ->
 safe_received_stun_request(#stun_request{length = Len} = SReq, Packet) ->
     #stun_env{proto = Proto, remote_ip_str = IPstr, remote_port = Port} = SReq#stun_request.env,
     Expected = size(Packet) - ?STUN_FIXED_HEADER_LENGTH,
-    case Expected of
-	Len ->
+    case Len == Expected of
+	true ->
 	    %%
 	    %% Correct length of payload
 	    %%
@@ -294,13 +294,13 @@ safe_received_stun_request(#stun_request{length = Len} = SReq, Packet) ->
 			       [Proto, IPstr, Port, Reason]),
 		    stun_error(400)
 	    end;
-	BadLen ->
+	false ->
 	    %%
 	    %% Incorrect length of payload
 	    %%
 	    logger:log(normal, "STUN request (type ~p, ~p) with invalid length ~p (real: ~p) from ~p:~s:~p",
 		       [SReq#stun_request.type, SReq#stun_request.rfc, SReq#stun_request.length,
-			BadLen, Proto, IPstr, Port]),
+			Len, Proto, IPstr, Port]),
 	    stun_error(400)
     end.
 
