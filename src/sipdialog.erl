@@ -691,8 +691,8 @@ create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
 %%--------------------------------------------------------------------
 create_dialog_state_uas_is_secure(Request, []) when is_record(Request, request) ->
     throw({error, response_contact_missing});
-create_dialog_state_uas_is_secure(Request, ResponseContact) when is_record(Request, request),
-								 is_list(ResponseContact) ->
+create_dialog_state_uas_is_secure(Request, [ResponseContact]) when is_record(Request, request),
+								   is_list(ResponseContact) ->
     MustBeSecure =
 	case is_sips_uri(Request#request.uri) of
 	    true ->
@@ -705,7 +705,7 @@ create_dialog_state_uas_is_secure(Request, ResponseContact) when is_record(Reque
 			is_sips_uri([FirstRR])
 		end
 	end,
-    ResponseContactIsSecure = is_sips_uri(ResponseContact),
+    ResponseContactIsSecure = is_sips_uri([ResponseContact]),
 
     %% RFC3261 #12.1.1 (UAS behavior) :
     %% If the request that initiated the dialog contained a
@@ -732,9 +732,13 @@ is_sips_uri([Str]) when is_list(Str) ->
     case contact:parse([Str]) of
 	[C] when is_record(C, contact) ->
 	    is_sips_uri(sipurl:parse(C#contact.urlstr));
-	_ ->
-	    throw({error, "Unparsable Contact/Record-Route/Request-URI when creating dialog state"})
-    end.
+	Other ->
+	    is_sips_uri(Other)
+    end;
+is_sips_uri(Other) ->
+    Msg = io_lib:format("Unparsable Contact/Record-Route/Request-URI '~p' when creating dialog state",
+			[Other]),
+    throw({error, lists:flatten(Msg)}).
 
 
 %%--------------------------------------------------------------------
