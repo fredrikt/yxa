@@ -1,18 +1,12 @@
 {application, outgoingproxy,
- [{description, "Outgoing SIP proxy"},
-  {vsn,"0.0"},
+ [{description, "YXA outgoingproxy"},
+  {vsn,"%VERSION%"},
   {modules, [
-	     outgoingproxy
-	    ]},
-  {registered, [
-		sipserver_sup,
-		yxa_config,
-		logger,
-		ldap_client,
-		tcp_dispatcher,
-		sipsocket_udp,
-		transactionlayer
-	       ]},
+    outgoingproxy,
+    outgoingproxy_test
+    ]},
+  {registered, []},
+  {included_applications, [yxa]},
   {mod, {sipserver, [outgoingproxy]}},
   {env, []},
   {applications,

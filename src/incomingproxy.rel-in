@@ -1,0 +1,12 @@
+%% Erlang OTP R11B-2 library versions
+{release, {"YXA incomingproxy","YXA-incomingproxy-%VERSION%"},
+ {erts, "5.5.2"},
+ [{kernel,"2.11.2"},
+  {stdlib,"1.14.2"},
+  {ssl, "3.0.12"},
+  {asn1, "1.4.4.11"},
+  {mnesia, "4.3.3"},
+  {yxa, "%VERSION%", load},
+  {incomingproxy, "%VERSION%", permanent}
+ ]
+}.

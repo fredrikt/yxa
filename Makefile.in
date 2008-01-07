@@ -24,6 +24,8 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
+ebin_dir = ./ebin
+
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 create_start_script = \
@@ -40,12 +42,12 @@ SUBDIRS = \
 	src \
 	yaws/src
 
-RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive doc-recursive
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive doc-recursive packages-recursive
 
 erl_FILES = \
 	version.erl
 
-beam_FILES = $(erl_FILES:.erl=.beam)
+beam_FILES = $(addprefix $(ebin_dir)/, $(erl_FILES:.erl=.beam))
 
 start_FILES = \
 	appserver \
@@ -54,7 +56,7 @@ start_FILES = \
 	pstnproxy \
 	yxa-bootstrap
 
-all: $(beam_FILES) all-recursive $(start_FILES)
+all: $(ebin_dir) $(beam_FILES) all-recursive $(start_FILES)
 
 $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
@@ -62,6 +64,9 @@ $(RECURSIVE_TARGETS):
 	echo "Making $$target in $$subdir"; \
 	(cd $$subdir && $(MAKE) $$target) || exit 1; \
 	done
+
+$(ebin_dir):
+	$(mkinstalldirs) $(ebin_dir)
 
 install: $(beam_FILES) $(start_FILES) install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(confdir)
@@ -76,6 +81,8 @@ install: $(beam_FILES) $(start_FILES) install-recursive
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
+packages:	all packages-recursive
+
 distclean: clean distclean-recursive
 	rm -f Makefile
 	rm -f config.status
@@ -87,6 +94,7 @@ clean: clean-recursive
 	rm -f core *.core *~
 	rm -f *.beam newversion.erl.new version.erl.in
 	rm -f *.o ktrace.out erl_crash.dump
+	rm -f $(beam_FILES)
 	rm -f $(start_FILES)
 
 sslkey:
@@ -110,8 +118,8 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
 .SUFFIXES:
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .app .app-in
 
-.erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info $<
+$(ebin_dir)/%.beam:	%.erl
+	$(ERLC) -o $(ebin_dir) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info $<
 
 $(start_FILES): $(top_srcdir)/scripts/init.sh.in $(builddir)/config.status
 
@@ -150,7 +158,7 @@ doc::
 	echo "Making doc in yaws/src/"; \
 	(cd yaws/src/ && $(MAKE) doc) || exit 1
 	# generate edoc overview in top doc/html/ directory
-	$(ERL) -yxa_edoc_dir doc/html -pa src/ -noshell -run yxa_edoc run "" -run init stop
+	$(ERL) -yxa_edoc_dir doc/html -pa $(ebin_dir) -noshell -run yxa_edoc run "" -run init stop
 	# for the top level, we clean away everything but the non-frame page
 	mv doc/html/overview-summary.html doc/html/index.html
 	rm -f doc/html/stylesheet.css \

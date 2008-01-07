@@ -1,6 +1,0 @@
-%% Erlang OTP R10B-6 library versions
-{release, {"YXA regression test server","0.0"}, {erts, "5.2"},
- [{kernel,"2.10.4"},
-  {stdlib,"1.13.8"},
-  {ssl, "3.0.7"},
-  {testserver, "0.0"}]}.

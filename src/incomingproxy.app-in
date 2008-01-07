@@ -1,18 +1,13 @@
 {application, incomingproxy,
- [{description, "Incoming SIP proxy"},
-  {vsn,"0.0"},
+ [{description, "YXA incomingproxy"},
+  {vsn,"%VERSION%"},
   {modules, [
-	     incomingproxy
-	    ]},
-  {registered, [
-		sipserver_sup,
-		yxa_config,
-		logger,
-		ldap_client,
-		tcp_dispatcher,
-		sipsocket_udp,
-		transactionlayer
-	       ]},
+    incomingproxy,
+    incomingproxy_test,
+    registrar
+    ]},
+  {registered, []},
+  {included_applications, [yxa]},
   {mod, {sipserver, [incomingproxy]}},
   {env, []},
   {applications,

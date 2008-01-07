@@ -1,0 +1,5 @@
+%% Erlang configuration file when building OTP packages ("make packages")
+[{mnesia,	[{dir, "%DB_DIR%"}]},
+ {yaws,		[{conf, "%CONF_DIR%/yaws.conf"}]},
+ {yxa,		[{config_erlang_fn, "%CONF_DIR%/yxa.config"}]}
+].

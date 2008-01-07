@@ -44,6 +44,8 @@ all: $(beam_FILES)
 
 install: $(beam_FILES) $(hrl_FILES)
 
+packages:
+
 distclean: clean
 	rm -f Makefile
 

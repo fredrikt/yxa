@@ -25,10 +25,13 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
+ebin_dir = ../ebin
+doc_dir = ../doc
+
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 systools_make_script = \
-	$(ERLC) -I$(srcdir) $(srcdir)/$*.rel
+	$(ERLC) +no_module_tests -pa $(ebin_dir) $(ebin_dir)/$*.rel
 
 
 erl_FILES = \
@@ -107,30 +110,33 @@ boot_FILES = \
 	appserver.boot \
 	outgoingproxy.boot
 
-app_FILES = $(boot_FILES:.boot=.app)
+app_FILES = $(addprefix $(ebin_dir)/, yxa.app $(boot_FILES:.boot=.app))
+
+rel_FILES = $(addprefix $(ebin_dir)/, start_ssl.rel $(boot_FILES:.boot=.rel))
 
 CC = gcc
 CFLAGS = -Wall
 
-beam_FILES = $(erl_FILES:.erl=.beam)
+beam_FILES = $(addprefix $(ebin_dir)/, $(erl_FILES:.erl=.beam))
 
+# the order of the subdirectorys is important to target 'packages'
 SUBDIRS = \
 	config \
 	cpl \
 	database \
 	eldap \
-	event \
 	event_handler \
+	mysql \
 	include \
 	local \
-	mysql \
 	sipuserdb \
 	transactionlayer \
-	transportlayer
+	transportlayer \
+	event 
 
-RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive doc-recursive
+RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive distclean-recursive doc-recursive packages-recursive
 
-all: $(beam_FILES) all-recursive $(boot_FILES) start_ssl.boot
+all: $(beam_FILES) $(app_FILES) $(rel_FILES) all-recursive $(boot_FILES) start_ssl.boot
 
 $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
@@ -142,12 +148,23 @@ $(RECURSIVE_TARGETS):
 install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) start_ssl.boot install-recursive
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
 	$(mkinstalldirs) $(DESTDIR)$(includedir)
-	for p in $(beam_FILES) $(boot_FILES) $(app_FILES) start_ssl.boot; do \
+	for p in $(beam_FILES) $(app_FILES); do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(boot_FILES) start_ssl.boot; do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
 	done
 	for p in $(hrl_FILES); do \
 	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
 	done
+
+packages:	all $(boot_FILES) $(rel_FILES) sys.config
+	for p in $(basename $(rel_FILES)) ; do \
+	  $(ERL) -noinput -pa $(ebin_dir) \
+	    -run systools make_tar  $$p -s erlang halt ; \
+	  test -f $$p.tar.gz || exit 1 ; \
+	done
+	$(MAKE) packages-recursive
 
 distclean: clean distclean-recursive
 	rm -f Makefile
@@ -156,56 +173,58 @@ clean: clean-recursive
 	rm -f core *.core *~
 	rm -f *.beam *.script *.start *.boot *.app
 	rm -f *.o ktrace.out erl_crash.dump
+	rm -f $(addsuffix .tar.gz, $(basename $(rel_FILES)))
+	rm -f $(rel_FILES) start_ssl.rel sys.config
+	rm -f $(app_FILES)
+	rm -f $(beam_FILES)
 
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
 
-SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES:
-.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .app .app-in
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
-.erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info $<
+$(ebin_dir)/%.beam:	$(srcdir)/%.erl
+	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/include -W +debug_info $<
 
-local.beam: $(srcdir)/local.erl ../config.status
-	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -W +debug_info -DLOCAL_MODULE=$(local_module) $(srcdir)/local.erl
+$(ebin_dir)/local.beam: $(srcdir)/local.erl ../config.status
+	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/include -W +debug_info -DLOCAL_MODULE=$(local_module) $(srcdir)/local.erl
 
-directory.beam: $(srcdir)/directory.erl ../config.status $(srcdir)/eldap/eldap.hrl
-	$(ERLC) -I$(srcdir) -I$(srcdir)/include/ -I$(srcdir)/eldap -W +debug_info $(srcdir)/directory.erl
+$(ebin_dir)/directory.beam: $(srcdir)/directory.erl ../config.status $(srcdir)/eldap/eldap.hrl
+	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/include -I$(srcdir)/eldap -W +debug_info $(srcdir)/directory.erl
 
-.app-in.app:
-	cp $(srcdir)/$*.app-in $*.app
+$(ebin_dir)/%.app:	$(srcdir)/%.app-in
+	sed -e 's!%LOCAL_MODULE%!$(local_module)!' \
+			-e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
 
+$(ebin_dir)/%.rel:	$(srcdir)/%.rel-in
+	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
 
-incomingproxy.boot: incomingproxy.app $(srcdir)/incomingproxy.rel
+%.boot: $(ebin_dir)/%.app $(ebin_dir)/yxa.app $(ebin_dir)/%.rel
 	$(systools_make_script)
 
-pstnproxy.boot: pstnproxy.app $(srcdir)/pstnproxy.rel
+sys.config:	$(srcdir)/sys.config-in
+	sed -e 's!%DB_DIR%!$(mnesiadir)!' \
+	      -e 's!%CONF_DIR%!$(confdir)!' < $< > $@
+
+start_ssl.boot: $(ebin_dir)/start_ssl.rel
 	$(systools_make_script)
 
-appserver.boot: appserver.app $(srcdir)/appserver.rel
-	$(systools_make_script)
-
-outgoingproxy.boot: outgoingproxy.app $(srcdir)/outgoingproxy.rel
-	$(systools_make_script)
-
-start_ssl.boot: $(srcdir)/start_ssl.rel
-	$(systools_make_script)
-
-test: autotest.beam
-	$(ERL) -noshell -s autotest run shell -pz $(SUBDIRS)
+test: $(ebin_dir)/autotest.beam
+	$(ERL) -noshell -s autotest run shell -pz $(ebin_dir)
 
 covertest: autotest.beam
-	$(ERL) -noshell -s autotest run_cover shell -pz $(SUBDIRS)
+	$(ERL) -noshell -s autotest run_cover shell -pz $(ebin_dir)
 
 xreftest: $(beam_FILES)
-	$(ERL) -noshell -s xref_test run_shell -pz .. $(SUBDIRS)
+	$(ERL) -noshell -s xref_test run_shell -pz .. $(ebin_dir)
 
-doc: yxa_edoc.beam doc-recursive
-	mkdir -p ../doc/html/src
-	cp $(srcdir)/overview.edoc ../doc/html/src/
-	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
-		-yxa_edoc_dir ../doc/html/src \
+doc: $(ebin_dir)/yxa_edoc.beam doc-recursive
+	mkdir -p $(doc_dir)/html/src
+	cp $(srcdir)/overview.edoc $(doc_dir)/html/src/
+	$(ERL) $(YXA_EDOC_ARGS) -pa $(ebin_dir) -noshell \
+		-yxa_edoc_dir $(doc_dir)/html/src \
 		-yxa_edoc_srcpath $(srcdir) \
 		-run yxa_edoc run "$(erl_FILES)" \
 		-run init stop

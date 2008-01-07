@@ -262,19 +262,10 @@ else
     mnesiaparameters="-mnesia dir '"$mnesiadir"'"
 fi
 
-if [ -d "${PWD}/src/event_handler" -a -d "${PWD}/src/cpl" ]; then
-    # we must be running from the build directory, add all subdirectorys
-    # to src/ plus yaws/src to the code search path
-    beamdirs=$(
-	echo "-pa src/ -pa yaws/src/"
-	ls ${PWD}/src/ | while read entry; do
-	    if [ -d "src/$entry" ]; then
-		echo "-pa src/$entry"
-	    fi
-	done
-    )
-    
-    EXTRA_ERL_ARGUMENTS="${EXTRA_ERL_ARGUMENTS} `echo $beamdirs`"
+if [ -d "${PWD}/src/event_handler" -a -d "${PWD}/src/cpl" -a -d "${PWD}/ebin" ]; then
+    # we must be running from the build directory, add path
+    # to the compiled modules to the code search path
+    EXTRA_ERL_ARGUMENTS="${EXTRA_ERL_ARGUMENTS} -pa ./ebin"
 fi
 
 if [ $is_bootstrap -eq 1 ]; then

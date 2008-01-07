@@ -25,8 +25,10 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
-mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
+ebin_dir = ../../ebin
+doc_dir = ../../doc
 
+mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 erl_FILES = \
 	ELDAPv3.erl \
@@ -40,7 +42,7 @@ hrl_FILES = \
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
 
-beam_FILES = $(erl_FILES:.erl=.beam)
+beam_FILES = $(addprefix $(ebin_dir)/, $(erl_FILES:.erl=.beam))
 
 all: $(beam_FILES)
 
@@ -54,6 +56,8 @@ install: $(beam_FILES) $(hrl_FILES)
 	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
 	done
 
+packages:
+
 distclean: clean
 	rm -f Makefile
 
@@ -61,15 +65,20 @@ clean:
 	rm -f core *.core *~
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
 	rm -f *.o ktrace.out erl_crash.dump
+	rm -rf ELDAPv3.asn1db ELDAPv3.hrl ELDAPv3.erl ELDAPv3.beam
+	rm -f $(beam_FILES)
 
 doc:
-	mkdir -p ../../doc/html/src/eldap
-	cp $(srcdir)/overview.edoc ../../doc/html/src/eldap/
-	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
-		-yxa_edoc_dir ../../doc/html/src/eldap \
+	mkdir -p $(doc_dir)/html/src/eldap
+	cp $(srcdir)/overview.edoc $(doc_dir)/html/src/eldap/
+	$(ERL) $(YXA_EDOC_ARGS) -pa $(ebin_dir) -noshell \
+		-yxa_edoc_dir $(doc_dir)/html/src/eldap \
 		-yxa_edoc_srcpath $(srcdir) \
 		-run yxa_edoc run "eldap.erl" \
 		-run init stop
+
+ELDAPv3.hrl: ELDAPv3.asn
+	$(ERLC) $(srcdir)/ELDAPv3.asn
 
 ELDAPv3.erl: ELDAPv3.asn
 	$(ERLC) $(srcdir)/ELDAPv3.asn
@@ -80,5 +89,5 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES:
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
-.erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -W +debug_info $<
+$(ebin_dir)/%.beam:	%.erl
+	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/../include -W +debug_info $<

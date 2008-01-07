@@ -53,6 +53,8 @@ install: $(hrl_FILES)
 	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
 	done
 
+packages:
+
 distclean: clean
 	rm -f Makefile
 

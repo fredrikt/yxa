@@ -25,11 +25,13 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
+ebin_dir = ../../ebin
+doc_dir = ../../doc
+
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 systools_make_script = \
-	$(ERLC) -I$(srcdir) $(srcdir)/$*.rel
-
+	$(ERLC) +no_module_tests -pa $(ebin_dir) $(ebin_dir)/$*.rel
 
 erl_FILES = \
 	event_package.erl \
@@ -43,7 +45,8 @@ erl_FILES = \
 	presence_package.erl \
 	presence_pidf.erl \
 	presence_xmerl_xml.erl \
-	subscription.erl
+	subscription.erl \
+	uaprofile_package.erl
 
 
 imported_hrl_FILES = \
@@ -60,20 +63,25 @@ boot_FILES = \
 start_FILES = \
 	eventserver
 
-app_FILES = $(boot_FILES:.boot=.app)
+app_FILES = $(addprefix $(ebin_dir)/, $(boot_FILES:.boot=.app))
+
+rel_FILES = $(addprefix $(ebin_dir)/, $(boot_FILES:.boot=.rel))
 
 CC = gcc
 CFLAGS = -Wall
 
-beam_FILES = $(erl_FILES:.erl=.beam)
+beam_FILES = $(addprefix $(ebin_dir)/, $(erl_FILES:.erl=.beam))
 
-all: $(beam_FILES) $(boot_FILES) $(start_FILES)
+all: $(beam_FILES) $(app_FILES) $(rel_FILES) $(boot_FILES) $(start_FILES)
 
-install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) $(start_FILES)
+install: $(beam_FILES) $(boot_FILES) $(hrl_FILES) $(start_FILES)
 	$(mkinstalldirs) $(DESTDIR)$(beamdir)
 	$(mkinstalldirs) $(DESTDIR)$(includedir)
 	$(mkinstalldirs) $(DESTDIR)$(sbindir)
-	for p in $(beam_FILES) $(boot_FILES) $(app_FILES); do \
+	for p in $(beam_FILES) $(app_FILES); do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(boot_FILES); do \
 	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
 	done
 	for p in $(hrl_FILES); do \
@@ -83,20 +91,32 @@ install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) $(start_FILES)
 	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
 	done
 
+packages: $(boot_FILES) $(rel_FILES) sys.config
+	for p in $(basename $(rel_FILES)) ; do \
+	  $(ERL) -noinput -pa $(ebin_dir) \
+	    -run systools make_tar  $$p -s erlang halt ; \
+	  test -f $$p.tar.gz || exit 1 ; \
+	done
+
 distclean: clean
 	rm -f Makefile
 
 clean:
 	rm -f core *.core *~
-	rm -f *.beam *.script *.start *.boot *.app
+	rm -f *.beam *.script *.start
 	rm -f *.o ktrace.out erl_crash.dump
+	rm -f $(addsuffix .tar.gz, $(basename $(rel_FILES)))
 	rm -f $(start_FILES)
+	rm -f $(boot_FILES)
+	rm -f $(rel_FILES) sys.config
+	rm -f $(app_FILES)
+	rm -f $(beam_FILES)
 
 doc:
-	mkdir -p ../../doc/html/src/event
-	cp $(srcdir)/overview.edoc ../../doc/html/src/event/
-	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
-		-yxa_edoc_dir ../../doc/html/src/event \
+	mkdir -p $(doc_dir)/html/src/event
+	cp $(srcdir)/overview.edoc $(doc_dir)/html/src/event/
+	$(ERL) $(YXA_EDOC_ARGS) -pa $(ebin_dir) -noshell \
+		-yxa_edoc_dir $(doc_dir)/html/src/event \
 		-yxa_edoc_srcpath $(srcdir) \
 		-run yxa_edoc run "$(erl_FILES)" \
 		-run init stop
@@ -104,19 +124,25 @@ doc:
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
 
-SUFFIXES = .c .o .hrl .beam .erl .boot .rel .app .app-in
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES:
-.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .app .app-in
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
-.erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -pz ../ -W +debug_info $<
+$(ebin_dir)/%.beam:	$(srcdir)/%.erl
+	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/../include -pz ../ -W +debug_info $<
 
-.app-in.app:
-	cp $(srcdir)/$*.app-in $*.app
+$(ebin_dir)/%.rel:	$(srcdir)/%.rel-in
+	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
 
+$(ebin_dir)/%.app:	$(srcdir)/%.app-in
+	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
 
-eventserver.boot: eventserver.app $(srcdir)/eventserver.rel
+%.boot: $(ebin_dir)/%.app $(ebin_dir)/yxa.app $(ebin_dir)/%.rel
 	$(systools_make_script)
+
+sys.config:	$(srcdir)/../sys.config-in
+	sed -e 's!%DB_DIR%!$(mnesiadir)!' \
+	      -e 's!%CONF_DIR%!$(confdir)!' < $< > $@
 
 $(start_FILES): $(top_srcdir)/scripts/init.sh.in ../../config.status
 

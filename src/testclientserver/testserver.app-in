@@ -1,5 +1,5 @@
 {application, testserver,
- [{description, "Regression test SIP server"},
+ [{description, "YXA DEPRECATED Regression test SIP server"},
   {vsn,"0.0"},
   {modules, [
 	     'LDAPv3',
