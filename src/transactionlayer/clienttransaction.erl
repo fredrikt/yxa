@@ -1535,14 +1535,14 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 		calling ->
 		    logger:log(debug, "~s: Stopping resend of INVITE ~s, but NOT starting CANCEL client transaction "
 			       "right now since we are in state 'calling'", [LogTag, sipurl:print(URI)]),
-		    NewState2 = NewState1#state{do_cancel={true, ExtraHeaders}},
+		    NewState2 = NewState1#state{do_cancel = {true, ExtraHeaders}},
 		    NewState3 = stop_resendrequest_timer(NewState2),
 		    NewState3;
 		proceeding ->
 		    logger:log(debug, "~s: Stopping resends of INVITE ~s and starting a CANCEL client transaction",
 			       [LogTag, sipurl:print(URI)]),
 		    NewState2 = stop_resendrequest_timer(NewState1),
-		    NewState3 = start_cancel_transaction(NewState2),
+		    NewState3 = start_cancel_transaction(NewState2, ExtraHeaders),
 		    NewState3;
 		SipState when SipState == completed; SipState == terminated ->
 		    logger:log(debug, "~s: NOT starting CANCEL transaction for request (INVITE ~s) "
@@ -1585,12 +1585,12 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 %%          then receive a '487 Request Cancelled' response.
 %% @end
 %%--------------------------------------------------------------------
-start_cancel_transaction(State) when is_record(State, state) ->
+start_cancel_transaction(State, ExtraHeaders) when is_record(State, state), is_list(ExtraHeaders) ->
     LogTag = State#state.logtag,
     Request = State#state.request,
     logger:log(debug, "~s: Starting new client transaction: CANCEL ~s",
 	       [LogTag, sipurl:print(Request#request.uri)]),
-    CancelRequest = create_cancel_request(Request),
+    CancelRequest = create_cancel_request(Request, ExtraHeaders),
 
     {ok, T1} = yxa_config:get_env(timerT1),
     NewState = add_timer(64 * T1, "quit after CANCEL", {terminate_transaction}, State),
@@ -1618,16 +1618,17 @@ start_cancel_transaction(State) when is_record(State, state) ->
 
 %% part of start_cancel_transaction/1. Create CANCEL request based on an INVITE,
 %% according to the procedure described in RFC3261 #9.1 (Client Behaviour).
-create_cancel_request(Request) ->
+create_cancel_request(Request, ExtraHeaders) ->
     {URI, ReqHeader} = {Request#request.uri, Request#request.header},
     CancelHeader1 = keylist:copy(ReqHeader, ['from', 'to', 'call-id']),
     {CSeqNum, _} = sipheader:cseq(ReqHeader),
     CancelId = {CSeqNum, "CANCEL"},
     CancelHeader2 = keylist:set("CSeq", [sipheader:cseq_print(CancelId)],
 				CancelHeader1),
+    CancelHeader3 = keylist:appendlist(CancelHeader2, ExtraHeaders),
     CancelRequest = #request{method = "CANCEL",
 			     uri    = URI,
-			     header = CancelHeader2
+			     header = CancelHeader3
 			    },
     siprequest:set_request_body(CancelRequest, <<>>).
 
@@ -1830,10 +1831,8 @@ test() ->
     100 = (SipMessage_State1_out#state.response)#response.status,
     1 = SipMessage_State1_out#state.res_count,
     "Testing" = (SipMessage_State1_out#state.response)#response.reason,
-    SipMessage_State1 = SipMessage_State1_out#state{sipstate  = calling,
-						    response  = undefined,
-						    res_count = 0
-						   },
+    ok = test_compare_records(SipMessage_State1, SipMessage_State1_out,
+			      [sipstate, response, res_count]),
 
     autotest:mark(?LINE, "gen_server:cast() {sipmessage, ...} - 2.1"),
     %% test that if we have a cancelled INVITE transaction in state 'calling', and receive
@@ -1859,17 +1858,8 @@ test() ->
     1 = SipMessage_State2_out#state.res_count,
     "Testing" = (SipMessage_State2_out#state.response)#response.reason,
     [{terminate_transaction}] = siptimer:test_get_appsignals(SipMessage_State2_out#state.timerlist),
-
-    %% take new state and reset everything we expect to have changed, to then check
-    %% that nothing _more_ than what we expected to change have changed
-    SipMessage_State2_out2 = SipMessage_State2_out#state{sipstate   = calling,
-							 response   = undefined,
-							 res_count  = 0,
-							 cancel_pid = undefined,
-							 timerlist  = siptimer:empty(),
-							 do_cancel  = {true, []}
-							},
-    SipMessage_State2 = SipMessage_State2_out2,
+    ok = test_compare_records(SipMessage_State2, SipMessage_State2_out,
+			      [sipstate, response, res_count, cancel_pid, timerlist, do_cancel]),
 
     %% clean up
     siptimer:cancel_all_timers(SipMessage_State2_out#state.timerlist),
@@ -1894,7 +1884,6 @@ test() ->
     %% verify new state
     true = Cancel_State2_out#state.cancelled,
     Cancel_State2 = Cancel_State2_out#state{cancelled = false},
-
 
 
     %% handle_cast({expired}, ...)
@@ -2010,10 +1999,8 @@ test() ->
     none = ExitSignal_State3_out#state.report_to,
     true = ExitSignal_State3_out#state.cancelled,
     {true, _} = ExitSignal_State3_out#state.do_cancel,
-    ExitSignal_State3 = ExitSignal_State3_out#state{report_to = self(),
-						    cancelled = false,
-						    do_cancel = false
-						   },
+    ok = test_compare_records(ExitSignal_State3, ExitSignal_State3_out,
+			      [report_to, cancelled, do_cancel]),
 
     autotest:mark(?LINE, "gen_server signal '{'EXIT', ...}' - 4"),
     %% test EXIT from cancel_pid, will be ignored
@@ -2263,9 +2250,9 @@ test() ->
     autotest:mark(?LINE, "process_timer2/3 {invite_timeout} - 1.2"),
     %% verify new state
     {408, "Request Timeout"} = InviteTimeout_State_out#state.response,
-    InviteTimeout_State = InviteTimeout_State_out#state{response     = undefined,
-							final_r_sent = false
-						       },
+    true = InviteTimeout_State_out#state.final_r_sent,
+    ok = test_compare_records(InviteTimeout_State, InviteTimeout_State_out,
+			      [response, final_r_sent]),
 
     autotest:mark(?LINE, "process_timer2/3 {invite_timeout} - 1.3"),
     %% verify that report_to was notified
@@ -2312,11 +2299,9 @@ test() ->
     autotest:mark(?LINE, "process_timer2/3 {invite_expire} - 1.2"),
     %% verify new state
     {408, "Request Timeout"} = InviteExpire_State_out#state.response,
-    InviteExpire_State = InviteExpire_State_out#state{response     = undefined,
-						      final_r_sent = false,
-						      sipstate     = calling,
-						      timerlist    = InviteExpire_State#state.timerlist
-						     },
+    true = InviteExpire_State_out#state.final_r_sent,
+    ok = test_compare_records(InviteExpire_State, InviteExpire_State_out,
+			      [response, final_r_sent, sipstate, timerlist]),
 
     autotest:mark(?LINE, "process_timer2/3 {invite_expire} - 1.3"),
     %% verify that report_to was notified
@@ -2868,11 +2853,8 @@ test() ->
     siptimer:cancel_all_timers(InitiateReq_State1_out#state.timerlist),
     [{resendrequest}, {resendrequest_timeout},
      {invite_timeout}, {invite_expire}] = siptimer:test_get_appsignals(InitiateReq_State1_out#state.timerlist),
-    InitiateReq_State1 = InitiateReq_State1_out#state{
-			   timerlist = InitiateReq_State1#state.timerlist,
-			   tl_branch = undefined,
-			   socket    = none
-			  },
+    ok = test_compare_records(InitiateReq_State1, InitiateReq_State1_out,
+			      [timerlist, tl_branch, socket]),
 
     test_verify_request_was_sent(InitiateReq_State1#state.request, "initiate_request/1 INVITE", 1, 3),
 
@@ -2896,11 +2878,8 @@ test() ->
     %% verify new state
     siptimer:cancel_all_timers(InitiateReq_State2_out#state.timerlist),
     [{resendrequest_timeout}] = siptimer:test_get_appsignals(InitiateReq_State2_out#state.timerlist),
-    InitiateReq_State2 = InitiateReq_State2_out#state{
-			   timerlist = InitiateReq_State2#state.timerlist,
-			   tl_branch = undefined,
-			   socket    = none
-			  },
+    ok = test_compare_records(InitiateReq_State2, InitiateReq_State2_out,
+			      [timerlist, tl_branch, socket]),
 
     test_verify_request_was_sent(InitiateReq_State2#state.request, "initiate_request/1 non-INVITE", 2, 3),
 
@@ -2926,11 +2905,8 @@ test() ->
     autotest:mark(?LINE, "initiate_request/1 - 3.2"),
     %% verify new state
     [] = siptimer:test_get_appsignals(InitiateReq_State3_out#state.timerlist),
-    InitiateReq_State3 = InitiateReq_State3_out#state{
-			   response     = undefined,
-			   sipstate     = calling,
-			   final_r_sent = false
-			  },
+    ok = test_compare_records(InitiateReq_State3, InitiateReq_State3_out,
+			      [response, sipstate, final_r_sent]),
     {503, "Service Unavailable"} = InitiateReq_State3_out#state.response,
     true = InitiateReq_State3_out#state.final_r_sent,
     terminated = InitiateReq_State3_out#state.sipstate,
@@ -3005,29 +2981,97 @@ test() ->
     EndInvite_State3 = end_invite(EndInvite_State3),
 
 
-    %% cancel_request(State, ExtraHeaders)
+    %% cancel_request(State)
     %%--------------------------------------------------------------------
 
-    autotest:mark(?LINE, "cancel_request/2 - 1.0"),
+    autotest:mark(?LINE, "cancel_request/1 - 1.0"),
     CancelRequest_State1_1 = #state{request = Test_Request#request{method = "TESTING"},
 				    logtag  = "testing",
 				    timerlist = siptimer:empty()
 				   },
     CancelRequest_State1 = add_timer(10000, "testing timer", {resendrequest}, CancelRequest_State1_1),
 
-    autotest:mark(?LINE, "cancel_request/2 - 1.1"),
-    CancelRequest_State1_out = cancel_request(CancelRequest_State1, []),
+    autotest:mark(?LINE, "cancel_request/1 - 1.1"),
+    CancelRequest_State1_out = cancel_request(CancelRequest_State1),
 
-    autotest:mark(?LINE, "cancel_request/2 - 1.1"),
+    autotest:mark(?LINE, "cancel_request/1 - 1.1"),
     %% verify new state
     siptimer:cancel_all_timers(CancelRequest_State1_out#state.timerlist),
     [{terminate_transaction}] = siptimer:test_get_appsignals(CancelRequest_State1_out#state.timerlist),
     completed = CancelRequest_State1_out#state.sipstate,
     true = CancelRequest_State1_out#state.cancelled,
+    ok = test_compare_records(CancelRequest_State1, CancelRequest_State1_out,
+			      [timerlist, sipstate, cancelled]),
+
     CancelRequest_State1 = CancelRequest_State1_out#state{timerlist = CancelRequest_State1#state.timerlist,
 							  sipstate  = undefined,
 							  cancelled = false
 							 },
+
+    %% cancel_request(State, ExtraHeaders)
+    %%--------------------------------------------------------------------
+
+    autotest:mark(?LINE, "cancel_request/2 - 1.0"),
+    CancelRequest2_State1_1 = #state{request	= Test_Request#request{method = "INVITE"},
+				     logtag	= "testing",
+				     timerlist	= siptimer:empty(),
+				     sipstate	= calling,
+				     testing	= true
+				    },
+    CancelRequest2_State1 = add_timer(10000, "testing timer", {resendrequest}, CancelRequest2_State1_1),
+    CancelRequest2_EH1 = [{"Reason", ["TESTING"]}],
+    
+    autotest:mark(?LINE, "cancel_request/2 - 1.1"),
+    %% test extra headers in state 'calling' - no CANCEL is starter here
+    CancelRequest2_State1_out = cancel_request(CancelRequest2_State1, CancelRequest2_EH1),
+					       
+    autotest:mark(?LINE, "cancel_request/2 - 1.2"),
+    %% verify new state
+    siptimer:cancel_all_timers(CancelRequest_State1_out#state.timerlist),
+    [] = siptimer:test_get_appsignals(CancelRequest2_State1_out#state.timerlist),
+    calling = CancelRequest2_State1_out#state.sipstate,
+    true = CancelRequest2_State1_out#state.cancelled,
+    {true, CancelRequest2_EH1} = CancelRequest2_State1_out#state.do_cancel,
+    ok = test_compare_records(CancelRequest2_State1, CancelRequest2_State1_out,
+			      [timerlist, cancelled, do_cancel]),
+
+    autotest:mark(?LINE, "cancel_request/2 - 2.0"),
+    CancelRequest2_State2_1 = CancelRequest2_State1_1#state{sipstate = proceeding,
+							    dst = test_dst
+							   },
+    CancelRequest2_State2 = add_timer(10000, "testing timer", {resendrequest}, CancelRequest2_State2_1),
+    CancelRequest2_EH2 = [{"Reason", ["TESTING 2"]}],
+    
+    autotest:mark(?LINE, "cancel_request/2 - 2.1"),
+    %% test extra headers in state 'proceeding' - should start a new CANCEL (when not testing)
+    {ok, testing, CancelRequest2_State2_out,
+     {CancelRequest2_CancelRequest, test_dst, _, 32 * 500, none}} =
+	cancel_request(CancelRequest2_State2, CancelRequest2_EH2),
+					       
+    autotest:mark(?LINE, "cancel_request/2 - 2.2"),
+    %% verify new state
+    siptimer:cancel_all_timers(CancelRequest_State1_out#state.timerlist),
+    [{terminate_transaction}] = siptimer:test_get_appsignals(CancelRequest2_State2_out#state.timerlist),
+    true = CancelRequest2_State2_out#state.cancelled,
+    false = CancelRequest2_State2_out#state.do_cancel,
+    testing = CancelRequest2_State2_out#state.cancel_pid,
+    ok = test_compare_records(CancelRequest2_State2, CancelRequest2_State2_out,
+			      [timerlist, cancelled, cancel_pid]),
+
+    autotest:mark(?LINE, "cancel_request/2 - 2.3"),
+    %% verify CANCEL request
+
+    %% verify that From, To and Call-Id was copied verbatim
+    lists:map(fun(H) ->
+		      OrigVal = keylist:fetch(H, Test_Request#request.header),
+		      CancelVal = keylist:fetch(H, CancelRequest2_CancelRequest#request.header),
+		      OrigVal = CancelVal
+	      end, ['from', 'to', 'call-id']),
+    ["1 CANCEL"] = keylist:fetch('cseq', CancelRequest2_CancelRequest#request.header),
+
+    %% Verify our ExtraHeaders were included as they should
+    ["TESTING 2"] = keylist:fetch('reason', CancelRequest2_CancelRequest#request.header),
+
 
     %% update_invite_expire(Status, State)
     %%--------------------------------------------------------------------
@@ -3046,7 +3090,8 @@ test() ->
     %% verify new state
     siptimer:cancel_all_timers(UpdInvExp_State1_out#state.timerlist),
     [{invite_expire}] = siptimer:test_get_appsignals(UpdInvExp_State1_out#state.timerlist),
-    UpdInvExp_State1 = UpdInvExp_State1_out#state{timerlist = UpdInvExp_State1#state.timerlist},
+    ok = test_compare_records(UpdInvExp_State1, UpdInvExp_State1_out,
+			      [timerlist]),
 
     autotest:mark(?LINE, "update_invite_expire/2 - 2.0"),
     UpdInvExp_State2 = #state{logtag    = "testing",
@@ -3141,3 +3186,38 @@ test_absorb_blacklisting(Status, Dst) ->
 	    Msg = io_lib:format("response ~p did not result in blacklisting", [Status]),
 	    throw({error, lists:flatten(Msg)})
     end.
+
+
+%% compare two records element by element and give good information on where they
+%% are not equal
+test_compare_records(R1, R2, Ignore) when is_tuple(R1), is_tuple(R2), is_list(Ignore) ->
+    test_compare_records2(tuple_to_list(R1), tuple_to_list(R2), Ignore).
+
+test_compare_records2([RecName | L1], [RecName | L2], Ignore) when is_list(L1), is_list(L2), length(L1) == length(L2) ->
+    test_compare_records3(L1, L2, RecName, test_record_info(RecName), Ignore).
+
+test_compare_records3([Elem | L1], [Elem | L2], RecName, [ThisField | Fields], Ignore) ->
+    %% element at first position matches
+    %%io:format("Record ~p#~p matches~n", [RecName, ThisField]),
+    case lists:member(ThisField, Ignore) of
+	true ->
+	    Msg = io_lib:format("Record ~p#~p NOT changed", [RecName, ThisField]),
+	    {error, lists:flatten(Msg), Elem};
+	false ->
+	    test_compare_records3(L1, L2, RecName, Fields, Ignore)
+    end;
+test_compare_records3([Elem1 | L1], [Elem2 | L2], RecName, [ThisField | Fields], Ignore) ->
+    case lists:member(ThisField, Ignore) of
+	true ->
+	    %%io:format("Record ~p#~p does NOT match, but we ignore that : ~p /= ~p~n",
+	    %%	      [RecName, ThisField, Elem1, Elem2]),
+	    test_compare_records3(L1, L2, RecName, Fields, Ignore);
+	false ->
+	    Msg = io_lib:format("Record ~p#~p does NOT match", [RecName, ThisField]),
+	    {error, lists:flatten(Msg), Elem1, Elem2}
+    end;
+test_compare_records3([], [], _RecName, [], _Ignore) ->
+    ok.
+
+test_record_info(state) ->
+    record_info(fields, state).
