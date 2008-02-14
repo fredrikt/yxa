@@ -1,20 +1,29 @@
-%%--------------------------------------------------------------------
-%% Note: this module does some costly list operations, such as
-%% appendning elements to the end of lists.
-%% There may be a datastructure better suited for this need, of adding
-%% elements to both front and end of lists, but note that most
-%% #keyelem.item are probably short, so that the overhead of smarter
-%% datastructures may still be more costly.
-%% It may also be beneficial, when several elements are added to the
-%% end of a list - to reverse it, append the new elements in revese
-%% order and then reverse the new list back to it's proper order.
-%% This results in O(3N+2M) rather than O(N * M) (aproximate - M
-%% grows for each element in N) list hd/1 calls
-%% (N = new list of elements to add, M = the orginal list). If N is
-%% small compared to M this results in roughly a O(2M) vs a O(N*M)
-%% algorithm.
-%%--------------------------------------------------------------------
-
+%%%-------------------------------------------------------------------
+%%% File    : keylist.erl
+%%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @doc      Kind of generic key-value list module, but really only
+%%%           meant/used for storing SIP message headers.
+%%%
+%%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
+%%% @end
+%%%
+%%% Note    : This module does some costly list operations, such as
+%%%           appending elements to the end of lists.
+%%%           There may be a datastructure better suited for this
+%%%           need, of adding elements to both front and end of lists,
+%%%           but note that most #keyelem.value are probably short, so
+%%%           the overhead of smarter datastructures may still be more
+%%%           costly.
+%%%           It may also be beneficial, when several elements are
+%%%           added to the end of a list - to reverse it, append the
+%%%           new elements in reverse order and then reverse the new
+%%%           list back to it's proper order.
+%%%           This results in O(3N+2M) rather than O(N * M)
+%%%           (aproximate - M grows for each element in N) list hd/1
+%%%           calls (N = new list of elements to add, M = the orginal
+%%%           list). If N is small compared to M this results in
+%%%           roughly a O(2M) vs a O(N*M) algorithm.
+%%%-------------------------------------------------------------------
 -module(keylist).
 
 %%--------------------------------------------------------------------
@@ -42,7 +51,6 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
-
 -include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
@@ -59,7 +67,7 @@
 	  %% short form
 	  name,
 	  %% list() of string(), stores field specific entries
-	  item
+	  value
 	 }).
 
 %%--------------------------------------------------------------------
@@ -71,25 +79,27 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% @spec    (Key, List) ->
-%%            [string()] "the value of Key - Key may have several values associated with it (e.g. the Via header in sip requests)"
+%% @spec    (Key, Keylist) ->
+%%            [string()]
 %%
-%%            Key  = string() | atom() "either the header name (string) or the internal form of it (atom)."
-%%            List = #keylist{}
+%%            Key     = string() | atom() "either the header name (string) or the internal form of it (atom)."
+%%            Keylist = #keylist{}
 %%
-%% @doc     return the contents of the header that matches Key
+%% @doc     Return the contents of the header that matches Key. The
+%%          result is a list of values, or the empty list if no header
+%%          matching Key was found in Keylist.
 %% @end
 %%--------------------------------------------------------------------
-fetch(Key, List) when is_list(Key), is_record(List, keylist) ->
-    fetchcase(normalize(Key), List#keylist.list);
-fetch(Key, List) when is_atom(Key), is_record(List, keylist) ->
-    fetchcase(Key, List#keylist.list).
+fetch(Key, #keylist{list = List}) when is_list(Key) ->
+    fetchcase(normalize(Key), List);
+fetch(Key, #keylist{list = List}) when is_atom(Key) ->
+    fetchcase(Key, List).
 
 fetchcase(_Key, []) ->
     [];
-fetchcase(Key, [#keyelem{key=Key}=Elem | _List]) ->
+fetchcase(Key, [#keyelem{key = Key} = Elem | _List]) ->
     %% match
-    Elem#keyelem.item;
+    Elem#keyelem.value;
 fetchcase(Key, [Elem | List]) when is_record(Elem, keyelem) ->
     %% no match
     fetchcase(Key, List).
@@ -97,34 +107,36 @@ fetchcase(Key, [Elem | List]) when is_record(Elem, keyelem) ->
 %%--------------------------------------------------------------------
 %% @spec    (Keylist, List) -> #keylist{}
 %%
-%%            KeyList = #keylist{}
-%%            List    = [{Name, Item}] | {Key, Name, Item}
+%%            KeyList  = #keylist{}
+%%            List     = [NewEntry]
+%%            NewEntry = {Name, Value} | {Key, Name, Value}
+%%            Name     = string() "the name of a header in a sip message (e.g. \"From\")"
+%%            Key      = atom() | string() "the key to use internally (e.g. 'from')"
+%%            Value    = [string()] "header value(s)"
 %%
-%% @doc     do one append/2 for each entry in List
+%% @doc     Do one append/2 for each entry in List.
 %% @end
 %%--------------------------------------------------------------------
-%% {Name, Key, Item} tuples
-appendlist(Keylist, [H | _] = List) when is_record(Keylist, keylist), size(H) == 3 ->
-    Func = fun ({Key, Name, Item}, KeylistAcc) ->
-		   append({Key, Name, Item}, KeylistAcc)
-	   end,
-    lists:foldl(Func, Keylist, List);
-%% {Name, Item} tuples
-appendlist(Keylist, [H | _] = List) when is_record(Keylist, keylist), size(H) == 2 ->
-    Func = fun ({Name, Item}, KeylistAcc) ->
-		   append({Name, Item}, KeylistAcc)
-	   end,
-    lists:foldl(Func, Keylist, List);
 appendlist(Keylist, []) when is_record(Keylist, keylist) ->
-    Keylist.
+    Keylist;
+appendlist(Keylist, List) when is_record(Keylist, keylist) ->
+    Func = fun ({Key, Name, Value}, KeylistAcc) ->
+		   append({Key, Name, Value}, KeylistAcc);
+	       ({Name, Value}, KeylistAcc) ->
+		   append({Name, Value}, KeylistAcc)
+	   end,
+    lists:foldl(Func, Keylist, List).
 
 %%--------------------------------------------------------------------
 %% @spec    (List) -> #keylist{}
 %%
-%%            List = [{Name, Key, Item}]
+%%            List     = [NewEntry]
+%%            NewEntry = {Name, Value} | {Key, Name, Value}
+%%            Key      = atom() | string() "the key to use internally (e.g. 'from')"
+%%            Name     = string() "the name of a header in a sip message (e.g. \"From\")"
+%%            Value    = [string()] "header value(s)"
 %%
-%% @doc     create an empty keylist and add the List elements with
-%%          append/2
+%% @doc     Create an empty keylist and add the entrys in List to it.
 %% @end
 %%--------------------------------------------------------------------
 from_list(List) when is_list(List) ->
@@ -137,20 +149,21 @@ from_list(List) when is_list(List) ->
 %% @end
 %%--------------------------------------------------------------------
 empty() ->
-    #keylist{list=[]}.
+    #keylist{list = []}.
 
 %%--------------------------------------------------------------------
-%% @spec    (Data, List) -> #keylist{}
+%% @spec    (Data, Keylist) -> #keylist{}
 %%
 %%            Data         = {Name, NewValueList}      |
-%%                           {Name, Key, NewValueList}
+%%                           {Key, Name, NewValueList}
 %%            Name         = string() "the name of a header in a sip message (e.g. \"From\")"
-%%            Key          = atom() | list() "the key to use internally (e.g. 'from')"
+%%            Key          = atom() | string() "the key to use internally (e.g. 'from')"
 %%            NewValueList = list() "new entries for keyelem identified by Key"
-%%            List         = #keylist{}
+%%            Keylist      = #keylist{}
 %%
-%% @doc     Add NewValueList to tail of element (#keyelem.item) in
-%%          List (or create new entry if Key is unknown).
+%% @doc     Add NewValueList to tail of existing entry matching
+%%          Key/Name in Keylist, or create a new entry in Keylist if no
+%%          matching entry was found.
 %% @end
 %%--------------------------------------------------------------------
 append({Name, NewValueList}, Keylist) when is_list(Name), is_list(NewValueList),
@@ -159,34 +172,34 @@ append({Name, NewValueList}, Keylist) when is_list(Name), is_list(NewValueList),
 		      lists:append(Valuelist, NewValueList)
 	      end, Keylist);
 %% Key also given, we can call modcase() directly
-append({Key, Name, NewValueList}, Keylist) when is_atom(Key); is_list(Key),
+append({Key, Name, NewValueList}, Keylist) when (is_atom(Key) orelse is_list(Key)),
 						is_list(Name), is_list(NewValueList),
 						is_record(Keylist, keylist) ->
     ModifierFun = fun (Valuelist) ->
 			  lists:append(Valuelist, NewValueList)
 		  end,
     NewL = modcase(Key, Name, ModifierFun, Keylist#keylist.list),
-    Keylist#keylist{list=NewL}.
+    Keylist#keylist{list = NewL}.
 
 %%--------------------------------------------------------------------
-%% @spec    ({Name, NewValueList}, List) -> #keylist{}
+%% @spec    ({Name, NewValueList}, Keylist) -> #keylist{}
 %%
 %%            Name         = string() "the name of a header in a sip message"
 %%            NewValueList = list() "new entries for keyelem identified by Key"
-%%            List         = #keylist{}
+%%            Keylist      = #keylist{}
 %%
-%% @doc     Add NewValueList to head of element (#keyelem.item) in
-%%          List (or create new entry if Key is unknown). Note : This
-%%          function does not accept atom() form because if there is
-%%          no header, one will be created and then we have to have a
-%%          string() variant of it anyways.
+%% @doc     Add NewValueList to head of an entry in Keylist (or create
+%%          new entry if Key is unknown).
+%%          Note : This function does not accept atom() form because
+%%          if there is no header, one will be created and then we
+%%          have to have a string() variant of it anyways.
 %% @end
 %%--------------------------------------------------------------------
-prepend({Name, NewValueList}, List) when is_list(Name), is_list(NewValueList),
-					 is_record(List, keylist) ->
+prepend({Name, NewValueList}, Keylist) when is_list(Name), is_list(NewValueList),
+					    is_record(Keylist, keylist) ->
     mod(Name, fun (Valuelist) ->
 		      lists:append(NewValueList, Valuelist)
-	      end, List).
+	      end, Keylist).
 
 %%--------------------------------------------------------------------
 %% @spec    (Name, Keylist) -> #keylist{}
@@ -197,54 +210,58 @@ prepend({Name, NewValueList}, List) when is_list(Name), is_list(NewValueList),
 %% @doc     remove an entry from keylist record() (#keylist.list)
 %% @end
 %%--------------------------------------------------------------------
-delete(Name, Keylist) when (is_list(Name) orelse is_atom(Name)), is_record(Keylist, keylist) ->
+delete(Key, Keylist) when is_atom(Key), is_record(Keylist, keylist) ->
+    #keylist{list = del(Key, Keylist#keylist.list)};
+delete(Name, Keylist) when is_list(Name), is_record(Keylist, keylist) ->
     Key = normalize(Name),
-    #keylist{list=del(Key, Keylist#keylist.list)}.
+    #keylist{list = del(Key, Keylist#keylist.list)}.
 
 %% Descrip.: delete first element (E) in List,
 %%           where E#keyelem.key == normalize(Key)
 %% Returns : list() of keyelem records()
 del(_Key, []) ->
     [];
-del(Key, [H | T]) when is_record(H, keyelem), H#keyelem.key == Key ->
+del(Key, [#keyelem{key = Key} | T]) ->
     %% Match, return remainder of list
     T;
 del(Key, [H | T]) when is_record(H, keyelem) ->
+    %% no match
     [H | del(Key, T)].
 
 %%--------------------------------------------------------------------
-%% @spec    (Name, List) -> #keylist{}
+%% @spec    (Name, Keylist) -> #keylist{}
 %%
-%%            Name = string() | atom() "the name of a header in a sip message (string), or our internal representation of it (atom)"
-%%            List = #keylist{}
+%%            Name    = string() | atom()
+%%            Keylist = #keylist{}
 %%
-%% @doc     remove the first entry from a element (#keyelem.item) in
-%%          keylist record() (#keylist.list)
+%% @doc     Remove the first entry from the element matching Name in
+%%          Keylist.
 %% @end
 %%--------------------------------------------------------------------
-deletefirstvalue(Name, Keylist) when is_list(Name); is_atom(Name), is_record(Keylist, keylist) ->
-    mod(Name, fun (Valuelist) ->
-		      case Valuelist of
-			  [_Item | Rest] ->
-			      Rest;
-			  [] ->
-			      []
-		      end
-	      end, Keylist).
+deletefirstvalue(Name, Keylist) when (is_list(Name) orelse is_atom(Name)), is_record(Keylist, keylist) ->
+    F = fun (Valuelist) ->
+		case Valuelist of
+		    [_Value | Rest] ->
+			Rest;
+		    [] ->
+			[]
+		end
+	end,
+    mod(Name, F, Keylist).
 
 %%--------------------------------------------------------------------
-%% @spec    (Name, Valuelist, List) -> #keylist{}
+%% @spec    (Name, NewValue, Keylist) -> #keylist{}
 %%
-%%            Nakme     = string() "the name of a header in a sip message"
-%%            ValueList = [string()]
-%%            List      = #keylist{}
+%%            Name      = string() | atom()
+%%            NewValue  = [string()]
+%%            Keylist   = #keylist{}
 %%
-%% @doc     replace all items in E#keyelem.item where Key matches key
-%%          in E
+%% @doc     Replace value of all entrys in Keylist matching Name with
+%%          NewValue.
 %% @end
 %%--------------------------------------------------------------------
 set(Name, Valuelist, Keylist) when is_list(Name), is_record(Keylist, keylist) ->
-    mod(Name, fun (_) ->
+    mod(Name, fun (_OldValue) ->
 		      Valuelist
 	      end, Keylist).
 
@@ -254,70 +271,30 @@ set(Name, Valuelist, Keylist) when is_list(Name), is_record(Keylist, keylist) ->
 %%            Keylist = [#keyelem{}]
 %%            Keys    = [string()]
 %%
-%% @doc     return Keylist only containing the fields in Keys Note :
-%%          use of atom() as keys (for well known keys) should
-%%          improve patternmatch speed. When matching a E#keyelem.key
-%%          against Key in the alternative solution below, it may
-%%          also be worth using one of the OTP set modules so that
-%%          the member check becomes O(log N) instead of O(N).
+%% @doc     Copy the elements matching Keys from Keylist.
 %% @end
 %%--------------------------------------------------------------------
-%% This code (untested) should do the same thing and should be less
-%% confusing
-%%
-%% copy(Keylist, Names) when record(Keylist, keylist) ->
-%%     Keys = normalize_list(Names),
-%%     KeyElems = Keylist#keylist.list,
-%%     Copies = [E ||
-%% 		 %% determine if E from Keylist should be copied
-%% 		 lists:member(E#keyelem.key, Keys),
-%% 		 E <- KeyElems ],
-%%     #keylist{list = Copies}.
-%%--------------------------------------------------------------------
-
-%% XXX I can't quite figure out how this works - hsten
-%% XXX but it does work ;) - ft
-
-copy(Keylist, Names) when is_record(Keylist, keylist), is_list(Names) ->
+copy(Keylist, Names) when record(Keylist, keylist) ->
     Keys = normalize_list(Names),
-    Func = fun(Key, _Name, _Item) ->
-		   lists:member(Key, Keys)
-	   end,
-    %% filter() calls our Func on every element of Keylist. filter()
-    %% returns all elements from Keylist where our Func returned
-    %% 'true'. Func returns 'true' if the elements key is a member of
-    %% Keys.
-    filter(Func, Keylist).
-
-%%--------------------------------------------------------------------
-%% @spec    (Func, Keylist) -> #keylist{}
-%%
-%%            Func    = fun() "fun(E) -> bool() - predicate function"
-%%            Keylist = [#keyelem{}]
-%%
-%% @doc     Return all keyelem elements from Keylist, for which the
-%%          predicate function returned 'true'.
-%% @end
-%%--------------------------------------------------------------------
-filter(Func, Keylist) when is_record(Keylist, keylist) ->
-    Pred = fun(Elem) ->
-		   Func(Elem#keyelem.key, Elem#keyelem.name, Elem#keyelem.item)
-	   end,
-    NewL = lists:filter(Pred, Keylist#keylist.list),
-    #keylist{list=NewL}.
+    KeyElems = Keylist#keylist.list,
+    Copies = [E || E <- KeyElems, lists:member(E#keyelem.key, Keys)],
+    #keylist{list = Copies}.
 
 %%--------------------------------------------------------------------
 %% @spec    (Func, Keylist) -> [term()]
 %%
-%%            Func    = fun() "fun(Key, Name, Item) -> term()"
+%%            Func    = fun() "fun(Key, Name, Value) -> term()"
 %%            Keylist = #keylist{}
 %%
-%% @doc     apply Func to all elements in Keylist (#keylist.list)
+%% @doc     Apply Func to all elements in Keylist. Func must be of
+%%          arity three, and accept arguments Func(Key, Name, Value)
+%%          where Key is an atom() or a string(), Name is always a
+%%          string() and Value is [string()].
 %% @end
 %%--------------------------------------------------------------------
 map(Func, Keylist) when is_record(Keylist, keylist) ->
     F = fun(Elem) ->
-		Func(Elem#keyelem.key, Elem#keyelem.name, Elem#keyelem.item)
+		Func(Elem#keyelem.key, Elem#keyelem.name, Elem#keyelem.value)
 	end,
     lists:map(F, Keylist#keylist.list).
 
@@ -353,13 +330,12 @@ normalize("f") -> normalize2("from");
 normalize("s") -> normalize2("subject");
 normalize("k") -> normalize2("supported");
 normalize("t") -> normalize2("to");
+normalize("v") -> normalize2("via");
 normalize("o") -> normalize2("event");			%% RFC3265
 normalize("u") -> normalize2("allow-events");		%% RFC3265
-normalize("v") -> normalize2("via");
-%% RFC3515 #7
-normalize("r") -> "refer-to";
+normalize("r") -> normalize2("refer-to");		%% RFC3515 #7
 normalize(Name) when is_list(Name) ->
-    LC = httpd_util:to_lower(Name),
+    LC = http_util:to_lower(Name),
     normalize2(LC);
 normalize(Key) when is_atom(Key) ->
     %% XXX perhaps check that it is one of the atoms we actually use?
@@ -412,45 +388,44 @@ normalize2("x-yxa-peer-auth") ->	'x-yxa-peer-auth';
 normalize2(In) when is_list(In) ->	In.
 
 %%--------------------------------------------------------------------
-%% @spec    (Names) -> [string()]
+%% @spec    (Names) -> [Normalized]
+%%          Normalized = string() | atom()
 %%
-%%            Names = [string()]                                                                    |
-%%                    atom() "the name of a header in a sip message, or our internal variant of it"
-%%
-%% @doc     convert header key, to a standard format - lowercase and
-%%          verbose string()
+%% @doc     Convert header names to an internal representation. Known
+%%          headers are represented with atoms, unknown ones are kept
+%%          as strings.
 %% @end
 %%--------------------------------------------------------------------
-normalize_list(Names) ->
-    lists:map(fun(Key) ->
-		      normalize(Key)
-	      end, Names).
+normalize_list(Names) when is_list(Names) ->
+    [normalize(Name) || Name <- Names].
 
 %%--------------------------------------------------------------------
-%% @spec    (Name, Func, List) -> #keylist{}
+%% @spec    (Name, Func, Keylist) -> #keylist{}
 %%
-%%            Name = string() "the name of a header in a sip message"
-%%            Func = fun()
-%%            List = #keylist{}
+%%            Name    = string() | atom()
+%%            Func    = fun()
+%%            Keylist = #keylist{}
 %%
-%% @doc     apply Func to all elements E; E#keyelem{item =
-%%          F(E#keyelem.item)} - in List, where E#keyelem.key ==
-%%          normalize(Key) A new #keyelem{key=normalize(Key),
-%%          name=Name, item=Func([])} is added if Key isn't found
+%% @doc     Apply Func to all _values_ of the elements in Keylist,
+%%          who matches Name. If no elements match Name, Func([])
+%%          will be invoked, and the result will be added as a new
+%%          element.
 %% @end
 %%--------------------------------------------------------------------
-mod(Name, Func, List) when is_atom(Name); is_list(Name), is_record(List, keylist) ->
+mod(Name, Func, #keylist{list = List}) when is_function(Func, 1), (is_atom(Name) orelse is_list(Name)) ->
     Key = normalize(Name),
-    #keylist{list=modcase(Key, Name, Func, List#keylist.list)}.
+    #keylist{list = modcase(Key, Name, Func, List)}.
 
 modcase(Key, Name, Func, []) ->
     %% No more input - add a new element
-    [#keyelem{key=Key,
-	      name=Name,
-	      item=Func([])}];
-modcase(Key, _Name, Func, [#keyelem{key=Key}=Elem | List]) ->
+    [#keyelem{key  = Key,
+	      name = Name,
+	      value = Func([])
+	     }
+    ];
+modcase(Key, _Name, Func, [#keyelem{key = Key, value = Value} = Elem | List]) ->
     %% Match, process item using Func
-    [Elem#keyelem{item=Func(Elem#keyelem.item)} | List];
+    [Elem#keyelem{value = Func(Value)} | List];
 modcase(Key, Name, Func, [Elem | List]) when is_record(Elem, keyelem) ->
     %% No match
     [Elem | modcase(Key, Name, Func, List)].
@@ -468,7 +443,7 @@ modcase(Key, Name, Func, [Elem | List]) when is_record(Elem, keyelem) ->
 %%--------------------------------------------------------------------
 test() ->
 
-    %% normalize/1
+    %% normalize(Key)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "normalize/1 - 1"),
     via = normalize("Via"),
@@ -492,34 +467,58 @@ test() ->
     %% test short format
     from = normalize("f"),
 
-    %% from_list/1
+    autotest:mark(?LINE, "normalize/1 - 8.1"),
+    %% test short format - we test all of them to 'double check' the
+    %% result when new ones are added
+    Normalize_L1 = [normalize([Normalize_Char]) || Normalize_Char <- lists:seq($a, $z)],
+    ["a", "b", "contact-type", "d", "content-encoding", 'from', "g", "h",
+     'call-id', "j", 'supported', 'content-length', 'contact', "n", 'event',
+     "p", "q", "refer-to", "subject", 'to', 'allow-events', 'via', "w", "x",
+     "y", "z"] = Normalize_L1,
+
+    %% from_list(List)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "from_list/1 - 1"),
     %% empty list
     #keylist{list=[]} = from_list([]),
 
-    autotest:mark(?LINE, "from_list/1 - 2"),
+    autotest:mark(?LINE, "from_list/1 - 2.1"),
     %% list() of {Key, Name, Value} tuples
-    H1 = from_list([{via, "Via", ["one", "two", "three"]},
-		    {"test", "Test", ["foo", "bar", "baz"]}]),
+    H1 = from_list([{via,    "Via",  ["one", "two", "three"]},
+		    {"test", "Test", ["foo", "bar", "baz"]}
+		   ]),
 
-    autotest:mark(?LINE, "from_list/1 - 3"),
+    autotest:mark(?LINE, "from_list/1 - 2.2"),
     %% check result
-    #keylist{list=[
-		   #keyelem{key=via, name="Via", item=["one", "two", "three"]},
-		   #keyelem{key="test", name="Test", item=["foo", "bar", "baz"]}
-		  ]} = H1,
+    [{"test", "Test", ["foo", "bar", "baz"]},
+     {via, "Via", ["one", "two", "three"]}
+    ] = test_to_list(H1),
 
-    autotest:mark(?LINE, "from_list/1 - 4"),
+    autotest:mark(?LINE, "from_list/1 - 3.1"),
     %% list() of {Name, Value} tuples
-    H2 = from_list([{"ATOM", [atom]}]),
+    H2 = from_list([{"ATOM", ["hi"]}]),
 
-    autotest:mark(?LINE, "from_list/1 - 5"),
+    autotest:mark(?LINE, "from_list/1 - 3.2"),
     %% check result
-    #keylist{list=[
-		   #keyelem{key="atom", name="ATOM", item=[atom]}
-		  ]} = H2,
-    %% fetch/2
+    [{"atom", "ATOM", ["hi"]}
+    ] = test_to_list(H2),
+
+    autotest:mark(?LINE, "from_list/1 - 4.1"),
+    %% trickier list of tuples
+    FromList_L4 = from_list([{"ATOM", ["hi"]},
+			     {"AtOm", ["low"]},
+			     {"Via",  ["first-via"]},
+			     {'via', "via", ["second-via"]}
+			    ]),
+
+    autotest:mark(?LINE, "from_list/1 - 4.2"),
+    %% check result
+    [{"atom", "ATOM", ["hi", "low"]},
+     {'via', "Via", ["first-via","second-via"]}
+    ] = test_to_list(FromList_L4),
+    
+
+    %% fetch(Key, Keylist)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "fetch/2 - 1"),
     %% fetch using name, will match key after normalize()
@@ -539,44 +538,53 @@ test() ->
 
     autotest:mark(?LINE, "fetch/2 - 5"),
     %% fetch using name
-    [atom] = fetch("atom", H2),
+    ["hi"] = fetch("atom", H2),
 
     autotest:mark(?LINE, "fetch/2 - 6"),
     %% fetch using name, will match after normalize()
-    [atom] = fetch("ATOM", H2),
+    ["hi"] = fetch("ATOM", H2),
 
-    %% append/2
+    %% append(Data, Keylist)
     %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "append/2 - 1"),
+    autotest:mark(?LINE, "append/2 - 1.1"),
     %% {Name, Value} tuple
     AppendH1 = append({"Header", ["one"]}, empty()),
 
-    autotest:mark(?LINE, "append/2 - 2"),
+    autotest:mark(?LINE, "append/2 - 1.2"),
     %% check result of append
-    #keylist{list=[
-		   #keyelem{key="header", name="Header", item=["one"]}
-		  ]} = AppendH1,
+    [{"header", "Header", ["one"]}
+    ] = test_to_list(AppendH1),
 
-    autotest:mark(?LINE, "append/2 - 3"),
+    autotest:mark(?LINE, "append/2 - 2.1"),
     %% {Key, Name, Value}
     AppendH2 = append({"header", "Header", ["two"]}, AppendH1),
 
-    autotest:mark(?LINE, "append/2 - 4"),
+    autotest:mark(?LINE, "append/2 - 2.2"),
     %% check result of append
-    #keylist{list=[
-		   #keyelem{key="header", name="Header", item=["one", "two"]}
-		  ]} = AppendH2,
+    [{"header", "Header", ["one", "two"]}
+    ] = test_to_list(AppendH2),
 
-    %% set/3
+    autotest:mark(?LINE, "append/2 - 3.1"),
+    %% test with existing values in list, and also test normalization
+    AppendH3_L1 = append({"Route", ["<sip:foo@test>"]}, AppendH1),
+    AppendH3_L2 = append({"Route", ["<sip:foo@test2>"]}, AppendH3_L1),
+
+    autotest:mark(?LINE, "append/2 - 3.2"),
+    %% check result
+    [{"header", "Header", ["one"]},
+     {'route', "Route", ["<sip:foo@test>", "<sip:foo@test2>"]}
+    ] = test_to_list(AppendH3_L2),
+
+
+    %% set(Name, NewValue, Keylist)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "set/3 - 1"),
     SetH1 = set("FOO", ["test"], empty()),
 
     autotest:mark(?LINE, "set/3 - 2"),
     %% check results
-    #keylist{list=[
-		   #keyelem{key="foo", name="FOO", item=["test"]}
-		  ]} = SetH1,
+    [{"foo", "FOO", ["test"]}
+    ] = test_to_list(SetH1),
 
     autotest:mark(?LINE, "set/3 - 3"),
     %% should not change SetH1
@@ -587,12 +595,12 @@ test() ->
 
     autotest:mark(?LINE, "set/3 - 5"),
     %% check results
-    #keylist{list=[
-		   #keyelem{key="foo", name="FOO", item=["test"]},
-		   #keyelem{key="bar", name="bar", item=["test2"]}
-		  ]} = SetH2,
+    [{"foo", "FOO", ["test"]},
+     {"bar", "bar", ["test2"]}
+    ] = test_to_list(SetH2),
 
-    %% prepend/2
+
+    %% prepend({Name, NewValueList}, Keylist)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "prepend/3 - 1"),
     %% have one more keyelem in the test case to make sure prepend() only
@@ -602,22 +610,21 @@ test() ->
 
     autotest:mark(?LINE, "prepend/3 - 2"),
     %% check result
-    #keylist{list=[
-		   #keyelem{key="other", name="Other", item=["foo"]},
-		   #keyelem{key="header", name="Header", item=["one"]}
-		  ]} = PrependH1,
+    [{"header", "Header", ["one"]},
+     {"other", "Other", ["foo"]}
+    ] = test_to_list(PrependH1),
 
     autotest:mark(?LINE, "prepend/3 - 3"),
     PrependH2 = prepend({"header", ["zero"]}, PrependH1),
 
     autotest:mark(?LINE, "prepend/3 - 4"),
     %% check result
-    #keylist{list=[
-		   #keyelem{key="other", name="Other", item=["foo"]},
-		   #keyelem{key="header", name="Header", item=["zero", "one"]}
-		  ]} = PrependH2,
+    [{"header", "Header", ["zero", "one"]},
+     {"other", "Other", ["foo"]}
+    ] = test_to_list(PrependH2),
 
-    %% delete/2
+
+    %% delete(Name, Keylist)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "delete/2 - 1"),
     %% add Via to PrependH2 so that we have one header with an atom key
@@ -629,16 +636,15 @@ test() ->
 
     autotest:mark(?LINE, "delete/2 - 2"),
     %% check results
-    #keylist{list=[
-		   #keyelem{key="header", name="Header", item=["zero", "one"]},
-		   #keyelem{key=via, name="Via", item=["bar"]}
-		  ]} = DeleteH2,
+    [{"header", "Header", ["zero", "one"]},
+     {'via', "Via", ["bar"]}
+    ] = test_to_list(DeleteH2),
 
     autotest:mark(?LINE, "delete/2 - 2"),
     %% delete both the 'via' and "header" elements, leaving an empty list
     #keylist{list=[]} = delete("header", delete(via, DeleteH2)),
 
-    %% deletefirstvalue/2
+    %% deletefirstvalue(Name, Keylist)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "deletefirstvalue/2 - 1"),
     DFVH1 = from_list([{via, "Via", ["one", "two", "three"]},
@@ -649,10 +655,9 @@ test() ->
 
     autotest:mark(?LINE, "deletefirstvalue/2 - 2.2"),
     %% check results
-    #keylist{list=[
-		   #keyelem{key=via, name="Via", item=["two", "three"]},
-		   #keyelem{key="other", name="Other", item=["foo"]}
-		  ]} = DFVH2,
+    [{"other", "Other", ["foo"]},
+     {'via', "Via", ["two", "three"]}
+    ] = test_to_list(DFVH2),
 
     autotest:mark(?LINE, "deletefirstvalue/2 - 3"),
     DFVH3 = deletefirstvalue("Other", DFVH2),
@@ -660,12 +665,12 @@ test() ->
     %% check results, current deletefirstvalue doesn't remove the element
     %% but the result of a keylist:fetch() would be the same as if the
     %% element had been deleted (empty list)
-    #keylist{list=[
-		   #keyelem{key=via, name="Via", item=["two", "three"]},
-		   #keyelem{key="other", name="Other", item=[]}
-		  ]} = DFVH3,
+    [{"other", "Other", []},
+     {'via', "Via", ["two", "three"]}
+    ] = test_to_list(DFVH3),
 
-    %% copy/2
+
+    %% copy(Keylist, Names)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "copy/2 - 1"),
     CopyH1 = from_list([{via, "Via", ["one", "two", "three"]},
@@ -681,15 +686,14 @@ test() ->
 
     autotest:mark(?LINE, "copy/2 - 3"),
     %% copy only via
-    #keylist{list=[
-		   #keyelem{key=via, name="Via", item=["one", "two", "three"]}
-		  ]} = copy(CopyH1, [via]),
+    [{'via', "Via", ["one", "two", "three"]}
+    ] = test_to_list( copy(CopyH1, [via]) ),
 
     autotest:mark(?LINE, "copy/2 - 3"),
     %% copy headers not in source, result in empty keylist
-    #keylist{list=[]} = copy(CopyH1, [warning, 'call-id', "foobar"]),
+    [] = test_to_list( copy(CopyH1, [warning, 'call-id', "foobar"]) ),
 
-    %% appendlist/2
+    %% appendlist(Keylist, List)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "appendlist/2 - 1"),
     %% {Name, Value} tuples
@@ -697,9 +701,8 @@ test() ->
 
     autotest:mark(?LINE, "appendlist/2 - 2"),
     %% check result
-    #keylist{list=[
-		   #keyelem{key=via, name="ViA", item=["one", "two"]}
-		  ]} = AppendLH1,
+    [{'via', "ViA", ["one", "two"]}
+    ] = test_to_list(AppendLH1),
 
     autotest:mark(?LINE, "appendlist/2 - 3"),
     %% {Name, Key, Value} tuples
@@ -709,16 +712,16 @@ test() ->
 
     autotest:mark(?LINE, "appendlist/2 - 4"),
     %% check result
-    #keylist{list=[
-		   #keyelem{key=via, name="ViA", item=["one", "two", "three"]},
-		   #keyelem{key="other", name="Other", item=["X"]}
-		  ]} = AppendLH2,
+    [{"other", "Other", ["X"]},
+     {'via', "ViA", ["one", "two", "three"]}
+    ] = test_to_list(AppendLH2),
 
-    %% map/2
+
+    %% map(Func, Keylist)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "map/2 - 1"),
-    CheckFun = fun(Key, Name, Item) ->
-		       case {Key, Name, Item} of
+    CheckFun = fun(Key, Name, Value) ->
+		       case {Key, Name, Value} of
 			   {one, "one", ["one"]} -> ok;
 			   {two, "TWO", ["TWO"]} -> ok
 		       end
@@ -728,7 +731,7 @@ test() ->
 				]),
 
     autotest:mark(?LINE, "map/2 - 2"),
-    map(CheckFun, MapH1),
+    [ok, ok] = map(CheckFun, MapH1),
 
     MapH2 = appendlist(MapH1, [{three, "three", ["thr33"]}]),
 
@@ -737,3 +740,19 @@ test() ->
     {'EXIT', {{case_clause, _}, _}} = (catch map(CheckFun, MapH2)),
 
     ok.
+
+
+%%--------------------------------------------------------------------
+%% @spec    (Keylist) -> [{Key, Name, Value}]
+%%
+%% @doc     Turn Keylist into a sorted list of headers with their
+%%          values and normalized representation. Used to verify
+%%          results of unit test cases without making them overly
+%%          dependant of the internal representation of keylists.
+%% @hidden
+%% @end
+%%--------------------------------------------------------------------
+test_to_list(Keylist) when is_record(Keylist, keylist) ->
+    Names = [E#keyelem.name || E <- Keylist#keylist.list],
+    SortedNames = lists:sort(Names),
+    [{normalize(Name), Name, fetch(Name, Keylist)} || Name <- SortedNames].
