@@ -602,7 +602,7 @@ start_get_dstlist(ServerHandler, Request, ApproxMsgSize, route) when is_record(R
     case siprequest:process_route_header(Request#request.header, Request#request.uri) of
 	nomatch ->
 	    logger:log(error, "sippipe: No destination given, and request has no Route header"),
-	    erlang:fault("no destination and no route", [ServerHandler, Request, route]);
+	    erlang:error("no destination and no route", [ServerHandler, Request, route]);
 	{ok, NewHeader, DstURI, ReqURI} when is_record(DstURI, sipurl), is_record(ReqURI, sipurl) ->
 	    logger:log(debug, "sippipe: Routing request as per the Route header, Destination ~p, Request-URI ~p",
 		      [sipurl:print(DstURI), sipurl:print(ReqURI)]),

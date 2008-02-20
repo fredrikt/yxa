@@ -24,7 +24,7 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
--include_lib("ssl/include/SSL-PKIX.hrl").
+-include_lib("ssl/include/OTP-PKIX.hrl").
 -include("sipsocket.hrl").
 
 
@@ -189,11 +189,11 @@ decode_ssl_rdnseq2([[H] | T], Res) when is_record(H, 'AttributeTypeAndValue') ->
     %% get value - copy-pasted from ssl_pkix:transform/1
     try
 	begin
-	    {ok, ATAVEnc} = 'PKIX1Explicit88':encode('AttributeTypeAndValue', H),
-	    'SSL-PKIX':decode('AttributeTypeAndValue', list_to_binary(ATAVEnc))
+	    {ok, ATAVEnc} = 'OTP-PKIX':encode('AttributeTypeAndValue', H),
+	    'OTP-PKIX':decode('SSLAttributeTypeAndValue', list_to_binary(ATAVEnc))
 	end of
-	{ok, ATAVDec} ->
-	    case ATAVDec#'AttributeTypeAndValue'.value of
+	{ok, ATAVDec} when is_record(ATAVDec, 'SSLAttributeTypeAndValue') ->
+	    case ATAVDec#'SSLAttributeTypeAndValue'.value of
 		{printableString, Value} ->
 		    decode_ssl_rdnseq2(T, [{Type, Value} | Res]);
 		Str when is_list(Str) ->
@@ -300,7 +300,7 @@ get_host_altnames(Type, Extensions) ->
     get_host_altnames(Type, Extensions, []).
 
 get_host_altnames(Type, [#'Extension'{extnValue = Value} | T], Res) ->
-    {ok, Decoded} = 'PKIX1Implicit88':decode(Type, list_to_binary(Value)),
+    {ok, Decoded} = 'OTP-PKIX':decode(Type, list_to_binary(Value)),
     %% Decoded is a list of tuples, for example :
     %%   [{rfc822Name, "ft@example.org"},
     %%    {dNSName,    "sip.example.org"}]

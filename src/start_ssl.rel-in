@@ -2,8 +2,8 @@
 %% File to get Erlang distribution using SSL started
 {release, {"YXA start_ssl","YXA-start_ssl-%VERSION%"},
  {erts, "5.5.2"},
- [{kernel,"2.11.2"},
-  {stdlib,"1.14.2"},
-  {ssl, "3.0.12"}
+ [{kernel,"2.12.1"},
+  {stdlib,"1.15.1"},
+  {ssl, "3.9"}
  ]
 }.

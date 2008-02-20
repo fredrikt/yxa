@@ -536,7 +536,7 @@ stateless_generate_branch(OrigURI, Header, Nodename) ->
 make_base64_md5_token(In) ->
     MD5 = binary_to_list(erlang:md5(In)),
     %% remove the trailing == from the result of encode_base64()
-    Out = string:strip(httpd_util:encode_base64(MD5), right, $=),
+    Out = string:strip(base64:encode_to_string(MD5), right, $=),
     make_3261_token(Out).
 
 %% RFC 3261 chapter 25 BNF notation of token :
@@ -1487,7 +1487,7 @@ test() ->
 	true ->
 	    ok;
 	false ->
-	    erlang:fault("approximate message size not within bounds", [ApproxMsgSize2_2])
+	    erlang:error("approximate message size not within bounds", [ApproxMsgSize2_2])
     end,
 
     %% check that we don't accept unknown Proxy-Require

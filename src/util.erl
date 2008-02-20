@@ -144,8 +144,8 @@ casecompare(none, _String) ->
 casecompare(_String, none) ->
     false;
 casecompare(String1, String2) ->
-    S1 = httpd_util:to_lower(String1),
-    case httpd_util:to_lower(String2) of
+    S1 = string:to_lower(String1),
+    case string:to_lower(String2) of
 	S1 ->
 	    true;
 	_ ->

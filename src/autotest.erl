@@ -495,7 +495,7 @@ fake_logger_loop(Enabled) ->
 	exit ->
 	    ok;
 	{'$gen_cast', {log, _Level, Data}} when Enabled == true ->
-	    io:format("~s~n", [binary_to_list(Data)]),
+	    io:format("~s~n", [binary_to_list(iolist_to_binary(Data))]),
 	    fake_logger_loop(Enabled);
 	enable ->
 	    fake_logger_loop(true);

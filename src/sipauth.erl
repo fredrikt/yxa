@@ -278,7 +278,7 @@ get_user_verified_yxa_peer2(_Header, _Method, [], _Realm, LastRes) ->
 %%    {_Response, Username} = gssapi:request(Info),
 %%    %% XXX this is definately broken! What does gssapi:request() return anyways?
 %%    Username,
-%%    erlang:fault({error, "GSSAPI code broken and not yet fixed"});
+%%    erlang:error({error, "GSSAPI code broken and not yet fixed"});
 
 %%--------------------------------------------------------------------
 %% @spec    (Method, AuthDicts, Header) ->

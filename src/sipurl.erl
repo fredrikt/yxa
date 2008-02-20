@@ -219,7 +219,7 @@ parse(URLStr) ->
     case string:chr(URLStr, $:) of
 	N when is_integer(N), N > 0 ->
 	    In = string:substr(URLStr, 1, N - 1),
-	    case httpd_util:to_lower(In) of
+	    case string:to_lower(In) of
 		LC when LC == "sip"; LC == "sips" ->
 		    RURL = string:substr(URLStr, N + 1),
 		    case parse2(LC, RURL) of
@@ -686,7 +686,7 @@ get_port(Sipurl) when is_record(Sipurl, sipurl) ->
 	none ->
 	    none;
 	_ ->
-	    erlang:fault("port in URL was not list or 'none'", [Sipurl])
+	    erlang:error("port in URL was not list or 'none'", [Sipurl])
     end.
 
 
@@ -733,11 +733,11 @@ new(AttrList) ->
 set([{proto, Val} | T], URL) when is_record(URL, sipurl), Val == "sip"; Val == "sips" ->
     set(T, URL#sipurl{proto=Val});
 set([{proto, Val} | T], URL) when is_record(URL, sipurl), is_list(Val) ->
-    case httpd_util:to_lower(Val) of
+    case string:to_lower(Val) of
 	L when L == "sip"; L == "sips" ->
 	    set(T, URL#sipurl{proto=L});
 	_ ->
-	    erlang:fault("sipurl:set/2 with non-sip or sips URI", [[{proto, Val} | T], URL])
+	    erlang:error("sipurl:set/2 with non-sip or sips URI", [[{proto, Val} | T], URL])
     end;
 
 %% USER
@@ -753,7 +753,7 @@ set([{pass, Val} | T], URL) when is_record(URL, sipurl), is_list(Val); Val == no
 %% HOST
 set([{host, Val} | T], URL) when is_record(URL, sipurl), is_list(Val) ->
     %% Lowercase and remove trailing dots
-    LC = httpd_util:to_lower(Val),
+    LC = string:to_lower(Val),
     Hostname = string:strip(LC, right, $.),
     set(T, URL#sipurl{host=Hostname});
 

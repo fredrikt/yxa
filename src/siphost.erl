@@ -80,7 +80,7 @@ makeip({A1, A2, A3, A4}) ->
 	integer_to_list(A4);
 makeip({A1, A2, A3, A4, A5, A6, A7, A8}) ->
     A = inet_parse:ntoa({A1, A2, A3, A4, A5, A6, A7, A8}),
-    "[" ++ httpd_util:to_lower(A) ++ "]".
+    "[" ++ string:to_lower(A) ++ "]".
 
 
 %%====================================================================

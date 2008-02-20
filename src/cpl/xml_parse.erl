@@ -1605,7 +1605,7 @@ first_work_day(Cond) ->
     case get_attribute(Cond, wkst) of
 	'#no_value' -> mo;
 	Wkst ->
-	    case httpd_util:to_lower(Wkst) of
+	    case string:to_lower(Wkst) of
 		"mo" -> mo;
 		"tu" -> tu;
 		"we" -> we;
@@ -1620,7 +1620,7 @@ first_work_day(Cond) ->
 
 %% convert freq value to a atom
 freq_str_to_atom(Str) ->
-    freq_str_to_atom2(httpd_util:to_lower(Str)).
+    freq_str_to_atom2(string:to_lower(Str)).
 
 freq_str_to_atom2("secondly") -> secondly;
 freq_str_to_atom2("minutely") -> minutely;

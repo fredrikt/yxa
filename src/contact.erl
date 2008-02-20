@@ -403,7 +403,7 @@ parse_param(ParamStr) ->
 	end,
     NameStripped = sipparse_util:strip(Name, both, [?SP,?HTAB]),
 
-    ParamName = httpd_util:to_lower(NameStripped),
+    ParamName = string:to_lower(NameStripped),
 
     case ParamName of
 	"expires" ->
@@ -570,7 +570,7 @@ new(DisplayName, URL, Params) when is_record(URL, sipurl) ->
 
 new(DisplayName, [$< | Rest], Params) ->
     %% UrlStr has < as first char - it shouldn't
-    erlang:fault("contact:new failed, urlstr should be without <>",
+    erlang:error("contact:new failed, urlstr should be without <>",
 		 [DisplayName, [$<, Rest], Params]);
 
 new(DisplayName, UrlStr, Params) when is_list(DisplayName); DisplayName == none,

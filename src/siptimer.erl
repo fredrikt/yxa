@@ -748,7 +748,7 @@ test() ->
     receive
 	{siptimer, TimerOp_T2_Ref, "timer that will fire"} -> ok
     after 1000 ->
-	    erlang:fault({error, "siptimer that should fire in 2 ms did not fire in 1 s"})
+	    erlang:error({error, "siptimer that should fire in 2 ms did not fire in 1 s"})
     end,
 
     autotest:mark(?LINE, "siptimer operations - 2"),
@@ -759,7 +759,7 @@ test() ->
 	    %% re-send this signal to ourselves
 	    self() ! TimerOp_Msg1
     after 100 ->
-	    erlang:fault({error, "siptimer that should fire in 1 ms did not fire in > 100 ms"})
+	    erlang:error({error, "siptimer that should fire in 1 ms did not fire in > 100 ms"})
     end,
 
     autotest:mark(?LINE, "siptimer operations - 3.1"),
@@ -771,9 +771,9 @@ test() ->
     TimerOp_T5_Ref = TimerOp_T5#siptimer.ref,
     receive
 	{siptimer, TimerOp_T1_Ref, _} ->
-	    erlang:fault({error, "cancelled timers signal not removed from process mailbox"});
+	    erlang:error({error, "cancelled timers signal not removed from process mailbox"});
 	{siptimer, TimerOp_T5_Ref, _} ->
-	    erlang:fault({error, "cancelled timers signal #2 not removed from process mailbox"})
+	    erlang:error({error, "cancelled timers signal #2 not removed from process mailbox"})
     after 10 ->
 	    ok
     end,
@@ -789,7 +789,7 @@ test() ->
     %% verify that we don't have any siptimer signals in our mailbox here
     receive
 	{siptimer, UnknownRef, UnknownDesc} ->
-	    erlang:fault({error, "Unknown siptimer has fired", [UnknownRef, UnknownDesc]})
+	    erlang:error({error, "Unknown siptimer has fired", [UnknownRef, UnknownDesc]})
     after 0 ->
 	    ok
     end,

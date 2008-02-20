@@ -173,7 +173,7 @@ compare_address_or_address_part(ReqVal, Val) when is_record(ReqVal, sipurl), is_
 
 %% values are case insensitive
 compare_address_or_address_part({'address-type', ReqVal}, Val) ->
-    ReqVal == httpd_util:to_lower(Val);
+    ReqVal == string:to_lower(Val);
 
 %% values are case sensitive
 compare_address_or_address_part({user, ReqVal}, Val) ->
@@ -188,7 +188,7 @@ compare_address_or_address_part({user, ReqVal}, Val) ->
 %%  is a v4-in-v6 embedding." - RFC 3880 chapter 4 p9
 compare_address_or_address_part({host, ReqVal}, Val) ->
     %% host name values are case insensitive
-    ReqVal == httpd_util:to_lower(Val)
+    ReqVal == string:to_lower(Val)
     %% XXX this will probably fail for IPv4 and IPv6
     ;
 
@@ -208,7 +208,7 @@ compare_address_or_address_part({port, ReqVal}, Val) ->
 compare_address_or_address_part({display, ReqVal}, Val) ->
     %% XXX erlang only supports Latin-1 (8 bit), so unicode will only
     %%     work correctly when it's in the ASCII range
-    httpd_util:to_lower(ReqVal) == httpd_util:to_lower(Val);
+    string:to_lower(ReqVal) == string:to_lower(Val);
 
 %% values are case sensitive
 compare_address_or_address_part({password, ReqVal}, Val) ->
@@ -227,7 +227,7 @@ compare_address_or_address_part({password, ReqVal}, Val) ->
 %% XXX see compare_address_or_address_part({display, ReqVal}, Val) about lacking unicode support !
 address_or_address_part_contains({display, ReqVal}, Val) ->
     %% non-zero index is returned if Val is a part of ReqVal
-    case string:str(httpd_util:to_lower(ReqVal), httpd_util:to_lower(Val)) of
+    case string:str(string:to_lower(ReqVal), string:to_lower(Val)) of
 	0 -> false;
 	_ -> true
     end.
@@ -329,17 +329,17 @@ is_subdomain3([_C1 | _], [_C2 | _]) ->
 	subject ->
 	    case keylist:fetch("subject", Header) of
 		[] -> '#no_value';
-		[SubjectStr] -> httpd_util:to_lower(SubjectStr)
+		[SubjectStr] -> string:to_lower(SubjectStr)
 	    end;
 	organization ->
 	    case keylist:fetch("organization", Header) of
 		[] -> '#no_value';
-		[OrganizationStr] -> httpd_util:to_lower(OrganizationStr)
+		[OrganizationStr] -> string:to_lower(OrganizationStr)
 	    end;
 	'user-agent' ->
 	    case keylist:fetch("user-agent", Header) of
 		      [] -> '#no_value';
-		[UserAgentStr] -> httpd_util:to_lower(UserAgentStr)
+		[UserAgentStr] -> string:to_lower(UserAgentStr)
 		  end;
 	display ->
 	    throw({error, string_switch_tag_field_attribute_value_display_unsupported_by_sip})
@@ -360,7 +360,7 @@ is_subdomain3([_C1 | _], [_C2 | _]) ->
 %% @end
 %%--------------------------------------------------------------------
 string_is(ReqVal, Val) ->
-    httpd_util:to_lower(ReqVal) == httpd_util:to_lower(Val).
+    string:to_lower(ReqVal) == string:to_lower(Val).
 
 %%--------------------------------------------------------------------
 %% @spec    (ReqVal, Val) -> true | false
@@ -377,7 +377,7 @@ string_is(ReqVal, Val) ->
 %% @end
 %%--------------------------------------------------------------------
 string_contains(ReqVal, Val) ->
-    case string:str(httpd_util:to_lower(ReqVal), httpd_util:to_lower(Val)) of
+    case string:str(string:to_lower(ReqVal), string:to_lower(Val)) of
 	0 -> false;
 	_ -> true
     end.
@@ -448,7 +448,7 @@ language_matches([ReqLangRange | R], ScriptLangTag) ->
 
 
 prefix_match(SubString, String) ->
-    prefix_match2(httpd_util:to_lower(SubString), httpd_util:to_lower(String)).
+    prefix_match2(string:to_lower(SubString), string:to_lower(String)).
 
 %% SubString = String
 prefix_match2([], []) ->
@@ -584,7 +584,7 @@ prio(Prio) ->
 	urgent -> 3;
 	normal -> 2;
 	'non-urgent' -> 1;
-	{unknown, PrioStr} -> httpd_util:to_lower(PrioStr)
+	{unknown, PrioStr} -> string:to_lower(PrioStr)
     end.
 
 %%--------------------------------------------------------------------

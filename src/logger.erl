@@ -555,7 +555,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %%====================================================================
 
-%% XXX is it ok, to call erlang:fault/2 if file can't be opened ?
+%% XXX is it ok, to call erlang:error/2 if file can't be opened ?
 safe_open(Filename, Args) when is_list(Filename) ->
     case file:open(Filename, Args) of
 	{ok, FD} ->
@@ -563,7 +563,7 @@ safe_open(Filename, Args) when is_list(Filename) ->
 	{error, E} ->
 	    EStr = file:format_error(E),
 	    Msg = io_lib:format("Error opening logfile '~s' : ~s (~p)", [Filename, EStr, E]),
-	    erlang:fault(lists:flatten(Msg), [Filename, Args])
+	    erlang:error(lists:flatten(Msg), [Filename, Args])
     end.
 
 %%--------------------------------------------------------------------

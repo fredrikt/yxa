@@ -500,7 +500,7 @@ auth(In) when is_list(In) ->
 	Index ->
 	    FirstWord = string:substr(In, 1, Index - 1),
 	    Rest = string:substr(In, Index + 1),
-	    LCfw = httpd_util:to_lower(FirstWord),
+	    LCfw = string:to_lower(FirstWord),
 	    auth2(LCfw, Rest)
     end.
 
@@ -550,9 +550,9 @@ param_to_dict(Param) ->
 			  Index = string:chr(H, $=),
 			  case Index of
 			      0 ->
-			          {httpd_util:to_lower(H), ""};
+			          {string:to_lower(H), ""};
 			      _ ->
-				  Name = httpd_util:to_lower(string:substr(H, 1, Index - 1)),
+				  Name = string:to_lower(string:substr(H, 1, Index - 1)),
 				  Value = string:substr(H, Index + 1),
 				  {Name, unescape(Value)}
 			  end

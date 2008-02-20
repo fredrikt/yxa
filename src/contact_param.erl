@@ -79,9 +79,9 @@ to_norm(Params) when is_list(Params) ->
 			[$\" | _] ->
 			    ValIn;  %% quoted value, don't lowercase
 			_ when is_list(ValIn) ->
-			    httpd_util:to_lower(ValIn)
+			    string:to_lower(ValIn)
 	            end,
-		{ httpd_util:to_lower(Name), Val}
+		{ string:to_lower(Name), Val}
 	end,
     %% make case insensitive
     L = [F(E) || E <- Params],
@@ -134,8 +134,8 @@ format_param({Name, none}) when is_list(Name) ->
 %% @end
 %%--------------------------------------------------------------------
 add(ContactParam, Key, Value) when is_record(ContactParam, contact_param), is_list(Key), is_list(Value) ->
-    NKey = httpd_util:to_lower(Key),
-    NValue = httpd_util:to_lower(Value),
+    NKey = string:to_lower(Key),
+    NValue = string:to_lower(Value),
     add2(ContactParam, {NKey, NValue}).
 
 add2(ContactParam, {Key, Value}) ->
@@ -154,7 +154,7 @@ add2(ContactParam, {Key, Value}) ->
 %%--------------------------------------------------------------------
 find(ContactParam, Key) when is_record(ContactParam, contact_param), is_list(Key) ->
     Data = ContactParam#contact_param.pairs,
-    CKey = httpd_util:to_lower(Key),
+    CKey = string:to_lower(Key),
     key_val_db:find(Data, CKey).
 
 %%--------------------------------------------------------------------
@@ -168,7 +168,7 @@ find(ContactParam, Key) when is_record(ContactParam, contact_param), is_list(Key
 %%--------------------------------------------------------------------
 remove(ContactParam, Key) ->
     Data = ContactParam#contact_param.pairs,
-    CKey = httpd_util:to_lower(Key),
+    CKey = string:to_lower(Key),
     Res = key_val_db:rm(Data, CKey),
     ContactParam#contact_param{pairs = Res}.
 

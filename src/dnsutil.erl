@@ -782,7 +782,7 @@ parsenaptr(Binary) when is_binary(Binary) ->
     Replacement = parsenaptr_replacement(Replacementlength, Rest4, []),
     #naptrrecord{order=Order, preference=Preference,
 		 flags=binary_to_list(Flags),
-		 services=httpd_util:to_upper(binary_to_list(Services)),
+		 services=string:to_upper(binary_to_list(Services)),
 		 regexp=binary_to_list(Regexp),
 		 replacement=Replacement
 		}.

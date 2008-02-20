@@ -14,7 +14,7 @@ request(String) ->
 		   end,
     case {Data1, Data2} of
 	{Response, "User:" ++ Username} ->
-	    {Response, httpd_util:to_lower(Username)};
+	    {Response, string:to_lower(Username)};
 	{_, _} ->
 	    {"", false}
     end.

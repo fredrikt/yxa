@@ -272,6 +272,7 @@ parse_one_header_key2(Bin, Offset, KeyLen, RequireColon) ->
 	    %% but no line break, and whitespace after, including a linebreak.
 	    case (KeyLen >= 0) of
 		false ->
+		    %% XXX should be (KeyLen > 0) ?
 		    throw({error, whitespace_where_header_name_was_expected});
 		true ->
 		    %% KeyLen is non-zero, so tab and space are OK - don't increase

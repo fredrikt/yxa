@@ -409,7 +409,7 @@ get_proto_from_parameters(URL) when is_record(URL, sipurl) ->
 get_transport_param(URL) when is_record(URL, sipurl) ->
     case url_param:find(URL#sipurl.param_pairs, "transport") of
 	[Transport] ->
-	    case httpd_util:to_lower(Transport) of
+	    case string:to_lower(Transport) of
 		"tcp" -> tcp;
 		"udp" -> udp;
 		"tls" -> tls;

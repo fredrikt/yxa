@@ -206,7 +206,7 @@ parse_until(UntilStr) ->
 %% @end
 %%--------------------------------------------------------------------
 parse_byday(Str) ->
-    Days = string:tokens(httpd_util:to_lower(Str), ","),
+    Days = string:tokens(string:to_lower(Str), ","),
     F = fun
 	    ("mo") -> {all, mo};
 	    ("tu") -> {all, tu};
@@ -298,7 +298,7 @@ get_day(_, _Acc) ->
 %%--------------------------------------------------------------------
 
 duration(Str) ->
-    case duration2(httpd_util:to_lower(Str), #duration{}) of
+    case duration2(string:to_lower(Str), #duration{}) of
 	#duration{weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0} ->
 	    throw({error, duration_value_may_not_be_zero_length});
 	Duration ->
@@ -488,7 +488,7 @@ status_code_to_sip_error_code(Status) ->
 %% @end
 %%--------------------------------------------------------------------
 normalize_prio(PrioStr) ->
-    case httpd_util:to_lower(PrioStr) of
+    case string:to_lower(PrioStr) of
 	"emergency" -> emergency;
 	"urgent" -> urgent;
 	"normal" -> normal;

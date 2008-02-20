@@ -77,11 +77,11 @@ to_norm(Params) when is_list(Params) ->
     F = fun(E) ->
 		case string:tokens(E, "=") of
 		    [Name, Val] ->
-			{ sipurl:unescape_str(httpd_util:to_lower(Name)),
-			  sipurl:unescape_str(httpd_util:to_lower(Val))
+			{ sipurl:unescape_str(string:to_lower(Name)),
+			  sipurl:unescape_str(string:to_lower(Val))
 			 };
 		    [Name] ->
-			{ sipurl:unescape_str(httpd_util:to_lower(Name)), none}
+			{ sipurl:unescape_str(string:to_lower(Name)), none}
 		end
 	end,
     L = [F(E) || E <- Params],
@@ -156,7 +156,7 @@ to_string(Norm) when is_record(Norm, url_param) ->
 %% @end
 %%--------------------------------------------------------------------
 add(UrlParam, Key) ->
-    NKey = httpd_util:to_lower(Key),
+    NKey = string:to_lower(Key),
     add2(UrlParam, {NKey, none}).
 
 %%--------------------------------------------------------------------
@@ -171,8 +171,8 @@ add(UrlParam, Key) ->
 %% @end
 %%--------------------------------------------------------------------
 add(UrlParam, Key, Value) when is_record(UrlParam, url_param), is_list(Key) ->
-    NKey = httpd_util:to_lower(Key),
-    NValue = httpd_util:to_lower(Value),
+    NKey = string:to_lower(Key),
+    NValue = string:to_lower(Value),
     add2(UrlParam, {NKey, NValue}).
 
 
@@ -192,7 +192,7 @@ add2(UrlParam, {Key, Value}) when is_record(UrlParam, url_param), is_list(Key) -
 %%--------------------------------------------------------------------
 find(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     Data = Param#url_param.pairs,
-    CKey = httpd_util:to_lower(Key),
+    CKey = string:to_lower(Key),
     key_val_db:find(Data, CKey).
 
 %%--------------------------------------------------------------------
@@ -206,7 +206,7 @@ find(Param, Key) when is_record(Param, url_param), is_list(Key) ->
 %%--------------------------------------------------------------------
 remove(Param, Key) when is_record(Param, url_param), is_list(Key) ->
     Data = Param#url_param.pairs,
-    CKey = httpd_util:to_lower(Key),
+    CKey = string:to_lower(Key),
     Res = key_val_db:rm(Data, CKey),
     Param#url_param{pairs = Res}.
 
