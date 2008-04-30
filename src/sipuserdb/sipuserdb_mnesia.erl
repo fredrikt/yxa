@@ -354,8 +354,8 @@ get_telephonenumber_for_user(User) ->
 %%            ForwardList = [#sipproxy_forward{}]
 %%
 %% @doc     Return a list of forwards for this user. Forwards are
-%%          currently not in the main YXA CVS repository - Magnus has
-%%          some CVS merging to do.
+%%          currently not in the main YXA source code repository -
+%%          Magnus has some merging to do.
 %% @end
 %%--------------------------------------------------------------------
 get_forwards_for_users(In) ->
@@ -381,8 +381,8 @@ get_forwards_for_users2([H | T], Res) ->
 %%            ForwardList = [#sipproxy_forward{}]
 %%
 %% @doc     Return the forward entry for a user. Forwards are
-%%          currently not in the main YXA CVS repository - Magnus has
-%%          some CVS merging to do.
+%%          currently not in the main YXA source code repository -
+%%          Magnus has some merging to do.
 %% @end
 %%--------------------------------------------------------------------
 get_forward_for_user(User) ->
@@ -391,11 +391,7 @@ get_forward_for_user(User) ->
 	    logger:log(debug, "userdb-mnesia: No forwards found for user ~p", [User]),
 	    nomatch;
 	{ok, Fwds} when is_list(Fwds) ->
-	    Fwds;
-	Unknown ->
-	    logger:log(error, "userdb-mnesia: Unexpected result from database_forward:fetch(), user ~p result : ~p",
-		       [User, Unknown]),
-	    error
+	    Fwds
     end.
 
 

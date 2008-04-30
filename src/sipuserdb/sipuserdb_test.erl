@@ -187,12 +187,8 @@ get_users_for_addresses_of_record(In) ->
 get_users_for_addresses_of_record2([], Res) ->
     lists:usort(Res);
 get_users_for_addresses_of_record2([H | T], Res) ->
-    case get_users_for_address_of_record(H) of
-	Users when is_list(Users) ->
-	    get_users_for_addresses_of_record2(T, lists:append(Res, Users));
-	_ ->
-	    get_users_for_addresses_of_record2(T, Res)
-    end.
+    Users = get_users_for_address_of_record(H),
+    get_users_for_addresses_of_record2(T, lists:append(Res, Users)).
 
 
 %%--------------------------------------------------------------------
@@ -215,12 +211,8 @@ get_addresses_for_users2([], Res) ->
     %% Make list sorted and remove duplicates
     lists:usort(Res);
 get_addresses_for_users2([H | T], Res) ->
-    case get_addresses_for_user(H) of
-	A when is_list(A) ->
-	    get_addresses_for_users2(T, lists:append(Res, A));
-	_ ->
-	    get_addresses_for_users2(T, Res)
-    end.
+    A = get_addresses_for_user(H),
+    get_addresses_for_users2(T, lists:append(Res, A)).
 
 
 %%--------------------------------------------------------------------
