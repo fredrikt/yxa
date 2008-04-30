@@ -1128,7 +1128,7 @@ check_unauth_request_to_pstn_dst(Request, YxaCtx, PstnCtx) ->
 %% @end
 %%--------------------------------------------------------------------
 is_localhostname(Hostname) ->
-    LChost = http_util:to_lower(Hostname),
+    LChost = string:to_lower(Hostname),
     {ok, MyHostnames} = yxa_config:get_env(myhostnames),
     case lists:member(LChost, MyHostnames) of
 	true ->
@@ -1150,7 +1150,7 @@ is_localhostname(Hostname) ->
 %% @end
 %%--------------------------------------------------------------------
 is_pstngateway(Hostname) ->
-    LChost = http_util:to_lower(Hostname),
+    LChost = string:to_lower(Hostname),
     {ok, MyHostnames} = yxa_config:get_env(pstngatewaynames),
     lists:member(LChost, MyHostnames).
 

@@ -1168,7 +1168,7 @@ event_package(Header) when is_record(Header, keylist) ->
 	    [];
 	[Event] ->
 	    EP = string:sub_word(Event, 1, $\;),
-	    http_util:to_lower(EP)
+	    string:to_lower(EP)
     end.
 
 %%====================================================================

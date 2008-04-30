@@ -377,7 +377,7 @@ get_accept(Header) ->
 	    %% RFC4235 #3.5
 	    ["application/dialog-info+xml"];
 	AcceptV ->
-	    [http_util:to_lower(Elem) || Elem <- AcceptV]
+	    [string:to_lower(Elem) || Elem <- AcceptV]
     end.
 
 

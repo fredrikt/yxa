@@ -152,6 +152,6 @@ check_no_unsupported_extension(Header, LogTag) ->
     end.
 
 localhostname(Hostname) ->
-    LC = http_util:to_lower(Hostname),
+    LC = string:to_lower(Hostname),
     {ok, MyHostnames} = yxa_config:get_env(myhostnames),
     lists:member(LC, MyHostnames).

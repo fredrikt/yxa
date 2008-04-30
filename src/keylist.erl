@@ -335,7 +335,7 @@ normalize("o") -> normalize2("event");			%% RFC3265
 normalize("u") -> normalize2("allow-events");		%% RFC3265
 normalize("r") -> normalize2("refer-to");		%% RFC3515 #7
 normalize(Name) when is_list(Name) ->
-    LC = http_util:to_lower(Name),
+    LC = string:to_lower(Name),
     normalize2(LC);
 normalize(Key) when is_atom(Key) ->
     %% XXX perhaps check that it is one of the atoms we actually use?

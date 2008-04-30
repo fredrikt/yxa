@@ -908,7 +908,7 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
 	    %% have the username part set).
 	    false;
 	none ->
-	    LCHost = http_util:to_lower(URI#sipurl.host),
+	    LCHost = string:to_lower(URI#sipurl.host),
 	    HostnameIsMyHostname = lists:member(LCHost, HostnameList),
 	    %% In theory, we should not treat an absent port number in this Request-URI as
 	    %% if the default port number was specified in there, but in practice that is
@@ -951,7 +951,7 @@ received_from_strict_router(URI, Header) when is_record(URI, sipurl) ->
 remove_maddr_matching_me(URI, Origin) when is_record(URI, sipurl), is_record(Origin, siporigin) ->
     case url_param:find(URI#sipurl.param_pairs, "maddr") of
         [MAddr] ->
-	    LCMaddr = http_util:to_lower(MAddr),
+	    LCMaddr = string:to_lower(MAddr),
 	    {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
 	    {ok, Homedomains} = yxa_config:get_env(homedomain, []),
 	    case lists:member(LCMaddr, siphost:myip_list())
@@ -983,7 +983,7 @@ remove_maddr_matching_me(URI, Origin) when is_record(URI, sipurl), is_record(Ori
 					    sipurl:set([{param, NewParam}, {port, none}], URI)
 				    end;
 				[Transport] ->
-				    LCTransport = http_util:to_lower(Transport),
+				    LCTransport = string:to_lower(Transport),
 				    Matches =
 					case {LCTransport, Origin#siporigin.proto} of
 					    {"tcp", TCP} when TCP == tcp; TCP == tcp6 -> true;
@@ -1074,7 +1074,7 @@ route_matches_me(Route) when is_record(Route, contact) ->
     Port = sipsocket:default_port(URL#sipurl.proto, sipurl:get_port(URL)),
     PortMatches = lists:member(Port, MyPorts),
 
-    LChost = http_util:to_lower(URL#sipurl.host),
+    LChost = string:to_lower(URL#sipurl.host),
     {ok, MyHostnames} = yxa_config:get_env(myhostnames, []),
     HostnameMatches = (lists:member(LChost, MyHostnames) orelse
 		       lists:member(LChost, siphost:myip_list())
@@ -1241,7 +1241,7 @@ extract_loopcookie(Branch, CookieLen) ->
     %% the casing of our Via header branch (never seen, but rumored to happen).
     RBranch1 = lists:reverse(Branch),
     %% lowercase as little of Branch as possible
-    RBranch2 = http_util:to_lower( string:substr(RBranch1, 1, CookieLen + 2) ),	%% 2 is length("-o")
+    RBranch2 = string:to_lower( string:substr(RBranch1, 1, CookieLen + 2) ),	%% 2 is length("-o")
     %% now check for -o indicating a real loop cookie
     case lists:reverse(RBranch2) of
 	"-o" ++ LoopCookie ->
@@ -1359,7 +1359,7 @@ check_supported_uri_scheme({unparseable, URIstr}, Header) when is_list(URIstr), 
 	0 ->
 	    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme"});
 	Index ->
-	    case http_util:to_lower(string:substr(URIstr, 1, Index)) of
+	    case string:to_lower(string:substr(URIstr, 1, Index)) of
 		Proto when Proto == "sip:"; Proto == "sips:" ->
 		    throw({sipparseerror, request, Header, 400, "Unparsable Request-URI"});
 		Scheme ->

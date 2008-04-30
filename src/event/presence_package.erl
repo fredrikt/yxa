@@ -461,7 +461,7 @@ subscription_behaviour("presence", bidirectional_subscribe, Request) when is_rec
 		_ -> false
 	    end;
 	Events ->
-	    Lowercased = [http_util:to_lower(E) || E <- Events],
+	    Lowercased = [string:to_lower(E) || E <- Events],
 	    lists:member("presence", Lowercased)
     end;
 
@@ -486,7 +486,7 @@ get_accept(Header) ->
 	    %% RFC3856 #6.7
 	    ["application/pidf+xml"];
 	AcceptV ->
-	    [http_util:to_lower(Elem) || Elem <- AcceptV]
+	    [string:to_lower(Elem) || Elem <- AcceptV]
     end.
 
 %%--------------------------------------------------------------------

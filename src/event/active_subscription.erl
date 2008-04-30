@@ -623,7 +623,7 @@ process_received_notify(Request, YxaCtx, State) when is_record(Request, request)
 	    [SubStateV] ->
 		{ok, L} = sipparse_util:split_non_quoted(59, SubStateV),	%% 59 is semi-colon
 		%% RFC3265 #3.2.4 (Subscriber NOTIFY Behavior)
-		SubscriptionState = http_util:to_lower(hd(L)),
+		SubscriptionState = string:to_lower(hd(L)),
 	        Action =
 		    case SubscriptionState of
 			"active"	-> ignore;
@@ -697,7 +697,7 @@ process_received_notify(Request, YxaCtx, State) when is_record(Request, request)
 check_is_acceptable(Request, AcceptL) ->
     case keylist:fetch('content-type', Request#request.header) of
 	[Acc1] ->
-	    Accept = http_util:to_lower(Acc1),
+	    Accept = string:to_lower(Acc1),
 	    case lists:member(Accept, AcceptL) of
 		true ->
 		    ok;
@@ -736,7 +736,7 @@ get_subscription_state_expires(Header, Default) when is_integer(Default) ->
     end.
 
 get_subscription_state_expires2([H | T], Default) ->
-    case string:strip(http_util:to_lower(H)) of
+    case string:strip(string:to_lower(H)) of
 	"expires=" ++ Rest ->
 	    try list_to_integer(Rest) of
 		Val ->

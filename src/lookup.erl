@@ -997,7 +997,7 @@ is_request_to_this_proxy2(_, URL, _) when is_record(URL, sipurl) ->
 %%--------------------------------------------------------------------
 homedomain(Domain) when is_list(Domain) ->
     {ok, HomedomainL} = yxa_config:get_env(homedomain, []),
-    LCdomain = http_util:to_lower(Domain),
+    LCdomain = string:to_lower(Domain),
     case lists:member(LCdomain, HomedomainL) of
 	true ->
 	    true;

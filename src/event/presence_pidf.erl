@@ -570,7 +570,7 @@ get_best_accepted_content_type(Accept) ->
     end.
 
 get_best_accepted_content_type2([H | T], Accept) ->
-    case lists:member(http_util:to_lower(H), Accept) of
+    case lists:member(string:to_lower(H), Accept) of
 	true ->
 	    H;
 	false ->

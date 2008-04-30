@@ -245,7 +245,7 @@ get_ssl_peer_info_subject(Cert) when is_record(Cert, 'Certificate') ->
 	    Descr = lists:append(["C=", C, "/O=", O, "/CN=", CN]),
 	    This = #ssl_conn_subject{countryName	= C,
 				     organizationName	= O,
-				     commonName		= http_util:to_lower(CN),
+				     commonName		= string:to_lower(CN),
 				     description	= Descr
 				    },
 	    {ok, This};
@@ -305,7 +305,7 @@ get_host_altnames(Type, [#'Extension'{extnValue = Value} | T], Res) ->
     %%   [{rfc822Name, "ft@example.org"},
     %%    {dNSName,    "sip.example.org"}]
     This = lists:foldl(fun({dNSName, Name}, Acc) when is_list(Name) ->
-			       [http_util:to_lower(Name) | Acc];
+			       [string:to_lower(Name) | Acc];
 			  ({iPAddress, IP}, Acc) when is_list(IP) ->
 			       IPstr = siphost:makeip(list_to_tuple(IP)),
 			       [IPstr | Acc];

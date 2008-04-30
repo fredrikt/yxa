@@ -479,7 +479,7 @@ type_check_elements([H | T], string, Def, Res) when is_list(H), length(H) > 1 ->
     %% we expect list of string (which would then be the list ["f", "o", "o"])
     case Def#cfg_entry.normalize of
 	true ->
-	    LC = http_util:to_lower(H),
+	    LC = string:to_lower(H),
 	    type_check_elements(T, string, Def, [LC | Res]);
 	false ->
 	    type_check_elements(T, string, Def, [H | Res])

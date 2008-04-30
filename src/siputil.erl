@@ -98,6 +98,6 @@ generate_tag() ->
     {Megasec, Sec, Microsec} = now(),
     In = lists:concat([node(), Megasec * 1000000 + Sec, 8, $., Microsec]),
     Out1 = siprequest:make_base64_md5_token(In),
-    Out = http_util:to_lower(Out1),	%% tags are case-insensitive
+    Out = string:to_lower(Out1),	%% tags are case-insensitive
     %% don't make the tag longer than it has to be.
     "yxa-" ++ string:substr(Out, 1, 9).

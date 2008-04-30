@@ -55,7 +55,7 @@ generate_gruu(SipUser, InstanceId) when is_list(SipUser), is_list(InstanceId) ->
 					     ]),
     %% Are URL parameters (opaque) case sensitive if quoted? If so, we should implement
     %% that and not lowercase all GRUUs
-    http_util:to_lower( string:substr(Token, 1, ?GRUU_LENGTH) ).
+    string:to_lower( string:substr(Token, 1, ?GRUU_LENGTH) ).
 
 %%--------------------------------------------------------------------
 %% @spec    (SipUser, InstanceId) ->
