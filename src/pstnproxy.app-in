@@ -1,13 +1,15 @@
+%% -*- erlang -*-
 {application, pstnproxy,
  [{description, "YXA pstnproxy"},
   {vsn,"%VERSION%"},
   {modules, [
-    pstnproxy,
-    pstnproxy_test
-    ]},
+	     pstnproxy,
+	     pstnproxy_test
+	    ]},
   {registered, []},
   {included_applications, [yxa]},
   {mod, {sipserver, [pstnproxy]}},
   {env, []},
   {applications,
-        [kernel, stdlib]}]}.
+   [kernel, stdlib]}]
+}.

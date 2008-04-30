@@ -1,13 +1,15 @@
+%% -*- erlang -*-
 {application, outgoingproxy,
  [{description, "YXA outgoingproxy"},
   {vsn,"%VERSION%"},
   {modules, [
-    outgoingproxy,
-    outgoingproxy_test
-    ]},
+	     outgoingproxy,
+	     outgoingproxy_test
+	    ]},
   {registered, []},
   {included_applications, [yxa]},
   {mod, {sipserver, [outgoingproxy]}},
   {env, []},
   {applications,
-        [kernel, stdlib]}]}.
+   [kernel, stdlib]}]
+}.
