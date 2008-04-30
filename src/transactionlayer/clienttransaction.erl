@@ -1570,8 +1570,9 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
     end.
 
 %%--------------------------------------------------------------------
-%% @spec    (State) ->
+%% @spec    (State, ExtraHeaders) ->
 %%            NewState
+%%            ExtraHeaders = [{Key, Value}] "extra headers to put in the CANCEL request"
 %%
 %%            State = #state{}
 %%
@@ -1581,7 +1582,7 @@ cancel_request(State, ExtraHeaders) when is_record(State, state), is_list(ExtraH
 %% @doc     Start fire-and-forget CANCEL transaction for this client
 %%          transaction. Note that this is done by starting _another_
 %%          client transaction process. We will know when _that_
-%%          transaction has finished because _this_ transaction will
+%%          transaction succeeds because _this_ transaction will
 %%          then receive a '487 Request Cancelled' response.
 %% @end
 %%--------------------------------------------------------------------
