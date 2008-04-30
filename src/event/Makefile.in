@@ -45,8 +45,7 @@ erl_FILES = \
 	presence_package.erl \
 	presence_pidf.erl \
 	presence_xmerl_xml.erl \
-	subscription.erl \
-	uaprofile_package.erl
+	subscription.erl
 
 
 imported_hrl_FILES = \
