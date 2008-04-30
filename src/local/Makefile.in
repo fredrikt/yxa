@@ -24,6 +24,9 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
+ebin_dir = ../../ebin
+doc_dir = ../../doc
+
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 
@@ -38,7 +41,7 @@ yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
 CC = gcc
 CFLAGS = -Wall
 
-beam_FILES = $(erl_FILES:.erl=.beam)
+beam_FILES = $(addprefix $(ebin_dir)/, $(erl_FILES:.erl=.beam))
 
 all: $(beam_FILES)
 
@@ -55,10 +58,10 @@ clean:
 	rm -f *.o ktrace.out erl_crash.dump
 
 doc:
-	mkdir -p ../../doc/html/src/local
-	cp $(srcdir)/overview.edoc ../../doc/html/src/local/
-	$(ERL) $(YXA_EDOC_ARGS) -pa ../ -noshell \
-		-yxa_edoc_dir ../../doc/html/src/local \
+	mkdir -p $(doc_dir)/html/src/local
+	cp $(srcdir)/overview.edoc $(doc_dir)/html/src/local/
+	$(ERL) $(YXA_EDOC_ARGS) -pa $(ebin_dir) -noshell \
+		-yxa_edoc_dir $(doc_dir)/html/src/local \
 		-yxa_edoc_srcpath $(srcdir) \
 		-run yxa_edoc run "" \
 		-run init stop
