@@ -174,7 +174,7 @@ start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModu
     Recv = #recv{origin_str	= OriginStr,
 		 stun_env	= StunEnv
 		},
-    spawn_link(?MODULE, recv_loop, [State, Recv]).
+    proc_lib:spawn_link(?MODULE, recv_loop, [State, Recv]).
 
 %%====================================================================
 %% Internal functions

@@ -1,0 +1,171 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : check_locationdb.erl
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Check the status of the location db on an Yxa node.
+%%%
+%%% Created : 27 Jun 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+-define(DEFAULT_MIN, 1).
+-define(DEFAULT_MAX, 10000).
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    HTML =
+	try out2(A, ?GET_VAR("node")) of
+	    Res ->
+		Res
+	catch
+	    throw:
+	      {error, E} when is_list(E) ->
+		{pre, [], "MNESIA-STATUS: UNKNOWN, no node specified"};
+	      X: Y ->
+		{pre, [], io_lib:format("ERROR ~p:~p~n", [X, Y])}
+	end,
+    {ehtml, [HTML]}.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Top level output function. Output header and catch
+%%           errors, if any.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
+    Min = get_int(A, "min", ?DEFAULT_MIN),
+    Max = get_int(A, "max", ?DEFAULT_MAX),
+
+    Time1 = erlang:now(),
+
+    try check_locationdb(list_to_atom(NodeStr), phone, Min, Max) of
+	{status, S} ->
+	    Time2 = erlang:now(),
+	    Diff = timer:now_diff(Time2, Time1) / 1000000,
+	    Msg = io_lib:format("check_locationdb(~s): ~s (check took ~.2f seconds)", [NodeStr, S, Diff]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    {pre, [], ["MNESIA-STATUS: " ++ S]}
+    catch
+	exit:
+	  {aborted, Reason} ->
+	    Time2 = erlang:now(),
+	    Diff = timer:now_diff(Time2, Time1) / 1000000,
+	    Msg = io_lib:format("check_locationdb(~s): ~p (check took ~.2f seconds)", [NodeStr, {aborted, Reason}, Diff]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    {pre, [], ["MNESIA-STATUS: ERROR: MNESIA ACCESS PROBLEM, RESTART MASTER NODE AND POSSIBLY THIS ONE AS WELL"]};
+	X : Y ->
+	    Time2 = erlang:now(),
+	    Diff = timer:now_diff(Time2, Time1) / 1000000,
+	    Msg = io_lib:format("check_locationdb(~s): ~p (check took ~.2f seconds)", [NodeStr, {error, X, Y}, Diff]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    {pre, [], [io_lib:format("MNESIA-STATUS: UNKNOWN, check_locationdb failed : ~p:~p~n",
+				     [X, Y])
+		      ]}
+    end;
+out2(_, _) ->
+    throw({error, "Invalid node specified"}).
+
+get_int(A, Name, Default) ->
+    case ?GET_VAR(Name) of
+	{ok, S} when is_list(S) ->
+	    list_to_integer(S);
+	undefined ->
+	    Default
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: get_node_info(Node, Table, Min, Max)
+%%           Node = atom(), the node we are to talk with
+%%           Min  = integer(), minimum number of entrys to expect in
+%%                  the location database
+%%           Max  = integer(), maximum number of entrys to expect in
+%%                  the location database
+%% Descrip.: Check status of location database (table 'phone') on Node
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+check_locationdb(Node, Table, Min, Max) when is_atom(Node), is_atom(Table),
+					     is_integer(Min), is_integer(Max) ->
+    %% check that table is accessible
+    case rpc:call(Node, mnesia, dirty_first, [Table]) of
+	{badrpc, _E} ->
+	    {status, io_lib:format("UNKNOWN, node ~p not accessible", [Node])};
+	_Key ->
+	    Status =
+		case rpc:call(Node, db_util, generic_table_info, [Table, size]) of
+		    N when is_integer(N), N < Min ->
+			io_lib:format("ERROR: TOO FEW ENTRYS (~p < ~p)", [N, Min]);
+		    N when is_integer(N), N > Max ->
+			io_lib:format("ERROR: TOO MANY ENTRYS (~p > ~p)", [N, Max]);
+		    N when is_integer(N) ->
+			Msg = io_lib:format("~p entrys in the location database", [N]),
+			case check_mnesia_availability(Node, Table) of
+			    {ok, AvailStr} ->
+				"OK, " ++ Msg ++ ", " ++ AvailStr;
+			    {error, AvailStr} when is_list(AvailStr) ->
+				lists:concat([AvailStr, " (", Msg, ")"])
+			end;
+		    {badrpc, _E} ->
+			%% Node was accessible when we did mnesia:dirty_read/1 above,
+			%% but not any longer.
+			io_lib:format("UNKNOWN, node ~p disappeared", [Node])
+		end,
+	    {status, Status}
+    end.
+
+%% Returns : {ok, Str}    |
+%%           {error, Str}
+check_mnesia_availability(Node, Table) when is_atom(Node), is_atom(Table) ->
+    case rpc:call(Node, mnesia, table_info, [Table, all]) of
+	TInfo when is_list(TInfo) ->
+	    {value, {_, Active1}} = lists:keysearch(active_replicas, 1, TInfo),
+	    {value, {_, DiscC1}}  = lists:keysearch(disc_copies, 1, TInfo),
+
+	    Active = lists:sort(Active1),
+	    DiscC  = lists:sort(DiscC1),
+
+	    %% Msg = io_lib:format("NODE ~p says ~p and ~p (equal: ~p)", [Node, Active, DiscC, Active == DiscC]),
+	    %% error_logger:info_report(lists:flatten(Msg)),
+
+	    NotRunning = DiscC -- Active,
+	    %% Msg3 = io_lib:format("Not running nodes with disc copies : ~p", [NotRunning]),
+	    %% error_logger:info_report(lists:flatten(Msg3)),
+
+	    case NotRunning == [] of
+		true ->
+		    Msg2 = io_lib:format("~p active disc replicas", [length(DiscC)]),
+		    {ok, lists:flatten(Msg2)};
+		false ->
+		    %% CRITICAL if this is a disc copy node, WARNING otherwise
+		    Seriosity =
+			case lists:member(Node, DiscC) of
+			    true ->
+				"CRITICAL";
+			    false ->
+				"WARNING"
+			end,
+		    Msg2 = io_lib:format("~s: Can't reach disc replica(s) : ~p", [Seriosity, NotRunning]),
+		    {error, lists:flatten(Msg2)}
+	    end;
+	_ ->
+	    Res = io_lib:format("UNKNOWN, could not get table info"),
+	    {error, lists:flatten(Res)}
+    end.
+
+</erl>

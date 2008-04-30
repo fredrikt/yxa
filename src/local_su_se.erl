@@ -8,11 +8,13 @@
 %%% @hidden
 %%%-------------------------------------------------------------------
 -module(local_su_se).
+%%-compile(export_all).
 
 %%--------------------------------------------------------------------
 %% Hooks
 %%--------------------------------------------------------------------
 -export([
+	 init/0,
 	 canonify_user/1,
 	 lookup_homedomain_url/1,
 	 format_number_for_remote_party_id/3,
@@ -21,11 +23,21 @@
 	 can_use_address/2,
 	 can_use_address_detail/2,
 	 canonify_authusername/2,
-	 create_dialog_state_uas/4
+	 create_dialog_state_uas/4,
+	 pstnproxy_lookup_action/2,
+	 pstnproxy_allowed_proxy_request/2,
+	 eventserver_locationdb_action/3,
+	 is_allowed_pstn_dst/4
 	]).
 
 -include("siprecords.hrl").
+-include("sipsocket.hrl").
 -include("directory.hrl").
+-include("pstnproxy.hrl").
+
+init() ->
+    ok = su_pstnproxy_policy:init(),
+    ok.
 
 % Turn a SIP username into an address which can be reached from anywhere.
 % Used for example from the Mnesia userdb-module. It should be possible
@@ -100,11 +112,11 @@ format_number_for_remote_party_id(Number, _Header, "sip1.telia.com") ->
     {ok, local:rewrite_potn_to_e164(Number)};
 format_number_for_remote_party_id(Number, _Header, "sip2.telia.com") ->
     {ok, local:rewrite_potn_to_e164(Number)};
-format_number_for_remote_party_id(Number, _Header, _DstHost) ->
+format_number_for_remote_party_id(Number, Header, DstHost) ->
     %% Rewrite number to an internal number if the gateway is not one of Telias
     case util:regexp_rewrite(Number, ?E164toInternal) of
 	nomatch ->
-	    {ok, Number};
+	    lookup:format_number_for_remote_party_id(Number, Header, DstHost);
 	Match ->
 	    {ok, Match}
     end.
@@ -198,6 +210,9 @@ canonify_authusername2("ft", #sipurl{user="ft", host="it.su.se"}=FromURL) when i
 canonify_authusername2("ft", #sipurl{user="ft", host="pappersk.org"}=FromURL) when is_record(FromURL, sipurl) ->
     logger:log(debug, "Auth: Using authentication username of 'ft.sip2' for this request"),
     "ft.sip2";
+canonify_authusername2("ft", #sipurl{user="ft", host="thulin.net"}=FromURL) when is_record(FromURL, sipurl) ->
+    logger:log(debug, "Auth: Using authentication username of 'ft.sip2' for this request"),
+    "ft.sip2";
 canonify_authusername2("ft", _URL) ->
     undefined.
 
@@ -261,3 +276,209 @@ find_matching_location(URL, [#siplocationdb_e{address = URL2} = H | T]) when is_
     end;
 find_matching_location(_URL, []) ->
     none.
+
+
+pstnproxy_lookup_action(Request, PstnCtx) when is_record(Request, request),
+					       is_record(PstnCtx, pstn_ctx) ->
+    case catch yxa_config:get_env(local_internal_enum_domains) of
+	{ok, ENUMDomains} ->
+	    Number = (Request#request.uri)#sipurl.user,
+	    logger:log(debug, "local: Resolving number ~p in internal ENUM routing domain(s) : ~p",
+		       [Number, ENUMDomains]),
+	    case lookup:rewrite_potn_to_e164(Number) of
+		error ->
+		    logger:log(debug, "local: Number not found in internal ENUM domains"),
+		    undefined;
+		"+" ++ E164 ->
+		    case dnsutil:enumlookup("+" ++ E164, ENUMDomains) of
+			none ->
+			    undefined;
+			Res when is_list(Res) ->
+			    case sipurl:parse(Res) of
+				URL when is_record(URL, sipurl) ->
+				    NewPstnCtx =
+					PstnCtx#pstn_ctx{destination   = pstn,
+							 called_number = Number
+							},
+				    {ok, {proxy, URL}, NewPstnCtx};
+				Bad ->
+				    logger:log(error, "local: Can't parse internal ENUM result "
+					       "(number ~p, domains ~p, string ~p) : ~p",
+					       [Number, ENUMDomains, Res, Bad]),
+				    undefined
+			    end
+		    end
+	    end;
+	_ ->
+	    undefined
+    end.
+
+pstnproxy_allowed_proxy_request(#request{method = "REFER"} = Request, PstnCtx) when is_record(PstnCtx, pstn_ctx) ->
+    case do_local_su_se_allow_icepeak_refer(Request, PstnCtx) of
+	undefined ->
+	    do_local_su_se_allow_internal_refer(Request, PstnCtx);
+	Res when is_boolean(Res) ->
+	    Res
+    end;
+
+pstnproxy_allowed_proxy_request(_Request, _PstnCtx) ->
+    %% non-REFER
+    undefined.
+
+do_local_su_se_allow_icepeak_refer(Request, PstnCtx) when is_record(Request, request), is_record(PstnCtx, pstn_ctx) ->
+    case catch yxa_config:get_env(local_su_se_allow_icepeak_refer_from) of
+	{ok, Icepeaks} when is_list(Icepeaks) ->
+	    IP = PstnCtx#pstn_ctx.ip,
+	    IP_match = lists:member(IP, Icepeaks),
+	    FromTag = (catch sipheader:get_tag(keylist:fetch('from', Request#request.header))),
+	    ToTag = (catch sipheader:get_tag(keylist:fetch('to', Request#request.header))),
+	    if
+		IP_match, is_list(FromTag), is_list(ToTag) ->
+		    logger:log(debug, "local: Allowing Icepeak REFER (from: ~p, has both from- and to-tags)", [IP]),
+		    true;
+		true ->
+		    logger:log(debug, "local: Icepeak refer allow: NO (IP match ~p, ft ~p, tt ~p)",
+			       [IP_match, FromTag, ToTag]),
+		    undefined
+	    end;
+	_ ->
+	    logger:log(debug, "local: local_su_se_allow_icepeak_refer_from not set, not checking if REFER "
+		       "should be allowed"),
+	    undefined
+    end.
+
+do_local_su_se_allow_internal_refer(Request, _PstnCtx) when is_record(Request, request) ->
+    case catch yxa_config:get_env(local_su_se_allow_internal_refer) of
+	{ok, true} ->
+	    case keylist:fetch("Refer-To", Request#request.header) of
+		[ReferTo] ->
+		    case sipurl:parse(ReferTo) of
+			ReferURL when is_record(ReferURL, sipurl) ->
+			    case allow_refer_replaces(ReferURL) of
+				Res when is_boolean(Res) -> Res;
+				undefined ->
+				    allow_refer_userpart(ReferURL)
+			    end;
+			_ ->
+			    logger:log(debug, "local: Invalid Refer-To header in REFER"),
+			    undefined
+		    end;
+		_ ->
+		    logger:log(debug, "local: No Refer-To header in REFER"),
+		    undefined
+	    end;
+	_ ->
+	    logger:log(debug, "local: local_su_se_allow_internal_refer not set, not checking if REFER "
+		       "should be allowed"),
+	    undefined
+    end.
+
+
+
+allow_refer_replaces(URL) when is_record(URL, sipurl) ->
+    case url_param:find(URL#sipurl.param_pairs, "Replaces") of
+	[Replaces] ->
+	    logger:log(debug, "local: Allowing REFER with Replaces (~s)", [Replaces]),
+	    true;
+	[] ->
+	    undefined
+    end.
+
+allow_refer_userpart(#sipurl{user = User}) when is_list(User) ->
+    DstNumber =
+	case local:rewrite_potn_to_e164(User) of
+	    error -> User;
+	    N when is_list(N) -> N
+	end,
+
+    {ok, Classdefs} = yxa_config:get_env(classdefs),
+    {ok, Class} = sipauth:classify_number(DstNumber, Classdefs),
+    logger:log(normal, "local: Checking if we should allow REFER to ~s (class: ~p)",
+	       [DstNumber, Class]),
+    case Class of
+	internal ->
+	    logger:log(normal, "local: Allowing REFER to internal number ~p",
+		       [DstNumber]),
+	    true;
+	_ ->
+	    undefined
+    end;
+allow_refer_userpart(_URL) ->
+    undefined.
+
+
+eventserver_locationdb_action(insert, "ft", Location) ->
+    Params =
+	case lists:keysearch(path, 1, Location#siplocationdb_e.flags) of
+	    {value, {path, Path1}} ->
+		[{path, Path1}];
+	    false ->
+		[]
+	end,
+    [{shared_line,
+      "resource",
+      "ft",
+      siplocation:to_url(Location),
+      Params
+     }];
+eventserver_locationdb_action(insert, "ft2", Location) ->
+    Params =
+	case lists:keysearch(path, 1, Location#siplocationdb_e.flags) of
+	    {value, {path, Path1}} ->
+		[{path, Path1}];
+	    false ->
+		[]
+	end,
+    [{shared_line,
+      "resource",
+      "ft2",
+      siplocation:to_url(Location),
+      Params
+     }];
+eventserver_locationdb_action(_, _, _) ->
+    undefined.
+
+
+%%--------------------------------------------------------------------
+%% @spec    (User, ToNumber, Header, Class) -> bool()
+%%
+%%            User     = string() "authenticated SIP username"
+%%            ToNumber = string() "phone number - E.164 if conversion was possible, otherwise it is the number as entered by the caller"
+%%            Header   = #keylist{} "SIP header of request"
+%%            Class    = undefined | atom()
+%%
+%% @doc
+%% @see      sipauth:is_allowed_pstn_dst/4.
+%% @end
+%%--------------------------------------------------------------------
+is_allowed_pstn_dst(User, ToNumber, Header, Class) when is_list(User), is_list(ToNumber),
+							is_record(Header, keylist), is_atom(Class) ->
+    try su_pstnproxy_policy:is_allowed_pstn_dst(User, ToNumber, Header, Class) of
+	Res when is_boolean(Res) ->
+	    logger:log(debug, "Local: su_pstnproxy_policy:is_allowed_pstn_dst/4 -> ~p", [Res]),
+	    Res;
+	undefined ->
+	    logger:log(debug, "Local: su_pstnproxy_policy:is_allowed_pstn_dst/4 -> undefined"),
+	    %% fallback
+	    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class);
+	Unknown ->
+	    logger:log(error, "Local: su_pstnproxy_policy:is_allowed_pstn_dst/4 BAD RESULT : ~p", [Unknown]),
+	    %% fallback
+	    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class)
+    catch
+	error:
+	  E ->
+	    ST = erlang:get_stacktrace(),
+	    logger:log(error, "Local: su_pstnproxy_policy:is_allowed_pstn_dst/4 FAILED: ~p, stacktrace : ~p", [E, ST]),
+	    %% fallback
+	    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class);
+	  X: Y ->
+	    logger:log(error, "Local: su_pstnproxy_policy:is_allowed_pstn_dst/4 FAILED: ~p ~p", [X, Y]),
+	    %% fallback
+	    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class)
+    end;
+
+is_allowed_pstn_dst(User, ToNumber, Header, Class) ->
+    %% fallback for unrecognized input
+    logger:log(debug, "Local: Unrecognized input to is_allowed_pstn_dst/4 : ~p", [[User, ToNumber, Header, Class]]),
+    sipauth:is_allowed_pstn_dst(User, ToNumber, Header, Class).

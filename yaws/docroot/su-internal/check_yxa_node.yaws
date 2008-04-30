@@ -1,0 +1,197 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : check_yxa_node.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Check the status of an YXA node.
+%%%
+%%% Created : 21 Nov 2007 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Macros
+%%--------------------------------------------------------------------
+-define(GET_VAR(TheVarName), yxa_yaws_util:get_var(A, TheVarName)).
+-define(DEFAULT_TIME_TOLERANCE, 5).
+-define(DEFAULT_TIME_TOLERANCE_WARNING, 3).
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+
+out(A) ->
+    %% necessary to not make our build process depend on Yaws include files
+    put({yxa_yaws_util, docroot}, A#arg.docroot),
+    put({yxa_yaws_util, method}, (A#arg.req)#http_request.method),
+
+    HTML =
+	try out2(A, ?GET_VAR("node")) of
+	    Res ->
+		Res
+	catch
+	    throw:
+	      {error, E} when is_list(E) ->
+		{pre, [], "YXA-STATUS: UNKNOWN, no node specified"};
+	      error: Y ->
+		ST = erlang:get_stacktrace(),
+		{pre, [], io_lib:format("ERROR error:~p ~p~n", [Y, ST])};
+	      X: Y ->
+		{pre, [], io_lib:format("ERROR ~p:~p~n", [X, Y])}
+	end,
+    {ehtml, [HTML]}.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% Function: out2(A, {ok, NodeStr})
+%%           NodeStr = string(), name of node we are to talk with
+%% Descrip.: Top level output function. Output header and catch
+%%           errors, if any.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
+    Time1 = erlang:now(),
+
+    info_log("check_yxa_node(~s): Checking node", [NodeStr]),
+
+    TimeTolerance = ?DEFAULT_TIME_TOLERANCE,
+    TimeTolerance_Warn = ?DEFAULT_TIME_TOLERANCE_WARNING,
+
+    try check_yxa_node(list_to_atom(NodeStr), TimeTolerance, TimeTolerance_Warn) of
+	{status, S} ->
+	    Time2 = erlang:now(),
+	    Diff = timer:now_diff(Time2, Time1) / 1000000,
+	    Msg = io_lib:format("check_yxa_node(~s): ~s (check took ~.2f seconds)", [NodeStr, S, Diff]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    {pre, [], ["YXA-STATUS: " ++ S]}
+    catch
+	exit:
+	  {aborted, Reason} ->
+	    Time2 = erlang:now(),
+	    Diff = timer:now_diff(Time2, Time1) / 1000000,
+	    Msg = io_lib:format("check_yxa_node(~s): ~p (check took ~.2f seconds)", [NodeStr, {aborted, Reason}, Diff]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    {pre, [], ["YXA-STATUS: ERROR: MNESIA ACCESS PROBLEM, RESTART MASTER NODE AND POSSIBLY THIS ONE AS WELL"]};
+	X : Y ->
+	    Time2 = erlang:now(),
+	    Diff = timer:now_diff(Time2, Time1) / 1000000,
+	    Msg = io_lib:format("check_yxa_node(~s): ~p (check took ~.2f seconds)", [NodeStr, {error, X, Y}, Diff]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    {pre, [], [io_lib:format("YXA-STATUS: UNKNOWN, check_yxa_node failed : ~p:~p~n",
+				     [X, Y])
+		      ]}
+    end;
+out2(_, _) ->
+    throw({error, "Invalid node specified"}).
+
+get_int(A, Name, Default) ->
+    case ?GET_VAR(Name) of
+	{ok, S} when is_list(S) ->
+	    list_to_integer(S);
+	undefined ->
+	    Default
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: check_yxa_node(Node, TimeError, TimeWarn)
+%%           Node      = atom(), the node we are to talk with
+%%           TimeError = integer(), number of seconds diff we tolerate
+%%           TimeWarn  = integer(), number of seconds diff we warn about
+%% Descrip.: Check status of an YXA node.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+check_yxa_node(Node, TimeError, TimeWarn) when is_atom(Node), is_integer(TimeError), is_integer(TimeWarn) ->
+    check_yxa_node_time(Node, TimeError, TimeWarn).
+
+%%--------------------------------------------------------------------
+%% Function: check_yxa_node_time(Node, TimeError, TimeWarn)
+%%           Node      = atom(), the node we are to talk with
+%%           TimeError = integer(), number of seconds diff we tolerate
+%%           TimeWarn  = integer(), number of seconds diff we warn about
+%% Descrip.: Check if the time reported by erlang:now/0 in the Erlang
+%%           node differs from what our system clock says. This has
+%%           been observed with YXA node running in VMWare ESX guests,
+%%           with Erlang/OTP R11B-2.
+%% Returns : HTML = term(), Yaws html data
+%%--------------------------------------------------------------------
+check_yxa_node_time(Node, TimeError, TimeWarn) when is_atom(Node), is_integer(TimeError), is_integer(TimeWarn) ->
+    case get_node_now(Node) of
+	NodeNow when is_integer(NodeNow) ->
+	    case get_system_time() of
+		SysTime when is_integer(SysTime) ->
+		    Diff = NodeNow - SysTime,
+
+		    DiffStr =
+			if
+			    Diff < 0 ->
+				integer_to_list(Diff);
+			    Diff > 0 ->
+				lists:concat(["+", Diff]);
+			    true ->
+				"+-0"
+			end,
+
+		    info_log("Node ~p, SysTime ~p, NodeNow ~p, Diff ~p",
+			     [Node, SysTime, NodeNow, Diff]),
+
+		    IsError = diff_is_not_within(Diff, TimeError),
+		    IsWarn = diff_is_not_within(Diff, TimeWarn),
+
+		    if
+			IsError ->
+			    Msg = io_lib:format("ERROR: Time difference ~s too big (sys ~p, erlang:now/0 ~p, "
+						"tolerance ~p)", [DiffStr, SysTime, NodeNow, TimeError]),
+			    {status, Msg};
+			IsWarn ->
+			    Msg = io_lib:format("WARNING: Time difference ~s observed (sys ~p, erlang:now/0 ~p, "
+						"tolerance ~p)", [DiffStr, SysTime, NodeNow, TimeError]),
+			    {status, Msg};
+			true ->
+			    Msg = io_lib:format("OK: time diff ~s seconds", [DiffStr]),
+			    {status, Msg}
+		    end;
+		error ->
+		    {status, "ERROR: Failed getting system time"}
+	    end;
+	E ->
+	    E
+    end.
+
+diff_is_not_within(Diff, Tolerance) ->
+    if
+	Diff > Tolerance; Diff < (0 - Tolerance) ->
+	    true;
+	true ->
+	    false
+    end.
+
+info_log(Fmt, Args) ->
+    Msg = io_lib:format(Fmt, Args),
+    error_logger:info_report(lists:flatten(Msg)).
+
+%% Returns: integer()
+get_system_time() ->
+    Cmd = "perl -e 'print time'",
+    S1 = os:cmd(Cmd),
+    try list_to_integer(S1) of
+	Time ->
+	    Time
+    catch
+	_: _ ->
+	    info_log("Failed getting system time, command ~p -> ~p", [Cmd, S1]),
+	    error
+    end.
+
+get_node_now(Node) when is_atom(Node) ->
+    case rpc:call(Node, erlang, now, []) of
+	{badrpc, _E} ->
+	    {status, io_lib:format("UNKNOWN, node ~p not accessible", [Node])};
+	{Megasec, Sec, _} when is_integer(Megasec), is_integer(Sec) ->
+	    Megasec * 1000000 + Sec
+    end.
+
+
+</erl>

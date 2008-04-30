@@ -170,6 +170,7 @@ handle_info({Port, {data, Data}}, State) when is_record(State, state), State#sta
 
 handle_info({Port, {exit_status, Status}}, #state{port = Port}) ->
     logger:log(error, "Event handler csyslog: Port driver ~p exited : ~p", [Port, Status]),
+    %% XXX RESTART IT SOMEHOW?
     remove_handler;
 
 handle_info(Unknown, State) ->

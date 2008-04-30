@@ -406,6 +406,8 @@ handle_request(Request, YxaCtx, PstnCtx) ->
 		    false ->
 			%% no Route, and not destined for the proxy itself
 			ToHost = (Request#request.uri)#sipurl.host,
+			logger:log(debug, "FREDRIK: ToHost ~p, is_localhostname ~p is_pstngateway ~p",
+				   [ToHost, is_localhostname(ToHost), is_pstngateway(ToHost)]),
 			case is_localhostname(ToHost) orelse
 			    is_pstngateway(ToHost) of
 			    true ->

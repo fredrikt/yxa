@@ -1,0 +1,192 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : yssi-dnscheck.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI DNS domain check page.
+%%%
+%%% Created : 12 Oct 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+
+-include("siprecords.hrl").
+-include("yxa_virtweb.hrl").
+
+-define(YXA_EXPECTED_SRV_RECORDS_N,	"yxa.sip.su.se").
+-define(YXA_EXPECTED_SRV_RECORDS_P,	5060).
+-define(YXA_EXPECTED_SRV_RECORDS_TLS_P,	5061).
+-define(YXA_EXPECTED_SRV_RECORDS, [#sipdns_srv{proto	= tls,
+					       host	= ?YXA_EXPECTED_SRV_RECORDS_N,
+					       port	= ?YXA_EXPECTED_SRV_RECORDS_TLS_P},
+				   #sipdns_srv{proto	= tcp,
+					       host	= ?YXA_EXPECTED_SRV_RECORDS_N,
+					       port	= ?YXA_EXPECTED_SRV_RECORDS_P
+					      },
+				   #sipdns_srv{proto	= udp,
+					       host	= ?YXA_EXPECTED_SRV_RECORDS_N,
+					       port	= ?YXA_EXPECTED_SRV_RECORDS_P
+					      }
+				  ]).
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+out(Args) ->
+    %% necessary to be able to use some functions in yxa_yaws_util
+    put({yxa_yaws_util, docroot}, Args#arg.docroot),
+    put({yxa_yaws_util, method}, (Args#arg.req)#http_request.method),
+
+    try out2(Args) of
+        Res ->
+            yxa_virtweb_cc:script_output("DNS check", Res)
+    catch
+        throw:
+	  {error, E} when is_list(E) ->
+            Error = yxa_yaws_util:error(E),
+            yxa_virtweb_cc:script_output("DNS check", Error);
+	  {no_formatting, EHTML} ->
+	    EHTML
+    end.
+
+out2(Args) ->
+    Node = list_to_atom(yxa_yaws_util:get_yxa_application_node()),
+    %% call get_logged_in_user with Required = false to get username
+    %% and "Log out" link in the top right corner
+    yxa_virtweb_cc:get_logged_in_user(Args,
+				      record_info(fields, arg),
+				      record_info(fields, headers),
+				      record_info(fields, http_request),
+				      Node,
+				      false
+				     ),
+    case yxa_yaws_util:get_var(Args, ?VARNAME_DNSCHECK_DOMAIN) of
+	{ok, Domain1} when is_list(Domain1) ->
+	    Domain = normalize_domain(Domain1),
+	    [print_form(Args, Domain),
+	     {p, [], []},
+	     "SIP DNS info for domain ", {strong, [], Domain}, " :",
+	     {p, [], []},
+	     print_dns_info(Domain)
+	    ];
+	undefined ->
+	    print_form(Args)
+    end.
+
+normalize_domain(In) ->
+    R1 = string:to_lower(In),
+    R2 = string:substr(In, 1, 200),
+    {Res, _Port} = sipparse_util:parse_hostport(In),
+    Res.
+
+print_form(Args) when is_record(Args, arg) ->
+    print_form(Args, []).
+
+print_form(Args, DomainIn) when is_record(Args, arg), is_list(DomainIn) ->
+    Me = Args#arg.server_path,
+    [
+     {form, [{method, post},
+	     {action, Me}
+	    ], [
+		{table, [{border, 0}], [
+					{tr, [], [{td, [], "Domain name"},
+						  {td, [], [{input, [{name, "domain"},
+								     {value, DomainIn}
+								    ]}
+							   ]}
+						 ]}
+				       ]},
+		{input, [{type, submit},
+			 {value, "Submit"}
+			]}
+		]
+      }
+    ].
+
+print_dns_info(Domain) when is_list(Domain) ->
+    case dnsutil:siplookup(Domain) of
+	{error, nxdomain} ->
+	    [yxa_yaws_util:error("No such domain"),
+	     {p, [], []},
+	     check_expectations(Domain, [])
+	    ];
+	{error, E} ->
+	    [yxa_yaws_util:error(io_lib:format("Failed resolving : ~p", [E])),
+	     {p, [], []},
+	     check_expectations(Domain, [])
+	    ];
+	SRV when is_list(SRV) ->
+	    [print_dns_info_srv_records(SRV),
+	     {p, [], []},
+	     check_expectations(Domain, SRV)
+	    ]
+    end.
+
+print_dns_info_srv_records(SRV) when is_list(SRV) ->
+    Pre = lists:map(fun(E) when is_record(E, sipdns_srv) ->
+			    lists:concat([E#sipdns_srv.proto, ":",
+					  E#sipdns_srv.host,  ":",
+					  E#sipdns_srv.port, "\n"
+					 ])
+		    end, SRV),
+    [{pre, [], [Pre]}];
+print_dns_info_srv_records(_Unknown) ->
+    throw({error, "Unknown data returned from dnsutil:siplookup"}).
+
+%% XXX we check the SRV's returned from dnsutil:siplookup/1. If there were (correct) NAPTR
+%% records for the input domain, the RFC2543 compatibility SRV-records won't be checked.
+check_expectations(_Domain, ?YXA_EXPECTED_SRV_RECORDS) ->
+    ["SIP DNS info is ", {font, [{size, 2}, {color, "green"}],
+			  ["OK"]}
+    ];
+check_expectations(Domain, _SRV) ->
+    ["SIP DNS info is ", {font, [{size, 2}, {color, "red"}],
+			  ["NOT OK"]},
+     {p, [], []},
+     "Expected :",
+     print_dns_info_srv_records(?YXA_EXPECTED_SRV_RECORDS),
+     {p, [], ["BIND zonefile format of expected data :"]},
+     print_dns_info_zonefile_format(Domain, ?YXA_EXPECTED_SRV_RECORDS)
+    ].
+
+print_dns_info_zonefile_format(Domain, In) when is_list(Domain), is_list(In) ->
+    DomainDot = Domain ++ ".",
+    {ok, NAPTR, SRV} = print_dns_info_zonefile_format(DomainDot, In, 1, [], []),
+    [{pre, [], [
+		NAPTR,
+		"\n",
+		"; for backwards compatibility with RFC2543 UAs\n",
+		SRV
+	       ]}
+    ].
+
+print_dns_info_zonefile_format(DomainDot, [H | T], N, NAPTR, SRV) when is_record(H, sipdns_srv) ->
+    {NAPTRService, SRV_prefix, SRVPort} =
+	case H#sipdns_srv.proto of
+	    tls ->
+		{"\"SIPS+D2T\"", "_sips._tcp", ?YXA_EXPECTED_SRV_RECORDS_TLS_P};
+	    tls6 ->
+		{"\"SIPS+D2T\"", "_sips._tcp", ?YXA_EXPECTED_SRV_RECORDS_TLS_P};
+	    tcp ->
+		{"\"SIP+D2T\"", "_sip._tcp", ?YXA_EXPECTED_SRV_RECORDS_P};
+	    tcp6 ->
+		{"\"SIP+D2T\"", "_sip._tcp", ?YXA_EXPECTED_SRV_RECORDS_P};
+	    udp ->
+		{"\"SIP+D2U\"", "_sip._udp", ?YXA_EXPECTED_SRV_RECORDS_P};
+	    udp6 ->
+		{"\"SIP+D2U\"", "_sip._udp", ?YXA_EXPECTED_SRV_RECORDS_P}
+	end,
+
+    ThisNAPTR = io_lib:format("~s IN NAPTR ~p 0 \"s\" ~.10s \"\" ~s.~s.~n",
+			      [pad(DomainDot, 20), N * 10, NAPTRService, SRV_prefix, ?YXA_EXPECTED_SRV_RECORDS_N]),
+    ThisSRV = io_lib:format("~s IN SRV ~p 0 ~p ~s.~n",
+			    [pad(SRV_prefix ++ "." ++ DomainDot, 35), N, SRVPort, ?YXA_EXPECTED_SRV_RECORDS_N]),
+
+    print_dns_info_zonefile_format(DomainDot, T, N + 1, [ThisNAPTR | NAPTR], [ThisSRV | SRV]);
+print_dns_info_zonefile_format(_DomainDot, [], _N, NAPTR, SRV) ->
+    {ok, lists:reverse(NAPTR), lists:reverse(SRV)}.
+
+pad(Str, Len) when length(Str) < Len ->
+    pad(Str ++ " ", Len);
+pad(Str, _Len) ->
+    Str.
+
+</erl>

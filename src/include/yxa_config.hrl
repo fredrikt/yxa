@@ -662,8 +662,10 @@
 		      list_of   = true,
 		      type	= term,
 		      required	= true,
-		      default	= [{"presence", presence_package},
-				   {"dialog",   dialog_package}
+		      default	= [{"presence",		presence_package},
+				   {"dialog",		dialog_package},
+				   {"uaprofile",	uaprofile_package},
+				   {"sip-config",	uaprofile_package}
 				  ]
 		      %% XXX soft_reload should perhaps be 'false' since any new modules
 		      %% won't get initialized with their init() function? Big loss in
@@ -673,6 +675,10 @@
 		      type	= bool,
 		      required	= true,
 		      default	= true
+		     },
+	   #cfg_entry{key	= uaprofile_base_path,
+		      type	= string,
+		      required	= false
 		     }
 	  ]}
 	]

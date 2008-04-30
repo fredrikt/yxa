@@ -25,6 +25,10 @@
 	 subscription_behaviour/3
 	]).
 
+-export([
+	 test/0
+	]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -173,6 +177,8 @@ request("presence", #request{method = "PUBLISH"} = Request, YxaCtx, Ctx) ->
 			{error, "Request has invalid SIP-If-Match"}
 		end
 	end,
+
+    logger:log(normal, "FREDRIK: NEW EVENTDATA :~n~p", [db_util:tab_to_list(eventdata)]),
 
     case Res of
 	{ok, ExtraHeaders} when is_list(ExtraHeaders) ->
@@ -507,7 +513,7 @@ get_accept(Header) ->
 %% @end
 %%--------------------------------------------------------------------
 get_publish_etag_expires(Request, SIPuser, THandler) ->
-    {Action, ETag} =
+    Res =
 	case keylist:fetch("SIP-If-Match", Request#request.header) of
 	    [ETag1] ->
 		case presence_pidf:check_if_user_etag_exists(SIPuser, ETag1) of
@@ -532,10 +538,10 @@ get_publish_etag_expires(Request, SIPuser, THandler) ->
 		error
 	end,
 
-    case ETag of
+    case Res of
 	error ->
 	    error;
-	_ ->
+	{Action, ETag} ->
 	    case publish_get_expires(Request#request.header, THandler) of
 		error ->
 		    error;
@@ -587,3 +593,59 @@ generate_etag() ->
     {A, B, C} = erlang:now(),
     ETag1 = lists:concat([siprequest:myhostname(), "-", A, "-", B, "-", C]),
     lists:flatten(ETag1).
+
+
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+test() ->
+    
+    %% get_publish_etag_expires(Request, SIPuser, THandler)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_publish_etag_expires/3 - 1"),
+    %% test with too many SIP-If-Match headers
+    GPEE_Request1 = #request{method = "TEST",
+			     uri    = sipurl:parse("sip:ft@example.org"),
+			     header = keylist:from_list([{"SIP-If-Match", ["foo", "bar"]}
+							])
+			    },
+    error = get_publish_etag_expires(GPEE_Request1, "test_user",
+				     transactionlayer:test_get_thandler_self()
+				    ),
+    %% verify that a 400 response was created
+    {400, "More than one SIP-If-Match header value", [], <<>>} = get_created_response(),
+
+    ok.
+
+%%====================================================================
+%% Helper functions
+%%====================================================================
+
+get_created_response() ->
+    receive
+	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
+	    ok = assert_on_message(),
+	    {Status, Reason, EH, Body};
+	M ->
+	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
+	    {error, lists:flatten(Msg)}
+    after 0 ->
+	    {error, "no created response in my mailbox"}
+    end.
+
+assert_on_message() ->
+    receive
+	M ->
+	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
+	    {error, lists:flatten(Msg)}
+    after 0 ->
+	    ok
+    end.

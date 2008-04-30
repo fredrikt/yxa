@@ -16,6 +16,7 @@ includedir = @libdir@/yxa/include
 sbindir = @sbindir@
 exec_prefix=${prefix}
 builddir = @builddir@
+local_module = @local_module@
 
 ERLC = @ERLC@
 ERL = @ERL@
@@ -29,33 +30,80 @@ doc_dir = ../../doc
 
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
+systools_make_script = \
+	$(ERLC) +no_module_tests -pa $(ebin_dir) $(ebin_dir)/$*.rel
 
-erl_FILES =
+erl_FILES = \
+	su_botbackend.erl \
+	su_bot.erl \
+	su_bot_refer.erl \
+	su_pstnproxy_policy.erl \
+	su_pstnproxy_policy_server.erl \
+	../unused/sdp.erl \
+	../unused/refer.erl
 
-imported_hrl_FILES =
 
-hrl_FILES =
+imported_hrl_FILES = \
+	../include/yxa_config.hrl
+
+hrl_FILES = \
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
+
+boot_FILES = \
+	su_bot.boot
+
+start_FILES = \
+	su_bot
+
+app_FILES = $(addprefix $(ebin_dir)/, $(boot_FILES:.boot=.app))
+
+rel_FILES = $(addprefix $(ebin_dir)/, $(boot_FILES:.boot=.rel))
 
 CC = gcc
 CFLAGS = -Wall
 
 beam_FILES = $(addprefix $(ebin_dir)/, $(erl_FILES:.erl=.beam))
 
-all: $(beam_FILES)
+all: $(beam_FILES) $(app_FILES) $(rel_FILES) $(boot_FILES) $(start_FILES)
 
-install: $(beam_FILES) $(hrl_FILES)
+install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) $(start_FILES)
+	$(mkinstalldirs) $(DESTDIR)$(beamdir)
+	$(mkinstalldirs) $(DESTDIR)$(includedir)
+	$(mkinstalldirs) $(DESTDIR)$(sbindir)
+	for p in $(beam_FILES) $(boot_FILES) $(app_FILES); do \
+	  $(install_DATA) $$p $(DESTDIR)$(beamdir)/$$f ; \
+	done
+	for p in $(hrl_FILES); do \
+	  $(install_DATA) $(srcdir)/$$p $(DESTDIR)$(includedir)/$$f ; \
+	done
+	for p in $(start_FILES); do \
+	  $(install_PROGRAM) $$p $(DESTDIR)$(sbindir)/$$f ; \
+	done
 
-packages:
+packages: $(boot_FILES) $(rel_FILES) sys.config
+	for p in $(basename $(rel_FILES)) ; do \
+	  $(ERL) -noinput -pa $(ebin_dir) \
+	    -run systools make_tar  $$p -s erlang halt ; \
+	  test -f $$p.tar.gz || exit 1 ; \
+	done
 
 distclean: clean
 	rm -f Makefile
 
 clean:
 	rm -f core *.core *~
-	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
+	rm -f *.beam *.script *.start *.boot *.app
 	rm -f *.o ktrace.out erl_crash.dump
+	rm -f $(start_FILES)
+	rm -f $(addsuffix .tar.gz, $(basename $(rel_FILES)))
+	rm -f $(boot_FILES)
+	rm -f $(rel_FILES) sys.config
+	rm -f $(app_FILES)
+	@# have to do this 'advanced' rm to handle the erl_FILES from another directory (../unused/)
+	for p in $(beam_FILES) ; do \
+	  rm -f $(ebin_dir)/`basename $$p` ; \
+	done
 
 doc:
 	mkdir -p $(doc_dir)/html/src/local
@@ -67,10 +115,36 @@ doc:
 		-run init stop
 
 $(beam_FILES): $(yxa_hrl_FILES)
+$(boot_FILES): $(beam_FILES)
 
 SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES:
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
-.erl.beam:
-	$(ERLC) -I$(srcdir) -I$(srcdir)/../include/ -W +debug_info $<
+$(ebin_dir)/%.beam:	$(srcdir)/%.erl
+	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/../include -pz ../ -W +debug_info $<
+
+$(ebin_dir)/%.rel:	$(srcdir)/%.rel-in
+	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
+
+$(ebin_dir)/%.app:	$(srcdir)/%.app-in
+	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
+
+%.boot: $(ebin_dir)/%.app $(ebin_dir)/yxa.app $(ebin_dir)/%.rel
+	$(systools_make_script)
+
+sys.config:	$(srcdir)/../sys.config-in
+	sed -e 's!%DB_DIR%!$(mnesiadir)!' \
+	      -e 's!%CONF_DIR%!$(confdir)!' < $< > $@
+
+$(start_FILES): $(top_srcdir)/scripts/init.sh.in ../../config.status
+
+su_bot:
+	sed -e "s!@PROGRAMNAME@!$@!" \
+	    -e 's!@CONFIGDIR@!$(confdir)!' \
+	    -e 's!@SSLCERTDIR@!$(sslcertdir)!' \
+	    -e 's!@MNESIADIR@!$(mnesiadir)!' \
+	    -e 's!@erl@!$(ERL)!' \
+	    -e 's!@beamdir@!$(beamdir)!' < $(top_srcdir)/scripts/init.sh.in > $@.new && \
+	chmod +x $@.new && \
+	mv $@.new $@

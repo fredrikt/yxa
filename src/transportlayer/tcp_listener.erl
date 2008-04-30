@@ -81,7 +81,7 @@ start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
 	true ->
 	    case lists:keysearch(certfile, 1, Options) of
 		{value, _} ->
-		    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
+		    Pid = proc_lib:spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
 		    {ok, Pid};
 		false ->
 		    logger:log(normal, "NOT starting ~p listener on port ~p, no SSL server certificate specified "
@@ -89,7 +89,7 @@ start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
 		    ignore
 	    end;
 	false ->
-	    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
+	    Pid = proc_lib:spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
 	    {ok, Pid}
     end.
 
@@ -198,6 +198,9 @@ accept_loop(State) when is_record(State, state) ->
     SocketModule = State#state.socketmodule,
     InetModule = State#state.inetmodule,
     ListenSocket = State#state.socket,
+    %% XXX for SSL sockets, it might be necessary to do accept with a timeout (ssl:accept/2),
+    %% to avoid defunct connections from remaining in state CLOSE_WAIT forever (until the
+    %% Erlang VM shuts down), according to mail to erlang-questions 2008-01-30 (Gaspar C).
     case SocketModule:accept(ListenSocket) of
 	{ok, NewSocket} ->
 	    case InetModule:peername(NewSocket) of

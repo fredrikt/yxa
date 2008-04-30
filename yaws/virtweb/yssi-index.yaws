@@ -1,0 +1,240 @@
+<erl module='yssi-index'>
+%%%-------------------------------------------------------------------
+%%% File    : yssi-index.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI index page.
+%%%
+%%% Created : 10 Oct 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+-include("yxa-yaws-acl.hrl").
+-include("yxa_virtweb.hrl").
+
+-include("siprecords.hrl").
+-include("phone.hrl").
+
+
+-define(YXA_VIRTWEB_DNSCHECK_URL, "dnscheck.yaws").
+
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+out(Args) ->
+    %% necessary to be able to use some functions in yxa_yaws_util
+    put({yxa_yaws_util, docroot}, Args#arg.docroot),
+    put({yxa_yaws_util, method}, (Args#arg.req)#http_request.method),
+
+    try out2(Args, yxa_yaws_util:get_var(Args, ?VARNAME_VIRTACTION)) of
+        Res ->
+            yxa_virtweb_cc:script_output("", Res)
+    catch
+        throw:
+	  {error, E} when is_list(E) ->
+            Error = yxa_yaws_util:error(E),
+            yxa_virtweb_cc:script_output("", Error);
+	  {no_formatting, EHTML} ->
+	    EHTML
+    end.
+
+out2(Args, {ok, "logout"}) ->
+    Node = list_to_atom(yxa_yaws_util:get_yxa_application_node()),
+    case yxa_virtweb_cc:get_logged_in_user(Args,
+					   record_info(fields, arg),
+					   record_info(fields, headers),
+					   record_info(fields, http_request),
+					   Node
+					  ) of
+	{ok, User} ->
+	    yxa_virtweb_cc:logout(Args,
+				  record_info(fields, arg),
+				  record_info(fields, headers)
+				 ),
+	    [{h2, [], "You have been logged out"},
+	     {p, [], []},
+	     {a, [{href, ?STARTPAGE_URL}], ["Log in again"]}
+	    ];
+	_ ->
+	    throw({error, "Can't log out when not logged in"})
+    end;
+out2(Args, {ok, Unknown}) ->
+    Msg = io_lib:format("Unknown '" ?VARNAME_VIRTACTION "' : ~p", [Unknown]),
+    throw({error, lists:flatten(Msg)});
+out2(Args, undefined) ->
+    Node = list_to_atom(yxa_yaws_util:get_yxa_application_node()),
+    case yxa_virtweb_cc:get_logged_in_user(Args,
+					   record_info(fields, arg),
+					   record_info(fields, headers),
+					   record_info(fields, http_request),
+					   Node
+					  ) of
+	{ok, User} when is_list(User) ->
+	    [print_domains(User, Node),
+	     {p, [], []},
+	     print_virtual_users(User, Node)
+	    ];
+	{not_logged_in, EHTML} when is_list(EHTML) ->
+	    EHTML;
+	{logged_in, EHTML} when is_list(EHTML) ->
+	    %% bypass script_output
+	    throw({no_formatting, EHTML});
+	 _ ->
+	    throw({error, "Not logged in"})
+     end.
+    
+
+%%====================================================================
+%% Domain printing
+%%====================================================================
+
+
+print_domains(User, Node) when is_list(User), is_atom(Node) ->
+    case yxa_virtweb_cc:get_user_domains(User, Node) of
+	[] ->
+	    throw({error, "No domains for you"});
+	Domains when is_list(Domains) ->
+	    %% Format the users domains into a table
+	    FmtDomains =
+		lists:map(fun(Domain) ->
+				  DNScheck = [{a, [{href, ?YXA_VIRTWEB_DNSCHECK_URL "?" ?VARNAME_DNSCHECK_DOMAIN "=" ++
+						   yaws_api:url_encode(Domain)}], "Check DNS setup"}],
+				  [{tr, [], [
+					     {td, [], Domain},
+					     {td, [], DNScheck}
+					    ]
+				   }]
+			  end, Domains),
+	    [{table, [{border, 0}], [
+				     {tr, [], [
+					       {td, [{colspan, 2}, {valign, "left"}],
+						[{strong, [], "Your domains "},
+						 "(logged in as '", User, "')"]
+					       }
+					      ]},
+				     FmtDomains
+				    ]}]
+    end.
+
+
+%%====================================================================
+%% Virtual users handling
+%%====================================================================
+
+print_virtual_users(AdminUser, Node) when is_list(AdminUser), is_atom(Node) ->
+    Domains = yxa_virtweb_cc:get_user_domains(AdminUser, Node),
+    VirtualUsers = get_virtual_users(Domains, Node),
+    FmtVirtualUsers = format_virtual_users(VirtualUsers, Node),
+
+    [{table, [{border, 0}], [
+			     {tr, [], [
+				       {td, [{colspan, 4}, {valign, "left"}],
+					[{strong, [], "Your domains users "}]
+				       }
+				      ]},
+			     FmtVirtualUsers,
+			     {tr, [], [
+				       {td, [{colspan, 4}], [
+							     {a, [{href, "index.yaws"
+								   "?" ?VARNAME_VIRTACTION "=edit"
+								   "&" ?VARNAME_WHAT "=virtuser"
+								  }], "Add user"}
+							     ]}
+				       ]}
+			    ]}].
+
+get_virtual_users(Domains, Node) when is_list(Domains), is_atom(Node) ->
+    AllAddresses = yxa_virtweb_cc:rpc_call(Node, phone, list_numbers, []),
+    AllVirtUsers = get_users_in_domains(Domains, AllAddresses),
+    AllVirtUsers.
+
+get_users_in_domains(Domains, Addresses) when is_list(Domains), is_list(Addresses) ->
+    get_users_in_domains(Domains, Addresses, []).
+
+get_users_in_domains(Domains, [H | T], Res) when is_record(H, numbers) ->
+    case lists:member(H#numbers.user, Res) of
+	true ->
+	    %% user has more than one address that matches Domains - ignore
+	    get_users_in_domains(Domains, T, Res);
+	false ->
+	    case sipurl:parse_url_with_default_protocol("sip", H#numbers.number) of
+		URL when is_record(URL, sipurl) ->
+		    case lists:member(URL#sipurl.host, Domains) of
+			true ->
+			    %% match
+			    get_users_in_domains(Domains, T, [H#numbers.user | Res]);
+			false ->
+			    %% no match
+			    get_users_in_domains(Domains, T, Res)
+		    end;
+		_ ->
+		    %% ignore bad data
+		    get_users_in_domains(Domains, T, Res)
+	    end
+    end;
+get_users_in_domains(_Domains, [], Res) ->
+    lists:sort(Res).
+
+format_virtual_users([], _Node) ->
+    [{tr, [], [
+	       {td, [{colspan, 2}], ["No users found"]}
+	      ]}
+    ];
+format_virtual_users(VirtualUsers, Node) ->
+    %% Format the virtual users into a table
+    Content =
+	lists:map(fun(VirtUser) when is_list(VirtUser) ->
+			  Actions =
+			      [{a, [{href, "index.yaws"
+				     "?" ?VARNAME_VIRTACTION "=edit"
+				     "&" ?VARNAME_WHAT "=virtuser"
+				     "&" ?VARNAME_VIRTUSER "=" ++ yaws_api:url_encode(VirtUser)
+				    }], ["Edit"]},
+			       "&nbsp;|&nbsp;",
+			       {a, [{href, "index.yaws"
+				     "?" ?VARNAME_VIRTACTION "=delete"
+				     "&" ?VARNAME_WHAT "=virtuser"
+				     "&" ?VARNAME_VIRTUSER "=" ++ yaws_api:url_encode(VirtUser)
+				    }], ["Delete"]}
+			      ],
+
+			  Addrs1 = yxa_yaws_util:get_user_addresses(VirtUser, Node),
+			  Addrs = case Addrs1 of
+				      [] ->
+					  [{font, [{color, "red"}], ["no addresses"]}];
+				      [_] ->
+					  %% exactly one address
+					  Addrs1;
+				      [FirstAddr | _] ->
+					  %% show only first address when there is more than one
+					  FirstAddr ++ ", ..."
+
+				  end,
+			  Locations =
+			      case yxa_virtweb_cc:rpc_call(Node, phone, get_sipuser_locations, [VirtUser]) of
+				  {ok, []} ->
+				      "No registered locations";
+				  {ok, [L]} when is_record(L, siplocationdb_e) ->
+				      %% exactly one location
+				      sipurl:print(L#siplocationdb_e.address);
+				  {ok, Locs} when is_list(Locs) ->
+				      lists:concat([length(Locs), " registered locations"])
+			      end,
+			  [{tr, [], [
+				     {td, [], VirtUser},
+				     {td, [], Addrs},
+				     {td, [], Locations},
+				     {td, [], Actions}
+				    ]
+			   }]
+		  end, VirtualUsers),
+    [{tr, [], [
+	       {th, [{align, "left"}], "Username"},
+	       {th, [{align, "left"}], "Addresses"},
+	       {th, [{align, "left"}], "Locations"},
+	       {th, [{align, "left"}], "Actions"}
+	      ]},
+     Content
+    ].
+
+</erl>
+

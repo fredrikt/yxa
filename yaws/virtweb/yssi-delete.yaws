@@ -1,0 +1,211 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : yssi-delete.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI file for deleting things (users, etc.).
+%%%
+%%% Created : 13 Oct 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+-include("yxa_virtweb.hrl").
+
+-define(REDIRECT_ON_SUCCESS_URL, "index.yaws").
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+out(Args) ->
+    %% necessary to be able to use some functions in yxa_yaws_util
+    put({yxa_yaws_util, docroot}, Args#arg.docroot),
+    put({yxa_yaws_util, method}, (Args#arg.req)#http_request.method),
+
+    try out2(Args) of
+        Res ->
+            yxa_virtweb_cc:script_output("Delete", Res)
+    catch
+        throw:
+	  {error, E} when is_list(E) ->
+            Error = yxa_yaws_util:error(E),
+            yxa_virtweb_cc:script_output("Delete", Error);
+	  {no_formatting, EHTML} ->
+	    EHTML
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: out2(Args)
+%%           Args = term(), Yaws arg record()
+%% Descrip.: out() function wrapped in a try/catch.
+%% Returns : EHTML = term(), Yaws ehtml data | throw()
+%%--------------------------------------------------------------------
+out2(Args) ->
+    NodeStr = yxa_yaws_util:get_yxa_application_node(),
+    Node = list_to_atom(NodeStr),
+    case yxa_virtweb_cc:get_logged_in_user(Args,
+					   record_info(fields, arg),
+					   record_info(fields, headers),
+					   record_info(fields, http_request),
+					   Node
+					  ) of
+	{ok, AuthUser} when is_list(AuthUser) ->
+	    case yxa_yaws_util:get_var(Args, ?VARNAME_WHAT) of
+		{ok, DeleteWhat} ->
+		    process(DeleteWhat, Args, Node, AuthUser);
+		undefined ->
+		    throw({error, "Don't know what it is that you want to delete"})
+	    end;
+	{not_logged_in, EHTML} ->
+	    EHTML;
+	{logged_in, EHTML} when is_list(EHTML) ->
+	    %% bypass script_output
+	    throw({no_formatting, EHTML});
+	_ ->
+	    throw({error, "Not logged in"})
+    end.
+
+process(?VARNAME_VIRTADDRESS, Args, Node, AuthUser) ->
+    User =
+	case yxa_yaws_util:get_var(Args, ?VARNAME_VIRTUSER) of
+	    {ok, User1} -> User1;
+	    undefined -> throw({error, "Can't delete virtual user address without username"})
+	end,
+    Address =
+	case yxa_yaws_util:get_var(Args, ?VARNAME_VIRTADDRESS) of
+	    {ok, Address1} -> Address1;
+	    undefined -> throw({error, "Can't delete virtual user address without address"})
+	end,
+    case (Req = Args#arg.req)#http_request.method of
+	'POST' ->
+	    case yxa_yaws_util:get_var(Args, "confirm_" ?VARNAME_VIRTADDRESS) of
+		{ok, "Confirm"} ->
+		    delete_virtaddress(Args, Node, AuthUser, User, Address);
+		_ ->
+		    throw({error, "Delete-post not confirmed"})
+	    end;
+	'GET' ->
+	    ConfirmText = [{strong, [], [{font, [{color, "red"}], ["delete address "]}]},
+			   {strong, [], [Address]}, " from user ",
+			   {strong, [], [User]}
+			  ],
+	    HiddenInputs = [{?VARNAME_VIRTUSER, User},
+			    {?VARNAME_VIRTADDRESS, Address}
+			   ],
+	    print_confirm_form(?VARNAME_VIRTADDRESS, Args, ConfirmText, HiddenInputs)
+    end;
+process(?VARNAME_VIRTUSER, Args, Node, AuthUser) ->
+    User =
+	case yxa_yaws_util:get_var(Args, ?VARNAME_VIRTUSER) of
+	    {ok, User1} -> User1;
+	    undefined -> throw({error, "Can't delete virtual user without name"})
+	end,
+    case (Req = Args#arg.req)#http_request.method of
+	'POST' ->
+	    case yxa_yaws_util:get_var(Args, "confirm_" ?VARNAME_VIRTUSER) of
+		{ok, "Confirm"} ->
+		    delete_virtuser(Args, Node, AuthUser, User);
+		_ ->
+		    throw({error, "Delete-post not confirmed"})
+	    end;
+	'GET' ->
+	    ConfirmText = [{strong, [], [{font, [{color, "red"}], ["delete user "]}]},
+			   {strong, [], [User]}
+			  ],
+	    HiddenInputs = [{?VARNAME_VIRTUSER, User}
+			   ],
+	    print_confirm_form(?VARNAME_VIRTUSER, Args, ConfirmText, HiddenInputs)
+    end;
+process(Unknown, _Args, _Node, _AuthUser) ->
+    Msg = io_lib:format("Deletion of ~p not implemented", [Unknown]),
+    throw({error, lists:flatten(Msg)}).
+
+%%--------------------------------------------------------------------
+%% Function: print_confirm_form(DeleteWhat, Args, ConfirmText,
+%%				HiddenInputs)
+%%           DeleteWhat   = string()
+%%           Args         = term(), Yaws arg record()
+%%           ConfirmEHTML = list() of term(), list of Yaws EHTML stuff
+%%           HiddenInputs = list() of {Key, Value} to create hidden
+%%                          inputs for
+%% Descrip.: Print a confirmation form.
+%% Returns : EHTML = term(), Yaws ehtml data | throw()
+%%--------------------------------------------------------------------
+print_confirm_form(DeleteWhat, Args, ConfirmEHTML, HiddenInputs) when is_list(DeleteWhat), is_record(Args, arg),
+								      is_list(ConfirmEHTML), is_list(HiddenInputs) ->
+    Me = Args#arg.server_path,
+    [
+     {form, [{method, post},
+	     {action, Me}
+	    ], [
+		{p, [], ["Please confirm that you want to ",
+			 ConfirmEHTML
+			]},
+		{input, [{type, submit},
+			 {name, "confirm_" ++ DeleteWhat},
+			 {value, "Confirm"}
+			]},
+		{input, [{type, hidden}, {name, ?VARNAME_VIRTACTION}, {value, "delete"}]},
+		{input, [{type, hidden}, {name, ?VARNAME_WHAT}, {value, DeleteWhat}]},
+		lists:map(fun({Key, Value}) when is_list(Key), is_list(Value) ->
+				  {input, [{type, hidden}, {name, Key}, {value, Value}]}
+			  end, HiddenInputs)
+	       ]
+      },
+     {a, [{href, ?REDIRECT_ON_SUCCESS_URL}], "Abort (to start page)"}
+    ].
+
+%%
+%% Delete virtaddress
+%%
+delete_virtaddress(Args, Node, AuthUser, User, Address) ->
+    AuthUserDomains = yxa_virtweb_cc:get_user_domains(AuthUser, Node),
+
+    %% Check that AuthUser is allowed to manipulate the virtual user User
+    true = yxa_virtweb_cc:check_is_allowed_write(Args, AuthUserDomains, User, Node),
+
+    %% Check that AuthUser will _still_ be allowed to manipulate the virtual user User
+    %% when we remove Address from User
+    OldAddresses = yxa_yaws_util:get_user_addresses(User, Node),
+
+    NewAddresses = OldAddresses -- [Address],
+
+    case (NewAddresses == OldAddresses) of
+	true ->
+	    throw({error, "Address is not valid for that virtual user"});
+	false ->
+	    ok
+    end,
+
+    case yxa_virtweb_cc:check_is_allowed_write2(AuthUserDomains, NewAddresses) of
+	true ->
+	    case yxa_virtweb_cc:rpc_call(Node, phone, set_user_numbers, [User, NewAddresses]) of
+		{atomic, ok} ->
+		    {redirect, ?REDIRECT_ON_SUCCESS_URL};
+		E ->
+		    Msg = io_lib:format("Failed deleting virtual address ~p from virtual user ~p : ~p",
+					[Address, User, E]),
+		    throw({error, lists:flatten(Msg)})
+	    end;
+	false ->
+	    throw({error, "Address cannot be removed since you would then loose the permissions to edit the user"})
+    end.
+	    
+%%
+%% Delete virtuser
+%%
+delete_virtuser(Args, Node, AuthUser, User) ->
+    AuthUserDomains = yxa_virtweb_cc:get_user_domains(AuthUser, Node),
+
+    %% Check that AuthUser is allowed to manipulate the virtual user User
+    true = yxa_virtweb_cc:check_is_allowed_write(Args, AuthUserDomains, User, Node),
+
+    case yxa_virtweb_cc:rpc_call(Node, phone, delete_user, [User]) of
+	{atomic, ok} ->
+	    {redirect, ?REDIRECT_ON_SUCCESS_URL};
+	E ->
+	    Msg = io_lib:format("Failed deleting virtual user ~p : ~p",
+				[User, E]),
+	    throw({error, lists:flatten(Msg)})
+    end.
+	    
+    
+
+</erl>

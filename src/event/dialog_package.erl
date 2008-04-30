@@ -101,11 +101,15 @@ request("dialog", #request{method = "NOTIFY"} = Request, YxaCtx, Ctx) ->
 
     XML = binary_to_list(Request#request.body),
 
-    UseExpires = util:timestamp() + 1000,	%% XXX FIX THIS, USES STATIC EXPIRATION TIME
+    UseExpires = util:timestamp() + 1000,
+    logger:log(debug, "FREDRIK: XXX FIXME; USING STATIC EXPIRES OF ~p FOR NOTIFY CONTENT (~p)", [UseExpires, Presentity]),
     Flags = [],
 
     case parse_xml(XML) of
 	{ok, _Version, _Entity, Dialogs} ->
+
+	    logger:log(normal, "FREDRIK: STORING DATA FOR PRESENTITY ~p :~n~p", [Presentity, Dialogs]),
+	    %%    {atomic, ok} = database_eventdata:insert("dialog", Presentity, ETag, UseExpires, Flags, DialogData),
 	    F =
 		fun(DE) when is_record(DE, dialog_entry) ->
 			ETag = DE#dialog_entry.id,
@@ -241,11 +245,15 @@ notify_content("dialog", Presentity, _LastAccept, PkgState) when is_record(PkgSt
 	      version = Version
 	     } = PkgState,
 
+    logger:log(normal, "FREDRIK: FETCHING DIALOG XML FOR PRESENTITY ~p", [Presentity]),
+
     DialogsXML =
 	case database_eventdata:fetch_using_presentity(Presentity) of
 	    {ok, Dialogs} when is_list(Dialogs) ->
+		logger:log(normal, "FREDRIK: DIALOG DATA FOR PRES ~p :~n~p", [Presentity, Dialogs]),
 		[(E#eventdata_dbe.data)#dialog_entry.xml || E <- Dialogs];
 	    nomatch ->
+		logger:log(normal, "FREDRIK: NO DIALOG DATA FOR PRES ~p", [Presentity]),
 		""
 	end,
 
@@ -445,6 +453,7 @@ parse_dialog_xml2(XML) ->
 
     XMLDialogs = [F(E) || E <- Dialogs],
 
+    logger:log(normal, "FREDRIK: CREATED DIALOGS :~n~p", [XMLDialogs]),
     {ok, Version, Entity, XMLDialogs}.
 
 %% part of parse_dialog_xml

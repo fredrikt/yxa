@@ -1,0 +1,272 @@
+<erl>
+%%%-------------------------------------------------------------------
+%%% File    : yssi-edit.yaws
+%%% Author  : Fredrik Thulin <ft@it.su.se>
+%%% Descrip.: Yaws SSI file for editing things (users, etc.).
+%%%
+%%% Created : 13 Oct 2005 by Fredrik Thulin <ft@it.su.se>
+%%%-------------------------------------------------------------------
+
+-include("yxa_virtweb.hrl").
+
+%%====================================================================
+%% Yaws entry point
+%%====================================================================
+out(Args) ->
+    %% necessary to be able to use some functions in yxa_yaws_util
+    put({yxa_yaws_util, docroot}, Args#arg.docroot),
+    put({yxa_yaws_util, method}, (Args#arg.req)#http_request.method),
+
+    try out2(Args) of
+        Res ->
+            yxa_virtweb_cc:script_output("Edit", Res)
+    catch
+        throw:
+	  {error, E} when is_list(E) ->
+            Error = yxa_yaws_util:error(E),
+            yxa_virtweb_cc:script_output("Edit", Error);
+	  {no_formatting, EHTML} ->
+	    EHTML
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: out2(Args)
+%%           Args = term(), Yaws arg record()
+%% Descrip.: out() function wrapped in a try/catch. 
+%% Returns : EHTML = term(), Yaws ehtml data | throw()
+%%--------------------------------------------------------------------
+out2(Args) ->
+    NodeStr = yxa_yaws_util:get_yxa_application_node(),
+    Node = list_to_atom(NodeStr),
+    case yxa_virtweb_cc:get_logged_in_user(Args,
+					   record_info(fields, arg),
+					   record_info(fields, headers),
+					   record_info(fields, http_request),
+					   Node
+					  ) of
+	{ok, AuthUser} when is_list(AuthUser) ->
+	    case yxa_yaws_util:get_var(Args, ?VARNAME_WHAT) of
+		{ok, "virtuser"} ->
+		    User =
+			case yxa_yaws_util:get_var(Args, ?VARNAME_VIRTUSER) of
+			    {ok, User1} -> User1;
+			    undefined -> ""
+			end,
+		    case (Req = Args#arg.req)#http_request.method of
+			'POST' ->
+			    case write_virtuser(Args, Node, AuthUser) of
+				ok ->
+				    %%print_virtuser_form(Args, Node, User);
+				    {redirect, ?STARTPAGE_URL};
+				E ->
+				    E
+			    end;
+			'GET' ->
+			    print_virtuser_form(Args, Node, User)
+		    end;
+		_ ->
+		    throw({error, "Don't know what it is that you want to edit"})
+	    end;
+	{not_logged_in, EHTML} ->
+	    EHTML;
+	{logged_in, EHTML} when is_list(EHTML) ->
+	    %% bypass script_output
+	    throw({no_formatting, EHTML});
+	_ ->
+	    throw({error, "Not logged in"})
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: print_virtuser_form(Args, Node, UserIn)
+%%           Args   = term(), Yaws arg record()
+%%           Node   = atom(), Yxa application node to talk with
+%%           UserIn = string(), username as posted
+%% Descrip.: out() function wrapped in a try/catch. 
+%% Returns : EHTML = term(), Yaws ehtml data | throw()
+%%--------------------------------------------------------------------
+print_virtuser_form(Args, Node, UserIn) when is_record(Args, arg), is_atom(Node), is_list(UserIn) ->
+    UserExists = yxa_yaws_util:user_exists(UserIn, Node),
+
+    UserTR =
+	{tr, [], [{td, [], "User"},
+		   td_required((true /= UserExists)),
+		   {td, [], case UserExists of
+				true ->
+				    [{input, [{name, ?VARNAME_VIRTUSER},
+					      {value, UserIn}, 
+					      {type, hidden}
+					     ]},
+				     UserIn];
+				false ->
+				    [{input, [{name, ?VARNAME_VIRTUSER},
+					      {value, UserIn}
+					     ]}
+				    ]
+			    end
+		   }]},
+
+    PasswordTR = 
+	{tr, [], [{td, [], case UserExists of
+			      true -> "Change password";
+			      false -> "Password"
+			   end
+		  },
+		  td_required((true /= UserExists)),
+		  {td, [], [
+			    {input, [{name, ?VARNAME_EDIT_PASSWORD},
+				     {type, ?VARNAME_EDIT_PASSWORD},
+				     {value, ""}
+				    ]}
+			   ]}
+		 ]},
+
+    CPLTR =
+	{tr, [], [{td, [], "CPL script"},
+		  td_required(false),
+		  {td, [], [{textarea, [{wrap, virtual},
+					{name, ?VARNAME_EDIT_CPL},
+					{id, ?VARNAME_EDIT_CPL},
+					{cols, 40},
+					{rows, 10}],
+			     [
+			      %% use CPL from post, or if not set there from the DB if
+			      %% this is an existing user
+			      case yxa_yaws_util:get_var(Args, ?VARNAME_EDIT_CPL) of
+				  {ok, CPLXML} ->
+				      CPLXML;
+				  undefined ->
+				      case UserExists of
+					  true ->
+					    case yxa_virtweb_cc:rpc_call(Node, cpl_db, get_cpl_text_for_user, [UserIn]) of
+						{ok, CPLText1} ->
+						    CPLText1;
+						nomatch ->
+						    ""
+					    end;
+					  false ->
+					      ""
+				      end
+			      end
+			     ]}
+			   ]}
+		 ]},
+
+    AddressesTR =
+	{tr, [], [{td, [], "Addresses"},
+		  td_required(false),
+		  {td, [], fmt_addresses(Node, UserIn)}
+		 ]},
+
+    NewAddressTR =
+	{tr, [], [{td, [], "New address"},
+		  td_required(true /= UserExists),
+		  {td, [], [{input, [{name, ?VARNAME_EDIT_NEW_ADDRESS}, {value, ""}]}
+			   ]}
+		 ]},
+
+    print_virtuser_form2(Args, [UserTR, PasswordTR, CPLTR, AddressesTR, NewAddressTR]).
+
+td_required(true) ->
+    {td, [], ["(", [{font, [{color, "red"}], "*"}], ")"]};
+td_required(false) ->
+    {td, [], "&nbsp;"}.
+
+print_virtuser_form2(Args, TRs) ->
+    Me = Args#arg.server_path,
+    [
+     {form, [{method, "post"},
+	     {action, Me}
+	    ], [
+		{table, [{border, 0}], [TRs]},
+
+		{input, [{type, submit},
+			 {value, "Submit"}
+			]},
+		{input, [{type, hidden}, {name, ?VARNAME_VIRTACTION}, {value, "edit"}]},
+		{input, [{type, hidden}, {name, ?VARNAME_WHAT}, {value, "virtuser"}]}
+	       ]
+      },
+     {a, [{href, ?STARTPAGE_URL}], "To start page"}
+    ].
+
+fmt_addresses(Node, User) when is_atom(Node), is_list(User) ->
+    FmtAddrs = fun(Addr) when is_list(Addr) ->
+		       DeleteLink =
+			   {a, [{href, ?STARTPAGE_URL
+				 "?" ?VARNAME_VIRTACTION "=delete"
+				 "&" ?VARNAME_WHAT "=virtaddress"
+				 "&" ?VARNAME_VIRTUSER "=" ++ yaws_api:url_encode(User) ++
+				 "&" ?VARNAME_VIRTADDRESS "=" ++ yaws_api:url_encode(Addr)
+				}], ["Delete"]},
+		       {tr, [], [
+				 {td, [], Addr},
+				 {td, [], DeleteLink}
+				]}
+	       end,
+
+    [{table, [{border, 0}], [
+			     case yxa_yaws_util:get_user_addresses(User, Node) of
+				 [] ->
+				     {tr, [], [
+					       {td, [{colspan, 2}], [{font, [{color, "red"}],
+								      ["No addresses"]}]}
+					      ]};
+				 Addrs when is_list(Addrs) ->
+				     lists:map(FmtAddrs, Addrs)
+			     end
+			    ]
+     }].
+					       
+%% Returns : ok | throw() | Error = term()
+write_virtuser(Args, Node, AuthUser) when is_record(Args, arg), is_atom(Node) ->
+    case yxa_yaws_util:get_var(Args, ?VARNAME_VIRTUSER) of
+	{ok, User} ->
+	    AuthUserDomains = yxa_virtweb_cc:get_user_domains(AuthUser, Node),
+	    
+	    true = yxa_virtweb_cc:check_is_allowed_write(Args, AuthUserDomains, User, Node),
+	    
+	    NewAddress = case yxa_yaws_util:get_var(Args, ?VARNAME_EDIT_NEW_ADDRESS) of
+			     {ok, NewAddress1} ->
+				 %% check that AuthUser is allowed to use the domain in NewAddress1
+				 case yxa_virtweb_cc:check_is_allowed_write2(AuthUserDomains, [NewAddress1]) of
+				     true ->
+					 NewAddress1;
+				     false ->
+					 %% not allowed, or address did not parse
+					 throw({error, "You are not in disposal of the domain in that address "
+						"(or it was unparsable)"})
+				 end;
+			     undefined ->
+				 undefined
+			 end,
+	    
+	    Password = case yxa_yaws_util:get_var(Args, ?VARNAME_EDIT_PASSWORD) of
+			   {ok, Password1} when is_list(Password1) ->
+			       Password1;
+			   undefined ->
+			       undefined
+		       end,
+
+	    CPLXML = case yxa_yaws_util:get_var(Args, ?VARNAME_EDIT_CPL) of
+			 {ok, CPLXML1} when is_list(CPLXML1) ->
+			     CPLXML1;
+			 undefined ->
+			     undefined
+		     end,
+
+	    %% Now make an all-or-nothing attempt to create/modify this user
+	    case (catch yxa_virtweb_cc:rpc_call(Node, yxa_virtweb_cc, do_write_user,
+						[User, Password, CPLXML, NewAddress])) of
+		ok ->
+		    ok;
+		{aborted, {error, Reason}} ->
+		    throw({error, Reason});
+		Error ->
+		    Msg = io_lib:format("Failed creating/modifying user : ~p~n", [Error]),
+		    throw({error, lists:flatten(Msg)})
+	    end;
+	_ ->
+	    throw({error, "yssi-edit:write_virtuser : No '" ?VARNAME_VIRTUSER "' parameter"})
+    end.
+
+</erl>

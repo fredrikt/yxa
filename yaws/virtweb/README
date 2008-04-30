@@ -1,0 +1,48 @@
+This directory contains a virtual SIP hosting web interface for Yxa.
+
+It was developed in October 2005, and made possible through funding from
+II-Stiftelsen (the Internet infrastructure foundation), with resources from
+Internetfonden (the Internet fund) from which I (Fredrik Thulin) received
+50.000 SEK (about USD $7000) in 2004.
+
+The purpose of Internetfonden is to gain Internet usage in Sweden, which I
+have hopefully helped a tiny bit through this code. Stockholm university
+has agreed to host (and maintain) a server (paid through the funding), that
+runs this code, until further notice.
+
+See http://yxa.sip.su.se/ for more information about that service (in
+Swedish only, since the service is aimed at Swedish users).
+
+Fredrik Thulin, 2005-10-18
+
+
+
+Usage :
+
+I have set up a site using Apache Forrest, that is served through the Yaws
+web server. One of the pages I generate with Forrest is domain/index.html,
+which I then rename and modify slightly (using 'sed') when publishing it.
+
+I make domain/index.yaws contain the following code to get Yaws to run the
+files in this directory using Apache Forrest for layout :
+
+	<erl>
+	out(Args) ->
+	    put({yxa_yaws_util, method}, (Args#arg.req)#http_request.method),
+	    case yxa_yaws_util:get_var(Args, "virtaction") of
+	        {ok, "edit"} ->
+	            {yssi, "yssi-edit.yaws"};
+	        {ok, "delete"} ->
+	            {yssi, "yssi-delete.yaws"};
+	        _ ->
+	            {yssi, "yssi-index.yaws"}
+	    end.
+	</erl>
+
+I do the same thing with a Forrest domain/dnscheck.html that is renamed to
+dnscheck.yaws and modified to include
+
+	<erl>
+	out(Args) ->
+	    {yssi, "yssi-dnscheck.yaws"}.
+	</erl>

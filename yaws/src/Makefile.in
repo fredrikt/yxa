@@ -31,6 +31,8 @@ doc_dir = ../../doc
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 erl_FILES = \
+	yxa_virtweb_cc.erl \
+	yxa_virtweb_db.erl \
 	yxa_yaws_util.erl
 
 imported_hrl_FILES = \
@@ -39,7 +41,8 @@ imported_hrl_FILES = \
 	$(top_srcdir)/src/include/yxa_config.hrl
 
 
-hrl_FILES =
+hrl_FILES = \
+	yxa_virtweb.hrl
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
 

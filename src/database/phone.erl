@@ -122,7 +122,13 @@ create(Servers) ->
 %% @spec    () -> true | error
 %%
 %% @doc     remove phone entries in DB that should no longer be
-%%          present
+%%          present.
+%%          XXX unless we have just started, we should NOT remove
+%%          phones that look expired by more than twice our expiration
+%%          interval (or similar), since it might be that we are
+%%          running in a cluster and this Erlang nodes internal clock
+%%          is off? This has been known to happen inside a VMware
+%%          ESX guest operating system, with Erlang/OTP R11B-2.
 %% @end
 %%--------------------------------------------------------------------
 remove_expired_phones() ->

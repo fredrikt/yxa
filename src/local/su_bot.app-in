@@ -1,0 +1,22 @@
+{application, su_bot,
+ [{description, "SU YXA JEvent bot Erlang backend"},
+  {vsn,"%VERSION%"},
+  {modules, [
+	     su_bot,
+	     su_bot_refer,
+	     su_botbackend
+	    ]},
+  {registered, [
+		sipserver_sup,
+		yxa_config,
+		logger,
+		ldap_client,
+		tcp_dispatcher,
+		sipsocket_udp,
+		transactionlayer,
+		su_botbackend
+	       ]},
+  {mod, {sipserver, [su_bot]}},
+  {env, []},
+  {applications,
+        [kernel, stdlib]}]}.

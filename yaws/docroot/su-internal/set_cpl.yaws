@@ -1,0 +1,249 @@
+<erl>
+
+out(A) ->
+    Req = A#arg.req,
+    ScriptOutput =
+	case Req#http_request.method of
+	    'POST' ->
+		{ok, NodeStr} = yaws_api:postvar(A, "node"),
+		Node = list_to_atom(NodeStr),
+		Action =
+		    case yaws_api:postvar(A, "action") of
+			{ok, Action1} ->
+			    Action1;
+			undefined ->
+			    throw({error, "No 'action' in POST"})
+		    end,
+		{ok, User} = yaws_api:postvar(A, "user"),
+
+		Msg = io_lib:format("set_cpl: Node ~p, user ~p, action ~p", [Node, User, Action]),
+		error_logger:info_report(lists:flatten(Msg)),
+
+		case Action of
+		    "Modify CPL" ->
+			modify_cpl(A, Node, Action, User);
+		    "Delete CPL" ->
+			delete_cpl(A, Node, Action, User);
+		    "Get CPL" ->
+			get_cpl(A, Node, Action, User);
+		    _ ->
+			throw({error, "Invalid action"})
+		end;
+	    'GET' ->
+		print_form(A)
+	end,
+
+    {ehtml, [{html, [], []}] ++ ScriptOutput}.
+
+modify_cpl(A, Node, Action, User) ->
+    {ok, CPLXML} = yaws_api:postvar(A, "cpl_xml"),
+    Data = [{p, [], [{pre, [], [yaws_api:htmlize(
+				  ["Action  : ", Action, "\n",
+				   "User    : ", User, "\n",
+				   "Node    : ", atom_to_list(Node), "\n",
+				   "CPL XML :\n", CPLXML, "\n"
+				  ])
+			       ]}
+		    ]}
+	   ],
+    try rpc:call(Node, cpl_db, set_cpl_for_user, [User, CPLXML]) of
+	{atomic, ok} ->
+	    Msg = io_lib:format("Set CPL for user ~p : OK", [User]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    [{pre, [],
+	      yaws_api:htmlize("Result : OK\n")}
+	    ] ++ Data;
+	Res ->
+	    Msg = io_lib:format("Set CPL for user ~p : FAILED, node ~p, reason ~p", [User, Node, Res]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    [{pre, [],
+	      yaws_api:htmlize(["Result : FAILED\n",
+				"Reason : ", io_lib:format("~p", [Res]),
+				"\n"])}
+	    ] ++ Data
+    catch
+	error: Y ->
+	    ST = erlang:get_stacktrace(),
+	    Msg = io_lib:format("Set CPL for user ~p : FAILED, reason error ~p ~p", [User, Y, ST]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    [{pre, [],
+	      yaws_api:htmlize(["Result : FAILED\n",
+				"Reason  : error\n",
+				io_lib:format("~p ~p", [Y, ST])
+			       ])}
+	    ] ++ Data;
+	  X: Y ->
+	    Msg = io_lib:format("Set CPL for user ~p : FAILED, reason ~p ~p", [User, X, Y]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    [{pre, [],
+	      yaws_api:htmlize(["Result : FAILED\n",
+				"Reason : ", io_lib:format("~p~n~p", [X, Y])
+			       ])}
+	    ] ++ Data
+    end.
+
+delete_cpl(A, Node, Action, User) ->
+    Data = [{p, [], [{pre, [], [yaws_api:htmlize(
+				  ["Action : ", Action, "\n",
+				   "User   : ", User, "\n"
+				  ])
+			       ]}
+		    ]
+	    }],
+    case rpc:call(Node, cpl_db, user_has_cpl_script, [User]) of
+	true ->
+	    case rpc:call(Node, cpl_db, rm_cpl_for_user, [User]) of
+		{atomic, ok} ->
+		    Msg = io_lib:format("Delete CPL for user ~p : OK", [User]),
+		    error_logger:info_report(lists:flatten(Msg)),
+		    [{pre, [],
+		      yaws_api:htmlize("Result : OK\n")}
+		    ] ++ Data;
+		E ->
+		    Msg = io_lib:format("Delete CPL for user ~p : FAILED, node ~p, reason ~p", [User, Node, E]),
+		    error_logger:info_report(lists:flatten(Msg)),
+		    [{pre, [],
+		      yaws_api:htmlize(["Result : FAILED\n",
+					"Reason : ", io_lib:format("~p", [E])
+				       ])}
+		    ] ++ Data
+	    end;
+	false ->
+	    [{pre, [],
+	      yaws_api:htmlize(["Result : FAILED\n",
+				"Reason : User has no CPL script"
+			       ])}
+	    ] ++ Data
+    end.
+
+get_cpl(A, Node, Action, User) ->
+    Data =
+	[{p, [], [{pre, [], [yaws_api:htmlize(
+			       ["Action  : ", Action, "\n",
+				"User    : ", User, "\n",
+				"Node    : ", atom_to_list(Node), "\n"
+			       ])
+			    ]}
+		 ]}
+	],
+    try rpc:call(Node, cpl_db, get_cpl_text_for_user, [User]) of
+	{ok, CPLXML} ->
+	    Data ++
+		[{pre, [],
+		  yaws_api:htmlize(["Result  : OK\n",
+				    "CPL XML :\n", CPLXML, "\n"
+				   ])}
+		];
+	Res ->
+	    Msg = io_lib:format("Get CPL for user ~p : FAILED, node ~p, reason ~p", [User, Node, Res]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    Data ++
+		[{pre, [],
+		  yaws_api:htmlize(["Result : FAILED\n",
+				    "Reason : ", io_lib:format("~p", [Res]),
+				    "\n"])}
+		]
+    catch
+	error: Y ->
+	    ST = erlang:get_stacktrace(),
+	    Msg = io_lib:format("Get CPL for user ~p : FAILED, reason error ~p ~p", [User, Y, ST]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    Data ++
+		[{pre, [],
+		  yaws_api:htmlize(["Result : FAILED\n",
+				    "Reason  : error\n",
+				    io_lib:format("~p ~p", [Y, ST])
+				   ])}
+		];
+	  X: Y ->
+	    Msg = io_lib:format("Get CPL for user ~p : FAILED, reason ~p ~p", [User, X, Y]),
+	    error_logger:info_report(lists:flatten(Msg)),
+	    Data ++
+		[{pre, [],
+		  yaws_api:htmlize(["Result : FAILED\n",
+				    "Reason : ", io_lib:format("~p~n~p", [X, Y])
+				   ])}
+		]
+    end.
+
+print_form(A) ->
+    Node = list_to_atom(get_incomingproxy_nodename()),
+    DefaultUser = case yaws_api:queryvar(A, "user") of
+		      {ok, Value} -> Value;
+		      undefined -> ""
+		  end,
+    Table =
+	{table, [], [
+		     {tr, [], [
+			       {td, [], "Node"},
+			       {td, [], {input, [{type, text},
+						 {name, "node"},
+						 {value, Node},
+						 {size, 80}
+						]}
+				}
+			      ]},
+
+		     {tr, [], [
+			       {td, [], "User"},
+			       {td, [], {input, [{type, text},
+						 {name, "user"},
+						 {value, DefaultUser},
+						 {size, 80}
+						]}
+				}
+			      ]},
+
+		     {tr, [], [
+			       {td, [], "CPL XML"},
+			       {td, [], {textarea, [{wrap, virtual},
+						    {name, "cpl_xml"},
+						    {id, "cpl_xml"},
+						    {cols, 80},
+						    {rows, 24}]}
+				}
+			      ]}
+		    ]},
+    Buttons = [
+	       {input, [{type, submit},
+			{name, "action"},
+			{value, "Modify CPL"}
+		       ]},
+	       "&nbsp;&nbsp;",
+	       {input, [{type, submit},
+			{name, "action"},
+			{value, "Delete CPL"}
+		       ]},
+	       "&nbsp;&nbsp;",
+	       {input, [{type, submit},
+			{name, "action"},
+			{value, "Get CPL"}
+		       ]}
+	      ],
+
+    Form = {form, [{method, post},
+		   {action, "set_cpl.yaws"}],
+	    [Table, Buttons]
+	   },
+    Form.
+
+%% patch this function if you want to run your web interface on another host
+%% than your incomingproxy (make sure the nodes are capable of talking to each
+%% other through distributed Erlang though)
+get_incomingproxy_nodename() ->
+    {ok, MyHostname} = my_hostname(),
+    Incomingproxy = "incomingproxy@" ++ MyHostname.
+
+%% inet:gethostname/0 without the domain-name removing part
+my_hostname() ->
+    case inet_udp:open(0, []) of
+        {ok, Socket} ->
+            {ok, Res} = inet:gethostname(Socket),
+            inet_udp:close(Socket),
+            {ok, Res};
+        _ ->
+            {ok, "nohost.nodomain"}
+    end.
+
+
+</erl>
