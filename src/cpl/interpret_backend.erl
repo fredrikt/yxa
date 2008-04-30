@@ -1003,7 +1003,7 @@ test() ->
     ip6addr = checktype("1:1:1:1:2:2:2:2"),
 
     autotest:mark(?LINE, "checktype/1  - 4"),
-    autotest:fail(fun() -> checktype("1:1:1:1:xxx:2:2:2") end),
+    autotest_util:fail(fun() -> checktype("1:1:1:1:xxx:2:2:2") end),
 
     %% is_subdomain/2
     %%--------------------------------------------------------------------
@@ -1065,28 +1065,28 @@ test() ->
     {0.8, "da"} = parse_accept_language("   da   ;  q  =  0.8"),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 4"),
-    autotest:fail(fun() -> parse_accept_language("daq=0.8") end),
+    autotest_util:fail(fun() -> parse_accept_language("daq=0.8") end),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 5"),
-    autotest:fail(fun() -> parse_accept_language("da;q0.8") end),
+    autotest_util:fail(fun() -> parse_accept_language("da;q0.8") end),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 6"),
-    autotest:fail(fun() -> parse_accept_language("da;q=") end),
+    autotest_util:fail(fun() -> parse_accept_language("da;q=") end),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 7"),
-    autotest:fail(fun() -> parse_accept_language("da;b=0.8") end),
+    autotest_util:fail(fun() -> parse_accept_language("da;b=0.8") end),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 8"),
-    autotest:fail(fun() -> parse_accept_language("daq0.8") end),
+    autotest_util:fail(fun() -> parse_accept_language("daq0.8") end),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 9"),
-    autotest:fail(fun() -> parse_accept_language(";q=0.8") end),
+    autotest_util:fail(fun() -> parse_accept_language(";q=0.8") end),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 10"),
-    autotest:fail(fun() -> parse_accept_language("da;q0.8") end),
+    autotest_util:fail(fun() -> parse_accept_language("da;q0.8") end),
 
     autotest:mark(?LINE, "parse_accept_language/1  - 11"),
-    autotest:fail(fun() -> parse_accept_language("da;0.8") end),
+    autotest_util:fail(fun() -> parse_accept_language("da;0.8") end),
 
     %% sort_languages_in_q_order/1
     %%--------------------------------------------------------------------

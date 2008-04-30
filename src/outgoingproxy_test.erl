@@ -57,8 +57,8 @@ test() ->
     ok.
 
 test_request() ->
-    autotest:store_unit_test_result(outgoingproxy, testing_sippipe, {ok, self()}),
-    autotest:store_unit_test_result(transactionlayer, get_branch_from_handler, "test-branch"),
+    autotest_util:store_unit_test_result(outgoingproxy, testing_sippipe, {ok, self()}),
+    autotest_util:store_unit_test_result(transactionlayer, get_branch_from_handler, "test-branch"),
 
     ok = test_route(),
 

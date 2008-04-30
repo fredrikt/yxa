@@ -599,39 +599,39 @@ test() ->
 
     %% out of range date or time - month
     autotest:mark(?LINE, "time/1  - 3.1"),
-    autotest:fail(fun() -> time("19531324t125343Z") end),
+    autotest_util:fail(fun() -> time("19531324t125343Z") end),
 
     %% out of range date or time - day
     autotest:mark(?LINE, "time/1  - 3.2"),
-    autotest:fail(fun() -> time("19531234t125343Z") end),
+    autotest_util:fail(fun() -> time("19531234t125343Z") end),
 
     %% out of range date or time - hour
     autotest:mark(?LINE, "time/1  - 3.3"),
-    autotest:fail(fun() -> time("19531224t245343Z") end),
+    autotest_util:fail(fun() -> time("19531224t245343Z") end),
 
     %% out of range date or time - minut
     autotest:mark(?LINE, "time/1  - 3.4"),
-    autotest:fail(fun() -> time("19531224t126343Z") end),
+    autotest_util:fail(fun() -> time("19531224t126343Z") end),
 
     %% out of range date or time - second
     autotest:mark(?LINE, "time/1  - 3.5"),
-    autotest:fail(fun() -> time("19531224t125363Z") end),
+    autotest_util:fail(fun() -> time("19531224t125363Z") end),
 
     %% non-existent date
     autotest:mark(?LINE, "time/1  - 4.1"),
-    autotest:fail(fun() -> time("20040230t125343Z") end),
+    autotest_util:fail(fun() -> time("20040230t125343Z") end),
     autotest:mark(?LINE, "time/1  - 4.2"),
-    autotest:fail(fun() -> time("20040431t125343Z") end),
+    autotest_util:fail(fun() -> time("20040431t125343Z") end),
     autotest:mark(?LINE, "time/1  - 4.3"),
-    autotest:fail(fun() -> time("20040631t125343Z") end),
+    autotest_util:fail(fun() -> time("20040631t125343Z") end),
     autotest:mark(?LINE, "time/1  - 4.4"),
-    autotest:fail(fun() -> time("20040931t125343Z") end),
+    autotest_util:fail(fun() -> time("20040931t125343Z") end),
     autotest:mark(?LINE, "time/1  - 4.5"),
-    autotest:fail(fun() -> time("20041131t125343Z") end),
+    autotest_util:fail(fun() -> time("20041131t125343Z") end),
 
     %% non-numerical date-time
     autotest:mark(?LINE, "time/1  - 5"),
-    autotest:fail(fun() -> time("200A1131t125343Z") end),
+    autotest_util:fail(fun() -> time("200A1131t125343Z") end),
 
     %% parse_until/1
     %%--------------------------------------------------------------------
@@ -645,19 +645,19 @@ test() ->
 
     %% test that date-time without utc fails
     autotest:mark(?LINE, "parse_until/1  - 3"),
-    autotest:fail(fun() -> parse_until("19531224t125343") end),
+    autotest_util:fail(fun() -> parse_until("19531224t125343") end),
 
     %% non-existent date
     autotest:mark(?LINE, "parse_until/1  - 4"),
-    autotest:fail(fun() -> parse_until("20040230") end),
+    autotest_util:fail(fun() -> parse_until("20040230") end),
     autotest:mark(?LINE, "parse_until/1  - 5"),
-    autotest:fail(fun() -> parse_until("20040431") end),
+    autotest_util:fail(fun() -> parse_until("20040431") end),
     autotest:mark(?LINE, "parse_until/1  - 6"),
-    autotest:fail(fun() -> parse_until("20040631") end),
+    autotest_util:fail(fun() -> parse_until("20040631") end),
     autotest:mark(?LINE, "parse_until/1  - 7"),
-    autotest:fail(fun() -> parse_until("20040931") end),
+    autotest_util:fail(fun() -> parse_until("20040931") end),
     autotest:mark(?LINE, "parse_until/1  - 8"),
-    autotest:fail(fun() -> parse_until("20041131") end),
+    autotest_util:fail(fun() -> parse_until("20041131") end),
 
     %% parse_byday/1
     %%--------------------------------------------------------------------
@@ -686,13 +686,13 @@ test() ->
 
     %% missing day
     autotest:mark(?LINE, "parse_byday/1  - 6"),
-    autotest:fail(fun() -> parse_byday("21") end),
+    autotest_util:fail(fun() -> parse_byday("21") end),
     %% incorrect format
     autotest:mark(?LINE, "parse_byday/1  - 7"),
-    autotest:fail(fun() -> parse_byday("21foo") end),
+    autotest_util:fail(fun() -> parse_byday("21foo") end),
     %% 'fo' isn't a day
     autotest:mark(?LINE, "parse_byday/1  - 8"),
-    autotest:fail(fun() -> parse_byday("21fo") end),
+    autotest_util:fail(fun() -> parse_byday("21fo") end),
 
 
     %% duration/1
@@ -715,13 +715,13 @@ test() ->
 
     %% usage of week disallows all other duration values
     autotest:mark(?LINE, "duration/1  - 4"),
-    autotest:fail(fun() -> duration("P7W15D") end),
-    autotest:fail(fun() -> duration("P7W15DT5H") end),
+    autotest_util:fail(fun() -> duration("P7W15D") end),
+    autotest_util:fail(fun() -> duration("P7W15DT5H") end),
 
     %% negative or zero duration
     autotest:mark(?LINE, "duration/1  - 5"),
-    autotest:fail(fun() -> duration("-P15DT5H2M20S") end),
-    autotest:fail(fun() -> duration("P0DT0H0M0S") end),
+    autotest_util:fail(fun() -> duration("-P15DT5H2M20S") end),
+    autotest_util:fail(fun() -> duration("P0DT0H0M0S") end),
 
     %% use of "+" sign
     autotest:mark(?LINE, "duration/1  - 6"),
@@ -729,7 +729,7 @@ test() ->
 
     %% skip M in H-M-S sequence - should fail
     autotest:mark(?LINE, "duration/1  - 7"),
-    autotest:fail(fun() -> duration("P15DT5H20S") end),
+    autotest_util:fail(fun() -> duration("P15DT5H20S") end),
 
     %% test case insensitivity
     autotest:mark(?LINE, "duration/1  - 8"),
@@ -780,7 +780,7 @@ test() ->
     autotest:mark(?LINE, "check_range/1  - 2.2"),
     -2 = check_range(-2, {[1,3],[-1,-3]}),
     autotest:mark(?LINE, "check_range/1  - 2.3"),
-    autotest:fail(fun() -> check_range(0, {[1,3],[-1,-3]}) end),
+    autotest_util:fail(fun() -> check_range(0, {[1,3],[-1,-3]}) end),
 
     %% is_language_tag/1
     %%--------------------------------------------------------------------
@@ -796,15 +796,15 @@ test() ->
 
     %% too long sub part
     autotest:mark(?LINE, "is_language_tag  - 4"),
-    autotest:fail(fun() -> is_language_tag("abcdabcda") end),
+    autotest_util:fail(fun() -> is_language_tag("abcdabcda") end),
 
     %% ilegal chars in first part of tag
     autotest:mark(?LINE, "is_language_tag  - 5"),
-    autotest:fail(fun() -> is_language_tag("abc42") end),
+    autotest_util:fail(fun() -> is_language_tag("abc42") end),
 
     %% empty string
     autotest:mark(?LINE, "is_language_tag  - 6"),
-    autotest:fail(fun() -> is_language_tag("") end),
+    autotest_util:fail(fun() -> is_language_tag("") end),
 
     %% legal tag with numbers
     autotest:mark(?LINE, "is_language_tag  - 9"),
@@ -824,15 +824,15 @@ test() ->
 
     %% too long sub part
     autotest:mark(?LINE, "is_language_range  - 4"),
-    autotest:fail(fun() -> is_language_range("abcdabcda") end),
+    autotest_util:fail(fun() -> is_language_range("abcdabcda") end),
 
     %% ilegal chars in first part of range
     autotest:mark(?LINE, "is_language_range  - 5"),
-    autotest:fail(fun() -> is_language_range("abc42") end),
+    autotest_util:fail(fun() -> is_language_range("abc42") end),
 
     %% empty string
     autotest:mark(?LINE, "is_language_range  - 6"),
-    autotest:fail(fun() -> is_language_range("") end),
+    autotest_util:fail(fun() -> is_language_range("") end),
 
     %% legal range with numbers
     autotest:mark(?LINE, "is_language_range  - 9"),

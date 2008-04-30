@@ -74,7 +74,7 @@ send(SipSocket, Proto, _Host, _Port, _Message)
 send(SipSocket, yxa_test, Host, Port, Message) when is_record(SipSocket, sipsocket) ->
     Proto = SipSocket#sipsocket.proto,
     self() ! {sipsocket_test, send, {Proto, Host, Port}, Message},
-    case autotest:is_unit_testing(?MODULE, {sipsocket_test, send_result}) of
+    case autotest_util:is_unit_testing(?MODULE, {sipsocket_test, send_result}) of
 	{true, {error, Reason}} ->
 	    {error, Reason};
 	false ->
@@ -90,7 +90,7 @@ send(SipSocket, yxa_test, Host, Port, Message) when is_record(SipSocket, sipsock
 %% @end
 %%--------------------------------------------------------------------
 get_socket(#sipdst{proto = yxa_test}) ->
-    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_socket}) of
+    case autotest_util:is_unit_testing(?MODULE, {sipsocket_test, get_socket}) of
 	{true, Res} ->
 	    Res;
 	false ->
@@ -109,7 +109,7 @@ get_socket(#sipdst{proto = yxa_test}) ->
 %% @end
 %%--------------------------------------------------------------------
 get_specific_socket(#ob_id{proto = yxa_test}) ->
-    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_specific_socket}) of
+    case autotest_util:is_unit_testing(?MODULE, {sipsocket_test, get_specific_socket}) of
 	{true, Res} ->
 	    Res;
 	false ->
@@ -128,7 +128,7 @@ get_specific_socket(#ob_id{proto = yxa_test}) ->
 %% @end
 %%--------------------------------------------------------------------
 get_raw_socket(#sipsocket{proto = yxa_test}) ->
-    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_raw_socket}) of
+    case autotest_util:is_unit_testing(?MODULE, {sipsocket_test, get_raw_socket}) of
 	{true, Res} ->
 	    Res;
 	false ->
@@ -149,7 +149,7 @@ get_raw_socket(#sipsocket{proto = yxa_test}) ->
 %% @end
 %%--------------------------------------------------------------------
 get_remote_peer(#sipsocket{proto = yxa_test}) ->
-    case autotest:is_unit_testing(?MODULE, {sipsocket_test, get_remote_peer}) of
+    case autotest_util:is_unit_testing(?MODULE, {sipsocket_test, get_remote_peer}) of
 	{true, Res} ->
 	    Res;
 	false ->
@@ -165,7 +165,7 @@ get_remote_peer(#sipsocket{proto = yxa_test}) ->
 %% @end
 %%--------------------------------------------------------------------
 is_reliable_transport(#sipsocket{proto = yxa_test}) ->
-    case autotest:is_unit_testing(?MODULE, {sipsocket_test, is_reliable_transport}) of
+    case autotest_util:is_unit_testing(?MODULE, {sipsocket_test, is_reliable_transport}) of
 	{true, Res} ->
 	    Res;
 	false ->
@@ -185,7 +185,7 @@ is_reliable_transport(#sipsocket{proto = yxa_test}) ->
 %% @end
 %%--------------------------------------------------------------------
 close_socket(#sipsocket{proto = yxa_test}) ->
-    case autotest:is_unit_testing(?MODULE, {sipsocket_test, close_socket}) of
+    case autotest_util:is_unit_testing(?MODULE, {sipsocket_test, close_socket}) of
 	{true, Res} ->
 	    Res;
 	false ->

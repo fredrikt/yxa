@@ -57,7 +57,7 @@ test() ->
 
 
 test_request() ->
-    autotest:store_unit_test_result(pstnproxy, testing_sippipe, {ok, self()}),
+    autotest_util:store_unit_test_result(pstnproxy, testing_sippipe, {ok, self()}),
 
     ok = test_OPTIONS(),
     ok = test_INVITE_from_gw(),

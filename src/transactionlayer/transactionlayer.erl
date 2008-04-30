@@ -869,7 +869,7 @@ get_branchbase_from_handler(TH) when is_record(TH, thandler) ->
 %%--------------------------------------------------------------------
 get_branch_from_handler(#thandler{pid = TPid}) when is_pid(TPid), TPid == self() ->
     %% for unit testing
-    case autotest:is_unit_testing(transactionlayer, get_branch_from_handler) of
+    case autotest_util:is_unit_testing(transactionlayer, get_branch_from_handler) of
 	{true, Res} when (is_list(Res) orelse Res == error)->
 	    Res;
 	false ->

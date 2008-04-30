@@ -40,6 +40,7 @@ erl_FILES = \
 	appserver_glue.erl \
 	appserver_test.erl \
 	autotest.erl \
+	autotest_util.erl \
 	bootstrap.erl \
 	contact.erl \
 	contact_param.erl \

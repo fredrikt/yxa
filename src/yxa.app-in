@@ -4,6 +4,7 @@
   {vsn,"%VERSION%"},
   {modules, [
 	     autotest,
+	     autotest_util,
 	     bootstrap,
 	     yxa_config,
 	     yxa_config_check,

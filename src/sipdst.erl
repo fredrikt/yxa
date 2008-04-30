@@ -815,7 +815,7 @@ address_to_address_and_proto(Addr, DefaultProto) when DefaultProto == tcp; Defau
     end.
 
 dnsutil_siplookup(In) ->
-    case autotest:is_unit_testing(?MODULE, dnsutil_test_res) of
+    case autotest_util:is_unit_testing(?MODULE, dnsutil_test_res) of
 	{true, L} when is_list(L) ->
 	    Key = {siplookup, In},
 	    case lists:keysearch(Key, 1, L) of
@@ -832,11 +832,11 @@ dnsutil_siplookup(In) ->
 
 dnsutil_get_ip_port(Host, Port) ->
     Key = {get_ip_port, Host, Port},
-    case autotest:is_unit_testing(?MODULE, dnsutil_test_res) of
+    case autotest_util:is_unit_testing(?MODULE, dnsutil_test_res) of
 	{true, L} when is_list(L) ->
 	    case lists:keysearch(Key, 1, L) of
 		{value, {Key, Value} = Entry} ->
-		    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, L -- [Entry]),
+		    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, L -- [Entry]),
 		    Value;
 		false ->
 		    Msg = io_lib:format("Unit test result ~p not found", [Key]),
@@ -966,14 +966,14 @@ test() ->
 
     autotest:mark(?LINE, "get_response_host_proto/1 - 4"),
     %% invalid received= parameter, but luckily valid IP address in Via host
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "X", none}, {error, timeout}}]
 				   ),
     {ok, "192.0.2.1", tls} = get_response_host_proto(GetVia("SIP/2.0/TLS 192.0.2.1;received=X")),
 
     autotest:mark(?LINE, "get_response_host_proto/1 - 5"),
     %% test with invalid received= parameter, and hostname not found in DNS
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "X", none},			{error, timeout}},
 				     {{get_ip_port, "test.example.com", none},	{error, nomatch}}]
 				   ),
@@ -1016,7 +1016,7 @@ test() ->
 
     autotest:mark(?LINE, "get_response_destination/1 - 5"),
     %% test with invalid hostname and no received
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "example.com", none}, {error, timeout}}]
 				   ),
     error = get_response_destination(GetVia("SIP/2.0/UDP example.com")),
@@ -1026,7 +1026,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "format_siplookup_result/5 - 1"),
     %% InPort 'none', use the one from DNS
-    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+    autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
     SRV3 = #sipdns_srv{proto=tcp, host="192.0.2.1", port=1234},
     Dst3 = #sipdst{proto=tcp, addr="192.0.2.1", port=1234, uri=URL, ssl_names=[]},
     [Dst3] = format_siplookup_result(none, URL, "192.0.2.1", [SRV3]),
@@ -1059,7 +1059,7 @@ test() ->
 				     port   = 99
 				    }]
 		  }],
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, FSR2_DNS_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, FSR2_DNS_1),
     FSR2_SrvList1 = [#sipdns_srv{proto = udp, host = "test.example.com", port = 99},
 		     #sipdns_srv{proto = tls, host = "ssl.example.com", port = 99}],
     [#sipdst{proto	= udp,
@@ -1091,7 +1091,7 @@ test() ->
 				     port   = 5061
 				    }]
 		  }],
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, FSR2_DNS_2),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, FSR2_DNS_2),
     FSR2_SrvList2 = [#sipdns_srv{proto = udp, host = "test.example.com", port = 5060},
 		     #sipdns_srv{proto = tls, host = "ssl.example.com", port = 5061}],
     [#sipdst{proto	= udp,
@@ -1221,7 +1221,7 @@ test() ->
     autotest:mark(?LINE, "url_to_dstlist/3 - 5"),
     %% test with invalid maddr parameter
     UTD_URL5_1 = sipurl:parse("sip:user@192.0.2.8;maddr=test;transport=tcp"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{siplookup, "test"},		{error, nxdomain}},
 				     {{get_ip_port, "test", 5060},	{error, nxdomain}}
 				    ]),
@@ -1246,7 +1246,7 @@ test() ->
     autotest:mark(?LINE, "url_to_dstlist/3 - 11"),
     %% test with non-IP, port specified, hostname not resolvable
     UTD_URL11_1 = sipurl:parse("sip:user@test.example.com:5012"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "test.example.com", 5012},	{error, nxdomain}}
 				    ]),
     {error, nxdomain} = url_to_dstlist(UTD_URL11_1, 1000, UTD_URL1_SIPS),
@@ -1254,7 +1254,7 @@ test() ->
     autotest:mark(?LINE, "url_to_dstlist/3 - 12.1"),
     %% test with non-IP, port specified
     UTD_URL12_1 = sipurl:parse("sip:user@test.example.com:5012"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "test.example.com", 5012},
 				      [#sipdns_hostport{family = inet,
 							addr   = "192.0.2.2",
@@ -1272,7 +1272,7 @@ test() ->
     autotest:mark(?LINE, "url_to_dstlist/3 - 12.2"),
     %% test with non-IP, port specified
     UTD_URL12_2 = sipurl:parse("sips:user@test.example.com:5012"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "test.example.com", 5012},
 				      [#sipdns_hostport{family = inet,
 							addr   = "192.0.2.2",
@@ -1297,31 +1297,31 @@ test() ->
 		    }
 		   ],
     UTD_URL13_1 = sipurl:parse("sip:user@test.example.com:5012;transport=tcp"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
     [#sipdst{proto = tcp}] = url_to_dstlist(UTD_URL13_1, 1000, UTD_URL1_SIPS),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 13.2"),
     %% test with transport=tls parameter, not SIPS
     UTD_URL13_2 = sipurl:parse("sip:user@test.example.com:5012;transport=tls"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
     [#sipdst{proto = tls}] = url_to_dstlist(UTD_URL13_2, 1000, UTD_URL1_SIPS),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 13.3"),
     %% test with transport=udp parameter, not SIPS
     UTD_URL13_3 = sipurl:parse("sip:user@test.example.com:5012;transport=udp"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
     [#sipdst{proto = udp}] = url_to_dstlist(UTD_URL13_3, 1000, UTD_URL1_SIPS),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 13.4"),
     %% test with transport=udp parameter, but size > MTU, not SIPS
     UTD_URL13_4 = sipurl:parse("sip:user@test.example.com:5012;transport=udp"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
     [#sipdst{proto = tcp}] = url_to_dstlist(UTD_URL13_4, 12000, UTD_URL1_SIPS),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 13.5"),
     %% test with transport=bogus parameter, not SIPS
     UTD_URL13_5 = sipurl:parse("sip:user@test.example.com:5012;transport=bogus"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS_13_1),
     [#sipdst{proto = udp}] = url_to_dstlist(UTD_URL13_5, 1199, UTD_URL1_SIPS),
 
 
@@ -1339,7 +1339,7 @@ test() ->
 					 host  = "incomingproxy.example.com",
 					 port  = 5061}
 			    ]},
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [UTD_DNS_15_1,
 				     {{get_ip_port, "incomingproxy.example.com", 5061},
 				      [#sipdns_hostport{family = inet6,
@@ -1380,7 +1380,7 @@ test() ->
 				      port   = 5060
 				     }
 		    ]},
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_16_1]),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_16_1]),
     [#sipdst{proto     = tcp6,
 	     addr      = "[2001:6b0:5:987::60]",
 	     port      = 5060,
@@ -1391,7 +1391,7 @@ test() ->
     autotest:mark(?LINE, "url_to_dstlist/3 - 17"),
     %% test without port, not SIPS and transport=udp parameter
     UTD_URL17_1 = sipurl:parse("sip:user@test.example.com;transport=udp"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_16_1]),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_16_1]),
     [#sipdst{proto     = udp6,
 	     addr      = "[2001:6b0:5:987::60]",
 	     port      = 5060,
@@ -1407,14 +1407,14 @@ test() ->
 					 host  = "incomingproxy.example.com",
 					 port  = 5060}
 			    ]},
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_18_1]),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_18_1]),
     [] = url_to_dstlist(UTD_URL18_1, 1199, UTD_URL18_1),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 19"),
     %% test with NAPTR/SRV records pointing at a hostname that does not exist
     UTD_URL19_1 = sipurl:parse("sip:user@test.example.com"),
     UTD_DNS_19_1 = {{get_ip_port, "incomingproxy.example.com", 5060}, {error, nxdomain}},
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_19_1]),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_19_1]),
     [] = url_to_dstlist(UTD_URL19_1, 1199, UTD_URL19_1),
 
 
@@ -1422,13 +1422,13 @@ test() ->
     %% test SIPS URI not upgradeable
     UTD_URL30_1 = sipurl:parse("sips:user@test.example.com"),
     UTD_URL30_2 = UTD_URL30_1#sipurl{proto = "test"},
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_16_1]),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, [UTD_DNS_15_1, UTD_DNS_16_1]),
     {'EXIT', {{error, _}, _}} = (catch url_to_dstlist(UTD_URL30_1, 1, UTD_URL30_2)),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 31"),
     %% test with non-nxdomain error when resolving NAPTR/SRV records
     UTD_URL31_1 = sipurl:parse("sip:test.example.com"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, [{{siplookup, "test.example.com"}, {error, timeout}}]),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, [{{siplookup, "test.example.com"}, {error, timeout}}]),
     {error, timeout} = url_to_dstlist(UTD_URL31_1, 1, UTD_URL31_1),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 40.1"),
@@ -1446,7 +1446,7 @@ test() ->
 				      port   = 5061
 				     }]}
 		   ],
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
 
     [#sipdst{proto = udp,		%% udp since message size is small
 	     addr = "192.0.2.40",
@@ -1456,7 +1456,7 @@ test() ->
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 40.2"),
     %% test same with large message size
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
     [#sipdst{proto = tcp,
 	     addr = "192.0.2.40",
 	     port = 5060,
@@ -1465,26 +1465,26 @@ test() ->
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 41"),
     %% test with transport parameter set, TCP
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
     [#sipdst{proto = tcp, port = 5060}]
 	= url_to_dstlist(sipurl:parse("sip:test.example.com;transport=tcp"), 400, UTD_URL1),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 42"),
     %% test with transport parameter set, UDP (size forces us to use TCP though)
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
     [#sipdst{proto = tcp, port = 5060}]
 	= url_to_dstlist(sipurl:parse("sip:test.example.com;transport=udp"), 14000, UTD_URL1),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 43"),
     %% test with transport parameter set, TLS
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
     [#sipdst{proto = tls, port = 5061}]
 	= url_to_dstlist(sipurl:parse("sip:test.example.com;transport=tls"), 300, UTD_URL1),
 
     autotest:mark(?LINE, "url_to_dstlist/3 - 44"),
     %% test with SIPS URL
     UTD_URL44_1 = sipurl:parse("sips:test.example.com"),
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, UTD_DNS40_1),
     [#sipdst{proto = tls,
 	     addr = "192.0.2.40",
 	     port = 5061,
