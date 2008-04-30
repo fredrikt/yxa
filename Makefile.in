@@ -89,6 +89,7 @@ distclean: clean distclean-recursive
 	rm -f config.log
 	rm -f version.erl
 	rm -rf doc/
+	rm -rf $(ebin_dir)/
 
 clean: clean-recursive
 	rm -f core *.core *~
@@ -150,9 +151,9 @@ xreftest: $(beam_FILES)
 	echo "Making xreftest in src/"; \
 	(cd src/ && $(MAKE) xreftest) || exit 1
 
-doc::
+doc: $(ebin_dir) doc-recursive
 	mkdir -p doc/html/src
-	cp $(srcdir)/doc/overview.edoc doc/html/
+	cp $(srcdir)/doc-src/overview.edoc doc/html/
 	echo "Making doc in src/"; \
 	(cd src/ && $(MAKE) doc) || exit 1
 	echo "Making doc in yaws/src/"; \
