@@ -19,13 +19,8 @@
 	 run/0,
 	 run/1,
 	 run_cover/1,
-	 fail/1,
 	 mark/2,
 	 mark/3,
-
-	 is_unit_testing/2,
-	 store_unit_test_result/3,
-	 clear_unit_test_result/2,
 
 	 aggregate_coverage/1
 	]).
@@ -379,24 +374,6 @@ run_cover([Mode]) ->
     end.
 
 %%--------------------------------------------------------------------
-%% @spec    (Fun) -> ok
-%%
-%%            Fun = function()
-%%
-%% @throws  {error, no_exception_thrown_by_test} 
-%%
-%% @doc     test case support function, used to check if call Fun()
-%%          fails - as expected
-%% @end
-%%--------------------------------------------------------------------
-fail(Fun) ->
-    try Fun() of
-	_  -> throw({error, no_exception_thrown_by_test})
-    catch
-	_ -> ok %% catch user throw()
-    end.
-
-%%--------------------------------------------------------------------
 %% @spec    (Line, Msg) -> ok
 %%
 %%            Line = integer() | undefined
@@ -425,53 +402,6 @@ mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
     io:put_chars(["test: ", Name, "\n"]),
     put({autotest, position}, {Line, Name}),
     ok.
-
-%%--------------------------------------------------------------------
-%% @spec    (Module, Key) ->
-%%            {true, Result} |
-%%            false
-%%
-%%            Module = atom() "calling module (currently unused)"
-%%            Key    = term()
-%%
-%%            Result = term()
-%%
-%% @doc     Check if we are currently unit testing and have a result
-%%          stored for the user of this specific Key.
-%% @end
-%%--------------------------------------------------------------------
-is_unit_testing(Module, Key) when is_atom(Module) ->
-    case get({autotest, Key}) of
-	undefined ->
-	    false;
-	Res ->
-	    {true, Res}
-    end.
-
-%%--------------------------------------------------------------------
-%% @spec    (Module, Key, Value) -> term()
-%%
-%%            Module = atom() "calling module (currently unused)"
-%%            Key    = term()
-%%            Value  = term()
-%%
-%% @doc     Store a value to be returned for this Key.
-%% @end
-%%--------------------------------------------------------------------
-store_unit_test_result(Module, Key, Value) when is_atom(Module) ->
-    put({autotest, Key}, Value).
-
-%%--------------------------------------------------------------------
-%% @spec    (Module, Key) -> term()
-%%
-%%            Module = atom() "calling module (currently unused)"
-%%            Key    = term()
-%%
-%% @doc     Clear any stored value for this Key.
-%% @end
-%%--------------------------------------------------------------------
-clear_unit_test_result(Module, Key) when is_atom(Module) ->
-    erase({autotest, Key}).
 
 
 %%====================================================================

@@ -207,7 +207,7 @@ test() ->
         </location>
 	</incoming>
 	</cpl>",
-    autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr3b) end),
+    autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr3b) end),
 
 
     %% RFC 3880 - Figure 22
@@ -341,7 +341,7 @@ test() ->
 	</outgoing>
 	</cpl>",
     %% io:format("CPL script = ~s~n",[ScriptStr6b]),
-    autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr6b) end),
+    autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr6b) end),
 
     %% RFC 3880 - Figure 25 - removed tzid and tzurl attribute
     %% as they are currently unsupported
@@ -442,7 +442,7 @@ test() ->
         </time-switch>
 	</incoming>
 	</cpl>",
-    autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7b) end),
+    autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7b) end),
 
     %% test creation of time_switch__cond_8 record
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 7c"),
@@ -670,7 +670,7 @@ test() ->
 	</incoming>
 	</cpl>",
     %% io:format("CPL script = ~s~n",[ScriptStr7i]),
-autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7i) end),
+autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7i) end),
 
 %% test that dtstart can't be set to a to early date not supported by OTP
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 7j"),
@@ -686,7 +686,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7i) end),
 	</incoming>
 	</cpl>",
 %% io:format("CPL script = ~s~n",[ScriptStr7j]),
-autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7j) end),
+autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7j) end),
 
 %% test that count limit (default = 100) is checked
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 7k"),
@@ -702,7 +702,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7j) end),
 	</incoming>
 	</cpl>",
 %% io:format("CPL script = ~s~n",[ScriptStr7k]),
-autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
+autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
 
 
 %% RFC 3880 - Figure 26
@@ -903,7 +903,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
         </location>
 	</incoming>
 	</cpl>",
-    autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr10b) end),
+    autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr10b) end),
 
 %% RFC 3880 - Figure 2
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 11"),
@@ -980,7 +980,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr7k) end),
         <sub ref=\"voicemail\"/>
      </incoming>
 	</cpl>",
-    autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr12) end),
+    autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr12) end),
 
 %% RFC 3880 - test that reference to later subaction fails
 autotest:mark(?LINE, "cpl_script_to_graph/1  - 13"),
@@ -998,7 +998,7 @@ autotest:mark(?LINE, "cpl_script_to_graph/1  - 13"),
         <sub ref=\"voicemail2\"/>
      </incoming>
 	</cpl>",
-autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr13) end),
+autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr13) end),
 
 %% RFC 3880 - test that existence of unreachable node results in failure
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 14"),
@@ -1013,7 +1013,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr13) end),
         <reject/>
 	</incoming>
 	</cpl>",
-autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr14) end),
+autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr14) end),
 
 %% test log tag (fail as no log destination is currently supported)
 autotest:mark(?LINE, "cpl_script_to_graph/1  - 15"),
@@ -1034,7 +1034,7 @@ autotest:mark(?LINE, "cpl_script_to_graph/1  - 15"),
 %% 					 { #log__attrs{name = default, comment = "log stuff"}, [2,1,1]}}},
 %% 		    {[2,1,1], #node_code{type = terminator, statements = no_statements}}
 %% 		   ]),
-autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
+autotest_util:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
 
 
 %% test that outgoing and incoming tags can be empty
@@ -1098,7 +1098,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
 	</incoming>
 	</cpl>",
 %%io:format("CPL script = ~s~n",[ScriptStr18]),
-    autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr18)) end),
+    autotest_util:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr18)) end),
 
 %% test that unknown sub tag (foo) can't be used
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 19"),
@@ -1119,7 +1119,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
 	</incoming>
 	</cpl>",
 %%io:format("CPL script = ~s~n",[ScriptStr19]),
-    autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr19)) end),
+    autotest_util:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr19)) end),
 
 %% test that unknown tag (foo) can't be used
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 20"),
@@ -1132,7 +1132,7 @@ autotest:fail(fun() -> xml_parse:cpl_script_to_graph(ScriptStr15) end),
 	</incoming>
 	</cpl>",
 %%io:format("CPL script = ~s~n",[ScriptStr20]),
-autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr20)) end),
+autotest_util:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr20)) end),
 
 %%
 %% test dtstart with utc is rejected when byparameters are supplied
@@ -1149,7 +1149,7 @@ autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr20)) en
         </time-switch>
 	</incoming>
 	</cpl>",
-autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr21a)) end),
+autotest_util:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr21a)) end),
 
 %% test dtstart with utc is not rejected when byparameters are not supplied
     autotest:mark(?LINE, "cpl_script_to_graph/1  - 21b"),
@@ -1228,7 +1228,7 @@ _ = lists:sort(xml_parse:cpl_script_to_graph(ScriptStr21b)),
         </time-switch>
 	</incoming>
 	</cpl>",
-autotest:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr23)) end),
+autotest_util:fail(fun() -> lists:sort(xml_parse:cpl_script_to_graph(ScriptStr23)) end),
 
 
 

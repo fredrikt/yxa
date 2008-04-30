@@ -1944,9 +1944,9 @@ test() ->
 
     autotest:mark(?LINE, "gen_server signal 'timeout' - 1.0"),
     %% test that we terminate immediately if this attempt to send the request fails
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, {error, "testing"}),
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, {error, "testing"}),
     {stop, normal, _TimeoutSignal_State_out} = handle_info(timeout, TimeoutSignal_State),
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
 
     %% clear fake-sent-request message from process mailbox
     test_verify_request_was_sent(Test_Request, "gen_server signal 'timeout'", 1, 1),
@@ -2335,7 +2335,7 @@ test() ->
     %% process_received_response(Response, State)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "process_received_response/2 - 1.0"),
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, false),
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, false),
     PRRes_State1 = #state{logtag    = "testing",
 			  socket    = #sipsocket{proto = yxa_test,
 						 module = sipsocket_test
@@ -2480,7 +2480,7 @@ test() ->
     [] = siptimer:test_get_appsignals(PRRes_State3_out#state.timerlist),
     proceeding = PRRes_State3_out#state.sipstate,
 
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
 
 
     %% act_on_new_sipstate2(SipState, BranchAction, State)
@@ -2525,7 +2525,7 @@ test() ->
 
 
     autotest:mark(?LINE, "act_on_new_sipstate2/3 completed - 4.0"),
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, true),
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, true),
     ActOnNewSS_State4 = #state{logtag    = "testing",
 			       request   = Test_Request,
 			       sipstate  = completed,
@@ -2541,11 +2541,11 @@ test() ->
     %% verify new state
     siptimer:cancel_all_timers(ActOnNewSS_State4_out#state.timerlist),
     [{terminate_transaction}] = siptimer:test_get_appsignals(ActOnNewSS_State4_out#state.timerlist),
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
 
     autotest:mark(?LINE, "act_on_new_sipstate2/3 completed - 5.1"),
     %% test non-INVITE with unreliable transport
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, false),
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, false),
     ActOnNewSS_State5 = ActOnNewSS_State4#state{request = Test_Request#request{method = "OPTIONS"}},
     {ActOnNewSS_State5_out, ignore} = act_on_new_sipstate2(completed, ignore, ActOnNewSS_State5),
 
@@ -2870,10 +2870,10 @@ test() ->
 				timeout      = 40
 			       },
 
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, true),
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}, true),
     autotest:mark(?LINE, "initiate_request/1 non-INVITE - 2.1"),
     InitiateReq_State2_out = initiate_request(InitiateReq_State2),
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, is_reliable_transport}),
 
     autotest:mark(?LINE, "initiate_request/1 non-INVITE - 2.2"),
     %% verify new state
@@ -2898,10 +2898,10 @@ test() ->
 				testing      = true
 			       },
 
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, {error, "testing"}),
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, send_result}, {error, "testing"}),
     autotest:mark(?LINE, "initiate_request/1 - 3.1"),
     InitiateReq_State3_out = initiate_request(InitiateReq_State3),
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, send_result}),
 
     autotest:mark(?LINE, "initiate_request/1 - 3.2"),
     %% verify new state
@@ -3191,34 +3191,11 @@ test_absorb_blacklisting(Status, Dst) ->
 
 %% compare two records element by element and give good information on where they
 %% are not equal
-test_compare_records(R1, R2, Ignore) when is_tuple(R1), is_tuple(R2), is_list(Ignore) ->
-    test_compare_records2(tuple_to_list(R1), tuple_to_list(R2), Ignore).
+test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_list(ShouldChange) ->
+    RecName = element(1, R1),
+    Fields = test_record_info(RecName),
+    autotest_util:compare_records(R1, R2, ShouldChange, Fields).
 
-test_compare_records2([RecName | L1], [RecName | L2], Ignore) when is_list(L1), is_list(L2), length(L1) == length(L2) ->
-    test_compare_records3(L1, L2, RecName, test_record_info(RecName), Ignore).
-
-test_compare_records3([Elem | L1], [Elem | L2], RecName, [ThisField | Fields], Ignore) ->
-    %% element at first position matches
-    %%io:format("Record ~p#~p matches~n", [RecName, ThisField]),
-    case lists:member(ThisField, Ignore) of
-	true ->
-	    Msg = io_lib:format("Record ~p#~p NOT changed", [RecName, ThisField]),
-	    {error, lists:flatten(Msg), Elem};
-	false ->
-	    test_compare_records3(L1, L2, RecName, Fields, Ignore)
-    end;
-test_compare_records3([Elem1 | L1], [Elem2 | L2], RecName, [ThisField | Fields], Ignore) ->
-    case lists:member(ThisField, Ignore) of
-	true ->
-	    %%io:format("Record ~p#~p does NOT match, but we ignore that : ~p /= ~p~n",
-	    %%	      [RecName, ThisField, Elem1, Elem2]),
-	    test_compare_records3(L1, L2, RecName, Fields, Ignore);
-	false ->
-	    Msg = io_lib:format("Record ~p#~p does NOT match", [RecName, ThisField]),
-	    {error, lists:flatten(Msg), Elem1, Elem2}
-    end;
-test_compare_records3([], [], _RecName, [], _Ignore) ->
-    ok.
-
+%% add more records here when needed
 test_record_info(state) ->
     record_info(fields, state).

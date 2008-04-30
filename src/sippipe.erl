@@ -694,7 +694,7 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_next_sipdst/2 - 1"),
     %% test normal case with sipsocket
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
 				    {ok, yxa_test, "192.0.2.1", 4999}),
     GNSipDst1 = [#sipdst{socket = #sipsocket{proto = yxa_test,
 					     module = sipsocket_test
@@ -703,19 +703,19 @@ test() ->
 	     addr  = "192.0.2.1",
 	     port  = 4999
 	    }] = get_next_sipdst(GNSipDst1, 500),
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
 
     autotest:mark(?LINE, "get_next_sipdst/2 - 2"),
     %% test with transport not supporting remote peer
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
 				    not_applicable),
     [] = get_next_sipdst(GNSipDst1, 500),
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
 
 
     autotest:mark(?LINE, "get_next_sipdst/2 - 3"),
     %% test with transport not supporting remote peer, and another one
-    autotest:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
+    autotest_util:store_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer},
 				    not_applicable),
     GNSipURI3 = sipurl:parse("sip:user@192.0.2.3"),
     GNSipDst3 = GNSipDst1 ++ [#sipdst{uri = GNSipURI3}],
@@ -723,12 +723,12 @@ test() ->
 	     addr  = "192.0.2.3",
 	     uri   = GNSipURI3
 	    }] = get_next_sipdst(GNSipDst3, 500),
-    autotest:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
+    autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, get_remote_peer}),
 
 
     autotest:mark(?LINE, "get_next_sipdst/2 - 4"),
     %% test all kinds of brokenness, only the second last entry is valid
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "unresolvable.example.org", 4999},
 				      {error, "testing unresolvable things"}}
 				    ]),
@@ -744,7 +744,7 @@ test() ->
 	 #sipdst{addr = "last entry"}],
     GNSipDst4 = GNSipDst4_1 ++ GNSipDst4_Tail,
     GNSipDst4_Tail = get_next_sipdst(GNSipDst4, 500),
-    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+    autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
 
     %% get_next_client_transaction_params(Status, State)
@@ -754,7 +754,7 @@ test() ->
 
     autotest:mark(?LINE, "get_next_client_transaction_params/2 - 2"),
     %% test with only an unresolvable destination left
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "unresolvable.example.org", 4999},
 				      {error, "testing unresolvable things"}}
 				    ]),
@@ -767,7 +767,7 @@ test() ->
 	       approxmsgsize = 500
 	      },
     {siperror, 500, _, []} = get_next_client_transaction_params(400, GNCTP_State2),
-    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+    autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
     autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.0"),
     %% test working case
@@ -829,7 +829,7 @@ test() ->
 				    port   = 99
 				   }]
 		 }],
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_3),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_3),
 
     {ok, SGD_Dst3_Res, SGD_Request3_Res} = start_get_dstlist(THandler, SGD_Request3, 500, route),
     SGD_Request3_URI = SGD_Request3#request.uri,
@@ -837,7 +837,7 @@ test() ->
 	     uri = SGD_Request3_URI
 	    }] = SGD_Dst3_Res,
     SGD_Request3 = SGD_Request3_Res,
-    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+    autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
     autotest:mark(?LINE, "start_get_dstlist/4 - 4"),
     %% test nxdomain
@@ -846,11 +846,11 @@ test() ->
     SGD_DNS_4 = [{{get_ip_port, "route.example.org", 99},
 		  {error, nxdomain}
 		 }],
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_4),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_4),
     error = start_get_dstlist(THandler, SGD_Request4, 500, route),
 
     {604, "Does Not Exist Anywhere", [], <<>>} = test_get_created_response(),
-    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+    autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
     autotest:mark(?LINE, "start_get_dstlist/4 - 5"),
     %% test other DNS error (timeout)
@@ -859,11 +859,11 @@ test() ->
     SGD_DNS_5 = [{{get_ip_port, "route.example.org", 99},
 		  {error, timeout}
 		 }],
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_5),
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_5),
     error = start_get_dstlist(THandler, SGD_Request5, 500, route),
 
     {500, "Failed resolving Route destination", [], <<>>} = test_get_created_response(),
-    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+    autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
 
     %% get_next_sipdst_with_instance(Instance, ApproxMsgSize, DstL)
@@ -892,7 +892,7 @@ test() ->
 
     autotest:mark(?LINE, "get_next_sipdst_with_instance/3 - 4"),
     %% test matching, but not eligible sipdst
-    autotest:store_unit_test_result(?MODULE, dnsutil_test_res,
+    autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res,
 				    [{{get_ip_port, "unresolvable.example.org", 4999},
 				      {error, "testing unresolvable things"}}
 				    ]),
@@ -903,7 +903,7 @@ test() ->
 	       },
     GNSWI_DstL4 = [GNSWI_Dst4, GNSWI_Dst2, GNSWI_Dst1],
     [GNSWI_Dst1, GNSWI_Dst2] = get_next_sipdst_with_instance("foo", 500, GNSWI_DstL4),
-    autotest:clear_unit_test_result(?MODULE, dnsutil_test_res),
+    autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
     ok = test_loop_receive_once(),
 

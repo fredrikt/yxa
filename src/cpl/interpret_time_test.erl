@@ -2270,7 +2270,7 @@ test21_16() ->
     true = ts_duration:valid_duration(TimeSwitchCond),
 
     %% leap years in range [2005,2025] are; 2008, 2012, 2016, 2020 and 2024 so there can't be 6 matches
-    autotest:fail(fun() -> interpret_time:get_count_ranges_7(Timezone, TimeSwitchCond) end),
+    autotest_util:fail(fun() -> interpret_time:get_count_ranges_7(Timezone, TimeSwitchCond) end),
 
     ok.
 
