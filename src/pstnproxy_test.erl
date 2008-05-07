@@ -65,6 +65,7 @@ test_request() ->
     ok = test_INVITE_to_pstn(),
     ok = test_From_addr_verification(),
     ok = test_BYE(),
+    ok = test_various_auth_to_pstn(),
     ok.
 
 test_OPTIONS() ->
@@ -454,6 +455,14 @@ test_BYE() ->
 
     ok = yxa_test_config:init(pstnproxy, Cfg1),
 
+    YxaCtx1 =
+	#yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
+		 origin   = #siporigin{proto = yxa_test,
+				       addr  = "192.0.2.9",
+				       port  = 50000
+				      }
+		},
+
     %% request(Request, YxaCtx)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "request/2 - BYE 1.0"),
@@ -466,12 +475,6 @@ test_BYE() ->
 	"\r\n",
 
     Request1 = sippacket:parse(Message1, none),
-    YxaCtx1 = #yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
-		       origin   = #siporigin{proto = yxa_test,
-					     addr  = "192.0.2.9",
-					     port  = 50000
-					    }
-		      },
     autotest:mark(?LINE, "request/2 - BYE 1.1"),
     ok = pstnproxy:request(Request1, YxaCtx1),
 
@@ -569,7 +572,6 @@ test_BYE() ->
     {403, "Forbidden", [], <<>>} = get_created_response(),
 
 
-    logger ! enable,
     autotest:mark(?LINE, "request/2 - BYE 5.0"),
     %% test BYE message to (non-free) PSTN destination, no auth - should not require auth
     yxa_test_config:set([{pstnproxy_challenge_bye_to_pstn_dst, false}]),
@@ -579,12 +581,12 @@ test_BYE() ->
 	"From: Test <sip:test@remote.example.org>\r\n"
 	"To: Number <sip:number@example.org>\r\n"
 	"\r\n",
-    
+
     Request5 = sippacket:parse(Message5, none),
-    
+
     autotest:mark(?LINE, "request/2 - BYE 5.1"),
     ok = pstnproxy:request(Request5, YxaCtx1),
-    
+
     autotest:mark(?LINE, "request/2 - BYE 5.2"),
     %% verify result (should be allowed, we are configured not to challenge BYE)
     {Request5_Res, _YxaCtx5, DstURL5_Res, [PstnCtxOut5]} = get_sippipe_result(),
@@ -605,10 +607,105 @@ test_BYE() ->
 
     %% restore config
     yxa_test_config:set([{pstnproxy_challenge_bye_to_pstn_dst, true}]),
-    logger ! disable,
 
     ok.
 
+test_various_auth_to_pstn() ->
+    Cfg1 = [{myhostnames,		["test.example.org"]},
+	    {pstngatewaynames,		["gw.example.org",	"192.0.2.33"]},
+	    {userdb_modules,		[sipuserdb_test]},
+	    {classdefs,			[{"^\\+1(...)$",		national},
+					 {"^\\+2...$",			pay}
+					]},
+	    {sipauth_unauth_classlist,	[]},
+	    {internal_to_e164,		[{"^1234$",		"+2345"}]},
+	    {e164_to_pstn,		[{"^\\+(2...)$",	"sip:ext.\\1@specialgw.example.org"},
+					 {"(.+)",		"sip:\\1@gw.example.org"}
+					]},
+	    {pstnproxy_challenge_bye_to_pstn_dst, false}
+	   ],
+
+    ok = yxa_test_config:init(pstnproxy, Cfg1),
+
+    YxaCtx1 =
+	#yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
+		 origin   = #siporigin{proto = yxa_test,
+				       addr  = "192.0.2.9",
+				       port  = 50000
+				      }
+		},
+
+    autotest:mark(?LINE, "request/2 - BYE with Route 1.0"),
+    %% test BYE message to (non-free) PSTN destination, no auth - should not require auth
+    Message1 =
+	"BYE sip:+1111@test.example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST client.example.org\r\n"
+	"From: Test <sip:test@remote.example.org>;tag=x\r\n"
+	"To: Number <sip:number@example.org>;tag=y\r\n"
+	"Route: <sip:gw.example.org;lr>\r\n"
+	"\r\n",
+
+    Request1 = sippacket:parse(Message1, none),
+
+    autotest:mark(?LINE, "request/2 - BYE with Route 1.1"),
+    ok = pstnproxy:request(Request1, YxaCtx1),
+
+    autotest:mark(?LINE, "request/2 - BYE with Route 1.2"),
+    %% verify result (should be allowed, we are configured not to challenge BYE)
+    {Request1_Res, _YxaCtx1, DstURL1_Res, [PstnCtxOut1]} = get_sippipe_result(),
+    Request1_Res = Request1,
+    DstURL1_Res = route,
+    ExpectedPstnCtx1 =
+	#pstn_ctx{tags		= [has_route,route_to_gw],
+		  ip		= "192.0.2.9",
+		  user		= undefined,
+		  stale_auth	= false,
+		  orig_uri	= sipurl:parse("sip:+1111@test.example.org"),
+		  called_number	= undefined,
+		  dst_number	= undefined,
+		  dst_class	= undefined,
+		  destination	= pstn
+		 },
+    ok = test_compare_records(PstnCtxOut1, ExpectedPstnCtx1, []),
+
+
+    %% test same thing, but configured to challenge BYEs
+    yxa_test_config:set([{pstnproxy_challenge_bye_to_pstn_dst, true}]),
+
+    autotest:mark(?LINE, "request/2 - BYE with Route 2.1"),
+    Request2 = Request1,
+    ok = pstnproxy:request(Request2, YxaCtx1),
+
+    autotest:mark(?LINE, "request/2 - BYE with Route 2.2"),
+    %% verify result (should be challenged this time)
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = get_created_response(),
+
+    %% restore config
+    yxa_test_config:set([{pstnproxy_challenge_bye_to_pstn_dst, false}]),
+
+
+    autotest:mark(?LINE, "request/2 - OPTIONS with Route 3.0"),
+    %% test OPTIONS message to (non-free) PSTN destination, no auth - should be challenged
+    Message3 =
+	"OPTIONS sip:+1111@test.example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST client.example.org\r\n"
+	"From: Test <sip:test@remote.example.org>;tag=x\r\n"
+	"To: Number <sip:number@example.org>;tag=y\r\n"
+	"Route: <sip:gw.example.org;lr>\r\n"
+	"\r\n",
+
+    Request3 = sippacket:parse(Message3, none),
+
+    autotest:mark(?LINE, "request/2 - OPTIONS with Route 3.1"),
+    ok = pstnproxy:request(Request3, YxaCtx1),
+
+    autotest:mark(?LINE, "request/2 - OPTIONS with Route 3.2"),
+    %% verify result (should NOT be allowed)
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = get_created_response(),
+
+
+
+    ok.
 
 %%====================================================================
 %% Helper functions
@@ -669,4 +766,6 @@ test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_l
 
 %% add more records here when needed
 test_record_info(pstn_ctx) ->
-    record_info(fields, pstn_ctx).
+    record_info(fields, pstn_ctx);
+test_record_info(sipurl) ->
+    record_info(fields, sipurl).

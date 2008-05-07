@@ -178,7 +178,21 @@ auth_and_tag(Request, YxaCtx) ->
     Tags = auth_and_tag_get_tags(Request, YXAPeerAuth, PstnCtx1),
     PstnCtx2 = PstnCtx1#pstn_ctx{tags = Tags},
 
-    PstnCtx = local:pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx2),
+    Destination =
+	case is_tagged(has_route, PstnCtx2) of
+	    true ->
+		case is_tagged(route_to_gw, PstnCtx2) of
+		    true ->
+			pstn;
+		    false ->
+			sip
+		end;
+	    false ->
+		undefined
+	end,
+    PstnCtx3 = PstnCtx2#pstn_ctx{destination = Destination},
+    
+    PstnCtx = local:pstnproxy_auth_and_tag(Request, Origin, THandler, PstnCtx3),
 
     case auth_and_tag_verify_from(Request, YxaCtx, PstnCtx) of
 	ok ->
@@ -312,7 +326,7 @@ auth_and_tag_get_tags(Request, IsPeerAuth, PstnCtx) when is_record(Request, requ
 %%
 %% @doc     If the From: has an address belonging to one of our users,
 %%          verify that the sender is authorized to use it. This
-%%          requires digest-authenticating a user, or determin- ing
+%%          requires digest-authenticating a user, or determining
 %%          that the request was received from one of our gateways or
 %%          was vouched for by a peer of ours.
 %% @end
@@ -322,22 +336,30 @@ auth_and_tag_verify_from(Request, YxaCtx, PstnCtx) ->
 	     app_logtag	= LogTag
 	    } = YxaCtx,
     YXAPeerAuth = is_tagged(peer_auth, PstnCtx),
-    case local:pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx) of
-	ignore    -> ignore;
-	ok        -> ok;
-	undefined ->
-	    FromGateway = is_tagged(from_gateway, PstnCtx),
-	    if
-		YXAPeerAuth ->
-		    logger:log(debug, "~s: pstnproxy: Request was received from one of our peers "
-                               "(X-Yxa-Peer-Auth), allowing any From: address", [LogTag]),
-		    ok;
-		FromGateway ->
-		    logger:log(debug, "~s: pstnproxy: Request was received from one of our gateways, "
-			       "allowing any From: address", [LogTag]),
-		    ok;
-		true ->
-		    auth_and_tag_verify_from2(Request, YxaCtx, PstnCtx)
+
+    case skip_challenge_of_bye_to_pstn(Request, PstnCtx) of
+	true ->
+	    logger:log(debug, "~s: pstnproxy: Not verifying From: address of BYE request "
+		       "(configured not to challenge those)", [LogTag]),
+	    ok;
+	false ->
+	    case local:pstnproxy_verify_from(Request, THandler, YXAPeerAuth, PstnCtx) of
+		ignore    -> ignore;
+		ok        -> ok;
+		undefined ->
+		    FromGateway = is_tagged(from_gateway, PstnCtx),
+		    if
+			YXAPeerAuth ->
+			    logger:log(debug, "~s: pstnproxy: Request was received from one of our peers "
+				       "(X-Yxa-Peer-Auth), allowing any From: address", [LogTag]),
+			    ok;
+			FromGateway ->
+			    logger:log(debug, "~s: pstnproxy: Request was received from one of our gateways, "
+				       "allowing any From: address", [LogTag]),
+			    ok;
+			true ->
+			    auth_and_tag_verify_from2(Request, YxaCtx, PstnCtx)
+		    end
 	    end
     end.
 
@@ -475,7 +497,15 @@ route_request_with_route(Request, YxaCtx, PstnCtx) ->
 			       [YxaCtx#yxa_ctx.app_logtag]),
 		    [{proxy, route}];
 		false ->
-		    [{challenge, proxy, PstnCtx#pstn_ctx.stale_auth}]
+		    case skip_challenge_of_bye_to_pstn(Request, PstnCtx) of
+			true ->
+			    %% Don't challenge BYE request since we are configured not to
+			    logger:log(debug, "~s: pstnproxy: Proxying BYE request with Route header",
+				       [YxaCtx#yxa_ctx.app_logtag]),
+			    [{proxy, route}];
+			false ->
+			    [{challenge, proxy, PstnCtx#pstn_ctx.stale_auth}]
+		    end
 	    end
     end.
 
@@ -1101,14 +1131,10 @@ check_unauth_request_to_pstn_dst(Request, YxaCtx, PstnCtx) ->
 	      dst_class  = DstClass
 	     } = PstnCtx,
 
-    Method = Request#request.method,
-    {ok, ChallengeBYE} = yxa_config:get_env(pstnproxy_challenge_bye_to_pstn_dst),
-    Allow = (Method == "BYE") andalso (ChallengeBYE == false),
-
-    case Allow of
+    case skip_challenge_of_bye_to_pstn(Request, PstnCtx) of
 	true ->
 	    logger:log(normal, "~s: pstnproxy: Allowing unauthenticated ~s request to number ~p, class '~p'",
-		       [YxaCtx#yxa_ctx.app_logtag, Method, DstNumber, DstClass]),
+		       [YxaCtx#yxa_ctx.app_logtag, Request#request.method, DstNumber, DstClass]),
 	    true;
 	false ->
 	    logger:log(normal, "~s: pstnproxy: Requesting authorization for destination number ~p, class '~p'",
@@ -1315,6 +1341,25 @@ start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), i
 	    local:start_sippipe(Request, YxaCtx, Dst, AppData)
     end.
 
+%%--------------------------------------------------------------------
+%% @spec    (Request, PstnCtx) -> bool()
+%%
+%%            Request = #request{} "SIP request"
+%%            PstnCtx = #pstn_ctx{} "context for this request"
+%%
+%% @doc     If this is a BYE to a PSTN destination, we check if we are
+%%          configured to challenge those or not. Return 'true' if any
+%%          challenging that would otherwise be performed should be
+%%          skipped, otherwise false.
+%% @end
+%%--------------------------------------------------------------------
+skip_challenge_of_bye_to_pstn(#request{method = "BYE"}, PstnCtx) ->
+    {ok, ChallengeBYE} = yxa_config:get_env(pstnproxy_challenge_bye_to_pstn_dst),
+    logger:log(debug, "FREDRIK: skip_challenge_of_bye_to_pstn: IS BYE, ChallengeBYE ~p, destination : ~p",
+	       [ChallengeBYE, PstnCtx#pstn_ctx.destination]),
+    (PstnCtx#pstn_ctx.destination == pstn) andalso (ChallengeBYE == false);
+skip_challenge_of_bye_to_pstn(_Request, _PstnCtx) ->
+    false.
 
 %%====================================================================
 %% Test functions
