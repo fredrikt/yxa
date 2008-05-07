@@ -147,7 +147,15 @@ compare_records(L1, L2, ShouldChange, Fields) when is_list(L1), is_list(L2), is_
 	    Msg = io_lib:format("These are not records, they have different length! ~p", [hd(L1)]),
 	    {error, lists:flatten(Msg)};
 	true ->
-	    compare_records2(tl(L1), tl(L2), hd(L1), Fields, ShouldChange)
+	    RecName = hd(L1),
+	    case ShouldChange -- Fields of
+		[] ->
+		    compare_records2(tl(L1), tl(L2), RecName, Fields, ShouldChange);
+		Unknown ->
+		    Msg = io_lib:format("ShouldChange field(s) ~p not valid for record ~p (fields : ~w)",
+					[Unknown, RecName, Fields]),
+		    {error, lists:flatten(Msg)}
+	    end
     end.
 
 compare_records2([Elem | L1], [Elem | L2], RecName, [ThisField | Fields], ShouldChange) ->
