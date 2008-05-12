@@ -40,6 +40,7 @@
 %% Macros
 %%--------------------------------------------------------------------
 -define(TEST_MODULES, [
+		       autotest_util,
 		       url_param,
 		       contact_param,
 		       keylist,
