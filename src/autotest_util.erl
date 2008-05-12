@@ -20,7 +20,9 @@
 	 clear_unit_test_result/2,
 
 	 compare_records/3,
-	 compare_records/4
+	 compare_records/4,
+
+	 test/0
 	]).
 
 
@@ -28,6 +30,14 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("siprecords.hrl").
+
+
+%%--------------------------------------------------------------------
+%% Records
+%%--------------------------------------------------------------------
+-record(test_rec_a, {key, value}).
+-record(test_rec_b, {name, age}).
+
 
 
 %%====================================================================
@@ -211,3 +221,86 @@ test_record_info(siplocationdb_e) ->		record_info(fields, siplocationdb_e);
 test_record_info(dialog) ->			record_info(fields, dialog);
 test_record_info(_) ->
     undefined.
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+
+%%--------------------------------------------------------------------
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
+%%--------------------------------------------------------------------
+test() ->
+
+    %% compare_records(T1, T2, ShouldChange, Fields)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "compare_records/4 - 0"),
+    TestRec1 = #test_rec_a{key = b, value = c},
+    TestRec2 = #test_rec_a{key = b, value = other},
+
+    TestRec1Fields = test_test_record_info(test_rec_a),
+
+    autotest:mark(?LINE, "compare_records/4 - 1"),
+    ok = compare_records(TestRec1, TestRec1, [], TestRec1Fields),
+
+    autotest:mark(?LINE, "compare_records/4 - 2"),
+    {error,"Record test_rec_a#value does NOT match", c, other} =
+	compare_records(TestRec1, TestRec2, [], TestRec1Fields),
+
+    autotest:mark(?LINE, "compare_records/4 - 3"),
+    %% different value, but value ShouldChange
+    ok = compare_records(TestRec1, TestRec2, [value], TestRec1Fields),
+
+    autotest:mark(?LINE, "compare_records/4 - 4"),
+    %% same value, but value ShouldChange
+    {error,"Record test_rec_a#value NOT changed",c} =
+	compare_records(TestRec1, TestRec1, [value], TestRec1Fields),
+
+    autotest:mark(?LINE, "compare_records/4 - 5"),
+    %% same value, but value ShouldChange
+    {error, "ShouldChange field(s) [bogus_field] not valid for record test_rec_a (fields : [key,value])"} =
+	compare_records(TestRec1, TestRec1, [bogus_field], TestRec1Fields),
+
+    autotest:mark(?LINE, "compare_records/4 - 6"),
+    %% test detection of bad input values
+    {error,"Records are not of the same kind! : test_rec_a /= test_rec_b"} =
+	compare_records(TestRec1, #test_rec_b{}, [], []),
+
+    autotest:mark(?LINE, "compare_records/4 - 7"),
+    %% test detection of bad input values
+    {error,"These are not records, they have different length! a"} =
+        compare_records({a, b}, {a, b, c}, [], []),
+
+
+    %% compare_records(T1, T2, ShouldChange)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "compare_records/4 - 1"),
+    ok = compare_records(sipurl:new([]), sipurl:new([]), []),
+
+    autotest:mark(?LINE, "compare_records/4 - 2"),
+    {error,"Record sipurl#host does NOT match", "test.example.org", "foo.example.org"} =
+	compare_records(sipurl:parse("sip:test.example.org"),
+			sipurl:parse("sip:foo.example.org"),
+			[]),
+
+    autotest:mark(?LINE, "compare_records/4 - 3"),
+    ok = compare_records(TestRec1, TestRec1, []),
+
+    autotest:mark(?LINE, "compare_records/4 - 3"),
+    {error, "Record test_rec_a#2 does NOT match", c, other} =
+	compare_records(TestRec1, TestRec2, []),
+
+    autotest:mark(?LINE, "compare_records/4 - 4"),
+    {error, "Record test_rec_a#2 NOT changed", c} =
+	compare_records(TestRec1, TestRec1, [2]),
+
+    ok.
+
+
+test_test_record_info(test_rec_a) ->
+    record_info(fields, test_rec_a).
