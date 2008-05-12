@@ -24,6 +24,12 @@
 	]).
 
 
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("siprecords.hrl").
+
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -34,7 +40,7 @@
 %%
 %%            Fun = function()
 %%
-%% @throws  {error, no_exception_thrown_by_test} 
+%% @throws  {error, no_exception_thrown_by_test}
 %%
 %% @doc     test case support function, used to check if call Fun()
 %%          fails - as expected
@@ -112,9 +118,15 @@ clear_unit_test_result(Module, Key) when is_atom(Module) ->
 %% @end
 %%--------------------------------------------------------------------
 compare_records(T1, T2, ShouldChange) when is_tuple(T1), is_tuple(T2), is_list(ShouldChange) ->
-    %% Two records as input, we can't give field name in errors but this is simpler to call.
-    %% When we don't have the real field names, we use numbers instead.
-    Fields = lists:seq(1, size(T1) - 1),
+    %% Two records as input, see if they are standard ones (from siprecords.hrl), and
+    %% otherwise use numbers istead of field names
+    Fields =
+	case test_record_info(element(1, T1)) of
+	    undefined ->
+		lists:seq(1, size(T1) - 1);
+	    T1_Fields ->
+		T1_Fields
+	end,
     compare_records(T1, T2, ShouldChange, Fields).
 
 %%--------------------------------------------------------------------
@@ -173,3 +185,21 @@ compare_records2([Elem1 | L1], [Elem2 | L2], RecName, [ThisField | Fields], Shou
 compare_records2([], [], _RecName, [], _ShouldChange) ->
     ok.
 
+
+%% add records found in siprecords.hrl here
+test_record_info(yxa_ctx) ->			record_info(fields, yxa_ctx);
+test_record_info(yxa_app_init) ->		record_info(fields, yxa_app_init);
+test_record_info(request) ->			record_info(fields, request);
+test_record_info(response) ->			record_info(fields, response);
+test_record_info(via) ->			record_info(fields, via);
+test_record_info(contact) ->			record_info(fields, contact);
+test_record_info(sipurl) ->			record_info(fields, sipurl);
+test_record_info(keylist) ->			record_info(fields, keylist);
+test_record_info(url_param) ->			record_info(fields, url_param);
+test_record_info(contact_param) ->		record_info(fields, contact_param);
+test_record_info(sipdns_srv) ->			record_info(fields, sipdns_srv);
+test_record_info(sipdns_hostport) ->		record_info(fields, sipdns_hostport);
+test_record_info(siplocationdb_e) ->		record_info(fields, siplocationdb_e);
+test_record_info(dialog) ->			record_info(fields, dialog);
+test_record_info(_) ->
+    undefined.
