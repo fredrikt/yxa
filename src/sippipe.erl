@@ -36,7 +36,7 @@
 %%                 no description
 -record(state, {branch,			%% string(), current client transaction branch
 		serverhandler,		%% term(), server transaction handle
-		clienttransaction_pid,	%% pid(), current client transaction process
+		clienttransaction_pid,	%% pid() | none, current client transaction process
 		request,		%% request record(), the request we are working on
 		dstlist,		%% list() of sipdst record(), our list of destinations for this request
 		timeout,		%% integer(), timeout value for this process and transactions it starts
@@ -544,18 +544,29 @@ get_next_sipdst([H | T] = DstList, ApproxMsgSize) when is_record(H, sipdst) ->
 %%            NewState = #state{}
 %%
 %% @doc     Our server transaction has been cancelled. Signal the
-%%          client transaction.
+%%          current client transaction, if any.
 %% @end
 %%--------------------------------------------------------------------
 cancel_transaction(#state{cancelled = false} = State, Reason, ExtraHeaders) when is_list(Reason) ->
+    Pid = State#state.clienttransaction_pid,
     logger:log(debug, "sippipe: Original request has been cancelled, asking current "
 	       "client transaction handler (~p) to cancel, and answering "
 	       "'487 Request Cancelled' to original request",
-	       [State#state.clienttransaction_pid]),
-    transactionlayer:cancel_client_transaction(State#state.clienttransaction_pid, Reason, ExtraHeaders),
+	       [Pid]),
+    case Pid of
+	_ when is_pid(Pid) ->
+	    ok = transactionlayer:cancel_client_transaction(Pid, Reason, ExtraHeaders);
+	none ->
+	    %% No current client transaction. We must be out of targets, or we have already
+	    %% generated a final response. XXX if we have already generated a final response,
+	    %% we will now ask the server transaction to generate a second one (487), which
+	    %% it will complain about but it should be harmless. Perhaps we should make
+	    %% sippipe remember that it has already generated a final response though...
+	    ok
+    end,
     transactionlayer:send_response_handler(State#state.serverhandler, 487, "Request Cancelled"),
     State#state{cancelled = true};
-cancel_transaction(#state{cancelled = true} = State, Reason, _ExtraHeaders) when is_list(Reason) ->
+cancel_transaction(#state{cancelled = true} = State, _Reason, _ExtraHeaders) ->
     %% already cancelled
     State.
 
@@ -936,7 +947,7 @@ test_cancel_received() ->
     autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 1.2"),
     %% check returned state
     true = State1_Res#state.cancelled,
-    State1_Res = State1#state{cancelled = true},
+    ok = test_compare_records(State1, State1_Res, [cancelled]),
 
     autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 1.3"),
     %% check signals received
@@ -947,11 +958,27 @@ test_cancel_received() ->
     autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 2.1"),
     %% check cancel when already cancelled
     self() ! {servertransaction_cancelled, self(), [{"Reason", ["unit test"]}]},
-    {ok, State1_Res} = loop_receive_once(State1_Res, util:timestamp() + 10),
+    State2 = State1#state{cancelled = true},
+    {ok, State2_Res} = loop_receive_once(State2, util:timestamp() + 10),
+    ok = test_compare_records(State2, State2_Res, []),
 
     autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 2.2"),
     %% check that we don't receive any signals in this case
     test_no_more_messages(),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 3.1"),
+    %% check cancel when we have received a final response, or for some other
+    %% reason don't have an active client transaction
+    self() ! {servertransaction_cancelled, self(), [{"Reason", ["unit test"]}]},
+    State3 = State1#state{clienttransaction_pid = none},
+    {ok, State3_Res} = loop_receive_once(State3, util:timestamp() + 10),
+    true = State3_Res#state.cancelled,
+    ok = test_compare_records(State3, State3_Res, [cancelled]),
+
+    autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 3.2"),
+    %% check that the server transaction is told to respond 487 even though
+    %% there was no client transaction to cancel
+    {487, "Request Cancelled", [], <<>>} = test_get_created_response(),
 
     ok.
 
@@ -1175,3 +1202,14 @@ test_receive_tuple(Key) ->
 	    Msg = io_lib:format("Did not receive the expected signal : tuple ~p", [Key]),
 	    erlang:error(lists:flatten(Msg))
     end.
+
+%% compare two records element by element and give good information on where they
+%% are not equal
+test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_list(ShouldChange) ->
+    RecName = element(1, R1),
+    Fields = test_record_info(RecName),
+    autotest_util:compare_records(R1, R2, ShouldChange, Fields).
+
+%% add more records here when needed
+test_record_info(state) ->
+    record_info(fields, state).
