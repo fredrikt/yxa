@@ -1799,14 +1799,12 @@ test() ->
     [{terminate_transaction}] = siptimer:test_get_appsignals(SipRequest_State3_out#state.timerlist),
     autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 3.3"),
     %% cancel timer
-    SipRequest_3_NewTL = siptimer:cancel_all_timers(SipRequest_State3_out#state.timerlist),
-    SipRequest_State3_out1 = SipRequest_State3_out#state{timerlist = SipRequest_3_NewTL},
-    autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 3.4"),
+    ok = siptimer:cancel_all_timers(SipRequest_State3_out#state.timerlist),
     %% and finally verify that SipRequest_State3_out1 is the same as SipRequest_State3_in
     %% with sipstate changed from 'completed' to 'confirmed'
-    confirmed = SipRequest_State3_out1#state.sipstate,
-    SipRequest_State3_out2 = SipRequest_State3_out1#state{sipstate = completed},
-    SipRequest_State3_out2 = SipRequest_State3_in,
+    confirmed = SipRequest_State3_out#state.sipstate,
+    ok = test_compare_records(SipRequest_State3_in, SipRequest_State3_out, [sipstate, timerlist]),
+
 
     autotest:mark(?LINE, "gen_server:call() {siprequest, ...} - 4"),
     %% test resend scenario with bad new request (different Request-URI)
@@ -1856,8 +1854,7 @@ test() ->
     %% check that the expected changes were made
     confirmed = ReceivedAckState_3#state.sipstate,
     [{terminate_transaction}] = siptimer:test_get_appsignals(ReceivedAckState_3#state.timerlist),
-    ReceivedAckState_3_1 = ReceivedAckState_3#state{timerlist = undefined, sipstate = undefined},
-    ReceivedAckState_3_1 = ReceivedAckState#state{timerlist = undefined},
+    ok = test_compare_records(ReceivedAckState, ReceivedAckState_3, [timerlist, sipstate]),
 
     autotest:mark(?LINE, "process_received_ack/1 - 3.3"),
     %% cancel timer started
@@ -2443,3 +2440,14 @@ test_verify_response_was_sent(Status, Reason, Body, TestLabel, Major, Minor) ->
     after 0 ->
 	    throw("test failed, SIP message 'sent' not found in process mailbox")
     end.
+
+%% compare two records element by element and give good information on where they
+%% are not equal
+test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_list(ShouldChange) ->
+    RecName = element(1, R1),
+    Fields = test_record_info(RecName),
+    autotest_util:compare_records(R1, R2, ShouldChange, Fields).
+
+%% add more records here when needed
+test_record_info(state) ->
+    record_info(fields, state).
