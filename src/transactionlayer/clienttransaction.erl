@@ -1485,8 +1485,10 @@ end_invite(State) when is_record(State, state) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate_transaction(State) when is_record(State, state) ->
-    NewTimerList = siptimer:cancel_all_timers(State#state.timerlist),
-    NewState = State#state{sipstate=terminated, timerlist=NewTimerList},
+    ok = siptimer:cancel_all_timers(State#state.timerlist),
+    NewState = State#state{sipstate  = terminated,
+			   timerlist = siptimer:empty()
+			  },
     NewState.
 
 %%--------------------------------------------------------------------

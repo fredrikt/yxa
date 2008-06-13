@@ -274,7 +274,7 @@ extract([appsignal | T], SipTimer, Res) when is_record(SipTimer, siptimer) ->
 %%            NewTimerList
 %%
 %%            Timers    = [#siptimer{}]
-%%            TimerList = #siptimerlist{} | none
+%%            TimerList = #siptimerlist{}
 %%
 %%            NewTimerList = #siptimerlist{}
 %%
@@ -301,27 +301,25 @@ cancel_timers([], TimerList) when is_record(TimerList, siptimerlist) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (TimerList) ->
-%%            EmptyList
+%%            ok
 %%
-%%            TimerList = #siptimerlist{} | none
-%%
-%%            EmptyList = #siptimerlist{}
+%%            TimerList = #siptimerlist{}
 %%
 %% @doc     Cancel all siptimers in TimerList.
 %% @end
 %%--------------------------------------------------------------------
 cancel_all_timers(TimerList) when is_record(TimerList, siptimerlist) ->
-    EmptyList = empty(),
     logger:log(debug, "Siptimer: Cancelling all timers :"),
+    EmptyList = empty(),	%% premature optimization?
     cancel_timers(TimerList#siptimerlist.list, EmptyList),
-    EmptyList.
+    ok.
 
 %%--------------------------------------------------------------------
 %% @spec    (AppSignal, TimerList) ->
 %%            NewTimerList
 %%
 %%            AppSignal = term() "appsignal to match on"
-%%            TimerList = #siptimerlist{} | none
+%%            TimerList = #siptimerlist{}
 %%
 %%            NewTimerList = #siptimerlist{}
 %%
@@ -343,7 +341,7 @@ cancel_timers_with_appsignal(AppSignal, TimerList) when is_record(TimerList, sip
 %%--------------------------------------------------------------------
 %% @spec    (TimerList) -> [string()]
 %%
-%%            TimerList = #siptimerlist{} | none
+%%            TimerList = #siptimerlist{}
 %%
 %% @doc     Format all timers in TimerList into strings suitable for
 %%          debug logging.
@@ -568,10 +566,10 @@ test() ->
     %% cancel_all_timers(TimerList)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "cancel_all_timers/1 - 1"),
-    EmptyList = cancel_all_timers(EmptyList),
+    ok = cancel_all_timers(EmptyList),
 
     autotest:mark(?LINE, "cancel_all_timers/1 - 2"),
-    EmptyList = cancel_all_timers(AddTimerL2),
+    ok = cancel_all_timers(AddTimerL2),
 
 
     %% revive_timer(SipTimer, NewTimeout, TimerList)
@@ -613,10 +611,10 @@ test() ->
 
     autotest:mark(?LINE, "revive_timer/3 - 5"),
     %% clean up
-    EmptyList = cancel_all_timers(ReviveTimerL1),
-    EmptyList = cancel_all_timers(ReviveTimerL2),
-    EmptyList = cancel_all_timers(ReviveTimerL3),
-    EmptyList = cancel_all_timers(ReviveTimerL4),
+    ok = cancel_all_timers(ReviveTimerL1),
+    ok = cancel_all_timers(ReviveTimerL2),
+    ok = cancel_all_timers(ReviveTimerL3),
+    ok = cancel_all_timers(ReviveTimerL4),
 
 
     %% reset_timers(Timers, TimerList)
@@ -674,7 +672,7 @@ test() ->
 
     autotest:mark(?LINE, "reset_timers/2 - 6"),
     %% clean up
-    EmptyList = cancel_all_timers(ResetTimersL5),
+    ok = cancel_all_timers(ResetTimersL5),
 
 
     %% timeout2str(Timeout)
@@ -780,7 +778,7 @@ test() ->
 
     autotest:mark(?LINE, "siptimer operations - 4.1"),
     %% clean up
-    cancel_all_timers(TimerOp_L6),
+    ok = cancel_all_timers(TimerOp_L6),
 
 
     %% final verification of operations
