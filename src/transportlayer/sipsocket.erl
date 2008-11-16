@@ -503,14 +503,6 @@ test() ->
     %% test with 'tls6'
     5061 = get_listenport(tls6),
 
-    autotest:mark(?LINE, "get_listenport/1 - 3"),
-    %% test with invalid value (string)
-    {'EXIT', {function_clause, _}} = (catch get_listenport("invalid")),
-
-    autotest:mark(?LINE, "get_listenport/1 - 4"),
-    %% test with invalid value (atom)
-    {'EXIT', {function_clause, _}} = (catch get_listenport(none)),
-
 
     %% test get_all_listenports()
     %%--------------------------------------------------------------------
