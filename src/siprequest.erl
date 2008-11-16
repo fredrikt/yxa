@@ -1253,10 +1253,6 @@ test() ->
     #via{proto="SIP/2.0/TLS", host=MyHostname, port=SipsLPort, param=[]} =
 	create_via(tls6, []),
 
-    %% foo protocol - expect crash
-    autotest:mark(?LINE, "create_via/2 - 7"),
-    {'EXIT', {function_clause, _}} = (catch create_via(foo, [])),
-
 
     %% add_record_route(URL, Header)
     %% and implicitly add_record_route/4
