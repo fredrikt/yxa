@@ -791,6 +791,8 @@ test() ->
     ok = test_type_check_sipurl(),
     ok = test_type_check_sip_sipurl(),
     ok = test_type_check_sips_sipurl(),
+    ok = test_type_check_tuple(),
+    ok = test_type_check_tuple_arity(),
 
 
     %% check_cfg_entry_type(Key, Value, Src, Def)
@@ -1385,6 +1387,56 @@ test_type_check_sips_sipurl() ->
 	_ -> throw(test_failed)
     catch
 	throw: {invalid_value, "invalid type", 1, 17} ->
+	    ok
+    end,
+
+    ok.
+
+test_type_check_tuple() ->
+    autotest:mark(?LINE, "type_check_elements/4 - tuple 1"),
+    %% check tuples
+    TupleL = [{test, []}, {test}],
+    {ok, TupleL} = type_check_elements(TupleL, tuple, #cfg_entry{}, []),
+
+    autotest:mark(?LINE, "type_check_elements/4 - tuple 2"),
+    %% check non-tuple
+    TupleL2 = [error],
+    TupleL2_head = hd(TupleL2),
+    try type_check_elements(TupleL2, tuple, #cfg_entry{}, []) of
+	_ -> throw(test_failed)
+    catch
+	throw: {invalid_value, "invalid type", 1, TupleL2_head} ->
+	    ok
+    end,
+
+    ok.
+
+test_type_check_tuple_arity() ->
+    autotest:mark(?LINE, "type_check_elements/4 - tuple/arity 1"),
+    %% check tuples
+    TupleL = [{test, []}, {foo, bar}],
+    {ok, TupleL} = type_check_elements(TupleL, {tuple, 2}, #cfg_entry{}, []),
+
+    autotest:mark(?LINE, "type_check_elements/4 - tuple/arity 2"),
+    %% check non-tuple
+    TupleL2 = [error],
+    TupleL2_head = hd(TupleL2),
+    try type_check_elements(TupleL2, {tuple, 2},
+			    #cfg_entry{}, []) of
+	_ -> throw(test_failed)
+    catch
+	throw: {invalid_value, "invalid type", 1, TupleL2_head} ->
+	    ok
+    end,
+
+    autotest:mark(?LINE, "type_check_elements/4 - tuple/arity 3"),
+    %% check wrong arity
+    TupleL3 = [{tuple, foo, bar}],
+    TupleL3_head = hd(TupleL3),
+    try type_check_elements(TupleL3, {tuple, 2}, #cfg_entry{}, []) of
+	_ -> throw(test_failed)
+    catch
+	throw: {invalid_value, "invalid type", 1, TupleL3_head} ->
 	    ok
     end,
 
