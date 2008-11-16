@@ -423,7 +423,7 @@ internal_error(Request, Socket, Status, Reason, ExtraHeaders) when is_record(Req
 %%--------------------------------------------------------------------
 %% @spec    (Packet, Origin) -> void() "does not matter."
 %%
-%%            Packet = string()
+%%            Packet = binary() | #request{} | #response{}
 %%            Origin = #siporigin{}
 %%
 %% @doc     Check if something we received from a socket (Packet) is a
@@ -540,7 +540,7 @@ my_apply(AppModule, Response, YxaCtx) when is_atom(AppModule), is_record(Respons
 %%            {ok, R, YxaCtx}       |
 %%            void() "unspecified"
 %%
-%%            Packet = string() | binary()
+%%            Packet = binary() | #request{} | #response{}
 %%            Origin = #siporigin{}
 %%
 %%            R      = #request{}  |
@@ -613,7 +613,8 @@ parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
     end.
 
 %% parse_packet2/2 - part of parse_packet/2. Parse the data if it is not in fact already parsed.
-parse_packet2(Msg, Origin) when is_record(Msg, request); is_record(Msg, response), is_record(Origin, siporigin) ->
+parse_packet2(Msg, Origin) when is_record(Msg, request) orelse is_record(Msg, response),
+				is_record(Origin, siporigin) ->
     %% is already parsed
     {ok, Msg};
 parse_packet2(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigin) ->
