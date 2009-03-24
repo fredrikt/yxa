@@ -18,8 +18,13 @@ exec_prefix=${prefix}
 builddir = @builddir@
 local_file = @local_file@
 
+ebin_dir = ../../ebin
+doc_dir = ../../doc
+yxa_include_dir = $(srcdir)/../include/
+
 ERLC = @ERLC@
 ERL = @ERL@
+L_ERLC_FLAGS = $(ERLC_FLAGS) -o $(ebin_dir) -I$(srcdir) -I$(yxa_include_dir)
 
 INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@

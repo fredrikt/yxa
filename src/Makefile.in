@@ -18,15 +18,17 @@ exec_prefix=${prefix}
 builddir = @builddir@
 local_module = @local_module@
 
+ebin_dir = ../ebin
+doc_dir = ../doc
+yxa_include_dir = $(srcdir)/include
+
 ERLC = @ERLC@
 ERL = @ERL@
+L_ERLC_FLAGS = $(ERLC_FLAGS) -o $(ebin_dir) -I$(srcdir) -I$(yxa_include_dir) -pa $(ebin_dir) 
 
 INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
-
-ebin_dir = ../ebin
-doc_dir = ../doc
 
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
@@ -143,7 +145,7 @@ $(RECURSIVE_TARGETS):
 	@target=`echo $@ | sed s/-recursive//`; \
 	list='$(SUBDIRS)'; for subdir in $$list; do \
 	echo "Making $$target in $$subdir"; \
-	(cd $$subdir && $(MAKE) $$target) || exit 1; \
+	(cd $$subdir && $(MAKE) ERLC_FLAGS="$(ERLC_FLAGS)" $$target) || exit 1; \
 	done
 
 install: $(boot_FILES) $(beam_FILES) $(hrl_FILES) start_ssl.boot install-recursive
@@ -187,13 +189,13 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 $(ebin_dir)/%.beam:	$(srcdir)/%.erl
-	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/include -W +debug_info $<
+	$(ERLC) $(L_ERLC_FLAGS) $<
 
 $(ebin_dir)/local.beam: $(srcdir)/local.erl ../config.status
-	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/include -W +debug_info -DLOCAL_MODULE=$(local_module) $(srcdir)/local.erl
+	$(ERLC) $(L_ERLC_FLAGS) -DLOCAL_MODULE=$(local_module) $(srcdir)/local.erl
 
 $(ebin_dir)/directory.beam: $(srcdir)/directory.erl ../config.status $(srcdir)/eldap/eldap.hrl
-	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/include -I$(srcdir)/eldap -W +debug_info $(srcdir)/directory.erl
+	$(ERLC) $(L_ERLC_FLAGS) -I$(srcdir)/eldap $(srcdir)/directory.erl
 
 $(ebin_dir)/%.app:	$(srcdir)/%.app-in
 	sed -e 's!%LOCAL_MODULE%!$(local_module)!' \
