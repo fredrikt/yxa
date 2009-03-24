@@ -18,15 +18,17 @@ exec_prefix=${prefix}
 builddir = @builddir@
 local_module = @local_module@
 
+ebin_dir = ../../ebin
+doc_dir = ../../doc
+yxa_include_dir = $(srcdir)/../include/
+
 ERLC = @ERLC@
 ERL = @ERL@
+L_ERLC_FLAGS = $(ERLC_FLAGS) -o $(ebin_dir) -I$(srcdir) -I$(yxa_include_dir) -pa $(ebin_dir) -pz ../
 
 INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
-
-ebin_dir = ../../ebin
-doc_dir = ../../doc
 
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
@@ -129,7 +131,7 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 $(ebin_dir)/%.beam:	$(srcdir)/%.erl
-	$(ERLC) -o $(ebin_dir) -pa $(ebin_dir) -I$(srcdir)/../include -pz ../ -W +debug_info $<
+	$(ERLC) $(L_ERLC_FLAGS) $<
 
 $(ebin_dir)/%.rel:	$(srcdir)/%.rel-in
 	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
