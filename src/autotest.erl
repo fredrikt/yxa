@@ -192,18 +192,30 @@ run([Mode]) ->
     io:format("======================================================================~n"),
 
     put(autotest_result, ok),
+    put(autotest_passed, 0),
+    put(autotest_failed, 0),
+    put(autotest_disabled, 0),
 
     F = fun({Module,Res}) ->
 		case Res of
 		    ok ->
-			io:format("~25w: passed~n", [Module]);
+			io:format("~25w: passed~n", [Module]),
+			put(autotest_passed, get(autotest_passed) + 1);
+		    {0, _Name, {error, "Unit test code disabled at compile time"}} ->
+			io:format("~25w: disabled~n", [Module]),
+			put(autotest_result, error),
+			put(autotest_disabled, get(autotest_disabled) + 1);
 		    {Line, Name, Error} ->
 			io:format("~25w: failed (test ~p, line ~p) - Error:~n~p~n~n",
 				  [Module, lists:flatten(Name), Line, Error]),
-			put(autotest_result, error)
+			put(autotest_result, error),
+			put(autotest_disabled, get(autotest_disabled) + 1)
 		end
 	end,
     lists:foreach(F, Results),
+
+    io:format("~nResult : ~p passed, ~p failed, ~p disabled modules.~n~n",
+	      [erase(autotest_passed), erase(autotest_failed), erase(autotest_disabled)]),
 
     Status = erase(autotest_result),
 
@@ -285,8 +297,12 @@ test_module2(Parent, Module) ->
 	    ok ->
 		fail_on_leftover_messages();
 	    Error ->
-		{Line, Name} = erase({autotest, position}),
-		{autotest_error, Line, Name, Error}
+		case erase({autotest, position}) of
+		    {Line, Name} ->
+			{autotest_error, Line, Name, Error};
+		    undefined ->
+			{autotest_error, 0, "no tests", Error}
+		end
 	end,
     Parent ! {test_result, self(), Res}.
 
