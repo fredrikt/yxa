@@ -215,7 +215,7 @@ start_ssl.boot: $(ebin_dir)/start_ssl.rel
 test: $(ebin_dir)/autotest.beam
 	$(ERL) -noshell -s autotest run shell -pz $(ebin_dir)
 
-covertest: autotest.beam
+covertest: $(ebin_dir)/autotest.beam
 	$(ERL) -noshell -s autotest run_cover shell -pz $(ebin_dir)
 
 xreftest: $(beam_FILES)
