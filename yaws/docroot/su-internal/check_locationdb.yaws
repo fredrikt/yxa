@@ -14,6 +14,8 @@
 -define(DEFAULT_MIN, 1).
 -define(DEFAULT_MAX, 10000).
 
+-define(LOCATIONDB_TABLE, phone).
+
 %%====================================================================
 %% Yaws entry point
 %%====================================================================
@@ -55,7 +57,7 @@ out2(A, {ok, NodeStr}) when is_list(NodeStr) ->
 
     Time1 = erlang:now(),
 
-    try check_locationdb(list_to_atom(NodeStr), phone, Min, Max) of
+    try check_locationdb(list_to_atom(NodeStr), ?LOCATIONDB_TABLE, Min, Max) of
 	{status, S} ->
 	    Time2 = erlang:now(),
 	    Diff = timer:now_diff(Time2, Time1) / 1000000,
@@ -91,14 +93,15 @@ get_int(A, Name, Default) ->
     end.
 
 %%--------------------------------------------------------------------
-%% Function: get_node_info(Node, Table, Min, Max)
+%% Function: check_locationdb(Node, Table, Min, Max)
 %%           Node = atom(), the node we are to talk with
 %%           Min  = integer(), minimum number of entrys to expect in
 %%                  the location database
 %%           Max  = integer(), maximum number of entrys to expect in
 %%                  the location database
 %% Descrip.: Check status of location database (table 'phone') on Node
-%% Returns : HTML = term(), Yaws html data
+%% Returns : {status, String} 
+%%           String = string()
 %%--------------------------------------------------------------------
 check_locationdb(Node, Table, Min, Max) when is_atom(Node), is_atom(Table),
 					     is_integer(Min), is_integer(Max) ->
@@ -122,7 +125,7 @@ check_locationdb(Node, Table, Min, Max) when is_atom(Node), is_atom(Table),
 				lists:concat([AvailStr, " (", Msg, ")"])
 			end;
 		    {badrpc, _E} ->
-			%% Node was accessible when we did mnesia:dirty_read/1 above,
+			%% Node was accessible when we did mnesia:dirty_first/1 above,
 			%% but not any longer.
 			io_lib:format("UNKNOWN, node ~p disappeared", [Node])
 		end,
