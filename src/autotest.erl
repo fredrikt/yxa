@@ -474,7 +474,12 @@ aggregate_coverage2([H | T], CoveredLines, TotalLines, ModuleStats) ->
    %% {ok, {_Module, {Cov, NotCov}}} = cover:analyse(H, coverage, module),
     {ok, Cov, NotCov} = get_module_coverage(H),
     ModLines = Cov + NotCov,
-    ModPercent = (Cov / ModLines * 100),
+    ModPercent =
+	if Cov /= 0 andalso ModLines /= 0 ->
+		Cov / ModLines * 100;
+	   true ->
+		0.0
+	end,
     This = {H, ModPercent, Cov, NotCov},
     NewModuleStats = [This | ModuleStats],
     aggregate_coverage2(T,
