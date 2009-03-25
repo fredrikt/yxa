@@ -88,6 +88,7 @@
 		       stun,
 		       appserver,
 		       presence_pidf,
+		       presence_package,
 		       subscription,
 		       sipuserdb_test,
 		       yxa_config,
