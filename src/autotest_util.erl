@@ -174,6 +174,14 @@ compare_records(L1, L2, ShouldChange, Fields) when is_list(L1), is_list(L2), is_
 	length(L1) /= length(L2) ->
 	    Msg = io_lib:format("These are not records, they have different length! ~p", [hd(L1)]),
 	    {error, lists:flatten(Msg)};
+	length(L1) /= length(Fields) + 1 ->
+	    Msg = io_lib:format("Length of record definition does not match first record (of type ~p)! ~p",
+				[hd(L1), Fields]),
+	    {error, lists:flatten(Msg)};
+	length(L2) /= length(Fields) + 1 ->
+	    Msg = io_lib:format("Length of record definition does not match second record (of type ~p)! ~p",
+				[hd(L2), Fields]),
+	    {error, lists:flatten(Msg)};
 	true ->
 	    RecName = hd(L1),
 	    case ShouldChange -- Fields of
