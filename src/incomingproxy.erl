@@ -434,7 +434,7 @@ request_homedomain_event(#request{method = Method} = Request, Origin) when Metho
 	    EventPackage = sipheader:event_package(Request#request.header),
 
 	    case lists:keysearch(EventPackage, 1, EventDstL) of
-		{value, {EventPackage, URL}} ->
+		{value, {EventPackage, URL}} when is_record(URL, sipurl) ->
 		    {forward, URL};
 		false ->
 		    %% use default eventserver parameter since we found no

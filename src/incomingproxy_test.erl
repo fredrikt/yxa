@@ -53,10 +53,11 @@ test() ->
     ok = sipuserdb_test:init(UserDb),
 
     ExtraCfg = [
-		{userdb_modules,	[sipuserdb_test]},
-		{myhostnames,		["autotest.example.org"]}
+		{userdb_modules,		[sipuserdb_test]},
+		{myhostnames,			["autotest.example.org"]}
+
 	       ],
-    yxa_test_config:init(incomingproxy, ExtraCfg),
+    ok = yxa_test_config:init(incomingproxy, ExtraCfg),
 
     ok = test_request(),
 
@@ -66,16 +67,19 @@ test_request() ->
     autotest_util:store_unit_test_result(incomingproxy, testing_sippipe, {ok, self()}),
     autotest_util:store_unit_test_result(transactionlayer, get_branch_from_handler, "test-branch"),
 
+    phone:test_create_table(),
+    database_gruu:test_create_table(),
+    database_regexproute:test_create_table(),
+    cpl_db:test_create_table(),
+
     ok = test_route(),
+    ok = test_pubsub_routing(),
 
     ok.
 
 
 test_route() ->
     autotest:mark(?LINE, "request/2 - Route - 0.0"),
-
-    phone:test_create_table(),
-    database_gruu:test_create_table(),
 
     case mnesia:transaction(fun test_route2/0) of
 	{aborted, ok} ->
@@ -176,5 +180,95 @@ test_route2() ->
 
     mnesia:abort(ok).
 
+
+test_pubsub_routing() ->
+    autotest:mark(?LINE, "request/2 - Route - 0.0"),
+
+    case mnesia:transaction(fun test_pubsub_routing2/0) of
+	{aborted, ok} ->
+	    ok;
+	{aborted, Res} ->
+	    {error, Res}
+    end.
+
+test_pubsub_routing2() ->
+    autotest:mark(?LINE, "request/2 - PubSub routing - 0.1"),
+
+    EventServerURL = sipurl:parse("sip:192.0.2.155"),
+    HomedomainStr = "example.org",
+
+    ExtraCfg = [
+		{userdb_modules,		[sipuserdb_test]},
+		{myhostnames,			["autotest.example.org"]},
+		{homedomain,			[HomedomainStr]},
+		{eventserver_for_package,	[{"unittest", sipurl:print(EventServerURL)}
+						]}
+	       ],
+    %% must use init, can't use set - set won't normalize values and we expect
+    %% URLs in eventserver_for_package to be normalized
+    ok = yxa_test_config:init(incomingproxy, ExtraCfg),
+
+    YxaCtx1 = #yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
+		       origin   = #siporigin{proto = yxa_test,
+					     addr  = "192.0.2.11",
+					     port  = 50000
+					    }
+		      },
+
+    %% request(Request, YxaCtx)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "request/2 - PubSub routing - 1.0"),
+    %% test SUBSCRIBE request to a user in one of our homedomains
+
+    HomedomainURL = sipurl:parse("sip:" ++ HomedomainStr),
+    HomeUser = sipurl:set([{user, "autotest2"}], HomedomainURL),
+
+    Message1 =
+	"SUBSCRIBE " ++ sipurl:print(HomeUser) ++ " SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST one.example.org\r\n"
+	"From: Remote User <sip:test@remote.example.org;tag=abc>\r\n"
+	"To: Test <sip:test@example.org>\r\n"
+	"Event: unittest;foo\r\n"
+	"\r\n",
+
+    Request1 = sippacket:parse(Message1, none),
+    autotest:mark(?LINE, "request/2 - PubSub routing - 1.1"),
+    ok = incomingproxy:request(Request1, YxaCtx1),
+    {Request1_Res, _YxaCtx1_Res11, Dst1_Res, []} = autotest_util:get_sippipe_result(),
+
+    autotest:mark(?LINE, "request/2 - PubSub routing - 1.2"),
+    %% verify results
+    
+    Request1_Expected =
+	#request{method = "SUBSCRIBE",
+		 uri    = HomeUser,
+		 body   = <<>>
+		},
+    ok = test_compare_records(Request1_Res, Request1_Expected, [header]),
+
+    [FirstDst1_Res] = Dst1_Res,
+    SipDst1_Expected =
+	#sipdst{proto = udp,
+		addr  = "192.0.2.155",
+		port  = 5060,
+		uri = HomeUser
+	       },
+    ok = test_compare_records(FirstDst1_Res, SipDst1_Expected, []),
+	       
+
+    ok = yxa_test_config:stop(),
+    mnesia:abort(ok).
+
+
+%% compare two records element by element and give good information on where they
+%% are not equal
+test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_list(ShouldChange) ->
+    RecName = element(1, R1),
+    Fields = test_record_info(RecName),
+    autotest_util:compare_records(R1, R2, ShouldChange, Fields).
+
+%% add more records here when needed
+test_record_info(request) ->	record_info(fields, request);
+test_record_info(sipdst) ->	record_info(fields, sipdst).
 
 -endif.
