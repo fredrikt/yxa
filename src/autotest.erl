@@ -210,7 +210,7 @@ run([Mode]) ->
 			io:format("~25w: failed (test ~p, line ~p) - Error:~n~p~n~n",
 				  [Module, lists:flatten(Name), Line, Error]),
 			put(autotest_result, error),
-			put(autotest_disabled, get(autotest_disabled) + 1)
+			put(autotest_failed, get(autotest_failed) + 1)
 		end
 	end,
     lists:foreach(F, Results),
