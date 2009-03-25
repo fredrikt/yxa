@@ -650,7 +650,8 @@ start_get_dstlist(_ServerHandler, Request, _ApproxMsgSize, [Dst | _] = DstList) 
 %% @doc     Assure we have a working server transaction handle. Either
 %%          we get one as ServerHandler argument, or we try to find
 %%          one using the transaction layer. If the server
-%%          transaction has already been cancelled, we return 'ok'.
+%%          transaction has already been cancelled, we return
+%%          'ignore'.
 %% @end
 %%--------------------------------------------------------------------
 start_get_servertransaction(TH, Request) when is_record(Request, request) ->
