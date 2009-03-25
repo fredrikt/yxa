@@ -116,7 +116,7 @@ process_request(Request, LogTag) when record(Request, request) ->
 
 get_user(URI) ->
     Key = sipurl:print(URI),
-    UserDb = yxa_config:get_env(testserver_userdb),
+    {ok, UserDb} = yxa_config:get_env(testserver_userdb),
     Res = regexp_locate_user(Key, UserDb),
     logger:log(debug, "Locate user: ~s -> ~p", [Key, Res]),
     Res.

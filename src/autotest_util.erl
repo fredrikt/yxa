@@ -22,6 +22,12 @@
 	 compare_records/3,
 	 compare_records/4,
 
+	 add_valid_credentials/3,
+	 add_valid_credentials/4,
+	 
+	 get_sippipe_result/0,
+	 get_created_response/0,
+
 	 test/0
 	]).
 
@@ -221,6 +227,54 @@ test_record_info(siplocationdb_e) ->		record_info(fields, siplocationdb_e);
 test_record_info(dialog) ->			record_info(fields, dialog);
 test_record_info(_) ->
     undefined.
+
+
+
+get_created_response() ->
+    receive
+	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
+	    ok = assert_on_message(),
+	    {Status, Reason, EH, Body};
+	M ->
+	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
+	    {error, lists:flatten(Msg)}
+    after 0 ->
+	    {error, "no created response in my mailbox"}
+    end.
+
+get_sippipe_result() ->
+    receive
+	{start_sippipe, Res} ->
+	    ok = assert_on_message(),
+	    Res;
+	M ->
+	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
+	    {error, lists:flatten(Msg)}
+    after 0 ->
+	    {error, "no sippipe data in my mailbox"}
+    end.
+
+
+add_valid_credentials(MethodName, Request, User) ->
+    Password = sipuserdb:get_password_for_user(User),
+    add_valid_credentials(MethodName, Request, User, Password).
+
+add_valid_credentials(MethodName, Request, User, Password) ->
+    true = is_list(Password),
+    NewHeader =
+	sipauth:add_credentials(digest, MethodName,
+				Request#request.method, Request#request.uri,
+				Request#request.header, User, Password),
+    Request#request{header = NewHeader}.
+
+assert_on_message() ->
+    receive
+	M ->
+	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
+	    {error, lists:flatten(Msg)}
+    after 0 ->
+	    ok
+    end.
 
 
 %%====================================================================

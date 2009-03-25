@@ -866,7 +866,7 @@ test() ->
     autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_4),
     error = start_get_dstlist(THandler, SGD_Request4, 500, route),
 
-    {604, "Does Not Exist Anywhere", [], <<>>} = test_get_created_response(),
+    {604, "Does Not Exist Anywhere", [], <<>>} = autotest_util:get_created_response(),
     autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
     autotest:mark(?LINE, "start_get_dstlist/4 - 5"),
@@ -879,7 +879,7 @@ test() ->
     autotest_util:store_unit_test_result(?MODULE, dnsutil_test_res, SGD_DNS_5),
     error = start_get_dstlist(THandler, SGD_Request5, 500, route),
 
-    {500, "Failed resolving Route destination", [], <<>>} = test_get_created_response(),
+    {500, "Failed resolving Route destination", [], <<>>} = autotest_util:get_created_response(),
     autotest_util:clear_unit_test_result(?MODULE, dnsutil_test_res),
 
 
@@ -959,7 +959,7 @@ test_cancel_received() ->
     %% check signals received
     test_receive_exact_cast({cancel, "server transaction cancelled", [{"Reason", ["unit test"]}]}),
 
-    {487, "Request Cancelled", [], <<>>} = test_get_created_response(),
+    {487, "Request Cancelled", [], <<>>} = autotest_util:get_created_response(),
 
     autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 2.1"),
     %% check cancel when already cancelled
@@ -984,7 +984,7 @@ test_cancel_received() ->
     autotest:mark(?LINE, "loop_receive_once/2 - CANCEL received 3.2"),
     %% check that the server transaction is told to respond 487 even though
     %% there was no client transaction to cancel
-    {487, "Request Cancelled", [], <<>>} = test_get_created_response(),
+    {487, "Request Cancelled", [], <<>>} = autotest_util:get_created_response(),
 
     ok.
 
@@ -1161,17 +1161,6 @@ test_processes_terminating() ->
 %%--------------------------------------------------------------------
 %%% Test helper functions
 %%--------------------------------------------------------------------
-
-test_get_created_response() ->
-    receive
-	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
-	    {Status, Reason, EH, Body};
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    {error, "no created response in my mailbox"}
-    end.
 
 test_receive_exact_cast(Match) ->
     test_receive_exact_signal({'$gen_cast', Match}).

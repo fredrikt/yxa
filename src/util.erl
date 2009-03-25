@@ -555,14 +555,6 @@ test() ->
     {true, LoggerPid} = safe_is_process_alive(logger),
     true = is_pid(LoggerPid),
 
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 3"),
-    %% list input (invalid)
-    {'EXIT', {function_clause, _}} = (catch safe_is_process_alive("foo")),
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 4"),
-    %% reference input (invalid)
-    {'EXIT', {function_clause, _}} = (catch safe_is_process_alive(make_ref())),
-
     autotest:mark(?LINE, "safe_is_process_alive/1 - 5"),
     %% test dead process
     {false, DeadPid} = safe_is_process_alive(DeadPid),

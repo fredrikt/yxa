@@ -1259,10 +1259,6 @@ test() ->
     #via{proto="SIP/2.0/TLS", host=MyHostname, port=SipsLPort, param=[]} =
 	create_via(tls6, []),
 
-    %% foo protocol - expect crash
-    autotest:mark(?LINE, "create_via/2 - 7"),
-    {'EXIT', {function_clause, _}} = (catch create_via(foo, [])),
-
 
     %% add_record_route(URL, Header)
     %% and implicitly add_record_route/4
@@ -1902,6 +1898,43 @@ test() ->
     autotest:mark(?LINE, "proxyauth_without_response/1 - 2"),
     none = proxyauth_without_response( keylist:from_list([]) ),
 
+    %% set_route(Route, Header)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "set_route/2 - 0"),
+    SR_Header = keylist:from_list([{"From", ["<sip:test@example.org"]}]),
+
+    autotest:mark(?LINE, "set_route/2 - 1.0"),
+    %% test addition of Route header
+    SR_Header1 = set_route(contact:parse(["<sip:one.example.org>", "<sip:two.example.org>"]),
+			   SR_Header),
+
+    autotest:mark(?LINE, "set_route/2 - 1.1"),
+    %% check result
+    [{from,"From",["<sip:test@example.org"]},
+     {route,"Route", ["<sip:one.example.org>", "<sip:two.example.org>"]}
+    ] = keylist:test_to_list(SR_Header1),
+    
+
+    autotest:mark(?LINE, "set_route/2 - 2.0"),
+    %% test deletion of Route header
+    SR_Header2 = set_route([], SR_Header1),
+
+    autotest:mark(?LINE, "set_route/2 - 2.1"),
+    %% check result
+    [{from,"From",["<sip:test@example.org"]}
+    ] = keylist:test_to_list(SR_Header2),
+    
+    autotest:mark(?LINE, "set_route/2 - 3.0"),
+    %% test modification of Route header
+    SR_Header3 = set_route(contact:parse(["<sip:three.example.org>"]),
+			   SR_Header2),
+
+    autotest:mark(?LINE, "set_route/2 - 3.1"),
+    %% check result
+    [{from,"From",["<sip:test@example.org"]},
+     {route,"Route", ["<sip:three.example.org>"]}
+    ] = keylist:test_to_list(SR_Header3),
+    
     ok.
 
 -endif.

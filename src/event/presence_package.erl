@@ -25,6 +25,10 @@
 	 subscription_behaviour/3
 	]).
 
+-export([
+	 test/0
+	]).
+
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
@@ -507,7 +511,7 @@ get_accept(Header) ->
 %% @end
 %%--------------------------------------------------------------------
 get_publish_etag_expires(Request, SIPuser, THandler) ->
-    {Action, ETag} =
+    Res =
 	case keylist:fetch("SIP-If-Match", Request#request.header) of
 	    [ETag1] ->
 		case presence_pidf:check_if_user_etag_exists(SIPuser, ETag1) of
@@ -532,10 +536,10 @@ get_publish_etag_expires(Request, SIPuser, THandler) ->
 		error
 	end,
 
-    case ETag of
+    case Res of
 	error ->
 	    error;
-	_ ->
+	{Action, ETag} ->
 	    case publish_get_expires(Request#request.header, THandler) of
 		error ->
 		    error;
@@ -587,3 +591,42 @@ generate_etag() ->
     {A, B, C} = erlang:now(),
     ETag1 = lists:concat([siprequest:myhostname(), "-", A, "-", B, "-", C]),
     lists:flatten(ETag1).
+
+
+
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: test()
+%% Descrip.: autotest callback
+%% Returns : ok
+%%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
+test() ->
+    
+    %% get_publish_etag_expires(Request, SIPuser, THandler)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_publish_etag_expires/3 - 1"),
+    %% test with too many SIP-If-Match headers
+    GPEE_Request1 = #request{method = "TEST",
+			     uri    = sipurl:parse("sip:ft@example.org"),
+			     header = keylist:from_list([{"SIP-If-Match", ["foo", "bar"]}
+							])
+			    },
+    error = get_publish_etag_expires(GPEE_Request1, "test_user",
+				     transactionlayer:test_get_thandler_self()
+				    ),
+    %% verify that a 400 response was created
+    {400, "More than one SIP-If-Match header value", [], <<>>} = autotest_util:get_created_response(),
+
+    ok.
+
+-endif.
