@@ -103,7 +103,7 @@ test_OPTIONS() ->
     %% test OPTIONS request to unknown user at this proxy
     ok = pstnproxy:request(Request1, YxaCtx1),
 
-    {404, "Not Found", [], <<>>} = get_created_response(),
+    {404, "Not Found", [], <<>>} = autotest_util:get_created_response(),
 
     autotest:mark(?LINE, "request/2 - OPTIONS 2.0"),
     Message2 =
@@ -118,7 +118,7 @@ test_OPTIONS() ->
     %% test OPTIONS request to unknown user at this proxy
     ok = pstnproxy:request(Request2, YxaCtx1),
 
-    {200, "OK", [], <<>>} = get_created_response(),
+    {200, "OK", [], <<>>} = autotest_util:get_created_response(),
 
     yxa_test_config:stop(),
     ok.
@@ -156,7 +156,7 @@ test_INVITE_from_gw() ->
 
     autotest:mark(?LINE, "request/2 - INVITE from gw 1.2"),
     %% verify result
-    {Request1, _SentCtx1, route, AppData1} = get_sippipe_result(),
+    {Request1, _SentCtx1, route, AppData1} = autotest_util:get_sippipe_result(),
     [#pstn_ctx{} = PstnCtx1] = AppData1,
     [from_gateway, has_route] = lists:sort(PstnCtx1#pstn_ctx.tags),
     "192.0.2.33" = PstnCtx1#pstn_ctx.ip,
@@ -201,7 +201,7 @@ test_INVITE_to_pstn() ->
     autotest:mark(?LINE, "request/2 - INVITE to pstn 1.1"),
     ok = pstnproxy:request(Request1, YxaCtx1),
 
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = autotest_util:get_created_response(),
 
     autotest:mark(?LINE, "request/2 - INVITE to pstn 2.0"),
     %% test INVITE to free PSTN destination
@@ -225,7 +225,7 @@ test_INVITE_to_pstn() ->
 
     autotest:mark(?LINE, "request/2 - INVITE to pstn 2.3"),
     DstUrl2 = sipurl:parse("sip:+1111@gw.example.org"),
-    {Request2, _YxaCtx2_res, DstUrl2, AppData2} = get_sippipe_result(),
+    {Request2, _YxaCtx2_res, DstUrl2, AppData2} = autotest_util:get_sippipe_result(),
     [#pstn_ctx{} = PstnCtx2] = AppData2,
     [] = lists:sort(PstnCtx2#pstn_ctx.tags),
     "192.0.2.9" = PstnCtx2#pstn_ctx.ip,
@@ -243,7 +243,7 @@ test_INVITE_to_pstn() ->
 	"\r\nbody",
 
     Request3_1 = sippacket:parse(Message3, none),
-    Request3 = add_valid_credentials("Proxy-Authorization", Request3_1, "autotest1"),
+    Request3 = autotest_util:add_valid_credentials("Proxy-Authorization", Request3_1, "autotest1"),
 
     YxaCtx3 = #yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
 		       origin   = #siporigin{proto = yxa_test,
@@ -255,7 +255,7 @@ test_INVITE_to_pstn() ->
     ok = pstnproxy:request(Request3, YxaCtx3),
 
     autotest:mark(?LINE, "request/2 - INVITE to pstn 3.3"),
-    {403, "Forbidden", [], <<>>} = get_created_response(),
+    {403, "Forbidden", [], <<>>} = autotest_util:get_created_response(),
 
 
 
@@ -269,7 +269,7 @@ test_INVITE_to_pstn() ->
 	"\r\nbody",
 
     Request4_1 = sippacket:parse(Message4, none),
-    Request4 = add_valid_credentials("Proxy-Authorization", Request4_1, "autotest1"),
+    Request4 = autotest_util:add_valid_credentials("Proxy-Authorization", Request4_1, "autotest1"),
 
     YxaCtx4 = #yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
 		       origin   = #siporigin{proto = yxa_test,
@@ -281,7 +281,7 @@ test_INVITE_to_pstn() ->
     ok = pstnproxy:request(Request4, YxaCtx4),
 
     autotest:mark(?LINE, "request/2 - INVITE to pstn 4.3"),
-    {Request4_Res, _YxaCtx4_res, DstUrl4_Res, AppData} = get_sippipe_result(),
+    {Request4_Res, _YxaCtx4_res, DstUrl4_Res, AppData} = autotest_util:get_sippipe_result(),
     Request4 = Request4_Res,
     DstUrl4_Res = sipurl:parse("sips:+1111@gw.example.org"),
 
@@ -303,13 +303,13 @@ test_INVITE_to_pstn() ->
 	"To: PSTN <sip:number@example.org>\r\n"
 	"\r\n",
     Request5_1 = sippacket:parse(Message5, none),
-    Request5 = add_valid_credentials("Proxy-Authorization", Request5_1, "autotest1"),
+    Request5 = autotest_util:add_valid_credentials("Proxy-Authorization", Request5_1, "autotest1"),
 
     autotest:mark(?LINE, "request/2 - INVITE to pstn 5.1"),
     ok = pstnproxy:request(Request5, YxaCtx4),
 
     autotest:mark(?LINE, "request/2 - INVITE to pstn 5.2"),
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge5]}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge5]}], <<>>} = autotest_util:get_created_response(),
     Dict5 = sipheader:auth(Challenge5),
     {ok, "true"} = dict:find("stale", Dict5),
     {ok, "test.example.org"} = dict:find("realm", Dict5),
@@ -344,7 +344,7 @@ test_From_addr_verification() ->
 	"\r\nbody",
 
     Request1_1 = sippacket:parse(Message1, none),
-    Request1 = add_valid_credentials("Proxy-Authorization", Request1_1, "autotest1"),
+    Request1 = autotest_util:add_valid_credentials("Proxy-Authorization", Request1_1, "autotest1"),
 
     YxaCtx1 = #yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
 		       origin   = #siporigin{proto = yxa_test,
@@ -357,19 +357,19 @@ test_From_addr_verification() ->
     ok = pstnproxy:request(Request1, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - From address verification - 1.2"),
-    {403, "Forbidden", [], <<>>} = get_created_response(),
+    {403, "Forbidden", [], <<>>} = autotest_util:get_created_response(),
 
 
     autotest:mark(?LINE, "request/2 - From address verification - 2.0"),
     %% test the same 'wrong From: for this authentication user' as in test 1
     %% above, only now with X-Yxa-Peer-Auth authorization (should be allowed)
-    Request2 = add_valid_credentials("X-Yxa-Peer-Auth", Request1, "autotest1", "peersecret"),
+    Request2 = autotest_util:add_valid_credentials("X-Yxa-Peer-Auth", Request1, "autotest1", "peersecret"),
 
     autotest:mark(?LINE, "request/2 - From address verification - 2.1"),
     ok = pstnproxy:request(Request2, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - From address verification - 2.2"),
-    {Request2_Res, _YxaCtx2, DstURL2_Res, AppData2_Res} = get_sippipe_result(),
+    {Request2_Res, _YxaCtx2, DstURL2_Res, AppData2_Res} = autotest_util:get_sippipe_result(),
     Request2_Res = Request2,
     DstURL2_Res = sipurl:parse("sip:+1111@gw.example.org"),
     [#pstn_ctx{user = "autotest1",
@@ -382,13 +382,13 @@ test_From_addr_verification() ->
     %% test the same 'wrong From: for this authentication user' with peer-auth as
     %% in test 2 above, but this time the peer auth is stale so it will be ignored
     yxa_test_config:set(sipauth_challenge_expiration, -1),
-    Request3 = add_valid_credentials("X-Yxa-Peer-Auth", Request1, "autotest1", "peersecret"),
+    Request3 = autotest_util:add_valid_credentials("X-Yxa-Peer-Auth", Request1, "autotest1", "peersecret"),
 
     autotest:mark(?LINE, "request/2 - From address verification - 3.1"),
     ok = pstnproxy:request(Request3, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - From address verification - 3.2"),
-    {403, "Forbidden", [], <<>>} = get_created_response(),
+    {403, "Forbidden", [], <<>>} = autotest_util:get_created_response(),
     yxa_test_config:set(sipauth_challenge_expiration, 30),
 
 
@@ -403,13 +403,13 @@ test_From_addr_verification() ->
 	"\r\nbody",
 
     Request4_1 = sippacket:parse(Message4, none),
-    Request4 = add_valid_credentials("Proxy-Authorization", Request4_1, "autotest1"),
+    Request4 = autotest_util:add_valid_credentials("Proxy-Authorization", Request4_1, "autotest1"),
 
     autotest:mark(?LINE, "request/2 - From address verification - 4.1"),
     ok = pstnproxy:request(Request4, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - From address verification - 4.2"),
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge4]}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge4]}], <<>>} = autotest_util:get_created_response(),
     Dict4 = sipheader:auth(Challenge4),
     {ok, "true"} = dict:find("stale", Dict4),
     {ok, "test.example.org"} = dict:find("realm", Dict4),
@@ -433,7 +433,7 @@ test_From_addr_verification() ->
     ok = pstnproxy:request(Request5, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - From address verification - 5.2"),
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge5]}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge5]}], <<>>} = autotest_util:get_created_response(),
     Dict5 = sipheader:auth(Challenge5),
     error = dict:find("stale", Dict5),
     {ok, "test.example.org"} = dict:find("realm", Dict5),
@@ -486,7 +486,7 @@ test_BYE() ->
 
     autotest:mark(?LINE, "request/2 - BYE 1.2"),
     %% verify result (should not be 'stale')
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge1]}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [Challenge1]}], <<>>} = autotest_util:get_created_response(),
     Dict1 = sipheader:auth(Challenge1),
     error = dict:find("stale", Dict1),
 
@@ -503,14 +503,14 @@ test_BYE() ->
 	"\r\n",
 
     Request2_1 = sippacket:parse(Message2, none),
-    Request2 = add_valid_credentials("Proxy-Authorization", Request2_1, "autotest1"),
+    Request2 = autotest_util:add_valid_credentials("Proxy-Authorization", Request2_1, "autotest1"),
 
     autotest:mark(?LINE, "request/2 - BYE 2.1"),
     ok = pstnproxy:request(Request2, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - BYE 2.2"),
     %% verify result (should be allowed, even with stale auth)
-    {Request2_Res, _YxaCtx2, DstURL2_Res, AppData2_Res} = get_sippipe_result(),
+    {Request2_Res, _YxaCtx2, DstURL2_Res, AppData2_Res} = autotest_util:get_sippipe_result(),
     Request2_Res = Request2,
     DstURL2_Res = sipurl:parse("sip:+1111@gw.example.org"),
     [#pstn_ctx{tags		= [],
@@ -534,14 +534,14 @@ test_BYE() ->
 	"\r\n",
 
     Request3_1 = sippacket:parse(Message3, none),
-    Request3 = add_valid_credentials("Proxy-Authorization", Request3_1, "autotest1"),
+    Request3 = autotest_util:add_valid_credentials("Proxy-Authorization", Request3_1, "autotest1"),
 
     autotest:mark(?LINE, "request/2 - BYE 3.1"),
     ok = pstnproxy:request(Request3, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - BYE 3.2"),
     %% verify result (should be allowed, even with stale auth)
-    {Request3_Res, _YxaCtx3, DstURL3_Res, [PstnCtxOut3]} = get_sippipe_result(),
+    {Request3_Res, _YxaCtx3, DstURL3_Res, [PstnCtxOut3]} = autotest_util:get_sippipe_result(),
     Request3_Res = Request3,
     DstURL3_Res = sipurl:parse("sip:foo@gw.example.org"),
     ExpectedPstnCtx3 =
@@ -568,14 +568,14 @@ test_BYE() ->
 	"\r\n",
 
     Request4_1 = sippacket:parse(Message4, none),
-    Request4 = add_valid_credentials("Proxy-Authorization", Request4_1, "autotest1"),
+    Request4 = autotest_util:add_valid_credentials("Proxy-Authorization", Request4_1, "autotest1"),
 
     autotest:mark(?LINE, "request/2 - BYE 4.1"),
     ok = pstnproxy:request(Request4, YxaCtx1),
 
     autotest:mark(?LINE, "request/2 - BYE 4.2"),
     %% BYE sent outside a dialog shoudl NOT be allowed
-    {403, "Forbidden", [], <<>>} = get_created_response(),
+    {403, "Forbidden", [], <<>>} = autotest_util:get_created_response(),
 
 
     autotest:mark(?LINE, "request/2 - BYE 5.0"),
@@ -595,7 +595,7 @@ test_BYE() ->
 
     autotest:mark(?LINE, "request/2 - BYE 5.2"),
     %% verify result (should be allowed, we are configured not to challenge BYE)
-    {Request5_Res, _YxaCtx5, DstURL5_Res, [PstnCtxOut5]} = get_sippipe_result(),
+    {Request5_Res, _YxaCtx5, DstURL5_Res, [PstnCtxOut5]} = autotest_util:get_sippipe_result(),
     Request5_Res = Request5,
     DstURL5_Res = sipurl:parse("sip:ext.2345@specialgw.example.org"),
     ExpectedPstnCtx5 =
@@ -658,7 +658,7 @@ test_various_auth_to_pstn() ->
 
     autotest:mark(?LINE, "request/2 - BYE with Route 1.2"),
     %% verify result (should be allowed, we are configured not to challenge BYE)
-    {Request1_Res, _YxaCtx1, DstURL1_Res, [PstnCtxOut1]} = get_sippipe_result(),
+    {Request1_Res, _YxaCtx1, DstURL1_Res, [PstnCtxOut1]} = autotest_util:get_sippipe_result(),
     Request1_Res = Request1,
     DstURL1_Res = route,
     ExpectedPstnCtx1 =
@@ -684,7 +684,7 @@ test_various_auth_to_pstn() ->
 
     autotest:mark(?LINE, "request/2 - BYE with Route 2.2"),
     %% verify result (should be challenged this time)
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = autotest_util:get_created_response(),
 
     %% restore config
     yxa_test_config:set([{pstnproxy_challenge_bye_to_pstn_dst, false}]),
@@ -707,7 +707,7 @@ test_various_auth_to_pstn() ->
 
     autotest:mark(?LINE, "request/2 - OPTIONS with Route 3.2"),
     %% verify result (should NOT be allowed)
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", [_]}], <<>>} = autotest_util:get_created_response(),
 
 
 
@@ -716,52 +716,6 @@ test_various_auth_to_pstn() ->
 %%====================================================================
 %% Helper functions
 %%====================================================================
-
-get_created_response() ->
-    receive
-	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
-	    ok = assert_on_message(),
-	    {Status, Reason, EH, Body};
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    {error, "no created response in my mailbox"}
-    end.
-
-get_sippipe_result() ->
-    receive
-	{start_sippipe, Res} ->
-	    ok = assert_on_message(),
-	    Res;
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    {error, "no sippipe data in my mailbox"}
-    end.
-
-
-add_valid_credentials(MethodName, Request, User) ->
-    Password = sipuserdb:get_password_for_user(User),
-    add_valid_credentials(MethodName, Request, User, Password).
-
-add_valid_credentials(MethodName, Request, User, Password) ->
-    true = is_list(Password),
-    NewHeader =
-	sipauth:add_credentials(digest, MethodName,
-				Request#request.method, Request#request.uri,
-				Request#request.header, User, Password),
-    Request#request{header = NewHeader}.
-
-assert_on_message() ->
-    receive
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    ok
-    end.
 
 %% compare two records element by element and give good information on where they
 %% are not equal

@@ -606,6 +606,12 @@ generate_etag() ->
 %% Descrip.: autotest callback
 %% Returns : ok
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     
     %% get_publish_etag_expires(Request, SIPuser, THandler)
@@ -621,31 +627,8 @@ test() ->
 				     transactionlayer:test_get_thandler_self()
 				    ),
     %% verify that a 400 response was created
-    {400, "More than one SIP-If-Match header value", [], <<>>} = get_created_response(),
+    {400, "More than one SIP-If-Match header value", [], <<>>} = autotest_util:get_created_response(),
 
     ok.
 
-%%====================================================================
-%% Helper functions
-%%====================================================================
-
-get_created_response() ->
-    receive
-	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
-	    ok = assert_on_message(),
-	    {Status, Reason, EH, Body};
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    {error, "no created response in my mailbox"}
-    end.
-
-assert_on_message() ->
-    receive
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    ok
-    end.
+-endif.

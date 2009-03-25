@@ -117,7 +117,7 @@ test_route2() ->
     autotest:mark(?LINE, "request/2 - Route - 1.1"),
     ok = outgoingproxy:request(Request1, YxaCtx1),
 
-    {Request1_Res, _YxaCtx1_Res11, Dst1_Res, []} = get_sippipe_result(),
+    {Request1_Res, _YxaCtx1_Res11, Dst1_Res, []} = autotest_util:get_sippipe_result(),
 
     autotest:mark(?LINE, "request/2 - Route - 1.2"),
     %% verify results
@@ -143,7 +143,7 @@ test_route2() ->
     autotest:mark(?LINE, "request/2 - Route - 2.1"),
     ok = outgoingproxy:request(Request2, YxaCtx1),
 
-    {Request2_Res, _YxaCtx1_Res21, Dst2_Res, []} = get_sippipe_result(),
+    {Request2_Res, _YxaCtx1_Res21, Dst2_Res, []} = autotest_util:get_sippipe_result(),
 
     autotest:mark(?LINE, "request/2 - Route - 2.2"),
     %% verify results. the push-requri-to-Route for Route header without ;lr
@@ -171,49 +171,8 @@ test_route2() ->
 
     autotest:mark(?LINE, "request/2 - Route - 3.2"),
     %% verify results
-    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", _}], <<>>} = get_created_response(),
+    {407, "Proxy Authentication Required", [{"Proxy-Authenticate", _}], <<>>} = autotest_util:get_created_response(),
 
     mnesia:abort(ok).
-
-
-
-%%====================================================================
-%% Helper functions
-%%====================================================================
-
-get_created_response() ->
-    receive
-	{'$gen_cast', {create_response, Status, Reason, EH, Body}} ->
-	    {Status, Reason, EH, Body};
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    {error, "no created response in my mailbox"}
-    end.
-
-get_sippipe_result() ->
-    receive
-	{start_sippipe, Res} ->
-	    Res;
-	M ->
-	    Msg = io_lib:format("Test: Unknown signal found in process mailbox :~n~p~n~n", [M]),
-	    {error, lists:flatten(Msg)}
-    after 0 ->
-	    {error, "no sippipe data in my mailbox"}
-    end.
-
-
-add_valid_credentials(MethodName, Request, User) ->
-    Password = sipuserdb:get_password_for_user(User),
-    add_valid_credentials(MethodName, Request, User, Password).
-
-add_valid_credentials(MethodName, Request, User, Password) ->
-    true = is_list(Password),
-    NewHeader =
-	sipauth:add_credentials(digest, MethodName,
-				Request#request.method, Request#request.uri,
-				Request#request.header, User, Password),
-    Request#request{header = NewHeader}.
 
 -endif.
