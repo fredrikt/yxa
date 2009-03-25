@@ -671,13 +671,13 @@ relay_dst2str(_) ->
 %% @end
 %%--------------------------------------------------------------------
 start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), is_record(YxaCtx, yxa_ctx) ->
-    case get({?MODULE, testing_sippipe}) of
-	{true, Res, none} ->
-	    Res;
-	{true, Res, Pid} when is_pid(Pid) ->
+    case autotest_util:is_unit_testing(?MODULE, testing_sippipe) of
+	{true, {Res, Pid}} when is_pid(Pid) ->
 	    Pid ! {start_sippipe, {Request, YxaCtx, Dst, AppData}},
 	    Res;
-	_ ->
+	{true, Res} ->
+	    Res;
+	false ->
 	    local:start_sippipe(Request, YxaCtx, Dst, AppData)
     end.
 
