@@ -519,6 +519,14 @@ make_extraheaders(Status, ExtraHeaders_In) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     ok = eventserver_test:test(),
     ok.
+
+-endif.

@@ -261,6 +261,12 @@ merge_config(Config, []) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% parse_includes(State, TermL)
     %%--------------------------------------------------------------------
@@ -362,3 +368,5 @@ test() ->
     ] = merge_config(MConfig_3, MConfig_2),
 
     ok.
+
+-endif.

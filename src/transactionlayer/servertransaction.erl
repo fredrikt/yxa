@@ -1533,6 +1533,12 @@ make_response(Status, Reason, RBody, ExtraHeaders, ViaParameters, State)
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     Test_OrigRequest =
 	#request{method = "INVITE",
@@ -2451,3 +2457,5 @@ test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_l
 %% add more records here when needed
 test_record_info(state) ->
     record_info(fields, state).
+
+-endif.

@@ -657,6 +657,12 @@ response({Status, Reason}, Header, Body) when is_integer(Status), is_list(Reason
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% parse/2
     %%--------------------------------------------------------------------
@@ -985,3 +991,5 @@ test() ->
     ["SIP/2.0/TLS 192.0.2.78"] = keylist:fetch('via', RHeader2),
 
     ok.
+
+-endif.

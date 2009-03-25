@@ -1134,6 +1134,12 @@ lookup_result_to_str2(Unknown) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% test homedomain/1
     %% Note: We can't test this function very well because it relies heavily
@@ -1596,3 +1602,5 @@ test_mnesia_dependant_functions() ->
 
 
     mnesia:abort(ok).
+
+-endif.

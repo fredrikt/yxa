@@ -885,6 +885,12 @@ sort_sockets_laddr([], HP, _Res) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% test do_send_sort_sockets(Sockets, SipSocket)
@@ -925,3 +931,5 @@ test() ->
     false = is_only_nulls(<<0, 0, 0, 1>>),
 
     ok.
+
+-endif.

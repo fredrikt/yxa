@@ -690,6 +690,12 @@ get_no_user_addresses2(_Username, []) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
 
     %% test parse_address(Params, A)
@@ -919,3 +925,5 @@ test() ->
     end,
 
     ok.
+
+-endif.

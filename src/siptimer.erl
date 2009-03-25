@@ -462,6 +462,12 @@ test_get_appsignals_sort(A, B) when is_record(A, siptimer), is_record(B, siptime
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% empty()
     %%--------------------------------------------------------------------
@@ -818,3 +824,5 @@ test_timer_was_updated(OldT, NewT) when is_record(OldT, siptimer), is_record(New
 	true ->
 	    true
     end.
+
+-endif.

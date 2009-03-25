@@ -632,6 +632,12 @@ forward_call_actions_create_calls2([], _Timeout, _Localring, _User, _Proto, Res)
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% locations_to_actions2(L, CallTimeout, [], [])
@@ -731,3 +737,5 @@ test() ->
     ok = appserver_test:test(),
 
     ok.
+
+-endif.

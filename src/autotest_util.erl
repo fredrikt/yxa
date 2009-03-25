@@ -235,6 +235,12 @@ test_record_info(_) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
 
     %% compare_records(T1, T2, ShouldChange, Fields)
@@ -304,3 +310,5 @@ test() ->
 
 test_test_record_info(test_rec_a) ->
     record_info(fields, test_rec_a).
+
+-endif.

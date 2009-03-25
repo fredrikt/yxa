@@ -731,6 +731,12 @@ change_action(Key, Value, Mode) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% merge_entrys(Left, Right)
     %%--------------------------------------------------------------------
@@ -748,3 +754,5 @@ test() ->
      {b,2,2}] = merge_entrys([{b,2,2}], [{a,b,c}]),
 
     ok.
+
+-endif.

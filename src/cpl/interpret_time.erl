@@ -2794,9 +2794,15 @@ get_default_datetime(Level, TimeSwitchCond, CurrentDateTime) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
     interpret_time_test:test(),
 
     ok.
 
-
+-endif.

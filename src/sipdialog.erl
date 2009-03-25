@@ -936,6 +936,12 @@ get_next_local_cseq(Dialog) when is_record(Dialog, dialog) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     Now = util:timestamp(),
 
@@ -1309,3 +1315,5 @@ test_dialog_expire_process(Parent) ->
 	    Parent ! {self(), Msg},
 	    test_dialog_expire_process(Parent)
     end.
+
+-endif.

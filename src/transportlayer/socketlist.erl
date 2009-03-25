@@ -500,6 +500,12 @@ make_yxa_socket_ident(out, Proto, HP) when is_atom(Proto), is_record(HP, hp) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     DeadPid1 = spawn(fun() -> ok end),
     Empty = empty(),
@@ -717,3 +723,5 @@ test() ->
     ["Listening on" ++ _] = monitor_format(Add_L1),
 
     ok.
+
+-endif.

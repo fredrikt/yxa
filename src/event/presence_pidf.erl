@@ -820,6 +820,12 @@ get_tuple_id(Tuple) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% normalize_entity(Entity)
@@ -1287,3 +1293,5 @@ test_verify_tuples2([H1 | T1], [H2 | T2], Pos) ->
     end;
 test_verify_tuples2([], [], _Pos) ->
     ok.
+
+-endif.

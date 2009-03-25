@@ -646,6 +646,12 @@ print_auth_response(AuthMethod, User, Realm, URIstr, Response, Nonce, Opaque, Al
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     autotest:mark(?LINE, "sipauth - 0"),
 
@@ -855,3 +861,5 @@ test() ->
     ok = yxa_test_config:stop(),
 
     ok.
+
+-endif.

@@ -222,6 +222,12 @@ remove(Param, Key) when is_record(Param, url_param), is_list(Key) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% test to_norm
     %%---------------------------------------------------------------
@@ -324,3 +330,5 @@ test() ->
     #url_param{pairs = ADB6} = add(UrlParam2, "gazong"),
 
     ok.
+
+-endif.

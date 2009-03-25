@@ -491,6 +491,12 @@ close_socket(Socket) when is_record(Socket, sipsocket) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% test get_listenport(Proto)
@@ -553,3 +559,5 @@ test() ->
 
 
     ok.
+
+-endif.

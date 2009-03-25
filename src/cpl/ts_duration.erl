@@ -446,6 +446,12 @@ sub_second(Duration) when is_record(Duration, duration) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
 
     test1(),
@@ -810,3 +816,4 @@ test4() ->
     D_c4b = sub_second(D_c4a),
     ok.
 
+-endif.

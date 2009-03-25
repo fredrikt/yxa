@@ -29,6 +29,12 @@
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     UserDb =
 	[{user, [
@@ -769,3 +775,5 @@ test_record_info(pstn_ctx) ->
     record_info(fields, pstn_ctx);
 test_record_info(sipurl) ->
     record_info(fields, sipurl).
+
+-endif.

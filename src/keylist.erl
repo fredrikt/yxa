@@ -441,6 +441,12 @@ modcase(Key, Name, Func, [Elem | List]) when is_record(Elem, keyelem) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% normalize(Key)
@@ -741,6 +747,7 @@ test() ->
 
     ok.
 
+-endif.
 
 %%--------------------------------------------------------------------
 %% @spec    (Keylist) -> [{Key, Name, Value}]

@@ -1372,6 +1372,12 @@ skip_challenge_of_bye_to_pstn(_Request, _PstnCtx) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     UserDb =
 	[{user, [
@@ -1527,3 +1533,5 @@ test() ->
     pstnproxy_test:test(),
 
     ok.
+
+-endif.

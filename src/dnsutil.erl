@@ -893,6 +893,12 @@ srvlookup(Proto, Name) when is_list(Name) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% test siplookup(Domain)
     %%--------------------------------------------------------------------
@@ -1218,3 +1224,5 @@ test_mwp_count([], _H, Count) ->
 test_permutations([]) -> [[]];
 test_permutations(L) ->
     [[H|T] || H <- L, T <- test_permutations(L--[H])].
+
+-endif.

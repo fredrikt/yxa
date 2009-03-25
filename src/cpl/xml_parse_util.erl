@@ -584,6 +584,12 @@ visualize(G) ->
 %% Descrip.: autotest callback
 %% Returns :
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
 
     %% time/1
@@ -844,3 +850,5 @@ test() ->
 
 
     ok.
+
+-endif.

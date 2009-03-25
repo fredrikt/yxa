@@ -951,6 +951,12 @@ get_address_switch_uri(Request, Field) when is_record(Request, request) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
 
     %% is_subdomain2/2
@@ -1131,3 +1137,5 @@ test() ->
 
 
     ok.
+
+-endif.

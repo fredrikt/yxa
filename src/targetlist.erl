@@ -423,6 +423,12 @@ set_cancelled(Target, Value) when is_record(Target, target), is_boolean(Value) -
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% test empty/0
     %%--------------------------------------------------------------------
@@ -579,3 +585,5 @@ test() ->
     [Target1Response, Target3Response, Target4Response] = get_responses(UpdatedList4),
 
     ok.
+
+-endif.
