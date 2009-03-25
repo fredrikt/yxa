@@ -301,10 +301,10 @@ refresh_transactionslist(State) when is_record(State, state), State#state.curren
     Node = State#state.current_node,
     Lb = State#state.transactions_lb,
     {Text9, NewState9} =
-	case catch gen_server:call({transactionlayer, Node}, {monitor_get_transactionlist}) of
-	    {ok, Transactions} when is_record(Transactions, transactionstatelist) ->
+	case catch gen_server:call({transactionlayer, Node}, {get_all_entries}) of
+	    Transactions when is_list(Transactions) ->
 		C = io_lib:format("~p entrys in transactionlayer's list :",
-				  [transactionstatelist:get_length(Transactions)]),
+				  [length(Transactions)]),
 		TF = transactionstatelist:monitor_format(Transactions),
 		Text = [C, ""] ++ TF,
 		{Text, State};
