@@ -22,7 +22,9 @@
 	 user_has_cpl_script/1,
 	 user_has_cpl_script/2,
 	 rm_cpl_for_user/1,
-	 get_transform_fun/0
+	 get_transform_fun/0,
+
+	 test_create_table/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -232,6 +234,26 @@ get_transform_fun() ->
 		CPL
 	end,
     {ok, record_info(fields, cpl_script_graph), F}.
+
+%%--------------------------------------------------------------------
+%% @spec    () -> ok
+%%
+%% @doc     Create a table in RAM only, for use in unit tests.
+%% @hidden
+%% @end
+%%--------------------------------------------------------------------
+test_create_table() ->
+    Table = cpl_script_graph,
+    case catch mnesia:table_info(Table, attributes) of
+	Attrs when is_list(Attrs) ->
+	    ok;
+	{'EXIT', {aborted, {no_exists, Table, attributes}}} ->
+	    %% Create table 'cpl_script_graph' in RAM for use in the tests here
+	    {atomic, ok} =
+		mnesia:create_table(Table, [{attributes, record_info(fields, cpl_script_graph)},
+					    {type, bag}
+					   ])
+    end.
 
 %%====================================================================
 %% Behaviour functions
