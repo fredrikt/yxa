@@ -547,7 +547,7 @@
 		     },
 	   #cfg_entry{key	= eventserver_for_package,
 		      list_of	= true,
-		      type	= term,
+		      type	= string_sipurl,
 		      default	= []
 		     },
 	   #cfg_entry{key	= eventserver,

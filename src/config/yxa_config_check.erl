@@ -286,15 +286,7 @@ check_cfg_entry_type(Key, undefined, yxa_config_default, Def) when is_atom(Key),
     {ok, undefined};
 check_cfg_entry_type(Key, Value, Src, Def) when is_atom(Key), is_record(Def, cfg_entry) ->
     try case type_check(Key, Value, Def) of
-	    {ok, NewValue} when NewValue /= Value ->
-		{ok, NewValue};
 	    {ok, NewValue} ->
-		%%case lists:member(Key, ?NO_DISCLOSURE) of
-		%%    true ->
-		%%	logger:log(debug, "Config: Kept ~p (value not shown)", [Key]);
-		%%    false ->
-		%%	logger:log(debug, "Config: Kept ~p = ~p", [Key, NewValue])
-		%%end,
 		{ok, NewValue};
 	    {error, Msg} when is_list(Msg) ->
 		{error, Msg}
@@ -424,6 +416,7 @@ type_check(Key, Value, #cfg_entry{list_of = true} = Def) ->
 %%                     sipurl         |
 %%                     sip_sipurl     |
 %%                     sips_sipurl    |
+%%                     string_sipurl  |
 %%                     tuple          |
 %%                     {tuple, Arity}
 %%            Arity  = integer()
@@ -572,6 +565,25 @@ type_check_elements([H | T], sips_sipurl, Def, Res) when is_list(H) ->
 	    end;
 	_ ->
 	    throw({invalid_value, "unparsable default-sips-URL", length(Res) + 1, H})
+    end;
+
+%%
+%% string_sipurl
+%%
+type_check_elements([H | T], string_sipurl, Def, Res) ->
+    try
+	begin
+	    {HStr, HURL} = H,
+	    {ok, [NewHStr]} = type_check_elements([HStr], string, Def, []),
+	    {ok, [NewHURL]} = type_check_elements([HURL], sipurl, Def, []),
+	    {NewHStr, NewHURL}
+	end of
+	This ->
+	    type_check_elements(T, string_sipurl, Def, [This | Res])
+    catch
+	throw:
+	  {invalid_value, _, _, _} ->
+	    throw({invalid_value, "unparsable string+URL", length(Res) + 1, H})
     end;
 
 type_check_elements([H | _T], _Type, _Def, Res) ->
@@ -797,6 +809,7 @@ test() ->
     ok = test_type_check_sipurl(),
     ok = test_type_check_sip_sipurl(),
     ok = test_type_check_sips_sipurl(),
+    ok = test_type_check_string_sipurl(),
     ok = test_type_check_tuple(),
     ok = test_type_check_tuple_arity(),
 
@@ -1358,7 +1371,6 @@ test_type_check_sip_sipurl() ->
 
     ok.
 
-
 test_type_check_sips_sipurl() ->
     autotest:mark(?LINE, "type_check_elements/4 - sips_sipurl 0"),
     TCE_SIPSURL_s1 = "ft@example.com:5555",
@@ -1393,6 +1405,49 @@ test_type_check_sips_sipurl() ->
 	_ -> throw(test_failed)
     catch
 	throw: {invalid_value, "invalid type", 1, 17} ->
+	    ok
+    end,
+
+    ok.
+
+test_type_check_string_sipurl() ->
+    autotest:mark(?LINE, "type_check_elements/4 - string_sipurl 0"),
+    TCE_SIPURL_s1 = "sip:ft@example.com:5555",
+    TCE_SIPURL_s2 = "sips:server.example.com",
+    TCE_SIPURL_u1 = sipurl:parse(TCE_SIPURL_s1),
+    TCE_SIPURL_u2 = sipurl:parse(TCE_SIPURL_s2),
+
+    autotest:mark(?LINE, "type_check_elements/4 - string_sipurl 1.0"),
+    %% check valid URLs with normalization
+    TCE_StrURL1 = [{"Test", TCE_SIPURL_s1},
+		   {"foo",  TCE_SIPURL_s2}
+		  ],
+    {ok, TCE_Res1} =
+	type_check_elements(TCE_StrURL1, string_sipurl, #cfg_entry{normalize = true}, []),
+    %% validate results
+    autotest:mark(?LINE, "type_check_elements/4 - string_sipurl 1.1"),
+    [{"test", TCE_SIPURL_u1},
+     {"foo",  TCE_SIPURL_u2}
+    ] = TCE_Res1,
+
+    autotest:mark(?LINE, "type_check_elements/4 - string_sipurl 2.0"),
+    %% check valid URLs without normalization
+    {ok, TCE_Res2} =
+	type_check_elements(TCE_StrURL1, string_sipurl, #cfg_entry{normalize = false}, []),
+    %% validate results
+    autotest:mark(?LINE, "type_check_elements/4 - string_sipurl 2.1"),
+    [{"Test", TCE_SIPURL_s1},
+     {"foo",  TCE_SIPURL_s2}
+    ] = TCE_Res2,
+
+    autotest:mark(?LINE, "type_check_elements/4 - string_sipurl 3"),
+    %% check one valid and one invalid URL
+    TCE_StrURL3 = {not_a_string, TCE_SIPURL_s1},
+    try type_check_elements([TCE_StrURL3], string_sipurl,
+			    #cfg_entry{}, []) of
+	_ -> throw(test_failed)
+    catch
+	throw: {invalid_value, "unparsable string+URL", 1, TCE_StrURL3} ->
 	    ok
     end,
 
