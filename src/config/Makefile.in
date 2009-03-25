@@ -24,7 +24,7 @@ yxa_include_dir = $(srcdir)/../include/
 
 ERLC = @ERLC@
 ERL = @ERL@
-L_ERLC_FLAGS = $(ERLC_FLAGS) -o $(ebin_dir) -I$(srcdir) -I$(yxa_include_dir)
+L_ERLC_FLAGS = $(ERLC_FLAGS) -o $(ebin_dir) -I$(srcdir) -I$(yxa_include_dir) -pa $(ebin_dir)
 
 INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
