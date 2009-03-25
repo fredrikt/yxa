@@ -1778,6 +1778,12 @@ should_cancel_on_parent_exit(_Method, State) when is_record(State, state) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     Test_Request =
 	#request{method = "INVITE",
@@ -3201,3 +3207,5 @@ test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_l
 %% add more records here when needed
 test_record_info(state) ->
     record_info(fields, state).
+
+-endif.

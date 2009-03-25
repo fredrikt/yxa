@@ -1394,6 +1394,12 @@ get_flag_value(Key, #phone{flags = Flags}) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% test get_priorities(Locations)
@@ -2566,3 +2572,5 @@ test_remove_outbound_params(In) ->
     NewParams = url_param:remove(URL1#sipurl.param_pairs, "ob"),
     NewURL = sipurl:set([{param, NewParams}], URL1),
     contact:print( contact:new(NewURL) ).
+
+-endif.

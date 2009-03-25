@@ -1451,6 +1451,12 @@ get_range_responses(Min, Max, [H | T], Res) when is_record(H, sp_response) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     Self = self(),
 
@@ -2272,3 +2278,5 @@ get_target_value(State, Branch, Key) when is_record(State, state), is_list(Branc
 	    [Value] = targetlist:extract([Key], Target),
 	    Value
     end.
+
+-endif.

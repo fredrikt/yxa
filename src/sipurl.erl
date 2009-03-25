@@ -785,6 +785,12 @@ set([], URL) when is_record(URL, sipurl) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% unescape_str/1
     %%--------------------------------------------------------------------
@@ -1178,6 +1184,8 @@ test() ->
     false = url_is_equal(A10, B10),
 
     ok.
+
+-endif.
 
 %%====================================================================
 %% Behaviour functions

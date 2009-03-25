@@ -1191,6 +1191,12 @@ set_response_body(Response, Body) when is_record(Response, response), is_list(Bo
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% myhostname()
     %%--------------------------------------------------------------------
@@ -1897,3 +1903,5 @@ test() ->
     none = proxyauth_without_response( keylist:from_list([]) ),
 
     ok.
+
+-endif.

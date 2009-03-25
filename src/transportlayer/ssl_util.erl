@@ -400,6 +400,12 @@ get_matching_altname(ValidNames, CommonName, []) when is_list(ValidNames), is_li
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
     autotest:mark(?LINE, "SSL certificates - 0"),
 
@@ -617,3 +623,5 @@ test() ->
     true = is_valid_ssl_certname(undefined, IsValidSubject1, [], false),
 
     ok.
+
+-endif.

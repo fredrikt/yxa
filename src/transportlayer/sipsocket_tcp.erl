@@ -287,6 +287,12 @@ get_timeout(tls6) -> 5000.
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     autotest:mark(?LINE, "tcp connections - 0"),
 
@@ -451,3 +457,5 @@ test_collect_results(N, Res) ->
 	5000 ->
 	    timeout
     end.
+
+-endif.

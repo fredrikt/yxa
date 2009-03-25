@@ -515,6 +515,12 @@ ge_datetime(_Timezone, DT1, DT2) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
     test1(),
 
@@ -939,3 +945,4 @@ test4() ->
     ok.
 
 
+-endif.

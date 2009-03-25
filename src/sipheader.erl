@@ -1308,6 +1308,12 @@ guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, 
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% test comma(String)
@@ -1954,3 +1960,5 @@ test() ->
 
 
     ok.
+
+-endif.

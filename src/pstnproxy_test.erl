@@ -29,6 +29,12 @@
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     UserDb =
 	[{user, [
@@ -611,3 +617,5 @@ assert_on_message() ->
     after 0 ->
 	    ok
     end.
+
+-endif.

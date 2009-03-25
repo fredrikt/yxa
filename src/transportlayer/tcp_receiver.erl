@@ -685,6 +685,12 @@ get_content_length(Type, Header) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
     %% handle_received_data2(Data, Recv)
     %%--------------------------------------------------------------------
@@ -1039,3 +1045,5 @@ test() ->
     end,
 
     ok.
+
+-endif.

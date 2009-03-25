@@ -566,6 +566,12 @@ get_good_socket(none, Dst) when is_record(Dst, sipdst) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     MyHostname = siprequest:myhostname(),
     MyPort = sipsocket:default_port(yxa_test, none),
@@ -910,3 +916,5 @@ test() ->
     autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, get_socket}),
 
     ok.
+
+-endif.

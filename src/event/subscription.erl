@@ -1350,6 +1350,12 @@ get_subscribe_refresh_timeout(Expires) when is_integer(Expires) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% get_subscribe_refresh_timeout(Expires)
     %%--------------------------------------------------------------------
@@ -1363,3 +1369,5 @@ test() ->
     4 * 1000 = get_subscribe_refresh_timeout(5),
 
     ok.
+
+-endif.

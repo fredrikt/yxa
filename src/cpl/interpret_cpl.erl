@@ -1232,6 +1232,15 @@ reject({RejectAttrs, terminate}, State) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+test27() ->
+    {error, "Unit test code disabled at compile time"}.
+    
+-else.
+
 test() ->
 
     interpret_cpl_test:test(),
@@ -1495,3 +1504,6 @@ test27() ->
 
 
     ok.
+
+
+-endif.

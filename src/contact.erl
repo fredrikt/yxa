@@ -646,6 +646,12 @@ set_urlstr(Contact, URLstr) when is_list(URLstr) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% parse(Contacts)
@@ -1078,3 +1084,5 @@ test() ->
 
 
     ok.
+
+-endif.

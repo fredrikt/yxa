@@ -28,6 +28,12 @@
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     autotest:mark(?LINE, "outgoingproxy_test setup - 0"),
 
@@ -209,3 +215,5 @@ add_valid_credentials(MethodName, Request, User, Password) ->
 				Request#request.method, Request#request.uri,
 				Request#request.header, User, Password),
     Request#request{header = NewHeader}.
+
+-endif.

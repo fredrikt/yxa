@@ -859,6 +859,12 @@ dnsutil_get_ip_port(Host, Port) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     %% test remove_tls_destinations(SRVList)
     %%--------------------------------------------------------------------
@@ -1523,3 +1529,5 @@ test() ->
 		       DebugF_2]),
 
     ok.
+
+-endif.

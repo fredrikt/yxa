@@ -1786,10 +1786,16 @@ is_subaction_name_unqiue(SubactionName, ParseState) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     xml_parse_test:test(),
 
     ok.
 
-
+-endif.

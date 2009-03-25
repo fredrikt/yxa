@@ -775,6 +775,12 @@ check_loadable_soft_no_definition(Key, Value) when is_atom(Key) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% type_check_elements(Values, Type, Def, [])
@@ -1389,3 +1395,5 @@ test_type_check_sips_sipurl() ->
     end,
 
     ok.
+
+-endif.

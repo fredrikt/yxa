@@ -1385,6 +1385,12 @@ error_code_reason(N) when is_integer(N) -> "unknown error".
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% decode_attributes(Packet, Offset)
@@ -2204,3 +2210,5 @@ test_expect_error_code(Num, Str, Attrs) when is_integer(Num), is_list(Str) ->
 
 test_get_attr_value(Label, Attrs) when is_atom(Label), is_list(Attrs) ->
     [E#stun_attr.value || E <- Attrs, E#stun_attr.label == Label].
+
+-endif.

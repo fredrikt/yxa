@@ -353,6 +353,12 @@ digit(_Digit) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% test timestamp()
@@ -607,3 +613,5 @@ test() ->
     "2001::]" = remove_v6_brackets("2001::]"),
 
     ok.
+
+-endif.

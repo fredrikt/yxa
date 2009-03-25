@@ -645,6 +645,12 @@ make_dst(SipDst) when is_record(SipDst, sipdst) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     Self = self(),
 
@@ -845,3 +851,5 @@ test() ->
 
 
     ok.
+
+-endif.

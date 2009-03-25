@@ -685,6 +685,12 @@ start_get_servertransaction(TH, Request) when is_record(Request, request) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     yxa_test_config:init(incomingproxy, [{sipsocket_blacklisting, false}]),
 
@@ -1213,3 +1219,5 @@ test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_l
 %% add more records here when needed
 test_record_info(state) ->
     record_info(fields, state).
+
+-endif.

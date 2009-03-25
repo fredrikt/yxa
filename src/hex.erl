@@ -167,6 +167,12 @@ from([C | String], N) when C >= $A, C =< $F ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
 
     %% to(Binary)
@@ -204,3 +210,5 @@ test() ->
     4886718345 = from("123456789"),
 
     ok.
+
+-endif.

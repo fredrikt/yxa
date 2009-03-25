@@ -1408,6 +1408,12 @@ origin2str(Origin) when is_record(Origin, siporigin) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     EmptyBody = <<>>,	%% Work around compiler bug in Erlang R10B-2
 
@@ -2022,3 +2028,5 @@ test() ->
 	(catch check_supported_uri_scheme(URISchemeURL3, URISchemeHeader)),
 
     ok.
+
+-endif.

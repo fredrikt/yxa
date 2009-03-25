@@ -1325,6 +1325,12 @@ start_sippipe(Request, YxaCtx, Dst, AppData) when is_record(Request, request), i
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
+-ifdef( YXA_NO_UNITTEST ).
+test() ->
+    {error, "Unit test code disabled at compile time"}.
+
+-else.
+
 test() ->
     UserDb =
 	[{user, [
@@ -1480,3 +1486,5 @@ test() ->
     pstnproxy_test:test(),
 
     ok.
+
+-endif.
