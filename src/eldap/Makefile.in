@@ -92,4 +92,4 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 .SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 $(ebin_dir)/%.beam:	%.erl
-	$(ERLC) $(ERLC_FLAGS) $<
+	$(ERLC) $(L_ERLC_FLAGS) $<
