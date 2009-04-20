@@ -520,11 +520,11 @@ get_publish_etag_expires(Request, SIPuser, THandler) ->
 		    true ->
 			case Request#request.body of
 			    <<>> ->
-				%% Has body, is not a refresh but rather an update
-				{update, ETag1};
-			    _ ->
 				%%% "a PUBLISH request that refreshes event state MUST NOT have a body."
-				{refresh, ETag1}
+				{refresh, ETag1};
+			    _ ->
+				%% Has body, is not a refresh but rather an update
+				{update, ETag1}
 			end;
 		    false ->
 			transactionlayer:send_response_handler(THandler, 412, "Conditional Request Failed"),
