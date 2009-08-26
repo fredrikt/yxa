@@ -262,7 +262,7 @@ request("presence", _Request, YxaCtx, _Ctx) ->
 %%            Body         = binary() | list()
 %%            PkgState     = #my_state{}
 %%
-%% @doc     YXA event packages must export an is_allowed_subscribe/6
+%% @doc     YXA event packages must export an is_allowed_subscribe/7
 %%          function. This function is called when the event server
 %%          receives a subscription request for this event package,
 %%          and is the event packages chance to decide wether the

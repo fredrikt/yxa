@@ -161,7 +161,7 @@ request("dialog", _Request, YxaCtx, _Ctx) ->
 %%            Body         = binary() | list() "body of response"
 %%            NewPkgState  = #my_state{}
 %%
-%% @doc     YXA event packages must export an is_allowed_subscribe/8
+%% @doc     YXA event packages must export an is_allowed_subscribe/7
 %%          function. This function is called when the event server
 %%          receives a subscription request for this event package,
 %%          and is the event packages chance to decide wether the
