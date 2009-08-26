@@ -75,6 +75,14 @@
 %% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
 -define(SOCKETOPTSv6, [{reuseaddr, true}, binary, inet6, {buffer, 8 * 1024}]).
 
+%% LINUX_IPPROTO_IPv6 = 41 is located in 
+%% /usr/include/linux/in.h from linux-libc-dev
+%% /usr/include/netinet/in.h from libc6-dev
+-define(LINUX_IPPROTO_IPV6, 41).
+%% and LINUX_IPV6_V6ONLY = 26 in
+%% * /usr/include/linux/in6.h from linux-libc-dev
+%% * /usr/include/bits/in.h from libc6-dev
+-define(LINUX_IPV6_V6ONLY, 26).
 
 %%====================================================================
 %% External functions
@@ -171,7 +179,15 @@ start_listening([{udp, IP, Port} | T], State) when is_integer(Port), is_record(S
 	    {stop, "Could not open UDP socket"}
     end;
 start_listening([{udp6, IP, Port} | T], State) when is_integer(Port), is_record(State, state) ->
-    SocketOpts = [{ip, IP} | ?SOCKETOPTSv6],
+    SocketOpts0 = [{ip, IP} | ?SOCKETOPTSv6],
+    SocketOpts = case os:type() of
+		     {unix,linux} ->
+			 %% set socket options to request an IPv6 socket only on Linux
+			 LinuxIPv6only = {raw,  ?LINUX_IPPROTO_IPV6, ?LINUX_IPV6_V6ONLY, <<1:32/native>>},
+			 [LinuxIPv6only | SocketOpts0];
+		     _ ->
+			 SocketOpts0
+		 end,
     case gen_udp:open(Port, SocketOpts) of
 	{ok, Socket} ->
 	    HostPort1 = get_localaddr(Socket, "[::]"),
