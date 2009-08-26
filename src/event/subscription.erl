@@ -754,7 +754,7 @@ received_request(State, THandler, #request{method = "SUBSCRIBE"} = NewRequest, Y
 		       "~p is allowed to re-subscribe to presentity ~p",
 		       [PackageS, PackageM, Subscriber, Presentity]),
 	    case PackageM:is_allowed_subscribe(PackageS, SubNum + 1, NewRequest, YxaCtx,
-					       LogTag, THandler, Subscriber, Presentity,
+					       Subscriber, Presentity,
 					       PkgState) of
 		{ok, SubState1, Status, Reason, ExtraHeaders, Body, NewPkgState}
 		when SubState1 == active orelse SubState1 == pending orelse SubState1 == terminated,
