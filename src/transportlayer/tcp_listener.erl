@@ -56,6 +56,15 @@
 %% The ssl module does not support reuseaddr
 -define(SSL_SOCKETOPTS, [binary, {packet, 0}, {active, once}, {nodelay, true}]).
 
+%% LINUX_IPPROTO_IPv6 = 41 is located in 
+%% /usr/include/linux/in.h from linux-libc-dev
+%% /usr/include/netinet/in.h from libc6-dev
+-define(LINUX_IPPROTO_IPV6, 41).
+%% and LINUX_IPV6_V6ONLY = 26 in
+%% * /usr/include/linux/in6.h from linux-libc-dev
+%% * /usr/include/bits/in.h from libc6-dev
+-define(LINUX_IPV6_V6ONLY, 26).
+
 
 %%====================================================================
 %% External functions
@@ -338,7 +347,15 @@ get_settings(tcp, IPtuple) ->
     This = [inet, {ip, IPtuple}],
     {ok, inet, gen_tcp, This ++ ?SOCKETOPTS};
 get_settings(tcp6, IPtuple) ->
-    This = [inet6, {ip, IPtuple}],
+    This0 = [inet6, {ip, IPtuple}],
+    This = case os:type() of
+	       {unix,linux} ->
+		   %% set socket options to request an IPv6 socket only on Linux
+		   LinuxIPv6only = {raw,  ?LINUX_IPPROTO_IPV6, ?LINUX_IPV6_V6ONLY, <<1:32/native>>},
+		   [LinuxIPv6only | This0];
+	       _ ->
+		   This0
+	   end,
     {ok, inet, gen_tcp, This ++ ?SOCKETOPTS};
 get_settings(tls, IPtuple) ->
     L = get_settings_tls(),
