@@ -81,7 +81,7 @@ start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
 	true ->
 	    case lists:keysearch(certfile, 1, Options) of
 		{value, _} ->
-		    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
+		    Pid = proc_lib:spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
 		    {ok, Pid};
 		false ->
 		    logger:log(normal, "NOT starting ~p listener on port ~p, no SSL server certificate specified "
@@ -89,7 +89,7 @@ start_link(IPt, Proto, Port) when is_atom(Proto), is_integer(Port) ->
 		    ignore
 	    end;
 	false ->
-	    Pid = spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
+	    Pid = proc_lib:spawn_link(?MODULE, start_listening, [Proto, Port, InetModule, SocketModule, Options]),
 	    {ok, Pid}
     end.
 

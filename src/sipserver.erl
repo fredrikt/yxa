@@ -332,7 +332,7 @@ init_statistics() ->
 %% @end
 %%--------------------------------------------------------------------
 safe_spawn(Module, Function, Arguments) ->
-    spawn(fun() -> safe_spawn_child(Module, Function, Arguments) end).
+    proc_lib:spawn(fun() -> safe_spawn_child(Module, Function, Arguments) end).
 
 safe_spawn_child(Module, Function, Arguments) ->
     try apply(Module, Function, Arguments) of
