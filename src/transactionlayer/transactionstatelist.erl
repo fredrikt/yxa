@@ -37,7 +37,9 @@
 	 set_result/2,
 	 update_transactionstate/1,
 	 get_length/0,
-	 get_all_entries/0
+	 get_all_entries/0,
+
+	 test/0
 	]).
 
 %%--------------------------------------------------------------------
@@ -51,7 +53,12 @@
 %%--------------------------------------------------------------------
 %% @type tables() = #tables{}.
 %%                  no description
--record(tables, {ref_to_t, pid_to_ref, ack_to_ref, typeid_to_ref}).
+-record(tables, {ref_to_t,
+		 pid_to_ref,
+		 ack_to_ref,
+		 typeid_to_ref,
+		 statistics
+		}).
 
 %%--------------------------------------------------------------------
 %% Macros
@@ -59,6 +66,17 @@
 %% Transaction expire is just a safety-net thing. All transactions should
 %% terminate by themselves long before this.
 -define(TRANSACTION_EXPIRE, 900).
+
+%% we generally use named tables in this module, but to facilitate testing some
+%% functions (the ones tested typically) provide the opportunity to supply a #tables
+%% record instead.
+-define(DEFAULT_TABLES, #tables{ref_to_t      = transactionstate_ref_to_t,
+				pid_to_ref    = transactionstate_pid_to_ref,
+				ack_to_ref    = transactionstate_ack_to_ref,
+				typeid_to_ref = transactionstate_typeid_to_ref,
+				statistics    = yxa_statistics
+			       }
+	).
 
 %%====================================================================
 %% External functions
@@ -82,8 +100,12 @@
 %%--------------------------------------------------------------------
 add_client_transaction(Method, Branch, Pid, Desc)
   when is_list(Method), is_list(Branch), is_pid(Pid), is_list(Desc) ->
+    add_client_transaction(?DEFAULT_TABLES, Method, Branch, Pid, Desc).
+
+add_client_transaction(Tables, Method, Branch, Pid, Desc)
+  when is_list(Method), is_list(Branch), is_pid(Pid), is_list(Desc) ->
     Id = {Branch, Method},
-    add(client, Id, none, Pid, Desc).
+    add(Tables, client, Id, none, Pid, Desc).
 
 %%--------------------------------------------------------------------
 %% @spec    (Request, Pid, Desc) ->
@@ -100,8 +122,12 @@ add_client_transaction(Method, Branch, Pid, Desc)
 %% @doc     Add a new transaction state entry to SocketList.
 %% @end
 %%--------------------------------------------------------------------
-add_server_transaction(Request, Pid, Desc)
+add_server_transaction(Request, Pid, Desc) 
   when is_record(Request, request), is_pid(Pid), is_list(Desc) ->
+    add_server_transaction(?DEFAULT_TABLES, Request, Pid, Desc).
+
+add_server_transaction(Tables, Request, Pid, Desc)
+  when is_record(Tables, tables), is_record(Request, request), is_pid(Pid), is_list(Desc) ->
     case sipheader:get_server_transaction_id(Request) of
 	error ->
 	    logger:log(error, "transactionstatelist: Could not get server transaction id for request"),
@@ -116,12 +142,12 @@ add_server_transaction(Request, Pid, Desc)
 			_ ->
 			    none
 		    end,
-	    add(server, Id, AckId, Pid, Desc)
+	    add(Tables, server, Id, AckId, Pid, Desc)
     end.
 
 %%--------------------------------------------------------------------
 %% @spec    () ->
-%%            TStateList
+%%            {ok, TStateList}
 %%
 %%            TStateList = #transactionstatelist{}
 %%
@@ -129,12 +155,19 @@ add_server_transaction(Request, Pid, Desc)
 %% @end
 %%--------------------------------------------------------------------
 empty() ->
-    Ref2t = ets:new(transactionstate_ref_to_t, [public, set, named_table]),
-    Pid2ref = ets:new(transactionstate_pid_to_ref, [public, bag, named_table]),
-    Ack2ref = ets:new(transactionstate_ack_to_ref, [public, set, named_table]),
-    TypeId2ref = ets:new(transactionstate_typeid_to_ref, [public, set, named_table]),
-    Tables = #tables{ref_to_t=Ref2t, pid_to_ref=Pid2ref, ack_to_ref=Ack2ref, typeid_to_ref=TypeId2ref},
-    #transactionstatelist{tables=Tables}.
+    empty(?DEFAULT_TABLES).
+
+empty(Tables) when is_record(Tables, tables) ->
+    Ref2t = ets:new(Tables#tables.ref_to_t, [public, set, named_table]),
+    Pid2ref = ets:new(Tables#tables.pid_to_ref, [public, bag, named_table]),
+    Ack2ref = ets:new(Tables#tables.ack_to_ref, [public, set, named_table]),
+    TypeId2ref = ets:new(Tables#tables.typeid_to_ref, [public, set, named_table]),
+    NewTables = Tables#tables{ref_to_t      = Ref2t,
+			      pid_to_ref    = Pid2ref,
+			      ack_to_ref    = Ack2ref,
+			      typeid_to_ref = TypeId2ref
+			     },
+    {ok, #transactionstatelist{tables = NewTables}}.
 
 
 %%--------------------------------------------------------------------
@@ -152,14 +185,17 @@ empty() ->
 %% @end
 %%--------------------------------------------------------------------
 get_server_transaction_using_request(Request) when is_record(Request, request) ->
+    get_server_transaction_using_request(?DEFAULT_TABLES, Request).
+
+get_server_transaction_using_request(Tables, Request) when is_record(Tables, tables), is_record(Request, request) ->
     case sipheader:get_server_transaction_id(Request) of
 	is_2543_ack ->
-	    get_server_transaction_ack_2543(Request);
+	    get_server_transaction_ack_2543(Tables, Request);
 	error ->
 	    logger:log(error, "Transaction state list: Could not get server transaction for request"),
 	    error;
 	Id ->
-	    case get_elem(server, Id) of
+	    case get_elem(Tables, server, Id) of
 		none when Request#request.method == "ACK" ->
 		    %% If the UAC is 2543 compliant, but there is a 3261 compliant proxy between UAC and us,
 		    %% the 3261 proxy will possibly generate another branch for the ACK than the INVITE
@@ -171,7 +207,7 @@ get_server_transaction_using_request(Request) when is_record(Request, request) -
 		    %%
 		    logger:log(debug, "Transaction state list: Found no matching server "
 			       "transaction for ACK using RFC3261 methods, trying RFC2543 too"),
-		    get_server_transaction_ack_2543(Request);
+		    get_server_transaction_ack_2543(Tables, Request);
 		none ->
 		    none;
 		Res when is_record(Res, transactionstate) ->
@@ -180,11 +216,12 @@ get_server_transaction_using_request(Request) when is_record(Request, request) -
     end.
 
 %%--------------------------------------------------------------------
-%% @spec    (Request) ->
+%% @spec    (Tables, Request) ->
 %%            Entry |
 %%            error |
 %%            none
 %%
+%%            Tables  = #tables{}
 %%            Request = #request{}
 %%
 %%            Entry = #transactionstate{}
@@ -195,7 +232,7 @@ get_server_transaction_using_request(Request) when is_record(Request, request) -
 %%          using the painful old RFC2543 backwards compatible code.
 %% @end
 %%--------------------------------------------------------------------
-get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
+get_server_transaction_ack_2543(Tables, Request) when is_record(Request, request) ->
     %% ACK requests are matched to transactions differently if they are not received from
     %% an RFC3261 compliant device, see RFC3261 17.2.3
     case sipheader:get_server_transaction_ack_id_2543(Request) of
@@ -204,7 +241,7 @@ get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
 	    error;
 	Id ->
 	    ToTag = sipheader:get_tag(keylist:fetch('to', Request#request.header)),
-	    case get_elem_ackid(Id, ToTag) of
+	    case get_elem_ackid(Tables, Id, ToTag) of
 		none ->
 		    logger:log(debug, "Transaction state list: ACK request does not match any existing transaction"),
 		    %% If this ever happens, this extra debug output will probably be crucial to
@@ -237,8 +274,11 @@ get_server_transaction_ack_2543(Request) when is_record(Request, request) ->
 %% @end
 %%--------------------------------------------------------------------
 get_client_transaction(Method, Branch) ->
+    get_client_transaction(?DEFAULT_TABLES, Method, Branch).
+
+get_client_transaction(Tables, Method, Branch) ->
     Id = {Branch, Method},
-    get_elem(client, Id).
+    get_elem(Tables, client, Id).
 
 %%--------------------------------------------------------------------
 %% @spec    (Pid) ->
@@ -255,7 +295,10 @@ get_client_transaction(Method, Branch) ->
 %% @end
 %%--------------------------------------------------------------------
 get_entrylist_using_pid(Pid) when is_pid(Pid) ->
-    case get_using_pid2(Pid) of
+    get_entrylist_using_pid(?DEFAULT_TABLES, Pid).
+
+get_entrylist_using_pid(Tables, Pid) when is_pid(Pid) ->
+    case get_using_pid2(Tables, Pid) of
 	[] ->
 	    none;
 	L when is_list(L) ->
@@ -280,8 +323,11 @@ get_entrylist_using_pid(Pid) when is_pid(Pid) ->
 %% @end
 %%--------------------------------------------------------------------
 get_elem_using_pid(Pid, TStateList) when is_pid(Pid), is_record(TStateList, transactionstatelist) ->
+    get_elem_using_pid(?DEFAULT_TABLES, Pid, TStateList).
+
+get_elem_using_pid(Tables, Pid, TStateList) when is_pid(Pid), is_record(TStateList, transactionstatelist) ->
     %%case get_using_pid2(Pid, TStateList#transactionstatelist.list, []) of
-    case get_using_pid2(Pid) of
+    case get_using_pid2(Tables, Pid) of
 	[] ->
 	    none;
 	[Elem] when is_record(Elem, transactionstate) ->
@@ -304,9 +350,9 @@ get_elem_using_pid(Pid, TStateList) when is_pid(Pid), is_record(TStateList, tran
 %%          transactionstatelist who have a matching pid.
 %% @end
 %%--------------------------------------------------------------------
-get_using_pid2(Pid) ->
-    RefList = ets:lookup(transactionstate_pid_to_ref, Pid),
-    fetch_using_ref_tuples(RefList).
+get_using_pid2(Tables, Pid)  ->
+    RefList = ets:lookup(Tables#tables.pid_to_ref, Pid),
+    fetch_using_ref_tuples(Tables, RefList).
 
 %%--------------------------------------------------------------------
 %% @spec    (Type, Id) ->
@@ -322,10 +368,10 @@ get_using_pid2(Pid) ->
 %%          has a matching type and id.
 %% @end
 %%--------------------------------------------------------------------
-get_elem(Type, Id) when is_atom(Type); Type == server; Type == client ->
+get_elem(Tables, Type, Id) when Type == server orelse Type == client ->
     TId = {Type, Id},
-    RefList = ets:lookup(transactionstate_typeid_to_ref, TId),
-    case fetch_using_ref_tuples(RefList) of
+    RefList = ets:lookup(Tables#tables.typeid_to_ref, TId),
+    case fetch_using_ref_tuples(Tables, RefList) of
 	[] -> none;
 	[IdMatch] ->
 	    IdMatch
@@ -333,12 +379,13 @@ get_elem(Type, Id) when is_atom(Type); Type == server; Type == client ->
 
 
 %%--------------------------------------------------------------------
-%% @spec    (AckId, ToTag) ->
+%% @spec    (Tables, AckId, ToTag) ->
 %%            Entry |
 %%            none
 %%
-%%            AckId = term()
-%%            ToTag = string() | none
+%%            Tables = #tables{}
+%%            AckId  = term()
+%%            ToTag  = string() | none
 %%
 %%            Entry = #transactionstate{}
 %%
@@ -348,9 +395,9 @@ get_elem(Type, Id) when is_atom(Type); Type == server; Type == client ->
 %%          matching RFC2543 ACK's to non-2xx responses to INVITEs.
 %% @end
 %%--------------------------------------------------------------------
-get_elem_ackid(AckId, ToTag) ->
-    RefList = ets:lookup(transactionstate_ack_to_ref, AckId),
-    AckIdMatches = fetch_using_ref_tuples(RefList),
+get_elem_ackid(Tables, AckId, ToTag) ->
+    RefList = ets:lookup(Tables#tables.ack_to_ref, AckId),
+    AckIdMatches = fetch_using_ref_tuples(Tables, RefList),
     filter_server_totag_matches(ToTag, AckIdMatches).
 
 filter_server_totag_matches(_ToTag, []) ->
@@ -489,9 +536,12 @@ set_result(TState, Value) when is_record(TState, transactionstate), is_list(Valu
 %% @end
 %%--------------------------------------------------------------------
 delete_using_entrylist(EntryList) when is_list(EntryList) ->
-    ok = del_entrys(EntryList),
+    delete_using_entrylist(?DEFAULT_TABLES, EntryList).
+
+delete_using_entrylist(Tables, EntryList) when is_list(EntryList) ->
+    ok = del_entrys(Tables, EntryList),
     NumEntrys = length(EntryList),
-    ets:update_counter(yxa_statistics, {transactionlayer, transactions}, 0 - NumEntrys),
+    ets:update_counter(Tables#tables.statistics, {transactionlayer, transactions}, 0 - NumEntrys),
     {ok, NumEntrys}.
 
 %%--------------------------------------------------------------------
@@ -508,8 +558,11 @@ delete_using_entrylist(EntryList) when is_list(EntryList) ->
 %% @end
 %%--------------------------------------------------------------------
 update_transactionstate(TState) when is_record(TState, transactionstate) ->
+    update_transactionstate(?DEFAULT_TABLES, TState).
+
+update_transactionstate(Tables, TState) when is_record(TState, transactionstate) ->
     Ref = TState#transactionstate.ref,
-    true = ets:insert(transactionstate_ref_to_t, {Ref, TState}),
+    true = ets:insert(Tables#tables.ref_to_t, {Ref, TState}),
     ok.
 
 %%--------------------------------------------------------------------
@@ -523,7 +576,10 @@ update_transactionstate(TState) when is_record(TState, transactionstate) ->
 %% @end
 %%--------------------------------------------------------------------
 get_length() ->
-    ets:info(transactionstate_ref_to_t, size).
+    get_length(?DEFAULT_TABLES).
+
+get_length(Tables) ->
+    ets:info(Tables#tables.ref_to_t, size).
 
 debugfriendly() ->
     %% no list supplied, request full dump
@@ -617,27 +673,28 @@ monitor_format2([H|T], Res) when record(H, transactionstate) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% @spec    (Type, Id, AckId, Pid, Desc) ->
+%% @spec    (Tables, Type, Id, AckId, Pid, Desc) ->
 %%            ok               |
 %%            error            |
 %%            {duplicate, Dup}
 %%
-%%            Type  = client | server
-%%            Id    = term()
-%%            AckId = term() | none
-%%            Pid   = pid()
-%%            Desc  = string() ""
+%%            Tables = #tables{}
+%%            Type   = client | server
+%%            Id     = term()
+%%            AckId  = term() | none
+%%            Pid    = pid()
+%%            Desc   = string() ""
 %%
 %%            Dup = #transactionstate{}
 %%
 %% @doc     Add a new transaction state entry to the ets tables.
 %% @end
 %%--------------------------------------------------------------------
-add(Type, Id, AckId, Pid, Desc) when is_pid(Pid), is_atom(Type),
-				     (Type == client orelse Type == server) ->
+add(Tables, Type, Id, AckId, Pid, Desc) when is_pid(Pid), is_atom(Type),
+					     (Type == client orelse Type == server) ->
     Ref = make_ref(),
     TId = {Type, Id},
-    case ets:insert_new(transactionstate_typeid_to_ref, {TId, Ref}) of
+    case ets:insert_new(Tables#tables.typeid_to_ref, {TId, Ref}) of
 	true ->
 	    NewT = #transactionstate{ref = Ref,
 				     type = Type,
@@ -646,17 +703,17 @@ add(Type, Id, AckId, Pid, Desc) when is_pid(Pid), is_atom(Type),
 				     pid = Pid,
 				     expire = util:timestamp() + ?TRANSACTION_EXPIRE,
 	    			     description = Desc},
-	    true = ets_insert_new(transactionstate_ref_to_t, {Ref, NewT}),
-	    true = ets:insert(transactionstate_pid_to_ref, {Pid, Ref}),
+	    true = ets_insert_new(Tables#tables.ref_to_t, {Ref, NewT}),
+	    true = ets:insert(Tables#tables.pid_to_ref, {Pid, Ref}),
 	    case AckId of
 		none -> true;
-		_ -> true = ets_insert_new(transactionstate_ack_to_ref, {AckId, Ref})
+		_ -> true = ets_insert_new(Tables#tables.ack_to_ref, {AckId, Ref})
 	    end,
 	    %% Statistics
-	    ets:update_counter(yxa_statistics, {transactionlayer, transactions}, 1),
+	    ets:update_counter(Tables#tables.statistics, {transactionlayer, transactions}, 1),
 	    ok;
 	false ->
-	    case get_elem(Type, Id) of
+	    case get_elem(Tables, Type, Id) of
 		Dup when is_record(Dup, transactionstate) ->
 		    logger:log(debug, "transactionstatelist: Asked to add transaction (handled by ~p) with duplicate Id ~p, "
 			       "existing entry :~n~p~nReturning {duplicate, ...}",
@@ -686,39 +743,125 @@ ets_insert_new(TName, Data) when is_atom(TName), is_tuple(Data) ->
     end.
 
 %% Fetch the transaction state and then remove all references to it from all our ets tables
-del_entrys([]) ->
+del_entrys(_Tables, []) ->
     ok;
-del_entrys([H|T]) when is_record(H, transactionstate) ->
+del_entrys(Tables, [H|T]) when is_record(H, transactionstate) ->
     Type = H#transactionstate.type,
     Id = H#transactionstate.id,
     TId = {Type, Id},
-    true = ets:delete(transactionstate_typeid_to_ref, TId),
+    true = ets:delete(Tables#tables.typeid_to_ref, TId),
     case H#transactionstate.ack_id of
 	none -> true;
-	AckId -> true = ets:delete(transactionstate_ack_to_ref, AckId)
+	AckId -> true = ets:delete(Tables#tables.ack_to_ref, AckId)
     end,
-    true = ets:delete(transactionstate_pid_to_ref, H#transactionstate.pid),
-    true = ets:delete(transactionstate_ref_to_t, H#transactionstate.ref),
-    del_entrys(T).
+    true = ets:delete(Tables#tables.pid_to_ref, H#transactionstate.pid),
+    true = ets:delete(Tables#tables.ref_to_t, H#transactionstate.ref),
+    del_entrys(Tables, T).
 
-fetch_using_ref_tuples(In) ->
-    fetch_using_ref_tuples2(In, []).
+fetch_using_ref_tuples(Tables, In) ->
+    fetch_using_ref_tuples2(Tables, In, []).
 
-fetch_using_ref_tuples2([], Res) ->
+fetch_using_ref_tuples2(_Tables, [], Res) ->
     Res;
-fetch_using_ref_tuples2([{_, Ref}|T], Res) ->
-    case ets:lookup(transactionstate_ref_to_t, Ref) of
+fetch_using_ref_tuples2(Tables, [{_, Ref}|T], Res) ->
+    case ets:lookup(Tables#tables.ref_to_t, Ref) of
 	[{Ref, Entry}] ->
-	    fetch_using_ref_tuples2(T, [Entry | Res]);
+	    fetch_using_ref_tuples2(Tables, T, [Entry | Res]);
 	_ ->
-	    fetch_using_ref_tuples2(T, Res)
+	    fetch_using_ref_tuples2(Tables, T, Res)
     end.
 
 get_all_entries() ->
+    get_all_entries(?DEFAULT_TABLES).
+
+get_all_entries(Tables) ->
     F = fun(H, Acc) ->
 		case H of
 		    {_Ref, Entry} -> [Entry | Acc];
 		    _ -> Acc
 		end
 	end,
-    lists:foldl(F, [], ets:tab2list(transactionstate_ref_to_t)).
+    lists:foldl(F, [], ets:tab2list(Tables#tables.ref_to_t)).
+
+%%====================================================================
+%% Test functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% @spec    () -> ok
+%%
+%% @doc     autotest callback
+%% @hidden
+%% @end
+%%--------------------------------------------------------------------
+test() ->
+    %% empty(Tables)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "empty/1 - 1.0"),
+    %% create a bunch of tables
+    TestTables_in = #tables{ref_to_t      = transactionstate_ref_to_t_TEST,
+			    pid_to_ref    = transactionstate_pid_to_ref_TEST,
+			    ack_to_ref    = transactionstate_ack_to_ref_TEST,
+			    typeid_to_ref = transactionstate_typeid_to_ref_TEST,
+			    statistics    = transactionstate_yxa_statistics_TEST
+			   },
+
+    {ok, TestTSList} = empty(TestTables_in),
+    %% the statistics table is not created by empty/1
+    ets:new(TestTables_in#tables.statistics, [public, set, named_table]),
+
+    TestTables = TestTSList#transactionstatelist.tables,
+
+    autotest:mark(?LINE, "empty/1 - 1.1"),
+    %% check that ets tables were created, and are empty
+    TestTablesList = tl(tuple_to_list(TestTables)),
+    [true = test_check_is_empty_ets_table(TableName) || TableName <- TestTablesList],
+
+    autotest:mark(?LINE, "empty/1 - 1.2"),
+    %% create statistics ets-entrys
+    true = ets:insert_new(TestTables_in#tables.statistics, {{transactionlayer, transactions}, 0}),
+
+    %% add_server_transaction(Request, Pid, Desc)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "add_server_transaction/4 - 1.0"),
+    Message1Branch = "z9hG4bK-yxa-unittest-add_server_transaction3",
+    Message1 =
+	"INVITE sip:ft@example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST one.example.org;branch=" ++ Message1Branch ++ "\r\n"
+	"From: Test <sip:test@example.org;tag=abc>\r\n"
+	"To: Test <sip:test@example.org>\r\n"
+	"Call-Id: unittest-add_server_transaction3@yxa.example.org\r\n"
+	"CSeq: INVITE 1234\r\n"
+	"\r\n",
+
+    Request1 = sippacket:parse(Message1, none),
+
+    autotest:mark(?LINE, "add_server_transaction/4 - 1.1"),
+    ok = add_server_transaction(TestTables, Request1, self(), "TEST request 1"),
+
+    autotest:mark(?LINE, "add_server_transaction/4 - 2"),
+    %% try to add the same request again, should fail
+    {duplicate, _} = add_server_transaction(TestTables, Request1, self(), "TEST request 1"),
+
+    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 1"),
+    %% try to fetch the transaction
+    #transactionstate{type = server,
+		      id   = {Message1Branch, _TopVia1, "INVITE"}
+		     } = get_server_transaction_using_request(TestTables, Request1),
+
+    
+
+
+    %% clean up
+    [true = ets:delete(TableName) || TableName <- TestTablesList],
+
+    ok.
+
+test_check_is_empty_ets_table(TableName) when is_atom(TableName) ->
+    case catch ets:tab2list(TableName) of
+	[] ->
+	    true;
+	_ ->
+	    Msg = io_lib:format("ETS table ~p is not empty", [TableName]),
+	    {error, lists:flatten(Msg)}
+    end.

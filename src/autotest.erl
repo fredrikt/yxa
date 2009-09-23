@@ -93,6 +93,7 @@
 		       yxa_config,
 		       sippipe,
 		       socketlist,
+		       transactionstatelist,
 
 		       %% YXA applications
 		       incomingproxy,
