@@ -143,7 +143,7 @@ start_link() ->
 init([]) ->
     process_flag(trap_exit, true),
 
-    transactionstatelist:empty(), %% create ets tables
+    {ok, _TStateList} = transactionstatelist:empty(), %% create ets tables
 
     %% create statistics ets-entrys
     lists:map(fun(Key) ->
