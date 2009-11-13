@@ -210,7 +210,7 @@ accept_loop(State) when is_record(State, state) ->
     %% XXX for SSL sockets, it might be necessary to do accept with a timeout (ssl:accept/2),
     %% to avoid defunct connections from remaining in state CLOSE_WAIT forever (until the
     %% Erlang VM shuts down), according to mail to erlang-questions 2008-01-30 (Gaspar C).
-    case SocketModule:accept(ListenSocket) of
+    case my_accept (SocketModule, ListenSocket) of
 	{ok, NewSocket} ->
 	    case InetModule:peername(NewSocket) of
 		{ok, {IPlist, InPortNo}} ->
@@ -244,15 +244,34 @@ accept_loop(State) when is_record(State, state) ->
 	    %% by just connecting to the SSL port a couple of times.
 	    accept_loop(State);
 	{error, E} ->
-	    logger:log(error, "TCP listener: accept() returned error : (~p) ~s", [E, inet:format_error(E)]),
+	    logger:log(error, "TCP listener: ~p accept returned error : (~p) ~s", [SocketModule, E, inet:format_error(E)]),
 	    %% accept failed for non-SSL socket. This is probably more serious, so we terminate the listener.
 	    %% It will be restarted by the transport layer supervisor according to the restart strategy.
             erlang:error({"Accept failed", {error, E}}, [State]);
 	Unknown ->
 	    %% To keep Dialyzer happy (otherwise complains about this function having no local return)
-	    logger:log(error, "TCP listener: ~p:accept() returned unknown data", [SocketModule]),
-	    logger:log(debug, "TCP listener: data returned by ~p:accept() : ~p", [SocketModule, Unknown]),
+	    logger:log(error, "TCP listener: ~p accept returned unknown data", [SocketModule]),
+	    logger:log(debug, "TCP listener: data returned by ~p accept : ~p", [SocketModule, Unknown]),
 	    {error, accept_returned_unknown_data}
+    end.
+
+my_accept(gen_tcp, Socket) ->
+    gen_tcp:accept(Socket);
+my_accept(ssl, Socket) ->
+    try ssl:transport_accept(Socket) of
+	{ok, NewSocket} ->
+	    case ssl:ssl_accept(NewSocket) of
+		ok ->
+		    {ok, NewSocket};
+		E ->
+		    E
+	    end;
+	E ->
+	    E
+    catch
+	  error: undef ->
+	    %% try old SSL accept interface
+	    ssl:accept(Socket)
     end.
 
 %%--------------------------------------------------------------------
