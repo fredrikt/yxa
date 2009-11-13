@@ -187,7 +187,34 @@ empty(Tables) when is_record(Tables, tables) ->
 get_server_transaction_using_request(Request) when is_record(Request, request) ->
     get_server_transaction_using_request(?DEFAULT_TABLES, Request).
 
-get_server_transaction_using_request(Tables, Request) when is_record(Tables, tables), is_record(Request, request) ->
+get_server_transaction_using_request(Tables, #request{method = "CANCEL"} = Request) when is_record(Tables, tables) ->
+    Header = Request#request.header,
+    %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
+    %% transaction that is being handled by 'assuming the method is anything but
+    %% CANCEL or ACK'.
+    {CSeqNum, _} = sipheader:cseq(Header),
+    %% When looking for the corresponding INVITE transaction, we have to change the
+    %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
+    %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
+    %% probably an error in RFC3261 #9.2 that refers to #17.2.3 which does not say that
+    %% CANCEL matches a transaction even though the CSeq method differs)
+    IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
+    Invite = Request#request{method = "INVITE",
+			     header = IHeader
+			    },
+    case sipheader:get_server_transaction_id(Invite) of
+	error ->
+	    logger:log(error, "Transaction state list: Could not get server transaction for request"),
+	    error;
+	Id ->
+	    case get_elem(Tables, server, Id) of
+		none ->
+		    none;
+		Res when is_record(Res, transactionstate) ->
+		    Res
+	    end
+    end;
+get_server_transaction_using_request(Tables, #request{method = "ACK"} = Request) when is_record(Tables, tables) ->
     case sipheader:get_server_transaction_id(Request) of
 	is_2543_ack ->
 	    get_server_transaction_ack_2543(Tables, Request);
@@ -196,7 +223,7 @@ get_server_transaction_using_request(Tables, Request) when is_record(Tables, tab
 	    error;
 	Id ->
 	    case get_elem(Tables, server, Id) of
-		none when Request#request.method == "ACK" ->
+		none ->
 		    %% If the UAC is 2543 compliant, but there is a 3261 compliant proxy between UAC and us,
 		    %% the 3261 proxy will possibly generate another branch for the ACK than the INVITE
 		    %% because the ACK might have a To-tag. If this happens, we must use 2543 methods to find
@@ -208,6 +235,17 @@ get_server_transaction_using_request(Tables, Request) when is_record(Tables, tab
 		    logger:log(debug, "Transaction state list: Found no matching server "
 			       "transaction for ACK using RFC3261 methods, trying RFC2543 too"),
 		    get_server_transaction_ack_2543(Tables, Request);
+		Res when is_record(Res, transactionstate) ->
+		    Res
+	    end
+    end;
+get_server_transaction_using_request(Tables, Request) when is_record(Tables, tables), is_record(Request, request) ->
+    case sipheader:get_server_transaction_id(Request) of
+	error ->
+	    logger:log(error, "Transaction state list: Could not get server transaction for request"),
+	    error;
+	Id ->
+	    case get_elem(Tables, server, Id) of
 		none ->
 		    none;
 		Res when is_record(Res, transactionstate) ->
@@ -656,7 +694,7 @@ monitor_format(TList) when is_list(TList) ->
 
 monitor_format2([], Res) ->
     lists:reverse(Res);
-monitor_format2([H|T], Res) when record(H, transactionstate) ->
+monitor_format2([H|T], Res) when is_record(H, transactionstate) ->
     Str =
 	case H#transactionstate.result of
 	    none ->
@@ -848,6 +886,26 @@ test() ->
     #transactionstate{type = server,
 		      id   = {Message1Branch, _TopVia1, "INVITE"}
 		     } = get_server_transaction_using_request(TestTables, Request1),
+
+    
+
+    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 2"),
+    %% now, try finding server transaction using a CANCEL request
+    CancelMessage1 =
+	"CANCEL sip:ft@example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST one.example.org;branch=" ++ Message1Branch ++ "\r\n"
+	"From: Test <sip:test@example.org;tag=abc>\r\n"
+	"To: Test <sip:test@example.org>\r\n"
+	"Call-Id: unittest-add_server_transaction3@yxa.example.org\r\n"
+	"CSeq: CANCEL 1235\r\n"
+	"\r\n",
+
+    CancelRequest1 = sippacket:parse(CancelMessage1, none),
+
+
+    #transactionstate{type = server,
+		      id   = {Message1Branch, _TopVia1, "INVITE"}
+		     } = get_server_transaction_using_request(TestTables, CancelRequest1),
 
     
 
