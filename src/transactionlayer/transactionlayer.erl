@@ -448,20 +448,8 @@ received_new_request(Request, YxaCtx, AppModule) when is_record(Request, request
 %%          return 'true' to pass the CANCEL to core.
 %% @end
 %%--------------------------------------------------------------------
-cancel_corresponding_transaction(#request{method="CANCEL"}=Request, STPid) when is_pid(STPid) ->
-    Header = Request#request.header,
-    %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
-    %% transaction that is being handled by 'assuming the method is anything but
-    %% CANCEL or ACK'.
-    {CSeqNum, _} = sipheader:cseq(Header),
-    %% When looking for the corresponding INVITE transaction, we have to change the
-    %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
-    %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
-    %% probably an error in RFC3261 #9.2 that refers to #17.2.3 which does not say that
-    %% CANCEL matches a transaction even though the CSeq method differs)
-    IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
-    Invite = Request#request{method="INVITE", header=IHeader},
-    case get_server_transaction_pid(Invite) of
+cancel_corresponding_transaction(#request{method = "CANCEL"} = Request, STPid) when is_pid(STPid) ->
+    case get_server_transaction_pid(Request) of
 	InvitePid when is_pid(InvitePid) ->
 	    logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
 	    {Status, Reason} =
@@ -472,7 +460,7 @@ cancel_corresponding_transaction(#request{method="CANCEL"}=Request, STPid) when 
 			%% RFC3326 #2 says we SHOULD include any present Reason header in a CANCEL we
 			%% receive in the CANCELs we generate based on it
 			ExtraHeaders = [{"Reason",
-					 keylist:fetch('reason', Header)
+					 keylist:fetch('reason', Request#request.header)
 					}],
 			gen_server:cast(InvitePid, {cancelled, ExtraHeaders}),
 			{200, "Ok"};
