@@ -2,7 +2,7 @@ dnl Process this file with autoconf to produce a configure script.
 AC_REVISION($Revision$)
 AC_PREREQ(2.53)
 AC_INIT(YXA, 1.0-current, yxa-devel@lists.su.se)
-REQUIRE_ERLANG="5.6.2 (Erlang/OTP R12B-2)"
+REQUIRE_ERLANG="5.7.2 (Erlang/OTP R13B-1)"
 AC_CONFIG_SRCDIR([src/incomingproxy.erl])
 AC_CONFIG_AUX_DIR([scripts])
 

@@ -1,11 +1,11 @@
 %% Erlang OTP R12B-2 library versions
 {release, {"YXA eventserver", "YXA-eventserver-%VERSION%"},
  {erts, "5.5.2"},
- [{kernel,"2.12.2"},
-  {stdlib,"1.15.2"},
-  {ssl, "3.9"},
-  {asn1, "1.5.1"},
-  {mnesia, "4.4.2"},
+ [{kernel,"2.13.2"},
+  {stdlib,"1.16.2"},
+  {ssl, "3.10.3"},
+  {asn1, "1.6.10"},
+  {mnesia, "4.4.10"},
   {yxa, "%VERSION%"},
   {eventserver, "%VERSION%", [yxa]}
  ]
