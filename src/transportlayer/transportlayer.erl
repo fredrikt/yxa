@@ -367,7 +367,7 @@ send_response(Socket, Response) when is_record(Response, response) ->
 %%          very consistent manner. Should be fixed.
 %% @end
 %%--------------------------------------------------------------------
-send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, response), record(TopVia, via) ->
+send_response_to(DefaultSocket, Response, TopVia) when is_record(Response, response), is_record(TopVia, via) ->
     #response{status = Status,
 	      reason = Reason,
 	      header = HeaderIn,

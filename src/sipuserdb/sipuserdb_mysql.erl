@@ -280,7 +280,7 @@ get_addresses_for_user(User) ->
 %%          from a Request-URI.
 %% @end
 %%--------------------------------------------------------------------
-get_users_for_url(URL) when record(URL, sipurl) ->
+get_users_for_url(URL) when is_record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_mysql, URL),
     logger:log(debug, "userdb-mysql: Looking for users matching address(es) ~p derived from URL ~p",
 	       [Addresses, sipurl:print(URL)]),

@@ -162,7 +162,7 @@ get_users_for_addresses_of_record2([], Res) ->
     lists:usort(Res);
 get_users_for_addresses_of_record2([H | T], Res) ->
     case get_users_for_address_of_record(H) of
-	Users when list(Users) ->
+	Users when is_list(Users) ->
 	    get_users_for_addresses_of_record2(T, lists:append(Res, Users));
 	_ ->
 	    get_users_for_addresses_of_record2(T, Res)
@@ -250,7 +250,7 @@ get_addresses_for_user(User) ->
 %%          from a Request-URI.
 %% @end
 %%--------------------------------------------------------------------
-get_users_for_url(URL) when record(URL, sipurl) ->
+get_users_for_url(URL) when is_record(URL, sipurl) ->
     Addresses = local:lookup_url_to_addresses(sipuserdb_mnesia, URL),
     logger:log(debug, "userdb-mnesia: Looking for users matching address(es) ~p derived from URL ~p",
 	       [Addresses, sipurl:print(URL)]),

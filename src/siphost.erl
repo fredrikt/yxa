@@ -102,13 +102,18 @@ get_iplist() ->
 	{ok, List} ->
 	    List;
 	none ->
-	    {ok, IfList} = inet:getiflist(),
-	    F = fun(If) ->
-			{ok, B} = inet:ifget(If, [addr, flags]),
-			B
-		end,
-	    IfData = [F(If) || If <- IfList],
-	    get_ifaddrs(IfData)
+	    case inet:getiflist() of
+		{ok, IfList} ->
+		    F = fun(If) ->
+				{ok, B} = inet:ifget(If, [addr, flags]),
+				B
+			end,
+		    IfData = [F(If) || If <- IfList],
+		    get_ifaddrs(IfData);
+		{error, Reason} ->
+		    logger:log(error, "Could not get list of network interfaces : ~p", [Reason]),
+		    []
+	    end
     end.
 
 %%--------------------------------------------------------------------
@@ -244,6 +249,8 @@ test() ->
     %% test that we get a list of strings back
     MyIPList = myip_list(),
     autotest:mark(?LINE, "myip_list/0 - 1.2"),
+    %% XXX bad test case, may fail since myip_list usorts it's result. MyIP is not
+    %% guaranteed to be the first in the resulting list.
     [MyIP | _] = MyIPList,
 
     %% test makeip(IPtuple)

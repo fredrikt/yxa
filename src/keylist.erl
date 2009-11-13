@@ -276,7 +276,7 @@ set(Name, Valuelist, Keylist) when is_list(Name), is_record(Keylist, keylist) ->
 %% @doc     Copy the elements matching Keys from Keylist.
 %% @end
 %%--------------------------------------------------------------------
-copy(Keylist, Names) when record(Keylist, keylist) ->
+copy(Keylist, Names) when is_record(Keylist, keylist) ->
     Keys = normalize_list(Names),
     KeyElems = Keylist#keylist.list,
     Copies = [E || E <- KeyElems, lists:member(E#keyelem.key, Keys)],
