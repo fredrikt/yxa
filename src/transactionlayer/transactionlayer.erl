@@ -460,7 +460,7 @@ cancel_corresponding_transaction(#request{method = "CANCEL"} = Request, STPid) w
 			%% RFC3326 #2 says we SHOULD include any present Reason header in a CANCEL we
 			%% receive in the CANCELs we generate based on it
 			ExtraHeaders = [{"Reason",
-					 keylist:fetch('reason', Header)
+					 keylist:fetch('reason', Request#request.header)
 					}],
 			gen_server:cast(InvitePid, {cancelled, ExtraHeaders}),
 			{200, "Ok"};
