@@ -238,7 +238,7 @@ get_users_for_url(URL) ->
 get_password_for_user(User) ->
     {Src, Res} = module_apply(get_password_for_user, [User]),
     ResStr = case Res of
-		 _ when list(Res) -> "password not shown";
+		 _ when is_list(Res) -> "password not shown";
 		 _ -> atom_to_list(Res)
 	     end,
     logger:log(debug, "Userdb: ~p:get_password_for_user ~p -> ~s", [Src, User, ResStr]),

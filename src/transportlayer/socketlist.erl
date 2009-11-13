@@ -378,7 +378,7 @@ debugfriendly2(Output, [H | Rest]) when is_record(H, socketlistelem) ->
     HP    = H#socketlistelem.hostport,
     ExpireIn = case H#socketlistelem.expire of
 		   0 -> "never";
-		   Expire when integer(Expire) ->
+		   Expire when is_integer(Expire) ->
 		       Expire - util:timestamp()
 	       end,
     IdStr = io_lib:format("~p", [Id]),

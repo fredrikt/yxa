@@ -366,7 +366,7 @@ handle_call({rotate_logs, Suffix}, _From, State) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
-handle_call({rotate_logs, Suffix, Logs}, _From, State) when list(Logs) ->
+handle_call({rotate_logs, Suffix, Logs}, _From, State) when is_list(Logs) ->
     {Res, NewState} = rotate(Logs, Suffix, State),
     {reply, Res, NewState};
 
@@ -639,7 +639,7 @@ create_filename_time_suffix() ->
 %%          logfiles exceeds the limit.
 %% @end
 %%--------------------------------------------------------------------
-needs_rotating(In, Size, State) when record(State, state) ->
+needs_rotating(In, Size, State) when is_record(State, state) ->
     Fun = fun(H, Acc) ->
 		  Fn = level2filename(H, State),
 		  case file:read_file_info(Fn) of
@@ -660,9 +660,9 @@ needs_rotating(In, Size, State) when record(State, state) ->
 %% return {ok, State} | {{error, Str}, State}
 %% stop processing after the first error encountered
 %% XXX process all log files, even if some fail?
-rotate([], _Suffix, State) when record(State, state) ->
+rotate([], _Suffix, State) when is_record(State, state) ->
     {ok, State};
-rotate([Level | T], Suffix, State) when record(State, state) ->
+rotate([Level | T], Suffix, State) when is_record(State, state) ->
     Fn = level2filename(Level, State),
     case rotate_file(Fn, Suffix) of
  	{ok, NewIoDev} ->
@@ -685,11 +685,11 @@ rotate([Level | T], Suffix, State) when record(State, state) ->
  	    {{error, Str}, State}
     end.
 
-level2filename(debug, State) when record(State, state) ->
+level2filename(debug, State) when is_record(State, state) ->
     State#state.debug_fn;
-level2filename(normal, State) when record(State, state) ->
+level2filename(normal, State) when is_record(State, state) ->
     State#state.normal_fn;
-level2filename(error, State) when record(State, state) ->
+level2filename(error, State) when is_record(State, state) ->
     State#state.error_fn.
 
 rotate_file(Filename, Suffix) ->

@@ -229,7 +229,7 @@ in_time_range_test(Timezone, TimeSwitchCond, Current) ->
 %% dtstart + dtend    -> single range
 %% dtstart + duration -> single range
 
-in_time_range(Timezone, TimeSwitchCond, Current) when record(TimeSwitchCond, time_switch__cond_2) ->
+in_time_range(Timezone, TimeSwitchCond, Current) when is_record(TimeSwitchCond, time_switch__cond_2) ->
     DTStart = time_switch:get_dtstart(TimeSwitchCond),
     Start = ts_datetime:datetime_to_usec(start, Timezone, DTStart),
     End = case time_switch:get_dtend_duration(TimeSwitchCond) of
@@ -253,7 +253,7 @@ in_time_range(Timezone, TimeSwitchCond, Current) when record(TimeSwitchCond, tim
 %% dtstart + duration + freq + interval + count->
 %%    every <interval>*<freq> timeperiod range is a <duration> long period, only the first <count> periods are checked
 
-in_time_range(Timezone, TimeSwitchCond, Current) when record(TimeSwitchCond, time_switch__cond_5) ->
+in_time_range(Timezone, TimeSwitchCond, Current) when is_record(TimeSwitchCond, time_switch__cond_5) ->
     in_time_range(Timezone, TimeSwitchCond, Current, fun in_time_range_5/3);
 
 %%--------------------------------------------------------------------
@@ -268,11 +268,11 @@ in_time_range(Timezone, TimeSwitchCond, Current) when record(TimeSwitchCond, tim
 %% byweekno   N/-N - nth day for start or end of year, wkst determines start of week
 %% bymonth         - month of year
 
-in_time_range(Timezone, TimeSwitchCond, Current) when record(TimeSwitchCond, time_switch__cond_7) ->
+in_time_range(Timezone, TimeSwitchCond, Current) when is_record(TimeSwitchCond, time_switch__cond_7) ->
     in_time_range(Timezone, TimeSwitchCond, Current, fun in_time_range_7/3);
 
 %%--------------------------------------------------------------------
-in_time_range(Timezone, TimeSwitchCond, Current) when record(TimeSwitchCond, time_switch__cond_8) ->
+in_time_range(Timezone, TimeSwitchCond, Current) when is_record(TimeSwitchCond, time_switch__cond_8) ->
     case in_time_range(Timezone, TimeSwitchCond, Current, fun in_time_range_7/3) of
 	%% Current is part of set used by "bysetpos"
 	%% now check that Current is a date-time selected by a "bysetpos" index

@@ -336,7 +336,7 @@ unescape_str([$%, H1, H2 | RStr]) ->
 %% @end
 %%--------------------------------------------------------------------
 %% XXX this will break if if the #sipurl.proto field isn't a string()
-print(URL) when record(URL, sipurl) ->
+print(URL) when is_record(URL, sipurl) ->
     URL#sipurl.proto ++ ":" ++
 	print_userinfo(URL#sipurl.user, URL#sipurl.pass) ++
 	print_hostport(URL#sipurl.host, get_port(URL)) ++
@@ -364,7 +364,7 @@ print_hostport(Host, Port) when is_integer(Port) ->
     lists:concat([Host, ":", Port]).
 
 
-print_parameters(URLParams) when record(URLParams, url_param) ->
+print_parameters(URLParams) when is_record(URLParams, url_param) ->
     url_param:to_string(URLParams).
 
 
@@ -475,7 +475,7 @@ url_is_equal(A, B, [param | T]) when is_record(A, sipurl), is_record(B, sipurl) 
 %%          chars
 %% @end
 %%--------------------------------------------------------------------
-url_is_equal(A, B) when record(A, sipurl), record(B, sipurl) ->
+url_is_equal(A, B) when is_record(A, sipurl), is_record(B, sipurl) ->
     %% RFC 3261  - - - - - - - - - - - - - - - - - - - - - - - - - - -
     %% o  A SIP and SIPS URI are never equivalent.
     %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -660,11 +660,11 @@ url_is_equal_header(_A, _B) ->
 %%--------------------------------------------------------------------
 parse_url_with_default_protocol(Proto, URLstr) ->
     case sipurl:parse(URLstr) of
-	URL1 when record(URL1, sipurl) ->
+	URL1 when is_record(URL1, sipurl) ->
 	    URL1;
 	_ ->
 	    case sipurl:parse(Proto ++ ":" ++ URLstr) of
-		URL2 when record(URL2, sipurl) ->
+		URL2 when is_record(URL2, sipurl) ->
 		    URL2;
 		_ ->
 		    error

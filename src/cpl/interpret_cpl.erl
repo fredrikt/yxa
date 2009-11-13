@@ -709,7 +709,7 @@ outgoing(Index, State) ->
 %% @doc     process a time-switch
 %% @end
 %%--------------------------------------------------------------------
-'time-switch'({Timezone, Conds}, State) when record(Timezone, time_zone) ->
+'time-switch'({Timezone, Conds}, State) when is_record(Timezone, time_zone) ->
     Backend = State#state.backend,
     Dest = 'time-switch_cond'(Timezone, Conds, Backend),
     {Dest, State}.
