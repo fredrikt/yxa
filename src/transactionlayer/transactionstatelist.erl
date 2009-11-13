@@ -216,11 +216,11 @@ get_server_transaction_using_request(Tables, #request{method = "CANCEL"} = Reque
     end;
 get_server_transaction_using_request(Tables, #request{method = "ACK"} = Request) when is_record(Tables, tables) ->
     case get_server_transaction_id(Request) of
-	is_2543_ack ->
-	    get_server_transaction_ack_2543(Tables, Request);
 	error ->
 	    logger:log(error, "Transaction state list: Could not get server transaction for request"),
 	    error;
+	is_2543_ack ->
+	    get_server_transaction_ack_2543(Tables, Request);
 	Id ->
 	    case get_elem(Tables, server, Id) of
 		none ->
@@ -1034,11 +1034,10 @@ guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, 
 
 %%--------------------------------------------------------------------
 %% @spec    (Via) ->
-%%            {Proto, Host, Port}
+%%            {Host, Port}
 %%
 %%            Via = #via{}
 %%
-%%            Proto = string()
 %%            Host  = string()
 %%            Port  = integer()
 %%
@@ -1046,7 +1045,10 @@ guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, 
 %% @end
 %%--------------------------------------------------------------------
 via_sentby(Via) when is_record(Via, via) ->
-    {Via#via.proto, Via#via.host, Via#via.port}.
+    %% Before a request is sent, the client transport MUST insert a value of
+    %% the "sent-by" field into the Via header field.  This field contains
+    %% an IP address or host name, and port.
+    {Via#via.host, Via#via.port}.
 
 
 
@@ -1071,9 +1073,7 @@ test() ->
     %% test via_sentby(Via)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "via_sentby/1 - 1"),
-    {"proto", "host", 1234} = via_sentby(#via{proto="proto", host="host", port=1234}),
-
-
+    {"host", 1234} = via_sentby(#via{host="host", port=1234}),
 
     %% test get_server_transaction_id(Request)
     %%--------------------------------------------------------------------
@@ -1092,7 +1092,7 @@ test() ->
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 1.2"),
     %% check result
-    {"z9hG4bK-really-unique", {"SIP/2.0/TLS", "sip.example.org", 5061}, "INVITE"} = Invite1Id,
+    {"z9hG4bK-really-unique", {"sip.example.org", 5061}, "INVITE"} = Invite1Id,
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 2"),
     %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123"
@@ -1200,13 +1200,16 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "add_server_transaction/4 - 1.0"),
     Message1Branch = "z9hG4bK-yxa-unittest-add_server_transaction3",
-    Message1 =
-	"INVITE sip:ft@example.org SIP/2.0\r\n"
-	"Via: SIP/2.0/YXA-TEST one.example.org;branch=" ++ Message1Branch ++ "\r\n"
+    MessageCommonHeaders1 =
 	"From: Test <sip:test@example.org;tag=abc>\r\n"
 	"To: Test <sip:test@example.org>\r\n"
 	"Call-Id: unittest-add_server_transaction3@yxa.example.org\r\n"
-	"CSeq: INVITE 1234\r\n"
+	"CSeq: INVITE 1234\r\n",
+
+    Message1 =
+	"INVITE sip:ft@example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST one.example.org;branch=" ++ Message1Branch ++ "\r\n"
+        ++ MessageCommonHeaders1 ++
 	"\r\n",
 
     Request1 = sippacket:parse(Message1, none),
@@ -1231,18 +1234,28 @@ test() ->
     CancelMessage1 =
 	"CANCEL sip:ft@example.org SIP/2.0\r\n"
 	"Via: SIP/2.0/YXA-TEST one.example.org;branch=" ++ Message1Branch ++ "\r\n"
-	"From: Test <sip:test@example.org;tag=abc>\r\n"
-	"To: Test <sip:test@example.org>\r\n"
-	"Call-Id: unittest-add_server_transaction3@yxa.example.org\r\n"
-	"CSeq: CANCEL 1235\r\n"
+	++ MessageCommonHeaders1 ++
 	"\r\n",
 
     CancelRequest1 = sippacket:parse(CancelMessage1, none),
 
-
     #transactionstate{type = server,
 		      id   = {Message1Branch, _TopVia1, "INVITE"}
 		     } = get_server_transaction_using_request(TestTables, CancelRequest1),
+
+    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 3"),
+    %% try the same thing but with the CANCEL being received over another transport
+    CancelMessage2 =
+	"CANCEL sip:ft@example.org SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST2 one.example.org;branch=" ++ Message1Branch ++ "\r\n"
+	++ MessageCommonHeaders1 ++
+	"\r\n",
+
+    CancelRequest2 = sippacket:parse(CancelMessage2, none),
+
+    #transactionstate{type = server,
+		      id   = {Message1Branch, _TopVia1, "INVITE"}
+		     } = get_server_transaction_using_request(TestTables, CancelRequest2),
 
     
 
