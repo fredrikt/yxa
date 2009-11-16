@@ -295,10 +295,7 @@ copy(Keylist, Names) when is_record(Keylist, keylist) ->
 %% @end
 %%--------------------------------------------------------------------
 map(Func, Keylist) when is_record(Keylist, keylist) ->
-    F = fun(Elem) ->
-		Func(Elem#keyelem.key, Elem#keyelem.name, Elem#keyelem.value)
-	end,
-    lists:map(F, Keylist#keylist.list).
+    [Func(E#keyelem.key, E#keyelem.name, E#keyelem.value) || E <- Keylist#keylist.list].
 
 %%====================================================================
 %% Behaviour functions
