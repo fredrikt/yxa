@@ -82,7 +82,7 @@
 %%--------------------------------------------------------------------
 connection_from(SocketModule, Proto, Socket, HostPort) when is_atom(SocketModule), is_atom(Proto),
 							    is_record(HostPort, hp) ->
-    SSLNames = HostPort#hp.r_ip,
+    SSLNames = [HostPort#hp.r_ip],
     gen_server:start(?MODULE, {in, SocketModule, Proto, Socket, HostPort, SSLNames}, []).
 
 %%--------------------------------------------------------------------
@@ -183,7 +183,9 @@ init({connect, Dst, GenServerFrom}) when is_record(Dst, sipdst) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
-init({Direction, SocketModule, Proto, Socket, HP, SSLNames}) when is_record(HP, hp) ->
+init({Direction, SocketModule, Proto, Socket, HP, SSLNames}) when is_atom(Direction), is_atom(SocketModule),
+								  is_atom(Proto), is_record(HP, hp),
+								  is_list(SSLNames) ->
     %% First check if socket is acceptable
     Remote = {HP#hp.r_ip, HP#hp.r_port},
     case is_acceptable_socket(Socket, Direction, Proto, Remote, SSLNames) of
