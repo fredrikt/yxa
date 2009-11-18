@@ -24,7 +24,7 @@
 	  addr,		%% string(), typically IP address
 	  port,		%% integer()
 	  uri,		%% sipurl record() | undefined
-	  ssl_names,	%% list() of string(), name(s) to verify SSL certificate against
+	  ssl_names = [],	%% list() of string(), name(s) to verify SSL certificate against
 	  socket,	%% undefined | sipsocket record(), when Outbound wants a specific socket
 	  instance	%% undefined | string(), set if sipdst is created from location db entry with instance id
 	 }).
