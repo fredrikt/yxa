@@ -633,14 +633,14 @@ create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
 
     %% the remote tag component of the dialog ID MUST be set to the tag from the
     %% From field in the request
-    From = keylist:fetch('from', Header),
+    [From] = keylist:fetch('from', Header),
     RemoteTag =
-	case sipheader:get_tag(From) of
+	case sipheader:get_tag([From]) of
 	    none ->
 		%% A UAS MUST be prepared to receive a request without a tag in the
 		%% From field, in which case the tag is considered to have a value of null.
 		undefined;
-	    FromTag1 ->
+	    FromTag1 when is_list(FromTag1) ->
 		FromTag1
 	end,
 
@@ -689,8 +689,6 @@ create_dialog_state_uas(Request, ResponseToTag, ResponseContact)
 %%          violates this rule.
 %% @end
 %%--------------------------------------------------------------------
-create_dialog_state_uas_is_secure(Request, []) when is_record(Request, request) ->
-    throw({error, response_contact_missing});
 create_dialog_state_uas_is_secure(Request, [ResponseContact]) when is_record(Request, request),
 								   is_list(ResponseContact) ->
     MustBeSecure =
@@ -790,7 +788,7 @@ update_dialog_recv_request(Request, Dialog) when is_record(Request, request), is
 %% @end
 %%--------------------------------------------------------------------
 generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), is_list(ExtraHeaders),
-							      is_binary(Body); is_list(Body),
+							      (is_binary(Body) orelse is_list(Body)),
 							      is_record(Dialog, dialog) ->
     {CSeqL, NewDialog} =
 	case lists:keysearch("CSeq", 1, ExtraHeaders) of
@@ -813,7 +811,7 @@ generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), i
 	    undefined ->
 		%% This really should be enough, but many clients expect To: byte-by-byte matching their From:
 		set_tag(NewDialog#dialog.remote_tag, NewDialog#dialog.remote_uri);
-	    [RemoteURI_str] when is_list(RemoteURI_str) ->
+	    RemoteURI_str when is_list(RemoteURI_str) ->
 		RemoteURI_str
 	end,
 
@@ -864,15 +862,13 @@ generate_new_request(Method, ExtraHeaders, Body, Dialog) when is_list(Method), i
 %% @doc     Set tag on a parsed To: header.
 %% @end
 %%--------------------------------------------------------------------
-set_tag(ToTag, {DisplayName, ToURI}) when is_list(ToTag) ->
+set_tag(ToTag, ToURI) when is_list(ToTag), is_record(ToURI, sipurl) ->
+    set_tag(ToTag, {none, ToURI});
+set_tag(ToTag, {DisplayName, ToURI}) when is_list(ToTag), (is_list(DisplayName) orelse DisplayName == none),
+					  is_record(ToURI, sipurl) ->
     [NewTo] = sipheader:contact_print(
                 [ contact:new(DisplayName, ToURI, [{"tag", ToTag}]) ]),
-    NewTo;
-
-set_tag(ToTag, URI) when is_list(ToTag), is_record(URI, sipurl) ->
-    [NewURL] = sipheader:contact_print(
-                [ contact:new(none, URI, [{"tag", ToTag}]) ]),
-    NewURL.
+    NewTo.
 
 
 %%--------------------------------------------------------------------
@@ -1123,7 +1119,7 @@ test() ->
 		remote_uri     = sipurl:parse("sip:ft@f.example.net"),
 		remote_target  = "<sips:contact@f.example.net>",
 		state          = undefined,
-		remote_uri_str = ["<sip:ft@f.example.net>;tag=yxa-testfromtag"]
+		remote_uri_str = "<sip:ft@f.example.net>;tag=yxa-testfromtag"
 	       },
 
     autotest:mark(?LINE, "create_dialog_state_uas/2 - 1.1"),
@@ -1146,7 +1142,7 @@ test() ->
     CDS_UAS_Req4 = CDS_UAS_Req1#request{header = keylist:set("From", ["<sip:ft@f.example.net>;no-tag"],
 							     CDS_UAS_Req1#request.header)},
     CDC_UAS_Dialog4 = CDC_UAS_Dialog1#dialog{remote_tag = undefined,
-					     remote_uri_str = ["<sip:ft@f.example.net>;no-tag"]
+					     remote_uri_str = "<sip:ft@f.example.net>;no-tag"
 					    },
     {ok, CDC_UAS_Dialog4} = create_dialog_state_uas(CDS_UAS_Req4, CDS_UAS_Res1),
 
@@ -1159,9 +1155,6 @@ test() ->
 	"Contact: <sips:contact@f.example.net>\r\n"
 	"\r\n",
     IsSecReq1 = sippacket:parse(IsSecReq1_Msg, none),
-
-    autotest:mark(?LINE, "create_dialog_state_uas_is_secure/2 - 1"),
-    {error, response_contact_missing} = (catch create_dialog_state_uas_is_secure(IsSecReq1, [])),
 
     autotest:mark(?LINE, "create_dialog_state_uas_is_secure/2 - 2"),
     {error, response_contact_must_be_secure} =
@@ -1271,7 +1264,7 @@ test() ->
     GNR_Dialog2 =
 	GNR_Dialog1#dialog{callid         = GNR_Dialog2_CallId,
 			   route_set      = ["<sip:192.0.2.111>"],
-			   remote_uri_str = ["Test <" ++ sipurl:print(GNR_Dialog1_To) ++ ">"]
+			   remote_uri_str = "Test <" ++ sipurl:print(GNR_Dialog1_To) ++ ">"
 			  },
 
     autotest:mark(?LINE, "generate_new_request/4 - 2.1"),
