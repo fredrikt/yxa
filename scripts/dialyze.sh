@@ -1,6 +1,7 @@
 #!/bin/bash
 
 params="-Wunmatched_returns"
+params=""
 
 if [ "x$1" = "x--src" ]; then
     params="$params --src"
@@ -32,7 +33,7 @@ includes2=$(
     done
 )
 
-params="$params $includes $includes2 -DLOCAL_MODULE=local_default -r $dir"
+params="$params $includes $includes2 -DLOCAL_MODULE=local_default -DYXA_NO_UNITTEST -r $dir"
 
 dialyzer=$(which dialyzer)
 
@@ -56,9 +57,22 @@ if [ -x "$dialyzer" ]; then
 
 	echo "Saving output in file '$out'"
 
-	$dialyzer $params | grep -vie "$local_call_to_regexp" | tee "$out"
-	grep -v "done in" "$out" > "$out.$$"
-	mv -f "$out.$$" "$out"
+	trap "echo ""; echo Removing '$out'; rm -f '$out' '$out.TMP'" EXIT
+
+	$dialyzer $params > "$out.TMP" 2>&1
+	echo ""
+	echo ""
+	cat "$out.TMP"
+
+	if [ -n "`grep Analysis.failed \"${out}.TMP\"`" ]; then
+	    echo ""
+	    echo ""
+	    echo "Analysis failed, removing '$out'"
+	    echo ""
+	else
+	    cat "$out.TMP" | grep -vie "$local_call_to_regexp" -e "^ done in " > "$out"
+	fi
+	rm "$out.TMP"
     else
 	$dialyzer $params | grep -vie "$local_call_to_regexp"
     fi
