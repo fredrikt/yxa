@@ -99,7 +99,8 @@ Request#request.method == "MESSAGE" ->
 	    logger:log(normal, "~s: Testserver response: '~p ~s'", [LogTag, Status, Reason]),
 	    transactionlayer:send_response_request(Request, Status, Reason);
 	nomatch ->
-	    {User, _, _, _, _} = Request#request.uri,
+	    URI = Request#request.uri,
+	    User = URI#sipurl.user,
 	    S = lists:flatten(io_lib:format("Busy Here (~s)", [User])),
 	    logger:log(normal, "~s: Testserver built-in response: '486 ~s'", [LogTag, S]),
 	    transactionlayer:send_response_request(Request, 486, S)
