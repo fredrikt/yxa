@@ -99,27 +99,6 @@
 	  list     % list() of keyelem record() with unique keys
 	 }).
 
-%%--------------------------------------------------------------------
-%% url_param.erl records
-%%--------------------------------------------------------------------
-
-%% a term() wrapped in a record to allow better type checking and 
-%% limiting direct access to it (use access functions supplied by 
-%% url_param.erl)
--record(url_param, {
-	  pairs
-	 }).
-
-%%--------------------------------------------------------------------
-%% contact_param.erl records
-%%--------------------------------------------------------------------
-
-%% a term() wrapped in a record to allow better type checking and 
-%% limiting direct access to it (use access functions supplied by 
-%% contact_param.erl)
--record(contact_param, {
-	  pairs
-	 }).
 
 %%--------------------------------------------------------------------
 %% dnsutil.erl records

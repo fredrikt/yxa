@@ -364,7 +364,7 @@ print_hostport(Host, Port) when is_integer(Port) ->
     lists:concat([Host, ":", Port]).
 
 
-print_parameters(URLParams) when is_record(URLParams, url_param) ->
+print_parameters(URLParams) ->
     url_param:to_string(URLParams).
 
 
@@ -762,15 +762,15 @@ set([{port, Val} | T], URL) when is_record(URL, sipurl), is_integer(Val); Val ==
     set(T, URL#sipurl{port=Val});
 
 %% PARAM
-set([{param, Val} | T], URL) when is_record(URL, sipurl), is_record(Val, url_param); is_list(Val) ->
+set([{param, Val} | T], URL) when is_record(URL, sipurl) ->
     SetParamPairs =
 	if
-	    is_record(Val, url_param) ->
-		%% Param already in a normalized form
-		Val;
 	    is_list(Val) ->
 		%% store param and param_pairs in a normalized form
-		url_param:to_norm(Val)
+		url_param:to_norm(Val);
+	    true ->
+		%% Param already in a normalized form
+		Val
 	end,
     set(T, URL#sipurl{param_pairs=SetParamPairs});
 

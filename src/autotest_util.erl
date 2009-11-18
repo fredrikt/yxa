@@ -227,8 +227,6 @@ test_record_info(via) ->			record_info(fields, via);
 test_record_info(contact) ->			record_info(fields, contact);
 test_record_info(sipurl) ->			record_info(fields, sipurl);
 test_record_info(keylist) ->			record_info(fields, keylist);
-test_record_info(url_param) ->			record_info(fields, url_param);
-test_record_info(contact_param) ->		record_info(fields, contact_param);
 test_record_info(sipdns_srv) ->			record_info(fields, sipdns_srv);
 test_record_info(sipdns_hostport) ->		record_info(fields, sipdns_hostport);
 test_record_info(siplocationdb_e) ->		record_info(fields, siplocationdb_e);
