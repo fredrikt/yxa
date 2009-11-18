@@ -679,7 +679,7 @@ build_header_binary(Header) when is_record(Header, keylist) ->
 build_header_unsafe_binary(Header) ->
     %% process each line in Header
     Lines = keylist:map(fun print_one_header_binary/3, Header),
-    list_to_binary(sort_headers(Lines)).
+    sort_headers(Lines).
 
 %%--------------------------------------------------------------------
 %% @spec    (In) -> binary()
@@ -709,10 +709,10 @@ sort_headers2([{_Other, Val} | T], R) ->
     sort_headers2(T, R#header_sort{rest = NewRest});
 sort_headers2([], R) ->
     [_ | Headers] = tuple_to_list(R),
-    Headers.
+    list_to_binary(Headers).
 
 %% Returns : list() of {Key, Binary}
-%%           Key = atom() or string(), keylist normalized header name
+%%           Key = atom() | string(), keylist normalized header name
 %%           Binary = binary(), this header as binary (<<"Supported: something\r\n">> for example
 print_one_header_binary(Key, Name, []) ->
     %% Header without value.
@@ -733,39 +733,30 @@ print_one_header_binary(Key, Name, ValueList) ->
 	    Key == 'rtp-txstat' ->	true;	%% Cisco 79xx
 	    true -> false
 	end,
-    BinName = list_to_binary(Name),
-    This = print_one_header_binary2(OneLine, BinName, ValueList, []),
-    {Key, This}.
-
-%% print_one_header_binary2 - convert all the values to binarys
-print_one_header_binary2(OneLine, BinName, [H | T], Res) ->
-    print_one_header_binary2(OneLine, BinName, T, [list_to_binary(H) | Res]);
-print_one_header_binary2(OneLine, BinName, [], Res) ->
-    print_one_header_binary3(OneLine, BinName, lists:reverse(Res)).
+    This = print_one_header_binary3(OneLine, Name, ValueList),
+    {Key, list_to_binary(This)}.
 
 %% print_one_header_binary3 - create the binary representation of this header
 %% and all it's values
-print_one_header_binary3(true, BinName, BinValueList) ->
+print_one_header_binary3(true, Name, ValueList) ->
     %% return as one line
-    OneLine = fun(Value, Acc) ->
-		      case Acc of
-			  [] ->
-			      %% No prior elements - return only Value
-			      [Value];
-			  _ ->
-			      %% Accumulated comma space Value
-			      list_to_binary([Acc, $\,, 32, Value])
-		      end
-	      end,
-    BinValues = lists:foldl(OneLine, [], BinValueList),
-    list_to_binary([BinName, $:, 32, BinValues, 13, 10]);
+    Joined = join_values(ValueList, []),
+    [Name, $:, 32, Joined, 13, 10];
 
-print_one_header_binary3(false, BinName, [First | Rest]) ->
+print_one_header_binary3(false, Name, [First | Rest]) ->
     %% Return one "Key: Value" for every element in BinValueList
-    This = list_to_binary([BinName, $:, 32, First, 13, 10]),	%% Name: First\r\n
-    [This | print_one_header_binary3(false, BinName, Rest)];
-print_one_header_binary3(false, _BinName, []) ->
+    This = [Name, $:, 32, First, 13, 10],	%% Name: First\r\n
+    [This | print_one_header_binary3(false, Name, Rest)];
+print_one_header_binary3(false, _Name, []) ->
     [].
+
+%% join a list of elements with a string ", " between each one.
+join_values([H | T], []) ->
+    join_values(T, [H]);
+join_values([H | T], Res) ->
+    join_values(T, [H, ", ", Res]);
+join_values([], Res) ->
+    lists:reverse(Res).
 
 %%--------------------------------------------------------------------
 %% @spec    ([String]) ->
