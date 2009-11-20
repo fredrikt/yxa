@@ -62,7 +62,7 @@ get_options(FileList) ->
 
     Options2 =
 	case init:get_argument(yxa_edoc_gen) of
-	    {ok, ["private"]} ->
+	    {ok, [["private"]]} ->
 		[{private, true} | Options1];
 	    {ok, _} ->
 		throw('Bad yxa_edoc_gen value');
