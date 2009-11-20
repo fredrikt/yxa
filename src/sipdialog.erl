@@ -1156,9 +1156,6 @@ test() ->
 	"\r\n",
     IsSecReq1 = sippacket:parse(IsSecReq1_Msg, none),
 
-    autotest:mark(?LINE, "create_dialog_state_uas_is_secure/2 - 1"),
-    {error, response_contact_missing} = (catch create_dialog_state_uas_is_secure(IsSecReq1, [])),
-
     autotest:mark(?LINE, "create_dialog_state_uas_is_secure/2 - 2"),
     {error, response_contact_must_be_secure} =
 	(catch create_dialog_state_uas_is_secure(IsSecReq1, ["<sip:unsecure@example.com>"])),
