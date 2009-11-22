@@ -745,6 +745,10 @@ parse_naptr_answer(DNSRRList) when is_list(DNSRRList) ->
 parse_naptr_answer2([#dns_rr{type=?T_NAPTR, data=Data} | T], Res) when is_list(Data) ->
     This = parsenaptr(list_to_binary(Data)),
     parse_naptr_answer2(T, [This | Res]);
+%% Pre-parsed NAPTR record
+parse_naptr_answer2([#dns_rr{type=naptr, data=Data} | T], Res) when is_tuple(Data) ->
+    This = naptr_from_tuple(Data),
+    parse_naptr_answer2(T, [This | Res]);
 %% non-NAPTR record
 parse_naptr_answer2([H | T], Res) when is_record(H, dns_rr) ->
     parse_naptr_answer2(T, Res);
@@ -786,6 +790,32 @@ parsenaptr(Binary) when is_binary(Binary) ->
 		 flags=binary_to_list(Flags),
 		 services=string:to_upper(binary_to_list(Services)),
 		 regexp=binary_to_list(Regexp),
+		 replacement=Replacement
+		}.
+
+%%--------------------------------------------------------------------
+%% @spec    ({Order, Preference, Flags,
+%%            Services, Regexp, Replacement}) ->
+%%            NAPTRrecord
+%%
+%%            Order = integer()
+%%            Preference = integer()
+%%            Flags = string()
+%%            Services = string()
+%%            Regexp = string()
+%%            Replacement = string()
+%%
+%%            NAPTRrecord = #naptrrecord{}
+%%
+%% @doc     Takes some pre-parsed DNS RR data and converts it into
+%%          a naptrrecord.
+%% @end
+%%--------------------------------------------------------------------
+naptr_from_tuple({Order, Preference, Flags, Services, Regexp, Replacement}) ->
+    #naptrrecord{order=Order, preference=Preference,
+		 flags=Flags,
+		 services=string:to_upper(Services),
+		 regexp=Regexp,
 		 replacement=Replacement
 		}.
 
