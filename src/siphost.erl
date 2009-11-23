@@ -58,7 +58,7 @@ myip_list() ->
 	[] ->
 	    [get_defaultaddr()];
 	L ->
-	    lists:usort(L)
+	    L
     end.
 
 %%--------------------------------------------------------------------
@@ -94,7 +94,7 @@ makeip({A1, A2, A3, A4, A5, A6, A7, A8}) ->
 %%            Addresses = [string()]
 %%
 %% @doc     Get the addresses of all interfaces that have global
-%%          addresses, and which are 'up'.
+%%          addresses, and which are 'up'. Returned in a stable order.
 %% @end
 %%--------------------------------------------------------------------
 get_iplist() ->
@@ -102,18 +102,14 @@ get_iplist() ->
 	{ok, List} ->
 	    List;
 	none ->
-	    case inet:getiflist() of
-		{ok, IfList} ->
-		    F = fun(If) ->
-				{ok, B} = inet:ifget(If, [addr, flags]),
-				B
-			end,
-		    IfData = [F(If) || If <- IfList],
-		    get_ifaddrs(IfData);
-		{error, Reason} ->
-		    logger:log(error, "Could not get list of network interfaces : ~p", [Reason]),
-		    []
-	    end
+	    {ok, IfList} = inet:getiflist(),
+	    F = fun(If) ->
+			{ok, B} = inet:ifget(If, [addr, flags]),
+			B
+		end,
+	    IfData = [F(If) || If <- IfList],
+	    Addrs = get_ifaddrs(IfData),
+	    lists:usort(Addrs)
     end.
 
 %%--------------------------------------------------------------------
@@ -249,8 +245,6 @@ test() ->
     %% test that we get a list of strings back
     MyIPList = myip_list(),
     autotest:mark(?LINE, "myip_list/0 - 1.2"),
-    %% XXX bad test case, may fail since myip_list usorts it's result. MyIP is not
-    %% guaranteed to be the first in the resulting list.
     [MyIP | _] = MyIPList,
 
     %% test makeip(IPtuple)
