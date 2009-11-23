@@ -58,7 +58,7 @@ myip_list() ->
 	[] ->
 	    [get_defaultaddr()];
 	L ->
-	    lists:usort(L)
+	    L
     end.
 
 %%--------------------------------------------------------------------
@@ -94,7 +94,7 @@ makeip({A1, A2, A3, A4, A5, A6, A7, A8}) ->
 %%            Addresses = [string()]
 %%
 %% @doc     Get the addresses of all interfaces that have global
-%%          addresses, and which are 'up'.
+%%          addresses, and which are 'up'. Returned in a stable order.
 %% @end
 %%--------------------------------------------------------------------
 get_iplist() ->
@@ -108,7 +108,8 @@ get_iplist() ->
 			B
 		end,
 	    IfData = [F(If) || If <- IfList],
-	    get_ifaddrs(IfData)
+	    Addrs = get_ifaddrs(IfData),
+	    lists:usort(Addrs)
     end.
 
 %%--------------------------------------------------------------------
