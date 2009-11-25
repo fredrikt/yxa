@@ -178,7 +178,7 @@ init({Request, YxaCtx, Parent}) ->
 		Reply ->
 		    Reply
 	    end;
-	{duplicate, TState} when is_record(TState, transactionstate) ->
+	{duplicate, _TState} ->
 	    %% We are the losing party of a race. Notify the winner that there was
 	    %% a resend (us) and then exit. XXX implement the notifying, for now
 	    %% just log.
