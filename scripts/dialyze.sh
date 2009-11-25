@@ -30,7 +30,7 @@ includes2=$(
 	if [ -d "${dir}/$entry" ]; then
 	    echo "-I ${dir}/$entry"
 	fi
-    done
+    done | sort | uniq
 )
 
 params="$params $includes $includes2 -DLOCAL_MODULE=local_default -DYXA_NO_UNITTEST -r $dir"
@@ -57,9 +57,12 @@ if [ -x "$dialyzer" ]; then
 
 	echo "Saving output in file '$out'"
 
-	trap "echo ""; echo Removing '$out'; rm -f '$out' '$out.TMP'" EXIT
+	trap "echo ""; echo Removing '$out'; rm -f '$out' '$out.TMP'; exit" INT TERM EXIT
 
 	$dialyzer $params > "$out.TMP" 2>&1
+
+	trap - INT TERM EXIT
+
 	echo ""
 	echo ""
 	cat "$out.TMP"
