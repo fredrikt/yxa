@@ -61,6 +61,25 @@
 		 statistics
 		}).
 
+%% Transaction layer data about ongoing transactions
+-record(transactionstate, {
+	  ref			:: reference(),		%% unique reference 
+	  type			:: server | client,
+	  id			:: term(),		%% identification data for matching requests/responses
+	  						%% to this transaction 
+	  ack_id		:: term(),		%% special id for matching ACK to INVITE 
+	  pid			:: pid(),		%% transaction handler process
+	  appdata		:: term(),		%% data about this transaction stored by an application
+	  response_to_tag	:: string(),		%% the To-tag used in responses to this transaction that
+							%% we have generated ourselves
+	  expire		:: non_neg_integer(),	%% when in time this transaction expires
+	  description		:: string(),		%% just used for displaying (in stack_monitor and debug logs etc.)
+	  result = none		:: none | string()	%% just used for displaying (in stack_monitor and debug logs etc.)
+	 }).
+
+-opaque transactionstate() :: #transactionstate{}.
+
+
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
@@ -657,7 +676,7 @@ debugfriendly2([H | T], Res) when is_record(H, transactionstate) ->
     In = [{id, H#transactionstate.id}, {description, H#transactionstate.description},
 	  {type, H#transactionstate.type}, {ref, H#transactionstate.ref}],
     %% These are NOT in reverse order
-    Out = debugfriendly_non_empty([pid, ack_id, response_to_tag, appdata, branches, result], H, In),
+    Out = debugfriendly_non_empty([pid, ack_id, response_to_tag, appdata, result], H, In),
     debugfriendly2(T, [Out | Res]).
 
 debugfriendly_non_empty([], _R, Res) ->
@@ -682,10 +701,6 @@ debugfriendly_non_empty([ack_id | T], R, Res)
 debugfriendly_non_empty([appdata | T], R, Res)
   when R#transactionstate.appdata /= undefined, R#transactionstate.appdata /= none ->
     debugfriendly_non_empty(T, R, [{appdata, R#transactionstate.appdata} | Res]);
-%% branches (length), not zero
-debugfriendly_non_empty([branches | T], R, Res)
-  when length(R#transactionstate.stateless_response_branches) /= 0 ->
-    debugfriendly_non_empty(T, R, [{stateless_response_branches, length(R#transactionstate.stateless_response_branches)} | Res]);
 %% empty, or unknown record field
 debugfriendly_non_empty([_ | T], R, Res) ->
     debugfriendly_non_empty(T, R, Res).
