@@ -28,6 +28,7 @@
 	 monitor_format/1,
 	 get_client_transaction/2,
 	 get_server_transaction_using_request/1,
+	 get_server_transaction_to_cancel/1,
 	 get_elem_using_pid/2,
 	 get_entrylist_using_pid/1,
 	 get_expired/0,
@@ -187,33 +188,6 @@ empty(Tables) when is_record(Tables, tables) ->
 get_server_transaction_using_request(Request) when is_record(Request, request) ->
     get_server_transaction_using_request(?DEFAULT_TABLES, Request).
 
-get_server_transaction_using_request(Tables, #request{method = "CANCEL"} = Request) when is_record(Tables, tables) ->
-    Header = Request#request.header,
-    %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
-    %% transaction that is being handled by 'assuming the method is anything but
-    %% CANCEL or ACK'.
-    {CSeqNum, _} = sipheader:cseq(Header),
-    %% When looking for the corresponding INVITE transaction, we have to change the
-    %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
-    %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
-    %% probably an error in RFC3261 #9.2 that refers to #17.2.3 which does not say that
-    %% CANCEL matches a transaction even though the CSeq method differs)
-    IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
-    Invite = Request#request{method = "INVITE",
-			     header = IHeader
-			    },
-    case get_server_transaction_id(Invite) of
-	error ->
-	    logger:log(error, "Transaction state list: Could not get server transaction for request"),
-	    error;
-	Id ->
-	    case get_elem(Tables, server, Id) of
-		none ->
-		    none;
-		Res when is_record(Res, transactionstate) ->
-		    Res
-	    end
-    end;
 get_server_transaction_using_request(Tables, #request{method = "ACK"} = Request) when is_record(Tables, tables) ->
     case get_server_transaction_id(Request) of
 	error ->
@@ -240,6 +214,9 @@ get_server_transaction_using_request(Tables, #request{method = "ACK"} = Request)
 	    end
     end;
 get_server_transaction_using_request(Tables, Request) when is_record(Tables, tables), is_record(Request, request) ->
+    get_server_transaction_using_request2(Tables, Request).
+
+get_server_transaction_using_request2(Tables, Request) ->
     case get_server_transaction_id(Request) of
 	error ->
 	    logger:log(error, "Transaction state list: Could not get server transaction for request"),
@@ -251,6 +228,31 @@ get_server_transaction_using_request(Tables, Request) when is_record(Tables, tab
 		Res when is_record(Res, transactionstate) ->
 		    Res
 	    end
+    end.
+
+get_server_transaction_to_cancel(Request) when is_record(Request, request) ->
+    get_server_transaction_to_cancel(?DEFAULT_TABLES, Request).
+
+get_server_transaction_to_cancel(Tables, #request{method = "CANCEL"} = Request) when is_record(Tables, tables) ->
+    Header = Request#request.header,
+    %% XXX not only INVITE can be cancelled, RFC3261 9.2 says we should find the
+    %% transaction that is being handled by 'assuming the method is anything but
+    %% CANCEL or ACK'.
+    {CSeqNum, _} = sipheader:cseq(Header),
+    %% When looking for the corresponding INVITE transaction, we have to change the
+    %% CSeq method of this header to INVITE, in case we received it from a RFC2543 client
+    %% (RFC2543 backwards-compatible transaction matching includes the whole CSeq, this is
+    %% probably an error in RFC3261 #9.2 that refers to #17.2.3 which does not say that
+    %% CANCEL matches a transaction even though the CSeq method differs)
+    IHeader = keylist:set("CSeq", [sipheader:cseq_print({CSeqNum, "INVITE"})], Header),
+    Invite = Request#request{method = "INVITE",
+			     header = IHeader
+			    },
+    case get_server_transaction_using_request2(Tables, Invite) of
+	none ->
+	    none;
+	Res ->
+	    Res
     end.
 
 %%--------------------------------------------------------------------
@@ -393,12 +395,13 @@ get_using_pid2(Tables, Pid)  ->
     fetch_using_ref_tuples(Tables, RefList).
 
 %%--------------------------------------------------------------------
-%% @spec    (Type, Id) ->
+%% @spec    (Tables, Type, Id) ->
 %%            Entry |
 %%            none
 %%
-%%            Type = client | server
-%%            Id   = term()
+%%            Tables = #tables{}
+%%            Type   = client | server
+%%            Id     = term()
 %%
 %%            Entry = #transactionstate{}
 %%
@@ -1215,22 +1218,15 @@ test() ->
     Request1 = sippacket:parse(Message1, none),
 
     autotest:mark(?LINE, "add_server_transaction/4 - 1.1"),
-    ok = add_server_transaction(TestTables, Request1, self(), "TEST request 1"),
+    %% add a request
+    Request1_Description = "TEST request 1",
+    ok = add_server_transaction(TestTables, Request1, self(), Request1_Description),
 
     autotest:mark(?LINE, "add_server_transaction/4 - 2"),
     %% try to add the same request again, should fail
-    {duplicate, _} = add_server_transaction(TestTables, Request1, self(), "TEST request 1"),
+    {duplicate, _} = add_server_transaction(TestTables, Request1, self(), Request1_Description),
 
-    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 1"),
-    %% try to fetch the transaction
-    #transactionstate{type = server,
-		      id   = {Message1Branch, _TopVia1, "INVITE"}
-		     } = get_server_transaction_using_request(TestTables, Request1),
-
-    
-
-    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 2"),
-    %% now, try finding server transaction using a CANCEL request
+    autotest:mark(?LINE, "add_server_transaction/4 - 3.0"),
     CancelMessage1 =
 	"CANCEL sip:ft@example.org SIP/2.0\r\n"
 	"Via: SIP/2.0/YXA-TEST one.example.org;branch=" ++ Message1Branch ++ "\r\n"
@@ -1238,24 +1234,50 @@ test() ->
 	"\r\n",
 
     CancelRequest1 = sippacket:parse(CancelMessage1, none),
+    CancelRequest1_Description = "CANCEL of TEST request 1",
+    %% add a CANCEL request (CANCEL of the INVITE received in test case above)
+    ok = add_server_transaction(TestTables, CancelRequest1, self(), CancelRequest1_Description),
 
-    #transactionstate{type = server,
-		      id   = {Message1Branch, _TopVia1, "INVITE"}
-		     } = get_server_transaction_using_request(TestTables, CancelRequest1),
+    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 1.1"),
+    %% try to fetch the INVITE transaction
+    GetUsingReq1_Expected1 =
+	#transactionstate{type		= server,
+			  id		= get_server_transaction_id(Request1),
+			  description	= Request1_Description,
+			  pid		= self()
+			 },
+    GetUsingReq1_Result1 = get_server_transaction_using_request(TestTables, Request1),
+    ok = test_compare_records(GetUsingReq1_Expected1, GetUsingReq1_Result1, [ref, ack_id, expire]),
 
-    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 3"),
+    autotest:mark(?LINE, "get_server_transaction_using_request/2 - 1.2"),
+    %% try to fetch the CANCEL transaction
+    GetUsingReq1_Expected2 =
+	#transactionstate{type		= server,
+			  id		= get_server_transaction_id(CancelRequest1),
+			  description	= CancelRequest1_Description,
+			  pid		= self()
+			 },
+    GetUsingReq1_Result2 = get_server_transaction_using_request(TestTables, CancelRequest1),
+    ok = test_compare_records(GetUsingReq1_Expected2, GetUsingReq1_Result2, [ref, ack_id, expire]),
+
+
+    autotest:mark(?LINE, "get_server_transaction_to_cancel/2 - 1"),
+    %% now, try finding the INVITE server transaction using the CANCEL request
+    GetToCancel2_Result = get_server_transaction_to_cancel(TestTables, CancelRequest1),
+    ok = test_compare_records(GetUsingReq1_Result1, GetToCancel2_Result, []),
+
+    autotest:mark(?LINE, "get_server_transaction_to_cancel/2 - 2"),
     %% try the same thing but with the CANCEL being received over another transport
     CancelMessage2 =
 	"CANCEL sip:ft@example.org SIP/2.0\r\n"
-	"Via: SIP/2.0/YXA-TEST2 one.example.org;branch=" ++ Message1Branch ++ "\r\n"
+	"Via: SIP/2.0/UDP one.example.org;branch=" ++ Message1Branch ++ "\r\n"
 	++ MessageCommonHeaders1 ++
 	"\r\n",
 
     CancelRequest2 = sippacket:parse(CancelMessage2, none),
 
-    #transactionstate{type = server,
-		      id   = {Message1Branch, _TopVia1, "INVITE"}
-		     } = get_server_transaction_using_request(TestTables, CancelRequest2),
+    GetToCancel3_Result = get_server_transaction_to_cancel(TestTables, CancelRequest2),
+    ok = test_compare_records(GetUsingReq1_Result1, GetToCancel3_Result, []),
 
     
 
@@ -1274,5 +1296,16 @@ test_check_is_empty_ets_table(TableName) when is_atom(TableName) ->
 	    Msg = io_lib:format("ETS table ~p is not empty", [TableName]),
 	    {error, lists:flatten(Msg)}
     end.
+
+%% compare two records element by element and give good information on where they
+%% are not equal
+test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_list(ShouldChange) ->
+    RecName = element(1, R1),
+    Fields = test_record_info(RecName),
+    autotest_util:compare_records(R1, R2, ShouldChange, Fields).
+
+%% add more records here when needed
+test_record_info(transactionstate) ->
+    record_info(fields, transactionstate).
 
 -endif.
