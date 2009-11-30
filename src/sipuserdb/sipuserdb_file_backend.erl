@@ -589,11 +589,12 @@ parse_address([{address, "tel:+" ++ Num} | T], A) when is_record(A, address), is
 	    {error, lists:flatten(E)}
     end;
 parse_address([{address, V} | T], A) when is_record(A, address), is_list(V) ->
-    case sipurl:parse(V) of
+    try sipurl:parse(V) of
 	URL when is_record(URL, sipurl) ->
-	    parse_address(T, A#address{address=V, url=URL});
-	Unknown ->
-	    E = io_lib:format("unparsable URL in address record (user ~p) : ~p (~p)", [A#address.user, V, Unknown]),
+	    parse_address(T, A#address{address=V, url=URL})
+    catch
+	throw: {yxa_unparsable, url, Error} ->
+	    E = io_lib:format("unparsable URL in address record (user ~p) : ~p (~p)", [A#address.user, V, Error]),
 	    {error, lists:flatten(E)}
     end;
 parse_address([H | _T], A) when is_record(A, address) ->

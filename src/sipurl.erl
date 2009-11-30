@@ -181,9 +181,11 @@
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 %%--------------------------------------------------------------------
-%% @spec    (URLStr) -> #sipurl{} | {unparsable, URLStr}
+%% @spec    (URLStr) -> #sipurl{}
 %%
 %%            URLStr = string() "a sip url"
+%%
+%% @throws  {yxa_unparsable, url, {Error :: term(), In :: string()}}
 %%
 %% @doc     parses a sip url of the following format (see RFC 3261
 %%          chapter 19.1.1 for more details):
@@ -204,42 +206,33 @@
 %% @end
 %%--------------------------------------------------------------------
 parse("sip:" ++ RURL) ->
-    case parse2("sip", RURL) of
-	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-	unparsable ->
-	    {unparsable, "sip:" ++ RURL}
-    end;
+    %% fast track for lower-case sip:
+    parse2("sip", RURL);
 parse("sips:" ++ RURL) ->
-    case parse2("sips", RURL) of
-	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-	unparsable ->
-	    {unparsable, "sips:" ++ RURL}
-    end;
+    %% fast track for lower-case sips:
+    parse2("sips", RURL);
 parse(URLStr) ->
+    %% find proto by looking for :, and lower-casing what is found before it
     case string:chr(URLStr, $:) of
 	N when is_integer(N), N > 0 ->
 	    In = string:substr(URLStr, 1, N - 1),
 	    case string:to_lower(In) of
 		LC when LC == "sip"; LC == "sips" ->
 		    RURL = string:substr(URLStr, N + 1),
-		    case parse2(LC, RURL) of
-			SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-			unparsable ->
-			    {unparsable, URLStr}
-		    end;
+		    parse2(LC, RURL);
 		_ ->
-		    {unparsable, URLStr}
+		    throw({yxa_unparsable, url, {unknown_proto, URLStr}})
 	    end;
 	_ ->
-	    {unparsable, URLStr}
+	    throw({yxa_unparsable, url, {invalid_proto, URLStr}})
     end.
 
 %% part of parse/1
 parse2(Proto, RURL) ->
     case catch parse_url(Proto, RURL) of
 	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-	_Error ->
-	    unparsable
+	Error ->
+	    throw({yxa_unparsable, url, {Error, Proto ++ ":" ++ RURL}})
     end.
 
 %% URL = URL input without the proto: prefix ("sip:" that is)
@@ -647,28 +640,26 @@ url_is_equal_header(_A, _B) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Proto, URLstr) ->
-%%            URL | error
+%%            URL
 %%
 %%            Proto  = string()
 %%            URLstr = string()
 %%
 %%            URL = #sipurl{}
 %%
+%% @throws  {yxa_unparsable, url, {Error :: term(), In :: string()}}
+%%
 %% @doc     Try to parse URLstr (using @{link parse/1}), and if that
 %%          fails then try to parse Proto + UrlStr.
 %% @end
 %%--------------------------------------------------------------------
-parse_url_with_default_protocol(Proto, URLstr) ->
-    case sipurl:parse(URLstr) of
-	URL1 when is_record(URL1, sipurl) ->
-	    URL1;
-	_ ->
-	    case sipurl:parse(Proto ++ ":" ++ URLstr) of
-		URL2 when is_record(URL2, sipurl) ->
-		    URL2;
-		_ ->
-		    error
-	    end
+parse_url_with_default_protocol(Proto, URLstr) when is_list(Proto), is_list(URLstr) ->
+    try sipurl:parse(URLstr) of
+	URL1 ->
+	    URL1
+    catch
+	throw: {yxa_unparsable, url, _Reason} ->
+	    sipurl:parse(Proto ++ ":" ++ URLstr)
     end.
 
 %%--------------------------------------------------------------------

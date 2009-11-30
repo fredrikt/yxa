@@ -1014,33 +1014,28 @@ event_package(Header) when is_record(Header, keylist) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (String) ->
-%%            {Displayname, URI} | {unparsable, String}
+%%            {DisplayName, URI}
 %%
 %%            String = string() "a sip URI string or sip URI inside \"<\" and \">\" quotes, preceded by a displayname"
 %%
-%%            Displayname = none | string()
+%%            DisplayName = none | string()
 %%            URI         = #sipurl{}
 %%
 %% @doc     used to parse the contents in a To, From or Contact header
 %% @end
 %%--------------------------------------------------------------------
 name_header(String) ->
-    Index1 = string:rchr(String, $<),
-    case Index1 of
+    case string:rchr(String, $<) of
 	0 ->
-	    %% No "<", just an URI? XXX Check that it is parsable?
-	    URI = sipurl:parse(String),
-	    {none, URI};
-	_ ->
+	    %% No "<", just an URL?
+	    URL = sipurl:parse(String),
+	    {none, URL};
+	Index1 ->
 	    Index2 = string:rchr(String, $>),
-	    URL = string:substr(String, Index1 + 1, Index2 - Index1 - 1),
-	    case sipurl:parse(URL) of
-		URI when is_record(URI, sipurl) ->
-		    Displayname = parse_displayname(string:substr(String, 1, Index1 - 1)),
-		    {Displayname, URI};
-		E ->
-		    E
-	    end
+	    Str = string:substr(String, Index1 + 1, Index2 - Index1 - 1),
+	    URL = sipurl:parse(Str),
+	    Displayname = parse_displayname(string:substr(String, 1, Index1 - 1)),
+	    {Displayname, URL}
     end.
 
 %% part of name_header/1.
@@ -1293,7 +1288,14 @@ test() ->
 
     autotest:mark(?LINE, "name_header/1 - 5"),
     %% test with URI missing <>
-    {none, {unparsable, "Fredrik sip:ft@example.org"}} = name_header("Fredrik sip:ft@example.org"),
+    try name_header("Fredrik sip:ft@example.org") of
+	_ ->
+	    throw({error, "Test case was supposed to fail!"})
+    catch
+	throw:
+	  {yxa_unparsable, url, {unknown_proto, "Fredrik sip:ft@example.org"}} ->
+	    ok
+    end,
 
     autotest:mark(?LINE, "name_header/1 - 6 (disabled)"),
     %% test with quoted quotes in the display name

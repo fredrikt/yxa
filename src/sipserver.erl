@@ -1346,9 +1346,9 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% @spec    (URI, Header) -> term()
+%% @spec    (URI, Header) -> true
 %%
-%%            URI    = #sipurl{} | {unparsable, URIstr}
+%%            URI    = #sipurl{} | {yxa_unparsable, uri, {Error :: atom(), URIstr :: string()}}
 %%            Header = #keylist{}
 %%
 %% @throws  {sipparseerror, Type, Header, Status, Reason} 
@@ -1358,18 +1358,12 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
 %%          have failed, and we just format the 416 error response.
 %% @end
 %%--------------------------------------------------------------------
-check_supported_uri_scheme({unparsable, URIstr}, Header) when is_list(URIstr), is_record(Header, keylist) ->
-    case string:chr(URIstr, $:) of
-	0 ->
-	    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme"});
-	Index ->
-	    case string:to_lower(string:substr(URIstr, 1, Index)) of
-		Proto when Proto == "sip:"; Proto == "sips:" ->
-		    throw({sipparseerror, request, Header, 400, "Unparsable Request-URI"});
-		Scheme ->
-		    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme (" ++ Scheme ++ ")"})
-	    end
-    end;
+check_supported_uri_scheme({yxa_unparsable, url, {invalid_proto, _URIstr}}, Header) when is_record(Header, keylist) ->
+    throw({sipparseerror, request, Header, 416, "Missing URI Scheme"});
+check_supported_uri_scheme({yxa_unparsable, url, {unknown_proto, _URIstr}}, Header) when is_record(Header, keylist) ->
+    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme"});
+check_supported_uri_scheme({yxa_unparsable, url, _Reason}, Header) when is_record(Header, keylist) ->
+    throw({sipparseerror, request, Header, 400, "Unparsable Request-URI"});
 check_supported_uri_scheme(URI, Header) when is_record(URI, sipurl), is_record(Header, keylist) ->
     true.
 
@@ -2020,13 +2014,13 @@ test() ->
     true = check_supported_uri_scheme(URISchemeURL1, URISchemeHeader),
 
     autotest:mark(?LINE, "check_supported_uri_scheme/2 - 2"),
-    URISchemeURL2 = sipurl:parse("bogus:ft@example.org"),
+    URISchemeURL2 = (catch sipurl:parse("bogus:ft@example.org")),
     %% URL was unparsable
-    {sipparseerror, request, URISchemeHeader, 416, "Unsupported URI Scheme (bogus:)"} =
+    {sipparseerror, request, URISchemeHeader, 416, _ReasonStr} =
 	(catch check_supported_uri_scheme(URISchemeURL2, URISchemeHeader)),
 
     autotest:mark(?LINE, "check_supported_uri_scheme/2 - 3"),
-    URISchemeURL3 = sipurl:parse("SiP:ft@454.247.207.112"),
+    URISchemeURL3 = (catch sipurl:parse("SiP:ft@454.247.207.112")),
     %% URL was unparsable, but it wasn't the URI scheme that we could not understand
     {sipparseerror, request, URISchemeHeader, 400, "Unparsable Request-URI"} =
 	(catch check_supported_uri_scheme(URISchemeURL3, URISchemeHeader)),

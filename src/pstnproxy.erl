@@ -1476,7 +1476,7 @@ test() ->
     %% add_caller_identity(sip, Method, Request, Dst, PstnCtx)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "add_caller_identity/5 - sip 1.0"),
-    ACI_SIP_Dst1 = sipurl:parse(siprequest:myhostname()),
+    ACI_SIP_Dst1 = sipurl:parse("sip:" ++ siprequest:myhostname()),
     yxa_test_config:set(remote_party_id, true),
     ACI_SIP_Ctx1 = #pstn_ctx{user = undefined,
 			     tags = [from_gateway]},
@@ -1494,7 +1494,7 @@ test() ->
 
 
     autotest:mark(?LINE, "add_caller_identity/5 - sip 2.0"),
-    ACI_SIP_Dst2 = sipurl:parse(siprequest:myhostname()),
+    ACI_SIP_Dst2 = sipurl:parse("sip:" ++ siprequest:myhostname()),
     yxa_test_config:set(remote_party_id, true),
     ACI_SIP_Ctx2 = #pstn_ctx{user = undefined,
 			     tags = []},
