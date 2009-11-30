@@ -601,12 +601,14 @@ httparg(String) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (In) ->
-%%            {Seq, Method} | {unparsable, String}
+%%            {Seq, Method}
 %%
 %%            In = #keylist{} | [string()]
 %%
-%%            Seq    = integer()
+%%            Seq    = string()
 %%            Method = string()
+%%
+%% @throws  {yxa_unparsable, cseq, {Reason :: atom(), In :: string()}}
 %%
 %% @doc     Parse CSeq: header data.
 %% @end
@@ -620,7 +622,7 @@ cseq([String]) ->
 	    %% XXX return Seq as integer
 	    {Seq, Method};
 	_ ->
-	    {unparsable, String}
+	    throw({yxa_unparsable, cseq, {unable_to_tokenize, String}})
     end.
 
 %%--------------------------------------------------------------------
@@ -1458,7 +1460,15 @@ test() ->
 
     autotest:mark(?LINE, "cseq/1 - 2"),
     %% test invalid CSeq
-    {unparsable, "INVITE_1"} = cseq( keylist:from_list([{"CSeq", ["INVITE_1"]}]) ),
+    try cseq( keylist:from_list([{"CSeq", ["INVITE_1"]}]) ) of
+	_ ->
+	    throw({error, "Test case was expected to throw exception!"})
+    catch
+	throw:
+	  {yxa_unparsable, cseq, {_Reason, "INVITE_1"}} ->
+	    ok
+    end,
+    
 
 
     %% test cseq_print({Seq, Method})

@@ -663,10 +663,7 @@ parse_packet2(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigi
 %% @end
 %%--------------------------------------------------------------------
 parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
-    case sipheader:cseq(Header) of
-	{unparsable, CSeqStr} ->
-	    logger:log(error, "Sipserver: Malformed CSeq (~p) in response we were going to send, dropping response",
-		       [CSeqStr]);
+    try sipheader:cseq(Header) of
 	{_Num, "ACK"} ->
 	    %% Empirical evidence says that it is a really bad idea to send responses to ACK
 	    %% (since the response may trigger yet another ACK). Although not very clearly,
@@ -678,6 +675,10 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
 		       [Status, Reason]);
 	{_Num, _Method} ->
 	    transportlayer:send_result(Header, Socket, <<>>, Status, Reason, ExtraHeaders)
+    catch
+	throw: {yxa_unparsable, cseq, Reason} ->
+	    logger:log(error, "Sipserver: Malformed CSeq in response we were going to send, dropping response : ~p",
+		       [Reason])
     end,
     ok.
 
@@ -1114,10 +1115,7 @@ check_packet(Request, Origin) when is_record(Request, request), is_record(Origin
     check_supported_uri_scheme(Request#request.uri, Header),
     sanity_check_contact(request, "From", Header),
     sanity_check_contact(request, "To", Header),
-    case sipheader:cseq(Header) of
-	{unparsable, CSeqStr} ->
-	    logger:log(error, "INVALID CSeq '~p' in packet from ~s", [CSeqStr, origin2str(Origin)]),
-	    throw({sipparseerror, request, Header, 400, "Invalid CSeq"});
+    try sipheader:cseq(Header) of
 	{CSeqNum, CSeqMethod} ->
 	    case util:isnumeric(CSeqNum) of
 		false ->
@@ -1131,6 +1129,11 @@ check_packet(Request, Origin) when is_record(Request, request), is_record(Origin
 			   " does not match request Method " ++ Method});
 		true -> true
 	    end
+    catch
+	throw:
+	  {yxa_unparsable, cseq, Reason} ->
+	    logger:log(error, "INVALID CSeq in packet from ~s : ~p", [origin2str(Origin), Reason]),
+	    throw({sipparseerror, request, Header, 400, "Invalid CSeq"})
     end,
     case yxa_config:get_env(detect_loops) of
 	{ok, true} ->
