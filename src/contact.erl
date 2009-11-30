@@ -231,9 +231,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% @spec    (Contacts) -> [#contact{}] | {unparsable, Reason}
+%% @spec    (Contacts) -> [#contact{}]
 %%
 %%            Contacts = string() "\"contact1, concact2\" or just \"c1\""
+%%
+%% @throws  {yxa_unparsable, contact, {Reason, In :: string()}}
 %%
 %% @doc     Parse header data from a request that uses the same (or
 %%          nearly the same) grammar as "Contact". This include
@@ -241,13 +243,12 @@
 %% @end
 %%--------------------------------------------------------------------
 parse(Contacts) when is_list(Contacts) ->
-    %% throw({unparsable, Str}) if parsing failed
     case catch [parse_star(Contact) || Contact <- Contacts] of
 	{error, Reason} ->
 	    %% parse error - detected by yxa code or Erlang match operations
-	    {unparsable, Reason};
+	    throw({yxa_unparsable, contact, {Reason, Contacts}});
 	{'EXIT', Reason} ->
-	    {unparsable, Reason};
+	    throw({yxa_unparsable, contact, {Reason, Contacts}});
 
 	ResLists ->
 	    %% parsed data
@@ -767,7 +768,7 @@ test() ->
 
     %% test that "Contact: *;foo=bar" throws an exception (* can't have contact-params)
     autotest:mark(?LINE, "parse/1 - 15"),
-    {unparsable, _} = parse(["*;foo=bar"]),
+    {unparsable, star_got_contact_params} = test_parse(["*;foo=bar"]),
 
     %% test contact-parameters without a value
     autotest:mark(?LINE, "parse/1 - 16"),
@@ -804,11 +805,11 @@ test() ->
 
     %% test display name without quotes, that really should have quotes
     autotest:mark(?LINE, "parse/1 - 20"),
-    {unparsable, {unparsable_uri_without_brackets, _}} = (catch parse(["Foo Bar sip:example.org"])),
+    {unparsable, {unparsable_uri_without_brackets, _}} = test_parse(["Foo Bar sip:example.org"]),
 
     %% test display name without quotes, that really should have quotes
     autotest:mark(?LINE, "parse/1 - 21"),
-    {unparsable, {unquoted_displayname_is_not_a_valid_token, _}} = (catch parse(["Foo|Bar <sip:example.org>"])),
+    {unparsable, {unquoted_displayname_is_not_a_valid_token, _}} = test_parse(["Foo|Bar <sip:example.org>"]),
 
 
     %% test with empty quoted display name
@@ -829,7 +830,7 @@ test() ->
 
     %% test invalid hostname that is not quoted and not a token
     autotest:mark(?LINE, "parse/1 - 24"),
-    {unparsable, {invalid_contact_param, _}} = (catch parse(["<sip:example.org>;foo=|.example.org"])),
+    {unparsable, {invalid_contact_param, _}} = test_parse(["<sip:example.org>;foo=|.example.org"]),
 
     %% test parameters with delimeter-alike characters, interop problem (our fault) encountered
     %% with Cisco 79xx phones firmware > 7.4
@@ -851,22 +852,22 @@ test() ->
     %% test parameters with unbalanced quotes
     autotest:mark(?LINE, "parse/1 - 27"),
     {unparsable, {unparsable_contact_params, unbalanced_quotes}} =
-	(catch parse(["<sip:ft@192.0.2.12:5060>;foo=\"test"])),
+	test_parse(["<sip:ft@192.0.2.12:5060>;foo=\"test"]),
 
     %% test invalid expires parameter
     autotest:mark(?LINE, "parse/1 - 28"),
     {unparsable, {malformed_expires, "aa"}} =
-	(catch parse(["<sip:ft@192.0.2.12:5060>;expires=aa"])),
+	test_parse(["<sip:ft@192.0.2.12:5060>;expires=aa"]),
 
     %% test with invalid IPv6 address in parameter
     autotest:mark(?LINE, "parse/1 - 29"),
     {unparsable, {invalid_contact_param, "test=[2001:6b0:5:987::1234"}} =
-	(catch parse(["<sip:ft@192.0.2.12:5060>;test=[2001:6b0:5:987::1234"])),
+	test_parse(["<sip:ft@192.0.2.12:5060>;test=[2001:6b0:5:987::1234"]),
 
     %% test invalid q parameter
     autotest:mark(?LINE, "parse/1 - 30"),
     {unparsable, {malformed_qvalue, "aa"}} =
-	(catch parse(["<sip:ft@192.0.2.12:5060>;q=aa"])),
+	test_parse(["<sip:ft@192.0.2.12:5060>;q=aa"]),
 
 
     %% print(Contact) / print(Contacts)
@@ -1087,5 +1088,14 @@ test() ->
 
 
     ok.
+
+test_parse(In) ->
+    try parse(In) of
+	_ -> throw({error, "Test case was expected to fail!"})
+    catch
+	throw: {yxa_unparsable, contact, {Error, In}} ->
+	    {unparsable, Error}
+    end.
+
 
 -endif.
