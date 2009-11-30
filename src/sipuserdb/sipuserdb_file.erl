@@ -451,10 +451,11 @@ get_users_using_address(Address) when is_list(Address) ->
     %% Check that Address is a parsable URL. It really does not have to
     %% be - it is often the result of canonization of a Request-URI, URL
     %% or address of some form.
-    case sipurl:parse(Address) of
+    try sipurl:parse(Address) of
 	URL when is_record(URL, sipurl) ->
-	    get_usernames_for_url(URL, fetch_addresses(), []);
-	_ ->
+	    get_usernames_for_url(URL, fetch_addresses(), [])
+    catch
+	throw: {yxa_unparsable, url, _Error} ->
 	    %% unparsable URL
 	    []
     end;
@@ -687,9 +688,12 @@ test() ->
 test_make_address(U, A) ->
     #address{user    = U,
 	     address = A,
-	     url     = case sipurl:parse(A) of
-			   URL when is_record(URL, sipurl) -> URL;
-			   {unparsable, _} -> undefined
+	     url     = try sipurl:parse(A) of
+			   URL when is_record(URL, sipurl) -> URL
+		       catch
+			   throw:
+			     {yxa_unparsable, url, _Error} ->
+			       undefined
 		       end
 	    }.
 

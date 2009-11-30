@@ -334,9 +334,12 @@ parse_contact_no_quoted_displayname(StrippedStr) ->
 		end,
 	    %% Since we did not have even a "<" to tell us where the addr-spec
 	    %% started, we verify that what we found is a parsable SIP URI
-	    case sipurl:parse(AddrSpec) of
-		URI when is_record(URI, sipurl) -> ok;
-		_ -> throw({error, {unparsable_uri_without_brackets, AddrSpec}})
+	    try sipurl:parse(AddrSpec) of
+		URI when is_record(URI, sipurl) ->
+		    ok
+	    catch
+		throw: {yxa_unparsable, url, _Error} ->
+		    throw({error, {unparsable_uri_without_brackets, AddrSpec}})
 	    end,
 	    {none, AddrSpec, Params};
 	{error, no_first_part} ->

@@ -622,13 +622,24 @@ extract_eol(Bin, Offset, CRLFseen, Res) ->
 %%            Header = #keylist{}
 %%            Body   = binary()
 %%
-%% @doc     Put all the pieces of a request together.
+%% @doc     Put all the pieces of a request together. Note that we
+%%          cover up for unparsable URIs here!
 %% @end
 %%--------------------------------------------------------------------
 request({Method, URIstr}, Header, Body) when is_list(Method), is_list(URIstr),
 					     is_record(Header, keylist), is_binary(Body) ->
-    URI = sipurl:parse(URIstr),
-    #request{method=Method, uri=URI, header=Header, body=Body}.
+    URI =
+	try sipurl:parse(URIstr) of
+	    Parsed -> Parsed
+	catch
+	    throw: {yxa_unparsable, url, {Error, Str}} ->
+		{yxa_unparsable, url, {Error, Str}}
+	end,
+    #request{method	= Method,
+	     uri	= URI,
+	     header	= Header,
+	     body	= Body
+	    }.
 
 %%--------------------------------------------------------------------
 %% @spec    ({Status, Reason}, Header, Body) -> #response{}
@@ -643,7 +654,11 @@ request({Method, URIstr}, Header, Body) when is_list(Method), is_list(URIstr),
 %%--------------------------------------------------------------------
 response({Status, Reason}, Header, Body) when is_integer(Status), is_list(Reason),
 					      is_record(Header, keylist), is_binary(Body) ->
-    #response{status=Status, reason=Reason, header=Header, body=Body}.
+    #response{status = Status,
+	      reason = Reason,
+	      header = Header,
+	      body   = Body
+	     }.
 
 
 %%====================================================================
@@ -890,7 +905,7 @@ test() ->
     autotest:mark(?LINE, "parse/2 request - 8.1"),
     %% Request-URI enclosed in <> - invalid, but should not be rejected here
     %% (it isn't THAT broken and should be responded to with a 400 Bad Request)
-    {request, "INVITE" , {unparsable, "<sip:user@example.com>"}, Header8, <<>>} = parse(Message8, none),
+    {request, "INVITE" , {yxa_unparsable, url, {_Error, "<sip:user@example.com>"}}, Header8, <<>>} = parse(Message8, none),
 
     autotest:mark(?LINE, "parse/2 request - 8.2"),
     %% verify the Via header so we know keylist is created as it should

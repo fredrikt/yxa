@@ -807,13 +807,14 @@ lookuppstn("+" ++ E164) ->
 		    none;
 		PSTN when is_list(PSTN) ->
 		    logger:log(debug, "Rewrite: ~s to PSTN URL ~p", ["+" ++ E164, PSTN]),
-		    case sipurl:parse_url_with_default_protocol("sip", PSTN) of
-			error ->
-			    logger:log(error, "Lookup: Failed parsing result of rewrite ~p using 'e164_to_pstn'",
-				       ["+" ++ E164]),
-			    none;
+		    try sipurl:parse_url_with_default_protocol("sip", PSTN) of
 			URL when is_record(URL, sipurl) ->
 			    {proxy, URL}
+		    catch
+			throw: {yxa_unparsable, url, {Error, _In}} ->
+			    logger:log(error, "Lookup: Failed parsing result of rewrite ~p using 'e164_to_pstn' : ~p",
+				       ["+" ++ E164, Error]),
+			    none
 		    end
 	    end;
 	false ->
@@ -868,7 +869,7 @@ lookupnumber2(Number, Regexps) when is_list(Number), is_list(Regexps) ->
     case util:regexp_rewrite(Number, Regexps) of
 	Res when is_list(Res) ->
 	    %% Check to see if what we got is a parsable URL
-	    case sipurl:parse_url_with_default_protocol("sip", Res) of
+	    try sipurl:parse_url_with_default_protocol("sip", Res) of
 		URL when is_record(URL, sipurl) ->
 		    %% Check if it is a local URL or a remote
 		    case homedomain(URL#sipurl.host) of
@@ -876,10 +877,11 @@ lookupnumber2(Number, Regexps) when is_list(Number), is_list(Regexps) ->
 			    {proxy, URL};
 			false ->
 			    {relay, URL}
-		    end;
-		_ ->
+		    end
+	    catch
+		throw: {yxa_unparsable, url, {Error, _In}} ->
 		    logger:log(error, "Lookup: Rewrite of number ~p using 'number_to_pstn' did not "
-			       "result in a parsable URL : ~p", [Number, Res]),
+			       "result in a parsable URL : ~p", [Number, Error]),
 		    error
 	    end;
 	nomatch ->

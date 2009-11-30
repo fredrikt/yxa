@@ -422,7 +422,7 @@ find_first_telephonenumber(["tel:+" ++ Rest | T]) ->
 	    find_first_telephonenumber(T)
     end;
 find_first_telephonenumber([H | T]) when is_list(H) ->
-    case sipurl:parse(H) of
+    try sipurl:parse(H) of
 	#sipurl{user = User} ->
 	    IsNumericUser = util:isnumeric(User),
 	    IsE164User =
@@ -437,8 +437,9 @@ find_first_telephonenumber([H | T]) when is_list(H) ->
 		IsE164User == true -> User;
 		true ->
 		    find_first_telephonenumber(T)
-	    end;
-	_ ->
+	    end
+    catch
+	throw: {yxa_unparsable, url, _Error} ->
 	    %% unparsable URL
 	    find_first_telephonenumber(T)
     end.

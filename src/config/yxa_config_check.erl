@@ -520,7 +520,7 @@ type_check_elements([{L, R} | _T], regexp_match, _Def, Res) ->
 %% sipurl
 %%
 type_check_elements([H | T], sipurl, Def, Res) when is_list(H) ->
-    case sipurl:parse(H) of
+    try sipurl:parse(H) of
 	URL when is_record(URL, sipurl) ->
 	    case Def#cfg_entry.normalize of
 		true ->
@@ -528,8 +528,9 @@ type_check_elements([H | T], sipurl, Def, Res) when is_list(H) ->
 		false ->
 		    %% H was parsable, but we are not to normalize it
 		    type_check_elements(T, sipurl, Def, [H | Res])
-	    end;
-	_ ->
+	    end
+    catch
+	throw: {yxa_unparsable, url, _Error} ->
 	    throw({invalid_value, "unparsable URL", length(Res) + 1, H})
     end;
 
@@ -537,7 +538,7 @@ type_check_elements([H | T], sipurl, Def, Res) when is_list(H) ->
 %% sip_sipurl
 %%
 type_check_elements([H | T], sip_sipurl, Def, Res) when is_list(H) ->
-    case sipurl:parse_url_with_default_protocol("sip", H) of
+    try sipurl:parse_url_with_default_protocol("sip", H) of
 	URL when is_record(URL, sipurl) ->
 	    case Def#cfg_entry.normalize of
 		true ->
@@ -545,8 +546,9 @@ type_check_elements([H | T], sip_sipurl, Def, Res) when is_list(H) ->
 		false ->
 		    %% H was parsable, but we are not to normalize it
 		    type_check_elements(T, sip_sipurl, Def, [H | Res])
-	    end;
-	_ ->
+	    end
+    catch
+	throw: {yxa_unparsable, url, _Error} ->
 	    throw({invalid_value, "unparsable default-sip-URL", length(Res) + 1, H})
     end;
 
@@ -554,7 +556,7 @@ type_check_elements([H | T], sip_sipurl, Def, Res) when is_list(H) ->
 %% sips_sipurl
 %%
 type_check_elements([H | T], sips_sipurl, Def, Res) when is_list(H) ->
-    case sipurl:parse_url_with_default_protocol("sips", H) of
+    try sipurl:parse_url_with_default_protocol("sips", H) of
 	URL when is_record(URL, sipurl) ->
 	    case Def#cfg_entry.normalize of
 		true ->
@@ -562,8 +564,9 @@ type_check_elements([H | T], sips_sipurl, Def, Res) when is_list(H) ->
 		false ->
 		    %% H was parsable, but we are not to normalize it
 		    type_check_elements(T, sips_sipurl, Def, [H | Res])
-	    end;
-	_ ->
+	    end
+    catch
+	throw: {yxa_unparsable, url, _Error} ->
 	    throw({invalid_value, "unparsable default-sips-URL", length(Res) + 1, H})
     end;
 
