@@ -557,11 +557,7 @@ get_server_transaction(Request) when is_record(Request, request) ->
 %% @end
 %%--------------------------------------------------------------------
 get_client_transaction(Response) when is_record(Response, response) ->
-    Header = Response#response.header,
-    TopVia = sipheader:topvia(Header),
-    Branch = sipheader:get_via_branch(TopVia),
-    {_, Method} = sipheader:cseq(Header),
-    transactionstatelist:get_client_transaction(Method, Branch).
+    transactionstatelist:get_client_transaction(Response).
 
 %%--------------------------------------------------------------------
 %% @spec    (Response) ->

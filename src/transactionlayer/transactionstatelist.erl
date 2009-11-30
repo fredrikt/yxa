@@ -26,10 +26,9 @@
 	 debugfriendly/0,
 	 debugfriendly/1,
 	 monitor_format/1,
-	 get_client_transaction/2,
+	 get_client_transaction/1,
 	 get_server_transaction_using_request/1,
 	 get_server_transaction_to_cancel/1,
-	 get_elem_using_pid/2,
 	 get_entrylist_using_pid/1,
 	 get_expired/0,
 	 set_pid/2,
@@ -61,20 +60,56 @@
 		 statistics
 		}).
 
+%% these records are the different variants of keys in the
+%% ack_to_ref and typeid_to_ref ETS tables.
+-record(rfc3261_client_id,	{branch		:: nonempty_string(),
+				 cseq_method	:: nonempty_string()
+				}).
+
+-record(rfc3261_server_id,	{branch		:: nonempty_string(),
+				 sent_by	:: {Host :: nonempty_string(), Port :: non_neg_integer()},
+				 method		:: nonempty_string()
+				}).
+
+-record(rfc2543_ack_id,		{uri		:: #sipurl{},
+				 from_tag	:: nonempty_string(),
+				 call_id	:: nonempty_string(),
+				 cseq		:: {nonempty_string(), nonempty_string()},
+				 top_via	:: #via{}
+				}).
+-record(rfc2543_id,		{uri		:: #sipurl{},
+				 from_tag	:: nonempty_string(),
+				 to_tag		:: nonempty_string(),
+				 call_id	:: nonempty_string(),
+				 cseq		:: {nonempty_string(), nonempty_string()},
+				 top_via	:: #via{}
+				}).
+
+
+-type rfc3261_client_id()	:: #rfc3261_client_id{}.
+-type rfc3261_server_id()	:: #rfc3261_server_id{}.
+-type rfc2543_ack_id()		:: #rfc2543_ack_id{}.
+-type rfc2543_id()		:: #rfc2543_id{}.
+
 %% Transaction layer data about ongoing transactions
 -record(transactionstate, {
-	  ref			:: reference(),		%% unique reference 
+	  ref			:: reference(),			%% unique reference
 	  type			:: server | client,
-	  id			:: term(),		%% identification data for matching requests/responses
-	  						%% to this transaction 
-	  ack_id		:: term(),		%% special id for matching ACK to INVITE 
-	  pid			:: pid(),		%% transaction handler process
-	  appdata		:: term(),		%% data about this transaction stored by an application
-	  response_to_tag	:: string(),		%% the To-tag used in responses to this transaction that
-							%% we have generated ourselves
-	  expire		:: non_neg_integer(),	%% when in time this transaction expires
-	  description		:: string(),		%% just used for displaying (in stack_monitor and debug logs etc.)
-	  result = none		:: none | string()	%% just used for displaying (in stack_monitor and debug logs etc.)
+	  id			:: rfc3261_client_id() |	 %% identification data for matching requests/responses
+	  			   rfc3261_server_id() |
+	  			   rfc2543_ack_id()    |
+	  			   rfc2543_id(),
+	  							%% to this transaction
+	  ack_id = none		:: none | rfc2543_ack_id(),	%% special id for matching ACK to INVITE
+	  pid			:: pid(),			%% transaction handler process
+	  appdata		:: term(),			%% data about this transaction stored by an application
+	  response_to_tag	:: nonempty_string(),		%% the To-tag used in responses to this transaction that
+								%% we have generated ourselves
+	  expire		:: non_neg_integer(),		%% when in time this transaction expires
+	  description		:: string(),			%% just used for displaying (in stack_monitor
+	  							%% and debug logs etc.)
+	  result = none		:: none | nonempty_string()	%% just used for displaying (in stack_monitor
+	  							%% and debug logs etc.)
 	 }).
 
 -opaque transactionstate() :: #transactionstate{}.
@@ -142,7 +177,7 @@ add_client_transaction(Tables, Method, Branch, Pid, Desc)
 %% @doc     Add a new transaction state entry to SocketList.
 %% @end
 %%--------------------------------------------------------------------
-add_server_transaction(Request, Pid, Desc) 
+add_server_transaction(Request, Pid, Desc)
   when is_record(Request, request), is_pid(Pid), is_list(Desc) ->
     add_server_transaction(?DEFAULT_TABLES, Request, Pid, Desc).
 
@@ -315,28 +350,26 @@ get_server_transaction_ack_2543(Tables, Request) when is_record(Request, request
     end.
 
 %%--------------------------------------------------------------------
-%% @spec    (Method, Branch) ->
+%% @spec    (Response) ->
 %%            Entry |
 %%            none
 %%
-%%            Method = string()
-%%            Branch = string()
+%%            Response = #response{}
 %%
 %%            Entry = #transactionstate{}
 %%
-%% @doc     Look for a client transaction using a method and branch.
-%%          Notes : This code is only used in transcationlayer before
-%%          adding a new client transaction. Since we have only a
-%%          single transactionlayer process per node, this is not a
-%%          race, but it would be better to just look for duplicates
-%%          in add_client_transaction().
+%% @doc     When we receive a response, we use this function to get an
+%%          Id which we look up in our transaction state database to
+%%          see if we have a client transaction handler that should
+%%          get this response. This is specified in RFC3261 #17.1.3
+%%          (Matching Responses to Client Transactions).
 %% @end
 %%--------------------------------------------------------------------
-get_client_transaction(Method, Branch) ->
-    get_client_transaction(?DEFAULT_TABLES, Method, Branch).
+get_client_transaction(Response) when is_record(Response, response) ->
+    get_client_transaction(?DEFAULT_TABLES, Response).
 
-get_client_transaction(Tables, Method, Branch) ->
-    Id = {Branch, Method},
+get_client_transaction(Tables, Response) ->
+    Id = get_client_transaction_id(Response),
     get_elem(Tables, client, Id).
 
 %%--------------------------------------------------------------------
@@ -362,37 +395,6 @@ get_entrylist_using_pid(Tables, Pid) when is_pid(Pid) ->
 	    none;
 	L when is_list(L) ->
 	    L
-    end.
-
-%%--------------------------------------------------------------------
-%% @spec    (Pid, TStateList) ->
-%%            TransactionState |
-%%            {error, Reason}  |
-%%            none
-%%
-%%            Pid        = pid()
-%%            TStateList = #transactionstatelist{}
-%%
-%%            TransactionState = #transactionstate{}
-%%            Reason           = string()
-%%
-%% @doc     The same as get_list_using_pid/2 except this function
-%%          returns {error, Reason} if more than one record has a
-%%          matching pid.
-%% @end
-%%--------------------------------------------------------------------
-get_elem_using_pid(Pid, TStateList) when is_pid(Pid), is_record(TStateList, transactionstatelist) ->
-    get_elem_using_pid(?DEFAULT_TABLES, Pid, TStateList).
-
-get_elem_using_pid(Tables, Pid, TStateList) when is_pid(Pid), is_record(TStateList, transactionstatelist) ->
-    %%case get_using_pid2(Pid, TStateList#transactionstatelist.list, []) of
-    case get_using_pid2(Tables, Pid) of
-	[] ->
-	    none;
-	[Elem] when is_record(Elem, transactionstate) ->
-	    Elem;
-	L when is_list(L) ->
-	    {error, "more than one transactionstate found"}
     end.
 
 %%--------------------------------------------------------------------
@@ -846,7 +848,7 @@ get_all_entries(Tables) ->
 %%
 %%            Request = #request{}
 %%
-%%            Id = term() | is_2543_ack | error
+%%            Id = rfc3261_server_id() | rfc2543_server_id() | is_2543_ack | error
 %%
 %% @doc     Turn a request into a transaction id, that can be stored
 %%          in our transaction state database together with a
@@ -871,11 +873,7 @@ get_server_transaction_id(Request) ->
 
 guarded_get_server_transaction_id(Request) when is_record(Request, request) ->
     TopVia = sipheader:topvia(Request#request.header),
-    %% XXX the branch is actually a token and should apparently be compared case-insensitively
-    %% http://bugs.sipit.net/show_bug.cgi?id=661
-    %% EXCEPT the z9hG4bK which should be compared with case sensitivity (sic)
-    Branch = sipheader:get_via_branch(TopVia),
-    case Branch of
+    case sipheader:get_via_branch(TopVia) of
 	"z9hG4bK" ++ _RestOfBranch ->
 	    M = case Request#request.method of
 		    "ACK" ->
@@ -896,13 +894,10 @@ guarded_get_server_transaction_id(Request) when is_record(Request, request) ->
 %%
 %%            Response = #response{}
 %%
-%%            Id = term() | error
+%%            Id = rfc3261_client_id() | error
 %%
-%% @doc     When we receive a response, we use this function to get an
-%%          Id which we look up in our transaction state database to
-%%          see if we have a client transaction handler that should
-%%          get this response. This is specified in RFC3261 #17.1.3
-%%          (Matching Responses to Client Transactions).
+%% @doc     Get the id we use for client transactions.
+%% @see     get_client_transaction/1.
 %% @end
 %%--------------------------------------------------------------------
 get_client_transaction_id(Response) ->
@@ -921,7 +916,9 @@ guarded_get_client_transaction_id(Response) when is_record(Response, response) -
     TopVia = sipheader:topvia(Header),
     Branch = sipheader:get_via_branch(TopVia),
     {_, CSeqMethod} = sipheader:cseq(Header),
-    {Branch, CSeqMethod}.
+    #rfc3261_client_id{branch = Branch,
+		       cseq_method = CSeqMethod
+		      }.
 
 %%--------------------------------------------------------------------
 %% @spec    (Request) ->
@@ -929,7 +926,7 @@ guarded_get_client_transaction_id(Response) when is_record(Response, response) -
 %%
 %%            Request = #request{}
 %%
-%%            Id = term() | error
+%%            Id = rfc2543_id() | error
 %%
 %% @doc     When we receive an ACK that has no RFC3261 Via branch
 %%          parameter, we use this function to get an Id that we then
@@ -967,14 +964,19 @@ get_server_transaction_ack_id_2543(Request) ->
 guarded_get_server_transaction_ack_id_2543(Request) when is_record(Request, request) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
     TopVia = remove_branch(sipheader:topvia(Header)),
-    CallID = sipheader:callid(Header),
+    CallId = sipheader:callid(Header),
     {CSeqNum, _} = sipheader:cseq(Header),
     FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
     %% We are supposed to match only on the CSeq number, but the entry we are
     %% matching against is an INVITE and that INVITE had it's Id generated with
     %% the full CSeq. Make it possible to match the INVITE with this Id.
     FakeCSeq = {CSeqNum, "INVITE"},
-    {URI, FromTag, CallID, FakeCSeq, TopVia}.
+    #rfc2543_ack_id{uri		= URI,
+		    from_tag	= FromTag,
+		    call_id	= CallId,
+		    cseq	= FakeCSeq,
+		    top_via	= TopVia
+		   }.
 
 remove_branch(Via) when is_record(Via, via) ->
     ParamDict = sipheader:param_to_dict(Via#via.param),
@@ -988,7 +990,7 @@ remove_branch(Via) when is_record(Via, via) ->
 %%            Method = list()
 %%            TopVia = #via{}
 %%
-%%            Id = term()
+%%            Id = rfc3261_server_id()
 %%
 %% @doc     Part of guarded_get_server_transaction_id(), called when
 %%          the top Via header is found to contain an RFC3261 branch
@@ -998,7 +1000,10 @@ remove_branch(Via) when is_record(Via, via) ->
 guarded_get_server_transaction_id_3261(Method, TopVia) when is_list(Method), is_record(TopVia, via) ->
     Branch = sipheader:get_via_branch_full(TopVia),
     SentBy = via_sentby(TopVia),
-    {Branch, SentBy, Method}.
+    #rfc3261_server_id{branch	= Branch,
+		       sent_by	= SentBy,
+		       method	= Method
+		      }.
 
 %%--------------------------------------------------------------------
 %% @spec    (Request, TopVia) ->
@@ -1043,12 +1048,17 @@ guarded_get_server_transaction_id_2543(Request, _) when is_record(Request, reque
 %%
 guarded_get_server_transaction_id_2543(Request, TopVia) when is_record(Request, request), is_record(TopVia, via) ->
     {URI, Header} = {Request#request.uri, Request#request.header},
-    CallID = sipheader:callid(Header),
+    CallId = sipheader:callid(Header),
     CSeq = sipheader:cseq(Header),
     FromTag = sipheader:get_tag(keylist:fetch('from', Header)),
     ToTag = sipheader:get_tag(keylist:fetch('to', Header)),
-    {URI, ToTag, FromTag, CallID, CSeq, TopVia}.
-
+    #rfc2543_id{uri		= URI,
+		from_tag	= FromTag,
+		to_tag		= ToTag,
+		call_id		= CallId,
+		cseq		= CSeq,
+		top_via		= TopVia
+	       }.
 
 %%--------------------------------------------------------------------
 %% @spec    (Via) ->
@@ -1110,7 +1120,10 @@ test() ->
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 1.2"),
     %% check result
-    {"z9hG4bK-really-unique", {"sip.example.org", 5061}, "INVITE"} = Invite1Id,
+    #rfc3261_server_id{branch = "z9hG4bK-really-unique",
+		       sent_by = {"sip.example.org", 5061},
+		       method = "INVITE"}
+	= Invite1Id,
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 2"),
     %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123"
@@ -1140,12 +1153,15 @@ test() ->
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 4.2"),
     %% check result
-    {#sipurl{proto="sip", user="alice", pass=none, host="example.org", port=none, param_pairs={url_param,[]}},
-     none,
-     "f-abc",
-     "3c26722ce234@192.0.2.111", {"2", "INVITE"},
-     {via, "SIP/2.0/TLS", "sip.example.org", 5061, ["branch=not-really-unique"]}
-    } = Invite2543_1Id,
+    Invite2543_1Expected =
+	#rfc2543_id{uri		= Invite2543_1#request.uri,
+		    from_tag	= "f-abc",
+		    to_tag	= none,
+		    call_id	= "3c26722ce234@192.0.2.111",
+		    cseq	= {"2", "INVITE"},
+		    top_via	= sipheader:topvia(Invite2543_1#request.header)
+		   },
+    ok = test_compare_records(Invite2543_1Id, Invite2543_1Expected, []),
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 5.1"),
     %% for RFC2543 INVITE, we must also get the ACK-id to match future ACKs with this INVITE
@@ -1153,12 +1169,18 @@ test() ->
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 5.2"),
     %% check result
-    {#sipurl{proto="sip", user="alice", pass=none, host="example.org", port=none, param_pairs={url_param,[]}},
-     "f-abc",
-     "3c26722ce234@192.0.2.111",
-     {"2","INVITE"},
-     {via,"SIP/2.0/TLS","sip.example.org",5061,[]}
-    } = Invite2543_1AckId,
+    Invite2543_1Expected_Ack =
+	#rfc2543_ack_id{uri		= Invite2543_1#request.uri,
+			from_tag	= "f-abc",
+			call_id		= "3c26722ce234@192.0.2.111",
+			cseq		= {"2", "INVITE"},
+			top_via		= #via{proto = "SIP/2.0/TLS",
+					       host  = "sip.example.org",
+					       port  = 5061,
+					       param = []
+					      }
+		       },
+    ok = test_compare_records(Invite2543_1AckId, Invite2543_1Expected_Ack, []),
 
     autotest:mark(?LINE, "get_server_transaction_id/1 - 6"),
     %% make an ACK for an imagined 3xx-6xx response with to-tag "t-123", check that
@@ -1183,7 +1205,9 @@ test() ->
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "get_client_transaction_id/1 - 1"),
     Response1 = #response{status=699, reason="foo", header=Invite2543_1Header, body = <<>>},
-    {"not-really-unique", "INVITE"} = get_client_transaction_id(Response1),
+    #rfc3261_client_id{branch = "not-really-unique",
+		       cseq_method = "INVITE"
+		      } = get_client_transaction_id(Response1),
 
 
 
@@ -1273,7 +1297,7 @@ test() ->
 			  pid		= self()
 			 },
     GetUsingReq1_Result2 = get_server_transaction_using_request(TestTables, CancelRequest1),
-    ok = test_compare_records(GetUsingReq1_Expected2, GetUsingReq1_Result2, [ref, ack_id, expire]),
+    ok = test_compare_records(GetUsingReq1_Expected2, GetUsingReq1_Result2, [ref, expire]),
 
 
     autotest:mark(?LINE, "get_server_transaction_to_cancel/2 - 1"),
@@ -1294,7 +1318,7 @@ test() ->
     GetToCancel3_Result = get_server_transaction_to_cancel(TestTables, CancelRequest2),
     ok = test_compare_records(GetUsingReq1_Result1, GetToCancel3_Result, []),
 
-    
+
 
 
     %% clean up
@@ -1320,7 +1344,10 @@ test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_l
     autotest_util:compare_records(R1, R2, ShouldChange, Fields).
 
 %% add more records here when needed
-test_record_info(transactionstate) ->
-    record_info(fields, transactionstate).
+test_record_info(transactionstate) ->	record_info(fields, transactionstate);
+test_record_info(rfc2543_id) ->		record_info(fields, rfc2543_id);
+test_record_info(rfc2543_ack_id) ->	record_info(fields, rfc2543_ack_id);
+test_record_info(rfc3261_client) ->	record_info(fields, rfc3261_client_id);
+test_record_info(rfc3261_server) ->	record_info(fields, rfc3261_server_id).
 
 -endif.
