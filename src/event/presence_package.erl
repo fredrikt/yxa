@@ -315,7 +315,7 @@ is_allowed_subscribe2(Header, SubState, Status, Reason, ExtraHeaders, PkgState) 
 %%
 %%            Presentity = {users, UserList} | {address, AddressStr}
 %%            UserList   = [string()] "SIP usernames"
-%%            AddressStr = string() "parseable with sipurl:parse/1"
+%%            AddressStr = string() "parsable with sipurl:parse/1"
 %%            LastAccept = [string()] "Accept: header value from last SUBSCRIBE"
 %%            PkgState   = #my_state{}
 %%

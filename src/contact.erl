@@ -231,7 +231,7 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% @spec    (Contacts) -> [#contact{}] | {unparseable, Reason}
+%% @spec    (Contacts) -> [#contact{}] | {unparsable, Reason}
 %%
 %%            Contacts = string() "\"contact1, concact2\" or just \"c1\""
 %%
@@ -241,13 +241,13 @@
 %% @end
 %%--------------------------------------------------------------------
 parse(Contacts) when is_list(Contacts) ->
-    %% throw({unparseable, Str}) if parsing failed
+    %% throw({unparsable, Str}) if parsing failed
     case catch [parse_star(Contact) || Contact <- Contacts] of
 	{error, Reason} ->
 	    %% parse error - detected by yxa code or Erlang match operations
-	    {unparseable, Reason};
+	    {unparsable, Reason};
 	{'EXIT', Reason} ->
-	    {unparseable, Reason};
+	    {unparsable, Reason};
 
 	ResLists ->
 	    %% parsed data
@@ -333,10 +333,10 @@ parse_contact_no_quoted_displayname(StrippedStr) ->
 			 ""}
 		end,
 	    %% Since we did not have even a "<" to tell us where the addr-spec
-	    %% started, we verify that what we found is a parseable SIP URI
+	    %% started, we verify that what we found is a parsable SIP URI
 	    case sipurl:parse(AddrSpec) of
 		URI when is_record(URI, sipurl) -> ok;
-		_ -> throw({error, {unparseable_uri_without_brackets, AddrSpec}})
+		_ -> throw({error, {unparsable_uri_without_brackets, AddrSpec}})
 	    end,
 	    {none, AddrSpec, Params};
 	{error, no_first_part} ->
@@ -562,7 +562,7 @@ new(SipURI, Params) when (is_list(SipURI) orelse is_record(SipURI, sipurl)), is_
 %%
 %% @doc     Create a contact record(), should be used to ensure proper
 %%          handling of internal data. Valid string values for SipURI
-%%          are "*" or a string that is parseable by sipurl:parse/1.
+%%          are "*" or a string that is parsable by sipurl:parse/1.
 %% @end
 %%--------------------------------------------------------------------
 new(DisplayName, URL, Params) when is_record(URL, sipurl) ->
@@ -764,7 +764,7 @@ test() ->
 
     %% test that "Contact: *;foo=bar" throws an exception (* can't have contact-params)
     autotest:mark(?LINE, "parse/1 - 15"),
-    {unparseable, _} = parse(["*;foo=bar"]),
+    {unparsable, _} = parse(["*;foo=bar"]),
 
     %% test contact-parameters without a value
     autotest:mark(?LINE, "parse/1 - 16"),
@@ -801,11 +801,11 @@ test() ->
 
     %% test display name without quotes, that really should have quotes
     autotest:mark(?LINE, "parse/1 - 20"),
-    {unparseable, {unparseable_uri_without_brackets, _}} = (catch parse(["Foo Bar sip:example.org"])),
+    {unparsable, {unparsable_uri_without_brackets, _}} = (catch parse(["Foo Bar sip:example.org"])),
 
     %% test display name without quotes, that really should have quotes
     autotest:mark(?LINE, "parse/1 - 21"),
-    {unparseable, {unquoted_displayname_is_not_a_valid_token, _}} = (catch parse(["Foo|Bar <sip:example.org>"])),
+    {unparsable, {unquoted_displayname_is_not_a_valid_token, _}} = (catch parse(["Foo|Bar <sip:example.org>"])),
 
 
     %% test with empty quoted display name
@@ -826,7 +826,7 @@ test() ->
 
     %% test invalid hostname that is not quoted and not a token
     autotest:mark(?LINE, "parse/1 - 24"),
-    {unparseable, {invalid_contact_param, _}} = (catch parse(["<sip:example.org>;foo=|.example.org"])),
+    {unparsable, {invalid_contact_param, _}} = (catch parse(["<sip:example.org>;foo=|.example.org"])),
 
     %% test parameters with delimeter-alike characters, interop problem (our fault) encountered
     %% with Cisco 79xx phones firmware > 7.4
@@ -847,22 +847,22 @@ test() ->
 
     %% test parameters with unbalanced quotes
     autotest:mark(?LINE, "parse/1 - 27"),
-    {unparseable, {unparsable_contact_params, unbalanced_quotes}} =
+    {unparsable, {unparsable_contact_params, unbalanced_quotes}} =
 	(catch parse(["<sip:ft@192.0.2.12:5060>;foo=\"test"])),
 
     %% test invalid expires parameter
     autotest:mark(?LINE, "parse/1 - 28"),
-    {unparseable, {malformed_expires, "aa"}} =
+    {unparsable, {malformed_expires, "aa"}} =
 	(catch parse(["<sip:ft@192.0.2.12:5060>;expires=aa"])),
 
     %% test with invalid IPv6 address in parameter
     autotest:mark(?LINE, "parse/1 - 29"),
-    {unparseable, {invalid_contact_param, "test=[2001:6b0:5:987::1234"}} =
+    {unparsable, {invalid_contact_param, "test=[2001:6b0:5:987::1234"}} =
 	(catch parse(["<sip:ft@192.0.2.12:5060>;test=[2001:6b0:5:987::1234"])),
 
     %% test invalid q parameter
     autotest:mark(?LINE, "parse/1 - 30"),
-    {unparseable, {malformed_qvalue, "aa"}} =
+    {unparsable, {malformed_qvalue, "aa"}} =
 	(catch parse(["<sip:ft@192.0.2.12:5060>;q=aa"])),
 
 

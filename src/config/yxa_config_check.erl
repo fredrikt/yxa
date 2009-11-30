@@ -526,7 +526,7 @@ type_check_elements([H | T], sipurl, Def, Res) when is_list(H) ->
 		true ->
 		    type_check_elements(T, sipurl, Def, [URL | Res]);
 		false ->
-		    %% H was parseable, but we are not to normalize it
+		    %% H was parsable, but we are not to normalize it
 		    type_check_elements(T, sipurl, Def, [H | Res])
 	    end;
 	_ ->
@@ -543,7 +543,7 @@ type_check_elements([H | T], sip_sipurl, Def, Res) when is_list(H) ->
 		true ->
 		    type_check_elements(T, sip_sipurl, Def, [URL | Res]);
 		false ->
-		    %% H was parseable, but we are not to normalize it
+		    %% H was parsable, but we are not to normalize it
 		    type_check_elements(T, sip_sipurl, Def, [H | Res])
 	    end;
 	_ ->
@@ -560,7 +560,7 @@ type_check_elements([H | T], sips_sipurl, Def, Res) when is_list(H) ->
 		true ->
 		    type_check_elements(T, sips_sipurl, Def, [URL | Res]);
 		false ->
-		    %% H was parseable, but we are not to normalize it
+		    %% H was parsable, but we are not to normalize it
 		    type_check_elements(T, sips_sipurl, Def, [H | Res])
 	    end;
 	_ ->

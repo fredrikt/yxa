@@ -173,7 +173,7 @@ is_allowed_subscribe(Package, _Num, Request, YxaCtx, SIPuser, {address, AddressS
 %%            Package    = event_pkg()
 %%            Presentity = {users, UserList} | {address, AddressStr}
 %%            UserList   = [string()] "SIP usernames"
-%%            AddressStr = string() "parseable with sipurl:parse/1"
+%%            AddressStr = string() "parsable with sipurl:parse/1"
 %%            LastAccept = [string()] "Accept: header value from last SUBSCRIBE"
 %%            PkgState   = #my_state{}
 %%

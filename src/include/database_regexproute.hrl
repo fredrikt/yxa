@@ -7,5 +7,5 @@
 	  flags,	% list() of {Key, Value}
 	  class,	% atom(), permanent | ...
 	  expire,	% integer() | never
-	  address	% string(), the target address. must be parseable by sipurl:parse().
+	  address	% string(), the target address. must be parsable by sipurl:parse().
 	 }).

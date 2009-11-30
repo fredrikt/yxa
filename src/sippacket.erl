@@ -890,7 +890,7 @@ test() ->
     autotest:mark(?LINE, "parse/2 request - 8.1"),
     %% Request-URI enclosed in <> - invalid, but should not be rejected here
     %% (it isn't THAT broken and should be responded to with a 400 Bad Request)
-    {request, "INVITE" , {unparseable, "<sip:user@example.com>"}, Header8, <<>>} = parse(Message8, none),
+    {request, "INVITE" , {unparsable, "<sip:user@example.com>"}, Header8, <<>>} = parse(Message8, none),
 
     autotest:mark(?LINE, "parse/2 request - 8.2"),
     %% verify the Via header so we know keylist is created as it should

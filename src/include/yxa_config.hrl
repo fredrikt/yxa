@@ -28,9 +28,9 @@
 %%   string		string is a list of lists __with length greater than one__
 %%   regexp_rewrite	{Regexp, Rewrite} where Regexp = string(), Rewrite = string()
 %%   regexp_match	{Regexp, Match} where Regexp = string(), Match = term()
-%%   sipurl		string parseable by sipurl:parse()
-%%   sip_sipurl		string parseable by sipurl:parse_url_with_default_protocol("sip", ...)
-%%   sips_sipurl       	string parseable by sipurl:parse_url_with_default_protocol("sips", ...)
+%%   sipurl		string parsable by sipurl:parse()
+%%   sip_sipurl		string parsable by sipurl:parse_url_with_default_protocol("sip", ...)
+%%   sips_sipurl       	string parsable by sipurl:parse_url_with_default_protocol("sips", ...)
 %%
 
 %% parameters containing sensitive information that we should avoid logging when changing etc.

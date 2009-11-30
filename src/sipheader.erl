@@ -274,7 +274,7 @@ contact2(Header, Name) when is_record(Header, keylist), is_atom(Name) ->
 %%
 %%            In = #keylist{} | [string()]
 %%
-%%            Reason = unparseable_via | term()
+%%            Reason = unparsable_via | term()
 %%
 %% @throws  {error, Reason} 
 %%
@@ -316,7 +316,7 @@ via2([H | T], Res) when is_list(H) ->
 	    This = #via{proto=Protocol, host=Host, port=Port, param=Parameters},
 	    via2(T, [This | Res]);
 	_ ->
-	    throw({error, unparseable_via})
+	    throw({error, unparsable_via})
     end;
 via2([], Res) ->
     lists:reverse(Res).
@@ -601,7 +601,7 @@ httparg(String) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (In) ->
-%%            {Seq, Method} | {unparseable, String}
+%%            {Seq, Method} | {unparsable, String}
 %%
 %%            In = #keylist{} | [string()]
 %%
@@ -620,7 +620,7 @@ cseq([String]) ->
 	    %% XXX return Seq as integer
 	    {Seq, Method};
 	_ ->
-	    {unparseable, String}
+	    {unparsable, String}
     end.
 
 %%--------------------------------------------------------------------
@@ -1012,7 +1012,7 @@ event_package(Header) when is_record(Header, keylist) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (String) ->
-%%            {Displayname, URI} | {unparseable, String}
+%%            {Displayname, URI} | {unparsable, String}
 %%
 %%            String = string() "a sip URI string or sip URI inside \"<\" and \">\" quotes, preceded by a displayname"
 %%
@@ -1026,7 +1026,7 @@ name_header(String) ->
     Index1 = string:rchr(String, $<),
     case Index1 of
 	0 ->
-	    %% No "<", just an URI? XXX Check that it is parseable?
+	    %% No "<", just an URI? XXX Check that it is parsable?
 	    URI = sipurl:parse(String),
 	    {none, URI};
 	_ ->
@@ -1291,7 +1291,7 @@ test() ->
 
     autotest:mark(?LINE, "name_header/1 - 5"),
     %% test with URI missing <>
-    {none, {unparseable, "Fredrik sip:ft@example.org"}} = name_header("Fredrik sip:ft@example.org"),
+    {none, {unparsable, "Fredrik sip:ft@example.org"}} = name_header("Fredrik sip:ft@example.org"),
 
     autotest:mark(?LINE, "name_header/1 - 6 (disabled)"),
     %% test with quoted quotes in the display name
@@ -1458,7 +1458,7 @@ test() ->
 
     autotest:mark(?LINE, "cseq/1 - 2"),
     %% test invalid CSeq
-    {unparseable, "INVITE_1"} = cseq( keylist:from_list([{"CSeq", ["INVITE_1"]}]) ),
+    {unparsable, "INVITE_1"} = cseq( keylist:from_list([{"CSeq", ["INVITE_1"]}]) ),
 
 
     %% test cseq_print({Seq, Method})
