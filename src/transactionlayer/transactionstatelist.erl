@@ -524,7 +524,12 @@ extract([pid | T], TState, Res) when is_record(TState, transactionstate) ->
 extract([appdata | T], TState, Res) when is_record(TState, transactionstate) ->
     extract(T, TState, lists:append(Res, [TState#transactionstate.appdata]));
 extract([response_to_tag | T], TState, Res) when is_record(TState, transactionstate) ->
-    extract(T, TState, lists:append(Res, [TState#transactionstate.response_to_tag])).
+    extract(T, TState, lists:append(Res, [TState#transactionstate.response_to_tag]));
+extract([description | T], TState, Res) when is_record(TState, transactionstate) ->
+    extract(T, TState, lists:append(Res, [TState#transactionstate.description]));
+extract([result | T], TState, Res) when is_record(TState, transactionstate) ->
+    extract(T, TState, lists:append(Res, [TState#transactionstate.result])).
+
 
 %%--------------------------------------------------------------------
 %% @spec    (TState, Value) ->
