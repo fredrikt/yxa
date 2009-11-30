@@ -1112,7 +1112,8 @@ route_matches_me(Route) when is_record(Route, contact) ->
 %%
 check_packet(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
     {Method, Header} = {Request#request.method, Request#request.header},
-    check_supported_uri_scheme(Request#request.uri, Header),
+    true = check_supported_uri_scheme(Request#request.uri, Header),
+    %% from here on, the request is guaranteed to have a parsed URI
     sanity_check_contact(request, "From", Header),
     sanity_check_contact(request, "To", Header),
     try sipheader:cseq(Header) of
@@ -1279,33 +1280,44 @@ extract_loopcookie(Branch, CookieLen) ->
 %% @end
 %%--------------------------------------------------------------------
 make_logstr(Request, Origin) when is_record(Request, request), is_record(Origin, siporigin) ->
-    {Method, URI, Header} = {Request#request.method, Request#request.uri, Request#request.header},
-    {_, FromURI} = sipheader:from(Header),
-    {_, ToURI} = sipheader:to(Header),
-    ClientStr = origin2str(Origin),
+    {Method, Header} = {Request#request.method, Request#request.header},
+    URLstr =
+	case Request#request.uri of
+	    URI when is_record(URI, sipurl) ->
+		sipurl:print(URI);
+	    _ ->
+		"unparsable"
+	end,
+    FromURLstr = make_logstr_get_sipheader(from, Header),
+    ToURLstr   = make_logstr_get_sipheader(to, Header),
+    ClientStr  = origin2str(Origin),
     lists:flatten(io_lib:format("~s ~s [client=~s, from=<~s>, to=<~s>]",
-				[Method, sipurl:print(URI), ClientStr, url2str(FromURI), url2str(ToURI)]));
+				[Method, URLstr, ClientStr, FromURLstr, ToURLstr]));
 make_logstr(Response, Origin) when is_record(Response, response), is_record(Origin, siporigin) ->
     Header = Response#response.header,
-    {_, CSeqMethod} = sipheader:cseq(Header),
-    {_, FromURI} = sipheader:from(Header),
-    {_, ToURI} = sipheader:to(Header),
-    ClientStr = origin2str(Origin),
+    CSeqMethod = make_logstr_get_sipheader(cseq, Header),
+    FromURLstr = make_logstr_get_sipheader(from, Header),
+    ToURLstr   = make_logstr_get_sipheader(to, Header),
+    ClientStr  = origin2str(Origin),
     case keylist:fetch('warning', Header) of
 	[Warning] when is_list(Warning) ->
 	    lists:flatten(io_lib:format("~s [client=~s, from=<~s>, to=<~s>, warning=~p]",
-					[CSeqMethod, ClientStr, url2str(FromURI), url2str(ToURI), Warning]));
+					[CSeqMethod, ClientStr, FromURLstr, ToURLstr, Warning]));
 	_ ->
 	    %% Zero or more than one Warning-headers
 	    lists:flatten(io_lib:format("~s [client=~s, from=<~s>, to=<~s>]",
-					[CSeqMethod, ClientStr, url2str(FromURI), url2str(ToURI)]))
+					[CSeqMethod, ClientStr, FromURLstr, ToURLstr]))
     end.
 
 %% part of make_logstr/2
-url2str(URL) when is_record(URL, sipurl) ->
-    sipurl:print(URL);
-url2str({unparsable, URLstr}) when is_list(URLstr) ->
-    "unparsable".
+make_logstr_get_sipheader(Func, Header) ->
+    try {Func, sipheader:Func(Header)} of
+	{from, {_DisplayName, URI}} -> sipurl:print(URI);
+	{to,   {_DisplayName, URI}} -> sipurl:print(URI);
+	{cseq, {_Seq, Method}} -> Method
+    catch
+	throw: _ -> "unparsable"
+    end.
 
 %%--------------------------------------------------------------------
 %% @spec    (Type, Name, Header) -> term()
@@ -1798,19 +1810,54 @@ test() ->
 
     %% test make_logstr(Request, Origin)
     %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "make_logstr/2 - 1"),
+    autotest:mark(?LINE, "make_logstr/2 - 1.0"),
     %% create records
-    LogStrH1 = keylist:from_list([
-				  {"From",	["<sip:test@it.su.se>;tag=f-123"]},
-				  {"To",	["<sip:test@it.su.se>;tag=t-123"]}
-				 ]),
-    LogStrReq1 = #request{method="INVITE", uri=sipurl:parse("sip:ft@example.org"),
-			  header=LogStrH1, body=EmptyBody},
+    LogStrMsg1 =
+	<<"INVITE sip:test@example.org SIP/2.0\r\n"
+	 "Via: SIP/2.0/TCP one.example.org\r\n"
+	 "From: Test <sip:test@it.su.se>;tag=f-123\r\n"
+	 "To: <sip:test@it.su.se>;tag=f-123\r\n"
+	 "\r\n"
+	 >>,
+    LogStrReq1 = sippacket:parse(LogStrMsg1, none),
 
-    autotest:mark(?LINE, "make_logstr/2 - 2"),
+    autotest:mark(?LINE, "make_logstr/2 - 1.1"),
     %% straight forward
-    LogStrResult1 = "INVITE sip:ft@example.org [client=tcp:192.0.2.123:10, from=<sip:test@it.su.se>, to=<sip:test@it.su.se>]",
+    LogStrResult1 = "INVITE sip:test@example.org [client=tcp:192.0.2.123:10, from=<sip:test@it.su.se>, to=<sip:test@it.su.se>]",
     LogStrResult1 = make_logstr(LogStrReq1, Origin2Str1),
+
+    autotest:mark(?LINE, "make_logstr/2 - 2.0"),
+    %% create records
+    LogStrMsg2 =
+	<<"INVITE <sip:test@example.org> SIP/2.0\r\n"
+	 "Via: SIP/2.0/TCP one.example.org\r\n"
+	 "From: <sip-test-bad:test@it.su.se>;tag=f-123\r\n"
+	 "To: <sip-test-bad:test@it.su.se>;tag=f-123\r\n"
+	 "\r\n"
+	 >>,
+    LogStrReq2 = sippacket:parse(LogStrMsg2, none),
+
+    autotest:mark(?LINE, "make_logstr/2 - 2.1"),
+    %% test request failure cases (bad URLs)
+    LogStrResult2 = "INVITE unparsable [client=tcp:192.0.2.123:10, from=<unparsable>, to=<unparsable>]",
+    LogStrResult2 = make_logstr(LogStrReq2, Origin2Str1),
+
+    autotest:mark(?LINE, "make_logstr/2 - 3.0"),
+    %% create records
+    LogStrMsg3 =
+	<<"SIP/2.0 100 Trying\r\n"
+	 "Via: SIP/2.0/TCP one.example.org\r\n"
+	 "From: <sip-test-bad:test@it.su.se>;tag=f-123\r\n"
+	 "To: <sip-test-bad:test@it.su.se>;tag=f-123\r\n"
+	 "CSeq: FOO\r\n"
+	 "\r\n"
+	 >>,
+    LogStrReq3 = sippacket:parse(LogStrMsg3, none),
+
+    autotest:mark(?LINE, "make_logstr/2 - 3.1"),
+    %% test response failure cases (bad URLs)
+    LogStrResult3 = "unparsable [client=tcp:192.0.2.123:10, from=<unparsable>, to=<unparsable>]",
+    LogStrResult3 = make_logstr(LogStrReq3, Origin2Str1),
 
 
     %% test check_packet(Request, Origin)
