@@ -367,7 +367,7 @@ safe_spawn_child(Module, Function, Arguments) ->
 %%
 %% @doc     In sipserver we do lots of checking in the dark areas of
 %%          transport layer, transaction layer or somewhere in
-%%          between. When we detect unparseable requests for example,
+%%          between. When we detect unparsable requests for example,
 %%          we generate an error response in sipserver but special
 %%          care must be taken so that we do not generate responses
 %%          to malformed ACK's. This function checks that.
@@ -664,7 +664,7 @@ parse_packet2(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigi
 %%--------------------------------------------------------------------
 parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
     case sipheader:cseq(Header) of
-	{unparseable, CSeqStr} ->
+	{unparsable, CSeqStr} ->
 	    logger:log(error, "Sipserver: Malformed CSeq (~p) in response we were going to send, dropping response",
 		       [CSeqStr]);
 	{_Num, "ACK"} ->
@@ -689,7 +689,7 @@ parse_do_internal_error(Header, Socket, Status, Reason, ExtraHeaders) ->
 %%
 %% @doc     Do alot of transport/transaction layer checking/work on a
 %%          request or response we have received and previously
-%%          concluded was parseable. For example, do RFC3581 handling
+%%          concluded was parsable. For example, do RFC3581 handling
 %%          of rport parameter on top via, check for loops, check if
 %%          we received a request from a strict router etc.
 %% @end
@@ -740,7 +740,7 @@ process_parsed_packet(Request, Origin) when is_record(Request, request), is_reco
 %%
 %% @doc     Do alot of transport/transaction layer checking/work on a
 %%          request or response we have received and previously
-%%          concluded was parseable. For example, do RFC3581 handling
+%%          concluded was parsable. For example, do RFC3581 handling
 %%          of rport parameter on top via, check for loops, check if
 %%          we received a request from a strict router etc.
 %% @end
@@ -1115,7 +1115,7 @@ check_packet(Request, Origin) when is_record(Request, request), is_record(Origin
     sanity_check_contact(request, "From", Header),
     sanity_check_contact(request, "To", Header),
     case sipheader:cseq(Header) of
-	{unparseable, CSeqStr} ->
+	{unparsable, CSeqStr} ->
 	    logger:log(error, "INVALID CSeq '~p' in packet from ~s", [CSeqStr, origin2str(Origin)]),
 	    throw({sipparseerror, request, Header, 400, "Invalid CSeq"});
 	{CSeqNum, CSeqMethod} ->
@@ -1301,8 +1301,8 @@ make_logstr(Response, Origin) when is_record(Response, response), is_record(Orig
 %% part of make_logstr/2
 url2str(URL) when is_record(URL, sipurl) ->
     sipurl:print(URL);
-url2str({unparseable, URLstr}) when is_list(URLstr) ->
-    "unparseable".
+url2str({unparsable, URLstr}) when is_list(URLstr) ->
+    "unparsable".
 
 %%--------------------------------------------------------------------
 %% @spec    (Type, Name, Header) -> term()
@@ -1345,7 +1345,7 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
 %%--------------------------------------------------------------------
 %% @spec    (URI, Header) -> term()
 %%
-%%            URI    = #sipurl{} | {unparseable, URIstr}
+%%            URI    = #sipurl{} | {unparsable, URIstr}
 %%            Header = #keylist{}
 %%
 %% @throws  {sipparseerror, Type, Header, Status, Reason} 
@@ -1355,7 +1355,7 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
 %%          have failed, and we just format the 416 error response.
 %% @end
 %%--------------------------------------------------------------------
-check_supported_uri_scheme({unparseable, URIstr}, Header) when is_list(URIstr), is_record(Header, keylist) ->
+check_supported_uri_scheme({unparsable, URIstr}, Header) when is_list(URIstr), is_record(Header, keylist) ->
     case string:chr(URIstr, $:) of
 	0 ->
 	    throw({sipparseerror, request, Header, 416, "Unsupported URI Scheme"});
@@ -2018,13 +2018,13 @@ test() ->
 
     autotest:mark(?LINE, "check_supported_uri_scheme/2 - 2"),
     URISchemeURL2 = sipurl:parse("bogus:ft@example.org"),
-    %% URL was unparseable
+    %% URL was unparsable
     {sipparseerror, request, URISchemeHeader, 416, "Unsupported URI Scheme (bogus:)"} =
 	(catch check_supported_uri_scheme(URISchemeURL2, URISchemeHeader)),
 
     autotest:mark(?LINE, "check_supported_uri_scheme/2 - 3"),
     URISchemeURL3 = sipurl:parse("SiP:ft@454.247.207.112"),
-    %% URL was unparseable, but it wasn't the URI scheme that we could not understand
+    %% URL was unparsable, but it wasn't the URI scheme that we could not understand
     {sipparseerror, request, URISchemeHeader, 400, "Unparsable Request-URI"} =
 	(catch check_supported_uri_scheme(URISchemeURL3, URISchemeHeader)),
 

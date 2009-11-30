@@ -1,6 +1,6 @@
 %% This module handles sipurl (record) related actions:
 %% * parsing data to a sipurl record()
-%% * formating sipurl record() to a parseable text string
+%% * formating sipurl record() to a parsable text string
 %% * comparing sipurls with url_is_equal/2
 %% * creating and modifying sipurl records with new() and set()
 %% * accessing sipurl records with get_port/1
@@ -181,7 +181,7 @@
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 %%--------------------------------------------------------------------
-%% @spec    (URLStr) -> #sipurl{} | {unparseable, URLStr}
+%% @spec    (URLStr) -> #sipurl{} | {unparsable, URLStr}
 %%
 %%            URLStr = string() "a sip url"
 %%
@@ -206,14 +206,14 @@
 parse("sip:" ++ RURL) ->
     case parse2("sip", RURL) of
 	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-	unparseable ->
-	    {unparseable, "sip:" ++ RURL}
+	unparsable ->
+	    {unparsable, "sip:" ++ RURL}
     end;
 parse("sips:" ++ RURL) ->
     case parse2("sips", RURL) of
 	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-	unparseable ->
-	    {unparseable, "sips:" ++ RURL}
+	unparsable ->
+	    {unparsable, "sips:" ++ RURL}
     end;
 parse(URLStr) ->
     case string:chr(URLStr, $:) of
@@ -224,14 +224,14 @@ parse(URLStr) ->
 		    RURL = string:substr(URLStr, N + 1),
 		    case parse2(LC, RURL) of
 			SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
-			unparseable ->
-			    {unparseable, URLStr}
+			unparsable ->
+			    {unparsable, URLStr}
 		    end;
 		_ ->
-		    {unparseable, URLStr}
+		    {unparsable, URLStr}
 	    end;
 	_ ->
-	    {unparseable, URLStr}
+	    {unparsable, URLStr}
     end.
 
 %% part of parse/1
@@ -239,7 +239,7 @@ parse2(Proto, RURL) ->
     case catch parse_url(Proto, RURL) of
 	SipUrl when is_record(SipUrl, sipurl) -> SipUrl;
 	_Error ->
-	    unparseable
+	    unparsable
     end.
 
 %% URL = URL input without the proto: prefix ("sip:" that is)
@@ -284,7 +284,7 @@ parse_url(Proto, URL) ->
 	    new([{proto, Proto}, {user, User}, {pass, Password}, {host, Host},
 		 {port, Port}, {param, Parameterlist}]);
 	false ->
-	    unparseable
+	    unparsable
     end.
 
 %% The parse functions are somewhat lax compared to the BNF specification so this
@@ -330,7 +330,7 @@ unescape_str([$%, H1, H2 | RStr]) ->
 %%
 %%            URL = #sipurl{}
 %%
-%% @doc     create parseable sip url string Note : user, password,
+%% @doc     create parsable sip url string Note : user, password,
 %%          uri-parameters and headers can use char codes that need
 %%          to be escaped using the %HH (H = 0-F) notation
 %% @end

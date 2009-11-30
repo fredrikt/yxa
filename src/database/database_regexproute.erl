@@ -77,7 +77,7 @@ create(Servers) ->
 %%            Flags   = [{Key, Value}]
 %%            Class   = atom()
 %%            Expire  = integer() | never
-%%            Address = string() "must be parseable with sipurl:parse/1"
+%%            Address = string() "must be parsable with sipurl:parse/1"
 %%
 %% @doc     Insert a new regexproute entry into the database.
 %% @end
@@ -95,7 +95,7 @@ insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flag
 %%            Flags   = [{Key, Value}]
 %%            Class   = atom()
 %%            Expire  = integer() | never
-%%            Address = string() "must be parseable with sipurl:parse/1"
+%%            Address = string() "must be parsable with sipurl:parse/1"
 %%
 %% @doc     Insert a new regexproute entry into the database.
 %% @end

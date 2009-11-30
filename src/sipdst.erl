@@ -774,7 +774,7 @@ get_response_host_proto(TopVia) when is_record(TopVia, via) ->
 %%            {ok, Address, Proto} |
 %%            {error, Reason}
 %%
-%%            Addr         = term() "something (probably a string()) that is parseable by inet_parse:ipv{4,6}_address() (should be an IPv4 or IPv6 address, not a hostname!)"
+%%            Addr         = term() "something (probably a string()) that is parsable by inet_parse:ipv{4,6}_address() (should be an IPv4 or IPv6 address, not a hostname!)"
 %%            DefaultProto = tcp | udp | tls | yxa_test
 %%
 %%            Address = term() "parsed version of Addr"

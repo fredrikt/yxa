@@ -94,7 +94,7 @@ write_regexp(A, Node) when is_atom(Node) ->
 
     Address = case ?GET_VAR("address") of
 		  {ok, AddressValue} when is_list(AddressValue) ->
-		      %% The Address probably looks like a SIP URL, but might not be parseable.
+		      %% The Address probably looks like a SIP URL, but might not be parsable.
 		      %% For example, the regexp could be '^sip:prefix;(.*)@example\.org$' and
 		      %% the regexp 'sip:\1@sip\.example\.org'
 		      AddressValue;

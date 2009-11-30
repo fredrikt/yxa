@@ -1708,7 +1708,7 @@ normalize_string_switch__field(FieldStr) ->
 %%--------------------------------------------------------------------
 check_url(URL) ->
     case sipurl:parse(URL) of
-	{unparseable, _URLStr} -> throw({error, url_attribute_not_set_to_proper_url});
+	{unparsable, _URLStr} -> throw({error, url_attribute_not_set_to_proper_url});
 	_ -> URL
     end.
 

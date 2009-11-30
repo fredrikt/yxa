@@ -488,14 +488,14 @@ get_addresses_using_user2(Username, [H | T], Res) when is_record(H, address) ->
 %% @end
 %%--------------------------------------------------------------------
 get_users_using_address(Address) when is_list(Address) ->
-    %% Check that Address is a parseable URL. It really does not have to
+    %% Check that Address is a parsable URL. It really does not have to
     %% be - it is often the result of canonization of a Request-URI, URL
     %% or address of some form.
     case sipurl:parse(Address) of
 	URL when is_record(URL, sipurl) ->
 	    get_usernames_for_url(URL, fetch_addresses(), []);
 	_ ->
-	    %% unparseable URL
+	    %% unparsable URL
 	    []
     end;
 get_users_using_address(URL) when is_record(URL, sipurl) ->

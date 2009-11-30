@@ -82,8 +82,8 @@
 %% @spec    (Referee, ReferTo) ->
 %%            Does not matter - does not return until we are finished.
 %%
-%%            URLstr  = string() "parseable with sipurl:parse/1"
-%%            ReferTo = string() "parseable with sipurl:parse/1"
+%%            URLstr  = string() "parsable with sipurl:parse/1"
+%%            ReferTo = string() "parsable with sipurl:parse/1"
 %%
 %% @doc     Refer Referee to ReferTo by first establishing a dialog
 %%          using an INVITE, and then sending a REFER on that dialog.
@@ -108,8 +108,8 @@ start_ir(Referee, ReferTo) when is_list(Referee), is_list(ReferTo) ->
 %% @spec    (Referee, ReferTo) ->
 %%            Does not matter - does not return until we are finished.
 %%
-%%            Referee = string() "parseable with sipurl:parse/1"
-%%            ReferTo = string() "parseable with sipurl:parse/1"
+%%            Referee = string() "parsable with sipurl:parse/1"
+%%            ReferTo = string() "parsable with sipurl:parse/1"
 %%
 %% @doc     Refer URLstr to ReferTo by just sending a REFER and
 %%          thereafter handle the NOTIFYs that a standards compliant

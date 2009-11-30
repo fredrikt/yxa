@@ -867,7 +867,7 @@ lookupnumber2(Number, Regexps) when is_list(Number), is_list(Regexps) ->
     %% Try to rewrite Number using configured regexp 'number_to_pstn'
     case util:regexp_rewrite(Number, Regexps) of
 	Res when is_list(Res) ->
-	    %% Check to see if what we got is a parseable URL
+	    %% Check to see if what we got is a parsable URL
 	    case sipurl:parse_url_with_default_protocol("sip", Res) of
 		URL when is_record(URL, sipurl) ->
 		    %% Check if it is a local URL or a remote
@@ -879,7 +879,7 @@ lookupnumber2(Number, Regexps) when is_list(Number), is_list(Regexps) ->
 		    end;
 		_ ->
 		    logger:log(error, "Lookup: Rewrite of number ~p using 'number_to_pstn' did not "
-			       "result in a parseable URL : ~p", [Number, Res]),
+			       "result in a parsable URL : ~p", [Number, Res]),
 		    error
 	    end;
 	nomatch ->
