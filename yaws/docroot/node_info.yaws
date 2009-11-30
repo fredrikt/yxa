@@ -10,7 +10,6 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
--include("transactionstatelist.hrl").
 
 %%--------------------------------------------------------------------
 %% Macros
@@ -199,7 +198,7 @@ transactionlayer(A, Node, Statistics) when is_list(Statistics) ->
 %%--------------------------------------------------------------------
 get_transactionlist(Node) ->
     {ok, TL} = rpc:call(Node, gen_server, call, [transactionlayer, {monitor_get_transactionlist}]),
-    Content = case print_transactionlist(TL, []) of
+    Content = case print_transactionlist(Node, TL, []) of
 		  [] ->
 		      {tr, [], [
 				{td, [{colspan, 2}], ["None right now"]}
@@ -218,26 +217,30 @@ get_transactionlist(Node) ->
 
 
 %%--------------------------------------------------------------------
-%% Function: print_transactionlist(TL, [])
+%% Function: print_transactionlist(Node, TL, [])
+%%           Node = atom(), node we are to talk with
 %%           TL = list() of transactionstate record()
 %% Descrip.: Format list of transactions.
 %% Returns : HTML = term(), Yaws html data
 %%--------------------------------------------------------------------
-print_transactionlist(none, []) ->
+print_transactionlist(_Node, none, []) ->
     [];
-print_transactionlist([H | T], Res) when is_record(H, transactionstate) ->
+print_transactionlist(Node, [H | T], Res) when is_tuple(H) ->
+    [Descr0, Result0] =
+        rpc:call(Node, transactionstatelist, extract,
+                 [[description, result], H]),
     This = {tr, [], [
-		     {td, [], case H#transactionstate.description of
+		     {td, [], case Descr0 of
 				 [] -> "empty";
 				 Descr -> Descr
 			      end},
-		     {td, [], case H#transactionstate.result of
+		     {td, [], case Result0 of
 				 none -> "none yet";
 				 Result -> Result
 			      end}
 		    ]},
-    print_transactionlist(T, [This | Res]);
-print_transactionlist([], Res) ->
+    print_transactionlist(Node, T, [This | Res]);
+print_transactionlist(_Node, [], Res) ->
     lists:reverse(Res).
 
 
