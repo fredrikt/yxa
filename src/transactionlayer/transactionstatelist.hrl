@@ -8,3 +8,4 @@
 	  list,
 	  tables
 	 }).
+-type transactionstatelist() :: #transactionstatelist{}.
