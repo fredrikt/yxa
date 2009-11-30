@@ -86,7 +86,6 @@
 		       sipdialog,
 		       sipsocket_blacklist,
 		       stun,
-		       appserver,
 		       presence_pidf,
 		       presence_package,
 		       subscription,
