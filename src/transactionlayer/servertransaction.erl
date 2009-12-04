@@ -75,22 +75,22 @@
 %% @type state() = #state{}.
 %%                 no description
 -record(state, {
-	  branch,		%% string(), our branch identifier
-	  logtag,		%% string(), prefix to use when logging
-	  socket,		%% sipsocket record(), the socket the request was received on -
-	  			%% RFC3261 requires us to send responses using the very same socket
-	  is_rel_sock,		%% true | false, are the sockets transport reliable?
-	  report_to,		%% undefined | pid(), to whom we should report if we are cancelled
-	  parent,		%% pid(), our parent process - to handle trapped EXITs from it
-	  request,		%% request record(), the request we are handling
-	  response,		%% undefined | response record(), the last response we sent
-	  sipstate,		%% atom(), trying|proceeding|completed|confirmed|terminated
-	  cancelled = false,	%% bool(), have we been cancelled?
-	  timerlist,		%% siptimerlist record(), our current set of timers
-	  my_to_tag,		%% string(), To-tag to use if we generate a response (as opposed to
-	  			%% if we forward a response)
-	  nit_100 = false,	%% non-INVITE '100 Trying' time reached?
-	  testing = false	%% true | false, are we just testing this modules functions?
+	  branch :: string(),		%% our branch identifier
+	  logtag :: string(),			%% prefix to use when logging
+	  socket :: #sipsocket{},		%% the socket the request was received on -
+	  					%% RFC3261 requires us to send responses using the very same socket
+	  is_rel_sock :: bool(),		%% are the sockets transport reliable?
+	  report_to :: undefined | pid(),	%% to whom we should report if we are cancelled
+	  parent :: pid(),			%% our parent process - to handle trapped EXITs from it
+	  request :: #request{},		%% the request we are handling
+	  response :: undefined | #response{},	%% the last response we sent
+	  sipstate :: trying|proceeding|completed|confirmed|terminated,
+	  cancelled = false :: bool(),		%% bool(), have we been cancelled?
+	  timerlist :: siptimer:siptimerlist(),	%% opaque, our current set of timers
+	  my_to_tag :: string(),		%% To-tag to use if we generate a response (as opposed to
+	  					%% if we forward a response)
+	  nit_100 = false :: bool(),		%% non-INVITE '100 Trying' time reached?
+	  testing = false :: bool()		%% are we just testing this modules functions?
 	 }).
 
 %%--------------------------------------------------------------------

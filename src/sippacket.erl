@@ -35,15 +35,15 @@
 %% @type ptr() = #ptr{}.
 %%               no description
 -record(ptr, {
-	  offset,	%% integer(), start offset of element
-	  length	%% integer(), length of element
+	  offset	:: non_neg_integer(),	%% start offset of element
+	  length	:: non_neg_integer()	%% length of element
 	 }).
 %% @type header() = #header{}.
 %%                  no description
 -record(header, {
-	  key,		%% ptr record() with data about header key
-	  valueptrs,	%% list() of ptr record(), value element(s)
-	  comma		%% true | false, comma present in value(s)?
+	  key		:: #ptr{},	%% data about header key
+	  valueptrs	:: [#ptr{}],	%% value element(s)
+	  comma		:: bool()	%% comma present in value(s)?
 	 }).
 
 %%--------------------------------------------------------------------
@@ -308,7 +308,7 @@ parse_one_header_key2(Bin, Offset, KeyLen, RequireColon) ->
 %%            Offset = integer() "this headers start offset"
 %%
 %%            Comma      = true | false "comma seen or not?"
-%%            ValuePtrs  = #ptr{}
+%%            ValuePtrs  = [#ptr{}]
 %%            NextOffset = integer() "offset of whatever is after this header's value(s)"
 %%
 %% @doc     Locate all value elements for this header. This is a list

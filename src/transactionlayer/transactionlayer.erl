@@ -79,13 +79,6 @@
 	]).
 
 %%--------------------------------------------------------------------
-%% Include files
-%%--------------------------------------------------------------------
--include("transactionstatelist.hrl").
--include("siprecords.hrl").
--include("sipsocket.hrl").
-
-%%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
 %% @type state() = #state{}.
@@ -98,8 +91,17 @@
 %%                    with the transaction processes should go through this
 %%                    module.
 -record(thandler, {
-	  pid
+	  pid :: pid()
 	 }).
+
+-opaque transaction_handler() :: #thandler{}.
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("transactionstatelist.hrl").
+-include("siprecords.hrl").
+-include("sipsocket.hrl").
 
 %%--------------------------------------------------------------------
 %% Macros

@@ -52,13 +52,13 @@
 %%--------------------------------------------------------------------
 %% @type dialogid() = #dialogid{}.
 %%                    no description
--record(dialogid, {callid,		%% string()
-		   local_tag,		%% string()
-		   remote_tag		%% string() | undefined
+-record(dialogid, {callid	:: nonempty_string(),
+		   local_tag	:: nonempty_string(),
+		   remote_tag	:: undefined | nonempty_string()
 		  }).
 
--record(dialog_attrs, {pid,		%% pid() of dialog controller
-		       expires		%% integer(), second since epoch when this transaction expires
+-record(dialog_attrs, {pid	:: pid(),		%% dialog controller
+		       expires	:: non_neg_integer()	%% seconds since epoch when this transaction expires
 		      }).
 
 %%--------------------------------------------------------------------

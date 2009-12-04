@@ -147,6 +147,8 @@ process_route_header(Header, URI) when is_record(Header, keylist), is_record(URI
 %%          in Header to Route.
 %% @end
 %%--------------------------------------------------------------------
+-spec set_route([#contact{}] | [], keylist:keylist()) -> keylist:keylist().
+
 set_route([], Header) ->
     keylist:delete('route', Header);
 set_route(Route, Header) ->

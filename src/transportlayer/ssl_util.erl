@@ -338,7 +338,7 @@ get_host_altnames(_Type, [], Res) ->
 %%--------------------------------------------------------------------
 is_valid_ssl_certname(ValidNames, Subject, AltNames, Reject) when is_list(ValidNames),
 								  is_record(Subject, ssl_conn_subject),
-								  is_list(AltNames) ->
+								  is_list(AltNames), is_boolean(Reject) ->
     CommonName = Subject#ssl_conn_subject.commonName,
     {ok, DoesMatch, MatchingName} = get_matching_altname(ValidNames, CommonName, AltNames),
     case {DoesMatch, Reject} of

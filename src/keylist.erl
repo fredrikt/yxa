@@ -51,30 +51,36 @@
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% Include files
-%%--------------------------------------------------------------------
--include("siprecords.hrl").
-
-%%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
 %% @type keyelem() = #keyelem{}.
 %%                   no description
 -record(keyelem, {
-	  %% string() | atom(), stores a sip header field name
-	  %% normalized to a standard format by normalize/1
-	  key,
-	  %% string(), stores a sip header field name in a
-	  %% non-normalized form, may be in upper or lower case, or
-	  %% short form
-	  name,
-	  %% list() of string(), stores field specific entries
-	  value
+	  %% stores a sip header field name normalized to a standard
+	  %% format by normalize/1
+	  key :: atom | nonempty_string(),
+	  %% stores a sip header field name in a non-normalized form,
+	  %% may be in upper or lower case, or short form
+	  name :: nonempty_string(),
+	  %% stores field specific entries (i.e. SIP header values)
+	  value :: [string()]
 	 }).
+
+-opaque keyelem() :: #keyelem{}.
+
+%%--------------------------------------------------------------------
+%% Include files
+%%--------------------------------------------------------------------
+-include("siprecords.hrl").
 
 %%--------------------------------------------------------------------
 %% Macros
 %%--------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+-type keylist() :: #keylist{}.
 
 %%====================================================================
 %% External functions

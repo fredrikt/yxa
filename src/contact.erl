@@ -577,7 +577,7 @@ new(DisplayName, [$< | Rest], Params) ->
     erlang:error("contact:new failed, urlstr should be without <>",
 		 [DisplayName, [$<, Rest], Params]);
 
-new(DisplayName, UrlStr, Params) when is_list(DisplayName); DisplayName == none,
+new(DisplayName, UrlStr, Params) when (is_list(DisplayName) orelse DisplayName == none),
 				      is_list(UrlStr), is_list(Params) ->
     #contact{display_name = DisplayName,
 	     urlstr = UrlStr,

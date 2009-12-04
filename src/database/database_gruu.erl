@@ -56,6 +56,10 @@
 	  flags			%% list() of {Key, Value} tuple(), for future use
 	 }).
 
+%% tell Dialyzer that this record should be opaque to everyone outside of
+%% this module
+-opaque gruu() :: #gruu{}.
+
 %%--------------------------------------------------------------------
 %% Types
 %%--------------------------------------------------------------------

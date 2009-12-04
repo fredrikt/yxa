@@ -44,7 +44,7 @@
 		warntime,		%% integer(), point in time when we should warn about still being alive
 		approxmsgsize,		%% integer(), approximate size of the SIP requests when we send them
 		cancelled = false,	%% true | false, have we been cancelled or not?
-		testing = false		%% true | false, are we currently unit testing? used to avoid some side effects
+		testing = false :: bool()		%% true | false, are we currently unit testing? used to avoid some side effects
 	       }).
 
 %%--------------------------------------------------------------------

@@ -34,21 +34,28 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
-%% @type siptimerlist() = #siptimerlist{}.
-%%                        no description
--record(siptimerlist, {
-	  list		%% list() of siptimer record()
-	 }).
 %% @type siptimer() = #siptimer{}.
 %%                    no description
 -record(siptimer, {
-	  ref,		%% ref(), unique reference
-	  timer,	%% term(), timer reference
-	  timeout,	%% integer(), timeout in milliseconds
-	  description,	%% string(), description of timer
-	  starttime,	%% integer(), start time in util:timestamp() format
-	  appsignal	%% term(), application signal this timer represents
+	  ref,					%% ref(), unique reference
+	  timer		:: any(),		%% term(), timer reference
+	  timeout	:: non_neg_integer(),	%% timeout in milliseconds
+	  description	:: string(),		%% description of timer
+	  starttime	:: non_neg_integer(),	%% start time in util:timestamp() format
+	  appsignal	:: any()		%% term(), application signal this timer represents
 	 }).
+
+-opaque siptimer() :: #siptimer{}.
+
+%% @type siptimerlist() = #siptimerlist{}.
+%%                        no description
+-record(siptimerlist, {
+	  list :: [siptimer()]		%% list() of siptimer record()
+	 }).
+
+%% tell Dialyzer that these records should be opaque to everyone outside of
+%% this module
+-opaque siptimerlist() :: #siptimerlist{}.
 
 %%====================================================================
 %% External functions

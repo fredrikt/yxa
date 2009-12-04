@@ -41,25 +41,30 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
-%% @type targetlist() = #targetlist{}.
-%%                      Container record to make sure noone tries to modify our
-%%                      records.
--record(targetlist, {list}).
-
 %% @type target() = #target{}.
 %%                  no description
 -record(target, {
-	  ref,			%% ref(), unique reference
-	  branch,		%% string(), this clients branch
-	  request,		%% request record()
-	  pid,			%% pid() of client transaction ???
-	  state,		%% atom(), SIP state of this target
-	  timeout,		%% integer()
-	  endresult = none,	%% none | sp_response record()
-	  dstlist,		%% list() of sipdst record(), more destinations if this one fail
-	  cancelled = false,	%% true | false, is this branch cancelled?
-	  user_instance		%% none | {User, Instance}
+	  ref			:: reference(),	%% unique reference
+	  branch		:: string(),	%% this clients branch
+	  request		:: sip_request(),
+	  pid			:: pid(),	%% client transaction ???
+	  state			:: atom(),	%% atom(), SIP state of this target
+	  timeout		:: non_neg_integer(),
+	  endresult = none	:: none | sipproxy:sp_response(),
+	  dstlist		:: [sipdst:sipdst()],	%% more destinations if this one fail
+	  cancelled = false	:: bool(),	%% is this branch cancelled?
+	  user_instance		:: none | {User :: string(), Instance :: string()}
 	 }).
+
+-opaque target() :: #target{}.
+
+%% @type targetlist() = #targetlist{}.
+%%                      Container record to make sure noone tries to modify our
+%%                      records.
+-record(targetlist, {list :: [target()]
+		    }).
+
+-opaque targetlist() :: #targetlist{}.
 
 %%--------------------------------------------------------------------
 %% Macros

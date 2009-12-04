@@ -79,14 +79,14 @@
 
 %% Used when building binary messages from headers - the headers will be
 %% outputed in the order of the fields in this record
--record(header_sort, {via		= [],
-		      from		= [],
-		      to		= [],
-		      'call-id'		= [],
-		      cseq		= [],
-		      route		= [],
-		      'record-route'	= [],
-		      rest		= []
+-record(header_sort, {via		= <<>> :: binary(),
+		      from		= <<>> :: binary(),
+		      to		= <<>> :: binary(),
+		      'call-id'		= <<>> :: binary(),
+		      cseq		= <<>> :: binary(),
+		      route		= <<>> :: binary(),
+		      'record-route'	= <<>> :: binary(),
+		      rest		= [] :: [binary()]
 		     }).
 
 %%--------------------------------------------------------------------
@@ -696,9 +696,14 @@ build_header_unsafe_binary(Header) ->
 %%          other nodes
 %% @end
 %%--------------------------------------------------------------------
+-spec sort_headers([{atom() | string(), binary()}]
+		  ) -> binary().
 sort_headers(In) when is_list(In) ->
     sort_headers2(In, #header_sort{}).
 
+-spec sort_headers2([{atom() | string(), binary()}],
+		    #header_sort{}
+		   ) -> binary().
 sort_headers2([{via, Val} | T], R) ->			sort_headers2(T, R#header_sort{via = Val});
 sort_headers2([{from, Val} | T], R) ->			sort_headers2(T, R#header_sort{from = Val});
 sort_headers2([{to, Val} | T], R) ->			sort_headers2(T, R#header_sort{to = Val});
@@ -772,6 +777,8 @@ join_values([], Res) ->
 %%          more than once, tag= not written in lowercase etc.
 %% @end
 %%--------------------------------------------------------------------
+-spec get_tag([String :: string()]) ->
+    string() | none.
 get_tag([String]) ->
     [Contact] = contact:parse([String]),
     case contact_param:find(Contact#contact.contact_param, "tag") of
