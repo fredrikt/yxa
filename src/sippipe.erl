@@ -124,7 +124,7 @@ guarded_start2(Branch, ServerHandler, none, Request, Dst, Timeout, ApproxMsgSize
 	    transactionlayer:send_response_handler(ServerHandler, 500, "Destination unreachable"),
 	    error;
 	[FirstDst | _] = DstList when is_record(FirstDst, sipdst) ->
-	    NewRequest = Request#request{uri = FirstDst#sipdst.uri},
+	    NewRequest = Request,
 	    case local:start_client_transaction(NewRequest, FirstDst, Branch, Timeout) of
 		BranchPid when is_pid(BranchPid) ->
 		    final_start(Branch, ServerHandler, BranchPid, Request, DstList, Timeout, ApproxMsgSize);
@@ -388,7 +388,7 @@ get_next_client_transaction_params(Status, State) when is_record(State, state) -
 		[FirstDst | _] = NewDstList when is_record(FirstDst, sipdst) ->
 		    NewBranch = get_next_target_branch(State#state.branch),
 		    Request = State#state.request,
-		    NewRequest = Request#request{uri = FirstDst#sipdst.uri},
+		    NewRequest = Request,
 		    %% Figure out what timeout to use. To not get stuck on a single destination, we divide the
 		    %% total ammount of time we have at our disposal with the number of remaining destinations
 		    %% that we might try. This might not be the ideal algorithm for this, but it is better than
@@ -790,6 +790,7 @@ test() ->
     autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.0"),
     %% test working case
     GNCTP_NewURL3 = sipurl:parse("sip:new.example.org"),
+    GNCTP_OldURL3 = sipurl:parse("sip:old.example.org"),
     GNCTP_DstL_3 =
 	[#sipdst{proto = yxa_test, addr = "failed dst"},
 	 #sipdst{proto = yxa_test,
@@ -803,7 +804,7 @@ test() ->
 	       approxmsgsize	= 500,
 	       branch		= "foo.1",
 	       request		= #request{method = "TEST",
-					   uri    = sipurl:parse("sip:old.example.org")
+					   uri    = GNCTP_OldURL3
 					  },
 	       endtime		= util:timestamp() + 10
 	      },
@@ -812,7 +813,7 @@ test() ->
     GNCTP_Res3 = get_next_client_transaction_params(400, GNCTP_State3),
 
     autotest:mark(?LINE, "get_next_client_transaction_params/2 - 3.2"),
-    {ok, #request{uri = GNCTP_NewURL3}, #sipdst{addr = "192.0.2.3", port = 4997},
+    {ok, #request{uri = GNCTP_OldURL3}, #sipdst{addr = "192.0.2.3", port = 4997},
      GNCTP_Timeout3, GNCTP_State3_Res} = GNCTP_Res3,
     "foo.2" = GNCTP_State3_Res#state.branch,
     {timeout, true} = {timeout, (GNCTP_Timeout3 >= 9 andalso GNCTP_Timeout3 =< 10)},

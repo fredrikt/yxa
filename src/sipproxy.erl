@@ -404,7 +404,7 @@ make_new_target_request(Request, ApproxMsgSize, Action)
     DstList = sipdst:url_to_dstlist(DstURI, ApproxMsgSize, URI),
 
     NewRequest =
-	Request#request{uri    = URI,
+	Request#request{
 			header = NewHeader
 		       },
 
