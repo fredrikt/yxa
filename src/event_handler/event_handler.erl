@@ -66,7 +66,7 @@ stop() ->
     gen_event:stop(?SERVER).
 
 generic_event(Prio, Class, Id, L) when is_atom(Prio), is_atom(Class),
-				       is_list(Id); is_list(L) ->
+				       is_list(Id) orelse is_list(L) ->
     gen_event:notify(?SERVER, {event, self(), Prio, Class, Id, L}).
 
 %% io_lib:format, then call generic_event/5

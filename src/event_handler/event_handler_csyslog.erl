@@ -118,7 +118,7 @@ init([AppName, PortName]) when is_atom(AppName), is_list(PortName) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_event({event, Pid, Prio, Class, Id, L}, State) when is_pid(Pid), is_atom(Prio), is_atom(Class),
-							   is_list(Id); is_list(L) ->
+							   is_list(Id) orelse is_list(L) ->
     PrioChar = case Prio of
 		   debug -> $d;
 		   normal -> $i;
