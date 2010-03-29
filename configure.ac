@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 AC_REVISION($Revision$)
-AC_PREREQ(2.53)
+AC_PREREQ(2.64)
 AC_INIT(YXA, 1.0-current, yxa-devel@lists.su.se)
 REQUIRE_ERLANG="5.7.2 (Erlang/OTP R13B-1)"
 AC_CONFIG_SRCDIR([src/incomingproxy.erl])
@@ -8,6 +8,17 @@ AC_CONFIG_AUX_DIR([scripts])
 
 AC_PROG_CC
 AC_PROG_INSTALL
+
+AC_ERLANG_NEED_ERLC
+AC_ERLANG_PATH_ERL
+AC_ERLANG_SUBST_INSTALL_LIB_DIR
+AC_ERLANG_SUBST_ERTS_VER
+ERLANG_SUBST_LIB_VER(asn1)
+ERLANG_SUBST_LIB_VER(kernel)
+ERLANG_SUBST_LIB_VER(mnesia)
+ERLANG_SUBST_LIB_VER(ssl)
+ERLANG_SUBST_LIB_VER(stdlib)
+ERLANG_SUBST_LIB_VER(yaws)
 
 AC_CONFIG_FILES(
 		Makefile \
@@ -46,8 +57,13 @@ if test "x$ERL" = "x" -o "x$ERLC" = "x"; then
 fi
 
 dnl check that the installed Erlang/OTP version is the right one for this version of YXA
-AC_MSG_CHECKING([Erlang/OTP version])
-cat > conftest.erl <<EOF
+AC_ARG_ENABLE(erlang-version-check,
+[AC_HELP_STRING([--enable-erlang-version-check],
+	[Check Erlang/OTP version @<:@default=yes@:>@])])
+	case "$enable_erlang_version_check" in
+	yes|'')
+		AC_MSG_CHECKING([Erlang/OTP version])
+		cat > conftest.erl <<EOF
 -module(conftest).
 -export([[start/0]]).
 
@@ -66,19 +82,24 @@ start() ->
 
 EOF
 
-$ERLC conftest.erl || AC_MSG_ERROR(["Could not compile Erlang/OTP version check program using '$ERLC'"])
+		$ERLC conftest.erl || AC_MSG_ERROR(["Could not compile Erlang/OTP version check program using '$ERLC'"])
 
-if ! $ERL -s conftest -noshell -o ! -f conftest.out ; then
-   AC_MSG_ERROR(["Could not run Erlang/OTP version check program using '$ERL'"])
-fi
+		if ! $ERL -s conftest -noshell -o ! -f conftest.out ; then
+		   AC_MSG_ERROR(["Could not run Erlang/OTP version check program using '$ERL'"])
+		fi
 
-if test "x`cat conftest.out`" != "xok"; then
-   AC_MSG_RESULT([failed])
-   X="`cat conftest.out`"
-   AC_MSG_FAILURE([$X])
-else
-   AC_MSG_RESULT([ok])
-fi
+		if test "x`cat conftest.out`" != "xok"; then
+		   AC_MSG_RESULT([failed])
+		   X="`cat conftest.out`"
+		   AC_MSG_FAILURE([$X])
+		else
+		   AC_MSG_RESULT([ok])
+		fi
+		;;
+	no)
+		AC_MSG_RESULT(Skipped Erlang/OTP version check)
+		;;
+esac
 
 
 AC_ARG_WITH(mnesiadir,
