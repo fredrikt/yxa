@@ -107,6 +107,14 @@ process(Node, ["stop"]) ->
 	Res ->
 	    Res
     end;
+process(Node, ["crashdump"]) ->
+    case rpc:call(Node, erlang, halt, ["Crashdump of YXA node requested"]) of
+	ok ->
+	    io:format("Node ~p halted~n", [Node]),
+	    ok;
+	Res ->
+	    Res
+    end;
 process(Node, ["info" | Args]) ->
     case rpc:call(Node, yxa_ctl, info, [Args]) of
 	{ok, Info} ->

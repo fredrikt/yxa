@@ -53,6 +53,7 @@ usage()
 	    echo "	info [all]	get info about running server, add 'all' to get more info"
 	    echo "	reload		reload configuration of running server, if possible"
 	    echo "	restart		restart running server"
+	    echo "      crashdump	crash the server, producing a crash dump"
 	    echo ""
 	    ;;
     esac
@@ -178,7 +179,7 @@ do
 		  shift
 	      fi
 	      ;;
-	  start|stop|status|info|reload|restart)
+	  start|stop|status|info|reload|restart|crashdump)
 	      # $arg not applicable to bootstrapping
 	      if [ $is_bootstrap -eq 1 ]; then
 		  echo "$0: '$arg' not applicable to bootstrapping, use '-h' for usage"
@@ -327,7 +328,7 @@ else
 		$ssloptions \
 		$mnesiaparameters $detach
 	    ;;
-	stop|status|info|reload|restart)
+	stop|status|info|reload|restart|crashdump)
 	    node="${name}@${hostname}"
 	    if [ $explicit_name -eq 0 ]; then
 	        # include pid ($$) in node name used here since contact with the running
