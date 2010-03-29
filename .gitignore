@@ -1,0 +1,12 @@
+Makefile
+configure
+config.log
+config.status
+version.erl
+version.erl.in
+version.beam
+autom4te.cache
+erl_crash.dump
+*~
+.\#*
+\#*\#
