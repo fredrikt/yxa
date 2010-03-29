@@ -1266,7 +1266,8 @@ pass_to_dialog_controller(DCPid, STPid, Request, YxaCtx) when is_record(Request,
 	    %% parent from this process to the dialog controller. Server transactions
 	    %% are not started for ACKs since they are not real requests.
 	    case is_pid(STPid) of
-		true -> ok = change_transaction_parent(STPid, self(), DCPid);
+		true -> ok = change_transaction_parent(STPid, self(), DCPid),
+			true = link(STPid);
 		false -> ok
 	    end,
 
@@ -1274,13 +1275,14 @@ pass_to_dialog_controller(DCPid, STPid, Request, YxaCtx) when is_record(Request,
 	    %% create a link bridge between server transaction and dialog controller
 	    %% while we are in the process of turning the server transaction ownership
 	    %% over to the dialog controller
-	    true = link(STPid),
 	    true = link(DCPid),
 	    DCPid ! {new_request, self(), Ref, Request, YxaCtx},
 	    receive
 		{ok, DCPid, Ref} ->
 		    true = unlink(DCPid),
-		    true = unlink(STPid),
+		    if is_pid(STPid) -> true = unlink(STPid);
+		       true -> ok
+		    end,
 		    logger:log(debug, "Transaction layer: Terminating after having turned over "
 			       "server transaction ~p to dialog controller ~p", [STPid, DCPid]),
 		    ok
