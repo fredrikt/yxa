@@ -345,7 +345,7 @@ handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid =
     ForkPid ! {cancel_pending, EH},
     transactionlayer:send_response_handler(State#state.callhandler, 487, "Request Cancelled"),
     NewState1 = State#state{cancelled = true},
-    check_quit({noreply, NewState1, ?TIMEOUT}, none);
+    check_quit({noreply, NewState1, ?TIMEOUT});
 
 %%--------------------------------------------------------------------
 %% @spec    ({servertransaction_terminated, FromPid}, State) ->
@@ -365,10 +365,11 @@ handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid =
 %%--------------------------------------------------------------------
 handle_info({servertransaction_terminating, FromPid}, #state{callhandler_pid = FromPid} = State) when is_pid(FromPid) ->
     #state{callhandler_pid	= CallHandlerPid,
-	   forkpid		= ForkPid
+	   forkpid		= ForkPid,
+	   completed		= Completed
 	  } = State,
     logger:log(debug, "Appserver glue: received servertransaction_terminating from my CallHandlerPid ~p "
-	       "(ForkPid is ~p) - terminating (completed: ~p)", [CallHandlerPid, ForkPid, State#state.completed]),
+	       "(ForkPid is ~p) - terminating (completed: ~p)", [CallHandlerPid, ForkPid, Completed]),
     check_quit({stop, normal, State});
 
 %%--------------------------------------------------------------------
@@ -495,12 +496,13 @@ handle_info({sipproxy_no_more_actions, FromPid}, #state{forkpid = FromPid} = Sta
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
-handle_info({sipproxy_terminating, FromPid}, #state{forkpid=FromPid}=State) when is_pid(FromPid) ->
+handle_info({sipproxy_terminating, FromPid}, #state{forkpid = FromPid} = State) when is_pid(FromPid) ->
     #state{callhandler_pid	= CallHandlerPid,
-	   forkpid		= ForkPid
+	   forkpid		= ForkPid,
+	   completed		= Completed
 	  } = State,
     logger:log(debug, "Appserver glue: received sipproxy_terminating from my ForkPid ~p (CallHandlerPid is ~p) "
-	       "- exiting normally (completed: ~p).", [ForkPid, CallHandlerPid, State#state.completed]),
+	       "- exiting normally (completed: ~p).", [ForkPid, CallHandlerPid, Completed]),
     check_quit({stop, normal, State});
 
 %%--------------------------------------------------------------------
@@ -560,21 +562,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
-%% @spec    (Res) -> term()
-%%
-%% @equiv    check_quit(Res, none)
-%% @end
-%%--------------------------------------------------------------------
-check_quit(Res) ->
-    check_quit(Res, none).
-
-%%--------------------------------------------------------------------
-%% @spec    (Res, From) ->
+%% @spec    (Res) ->
 %%            Res                   |
 %%            {stop, Reason, State}
 %%
 %%            Res  = term() "gen_server:call/cast/info() return value"
-%%            From = term() "gen_server from-value | none"
 %%
 %% @doc     Wrapper function checking if our server transaction
 %%          (callhandler) or our sipproxy (forkpid) is dead. If so,
@@ -585,38 +577,37 @@ check_quit(Res) ->
 %%          actually use!
 %% @end
 %%--------------------------------------------------------------------
-check_quit(Res, From) ->
+check_quit(Res) ->
     case Res of
 	{stop, _Reason, State} when is_record(State, state) ->
-	    check_quit2(Res, From, State);
+	    check_quit2(Res, State);
 	{noreply, State, _Timeout} when is_record(State, state) ->
-	    check_quit2(Res, From, State)
+	    check_quit2(Res, State)
     end.
 
 %% part of check_quit/2
-check_quit2(Res, From, #state{cpl_pid = CPLpid, forkpid = FP} = State) when CPLpid /= none, FP == none ->
+check_quit2(Res, #state{cpl_pid = CPLpid, forkpid = FP} = State) when CPLpid /= none, FP == none ->
     %% When we are executing a CPL script, we never have a callhandler, so just check forkpid
     logger:log(debug, "Appserver glue: We are executing on behalf of a CPL script and ForkPid is 'none' - terminating"),
-    check_quit2_terminate(Res, From, State);
+    check_quit2_terminate(Res, State);
 
-check_quit2(Res, From, #state{callhandler = CH, forkpid = FP} = State) when CH == none; FP == none ->
+check_quit2(Res, #state{callhandler = CH, forkpid = FP} = State) when CH == none orelse FP == none ->
     logger:log(debug, "Appserver glue: CallHandler (~p) or ForkPid (~p) is 'none' - terminating",
 	       [CH, FP]),
-    check_quit2_terminate(Res, From, State);
+    check_quit2_terminate(Res, State);
 
-check_quit2(Res, _From, State) when is_record(State, state) ->
+check_quit2(Res, State) when is_record(State, state) ->
     %% Not time to quit yet
     Res.
 
-%% part of check_quit2(), turn Res into a {stop, ...}.
-check_quit2_terminate(Res, _From, State) ->
-    NewReply = case Res of
-		   {noreply, _State, _Timeout} ->
-		       {stop, normal, State};
-		   {stop, _Reason, _State} ->
-		       Res
-	       end,
-    NewReply.
+%% part of check_quit2(), turn {noreply, ...} into a {stop, ...}.
+check_quit2_terminate(Res, State) ->
+    case Res of
+	{noreply, _State, _Timeout} ->
+	    {stop, normal, State};
+	{stop, _Reason, _State} ->
+	    Res
+    end.
 
 %%--------------------------------------------------------------------
 %% @spec    (State, Status, Reason) -> term()
