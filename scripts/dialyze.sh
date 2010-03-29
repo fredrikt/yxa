@@ -1,7 +1,42 @@
 #!/bin/bash
+#
+# Script to run Dialyzer.
+#
 
 params="-Wunmatched_returns"
 params=""
+
+# first find what Erlang version we should use
+look_for_erlang="/pkg/erlang/R13B02/lib/erlang /usr/lib/erlang"
+for ERL_TOP in echo $look_for_erlang; do
+    test -d $ERL_TOP || continue
+    break
+done
+if [ ! -d "$ERL_TOP" ]; then
+    echo "No Erlang top directory found! Looked in $look_for_erlang"
+    exit 1
+fi
+look_for_erlang="/pkg/erlang/R13B02/bin /usr/bin"
+for erlang_bin in $look_for_erlang; do
+    test -x $erlang_bin/erl || continue
+    PATH="$erlang_bin:$PATH"
+    export PATH
+    echo "Using Erlang binaries in $erlang_bin"
+    break
+done
+
+if [ "x$1" = "x--build_plt" ]; then
+    echo "Building PLT with \$ERL_TOP $ERL_TOP..."
+    echo ""
+
+    dialyzer --build_plt -r \
+       $ERL_TOP/lib/erts-*/ebin \
+       $ERL_TOP/lib/kernel*/ebin \
+       $ERL_TOP/lib/stdlib*/ebin \
+       $ERL_TOP/lib/mnesia*/ebin \
+       $ERL_TOP/lib/crypto*/ebin
+    exit $?
+fi
 
 if [ "x$1" = "x--src" ]; then
     params="$params --src"
@@ -43,7 +78,7 @@ if [ -x "$dialyzer" ]; then
 
     local_call_to_regexp="^local.*call.* missing or unexported.*local"
 
-    out_dir="$TMPDIR/yxa-dialyzer-output" 
+    out_dir="$TMPDIR/yxa-dialyzer-output"
     if [ -d "$out_dir" ]; then
 	out_base=$(echo "out_$PWD/$dir" | sed -e 's!\./!!g' -e 's!/*$!!g' | tr / _)
 	out="$out_dir/${out_base}__`date +%Y-%m-%d_%Hh%Mm%Ss`"
