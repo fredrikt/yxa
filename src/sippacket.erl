@@ -79,7 +79,7 @@
 %%          request or a response record()
 %% @end
 %%--------------------------------------------------------------------
-parse(Packet, Origin) when is_binary(Packet), Origin == none; is_record(Origin, siporigin) ->
+parse(Packet, Origin) when is_binary(Packet), Origin == none orelse is_record(Origin, siporigin) ->
     case parse_packet(Packet, Origin) of
 	keepalive ->
 	    keepalive;

@@ -557,7 +557,7 @@ my_apply(AppModule, Response, YxaCtx) when is_atom(AppModule), is_record(Respons
 parse_packet(Packet, Origin) when is_record(Origin, siporigin) ->
     Socket = Origin#siporigin.sipsocket,
     case parse_packet2(Packet, Origin) of
-	{ok, Parsed} when is_record(Parsed, request); is_record(Parsed, response) ->
+	{ok, Parsed} when is_record(Parsed, request) orelse is_record(Parsed, response) ->
 	    %% Ok, we have done the elementary parsing of the request/response. Now check it
 	    %% for bad things, like loops, wrong IP in top Via (for responses) etc. etc.
 	    %%
@@ -621,7 +621,7 @@ parse_packet2(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigi
     try sippacket:parse(Packet, Origin) of
 	keepalive ->
 	    ignore;
-	Parsed when is_record(Parsed, request); is_record(Parsed, response) ->
+	Parsed when is_record(Parsed, request) orelse is_record(Parsed, response) ->
 	    {ok, Parsed}
     catch
 	exit:

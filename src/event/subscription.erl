@@ -998,7 +998,7 @@ prepare_and_send_notify(State) when is_record(State, state) ->
 	    %% XXX should we terminate the subscription? Terminate if this was the notify we were
 	    %% supposed to send as a result of the initial SUBSCRIBE? Subsequent SUBSCRIBE?
 	    State;
-	{ok, Body, ExtraHeaders, NewPkgState} when is_list(Body); is_binary(Body), is_list(ExtraHeaders) ->
+	{ok, Body, ExtraHeaders, NewPkgState} when is_list(Body) orelse is_binary(Body), is_list(ExtraHeaders) ->
 	    CompareWith = {Body, ExtraHeaders, State#state.subscription_state},
 	    case (CompareWith == State#state.last_notify_content) of
 		true ->
@@ -1026,7 +1026,7 @@ prepare_and_send_notify(State) when is_record(State, state) ->
 %% @doc     Part of prepare_and_send_notify/1.
 %% @end
 %%--------------------------------------------------------------------
-send_notify_request(State, Body, ExtraHeaders) when is_list(Body); is_binary(Body), is_list(ExtraHeaders) ->
+send_notify_request(State, Body, ExtraHeaders) when is_list(Body) orelse is_binary(Body), is_list(ExtraHeaders) ->
     Now = util:timestamp(),
 
     {NewSubState, SubscriptionState} =

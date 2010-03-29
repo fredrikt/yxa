@@ -181,7 +181,7 @@ do_recv(LogFun, RecvPid, SeqNum) when is_function(LogFun); LogFun == undefined, 
 	{mysql_recv, RecvPid, closed, _E} ->
 	    {error, "mysql_recv: socket was closed"}
     end;
-do_recv(LogFun, RecvPid, SeqNum) when is_function(LogFun); LogFun == undefined, is_integer(SeqNum) ->
+do_recv(LogFun, RecvPid, SeqNum) when is_function(LogFun) orelse LogFun == undefined, is_integer(SeqNum) ->
     ResponseNum = SeqNum + 1,
     receive
         {mysql_recv, RecvPid, data, Packet, ResponseNum} ->

@@ -538,7 +538,7 @@ print(Contact) when is_record(Contact, contact) ->
 %% @equiv    new(none, SipURI, [])
 %% @end
 %%--------------------------------------------------------------------
-new(SipURI) when is_list(SipURI); is_record(SipURI, sipurl) ->
+new(SipURI) when is_list(SipURI) orelse is_record(SipURI, sipurl) ->
     new(none, SipURI, []).
 
 %%--------------------------------------------------------------------
@@ -623,7 +623,7 @@ rm_param(Contact, Key) ->
 %% @doc     Change the display name of Contact
 %% @end
 %%--------------------------------------------------------------------
-set_display_name(Contact, DispName) when is_record(Contact, contact), DispName == none; is_list(DispName) ->
+set_display_name(Contact, DispName) when is_record(Contact, contact), DispName == none orelse is_list(DispName) ->
     Contact#contact{display_name = DispName}.
 
 %%--------------------------------------------------------------------

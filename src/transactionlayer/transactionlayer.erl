@@ -1325,7 +1325,7 @@ get_my_to_tag(TH) when is_record(TH, thandler) ->
 %% @doc     Get the dialog controller for a request or response.
 %% @end
 %%--------------------------------------------------------------------
-get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
+get_dialog_handler(Re) when is_record(Re, request) orelse is_record(Re, response) ->
     case sipdialog:get_dialog_controller(Re) of
 	{ok, Pid} -> Pid;
 	R -> R

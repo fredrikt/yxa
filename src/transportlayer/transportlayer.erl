@@ -67,7 +67,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 send_proxy_response(Socket, Response)
-  when is_record(Socket, sipsocket); Socket == none, is_record(Response, response) ->
+  when is_record(Socket, sipsocket) orelse Socket == none, is_record(Response, response) ->
     case sipheader:via(Response#response.header) of
 	[_Self] ->
 	    logger:log(error, "Transport layer: Can't proxy response ~p ~s because it contains just one or less Via "
@@ -102,7 +102,7 @@ send_proxy_response(Socket, Response)
 %% @end
 %%--------------------------------------------------------------------
 send_proxy_request(Socket, Request, Dst, ViaParameters)
-  when is_record(Socket, sipsocket); Socket == none, is_record(Request, request), is_record(Dst, sipdst) ->
+  when is_record(Socket, sipsocket) orelse Socket == none, is_record(Request, request), is_record(Dst, sipdst) ->
     #sipdst{addr  = IP,
 	    port  = Port,
 	    proto = Proto

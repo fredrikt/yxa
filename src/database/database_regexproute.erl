@@ -83,7 +83,7 @@ create(Servers) ->
 %% @end
 %%--------------------------------------------------------------------
 insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flags), is_atom(Class),
-						   is_integer(Expire); Expire == never, is_list(Address) ->
+						   is_integer(Expire) orelse Expire == never, is_list(Address) ->
     db_util:insert_record(#regexproute{regexp = Regexp, flags = Flags, class = Class,
 			       expire = Expire, address = Address}).
 
@@ -101,7 +101,7 @@ insert(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flag
 %% @end
 %%--------------------------------------------------------------------
 delete(Regexp, Flags, Class, Expire, Address) when is_list(Regexp), is_list(Flags), is_atom(Class),
-                                                   is_integer(Expire); Expire == never, is_list(Address) ->
+                                                   is_integer(Expire) orelse Expire == never, is_list(Address) ->
     Fun = fun() ->
 		  A = mnesia:match_object(#regexproute{regexp = Regexp,
 						       flags = Flags,
