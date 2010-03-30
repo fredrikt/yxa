@@ -1,4 +1,4 @@
-%% Erlang OTP R12B-2 library versions
+%% Erlang library versions inserted by 'configure'
 {release, {"YXA eventserver", "YXA-eventserver-%VERSION%"},
  {erts, "@ERLANG_ERTS_VER@"},
  [{kernel,"@ERLANG_LIB_VER_kernel@"},
