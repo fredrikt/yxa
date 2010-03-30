@@ -518,7 +518,7 @@ ge_datetime(_Timezone, DT1, DT2) ->
 -ifdef( YXA_NO_UNITTEST ).
 test() ->
     {error, "Unit test code disabled at compile time"}.
-    
+
 -else.
 
 test() ->
@@ -757,7 +757,12 @@ test3() ->
     U4 = datetime_to_usec(start, dummy, #date_time{date = {2004, 3, 28},
 						   time = {11 + DST + cpl_test_util:timezone_offset(), 0, 0},
 						   type = floating}),
-    U3 /= U4,
+    case U3 == U4 of
+	true ->
+	    throw({error, unexpected_match, U3});
+	false ->
+	    ok
+    end,
 
     %% DST in effect
     autotest:mark(?LINE, "datetime_to_usec/2 - 3 - WARNING: test assumes that local = EU"),
