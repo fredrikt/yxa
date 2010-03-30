@@ -9,6 +9,19 @@ AC_CONFIG_AUX_DIR([scripts])
 AC_PROG_CC
 AC_PROG_INSTALL
 
+AC_ARG_WITH(erlang,
+	AC_HELP_STRING([--with-erlang=dir],
+		[search for erlang in dir]),
+[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_erlang" = "X"; then
+    extra_erl_path=""
+else
+    extra_erl_path="$with_erlang:$with_erlang/bin:"
+fi
+])
+
+AC_PATH_TOOL(ERL, erl, , [${extra_erl_path}$PATH])
+AC_PATH_TOOL(ERLC, erlc, , [${extra_erl_path}$PATH])
+
 AC_ERLANG_NEED_ERLC
 AC_ERLANG_PATH_ERL
 AC_ERLANG_SUBST_INSTALL_LIB_DIR
@@ -37,24 +50,6 @@ AC_CONFIG_FILES(
 		src/transactionlayer/Makefile \
 		yaws/src/Makefile
 	       )
-
-AC_ARG_WITH(erlang,
-	AC_HELP_STRING([--with-erlang=dir],
-		[search for erlang in dir]),
-[if test "$withval" = "yes" -o "$withval" = "no" -o "X$with_erlang" = "X"; then
-    extra_erl_path=""
-else
-    extra_erl_path="$with_erlang:$with_erlang/bin:"
-fi
-])
-
-AC_PATH_TOOL(ERL, erl, , [${extra_erl_path}$PATH])
-AC_PATH_TOOL(ERLC, erlc, , [${extra_erl_path}$PATH])
-
-dnl check that we found 'erl' and 'erlc'
-if test "x$ERL" = "x" -o "x$ERLC" = "x"; then
-   AC_MSG_ERROR(["Erlang programs 'erl' or 'erlc' not found"])
-fi
 
 dnl check that the installed Erlang/OTP version is the right one for this version of YXA
 AC_ARG_ENABLE(erlang-version-check,
