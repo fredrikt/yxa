@@ -486,8 +486,8 @@ type_check_elements([H | _T], string, _Def, Res) when is_list(H) ->
 type_check_elements([{L, R} | T], regexp_rewrite, Def, Res) ->
     if
 	is_list(L), length(L) > 1 ->
-	    case regexp:parse(L) of
-		{ok, _RE} ->
+	    case re:compile(L) of
+		{ok, _MP} ->
 		    %% XXX we could store the RE if normalization is true, but we don't do that yet
 		    if
 			is_list(R), length(R) > 1 ->
@@ -506,8 +506,8 @@ type_check_elements([{L, R} | T], regexp_rewrite, Def, Res) ->
 %% regexp_match
 %%
 type_check_elements([{L, R} | T], regexp_match, Def, Res) when is_list(L) ->
-    case regexp:parse(L) of
-	{ok, _RE} ->
+    case re:compile(L) of
+	{ok, _MP} ->
 	    %% XXX we could store the RE if normalization is true, but we don't do that yet
 	    type_check_elements(T, regexp_match, Def, [{L, R} | Res]);
 	{error, _E} ->
