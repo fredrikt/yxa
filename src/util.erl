@@ -112,11 +112,12 @@ regexp_rewrite(_Input, []) ->
     nomatch;
 
 regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
-    case group_regexp:groups(Input, Regexp) of
-	{match, List} ->
-	    %% If Input was "foobar" and Regexp was "foo(.+)" then List will be ["bar"].
-	    %% If Input was "foobar" and Regexp was "foo.+" then List will be [].
-	    %% If Input was "foobar" and Regexp was "(fo.)(.+)" then List will be ["foo", "bar"].
+    %% XXX would probably be better to use something like
+    %%   re:replace(Input, Regexp, Rewrite, [{return, list}])
+    %% instead of having our own replace-\1-with-something-else, but that
+    %% is an backwards incompatible change.
+    case re:run(Input, Regexp, [{capture, all, list}]) of
+	{match, [_ | List]} ->
 	    apply_rewrite(Rewrite, List);
 	nomatch ->
 	    regexp_rewrite(Input, Rest)

@@ -1037,8 +1037,7 @@ test() ->
     "bar" = applyregexp("Xfoobar", ["!.+foo(...)$!\\1"]),
 
     autotest:mark(?LINE, "applyregexp/1 - 2"),
-    %% XXX this is a potential problem - the regexp "foo..." does not match "Xfoobar" - shouldn't it?
-    none = applyregexp("Xfoobar", ["!foo...$!foo"]),
+    "foo" = applyregexp("Xfoobar", ["!foo...$!foo"]),
 
     autotest:mark(?LINE, "applyregexp/1 - 3"),
     %% multiple regexps, none matching

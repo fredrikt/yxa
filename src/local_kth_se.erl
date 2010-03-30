@@ -85,9 +85,9 @@ lookupkthid(KTHid) ->
     end.
 
 lookupkthid_address(Address) ->
-    case group_regexp:groups(Address, "(u[0-9]......)@kth.se") of
+    case re:run(Address, "(u[0-9]......)@kth.se", [{capture, first, list}]) of
 	{match, [KTHid]} ->
-	    lookupkthid(KTHid);
+	    lookupkthid([KTHid]);
 	nomatch ->
 	    none;
 	{error, _Error} ->
