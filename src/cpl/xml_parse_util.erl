@@ -383,7 +383,7 @@ get_digit([Type | R], Acc) ->
 %%          range
 %% @end
 %%--------------------------------------------------------------------
-iolist_to_str(IOList) when list(IOList) ->
+iolist_to_str(IOList) when is_list(IOList) ->
     %% this relies on lists being flattened when they are turned to
     %% binaries. Both functions are bifs which probably makes this the
     %% fastest solution.
@@ -567,7 +567,7 @@ is_language_tag(Str, Type) ->
 %%====================================================================
 
 %% debug help function
-visualize(ParseState) when record(ParseState, parse_state) ->
+visualize(ParseState) when is_record(ParseState, parse_state) ->
     G = ParseState#parse_state.current_graph,
     visualize(G);
 
