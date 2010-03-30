@@ -91,12 +91,7 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
 %%--------------------------------------------------------------------
 isnumeric(Number) when is_list(Number) ->
     Pattern = "^[0-9]+\$",
-    case regexp:first_match(Number, Pattern) of
-	{match, _, _} ->
-	    true;
-	_ ->
-	    false
-    end;
+    match == re:run(Number, Pattern, [{capture, none}]);
 isnumeric(_) ->
     false.
 
@@ -401,6 +396,10 @@ test() ->
     autotest:mark(?LINE, "isnumeric/1 - 5"),
     %% not even a string
     false = isnumeric({1,2,3}),
+
+    autotest:mark(?LINE, "isnumeric/1 - 6"),
+    %% empty string is not numeric
+    false = isnumeric(""),
 
 
     %% test apply_rewrite(Rewrite, List)

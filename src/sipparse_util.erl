@@ -54,7 +54,7 @@
 
 %%--------------------------------------------------------------------
 %% @spec    (FieldStr, Sep) ->
-%%            {First, Second} | {First} 
+%%            {First, Second} | {First}
 %%
 %%            FieldStr = string()
 %%            Sep      = char()
@@ -63,7 +63,7 @@
 %%                     no_second_part          |
 %%                     more_than_one_separator
 %%
-%% @throws  {error, Reason} 
+%% @throws  {error, Reason}
 %%
 %% @doc     split FieldStr into two parts where Sep is encountered
 %%          Example, if Sep = @ then: `` "foo@bar" = {"foo", "bar"}
@@ -188,7 +188,7 @@ split_non_quoted2(_Delim, [], _This, _Res, _InQuote = true) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Host) ->
-%%            Host                    
+%%            Host
 %%
 %%            Host = string()
 %%
@@ -196,7 +196,7 @@ split_non_quoted2(_Delim, [], _This, _Res, _InQuote = true) ->
 %%            throw() = {error, Reason} | {'EXIT',Reason}
 %%
 %% @throws  {error, Reason}  |
-%%            {'EXIT', Reason} 
+%%            {'EXIT', Reason}
 %%
 %% @doc     return Host if it is wellformed, a exception is thrown if
 %%          the Host is malformed
@@ -212,7 +212,7 @@ parse_host(Host) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (HostPort) ->
-%%            {Host, Port}            
+%%            {Host, Port}
 %%
 %%            HostPort = string()
 %%
@@ -220,7 +220,7 @@ parse_host(Host) ->
 %%            Port = integer() | none
 %%
 %% @throws  {error, Reason}  |
-%%            {'EXIT', Reason} 
+%%            {'EXIT', Reason}
 %%
 %% @doc     splits the string into it's two parts, a exception is
 %%          thrown if the Host or Port is malformed
@@ -426,26 +426,23 @@ is_token(Str) ->
 %% @end
 %%--------------------------------------------------------------------
 is_hostname(Host) ->
-    HostL = length(Host),
     %% pattern based on the BNF grammer for the <hostname> rule
+
     Pattern =
+	"^"						%% beginning of string
 	"(("
-	  "([A-Za-z0-9])|"
+	  "([A-Za-z0-9])|"				%% domainlabel
 	    "([A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])"
 	")\\."
-	")*"
+	")*"						%% zero or more domainlabel
 	"("
-	"([A-Za-z])|"
+	"([A-Za-z])|"					%% toplabel
 	  "([A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9])"
 	")"
-	"\\.?",
+	"\\.?"						%% optional trailing dot
+	"$",						%% end of string
 
-    R = regexp:first_match(Host, Pattern),
-    %% throw exception if whole string doesn't match
-    case R of
-	{match, 1, HostL} -> true;
-	_ -> false
-    end.
+    match == re:run(Host, Pattern, [{capture, none}]).
 
 is_hostname_throw(Host) ->
     case is_hostname(Host) of
@@ -508,7 +505,7 @@ is_IPv6reference_throw(IPv6Str) ->
 %%--------------------------------------------------------------------
 %% @spec    (Str) -> float()
 %%
-%% @throws  {error, string_not_float_or_integer} 
+%% @throws  {error, string_not_float_or_integer}
 %%
 %% @doc     convert Str containing float() or integer() value, to a
 %%          float(). Note : user need to strip any preceding or
@@ -535,7 +532,7 @@ str_to_float(Str) ->
 %%
 %% @throws  {error, malformed_beging_of_qvalue}       |
 %%            {error, wrong_number_of_chars_in_q_value} |
-%%            {error, q_value_out_of_range}             
+%%            {error, q_value_out_of_range}
 %%
 %% @doc     parse a qvalue string qvalue = ( "0" [ "." 0*3DIGIT ] ) /
 %%          ( "1" [ "." 0*3("0") ] ) - RFC 3261
@@ -1006,6 +1003,31 @@ test() ->
     autotest:mark(?LINE, "strip/3 - 16"),
     "+abc-" = strip("+abc-", both, ""),
 
+
+    %% is_hostname(Host)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "is_hostname/1 - 1"),
+    true = is_hostname("ft.example.org"),
+
+    autotest:mark(?LINE, "is_hostname/1 - 2"),
+    true = is_hostname("ft.example.org."),
+
+    autotest:mark(?LINE, "is_hostname/1 - 3"),
+    false = is_hostname("ft.example.org|"),
+
+    autotest:mark(?LINE, "is_hostname/1 - 4"),
+    false = is_hostname("#.example.org"),
+
+    autotest:mark(?LINE, "is_hostname/1 - 5"),
+    false = is_hostname("ft..example.org"),
+
+    autotest:mark(?LINE, "is_hostname/1 - 6"),
+    %% only toplabel appears to be valid (RFC3261 25.1)
+    true = is_hostname("org"),
+
+    autotest:mark(?LINE, "is_hostname/1 - 7"),
+    %% empty domainlabel is not allowed
+    false = is_hostname(".org"),
 
     ok.
 

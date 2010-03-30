@@ -542,10 +542,11 @@ is_language_tag(Str, Type) ->
 	"^([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?)"
 	"(-[a-zA-Z1-9][a-zA-Z1-9]?[a-zA-Z1-9]?[a-zA-Z1-9]?"
 	"[a-zA-Z1-9]?[a-zA-Z1-9]?[a-zA-Z1-9]?[a-zA-Z1-9]?)*$",
-    case regexp:first_match(Str, Pattern) of
-	{match, _, _} ->
+    case re:run(Str, Pattern, [{capture, none}]) of
+	match ->
 	    Str;
-	_ ->case Type of
+	nomatch ->
+	    case Type of
 		tag ->
 		    throw({error, malformed_language_tag});
 		range ->
