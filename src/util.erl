@@ -479,66 +479,6 @@ test() ->
     [] = concat([], "neverseen"),
 
 
-    %% test safe_is_process_alive(PidOrName)
-    %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 0"),
-    %% get a reference to a dead process
-    DeadPid = spawn(fun() -> ok end),
-
-    %% use erlang:monitor() to find out when pid is dead (it might be dead already)
-    MonitorRef = erlang:monitor(process, DeadPid),
-    receive
-	{'DOWN', MonitorRef, process, DeadPid, _Reason} -> ok
-    after
-	1000 ->
-	    throw({error, "test: safe_is_process_alive/1: the process I spawned did not exit!"})
-    end,
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 1"),
-    %% myself as input, should definately be alive
-    MyPid = self(),
-    {true, MyPid} = safe_is_process_alive(MyPid),
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 2"),
-    %% atom input (valid) of a process that should really be alive
-    {true, LoggerPid} = safe_is_process_alive(logger),
-    true = is_pid(LoggerPid),
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 5"),
-    %% test dead process
-    {false, DeadPid} = safe_is_process_alive(DeadPid),
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 6"),
-    %% test non-existing registered name
-    {false, undefined} = safe_is_process_alive(util_autotest_does_not_exist),
-
-
-    %% test safe_signal(LogTag, PidOrName, Message)
-    %%--------------------------------------------------------------------
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.1"),
-    %% send message to ourselves
-    SafeSignalRef = make_ref(),
-    ok = safe_signal("foo", self(), {SafeSignalRef, "test"}),
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.2"),
-    %% check that we got the message
-    receive
-	{SafeSignalRef, "test"} ->
-	    ok
-    after
-	0 ->
-	    throw({error, "test: safe_is_process_alive/1: did not get signal I sent to myself"})
-    end,
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.2"),
-    %% dead pid
-    error = safe_signal("foo", DeadPid, {SafeSignalRef, "test with dead recipient"}),
-
-    autotest:mark(?LINE, "safe_is_process_alive/1 - 1.2"),
-    %% for 100% coverage
-    error = safe_signal(none, DeadPid, {SafeSignalRef, "test with dead recipient"}),
-
-
     %% test remove_v6_brackets(In)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "remove_v6_brackets/1 - 1"),
