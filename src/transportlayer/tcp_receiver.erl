@@ -169,7 +169,7 @@ start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModu
 			receiver	= self(),
 			sipsocket	= SipSocket
 		       },
-    OriginStr = sipserver:origin2str(Origin),
+    OriginStr = transportlayer:origin2str(Origin),
 
     Recv = #recv{origin_str	= OriginStr,
 		 stun_env	= StunEnv
