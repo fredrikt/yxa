@@ -97,6 +97,7 @@ erl_FILES = \
 	yxa_ctl.erl \
 	yxa_edoc.erl \
 	yxa_monitor.erl \
+	yxa_proc.erl \
 	$(local_module).erl
 
 

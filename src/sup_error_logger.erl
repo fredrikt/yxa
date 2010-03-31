@@ -138,7 +138,7 @@ handle_event({error_report, _SomePid, _ReportArgs} = Report, State) ->
     ReportStr = lists:flatten( io_lib:format("~p", [Report]) ),
     io:format("Supervisor error:~n~s~nLast five successfully started subsystems (oldest last) :~n~p~n~n",
 	      [ReportStr, State#state.stack]),
-    case util:safe_is_process_alive(logger) of
+    case yxa_proc:safe_is_process_alive(logger) of
 	{true, _Logger} ->
 	    logger:log(error, "Supervisor error :~n~s~n"
 		       "Last five successfully started subsystems (oldest last) :~n~p",

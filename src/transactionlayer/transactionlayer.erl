@@ -454,7 +454,7 @@ cancel_corresponding_transaction(#request{method = "CANCEL"} = Request, STPid) w
 	InvitePid when is_pid(InvitePid) ->
 	    logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
 	    {Status, Reason} =
-		case util:safe_is_process_alive(InvitePid) of
+		case yxa_proc:safe_is_process_alive(InvitePid) of
 		    {true, _} ->
 			logger:log(debug, "Transaction layer: Cancelling original request handled by ~p "
 				   "and responding 200 Ok", [InvitePid]),
@@ -1032,7 +1032,7 @@ store_appdata(Request, Value) when is_record(Request, request) ->
 %% @end
 %%--------------------------------------------------------------------
 is_good_transaction(TH) when is_record(TH, thandler) ->
-    case util:safe_is_process_alive(TH#thandler.pid) of
+    case yxa_proc:safe_is_process_alive(TH#thandler.pid) of
 	{true, _} ->
 	    true;
 	_ ->

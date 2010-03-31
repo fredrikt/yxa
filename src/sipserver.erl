@@ -20,7 +20,6 @@
 	 process/2,
 
 	 %% XXX should move these to some utility module
-	 safe_spawn/3,
 	 origin2str/1,
 
 	 test/0
@@ -315,42 +314,6 @@ init_statistics() ->
     ets:new(yxa_statistics, [public, set, named_table]),
     true = ets:insert(yxa_statistics, {starttime, util:timestamp()}),
     ok.
-
-%%--------------------------------------------------------------------
-%% @spec    (Module, Function, Arguments) ->
-%%            Pid
-%%
-%%            Module    = atom()
-%%            Function  = atom()
-%%            Arguments = list()
-%%
-%%            Pid = pid() "spawned process pid"
-%%
-%% @doc     Run Module:Function(Arguments), in a separate process. Log
-%%          errors, but otherwise just ignore them. Relies on Erlang
-%%          process links elsewhere to 'fix' errors.
-%% @end
-%%--------------------------------------------------------------------
-safe_spawn(Module, Function, Arguments) ->
-    proc_lib:spawn(fun() -> safe_spawn_child(Module, Function, Arguments) end).
-
-safe_spawn_child(Module, Function, Arguments) ->
-    try apply(Module, Function, Arguments) of
-	Res -> Res
-    catch
-	exit: E ->
-	    logger:log(error, "=ERROR REPORT==== from ~p:~p :~n~p", [Module, Function, E]),
-	    erlang:exit(E);
-	throw:
-	  {siperror, Status, Reason} ->
-	    logger:log(error, "Spawned function ~p:~p generated a SIP-error (ignoring) : ~p ~s",
-		       [Module, Function, Status, Reason]),
-	    throw({siperror, Status, Reason});
-	  {siperror, Status, Reason, _} ->
-	    logger:log(error, "Spawned function ~p:~p generated a SIP-error (ignoring) : ~p ~s",
-		       [Module, Function, Status, Reason]),
-	    throw({siperror, Status, Reason})
-    end.
 
 %%--------------------------------------------------------------------
 %% @spec    (Request, Socket, Status, Reason, ExtraHeaders) ->
