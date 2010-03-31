@@ -1,7 +1,8 @@
 %%%-------------------------------------------------------------------
 %%% File    : util.erl
 %%% @author   Magnus Ahltorp <ahltorp@nada.kth.se>
-%%% @doc      Utility functions.
+%%% @doc      Utility functions focused on string manipulation and
+%%%           similar.
 %%%
 %%% @since    15 Nov 2002 by Magnus Ahltorp <ahltorp@nada.kth.se>
 %%% @end
@@ -22,8 +23,6 @@
 	 casegrep/2,
 	 join/2,
 	 concat/2,
-	 safe_is_process_alive/1,
-	 safe_signal/3,
 	 remove_v6_brackets/1,
 
 	 test/0
@@ -207,56 +206,6 @@ concat([], _Separator) ->
     [];
 concat([A | B], Separator) ->
     A ++ Separator ++ concat(B, Separator).
-
-%%--------------------------------------------------------------------
-%% @spec    (Process) ->
-%%            {Alive, ProcessPid}
-%%
-%%            Process = pid() | atom()
-%%
-%%            Alive      = true | false
-%%            ProcessPid = pid()
-%%
-%% @doc     determine if the process Process is running
-%% @end
-%%--------------------------------------------------------------------
-safe_is_process_alive(Pid) when is_pid(Pid) ->
-    {is_process_alive(Pid), Pid};
-safe_is_process_alive(Name) when is_atom(Name) ->
-    case erlang:whereis(Name) of
-	Pid when is_pid(Pid) ->
-	    case is_process_alive(Pid) of
-		true ->
-		    {true, Pid};
-		false ->
-		    {false, Pid}
-	    end;
-	E ->
-	    {false, E}
-    end.
-
-%%--------------------------------------------------------------------
-%% @spec    (LogTag, PidIn, Message) -> ok | error
-%%
-%%            LogTag  = string() "log prefix when we fail"
-%%            PidIn   = pid() | atom()
-%%            Message = string()
-%%
-%% @doc     Check if a process is alive before sending it a signal.
-%% @end
-%%--------------------------------------------------------------------
-safe_signal(LogTag, PidIn, Message) ->
-    case util:safe_is_process_alive(PidIn) of
-	{true, Pid} ->
-	    Pid ! Message,
-	    ok;
-	{false, Pid} when is_list(LogTag) ->
-	    logger:log(error, LogTag ++ "Can't send signal ~p to pid '~p' (~p) - not alive or not pid",
-		       [Message, PidIn, Pid]),
-	    error;
-	{false, _} ->
-	    error
-    end.
 
 %%--------------------------------------------------------------------
 %% @spec    (In) ->

@@ -692,7 +692,7 @@ received_packet(Packet, IPtuple, IP, Port, Proto, Socket, SipSocket)
 				receiver	= self(),
 				sipsocket	= SipSocket
 			       },
-	    sipserver:safe_spawn(sipserver, process, [Packet, Origin]),
+	    yxa_proc:safe_spawn(sipserver, process, [Packet, Origin]),
 	    ok
     end.
 

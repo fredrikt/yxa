@@ -1027,7 +1027,7 @@ report_upstreams(true, #state{final_response_sent = false, mystate = MyState} = 
     Parent = State#state.parent,
     logger:log(debug, "sipproxy: Sending the result to parent Pid ~p.", [Parent]),
     %% ForwardResponse is either a response record() or a {Status, Reason} tuple
-    util:safe_signal("sipproxy: ", Parent, {sipproxy_all_terminated, self(), ForwardResponse}),
+    yxa_proc:safe_signal("sipproxy: ", Parent, {sipproxy_all_terminated, self(), ForwardResponse}),
     State#state{mystate		    = completed,
 		final_response_sent = true
 	       };
@@ -1152,7 +1152,7 @@ check_forward_immediately(Request, SPResponse, Branch, State)
 				  body   = FwdSPR#sp_response.body
 				 }
 		end,
-	    util:safe_signal("sipproxy: ", Parent, {sipproxy_response, self(), Branch, FwdResponse}),
+	    yxa_proc:safe_signal("sipproxy: ", Parent, {sipproxy_response, self(), Branch, FwdResponse}),
 	    NewState;
 	false ->
 	    logger:log(debug, "sipproxy: Not forwarding response '~p ~s' (in response to ~s ~s) immediately",

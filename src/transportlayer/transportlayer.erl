@@ -26,6 +26,8 @@
 	 remove_blacklisting/1,
 	 is_eligible_dst/1,
 
+	 origin2str/1,
+
 	 test/0
 	]).
 
@@ -478,6 +480,22 @@ is_eligible_dst(Dst) when is_record(Dst, sipdst) ->
 	    true
     end.
 
+%%--------------------------------------------------------------------
+%% @spec    (Origin) ->
+%%            OriginStr
+%%
+%%            Origin  = #siporigin{}
+%%            Default = term()
+%%
+%%            OriginStr = string()
+%%
+%% @doc     Turn a siporigin record into a string.
+%% @end
+%%--------------------------------------------------------------------
+origin2str(Origin) when is_record(Origin, siporigin) ->
+    lists:concat([Origin#siporigin.proto, ":", Origin#siporigin.addr, ":", Origin#siporigin.port]).
+
+
 %%====================================================================
 %% Internal functions
 %%====================================================================
@@ -914,6 +932,14 @@ test() ->
     {error, "Failed getting a socket"} = get_good_socket(none, GGSocket_Dst1),
     %% clean up
     autotest_util:clear_unit_test_result(?MODULE, {sipsocket_test, get_socket}),
+
+    %% test origin2str(Origin)
+    %%--------------------------------------------------------------------
+    Origin2Str1 = #siporigin{proto=tcp, addr="192.0.2.123", port=10},
+
+    autotest:mark(?LINE, "origin2str/1 - 1"),
+    %% straight forward
+    "tcp:192.0.2.123:10" = origin2str(Origin2Str1),
 
     ok.
 

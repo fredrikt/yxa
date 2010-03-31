@@ -163,7 +163,7 @@ extract_body(_Bin, _BodyOffset, CL) ->
 parse_packet(<<?CR, ?LF>>, Origin) ->
     if
 	is_record(Origin, siporigin) ->
-	    logger:log(debug, "Keep-alive packet from ~s", [sipserver:origin2str(Origin)]);
+	    logger:log(debug, "Keep-alive packet from ~s", [transportlayer:origin2str(Origin)]);
 	true ->
 	    %% This is not our final parse attempt, don't log
 	    true
@@ -172,7 +172,7 @@ parse_packet(<<?CR, ?LF>>, Origin) ->
 parse_packet(Packet, Origin) when is_binary(Packet) ->
     if
 	is_record(Origin, siporigin) ->
-	    OriginStr = sipserver:origin2str(Origin),
+	    OriginStr = transportlayer:origin2str(Origin),
 	    %% Extract receiver pid if present
 	    RStr = if
 		       is_record(Origin, siporigin) ->

@@ -377,7 +377,7 @@ handle_expired_dialogs2(Interval, Entrys) when is_integer(Interval), is_list(Ent
 			DialogId = {Id#dialogid.callid, Id#dialogid.local_tag, Id#dialogid.remote_tag},
 			logger:log(debug, "Sipdialog: Notifying dialog controller ~p that dialog ~p has expired",
 				   [DCPid, DialogId]),
-			util:safe_signal("Sipdialog: ", DCPid, {dialog_expired, DialogId})
+			yxa_proc:safe_signal("Sipdialog: ", DCPid, {dialog_expired, DialogId})
 		end;
 	   (_) ->
 		%% ignore all other content than expired dialogs

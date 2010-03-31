@@ -87,13 +87,13 @@
 		       sipsocket_blacklist,
 		       stun,
 		       presence_pidf,
-		       presence_package,
 		       subscription,
 		       sipuserdb_test,
 		       yxa_config,
 		       sippipe,
 		       socketlist,
 		       transactionstatelist,
+		       yxa_proc,
 
 		       %% YXA applications
 		       incomingproxy,

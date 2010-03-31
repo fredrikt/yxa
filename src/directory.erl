@@ -335,7 +335,7 @@ should_reopen_connection(State) when is_record(State, state) ->
     Server = State#state.server,
     case State#state.handle of
 	H when is_record(H, ldaphandle) ->
-	    case util:safe_is_process_alive(H#ldaphandle.ref) of
+	    case yxa_proc:safe_is_process_alive(H#ldaphandle.ref) of
 		{false, _} ->
 		    true;
 		{true, _} ->
@@ -691,7 +691,7 @@ ldap_close(_) ->
 %% @end
 %%--------------------------------------------------------------------
 query_ldapclient(Query) ->
-    case util:safe_is_process_alive(ldap_client) of
+    case yxa_proc:safe_is_process_alive(ldap_client) of
 	{true, Pid} ->
 	    %% We must remember which pid we send this query to, so that if the ldap_client
 	    %% process dies while processing our query and the sipserver_sup starts a new

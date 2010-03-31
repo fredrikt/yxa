@@ -225,7 +225,7 @@ verify_homedomain_user2(Request, YxaCtx) ->
 		    transactionlayer:send_challenge_request(Request, proxy, false, none),
 		    drop;
 		_ ->
-		    OStr = sipserver:origin2str(YxaCtx#yxa_ctx.origin),
+		    OStr = transportlayer:origin2str(YxaCtx#yxa_ctx.origin),
 		    LogStr = YxaCtx#yxa_ctx.logstr,
 		    Msg = io_lib:format("Request from ~s failed authentication : ~s", [OStr, LogStr]),
 		    event_handler:generic_event(normal, auth, LogTag, Msg),

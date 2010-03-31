@@ -524,7 +524,7 @@ handle_cast({cancelled, ExtraHeaders}, State) ->
 	case lists:member(SipState, [trying, proceeding]) of
 	    true ->
 		ReportTo = State#state.report_to,
-		case util:safe_is_process_alive(ReportTo) of
+		case yxa_proc:safe_is_process_alive(ReportTo) of
 		    {true, ReportTo} ->
 			logger:log(debug, "~s: Server transaction cancelled, telling parent ~p",
 				   [LogTag, ReportTo]),
@@ -748,7 +748,7 @@ terminate(Reason, State) ->
         normal -> true;
         _ -> logger:log(error, "~s: Server transaction terminating : ~p", [LogTag, Reason])
     end,
-    case util:safe_is_process_alive(State#state.report_to) of
+    case yxa_proc:safe_is_process_alive(State#state.report_to) of
 	{true, R} ->
 	    R ! {servertransaction_terminating, self()};
 	{false, undefined} ->

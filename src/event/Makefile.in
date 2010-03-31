@@ -30,6 +30,15 @@ INSTALL = @INSTALL@
 install_DATA = @INSTALL_DATA@
 install_PROGRAM = @INSTALL_PROGRAM@
 
+ERLANG_ERTS_VER = @ERLANG_ERTS_VER@
+ERLANG_LIB_VER_asn1 = @ERLANG_LIB_VER_asn1@
+ERLANG_LIB_VER_kernel = @ERLANG_LIB_VER_kernel@
+ERLANG_LIB_VER_mnesia = @ERLANG_LIB_VER_mnesia@
+ERLANG_LIB_VER_ssl = @ERLANG_LIB_VER_ssl@
+ERLANG_LIB_VER_stdlib = @ERLANG_LIB_VER_stdlib@
+ERLANG_LIB_VER_yaws = @ERLANG_LIB_VER_yaws@
+ERLANG_LIB_VER_SUBST = @ERLANG_LIB_VER_SUBST@
+
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 systools_make_script = \
@@ -47,8 +56,7 @@ erl_FILES = \
 	presence_package.erl \
 	presence_pidf.erl \
 	presence_xmerl_xml.erl \
-	subscription.erl \
-	uaprofile_package.erl
+	subscription.erl
 
 
 imported_hrl_FILES = \
@@ -105,7 +113,7 @@ distclean: clean
 
 clean:
 	rm -f core *.core *~
-	rm -f *.beam *.script *.start
+	rm -f *.beam *.script *.start *.rel
 	rm -f *.o ktrace.out erl_crash.dump
 	rm -f $(addsuffix .tar.gz, $(basename $(rel_FILES)))
 	rm -f $(start_FILES)
@@ -126,15 +134,17 @@ doc:
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
 
-SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in .app-in
 .SUFFIXES:
-.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in .app-in
 
 $(ebin_dir)/%.beam:	$(srcdir)/%.erl
 	$(ERLC) $(L_ERLC_FLAGS) $<
 
 $(ebin_dir)/%.rel:	$(srcdir)/%.rel-in
-	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@
+	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' \
+	  -e 's,[@]ERLANG_ERTS_VER[@],$(ERLANG_ERTS_VER),g' \
+	  $(ERLANG_LIB_VER_SUBST) < $< > $@
 
 $(ebin_dir)/%.app:	$(srcdir)/%.app-in
 	sed -e 's!%VERSION%!@PACKAGE_VERSION@!' < $< > $@

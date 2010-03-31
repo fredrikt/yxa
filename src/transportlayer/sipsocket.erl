@@ -338,7 +338,7 @@ viastr2proto("SIP/2.0/YXA-TEST") -> yxa_test.
 %% @end
 %%--------------------------------------------------------------------
 is_good_socket(Socket) when is_record(Socket, sipsocket) ->
-    case util:safe_is_process_alive(Socket#sipsocket.pid) of
+    case yxa_proc:safe_is_process_alive(Socket#sipsocket.pid) of
 	{true, _} ->
 	    true;
 	_ ->
