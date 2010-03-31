@@ -448,7 +448,7 @@ handle_call(Unknown, _From, State) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data); is_list(Data) ->
+handle_cast({log, Level, Data}, State) when is_atom(Level), is_binary(Data) orelse is_list(Data) ->
     case Level of
 	error ->
 	    log_to_device(State#state.error_enabled, State#state.error_iodev, Data),

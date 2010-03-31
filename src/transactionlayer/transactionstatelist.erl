@@ -159,7 +159,9 @@ add_client_transaction(Method, Branch, Pid, Desc)
 
 add_client_transaction(Tables, Method, Branch, Pid, Desc)
   when is_list(Method), is_list(Branch), is_pid(Pid), is_list(Desc) ->
-    Id = {Branch, Method},
+    Id = #rfc3261_client_id{branch = Branch,
+    			    cseq_method = Method
+    			   },
     add(Tables, client, Id, none, Pid, Desc).
 
 %%--------------------------------------------------------------------
@@ -1322,6 +1324,44 @@ test() ->
 
     GetToCancel3_Result = get_server_transaction_to_cancel(TestTables, CancelRequest2),
     ok = test_compare_records(GetUsingReq1_Result1, GetToCancel3_Result, []),
+
+
+    %% add_client_transaction(Method, Branch, Pid, Desc)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "add_client_transaction/5 - 1"),
+    Message4Method = "TEST",
+    Message4Branch = "z9hG4bK-yxa-unittest-add_client_transaction3",
+    Request4Description = "TEST client request 4",
+    ok = add_client_transaction(TestTables, Message4Method, Message4Branch, self(), Request4Description),
+
+    %% build response
+    Response4Header = keylist:from_list([
+					    {"Via",	["SIP/2.0/UDP sip.example.org:5060;branch=" ++ Message4Branch]},
+					    {"From",	["<sip:alice@example.org>;tag=f-abc"]},
+					    {"To",	["<sip:bob@example.org>;tag=t-abc"]},
+					    {"Call-ID", ["3c26722ce235@192.0.2.111"]},
+					    {"CSeq",	["2 " ++ Message4Method]}
+					   ]),
+
+    Response4 = #response{status=200, reason="Foo", header=Response4Header, body = <<>>},
+
+    autotest:mark(?LINE, "add_client_transaction/5 - 2"),
+    %% try to add the same request again, should fail
+    {duplicate, _} = add_client_transaction(TestTables, Message4Method, Message4Branch, self(), Request4Description),
+
+    autotest:mark(?LINE, "get_client_transaction/2 - 1.0"),
+    %% try to fetch the TEST transaction
+    GetUsingReq4_Expected1 =
+	#transactionstate{type		= client,
+			  id		= get_client_transaction_id(Response4),
+			  description	= Request4Description,
+			  pid		= self()
+			 },
+    autotest:mark(?LINE, "get_client_transaction/2 - 1.1"),
+    GetUsingReq4_Result1 = get_client_transaction(TestTables,
+    						  Response4),
+    autotest:mark(?LINE, "get_client_transaction/2 - 1.2"),
+    ok = test_compare_records(GetUsingReq4_Expected1, GetUsingReq4_Result1, [ref, expire]),
 
 
 

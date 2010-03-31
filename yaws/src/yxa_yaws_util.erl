@@ -63,7 +63,7 @@
 %%--------------------------------------------------------------------
 script_output({redirect, Link}) when is_list(Link) ->
     yaws_api:redirect(Link);
-script_output(In) when is_list(In); is_tuple(In) ->
+script_output(In) when is_list(In) orelse is_tuple(In) ->
     DocRoot =
 	case get({yxa_yaws_util, docroot}) of
 	    undefined ->
