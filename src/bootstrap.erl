@@ -49,6 +49,8 @@ start() ->
 
     io:format("* Creating tables on this Mnesia node (~p)~n", [node()]),
     init_db_module(?DB_MODULES, node()),
+ 
+    ok = mnesia:wait_for_tables(?MNESIA_TABLES, 10000),
 
     io:format("* Updating any pre-existing table definitions~n"),
     ok = table_update:update(),
