@@ -26,7 +26,7 @@
 
 start(normal, _Args) ->
     {ok, HTTPDconfig} = yxa_config:get_env(httpd_config),
-    Pid = sipserver:safe_spawn(admin_www, start, [HTTPDconfig]),
+    Pid = yxa_proc:safe_spawn(admin_www, start, [HTTPDconfig]),
     {ok, Pid}.
 
 start(ConfigFile) ->

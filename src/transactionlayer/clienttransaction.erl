@@ -509,7 +509,7 @@ handle_info(Info, State) ->
 terminate(Reason, State) ->
     LogTag = State#state.logtag,
     ReportTo = State#state.report_to,
-    case util:safe_is_process_alive(ReportTo) of
+    case yxa_proc:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} ->
 	    logger:log(debug, "~s: Informing my parent (~p) that I am terminating now",
 		       [LogTag, ReportTo]),
@@ -1089,7 +1089,7 @@ perform_branchaction(tell_parent, State) when is_record(State, state) ->
 		       end,
     blacklist_report_if_unreachable(State),
     ReportTo = State#state.report_to,
-    case util:safe_is_process_alive(ReportTo) of
+    case yxa_proc:safe_is_process_alive(ReportTo) of
 	{true, ReportTo} when is_pid(ReportTo) ->
 	    IsFinalResponse = (Status >= 200),
 	    case (IsFinalResponse == true) and (State#state.final_r_sent == true) of

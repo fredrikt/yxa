@@ -430,7 +430,7 @@ handle_cast({recv_sipmsg, Msg}, State) when State#state.on == true ->
 			receiver	= self(),
 			sipsocket	= State#state.sipsocket
 		       },
-    sipserver:safe_spawn(sipserver, process, [Msg, Origin]),
+    yxa_proc:safe_spawn(sipserver, process, [Msg, Origin]),
     {noreply, State, State#state.timeout};
 
 %%--------------------------------------------------------------------

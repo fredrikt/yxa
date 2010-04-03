@@ -454,7 +454,7 @@ cancel_corresponding_transaction(#request{method = "CANCEL"} = Request, STPid) w
 	InvitePid when is_pid(InvitePid) ->
 	    logger:log(debug, "Transaction layer: CANCEL matches server transaction handled by ~p", [InvitePid]),
 	    {Status, Reason} =
-		case util:safe_is_process_alive(InvitePid) of
+		case yxa_proc:safe_is_process_alive(InvitePid) of
 		    {true, _} ->
 			logger:log(debug, "Transaction layer: Cancelling original request handled by ~p "
 				   "and responding 200 Ok", [InvitePid]),
@@ -1032,7 +1032,7 @@ store_appdata(Request, Value) when is_record(Request, request) ->
 %% @end
 %%--------------------------------------------------------------------
 is_good_transaction(TH) when is_record(TH, thandler) ->
-    case util:safe_is_process_alive(TH#thandler.pid) of
+    case yxa_proc:safe_is_process_alive(TH#thandler.pid) of
 	{true, _} ->
 	    true;
 	_ ->
@@ -1265,22 +1265,34 @@ pass_to_dialog_controller(DCPid, STPid, Request, YxaCtx) when is_record(Request,
 	    %% If a server transaction has been started for this request, change it's
 	    %% parent from this process to the dialog controller. Server transactions
 	    %% are not started for ACKs since they are not real requests.
-	    case is_pid(STPid) of
-		true -> ok = change_transaction_parent(STPid, self(), DCPid);
-		false -> ok
-	    end,
 
-	    Ref = make_ref(),
-	    %% create a link bridge between server transaction and dialog controller
+	    %% We create a link bridge between server transaction and dialog controller
 	    %% while we are in the process of turning the server transaction ownership
 	    %% over to the dialog controller
-	    true = link(STPid),
+
+	    case is_pid(STPid) of
+		true ->
+		    ok = change_transaction_parent(STPid, self(), DCPid),
+		    %% first, link with server transaction
+		    true = link(STPid);
+		false ->
+		    ok
+	    end,
+
+	    %% then, complete link bridge by linking with dialog controller
 	    true = link(DCPid),
+
+	    Ref = make_ref(),
 	    DCPid ! {new_request, self(), Ref, Request, YxaCtx},
 	    receive
 		{ok, DCPid, Ref} ->
 		    true = unlink(DCPid),
-		    true = unlink(STPid),
+		    if
+			is_pid(STPid) ->
+			    true = unlink(STPid);
+			true ->
+			    ok
+		    end,
 		    logger:log(debug, "Transaction layer: Terminating after having turned over "
 			       "server transaction ~p to dialog controller ~p", [STPid, DCPid]),
 		    ok
@@ -1325,7 +1337,7 @@ get_my_to_tag(TH) when is_record(TH, thandler) ->
 %% @doc     Get the dialog controller for a request or response.
 %% @end
 %%--------------------------------------------------------------------
-get_dialog_handler(Re) when is_record(Re, request); is_record(Re, response) ->
+get_dialog_handler(Re) when is_record(Re, request) orelse is_record(Re, response) ->
     case sipdialog:get_dialog_controller(Re) of
 	{ok, Pid} -> Pid;
 	R -> R

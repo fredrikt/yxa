@@ -341,7 +341,7 @@ handle_info({servertransaction_cancelled, FromPid, EH}, #state{callhandler_pid =
     logger:log(debug, "Appserver glue: Original request has been cancelled, sending " ++
 	       "'cancel_pending' to ForkPid ~p and entering state 'cancelled' (answering '487 Request Cancelled')",
 	       [ForkPid]),
-    %% By not doing util:safe_signal(...), we crash (and return 500) instead of returning 487 if this fails
+    %% By not doing yxa_proc:safe_signal(...), we crash (and return 500) instead of returning 487 if this fails
     ForkPid ! {cancel_pending, EH},
     transactionlayer:send_response_handler(State#state.callhandler, 487, "Request Cancelled"),
     NewState1 = State#state{cancelled = true},
@@ -517,7 +517,7 @@ handle_info({sipproxy_terminating, FromPid}, #state{forkpid=FromPid}=State) when
 handle_info(timeout, State) ->
     logger:log(error, "Appserver glue: Still alive after 5 minutes! Exiting. CallHandler '~p', ForkPid '~p'",
 	       [State#state.callhandler, State#state.forkpid]),
-    util:safe_signal("Appserver glue: ", State#state.forkpid, {showtargets}),
+    yxa_proc:safe_signal("Appserver glue: ", State#state.forkpid, {showtargets}),
     check_quit({stop, "appserver_glue should not live forever", State});
 
 handle_info(Info, State) ->

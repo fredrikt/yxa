@@ -507,7 +507,7 @@ handle_call(stop, _From, State) ->
 	active ->
 	    %% Signal all our subscription processes to stop, reply OK and then exit
 	    %% when we have no subscription processes left
-	    [util:safe_signal("Active subscriber: ", SPid, {stop, self()}) || SPid <- State#state.subscription_pids],
+	    [yxa_proc:safe_signal("Active subscriber: ", SPid, {stop, self()}) || SPid <- State#state.subscription_pids],
 	    {reply, ok, State#state{mystate = stop}};
 	stopped ->
 	    {reply, {error, already_stopped}, State}
