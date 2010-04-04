@@ -164,7 +164,7 @@ log(Level, Format, Arguments) when is_atom(Level), is_list(Format),
 %% @end
 %%--------------------------------------------------------------------
 log_iolist(Level, IOlist) when is_atom(Level) ->
-    LogTS = get_ts(now()),
+    LogTS = get_ts(os:timestamp()),
     L = atom_to_list(Level),
     P = pid_to_list(self()),
     gen_server:cast(logger, {log, Level, [LogTS, 32, L, P, $:, IOlist]}),
@@ -621,7 +621,7 @@ log_to_stdout(true, Data) ->
 %% @end
 %%--------------------------------------------------------------------
 create_filename_time_suffix() ->
-    {Megasec, Sec, _USec} = now(),
+    {Megasec, Sec, _USec} = os:timestamp(),
     DateTime = util:sec_to_date(Megasec * 1000000 + Sec),
     [Date, Time] = string:tokens(DateTime, " "),
     Suffix = "-" ++ Date ++ "_" ++ Time,
@@ -725,7 +725,7 @@ rotate_file(Filename, Suffix) ->
 %% persistent logger process.
 do_log(Level, Format, Arguments) when is_atom(Level), is_list(Format), is_list(Arguments) ->
     %%				      Level == debug; Level == normal; Level == error ->
-    LogTS = get_ts(now()),
+    LogTS = get_ts(os:timestamp()),
     Data = format_msg(LogTS, Level, self(), Format, Arguments),
     gen_server:cast(logger, {log, Level, Data}),
     ok.
