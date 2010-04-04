@@ -113,14 +113,19 @@ format_number_for_remote_party_id(Number, _Header, "sip1.telia.com") ->
 format_number_for_remote_party_id(Number, _Header, "sip2.telia.com") ->
     {ok, local:rewrite_potn_to_e164(Number)};
 format_number_for_remote_party_id(Number, Header, DstHost) ->
-    %% Rewrite number to an internal number if the gateway is not one of Telias
-    case util:regexp_rewrite(Number, ?E164toInternal) of
+    case re:run(DstHost, "\\.su\\.se$", [{capture, none}]) of
+	match ->
+	    %% Rewrite number to an internal number if the gateway is not one of Telias
+	    case util:regexp_rewrite(Number, ?E164toInternal) of
+		nomatch ->
+		    {ok, Number};
+		Match ->
+		    {ok, Match}
+	    end;
 	nomatch ->
-	    lookup:format_number_for_remote_party_id(Number, Header, DstHost);
-	Match ->
-	    {ok, Match}
+	    %% not su.se gateway (for example unit test), perform default action
+	    lookup:format_number_for_remote_party_id(Number, Header, DstHost)
     end.
-
 
 get_classes_for_user(User) ->
     Res = sipuserdb:get_classes_for_user(User),
