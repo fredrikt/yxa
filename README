@@ -417,6 +417,19 @@ event_handler_handlers          (no default): event_handler gen_event handlers
                                 (atoms) or a list of {Module, Args} of the
                                 event handler takes arguments.
 
+yxa_monitor_system		(default: true) Set up erlang:system_monitor
+				in yxa_monitor, to log error messages when
+				certain bad things happen in the Erlang VM.
+
+yxa_monitor_system_long_gc	(default: 1000) Number of milli-seconds a GC
+				(garbage collect) may take before a warning is
+				logged. Depends on yxa_monitor_system being
+				'true'.
+
+yxa_monitor_system_large_heap	(default: 1024 * 1024) The max size of any
+				processes heap before a warning is logged.
+				Depends on yxa_monitor_system being 'true'.
+
 pstnproxy:
 ----------
 e164_to_pstn			(no default) Regexps for choosing PSTN gateway

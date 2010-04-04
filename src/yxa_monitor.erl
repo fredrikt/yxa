@@ -89,10 +89,38 @@ init({AppModule, MnesiaTables}) ->
     ok = net_kernel:monitor_nodes(true, [{node_type, visible},
 					 nodedown_reason]
 				 ),
+
+    case yxa_config:get_env(yxa_monitor_system) of
+	{ok, true} ->
+	    %% set up system_monitor
+	    ok = init_system_monitor();
+	{ok, false} ->
+	    ok
+    end,
+
     State = #state{appmodule		= AppModule,
 		   mnesia_tables	= MnesiaTables
 		  },
     {ok, State, ?TIMEOUT}.
+
+init_system_monitor() ->
+    LongGc	 = init_system_monitor_getenv(yxa_monitor_system_long_gc, long_gc, 1),
+    LargeHeap	 = init_system_monitor_getenv(yxa_monitor_system_large_heap, large_heap, 1),
+
+    erlang:system_monitor(self(),
+			  LongGc ++
+			  LargeHeap ++
+			  [busy_port, busy_dist_port]
+			  ),
+    ok.
+
+init_system_monitor_getenv(CfgName, Name, Limit) when is_integer(Limit) ->
+    case yxa_config:get_env(CfgName) of
+	{ok, Value} when Value >= Limit ->
+	    [{Name, Value}];
+	_ ->
+	    []
+    end.
 
 %%--------------------------------------------------------------------
 %% @spec    handle_call(Msg, From, State) ->
@@ -228,7 +256,7 @@ handle_info({nodedown, Node, InfoList}, State) ->
 
 
 %%--------------------------------------------------------------------
-%% @spec    (Unknown, State) -> {noreply, State, Timeout::integer()}
+%% @spec    (timeout, State) -> {noreply, State, Timeout::integer()}
 %%
 %% @doc     Currently does nothing. Should check periodically for
 %%          resources we need, like Mnesia tables.
@@ -237,6 +265,35 @@ handle_info({nodedown, Node, InfoList}, State) ->
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
     %%% XXX CHECK FOR MNESIA TABLES HERE
+    {noreply, State, ?TIMEOUT};
+
+%%--------------------------------------------------------------------
+%% @spec    ({monitor, Pid, What, Info}, State) ->
+%%            {noreply, #state{}, Timeout::integer()}
+%%
+%%            Pid  = pid()
+%%            What = long_gc | large_head | busy_port |
+%%                   busy_dist_port
+%%            Info = any()
+%%
+%% @doc     Handle erlang:system_monitor/1 messages.
+%% @hidden
+%% @end
+%%--------------------------------------------------------------------
+handle_info({monitor, GcPid, long_gc, Info}, State) ->
+    logger:log(error, "YXA monitor: Process ~p exceeded garbage collection time limit : ~p", [GcPid, Info]),
+    {noreply, State, ?TIMEOUT};
+
+handle_info({monitor, GcPid, large_heap, Info}, State) ->
+    logger:log(error, "YXA monitor: Process ~p exceeded heap size limit : ~p", [GcPid, Info]),
+    {noreply, State, ?TIMEOUT};
+
+handle_info({monitor, SusPid, busy_port, Port}, State) ->
+    logger:log(error, "YXA monitor: Process ~p has a busy port : ~p", [SusPid, Port]),
+    {noreply, State, ?TIMEOUT};
+
+handle_info({monitor, SusPid, busy_dist_port, Port}, State) ->
+    logger:log(error, "YXA monitor: Process ~p has a busy dist port : ~p", [SusPid, Port]),
     {noreply, State, ?TIMEOUT};
 
 %%--------------------------------------------------------------------

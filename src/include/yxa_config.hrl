@@ -413,7 +413,30 @@
 		    default	= 100,
 		    type	= integer,
 		    required	= true
+		   },
+
+	 %% Erlang system monitoring
+	 #cfg_entry{key		= yxa_monitor_system,
+		    default	= true,
+		    type	= bool,
+		    required	= false,
+		    soft_reload	= false
+		   },
+
+	 #cfg_entry{key	= yxa_monitor_system_long_gc,
+		    default	= 1000,
+		    type	= integer,
+		    required	= false,
+		    soft_reload	= false
+		   },
+
+	 #cfg_entry{key	= yxa_monitor_system_large_heap,
+		    default	= 1024 * 1024,
+		    type	= integer,
+		    required	= false,
+		    soft_reload	= false
 		   }
+
 	]).
 
 %%
