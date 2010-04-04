@@ -400,10 +400,11 @@ get_entrylist_using_pid(Tables, Pid) when is_pid(Pid) ->
     end.
 
 %%--------------------------------------------------------------------
-%% @spec    (Pid) ->
+%% @spec    (Tables, Pid) ->
 %%            Entrys |
 %%            []
 %%
+%%            Tables  = #tables{}
 %%            Pid = pid()
 %%
 %%            Entrys = [#transactionstate{}]
