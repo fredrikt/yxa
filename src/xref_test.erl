@@ -69,7 +69,7 @@ run() ->
     %% start new "empty" xref process
     xref:start(Xref, {xref_mode, functions}),
 
-    %% add path to OTP modules - they should not be detected as unkown modules
+    %% add path to OTP modules - they should not be detected as unknown modules
     OTP = code:get_path(),
     xref:set_library_path(Xref, OTP, [{verbose, true}]),
 
@@ -82,10 +82,16 @@ run() ->
 		 ],
 
     %% tell xref where to look for modules to check
-    Res = xref:add_directory(Xref, ".", [{recurse, true}]),
-    io:format("add_directory: ~n~p~n", [Res]),
-
-
+    case xref:add_directory(Xref, "../ebin/", AddOptions) of
+	{ok, []} ->
+	    io:format("~nNo modules found, module path probably incorrect (../ebin/)~n~n"),
+	    erlang:error(no_modules_found);
+	{ok, Modules} ->
+	    io:format("~nModules to analyze (~p) : ~n~p~n", [length(Modules), Modules]);
+	Error ->
+	    io:format("~nadd_directory failed : ~p~n", [Error]),
+	    erlang:error(xref_failed)
+    end,
 
     %% determine which properties to check with xref
     Analysis = [
@@ -153,7 +159,8 @@ filter(Res, undefined_function_calls) ->
     {ok, L} = Res,
     F = fun(E, Acc) ->
 		case E of
-		    {_, {local,_,_}} -> Acc;
+		    {_, {local, _Fun, _Arity}} -> Acc;
+		    {_, {local_su_se, _Fun, _Arity}} -> Acc;
 		    _ -> [E | Acc]
 		end
 	end,
@@ -164,7 +171,8 @@ filter(Res, undefined_functions) ->
     {ok, L} = Res,
     F = fun(E, Acc) ->
 		case E of
-		    {local,_,_} -> Acc;
+		    {local, _Fun , _Arity} -> Acc;
+		    {local_su_se, _Fun, _Arity} -> Acc;
 		    _ -> [E | Acc]
 		end
 	end,
