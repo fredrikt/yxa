@@ -1287,7 +1287,7 @@ test14() ->
        </incoming>
      </cpl>",
 
-     Graph = xml_parse:cpl_script_to_graph(ScriptStr),
+    Graph = xml_parse:cpl_script_to_graph(ScriptStr),
     %% io:format("Graph = ~p~n", [Graph]),
 
     %% create request
@@ -1348,14 +1348,14 @@ test14() ->
     put(1, #date_time{date = {2005,11,18}, time = {17,0,0}, type = floating}),
     Res6 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res6 = ~p~n",[Res6]),
-    {reject, 500} /= Res6,
+    {server_default_action} = Res6,
 
     %% io:format("7. ~n",[]),
     %% 2005-11-19 = SA - invalid day
-    put(1, #date_time{date = {2005,11,18}, time = {12,0,0}, type = floating}),
+    put(1, #date_time{date = {2005,11,19}, time = {12,0,0}, type = floating}),
     Res7 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res7 = ~p~n",[Res7]),
-    {reject, 500} /= Res7.
+    {server_default_action} = Res7.
 
 %% test <time-switch>
 %% test bysetpos
@@ -1414,13 +1414,13 @@ test14b() ->
     put(1, #date_time{date = {2005,9,13}, time = {16,59,59}, type = floating}),
     Res3 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res3 = ~p~n",[Res3]),
-    {reject, 500} /= Res3,
+    {server_default_action} = Res3,
 
     %% day not in bymonthday set
     put(1, #date_time{date = {2005,9,13}, time = {16,59,59}, type = floating}),
     Res4 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res4 = ~p~n",[Res4]),
-    {reject, 500} /= Res4.
+    {server_default_action} = Res4.
 
 
 
@@ -1644,7 +1644,7 @@ test18() ->
     put(1, #date_time{date = {2005,7,7}, time = {9,0,0}, type = floating}),
     Res1 = interpret_cpl:process_cpl_script(BranchBase, Request1, User, Graph, Backend, STHandler, Direction),
     %% io:format("Res1 = ~p~n",[Res1]),
-    {reject, 500} /= Res1,
+    {server_default_action} = Res1,
 
     %% io:format("1. ~n",[]),
     %% last thursday

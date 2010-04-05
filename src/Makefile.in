@@ -58,7 +58,6 @@ erl_FILES = \
 	dialog_server.erl \
 	directory.erl \
 	dnsutil.erl \
-	group_regexp.erl \
 	gruu.erl \
 	hex.erl \
 	incomingproxy.erl \

@@ -150,14 +150,16 @@ classify_number(Number, [{"^+" ++ Regexp, _Class} | Rest]) when is_list(Number) 
     classify_number(Number, Rest);
 
 classify_number(Number, [{Regexp, Class} | Rest]) when is_list(Number), is_list(Regexp), is_atom(Class) ->
-    case regexp:first_match(Number, Regexp) of
-	{match, _, _} ->
+    try re:run(Number, Regexp, [{capture, none}]) of
+	match ->
 	    {ok, Class};
 	nomatch ->
-	    classify_number(Number, Rest);
-	{error, E} ->
-	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, E]),
-	    {error, E}
+	    classify_number(Number, Rest)
+    catch
+	error:
+	  badarg ->
+	    logger:log(normal, "Error in regexp ~p", [Regexp]),
+	    {error, bad_regexp}
     end.
 
 %%--------------------------------------------------------------------

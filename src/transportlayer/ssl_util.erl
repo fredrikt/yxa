@@ -507,7 +507,7 @@ test() ->
 	 18,241,73,68,30,183,225,22,14,172,193,251,254,99,104,222,249,240,41,28,33,81,4,155,105,29,165,75,214,231,150,
 	 100,157,176,135,199,38,70,213,107,101,39,244,183,149,103,223,131,137>>,
 
-    {ok, TestCert1} = ssl_pkix:decode_cert(TestCert1_der, [pkix]),
+    {ok, TestCert1} = public_key:pkix_decode_cert(TestCert1_der, plain),
 
 
     %% test decode_ssl_rdnseq(RdnSequence)

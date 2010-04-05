@@ -11,7 +11,6 @@
 	     directory,
 	     dnsutil,
 	     eldap,
-	     group_regexp,
 	     gssapi,
 	     hex,
 	     keylist,
