@@ -126,14 +126,11 @@ get_user(URI) ->
 regexp_locate_user(_Input, []) ->
     nomatch;
 regexp_locate_user(Input, [{Regexp, Code, Text} | Rest]) ->
-    case regexp:match(Input, Regexp) of
-	{match, _, _} ->
+    case re:run(Input, Regexp, [{capture, none}]) of
+	match ->
 	    {Code, Text};
 	nomatch ->
-	    regexp_locate_user(Input, Rest);
-	{error, Error} ->
-	    logger:log(normal, "Error in regexp ~p: ~p", [Regexp, Error]),
-	    []
+	    regexp_locate_user(Input, Rest)
     end.
 
 
