@@ -75,6 +75,10 @@
 %%          is already present in Params.
 %% @end
 %%--------------------------------------------------------------------
+-spec to_norm([{Name :: nonempty_string(),
+		Value :: nonempty_string() | none
+	       }]) ->
+    contact_param().
 to_norm(Params) when is_list(Params) ->
     F = fun({Name, ValIn}) when is_list(Name), (is_list(ValIn) orelse ValIn == none) ->
 		Val =

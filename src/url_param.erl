@@ -80,6 +80,8 @@
 %%          whitespace)
 %% @end
 %%--------------------------------------------------------------------
+-spec to_norm([nonempty_string()]) ->
+    url_param().
 to_norm(Params) when is_list(Params) ->
     F = fun(E) ->
 		case string:tokens(E, "=") of
