@@ -321,7 +321,7 @@ parse_one_header_values(Bin, Offset) ->
 
 parse_one_header_values2(Bin, Comma, Offset, StartOffset, Len, Res) ->
     case Bin of
-	<<_:Offset/binary, N:8, _/binary>> when Len == 0, Res == [], N == ?SP; N == ?HTAB ->
+	<<_:Offset/binary, N:8, _/binary>> when Len == 0, Res == [], N == ?SP orelse N == ?HTAB ->
 	    %% space / tab after colon, just ignore
 	    parse_one_header_values2(Bin, Comma, Offset + 1, StartOffset + 1, Len, Res);
 	<<_:Offset/binary, ?CR, ?LF, N:8, _/binary>> when N == ?SP; N == ?HTAB ->
@@ -975,6 +975,19 @@ test() ->
     catch
 	throw: {siperror, 400, "Invalid (or duplicate) Content-Length header"} -> ok
     end,
+
+    DisplayName14 = "First\t Last",
+    Message14 =
+	"INVITE sip:test@example.org SIP/2.0\r\n"
+	"From: \"" ++ DisplayName14 ++ "\" <sip:test@example.org>;tag=abc\r\n"
+	"\r\n"
+	"body",
+
+    autotest:mark(?LINE, "parse/2 request - 14"),
+    %% <TAB> in the quoted display name
+    #request{method = "INVITE", header = Header14} = parse(Message14, none),
+    Parse14 = contact:parse(keylist:fetch('from', Header14)),
+    [#contact{display_name = DisplayName14}] = Parse14,
 
     %% RESPONSES
 
