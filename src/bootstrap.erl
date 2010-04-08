@@ -179,7 +179,7 @@ replicate_tables([]) ->
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
-check_node_has_tables(Node, []) ->
+check_node_has_tables(_Node, []) ->
     true;
 check_node_has_tables(Node, [H | T]) ->
     L =
