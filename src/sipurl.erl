@@ -1310,9 +1310,10 @@ is_parameters(Parameters) ->
     %% string:tokens in is_uri_parameters/1 below will consume several ";"
     %% in sucession and consider it as one separator, as sequences like
     %% ";;" are illegal, this is checked for here instead
-    case regexp:first_match(Parameters, Match) of
-	{match, _, _} -> false;
-	_ ->
+    case re:run(Parameters, Match, [{capture, none}]) of
+	match ->
+	    false;
+	nomatch ->
 	    is_uri_parameters(Parameters)
     end.
 
@@ -1328,9 +1329,10 @@ is_uri_parameter(Str) ->
     %% string:tokens/2 below will consume several "==" in sucession
     %% and consider it as one separator, as sequences like
     %% "==" are illegal, this is checked for here instead
-    case regexp:first_match(Str, Match) of
-	{match, _, _} -> false;
-	_ ->
+    case re:run(Str, Match, [{capture, none}]) of
+	match ->
+	    false;
+	nomatch ->
 	    case string:tokens(Str, "=") of
 		[Name, Val] ->
 		    is_paramchar_str(Name) and is_paramchar_str(Val);

@@ -90,12 +90,7 @@ localtime_to_string({{Year, Month, Day}, {Hour, Minute, Second}}) ->
 %%--------------------------------------------------------------------
 isnumeric(Number) when is_list(Number) ->
     Pattern = "^[0-9]+\$",
-    case regexp:first_match(Number, Pattern) of
-	{match, _, _} ->
-	    true;
-	_ ->
-	    false
-    end;
+    match == re:run(Number, Pattern, [{capture, none}]);
 isnumeric(_) ->
     false.
 
@@ -116,11 +111,12 @@ regexp_rewrite(_Input, []) ->
     nomatch;
 
 regexp_rewrite(Input, [{Regexp, Rewrite} | Rest]) ->
-    case group_regexp:groups(Input, Regexp) of
-	{match, List} ->
-	    %% If Input was "foobar" and Regexp was "foo(.+)" then List will be ["bar"].
-	    %% If Input was "foobar" and Regexp was "foo.+" then List will be [].
-	    %% If Input was "foobar" and Regexp was "(fo.)(.+)" then List will be ["foo", "bar"].
+    %% XXX would probably be better to use something like
+    %%   re:replace(Input, Regexp, Rewrite, [{return, list}])
+    %% instead of having our own replace-\1-with-something-else, but that
+    %% is an backwards incompatible change.
+    case re:run(Input, Regexp, [{capture, all, list}]) of
+	{match, [_ | List]} ->
 	    apply_rewrite(Rewrite, List);
 	nomatch ->
 	    regexp_rewrite(Input, Rest)
@@ -350,6 +346,10 @@ test() ->
     autotest:mark(?LINE, "isnumeric/1 - 5"),
     %% not even a string
     false = isnumeric({1,2,3}),
+
+    autotest:mark(?LINE, "isnumeric/1 - 6"),
+    %% empty string is not numeric
+    false = isnumeric(""),
 
 
     %% test apply_rewrite(Rewrite, List)

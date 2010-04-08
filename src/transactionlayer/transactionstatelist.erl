@@ -153,6 +153,13 @@
 %% @doc     Add a new client transaction state entry to TStateList.
 %% @end
 %%--------------------------------------------------------------------
+-spec add_client_transaction(Method :: nonempty_string(),
+			     Branch :: nonempty_string(),
+			     Pid    :: pid(),
+			     Desc   :: nonempty_string()
+			    ) -> ok | error |
+				     {duplicate, Dup :: transactionstate()}.
+
 add_client_transaction(Method, Branch, Pid, Desc)
   when is_list(Method), is_list(Branch), is_pid(Pid), is_list(Desc) ->
     add_client_transaction(?DEFAULT_TABLES, Method, Branch, Pid, Desc).

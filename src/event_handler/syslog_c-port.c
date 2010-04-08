@@ -9,9 +9,9 @@
 #include <string.h>
 
 int
-nread(unsigned char *buf, unsigned int remaining, unsigned int maxlen)
+nread(char *buf, unsigned int remaining, unsigned int maxlen)
 {
-  unsigned char *c = buf;
+  char *c = buf;
   unsigned int read_bytes = 0;
 
   if (remaining > maxlen)
@@ -29,7 +29,7 @@ nread(unsigned char *buf, unsigned int remaining, unsigned int maxlen)
 }
 
 int
-read_msg(unsigned char *buf, unsigned int maxlen)
+read_msg(char *buf, unsigned int maxlen)
 {
   unsigned int len;
 
@@ -43,7 +43,7 @@ read_msg(unsigned char *buf, unsigned int maxlen)
 }
 
 int
-write_msg(unsigned char *buf, unsigned int len)
+write_msg(char *buf, unsigned int len)
 {
   unsigned char c;
 
@@ -68,8 +68,8 @@ write_msg(unsigned char *buf, unsigned int len)
 int
 main()
 {
-  unsigned char buf[1024];
-  unsigned char *myname;
+  char buf[1024];
+  char *myname;
   int len;
 
   /* read application name, will be the first message passed to us. */
@@ -84,7 +84,7 @@ main()
   buf[len] = 0;
 
   len = strlen (buf) + 4;
-  if ((myname = (unsigned char *) malloc (len)) == NULL) {
+  if ((myname = malloc (len)) == NULL) {
     snprintf (buf, sizeof (buf), "Failed allocating %i bytes of memory for the identification string\n", len);
     buf[sizeof (buf) - 1] = 0;
     write_msg (buf, strlen (buf));

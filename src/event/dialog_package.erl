@@ -110,7 +110,7 @@ request("dialog", #request{method = "NOTIFY"} = Request, YxaCtx, Ctx) ->
 		fun(DE) when is_record(DE, dialog_entry) ->
 			ETag = DE#dialog_entry.id,
 			%% XXX DO THIS IN ONE TRANSACTION TO NOT GET TWO NOTIFYS SENT
-			{atomic, ok}, database_eventdata:delete_using_presentity_etag(Presentity, ETag),
+			{atomic, ok} = database_eventdata:delete_using_presentity_etag(Presentity, ETag),
 			{atomic, ok} = database_eventdata:insert("dialog", Presentity, ETag, UseExpires, Flags, DE)
 		end,
 

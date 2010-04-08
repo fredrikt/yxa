@@ -27,7 +27,6 @@
 	     dnsutil,
 	     eldap,
 	     'ELDAPv3',
-	     group_regexp,
 	     gruu,
 	     hex,
 	     key_val_db,
