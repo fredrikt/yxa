@@ -50,7 +50,7 @@ start() ->
     io:format("* Creating tables on this Mnesia node (~p)~n", [node()]),
     init_db_module(?DB_MODULES, node()),
  
-    ok = mnesia:wait_for_tables(?MNESIA_TABLES, 10000),
+    ok = my_wait_for_tables(?MNESIA_TABLES, 10000),
 
     io:format("* Updating any pre-existing table definitions~n"),
     ok = table_update:update(),
@@ -74,9 +74,17 @@ create_schema(Node) ->
     ok.
 
 init_db_module([H | T], Node) ->
-    io:format("  + Creating table '~p'~n", [H]),
-    H:create([Node]),
-    init_db_module(T, Node);
+    io:format("  + Creating table(s) using module '~p'~n", [H]),
+    case H:create([Node]) of
+	{atomic, ok} ->
+	    init_db_module(T, Node);
+	{aborted, {already_exists, _Table}} ->
+	    %% not an error
+	    init_db_module(T, Node);
+	E ->
+	    io:format("~nERROR: ~p:create/1 FAILED : ~p~n~n", [H, E]),
+	    erlang:error("failed creating table(s)")
+    end;
 init_db_module([], _Node) ->
     ok.
 
@@ -108,8 +116,9 @@ replica([Master]) ->
 		true ->
 		    ok;
 		false ->
-		    erlang:error("Failed connecting to master node - Erlang distribution problem? "
-				 "Are you running SSL on the master node but not on this?")
+		    io:format("~nERROR: Failed connecting to master node - Erlang distribution problem? "
+			      "Are you running SSL on the master node but not on this?~n~n"),
+		    erlang:error("connect to master node failed")
 	    end;
 	{ok, [MasterNode]} ->
 	    ok;
@@ -117,20 +126,34 @@ replica([Master]) ->
 	    erlang:error(E)
     end,
 
+    %% basic sanity check of MasterNode
+    case check_node_has_tables(MasterNode, [phone, user, numbers, regexproute]) of
+	true ->
+	    ok;
+	false ->
+	    io:format("~nERROR: Master node ~p does not have disc_copies of basic YXA tables, "
+		      "is it really an YXA db node?~n~n", [MasterNode]),
+	    erlang:error("bad master node")
+    end,
+
     AllTables = [schema | ?MNESIA_TABLES],
+    %% Only wait for tables present on MasterNode. This makes it possible to upgrade
+    %% an YXA installation to a new version with more tables by adding new replicas.
+    %% This might not be safe to do though, but having the option is nice. Be warned!
+    WaitTables = lists:filter(fun(T) ->
+				      check_node_has_tables(MasterNode, [T])
+			      end, AllTables),
 
-    io:format("* Waiting for tables : ~w~n", [AllTables]),
-    ok = mnesia:wait_for_tables(AllTables, 60 * 1000),
+    ok = my_wait_for_tables(WaitTables, 60 * 1000),
 
-    io:format("* Replicating ~p tables :~n", [length(AllTables)]),
-    ok = replicate_tables(AllTables),
+    io:format("* Replicating ~p tables :~n", [length(WaitTables)]),
+    ok = replicate_tables(WaitTables),
 
     io:format("~nReplica created successfully.~n~n"),
     ok.
 
-
 replicate_tables([H | T]) ->
-    case lists:member(node(), mnesia:table_info(H, disc_copies)) of
+    case check_node_has_tables(node(), [H]) of
 	true ->
 	    io:format("~25w: Table is already present on disc at node ~p~n", [H, node()]);
 	false ->
@@ -146,3 +169,66 @@ replicate_tables([H | T]) ->
     replicate_tables(T);
 replicate_tables([]) ->
     ok.
+
+%%--------------------------------------------------------------------
+%% @spec    (Node, Tables) -> bool()
+%%          Node = atom()
+%%          Tables = [atom()]
+%%
+%% @doc     Checks if Node has disc copies of a list of Mnesia tables.
+%% @hidden
+%% @end
+%%--------------------------------------------------------------------
+check_node_has_tables(Node, []) ->
+    true;
+check_node_has_tables(Node, [H | T]) ->
+    L =
+	try mnesia:table_info(H, disc_copies) of
+	    L1 -> L1
+	catch
+	    exit:
+	      {aborted, {no_exists, H, disc_copies}} ->
+		[]
+	end,
+    case lists:member(Node, L) of
+	true ->
+	    check_node_has_tables(Node, T);
+	false ->
+	    false
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @spec    (Tables, Timeout) -> ok | timeout | error
+%%          Tables = [atom()]
+%%          Timeout = integer() "timeout in milliseconds"
+%%
+%% @doc     Perform mnesia:wait_for_tables/2 on one table at a time,
+%%          with pretty-printed output for each table.
+%% @hidden
+%% @end
+%%--------------------------------------------------------------------
+my_wait_for_tables(Tables, Timeout) when is_list(Tables), is_integer(Timeout) ->
+    io:format("* Waiting for ~p tables : ", [length(Tables)]),
+    my_wait_for_tables2(Tables, Timeout, 0).
+
+my_wait_for_tables2([], _Timeout, _Count) ->
+    io:format("~n"),
+    ok;
+my_wait_for_tables2([H | T], Timeout, Count) ->
+    case Count of
+	0 -> io:format("~p", [H]);
+	_ -> io:format(", ~p", [H])
+    end,
+    case mnesia:wait_for_tables([H], Timeout) of
+	ok ->
+	    my_wait_for_tables2(T, Timeout, Count + 1);
+	{timeout, _Bad_Tab_List} ->
+	    io:format(" timeout!~n~n"),
+	    timeout;
+	{error, Reason} ->
+	    io:format(" error ~p~n~n", [Reason]),
+	    error
+    end.
+    
+    
