@@ -117,12 +117,15 @@ start_bg_check(Cfg, AppModule) when is_record(Cfg, yxa_cfg), is_atom(AppModule) 
 %% @end
 %%--------------------------------------------------------------------
 get_cfg_definitions(AppModule) when is_atom(AppModule) ->
-    AppConfig = case lists:keysearch(AppModule, 1, ?APPLICATION_DEFAULTS) of
-		    {value, {AppModule, AppConfig1}} when is_list(AppConfig1) ->
-			AppConfig1;
-		    false ->
-			[]
-		end,
+    AppConfig =
+	%% Handle missing config_defaults/0 gracefully.
+	try AppModule:config_defaults() of
+	    L when is_list(L) ->
+		L
+	catch
+	    error:undef ->
+		[]
+	end,
     merge_cfg_entrys(?COMMON_DEFAULTS, AppConfig).
 
 %%--------------------------------------------------------------------

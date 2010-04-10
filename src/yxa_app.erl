@@ -23,7 +23,8 @@
 %% @end
 %%--------------------------------------------------------------------
 behaviour_info(callbacks) ->
-    [{init, 0},
+    [{config_defaults, 0},
+     {init, 0},
      {request, 2},
      {response, 2},
      {terminate, 1}

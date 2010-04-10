@@ -1,18 +1,30 @@
 -module(testserver).
 
 %% Standard YXA SIP-application exports
--export([init/0,
+-export([config_defaults/0,
+	 init/0,
 	 request/2,
 	 response/2
 	]).
 
 -include("siprecords.hrl").
 -include("sipsocket.hrl").
+-include("yxa_config.hrl").
 
 %%--------------------------------------------------------------------
 %%% Standard YXA SIP-application exported functions
 %%--------------------------------------------------------------------
 
+%%--------------------------------------------------------------------
+%% @spec    () -> AppConfig
+%%
+%%            AppConfig = [#cfg_entry{}]
+%%
+%% @doc     Return application defaults.
+%% @end
+%%--------------------------------------------------------------------
+config_defaults() ->
+    ?TESTSERVER_DEFAULTS.
 
 %%--------------------------------------------------------------------
 %% @spec    () -> term()

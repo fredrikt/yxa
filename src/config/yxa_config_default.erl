@@ -63,15 +63,17 @@ init(AppModule) ->
     {ok, #yxa_config_default_state{defaults = Dict}}.
 
 init_get_app_dict(Application) ->
-    %% APPLICATION_DEFAULTS looks like this :
-    %% [{app1, Config}, {app2, Config}], get the right Config for Application
-    case lists:keysearch(Application, 1, ?APPLICATION_DEFAULTS) of
-	{value, {Application, Config}} when is_list(Config) ->
-	    cfg_to_dict(Config);
-	false ->
-	    %% return empty dict when there is no application specific config
-	    dict:new()
-    end.
+    AppConfig =
+	%% Handle missing config_defaults/0 gracefully.
+	try Application:config_defaults() of
+	    L when is_list(L) ->
+		L
+	catch
+	    error:undef ->
+		[]
+	end,
+
+    cfg_to_dict(AppConfig).
 
 %%--------------------------------------------------------------------
 %% @spec    (State) ->
