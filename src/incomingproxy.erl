@@ -47,7 +47,7 @@
 %% @end
 %%--------------------------------------------------------------------
 config_defaults() ->
-    ?INCOMINGPROXY_DEFAULTS.
+    ?INCOMINGPROXY_CONFIG_DEFAULTS.
 
 %%--------------------------------------------------------------------
 %% @spec    () -> #yxa_app_init{}

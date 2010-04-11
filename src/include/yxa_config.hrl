@@ -422,7 +422,7 @@
 %% 'record_route' for pstnproxy), or add a setting that is completely application
 %% specific, like 'appserver' for incomingproxy.
 %%
--define(PSTNPROXY_DEFAULTS,
+-define(PSTNPROXY_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= internal_to_e164,
 		      default	= [],
@@ -498,7 +498,7 @@
 		     }
 	  ]).
 
--define(INCOMINGPROXY_DEFAULTS, 
+-define(INCOMINGPROXY_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= internal_to_e164,
 		      list_of	= true,
@@ -553,7 +553,7 @@
 		     }
 	  ].
 
--define(OUTGOINGPROXY_DEFAULTS,
+-define(OUTGOINGPROXY_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= sipproxy,
 		      type	= sip_sipurl
@@ -594,7 +594,7 @@
 		     }
 	  ].
 
--define(APPSERVER_DEFAULTS,
+-define(APPSERVER_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= internal_to_e164,
 		      default	= [],
@@ -617,7 +617,7 @@
 		     }
 	  ].
 
--define(TESTSERVER_DEFAULTS,
+-define(TESTSERVER_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= testserver_userdb,
 		      default	= [],
@@ -627,7 +627,7 @@
 		     }
 	  ].
 
--define(ADMIN_WWW_DEFAULTS,
+-define(ADMIN_WWW_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= httpd_config,
 		      type	= string,
@@ -639,7 +639,7 @@
 		     }
 	  ].
 
--define(EVENTSERVER_DEFAULTS,
+-define(EVENTSERVER_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= presence_min_publish_time,
 		      type	= integer,
