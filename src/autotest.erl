@@ -135,11 +135,10 @@ run([Mode]) ->
 	    %%directory:start_link(),
 	    StartHandler =
 		fun(ProcName) ->
-			Pid = spawn(fun() ->
-					    fake_handler_loop(ProcName, false)
-				    end
-				   ),
-			register(ProcName, Pid)
+			spawn(fun() ->
+				      start_fake_handler(ProcName)
+			      end
+			     )
 		end,
 	    [StartHandler(ProcName) || ProcName <- [logger, event_mgr]],
 
@@ -429,6 +428,23 @@ mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+start_fake_handler(ProcName) ->
+    process_flag(trap_exit, true),
+
+    Pid = spawn_link(fun() ->
+			     fake_handler_loop(ProcName, false)
+		     end
+		    ),
+
+    register(ProcName, Pid),
+    
+    %% now, start monitoring exit signals
+    receive
+	Any ->
+	    io:format("AUTOTEST: Watcher of '~p' received ~p",
+		      [ProcName, Any])
+    end.
 
 %%--------------------------------------------------------------------
 %% @spec    (Enabled) -> term() "does not return."
