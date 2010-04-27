@@ -74,6 +74,7 @@ test_request() ->
 
     ok = test_route(),
     ok = test_pubsub_routing(),
+    ok = test_regexp_routing(),
 
     ok.
 
@@ -238,7 +239,7 @@ test_pubsub_routing2() ->
 
     autotest:mark(?LINE, "request/2 - PubSub routing - 1.2"),
     %% verify results
-    
+
     Request1_Expected =
 	#request{method = "SUBSCRIBE",
 		 uri    = HomeUser,
@@ -254,10 +255,109 @@ test_pubsub_routing2() ->
 		uri = HomeUser
 	       },
     ok = test_compare_records(FirstDst1_Res, SipDst1_Expected, []),
-	       
+
 
     ok = yxa_test_config:stop(),
     mnesia:abort(ok).
+
+
+test_regexp_routing() ->
+    autotest:mark(?LINE, "request/2 - Regexp routing - 0.0"),
+
+    case mnesia:transaction(fun test_regexp_routing2/0) of
+	{aborted, ok} ->
+	    ok;
+	{aborted, Res} ->
+	    {error, Res}
+    end.
+
+test_regexp_routing2() ->
+    autotest:mark(?LINE, "request/2 - regexp routing - 0.1"),
+    %% test a request to an address that is present in our regexp rewriting database
+
+    HomedomainStr = "example.org",
+
+    ExtraCfg = [
+		{userdb_modules,		[sipuserdb_test]},
+		{myhostnames,			["autotest.example.org"]},
+		{homedomain,			[HomedomainStr]}
+	       ],
+    ok = yxa_test_config:init(incomingproxy, ExtraCfg),
+
+    YxaCtx1 = #yxa_ctx{thandler = transactionlayer:test_get_thandler_self(),
+		       origin   = #siporigin{proto = yxa_test,
+					     addr  = "192.0.2.11",
+					     port  = 60000
+					    }
+		      },
+
+    %% set up a regexp route
+    Flags = [],
+    Class = test,
+    Expire = util:timestamp() + 99,
+    Regexp1_Output_URL = sipurl:parse("sip:regexp2@" ++ HomedomainStr),
+    {atomic, ok} = database_regexproute:insert("^sip:regexp1@", Flags, Class, Expire,
+					       sipurl:print(Regexp1_Output_URL)
+					      ),
+
+    %% request(Request, YxaCtx)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "request/2 - regexp routing - 1.0"),
+
+    Message1 =
+	"MESSAGE sip:regexp1@" ++ HomedomainStr ++ " SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST one.example.org\r\n"
+	"From: Remote User <sip:test@remote.example.org;tag=abc>\r\n"
+	"To: Test <sip:regexp1@example.org>\r\n"
+	"CSeq: 31000 MESSAGE\r\n"
+	"\r\n",
+
+    Request1 = sippacket:parse(Message1, none),
+    autotest:mark(?LINE, "request/2 - regexp routing routing - 1.1"),
+    ok = incomingproxy:request(Request1, YxaCtx1),
+    {Request1_Res, _YxaCtx1_Res11, Dst1_Res, []} = autotest_util:get_sippipe_result(),
+
+    autotest:mark(?LINE, "request/2 - regexp routing - 1.2"),
+    %% verify results
+
+    ok = test_compare_records(Request1_Res, Request1, []),
+    Dst1_Expected = Regexp1_Output_URL,
+    ok = test_compare_records(Dst1_Res, Dst1_Expected, []),
+
+    %% Here, we pretend that sippipe was started and that it started a client transaction
+    %% that handed the request over to the transport layer.
+
+    TestSipSocket = #sipsocket{proto = yxa_test},
+    TestSipDst1 =
+	#sipdst{addr  = "192.0.2.99",
+		port  = 5999,
+		proto = yxa_test,
+		uri   = Regexp1_Output_URL
+	       },
+    {ok, _SipSocket_Res1, Branch_Res1} =
+	transportlayer:send_proxy_request(TestSipSocket, Request1, TestSipDst1, []),
+
+    autotest:mark(?LINE, "request/2 - regexp routing - 1.3"),
+    {ok, SentMessage1} = test_get_sipsocket_sent_message(TestSipDst1),
+
+    SentRequest1 = sippacket:parse(SentMessage1, none),
+    Regexp1_Output_URL = SentRequest1#request.uri,
+
+    ok = yxa_test_config:stop(),
+    mnesia:abort(ok).
+
+test_get_sipsocket_sent_message(Dst) when is_record(Dst, sipdst) ->
+    #sipdst{addr = Addr,
+	    port = Port,
+	    proto = Proto
+	   } = Dst,
+    receive
+	{sipsocket_test, send, {Proto, Addr, Port}, Message} ->
+	    {ok, Message}
+    after
+	1000 ->
+	    {error, "Did not find expected sent message in mailbox"}
+    end.
 
 
 %% compare two records element by element and give good information on where they
@@ -269,6 +369,7 @@ test_compare_records(R1, R2, ShouldChange) when is_tuple(R1), is_tuple(R2), is_l
 
 %% add more records here when needed
 test_record_info(request) ->	record_info(fields, request);
-test_record_info(sipdst) ->	record_info(fields, sipdst).
+test_record_info(sipdst) ->	record_info(fields, sipdst);
+test_record_info(sipurl) ->	record_info(fields, sipurl).
 
 -endif.
