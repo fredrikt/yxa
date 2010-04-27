@@ -508,7 +508,7 @@ handle_received_data2_stun(Frame, #recv{stun_env = StunEnv, frame = <<>>} = Recv
 %%
 %%            NewRecv = #recv{}
 %%
-%% @throws  {error, parse_failed, Reason::string()} 
+%% @throws  {error, parse_failed, Reason::string()}
 %%
 %% @doc     When we see the header-body separator, we let this
 %%          function call sippacket:parse() on the data we have this
@@ -659,7 +659,7 @@ process_msg_stack([], _Parent) ->
 %%
 %%            Length = integer()
 %%
-%% @throws  {error, Type, invalid_content_length, Header} 
+%% @throws  {error, Type, invalid_content_length, Header}
 %%
 %% @doc     Get Content-Length and return it as an integer value.
 %% @end
@@ -688,13 +688,13 @@ get_content_length(Type, Header) ->
 -ifdef( YXA_NO_UNITTEST ).
 test() ->
     {error, "Unit test code disabled at compile time"}.
-    
+
 -else.
 
 test() ->
     %% handle_received_data2(Data, Recv)
     %%--------------------------------------------------------------------
-    EmptyRecv = #recv{},
+    EmptyRecv = #recv{origin_str = "origin-goes-here"},
 
     autotest:mark(?LINE, "handle_received_data2/2 - 1"),
     %% check that we properly ignore leading CRLF's
@@ -896,7 +896,9 @@ test() ->
 		  alt_ip	= undefined,
 		  alt_port	= undefined
 		 },
-    Test_StunRecv = #recv{stun_env = Test_StunEnv},
+    Test_StunRecv = #recv{stun_env   = Test_StunEnv,
+			  origin_str = "origin-string"
+			 },
 
     HRD_17_Data = <<16#0001:16/big-unsigned,	%% STUN binding request
 		   0:16/big-unsigned,		%% STUN length of attributes
@@ -905,7 +907,8 @@ test() ->
 	  frame		= <<>>,
 	  bytes_left	= undefined,
 	  is_stun	= false,
-	  stun_env	= Test_StunEnv
+	  stun_env	= Test_StunEnv,
+	  origin_str	= "origin-string"
 	 } = handle_received_data2(HRD_17_Data, Test_StunRecv),
 
     autotest:mark(?LINE, "handle_received_data2/2 - 18"),
