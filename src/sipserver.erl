@@ -129,13 +129,13 @@ restart() ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Tables) ->
-%%            ok 
+%%            ok
 %%
 %%            Tables = [atom()] "names of Mnesia tables needed by this YXA application."
 %%
 %%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
 %%
-%% @throws  DescriptiveAtom 
+%% @throws  DescriptiveAtom
 %%
 %% @doc     Initiate Mnesia on this node. If there are no remote
 %%          mnesia-tables, we conclude that we are a mnesia master
@@ -230,13 +230,13 @@ get_remote_tables([], Res) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Tables) ->
-%%            ok 
+%%            ok
 %%
 %%            Tables = [atom()] "list of table names"
 %%
 %%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
 %%
-%% @throws  DescriptiveAtom 
+%% @throws  DescriptiveAtom
 %%
 %% @doc     Make sure the tables listed in Tables exist, otherwise
 %%          halt the Erlang runtime system.
@@ -259,14 +259,14 @@ check_for_tables([]) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Descr, Tables) ->
-%%            ok 
+%%            ok
 %%
 %%            Descr  = string() "\"local\" or \"remote\""
 %%            Tables = [atom()] "names of local/remote Mnesia tables needed by this YXA application."
 %%
 %%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
 %%
-%% @throws  DescriptiveAtom 
+%% @throws  DescriptiveAtom
 %%
 %% @doc     Do mnesia:wait_for_tables() for RemoteTables, with a
 %%          timeout since Mnesia doesn't always start correctly due
@@ -1063,7 +1063,7 @@ route_matches_me(Route) when is_record(Route, contact) ->
 %%            Packet = #request{} | #response{}
 %%            Origin = #siporigin{} "information about where this Packet was received from"
 %%
-%% @throws  {sipparseerror, request, Header, Status, Reason} 
+%% @throws  {sipparseerror, request, Header, Status, Reason}
 %%
 %% @doc     Sanity check To: and From: in a received request/response
 %%          and, if Packet is a request record(), also check sanity
@@ -1130,7 +1130,7 @@ check_packet(Response, Origin) when is_record(Response, response), is_record(Ori
 %%            URI    = term() "opaque #(sipurl{})"
 %%            Origin = #siporigin{} "information about where this Packet was received from"
 %%
-%% @throws  {sipparseerror, request, Header, Status, Reason} 
+%% @throws  {sipparseerror, request, Header, Status, Reason}
 %%
 %% @doc     Inspect Header's Via: record(s) to make sure this is not a
 %%          looping request.
@@ -1183,8 +1183,6 @@ via_indicates_loop(LoopCookie, CmpVia, [TopVia | Rest]) when is_record(TopVia, v
 			       sipheader:via_print([TopVia])),
 		    via_indicates_loop(LoopCookie, CmpVia, Rest);
 		{ok, Branch} ->
-		    logger:log(debug, "FREDRIK: CHECKING BRANCH ~p ->~n ~p ~nAGAINST ~p", [Branch, extract_loopcookie(Branch, length(LoopCookie)),
-											  LoopCookie]),
 		    case extract_loopcookie(Branch, length(LoopCookie)) of
 			LoopCookie ->
 			    true;
@@ -1195,7 +1193,6 @@ via_indicates_loop(LoopCookie, CmpVia, [TopVia | Rest]) when is_record(TopVia, v
 		    end
 	    end;
 	false ->
-	    logger:log(debug, "FREDRIK: VIA ~p NOT EQUAL MINE ~p", [TopVia, CmpVia]),
 	    %% Via doesn't match me, check next.
 	    via_indicates_loop(LoopCookie, CmpVia, Rest)
     end.
@@ -1293,7 +1290,7 @@ make_logstr_get_sipheader(Func, Header) ->
 %%            Name   = string() "\"From\" or \"To\" or similar"
 %%            Header = #keylist{}
 %%
-%% @throws  {sipparseerror, Type, Header, Status, Reason} 
+%% @throws  {sipparseerror, Type, Header, Status, Reason}
 %%
 %% @doc     Check if the header Name (from Header) is parsable.
 %%          Currently we define parsable as parsable by
@@ -1330,7 +1327,7 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
 %%            URI    = #sipurl{} | {yxa_unparsable, uri, {Error :: atom(), URIstr :: string()}}
 %%            Header = #keylist{}
 %%
-%% @throws  {sipparseerror, Type, Header, Status, Reason} 
+%% @throws  {sipparseerror, Type, Header, Status, Reason}
 %%
 %% @doc     Check if we supported the URI scheme of a request. If we
 %%          didn't support the URI scheme, sipurl:parse(...) will
@@ -2026,18 +2023,14 @@ test_parse_packet2_loop_detection() ->
     %% test parse_packet2(Packet, Origin)
     %%--------------------------------------------------------------------
     autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.0"),
-    %% Bug report :
+    %% demonstrate that a spiraling request is not treated as a loop
     %%
-    %% Another easier way to recreate the problem is using two regexps and one account:
+    %% The spiral is supposed to emulate this scenario :
     %%
     %% Regexp1: ^sip:regexp1@homedomain$ sip:regexp2@homedomain
     %% Regexp2: ^sip:regexp2@homedomain$ sip:user@homedomain
     %%
-    %% There is no problem sending an INVITE to sip:regexp2@homedomain. The
-    %% request is sent in a spiral one time before it reaches the user. But an
-    %% INVITE to sip:regexp1@homedomain results in 482 Loop Detected.
-
-    logger ! enable,
+    %% a request sent to regexp1@ should spiral and end up at user@
 
     HomedomainStr = "example.org",
 
@@ -2107,10 +2100,7 @@ test_parse_packet2_loop_detection() ->
     Request4 = sippacket:parse(SentMessage2, none),
     #request{} = Request4,
 
-    logger:log(debug, "FREDRIK: PRETENDING RECEIVING ~p", [Request4]),
-
     {ok, Request5, YxaCtx2} = process_parsed_packet(Request4, TestOrigin1),
-
 
     ok.
 
