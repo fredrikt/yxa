@@ -393,7 +393,7 @@ route_request(Request, Origin, LogTag) when is_record(Request, request), is_list
 %%            {response, Status, Reason}   |
 %%            {proxy, Location}            |
 %%            {relay, Location}            |
-%%            {forward, Location} |
+%%            {forward, Location}          |
 %%            none
 %%
 %%            Request = #request{}
@@ -439,7 +439,19 @@ request_to_homedomain(Request, Origin, LogTag, Recursing) when is_record(Request
 	    end
     end.
 
-request_homedomain_event(#request{method = Method} = Request, Origin) when Method == "PUBLISH";
+%%--------------------------------------------------------------------
+%% @spec    (Request, Origin, LogTag) ->
+%%            {forward, Location} |
+%%            false
+%%
+%%            Request = #request{}
+%%            Origin  = #siporigin{}
+%%
+%% @doc     Find out where to route a PUBLISH or SUBSCRIBE to one of
+%%          our homedomains.
+%% @end
+%%--------------------------------------------------------------------
+request_homedomain_event(#request{method = Method} = Request, Origin) when Method == "PUBLISH" orelse
 									   Method == "SUBSCRIBE" ->
     case local:incomingproxy_request_homedomain_event(Request, Origin) of
 	undefined ->
