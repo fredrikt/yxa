@@ -1183,6 +1183,8 @@ via_indicates_loop(LoopCookie, CmpVia, [TopVia | Rest]) when is_record(TopVia, v
 			       sipheader:via_print([TopVia])),
 		    via_indicates_loop(LoopCookie, CmpVia, Rest);
 		{ok, Branch} ->
+		    logger:log(debug, "FREDRIK: CHECKING BRANCH ~p ->~n ~p ~nAGAINST ~p", [Branch, extract_loopcookie(Branch, length(LoopCookie)),
+											  LoopCookie]),
 		    case extract_loopcookie(Branch, length(LoopCookie)) of
 			LoopCookie ->
 			    true;
@@ -1193,6 +1195,7 @@ via_indicates_loop(LoopCookie, CmpVia, [TopVia | Rest]) when is_record(TopVia, v
 		    end
 	    end;
 	false ->
+	    logger:log(debug, "FREDRIK: VIA ~p NOT EQUAL MINE ~p", [TopVia, CmpVia]),
 	    %% Via doesn't match me, check next.
 	    via_indicates_loop(LoopCookie, CmpVia, Rest)
     end.
@@ -2015,6 +2018,114 @@ test() ->
     {sipparseerror, request, URISchemeHeader, 400, "Unparsable Request-URI"} =
 	(catch check_supported_uri_scheme(URISchemeURL3, URISchemeHeader)),
 
+    ok = test_parse_packet2_loop_detection(),
+
     ok.
+
+test_parse_packet2_loop_detection() ->
+    %% test parse_packet2(Packet, Origin)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.0"),
+    %% Bug report :
+    %%
+    %% Another easier way to recreate the problem is using two regexps and one account:
+    %%
+    %% Regexp1: ^sip:regexp1@homedomain$ sip:regexp2@homedomain
+    %% Regexp2: ^sip:regexp2@homedomain$ sip:user@homedomain
+    %%
+    %% There is no problem sending an INVITE to sip:regexp2@homedomain. The
+    %% request is sent in a spiral one time before it reaches the user. But an
+    %% INVITE to sip:regexp1@homedomain results in 482 Loop Detected.
+
+    logger ! enable,
+
+    HomedomainStr = "example.org",
+
+    Message1 =
+	"MESSAGE sip:regexp1@" ++ HomedomainStr ++ " SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST one.example.org\r\n"
+	"From: Remote User <sip:test@remote.example.org>;tag=abc\r\n"
+	"To: Test <sip:regexp1@" ++ HomedomainStr ++ ">\r\n"
+	"CSeq: 31000 MESSAGE\r\n"
+	"\r\n",
+
+    Request1 = sippacket:parse(Message1, none),
+    #request{} = Request1,
+
+    MyIP = siphost:myip(),
+    MyPort = sipsocket:get_listenport(yxa_test),
+
+    TestSipSocket = #sipsocket{proto = yxa_test},
+    TestSipDst1 =
+	#sipdst{addr  = MyIP,
+		port  = MyPort,
+		proto = yxa_test,
+		uri   = sipurl:parse("sip:regexp2@" ++ HomedomainStr)
+	       },
+
+    {ok, _SipSocket_Res1, Branch_Res1} =
+	transportlayer:send_proxy_request(TestSipSocket, Request1, TestSipDst1,
+					  ["branch=z9hG4bK-yxa-unittest-unique"]
+					 ),
+
+    {ok, SentMessage1} = test_get_sipsocket_sent_message(TestSipDst1),
+
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.1"),
+    %% Now, see if we would detect a loop upon receiving SentRequest1 (we shouldn't,
+    %% since it is a spiraling request (URI in TestSipDst1 was not the same as
+    %% Request-URI in Message1).
+
+    TestOrigin1 =
+	#siporigin{proto = yxa_test,
+		   addr  = MyIP,
+		   port  = MyPort
+		  },
+
+    Request2 = sippacket:parse(SentMessage1, none),
+    #request{} = Request2,
+
+    {ok, Request3, YxaCtx1} = process_parsed_packet(Request2, TestOrigin1),
+
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.2"),
+    %% Now, pretend we spiral the request again (now, it is a request with a Via
+    %% header containing one of our loop cookies)
+
+    TestSipDst2 =
+	TestSipDst1#sipdst{uri = sipurl:parse("sip:user@" ++ HomedomainStr)
+			  },
+
+
+    {ok, _SipSocket_Res2, Branch_Res2} =
+	transportlayer:send_proxy_request(TestSipSocket, Request3, TestSipDst2, []),
+
+    {ok, SentMessage2} = test_get_sipsocket_sent_message(TestSipDst2),
+
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.3"),
+    %% And finally, check that we don't mistake this still spiraling request
+    %% with a looping one.
+
+    Request4 = sippacket:parse(SentMessage2, none),
+    #request{} = Request4,
+
+    logger:log(debug, "FREDRIK: PRETENDING RECEIVING ~p", [Request4]),
+
+    {ok, Request5, YxaCtx2} = process_parsed_packet(Request4, TestOrigin1),
+
+
+    ok.
+
+
+test_get_sipsocket_sent_message(Dst) when is_record(Dst, sipdst) ->
+    #sipdst{addr = Addr,
+	    port = Port,
+	    proto = Proto
+	   } = Dst,
+    receive
+	{sipsocket_test, send, {Proto, Addr, Port}, Message} ->
+	    {ok, Message}
+    after
+	1000 ->
+	    {error, "Did not find expected sent message in mailbox"}
+    end.
 
 -endif.
