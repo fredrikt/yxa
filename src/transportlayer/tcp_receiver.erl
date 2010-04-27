@@ -119,7 +119,7 @@
 %% @doc     Spawn a tcp_receiver process into it's recv_loop().
 %% @end
 %%--------------------------------------------------------------------
-start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl; SocketModule == gen_tcp,
+start_link(SocketModule, Socket, SipSocket) when SocketModule == ssl orelse SocketModule == gen_tcp,
 						 is_record(SipSocket, sipsocket) ->
     #sipsocket{proto	= Proto,
 	       hostport	= #hp{l_ip	= LocalIP,
