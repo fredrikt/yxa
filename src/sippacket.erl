@@ -249,49 +249,46 @@ parse_one_header(Bin) ->
 %%            Length           = integer()
 %%            AfterColonOffset = integer()
 %%
-%% @doc     Get the offset and length of the key for this header.
-%%          Return an offset to the first byte after the colon
-%%          separating key and values.
+%% @throws  {error, atom()}
+%%
+%% @doc     Get the name of this header. The returned binary is what
+%%          comes _after_ the colon.
 %% @end
 %%--------------------------------------------------------------------
 parse_one_header_key(Bin) ->
-    {Str, Rest} = parse_one_header_key2(Bin, false, []),
+    {Str, Rest} = parse_one_header_key2(Bin, []),
     {keylist:normalize(Str), Str, Rest}.
 
-parse_one_header_key2(<<N, Rest/binary>>, RequireColon, Acc) when N == ?SP orelse N == ?HTAB ->
-    %% RFC3261 BNF for headers :
-    %% To separate the header name from the rest of value,
-    %% a colon is used, which, by the above rule, allows whitespace before,
-    %% but no line break, and whitespace after, including a linebreak.
-    KeyLen = length(Acc),
-    case (KeyLen >= 0) of
-	false ->
-	    %% XXX should be (KeyLen > 0) ?
-	    throw({error, whitespace_where_header_name_was_expected});
-	true ->
-	    %% KeyLen is non-zero, so tab and space are OK - don't accumulate
-	    %% spaces though, and set RequireColon to true
-	    parse_one_header_key2(Rest, true, Acc)
-    end;
-parse_one_header_key2(<<$:, Rest/binary>>, _RequireColon, Acc) ->
-    %% Colon spotted
-    case (length(Acc) >= 0) of
-	true ->
-	    %% We are finished.
-	    {lists:reverse(Acc), Rest};
-	false ->
-	    throw({error, colon_where_header_name_was_expected})
-    end;
-parse_one_header_key2(<<H, Rest/binary>>, RequireColon, Acc) ->
-    %% anything else, make sure we don't have RequireColon set
-    case RequireColon of
-	true ->
-	    throw({error, non_colon_when_colon_was_required});
-	false ->
-	    parse_one_header_key2(Rest, false, [H | Acc])
-    end;
-parse_one_header_key2(<<>>, _RequireColon, _Acc) ->
+%% RFC3261 BNF for headers :
+%% To separate the header name from the rest of value,
+%% a colon is used, which, by the above rule, allows whitespace before,
+%% but no line break, and whitespace after, including a linebreak.
+
+%% Just accumulate until we find the first SP/HTAB, or a colon.
+parse_one_header_key2(<<H, Rest/binary>>, Acc) when H =/= ?SP andalso H =/= ?HTAB andalso H =/= $: ->
+    parse_one_header_key2(Rest, [H | Acc]);
+parse_one_header_key2(<<$:, _Rest/binary>>, []) ->
+    %% Colon found, but header name is empty.
+    throw({error, colon_where_header_name_was_expected});
+parse_one_header_key2(<<$:, Rest/binary>>, Acc) ->
+    %% No SP/HTAB between header name and colon, we are finished.
+    {lists:reverse(Acc), Rest};
+parse_one_header_key2(<<H, Rest/binary>>, Acc) when H == ?SP orelse H == ?HTAB ->
+    %% SP/HTAB found, now ignore SP/HTAB up until the colon
+    Rest2 = parse_one_header_key3(Rest),
+    %% We are finished.
+    {lists:reverse(Acc), Rest2};
+parse_one_header_key2(<<>>, Acc) ->
     throw({error, no_end_of_key_or_no_header_body_separator}).
+
+%% Ignore SP/HTAB until we find a colon. Fail on anything else.
+parse_one_header_key3(<<H, Rest/binary>>) when H == ?SP orelse H == ?HTAB ->
+    parse_one_header_key3(Rest);
+parse_one_header_key3(<<$:, Rest/binary>>) ->
+    %% We are finished.
+    Rest;
+parse_one_header_key3(<<_Any/binary>>) ->
+    throw({error, non_colon_when_colon_was_required}).
 
 %%--------------------------------------------------------------------
 %% @spec    (Bin, Offset) ->
@@ -502,7 +499,6 @@ parse_firstline_response(Bin) ->
 %% Get an integer
 extract_integer(Bin) ->
     {L, Rest} = extract_integer(Bin, []),
-    io:format("EXTR INT : ~p  (Rest ~p)~n", [L, Rest]),
     Int =
 	try list_to_integer(L) of
 	    N -> N
