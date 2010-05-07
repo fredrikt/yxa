@@ -79,13 +79,13 @@
 %%          request or a response record()
 %% @end
 %%--------------------------------------------------------------------
-parse(Packet, Origin) when is_binary(Packet), Origin == none orelse is_record(Origin, siporigin) ->
+parse(Packet, Origin) when is_binary(Packet), is_record(Origin, siporigin) orelse Origin == none ->
     case parse_packet(Packet, Origin) of
 	keepalive ->
 	    keepalive;
-	{FirstLine, Header, BodyOffset} ->
+	{ok, FirstLine, Header, Rest} ->
 	    CL = keylist:fetch('content-length', Header),
-	    case extract_body(Packet, BodyOffset, CL) of
+	    case extract_body(Rest, CL) of
 		{ok, Body} ->
 		    case FirstLine of
 			{request, Parsed} ->
@@ -106,51 +106,50 @@ parse(PacketL, Origin) when is_list(PacketL) ->
     parse(list_to_binary(PacketL), Origin).
 
 %% part of parse() - extract body using an existing Content-Length
-%% or assuming that it is the rest of Bin
-extract_body(Bin, BodyOffset, [LLen]) ->
-    %% Extract BodyLen from Content-Length header if one exists. If we get
-    %% a datagram with excess data, we are to just ignore the extra data.
-    BodyLen = size(Bin) - BodyOffset,
+%% or assuming that it is the rest of Bin. If we get a datagram with
+%% excess data, we are to just ignore the extra data.
+extract_body(Bin, [LLen]) ->
     try list_to_integer(LLen) of
-	CLen when CLen < BodyLen ->
-	    <<_:BodyOffset/binary, Body:CLen/binary-unit:8, Rest/binary>> = Bin,
-	    logger:log(debug, "Ignoring ~p bytes of excess data (for now) : ~p", [size(Rest), binary_to_list(Rest)]),
-	    {ok, Body};
-	CLen when CLen > BodyLen ->
-	    %% We haven't got the whole body. For stream-oriented transport (like TCP)
-	    %% this is not an error - we just haven't received the complete message yet
-	    <<_:BodyOffset/binary, Body:BodyLen/binary-unit:8>> = Bin,
-	    {ok, Body};
-	BodyLen ->
-	    %% CLen matches BodyLen
-	    <<_:BodyOffset/binary, Body:BodyLen/binary-unit:8>> = Bin,
-	    {ok, Body}
+	CLen ->
+	    extract_body2(Bin, CLen)
     catch
 	_ : _ ->
 	    {error, "invalid Content-Length"}
     end;
-extract_body(Bin, BodyOffset, []) ->
+extract_body(Bin, []) ->
     %% No Content-Length header supplied, assume the body is the rest of the packet.
-    BodyLen = size(Bin) - BodyOffset,
-    <<_:BodyOffset/binary, Body:BodyLen/binary-unit:8>> = Bin,
-    {ok, Body};
-extract_body(_Bin, _BodyOffset, CL) ->
+    {ok, Bin};
+extract_body(_Bin, CL) ->
     %% More than one Content-Length header or something else wrong with it
     logger:log(debug, "Packet has invalid Content-Length header : ~p", [CL]),
     {error, "invalid Content-Length"}.
 
+extract_body2(Bin, CLen) when size(Bin) > CLen ->
+    <<Body:CLen/binary-unit:8, Rest/binary>> = Bin,
+    %% XXX should we really log the data? If so, perhaps log using
+    %% special logger:log_io_list.
+    logger:log(debug, "Ignoring ~p bytes of excess data (for now) : ~p",
+	       [size(Bin) - CLen, binary_to_list(Rest)]),
+    {ok, Body};
+extract_body2(Bin, CLen) when size(Bin) < CLen ->
+    %% We haven't got the whole body. For stream-oriented transport (like TCP)
+    %% this is not an error - we just haven't received the complete message yet
+    {ok, Bin};
+extract_body2(Bin, CLen) when size(Bin) == CLen ->
+    %% CLen matches size of Bin
+    {ok, Bin}.
 
 %%--------------------------------------------------------------------
 %% @spec    (Packet, Origin) ->
-%%            {FirstLine, Header, BodyOffset} | keepalive 
+%%            {ok, FirstLine, Header, Rest} | keepalive 
 %%
 %%            Packet = binary()
 %%            Origin = #siporigin{} | none
 %%
-%%            FirstLine  = {request, {Method, URIstr}}  |
-%%                         {response, {Status, Reason}}
-%%            Header     = #keylist{}
-%%            BodyOffset = integer()
+%%            FirstLine = {request, {Method, URIstr}}  |
+%%                        {response, {Status, Reason}}
+%%            Header    = #keylist{}
+%%            Rest      = binary()
 %%
 %% @throws  {siperror, Status, Reason}               |
 %%            {siperror, Status, Reason, ExtraHeaders} 
@@ -169,7 +168,7 @@ parse_packet(<<?CR, ?LF>>, Origin) ->
 	    true
     end,
     keepalive;
-parse_packet(Packet, Origin) when is_binary(Packet) ->
+parse_packet(Packet, Origin) ->
     if
 	is_record(Origin, siporigin) ->
 	    OriginStr = transportlayer:origin2str(Origin),
@@ -185,65 +184,60 @@ parse_packet(Packet, Origin) when is_binary(Packet) ->
 	    %% This is not our final parse attempt, don't log
 	    true
     end,
-    {FirstLine, HeaderOffset} = parse_firstline(Packet, 0),
-    {Header, BodyOffset} = parse_headers(Packet, HeaderOffset),
-    {FirstLine, Header, BodyOffset}.
+    {FirstLine, HeaderBody} = parse_firstline(Packet),
+    {Header, Body} = parse_headers(HeaderBody),
+    {ok, FirstLine, Header, Body}.
 
 %%--------------------------------------------------------------------
 %% @spec    (Bin, Offset) ->
-%%            {Headers, BodyOffset}
+%%            {Headers, Body}
 %%
-%%            Bin    = binary() "the complete SIP message"
-%%            Offset = integer() "headers start offset"
+%%            Bin     = binary() "SIP request without first line"
 %%
-%%            Headers    = #keylist{}
-%%            BodyOffset = integer()
+%%            Headers = #keylist{}
+%%            Body    = binary()
 %%
 %% @doc     Get all headers, and a new offset pointing at whatever is
 %%          after the header-body separator (body or nothing).
 %% @end
 %%--------------------------------------------------------------------
-parse_headers(Bin, Offset) ->
-    parse_headers(Bin, Offset, []).
+parse_headers(Bin) ->
+    parse_headers(Bin, []).
 
-parse_headers(Bin, Offset, Res) ->
-    case Bin of
-	<<_:Offset/binary, ?CR, ?LF, _/binary>> ->
-	    %% CRLF, must be header-body separator. We are finished.
-	    {make_keylist(Bin, lists:reverse(Res)), Offset + 2};
-	<<_:Offset/binary, N:8, _/binary>> when N == ?CR; N == ?LF ->
-	    %% CR or LF, must be header-body separator (albeit broken). We are finished.
-	    {make_keylist(Bin, lists:reverse(Res)), Offset + 1};
-	<<_:Offset/binary, _, _/binary>> ->
-	    {ok, This, NextOffset} = parse_one_header(Bin, Offset),
-	    parse_headers(Bin, NextOffset, [This | Res]);
-	_ ->
-	    throw({error, no_header_body_separator_found})
-    end.
+parse_headers(<<?CR, ?LF, Rest/binary>>, Acc) ->
+    %% CRLF, must be header-body separator. We are finished.
+    {keylist:from_list(lists:reverse(Acc)), Rest};
+parse_headers(<<N, Rest/binary>>, Acc) when N == ?CR orelse N == ?LF ->
+    %% CRLF, must be header-body separator. We are finished.
+    {keylist:from_list(lists:reverse(Acc)), Rest};
+parse_headers(Bin, Acc) when size(Bin) > 0 ->
+    {ok, This, Rest} = parse_one_header(Bin),
+    parse_headers(Rest, [This | Acc]);
+parse_headers(<<>>, _Acc) ->
+    throw({error, no_header_body_separator_found}).
 
 %%--------------------------------------------------------------------
-%% @spec    (Bin, Offset) ->
-%%            {ok, HData, NextLineOffset}
+%% @spec    (Bin) ->
+%%            {ok, HData, Rest}
 %%
-%%            Bin    = binary() "the complete SIP message"
-%%            Offset = integer() "this headers start offset"
+%%            Bin    = binary() "SIP header and probably more"
 %%
-%%            HData          = #header{}
-%%            NextLineOffset = integer()
+%%            HData  = {Key, Name, Values}
+%%            Key    = atom() | string() "Normalized header name"
+%%            Name   = string() "Header name"
+%%            Values = [string()]
+%%            Rest   = binary()
 %%
-%% @doc     Get the offsets for all elements in the header starting at
-%%          Offset. This is a tuple containing the offset and length
-%%          of the header name, and one or more tuples with start
-%%          offset and length of value elements. This is a list since
-%%          header values can span over multiple lines.
+%% @doc     Parse the SIP header line at the start of Bin, and return
+%%          the parsed #header{} plus anything left of Bin.
 %% @end
 %%--------------------------------------------------------------------
-parse_one_header(Bin, Offset) ->
-    {KeyLength, ColonOffset} = parse_one_header_key(Bin, Offset),
-    Key = #ptr{offset=Offset, length=KeyLength},
-    {Comma, ValuePtrs, NextLineOffset} = parse_one_header_values(Bin, ColonOffset + 1),
-    This = #header{key=Key, valueptrs=ValuePtrs, comma=Comma},
-    {ok, This, NextLineOffset}.
+parse_one_header(Bin) ->
+    {Key, Name, Rest} = parse_one_header_key(Bin),
+    {Comma, ValueStr, Rest2} = parse_one_header_values(Rest),
+    %% Extract values
+    Values = split_header_value(Key, ValueStr, Comma),
+    {ok, {Key, Name, Values}, Rest2}.
 
 %%--------------------------------------------------------------------
 %% @spec    (Bin, Offset) ->
@@ -260,45 +254,44 @@ parse_one_header(Bin, Offset) ->
 %%          separating key and values.
 %% @end
 %%--------------------------------------------------------------------
-parse_one_header_key(Bin, Offset) ->
-    parse_one_header_key2(Bin, Offset, 0, false).
+parse_one_header_key(Bin) ->
+    {Str, Rest} = parse_one_header_key2(Bin, false, []),
+    {keylist:normalize(Str), Str, Rest}.
 
-parse_one_header_key2(Bin, Offset, KeyLen, RequireColon) ->
-    case Bin of
-	<<_:Offset/binary, N, _/binary>> when N == ?SP; N == ?HTAB ->
-	    %% RFC3261 BNF for headers :
-	    %% To separate the header name from the rest of value,
-	    %% a colon is used, which, by the above rule, allows whitespace before,
-	    %% but no line break, and whitespace after, including a linebreak.
-	    case (KeyLen >= 0) of
-		false ->
-		    %% XXX should be (KeyLen > 0) ?
-		    throw({error, whitespace_where_header_name_was_expected});
-		true ->
-		    %% KeyLen is non-zero, so tab and space are OK - don't increase
-		    %% KeyLen for spaces though, and set RequireColon to true
-		    parse_one_header_key2(Bin, Offset + 1, KeyLen, true)
-	    end;
-	<<_:Offset/binary, $:, _/binary>> ->
-	    %% Colon spotted
-	    case (KeyLen >= 0) of
-		true ->
-		    %% KeyLen >= 0. We are finished.
-		    {KeyLen, Offset};
-		false ->
-		    throw({error, colon_where_header_name_was_expected})
-	    end;
-	<<_:Offset/binary, _:8, _/binary>> ->
-	    %% anything else, make sure we don't have RequireColon set
-	    case RequireColon of
-		true ->
-		    throw({error, non_colon_when_colon_was_required});
-		false ->
-		    parse_one_header_key2(Bin, Offset + 1, KeyLen + 1, false)
-	    end;
-	_ ->
-	    throw({error, no_end_of_key_or_no_header_body_separator})
-    end.
+parse_one_header_key2(<<N, Rest/binary>>, RequireColon, Acc) when N == ?SP orelse N == ?HTAB ->
+    %% RFC3261 BNF for headers :
+    %% To separate the header name from the rest of value,
+    %% a colon is used, which, by the above rule, allows whitespace before,
+    %% but no line break, and whitespace after, including a linebreak.
+    KeyLen = length(Acc),
+    case (KeyLen >= 0) of
+	false ->
+	    %% XXX should be (KeyLen > 0) ?
+	    throw({error, whitespace_where_header_name_was_expected});
+	true ->
+	    %% KeyLen is non-zero, so tab and space are OK - don't accumulate
+	    %% spaces though, and set RequireColon to true
+	    parse_one_header_key2(Rest, true, Acc)
+    end;
+parse_one_header_key2(<<$:, Rest/binary>>, _RequireColon, Acc) ->
+    %% Colon spotted
+    case (length(Acc) >= 0) of
+	true ->
+	    %% We are finished.
+	    {lists:reverse(Acc), Rest};
+	false ->
+	    throw({error, colon_where_header_name_was_expected})
+    end;
+parse_one_header_key2(<<H, Rest/binary>>, RequireColon, Acc) ->
+    %% anything else, make sure we don't have RequireColon set
+    case RequireColon of
+	true ->
+	    throw({error, non_colon_when_colon_was_required});
+	false ->
+	    parse_one_header_key2(Rest, false, [H | Acc])
+    end;
+parse_one_header_key2(<<>>, _RequireColon, _Acc) ->
+    throw({error, no_end_of_key_or_no_header_body_separator}).
 
 %%--------------------------------------------------------------------
 %% @spec    (Bin, Offset) ->
@@ -316,93 +309,48 @@ parse_one_header_key2(Bin, Offset, KeyLen, RequireColon) ->
 %%          header values can span over multiple lines.
 %% @end
 %%--------------------------------------------------------------------
-parse_one_header_values(Bin, Offset) ->
-    parse_one_header_values2(Bin, false, Offset, Offset, 0, []).
+parse_one_header_values(Bin) ->
+    parse_one_header_values2(Bin, false, []).
 
-parse_one_header_values2(Bin, Comma, Offset, StartOffset, Len, Res) ->
-    case Bin of
-	<<_:Offset/binary, N:8, _/binary>> when Len == 0, Res == [], N == ?SP orelse N == ?HTAB ->
-	    %% space / tab after colon, just ignore
-	    parse_one_header_values2(Bin, Comma, Offset + 1, StartOffset + 1, Len, Res);
-	<<_:Offset/binary, ?CR, ?LF, N:8, _/binary>> when N == ?SP; N == ?HTAB ->
-	    %% CRLF followed by space / tab, this header continues on the next line.
-	    %% Make a ptr record() for what we have this far, and then start over (set
-	    %% a new StartOffset and set Len to 0)
-	    This = #ptr{offset=StartOffset, length=Len},
-	    NextOffset = Offset + 3,
-	    parse_one_header_values2(Bin, Comma, NextOffset, NextOffset, 0, [This | Res]);
-	<<_:Offset/binary, ?LF, N:8, _/binary>> when N == ?SP; N == ?HTAB ->
-	    %% LF followed by space / tab, this header continues on the next line.
-	    %% Make a ptr record() for what we have this far, and then start over (set
-	    %% a new StartOffset and set Len to 0)
-	    This = #ptr{offset=StartOffset, length=Len},
-	    NextOffset = Offset + 2,
-	    parse_one_header_values2(Bin, Comma, NextOffset, NextOffset, 0, [This | Res]);
-	<<_:Offset/binary, ?CR, ?LF, _/binary>> ->
-	    %% CRLF (not followed by space or tab (checked above)), we are done
-	    This = #ptr{offset=StartOffset, length=Len},
-	    {Comma, lists:reverse([This | Res]), Offset + 2};
-	<<_:Offset/binary, ?LF, _/binary>> ->
-	    %% LF (not followed by space or tab (checked above)), we are done
-	    This = #ptr{offset=StartOffset, length=Len},
-	    {Comma, lists:reverse([This | Res]), Offset + 1};
-	<<_:Offset/binary, 44, _/binary>> ->	%% 44 is comma
-	    %% comma, part of value but remember we saw a comma (by setting Comma to true)
-	    parse_one_header_values2(Bin, true, Offset + 1, StartOffset, Len + 1, Res);
-	<<_:Offset/binary, _:8, _/binary>> ->
-	    %% something else, must be part of value
-	    parse_one_header_values2(Bin, Comma, Offset + 1, StartOffset, Len + 1, Res);
-	_ ->
-	    throw({error, no_end_of_header})
-    end.
+parse_one_header_values2(<<N, Rest/binary>>, Comma, []) when N == ?SP orelse N == ?HTAB ->
+    %% space / tab after colon, just ignore
+    parse_one_header_values2(Rest, Comma, []);
+parse_one_header_values2(<<?CR, ?LF, N:8, Rest/binary>>, Comma, Acc) when N == ?SP orelse N == ?HTAB ->
+    %% CRLF followed by space / tab, this header continues on the next line.
+    parse_one_header_values2(Rest, Comma, Acc);
+parse_one_header_values2(<<?LF, N:8, Rest/binary>>, Comma, Acc) when N == ?SP orelse N == ?HTAB ->
+    %% LF followed by space / tab, this header continues on the next line.
+    parse_one_header_values2(Rest, Comma, Acc);
+parse_one_header_values2(<<?CR, ?LF, Rest/binary>>, Comma, Acc) ->
+    %% CRLF (not followed by space or tab (checked above)), we are done
+    {Comma, lists:reverse(Acc), Rest};
+parse_one_header_values2(<<?LF, Rest/binary>>, Comma, Acc) ->
+    %% LF (not followed by space or tab (checked above)), we are done
+    {Comma, lists:reverse(Acc), Rest};
+parse_one_header_values2(<<N, Rest/binary>>, Comma, Acc) ->
+    %% Part of value. If it is a comma we remember we saw one, and have to do more
+    %% expensive header parsing later on.
+    NewComma =
+	case N of
+	    44 -> true;
+	    _ ->  Comma
+	end,
+    parse_one_header_values2(Rest, NewComma, [N | Acc]);
+parse_one_header_values2(<<>>, _Comma, _Acc) ->
+    throw({error, no_end_of_header}).
 
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
-%%--------------------------------------------------------------------
-%% @spec    (Bin, Headers) ->
-%%            Keylist
-%%
-%%            Bin     = binary() "the complete SIP message"
-%%            Headers = [#header{}]
-%%
-%%            Keylist = #keylist{}
-%%
-%% @doc     Turn every element of Offsets into a {Key, Name, Values}
-%%          tuple and then hand all those tuples to
-%%          keylist:from_list() to get a keylist record.
-%% @end
-%%--------------------------------------------------------------------
-make_keylist(Bin, Headers) ->
-    Headerlist = make_keylist2(Bin, Headers, []),
-    Keylist = keylist:from_list(Headerlist),
-    Keylist.
-
-make_keylist2(Bin, [#header{key=HKey, valueptrs=ValuePtrs, comma=Comma} | T], Res) ->
-    #ptr{offset=KeyOffset, length=KeyLen} = HKey,
-
-    %% Extract key
-    <<_:KeyOffset/binary, NameBin:KeyLen/binary-unit:8, _/binary>> = Bin,
-    Name = binary_to_list(NameBin),
-    Key = keylist:normalize(Name),
-
-    %% Extract values
-    Values = split_header_value(Key, ValuePtrs, Bin, Comma),
-    This = {Key, Name, Values},
-
-    make_keylist2(Bin, T, [This | Res]);
-make_keylist2(_Bin, [], Res) ->
-    %% No more input
-    lists:reverse(Res).
 
 %%--------------------------------------------------------------------
-%% @spec    (Key, ValuePtrs, Bin, Comma) ->
+%% @spec    (Key, ValueStr, Comma) ->
 %%            ValueList
 %%
 %%            Key       = atom() | string()
-%%            ValuePtrs = [#ptr{}]
+%%            ValueStr  = string()
 %%            Bin       = binary() "the complete SIP message"
 %%            Comma     = true | false "whether there is a comma in the values or not"
 %%
@@ -417,93 +365,76 @@ make_keylist2(_Bin, [], Res) ->
 %%--------------------------------------------------------------------
 %% Except the headers listed in RFC3261 7.3.1 and in the RFC3261 BNF
 %% to be excepted from standard header comma splitting
-split_header_value('www-authenticate', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('authorization', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('proxy-authenticate', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('proxy-authorization', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('call-id', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('content-disposition', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('content-length', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('content-type', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('cseq', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('date', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('expires', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('from', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('max-forwards', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('mime-version', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('min-expires', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('organization', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('priority', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('reply-to', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('retry-after', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('server', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('timestamp', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('to', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value('user-agent', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
+split_header_value('www-authenticate', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('authorization', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('proxy-authenticate', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('proxy-authorization', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('call-id', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('content-disposition', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('content-length', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('content-type', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('cseq', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('date', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('expires', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('from', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('max-forwards', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('mime-version', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('min-expires', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('organization', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('priority', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('reply-to', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('retry-after', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('server', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('timestamp', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('to', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value('user-agent', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
 %% Non-RFC3261 ones that should not be splitted
-split_header_value('x-yxa-peer-auth', ValuePtrs, Bin, _Comma) ->
-    extract_value_s(ValuePtrs, Bin);
-split_header_value(_Key, ValuePtrs, Bin, false) ->
+split_header_value('x-yxa-peer-auth', ValueStr, _Comma) ->
+    extract_value_s(ValueStr);
+split_header_value(_Key, ValueStr, false) ->
     %% An ordinary header, but we haven't seen a comma in it so we don't
     %% have to try and split on comma
-    extract_value_s(ValuePtrs, Bin);
-split_header_value(_Key, ValuePtrs, Bin, true) ->
-    Value = extract_value(ValuePtrs, Bin),
-    Splitted = sipheader:comma(Value),
+    extract_value_s(ValueStr);
+split_header_value(_Key, ValueStr, true) ->
+    Splitted = sipheader:comma(ValueStr),
     %% Remove leading and trailing white space from all the values
-    Res = lists:map(fun(V) ->
-			    string:strip(V, both)
-		    end, Splitted),
-    Res.
-
-%% part of split_header_value(), extract all value parts from the
-%% original SIP message and turn them into a list()
-%% Returns : string()
-extract_value(ValuePtrs, Bin) ->
-    extract_value2(ValuePtrs, Bin, []).
+    [string:strip(V, both) || V <- Splitted].
 
 %% part of split_header_value(), extract all value parts, strip leading
 %% and trailing whitespace and return it as a list containing a string
 %% Returns : [string()]
-extract_value_s(ValuePtrs, Bin) ->
-    V = extract_value2(ValuePtrs, Bin, []),
-    [string:strip(V, both)].
-
-extract_value2([H | T], Bin, Res) ->
-    #ptr{offset=VOffset, length=VLen} = H,
-    <<_:VOffset/binary, ValueBin:VLen/binary-unit:8, _/binary>> = Bin,
-    extract_value2(T, Bin, [ValueBin | Res]);
-extract_value2([], _Bin, Res) ->
-    %% No more input
-    All = list_to_binary(lists:reverse(Res)),
-    binary_to_list(All).
+extract_value_s(ValueStr) ->
+    [string:strip(ValueStr, both)].
 
 %%--------------------------------------------------------------------
-%% @spec    (Bin, Offset) ->
-%%            {request, {Method, URIstr}} | {response, {Status, Reason}}
+%% @spec    (Bin) ->
+%%            {Parsed, Rest}
+%%            Parsed = {request, {Method, URIstr}} |
+%%                     {response, {Status, Reason}}
+%%            Rest   = binary()
 %%
 %%            Bin    = binary()
 %%            Offset = integer() "where in Bin the first line starts"
@@ -516,103 +447,95 @@ extract_value2([], _Bin, Res) ->
 %% @doc     Figure out if this is a request or response.
 %% @end
 %%--------------------------------------------------------------------
-parse_firstline(Bin, Offset) ->
+parse_firstline(Bin) ->
     case Bin of
-	<<"SIP/2.0 ", _/binary>> ->
+	<<"SIP/2.0 ", Bin2/binary>> ->
 	    %% is response
-	    {Parsed, NextLineOffset} = parse_firstline_response(Bin, Offset + 8),
-	    {{response, Parsed}, NextLineOffset};
+	    {ok, Parsed, Bin3} = parse_firstline_response(Bin2),
+	    {{response, Parsed}, Bin3};
 	_ ->
 	    %% is (hopefully) request
-	    {Parsed, NextLineOffset} = parse_firstline_request(Bin, Offset),
-	    {{request, Parsed}, NextLineOffset}
+	    {ok, Parsed, Bin3} = parse_firstline_request(Bin),
+	    {{request, Parsed}, Bin3}
     end.
 
 %% part of parse_firstline(), try to parse data at offset MethodOffset
 %% as a Request-Line.
-parse_firstline_request(Bin, MethodOffset) ->
-    {Method, MethodEOffset} = extract_token(Bin, MethodOffset, ?SP),
-    {URI, URIEOffset} = extract_token(Bin, MethodEOffset + 1, ?SP),
-    VerOffset = URIEOffset + 1,
-    case Bin of
-	<<_:VerOffset/binary, "SIP/2.0", _/binary>> ->
-	    %% Ok, the URI had " SIP/2.0" after it - now verify that
-	    %% the " SIP/2.0" is the last thing on this line
-	    VerEOffset = URIEOffset + 8,
-	    case Bin of
-		<<_:VerEOffset/binary, ?CR, ?LF, _/binary>> ->
-		    {{Method, URI}, VerEOffset + 2};
-		<<_:VerEOffset/binary, ?LF, _/binary>> ->
-		    {{Method, URI}, VerEOffset + 1};
-		_ ->
-		%% uh oh, there is something other than a linefeed there
-		%% (or nothing more at all)
-		throw({error, garbage_after_sip_version})
-	    end;
+parse_firstline_request(Bin) ->
+    {Method, Bin2} = extract_token(Bin, ?SP),
+    {URI, Bin3} = extract_token(Bin2, ?SP),
+    %% Verify what is after the URI
+    case Bin3 of
+	<<"SIP/2.0\r\n", Rest/binary>> ->
+	    %% Ok, the URI had " SIP/2.0"
+	    {ok, {Method, URI}, Rest};
+	<<"SIP/2.0\n", Rest/binary>> ->
+	    %% Ok, the URI had " SIP/2.0". Missing a CR, but we allow that.
+	    {ok, {Method, URI}, Rest};
+	<<"SIP/2.0", _Rest/binary>> ->
+	    %% uh oh, there is something other than a linefeed there
+	    %% (or nothing more at all)
+	    throw({error, garbage_after_sip_version});
 	_ ->
 	    throw({error, invalid_sip_version})
     end.
 
 %% Get everything up until Sep (Sep is a byte)
-extract_token(Bin, Offset, Sep) ->
-    extract_token(Bin, Offset, Sep, []).
+extract_token(Bin, Sep) ->
+    extract_token(Bin, Sep, []).
 
-extract_token(Bin, Offset, Sep, Res) ->
-    case Bin of
-	<<_:Offset/binary, Sep:8, _/binary>> ->
-	    %% Separator found
-	    {lists:reverse(Res), Offset};
-	<<_:Offset/binary, N:8, _/binary>> ->
-	    extract_token(Bin, Offset + 1, Sep, [N | Res]);
-	_ ->
-	    %% end of binary
-	    {lists:reverse(Res), Offset}
-    end.
+extract_token(<<Sep, Rest/binary>>, Sep, Acc) ->
+    %% Separator found
+    {lists:reverse(Acc), Rest};
+extract_token(<<H, Rest/binary>>, Sep, Acc) ->
+    extract_token(Rest, Sep, [H | Acc]);
+extract_token(<<>>, _Sep, Acc) ->
+    %% end of binary
+    {lists:reverse(Acc), <<>>}.
 
 %% part of parse_firstline(), this should be a Status-Line
-parse_firstline_response(Bin, StatusOffset) ->
-    {Status, StatusEOffset} = extract_integer(Bin, StatusOffset),
-    {Reason, NextLineOffset} = extract_eol(Bin, StatusEOffset + 1),
-    {{Status, Reason}, NextLineOffset}.
+parse_firstline_response(Bin) ->
+    {Status, Bin2} = extract_integer(Bin),
+    {Reason, Bin3} = extract_eol(Bin2),
+    {ok, {Status, Reason}, Bin3}.
 
-%% Get an integer starting at Offset
-extract_integer(Bin, Offset) ->
-    extract_integer(Bin, Offset, []).
-
-extract_integer(Bin, Offset, Res) ->
-    case Bin of
-	<<_:Offset/binary, N:8, _/binary>> when N >= $0, N =< $9 ->
-	    %% a digit
-	    extract_integer(Bin, Offset + 1, [N | Res]);
-	_ ->
-	    %% not a digit, we are finished
-	    L = lists:reverse(Res),
-	    Int = try list_to_integer(L) of
-		      N -> N
-		  catch
-		      error: _ ->
-			  throw({error, non_integer_where_integer_expected})
-		  end,
-	    {Int, Offset}
-    end.
+%% Get an integer
+extract_integer(Bin) ->
+    {L, Rest} = extract_integer(Bin, []),
+    io:format("EXTR INT : ~p  (Rest ~p)~n", [L, Rest]),
+    Int =
+	try list_to_integer(L) of
+	    N -> N
+	catch
+	    error: _ ->
+		throw({error, non_integer_where_integer_expected})
+	end,
+    {Int, Rest}.
+    
+extract_integer(<<H, Rest/binary>>, Acc) when H >= $0, H =< $9 ->
+    %% a digit
+    extract_integer(Rest, [H | Acc]);
+extract_integer(<<Rest/binary>>, Acc) ->
+    %% not a digit, we are finished
+    {lists:reverse(Acc), Rest}.
 
 %% extract up to the next end-of-line (CR or LF)
-extract_eol(Bin, Offset) ->
-    extract_eol(Bin, Offset, false, []).
+extract_eol(Bin) ->
+    extract_eol(Bin, false, []).
 
-extract_eol(Bin, Offset, CRLFseen, Res) ->
-    case Bin of
-	<<_:Offset/binary, N, _/binary>> when N == ?CR; N == ?LF ->
-	    %% CR or LF, advance to next position
-	    extract_eol(Bin, Offset + 1, true, Res);
-	<<_:Offset/binary, N, _/binary>> when CRLFseen == false ->
-	    %% non-CR/LF, add to front of Res
-	    extract_eol(Bin, Offset + 1, false, [N | Res]);
-	_ ->
-	    %% we are finished, peel of spaces and then return
-	    Str = lists:reverse(string:strip(Res, left)),
-	    {Str, Offset}
-    end.
+extract_eol(<<?CR, ?LF, Rest/binary>>, _CRLFseen, Acc) ->
+    %% CRLF, advance to next position
+    extract_eol(Rest, true, Acc);
+extract_eol(<<?LF, Rest/binary>>, _CRLFseen, Acc) ->
+    %% LF, advance to next position
+    extract_eol(Rest, true, Acc);
+extract_eol(<<H, Rest/binary>>, false, Acc) ->
+    %% non-CR/LF, add to Acc
+    extract_eol(Rest, false, [H | Acc]);
+extract_eol(Rest, _CRLFseen, Acc) ->
+    %% we are finished, peel of spaces and then return
+    Str = string:strip(lists:reverse(Acc), left),
+    {Str, Rest}.
 
 %%--------------------------------------------------------------------
 %% @spec    ({Method, URI}, Header, Body) -> #request{}
