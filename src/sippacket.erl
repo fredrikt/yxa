@@ -32,19 +32,6 @@
 %%--------------------------------------------------------------------
 %% Records
 %%--------------------------------------------------------------------
-%% @type ptr() = #ptr{}.
-%%               no description
--record(ptr, {
-	  offset,	%% integer(), start offset of element
-	  length	%% integer(), length of element
-	 }).
-%% @type header() = #header{}.
-%%                  no description
--record(header, {
-	  key,		%% ptr record() with data about header key
-	  valueptrs,	%% list() of ptr record(), value element(s)
-	  comma		%% true | false, comma present in value(s)?
-	 }).
 
 %%--------------------------------------------------------------------
 %% Macros
@@ -210,11 +197,11 @@ parse_headers(<<?CR, ?LF, Rest/binary>>, Acc) ->
 parse_headers(<<N, Rest/binary>>, Acc) when N == ?CR orelse N == ?LF ->
     %% CRLF, must be header-body separator. We are finished.
     {keylist:from_list(lists:reverse(Acc)), Rest};
-parse_headers(Bin, Acc) when size(Bin) > 0 ->
-    {ok, This, Rest} = parse_one_header(Bin),
-    parse_headers(Rest, [This | Acc]);
 parse_headers(<<>>, _Acc) ->
-    throw({error, no_header_body_separator_found}).
+    throw({error, no_header_body_separator_found});
+parse_headers(Bin, Acc) ->
+    {ok, This, Rest} = parse_one_header(Bin),
+    parse_headers(Rest, [This | Acc]).
 
 %%--------------------------------------------------------------------
 %% @spec    (Bin) ->
@@ -267,10 +254,10 @@ parse_one_header_key(Bin) ->
 %% Just accumulate until we find the first SP/HTAB, or a colon.
 parse_one_header_key2(<<H, Rest/binary>>, Acc) when H =/= ?SP andalso H =/= ?HTAB andalso H =/= $: ->
     parse_one_header_key2(Rest, [H | Acc]);
-parse_one_header_key2(<<$:, _Rest/binary>>, []) ->
+parse_one_header_key2(<<H, _Rest/binary>>, []) when H == $: ->
     %% Colon found, but header name is empty.
     throw({error, colon_where_header_name_was_expected});
-parse_one_header_key2(<<$:, Rest/binary>>, Acc) ->
+parse_one_header_key2(<<H, Rest/binary>>, Acc) when H == $: ->
     %% No SP/HTAB between header name and colon, we are finished.
     {lists:reverse(Acc), Rest};
 parse_one_header_key2(<<H, Rest/binary>>, Acc) when H == ?SP orelse H == ?HTAB ->
@@ -278,13 +265,13 @@ parse_one_header_key2(<<H, Rest/binary>>, Acc) when H == ?SP orelse H == ?HTAB -
     Rest2 = parse_one_header_key3(Rest),
     %% We are finished.
     {lists:reverse(Acc), Rest2};
-parse_one_header_key2(<<>>, Acc) ->
+parse_one_header_key2(<<>>, _Acc) ->
     throw({error, no_end_of_key_or_no_header_body_separator}).
 
 %% Ignore SP/HTAB until we find a colon. Fail on anything else.
 parse_one_header_key3(<<H, Rest/binary>>) when H == ?SP orelse H == ?HTAB ->
     parse_one_header_key3(Rest);
-parse_one_header_key3(<<$:, Rest/binary>>) ->
+parse_one_header_key3(<<H, Rest/binary>>) when H == $: ->
     %% We are finished.
     Rest;
 parse_one_header_key3(<<_Any/binary>>) ->
