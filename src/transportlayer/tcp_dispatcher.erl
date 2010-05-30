@@ -224,7 +224,7 @@ format_listener_specs([{Proto, IP, Port} | T], Res)
 %%
 %%            Reply     = {ok, SipSocket} | {error, Reason}
 %%            SipSocket = #sipsocket{}
-%%            Reason    = string()
+%%            Reason    = try_again | string()
 %%
 %% @doc     Look for a cached connection to the destination in Dst. If
 %%          one is found, return {reply, ...} with it. If we are

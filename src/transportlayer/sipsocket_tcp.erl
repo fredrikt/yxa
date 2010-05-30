@@ -112,16 +112,16 @@ get_socket(#sipdst{proto=Proto}=Dst) when Proto == tls; Proto == tls6 ->
 	{ok, true} ->
 	    {error, "TLS client disabled"};
 	{ok, false} ->
-	    get_socket2(Dst, false)
+	    get_socket2(Dst, 1)
     end;
 %%
 %% Protocol is 'tcp' or 'tcp6'
 %%
 get_socket(#sipdst{proto=Proto}=Dst) when Proto == tcp; Proto == tcp6 ->
-    get_socket2(Dst, false).
+    get_socket2(Dst, 1).
 
 %% get_socket2/2 - part of get_socket/1
-get_socket2(Dst, false) ->
+get_socket2(Dst, TryNum) when TryNum =< 2 ->
     Timeout = get_timeout(Dst#sipdst.proto),
     case catch gen_server:call(tcp_dispatcher, {get_socket, Dst}, Timeout) of
 	{error, try_again} ->
@@ -129,7 +129,7 @@ get_socket2(Dst, false) ->
 	    %% there was already a connection attempt ongoing. The second tcp_connection
 	    %% noticed this, but when it was about to queue with the first
 	    %% tcp_connection had finished
-	    get_socket2(Dst, true);
+	    get_socket2(Dst, TryNum + 1);
 	{error, E} ->
 	    {error, E};
 	{ok, Socket} ->
@@ -139,7 +139,7 @@ get_socket2(Dst, false) ->
 				[Dst#sipdst.proto, Reason]),
 	    {error, lists:flatten(Msg)}
     end;
-get_socket2(Dst, true) ->
+get_socket2(Dst, _TryNum) ->
     Msg = io_lib:format("sipsocket_tcp failed fetching ~p socket (tried twice)",
 			[Dst#sipdst.proto]),
     {error, lists:flatten(Msg)}.
