@@ -87,7 +87,7 @@ connection_from(SocketModule, Proto, Socket, HostPort) when is_atom(SocketModule
 
 %%--------------------------------------------------------------------
 %% @spec    (Dst, GenServerFrom) ->
-%%            {ok, Pid} | Error
+%%            {ok, Pid} | ignore | Error
 %%
 %%            Dst           = #sipdst{}
 %%            GenServerFrom = term() "send result of connection attempt to this caller using gen_server:reply()."
