@@ -816,8 +816,30 @@ naptr_from_tuple({Order, Preference, Flags, Services, Regexp, Replacement}) ->
 		 flags=Flags,
 		 services=string:to_upper(Services),
 		 regexp=Regexp,
-		 replacement=Replacement
+		 replacement=remove_last_period(Replacement)
 		}.
+
+
+%%--------------------------------------------------------------------
+%% @spec    (Replacement) ->
+%%            Replacement
+%%
+%%            Replacement = string()
+%%
+%% @doc     Removes the terminating period (".") of the replacement
+%%          string.
+%% @end
+%%--------------------------------------------------------------------
+remove_last_period(Replacement) ->
+    remove_last_period(Replacement, []).
+
+remove_last_period([], Acc) ->
+    Acc;
+remove_last_period([$.], Acc) ->
+    Acc;
+remove_last_period([E | Replacement], Acc) ->
+    remove_last_period(Replacement, [E | Acc]).
+    
 
 %%--------------------------------------------------------------------
 %% @spec    (Len, In, []) ->

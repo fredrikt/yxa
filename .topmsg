@@ -1,0 +1,8 @@
+From: Mikael Magnusson <mikma@users.sourceforge.net>
+Subject: [PATCH] t/fix/naptr_replacement
+
+Fix enum lookup on Erlang/OTP R13.
+All ENUM NAPTR records decoded by R13 were ignored since it adds a
+terminating "." which YXA doesn't expect.
+
+Signed-off-by: Mikael Magnusson <mikma@users.sourceforge.net>
