@@ -339,10 +339,10 @@ handle_call({get_raw_socket, _Proto}, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 %%
-%% Host = IPv6 address (e.g. [2001:6b0:5:987::1])
+%% Proto = udp6, Host = IPv6 address (e.g. [2001:6b0:5:987::1])
 %%
-handle_call({send, SipSocket, "[" ++ HostT, Port, Message}, _From, State) when is_record(SipSocket, sipsocket),
-									       is_integer(Port) ->
+handle_call({send, #sipsocket{proto = udp6} = SipSocket, "[" ++ HostT, Port, Message}, _From, State)
+  when is_record(SipSocket, sipsocket), is_integer(Port) ->
     SendRes =
 	case string:rchr(HostT, 93) of	%% 93 is ]
 	    0 ->
@@ -354,10 +354,10 @@ handle_call({send, SipSocket, "[" ++ HostT, Port, Message}, _From, State) when i
 	end,
     {reply, {send_result, SendRes}, State};
 %%
-%% Host is not IPv6 reference (inside brackets)
+%% Proto = udp
 %%
-handle_call({send, SipSocket, Host, Port, Message}, _From, State) when is_record(SipSocket, sipsocket),
-								       is_list(Host), is_integer(Port) ->
+handle_call({send, #sipsocket{proto = udp} = SipSocket, Host, Port, Message}, _From, State)
+  when is_record(SipSocket, sipsocket), is_list(Host), is_integer(Port) ->
     SendRes = do_send(State#state.inet_socketlist, SipSocket, Host, Port, Message),
     {reply, {send_result, SendRes}, State};
 
