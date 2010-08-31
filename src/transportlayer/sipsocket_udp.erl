@@ -478,7 +478,7 @@ send(SipSocket, Proto, _Host, _Port, _Message)
     {error, "Protocol mismatch"};
 send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket),
 						 is_integer(Port), is_atom(Proto),
-						 Proto == udp; Proto == udp6 ->
+						 (Proto == udp orelse Proto == udp6) ->
     Pid = SipSocket#sipsocket.pid,
     case catch gen_server:call(Pid, {send, SipSocket, Host, Port, Message}) of
 	{send_result, Res} ->
