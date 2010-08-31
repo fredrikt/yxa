@@ -988,6 +988,8 @@ test() ->
 
     ok = test_ipv4(),
 
+    ok = test_speed(),
+
     ok.
 
 test_ipv4() ->
@@ -1105,5 +1107,97 @@ test_ipv4() ->
     ok = yxa_test_config:stop(),
 
     ok.
+
+
+
+test_speed() ->
+
+    %% test init(Port, TestLeader)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "init/1 - 1.0"),
+
+    MyIP = siphost:myip(),
+    {ok, MyIPt} = inet_parse:ipv4_address(MyIP),
+
+    ok = yxa_test_config:init(incomingproxy, []),
+    ok = yxa_test_config:set(enable_v6, false),
+
+    TestPort = 59596,
+    Self = self(),
+    {ok, TestServer} = gen_server:start_link(?MODULE,
+					     [TestPort, Self],
+					     []
+					    ),
+    autotest:mark(?LINE, "init/1 - 1.1"),
+    receive
+	{started, #state{test_leader = Self}} ->
+	    ok
+    after 1000 ->
+	    throw({error, "sipsocket_UDP test server did not start OK"})
+    end,
+
+    %% test get_socket(Dst)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_socket/1 - 1"),
+    %% get v4 socket
+    SipSocket1 = get_socket(udp, TestServer),
+
+    autotest:mark(?LINE, "UDP send/receive speed - 1.0"),
+    Time = 100,
+    NumTests = 5,
+    PPS_L = [test_speed2(Time, SipSocket1, MyIP, TestPort) || _ <- lists:seq(1, NumTests)],
+
+    BestResult = lists:max(PPS_L),
+    autotest:mark(?LINE, "UDP send/receive speed - 1.1 (best result per ~p ms of ~p runs : ~p packets)",
+		  [Time, NumTests, BestResult]),
+    %% fake test to output result
+
+    autotest:mark(?LINE, "UDP send/receive speed - 1.2"),
+    if
+	BestResult < 500 ->
+	    %% Around 1000 PPS for Time == 100 is what I get on my laptop
+	    throw({error, {"Packets per second benchmark result too low (must be >= 500)", BestResult}});
+	true ->
+	    ok
+    end,
+
+
+    %% test quit
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "gen_server call (quit)/1 - 1"),
+    ok = gen_server:call(TestServer, quit),
+
+    ok = yxa_test_config:stop(),
+
+    ok.
+
+test_speed2(Time, SipSocket, MyIP, TestPort) ->
+    erlang:send_after(Time, self(), stop_speedtest),
+    {ok, Count} = test_speed3(SipSocket, MyIP, TestPort, 0),
+    Count.
+
+test_speed3(SipSocket, MyIP, TestPort, Count) ->
+    TestPacket = <<0, 0, 0, 0, 0, "TEST", Count>>,
+    receive
+	stop_speedtest ->
+	    {ok, Count}
+    after 0 ->
+	    ok = send(SipSocket, udp, MyIP, TestPort, TestPacket),
+
+	    receive
+		{received_packet,
+		 TestPacket,
+		 _IP2_1,
+		 _IP2_2,
+		 _TestPort,
+		 _Proto,
+		 _Socket,
+		 _SipSocket
+		} ->
+		    test_speed3(SipSocket, MyIP, TestPort, Count + 1)
+	    after 1000 ->
+		    throw({error, "Did not receive packet"})
+	    end
+    end.
 
 -endif.
