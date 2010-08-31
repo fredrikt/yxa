@@ -65,7 +65,8 @@
 %%                 no description
 -record(state, {inet_socketlist  = [],	%% list() of {Socket, SipSocket}
 		inet6_socketlist = [],	%% list() of {Socket, SipSocket}
-		socketlist
+		socketlist,
+		test_leader
 	       }).
 
 %%--------------------------------------------------------------------
@@ -75,7 +76,7 @@
 %% v6 sockets have a default receive buffer size of 1k in Erlang R9C-0
 -define(SOCKETOPTSv6, [{reuseaddr, true}, binary, inet6, {buffer, 8 * 1024}]).
 
-%% LINUX_IPPROTO_IPv6 = 41 is located in 
+%% LINUX_IPPROTO_IPv6 = 41 is located in
 %% /usr/include/linux/in.h from linux-libc-dev
 %% /usr/include/netinet/in.h from libc6-dev
 -define(LINUX_IPPROTO_IPV6, 41).
@@ -86,6 +87,9 @@
 
 %% timeout (in milliseconds) for get_socket/1
 -define(GET_SOCKET_TIMEOUT, 1500).
+
+%% registered name of gen_server
+-define(SIPSOCKET_UDP_SERVER, sipsocket_udp).
 
 %%====================================================================
 %% External functions
@@ -98,7 +102,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({local, sipsocket_udp}, ?MODULE, [], []).
+    gen_server:start_link({local, ?SIPSOCKET_UDP_SERVER}, ?MODULE, [], []).
 
 %%====================================================================
 %% Server functions
@@ -117,6 +121,9 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     Port = sipsocket:get_listenport(udp),  %% same for UDP and UDPv6
+    init([Port, undefined]);
+
+init([Port, TestLeader]) when is_integer(Port), (is_pid(TestLeader) orelse TestLeader == undefined) ->
     IPv4Spec =
 	lists:foldl(fun(IP, Acc) ->
 			    case inet_parse:ipv4_address(IP) of
@@ -134,7 +141,9 @@ init([]) ->
 	    {ok, false} ->
 		IPv4Spec
 	end,
-    start_listening(Spec, #state{socketlist = socketlist:empty()}).
+    start_listening(Spec, #state{socketlist  = socketlist:empty(),
+				 test_leader = TestLeader
+				}).
 
 %%--------------------------------------------------------------------
 %% @spec    (Spec, State) ->
@@ -215,6 +224,10 @@ start_listening([{udp6, IP, Port} | T], State) when is_integer(Port), is_record(
 		       [SocketOpts, Port, inet:format_error(Reason)]),
 	    {stop, "Could not open IPv6 UDP socket"}
     end;
+start_listening([], #state{test_leader = TL} = State) when is_pid(TL) ->
+    logger:log(debug, "Test sipsocket_udp server started, reporting to ~p", [TL]),
+    TL ! {started, State},
+    {ok, State};
 start_listening([], State) ->
     {ok, State}.
 
@@ -346,7 +359,14 @@ handle_call({send, SipSocket, "[" ++ HostT, Port, Message}, _From, State) when i
 handle_call({send, SipSocket, Host, Port, Message}, _From, State) when is_record(SipSocket, sipsocket),
 								       is_list(Host), is_integer(Port) ->
     SendRes = do_send(State#state.inet_socketlist, SipSocket, Host, Port, Message),
-    {reply, {send_result, SendRes}, State}.
+    {reply, {send_result, SendRes}, State};
+
+%%
+%% For now, this is just used by unit tests.
+%%
+handle_call(quit, From, State) ->
+    logger:log(debug, "Terminating on request from ~p", [From]),
+    {stop, normal, ok, State}.
 
 
 %%--------------------------------------------------------------------
@@ -417,7 +437,14 @@ handle_info({udp, Socket, IPtuple, InPortNo, Packet}, State) when is_integer(InP
     case (Proto == udp orelse Proto == udp6) of
 	true ->
 	    IP = siphost:makeip(IPtuple),
-	    received_packet(Packet, IPtuple, IP, InPortNo, Proto, Socket, SipSocket);
+	    case State#state.test_leader of
+		undefined ->
+		    %% not testing
+		    received_packet(Packet, IPtuple, IP, InPortNo, Proto, Socket, SipSocket);
+		TL when is_pid(TL) ->
+		    %% unit testing
+		    TL ! {received_packet, Packet, IPtuple, IP, InPortNo, Proto, Socket, SipSocket}
+	    end;
 	false ->
 	    logger:log(error, "Sipsocket UDP: Received gen_server info 'udp' "
 		       "from unknown source '~p', ignoring", [Socket])
@@ -506,7 +533,10 @@ send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket)
 %% @end
 %%--------------------------------------------------------------------
 get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
-    case catch gen_server:call(sipsocket_udp, {get_socket, Proto}, ?GET_SOCKET_TIMEOUT) of
+    get_socket(Proto, ?SIPSOCKET_UDP_SERVER).
+
+get_socket(Proto, ServerRef) ->
+    case catch gen_server:call(ServerRef, {get_socket, Proto}, ?GET_SOCKET_TIMEOUT) of
 	{ok, SipSocket} ->
 	    SipSocket;
 	{error, E} ->
@@ -534,7 +564,10 @@ get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
 %% @end
 %%--------------------------------------------------------------------
 get_specific_socket(#ob_id{proto = Proto} = Id) when Proto == udp; Proto == udp6 ->
-    case catch gen_server:call(sipsocket_udp, {get_specific_socket, Id}) of
+    get_specific_socket(Id, ?SIPSOCKET_UDP_SERVER).
+
+get_specific_socket(Id, ServerRef) ->
+    case catch gen_server:call(ServerRef, {get_specific_socket, Id}) of
 	{ok, SipSocket} ->
 	    SipSocket;
 	{error, E} ->
@@ -952,6 +985,124 @@ test() ->
 
     autotest:mark(?LINE, "is_only_nulls/1 - 3"),
     false = is_only_nulls(<<0, 0, 0, 1>>),
+
+    ok = test_ipv4(),
+
+    ok.
+
+test_ipv4() ->
+
+    %% test init(Port, TestLeader)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "init/1 - 1.0"),
+
+    MyIP = siphost:myip(),
+    {ok, MyIPt} = inet_parse:ipv4_address(MyIP),
+
+    ok = yxa_test_config:init(incomingproxy, []),
+    ok = yxa_test_config:set(enable_v6, false),
+
+    TestPort = 59595,
+    Self = self(),
+    {ok, TestServer} = gen_server:start_link(?MODULE,
+					     [TestPort, Self],
+					     []
+					    ),
+    autotest:mark(?LINE, "init/1 - 1.1"),
+    receive
+	{started, #state{test_leader = Self}} ->
+	    ok
+    after 1000 ->
+	    throw({error, "sipsocket_UDP test server did not start OK"})
+    end,
+
+    %% test get_socket(Dst)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_socket/1 - 1"),
+    %% get v4 socket
+    SipSocket1 = get_socket(udp, TestServer),
+
+    autotest:mark(?LINE, "get_socket/1 - 1"),
+    %% should have no v6 socket
+    {error,"No socket found"} = get_socket(udp6, TestServer),
+
+    %% test get_specific_socket(Id)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "get_specific_socket/1 - 1"),
+    %% ask for the socket we have
+    SipSocket1 = get_specific_socket(SipSocket1#sipsocket.id, TestServer),
+
+    autotest:mark(?LINE, "get_specific_socket/1 - 2"),
+    %% ask for a socket we DON'T have
+    {error, "No socket found"} = get_specific_socket(#ob_id{proto = udp6}, TestServer),
+
+    autotest:mark(?LINE, "get_specific_socket/1 - 3"),
+    %% ask for a socket we DON'T have #2
+    {error, "No socket found"} = get_specific_socket(#ob_id{proto = udp, id = 123}, TestServer),
+
+    %% test packet reception
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "packet reception - 1.0"),
+    TestSocketOpts = [{ip, MyIPt} | ?SOCKETOPTS],
+
+    %% get a temporary plain gen_udp socket
+    {ok, ClientSocket1} = gen_udp:open(0, TestSocketOpts),
+
+    {ok, {ClientAddress1, ClientPort1}} = inet:sockname(ClientSocket1),
+
+    TestPacket1 = <<"\r\n">>,
+    ok = gen_udp:send(ClientSocket1, siphost:myip(), TestPort, TestPacket1),
+
+    autotest:mark(?LINE, "packet reception - 1.1"),
+    receive
+	{received_packet, TestPacket1,
+	 ClientAddress1, MyIP, ClientPort1,
+	 udp, _Socket1, #sipsocket{}} ->
+	    ok;
+	Msg1 ->
+	    throw({error, "Received unknown message", Msg1})
+    after 1000 ->
+	    throw({error, "Did not receive packet"})
+    end,
+
+
+    autotest:mark(?LINE, "packet reception - 1.2"),
+    %% clean up
+    gen_udp:close(ClientSocket1),
+
+
+    %% test send(SipSocket, Proto, Host, Port, Message)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "send/5 - 1.0"),
+    TestPacket2 = <<0, 0, 0, 0, 0>>,
+    ok = send(SipSocket1, udp, MyIP, TestPort, TestPacket2),
+
+    autotest:mark(?LINE, "send/5 - 1.1"),
+    receive
+	{received_packet,
+	 TestPacket2,
+	 _IP2_1,
+	 _IP2_2,
+	 TestPort,
+	 udp, _Socket2, #sipsocket{}} ->
+	    ok;
+	Msg2 ->
+	    throw({error, "Received unknown message", Msg2})
+    after 1000 ->
+	    throw({error, "Did not receive packet"})
+    end,
+
+    autotest:mark(?LINE, "send/5 - 2"),
+    %% test with protocol not matching our socket
+    {error, "Protocol mismatch"} = send(SipSocket1, udp6, MyIP, TestPort, TestPacket2),
+
+
+    %% test quit
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "gen_server call (quit)/1 - 1"),
+    ok = gen_server:call(TestServer, quit),
+
+    ok = yxa_test_config:stop(),
 
     ok.
 
