@@ -90,6 +90,7 @@
 
 %% registered name of gen_server
 -define(SIPSOCKET_UDP_SERVER, sipsocket_udp).
+-define(SIPSOCKET_UDP_TABLE_NAME, yxa_sipsocket_udp).
 
 %%====================================================================
 %% External functions
@@ -141,6 +142,9 @@ init([Port, TestLeader]) when is_integer(Port), (is_pid(TestLeader) orelse TestL
 	    {ok, false} ->
 		IPv4Spec
 	end,
+
+    ets:new(?SIPSOCKET_UDP_TABLE_NAME, [public, bag, named_table]),
+
     start_listening(Spec, #state{socketlist  = socketlist:empty(),
 				 test_leader = TestLeader
 				}).
@@ -226,9 +230,13 @@ start_listening([{udp6, IP, Port} | T], State) when is_integer(Port), is_record(
     end;
 start_listening([], #state{test_leader = TL} = State) when is_pid(TL) ->
     logger:log(debug, "Test sipsocket_udp server started, reporting to ~p", [TL]),
+    ets:insert(?SIPSOCKET_UDP_TABLE_NAME, {{self(), udp}, State#state.inet_socketlist}),
+    ets:insert(?SIPSOCKET_UDP_TABLE_NAME, {{self(), udp6}, State#state.inet6_socketlist}),
     TL ! {started, State},
     {ok, State};
 start_listening([], State) ->
+    ets:insert(?SIPSOCKET_UDP_TABLE_NAME, {{self(), udp}, State#state.inet_socketlist}),
+    ets:insert(?SIPSOCKET_UDP_TABLE_NAME, {{self(), udp6}, State#state.inet6_socketlist}),
     {ok, State}.
 
 
@@ -927,7 +935,23 @@ sort_sockets_laddr([], HP, _Res) ->
     none.
 
 get_socketlist(ServerRef, Proto) when Proto == udp; Proto == udp6 ->
-    gen_server:call(ServerRef, {get_socketlist, Proto}).
+    %%gen_server:call(ServerRef, {get_socketlist, Proto}).
+    ServerPid =
+	case is_pid(ServerRef) of
+	    true ->
+		ServerRef;
+	    false ->
+		case erlang:whereis(ServerRef) of
+		    Pid when is_pid(Pid) ->
+			Pid;
+		    undefined ->
+			throw({error, "Sipsocket UDP server not found"})
+		end
+	end,
+
+    [{_Key, List}] = ets:lookup(?SIPSOCKET_UDP_TABLE_NAME, {ServerPid, Proto}),
+
+    {ok, List}.
 
 
 
