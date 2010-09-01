@@ -1177,7 +1177,27 @@ test_speed2(Time, SipSocket, MyIP, TestPort) ->
     Count.
 
 test_speed3(SipSocket, MyIP, TestPort, Count) ->
-    TestPacket = <<0, 0, 0, 0, 0, "TEST", Count>>,
+    %%TestPacket = <<0, 0, 0, 0, 0, "TEST", Count>>,
+    TestPacket =
+	<<"INVITE sip:test@example.org SIP/2.0\r\n"
+	 "Via: SIP/2.0/TCP one.example.org\r\n"
+	 "Via: SIP/2.0/TCP two.example.org\r\n"
+	 "Via: SIP/2.0/TCP three.example.org\r\n"
+	 "Via: SIP/2.0/TCP four.example.org\r\n"
+	 "Via: SIP/2.0/TCP five.example.org\r\n"
+	 "Via: SIP/2.0/TCP six.example.org\r\n"
+	 "Via: SIP/2.0/TCP seven.example.org\r\n"
+	 "Via: SIP/2.0/TCP eight.example.org\r\n"
+	 "Via: SIP/2.0/TCP nine.example.org\r\n"
+	 "Via: SIP/2.0/TCP ten.example.org\r\n"
+	 "Via: SIP/2.0/TCP eleven.example.org\r\n"
+	 "Via: SIP/2.0/TCP twelve.example.org\r\n"
+	 "From: Test <sip:test@example.org>;tag=f-123\r\n"
+	 "To: <sip:test@example.org>;tag=t-123\r\n"
+	 "Content-Length: 4\r\n"
+	 "\r\n",
+	 Count
+	 >>,
     receive
 	stop_speedtest ->
 	    {ok, Count}
