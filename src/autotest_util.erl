@@ -36,6 +36,7 @@
 %% Include files
 %%--------------------------------------------------------------------
 -include("siprecords.hrl").
+-include("sipsocket.hrl").
 
 
 %%--------------------------------------------------------------------
@@ -231,6 +232,14 @@ test_record_info(sipdns_srv) ->			record_info(fields, sipdns_srv);
 test_record_info(sipdns_hostport) ->		record_info(fields, sipdns_hostport);
 test_record_info(siplocationdb_e) ->		record_info(fields, siplocationdb_e);
 test_record_info(dialog) ->			record_info(fields, dialog);
+%% add records found in sipsocket.hrl here
+test_record_info(sipsocket) ->			record_info(fields, sipsocket);
+test_record_info(hp) ->				record_info(fields, hp);
+test_record_info(sipdst) ->			record_info(fields, sipdst);
+test_record_info(siporigin) ->			record_info(fields, siporigin);
+test_record_info(yxa_sipsocket_info_e) ->	record_info(fields, yxa_sipsocket_info_e);
+test_record_info(ssl_conn_subject) ->		record_info(fields, ssl_conn_subject);
+test_record_info(ob_id) ->			record_info(fields, ob_id);
 test_record_info(_) ->
     undefined.
 
