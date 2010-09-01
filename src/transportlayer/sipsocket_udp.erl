@@ -321,45 +321,25 @@ handle_call({get_raw_socket, _Proto}, _From, State) ->
 
 
 %%--------------------------------------------------------------------
-%% @spec    ({send, SipSocket, Host, Port, Message}, ...) ->
+%% @spec    ({get_socketlist, Proto}, ...) ->
 %%            {reply, Reply, State}
 %%
-%%            SipSocket = #sipsocket{} "prefered socket to use"
-%%            Host      = string()
-%%            Port      = integer()
-%%            Message   = term()
+%%            Proto = udp | udp6
 %%
-%%            Reply = {send_result, Res}
-%%            Res   = term()
+%%            Reply = {ok, Res}
+%%            Res   = [#sipsocket]
 %%
-%% @doc     Send Message to Host:Port. Note : Unfortunately there
-%%          seems to be no way to receive ICMP port unreachables when
-%%          sending with gen_udp...
+%% @doc     Return the list of sockets for a protocol, to facilitate
+%%          sending messages from client processes, thereby avoiding
+%%          the bottle neck of the single sipsocket_udp process.
+%%
 %% @hidden
 %% @end
 %%--------------------------------------------------------------------
-%%
-%% Proto = udp6, Host = IPv6 address (e.g. [2001:6b0:5:987::1])
-%%
-handle_call({send, #sipsocket{proto = udp6} = SipSocket, "[" ++ HostT, Port, Message}, _From, State)
-  when is_record(SipSocket, sipsocket), is_integer(Port) ->
-    SendRes =
-	case string:rchr(HostT, 93) of	%% 93 is ]
-	    0 ->
-		{error, "Unknown format of destination"};
-	    Index when is_integer(Index) ->
-		Addr = string:substr(HostT, 1, Index - 1),
-		{ok, AddrT} = inet_parse:ipv6_address(Addr),
-		do_send(State#state.inet6_socketlist, SipSocket, AddrT, Port, Message)
-	end,
-    {reply, {send_result, SendRes}, State};
-%%
-%% Proto = udp
-%%
-handle_call({send, #sipsocket{proto = udp} = SipSocket, Host, Port, Message}, _From, State)
-  when is_record(SipSocket, sipsocket), is_list(Host), is_integer(Port) ->
-    SendRes = do_send(State#state.inet_socketlist, SipSocket, Host, Port, Message),
-    {reply, {send_result, SendRes}, State};
+handle_call({get_socketlist, udp}, _From, State) ->
+    {reply, {ok, State#state.inet_socketlist}, State};
+handle_call({get_socketlist, udp6}, _From, State) ->
+    {reply, {ok, State#state.inet6_socketlist}, State};
 
 %%
 %% For now, this is just used by unit tests.
@@ -509,14 +489,31 @@ send(SipSocket, Proto, _Host, _Port, _Message)
 send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket),
 						 is_integer(Port), is_atom(Proto),
 						 (Proto == udp orelse Proto == udp6) ->
-    Pid = SipSocket#sipsocket.pid,
-    case catch gen_server:call(Pid, {send, SipSocket, Host, Port, Message}) of
-	{send_result, Res} ->
-	    Res;
-	Unknown ->
-	    logger:log(error, "Sipsocket UDP: Unknown send response from socket pid ~p for ~p:~s:~p : ~p",
-                       [Pid, Proto, Host, Port, Unknown]),
-	    {error, "Unknown sipsocket_udp send result"}
+    Host2 =
+	case Proto of
+	    udp6 ->
+		case hd(Host) of
+		    "[" ->
+			case string:rchr(Host, 93) of	%% 93 is ]
+			    0 ->
+				{error, "Unknown format of destination"};
+			    Index when is_integer(Index) ->
+				Addr = string:substr(Host, 1, Index - 1),
+				{ok, AddrT} = inet_parse:ipv6_address(Addr),
+				AddrT
+			end;
+		    _ ->
+			Host
+		end;
+	    udp ->
+		Host
+	end,
+
+    case get_socketlist(SipSocket#sipsocket.pid, Proto) of
+	{ok, SocketList} ->
+	    do_send(SocketList, SipSocket, Host2, Port, Message);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 %%--------------------------------------------------------------------
@@ -928,6 +925,10 @@ sort_sockets_laddr([{_Socket, SipSocket} = H | T], HP, Res) ->
 sort_sockets_laddr([], HP, _Res) ->
     logger:log(debug, "Sipsocket UDP: Found no match for local address+port ~s:~p", [HP#hp.l_ip, HP#hp.l_port]),
     none.
+
+get_socketlist(ServerRef, Proto) when Proto == udp; Proto == udp6 ->
+    gen_server:call(ServerRef, {get_socketlist, Proto}).
+
 
 
 %%====================================================================
