@@ -551,7 +551,7 @@
 	   #cfg_entry{key	= eventserver,
 		      type	= sip_sipurl
 		     }
-	  ].
+	  ]).
 
 -define(OUTGOINGPROXY_CONFIG_DEFAULTS,
 	  [
@@ -592,7 +592,7 @@
 		      default	= true,
 		      type	= bool
 		     }
-	  ].
+	  ]).
 
 -define(APPSERVER_CONFIG_DEFAULTS,
 	  [
@@ -615,7 +615,7 @@
 		      type	= regexp_match,
 		      normalize	= false
 		     }
-	  ].
+	  ]).
 
 -define(TESTSERVER_CONFIG_DEFAULTS,
 	  [
@@ -625,7 +625,7 @@
 		      type	= regexp_match,
 		      required	= true
 		     }
-	  ].
+	  ]).
 
 -define(ADMIN_WWW_CONFIG_DEFAULTS,
 	  [
@@ -637,7 +637,7 @@
 		      type	= string,
 		      required	= true
 		     }
-	  ].
+	  ]).
 
 -define(EVENTSERVER_CONFIG_DEFAULTS,
 	  [
@@ -672,4 +672,4 @@
 		      required	= true,
 		      default	= true
 		     }
-	  ].
+	  ]).
