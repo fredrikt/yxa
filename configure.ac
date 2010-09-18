@@ -35,6 +35,9 @@ ERLANG_SUBST_LIB_VER(yaws)
 ERLANG_SUBST_LIB_VER(crypto)
 ERLANG_SUBST_LIB_VER(public_key)
 
+AC_CHECK_FILE([${ERLANG_LIB_DIR_public_key}/include/OTP-PUB-KEY.hrl],[HAS_OTP_PUB_KEY_HRL="true"],[HAS_OTP_PUB_KEY_HRL="false"])
+AC_SUBST(HAS_OTP_PUB_KEY_HRL)
+
 AC_CONFIG_FILES(
 		Makefile \
 		src/Makefile \

@@ -41,6 +41,8 @@ ERLANG_LIB_VER_crypto = @ERLANG_LIB_VER_crypto@
 ERLANG_LIB_VER_public_key = @ERLANG_LIB_VER_public_key@
 ERLANG_LIB_VER_SUBST = @ERLANG_LIB_VER_SUBST@
 
+HAS_OTP_PUB_KEY_HRL = @HAS_OTP_PUB_KEY_HRL@
+
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
 
 systools_make_script = \
@@ -115,6 +117,7 @@ imported_hrl_FILES = \
 	include/yxa_config.hrl
 
 hrl_FILES = \
+	config.hrl
 
 yxa_hrl_FILES = $(imported_hrl_FILES) $(hrl_FILES)
 
@@ -191,13 +194,14 @@ clean: clean-recursive
 	rm -f $(rel_FILES) start_ssl.rel sys.config
 	rm -f $(app_FILES)
 	rm -f $(beam_FILES)
+	rm -f config.hrl
 
 $(beam_FILES): $(yxa_hrl_FILES)
 $(boot_FILES): $(beam_FILES)
 
-SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in .rel-in
+SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in .rel-in .hrl-in
 .SUFFIXES:
-.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in .rel-in
+.SUFFIXES: .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in .rel-in .hrl-in
 
 $(ebin_dir)/%.beam:	$(srcdir)/%.erl
 	$(ERLC) $(L_ERLC_FLAGS) $<
@@ -226,6 +230,10 @@ sys.config:	$(srcdir)/sys.config-in
 
 start_ssl.boot: $(ebin_dir)/start_ssl.rel
 	$(systools_make_script)
+
+config.hrl: $(srcdir)/config.hrl-in
+	sed -e 's,[@]HAS_OTP_PUB_KEY_HRL[@],$(HAS_OTP_PUB_KEY_HRL),g' \
+	  < $< > $@
 
 test: $(ebin_dir)/autotest.beam
 	$(ERL) -noshell -s autotest run shell -pz $(ebin_dir)
