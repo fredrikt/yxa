@@ -37,6 +37,8 @@ ERLANG_LIB_VER_mnesia = @ERLANG_LIB_VER_mnesia@
 ERLANG_LIB_VER_ssl = @ERLANG_LIB_VER_ssl@
 ERLANG_LIB_VER_stdlib = @ERLANG_LIB_VER_stdlib@
 ERLANG_LIB_VER_yaws = @ERLANG_LIB_VER_yaws@
+ERLANG_LIB_VER_crypto = @ERLANG_LIB_VER_crypto@
+ERLANG_LIB_VER_public_key = @ERLANG_LIB_VER_public_key@
 ERLANG_LIB_VER_SUBST = @ERLANG_LIB_VER_SUBST@
 
 mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs

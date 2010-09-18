@@ -5,7 +5,7 @@
  [{kernel,"@ERLANG_LIB_VER_kernel@"},
   {stdlib,"@ERLANG_LIB_VER_stdlib@"},
   {ssl, "@ERLANG_LIB_VER_ssl@"},
-  {crypto, "@ELANG_LIB_VER_crypto@"},
+  {crypto, "@ERLANG_LIB_VER_crypto@"},
   {public_key, "@ERLANG_LIB_VER_public_key@"}
  ]
 }.
