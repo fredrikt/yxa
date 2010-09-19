@@ -47,7 +47,8 @@ erl_FILES = \
 	tcp_dispatcher.erl \
 	tcp_listener.erl \
 	tcp_receiver.erl \
-	transportlayer.erl
+	transportlayer.erl \
+	yxa_ssl_pkix_oid.erl
 
 imported_hrl_FILES = \
 	../include/yxa_config.hrl \
@@ -86,7 +87,7 @@ distclean: clean
 clean:
 	rm -f core *.core *~
 	rm -f *.beam *.script *.start *.boot *.rel *.app *.script
-	rm -f *.o ktrace.out erl_crash.dump
+	rm -f *.o ktrace.out erl_crash.dump yxa_ssl_pkix_oid.erl
 	rm -f $(beam_FILES)
 
 doc:
@@ -106,3 +107,6 @@ SUFFIXES = .c .o .hrl .beam .erl .boot .rel .rel-in .app .app-in
 
 $(ebin_dir)/%.beam:	$(srcdir)/%.erl
 	$(ERLC) $(L_ERLC_FLAGS) $<
+
+yxa_ssl_pkix_oid.erl: $(ebin_dir)/mk_yxa_ssl_pkix_oid.beam
+	$(ERL) -noinput -pa $(ebin_dir) -run mk_yxa_ssl_pkix_oid make -run init stop
