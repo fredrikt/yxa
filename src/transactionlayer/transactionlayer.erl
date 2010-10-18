@@ -413,7 +413,7 @@ received_new_request(Request, YxaCtx, AppModule) when is_record(Request, request
     logger:log(debug, "Transaction layer: No state for received request, starting new transaction"),
     case servertransaction:start_link(Request, YxaCtx) of
 	{ok, STPid} when is_pid(STPid) ->
-	    %% returns true if it is a CANCEL and we find a transaction to cancel, otherwise false
+	    %% returns false if it is a CANCEL and we find a transaction to cancel, otherwise true
 	    case cancel_corresponding_transaction(Request, STPid) of
 		true ->
 		    logger:log(debug, "Transaction layer: Telling SIP message handler to start this applications "
