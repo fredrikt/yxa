@@ -422,9 +422,7 @@
 %% 'record_route' for pstnproxy), or add a setting that is completely application
 %% specific, like 'appserver' for incomingproxy.
 %%
--define(APPLICATION_DEFAULTS,
-	[
-	 {pstnproxy,
+-define(PSTNPROXY_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= internal_to_e164,
 		      default	= [],
@@ -498,9 +496,9 @@
 		      type	= bool,
 		      required	= true
 		     }
-	  ]},
+	  ]).
 
-	 {incomingproxy,
+-define(INCOMINGPROXY_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= internal_to_e164,
 		      list_of	= true,
@@ -553,9 +551,9 @@
 	   #cfg_entry{key	= eventserver,
 		      type	= sip_sipurl
 		     }
-	  ]},
+	  ]).
 
-	 {outgoingproxy,
+-define(OUTGOINGPROXY_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= sipproxy,
 		      type	= sip_sipurl
@@ -594,9 +592,9 @@
 		      default	= true,
 		      type	= bool
 		     }
-	  ]},
+	  ]).
 
-	 {appserver,
+-define(APPSERVER_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= internal_to_e164,
 		      default	= [],
@@ -617,9 +615,9 @@
 		      type	= regexp_match,
 		      normalize	= false
 		     }
-	  ]},
+	  ]).
 
-	 {testserver,
+-define(TESTSERVER_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= testserver_userdb,
 		      default	= [],
@@ -627,9 +625,9 @@
 		      type	= regexp_match,
 		      required	= true
 		     }
-	  ]},
+	  ]).
 
-	 {admin_www,
+-define(ADMIN_WWW_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= httpd_config,
 		      type	= string,
@@ -639,9 +637,9 @@
 		      type	= string,
 		      required	= true
 		     }
-	  ]},
+	  ]).
 
-	 {eventserver,
+-define(EVENTSERVER_CONFIG_DEFAULTS,
 	  [
 	   #cfg_entry{key	= presence_min_publish_time,
 		      type	= integer,
@@ -680,6 +678,4 @@
 		      type	= string,
 		      required	= false
 		     }
-	  ]}
-	]
-       ).
+	  ]).

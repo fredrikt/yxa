@@ -335,7 +335,7 @@ proxy_check_maxforwards(Header) ->
 %%
 %%            Header     = #keylist{}
 %%            OrigURI    = #sipurl{}
-%%            Parameters = string()
+%%            Parameters = [string()]  "list of strings like foo=bar"
 %%            Proto      = tcp | tcp6 | udp | udp6 | tls | tls6
 %%
 %%            NewHeader =  #keylist{}

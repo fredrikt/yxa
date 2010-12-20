@@ -56,7 +56,7 @@ test() ->
 		{userdb_modules,	[sipuserdb_test]},
 		{myhostnames,		["autotest.example.org"]}
 	       ],
-    yxa_test_config:init(outgoinproxy, ExtraCfg),
+    yxa_test_config:init(outgoingproxy, ExtraCfg),
 
     ok = test_request(),
 

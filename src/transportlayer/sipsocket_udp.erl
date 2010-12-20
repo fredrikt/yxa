@@ -84,6 +84,9 @@
 %% * /usr/include/bits/in.h from libc6-dev
 -define(LINUX_IPV6_V6ONLY, 26).
 
+%% timeout (in milliseconds) for get_socket/1
+-define(GET_SOCKET_TIMEOUT, 1500).
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -478,7 +481,7 @@ send(SipSocket, Proto, _Host, _Port, _Message)
     {error, "Protocol mismatch"};
 send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket),
 						 is_integer(Port), is_atom(Proto),
-						 Proto == udp; Proto == udp6 ->
+						 (Proto == udp orelse Proto == udp6) ->
     Pid = SipSocket#sipsocket.pid,
     case catch gen_server:call(Pid, {send, SipSocket, Host, Port, Message}) of
 	{send_result, Res} ->
@@ -503,12 +506,16 @@ send(SipSocket, Proto, Host, Port, Message) when is_record(SipSocket, sipsocket)
 %% @end
 %%--------------------------------------------------------------------
 get_socket(#sipdst{proto = Proto}) when Proto == udp; Proto == udp6 ->
-    case catch gen_server:call(sipsocket_udp, {get_socket, Proto}, 1500) of
+    case catch gen_server:call(sipsocket_udp, {get_socket, Proto}, ?GET_SOCKET_TIMEOUT) of
 	{ok, SipSocket} ->
 	    SipSocket;
 	{error, E} ->
 	    logger:log(error, "Sipsocket UDP: Failed fetching socket for protocol ~p : ~p", [Proto, E]),
-	    {error, E}
+	    {error, E};
+	{'EXIT', {timeout, _}} ->
+	    logger:log(error, "Sipsocket UDP: Failed fetching socket for protocol ~p : timeout (~p ms)",
+		       [Proto, ?GET_SOCKET_TIMEOUT]),
+	    {error, "timeout"}
     end.
 
 %%--------------------------------------------------------------------

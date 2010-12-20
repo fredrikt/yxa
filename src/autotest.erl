@@ -133,11 +133,14 @@ run([Mode]) ->
 	    io:format("Faking YXA runtime environment...~n"),
 	    %%mnesia:start(),
 	    %%directory:start_link(),
-	    StartLogger = fun() ->
-				  fake_logger_loop(false)
-			  end,
-	    Logger = spawn(StartLogger),
-	    register(logger, Logger),
+	    StartHandler =
+		fun(ProcName) ->
+			spawn(fun() ->
+				      start_fake_handler(ProcName)
+			      end
+			     )
+		end,
+	    [StartHandler(ProcName) || ProcName <- [logger, event_mgr]],
 
 	    {ok, _CfgPid} = yxa_config:start_link(incomingproxy),
 
@@ -426,32 +429,53 @@ mark(Line, Fmt, Args) when is_list(Fmt), is_list(Args) ->
 %% Internal functions
 %%====================================================================
 
+start_fake_handler(ProcName) ->
+    process_flag(trap_exit, true),
+
+    Pid = spawn_link(fun() ->
+			     fake_handler_loop(ProcName, false)
+		     end
+		    ),
+
+    register(ProcName, Pid),
+    
+    %% now, start monitoring exit signals
+    receive
+	Any ->
+	    io:format("AUTOTEST: Watcher of '~p' received ~p",
+		      [ProcName, Any])
+    end.
+
 %%--------------------------------------------------------------------
 %% @spec    (Enabled) -> term() "does not return."
 %%
-%%            Enabled = bool() "output to console or not?"
+%%            Enabled = bool()
 %%
 %% @doc     Main loop for a process that does nothing more than
-%%          registers itself as 'logger'. This is needed when this
+%%          registers itself as ProcName. This is needed when this
 %%          module is executed from a unix-shell, instead of from an
-%%          erlang prompt with an YXA application running. NOTE :
-%%          this function does not return.
+%%          erlang prompt with an YXA application running. This is
+%%          used as a fake 'logger' and 'event_mgr' for example.
 %% @end
 %%--------------------------------------------------------------------
-fake_logger_loop(Enabled) ->
+fake_handler_loop(ProcName, Enabled) ->
     receive
 	exit ->
 	    ok;
-	{'$gen_cast', {log, _Level, Data}} when Enabled == true ->
-	    io:format("~s~n", [binary_to_list(iolist_to_binary(Data))]),
-	    fake_logger_loop(Enabled);
 	enable ->
-	    fake_logger_loop(true);
+	    fake_handler_loop(ProcName, true);
 	disable ->
-	    fake_logger_loop(false);
-	_ ->
-	    fake_logger_loop(Enabled)
+	    fake_handler_loop(ProcName, false);
+	Msg ->
+	    fake_handler_msg(ProcName, Enabled, Msg),
+	    fake_handler_loop(ProcName, Enabled)
     end.
+
+fake_handler_msg(logger, Enabled, {'$gen_cast', {log, _Level, Data}}) when Enabled == true ->
+    io:format("~s~n", [binary_to_list(iolist_to_binary(Data))]),
+    ok;
+fake_handler_msg(_ProcName, _Enabled, _Msg) ->
+    ok.
 
 %%--------------------------------------------------------------------
 %% @spec    (Modules) ->

@@ -129,13 +129,13 @@ restart() ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Tables) ->
-%%            ok 
+%%            ok
 %%
 %%            Tables = [atom()] "names of Mnesia tables needed by this YXA application."
 %%
 %%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
 %%
-%% @throws  DescriptiveAtom 
+%% @throws  DescriptiveAtom
 %%
 %% @doc     Initiate Mnesia on this node. If there are no remote
 %%          mnesia-tables, we conclude that we are a mnesia master
@@ -230,13 +230,13 @@ get_remote_tables([], Res) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Tables) ->
-%%            ok 
+%%            ok
 %%
 %%            Tables = [atom()] "list of table names"
 %%
 %%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
 %%
-%% @throws  DescriptiveAtom 
+%% @throws  DescriptiveAtom
 %%
 %% @doc     Make sure the tables listed in Tables exist, otherwise
 %%          halt the Erlang runtime system.
@@ -259,14 +259,14 @@ check_for_tables([]) ->
 
 %%--------------------------------------------------------------------
 %% @spec    (Descr, Tables) ->
-%%            ok 
+%%            ok
 %%
 %%            Descr  = string() "\"local\" or \"remote\""
 %%            Tables = [atom()] "names of local/remote Mnesia tables needed by this YXA application."
 %%
 %%            DescriptiveAtom = atom() "reason converted to atom since atoms are displayed best when an application fails to start"
 %%
-%% @throws  DescriptiveAtom 
+%% @throws  DescriptiveAtom
 %%
 %% @doc     Do mnesia:wait_for_tables() for RemoteTables, with a
 %%          timeout since Mnesia doesn't always start correctly due
@@ -1063,7 +1063,7 @@ route_matches_me(Route) when is_record(Route, contact) ->
 %%            Packet = #request{} | #response{}
 %%            Origin = #siporigin{} "information about where this Packet was received from"
 %%
-%% @throws  {sipparseerror, request, Header, Status, Reason} 
+%% @throws  {sipparseerror, request, Header, Status, Reason}
 %%
 %% @doc     Sanity check To: and From: in a received request/response
 %%          and, if Packet is a request record(), also check sanity
@@ -1130,7 +1130,7 @@ check_packet(Response, Origin) when is_record(Response, response), is_record(Ori
 %%            URI    = term() "opaque #(sipurl{})"
 %%            Origin = #siporigin{} "information about where this Packet was received from"
 %%
-%% @throws  {sipparseerror, request, Header, Status, Reason} 
+%% @throws  {sipparseerror, request, Header, Status, Reason}
 %%
 %% @doc     Inspect Header's Via: record(s) to make sure this is not a
 %%          looping request.
@@ -1290,7 +1290,7 @@ make_logstr_get_sipheader(Func, Header) ->
 %%            Name   = string() "\"From\" or \"To\" or similar"
 %%            Header = #keylist{}
 %%
-%% @throws  {sipparseerror, Type, Header, Status, Reason} 
+%% @throws  {sipparseerror, Type, Header, Status, Reason}
 %%
 %% @doc     Check if the header Name (from Header) is parsable.
 %%          Currently we define parsable as parsable by
@@ -1327,7 +1327,7 @@ sanity_check_uri(_Type, _Desc, URI, _Header) when is_record(URI, sipurl) ->
 %%            URI    = #sipurl{} | {yxa_unparsable, uri, {Error :: atom(), URIstr :: string()}}
 %%            Header = #keylist{}
 %%
-%% @throws  {sipparseerror, Type, Header, Status, Reason} 
+%% @throws  {sipparseerror, Type, Header, Status, Reason}
 %%
 %% @doc     Check if we supported the URI scheme of a request. If we
 %%          didn't support the URI scheme, sipurl:parse(...) will
@@ -2015,6 +2015,107 @@ test() ->
     {sipparseerror, request, URISchemeHeader, 400, "Unparsable Request-URI"} =
 	(catch check_supported_uri_scheme(URISchemeURL3, URISchemeHeader)),
 
+    ok = test_parse_packet2_loop_detection(),
+
     ok.
+
+test_parse_packet2_loop_detection() ->
+    %% test parse_packet2(Packet, Origin)
+    %%--------------------------------------------------------------------
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.0"),
+    %% demonstrate that a spiraling request is not treated as a loop
+    %%
+    %% The spiral is supposed to emulate this scenario :
+    %%
+    %% Regexp1: ^sip:regexp1@homedomain$ sip:regexp2@homedomain
+    %% Regexp2: ^sip:regexp2@homedomain$ sip:user@homedomain
+    %%
+    %% a request sent to regexp1@ should spiral and end up at user@
+
+    HomedomainStr = "example.org",
+
+    Message1 =
+	"MESSAGE sip:regexp1@" ++ HomedomainStr ++ " SIP/2.0\r\n"
+	"Via: SIP/2.0/YXA-TEST one.example.org\r\n"
+	"From: Remote User <sip:test@remote.example.org>;tag=abc\r\n"
+	"To: Test <sip:regexp1@" ++ HomedomainStr ++ ">\r\n"
+	"CSeq: 31000 MESSAGE\r\n"
+	"\r\n",
+
+    Request1 = sippacket:parse(Message1, none),
+    #request{} = Request1,
+
+    MyIP = siphost:myip(),
+    MyPort = sipsocket:get_listenport(yxa_test),
+
+    TestSipSocket = #sipsocket{proto = yxa_test},
+    TestSipDst1 =
+	#sipdst{addr  = MyIP,
+		port  = MyPort,
+		proto = yxa_test,
+		uri   = sipurl:parse("sip:regexp2@" ++ HomedomainStr)
+	       },
+
+    {ok, _SipSocket_Res1, Branch_Res1} =
+	transportlayer:send_proxy_request(TestSipSocket, Request1, TestSipDst1,
+					  ["branch=z9hG4bK-yxa-unittest-unique"]
+					 ),
+
+    {ok, SentMessage1} = test_get_sipsocket_sent_message(TestSipDst1),
+
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.1"),
+    %% Now, see if we would detect a loop upon receiving SentRequest1 (we shouldn't,
+    %% since it is a spiraling request (URI in TestSipDst1 was not the same as
+    %% Request-URI in Message1).
+
+    TestOrigin1 =
+	#siporigin{proto = yxa_test,
+		   addr  = MyIP,
+		   port  = MyPort
+		  },
+
+    Request2 = sippacket:parse(SentMessage1, none),
+    #request{} = Request2,
+
+    {ok, Request3, YxaCtx1} = process_parsed_packet(Request2, TestOrigin1),
+
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.2"),
+    %% Now, pretend we spiral the request again (now, it is a request with a Via
+    %% header containing one of our loop cookies)
+
+    TestSipDst2 =
+	TestSipDst1#sipdst{uri = sipurl:parse("sip:user@" ++ HomedomainStr)
+			  },
+
+
+    {ok, _SipSocket_Res2, Branch_Res2} =
+	transportlayer:send_proxy_request(TestSipSocket, Request3, TestSipDst2, []),
+
+    {ok, SentMessage2} = test_get_sipsocket_sent_message(TestSipDst2),
+
+    autotest:mark(?LINE, "parse_packet1/2 - Loop detection - 1.3"),
+    %% And finally, check that we don't mistake this still spiraling request
+    %% with a looping one.
+
+    Request4 = sippacket:parse(SentMessage2, none),
+    #request{} = Request4,
+
+    {ok, Request5, YxaCtx2} = process_parsed_packet(Request4, TestOrigin1),
+
+    ok.
+
+
+test_get_sipsocket_sent_message(Dst) when is_record(Dst, sipdst) ->
+    #sipdst{addr = Addr,
+	    port = Port,
+	    proto = Proto
+	   } = Dst,
+    receive
+	{sipsocket_test, send, {Proto, Addr, Port}, Message} ->
+	    {ok, Message}
+    after
+	1000 ->
+	    {error, "Did not find expected sent message in mailbox"}
+    end.
 
 -endif.

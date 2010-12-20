@@ -179,7 +179,7 @@ format_listener_specs(L) ->
 format_listener_specs([], Res) ->
     lists:reverse(Res);
 format_listener_specs([{Proto, IP, Port} | T], Res)
-  when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp6; Proto == tls6 ->
+  when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp6 orelse Proto == tls6 ->
     case yxa_config:get_env(enable_v6) of
 	{ok, true} ->
 	    Id = {listener, Proto, IP, Port},
@@ -191,7 +191,7 @@ format_listener_specs([{Proto, IP, Port} | T], Res)
 	    format_listener_specs(T, Res)
     end;
 format_listener_specs([{Proto, IP, Port} | T], Res)
-  when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp; Proto == tls ->
+  when is_atom(Proto), is_list(IP), is_integer(Port), Proto == tcp orelse Proto == tls ->
     Id = {listener, Proto, IP, Port},
     {ok, IPt} = inet_parse:ipv4_address(IP),
     MFA = {tcp_listener, start_link, [IPt, Proto, Port]},
@@ -224,7 +224,7 @@ format_listener_specs([{Proto, IP, Port} | T], Res)
 %%
 %%            Reply     = {ok, SipSocket} | {error, Reason}
 %%            SipSocket = #sipsocket{}
-%%            Reason    = string()
+%%            Reason    = try_again | string()
 %%
 %% @doc     Look for a cached connection to the destination in Dst. If
 %%          one is found, return {reply, ...} with it. If we are

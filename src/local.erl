@@ -1222,9 +1222,12 @@ incomingproxy_challenge_before_relay(Origin, Request, Dst) when is_record(Origin
 		   ).
 
 %%--------------------------------------------------------------------
-%% @spec    (Request, Origin) -> term()
+%% @spec    (Request, Origin) -> {forward, FwdURL} | false
 %%
-%% @doc
+%% @doc     This function is called when incomingproxy gets a PUBLISH
+%%          or SUBSCRIBE request to a homedomain. Return 'false' for
+%%          default processing, or {forward, FwdURL} if you want to
+%%          get the request routed somewhere special.
 %% @end
 %%--------------------------------------------------------------------
 incomingproxy_request_homedomain_event(Request, Origin) when is_record(Request, request),

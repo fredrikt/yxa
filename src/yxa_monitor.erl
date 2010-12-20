@@ -2,9 +2,8 @@
 %%% File    : yxa_monitor.erl
 %%% @author   Fredrik Thulin <ft@it.su.se>
 %%% @doc      YXA application monitor process. Monitors other nodes in
-%%%           the network (for logging purposes) and shuts down the
-%%%           local node if it gets into serious problems (like Mnesia
-%%%           going away for an extended period of time).
+%%%           the network (for logging purposes), and monitors the
+%%%           Erlang VM for certain signals of trouble.
 %%%
 %%% @since    16 Mar 2006 by Fredrik Thulin <ft@it.su.se>
 %%% @end
