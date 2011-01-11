@@ -153,9 +153,10 @@ appserver: $(builddir)/src/appserver.boot
 outgoingproxy: $(builddir)/src/outgoingproxy.boot
 	$(create_start_script)
 
+test: TZ = CET
 test:
 	echo "Making test in src/"; \
-	(cd src/ && $(MAKE) test) || exit 1
+	(cd src/ && $(MAKE) test TZ=$(TZ)) || exit 1
 
 covertest:
 	echo "Making covertest in src/"; \
