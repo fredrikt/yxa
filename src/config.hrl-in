@@ -1,0 +1,3 @@
+%%% Generated automatically by Makefile
+
+-define(HAS_OTP_PUB_KEY_HRL, @HAS_OTP_PUB_KEY_HRL@).

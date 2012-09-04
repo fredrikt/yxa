@@ -24,7 +24,16 @@
 %%--------------------------------------------------------------------
 %% Include files
 %%--------------------------------------------------------------------
+-include("config.hrl").
+-ifdef( HAS_OTP_PUB_KEY_HRL ).
+-include_lib("public_key/include/OTP-PUB-KEY.hrl").
+-define(PKIX_MODULE, 'OTP-PUB-KEY').
+-define(ATTRIBUTE_TYPE_AND_VALUE, 'OTPAttributeTypeAndValue').
+-else.
 -include_lib("ssl/include/OTP-PKIX.hrl").
+-define(PKIX_MODULE, 'OTP-PKIX').
+-define(ATTRIBUTE_TYPE_AND_VALUE, 'SSLAttributeTypeAndValue').
+-endif.
 -include("sipsocket.hrl").
 
 
@@ -167,7 +176,7 @@ is_acceptable_ssl_socket(Socket, Dir, Proto, Remote, Names) when Proto == tls or
 %%
 %% @doc     Turn a rdnSequence into a list of {Key, Value} where Key
 %%          is either the oid (integer() or tuple()) or, if
-%%          ssl_pkix_oid could turn it into an atom, then an atom
+%%          yxa_ssl_pkix_oid could turn it into an atom, then an atom
 %%          (like countryName).
 %% @end
 %%--------------------------------------------------------------------
@@ -179,7 +188,7 @@ decode_ssl_rdnseq(_Other) ->
 decode_ssl_rdnseq2([[H] | T], Res) when is_record(H, 'AttributeTypeAndValue') ->
     %% get type
     Type =
-	try ssl_pkix_oid:id2atom(H#'AttributeTypeAndValue'.type) of
+	try yxa_ssl_pkix_oid:id2atom(H#'AttributeTypeAndValue'.type) of
 	    A ->
 		A
 	catch
@@ -189,11 +198,11 @@ decode_ssl_rdnseq2([[H] | T], Res) when is_record(H, 'AttributeTypeAndValue') ->
     %% get value - copy-pasted from ssl_pkix:transform/1
     try
 	begin
-	    {ok, ATAVEnc} = 'OTP-PKIX':encode('AttributeTypeAndValue', H),
-	    'OTP-PKIX':decode('SSLAttributeTypeAndValue', list_to_binary(ATAVEnc))
+	    {ok, ATAVEnc} = ?PKIX_MODULE:encode('AttributeTypeAndValue', H),
+	    ?PKIX_MODULE:decode(?ATTRIBUTE_TYPE_AND_VALUE, list_to_binary(ATAVEnc))
 	end of
-	{ok, ATAVDec} when is_record(ATAVDec, 'SSLAttributeTypeAndValue') ->
-	    case ATAVDec#'SSLAttributeTypeAndValue'.value of
+	{ok, ATAVDec} when is_record(ATAVDec, ?ATTRIBUTE_TYPE_AND_VALUE) ->
+	    case ATAVDec#?ATTRIBUTE_TYPE_AND_VALUE.value of
 		{printableString, Value} ->
 		    decode_ssl_rdnseq2(T, [{Type, Value} | Res]);
 		Str when is_list(Str) ->
@@ -278,7 +287,7 @@ ssl_decoded_rdn_get(Key, L) ->
 %%--------------------------------------------------------------------
 get_ssl_peer_info_host_altnames(Cert) when is_record(Cert, 'Certificate') ->
     Extensions = (Cert#'Certificate'.tbsCertificate)#'TBSCertificate'.extensions,
-    AltNameExtensions = get_tbs_extensions(ssl_pkix_oid:atom2id('ce-subjectAltName'), Extensions),
+    AltNameExtensions = get_tbs_extensions(yxa_ssl_pkix_oid:atom2id('ce-subjectAltName'), Extensions),
     {ok, DNS_altNames} = get_host_altnames('SubjectAltName', AltNameExtensions),
     {ok, DNS_altNames}.
 
@@ -300,7 +309,7 @@ get_host_altnames(Type, Extensions) ->
     get_host_altnames(Type, Extensions, []).
 
 get_host_altnames(Type, [#'Extension'{extnValue = Value} | T], Res) ->
-    {ok, Decoded} = 'OTP-PKIX':decode(Type, list_to_binary(Value)),
+    {ok, Decoded} = ?PKIX_MODULE:decode(Type, list_to_binary(Value)),
     %% Decoded is a list of tuples, for example :
     %%   [{rfc822Name, "ft@example.org"},
     %%    {dNSName,    "sip.example.org"}]
