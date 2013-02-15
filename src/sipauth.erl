@@ -24,6 +24,7 @@
 	 add_x_yxa_peer_auth/5,
 	 add_credentials/7,
 	 classify_number/2,
+	 print_auth_response/8,
 
 	 test/0
 	]).
